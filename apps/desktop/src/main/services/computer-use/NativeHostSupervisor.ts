@@ -5,6 +5,7 @@ import {
   type NativeHostHealthServiceOptions,
 } from './NativeHostHealthService.js'
 import { createLogger } from '@spark/shared'
+import { computerUseV2RolloutController } from './ComputerUseV2RolloutController.js'
 
 const log = createLogger('computer-use-native-host-supervisor')
 
@@ -125,10 +126,7 @@ export class NativeHostSupervisor {
    */
   async acquire(): Promise<NativeHostConnection> {
     if (this.disposed) {
-      throw new ComputerUseBrokerError(
-        'session_canceled',
-        'Native Host supervisor is disposed',
-      )
+      throw new ComputerUseBrokerError('session_canceled', 'Native Host supervisor is disposed')
     }
     if (this.state === 'failed') {
       throw this.lastError ?? this.exhaustedError()
@@ -165,6 +163,7 @@ export class NativeHostSupervisor {
       maxRestartsPerSession: this.maxRestartsPerSession,
       code: error.code,
     })
+    computerUseV2RolloutController.recordHostSession(true)
   }
 
   async dispose(): Promise<void> {
@@ -207,6 +206,7 @@ export class NativeHostSupervisor {
         this.state = 'ready'
         this.health.reset()
         this.health.start()
+        computerUseV2RolloutController.recordHostSession(false)
         if (rebound) {
           // The new host process lost all session state. Force callers to
           // re-bind the target window and re-observe before any action.
@@ -214,8 +214,7 @@ export class NativeHostSupervisor {
             this.onRebound?.()
           } catch (callbackError) {
             log.error('Native Host onRebound callback threw', {
-              error:
-                callbackError instanceof Error ? callbackError.message : String(callbackError),
+              error: callbackError instanceof Error ? callbackError.message : String(callbackError),
             })
           }
         }
@@ -253,6 +252,7 @@ export class NativeHostSupervisor {
       restartCount: this.restartCount,
       maxRestartsPerSession: this.maxRestartsPerSession,
     })
+    computerUseV2RolloutController.recordHostSession(true)
     await dead.close().catch(() => undefined)
     if (this.restartCount >= this.maxRestartsPerSession) {
       this.state = 'failed'

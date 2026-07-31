@@ -251,6 +251,10 @@ function createHarness(
     observer?: ComputerObserverBackend
     timeline?: ComputerUseTimelineSink
     flushHighRiskEvidence?: (computerSessionId: string) => Promise<void>
+    rollout?: {
+      recordAction(erroneous: boolean): void
+      recordTakeoverStop(durationMs: number): void
+    }
   } = {},
 ) {
   const actions = new MemoryActionStore()
@@ -280,6 +284,7 @@ function createHarness(
     ...(options.flushHighRiskEvidence == null
       ? {}
       : { flushHighRiskEvidence: options.flushHighRiskEvidence }),
+    ...(options.rollout == null ? {} : { rollout: options.rollout }),
     now: () => new Date('2026-07-28T05:00:02.000Z'),
   })
   return {
@@ -296,7 +301,8 @@ function createHarness(
 describe('ComputerControlBroker', () => {
   it('executes only against the broker-owned observation and persists the after frame', async () => {
     const flushHighRiskEvidence = vi.fn(async () => undefined)
-    const { broker, actions, executor } = createHarness({ flushHighRiskEvidence })
+    const rollout = { recordAction: vi.fn(), recordTakeoverStop: vi.fn() }
+    const { broker, actions, executor } = createHarness({ flushHighRiskEvidence, rollout })
     await expect(broker.observe(session.id, true)).resolves.toEqual(beforeObservation)
 
     await expect(broker.dispatch(envelope())).resolves.toEqual({
@@ -315,6 +321,7 @@ describe('ComputerControlBroker', () => {
       risk_level: 'L1',
     })
     expect(flushHighRiskEvidence).not.toHaveBeenCalled()
+    expect(rollout.recordAction).toHaveBeenCalledWith(false)
   })
 
   it('rejects stale frames, stale trees and foreground window drift before execution', async () => {
@@ -475,11 +482,13 @@ describe('ComputerControlBroker', () => {
       execute: vi.fn(async () => ({ observation: beforeObservation, noop: true })),
       cancelSession: vi.fn(async () => undefined),
     }
-    const { broker, actions } = createHarness({ executor })
+    const rollout = { recordAction: vi.fn(), recordTakeoverStop: vi.fn() }
+    const { broker, actions } = createHarness({ executor, rollout })
     await broker.observe(session.id, true)
 
     await expect(broker.dispatch(envelope())).rejects.toMatchObject({ code: 'action_noop' })
     expect(actions.get('action-1')).toMatchObject({ status: 'failed', error_code: 'action_noop' })
+    expect(rollout.recordAction).toHaveBeenCalledWith(true)
   })
 
   it('keeps the session runnable after a recoverable native execution error', async () => {
@@ -548,6 +557,15 @@ describe('ComputerControlBroker', () => {
     if (finishCancel == null) throw new Error('Expected backend cancellation to start')
     finishCancel()
     await stopping
+  })
+
+  it('records kill-switch stop latency for automatic rollback evaluation', async () => {
+    const rollout = { recordAction: vi.fn(), recordTakeoverStop: vi.fn() }
+    const { broker } = createHarness({ rollout })
+
+    await broker.killSwitch(session.id)
+
+    expect(rollout.recordTakeoverStop).toHaveBeenCalledWith(0)
   })
 
   it('fails closed when the trusted native backend is unavailable', async () => {

@@ -608,6 +608,45 @@ describe('NativeHostComputerUseBackend', () => {
     expect(connect).toHaveBeenCalledTimes(2)
   })
 
+  it('falls back to the baseline connection path after a host-supervisor rollback', async () => {
+    const first = createConnection([FOCUSED_WINDOW])
+    const second = createConnection([])
+    const connect = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    let rollbackListener:
+      | ((event: {
+          flag: 'hostSupervisor'
+          reason: string
+          observedValue: number
+          threshold: number
+        }) => void)
+      | undefined
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect,
+      enableHostSupervisor: true,
+      rollout: {
+        subscribe: (listener) => {
+          rollbackListener = listener as typeof rollbackListener
+          return vi.fn()
+        },
+      },
+    })
+
+    await expect(backend.listWindows()).resolves.toEqual([FOCUSED_WINDOW])
+    rollbackListener?.({
+      flag: 'hostSupervisor',
+      reason: 'host_crash_rate_exceeded',
+      observedValue: 0.01,
+      threshold: 0.005,
+    })
+    await vi.waitFor(() => expect(first.close).toHaveBeenCalled())
+
+    await expect(backend.listWindows()).resolves.toEqual([])
+    expect(connect).toHaveBeenCalledTimes(2)
+    await backend.dispose()
+    expect(second.close).toHaveBeenCalled()
+  })
+
   it('observes the explicitly bound window instead of following a newly focused window', async () => {
     const boundWindow = { ...FOCUSED_WINDOW, focused: false }
     const otherWindow = {

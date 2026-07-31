@@ -25,6 +25,10 @@ import type {
   ComputerUseMetricName,
   ComputerUseMetricsCollector,
 } from './ComputerUseMetricsCollector.js'
+import {
+  computerUseV2RolloutController,
+  type ComputerUseV2RolloutController,
+} from './ComputerUseV2RolloutController.js'
 
 const log = createLogger('computer-use-native-host')
 
@@ -105,6 +109,8 @@ export class NativeHostComputerUseBackend
   private readonly observationSessions = new Map<string, ObservationSessionState>()
   private readonly targetBindings = new Map<string, { appId: string; windowId: string }>()
   private readonly supervisor: NativeHostSupervisor | null
+  private supervisorDisabledByRollback = false
+  private readonly unsubscribeRollout: (() => void) | null
   private readonly metrics: ComputerUseMetricsCollector | null
   private readonly metricDimensions: () => ComputerUseMetricDimensions
   private connectionPromise: Promise<NativeHostConnection> | null = null
@@ -129,6 +135,7 @@ export class NativeHostComputerUseBackend
     enableHostSupervisor?: boolean
     metrics?: ComputerUseMetricsCollector
     metricDimensions?: () => ComputerUseMetricDimensions
+    rollout?: Pick<ComputerUseV2RolloutController, 'subscribe'>
   }) {
     this.platform = options.platform
     this.connect = options.connect
@@ -164,6 +171,15 @@ export class NativeHostComputerUseBackend
             },
           })
         : null)
+    this.unsubscribeRollout =
+      options.supervisor == null && this.supervisor != null
+        ? (options.rollout ?? computerUseV2RolloutController).subscribe((event) => {
+            if (event.flag !== 'hostSupervisor' || this.supervisorDisabledByRollback) return
+            this.supervisorDisabledByRollback = true
+            this.observationSessions.clear()
+            void this.supervisor?.dispose()
+          })
+        : null
   }
 
   async getCapabilities(): Promise<ComputerUseCapabilitySummary> {
@@ -343,10 +359,11 @@ export class NativeHostComputerUseBackend
   async cancelSession(computerSessionId: string): Promise<void> {
     this.observationSessions.delete(computerSessionId)
     this.targetBindings.delete(computerSessionId)
-    if (this.supervisor != null) {
+    const supervisor = this.activeSupervisor()
+    if (supervisor != null) {
       let connection: NativeHostConnection
       try {
-        connection = await this.supervisor.acquire()
+        connection = await supervisor.acquire()
       } catch (error) {
         // The supervisor has no live connection to cancel on; the local session
         // is already cleared. Surface the underlying error for observability.
@@ -379,12 +396,10 @@ export class NativeHostComputerUseBackend
   async dispose(): Promise<void> {
     if (this.disposed) return
     this.disposed = true
+    this.unsubscribeRollout?.()
     this.observationSessions.clear()
     this.targetBindings.clear()
-    if (this.supervisor != null) {
-      await this.supervisor.dispose()
-      return
-    }
+    if (this.supervisor != null) await this.supervisor.dispose()
     if (this.connectionPromise == null) return
     try {
       await (await this.connectionPromise).close()
@@ -553,10 +568,11 @@ export class NativeHostComputerUseBackend
     connection: NativeHostConnection,
     error?: unknown,
   ): Promise<void> {
-    if (this.supervisor != null) {
+    const supervisor = this.activeSupervisor()
+    if (supervisor != null) {
       const brokerError =
         error instanceof ComputerUseBrokerError ? error : normalizeBackendError(error)
-      await this.supervisor.reportTerminalFailure(connection, brokerError)
+      await supervisor.reportTerminalFailure(connection, brokerError)
       return
     }
     if (this.connection !== connection) return
@@ -571,7 +587,8 @@ export class NativeHostComputerUseBackend
         new ComputerUseBrokerError('session_canceled', 'Native Host backend is disposed'),
       )
     }
-    if (this.supervisor != null) return this.supervisor.acquire()
+    const supervisor = this.activeSupervisor()
+    if (supervisor != null) return supervisor.acquire()
     if (this.connectionPromise != null) return this.connectionPromise
     const pending = this.connect()
       .then((connection) => {
@@ -584,6 +601,10 @@ export class NativeHostComputerUseBackend
       })
     this.connectionPromise = pending
     return pending
+  }
+
+  private activeSupervisor(): NativeHostSupervisor | null {
+    return this.supervisorDisabledByRollback ? null : this.supervisor
   }
 }
 

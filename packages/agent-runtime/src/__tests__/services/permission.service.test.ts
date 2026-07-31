@@ -228,7 +228,18 @@ describe('PermissionService', () => {
         svc.requestApproval('sess-1', 'mcp__spark_computer__get_status', {}, push),
       ).resolves.toBe(true)
       await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__diagnose_native_host', {}, push),
+      ).resolves.toBe(true)
+      await expect(
         svc.requestApproval('sess-1', 'mcp:spark_computer:capture_app_snapshot', {}, push),
+      ).resolves.toBe(true)
+      await expect(
+        svc.requestApproval(
+          'sess-1',
+          'mcp__spark_computer__wait_for_completion',
+          { computerSessionId: 'computer-1' },
+          push,
+        ),
       ).resolves.toBe(true)
       expect(push).not.toHaveBeenCalled()
 

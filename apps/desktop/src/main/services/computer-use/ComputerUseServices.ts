@@ -39,6 +39,7 @@ import { ElectronSnapshotImageProcessor } from './ElectronSnapshotImageProcessor
 import { getMainWindow } from '../../windows/index.js'
 import { AppControlBridge } from './AppControlBridge.js'
 import { AppControlExecutorBackend } from './AppControlExecutorBackend.js'
+import { computerUseV2RolloutController } from './ComputerUseV2RolloutController.js'
 
 export type TrustedComputerUseBackend = ComputerObserverBackend &
   ComputerExecutorBackend &
@@ -150,6 +151,7 @@ export function createComputerUseServices(
     observer: backend,
     executor,
     timeline,
+    rollout: computerUseV2RolloutController,
     ...(usableEvidence?.flushPendingWritesOrThrow == null
       ? {}
       : {

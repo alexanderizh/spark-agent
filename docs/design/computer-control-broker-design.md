@@ -102,7 +102,7 @@ Renderer 提交批准时必须回传它展示的 action/target/data-class digest
 
 | 工具                                 | Permission action        | 默认行为                              |
 | ------------------------------------ | ------------------------ | ------------------------------------- |
-| `get_status`、`capture_app_snapshot` | `computer_observe`       | allow                                 |
+| `get_status`、`wait_for_completion`、`capture_app_snapshot`、诊断 | `computer_observe`       | allow                                 |
 | `start_task`                         | `computer_task_start`    | ask                                   |
 | `resume`                             | `computer_resume`        | ask                                   |
 | `pause`、`stop`、`takeover`          | 独立安全控制 action      | 始终允许，不受旧 profile/记忆拒绝阻断 |

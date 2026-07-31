@@ -9,10 +9,12 @@ export const COMPUTER_USE_AGENT_TOOL_NAMES = [
   'mcp__spark_computer__capture_app_snapshot',
   'mcp__spark_computer__start_task',
   'mcp__spark_computer__get_status',
+  'mcp__spark_computer__wait_for_completion',
   'mcp__spark_computer__pause',
   'mcp__spark_computer__resume',
   'mcp__spark_computer__stop',
   'mcp__spark_computer__takeover',
+  'mcp__spark_computer__bind_target',
 ] as const
 
 let bridge: ComputerUseAgentBridge | null = null

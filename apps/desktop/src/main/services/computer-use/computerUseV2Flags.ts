@@ -1,43 +1,135 @@
-/**
- * Phase 2.1+ — minimal Computer Use V2 feature-flag gate.
- *
- * The full feature-flag system is Phase 7's deliverable. Until that lands,
- * each V2 work-package is gated behind an opt-in environment variable so the
- * existing single-connection path remains the default and V2 capabilities ship
- * strictly off-by-default. Phase 7 will replace these readers with a unified
- * flag store without changing call sites.
- *
- * All flags default to OFF (the current shipped behaviour). Set the variable to
- * `1` (or any non-empty value other than `0`/`false`) to enable.
- */
+export const COMPUTER_USE_V2_FLAGS = [
+  'hostSupervisor',
+  'installedArtifactDiagnostics',
+  'persistentCapture',
+  'incrementalTree',
+  'actionBatch',
+  'backgroundSemanticLane',
+  'activityTimeline',
+  'visibleControlIndicator',
+] as const
 
-function isEnabled(variable: string | undefined): boolean {
-  const value = variable?.trim().toLowerCase()
-  if (value == null || value === '') return false
-  return value !== '0' && value !== 'false' && value !== 'no' && value !== 'off'
+export type ComputerUseV2FlagName = (typeof COMPUTER_USE_V2_FLAGS)[number]
+
+export interface ComputerUseV2FlagSnapshot {
+  readonly name: ComputerUseV2FlagName
+  readonly enabled: boolean
+  readonly source: 'default' | 'environment' | 'runtime_rollback'
+  readonly rollbackReason?: string
 }
 
-/** WP3 — persistent Native Host connection with heartbeat + bounded restart. */
+const ENVIRONMENT_KEYS: Record<ComputerUseV2FlagName, string> = {
+  hostSupervisor: 'SPARK_COMPUTER_USE_V2_HOST_SUPERVISOR',
+  installedArtifactDiagnostics: 'SPARK_COMPUTER_USE_V2_INSTALLED_ARTIFACT_DIAGNOSTICS',
+  persistentCapture: 'SPARK_COMPUTER_USE_V2_PERSISTENT_CAPTURE',
+  incrementalTree: 'SPARK_COMPUTER_USE_V2_INCREMENTAL_TREE',
+  actionBatch: 'SPARK_COMPUTER_USE_V2_ACTION_BATCH',
+  backgroundSemanticLane: 'SPARK_COMPUTER_USE_V2_BACKGROUND_SEMANTIC_LANE',
+  activityTimeline: 'SPARK_COMPUTER_USE_V2_ACTIVITY_TIMELINE',
+  visibleControlIndicator: 'SPARK_COMPUTER_USE_V2_VISIBLE_CONTROL_INDICATOR',
+}
+
+// Features that already replaced their legacy path remain on unless an explicit
+// environment override or runtime rollback disables them. Experimental execution
+// paths stay opt-in until their release gates are signed off.
+const DEFAULTS: Record<ComputerUseV2FlagName, boolean> = {
+  hostSupervisor: false,
+  installedArtifactDiagnostics: true,
+  persistentCapture: false,
+  incrementalTree: false,
+  actionBatch: false,
+  backgroundSemanticLane: true,
+  activityTimeline: true,
+  visibleControlIndicator: true,
+}
+
+export class ComputerUseV2FlagStore {
+  private readonly env: NodeJS.ProcessEnv
+  private readonly runtimeRollbacks = new Map<ComputerUseV2FlagName, string>()
+
+  constructor(env: NodeJS.ProcessEnv = process.env) {
+    this.env = env
+  }
+
+  isEnabled(name: ComputerUseV2FlagName): boolean {
+    if (this.runtimeRollbacks.has(name)) return false
+    return resolveConfiguredFlag(name, this.env).enabled
+  }
+
+  disableForRuntime(name: ComputerUseV2FlagName, reason: string): boolean {
+    if (!this.isEnabled(name)) return false
+    this.runtimeRollbacks.set(name, reason.trim().slice(0, 500) || 'automatic_rollback')
+    return true
+  }
+
+  snapshot(): ComputerUseV2FlagSnapshot[] {
+    return COMPUTER_USE_V2_FLAGS.map((name) => {
+      const rollbackReason = this.runtimeRollbacks.get(name)
+      if (rollbackReason != null) {
+        return { name, enabled: false, source: 'runtime_rollback', rollbackReason }
+      }
+      const configured = resolveConfiguredFlag(name, this.env)
+      return { name, enabled: configured.enabled, source: configured.source }
+    })
+  }
+}
+
+const defaultFlagStore = new ComputerUseV2FlagStore()
+
+export function getComputerUseV2FlagStore(): ComputerUseV2FlagStore {
+  return defaultFlagStore
+}
+
 export function isHostSupervisorEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return isEnabled(env.SPARK_COMPUTER_USE_V2_HOST_SUPERVISOR)
+  return enabledFor('hostSupervisor', env)
 }
 
-/**
- * WP6/Phase 2.2 — request incremental (diff) AX trees on decision steps. The
- * client-side reconciler (see NativeHostTreeReconciler) rebuilds the full tree
- * text from the always-complete `elements` array, so the model input is
- * equivalent to a full request while saving the `tree.text` wire bytes.
- */
 export function isIncrementalTreeEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return isEnabled(env.SPARK_COMPUTER_USE_V2_INCREMENTAL_TREE)
+  return enabledFor('incrementalTree', env)
 }
 
-/**
- * WP6/Phase 3 — allow the decision model to return a short batch of actions
- * (2–8) per round-trip. The operator executes them sequentially, re-checking
- * the target before each step and stopping the batch the moment a target goes
- * stale. Off = the model is asked for exactly one action per decision.
- */
 export function isActionBatchEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return isEnabled(env.SPARK_COMPUTER_USE_V2_ACTION_BATCH)
+  return enabledFor('actionBatch', env)
+}
+
+export function isInstalledArtifactDiagnosticsEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return enabledFor('installedArtifactDiagnostics', env)
+}
+
+export function isPersistentCaptureEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return enabledFor('persistentCapture', env)
+}
+
+export function isBackgroundSemanticLaneEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return enabledFor('backgroundSemanticLane', env)
+}
+
+export function isActivityTimelineEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return enabledFor('activityTimeline', env)
+}
+
+export function isVisibleControlIndicatorEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return enabledFor('visibleControlIndicator', env)
+}
+
+function enabledFor(name: ComputerUseV2FlagName, env: NodeJS.ProcessEnv): boolean {
+  return env === process.env
+    ? defaultFlagStore.isEnabled(name)
+    : resolveConfiguredFlag(name, env).enabled
+}
+
+function resolveConfiguredFlag(
+  name: ComputerUseV2FlagName,
+  env: NodeJS.ProcessEnv,
+): { enabled: boolean; source: 'default' | 'environment' } {
+  const raw = env[ENVIRONMENT_KEYS[name]]
+  if (raw == null || raw.trim() === '') return { enabled: DEFAULTS[name], source: 'default' }
+  return { enabled: parseBooleanFlag(raw), source: 'environment' }
+}
+
+function parseBooleanFlag(raw: string): boolean {
+  const value = raw.trim().toLowerCase()
+  return value !== '0' && value !== 'false' && value !== 'no' && value !== 'off'
 }

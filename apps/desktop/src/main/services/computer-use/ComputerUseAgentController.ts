@@ -17,6 +17,7 @@ import type { ComputerActionApprovalRequest } from './ComputerTaskOperator.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import { getComputerUseServices, type ComputerUseServices } from './ComputerUseServices.js'
 import { MY_DESKTOP_ENVIRONMENT_KEY } from './ComputerSessionManager.js'
+import { getComputerUseV2FlagStore } from './computerUseV2Flags.js'
 
 interface BoundAgentRuntime {
   turnId: string
@@ -29,6 +30,15 @@ interface OperatorRunState {
   status: 'running' | ComputerTaskOperatorResult['status']
   result?: ComputerTaskOperatorResult
 }
+
+const WAIT_RETURN_STATUSES = new Set<ComputerSession['status']>([
+  'completed',
+  'failed',
+  'canceled',
+  'paused',
+  'waiting_approval',
+  'handoff_required',
+])
 
 export class ComputerUseAgentController {
   private readonly getServices: () => ComputerUseServices
@@ -124,12 +134,14 @@ export class ComputerUseAgentController {
           releaseChannel: 'beta',
           executionAvailable: supportsExecution(capabilities),
           killSwitchArmed: services.killSwitch.isArmed(),
+          v2Flags: getComputerUseV2FlagStore().snapshot(),
           taskTools: [
             'get_capabilities',
             'diagnose_native_host',
             'capture_app_snapshot',
             'start_task',
             'get_status',
+            'wait_for_completion',
             'pause',
             'resume',
             'stop',
@@ -142,19 +154,12 @@ export class ComputerUseAgentController {
         return services.diagnostics.collect()
       case 'get_status': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
-        const operator = this.runs.get(computerSession.id) ?? { status: 'not_running' as const }
-        return {
-          computerSession,
-          operator,
-          ...(operator.status === 'failed'
-            ? {
-                continuation: {
-                  action: 'continue_with_best_available_fallback',
-                  askUserToChooseFallback: false,
-                },
-              }
-            : {}),
-        }
+        return this.statusPayload(computerSession)
+      }
+      case 'wait_for_completion': {
+        const computerSession = this.requireOwnedSession(services, sessionId, args)
+        const { timeoutMs } = parseWaitForCompletion(args)
+        return this.waitForCompletion(services, computerSession, timeoutMs)
       }
       case 'bind_target': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
@@ -362,6 +367,55 @@ export class ComputerUseAgentController {
     services.evidence?.clearSession(computerSessionId)
   }
 
+  private statusPayload(
+    computerSession: ComputerSession,
+    timedOut = false,
+  ): Record<string, unknown> {
+    const operator = this.runs.get(computerSession.id) ?? { status: 'not_running' as const }
+    return {
+      computerSession,
+      operator,
+      ...(timedOut ? { timedOut: true } : {}),
+      ...(operator.status === 'failed' || computerSession.status === 'failed'
+        ? {
+            continuation: {
+              action: 'continue_with_best_available_fallback',
+              askUserToChooseFallback: false,
+            },
+          }
+        : {}),
+    }
+  }
+
+  private waitForCompletion(
+    services: ComputerUseServices,
+    initial: ComputerSession,
+    timeoutMs: number,
+  ): Promise<Record<string, unknown>> {
+    if (WAIT_RETURN_STATUSES.has(initial.status)) {
+      return Promise.resolve(this.statusPayload(initial))
+    }
+    return new Promise((resolve) => {
+      let settled = false
+      const finish = (session: ComputerSession, timedOut = false) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        unsubscribe()
+        resolve(this.statusPayload(session, timedOut))
+      }
+      const unsubscribe = services.sessions.subscribeStatus((session) => {
+        if (session.id === initial.id && WAIT_RETURN_STATUSES.has(session.status)) finish(session)
+      })
+      const timer = setTimeout(() => {
+        finish(services.sessions.getSession(initial.id) ?? initial, true)
+      }, timeoutMs)
+      timer.unref?.()
+      const current = services.sessions.getSession(initial.id)
+      if (current != null && WAIT_RETURN_STATUSES.has(current.status)) finish(current)
+    })
+  }
+
   private trimRunStates(): void {
     while (this.runs.size > 1_000) {
       const oldest = this.runs.keys().next().value
@@ -402,6 +456,19 @@ const SnapshotCaptureSchema = z
     accessibleTextMode: z.enum(['visible_only', 'app_exposed']).default('visible_only'),
   })
   .strict()
+
+const WaitForCompletionSchema = z
+  .object({
+    computerSessionId: z.string().trim().min(1).max(200),
+    timeoutMs: z.number().int().min(100).max(300_000).default(120_000),
+  })
+  .strict()
+
+function parseWaitForCompletion(args: unknown): z.infer<typeof WaitForCompletionSchema> {
+  const parsed = WaitForCompletionSchema.safeParse(args)
+  if (!parsed.success) throw invalidArguments()
+  return parsed.data
+}
 
 function parseSnapshotCapture(args: unknown): z.infer<typeof SnapshotCaptureSchema> {
   const parsed = SnapshotCaptureSchema.safeParse(args)

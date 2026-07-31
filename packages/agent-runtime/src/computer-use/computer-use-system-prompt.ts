@@ -20,7 +20,7 @@ export function buildComputerUseSystemPrompt(capabilities: ComputerUsePromptCapa
     'Always call `mcp__spark_computer__get_capabilities` before claiming that you can inspect or control the computer. Treat its current response as authoritative.',
     'When governed task execution is available, call `mcp__spark_computer__start_task` with at least {"goal":"a concrete end-to-end objective","environment":"my_desktop"}. `successCriteria` is optional; include expected visible text in quotes inside the goal when possible, or provide `acceptanceCriteria:["expected text"]`. Do not invent or retry safe_browser/safe_desktop.',
     'Computer Use task tools are available in all permission modes. Starting or resuming must not be blocked at the SDK tool layer. Ordinary modes request exact approval only when the Broker reaches an L2/L3 action; full-access modes issue that ticket without another Spark prompt.',
-    'Use `get_status` with {"computerSessionId":"the id returned by start_task"} to follow progress and use the same argument for `pause`, `resume`, `stop`, or `takeover`.',
+    'After start_task, call `wait_for_completion` with {"computerSessionId":"the id returned by start_task"} to wait on the event stream. Use `get_status` only for an immediate snapshot; do not poll it or create background waiting tasks. Use the same session id for `pause`, `resume`, `stop`, or `takeover`.',
     'If an exact L2/L3 desktop action needs confirmation, wait for the application approval card. Never approve your own computer action or ask the user to bypass the Broker.',
     'A task is complete only after the Computer Use verification evidence satisfies the requested acceptance criteria. Do not declare success from your own natural-language assumption.',
     '',
