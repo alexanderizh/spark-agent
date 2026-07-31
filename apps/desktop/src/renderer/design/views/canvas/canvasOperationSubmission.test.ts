@@ -213,6 +213,36 @@ describe('canvasOperationSubmission', () => {
     expect(deps.validateMedia).not.toHaveBeenCalled()
   })
 
+  it('validates depth video locally without invoking provider validation', async () => {
+    const node = operationNode({
+      type: 'video_depth_map',
+      data: { operation: 'video_depth_map' },
+    })
+    const current = snapshot(node)
+    current.nodes[0] = {
+      ...current.nodes[0]!,
+      type: 'video',
+      data: { url: 'safe-file://canvas/input.mp4', mimeType: 'video/mp4' },
+    }
+    const deps = dependencies({
+      compile: vi.fn(async () => ({
+        prompt: '',
+        inputFiles: [
+          { type: 'video' as const, path: '/canvas/input.mp4', mimeType: 'video/mp4' },
+        ],
+      })),
+    })
+
+    const prepared = await prepareSavedCanvasOperationSubmission(
+      { snapshot: current, node },
+      deps,
+    )
+
+    expect(prepared.operation).toBe('video_depth_map')
+    expect(deps.validateText).not.toHaveBeenCalled()
+    expect(deps.validateMedia).not.toHaveBeenCalled()
+  })
+
   it('uses the bound task runtime when the node has no saved override', async () => {
     const current = snapshot(
       operationNode({

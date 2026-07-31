@@ -8,6 +8,7 @@ import { pruneModelParamsForCanvas } from './canvasMediaContract'
 import {
   CanvasTaskValidationError,
   validateCanvasMediaTaskSubmission,
+  validateCanvasLocalTaskSubmission,
   validateCanvasTextTaskSubmission,
 } from './canvasTaskSubmissionValidation'
 
@@ -299,5 +300,36 @@ describe('canvasTaskSubmissionValidation', () => {
         modelParams: { responseFormat: 123 },
       }),
     ).toThrow('responseFormat 必须是字符串')
+  })
+
+  it('requires exactly one local video for depth video tasks', () => {
+    expect(() =>
+      validateCanvasLocalTaskSubmission({
+        operation: 'video_depth_map',
+        prompt: '',
+        inputFiles: [],
+      }),
+    ).toThrow('请连接一段输入视频')
+
+    expect(() =>
+      validateCanvasLocalTaskSubmission({
+        operation: 'video_depth_map',
+        prompt: '',
+        inputFiles: [
+          { type: 'video', path: '/canvas/one.mp4' },
+          { type: 'video', path: '/canvas/two.mp4' },
+        ],
+      }),
+    ).toThrow('深度视频仅支持一段输入视频')
+  })
+
+  it('accepts one materialized local video path for a depth task', () => {
+    expect(
+      validateCanvasLocalTaskSubmission({
+        operation: 'video_depth_map',
+        prompt: '',
+        inputFiles: [{ type: 'video', path: '/canvas/input.mp4', mimeType: 'video/mp4' }],
+      }),
+    ).toMatchObject({ operation: 'video_depth_map' })
   })
 })

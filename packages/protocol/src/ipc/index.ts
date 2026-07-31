@@ -4960,6 +4960,30 @@ export interface CanvasMediaTaskCreateResponse {
   /** 实际发给 provider 的请求摘要（method + url + 已截断 body），用于任务详情展示。 */
   requestCall?: MediaRequestCall
   error?: { code: string; message: string }
+  /** 本地/异步任务的阶段进度；旧 Provider 响应可省略。 */
+  progress?: number
+  stage?: string
+  message?: string
+}
+
+export interface CanvasDepthModelStatusRequest {}
+export interface CanvasDepthModelStatusResponse {
+  state: 'missing' | 'installing' | 'ready' | 'error'
+  version?: string
+  error?: string
+}
+export interface CanvasDepthModelInstallRequest {}
+export type CanvasDepthModelInstallResponse = CanvasDepthModelStatusResponse
+export interface CanvasDepthVideoTaskCreateRequest {
+  projectId: string
+  clientTaskId: string
+  inputPath: string
+}
+export interface CanvasDepthVideoTaskCancelRequest {
+  runtimeTaskId: string
+}
+export interface CanvasDepthVideoTaskCancelResponse {
+  cancelled: boolean
 }
 
 /**
@@ -5689,6 +5713,16 @@ export interface IpcChannelMap
     CanvasMediaPruneModelParamsByInlineManifestResponse,
   ]
   'canvas:task:create-media': [CanvasMediaTaskCreateRequest, CanvasMediaTaskCreateResponse]
+  'canvas:depth-model:status': [CanvasDepthModelStatusRequest, CanvasDepthModelStatusResponse]
+  'canvas:depth-model:install': [CanvasDepthModelInstallRequest, CanvasDepthModelInstallResponse]
+  'canvas:task:create-depth-video': [
+    CanvasDepthVideoTaskCreateRequest,
+    CanvasMediaTaskCreateResponse,
+  ]
+  'canvas:task:cancel-depth-video': [
+    CanvasDepthVideoTaskCancelRequest,
+    CanvasDepthVideoTaskCancelResponse,
+  ]
   'canvas:task:generate-text': [CanvasTextTaskCreateRequest, CanvasTextTaskCreateResponse]
   'canvas:task:cancel-media': [CanvasMediaTaskCancelRequest, CanvasMediaTaskCancelResponse]
 

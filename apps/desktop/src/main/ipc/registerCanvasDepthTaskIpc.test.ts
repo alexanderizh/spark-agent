@@ -1,0 +1,96 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const harness = vi.hoisted(() => ({
+  handlers: new Map<string, (request: any) => Promise<any>>(),
+  events: [] as Array<{ channel: string; payload: any }>,
+}))
+
+vi.mock('./typed-ipc.js', () => ({
+  typedIpcHandle: (channel: string, handler: (request: any) => Promise<any>) => {
+    harness.handlers.set(channel, handler)
+  },
+  pushStreamEvent: (channel: string, payload: any) => harness.events.push({ channel, payload }),
+}))
+
+vi.mock('electron', () => ({
+  app: { getPath: () => '/tmp/spark-user-data' },
+}))
+
+vi.mock('../services/SafeFileProtocol.js', () => ({
+  getSafeFileAllowedRoots: () => ['/canvas'],
+}))
+
+import { registerCanvasDepthTaskIpc } from './registerCanvasDepthTaskIpc.js'
+
+describe('registerCanvasDepthTaskIpc', () => {
+  beforeEach(() => {
+    harness.handlers.clear()
+    harness.events.length = 0
+  })
+
+  it('installs the model, runs local depth inference, and streams a media result', async () => {
+    const integrityService = {
+      inspect: vi.fn(async () => ({ state: 'missing', modelDir: '/managed/depth' })),
+      install: vi.fn(async (onProgress?: (downloaded: number, total: number) => void) => {
+        onProgress?.(50, 100)
+        return { state: 'ready', version: '1.0.0', modelDir: '/managed/depth' }
+      }),
+    }
+    const runner = {
+      run: vi.fn(async (request: any) => {
+        request.onProgress?.({
+          stage: 'estimating_depth',
+          percent: 60,
+          frame: 6,
+          totalFrames: 10,
+        })
+        return {
+          path: '/tmp/depth-output.mp4',
+          width: 1280,
+          height: 720,
+          fps: 25,
+          durationSec: 4,
+          frameCount: 100,
+        }
+      }),
+    }
+    registerCanvasDepthTaskIpc({
+      integrityService: integrityService as never,
+      createRunner: () => runner as never,
+      createRuntimeTaskId: () => 'depth-runtime-1',
+      createOutputPath: () => '/tmp/depth-output.mp4',
+    })
+
+    const response = await harness.handlers.get('canvas:task:create-depth-video')!({
+      projectId: 'project-1',
+      clientTaskId: 'canvas-task-1',
+      inputPath: '/canvas/input.mp4',
+    })
+
+    expect(response).toMatchObject({ status: 'running', runtimeTaskId: 'depth-runtime-1' })
+    await vi.waitFor(() =>
+      expect(
+        harness.events.some(
+          (event) =>
+            event.channel === 'stream:canvas:media-task' &&
+            event.payload.response.status === 'succeeded',
+        ),
+      ).toBe(true),
+    )
+    const runningStages = harness.events
+      .filter((event) => event.payload.response.status === 'running')
+      .map((event) => event.payload.response.stage)
+    expect(runningStages).toEqual(expect.arrayContaining(['installing_model', 'estimating_depth']))
+    const success = harness.events.find((event) => event.payload.response.status === 'succeeded')!
+    expect(success.payload.response.assets).toEqual([
+      expect.objectContaining({
+        type: 'video',
+        filePath: '/tmp/depth-output.mp4',
+        mimeType: 'video/mp4',
+        width: 1280,
+        height: 720,
+        durationMs: 4000,
+      }),
+    ])
+  })
+})

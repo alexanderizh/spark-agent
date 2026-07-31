@@ -126,6 +126,25 @@ export function validateCanvasTextTaskSubmission(
   return isImagePromptReverse ? { ...request, prompt: IMAGE_PROMPT_REVERSE_PROMPT } : request
 }
 
+export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmissionRequest>(
+  request: T,
+): T {
+  const issues: MediaContractIssue[] = []
+  const files = request.inputFiles ?? []
+  const videoCount = files.filter((file) => matchesMediaKind(file, 'video')).length
+  if (videoCount === 0) {
+    issues.push(issue('missing_required', '请连接一段输入视频', ['inputFiles']))
+  } else if (videoCount !== 1 || files.length !== 1) {
+    issues.push(issue('out_of_range', '深度视频仅支持一段输入视频', ['inputFiles']))
+  } else if (!files[0]?.path?.trim()) {
+    issues.push(
+      issue('missing_required', '深度视频需要可读取的本地视频路径', ['inputFiles', 0, 'path']),
+    )
+  }
+  if (issues.length > 0) throw new CanvasTaskValidationError(issues)
+  return request
+}
+
 function validateOptionalEnum(
   params: Record<string, unknown>,
   names: string[],

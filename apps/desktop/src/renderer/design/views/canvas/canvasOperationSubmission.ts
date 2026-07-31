@@ -8,6 +8,7 @@ import { migrateLegacyPrompt } from './canvasPromptDocument'
 import { buildCanvasPromptSubmission } from './canvasPromptSubmission'
 import {
   validateCanvasMediaTaskSubmission,
+  validateCanvasLocalTaskSubmission,
   validateCanvasTextTaskSubmission,
 } from './canvasTaskSubmissionValidation'
 import { fallbackPromptForOperation } from './canvasWorkspaceTaskInput'
@@ -150,11 +151,14 @@ export async function prepareSavedCanvasOperationSubmission(
     ...(Object.keys(modelParams).length > 0 ? { modelParams: { ...modelParams } } : {}),
     userPrompt,
   }
+  const executionKind = canvasOperationKind(operation)
   const validated = options?.skipParameterValidation
     ? request
-    : canvasOperationKind(operation) === 'text'
+    : executionKind === 'text'
       ? dependencies.validateText(request)
-      : await dependencies.validateMedia(request)
+      : executionKind === 'local_media'
+        ? validateCanvasLocalTaskSubmission(request)
+        : await dependencies.validateMedia(request)
   const params = omitOperation({
     ...request,
     ...validated,
