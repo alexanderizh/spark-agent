@@ -1,7 +1,11 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import { buildDepthVideoEncoderArgs, DepthVideoRunner } from './DepthVideoRunner'
+import {
+  buildDepthVideoDecoderArgs,
+  buildDepthVideoEncoderArgs,
+  DepthVideoRunner,
+} from './DepthVideoRunner'
 
 class FakeProcess extends EventEmitter {
   readonly stdin = new PassThrough()
@@ -16,6 +20,13 @@ class FakeProcess extends EventEmitter {
 }
 
 describe('DepthVideoRunner', () => {
+  it('uses the FFmpeg 8 frame sync option for raw-video decoding', () => {
+    const args = buildDepthVideoDecoderArgs('/tmp/source.mp4')
+    expect(args).toContain('-fps_mode')
+    expect(args).toContain('passthrough')
+    expect(args).not.toContain('-vsync')
+  })
+
   it('builds an H.264 gray-video encoder that preserves dimensions and drops audio', () => {
     const args = buildDepthVideoEncoderArgs({
       width: 640,
