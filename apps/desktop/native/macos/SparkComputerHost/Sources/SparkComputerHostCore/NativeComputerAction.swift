@@ -68,6 +68,12 @@ public struct NativePolicyContext: Equatable, Sendable {
   public let dataClasses: [String]
 }
 
+public enum NativeExecutionLane: String, Equatable, Sendable {
+  case backgroundSemantic = "background_semantic"
+  case foregroundInput = "foreground_input"
+  case passive
+}
+
 public struct NativeComputerActionEnvelope: Equatable, Sendable {
   public let computerSessionID: String
   public let actionID: String
@@ -77,6 +83,7 @@ public struct NativeComputerActionEnvelope: Equatable, Sendable {
   public let targetAppID: String
   public let targetWindowID: String
   public let action: NativeComputerAction
+  public let executionLane: NativeExecutionLane
   public let policyContext: NativePolicyContext
   public let intent: String
   public let hasExpectedPostcondition: Bool
@@ -88,12 +95,23 @@ func decodeComputerActionEnvelope(_ value: Any?) throws -> NativeComputerActionE
     "computerSessionId", "actionId", "actuatorLeaseId", "observedFrameId",
     "observedTreeVersion", "targetAppId", "targetWindowId", "action", "policyContext", "intent",
   ]
-  guard
-    Set(object.keys) == required || Set(object.keys) == required.union(["expectedPostcondition"])
+  let optional: Set<String> = ["expectedPostcondition", "executionLane"]
+  guard required.isSubset(of: Set(object.keys)), Set(object.keys).isSubset(of: required.union(optional))
   else { throw invalidFields }
   let intent = try string(object["intent"], min: 1, max: 4_000, trimmed: true)
   if let postcondition = object["expectedPostcondition"] {
     try validateVerificationSpec(postcondition)
+  }
+  let action = try decodeAction(object["action"])
+  let expectedLane = executionLane(for: action)
+  let lane: NativeExecutionLane
+  if let rawLane = object["executionLane"] {
+    guard let raw = rawLane as? String, let decoded = NativeExecutionLane(rawValue: raw),
+      decoded == expectedLane
+    else { throw invalidFields }
+    lane = decoded
+  } else {
+    lane = expectedLane
   }
   return NativeComputerActionEnvelope(
     computerSessionID: try identifier(object["computerSessionId"]),
@@ -103,11 +121,23 @@ func decodeComputerActionEnvelope(_ value: Any?) throws -> NativeComputerActionE
     observedTreeVersion: try identifier(object["observedTreeVersion"]),
     targetAppID: try identifier(object["targetAppId"]),
     targetWindowID: try identifier(object["targetWindowId"]),
-    action: try decodeAction(object["action"]),
+    action: action,
+    executionLane: lane,
     policyContext: try decodePolicyContext(object["policyContext"]),
     intent: intent,
     hasExpectedPostcondition: object["expectedPostcondition"] != nil
   )
+}
+
+private func executionLane(for action: NativeComputerAction) -> NativeExecutionLane {
+  switch action {
+  case .invokeElement, .setValue, .selectText:
+    return .backgroundSemantic
+  case .observe, .waitFor:
+    return .passive
+  default:
+    return .foregroundInput
+  }
 }
 
 private func decodeAction(_ value: Any?) throws -> NativeComputerAction {

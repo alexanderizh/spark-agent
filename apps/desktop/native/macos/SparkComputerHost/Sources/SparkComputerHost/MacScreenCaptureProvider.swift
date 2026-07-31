@@ -228,7 +228,11 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       appID: envelope.targetAppID, windowID: envelope.targetWindowID)
     try NativeInputPolicy.validateApplicationIdentity(
       expected: binding.target, current: before.identity)
-    if !before.descriptor.focused {
+    let foregroundContext =
+      envelope.executionLane == .foregroundInput
+      ? ForegroundInteractionContext.capture() : nil
+    defer { foregroundContext?.restore() }
+    if envelope.executionLane == .foregroundInput && !before.descriptor.focused {
       _ = try focusWindow(processID: before.processID)
       try await Task.sleep(for: .milliseconds(100))
     }
@@ -252,11 +256,17 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     let status: NativeActionStatus
     switch envelope.action {
     case .invokeElement, .setValue, .selectText:
+      guard envelope.executionLane == .backgroundSemantic else {
+        throw NativeHostPlatformError.actionNotAllowed
+      }
       status = try accessibility.execute(
         envelope.action, treeVersion: envelope.observedTreeVersion)
     case .click, .move, .drag, .keypress, .typeText,
       .scroll(elementID: nil, point: _, deltaX: _, deltaY: _),
       .scroll(elementID: .some, point: _, deltaX: _, deltaY: _):
+      guard envelope.executionLane == .foregroundInput else {
+        throw NativeHostPlatformError.actionNotAllowed
+      }
       let scrollBounds: NativeRect?
       if case .scroll(let elementID?, _, _, _) = envelope.action {
         scrollBounds = try accessibility.bounds(
@@ -278,15 +288,24 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
             expected: binding.target, current: current.identity)
         })
     case .focusWindow(let windowID):
+      guard envelope.executionLane == .foregroundInput else {
+        throw NativeHostPlatformError.actionNotAllowed
+      }
       guard windowID == envelope.targetWindowID else {
         throw NativeHostPlatformError.focusMismatch
       }
       status = try focusWindow(processID: before.processID)
       try await Task.sleep(for: .milliseconds(100))
     case .waitFor(let condition, let timeoutMs):
+      guard envelope.executionLane == .passive else {
+        throw NativeHostPlatformError.actionNotAllowed
+      }
       status = try await wait(
         condition: condition, timeoutMs: timeoutMs, envelope: envelope)
     case .observe:
+      guard envelope.executionLane == .passive else {
+        throw NativeHostPlatformError.actionNotAllowed
+      }
       status = .noop
     }
 
@@ -474,6 +493,27 @@ private struct FocusedTarget {
 private struct CodeIdentity {
   let identifier: String?
   let teamIdentifier: String?
+}
+
+private struct ForegroundInteractionContext {
+  let processID: pid_t?
+  let pointer: CGPoint?
+
+  static func capture() -> ForegroundInteractionContext {
+    ForegroundInteractionContext(
+      processID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+      pointer: CGEvent(source: nil)?.location
+    )
+  }
+
+  func restore() {
+    if let processID, let application = NSRunningApplication(processIdentifier: processID) {
+      _ = application.activate(options: [.activateAllWindows])
+    }
+    if let pointer {
+      CGWarpMouseCursorPosition(pointer)
+    }
+  }
 }
 
 private var hostArchitecture: String {

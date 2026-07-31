@@ -166,6 +166,34 @@ final class NativeHostProtocolTests: XCTestCase {
     XCTAssertThrowsError(try decoder.decode(try JSONSerialization.data(withJSONObject: oversized)))
   }
 
+  func testExecutionLaneMustMatchTheActionKind() throws {
+    let decoder = NativeHostRequestDecoder()
+
+    var foreground = try XCTUnwrap(
+      JSONSerialization.jsonObject(
+        with: actionRequest(#"{"type":"click","point":{"x":0.5,"y":0.5}}"#)
+      ) as? [String: Any]
+    )
+    var foregroundEnvelope = try XCTUnwrap(foreground["envelope"] as? [String: Any])
+    foregroundEnvelope["executionLane"] = "foreground_input"
+    foreground["envelope"] = foregroundEnvelope
+    XCTAssertNoThrow(try decoder.decode(try JSONSerialization.data(withJSONObject: foreground)))
+
+    foregroundEnvelope["executionLane"] = "background_semantic"
+    foreground["envelope"] = foregroundEnvelope
+    XCTAssertThrowsError(try decoder.decode(try JSONSerialization.data(withJSONObject: foreground)))
+
+    var background = try XCTUnwrap(
+      JSONSerialization.jsonObject(
+        with: actionRequest(#"{"type":"set_value","elementId":"field-1","value":"ok"}"#)
+      ) as? [String: Any]
+    )
+    var backgroundEnvelope = try XCTUnwrap(background["envelope"] as? [String: Any])
+    backgroundEnvelope["executionLane"] = "background_semantic"
+    background["envelope"] = backgroundEnvelope
+    XCTAssertNoThrow(try decoder.decode(try JSONSerialization.data(withJSONObject: background)))
+  }
+
   func testRejectsInvalidExpectedPostconditionAndPolicyContext() throws {
     let decoder = NativeHostRequestDecoder()
     let object = try XCTUnwrap(
