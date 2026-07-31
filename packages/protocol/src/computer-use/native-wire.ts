@@ -191,6 +191,7 @@ export const NativeHostRequestSchema = z.discriminatedUnion('type', [
       windowId: ComputerUseIdentifierSchema,
       previousTreeVersion: ComputerUseIdentifierSchema.nullable(),
       fullTree: z.boolean(),
+      persistentCapture: z.boolean().optional(),
     })
     .strict(),
   z

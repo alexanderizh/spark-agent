@@ -29,6 +29,7 @@ import {
   computerUseV2RolloutController,
   type ComputerUseV2RolloutController,
 } from './ComputerUseV2RolloutController.js'
+import { getComputerUseV2FlagStore } from './computerUseV2Flags.js'
 
 const log = createLogger('computer-use-native-host')
 
@@ -61,6 +62,7 @@ export interface NativeHostConnection {
     windowId: string
     previousTreeVersion: string | null
     fullTree: boolean
+    persistentCapture?: boolean
     signal?: AbortSignal
   }): Promise<{
     response: Extract<NativeHostResponse, { type: 'observation' }>
@@ -113,6 +115,7 @@ export class NativeHostComputerUseBackend
   private readonly unsubscribeRollout: (() => void) | null
   private readonly metrics: ComputerUseMetricsCollector | null
   private readonly metricDimensions: () => ComputerUseMetricDimensions
+  private readonly persistentCaptureEnabled: () => boolean
   private connectionPromise: Promise<NativeHostConnection> | null = null
   private connection: NativeHostConnection | null = null
   private disposed = false
@@ -136,6 +139,7 @@ export class NativeHostComputerUseBackend
     metrics?: ComputerUseMetricsCollector
     metricDimensions?: () => ComputerUseMetricDimensions
     rollout?: Pick<ComputerUseV2RolloutController, 'subscribe'>
+    persistentCaptureEnabled?: () => boolean
   }) {
     this.platform = options.platform
     this.connect = options.connect
@@ -151,6 +155,9 @@ export class NativeHostComputerUseBackend
         hostVersion: 'unknown',
         trustMode: 'unknown',
       }))
+    this.persistentCaptureEnabled =
+      options.persistentCaptureEnabled ??
+      (() => getComputerUseV2FlagStore().isEnabled('persistentCapture'))
     if (options.supervisor != null && options.enableHostSupervisor === true) {
       throw new Error(
         'NativeHostComputerUseBackend: pass either supervisor or enableHostSupervisor, not both',
@@ -532,6 +539,7 @@ export class NativeHostComputerUseBackend
       windowId: input.windowId,
       previousTreeVersion: input.previousTreeVersion,
       fullTree: input.fullTree,
+      ...(this.persistentCaptureEnabled() ? { persistentCapture: true } : {}),
       signal: input.signal,
     })
     const observation = ComputerObservationSchema.parse(result.response.observation)

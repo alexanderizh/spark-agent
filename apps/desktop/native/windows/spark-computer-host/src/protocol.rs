@@ -270,6 +270,8 @@ pub enum HostRequest {
         previous_tree_version: Option<String>,
         #[serde(rename = "fullTree")]
         full_tree: bool,
+        #[serde(rename = "persistentCapture", default)]
+        persistent_capture: bool,
     },
     #[serde(rename = "execute_action")]
     ExecuteAction {

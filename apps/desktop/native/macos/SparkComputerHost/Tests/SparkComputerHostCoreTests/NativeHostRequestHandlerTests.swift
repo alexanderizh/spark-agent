@@ -38,7 +38,8 @@ final class NativeHostRequestHandlerTests: XCTestCase {
     let unsupported = try await handler.handle(
       .observe(
         requestID: "request-2", snapshotID: "snapshot-1", appID: "app-1",
-        windowID: "window-1", previousTreeVersion: nil, fullTree: true
+        windowID: "window-1", previousTreeVersion: nil, fullTree: true,
+        persistentCapture: false
       )
     )
     XCTAssertEqual(try responseErrorCode(unsupported.json), "environment_unavailable")
@@ -50,7 +51,8 @@ final class NativeHostRequestHandlerTests: XCTestCase {
     let observed = try await handler.handle(
       .observe(
         requestID: "request-observe", snapshotID: "snapshot-1", appID: "app-1",
-        windowID: "window-1", previousTreeVersion: nil, fullTree: true
+        windowID: "window-1", previousTreeVersion: nil, fullTree: true,
+        persistentCapture: false
       )
     )
     XCTAssertEqual(observed.binary, Data("png".utf8))
@@ -164,7 +166,8 @@ final class NativeHostRequestHandlerTests: XCTestCase {
     let result = try await NativeHostRequestHandler(provider: provider).handle(
       .observe(
         requestID: "request-invalid-observation", snapshotID: "snapshot-1", appID: "app-1",
-        windowID: "window-1", previousTreeVersion: nil, fullTree: true
+        windowID: "window-1", previousTreeVersion: nil, fullTree: true,
+        persistentCapture: false
       )
     )
     XCTAssertEqual(try responseErrorCode(result.json), "native_host_incompatible")
@@ -176,7 +179,8 @@ final class NativeHostRequestHandlerTests: XCTestCase {
     let result = try await NativeHostRequestHandler(provider: provider).handle(
       .observe(
         requestID: "request-mismatched-observation", snapshotID: "snapshot-1", appID: "app-1",
-        windowID: "window-1", previousTreeVersion: nil, fullTree: true
+        windowID: "window-1", previousTreeVersion: nil, fullTree: true,
+        persistentCapture: false
       )
     )
     XCTAssertEqual(try responseErrorCode(result.json), "focus_mismatch")
@@ -252,7 +256,7 @@ private actor FakePlatformProvider: NativeHostPlatformProviding {
 
   func observe(
     snapshotID: String, appID: String, windowID: String,
-    previousTreeVersion: String?, fullTree: Bool
+    previousTreeVersion: String?, fullTree: Bool, persistentCapture: Bool
   ) async throws -> NativeObservedWindow {
     guard controlAvailable else { throw NativeHostPlatformError.environmentUnavailable }
     let app = NativeAppIdentity(

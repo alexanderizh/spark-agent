@@ -19,7 +19,8 @@ public enum NativeHostRequest: Equatable, Sendable {
     appID: String,
     windowID: String,
     previousTreeVersion: String?,
-    fullTree: Bool
+    fullTree: Bool,
+    persistentCapture: Bool
   )
   case executeAction(requestID: String, envelope: NativeComputerActionEnvelope)
   case cancelSession(requestID: String, computerSessionID: String)
@@ -31,7 +32,7 @@ public enum NativeHostRequest: Equatable, Sendable {
       .requestPermissions(let requestID, _),
       .listWindows(let requestID),
       .captureWindow(let requestID, _, _),
-      .observe(let requestID, _, _, _, _, _),
+      .observe(let requestID, _, _, _, _, _, _),
       .executeAction(let requestID, _),
       .cancelSession(let requestID, _),
       .ping(let requestID):
@@ -111,13 +112,12 @@ public struct NativeHostRequestDecoder: Sendable {
         windowID: try requireIdentifier(object["windowId"])
       )
     case "observe":
-      try requireKeys(
-        object,
-        exactly: [
-          "protocolVersion", "requestId", "type", "snapshotId", "appId", "windowId",
-          "previousTreeVersion", "fullTree",
-        ]
-      )
+      let observeKeys: Set<String> = [
+        "protocolVersion", "requestId", "type", "snapshotId", "appId", "windowId",
+        "previousTreeVersion", "fullTree",
+      ]
+      guard Set(object.keys) == observeKeys || Set(object.keys) == observeKeys.union(["persistentCapture"])
+      else { throw NativeHostProtocolError.invalidRequestFields }
       let previousTreeVersion: String?
       if object["previousTreeVersion"] is NSNull {
         previousTreeVersion = nil
@@ -127,13 +127,22 @@ public struct NativeHostRequestDecoder: Sendable {
       guard let fullTree = strictBoolean(object["fullTree"]) else {
         throw NativeHostProtocolError.invalidRequestFields
       }
+      let persistentCapture: Bool
+      if object["persistentCapture"] == nil {
+        persistentCapture = false
+      } else if let parsed = strictBoolean(object["persistentCapture"]) {
+        persistentCapture = parsed
+      } else {
+        throw NativeHostProtocolError.invalidRequestFields
+      }
       return .observe(
         requestID: requestID,
         snapshotID: try requireIdentifier(object["snapshotId"]),
         appID: try requireIdentifier(object["appId"]),
         windowID: try requireIdentifier(object["windowId"]),
         previousTreeVersion: previousTreeVersion,
-        fullTree: fullTree
+        fullTree: fullTree,
+        persistentCapture: persistentCapture
       )
     case "execute_action":
       try requireKeys(

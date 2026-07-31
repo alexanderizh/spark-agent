@@ -56,6 +56,27 @@ describe('native host wire protocol', () => {
     expect(schema.parse(request)).toEqual(request)
   })
 
+  it('keeps persistent capture opt-in and rejects non-boolean rollout values', () => {
+    const schema = exportedSchema('NativeHostRequestSchema')
+    const request = {
+      protocolVersion: 1,
+      requestId: 'native-observe-1',
+      type: 'observe',
+      snapshotId: 'snapshot-1',
+      appId: 'app-1',
+      windowId: 'window-1',
+      previousTreeVersion: null,
+      fullTree: true,
+    }
+
+    expect(schema.parse(request)).toEqual(request)
+    expect(schema.parse({ ...request, persistentCapture: true })).toEqual({
+      ...request,
+      persistentCapture: true,
+    })
+    expect(schema.safeParse({ ...request, persistentCapture: 'true' }).success).toBe(false)
+  })
+
   it('bounds text injection and drag duration below the native-host watchdog window', () => {
     const schema = exportedSchema('NativeHostRequestSchema')
     const request = {

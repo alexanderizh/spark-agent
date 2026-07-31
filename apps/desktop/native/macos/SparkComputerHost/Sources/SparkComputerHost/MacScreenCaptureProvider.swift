@@ -1,10 +1,13 @@
 import AppKit
 @preconcurrency import ApplicationServices
 import CoreGraphics
+import CoreImage
+import CoreMedia
+import CoreVideo
 import CryptoKit
 import Foundation
 import ImageIO
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 import Security
 import SparkComputerHostCore
 import UniformTypeIdentifiers
@@ -19,6 +22,8 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
   private let userInput = MacUserInputMonitor()
   private var observation: ObservationBinding?
   private var canceledSessions: Set<String> = []
+  private var persistentCapture: MacPersistentWindowCapture?
+  private var persistentCaptureBindingKey: String?
 
   func capabilityManifest() -> NativeCapabilityManifest {
     let permission: String
@@ -116,6 +121,10 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
   }
 
   func captureWindow(id: String) async throws -> NativeCapturedWindow {
+    try await captureWindowOnce(id: id)
+  }
+
+  private func captureWindowOnce(id: String) async throws -> NativeCapturedWindow {
     guard captureIsSupported else { throw NativeHostPlatformError.captureFailed }
     guard let windowID = NativeWindowIDParser.parse(id) else {
       throw NativeHostPlatformError.windowNotFound
@@ -164,21 +173,39 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     appID: String,
     windowID: String,
     previousTreeVersion: String?,
-    fullTree: Bool
+    fullTree: Bool,
+    persistentCapture: Bool
   ) async throws -> NativeObservedWindow {
     observation = nil
     let observationStartedAt = Date.timeIntervalSinceReferenceDate
     let before = try await focusedTarget(appID: appID, windowID: windowID)
-    let captured = try await captureWindow(id: windowID)
+    let captureBindingKey = [
+      before.identity.appID,
+      before.identity.windowID,
+      String(before.identity.processID),
+      before.identity.executableIdentity ?? "",
+      before.identity.signingIdentity ?? "",
+    ].joined(separator: "|")
+    let captured = try await captureObservedWindow(
+      id: windowID,
+      bindingKey: captureBindingKey,
+      persistent: persistentCapture
+    )
     let tree = accessibilityOrVisualTree(
       processID: before.processID,
       captured: captured,
       previousTreeVersion: previousTreeVersion,
       fullTree: fullTree
     )
-    let after = try await focusedTarget(appID: appID, windowID: windowID)
-    try NativeInputPolicy.validateApplicationIdentity(
-      expected: before.identity, current: after.identity)
+    let after: FocusedTarget
+    do {
+      after = try await focusedTarget(appID: appID, windowID: windowID)
+      try NativeInputPolicy.validateApplicationIdentity(
+        expected: before.identity, current: after.identity)
+    } catch {
+      await stopPersistentCapture()
+      throw error
+    }
     let capturedDate = Date()
     let capturedAt = ISO8601DateFormatter().string(from: capturedDate)
     var frameHasher = SHA256()
@@ -343,6 +370,52 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     canceledSessions.insert(id)
     userInput.unbind(sessionID: id)
     invalidateObservation()
+    await stopPersistentCapture()
+  }
+
+  private func captureObservedWindow(
+    id: String,
+    bindingKey: String,
+    persistent: Bool
+  ) async throws -> NativeCapturedWindow {
+    guard persistent else {
+      await stopPersistentCapture()
+      return try await captureWindowOnce(id: id)
+    }
+    let requestedAt = ProcessInfo.processInfo.systemUptime
+    do {
+      if persistentCapture == nil || persistentCaptureBindingKey != bindingKey {
+        await stopPersistentCapture()
+        guard let windowID = NativeWindowIDParser.parse(id) else {
+          throw NativeHostPlatformError.windowNotFound
+        }
+        let content = try await loadShareableContent()
+        guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+          throw NativeHostPlatformError.windowNotFound
+        }
+        guard window.frame.width > 0, window.frame.height > 0 else {
+          throw NativeHostPlatformError.invalidWindowGeometry
+        }
+        let scaleFactor = displayScale(for: window, displays: content.displays)
+        persistentCapture = try await MacPersistentWindowCapture.start(
+          window: window,
+          scaleFactor: scaleFactor
+        )
+        persistentCaptureBindingKey = bindingKey
+      }
+      guard let persistentCapture else { throw NativeHostPlatformError.captureFailed }
+      return try await persistentCapture.nextFrame(notBefore: requestedAt, timeout: 2)
+    } catch {
+      await stopPersistentCapture()
+      return try await captureWindowOnce(id: id)
+    }
+  }
+
+  private func stopPersistentCapture() async {
+    let capture = persistentCapture
+    persistentCapture = nil
+    persistentCaptureBindingKey = nil
+    await capture?.stop()
   }
 
   private func focusedTarget(appID: String, windowID: String) async throws -> FocusedTarget {
@@ -494,6 +567,110 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
   private var inputPermission: String {
     if CGPreflightPostEventAccess() { return "granted" }
     return inputPermissionWasDenied ? "denied" : "not_determined"
+  }
+}
+
+private final class MacPersistentWindowCapture: NSObject, SCStreamOutput, SCStreamDelegate,
+  @unchecked Sendable
+{
+  private let lock = NSLock()
+  private let outputQueue = DispatchQueue(
+    label: "com.spark-agent.desktop.computer-host.capture",
+    qos: .userInitiated
+  )
+  private let imageContext = CIContext(options: [.cacheIntermediates: false])
+  private var stream: SCStream?
+  private var latest: (image: CGImage, capturedAt: TimeInterval)?
+  private var terminalError = false
+
+  static func start(window: SCWindow, scaleFactor: CGFloat) async throws
+    -> MacPersistentWindowCapture
+  {
+    let width = max(1, min(16_384, Int((window.frame.width * scaleFactor).rounded())))
+    let height = max(1, min(16_384, Int((window.frame.height * scaleFactor).rounded())))
+    let configuration = SCStreamConfiguration()
+    configuration.width = width
+    configuration.height = height
+    configuration.showsCursor = true
+    if #available(macOS 14.0, *) {
+      configuration.ignoreShadowsSingleWindow = false
+    }
+    configuration.queueDepth = 2
+    configuration.minimumFrameInterval = CMTime(value: 1, timescale: 10)
+    configuration.pixelFormat = kCVPixelFormatType_32BGRA
+    let capture = MacPersistentWindowCapture()
+    let stream = SCStream(
+      filter: SCContentFilter(desktopIndependentWindow: window),
+      configuration: configuration,
+      delegate: capture
+    )
+    try stream.addStreamOutput(capture, type: .screen, sampleHandlerQueue: capture.outputQueue)
+    capture.stream = stream
+    do {
+      try await stream.startCapture()
+      return capture
+    } catch {
+      capture.stream = nil
+      try? await stream.stopCapture()
+      throw error
+    }
+  }
+
+  func nextFrame(notBefore requestedAt: TimeInterval, timeout: TimeInterval) async throws
+    -> NativeCapturedWindow
+  {
+    let deadline = ProcessInfo.processInfo.systemUptime + timeout
+    while ProcessInfo.processInfo.systemUptime < deadline {
+      let state = lock.withLock { (latest, terminalError) }
+      if state.1 { throw NativeHostPlatformError.captureFailed }
+      if let latest = state.0, latest.capturedAt >= requestedAt {
+        return NativeCapturedWindow(
+          bytes: try encodePNG(latest.image),
+          width: latest.image.width,
+          height: latest.image.height
+        )
+      }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    throw NativeHostPlatformError.captureFailed
+  }
+
+  func stop() async {
+    let current = lock.withLock { () -> SCStream? in
+      let current = stream
+      stream = nil
+      latest = nil
+      return current
+    }
+    try? await current?.stopCapture()
+  }
+
+  func stream(
+    _ stream: SCStream,
+    didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+    of outputType: SCStreamOutputType
+  ) {
+    guard outputType == .screen, sampleBuffer.isValid,
+      let attachments = CMSampleBufferGetSampleAttachmentsArray(
+        sampleBuffer,
+        createIfNecessary: false
+      ) as? [[SCStreamFrameInfo: Any]],
+      let statusValue = attachments.first?[.status] as? Int,
+      SCFrameStatus(rawValue: statusValue) == .complete,
+      let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
+    else { return }
+    let image = CIImage(cvPixelBuffer: pixelBuffer)
+    guard let cgImage = imageContext.createCGImage(image, from: image.extent) else { return }
+    lock.withLock {
+      latest = (cgImage, ProcessInfo.processInfo.systemUptime)
+    }
+  }
+
+  func stream(_ stream: SCStream, didStopWithError error: any Error) {
+    lock.withLock {
+      terminalError = true
+      latest = nil
+    }
   }
 }
 
