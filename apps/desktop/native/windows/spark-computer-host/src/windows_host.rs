@@ -22,8 +22,8 @@ mod user_input;
 const MAX_SCREENSHOT_DIMENSION: u32 = 32_768;
 
 pub fn run() -> ExitCode {
-    if runtime_auth::authorize_parent().is_err() {
-        eprintln!("[spark-computer-host] parent process authorization failed");
+    if let Err(error) = runtime_auth::authorize_parent() {
+        eprintln!("[spark-computer-host] parent process authorization failed: {error}");
         return ExitCode::from(77);
     }
     let mut state = HostState::new();

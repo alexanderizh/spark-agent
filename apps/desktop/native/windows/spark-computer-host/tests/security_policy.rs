@@ -71,6 +71,7 @@ fn pinned_self_signed_release_allows_only_chain_and_revocation_availability_fail
         0x800B0109_u32 as i32, // CERT_E_UNTRUSTEDROOT
         0x80092013_u32 as i32, // CRYPT_E_REVOCATION_OFFLINE
         0x800B010E_u32 as i32, // CERT_E_REVOCATION_FAILURE
+        0x800B0004_u32 as i32, // TRUST_E_SUBJECT_NOT_TRUSTED
     ] {
         assert!(allows_pinned_self_signed_chain_failure(status));
     }
@@ -78,7 +79,6 @@ fn pinned_self_signed_release_allows_only_chain_and_revocation_availability_fail
     for status in [
         0,
         0x80096010_u32 as i32, // TRUST_E_BAD_DIGEST
-        0x800B0004_u32 as i32, // TRUST_E_SUBJECT_NOT_TRUSTED
     ] {
         assert!(!allows_pinned_self_signed_chain_failure(status));
     }
