@@ -1,6 +1,6 @@
 # 工作台会话大图自适应压缩设计
 
-> 状态: 待开发 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-01
 
 ## 背景与目标
 
@@ -16,15 +16,15 @@
 
 ## 依赖决策
 
-采用 `sharp@0.34.5`，并在桌面端将其声明为直接生产依赖。
+采用 `sharp@0.35.3`，并在桌面端将其声明为直接生产依赖。项目通过 `pnpm-workspace.yaml` 的安全 override 让 `@huggingface/transformers` 也复用同一版本，避免同时打包两套 Sharp/libvips。
 
-`sharp` 当前已经由 `@huggingface/transformers@4.2.0` 传递引入并进入桌面安装包。macOS arm64 本地构建中的组成约为：
+`sharp` 原本已经由 `@huggingface/transformers@4.2.0` 传递引入并进入桌面安装包。最初锁定的 0.34.5 在实现期安全审查中发现 libvips 高危公告，因此升级到已修复的 0.35.3。macOS arm64 本地安装中的组成约为：
 
-- `sharp` JavaScript：596 KiB；
-- 平台 binding：280 KiB；
-- `libvips`：15 MiB。
+- `sharp` JavaScript：1.0 MiB；
+- 平台 binding：300 KiB；
+- `libvips`：17 MiB。
 
-因此当前安装包预计没有可见净增量。代价是即使未来移除 Transformers，桌面端仍会因为本功能保留各平台约 10～20 MiB 的 Sharp 运行库。该依赖和体积影响已经向维护者说明并获得同意。
+相对原来已经打包的 0.34.5，macOS arm64 解包体积增加约 2～3 MiB，且锁文件确认全仓只有一个 Sharp 版本。代价是即使未来移除 Transformers，桌面端仍会因为本功能保留各平台约 10～20 MiB 的 Sharp 运行库。该依赖和体积影响已经向维护者说明并获得同意。
 
 不采用 Electron `nativeImage`，因为其输出格式和目标体积控制能力有限；不采用渲染端 Canvas，因为大图解码会占用 UI 线程且跨格式行为不够稳定。
 
@@ -34,7 +34,7 @@
 
 - 工作台普通会话的图片附件发送。
 - 文件选择、拖入、剪贴板粘贴以及历史消息重发产生的图片附件。
-- JPEG、PNG、WebP、BMP、TIFF、HEIC 和 HEIF 的静态图片处理。
+- JPEG、PNG、WebP、TIFF，以及当前平台 libvips 能解码的 HEIC/HEIF、BMP 静态图片处理；运行库不支持的格式明确记录并回退原图。
 - 压缩耗时、成功、超时和失败日志。
 - 临时优化文件清理。
 
@@ -60,7 +60,14 @@ type SessionImageOptimizationResult = {
   inputBytes: number
   outputBytes: number
   durationMs: number
-  reason?: 'below_threshold' | 'animated' | 'unsupported' | 'timeout' | 'decode_error' | 'encode_error' | 'write_error'
+  reason?:
+    | 'below_threshold'
+    | 'animated'
+    | 'unsupported'
+    | 'timeout'
+    | 'decode_error'
+    | 'encode_error'
+    | 'write_error'
 }
 ```
 
@@ -150,7 +157,7 @@ Composer 根据批量结果显示一次聚合提示：
 
 ## 临时文件与清理
 
-优化副本写入 `app.getPath('temp')/spark-agent-session-images/`，文件名使用源内容短哈希、策略版本和随机后缀，避免冲突。
+优化副本写入 `app.getPath('temp')/spark-agent-session-images/`，文件名保留经过清洗的原始 basename，并附加源文件状态短哈希和策略版本；临时写盘阶段再使用随机后缀，既避免冲突，也让会话中的附件名称仍可辨认。
 
 - 发送失败后保留优化副本，支持用户立即重试而不必再次压缩。
 - 相同源文件、大小和修改时间命中有效缓存时直接复用，减少重发耗时。
@@ -184,6 +191,10 @@ Composer 根据批量结果显示一次聚合提示：
 ### 性能验证
 
 使用小图、12 MP JPEG、24 MP JPEG、大型 PNG 截图、透明 PNG 和多图批次记录基准。测试报告记录机器信息、输入尺寸、输入/输出体积、耗时和是否触发回退，不把性能测试绑定到过于严格的单一 CI 硬件数值；自动测试主要验证超时和并发边界，真实耗时目标在开发机和打包产物上人工核对。
+
+实现期在 macOS arm64、Sharp 0.35.3 上使用合成 6000×4000 JPEG 做了真实管线基准：输入 24,349,601 bytes，第一轮输出 2,581,565 bytes，服务耗时 2,318 ms、墙钟 2,319 ms，满足单图 3 秒预算。基准素材和临时脚本均未提交。
+
+安全审计确认 Sharp/libvips 的高危项已随 0.35.3 消除。`pnpm audit --prod` 仍报告一项项目既有的 `@huggingface/transformers → onnxruntime-node → adm-zip` 高危依赖链，与本功能直接使用 Sharp 无关，未在本次跨范围升级。
 
 ## 文档与索引
 

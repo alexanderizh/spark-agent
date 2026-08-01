@@ -300,6 +300,10 @@ export const FilePrepareImagePreviewRequestSchema = z.object({
   sourcePath: z.string().min(1),
 })
 
+export const FilePrepareSessionImagesRequestSchema = z.object({
+  sourcePaths: z.array(z.string().min(1).max(4000)).max(20),
+})
+
 export const FileStatKindRequestSchema = z.object({
   path: z.string().min(1),
 })
@@ -913,6 +917,7 @@ export const IpcSchemaRegistry = {
   'file:save-pasted-image': FileSavePastedImageRequestSchema,
   'file:save-pasted-media': FileSavePastedMediaRequestSchema,
   'file:prepare-image-preview': FilePrepareImagePreviewRequestSchema,
+  'file:prepare-session-images': FilePrepareSessionImagesRequestSchema,
   'file:stat-kind': FileStatKindRequestSchema,
   'clipboard:write-text': ClipboardWriteTextRequestSchema,
   'app:get-startup-settings': z.object({}),

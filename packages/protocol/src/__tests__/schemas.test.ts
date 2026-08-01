@@ -27,6 +27,20 @@ describe('ProviderMediaDefaultsSchema', () => {
 })
 
 describe('IPC schemas', () => {
+  it('validates session image optimization batches', () => {
+    expect(
+      IpcSchemaRegistry['file:prepare-session-images'].parse({
+        sourcePaths: ['/tmp/one.png', '/tmp/two.jpg'],
+      }),
+    ).toEqual({ sourcePaths: ['/tmp/one.png', '/tmp/two.jpg'] })
+
+    expect(() =>
+      IpcSchemaRegistry['file:prepare-session-images'].parse({
+        sourcePaths: Array.from({ length: 21 }, (_, index) => `/tmp/${index}.png`),
+      }),
+    ).toThrow()
+  })
+
   it('accepts the canvas log scope and rejects unknown log scopes', () => {
     expect(IpcSchemaRegistry['log:read'].parse({ scope: 'canvas' })).toEqual({ scope: 'canvas' })
     expect(() => IpcSchemaRegistry['log:read'].parse({ scope: 'tasks' })).toThrow()

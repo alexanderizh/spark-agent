@@ -28,6 +28,10 @@ import {
   isUnresolvableFileDrop,
 } from '../../services/composer-attachments'
 import { shouldHandleComposerFileDrop } from '../../services/project-folder-drop'
+import {
+  formatSessionImageOptimizationNotice,
+  prepareSessionImageAttachments,
+} from '../../services/session-image-attachments'
 import { canReuseComposerSession, canShowComposerWorktreeToggle } from '../chat-session-routing'
 import { resolveComposerRunningAgentIds } from '../../services/composer-working-state'
 import {
@@ -907,6 +911,7 @@ export function ComposerV2({
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
   const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
+  const { invoke: prepareSessionImages } = useIpcInvoke('file:prepare-session-images')
   const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
   const { invoke: getQueue } = useIpcInvoke('session:get-queue')
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
@@ -1484,7 +1489,13 @@ export function ComposerV2({
     ) => {
       // 用户选择快捷回复或自行发送后立即隐藏建议，不等待事件流回写 user_message。
       if (activeQuickReplies != null) setDismissedQuickReplyKey(activeQuickReplies.key)
-      const requestAttachments = toSessionAttachments(turnAttachments)
+      const prepareRequestAttachments = async (): Promise<SessionAttachment[]> => {
+        const prepared = await prepareSessionImageAttachments(turnAttachments, prepareSessionImages)
+        const notice = formatSessionImageOptimizationNotice(prepared.summary)
+        if (notice?.level === 'warning') toast.warning(notice.message)
+        else if (notice != null) toast.success(notice.message)
+        return toSessionAttachments(prepared.attachments)
+      }
       // 斜杠命令拦截：以 / 开头的消息走 command:execute
       if (text.startsWith('/')) {
         if (isLocalCopySlashCommand(text)) {
@@ -1546,6 +1557,7 @@ export function ComposerV2({
           const res = await window.spark.invoke('command:execute', { sessionId, message: text })
           if (res.forwardToAgent) {
             // 转发给 Agent：作为普通消息发送
+            const requestAttachments = await prepareRequestAttachments()
             setSending(false)
             await flushPendingRuntimePatch()
             const sendRes = await sendTurn({
@@ -1622,6 +1634,7 @@ export function ComposerV2({
         }
         if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
         await flushPendingRuntimePatch()
+        const requestAttachments = await prepareRequestAttachments()
         const res = await sendTurn({
           sessionId: targetSessionId,
           message: text,
@@ -1684,6 +1697,7 @@ export function ComposerV2({
       teamConfig,
       toast,
       pendingMention,
+      prepareSessionImages,
       activeQuickReplies,
     ],
   )
