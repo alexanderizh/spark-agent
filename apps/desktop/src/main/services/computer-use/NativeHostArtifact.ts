@@ -12,6 +12,7 @@ const MAX_MANIFEST_BYTES = 65_536
 const MAX_EXECUTABLE_BYTES = 268_435_456
 const NATIVE_HOST_SIGNING_IDENTIFIER = 'com.spark-agent.desktop.computer-host'
 const MINIMUM_TRUSTED_NATIVE_HOST_VERSION = [0, 1, 0] as const
+export const WINDOWS_CODE_SIGNATURE_TIMEOUT_MS = 30_000
 
 const NativeHostArtifactBase = {
   schemaVersion: z.literal(1),
@@ -469,7 +470,7 @@ export async function inspectMacCodeSignature(
     ['--verify', '--strict', '--verbose=2', executablePath],
     {
       encoding: 'utf8',
-      timeout: 10_000,
+      timeout: WINDOWS_CODE_SIGNATURE_TIMEOUT_MS,
       maxBuffer: 64 * 1_024,
     },
   )
