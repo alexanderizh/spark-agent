@@ -136,7 +136,7 @@ const MCP_TOOLS = [
   {
     name: 'start_task',
     description:
-      'Start a resilient governed task on the real desktop. Minimal valid input example: {"goal":"Open the app and search for the requested topic","environment":"my_desktop"}. successCriteria is optional; Spark derives visible search/input text when possible and can continue with screenshot coordinates when accessibility data is incomplete. Do not retry safe_browser or safe_desktop: this build supports my_desktop execution.',
+      'Start a resilient task on the real desktop. Without targetWindowId the task follows the foreground window across applications; provide targetWindowId only when the user explicitly wants a single-window task. Minimal valid input example: {"goal":"Open the app and search for the requested topic","environment":"my_desktop"}. successCriteria is optional; Spark derives visible search/input text when possible and can continue with screenshot coordinates when accessibility data is incomplete. Do not retry safe_browser or safe_desktop: this build supports my_desktop execution.',
     inputSchema: {
       type: 'object',
       properties: {

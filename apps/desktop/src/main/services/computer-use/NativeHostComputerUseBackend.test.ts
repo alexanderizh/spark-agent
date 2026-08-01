@@ -671,6 +671,41 @@ describe('NativeHostComputerUseBackend', () => {
     expect(second.close).toHaveBeenCalled()
   })
 
+  it('follows a newly focused window across applications when the session is not explicitly bound', async () => {
+    const initialWindow = { ...FOCUSED_WINDOW, focused: false }
+    const newlyFocusedWindow = {
+      ...FOCUSED_WINDOW,
+      app: { ...FOCUSED_WINDOW.app, id: 'app-2', name: 'Other' },
+      window: { ...FOCUSED_WINDOW.window, id: 'window-2', title: 'Other document' },
+      focused: true,
+    }
+    const crossAppObservation: ComputerObservation = {
+      ...OBSERVATION,
+      foreground: {
+        app: newlyFocusedWindow.app,
+        window: newlyFocusedWindow.window,
+      },
+    }
+    const connection = createControlConnection([crossAppObservation])
+    vi.mocked(connection.listWindows).mockResolvedValue([initialWindow, newlyFocusedWindow])
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'windows',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: () => 'snapshot-1',
+    })
+
+    await backend.observe({
+      computerSessionId: 'computer-1',
+      fullTree: true,
+      signal: new AbortController().signal,
+    })
+
+    expect(connection.observe).toHaveBeenCalledWith(
+      expect.objectContaining({ appId: 'app-2', windowId: 'window-2' }),
+    )
+  })
+
   it('observes the explicitly bound window instead of following a newly focused window', async () => {
     const boundWindow = { ...FOCUSED_WINDOW, focused: false }
     const otherWindow = {
