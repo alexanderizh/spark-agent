@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- build hooks are CommonJS modules */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const { pruneMacElectronLocales, hardenElectronFuses, signWindowsStandaloneNodeRuntime } =
@@ -119,6 +119,13 @@ const { packageStandaloneNodeRuntime } =
       },
     ) => Promise<{ executablePath: string }>
   }
+const { prunePackagedOnnxRuntime } = require('../../../../scripts/prune-onnx-runtime.js') as {
+  prunePackagedOnnxRuntime: (
+    resourcesPath: string,
+    platform: 'darwin' | 'linux' | 'win32',
+    arch: 'arm64' | 'x64',
+  ) => Promise<{ kept: string[]; removed: string[] }>
+}
 const { NATIVE_HOST_PROTOCOL_VERSION, NATIVE_HOST_VERSION, createNativeHostBuildInfo } =
   require('../../../../scripts/native-host-build-info.js') as {
     NATIVE_HOST_PROTOCOL_VERSION: number
@@ -162,6 +169,56 @@ describe('after-pack locale pruning', () => {
       kept: ['en.lproj', 'zh_CN.lproj', 'zh_TW.lproj'],
       removed: 2,
     })
+  })
+})
+
+describe('after-pack ONNX runtime pruning', () => {
+  let root = ''
+
+  afterEach(() => {
+    if (root) rmSync(root, { recursive: true, force: true })
+  })
+
+  it('keeps only the target platform and architecture', async () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-onnx-pruning-'))
+    for (const relative of [
+      'darwin/arm64/onnxruntime_binding.node',
+      'darwin/x64/onnxruntime_binding.node',
+      'linux/arm64/onnxruntime_binding.node',
+      'linux/x64/onnxruntime_binding.node',
+      'win32/x64/onnxruntime_binding.node',
+    ]) {
+      const file = join(
+        root,
+        'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6',
+        relative,
+      )
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, relative)
+    }
+
+    const result = await prunePackagedOnnxRuntime(root, 'darwin', 'arm64')
+
+    expect(result.kept).toEqual(['darwin/arm64'])
+    expect(result.removed.sort()).toEqual(['darwin/x64', 'linux', 'win32'])
+    expect(
+      existsSync(
+        join(
+          root,
+          'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64',
+        ),
+      ),
+    ).toBe(true)
+    expect(
+      existsSync(
+        join(root, 'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/linux'),
+      ),
+    ).toBe(false)
+    expect(
+      existsSync(
+        join(root, 'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/win32'),
+      ),
+    ).toBe(false)
   })
 })
 
