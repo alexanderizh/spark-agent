@@ -22,6 +22,26 @@ export function encodeToSafeFileUrl(absolutePath: string): string {
   return `${SAFE_FILE_SCHEME}://x/${encoded}`
 }
 
+/** Decode a canonical canvas safe-file URL back to its absolute disk path. */
+export function decodeCanvasSafeFileUrl(url: string | null | undefined): string | null {
+  if (!url?.startsWith(`${SAFE_FILE_SCHEME}://`)) return null
+  try {
+    const rest = url.slice(`${SAFE_FILE_SCHEME}://`.length)
+    const slashIndex = rest.indexOf('/')
+    if (slashIndex < 0) return null
+    const encoded = rest.slice(slashIndex + 1)
+    if (!encoded) return null
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
+    const padding = base64.length % 4 === 0 ? '' : '='.repeat(4 - (base64.length % 4))
+    const binary = atob(base64 + padding)
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+    const decoded = new TextDecoder().decode(bytes)
+    return /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(decoded) ? decoded : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * 把媒体产物的磁盘路径转成 renderer 可直接加载的 URL。
  *
