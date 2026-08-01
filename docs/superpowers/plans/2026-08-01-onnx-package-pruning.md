@@ -140,7 +140,7 @@ git commit -m "test(desktop): define packaged ONNX pruning"
 - Modify: `apps/desktop/electron-builder.yml`
 - Modify: `apps/desktop/src/main/services/__tests__/after-pack.test.ts`
 
-- [ ] **Step 1: 写失败测试，约束 afterPack 调用顺序和 Web Runtime 排除规则**
+- [ ] **Step 1: 写失败测试，约束目标路径解析和 Web Runtime 排除规则**
 
 在 `after-pack.test.ts` 增加静态配置断言和钩子依赖注入测试：
 
@@ -150,9 +150,8 @@ it('excludes the unused ONNX web runtime from production packaging', () => {
   expect(config).toContain("'!**/node_modules/onnxruntime-web/**'")
 })
 
-it('prunes ONNX binaries for the target before hardening the executable', async () => {
-  const events: string[] = []
-  await runAfterPack(
+it('resolves the packaged resources path and target architecture', async () => {
+  const result = await pruneOnnxForContext(
     {
       electronPlatformName: 'darwin',
       arch: Arch.arm64,
@@ -163,28 +162,25 @@ it('prunes ONNX binaries for the target before hardening the executable', async 
       },
     },
     {
-      packageStandaloneNodeRuntime: async () => ({ executablePath: '/runtime/node' }),
       prunePackagedOnnxRuntime: async (_resources, platform, arch) => {
-        events.push(`prune:${platform}/${arch}`)
+        expect(platform).toBe('darwin')
+        expect(arch).toBe('arm64')
         return { kept: ['darwin/arm64'], removed: ['linux', 'win32'] }
       },
-      packageMacNativeHost: async () => void events.push('host'),
-      hardenElectronFuses: async () => void events.push('fuses'),
-      pruneMacElectronLocales: async () => ({ kept: [], removed: 0 }),
     },
   )
-  expect(events).toEqual(['prune:darwin/arm64', 'host', 'fuses'])
+  expect(result.kept).toEqual(['darwin/arm64'])
 })
 ```
 
-为此把 `after-pack.js` 的主函数命名为 `runAfterPack(context, dependencies)` 并继续以默认导出供
-electron-builder 调用；测试只替换外部副作用，不模拟裁剪算法。
+新增独立的 `pruneOnnxForContext(context, dependencies)`；现有 Computer Use、Native Host、Node
+签名和 fuses 分支不重构，只在原 `afterPack` 中插入 ONNX helper 调用。
 
 - [ ] **Step 2: 运行测试并确认失败原因正确**
 
 Run: `pnpm --filter @spark/desktop test:unit -- src/main/services/__tests__/after-pack.test.ts`
 
-Expected: FAIL，配置中尚无排除规则，`runAfterPack` 尚未导出。
+Expected: FAIL，配置中尚无排除规则，`pruneOnnxForContext` 尚未导出。
 
 - [ ] **Step 3: 加入生产配置和 afterPack 调用**
 
@@ -212,12 +208,16 @@ function resourcesPath(context) {
   return path.join(context.appOutDir, 'resources')
 }
 
-const targetArch = targetArchitecture(context.arch)
-await dependencies.prunePackagedOnnxRuntime(
-  resourcesPath(context),
-  context.electronPlatformName,
-  targetArch,
-)
+async function pruneOnnxForContext(
+  context,
+  dependencies = { prunePackagedOnnxRuntime },
+) {
+  return dependencies.prunePackagedOnnxRuntime(
+    resourcesPath(context),
+    context.electronPlatformName,
+    targetArchitecture(context.arch),
+  )
+}
 ```
 
 `targetArchitecture` 从 `package-standalone-node.js` 导出复用，不复制另一份 Arch 数字映射。
@@ -427,8 +427,8 @@ Expected: 本计划提交只涉及列出的构建脚本、配置、测试和文�
 
 - [ ] **Step 4: GitNexus 降级核对**
 
-若 GitNexus MCP 健康可用，对 `runAfterPack` 做 upstream impact 并在提交前运行 detect changes；若未
-暴露或索引不可信，按项目规则使用 `rg -n "afterPack|runAfterPack|prunePackagedOnnxRuntime"`、定向
+若 GitNexus MCP 健康可用，对 `afterPack` 做 upstream impact 并在提交前运行 detect changes；若未
+暴露或索引不可信，按项目规则使用 `rg -n "afterPack|pruneOnnxForContext|prunePackagedOnnxRuntime"`、定向
 测试和 `git diff` 完成核对，并在交付说明中注明降级。
 
 - [ ] **Step 5: 标记第一阶段完成**

@@ -13,7 +13,8 @@ const {
   resolveWindowsNativeHostTrustMode,
   signWindowsNativeHost,
 } = require('./package-windows-native-host.js')
-const { packageStandaloneNodeRuntime } = require('./package-standalone-node.js')
+const { packageStandaloneNodeRuntime, targetArchitecture } = require('./package-standalone-node.js')
+const { prunePackagedOnnxRuntime } = require('./prune-onnx-runtime.js')
 const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses')
 
 const MAC_LOCALES_TO_KEEP = new Set(['en.lproj', 'zh_CN.lproj', 'zh_TW.lproj'])
@@ -99,8 +100,35 @@ async function signWindowsStandaloneNodeRuntime(context, runtime, dependencies =
   return { signed: true, signature }
 }
 
+function packagedResourcesPath(context) {
+  if (context.electronPlatformName === 'darwin') {
+    return path.join(
+      context.appOutDir,
+      `${context.packager.appInfo.productFilename}.app`,
+      'Contents',
+      'Resources',
+    )
+  }
+  return path.join(context.appOutDir, 'resources')
+}
+
+async function pruneOnnxForContext(
+  context,
+  dependencies = { prunePackagedOnnxRuntime },
+) {
+  return dependencies.prunePackagedOnnxRuntime(
+    packagedResourcesPath(context),
+    context.electronPlatformName,
+    targetArchitecture(context.arch),
+  )
+}
+
 module.exports = async function afterPack(context) {
   const standaloneNodeRuntime = await packageStandaloneNodeRuntime(context)
+  const onnxResult = await pruneOnnxForContext(context)
+  console.log(
+    `[after-pack] ONNX runtime: kept ${onnxResult.kept.join(', ') || '<none>'}, removed ${onnxResult.removed.join(', ') || '<none>'}`,
+  )
   if (context.electronPlatformName === 'win32') {
     await signWindowsStandaloneNodeRuntime(context, standaloneNodeRuntime)
     await packageWindowsNativeHost(context)
@@ -123,4 +151,5 @@ module.exports = async function afterPack(context) {
 
 module.exports.pruneMacElectronLocales = pruneMacElectronLocales
 module.exports.hardenElectronFuses = hardenElectronFuses
+module.exports.pruneOnnxForContext = pruneOnnxForContext
 module.exports.signWindowsStandaloneNodeRuntime = signWindowsStandaloneNodeRuntime

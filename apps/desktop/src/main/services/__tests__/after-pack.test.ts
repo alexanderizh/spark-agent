@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { pruneMacElectronLocales, hardenElectronFuses, signWindowsStandaloneNodeRuntime } =
+const {
+  pruneMacElectronLocales,
+  hardenElectronFuses,
+  pruneOnnxForContext,
+  signWindowsStandaloneNodeRuntime,
+} =
   require('../../../../scripts/after-pack.js') as {
     pruneMacElectronLocales: (appPath: string) => Promise<{ kept: string[]; removed: number }>
     hardenElectronFuses: (
@@ -25,6 +30,16 @@ const { pruneMacElectronLocales, hardenElectronFuses, signWindowsStandaloneNodeR
         ) => Promise<{ publisherThumbprint: string; timestamped: boolean }>
       },
     ) => Promise<{ signed: boolean }>
+    pruneOnnxForContext: (
+      context: unknown,
+      dependencies: {
+        prunePackagedOnnxRuntime: (
+          resourcesPath: string,
+          platform: string,
+          arch: string,
+        ) => Promise<{ kept: string[]; removed: string[] }>
+      },
+    ) => Promise<{ kept: string[]; removed: string[] }>
   }
 const {
   createNativeHostManifest,
@@ -219,6 +234,39 @@ describe('after-pack ONNX runtime pruning', () => {
         join(root, 'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/win32'),
       ),
     ).toBe(false)
+  })
+
+  it('excludes the unused ONNX web runtime from production packaging', () => {
+    const config = readFileSync(
+      join(__dirname, '../../../../electron-builder.yml'),
+      'utf8',
+    )
+
+    expect(config).toContain("'!**/node_modules/onnxruntime-web/**'")
+  })
+
+  it('resolves the packaged resources path and target architecture', async () => {
+    const result = await pruneOnnxForContext(
+      {
+        electronPlatformName: 'darwin',
+        arch: Arch.arm64,
+        appOutDir: '/tmp/spark-pack',
+        packager: {
+          appInfo: { productFilename: 'Spark Agent' },
+          platformSpecificBuildOptions: {},
+        },
+      },
+      {
+        prunePackagedOnnxRuntime: async (resourcesPath, platform, arch) => {
+          expect(resourcesPath).toBe(
+            '/tmp/spark-pack/Spark Agent.app/Contents/Resources',
+          )
+          return { kept: ['darwin/arm64'], removed: ['linux', 'win32'] }
+        },
+      },
+    )
+
+    expect(result).toEqual({ kept: ['darwin/arm64'], removed: ['linux', 'win32'] })
   })
 })
 
