@@ -1,6 +1,6 @@
 # ONNX 安装包精准裁剪 Implementation Plan
 
-> 状态: 待开发 | 最后核对: 2026-08-01
+> 状态: 实施中 | 最后核对: 2026-08-01
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -362,7 +362,7 @@ macOS arm64 示例：
 
 ```bash
 pnpm --filter @spark/desktop verify:packaged:onnx -- \
-  --resources "apps/desktop/dist/mac-arm64/Spark Agent.app/Contents/Resources" \
+  --resources "dist/mac-arm64/Spark Agent.app/Contents/Resources" \
   --platform darwin \
   --arch arm64
 ```
