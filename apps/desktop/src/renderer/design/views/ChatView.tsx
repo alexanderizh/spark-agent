@@ -3719,6 +3719,7 @@ function ChatStream({
                       blocks={msg.blocks}
                       messageStatus={msg.status}
                       isLatest={expandedAssistantMessageIds.has(msg.id)}
+                      sessionRunning={agentIsRunning || persistedSessionStatus === 'running'}
                       assistantId={identity.id}
                       assistantName={identity.name}
                       assistantAvatarSrc={identity.avatarSrc}
@@ -6085,6 +6086,7 @@ function assistantRowsPropsAreEqual(
 
 const AssistantMessageRows = React.memo(function AssistantMessageRows({
   sessionId,
+  sessionRunning,
   workspaceRootPath,
   status,
   blocks,
@@ -6121,6 +6123,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   onDelete?: () => void
   onReply?: (selectedText?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  sessionRunning?: boolean
   messageId: string
   onReplyToMember?: (args: {
     messageId: string
@@ -6213,6 +6216,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             workspaceRootPath={workspaceRootPath}
             blocks={segment.blocks}
             isLatest={segmentIsLatest}
+            sessionRunning={sessionRunning}
             assistantId={assistantId}
             assistantName={assistantName}
             assistantAvatarSrc={assistantAvatarSrc}
@@ -6362,6 +6366,7 @@ function isHostActivityRunning(blocks: UIBlock[]): boolean {
 
 const AgentMsg = React.memo(function AgentMsg({
   sessionId,
+  sessionRunning,
   workspaceRootPath,
   status,
   blocks,
@@ -6394,6 +6399,7 @@ const AgentMsg = React.memo(function AgentMsg({
   assistantAvatarSrc: string
   showIdentity?: boolean
   running?: boolean
+  sessionRunning?: boolean
   onDelete?: () => void
   onReply?: (selectedText?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
@@ -6447,6 +6453,10 @@ const AgentMsg = React.memo(function AgentMsg({
     messageStatus === 'error' && !isStreaming && !hasContent && errorBlocks.length > 0
   // 是否已完成（非流式中）— 只有完成的消息才显示 hover bar
   const isFinished = !isStreaming
+  // 会话仍在连续运行（如 codex CLI 多 turn）时，最近的消息即便已完成也保持思考/工具日志展开，
+  // 避免长会话里每个 turn 完成瞬间把过程日志全折掉、用户看不到 agent 正在做什么。
+  // isLatest = 最近 2 条 assistant 消息（见外层 expandedAssistantMessageIds）。
+  const suppressAutoCollapse = !!sessionRunning && !!isLatest
 
   // 思考与工具日志总开关：输出完毕后默认折叠本气泡内所有「思考过程」与工具日志组，
   // 由顶部「思考和工具日志」切换条统一控制（流式中不生效，保留思考进度反馈）。
@@ -6470,6 +6480,7 @@ const AgentMsg = React.memo(function AgentMsg({
   ).length
   const showToolLogsToggle =
     isFinished &&
+    !suppressAutoCollapse &&
     (toolCallBlocks.length > 0 ||
       thinkingBlocksCount > 0 ||
       extraCollapsibleBlocksCount > 0 ||
@@ -6572,9 +6583,9 @@ const AgentMsg = React.memo(function AgentMsg({
                   sessionId,
                   workspaceRootPath,
                   onFilePreview,
-                  autoCollapseTools: !isStreaming,
+                  autoCollapseTools: !(isStreaming || suppressAutoCollapse),
                 }
-              : { sessionId, workspaceRootPath, autoCollapseTools: !isStreaming },
+              : { sessionId, workspaceRootPath, autoCollapseTools: !(isStreaming || suppressAutoCollapse) },
           )}
         </div>
       )
