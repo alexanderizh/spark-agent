@@ -173,6 +173,14 @@ export function LobeThemeProvider({
             defaultShadow: 'transparent',
             fontWeight: 500,
           },
+          // Checkbox checked 背景：lobehub 的 darkAlgorithm 会用内置 primary 灰阶
+          // 覆盖全局 colorPrimary（dark[9] = #eeeeee，近白），导致 checked 背景与
+          // 白色勾（colorWhite）融为一体、几乎不可见。在组件级把 colorPrimary
+          // 锚定到项目主色，恢复选中态对比（hover 同色避免再次融化成白底白勾）。
+          Checkbox: {
+            colorPrimary: primary,
+            colorPrimaryHover: primary,
+          },
         },
       }}
     >
