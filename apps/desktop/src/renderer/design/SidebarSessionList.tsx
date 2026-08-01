@@ -14,7 +14,7 @@ import React, {
 } from 'react'
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
-import { ActionIcon, Button, Dropdown, Input, Modal, Tooltip } from '@lobehub/ui'
+import { ActionIcon, Button, Dropdown, Icon, Input, Modal, Tooltip } from '@lobehub/ui'
 import { Archive, Clock3, Maximize2, Minimize2, Pin, PinOff } from 'lucide-react'
 import { Popover } from 'antd'
 import {
@@ -60,7 +60,9 @@ import {
   type SidebarFilterState,
   type SidebarStatusFilter,
   type SidebarLastActivityFilter,
+  type SidebarScheduledTasksFilter,
 } from './SidebarFilterMenu'
+import type { SessionScheduleSummaries } from './session-schedule-summary'
 import { isModalOverlayVisible, useSessionDeleteShortcut } from './hooks/useAppDialogKeyboard'
 import {
   resolveSidebarActiveWorkspaceId,
@@ -235,6 +237,7 @@ function readSidebarFilter(): SidebarFilterState {
       status: parsed.status ?? DEFAULT_SIDEBAR_FILTER.status,
       projectId: parsed.projectId ?? DEFAULT_SIDEBAR_FILTER.projectId,
       lastActivity: parsed.lastActivity ?? DEFAULT_SIDEBAR_FILTER.lastActivity,
+      scheduledTasks: parsed.scheduledTasks ?? DEFAULT_SIDEBAR_FILTER.scheduledTasks,
       groupBy: parsed.groupBy ?? DEFAULT_SIDEBAR_FILTER.groupBy,
     }
   } catch {
@@ -287,12 +290,29 @@ function filterByProject(sessions: SessionSummary[], projectId: string): Session
   return sessions.filter((s) => s.workspaceIds.includes(projectId))
 }
 
-function applySessionFilters(
+function filterByScheduledTasks(
+  sessions: SessionSummary[],
+  filter: SidebarScheduledTasksFilter,
+  summaries: SessionScheduleSummaries,
+): SessionSummary[] {
+  if (filter === 'all') return sessions
+  return sessions.filter((session) => {
+    const attached = (summaries[session.id]?.total ?? 0) > 0
+    return filter === 'attached' ? attached : !attached
+  })
+}
+
+export function applySessionFilters(
   sessions: SessionSummary[],
   filter: SidebarFilterState,
+  scheduleSummaries: SessionScheduleSummaries = {},
 ): SessionSummary[] {
   return filterByLastActivity(
-    filterByProject(filterByStatus(sessions, filter.status), filter.projectId),
+    filterByScheduledTasks(
+      filterByProject(filterByStatus(sessions, filter.status), filter.projectId),
+      filter.scheduledTasks,
+      scheduleSummaries,
+    ),
     filter.lastActivity,
   )
 }
@@ -761,7 +781,8 @@ function ChatListItem({
   // 悬浮卡 hover 开合（受控）；editing 时锁定不关，避免输入中被中断
   const [hoverOpen, setHoverOpen] = useState(false)
   const [editing, setEditing] = useState(false)
-  const { workspaces, noProjectWorkspace, openSessionSchedule } = useSessionSidebar()
+  const { workspaces, noProjectWorkspace, openSessionSchedule, sessionScheduleSummaries } =
+    useSessionSidebar()
   // 该会话关联的 workspace：用于解析项目名、worktree 分支等悬浮面板信息
   const sessionWorkspace = useMemo(() => {
     const wsId = s.workspaceIds[0]
@@ -791,6 +812,14 @@ function ChatListItem({
 
   const statusClass = displayStatus !== 'idle' ? `is-${displayStatus}` : ''
   const terminalRunningCount = terminalActivity?.running ?? 0
+  const scheduleSummary = sessionScheduleSummaries[s.id]
+  const scheduleSummaryLabel =
+    scheduleSummary == null
+      ? ''
+      : t('sidebar.scheduleSummary', {
+          total: scheduleSummary.total,
+          enabled: scheduleSummary.enabled,
+        })
 
   return (
     <Popover
@@ -869,6 +898,16 @@ function ChatListItem({
             )}
             <span className="truncate">{s.title || t('sidebar.newSession')}</span>
           </div>
+          {scheduleSummary != null && scheduleSummary.total > 0 && (
+            <Tooltip title={scheduleSummaryLabel} mouseEnterDelay={0.05}>
+              <span
+                className={`session-schedule-indicator${scheduleSummary.enabled > 0 ? ' is-enabled' : ' is-paused'}`}
+                aria-label={scheduleSummaryLabel}
+              >
+                <Icon icon={Clock3} size={12} />
+              </span>
+            </Tooltip>
+          )}
           {terminalRunningCount > 0 && (
             <span
               className="session-terminal-indicator"
@@ -1758,13 +1797,24 @@ export function SidebarSessionList() {
     const visibleSource = filterCanvasSessions(source, ctx.workspaces)
     // 与后端 SQL 对齐：置顶在前、未置顶按 updatedAt 倒序。
     // 乐观更新 pinnedAt 后由这里即时重排，覆盖 date/state/none 分组及 noProject/ungrouped。
-    return sortSessionsByPinned(applySessionFilters(visibleSource, filter))
-  }, [ctx.sessions, ctx.workspaces, filter, searchQuery, searchResultSessions, searchVisible])
+    return sortSessionsByPinned(
+      applySessionFilters(visibleSource, filter, ctx.sessionScheduleSummaries),
+    )
+  }, [
+    ctx.sessionScheduleSummaries,
+    ctx.sessions,
+    ctx.workspaces,
+    filter,
+    searchQuery,
+    searchResultSessions,
+    searchVisible,
+  ])
 
   const hideEmptyProjectGroups =
     filter.status !== DEFAULT_SIDEBAR_FILTER.status ||
     filter.projectId !== DEFAULT_SIDEBAR_FILTER.projectId ||
     filter.lastActivity !== DEFAULT_SIDEBAR_FILTER.lastActivity ||
+    filter.scheduledTasks !== DEFAULT_SIDEBAR_FILTER.scheduledTasks ||
     (searchVisible && searchQuery.trim().length > 0)
 
   // Build display groups based on groupBy mode
@@ -1843,6 +1893,7 @@ export function SidebarSessionList() {
     filter.status === DEFAULT_SIDEBAR_FILTER.status &&
     filter.projectId === DEFAULT_SIDEBAR_FILTER.projectId &&
     filter.lastActivity === DEFAULT_SIDEBAR_FILTER.lastActivity &&
+    filter.scheduledTasks === DEFAULT_SIDEBAR_FILTER.scheduledTasks &&
     !(searchVisible && searchQuery.trim().length > 0)
   const canReorderProjects = canReorderSessions
   const sensors = useSensors(

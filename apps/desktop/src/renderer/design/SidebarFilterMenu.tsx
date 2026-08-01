@@ -16,12 +16,14 @@ import { isCanvasWorkspace } from './workspace-visibility'
 export type SidebarStatusFilter = 'active' | 'archived' | 'all'
 export type SidebarLastActivityFilter = 'today' | '1d' | '3d' | '7d' | '30d' | 'all'
 export type SidebarGroupBy = 'date' | 'project' | 'state' | 'none'
+export type SidebarScheduledTasksFilter = 'all' | 'attached' | 'none'
 
 export interface SidebarFilterState {
   status: SidebarStatusFilter
   /** workspaceId 或 'all' */
   projectId: string
   lastActivity: SidebarLastActivityFilter
+  scheduledTasks: SidebarScheduledTasksFilter
   groupBy: SidebarGroupBy
 }
 
@@ -29,6 +31,7 @@ export const DEFAULT_SIDEBAR_FILTER: SidebarFilterState = {
   status: 'active',
   projectId: 'all',
   lastActivity: 'all',
+  scheduledTasks: 'all',
   groupBy: 'project',
 }
 
@@ -37,6 +40,7 @@ export function isDefaultFilter(state: SidebarFilterState): boolean {
     state.status === DEFAULT_SIDEBAR_FILTER.status &&
     state.projectId === DEFAULT_SIDEBAR_FILTER.projectId &&
     state.lastActivity === DEFAULT_SIDEBAR_FILTER.lastActivity &&
+    state.scheduledTasks === DEFAULT_SIDEBAR_FILTER.scheduledTasks &&
     state.groupBy === DEFAULT_SIDEBAR_FILTER.groupBy
   )
 }
@@ -54,6 +58,15 @@ const LAST_ACTIVITY_OPTIONS: Array<{ value: SidebarLastActivityFilter; labelKey:
   { value: '7d', labelKey: 'sidebar.filter.activity.7d' },
   { value: '30d', labelKey: 'sidebar.filter.activity.30d' },
   { value: 'all', labelKey: 'sidebar.filter.all' },
+]
+
+export const SCHEDULED_TASK_FILTER_OPTIONS: Array<{
+  value: SidebarScheduledTasksFilter
+  labelKey: string
+}> = [
+  { value: 'all', labelKey: 'sidebar.filter.all' },
+  { value: 'attached', labelKey: 'sidebar.filter.scheduledTasks.attached' },
+  { value: 'none', labelKey: 'sidebar.filter.scheduledTasks.none' },
 ]
 
 const GROUP_BY_OPTIONS: Array<{ value: SidebarGroupBy; labelKey: string }> = [
@@ -75,6 +88,13 @@ function getLastActivityLabelKey(value: SidebarLastActivityFilter): string {
 
 function getGroupByLabelKey(value: SidebarGroupBy): string {
   return GROUP_BY_OPTIONS.find((o) => o.value === value)?.labelKey ?? 'sidebar.filter.groupBy.none'
+}
+
+function getScheduledTasksLabelKey(value: SidebarScheduledTasksFilter): string {
+  return (
+    SCHEDULED_TASK_FILTER_OPTIONS.find((option) => option.value === value)?.labelKey ??
+    'sidebar.filter.all'
+  )
 }
 
 /* ─── SubMenu — 二级浮层内容(不带 chrome, 由 Dropdown 外层负责) ─── */
@@ -169,6 +189,14 @@ function FilterPopupContent({
     () => GROUP_BY_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) })),
     [t],
   )
+  const scheduledTaskOptions = useMemo(
+    () =>
+      SCHEDULED_TASK_FILTER_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.labelKey),
+      })),
+    [t],
+  )
 
   const projectOptions = useMemo(() => {
     const list: Array<{ value: string; label: string; hint?: string }> = [
@@ -195,6 +223,7 @@ function FilterPopupContent({
     state.status !== DEFAULT_SIDEBAR_FILTER.status || state.status === 'active'
   const projectHighlight = state.projectId !== 'all'
   const lastActivityHighlight = state.lastActivity !== 'all'
+  const scheduledTasksHighlight = state.scheduledTasks !== 'all'
 
   return (
     <div className="sidebar-filter-menu" onClick={(e) => e.stopPropagation()}>
@@ -229,6 +258,17 @@ function FilterPopupContent({
           options={lastActivityOptions}
           current={state.lastActivity}
           onSelect={(value) => onChange({ ...state, lastActivity: value })}
+        />
+      </FilterRow>
+      <FilterRow
+        label={t('sidebar.filter.rowScheduledTasks')}
+        valueLabel={t(getScheduledTasksLabelKey(state.scheduledTasks))}
+        highlighted={scheduledTasksHighlight}
+      >
+        <SubMenu
+          options={scheduledTaskOptions}
+          current={state.scheduledTasks}
+          onSelect={(value) => onChange({ ...state, scheduledTasks: value })}
         />
       </FilterRow>
       <div className="sidebar-filter-divider" />

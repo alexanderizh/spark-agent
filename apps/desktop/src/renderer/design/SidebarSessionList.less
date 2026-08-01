@@ -427,6 +427,26 @@
   opacity: 1;
 }
 
+.session-schedule-indicator {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  background: var(--hover);
+
+  &.is-enabled {
+    color: var(--primary);
+    background: var(--primary-soft);
+  }
+
+  &.is-paused {
+    color: var(--text-faint);
+  }
+}
+
 /* ─── Sidebar 空态：更轻、更克制的项目/筛选空态 ─── */
 .sidebar-empty-state {
   justify-content: center;

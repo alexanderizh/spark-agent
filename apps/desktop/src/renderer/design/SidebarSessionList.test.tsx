@@ -5,14 +5,28 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId, WorkspaceInfo } from '@spark/protocol'
 import type { SessionSummary } from './SessionSidebarContext'
-import { FlatGroup, ProjectSessionGroup, SidebarProjectToolbar } from './SidebarSessionList'
+import {
+  applySessionFilters,
+  FlatGroup,
+  ProjectSessionGroup,
+  SidebarProjectToolbar,
+} from './SidebarSessionList'
+import { DEFAULT_SIDEBAR_FILTER } from './SidebarFilterMenu'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const openSessionSchedule = vi.fn()
+const sidebarMock = vi.hoisted(() => ({
+  openSessionSchedule: vi.fn(),
+  sessionScheduleSummaries: {} as Record<string, { total: number; enabled: number }>,
+}))
+const { openSessionSchedule } = sidebarMock
 
 vi.mock('./SessionSidebarContext', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./SessionSidebarContext')>()),
-  useSessionSidebar: () => ({ workspaces: [], openSessionSchedule }),
+  useSessionSidebar: () => ({
+    workspaces: [],
+    openSessionSchedule,
+    sessionScheduleSummaries: sidebarMock.sessionScheduleSummaries,
+  }),
 }))
 
 vi.mock('./i18n', () => ({
@@ -46,6 +60,7 @@ describe('ProjectSessionGroup pagination', () => {
   let root: Root
 
   beforeEach(() => {
+    sidebarMock.sessionScheduleSummaries = {}
     window.localStorage.setItem('spark-settings-general', JSON.stringify({ language: 'zh-CN' }))
     vi.stubGlobal(
       'ResizeObserver',
@@ -255,6 +270,83 @@ describe('ProjectSessionGroup pagination', () => {
 
     expect(onSelectSession).toHaveBeenCalledWith(sessions[0])
     expect(openSessionSchedule).toHaveBeenCalledWith(sessions[0]!.id)
+  })
+
+  it('shows Lobe clock indicators for enabled and paused session tasks', () => {
+    const sessions = createSessions(2)
+    sidebarMock.sessionScheduleSummaries = {
+      'session-0': { total: 2, enabled: 1 },
+      'session-1': { total: 1, enabled: 0 },
+    }
+    const workspace: WorkspaceInfo = {
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      id: 'workspace-1',
+      name: 'Spark-Agent',
+      pinnedAt: null,
+      rootPath: '/tmp/spark-agent',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      worktreeMeta: null,
+    }
+
+    act(() => {
+      root.render(
+        <ProjectSessionGroup
+          group={{ workspace, sessions }}
+          activeSessionId={null}
+          activeWorkspaceId={workspace.id}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={{}}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          onSelectWorkspace={async () => undefined}
+          onSelectSession={() => undefined}
+          onNewSession={() => undefined}
+          onRenameProject={() => undefined}
+          onToggleProjectPinned={() => undefined}
+          onArchiveProject={() => undefined}
+          onDeleteProject={() => undefined}
+          onOpenProjectFolder={() => undefined}
+          onRenameSession={() => undefined}
+          onCommitSessionTitle={async () => undefined}
+          onToggleSessionPinned={() => undefined}
+          onArchiveSession={() => undefined}
+          onDeleteSession={() => undefined}
+        />,
+      )
+    })
+
+    const indicators = container.querySelectorAll('.session-schedule-indicator')
+    expect(indicators).toHaveLength(2)
+    expect(indicators[0]?.classList.contains('is-enabled')).toBe(true)
+    expect(indicators[1]?.classList.contains('is-paused')).toBe(true)
+    expect(indicators[0]?.querySelector('.anticon')).not.toBeNull()
+  })
+})
+
+describe('scheduled-task session filtering', () => {
+  it('includes paused tasks in the attached filter and supports unattached sessions', () => {
+    const sessions = createSessions(3)
+    const summaries = {
+      'session-0': { total: 1, enabled: 1 },
+      'session-1': { total: 2, enabled: 0 },
+    }
+
+    expect(
+      applySessionFilters(
+        sessions,
+        { ...DEFAULT_SIDEBAR_FILTER, scheduledTasks: 'attached' },
+        summaries,
+      ).map((session) => session.id),
+    ).toEqual(['session-0', 'session-1'])
+    expect(
+      applySessionFilters(
+        sessions,
+        { ...DEFAULT_SIDEBAR_FILTER, scheduledTasks: 'none' },
+        summaries,
+      ).map((session) => session.id),
+    ).toEqual(['session-2'])
   })
 })
 

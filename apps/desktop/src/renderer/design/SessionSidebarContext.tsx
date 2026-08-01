@@ -43,6 +43,10 @@ import {
   addProjectsFromDroppedPaths,
   formatDroppedProjectSummary,
 } from './services/project-folder-drop'
+import {
+  buildSessionScheduleSummaries,
+  type SessionScheduleSummaries,
+} from './session-schedule-summary'
 
 // 供 SidebarSessionList 等消费方在本地排序时复用（与后端 listSessions 排序对齐）。
 export { sortSessionsByPinned }
@@ -311,6 +315,8 @@ type SessionSidebarCtx = {
   sessionScheduleTargetId: SessionId | null
   openSessionSchedule: (id: SessionId) => void
   closeSessionSchedule: () => void
+  sessionScheduleSummaries: SessionScheduleSummaries
+  refreshSessionScheduleSummaries: () => Promise<void>
 
   // Agent status per session (fine-grained: waiting_permission, waiting_user, etc.)
   sessionAgentStatuses: Record<string, AgentStatusValue>
@@ -414,6 +420,8 @@ export function SessionSidebarProvider({
   }, [])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [sessionScheduleTargetId, setSessionScheduleTargetId] = useState<SessionId | null>(null)
+  const [sessionScheduleSummaries, setSessionScheduleSummaries] =
+    useState<SessionScheduleSummaries>({})
   const openSessionSchedule = useCallback((id: SessionId) => setSessionScheduleTargetId(id), [])
   const closeSessionSchedule = useCallback(() => setSessionScheduleTargetId(null), [])
   const [noProjectWorkspaceId, setNoProjectWorkspaceId] = useState<string | null>(null)
@@ -523,6 +531,44 @@ export function SessionSidebarProvider({
   const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
   const { invoke: listSidebarOrder } = useIpcInvoke('sidebar-order:list')
   const { invoke: updateSidebarOrder } = useIpcInvoke('sidebar-order:update')
+  const { invoke: listScheduledTasks } = useIpcInvoke('scheduled-task:list')
+
+  const refreshSessionScheduleSummaries = useCallback(async () => {
+    try {
+      const response = await listScheduledTasks({ scope: 'session' })
+      setSessionScheduleSummaries(
+        buildSessionScheduleSummaries(Array.isArray(response.tasks) ? response.tasks : []),
+      )
+    } catch (error) {
+      console.warn('[scheduled-task] failed to refresh sidebar summaries:', error)
+    }
+  }, [listScheduledTasks])
+
+  useEffect(() => {
+    if (!reportAppActivity) return
+    const initialRefresh = window.setTimeout(() => void refreshSessionScheduleSummaries(), 0)
+    const timer = window.setInterval(() => void refreshSessionScheduleSummaries(), 30_000)
+    const unsubscribe =
+      window.spark?.on?.('stream:scheduled-task:execution', () => {
+        void refreshSessionScheduleSummaries()
+      }) ?? (() => {})
+    return () => {
+      window.clearTimeout(initialRefresh)
+      window.clearInterval(timer)
+      unsubscribe()
+    }
+  }, [refreshSessionScheduleSummaries, reportAppActivity])
+
+  const sessionArchiveRevision = useMemo(
+    () => sessions.map((session) => `${session.id}:${session.archivedAt ?? ''}`).join('|'),
+    [sessions],
+  )
+
+  useEffect(() => {
+    if (!reportAppActivity || sessionArchiveRevision === '') return
+    const timer = window.setTimeout(() => void refreshSessionScheduleSummaries(), 0)
+    return () => window.clearTimeout(timer)
+  }, [refreshSessionScheduleSummaries, reportAppActivity, sessionArchiveRevision])
 
   const refreshTerminalActivity = useCallback(async () => {
     try {
@@ -1764,6 +1810,8 @@ export function SessionSidebarProvider({
       sessionScheduleTargetId,
       openSessionSchedule,
       closeSessionSchedule,
+      sessionScheduleSummaries,
+      refreshSessionScheduleSummaries,
       sessionAgentStatuses,
       sessionTerminalActivity,
       unreviewedCompletedSessions: unreviewedCompleted,
@@ -1820,6 +1868,8 @@ export function SessionSidebarProvider({
       sessionScheduleTargetId,
       openSessionSchedule,
       closeSessionSchedule,
+      sessionScheduleSummaries,
+      refreshSessionScheduleSummaries,
       setActiveWorkspace,
       sessionAgentStatuses,
       sessionTerminalActivity,
