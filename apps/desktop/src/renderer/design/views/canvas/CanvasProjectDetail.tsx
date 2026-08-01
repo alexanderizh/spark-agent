@@ -5,7 +5,7 @@
  * 用户在侧栏点项目 → 主区显示详情页 → 详情页里的「打开画布」按钮
  * 才真正在独立窗口打开画布。
  *
- * 布局：顶部封面 banner（浮动 pin/more）+ 标题栏（左标题/右打开按钮，
+ * 布局：顶部完整封面预览 + 标题栏（左标题/右项目操作，
  * 两侧排列垂直居中，超长标题 ellipsis）+ 描述/统计/时间线。
  * 视觉元素沿用 CanvasProjectCard，展开成纵向详情布局。
  */
@@ -129,9 +129,21 @@ export function CanvasProjectDetail({
   onUploadCover,
 }: CanvasProjectDetailProps) {
   const coverInputRef = useRef<HTMLInputElement | null>(null)
-  const handleCoverClick = useCallback(() => {
+  const [coverPreviewOpen, setCoverPreviewOpen] = useState(false)
+  const [coverFailed, setCoverFailed] = useState(false)
+  const hasUsableCover = Boolean(project.coverUrl) && !coverFailed
+
+  useEffect(() => {
+    setCoverPreviewOpen(false)
+    setCoverFailed(false)
+  }, [project.id, project.coverUrl])
+
+  const openCoverPicker = useCallback(() => {
     if (onUploadCover) coverInputRef.current?.click()
   }, [onUploadCover])
+  const openCoverPreview = useCallback(() => {
+    if (hasUsableCover) setCoverPreviewOpen(true)
+  }, [hasUsableCover])
   const handleCoverFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
@@ -285,32 +297,68 @@ export function CanvasProjectDetail({
 
   return (
     <div className="canvas-project-detail">
-      {/* 封面 banner：点击上传/更换封面图。cover-actions 区域 stopPropagation
-          避免点 pin/more 误触发上传。 */}
-      <div
-        className={`canvas-detail-cover${onUploadCover ? ' is-uploadable' : ''}`}
-        onClick={handleCoverClick}
-        role={onUploadCover ? 'button' : undefined}
-        aria-label={project.coverUrl ? '点击更换封面' : '点击上传封面'}
-      >
-        {project.coverUrl ? (
-          <img
-            className="canvas-detail-cover-image"
-            src={project.coverUrl}
-            alt={project.title}
-            draggable={false}
-          />
+      {/* 封面只负责完整预览；上传/更换使用独立按钮，避免单击语义冲突。 */}
+      <div className={`canvas-detail-cover${onUploadCover ? ' is-uploadable' : ''}`}>
+        {hasUsableCover && project.coverUrl ? (
+          <>
+            <button
+              type="button"
+              className="canvas-detail-cover-preview-trigger"
+              aria-label={`查看项目封面：${project.title}`}
+              onClick={openCoverPreview}
+            >
+              <img
+                className="canvas-detail-cover-ambient"
+                src={project.coverUrl}
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+              />
+              <img
+                className="canvas-detail-cover-image"
+                src={project.coverUrl}
+                alt={project.title}
+                draggable={false}
+                onError={() => setCoverFailed(true)}
+              />
+            </button>
+            <div className="canvas-detail-cover-toolbar">
+              <button
+                type="button"
+                className="canvas-detail-cover-tool"
+                onClick={openCoverPreview}
+                aria-label="查看封面大图"
+              >
+                <Icons.Maximize size={14} />
+                <span>查看大图</span>
+              </button>
+              {onUploadCover && (
+                <button
+                  type="button"
+                  className="canvas-detail-cover-tool"
+                  onClick={openCoverPicker}
+                  aria-label="更换项目封面"
+                >
+                  <Icons.Edit size={14} />
+                  <span>更换封面</span>
+                </button>
+              )}
+            </div>
+          </>
+        ) : onUploadCover ? (
+          <button
+            type="button"
+            className="canvas-detail-cover-empty"
+            onClick={openCoverPicker}
+            aria-label="上传项目封面"
+          >
+            <Icons.Canvas size={36} />
+            <span>{coverFailed ? '封面加载失败，点击重新上传' : '暂无封面，点击上传'}</span>
+          </button>
         ) : (
           <div className="canvas-detail-cover-empty">
             <Icons.Canvas size={36} />
-            <span>暂无封面，进入项目开始创作</span>
-          </div>
-        )}
-        {/* hover 遮罩：提示可点击上传 */}
-        {onUploadCover && (
-          <div className="canvas-detail-cover-overlay">
-            <Icons.ImagePlus size={22} />
-            <span>{project.coverUrl ? '更换封面' : '上传封面'}</span>
+            <span>{coverFailed ? '封面加载失败' : '暂无封面，进入项目开始创作'}</span>
           </div>
         )}
         <input
@@ -320,9 +368,22 @@ export function CanvasProjectDetail({
           className="canvas-detail-cover-input"
           onChange={handleCoverFileChange}
         />
-        {/* 浮动在 banner 右上的次要操作：pin + 更多。
-            「打开画布」主操作已移到标题栏右侧，与标题同层。 */}
-        <div className="canvas-detail-cover-actions" onClick={(e) => e.stopPropagation()}>
+      </div>
+
+      {/* 标题栏：左侧标题+状态，右侧项目操作。 */}
+      <div className="canvas-detail-header">
+        <div className="canvas-detail-header-left">
+          <h1 className="canvas-detail-title" title={project.title}>{project.title}</h1>
+          <Tag color={project.status === 'archived' ? 'default' : 'green'}>
+            {project.status === 'archived' ? '已归档' : '进行中'}
+          </Tag>
+          {project.pinned && (
+            <Tooltip title="已置顶">
+              <Pin size={13} fill="currentColor" className="canvas-detail-title-pin" />
+            </Tooltip>
+          )}
+        </div>
+        <div className="canvas-detail-header-right">
           <Tooltip title={project.pinned ? '取消置顶' : '置顶'}>
             <button
               type="button"
@@ -382,24 +443,6 @@ export function CanvasProjectDetail({
               </button>
             </Tooltip>
           </Dropdown>
-        </div>
-      </div>
-
-      {/* 标题栏：左侧标题+状态，右侧打开画布主按钮。两侧排列、垂直居中，
-          超长标题 ellipsis 截断不让按钮被挤走。 */}
-      <div className="canvas-detail-header">
-        <div className="canvas-detail-header-left">
-          <h1 className="canvas-detail-title" title={project.title}>{project.title}</h1>
-          <Tag color={project.status === 'archived' ? 'default' : 'green'}>
-            {project.status === 'archived' ? '已归档' : '进行中'}
-          </Tag>
-          {project.pinned && (
-            <Tooltip title="已置顶">
-              <Pin size={13} fill="currentColor" className="canvas-detail-title-pin" />
-            </Tooltip>
-          )}
-        </div>
-        <div className="canvas-detail-header-right">
           <Button
             type="primary"
             size="middle"
@@ -525,6 +568,26 @@ export function CanvasProjectDetail({
           </div>
         ))}
       </div>
+
+      {/* 项目封面预览与资源预览互相独立，避免参与资源翻页状态。 */}
+      <Modal
+        open={coverPreviewOpen && hasUsableCover}
+        onCancel={() => setCoverPreviewOpen(false)}
+        footer={null}
+        width="min(92vw, 1200px)"
+        centered
+        title={`${project.title} · 项目封面`}
+        className="canvas-detail-cover-preview-modal"
+        destroyOnHidden
+      >
+        {project.coverUrl && (
+          <img
+            src={project.coverUrl}
+            alt={`${project.title} · 项目封面`}
+            className="canvas-detail-cover-preview-image"
+          />
+        )}
+      </Modal>
 
       {/* 资源预览 lightbox：点击缩略图触发，图片用大图、视频用 video 播放 */}
       <Modal
