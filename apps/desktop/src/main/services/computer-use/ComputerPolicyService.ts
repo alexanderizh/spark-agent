@@ -40,8 +40,6 @@ const ACTION_BASELINE_RISK: Record<ComputerActionEnvelope['action']['type'], Com
 }
 
 export class ComputerPolicyService {
-  private readonly dynamicallyObservedApps = new Map<string, Set<string>>()
-
   evaluate(
     envelope: ComputerActionEnvelope,
     taskContract: ComputerTaskContract,
@@ -51,16 +49,8 @@ export class ComputerPolicyService {
     },
   ): ComputerPolicyDecision {
     if (observedApp.id !== envelope.targetAppId) {
-      return decision(envelope.actionId, 'L1', 'deny', 'app_not_allowed', false)
+      return decision(envelope.actionId, 'L1', 'deny', 'focus_mismatch', false)
     }
-    const dynamicAppKey = appIdentityKey(observedApp)
-    const previouslyObserved = this.dynamicallyObservedApps
-      .get(envelope.computerSessionId)
-      ?.has(dynamicAppKey)
-    const newlyObservedApp =
-      !previouslyObserved &&
-      !taskContract.allowedApps.some((rule) => appRuleMatches(rule, observedApp))
-
     if (
       envelope.policyContext.target.kind === 'domain' &&
       !taskContract.allowedDomains.some((rule) =>
@@ -84,12 +74,6 @@ export class ComputerPolicyService {
       actionBaselineRisk(envelope.action),
     )
     if (envelope.policyContext.target.kind === 'unknown') {
-      riskLevel = maxRisk(riskLevel, 'L2')
-    }
-    if (newlyObservedApp) {
-      // A task may legitimately open a new application after its initial window inventory.
-      // Elevate only its first action; subsequent navigation in that live identity stays
-      // low-friction, while committing actions remain governed by their effect/data risk.
       riskLevel = maxRisk(riskLevel, 'L2')
     }
     if (isSensitiveTextWrite(envelope.action)) {
@@ -122,23 +106,6 @@ export class ComputerPolicyService {
       false,
     )
   }
-
-  markAppObservedByExecutedAction(computerSessionId: string, app: ComputerAppIdentity): void {
-    const apps = this.dynamicallyObservedApps.get(computerSessionId) ?? new Set<string>()
-    apps.add(appIdentityKey(app))
-    while (apps.size > 200) {
-      const oldest = apps.values().next().value
-      if (oldest == null) break
-      apps.delete(oldest)
-    }
-    this.dynamicallyObservedApps.delete(computerSessionId)
-    this.dynamicallyObservedApps.set(computerSessionId, apps)
-    while (this.dynamicallyObservedApps.size > 1_000) {
-      const oldest = this.dynamicallyObservedApps.keys().next().value
-      if (oldest == null) break
-      this.dynamicallyObservedApps.delete(oldest)
-    }
-  }
 }
 
 function isLocalTextWrite(action: ComputerActionEnvelope['action']): boolean {
@@ -155,12 +122,6 @@ function isSensitiveTextWrite(action: ComputerActionEnvelope['action']): boolean
     action.type === 'app_command' &&
     action.command.name === 'prefill_composer' &&
     action.command.sensitive === true
-  )
-}
-
-function appIdentityKey(app: ComputerAppIdentity): string {
-  return [app.id, app.bundleId ?? '', app.executableIdentity ?? '', app.signingIdentity ?? ''].join(
-    '\u0000',
   )
 }
 
@@ -181,22 +142,6 @@ function domainMatches(hostInput: string, ruleInput: string): boolean {
   if (!rule.startsWith('*.')) return host === rule
   const suffix = rule.slice(2)
   return host !== suffix && host.endsWith(`.${suffix}`)
-}
-
-function appRuleMatches(
-  rule: ComputerTaskContract['allowedApps'][number],
-  app: ComputerAppIdentity,
-): boolean {
-  switch (rule.kind) {
-    case 'app_id':
-      return app.id === rule.value
-    case 'bundle_id':
-      return app.bundleId === rule.value
-    case 'executable_identity':
-      return app.executableIdentity === rule.value
-    case 'signing_identity':
-      return app.signingIdentity === rule.value
-  }
 }
 
 function decision(

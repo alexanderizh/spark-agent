@@ -825,6 +825,63 @@ describe('Computer Use storage migration', () => {
     ).not.toThrow()
   })
 
+  it('reclaims a leaked lease from a terminal session before granting the next task', () => {
+    new SessionRepository(database).create({
+      id: 'session-1',
+      kind: 'chat',
+      title: 'Recovered lease session',
+      status: 'idle',
+      projectId: 'default',
+    })
+    const sessions = exportedRepository<{
+      create(input: Record<string, unknown>): Record<string, unknown>
+      get(id: string): Record<string, unknown> | null
+      updateStatus(id: string, status: string, updatedAt: string, endedAt?: string | null): unknown
+    }>('ComputerSessionRepository', database)
+    const leases = exportedRepository<{
+      acquire(input: Record<string, unknown>): Record<string, unknown>
+    }>('ComputerActuatorLeaseRepository', database)
+    for (const id of ['computer-session-failed', 'computer-session-next']) {
+      sessions.create({
+        id,
+        sessionId: 'session-1',
+        turnId: `turn-${id}`,
+        workflowRunId: null,
+        environment: 'my_desktop',
+        providerProfileId: 'provider-1',
+        modelId: 'model-1',
+        taskContract: { objective: 'Recover a leaked actuator lease' },
+        createdAt,
+      })
+    }
+    leases.acquire({
+      id: 'lease-leaked',
+      environmentKey: 'my-desktop:local',
+      computerSessionId: 'computer-session-failed',
+      operatorId: 'operator-failed',
+      acquiredAt: createdAt,
+      expiresAt: '2026-07-28T04:00:00.000Z',
+    })
+    sessions.updateStatus(
+      'computer-session-failed',
+      'failed',
+      '2026-07-28T03:01:00.000Z',
+      '2026-07-28T03:01:00.000Z',
+    )
+
+    expect(() =>
+      leases.acquire({
+        id: 'lease-next',
+        environmentKey: 'my-desktop:local',
+        computerSessionId: 'computer-session-next',
+        operatorId: 'operator-next',
+        acquiredAt: '2026-07-28T03:02:00.000Z',
+        expiresAt: '2026-07-28T03:12:00.000Z',
+      }),
+    ).not.toThrow()
+    expect(sessions.get('computer-session-failed')?.actuator_lease_id).toBeNull()
+  })
+
   it('rejects invalid lease windows and clears expired session lease links', () => {
     new SessionRepository(database).create({
       id: 'session-1',

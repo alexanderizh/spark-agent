@@ -2,7 +2,6 @@ import type { ComputerDecisionModelConfig } from '@spark/agent-runtime'
 import {
   ComputerTaskContractSchema,
   VerificationSpecSchema,
-  type ComputerAppIdentity,
   type ComputerApprovalTicket,
   type ComputerActuatorLease,
   type ComputerSession,
@@ -11,6 +10,7 @@ import {
   type NativeWindowDescriptor,
 } from '@spark/protocol'
 import { z } from 'zod'
+import { createLogger } from '@spark/shared'
 import { GenericComputerDecisionAdapter } from './ComputerDecisionAdapter.js'
 import { ComputerTaskOperator, type ComputerTaskOperatorResult } from './ComputerTaskOperator.js'
 import type { ComputerActionApprovalRequest } from './ComputerTaskOperator.js'
@@ -18,6 +18,8 @@ import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import { getComputerUseServices, type ComputerUseServices } from './ComputerUseServices.js'
 import { MY_DESKTOP_ENVIRONMENT_KEY } from './ComputerSessionManager.js'
 import { getComputerUseV2FlagStore } from './computerUseV2Flags.js'
+
+const log = createLogger('computer-use-agent-controller')
 
 interface BoundAgentRuntime {
   turnId: string
@@ -101,6 +103,30 @@ export class ComputerUseAgentController {
     this.sessionContexts.set(sessionId, { ...context })
   }
 
+  async stopOwnedSessions(sessionId: string): Promise<void> {
+    const services = this.getServices()
+    const ownedSessionIds = services.sessions
+      .listActiveSessionIds()
+      .filter(
+        (computerSessionId) =>
+          services.sessions.getSession(computerSessionId)?.sessionId === sessionId,
+      )
+    const results = await Promise.allSettled(
+      ownedSessionIds.map(async (computerSessionId) => {
+        await services.broker.stop(computerSessionId)
+        this.invalidateRun(services, computerSessionId)
+      }),
+    )
+    this.sessionContexts.delete(sessionId)
+    const failures = results.filter((result) => result.status === 'rejected')
+    if (failures.length > 0) {
+      log.warn('Failed to stop one or more Computer Use sessions while revoking Agent control', {
+        sessionId,
+        failureCount: failures.length,
+      })
+    }
+  }
+
   async promptCapabilities(): Promise<{
     platform: ComputerUseCapabilitySummary['platform']
     available: boolean
@@ -170,11 +196,7 @@ export class ComputerUseAgentController {
           )
         }
         const targetWindowId = readTargetWindowId(args)
-        const target = requireAllowedTargetWindow(
-          await services.backend.listWindows(),
-          targetWindowId,
-          computerSession.taskContract,
-        )
+        const target = requireTargetWindowById(await services.backend.listWindows(), targetWindowId)
         services.backend.bindSessionTarget?.({
           computerSessionId: computerSession.id,
           appId: target.app.id,
@@ -274,14 +296,10 @@ export class ComputerUseAgentController {
           request.successCriteria.length > 0
             ? request.successCriteria
             : deriveSuccessCriteria(request.goal, target)
-        const allowedApps =
-          request.targetWindowId == null
-            ? strongestAppRules(target, windows)
-            : [strongestAppRule(target)]
         const taskContract = ComputerTaskContractSchema.parse({
           objective: request.goal,
           successCriteria,
-          allowedApps,
+          allowedApps: [],
           allowedDomains: [],
           allowedDataClasses: ['public', 'internal', 'personal'],
           forbiddenActions: [],
@@ -306,11 +324,22 @@ export class ComputerUseAgentController {
             windowId: target.window.id,
           })
         }
-        const lease = services.sessions.acquireLease({
-          computerSessionId: computerSession.id,
-          environmentKey: MY_DESKTOP_ENVIRONMENT_KEY,
-          operatorId: `agent:${sessionId}`,
-        })
+        let lease: ComputerActuatorLease
+        try {
+          lease = services.sessions.acquireLease({
+            computerSessionId: computerSession.id,
+            environmentKey: MY_DESKTOP_ENVIRONMENT_KEY,
+            operatorId: `agent:${sessionId}`,
+          })
+        } catch (error) {
+          // A session row exists before lease acquisition. Never leave that preflight row (or
+          // any native capture state it created) behind when another valid operator owns the
+          // desktop. Otherwise retries present a false "running" task and can accumulate stale
+          // state around the real lease holder.
+          await services.broker.stop(computerSession.id).catch(() => undefined)
+          this.releaseOperatorResources(services, computerSession.id, 'failed')
+          throw error
+        }
         const operator = this.createOperator(services)
         const adapter = this.createAdapter(model)
         this.launchOperator(
@@ -344,14 +373,19 @@ export class ComputerUseAgentController {
       (result) => {
         if (this.runTokens.get(session.id) !== token) return
         this.runTokens.delete(session.id)
-        services.evidence?.clearSession(session.id)
+        if (result.status === 'handoff_required') {
+          // Handoff retains the session for the user, but it must not retain the one global
+          // desktop actuator lease. A fresh task may start immediately after takeover.
+          services.sessions.releaseLease(session.id)
+        }
+        this.releaseOperatorResources(services, session.id, 'finished')
         this.runs.set(session.id, { status: result.status, result })
         this.trimRunStates()
       },
       (error) => {
         if (this.runTokens.get(session.id) !== token) return
         this.runTokens.delete(session.id)
-        services.evidence?.clearSession(session.id)
+        this.releaseOperatorResources(services, session.id, 'failed')
         const result: ComputerTaskOperatorResult = {
           status: 'failed',
           reason:
@@ -373,6 +407,22 @@ export class ComputerUseAgentController {
     services.evidence?.clearSession(computerSessionId)
   }
 
+  private releaseOperatorResources(
+    services: ComputerUseServices,
+    computerSessionId: string,
+    outcome: 'finished' | 'failed',
+  ): void {
+    services.evidence?.clearSession(computerSessionId)
+    services.appControlBridge?.cancelSession(computerSessionId)
+    if (services.backend == null || typeof services.backend.cancelSession !== 'function') return
+    void services.backend.cancelSession(computerSessionId).catch((error) =>
+      log.warn(`Failed to release Native Host resources after Computer Use ${outcome}`, {
+        computerSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    )
+  }
+
   private statusPayload(
     computerSession: ComputerSession,
     timedOut = false,
@@ -385,8 +435,8 @@ export class ComputerUseAgentController {
       ...(operator.status === 'failed' || computerSession.status === 'failed'
         ? {
             continuation: {
-              action: 'continue_with_best_available_fallback',
-              askUserToChooseFallback: false,
+              action: 'report_computer_task_failure',
+              askUserToChooseFallback: true,
             },
           }
         : {}),
@@ -560,36 +610,13 @@ function requireTargetWindow(
   throw new ComputerUseBrokerError('focus_mismatch', 'No controllable window was found')
 }
 
-function requireAllowedTargetWindow(
+function requireTargetWindowById(
   windows: NativeWindowDescriptor[],
   targetWindowId: string,
-  taskContract: ComputerSession['taskContract'],
 ): NativeWindowDescriptor {
   const target = windows.find((window) => window.window.id === targetWindowId && !window.minimized)
   if (target == null) throw unavailable('The selected target window is unavailable')
-  if (!taskContract.allowedApps.some((rule) => appRuleMatches(rule, target.app))) {
-    throw new ComputerUseBrokerError(
-      'app_not_allowed',
-      'The selected target window is outside the task application allowlist',
-    )
-  }
   return target
-}
-
-function appRuleMatches(
-  rule: ComputerSession['taskContract']['allowedApps'][number],
-  app: ComputerAppIdentity,
-): boolean {
-  switch (rule.kind) {
-    case 'app_id':
-      return app.id === rule.value
-    case 'bundle_id':
-      return app.bundleId === rule.value
-    case 'executable_identity':
-      return app.executableIdentity === rule.value
-    case 'signing_identity':
-      return app.signingIdentity === rule.value
-  }
 }
 
 function largestWindow(windows: NativeWindowDescriptor[]): NativeWindowDescriptor {
@@ -598,32 +625,6 @@ function largestWindow(windows: NativeWindowDescriptor[]): NativeWindowDescripto
       right.window.bounds.width * right.window.bounds.height -
       left.window.bounds.width * left.window.bounds.height,
   )[0] as NativeWindowDescriptor
-}
-
-function strongestAppRule(
-  target: NativeWindowDescriptor,
-): ComputerSession['taskContract']['allowedApps'][number] {
-  if (target.app.signingIdentity != null) {
-    return { kind: 'signing_identity', value: target.app.signingIdentity }
-  }
-  if (target.app.bundleId != null) return { kind: 'bundle_id', value: target.app.bundleId }
-  if (target.app.executableIdentity != null) {
-    return { kind: 'executable_identity', value: target.app.executableIdentity }
-  }
-  return { kind: 'app_id', value: target.app.id }
-}
-
-function strongestAppRules(
-  initialTarget: NativeWindowDescriptor,
-  windows: NativeWindowDescriptor[],
-): ComputerSession['taskContract']['allowedApps'] {
-  const rules = [initialTarget, ...windows.filter((window) => !window.minimized)].map(
-    strongestAppRule,
-  )
-  return [...new Map(rules.map((rule) => [`${rule.kind}:${rule.value}`, rule])).values()].slice(
-    0,
-    200,
-  )
 }
 
 function supportsExecution(capabilities: ComputerUseCapabilitySummary): boolean {

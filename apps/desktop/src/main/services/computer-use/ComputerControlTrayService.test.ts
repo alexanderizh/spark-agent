@@ -41,7 +41,7 @@ describe('ComputerControlTrayService', () => {
     expect(service.list()).toEqual([
       {
         computerSessionId: SESSION.id,
-        label: 'com.apple.TextEdit',
+        label: '所有应用',
         status: 'acting',
         canPause: true,
       },

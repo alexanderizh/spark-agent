@@ -38,6 +38,7 @@ const MAX_APPROVAL_POLLS = 1_200
 const MAX_TRANSIENT_RECOVERIES = 8
 const MAX_DECISION_RECOVERIES = 2
 const MAX_MODEL_HANDOFF_REPLANS = 2
+const LEASE_HEARTBEAT_INTERVAL_MS = 2_000
 
 interface OperatorSessions {
   heartbeatLease(input: {
@@ -119,6 +120,7 @@ export class ComputerTaskOperator {
     | undefined
   private readonly getAbortSignal: ((computerSessionId: string) => AbortSignal) | undefined
   private readonly timeline: ComputerUseTimelineSink | undefined
+  private readonly leaseHeartbeatIntervalMs: number
 
   constructor(options: {
     sessions: OperatorSessions
@@ -136,6 +138,7 @@ export class ComputerTaskOperator {
     ) => Promise<ComputerApprovalTicket | null>
     getAbortSignal?: (computerSessionId: string) => AbortSignal
     timeline?: ComputerUseTimelineSink
+    leaseHeartbeatIntervalMs?: number
   }) {
     this.sessions = options.sessions
     this.broker = options.broker
@@ -152,6 +155,8 @@ export class ComputerTaskOperator {
     this.requestApproval = options.requestApproval
     this.getAbortSignal = options.getAbortSignal
     this.timeline = options.timeline
+    this.leaseHeartbeatIntervalMs =
+      options.leaseHeartbeatIntervalMs ?? LEASE_HEARTBEAT_INTERVAL_MS
   }
 
   async run(input: {
@@ -166,6 +171,7 @@ export class ComputerTaskOperator {
     let modelHandoffReplans = 0
     let successfulActions = 0
     const abortSignal = this.getAbortSignal?.(input.session.id)
+    const leaseHeartbeat = this.keepLeaseAlive(input.session.id, input.lease)
     try {
       observation = await this.observeWithRecovery(
         input.session.id,
@@ -198,6 +204,7 @@ export class ComputerTaskOperator {
             stepIndex,
             allowBatch: isActionBatchEnabled(),
           })
+          leaseHeartbeat.assertHealthy()
           consecutiveTransientFailures = 0
         } catch (error) {
           consecutiveTransientFailures += 1
@@ -439,6 +446,8 @@ export class ComputerTaskOperator {
         status: 'failed',
         reason: error instanceof ComputerUseBrokerError ? error.code : 'operator_failed',
       }
+    } finally {
+      leaseHeartbeat.stop()
     }
   }
 
@@ -567,6 +576,37 @@ export class ComputerTaskOperator {
       leaseId: lease.id,
       operatorId: lease.operatorId,
     })
+  }
+
+  /**
+   * A visual model can take longer than the initial lease window to return its
+   * first decision. Lease maintenance therefore cannot depend on dispatching an
+   * action: it must remain live while waiting for observation, model, or
+   * approval I/O, otherwise a task races and loses its own actuator lease.
+   */
+  private keepLeaseAlive(computerSessionId: string, lease: ComputerActuatorLease): {
+    assertHealthy: () => void
+    stop: () => void
+  } {
+    let failure: unknown
+    const heartbeat = (): void => {
+      if (failure != null) return
+      try {
+        this.heartbeat(computerSessionId, lease)
+      } catch (error) {
+        failure = error
+      }
+    }
+
+    heartbeat()
+    const timer = setInterval(heartbeat, this.leaseHeartbeatIntervalMs)
+    timer.unref?.()
+    return {
+      assertHealthy: () => {
+        if (failure != null) throw failure
+      },
+      stop: () => clearInterval(timer),
+    }
   }
 }
 

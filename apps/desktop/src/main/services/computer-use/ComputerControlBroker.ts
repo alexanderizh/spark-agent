@@ -359,10 +359,6 @@ export class ComputerControlBroker {
       beforeFrameId: envelope.observedFrameId,
       afterFrameId: result.observation.frameId,
     })
-    this.policy.markAppObservedByExecutedAction(
-      envelope.computerSessionId,
-      observation.foreground.app,
-    )
     this.rollout?.recordAction(false)
     this.sessions.setPhase(envelope.computerSessionId, 'observing')
     return result

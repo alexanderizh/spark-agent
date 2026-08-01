@@ -31,8 +31,15 @@ export class ComputerActuatorLeaseRepository extends BaseRepository {
           `UPDATE computer_sessions
            SET actuator_lease_id = NULL, updated_at = ?
            WHERE actuator_lease_id IN (
-             SELECT id FROM computer_actuator_leases
-             WHERE released_at IS NULL AND expires_at <= ?
+             SELECT leases.id
+             FROM computer_actuator_leases AS leases
+             LEFT JOIN computer_sessions AS sessions
+               ON sessions.id = leases.computer_session_id
+             WHERE leases.released_at IS NULL
+               AND (
+                 leases.expires_at <= ?
+                 OR sessions.status IN ('completed', 'failed', 'canceled')
+               )
            )`,
         )
         .run(params.acquiredAt, params.acquiredAt)
@@ -40,7 +47,14 @@ export class ComputerActuatorLeaseRepository extends BaseRepository {
         .prepare(
           `UPDATE computer_actuator_leases
            SET released_at = ?
-           WHERE released_at IS NULL AND expires_at <= ?`,
+           WHERE released_at IS NULL
+             AND (
+               expires_at <= ?
+               OR computer_session_id IN (
+                 SELECT id FROM computer_sessions
+                 WHERE status IN ('completed', 'failed', 'canceled')
+               )
+             )`,
         )
         .run(params.acquiredAt, params.acquiredAt)
       this.raw

@@ -94,6 +94,7 @@ import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
 import { ChatTurnNavigator } from './chat/ChatTurnNavigator'
 import { buildChatTurnNavItems, type ChatTurnNavItem } from './chat/chat-turn-navigation'
 import { ApplicationSnapshotPreviewCard } from './chat/ApplicationSnapshotPreviewCard'
+import { reorderChatTurnSummaryBlocks } from './chat/chat-turn-summary-order'
 import {
   persistThenSyncTeamSelection,
   preserveExplicitEmptySessionTeamConfig,
@@ -4458,17 +4459,7 @@ function renderActivityBlocks(
  * 普通内容（正文、带 diff 的 HunkDiff、工具日志组）保持原相对顺序，分组逻辑不受影响。
  */
 function reorderTurnSummaryBlocks(blocks: UIBlock[]): UIBlock[] {
-  const rank = (b: UIBlock): number => {
-    if (b.kind === 'validation_suggestion') return 3
-    if (b.kind === 'turn_file_summary') return 1
-    if (b.kind === 'presented_files') return 2
-    if (b.kind === 'application_snapshot') return 2
-    return 0
-  }
-  return blocks
-    .map((b, i) => ({ b, i }))
-    .sort((x, y) => rank(x.b) - rank(y.b) || x.i - y.i)
-    .map((entry) => entry.b)
+  return reorderChatTurnSummaryBlocks(blocks)
 }
 
 function normalizeToolName(name: string): string {

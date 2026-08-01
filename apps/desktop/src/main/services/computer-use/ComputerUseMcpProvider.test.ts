@@ -18,6 +18,7 @@ describe('createComputerUseMcpProvider', () => {
       })),
       invoke: vi.fn(async () => ({})),
       bindSessionContext: vi.fn(),
+      stopOwnedSessions: vi.fn(async () => undefined),
     }
     const revokeSnapshotSession = vi.fn()
     const provider = createComputerUseMcpProvider({
@@ -62,6 +63,7 @@ describe('createComputerUseMcpProvider', () => {
     ).resolves.toMatchObject({ status: 200 })
     provider.revokeSession?.('session-1')
     expect(revokeSnapshotSession).toHaveBeenCalledWith('session-1')
+    expect(controller.stopOwnedSessions).toHaveBeenCalledWith('session-1')
     await expect(
       fetch(serverUrl, {
         method: 'POST',
@@ -82,6 +84,7 @@ describe('createComputerUseMcpProvider', () => {
         })),
         invoke: vi.fn(async () => ({})),
         bindSessionContext: vi.fn(),
+        stopOwnedSessions: vi.fn(async () => undefined),
       }
       const provider = createComputerUseMcpProvider({ controller: controller as never })
 

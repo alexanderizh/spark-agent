@@ -301,6 +301,7 @@ export class NativeHostComputerUseBackend
             computerSessionId: input.computerSessionId,
             appId: target.app.id,
             windowId: target.window.id,
+            targetProcessId: target.app.processId,
             previousTreeVersion: previous?.treeVersion ?? null,
             fullTree: input.fullTree || previous == null,
             kind: 'execution_before',
@@ -346,6 +347,7 @@ export class NativeHostComputerUseBackend
           computerSessionId: input.envelope.computerSessionId,
           appId: target.app.id,
           windowId: target.window.id,
+          targetProcessId: target.app.processId,
           previousTreeVersion: input.observation.treeVersion,
           fullTree: false,
           kind: 'execution_after',
@@ -526,6 +528,7 @@ export class NativeHostComputerUseBackend
     computerSessionId: string
     appId: string
     windowId: string
+    targetProcessId?: number
     previousTreeVersion: string | null
     fullTree: boolean
     kind: 'execution_before' | 'execution_after'
@@ -539,7 +542,13 @@ export class NativeHostComputerUseBackend
       windowId: input.windowId,
       previousTreeVersion: input.previousTreeVersion,
       fullTree: input.fullTree,
-      ...(this.persistentCaptureEnabled() ? { persistentCapture: true } : {}),
+      // The first observation commonly happens while Spark itself is still foreground. A
+      // one-shot capture is sufficient to navigate to the requested app and avoids pinning the
+      // macOS controlled/captured indicator on Spark. Persistent capture starts once the target
+      // belongs to another desktop process.
+      ...(this.persistentCaptureEnabled() && input.targetProcessId !== process.pid
+        ? { persistentCapture: true }
+        : {}),
       signal: input.signal,
     })
     const observation = ComputerObservationSchema.parse(result.response.observation)

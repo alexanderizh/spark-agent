@@ -176,14 +176,10 @@ describe('ComputerPolicyService', () => {
     ).toMatchObject({ riskLevel: 'L4', decision: 'require_handoff' })
   })
 
-  it('escalates newly observed apps but still denies identity mismatches and scope violations', () => {
+  it('allows every matching foreground application while still denying identity mismatches and scope violations', () => {
     expect(
       policy.evaluate(envelope({ targetAppId: 'com.unapproved.App' }), taskContract),
-    ).toMatchObject({ decision: 'require_approval', reasonCode: 'approval_required' })
-    policy.markAppObservedByExecutedAction('computer-session-1', {
-      id: 'com.unapproved.App',
-      name: 'New App',
-    })
+    ).toMatchObject({ decision: 'allow', reasonCode: 'read_only_action' })
     expect(
       policy.evaluate(
         envelope({ actionId: 'action-2', targetAppId: 'com.unapproved.App' }),
@@ -196,7 +192,7 @@ describe('ComputerPolicyService', () => {
         id: 'com.different.App',
         name: 'Different App',
       }),
-    ).toMatchObject({ decision: 'deny', reasonCode: 'app_not_allowed' })
+    ).toMatchObject({ decision: 'deny', reasonCode: 'focus_mismatch' })
 
     expect(
       policy.evaluate(envelope(), { ...taskContract, forbiddenActions: ['scroll'] }),
@@ -323,15 +319,15 @@ describe('ComputerPolicyService', () => {
     ).toMatchObject({ decision: 'deny', reasonCode: 'domain_not_allowed' })
   })
 
-  it('requires native identity evidence for bundle, executable and signing allowlists', () => {
+  it('ignores legacy application allowlist entries', () => {
     const signingContract: ComputerTaskContract = {
       ...taskContract,
       allowedApps: [{ kind: 'signing_identity', value: 'trusted-signer:editor' }],
     }
 
     expect(policy.evaluate(envelope(), signingContract)).toMatchObject({
-      decision: 'require_approval',
-      reasonCode: 'approval_required',
+      decision: 'allow',
+      reasonCode: 'read_only_action',
     })
     expect(
       policy.evaluate(envelope(), signingContract, {

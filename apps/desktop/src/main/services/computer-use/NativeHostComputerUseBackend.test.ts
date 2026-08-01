@@ -333,6 +333,32 @@ describe('NativeHostComputerUseBackend', () => {
     )
   })
 
+  it('uses a one-shot frame while Spark itself is the initial foreground window', async () => {
+    const ownWindow = {
+      ...FOCUSED_WINDOW,
+      app: { ...FOCUSED_WINDOW.app, processId: process.pid },
+    }
+    const connection = createControlConnection()
+    vi.mocked(connection.listWindows).mockResolvedValue([ownWindow])
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect: async () => connection,
+      createId: () => 'snapshot-1',
+      evidenceSink: { persist: async () => undefined },
+      persistentCaptureEnabled: () => true,
+    })
+
+    await backend.observe({
+      computerSessionId: 'computer-1',
+      fullTree: true,
+      signal: new AbortController().signal,
+    })
+
+    expect(connection.observe).toHaveBeenCalledWith(
+      expect.not.objectContaining({ persistentCapture: expect.anything() }),
+    )
+  })
+
   it('continues observation when an Electron app replaces its focused window', async () => {
     const replacementWindow = {
       ...FOCUSED_WINDOW,

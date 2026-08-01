@@ -40,6 +40,7 @@ describe('computer task and session governance', () => {
       schema.safeParse({ ...taskContract, allowedDomains: ['https://docs.example.com/private'] })
         .success,
     ).toBe(false)
+    expect(schema.safeParse({ ...taskContract, allowedApps: [] }).success).toBe(true)
   })
 
   it('requires a task contract for every computer session', () => {

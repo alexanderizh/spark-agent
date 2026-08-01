@@ -447,7 +447,7 @@ describe('registerComputerUseIpc', () => {
     })
   })
 
-  it('rejects a selected window outside the task application allowlist before session creation', async () => {
+  it('allows an explicitly selected window from any application', async () => {
     const services = createServices()
     services.backend.listWindows.mockResolvedValue([
       {
@@ -477,11 +477,16 @@ describe('registerComputerUseIpc', () => {
         },
         event(),
       ),
-    ).rejects.toMatchObject({ code: 'app_not_allowed' })
-    expect(services.sessions.createSession).not.toHaveBeenCalled()
+    ).resolves.toMatchObject({ computerSession: { id: SESSION.id } })
+    expect(services.sessions.createSession).toHaveBeenCalledTimes(1)
+    expect(services.backend.bindSessionTarget).toHaveBeenCalledWith({
+      computerSessionId: SESSION.id,
+      appId: 'app-2',
+      windowId: 'window-2',
+    })
   })
 
-  it('allows only the owning renderer to explicitly join a new window with matching provenance', async () => {
+  it('allows only the owning renderer to bind any visible application window', async () => {
     const services = createServices()
     const enabled = {
       ...DEFAULT_SETTINGS,
