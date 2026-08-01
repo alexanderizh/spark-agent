@@ -1,0 +1,73 @@
+.optional-capability-prompt-copy {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+}
+
+.optional-capability-choice-list {
+  display: grid;
+  gap: 10px;
+
+  .ant-checkbox-wrapper {
+    align-items: flex-start;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+}
+
+.optional-capability-choice-title,
+.optional-capability-choice-description,
+.optional-capability-choice-size {
+  display: block;
+}
+
+.optional-capability-choice-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.optional-capability-choice-description,
+.optional-capability-choice-size,
+.optional-capability-progress-detail {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.optional-capability-progress-card {
+  position: fixed;
+  z-index: 1090;
+  top: 52px;
+  right: 18px;
+  width: min(340px, calc(100vw - 36px));
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elevated, var(--bg-primary));
+  box-shadow: 0 14px 40px rgb(0 0 0 / 16%);
+}
+
+.optional-capability-progress-header,
+.optional-capability-progress-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.optional-capability-progress-header button {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 20px;
+}
+
+.optional-capability-progress-item {
+  margin-top: 12px;
+}
+
+.optional-capability-progress-label {
+  margin-bottom: 4px;
+  font-size: 13px;
+}

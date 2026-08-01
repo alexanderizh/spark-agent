@@ -87,6 +87,7 @@ import { getInternalBrowserService } from './services/InternalBrowserService.js'
 import { getCanvasWindowService } from './services/CanvasWindowService.js'
 import { attachAppUnreadBadgeTray } from './services/AppUnreadBadgeService.js'
 import { registerAppUnreadBadgeIpc } from './ipc/registerAppUnreadBadgeIpc.js'
+import { getOptionalCapabilityManager } from './ipc/registerOptionalCapabilityIpc.js'
 import { ensureBundledBrowserEnv } from './services/PlaywrightEnvironment.js'
 import { detectFfmpegIntegrity } from './services/FfmpegIntegrityService.js'
 import { updateManagedFontAssetsInBackground } from './services/FontAssetService.js'
@@ -1079,6 +1080,19 @@ async function initializeApp(): Promise<void> {
       log.warn(`FFmpeg integrity check failed: ${String(err)}`)
     })
   }, 8_000)
+
+  // 9. 检查可选 Office / 深度资源。只读取小型 manifest，不自动下载大组件；
+  // renderer 根据缺失项和用户的提示冷却设置决定是否展示选择弹窗。
+  setTimeout(() => {
+    void getOptionalCapabilityManager()
+      .check(false)
+      .then((snapshot) => {
+        sendToMainWindow('stream:optional-capability:snapshot', snapshot)
+      })
+      .catch((err) => {
+        log.warn(`Optional capability check failed: ${String(err)}`)
+      })
+  }, 9_000)
 
   log.info('Spark Agent initialized')
 }

@@ -30,6 +30,7 @@ import { useAppearanceEffects } from './design/hooks/useAppearance'
 import { appliedAppControlMessage, applyAppControlCommand } from './design/app-control-client'
 import { requestComposerPrefill } from './design/views/chat/composerAppControl'
 import { useResolvedTheme } from './design/hooks/useResolvedTheme'
+import { OptionalCapabilityCenter } from './design/optional-capabilities/OptionalCapabilityCenter'
 
 import { shouldShowOnboardingAsync } from './design/views/onboarding-state'
 import {
@@ -1841,6 +1842,7 @@ function Shell() {
           )}
         </Modal>
 
+        <OptionalCapabilityCenter />
         <ToastContainer />
       </div>
     </ErrorBoundary>

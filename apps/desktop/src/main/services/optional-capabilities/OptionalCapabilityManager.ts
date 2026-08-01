@@ -85,6 +85,11 @@ export class OptionalCapabilityManager {
     if (forceRemote || !this.manifest) await this.refreshManifest().catch(() => undefined)
     const snapshot = await this.buildSnapshot()
     this.onSnapshot?.(snapshot)
+    for (const capability of snapshot.capabilities) {
+      if (capability.state === 'update_available' && capability.autoUpdate) {
+        void this.enqueueInstall(capability.id)
+      }
+    }
     return snapshot
   }
 

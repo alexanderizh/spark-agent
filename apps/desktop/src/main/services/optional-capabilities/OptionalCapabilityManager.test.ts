@@ -229,4 +229,46 @@ describe('OptionalCapabilityManager', () => {
       message: expect.stringContaining('符号链接'),
     })
   })
+
+  it('queues updates only for installed capabilities with automatic updates enabled', async () => {
+    const root = await fixtureRoot()
+    let releaseVersion = '2.2.3-1'
+    const fetchManifest = vi.fn(async () => {
+      const next = manifest()
+      const office = next.artifacts[0]!
+      office.id = `archive.optional-office-viewer-${releaseVersion}`
+      office.version = releaseVersion
+      office.url = `dependencies/office/office-viewer-${releaseVersion}.tar.gz`
+      return next
+    })
+    const installArchive = vi.fn(async ({ destDir }: { destDir: string }) => {
+      await writePackage(
+        destDir,
+        'office-viewer',
+        `archive.optional-office-viewer-${releaseVersion}`,
+        releaseVersion,
+      )
+      return { destPath: destDir, entries: [], fileCount: 2 }
+    })
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest,
+      installArchive,
+    })
+    await manager.install('office-viewer')
+    releaseVersion = '2.2.3-2'
+
+    await manager.check(true)
+
+    await vi.waitFor(() => expect(installArchive).toHaveBeenCalledTimes(2))
+    expect(installArchive).toHaveBeenCalledTimes(2)
+    // local-depth is missing and must not be installed merely because its artifacts exist.
+    expect(
+      installArchive.mock.calls.some(([input]) =>
+        String(input.destDir).includes('local-depth'),
+      ),
+    ).toBe(false)
+  })
 })
