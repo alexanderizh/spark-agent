@@ -2,6 +2,8 @@
 
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScheduledTaskItem } from '@spark/protocol'
 
@@ -26,6 +28,16 @@ describe('SessionSchedulePanel', () => {
     if (channel === 'scheduled-task:list') return { tasks: [] }
     if (channel === 'scheduled-task:create') return { task: { id: 'task-new' } }
     return {}
+  })
+
+  it('uses application theme tokens instead of light-only fallback colors', () => {
+    const styles = readFileSync(resolve(__dirname, 'SessionSchedulePanel.less'), 'utf8')
+
+    expect(styles).toContain('--schedule-panel: var(--panel)')
+    expect(styles).toContain('--schedule-text: var(--text)')
+    expect(styles).toContain('--schedule-accent: var(--primary)')
+    expect(styles).not.toContain('--color-bg-container')
+    expect(styles).not.toContain('--color-text-')
   })
 
   beforeEach(() => {
@@ -64,12 +76,14 @@ describe('SessionSchedulePanel', () => {
   })
 
   it('creates an interval task in the bound session', async () => {
+    const onTasksChange = vi.fn()
     await act(async () => {
       root.render(
         <SessionSchedulePanel
           open
           session={{ id: 'session-1', title: '代理巡检' }}
           onClose={() => undefined}
+          onTasksChange={onTasksChange}
         />,
       )
     })
@@ -105,6 +119,7 @@ describe('SessionSchedulePanel', () => {
         triggerType: 'interval',
       }),
     )
+    expect(onTasksChange).toHaveBeenCalledOnce()
   })
 
   it('shows an existing one-time execution in local wall-clock time when editing', async () => {

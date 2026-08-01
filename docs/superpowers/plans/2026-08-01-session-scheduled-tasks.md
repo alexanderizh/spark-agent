@@ -1,6 +1,6 @@
 # 会话级计划任务实施计划
 
-> 状态: 实施中 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-01
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -367,7 +367,7 @@ pnpm --filter @spark/desktop exec vitest run src/renderer/design/views/chat/Sess
 - Modify: `apps/desktop/src/renderer/design/views/chat/SessionSchedulePanel.tsx`
 - Modify: `apps/desktop/src/renderer/design/views/chat/SessionSchedulePanel.test.tsx`
 
-- [ ] **Step 1：写失败的聚合与筛选测试**
+- [x] **Step 1：写失败的聚合与筛选测试**
 
 聚合测试输入多个会话任务，断言总数与启用数：
 
@@ -380,7 +380,7 @@ expect(buildSessionScheduleSummaries(tasks)).toEqual({
 
 侧栏测试分别断言品牌色与暂停色小时钟标记，并确认筛选为 `attached` 时只保留 `total > 0` 的会话。筛选菜单测试断言“计划任务”子菜单可选择“全部 / 已挂载 / 未挂载”。
 
-- [ ] **Step 2：运行 RED**
+- [x] **Step 2：运行 RED**
 
 运行：
 
@@ -390,7 +390,7 @@ pnpm --filter @spark/desktop exec vitest run src/renderer/design/session-schedul
 
 预期：聚合模块、筛选字段和侧栏小时钟标记尚不存在，测试失败。
 
-- [ ] **Step 3：实现单次聚合与即时刷新**
+- [x] **Step 3：实现单次聚合与即时刷新**
 
 `SessionSidebarContext` 增加：
 
@@ -401,7 +401,7 @@ refreshSessionScheduleSummaries(): Promise<void>
 
 刷新函数只调用一次 `scheduled-task:list({ scope: 'session' })`，通过 `buildSessionScheduleSummaries` 聚合结果。面板成功完成 create/update/toggle/delete 后调用 `onTasksChange`，由 `ChatView` 转发给 Context 刷新函数。
 
-- [ ] **Step 4：实现 Lobe 图标标记与筛选状态**
+- [x] **Step 4：实现 Lobe 图标标记与筛选状态**
 
 `SidebarFilterState` 增加：
 
@@ -417,15 +417,16 @@ scheduledTasks: 'all' | 'attached' | 'none'
 
 并根据 `enabled > 0` 切换品牌色或中性灰样式。筛选逻辑把任务维度与状态、项目、最近活动组合执行。
 
-- [ ] **Step 5：运行 GREEN 与回归验证**
+- [x] **Step 5：运行 GREEN 与回归验证**
 
 运行聚合、筛选菜单、侧栏、面板相关测试，以及 Desktop typecheck、Prettier、ESLint 和生产构建；视觉检查普通、启用任务、仅暂停任务和筛选激活四种状态。
 
 ## 实施结果
 
 - Storage 全量测试：20 个文件、231 个测试通过。
-- 会话计划任务服务测试：10 个测试通过；桌面相关测试：6 个文件、30 个测试通过。
+- 会话计划任务服务测试：10 个测试通过；桌面相关测试：8 个文件、36 个测试通过。
 - Storage、Protocol、Agent Runtime、Desktop 类型检查通过；migration 65 静态校验和完整构建通过。
 - 变更文件 ESLint 为 0 error；仓库全量 lint 仍受未改动的 `packages/protocol/src/media-config.ts` 既有 `no-fallthrough` 错误阻塞。
 - 仓库全量测试中的既有 Canvas/Renderer 快照断言及附件快照测试仍失败；本功能相关套件均通过，失败文件不在本功能改动范围。
 - 计划任务浮层已完成深色、浅色及 560×640 窄窗口视觉验收；列表态、表单态、焦点状态和粘性操作栏均无文字反色、溢出或关键操作遮挡。
+- 侧栏标记和筛选已完成深浅主题、260px 常规侧栏及 210px 窄侧栏悬浮操作视觉验收；Lobe 小时钟、长标题省略、启用/暂停配色与筛选激活态均无溢出或遮挡。

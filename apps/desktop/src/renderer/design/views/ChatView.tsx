@@ -2254,6 +2254,7 @@ export function ChatView({
             session={activeSession}
             onClose={sessionCtx.closeSessionSchedule}
             onEnabledCountChange={setSessionScheduleEnabledCount}
+            onTasksChange={() => void sessionCtx.refreshSessionScheduleSummaries()}
           />
         )}
 

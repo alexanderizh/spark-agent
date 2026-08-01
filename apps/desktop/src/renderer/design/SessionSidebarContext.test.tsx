@@ -68,6 +68,49 @@ describe('SessionSidebarContext', () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
   })
 
+  it('loads all session schedules once per refresh and exposes aggregated summaries', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'scheduled-task:list') {
+        return {
+          tasks: [
+            { id: 'task-1', scope: 'session', sessionId: 'session-1', enabled: true },
+            { id: 'task-2', scope: 'session', sessionId: 'session-1', enabled: false },
+          ],
+        }
+      }
+      return {}
+    })
+    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+    })
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 30)))
+
+    expect(invoke).toHaveBeenCalledWith('scheduled-task:list', { scope: 'session' })
+    expect(latestCtxRef.current?.sessionScheduleSummaries).toEqual({
+      'session-1': { total: 2, enabled: 1 },
+    })
+  })
+
   it('reports no actively viewed session while the main app is outside chat', async () => {
     appContextMock.view = 'settings'
     localStorage.setItem('spark-agent:last-active-session', 'session-1')
@@ -166,10 +209,11 @@ describe('SessionSidebarContext', () => {
           <SessionSidebarProvider reportAppActivity={false}>{null}</SessionSidebarProvider>
         </ToastProvider>,
       )
-      await new Promise((resolve) => setTimeout(resolve, 20))
     })
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
 
     expect(invoke.mock.calls.some(([channel]) => channel === 'app:set-unread-count')).toBe(false)
+    expect(invoke.mock.calls.some(([channel]) => channel === 'scheduled-task:list')).toBe(false)
   })
 
   afterEach(() => {

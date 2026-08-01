@@ -25,6 +25,7 @@ interface SessionSchedulePanelProps {
   session: SessionScheduleTarget
   onClose: () => void
   onEnabledCountChange?: (count: number) => void
+  onTasksChange?: () => void
 }
 
 type FormState = {
@@ -97,6 +98,7 @@ export function SessionSchedulePanel({
   session,
   onClose,
   onEnabledCountChange,
+  onTasksChange,
 }: SessionSchedulePanelProps) {
   const [tasks, setTasks] = useState<ScheduledTaskItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -196,6 +198,7 @@ export function SessionSchedulePanel({
       setShowForm(false)
       setEditingTask(null)
       await loadTasks()
+      onTasksChange?.()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '计划任务保存失败')
     } finally {
@@ -208,6 +211,7 @@ export function SessionSchedulePanel({
     try {
       await invoke<unknown>('scheduled-task:toggle', { id: task.id, enabled: !task.enabled })
       await loadTasks()
+      onTasksChange?.()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '无法更新任务状态')
     }
@@ -230,6 +234,7 @@ export function SessionSchedulePanel({
     try {
       await invoke<unknown>('scheduled-task:delete', { id: task.id })
       await loadTasks()
+      onTasksChange?.()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '删除任务失败')
     }
