@@ -46,7 +46,7 @@ const { beforePack } = require('../../../../scripts/before-pack.js') as {
     electronPlatformName: string
     packager: {
       config: {
-        files: string[]
+        files: Array<string | { from?: string; filter: string[] }>
         mac?: { files?: string[] }
         win?: { files?: string[] }
         linux?: { files?: string[] }
@@ -302,6 +302,25 @@ describe('after-pack ONNX runtime pruning', () => {
 })
 
 describe('before-pack ONNX runtime filtering', () => {
+  it('appends exclusions inside electron-builder normalized file-set filters', () => {
+    const filter = ['out/**/*', 'package.json', '!src/**']
+    const files = [{ filter }]
+
+    beforePack({
+      electronPlatformName: 'darwin',
+      packager: { config: { files } },
+    })
+
+    expect(files).toEqual([{ filter }])
+    expect(filter).toEqual([
+      'out/**/*',
+      'package.json',
+      '!src/**',
+      '!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**',
+      '!**/node_modules/onnxruntime-node/bin/napi-v6/win32/**',
+    ])
+  })
+
   it.each([
     ['darwin', ['linux', 'win32']],
     ['win32', ['darwin', 'linux']],
