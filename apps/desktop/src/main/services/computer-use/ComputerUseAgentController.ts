@@ -274,10 +274,14 @@ export class ComputerUseAgentController {
           request.successCriteria.length > 0
             ? request.successCriteria
             : deriveSuccessCriteria(request.goal, target)
+        const allowedApps =
+          request.targetWindowId == null
+            ? strongestAppRules(target, windows)
+            : [strongestAppRule(target)]
         const taskContract = ComputerTaskContractSchema.parse({
           objective: request.goal,
           successCriteria,
-          allowedApps: [strongestAppRule(target)],
+          allowedApps,
           allowedDomains: [],
           allowedDataClasses: ['public', 'internal', 'personal'],
           forbiddenActions: [],
@@ -295,11 +299,13 @@ export class ComputerUseAgentController {
           modelId: model.model,
           taskContract,
         })
-        services.backend.bindSessionTarget?.({
-          computerSessionId: computerSession.id,
-          appId: target.app.id,
-          windowId: target.window.id,
-        })
+        if (request.targetWindowId != null) {
+          services.backend.bindSessionTarget?.({
+            computerSessionId: computerSession.id,
+            appId: target.app.id,
+            windowId: target.window.id,
+          })
+        }
         const lease = services.sessions.acquireLease({
           computerSessionId: computerSession.id,
           environmentKey: MY_DESKTOP_ENVIRONMENT_KEY,
@@ -605,6 +611,19 @@ function strongestAppRule(
     return { kind: 'executable_identity', value: target.app.executableIdentity }
   }
   return { kind: 'app_id', value: target.app.id }
+}
+
+function strongestAppRules(
+  initialTarget: NativeWindowDescriptor,
+  windows: NativeWindowDescriptor[],
+): ComputerSession['taskContract']['allowedApps'] {
+  const rules = [initialTarget, ...windows.filter((window) => !window.minimized)].map(
+    strongestAppRule,
+  )
+  return [...new Map(rules.map((rule) => [`${rule.kind}:${rule.value}`, rule])).values()].slice(
+    0,
+    200,
+  )
 }
 
 function supportsExecution(capabilities: ComputerUseCapabilitySummary): boolean {

@@ -208,6 +208,89 @@ describe('ComputerUseAgentController', () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ session: computerSession, lease }))
   })
 
+  it('starts an unbound desktop task that can follow the foreground window across applications', async () => {
+    const computerSession = {
+      id: 'computer-1',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      status: 'observing',
+      taskContract: {},
+    }
+    const bindSessionTarget = vi.fn()
+    const services = {
+      backend: {
+        getCapabilities: vi.fn(async () => CAPABILITIES),
+        bindSessionTarget,
+        listWindows: vi.fn(async () => [
+          {
+            app: { id: 'app-spark', name: 'Spark', bundleId: 'com.spark.desktop' },
+            window: {
+              id: 'window-spark',
+              title: 'Spark',
+              bounds: { x: 0, y: 0, width: 900, height: 800 },
+            },
+            display: { id: 'display-1', width: 1920, height: 1080, scaleFactor: 1 },
+            focused: true,
+            minimized: false,
+          },
+          {
+            app: { id: 'app-browser', name: 'Browser', bundleId: 'com.browser.desktop' },
+            window: {
+              id: 'window-browser',
+              title: 'Browser',
+              bounds: { x: 900, y: 0, width: 800, height: 800 },
+            },
+            display: { id: 'display-1', width: 1920, height: 1080, scaleFactor: 1 },
+            focused: false,
+            minimized: false,
+          },
+        ]),
+      },
+      sessions: {
+        createSession: vi.fn(() => computerSession),
+        acquireLease: vi.fn(() => ({ id: 'lease-1', operatorId: 'agent:session-1' })),
+      },
+      broker: {},
+      approvals: {},
+      evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+      killSwitch: { isArmed: vi.fn(() => false) },
+    }
+    const controller = new ComputerUseAgentController({
+      getServices: () => services as never,
+      resolveDecisionModel: vi.fn(async () => ({
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      })),
+      createAdapter: vi.fn(() => ({ decide: vi.fn() }) as never),
+      createOperator: vi.fn(() => ({ run: vi.fn(async () => ({ status: 'completed' })) }) as never),
+    })
+    controller.bindSessionContext('session-1', {
+      turnId: 'turn-1',
+      providerProfileId: 'provider-1',
+      modelId: 'vision-model',
+      permissionMode: 'codex-full-access',
+    })
+
+    await controller.invoke('session-1', 'start_task', {
+      goal: 'Open the browser and search for "Spark Agent"',
+      environment: 'my_desktop',
+    })
+
+    expect(bindSessionTarget).not.toHaveBeenCalled()
+    expect(services.sessions.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskContract: expect.objectContaining({
+          allowedApps: [
+            { kind: 'bundle_id', value: 'com.spark.desktop' },
+            { kind: 'bundle_id', value: 'com.browser.desktop' },
+          ],
+        }),
+      }),
+    )
+  })
+
   it('resumes an owned paused task with a fresh lease and a new full-observation operator run', async () => {
     const paused = computerSession('paused')
     const resumed = computerSession('observing')
