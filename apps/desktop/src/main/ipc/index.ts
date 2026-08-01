@@ -232,6 +232,7 @@ import { registerFontAssetIpc } from './registerFontAssetIpc.js'
 import { registerVoiceIpc } from './registerVoiceIpc.js'
 import { registerCanvasWorkflowIpc } from './registerCanvasWorkflowIpc.js'
 import { registerCanvasDepthTaskIpc } from './registerCanvasDepthTaskIpc.js'
+import { registerOptionalCapabilityIpc } from './registerOptionalCapabilityIpc.js'
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
 import { registerSidebarOrderIpc } from './registerSidebarOrderIpc.js'
@@ -3009,6 +3010,7 @@ export function registerAllIpcHandlers(): void {
   registerVoiceIpc()
   registerCanvasWorkflowIpc()
   registerCanvasDepthTaskIpc()
+  registerOptionalCapabilityIpc()
   // 初始化文件日志：app.getPath('logs') 在 app.whenReady() 后才可用，
   // 而 registerAllIpcHandlers 恰在 ready 后被调用（见 main/index.ts），故此处安全。
   // 此后所有 createLogger 产出的日志会同时落盘到 <logs>/main.log，设置页可查看。
