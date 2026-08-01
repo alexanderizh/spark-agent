@@ -1,6 +1,6 @@
 # 会话附件与侧栏文件夹拖拽实施计划
 
-> 状态: 实施中 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-01
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -33,7 +33,7 @@
 - Create: `apps/desktop/src/renderer/design/services/project-folder-drop.ts`
 - Create: `apps/desktop/src/renderer/design/services/project-folder-drop.test.ts`
 
-- [ ] **Step 1：先写失败测试**
+- [x] **Step 1：先写失败测试**
 
 测试定义以下期望 API 与行为：
 
@@ -59,7 +59,7 @@ expect(setActiveWorkspace).toHaveBeenCalledWith('ws:/work/beta')
 
 另加用例证明：同根路径项目被跳过；`statFileKind` 或单次 `openWorkspace` 失败时继续后续目录；没有成功项时不 refresh、不切换项目；Windows 路径比较忽略分隔符差异与盘符大小写。
 
-- [ ] **Step 2：运行测试并确认按预期失败**
+- [x] **Step 2：运行测试并确认按预期失败**
 
 Run:
 
@@ -69,7 +69,7 @@ pnpm --filter @spark/desktop exec vitest run src/renderer/design/services/projec
 
 Expected: FAIL，提示 `project-folder-drop` 模块或导出不存在。
 
-- [ ] **Step 3：实现最小纯函数服务**
+- [x] **Step 3：实现最小纯函数服务**
 
 实现以下公开边界：
 
@@ -93,11 +93,11 @@ export async function addProjectsFromDroppedPaths(
 
 `getDirectoryDropIntent` 仅检查顶层 `DataTransferItem`；只要一个 entry 为目录就返回 `accept`，所有可识别 entry 都是文件时返回 `reject`，平台没有 entry API 但携带文件时返回 `unknown`。批量服务逐项校验、创建并累计摘要，只在至少成功一次时刷新并激活最后一个成功项目。
 
-- [ ] **Step 4：运行测试并确认通过**
+- [x] **Step 4：运行测试并确认通过**
 
 Run 同 Step 2。Expected: PASS，所有目录分类与批量添加用例通过。
 
-- [ ] **Step 5：提交任务 1**
+- [x] **Step 5：提交任务 1**
 
 ```bash
 git add apps/desktop/src/renderer/design/services/project-folder-drop.ts \
@@ -112,7 +112,7 @@ git commit -m "feat(desktop): add project folder drop service"
 - Modify: `apps/desktop/src/renderer/design/i18n/locales.ts`
 - Test: `apps/desktop/src/renderer/design/services/project-folder-drop.test.ts`
 
-- [ ] **Step 1：扩展失败测试约束结果摘要文案**
+- [x] **Step 1：扩展失败测试约束结果摘要文案**
 
 在服务测试中新增：
 
@@ -121,11 +121,11 @@ expect(formatDroppedProjectSummary({ added: 2, ignoredFiles: 1, duplicates: 1, f
   .toBe('已添加 2 个项目；忽略 1 个文件、1 个重复目录，1 个目录添加失败')
 ```
 
-- [ ] **Step 2：运行目标测试并确认失败**
+- [x] **Step 2：运行目标测试并确认失败**
 
 Expected: FAIL，提示 `formatDroppedProjectSummary` 不存在。
 
-- [ ] **Step 3：接入 Context 与 IPC**
+- [x] **Step 3：接入 Context 与 IPC**
 
 在 `SessionSidebarCtx` 增加：
 
@@ -137,7 +137,7 @@ Provider 内新增 `useIpcInvoke('file:stat-kind')`，并通过 `addProjectsFrom
 
 为侧栏提示、不可解析错误和结果摘要增加中英文 i18n key，保持中文结果与测试一致。
 
-- [ ] **Step 4：运行服务测试与类型检查**
+- [x] **Step 4：运行服务测试与类型检查**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run src/renderer/design/services/project-folder-drop.test.ts
@@ -146,7 +146,7 @@ pnpm --filter @spark/desktop typecheck
 
 Expected: PASS，类型检查无新增错误。
 
-- [ ] **Step 5：提交任务 2**
+- [x] **Step 5：提交任务 2**
 
 ```bash
 git add apps/desktop/src/renderer/design/SessionSidebarContext.tsx \
@@ -164,7 +164,7 @@ git commit -m "feat(desktop): add dropped folders as projects"
 - Create: `apps/desktop/src/renderer/design/components/SidebarProjectDropZone.test.tsx`
 - Modify: `apps/desktop/src/renderer/design/SidebarSessionList.tsx`
 
-- [ ] **Step 1：写组件失败测试**
+- [x] **Step 1：写组件失败测试**
 
 使用 jsdom 渲染组件，并分开验证：目录 `dragenter` 后出现 `.sidebar-project-drop-overlay`；嵌套 `dragleave` 不提前关闭；目录 drop 调用 `onDropPaths(['/work/a', '/work/b'])`；普通文件 entry 不显示有效投放态；窗口 blur 清理状态。
 
@@ -175,7 +175,7 @@ act(() => fireNativeDrag(zone, 'drop', directoryTransfer))
 expect(onDropPaths).toHaveBeenCalledWith(['/work/a', '/work/b'])
 ```
 
-- [ ] **Step 2：运行组件测试并确认失败**
+- [x] **Step 2：运行组件测试并确认失败**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run src/renderer/design/components/SidebarProjectDropZone.test.tsx
@@ -183,7 +183,7 @@ pnpm --filter @spark/desktop exec vitest run src/renderer/design/components/Side
 
 Expected: FAIL，组件模块不存在。
 
-- [ ] **Step 3：实现投放组件并接入侧栏**
+- [x] **Step 3：实现投放组件并接入侧栏**
 
 组件根节点设置 `data-sidebar-project-drop-zone`，使用 drag depth ref 管理进入/离开；`accept` 与 `unknown` 状态阻止默认行为并显示覆盖层，`reject` 不显示。drop 时用共享 `getDataTransferFilePaths` 只提取顶层投放项，并调用 `onDropPaths`；无法解析时显示明确错误。
 
@@ -197,7 +197,7 @@ Expected: FAIL，组件模块不存在。
 
 样式使用半透明浅蓝层、`backdrop-filter: blur(12px)`、虚线内轮廓和居中提示，并为暗色主题与 `prefers-reduced-motion` 提供覆盖。
 
-- [ ] **Step 4：运行组件与现有侧栏测试**
+- [x] **Step 4：运行组件与现有侧栏测试**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run \
@@ -207,7 +207,7 @@ pnpm --filter @spark/desktop exec vitest run \
 
 Expected: PASS，现有排序/分页测试不回归。
 
-- [ ] **Step 5：提交任务 3**
+- [x] **Step 5：提交任务 3**
 
 ```bash
 git add apps/desktop/src/renderer/design/components/SidebarProjectDropZone.tsx \
@@ -225,11 +225,11 @@ git commit -m "feat(desktop): accept project folders in sidebar"
 - Modify: `apps/desktop/src/renderer/design/views/ChatView.less`
 - Modify: `apps/desktop/src/renderer/tests/composer-drag-drop.test.ts`
 
-- [ ] **Step 1：先写区域让行失败测试**
+- [x] **Step 1：先写区域让行失败测试**
 
 在 composer 拖拽测试中构造带 `data-sidebar-project-drop-zone` 的元素，验证共享命中函数对其子元素返回 true、普通主内容元素返回 false。该测试证明 Composer 可以可靠跳过侧栏区域。
 
-- [ ] **Step 2：运行测试并确认失败**
+- [x] **Step 2：运行测试并确认失败**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run src/renderer/tests/composer-drag-drop.test.ts
@@ -237,7 +237,7 @@ pnpm --filter @spark/desktop exec vitest run src/renderer/tests/composer-drag-dr
 
 Expected: FAIL，侧栏命中判断尚未被测试文件导入或行为未接线。
 
-- [ ] **Step 3：实现内容区让行与新遮罩结构**
+- [x] **Step 3：实现内容区让行与新遮罩结构**
 
 Composer 的 `shouldHandle` 增加目标参数：
 
@@ -258,13 +258,13 @@ const shouldHandle = (event: DragEvent) =>
 </div>
 ```
 
-- [ ] **Step 4：实现清透样式**
+- [x] **Step 4：实现清透样式**
 
 `ChatView.less` 将遮罩左边界设为 `var(--sidebar-offset, 210px)`，侧栏隐藏时归零；背景采用低对比半透明蓝灰、`blur(16px) saturate(1.16)`。提示卡移除大面积实体块，使用紧凑圆形图标底和两级文字，并加入 160ms 淡入/上移动效与 reduced-motion。
 
 `ComposerAttachments.less` 为文件与目录 chip 提供 `999px` 圆角、有底色弱描边、焦点可见和目录色阶；保持图片卡片现状。文件 chip 补全 `title={attachment.path}` 与具体移除 aria-label。
 
-- [ ] **Step 5：运行相关测试和类型检查**
+- [x] **Step 5：运行相关测试和类型检查**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run \
@@ -275,7 +275,7 @@ pnpm --filter @spark/desktop typecheck
 
 Expected: PASS，类型检查无新增错误。
 
-- [ ] **Step 6：提交任务 4**
+- [x] **Step 6：提交任务 4**
 
 ```bash
 git add apps/desktop/src/renderer/design/views/chat/ComposerV2.tsx \
@@ -325,3 +325,11 @@ git add docs/superpowers/specs/2026-08-01-composer-and-sidebar-folder-drop-desig
   docs/superpowers/plans/2026-08-01-composer-and-sidebar-folder-drop.md
 git commit -m "docs(desktop): mark folder drop experience delivered"
 ```
+
+## 交付验证记录
+
+- 相关 Vitest：5 个测试文件、34 个用例通过。
+- Desktop TypeScript 类型检查通过。
+- 本次涉及的 TS/TSX 文件定向 lint 为 0 error；全量 lint 被既有 `AppControlBridge.ts:68` 的 `no-useless-assignment` error 阻断。
+- Electron/Vite 主进程、preload 与 renderer 生产编译通过；标准 `pnpm build` 在编译前因本地缺失 file-viewer WASM/vendor 静态资源而停止。
+- GitNexus MCP 未在当前会话暴露，影响与变更范围按项目降级规则使用直接调用点检索、相关测试和 Git diff 核对。
