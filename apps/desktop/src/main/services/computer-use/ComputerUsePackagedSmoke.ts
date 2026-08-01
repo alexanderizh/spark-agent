@@ -30,8 +30,14 @@ export async function runComputerUsePackagedSmoke(options: {
   let report: Record<string, unknown>
   let exitCode = 0
   try {
-    const capabilities = await options.services.backend.getCapabilities()
+    let capabilities = await options.services.backend.getCapabilities()
     const diagnostics = await options.services.diagnostics.collect()
+    if (
+      (!capabilities.available || capabilities.nativeHost == null) &&
+      diagnostics.result.diagnosticCode === 'native_host_ready'
+    ) {
+      capabilities = await options.services.backend.getCapabilities()
+    }
     const ready = capabilities.available && capabilities.nativeHost != null
     report = { ok: ready, capabilities, diagnostics }
     if (!ready) exitCode = 1

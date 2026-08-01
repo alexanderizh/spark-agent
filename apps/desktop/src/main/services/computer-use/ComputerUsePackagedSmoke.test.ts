@@ -35,6 +35,45 @@ describe('runComputerUsePackagedSmoke', () => {
     }
   })
 
+  it('reconciles a cold trust-probe timeout after diagnostics prove the Host is ready', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-native-smoke-'))
+    const reportPath = join(root, 'report.json')
+    let capabilityCalls = 0
+    try {
+      const result = await runComputerUsePackagedSmoke({
+        argv: ['SparkWork', '--spark-verify-native-host'],
+        env: { SPARK_NATIVE_HOST_SMOKE_REPORT: reportPath },
+        services: {
+          backend: {
+            getCapabilities: async () => {
+              capabilityCalls += 1
+              return capabilityCalls === 1
+                ? { available: false, platform: 'windows', nativeHost: null }
+                : {
+                    available: true,
+                    platform: 'windows',
+                    nativeHost: { protocolVersion: 1, hostVersion: '0.1.0' },
+                  }
+            },
+          } as never,
+          diagnostics: {
+            collect: async () => ({ result: { diagnosticCode: 'native_host_ready' } }),
+          } as never,
+        },
+      })
+
+      expect(result).toEqual({ requested: true, exitCode: 0 })
+      expect(capabilityCalls).toBe(2)
+      await expect(readFile(reportPath, 'utf8').then(JSON.parse)).resolves.toMatchObject({
+        ok: true,
+        capabilities: { available: true },
+        diagnostics: { result: { diagnosticCode: 'native_host_ready' } },
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('does nothing without the release verifier argument', async () => {
     await expect(
       runComputerUsePackagedSmoke({ argv: ['SparkWork'], services: {} as never }),
