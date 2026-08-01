@@ -8,6 +8,37 @@ import { OPTIONAL_CAPABILITY_DEFINITIONS } from './definitions'
 import { OptionalCapabilityManager } from './OptionalCapabilityManager'
 
 const roots: string[] = []
+const OFFICE_HEALTH_FILES = [
+  'flyfish-viewer-manifest.json',
+  'flyfish-viewer-assets.json',
+  'vendor/docx/docx.worker.js',
+  'vendor/docx/jszip.min.js',
+  'vendor/xlsx/sheet.worker.js',
+  'vendor/pptx/pptx.worker.js',
+  'vendor/ppt/index.mjs',
+  'vendor/ppt/worker.mjs',
+  'vendor/ppt/frame-cache.mjs',
+  'vendor/ppt/ppt-native.wasm',
+  'vendor/ppt/ppt-font-cjk.otf',
+  'vendor/ppt/manifest.json',
+  'vendor/ppt/package.json',
+  'vendor/ppt/LICENSE',
+  'vendor/ppt/NOTICE',
+] as const
+
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T | PromiseLike<T>) => void
+  reject: (reason?: unknown) => void
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -74,6 +105,17 @@ async function writePackage(
   await mkdir(destination, { recursive: true })
   const payload = 'verified payload'
   await writeFile(join(destination, 'payload.bin'), payload)
+  const files: Record<string, string> = {
+    'payload.bin': createHash('sha256').update(payload).digest('hex'),
+  }
+  if (capabilityId === 'office-viewer') {
+    for (const relativePath of OFFICE_HEALTH_FILES) {
+      const content = `fixture:${relativePath}`
+      await mkdir(join(destination, relativePath, '..'), { recursive: true })
+      await writeFile(join(destination, relativePath), content)
+      files[relativePath] = createHash('sha256').update(content).digest('hex')
+    }
+  }
   await writeFile(
     join(destination, 'capability-package.json'),
     JSON.stringify({
@@ -81,7 +123,74 @@ async function writePackage(
       capabilityId,
       artifactId,
       version,
-      files: { 'payload.bin': createHash('sha256').update(payload).digest('hex') },
+      files,
+    }),
+  )
+}
+
+async function writeHashedFiles(
+  destination: string,
+  files: Record<string, string>,
+): Promise<Record<string, string>> {
+  const hashes: Record<string, string> = {}
+  for (const [relativePath, content] of Object.entries(files)) {
+    await mkdir(join(destination, relativePath, '..'), { recursive: true })
+    await writeFile(join(destination, relativePath), content)
+    hashes[relativePath] = createHash('sha256').update(content).digest('hex')
+  }
+  return hashes
+}
+
+async function writeDepthRuntimePackage(
+  destination: string,
+  artifactId: string,
+  version: string,
+): Promise<void> {
+  const runtimeEntry = 'node_modules/@huggingface/transformers/src/transformers.js'
+  const nativeRoot = 'node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64'
+  const files = await writeHashedFiles(destination, {
+    [runtimeEntry]: 'export const pipeline = () => undefined',
+    'node_modules/@huggingface/transformers/package.json': '{"version":"4.2.0"}',
+    'node_modules/onnxruntime-node/package.json': '{"version":"1.24.3"}',
+    [`${nativeRoot}/onnxruntime_binding.node`]: 'native-binding',
+    [`${nativeRoot}/libonnxruntime.1.24.3.dylib`]: 'native-library',
+  })
+  await writeFile(
+    join(destination, 'capability-package.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      capabilityId: 'local-depth',
+      artifactId,
+      version,
+      platform: 'darwin',
+      arch: 'arm64',
+      runtimeEntry,
+      packages: {
+        '@huggingface/transformers': '4.2.0',
+        'onnxruntime-node': '1.24.3',
+      },
+      files,
+    }),
+  )
+}
+
+async function writeDepthModelPackage(
+  destination: string,
+  version: string,
+): Promise<void> {
+  const files = await writeHashedFiles(destination, {
+    LICENSE: 'Apache-2.0',
+    'config.json': '{"model_type":"depth_anything"}',
+    'preprocessor_config.json': '{"size":518}',
+    'onnx/model_int8.onnx': 'fixture-onnx',
+  })
+  await writeFile(
+    join(destination, 'model-package.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      modelId: 'depth-anything-v2-small-int8',
+      version,
+      files,
     }),
   )
 }
@@ -135,6 +244,45 @@ describe('OptionalCapabilityManager', () => {
     expect(
       first.snapshot.capabilities.find((item) => item.id === 'office-viewer')?.installedSize,
     ).toBeGreaterThan(120)
+  })
+
+  it('activates local depth only after both runtime and model pass health checks', async () => {
+    const root = await fixtureRoot()
+    const installArchive = vi.fn(async ({ destDir }: { destDir: string }) => {
+      if (destDir.includes('runtime.optional-depth-')) {
+        await writeDepthRuntimePackage(
+          destDir,
+          'runtime.optional-depth-transformers-4.2.0-onnx-1.24.3-1-darwin-arm64',
+          '4.2.0-1.24.3-1',
+        )
+      } else {
+        await writeDepthModelPackage(destDir, '1.0.0')
+      }
+      return { destPath: destDir, entries: [], fileCount: 5 }
+    })
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: async () => manifest(),
+      installArchive,
+    })
+
+    const result = await manager.install('local-depth')
+
+    expect(result).toMatchObject({ success: true })
+    expect(installArchive).toHaveBeenCalledTimes(2)
+    expect(result.snapshot.capabilities.find((item) => item.id === 'local-depth')).toMatchObject({
+      state: 'ready',
+      installedVersion: '4.2.0-1.24.3-1+1.0.0',
+      downloadSize: 120,
+    })
+    await expect(
+      manager.getArtifactDirectory('local-depth', 'runtime.optional-depth-'),
+    ).resolves.toEqual(expect.stringContaining('runtime.optional-depth-'))
+    await expect(
+      manager.getArtifactDirectory('local-depth', 'model.depth-anything-v2-small-int8-'),
+    ).resolves.toEqual(expect.stringContaining('model.depth-anything-v2-small-int8-'))
   })
 
   it('keeps the active version when an update fails before activation', async () => {
@@ -398,7 +546,7 @@ describe('OptionalCapabilityManager', () => {
   it('cancels an active download and reports a stable client error without leaking the raw URL', async () => {
     const root = await fixtureRoot()
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
-    const installStarted = Promise.withResolvers<void>()
+    const installStarted = deferred<void>()
     const manager = new OptionalCapabilityManager({
       userDataDir: root,
       platform: 'darwin',
@@ -406,7 +554,7 @@ describe('OptionalCapabilityManager', () => {
       fetchManifest: async () => manifest(),
       logger,
       installArchive: async ({ signal }: { signal?: AbortSignal }) => {
-        installStarted.resolve()
+        installStarted.resolve(undefined)
         await new Promise<void>((_resolve, reject) => {
           signal?.addEventListener(
             'abort',
@@ -427,14 +575,16 @@ describe('OptionalCapabilityManager', () => {
       message: '离线 Office 预览安装已取消',
     })
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('cancelled'),
+      expect.stringMatching(
+        /event=optional_capability_install capability=office-viewer stage=(cancelled|error)/,
+      ),
     )
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('secret=value')
   })
 
   it('cancels and drains an active install before uninstalling its files', async () => {
     const root = await fixtureRoot()
-    const installStarted = Promise.withResolvers<void>()
+    const installStarted = deferred<void>()
     let activeSignal: AbortSignal | undefined
     const manager = new OptionalCapabilityManager({
       userDataDir: root,
@@ -443,7 +593,7 @@ describe('OptionalCapabilityManager', () => {
       fetchManifest: async () => manifest(),
       installArchive: async ({ signal }) => {
         activeSignal = signal
-        installStarted.resolve()
+        installStarted.resolve(undefined)
         await new Promise<void>((_resolve, reject) => {
           signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
         })
