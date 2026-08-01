@@ -1,0 +1,16 @@
+{
+  "id": "runtime.optional-depth-transformers-4.2.0-onnx-1.24.3-1-darwin-arm64",
+  "type": "runtime",
+  "name": "Local Depth Runtime 4.2.0-1.24.3-1 (darwin-arm64)",
+  "version": "4.2.0-1.24.3-1",
+  "platform": "darwin",
+  "arch": "arm64",
+  "url": "dependencies/depth-runtime/depth-runtime-4.2.0-1.24.3-1-darwin-arm64.tar.gz",
+  "sha256": "c03d5699fe2d6411cf2c93ce4317a3c387284afe2769517d02446b2291f4b386",
+  "size": 21033096,
+  "archive": {
+    "format": "tar.gz",
+    "contentRoot": "."
+  },
+  "notes": "Optional Node depth-estimation runtime containing Transformers.js and only the target ONNX/native dependency closure; Apache-2.0/MIT and bundled third-party licenses."
+}
