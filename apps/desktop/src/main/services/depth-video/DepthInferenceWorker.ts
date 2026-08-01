@@ -9,15 +9,14 @@ type WorkerRequest = {
   height: number
 }
 
-type WorkerResponse =
-  | { id: number; depth: ArrayBuffer }
-  | { id: number; error: string }
+type WorkerResponse = { id: number; depth: ArrayBuffer } | { id: number; error: string }
 
 type WorkerLike = Pick<Worker, 'on' | 'postMessage' | 'terminate'>
 
 export type DepthInferenceWorkerOptions = {
   modelDir: string
-  createWorker?: (modelDir: string) => WorkerLike
+  runtimeEntryPath: string
+  createWorker?: (modelDir: string, runtimeEntryPath: string) => WorkerLike
 }
 
 export class DepthInferenceWorker {
@@ -28,24 +27,29 @@ export class DepthInferenceWorker {
   >()
   private nextId = 1
   private disposed = false
+  private fatalError: Error | null = null
 
   constructor(options: DepthInferenceWorkerOptions) {
     this.worker =
-      options.createWorker?.(options.modelDir) ??
+      options.createWorker?.(options.modelDir, options.runtimeEntryPath) ??
       new Worker(resolveDepthWorkerPath(), {
-        workerData: { modelDir: options.modelDir },
+        workerData: {
+          modelDir: options.modelDir,
+          runtimeEntryPath: options.runtimeEntryPath,
+        },
       })
     this.worker.on('message', (message: WorkerResponse) => this.handleMessage(message))
-    this.worker.on('error', (error: Error) => this.failAll(error))
+    this.worker.on('error', (error: Error) => this.fail(error))
     this.worker.on('exit', (code: number) => {
-      if (!this.disposed && code !== 0) {
-        this.failAll(new Error(`深度推理 worker 异常退出：${code}`))
+      if (!this.disposed) {
+        this.fail(new Error(`深度推理 worker 意外退出：${code}`))
       }
     })
   }
 
   process(frame: { rgb: Uint8Array; width: number; height: number }): Promise<Uint8Array> {
     if (this.disposed) return Promise.reject(new Error('深度推理 worker 已关闭'))
+    if (this.fatalError) return Promise.reject(this.fatalError)
     const id = this.nextId++
     const rgb = frame.rgb.slice().buffer
     return new Promise<Uint8Array>((resolve, reject) => {
@@ -74,10 +78,18 @@ export class DepthInferenceWorker {
     for (const pending of this.pending.values()) pending.reject(error)
     this.pending.clear()
   }
+
+  private fail(error: Error): void {
+    this.fatalError ??= error
+    this.failAll(this.fatalError)
+  }
 }
 
 function resolveDepthWorkerPath(): string {
-  const bundled = join(__dirname, 'depth-inference-worker.js')
-  if (existsSync(bundled)) return bundled
-  return join(process.cwd(), 'out', 'main', 'depth-inference-worker.js')
+  const candidates = [
+    join(__dirname, 'depth-inference-worker.js'),
+    join(process.cwd(), 'out', 'main', 'depth-inference-worker.js'),
+    join(process.cwd(), 'apps', 'desktop', 'out', 'main', 'depth-inference-worker.js'),
+  ] as const
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]
 }

@@ -30,6 +30,7 @@ export type DepthVideoRunRequest = {
   inputPath: string
   outputPath: string
   modelDir: string
+  runtimeEntryPath: string
   signal?: AbortSignal
   onProgress?: (progress: DepthVideoProgress) => void
 }
@@ -47,7 +48,7 @@ type DepthVideoRunnerDependencies = {
   probe: typeof probeVideo
   resolveBins: typeof resolveFfmpegBin
   spawnProcess: (executable: string, args: string[]) => SpawnedProcess
-  createFrameProcessor: (modelDir: string) => FrameProcessor
+  createFrameProcessor: (modelDir: string, runtimeEntryPath: string) => FrameProcessor
   ensureOutputDir: (directory: string) => Promise<void>
   finalizeOutput: (temporaryPath: string, outputPath: string) => Promise<void>
   removeOutput: (filePath: string) => Promise<void>
@@ -62,7 +63,8 @@ const DEFAULT_DEPENDENCIES: DepthVideoRunnerDependencies = {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     }),
-  createFrameProcessor: (modelDir) => new DepthInferenceWorker({ modelDir }),
+  createFrameProcessor: (modelDir, runtimeEntryPath) =>
+    new DepthInferenceWorker({ modelDir, runtimeEntryPath }),
   ensureOutputDir: async (directory) => {
     await mkdir(directory, { recursive: true })
   },
@@ -113,7 +115,10 @@ export class DepthVideoRunner {
 
     try {
       if (request.signal?.aborted) throw new Error('cancelled')
-      frameProcessor = this.dependencies.createFrameProcessor(request.modelDir)
+      frameProcessor = this.dependencies.createFrameProcessor(
+        request.modelDir,
+        request.runtimeEntryPath,
+      )
       const frameBytes = dimensions.width * dimensions.height * 3
       const totalFrames = Math.max(1, Math.round(probe.durationSec * processingFps))
       let frameCount = 0

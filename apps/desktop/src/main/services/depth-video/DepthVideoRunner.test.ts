@@ -82,6 +82,7 @@ describe('DepthVideoRunner', () => {
       process: vi.fn(async () => new Uint8Array([0, 255])),
       dispose: vi.fn(async () => undefined),
     }
+    const createFrameProcessor = vi.fn(() => frameProcessor)
     const runner = new DepthVideoRunner({
       probe: async () => ({
         durationSec: 1,
@@ -96,7 +97,7 @@ describe('DepthVideoRunner', () => {
       }),
       resolveBins: async () => ({ ffmpeg: '/managed/ffmpeg', ffprobe: '/managed/ffprobe' }),
       spawnProcess,
-      createFrameProcessor: () => frameProcessor,
+      createFrameProcessor,
       finalizeOutput: vi.fn(async () => undefined),
       removeOutput: vi.fn(async () => undefined),
       ensureOutputDir: vi.fn(async () => undefined),
@@ -108,6 +109,7 @@ describe('DepthVideoRunner', () => {
       inputPath: '/canvas/source.mp4',
       outputPath: '/canvas/depth.mp4',
       modelDir: '/managed/depth-model',
+      runtimeEntryPath: '/managed/depth-runtime/transformers.js',
     })
     await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(2))
     decoder.stdout.write(Buffer.from([0, 0]))
@@ -118,6 +120,10 @@ describe('DepthVideoRunner', () => {
 
     expect(Buffer.concat(encoded)).toEqual(Buffer.from([0, 255]))
     expect(frameProcessor.process).toHaveBeenCalledTimes(1)
+    expect(createFrameProcessor).toHaveBeenCalledWith(
+      '/managed/depth-model',
+      '/managed/depth-runtime/transformers.js',
+    )
     expect(frameProcessor.dispose).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({ width: 2, height: 1, fps: 1, durationSec: 1 })
   })
@@ -154,6 +160,7 @@ describe('DepthVideoRunner', () => {
       inputPath: '/canvas/source.mp4',
       outputPath: '/canvas/depth.mp4',
       modelDir: '/managed/depth-model',
+      runtimeEntryPath: '/managed/depth-runtime/transformers.js',
       signal: controller.signal,
     })
 

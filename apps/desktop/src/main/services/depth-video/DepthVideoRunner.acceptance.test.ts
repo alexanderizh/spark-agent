@@ -9,9 +9,10 @@ import { probeVideo } from '../FfmpegRunner.js'
 import { DepthVideoRunner } from './DepthVideoRunner.js'
 
 const modelDir = process.env.SPARK_DEPTH_ACCEPTANCE_MODEL_DIR
+const runtimeEntryPath = process.env.SPARK_DEPTH_ACCEPTANCE_RUNTIME_ENTRY
 const inputPath = process.env.SPARK_DEPTH_ACCEPTANCE_INPUT
 const outputPath = process.env.SPARK_DEPTH_ACCEPTANCE_OUTPUT
-const acceptanceEnabled = Boolean(modelDir && inputPath && outputPath)
+const acceptanceEnabled = Boolean(modelDir && runtimeEntryPath && inputPath && outputPath)
 
 describe('DepthVideoRunner real-video acceptance', () => {
   it.runIf(acceptanceEnabled)(
@@ -23,6 +24,7 @@ describe('DepthVideoRunner real-video acceptance', () => {
         inputPath: inputPath!,
         outputPath: outputPath!,
         modelDir: modelDir!,
+        runtimeEntryPath: runtimeEntryPath!,
         onProgress: (progress) => stages.add(progress.stage),
       })
       const output = await probeVideo(result.path)

@@ -1,3 +1,6 @@
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+
 type RgbFrame = {
   rgb: Uint8Array
   width: number
@@ -23,6 +26,14 @@ type PipelineFactory = (
 
 type ImageFactory = (frame: RgbFrame) => unknown | Promise<unknown>
 
+type DepthRuntimeModule = {
+  env: { allowRemoteModels: boolean }
+  pipeline: PipelineFactory
+  RawImage: new (data: Uint8Array, width: number, height: number, channels: number) => unknown
+}
+
+type RuntimeLoader = (runtimeEntryPath: string) => Promise<DepthRuntimeModule>
+
 export type DepthEstimate = {
   values: Float32Array
   width: number
@@ -31,6 +42,8 @@ export type DepthEstimate = {
 
 export type DepthFrameEstimatorOptions = {
   modelDir: string
+  runtimeEntryPath?: string
+  runtimeLoader?: RuntimeLoader
   pipelineFactory?: PipelineFactory
   imageFactory?: ImageFactory
 }
@@ -41,8 +54,33 @@ export class DepthFrameEstimator {
   private readonly imageFactory: ImageFactory
 
   constructor(private readonly options: DepthFrameEstimatorOptions) {
-    this.pipelineFactory = options.pipelineFactory ?? createLocalDepthPipeline
-    this.imageFactory = options.imageFactory ?? createRawRgbImage
+    let runtimePromise: Promise<DepthRuntimeModule> | null = null
+    const runtimeEntryPath = options.runtimeEntryPath
+    const getRuntime = runtimeEntryPath
+      ? () => {
+          runtimePromise ??= (options.runtimeLoader ?? loadDepthRuntime)(runtimeEntryPath).then(
+            (runtime) => {
+              runtime.env.allowRemoteModels = false
+              return runtime
+            },
+          )
+          return runtimePromise
+        }
+      : null
+    this.pipelineFactory =
+      options.pipelineFactory ??
+      (getRuntime
+        ? async (task, modelDir, pipelineOptions) =>
+            (await getRuntime()).pipeline(task, modelDir, pipelineOptions)
+        : missingRuntime)
+    this.imageFactory =
+      options.imageFactory ??
+      (getRuntime
+        ? async (frame) => {
+            const { RawImage } = await getRuntime()
+            return new RawImage(frame.rgb, frame.width, frame.height, 3)
+          }
+        : missingRuntime)
   }
 
   async estimate(frame: RgbFrame): Promise<DepthEstimate> {
@@ -71,17 +109,12 @@ export class DepthFrameEstimator {
   }
 }
 
-async function createLocalDepthPipeline(
-  task: 'depth-estimation',
-  modelDir: string,
-  options: { local_files_only: true; dtype: 'int8' },
-): Promise<DepthPipeline> {
-  const { env, pipeline } = await import('@huggingface/transformers')
-  env.allowRemoteModels = false
-  return (await pipeline(task, modelDir, options)) as unknown as DepthPipeline
+async function loadDepthRuntime(runtimeEntryPath: string): Promise<DepthRuntimeModule> {
+  if (!runtimeEntryPath) throw new Error('本地深度 Runtime 入口为空，请在完整性页修复组件')
+  const runtimeUrl = pathToFileURL(resolve(runtimeEntryPath)).href
+  return import(/* @vite-ignore */ runtimeUrl) as Promise<DepthRuntimeModule>
 }
 
-async function createRawRgbImage(frame: RgbFrame): Promise<unknown> {
-  const { RawImage } = await import('@huggingface/transformers')
-  return new RawImage(frame.rgb, frame.width, frame.height, 3)
+function missingRuntime(): never {
+  throw new Error('本地深度 Runtime 未安装或已损坏，请在“设置 → 完整性”中安装或修复')
 }

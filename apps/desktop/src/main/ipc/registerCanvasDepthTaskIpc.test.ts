@@ -38,12 +38,35 @@ describe('registerCanvasDepthTaskIpc', () => {
   })
 
   it('installs the model, runs local depth inference, and streams a media result', async () => {
-    const integrityService = {
-      inspect: vi.fn(async () => ({ state: 'missing', modelDir: '/managed/depth' })),
-      install: vi.fn(async (onProgress?: (downloaded: number, total: number) => void) => {
-        onProgress?.(50, 100)
-        return { state: 'ready', version: '1.0.0', modelDir: '/managed/depth' }
+    let progressListener: ((progress: any) => void) | undefined
+    const capabilityManager = {
+      list: vi.fn(async () => ({
+        capabilities: [
+          {
+            id: 'local-depth',
+            state: 'missing',
+            installedVersion: null,
+            targetVersion: '4.2.0-1.24.3-1+1.0.0',
+          },
+        ],
+      })),
+      install: vi.fn(async () => {
+        progressListener?.({
+          capabilityId: 'local-depth',
+          percent: 50,
+          message: '正在下载 Runtime',
+        })
+        return { success: true, message: 'ok', snapshot: { capabilities: [] } }
       }),
+      subscribeProgress: vi.fn((listener: (progress: any) => void) => {
+        progressListener = listener
+        return () => {
+          progressListener = undefined
+        }
+      }),
+      getArtifactDirectory: vi.fn(async (_id: string, prefix: string) =>
+        prefix.startsWith('runtime.') ? '/managed/runtime' : '/managed/model',
+      ),
     }
     const runner = {
       run: vi.fn(async (request: any) => {
@@ -76,7 +99,7 @@ describe('registerCanvasDepthTaskIpc', () => {
       }),
     }
     registerCanvasDepthTaskIpc({
-      integrityService: integrityService as never,
+      capabilityManager: capabilityManager as never,
       createRunner: () => runner as never,
       createRuntimeTaskId: () => 'depth-runtime-1',
       createOutputPath: () => '/tmp/depth-output.mp4',
@@ -110,11 +133,18 @@ describe('registerCanvasDepthTaskIpc', () => {
         .map((event) => [event.payload.response.stage, event.payload.response.message]),
     )
     expect(runningMessages).toMatchObject({
-      installing_model: '资源下载中：正在下载本地深度模型',
+      installing_model: '资源下载中：正在安装本地深度 Runtime 与模型',
       decoding: '任务执行中：正在解析输入视频',
       estimating_depth: '任务执行中：正在逐帧生成深度',
       encoding: '任务执行中：正在编码深度视频',
     })
+    expect(runner.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelDir: '/managed/model',
+        runtimeEntryPath:
+          '/managed/runtime/node_modules/@huggingface/transformers/src/transformers.js',
+      }),
+    )
     const success = harness.events.find((event) => event.payload.response.status === 'succeeded')!
     expect(success.payload.response.assets).toEqual([
       expect.objectContaining({
@@ -131,9 +161,11 @@ describe('registerCanvasDepthTaskIpc', () => {
   it('rejects input paths outside the canonical safe-file roots', async () => {
     harness.inputPathAllowed = false
     registerCanvasDepthTaskIpc({
-      integrityService: {
-        inspect: vi.fn(),
+      capabilityManager: {
+        list: vi.fn(),
         install: vi.fn(),
+        subscribeProgress: vi.fn(),
+        getArtifactDirectory: vi.fn(),
       } as never,
     })
 
@@ -148,9 +180,122 @@ describe('registerCanvasDepthTaskIpc', () => {
 
   it('registers cleanup for application shutdown', () => {
     registerCanvasDepthTaskIpc({
-      integrityService: { inspect: vi.fn(), install: vi.fn() } as never,
+      capabilityManager: {
+        list: vi.fn(),
+        install: vi.fn(),
+        subscribeProgress: vi.fn(),
+        getArtifactDirectory: vi.fn(),
+      } as never,
     })
 
     expect(harness.beforeQuit).toBeTypeOf('function')
+  })
+
+  it('reports an integrity error when install succeeds without an installed version', async () => {
+    registerCanvasDepthTaskIpc({
+      capabilityManager: {
+        list: vi.fn(),
+        install: vi.fn(async () => ({
+          success: true,
+          message: 'ok',
+          snapshot: {
+            capabilities: [{ id: 'local-depth', state: 'missing', installedVersion: null }],
+          },
+        })),
+        subscribeProgress: vi.fn(),
+        getArtifactDirectory: vi.fn(),
+      } as never,
+    })
+
+    await expect(harness.handlers.get('canvas:depth-model:install')!({})).resolves.toEqual({
+      state: 'error',
+      error: '本地深度组件安装结果缺少已安装版本，请在完整性页修复后重试',
+    })
+  })
+
+  it('returns a clear failed task when the managed depth capability cannot be installed', async () => {
+    registerCanvasDepthTaskIpc({
+      capabilityManager: {
+        list: vi.fn(async () => ({
+          capabilities: [{ id: 'local-depth', state: 'missing', installedVersion: null }],
+        })),
+        install: vi.fn(async () => ({
+          success: false,
+          message: '本地深度处理安装失败：当前平台暂无可用制品',
+          snapshot: { capabilities: [] },
+        })),
+        subscribeProgress: vi.fn(() => () => undefined),
+        getArtifactDirectory: vi.fn(),
+      } as never,
+      createRuntimeTaskId: () => 'depth-runtime-missing',
+      createOutputPath: () => '/tmp/depth-output.mp4',
+    })
+
+    await harness.handlers.get('canvas:task:create-depth-video')!({
+      projectId: 'project-1',
+      clientTaskId: 'canvas-task-1',
+      inputPath: '/canvas/input.mp4',
+    })
+
+    await vi.waitFor(() =>
+      expect(
+        harness.events.some(
+          (event) =>
+            event.payload.response.status === 'failed' &&
+            event.payload.response.error.message.includes('当前平台暂无可用制品'),
+        ),
+      ).toBe(true),
+    )
+  })
+
+  it('cancels only the task wait without cancelling a shared capability install', async () => {
+    let resolveInstall!: (value: any) => void
+    let markInstallStarted!: () => void
+    const installStarted = new Promise<void>((resolve) => {
+      markInstallStarted = resolve
+    })
+    const installResult = new Promise<any>((resolve) => {
+      resolveInstall = resolve
+    })
+    const cancelCapability = vi.fn(async () => ({ success: true }))
+    registerCanvasDepthTaskIpc({
+      capabilityManager: {
+        list: vi.fn(async () => ({
+          capabilities: [{ id: 'local-depth', state: 'missing', installedVersion: null }],
+        })),
+        install: vi.fn(() => {
+          markInstallStarted()
+          return installResult
+        }),
+        repair: vi.fn(),
+        cancel: cancelCapability,
+        subscribeProgress: vi.fn(() => () => undefined),
+        getArtifactDirectory: vi.fn(),
+      } as never,
+      createRuntimeTaskId: () => 'depth-runtime-cancelled',
+      createOutputPath: () => '/tmp/depth-output.mp4',
+    })
+
+    await harness.handlers.get('canvas:task:create-depth-video')!({
+      projectId: 'project-1',
+      clientTaskId: 'canvas-task-1',
+      inputPath: '/canvas/input.mp4',
+    })
+    await installStarted
+    await harness.handlers.get('canvas:task:cancel-depth-video')!({
+      runtimeTaskId: 'depth-runtime-cancelled',
+    })
+    resolveInstall({ success: true, message: 'ok', snapshot: { capabilities: [] } })
+
+    await vi.waitFor(() =>
+      expect(
+        harness.events.some(
+          (event) =>
+            event.payload.response.runtimeTaskId === 'depth-runtime-cancelled' &&
+            event.payload.response.status === 'cancelled',
+        ),
+      ).toBe(true),
+    )
+    expect(cancelCapability).not.toHaveBeenCalled()
   })
 })

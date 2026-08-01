@@ -7,11 +7,14 @@ import {
   smoothDepthFrame,
 } from '../services/depth-video/depthMath.js'
 
-type WorkerData = { modelDir: string }
+type WorkerData = { modelDir: string; runtimeEntryPath: string }
 type WorkerRequest = { id: number; rgb: ArrayBuffer; width: number; height: number }
 
 const data = workerData as WorkerData
-const estimator = new DepthFrameEstimator({ modelDir: data.modelDir })
+const estimator = new DepthFrameEstimator({
+  modelDir: data.modelDir,
+  runtimeEntryPath: data.runtimeEntryPath,
+})
 let previousRgb: Uint8Array | null = null
 let previousDepth: Uint8Array | null = null
 

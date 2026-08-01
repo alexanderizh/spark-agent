@@ -1,35 +1,48 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { app } from 'electron'
-import type { CanvasMediaTaskCreateResponse, CanvasMediaTaskStreamPayload } from '@spark/protocol'
-import {
-  DepthModelIntegrityService,
-  DEPTH_MODEL_PACKAGE_ID,
-} from '../services/DepthModelIntegrityService.js'
+import { createLogger } from '@spark/shared'
+import type {
+  CanvasMediaTaskCreateResponse,
+  CanvasMediaTaskStreamPayload,
+  OptionalCapabilityProgress,
+} from '@spark/protocol'
+import { DEPTH_MODEL_PACKAGE_ID } from '../services/DepthModelIntegrityService.js'
 import {
   DepthVideoRunner,
   type DepthVideoProgress,
 } from '../services/depth-video/DepthVideoRunner.js'
 import { isSafeFilePathAllowed } from '../services/SafeFileProtocol.js'
+import { getOptionalCapabilityManager } from './registerOptionalCapabilityIpc.js'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
 
-type IntegrityService = Pick<DepthModelIntegrityService, 'inspect' | 'install'>
+const log = createLogger('canvas-depth')
+const DEPTH_RUNTIME_ENTRY = join(
+  'node_modules',
+  '@huggingface',
+  'transformers',
+  'src',
+  'transformers.js',
+)
+
+type CapabilityManager = Pick<
+  ReturnType<typeof getOptionalCapabilityManager>,
+  'list' | 'install' | 'repair' | 'getArtifactDirectory' | 'subscribeProgress'
+>
 type Runner = Pick<DepthVideoRunner, 'run'>
 type DepthTaskResponse = CanvasMediaTaskCreateResponse & {
   status: NonNullable<CanvasMediaTaskCreateResponse['status']>
 }
 
 export type RegisterCanvasDepthTaskIpcOptions = {
-  integrityService?: IntegrityService
+  capabilityManager?: CapabilityManager
   createRunner?: () => Runner
   createRuntimeTaskId?: () => string
   createOutputPath?: (runtimeTaskId: string) => string
 }
 
 export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOptions = {}): void {
-  const integrityService =
-    options.integrityService ??
-    new DepthModelIntegrityService({ userDataDir: app.getPath('userData') })
+  const capabilityManager = options.capabilityManager ?? getOptionalCapabilityManager()
   const createRunner = options.createRunner ?? (() => new DepthVideoRunner())
   const createRuntimeTaskId = options.createRuntimeTaskId ?? (() => `depth-${randomUUID()}`)
   const createOutputPath =
@@ -49,22 +62,33 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
   })
 
   typedIpcHandle('canvas:depth-model:status', async () => {
-    const state = await integrityService.inspect()
-    if (state.state === 'ready') return { state: 'ready' as const, version: state.version }
-    if (state.state === 'error') return { state: 'error' as const, error: state.error }
+    const snapshot = await capabilityManager.list()
+    const depth = snapshot.capabilities.find((item) => item.id === 'local-depth')
+    if (depth?.installedVersion && depth.state !== 'damaged') {
+      return { state: 'ready' as const, version: depth.installedVersion }
+    }
+    if (depth?.state === 'error' || depth?.state === 'damaged') {
+      return { state: 'error' as const, error: depth.error ?? '本地深度组件已损坏，请修复' }
+    }
     return { state: 'missing' as const }
   })
 
   typedIpcHandle('canvas:depth-model:install', async () => {
-    try {
-      const state = await integrityService.install()
-      return { state: 'ready' as const, version: state.version }
-    } catch (error) {
+    const result = await capabilityManager.install('local-depth')
+    if (!result.success) {
       return {
         state: 'error' as const,
-        error: error instanceof Error ? error.message : String(error),
+        error: result.message,
       }
     }
+    const depth = result.snapshot.capabilities.find((item) => item.id === 'local-depth')
+    if (!depth?.installedVersion) {
+      return {
+        state: 'error' as const,
+        error: '本地深度组件安装结果缺少已安装版本，请在完整性页修复后重试',
+      }
+    }
+    return { state: 'ready' as const, version: depth.installedVersion }
   })
 
   typedIpcHandle('canvas:task:create-depth-video', async (request) => {
@@ -90,23 +114,29 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
 
     void (async () => {
       try {
-        const model = await integrityService.install((downloaded, total) => {
-          if (controller.signal.aborted) return
-          pushResponse(
-            runningResponse(runtimeTaskId, {
-              stage: 'installing_model',
-              progress: total > 0 ? Math.round((downloaded / total) * 20) : 5,
-              message: '资源下载中：正在下载本地深度模型',
-            }),
-          )
-        })
+        log.info(`event=canvas_depth_task task=${runtimeTaskId} stage=started status=running`)
+        const resources = await ensureDepthCapability(
+          capabilityManager,
+          controller.signal,
+          (progress) => {
+            if (controller.signal.aborted) return
+            pushResponse(
+              runningResponse(runtimeTaskId, {
+                stage: 'installing_model',
+                progress: Math.max(1, Math.round((progress.percent ?? 0) * 0.2)),
+                message: '资源下载中：正在安装本地深度 Runtime 与模型',
+              }),
+            )
+          },
+        )
         if (controller.signal.aborted) throw new Error('cancelled')
         let lastStage = ''
         let lastProgress = -1
         const result = await createRunner().run({
           inputPath: request.inputPath,
           outputPath,
-          modelDir: model.modelDir,
+          modelDir: resources.modelDir,
+          runtimeEntryPath: resources.runtimeEntryPath,
           signal: controller.signal,
           onProgress: (progress: DepthVideoProgress) => {
             const mappedProgress = 20 + Math.round(progress.percent * 0.8)
@@ -144,9 +174,11 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
             },
           ],
         })
+        log.info(`event=canvas_depth_task task=${runtimeTaskId} stage=completed status=succeeded`)
       } catch (error) {
         const cancelled =
           controller.signal.aborted || (error instanceof Error && error.message === 'cancelled')
+        const diagnostic = safeDepthDiagnostic(error)
         pushResponse({
           runtimeTaskId,
           requestId: runtimeTaskId,
@@ -161,13 +193,16 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
           assets: [],
           error: {
             code: cancelled ? 'cancelled' : 'local_depth_failed',
-            message: cancelled
-              ? '任务已取消'
-              : error instanceof Error
-                ? error.message
-                : String(error),
+            message: cancelled ? '任务已取消' : diagnostic,
           },
         })
+        log.warn(
+          `event=canvas_depth_task task=${runtimeTaskId} stage=${
+            cancelled ? 'cancelled' : 'failed'
+          } status=${cancelled ? 'cancelled' : 'failed'} code=${
+            cancelled ? 'cancelled' : 'local_depth_failed'
+          } error=${diagnostic}`,
+        )
       } finally {
         runningTasks.delete(runtimeTaskId)
       }
@@ -185,6 +220,78 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
     controller?.abort()
     return { cancelled: controller != null }
   })
+}
+
+async function ensureDepthCapability(
+  manager: CapabilityManager,
+  signal: AbortSignal,
+  onProgress: (progress: OptionalCapabilityProgress) => void,
+): Promise<{ modelDir: string; runtimeEntryPath: string }> {
+  const unsubscribe = manager.subscribeProgress((progress) => {
+    if (progress.capabilityId === 'local-depth') onProgress(progress)
+  })
+  try {
+    throwIfDepthTaskAborted(signal)
+    const snapshot = await manager.list()
+    throwIfDepthTaskAborted(signal)
+    const depth = snapshot.capabilities.find((item) => item.id === 'local-depth')
+    const needsInstall =
+      !depth?.installedVersion || depth.state === 'damaged' || depth.state === 'error'
+    if (needsInstall) {
+      const result = await waitForDepthTask(manager.install('local-depth'), signal)
+      if (!result.success) throw new Error(result.message)
+    }
+    throwIfDepthTaskAborted(signal)
+    let [runtimeDir, modelDir] = await Promise.all([
+      manager.getArtifactDirectory('local-depth', 'runtime.optional-depth-'),
+      manager.getArtifactDirectory('local-depth', 'model.depth-anything-v2-small-int8-'),
+    ])
+    if ((!runtimeDir || !modelDir) && !needsInstall) {
+      const repaired = await waitForDepthTask(manager.repair('local-depth'), signal)
+      if (!repaired.success) throw new Error(repaired.message)
+      ;[runtimeDir, modelDir] = await Promise.all([
+        manager.getArtifactDirectory('local-depth', 'runtime.optional-depth-'),
+        manager.getArtifactDirectory('local-depth', 'model.depth-anything-v2-small-int8-'),
+      ])
+    }
+    if (!runtimeDir || !modelDir) {
+      throw new Error('本地深度组件安装完成但 Runtime 或模型目录缺失，请在完整性页修复')
+    }
+    return { modelDir, runtimeEntryPath: join(runtimeDir, DEPTH_RUNTIME_ENTRY) }
+  } finally {
+    unsubscribe()
+  }
+}
+
+function waitForDepthTask<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new Error('cancelled'))
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new Error('cancelled'))
+    signal.addEventListener('abort', abort, { once: true })
+    void operation.then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', abort)
+    })
+  })
+}
+
+function throwIfDepthTaskAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new Error('cancelled')
+}
+
+function safeDepthDiagnostic(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? 'unknown error')
+  return raw
+    .replace(/https?:\/\/[^\s]+/gi, (value) => {
+      try {
+        const url = new URL(value)
+        url.search = ''
+        url.hash = ''
+        return url.toString()
+      } catch {
+        return '[redacted-url]'
+      }
+    })
+    .slice(0, 500)
 }
 
 function runningResponse(
