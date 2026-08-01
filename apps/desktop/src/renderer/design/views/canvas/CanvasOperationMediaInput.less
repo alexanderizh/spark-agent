@@ -1,4 +1,4 @@
-.canvas-operation-image-input {
+.canvas-operation-media-input {
   display: flex;
   min-height: 148px;
   align-items: stretch;
@@ -10,7 +10,7 @@
   background: rgb(255 255 255 / 2%);
 }
 
-.canvas-operation-image-input-preview {
+.canvas-operation-media-input-preview {
   display: flex;
   min-width: 280px;
   flex: 1;
@@ -20,11 +20,12 @@
   color: var(--spark-text-secondary, rgb(255 255 255 / 56%));
 }
 
-.canvas-operation-image-input-preview.has-image {
+.canvas-operation-media-input-preview.has-media {
   justify-content: flex-start;
 }
 
-.canvas-operation-image-input-preview img {
+.canvas-operation-media-input-preview img,
+.canvas-operation-media-input-preview video {
   width: 112px;
   height: 112px;
   flex: 0 0 auto;
@@ -33,7 +34,7 @@
   background: rgb(0 0 0 / 24%);
 }
 
-.canvas-operation-image-input-empty-icon {
+.canvas-operation-media-input-empty-icon {
   display: grid;
   width: 58px;
   height: 58px;
@@ -43,14 +44,14 @@
   color: rgb(161 139 255);
 }
 
-.canvas-operation-image-input-meta {
+.canvas-operation-media-input-meta {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 5px;
 }
 
-.canvas-operation-image-input-meta strong {
+.canvas-operation-media-input-meta strong {
   overflow: hidden;
   color: var(--spark-text-primary, rgb(255 255 255 / 88%));
   font-size: 14px;
@@ -58,11 +59,11 @@
   white-space: nowrap;
 }
 
-.canvas-operation-image-input-meta span {
+.canvas-operation-media-input-meta span {
   font-size: 12px;
 }
 
-.canvas-operation-image-input-actions {
+.canvas-operation-media-input-actions {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -71,11 +72,11 @@
 }
 
 @media (width <= 760px) {
-  .canvas-operation-image-input {
+  .canvas-operation-media-input {
     flex-direction: column;
   }
 
-  .canvas-operation-image-input-preview {
+  .canvas-operation-media-input-preview {
     min-width: 0;
   }
 }
