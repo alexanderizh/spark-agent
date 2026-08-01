@@ -198,6 +198,49 @@ describe('CanvasInlineAiComposer node default model params', () => {
     })
   })
 
+  it('reads x-template-labels into enumLabels for opaque enum values', () => {
+    // MiniMax 视频 Agent 模板的 templateId 是不透明数字 id，manifest 通过
+    // x-template-labels 注入中文名；schemaFields 应把它解析为 enumLabels。
+    expect(
+      schemaFields({
+        properties: {
+          templateId: {
+            type: 'string',
+            title: '模板',
+            enum: ['392753057216684038', '398574688191234048'],
+            'x-template-labels': {
+              '392753057216684038': '跳水',
+              '398574688191234048': '四季写真',
+            },
+          },
+        },
+      })[0],
+    ).toMatchObject({
+      enumValues: ['392753057216684038', '398574688191234048'],
+      enumLabels: {
+        '392753057216684038': '跳水',
+        '398574688191234048': '四季写真',
+      },
+    })
+  })
+
+  it('omits enumLabels when x-template-labels is absent or malformed', () => {
+    expect(
+      schemaFields({ properties: { voice: { type: 'string', enum: ['a', 'b'] } } })[0]?.enumLabels,
+    ).toBeUndefined()
+    expect(
+      schemaFields({
+        properties: {
+          voice: {
+            type: 'string',
+            enum: ['a', 'b'],
+            'x-template-labels': [{ not: 'an object' }],
+          },
+        },
+      })[0]?.enumLabels,
+    ).toBeUndefined()
+  })
+
   it('falls back to the model default when a persisted value is incompatible', () => {
     expect(
       resolveInitialModelParamDraftValue({

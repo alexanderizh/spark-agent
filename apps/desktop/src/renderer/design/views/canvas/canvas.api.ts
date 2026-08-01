@@ -19,6 +19,10 @@ import { getCanvasCapability, isOperationNode } from './canvas.capabilities'
 import { inferCanvasConnectionType } from './canvasConnectionSemantics'
 import { encodeToSafeFileUrl, readFileAsDataUrl, resolveMediaDisplayUrl } from './canvas-safe-file'
 import {
+  type CanvasProviderFileNodeInput,
+  resolveProviderFileTaskProfile,
+} from './canvasProviderFileNode'
+import {
   filmKindToAssetType,
   filmUid,
   migrateFilmAssetMetadata,
@@ -3578,6 +3582,62 @@ export const canvasApi = {
     return node
   },
 
+  /**
+   * 创建「Provider 文件」节点（来自「素材中心 → Files」上传的 MiniMax 等文件）。
+   *
+   * 与 createMediaNode 的区别：不创建本地 asset、无本地 url——文件实体在 provider 侧，
+   * 节点仅持有 fileId。提交任务时 fileId 经 buildTaskInputFiles 透传，命中 adapter
+   * 上传短路（MiniMax H3 用 `mm_file://{fileId}` 直接引用，跳过上传）。
+   * 节点无缩略图（provider 侧文件不可直接 fetch），渲染为占位，与 createEmptyImageNode 一致。
+   */
+  async createProviderFileNode(input: {
+    projectId: string
+    boardId: string
+  } & CanvasProviderFileNodeInput): Promise<CanvasNode> {
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
+    const kind = input.kind ?? 'image'
+    const fitted =
+      kind === 'image'
+        ? IMAGE_NODE_DEFAULT_SIZE
+        : fitMediaNodeSize(kind, undefined, undefined)
+    const size = {
+      width: input.width ?? fitted.width,
+      height: input.height ?? fitted.height,
+    }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+    })
+    const node = createNodeBase({
+      nodes: db.nodes,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: kind,
+      title: input.fileName ?? null,
+      assetId: null,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      data: {
+        providerProfileId: input.providerProfileId,
+        fileId: input.fileId,
+        ...(input.mimeType ? { mimeType: input.mimeType } : {}),
+      },
+    })
+    node.zIndex = maxZ + 1
+    db.nodes.push(node)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
+  },
+
   async createGroupNode(projectId: string, nodeIds: string[]): Promise<CanvasSnapshot> {
     const db = readDb()
     const selected = new Set(nodeIds)
@@ -4703,7 +4763,10 @@ export const canvasApi = {
     // Contract V2 二次裁剪：preset/继承/input 合并后按目标 manifest 再次过滤，
     // 防止上游节点的旧模型字段（如 searchEnabled / output_format）污染新模型请求。
     // manifest 缺省时直接退回原值，不阻塞创建。
-    const providerProfileId = input.providerProfileId ?? operationPreset.providerProfileId ?? null
+    const providerProfileId = resolveProviderFileTaskProfile({
+      nodes: inputNodes,
+      selectedProviderProfileId: input.providerProfileId ?? operationPreset.providerProfileId,
+    })
     const manifestId = input.manifestId ?? operationPreset.manifestId ?? null
     const pruned = await pruneModelParamsForCanvas({
       operation: input.operation,
@@ -4890,7 +4953,12 @@ export const canvasApi = {
       ? { ...oldTask.modelParams, ...(node.data.modelParams ?? {}) }
       : oldTask.modelParams
     const retryProviderProfileId =
-      (useCurrentRuntime ? node.data.providerProfileId : oldTask.providerProfileId) ?? undefined
+      resolveProviderFileTaskProfile({
+        nodes: retryInputNodes,
+        selectedProviderProfileId: useCurrentRuntime
+          ? node.data.providerProfileId
+          : oldTask.providerProfileId,
+      }) ?? undefined
     const retryManifestId =
       (useCurrentRuntime ? node.data.manifestId : oldTask.manifestId) ?? undefined
     const retryModelId = (useCurrentRuntime ? node.data.modelId : oldTask.modelId) ?? undefined
@@ -5008,6 +5076,11 @@ export const canvasApi = {
           inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
       ),
     )
+    const providerProfileId =
+      resolveProviderFileTaskProfile({
+        nodes: inputNodes,
+        selectedProviderProfileId: params.providerProfileId ?? node.data.providerProfileId,
+      }) ?? undefined
     // output 位置：节点右侧
     const oldOutputs = db.nodes.filter((n) =>
       db.edges.some(
@@ -5063,7 +5136,7 @@ export const canvasApi = {
       ...(node.data.outputPipelineRole ? { outputPipelineRole: node.data.outputPipelineRole } : {}),
       ...(node.data.outputTitle ? { outputTitle: node.data.outputTitle } : {}),
       ...(params.agentId ? { agentId: params.agentId } : {}),
-      ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+      ...(providerProfileId ? { providerProfileId } : {}),
       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
       ...(params.modelId ? { modelId: params.modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),

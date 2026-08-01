@@ -45,6 +45,7 @@ import { GoogleGenerativeAiMediaAdapter } from './adapters/google-generative-ai-
 import { OpenAiOfficialMediaAdapter } from './adapters/openai-official-media.adapter.js'
 import { MidjourneyMediaAdapter } from './adapters/midjourney-media.adapter.js'
 import { TencentTokenhubMediaAdapter } from './adapters/tencent-tokenhub-media.adapter.js'
+import { MinimaxHailuoMediaAdapter } from './adapters/minimax-hailuo-media.adapter.js'
 import { compactForLog } from './media-debug-log.js'
 import {
   logCanvasBlockEnd,
@@ -118,6 +119,9 @@ export class MediaRouterService {
     // 腾讯云 TokenHub（图片 + 视频）：query 是 POST + body {model, id}，
     // 模板适配器 pollTask 写死 GET 无法表达，故用专用 adapter。
     this.register(new TencentTokenhubMediaAdapter())
+    // MiniMax（minimaxi）：v1 HTTP 恒 200 + base_resp、V2 OAI + content[]，模板适配器无法表达，故用专用 adapter。
+    // 覆盖 image-01/01-live、Hailuo-2.3/-Fast、视频 Agent 模板、H3(V2)。
+    this.register(new MinimaxHailuoMediaAdapter())
   }
 
   register(adapter: MediaProviderAdapter): void {

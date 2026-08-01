@@ -29,12 +29,20 @@ import {
   apimartSeedance2VideoSchema,
   klingVideoSchema,
   minimaxImageSchema,
+  minimaxImage01LiveSchema,
   minimaxSpeechSchema,
   minimaxMusicSchema,
   minimaxHailuoVideoSchema,
+  minimaxH3VideoSchema,
+  minimaxH3VideoT2VSchema,
+  minimaxVideoTemplateSchema,
+  MINIMAX_VIDEO_TEMPLATE_IDS,
   agnesImageSchema,
   agnesVideoSchema,
 } from './media-model-shared-manifest-parts.js'
+
+// 视频 Agent 模板清单供 adapter / validator 复用（避免在多包间重复硬编码 11 个 id）。
+export { MINIMAX_VIDEO_TEMPLATE_IDS, MINIMAX_VIDEO_TEMPLATE_LABELS } from './media-model-shared-manifest-parts.js'
 
 export type MediaDomain =
   | 'image'
@@ -1901,6 +1909,35 @@ const xaiErrorContract: MediaErrorContract = {
   retryableCodes: ['rate_limit_exceeded', 'service_unavailable'],
 }
 
+/**
+ * MiniMax 视频生成 V2（MiniMax-H3，POST /v2/video_generation）错误归一规则。
+ *
+ * V2 与 v1 错误模型不同：HTTP 是真实状态码（401/400/429/402/422/500/529），响应体为
+ * OAI 风格 `{ type:'error', error:{ type, message, http_code }, request_id }`，业务码在
+ * `error.message` 末尾括号内。fetchJson 在 !res.ok 时按此 contract 归一。
+ *
+ * v1（/v1/image_generation、/v1/video_generation 等）HTTP 恒为 200、错误在
+ * `base_resp.status_code`(number)，fetchJson 不会触发 errorContract；v1 错误由 adapter
+ * 主动检测 base_resp 后本地映射，不走此 contract。
+ *
+ * 来源：docs/integrations/minimax/video-models-v2.md §4.6
+ */
+const minimaxV2ErrorContract: MediaErrorContract = {
+  codePaths: ['error.type', 'error.code'],
+  messagePaths: ['error.message'],
+  requestIdPaths: ['request_id', 'error.request_id'],
+  mappings: {
+    bad_request_error: 'invalid_parameter_value',
+    authorized_error: 'auth_failed',
+    insufficient_balance_error: 'quota_exceeded',
+    unprocessable_entity_error: 'content_policy_blocked',
+    rate_limit_error: 'rate_limited',
+    server_error: 'provider_http_error',
+    overloaded_error: 'rate_limited',
+  },
+  retryableCodes: ['rate_limit_error', 'overloaded_error'],
+}
+
 const commonStatusMap = {
   queued: 'queued',
   pending: 'queued',
@@ -2942,6 +2979,31 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         aliases: { aspectRatio: 'aspect_ratio' },
       },
+      // 图生图（subject_reference）：与文生图共用 /v1/image_generation，必传 subject_reference。
+      // 官方当前仅 image-01 明确支持、type 仅 character、单张参考图（<10MB，JPG/JPEG/PNG）。
+      // 来源：docs/integrations/minimax/image-edit-models.md §1/§3
+      {
+        id: 'image.edit',
+        label: '图生图（主体参考）',
+        input: {
+          required: ['prompt', 'image'],
+          maxImages: 1,
+          acceptedMimeTypes: ['image/jpeg', 'image/png'],
+        },
+        output: {
+          types: ['image'] as MediaManifestOutputKind[],
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        paramSchema: minimaxImageSchema,
+        defaults: {
+          aspectRatio: '1:1',
+          response_format: 'url',
+          n: 1,
+          prompt_optimizer: false,
+          aigc_watermark: false,
+        },
+        aliases: { aspectRatio: 'aspect_ratio' },
+      },
     ],
     invocation: {
       mode: 'sync',
@@ -2955,7 +3017,60 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         download: true,
       },
     },
-    docs: { sourceUrls: ['https://platform.minimaxi.com/document/image_generation'] },
+    docs: {
+      sourceUrls: [
+        'https://platform.minimaxi.com/docs/api-reference/image-generation-t2i',
+        'https://platform.minimaxi.com/docs/api-reference/image-generation-i2i',
+      ],
+    },
+    safety: { maxPromptLength: 1500 },
+  },
+  {
+    // image-01-live：画风增强（漫画/元气/中世纪/水彩）。style 仅此模型生效。
+    // 官方未明示 image-01-live 是否支持 subject_reference（图生图），本轮仅开 image.generate。
+    // 来源：docs/integrations/minimax/image-models.md §1/§3.1
+    id: 'minimax:image-01-live',
+    providerKind: 'minimax-hailuo',
+    modelId: 'image-01-live',
+    displayName: 'MiniMax Image 01 Live',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图（画风增强）',
+        // 不同模板分别要求 media_inputs / text_inputs；通用层无法表达 OR，交给
+        // minimax validator 按“文本或图片至少一种”校验，避免错误阻断纯图片模板。
+        input: { required: [] },
+        output: {
+          types: ['image'] as MediaManifestOutputKind[],
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        paramSchema: minimaxImage01LiveSchema,
+        defaults: {
+          aspectRatio: '1:1',
+          response_format: 'url',
+          n: 1,
+          prompt_optimizer: false,
+          aigc_watermark: false,
+        },
+        aliases: { aspectRatio: 'aspect_ratio' },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/v1/image_generation',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+      response: {
+        kind: 'url',
+        jsonPaths: ['data.image_urls[]', 'data.image_base64[]'],
+        download: true,
+      },
+    },
+    docs: {
+      sourceUrls: ['https://platform.minimaxi.com/docs/api-reference/image-generation-t2i'],
+    },
     safety: { maxPromptLength: 1500 },
   },
   ...[
@@ -3078,6 +3193,9 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     safety: { maxPromptLength: 3000 },
   },
   {
+    // MiniMax-Hailuo-2.3（v1）：t2v + i2v。fl2v 官方未声明此模型可用（仅 Hailuo-02）。
+    // video.edit 能力已移除：官方 /v1/video_generation 无独立 edit 端点（docs/integrations/minimax/video-models.md §5）。
+    // 产物经 GET /v1/files/retrieve?file_id= 拿 download_url（1h）再下载。
     id: 'minimax:hailuo-2.3',
     providerKind: 'minimax-hailuo',
     modelId: 'MiniMax-Hailuo-2.3',
@@ -3097,7 +3215,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           fast_pretreatment: false,
           aigc_watermark: false,
         },
-        aliases: { durationSeconds: 'duration', editStrength: 'edit_strength' },
+        aliases: { durationSeconds: 'duration' },
       },
       {
         id: 'video.image_to_video',
@@ -3116,26 +3234,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           fast_pretreatment: false,
           aigc_watermark: false,
         },
-        aliases: { durationSeconds: 'duration', editStrength: 'edit_strength' },
-      },
-      {
-        id: 'video.edit',
-        label: '视频编辑',
-        input: {
-          required: ['prompt', 'video'],
-          maxImages: 2,
-          acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'],
-        },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: minimaxHailuoVideoSchema,
-        defaults: {
-          durationSeconds: 6,
-          resolution: '768P',
-          prompt_optimizer: true,
-          fast_pretreatment: false,
-          aigc_watermark: false,
-        },
-        aliases: { durationSeconds: 'duration', editStrength: 'edit_strength' },
+        aliases: { durationSeconds: 'duration' },
       },
     ],
     invocation: {
@@ -3147,19 +3246,206 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         model: '{{modelId}}',
         prompt: '{{prompt}}',
         first_frame_image: '{{firstFrame}}',
-        last_frame_image: '{{lastFrame}}',
-        video: '{{video}}',
       },
       response: {
         kind: 'task_poll',
         taskIdPaths: ['task_id', 'data.task_id'],
         statusEndpoint: '/v1/query/video_generation?task_id={{taskId}}',
-        resultPaths: ['data.video_url', 'data.file_url', 'file_url', 'video_url'],
+        resultPaths: ['file_id', 'data.file_id'],
       },
       polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
     },
-    docs: { sourceUrls: ['https://platform.minimaxi.com/document/video_generation'] },
+    docs: {
+      sourceUrls: [
+        'https://platform.minimaxi.com/docs/api-reference/video-generation-t2v',
+        'https://platform.minimaxi.com/docs/api-reference/video-generation-i2v',
+        'https://platform.minimaxi.com/docs/api-reference/video-generation-query',
+      ],
+    },
     safety: { maxPromptLength: 2000, allowLocalFiles: true },
+  },
+  {
+    // MiniMax-Hailuo-2.3-Fast（v1）：仅 i2v（图生视频），duration/resolution 同 2.3。
+    // 来源：docs/integrations/minimax/video-models.md §3/§5.2
+    id: 'minimax:hailuo-2.3-fast',
+    providerKind: 'minimax-hailuo',
+    modelId: 'MiniMax-Hailuo-2.3-Fast',
+    displayName: 'MiniMax Hailuo 2.3 Fast',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.image_to_video',
+        label: '图生视频',
+        input: {
+          required: ['prompt', 'image'],
+          maxImages: 1,
+          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: minimaxHailuoVideoSchema,
+        defaults: {
+          durationSeconds: 6,
+          resolution: '768P',
+          prompt_optimizer: true,
+          fast_pretreatment: false,
+          aigc_watermark: false,
+        },
+        aliases: { durationSeconds: 'duration' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/v1/video_generation',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: {
+        model: '{{modelId}}',
+        prompt: '{{prompt}}',
+        first_frame_image: '{{firstFrame}}',
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['task_id', 'data.task_id'],
+        statusEndpoint: '/v1/query/video_generation?task_id={{taskId}}',
+        resultPaths: ['file_id', 'data.file_id'],
+      },
+      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+    },
+    docs: {
+      sourceUrls: [
+        'https://platform.minimaxi.com/docs/api-reference/video-generation-i2v',
+        'https://platform.minimaxi.com/docs/api-reference/video-generation-query',
+      ],
+    },
+    safety: { maxPromptLength: 2000, allowLocalFiles: true },
+  },
+  {
+    // 视频 Agent（POST /v1/video_template_generation）：template_id 驱动的模板化生成。
+    // adapter 检测 paramSchema 是否含 templateId 值，分流到 /v1/video_template_generation。
+    // 11 个模板清单见 minimaxVideoTemplateSchema；media_inputs 由 inputFiles 驱动，text_inputs 由 prompt 驱动。
+    // 来源：docs/integrations/minimax/video-templates.md
+    id: 'minimax:hailuo-template',
+    providerKind: 'minimax-hailuo',
+    modelId: 'video-agent',
+    displayName: 'MiniMax 视频 Agent（模板）',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '模板生视频',
+        input: { required: ['prompt'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: minimaxVideoTemplateSchema,
+        defaults: { templateId: MINIMAX_VIDEO_TEMPLATE_IDS[0] },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/v1/video_template_generation',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { template_id: '{{templateId}}' },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['task_id', 'data.task_id'],
+        statusEndpoint: '/v1/query/video_template_generation?task_id={{taskId}}',
+        resultPaths: ['video_url', 'data.video_url'],
+      },
+      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+    },
+    docs: {
+      sourceUrls: [
+        'https://platform.minimaxi.com/docs/api-reference/video-agent-create',
+        'https://platform.minimaxi.com/docs/api-reference/video-agent-query',
+        'https://platform.minimaxi.com/docs/faq/video-agent-templates',
+      ],
+    },
+    safety: { maxPromptLength: 2000, allowLocalFiles: true },
+  },
+  {
+    // MiniMax-H3（视频生成 V2，POST /v2/video_generation）：content[] 多模态数组。
+    // t2v / i2v（首帧+尾帧）/ r2v（参考图+视频+音频）。i2v 与 r2v 互斥（adapter 强制）。
+    // resolution 固定 2K；错误走真实 HTTP 码 + OAI error（minimaxV2ErrorContract）。
+    // 来源：docs/integrations/minimax/video-models-v2.md
+    id: 'minimax:v2-h3',
+    providerKind: 'minimax-hailuo',
+    modelId: 'MiniMax-H3',
+    displayName: 'MiniMax H3（V2）',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: minimaxH3VideoT2VSchema,
+        defaults: { duration: 5, ratio: '16:9', aigc_watermark: false },
+      },
+      {
+        id: 'video.image_to_video',
+        label: '图生视频（首帧/首尾帧）',
+        input: {
+          required: ['prompt', 'image'],
+          maxImages: 2,
+          acceptedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
+        },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: minimaxH3VideoSchema,
+        defaults: { duration: 5, ratio: 'adaptive', aigc_watermark: false },
+      },
+      {
+        id: 'video.reference_to_video',
+        label: '多模态参考生视频',
+        input: {
+          required: ['prompt'],
+          maxImages: 9,
+          maxVideos: 3,
+          maxAudios: 3,
+          acceptedMimeTypes: [
+            'image/jpeg',
+            'image/png',
+            'image/webp',
+            'image/heic',
+            'image/heif',
+            'video/mp4',
+            'video/quicktime',
+            'audio/wav',
+            'audio/mpeg',
+          ],
+        },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: minimaxH3VideoSchema,
+        defaults: { duration: 5, ratio: 'adaptive', aigc_watermark: false },
+        rolePolicy: {
+          imageRoles: ['reference_image'],
+          videoRoles: ['reference_video'],
+          audioRoles: ['reference_audio'],
+          defaultRoleAssignment: 'all_reference',
+        },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/v2/video_generation',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', content: '{{content}}' },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['task_id', 'data.task_id'],
+        statusEndpoint: '/v2/query/video_generation/{{taskId}}',
+        resultPaths: ['task.content.url', 'content.url'],
+      },
+      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+    },
+    docs: {
+      sourceUrls: [
+        'https://platform.minimaxi.com/docs/api-reference/video-generation-v2-create',
+        'https://platform.minimaxi.com/docs/api-reference/video-generation-v2-query',
+      ],
+    },
+    error: minimaxV2ErrorContract,
+    safety: { maxPromptLength: 7000, allowLocalFiles: true },
   },
 ]
 

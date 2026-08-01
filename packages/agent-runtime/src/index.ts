@@ -22,6 +22,8 @@ export {
   BailianFilesClient,
   resolveBailianFilesBaseUrl,
 } from './services/media/bailian-files.client.js'
+export { MinimaxHailuoFilesClient } from './services/media/minimax-hailuo-files.client.js'
+export type { MinimaxFileObject } from './services/media/minimax-hailuo-files.client.js'
 export {
   VOLCENGINE_ARK_FILES_DEFAULT_BASE_URL,
   VOLCENGINE_ARK_PLATFORM_FILE_MAX_BYTES,

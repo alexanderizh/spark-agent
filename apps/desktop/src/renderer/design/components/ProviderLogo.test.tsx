@@ -176,5 +176,7 @@ describe('ProviderLogo icon catalog', () => {
     expect(getProviderIconForVendor('xai')).toEqual({ id: 'xai', style: 'avatar' })
     expect(getProviderIconForVendor('bailian')).toEqual({ id: 'bailian', style: 'avatar' })
     expect(getProviderIconForVendor('midjourney')).toEqual({ id: 'midjourney', style: 'avatar' })
+    // providerKind（minimax-hailuo）在 CanvasModelPicker 里直接当 vendorId 传入，应映射到 lobehub 的 minimax 图标
+    expect(getProviderIconForVendor('minimax-hailuo')).toEqual({ id: 'minimax', style: 'avatar' })
   })
 })
