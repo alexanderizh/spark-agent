@@ -1,6 +1,8 @@
 # 桌面端可选能力包与后台安装设计
 
-> 状态: 实施中 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-02
+
+> 交付范围：本轮已完成离线 Office Viewer 与本地深度处理；Computer Use 按明确要求完全跳过，现有实现和打包边界保持不变，不属于本轮验收结论。
 
 ## 背景
 
@@ -19,7 +21,7 @@ SparkWork 当前把本地深度推理运行时、独立 Node Runtime、Playwrigh
 ## 目标
 
 1. 立即裁剪基础包中不需要的 ONNX Web Runtime 和异平台 Native 二进制。
-2. 建立统一的可选能力包管理器，支持 Computer Use、离线 Office 预览和本地深度处理。
+2. 建立统一的可选能力包管理器，支持离线 Office 预览和本地深度处理。
 3. 应用启动时只检查远程清单；由用户选择需要的能力后后台安装。
 4. 右上角统一展示下载、校验、解压和激活进度。
 5. 设置「完整性」页支持安装、更新、修复、卸载和自动更新。
@@ -107,8 +109,6 @@ SparkWork 当前把本地深度推理运行时、独立 Node Runtime、Playwrigh
 
 - 深度处理：添加或选中深度节点时展示状态；执行任务前确保“本地深度处理”能力就绪。
 - Office：打开 DOCX、XLSX、PPT/PPTX 时展示内联安装状态；就绪后自动重试本次预览。
-- Computer Use：开启电脑操作或选择窗口时展示状态；Agent 首次观察或操作前确保能力就绪，
-  下载完成后继续建立会话，点击和输入仍经过现有审批流程。
 
 ## 设置「完整性」页
 
@@ -149,14 +149,11 @@ renderer 通过受限的 `safe-file://` 或专用只读协议访问激活目录�
 构建制品时使用明确 allowlist，避免整包复制未使用格式；同一字体、WASM 和 Worker 只保留一份。
 能力健康检查至少验证 DOCX、XLSX、PPTX 所需入口和文件哈希。
 
-### Computer Use
+### Computer Use（本轮不实施）
 
-Computer Use 的 TypeScript 控制层继续随应用发布。体积小但属于信任边界的 macOS/Windows
-Native Host 继续内置，由应用签名、公证/时间戳和父进程授权门禁保护，不改成普通远程下载。
-
-独立 Node Runtime、Playwright MCP 和匹配的 `playwright-core` 组成按平台、架构发布的远程能力
-制品。安装后由 `StandaloneNodeRuntime` 和 `PlaywrightMcpRegistration` 解析激活目录。健康检查
-执行 Node 版本、MCP CLI 启动和 Native Host handshake；失败保留旧版本或回到未安装状态。
+Computer Use 明确排除在本轮代码、制品、上传和验收范围之外。其 TypeScript 控制层、Native Host、
+独立 Node Runtime 和 Playwright MCP 均保持现有实现与打包方式；后续若要可选能力化，必须另行设计、
+签名并验收，不能复用本轮 Office/深度已落地结论。
 
 ## 远程制品与清单
 
@@ -198,7 +195,7 @@ SHA-256 → 发布 staging manifest → 审计 → 原子替换正式 manifest�
 - 启动提示冷却、默认不勾选和关闭提醒；
 - 下载队列、提升优先级、取消、失败重试和原子回滚；
 - IPC 状态与设置页、右上角进度卡片一致；
-- Office、深度和 Computer Use 在缺失、安装中、就绪、损坏状态下的功能入口行为；
+- Office、深度在缺失、安装中、就绪、损坏状态下的功能入口行为；
 - ONNX 目标平台裁剪产物检查；
 - 三类远程归档的逐文件完整性和健康检查。
 
@@ -207,8 +204,8 @@ SHA-256 → 发布 staging manifest → 审计 → 原子替换正式 manifest�
 - macOS arm64/x64、Windows x64 安装包均不包含 `onnxruntime-web`；
 - 每个平台只包含目标 ONNX Runtime，或在 Runtime 完全远程化后不包含 ONNX Native Runtime；
 - 基础包不包含 Office 大型 Worker/WASM/字体资源；
-- 基础包不包含独立 Node Runtime 和外置 Playwright MCP；
-- 三项能力可以从干净用户目录安装、立即使用、更新、失败回滚和卸载；
+- Computer Use 维持原打包边界，本轮不对其体积或安装方式作验收承诺；
+- Office 与深度两项能力可以从干净用户目录安装、立即使用、更新、失败回滚和卸载；
 - 公网下载对象与正式 manifest 的 size/SHA-256 完全一致；
 - 最终记录各平台安装包、首次组件下载量和安装后磁盘占用的前后对比。
 
@@ -217,6 +214,6 @@ SHA-256 → 发布 staging manifest → 审计 → 原子替换正式 manifest�
 1. ONNX 产物精准裁剪，验证安装包体积回落。
 2. 通用可选能力管理器、协议、启动选择弹窗、右上角进度和设置页。
 3. Office 静态资源制品化、上传和按需加载。
-4. Computer Use 独立 Node/Playwright 制品化、签名、上传和按需加载。
-5. 深度 Runtime 制品化，与现有模型制品组成统一能力。
-6. 全平台打包、安装、更新、回滚、MinIO 公网回读和体积审计。
+4. 深度 Runtime 制品化，与现有模型制品组成统一能力。
+5. macOS arm64 打包、安装、更新、回滚、MinIO 公网回读和体积审计；其他可信平台制品由对应 runner 后续生成。
+6. Computer Use 可选能力化延期，且不影响本轮 Office/深度交付。

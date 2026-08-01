@@ -1,8 +1,8 @@
 # Office 与深度可选能力包 Implementation Plan
 
-> 状态: 实施中 | 最后核对: 2026-08-02
+> 状态: 已落地 | 最后核对: 2026-08-02
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 在不改动 Computer Use 的前提下，将离线 Office Viewer 静态资源和本地深度推理 Runtime 从桌面基础安装包移出，支持启动选择、后台安装、统一进度、设置页安装/更新/修复和功能入口按需恢复。
 
@@ -36,7 +36,7 @@
 - Modify: `packages/protocol/src/schemas/index.ts`
 - Test: `packages/protocol/src/__tests__/schemas.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 断言 `optional-capability:install` 只接受 `office-viewer | local-depth`，进度事件包含阶段、字节数、百分比和队列位置，拒绝 `computer-use`。
 
@@ -47,16 +47,16 @@ expect(validateIpcRequest('optional-capability:install', { capabilityId: 'office
   .toEqual({ capabilityId: 'office-viewer' })
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `pnpm --filter @spark/protocol test -- src/__tests__/schemas.test.ts`
 Expected: FAIL，通道尚未定义。
 
-- [ ] **Step 3: 实现最小协议**
+- [x] **Step 3: 实现最小协议**
 
 定义 `OptionalCapabilityId`、`OptionalCapabilityPhase`、`OptionalCapabilityStatus`、`OptionalCapabilitySnapshot`、`OptionalCapabilityProgress`；IPC 包含 `list/check/install/update/repair/uninstall/set-auto-update`，流包含 `stream:optional-capability:snapshot` 与 `stream:optional-capability:progress`。
 
-- [ ] **Step 4: 运行 GREEN 并提交**
+- [x] **Step 4: 运行 GREEN 并提交**
 
 Run: `pnpm --filter @spark/protocol test -- src/__tests__/schemas.test.ts`
 Expected: PASS。
@@ -74,7 +74,7 @@ git commit -m "feat(protocol): define optional capability lifecycle"
 - Create: `apps/desktop/src/main/services/optional-capabilities/OptionalCapabilityStateStore.ts`
 - Test: `apps/desktop/src/main/services/optional-capabilities/OptionalCapabilityManager.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 覆盖：平台/架构 artifact 选择；Office 单 artifact 与深度 Runtime+模型聚合；串行队列；重复安装去重；下载/校验/解压/激活阶段；更新失败保留旧 active；损坏状态；自动更新仅处理已安装能力；定义列表不含 Computer Use。
 
@@ -86,16 +86,16 @@ expect(events.map((event) => event.phase)).toEqual(
 )
 ```
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `pnpm --dir apps/desktop exec vitest run src/main/services/optional-capabilities/OptionalCapabilityManager.test.ts`
 Expected: FAIL，模块不存在。
 
-- [ ] **Step 3: 实现最小管理器**
+- [x] **Step 3: 实现最小管理器**
 
 状态根目录固定为 `{userData}/optional-capabilities`。下载写入同盘 staging；包内 `capability-package.json`、archive SHA-256、artifact/version/platform/arch 和健康检查全部成功后才用 rename 更新 `active.json`。所有外部依赖（manifest fetch、archive install、平台、时钟、事件回调）可注入，测试禁止联网。
 
-- [ ] **Step 4: 运行 GREEN、typecheck 并提交**
+- [x] **Step 4: 运行 GREEN、typecheck 并提交**
 
 Run: `pnpm --dir apps/desktop exec vitest run src/main/services/optional-capabilities/OptionalCapabilityManager.test.ts`
 Run: `pnpm --filter @spark/desktop typecheck`
@@ -121,20 +121,20 @@ git commit -m "feat(desktop): add optional capability manager"
 - Modify: `apps/desktop/src/renderer/design/views/SettingsView.tsx`
 - Test: matching `*.test.tsx` and `registerOptionalCapabilityIpc.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 启动快照在 manifest 不可达时不弹窗；缺失能力默认不勾选；同 manifest “稍后”冷却 7 天；确认后后台安装；右上角显示字节进度和队列；设置卡支持安装、更新、修复、卸载、自动更新和手动检查。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `pnpm --dir apps/desktop exec vitest run src/main/ipc/registerOptionalCapabilityIpc.test.ts src/renderer/design/optional-capabilities/*.test.tsx`
 Expected: FAIL，组件/IPC 尚不存在。
 
-- [ ] **Step 3: 实现接线**
+- [x] **Step 3: 实现接线**
 
 主窗口加载完成后延迟检查 manifest，不阻塞首屏；24 小时缓存由主进程负责，7 天提示冷却由 renderer localStorage 负责。弹窗所有大包默认不勾选；进度卡提供“前往完整性”并通过既有 `settingsSection=integrity` 导航。`SettingsView.tsx` 只增加 import 和 `<OptionalCapabilitiesSettingsCard />`。
 
-- [ ] **Step 4: 运行 GREEN 并提交**
+- [x] **Step 4: 运行 GREEN 并提交**
 
 Run: 与 Step 2 相同；再运行 `pnpm --filter @spark/desktop typecheck`。
 
@@ -158,21 +158,21 @@ git commit -m "feat(desktop): surface optional capability installs"
 - Modify: `apps/desktop/src/renderer/design/components/OfficeFileViewer.tsx`
 - Test: existing Office tests plus new missing/installing/ready tests
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 归档必须包含全量 `public/file-viewer` 资产和逐文件哈希，不得包含符号链接；协议拒绝 `..`、编码穿越和非激活 capability；Office 缺失时不实例化 FileViewer，安装完成自动重试；electron-builder 排除 `out/renderer/file-viewer{,/**/*}`。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node --test scripts/__tests__/prepare-office-viewer-artifact.test.mjs`
 Run: `pnpm --dir apps/desktop exec vitest run src/main/services/__tests__/CapabilityAssetProtocol.test.ts src/renderer/design/components/OfficeFileViewer.test.ts`
 Expected: FAIL。
 
-- [ ] **Step 3: 实现制品和加载**
+- [x] **Step 3: 实现制品和加载**
 
 版本使用 `2.2.3-1`，artifact ID 为 `archive.optional-office-viewer-2.2.3-1`。`capability-asset://office-viewer/<relative>` 只映射当前 active 目录，做 lexical + realpath 双重边界检查并返回正确 JS/WASM/font MIME。CSP 显式允许该 scheme 的 script/worker/connect/font。
 
-- [ ] **Step 4: 运行 GREEN、真实 Office smoke test 并提交**
+- [x] **Step 4: 运行 GREEN、真实 Office smoke test 并提交**
 
 至少用仓库测试 DOCX/XLSX/PPTX fixture 验证 renderer 进入 ready；缺资源时显示安装态而非空白/崩溃。
 
@@ -194,21 +194,21 @@ git commit -m "feat(office): load viewer assets as an optional package"
 - Modify: `apps/desktop/src/main/ipc/registerCanvasDepthTaskIpc.ts`
 - Test: existing depth estimator/worker/IPC tests
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 制品只包含目标平台/架构的 Transformers Node 依赖闭包，不含 `onnxruntime-web` 或异平台 native；Estimator 从传入 file URL 加载；缺 Runtime 时深度入口报告能力缺失；安装进度合并 Runtime 与现有模型字节数。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run: `node --test scripts/__tests__/prepare-depth-runtime-artifact.test.mjs`
 Run: `pnpm --dir apps/desktop exec vitest run src/main/services/depth-video/DepthFrameEstimator.test.ts src/main/services/depth-video/DepthInferenceWorker.test.ts src/main/ipc/registerCanvasDepthTaskIpc.test.ts`
 Expected: FAIL。
 
-- [ ] **Step 3: 实现 Runtime 包和加载**
+- [x] **Step 3: 实现 Runtime 包和加载**
 
 Runtime 版本 `transformers-4.2.0-onnx-1.24.3-1`，按 `darwin-arm64`、`darwin-x64`、`win32-x64` 发布。基础包不再携带 `@huggingface/transformers`、`onnxruntime-node`、`onnxruntime-web` 及其仅深度使用的 native 闭包；workerData 同时传 `modelDir` 与 `runtimeEntryPath`。不得修改 Computer Use 文件或依赖。
 
-- [ ] **Step 4: 运行 GREEN、真实一帧推理并提交**
+- [x] **Step 4: 运行 GREEN、真实一帧推理并提交**
 
 从临时安装目录导入 Runtime，断言 `pipeline`、`RawImage`、ONNX 版本，并用固定 RGB fixture 完成一帧深度估计。
 
@@ -226,24 +226,24 @@ git commit -m "feat(depth): load inference runtime from optional package"
 - Create: `docs/release-manifests/depth-runtime-*.json`
 - Modify: `scripts/audit-artifact-repository.mjs`
 
-- [ ] **Step 1: 写发布器失败测试**
+- [x] **Step 1: 写发布器失败测试**
 
 覆盖本地 size/SHA 不符拒绝、已有 ID 冲突拒绝、先备份再上传、staging manifest 先于正式 index、正式发布后从公网完整下载并复算 SHA。测试使用本地 mock HTTP server，不访问真实 MinIO。
 
-- [ ] **Step 2: 运行 RED/GREEN**
+- [x] **Step 2: 运行 RED/GREEN**
 
 Run: `node --test scripts/__tests__/publish-optional-capabilities-to-minio.test.mjs`
 Expected: 先因模块缺失 FAIL，最小实现后 PASS。
 
-- [ ] **Step 3: 生成并本地审计制品**
+- [x] **Step 3: 生成并本地审计制品**
 
 凭据只以当前进程环境变量注入，禁止写入仓库、日志、测试快照和 shell 历史。生成 Office 与本机 `darwin-arm64` 深度 Runtime；其他平台没有可信 runner 产物时不得伪造，在 manifest 和设置状态中保持 unavailable。
 
-- [ ] **Step 4: 上传、staging、正式发布和公网回读**
+- [x] **Step 4: 上传、staging、正式发布和公网回读**
 
 固定顺序：本地校验 → 备份 index → 上传版本化对象 → HEAD 元数据校验 → 公网 GET 全量 SHA → staging index → 审计 → 正式 index → 再次公网 GET。任何一步失败不得替换正式 index。
 
-- [ ] **Step 5: 提交清单与发布工具**
+- [x] **Step 5: 提交清单与发布工具**
 
 ```bash
 git add scripts docs/release-manifests
@@ -257,23 +257,23 @@ git commit -m "release: publish optional Office and depth packages"
 - Modify: this plan status to `已落地`
 - Create: `docs/reviews/2026-08-02-optional-capabilities-delivery.md`
 
-- [ ] **Step 1: 定向测试和 typecheck**
+- [x] **Step 1: 定向测试和 typecheck**
 
 运行 Task 1—6 所有测试、`pnpm --filter @spark/desktop typecheck`、`pnpm --filter @spark/protocol build` 和 `git diff --check`。全量测试若受并行开发影响，记录具体无关失败，不得声称全量通过。
 
-- [ ] **Step 2: 构建干净 macOS arm64 unpacked 和 DMG**
+- [x] **Step 2: 构建干净 macOS arm64 unpacked 和 DMG**
 
 安全移走并恢复 `apps/desktop/output`，不要删除其中用户技能链接。验证基础 ASAR 不含 `out/renderer/file-viewer`、Transformers、ONNX；验证 ASAR 可完整解包。
 
-- [ ] **Step 3: 干净 userData 验收**
+- [x] **Step 3: 干净 userData 验收**
 
 启动弹窗默认未勾选；Office/深度分别可后台安装；进度卡与设置状态一致；断网、取消、损坏修复、更新失败回滚不影响核心启动；Office 三种格式和深度一帧/短视频可用。
 
-- [ ] **Step 4: 记录体积和公网证据**
+- [x] **Step 4: 记录体积和公网证据**
 
 记录基础 DMG、`.app`、`app.asar`、`app.asar.unpacked`、每个远程下载量与落盘量，并与 398,417,355 B 原始 DMG 对比。记录正式 manifest URL、artifact ID、size/SHA，不记录 MinIO 凭据。
 
-- [ ] **Step 5: GitNexus/降级核对和提交**
+- [x] **Step 5: GitNexus/降级核对和提交**
 
 若 GitNexus 健康，运行 impact/detect_changes；否则按项目规则用 `rg`、定向测试、真实产物和 `git diff`，在 review 中注明降级。刷新 spec/plan 状态和日期。
 
