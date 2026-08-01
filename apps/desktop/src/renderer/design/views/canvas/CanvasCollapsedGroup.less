@@ -1,0 +1,194 @@
+/* 折叠编组使用“后壳 → 插页 → 前挡板”三层结构；真实组尺寸与成员布局保持不变。 */
+.canvas-node.canvas-node-collapsed-group {
+  overflow: visible;
+  border: 0;
+  border-radius: 28px;
+  background: transparent;
+  box-shadow: none;
+  filter: drop-shadow(0 18px 20px rgba(15, 23, 42, 0.2));
+}
+
+.canvas-node-collapsed-group.canvas-node-selected {
+  filter: drop-shadow(0 18px 20px rgba(15, 23, 42, 0.2))
+    drop-shadow(0 0 7px color-mix(in srgb, var(--primary) 54%, transparent));
+}
+
+.canvas-collapsed-group-cover {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  color: color-mix(in srgb, var(--primary) 66%, #27698f);
+  cursor: pointer;
+  user-select: none;
+}
+
+.canvas-collapsed-group-back {
+  position: absolute;
+  z-index: 0;
+  top: 24px;
+  right: 0;
+  bottom: 10px;
+  left: 0;
+  border: 1px solid color-mix(in srgb, var(--primary) 50%, #76c4f8);
+  border-radius: 28px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--primary) 22%, #dff3ff),
+    color-mix(in srgb, var(--primary) 34%, #a9dcfb)
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.52);
+}
+
+.canvas-collapsed-group-inserts {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+}
+
+.canvas-collapsed-group-insert {
+  position: absolute;
+  top: 36px;
+  width: 102px;
+  height: 104px;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 4px solid color-mix(in srgb, var(--primary) 16%, #e4f5ff);
+  border-radius: 19px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
+  box-shadow: 0 5px 15px rgba(27, 83, 124, 0.2);
+  transition:
+    transform 0.32s cubic-bezier(0.2, 0.85, 0.2, 1),
+    filter 0.32s ease;
+}
+
+.canvas-collapsed-group-insert.is-slot-0 {
+  left: 13px;
+}
+
+.canvas-collapsed-group-insert.is-slot-1 {
+  right: 13px;
+}
+
+.canvas-collapsed-group-insert img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-collapsed-group-insert.is-fallback {
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--primary) 55%, var(--text-muted));
+  background:
+    linear-gradient(135deg, transparent 47%, rgba(255, 255, 255, 0.32) 48% 52%, transparent 53%),
+    color-mix(in srgb, var(--primary) 12%, var(--panel));
+}
+
+.canvas-collapsed-group-insert.is-fallback span {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--primary) 12%, rgba(255, 255, 255, 0.78));
+}
+
+.canvas-collapsed-group-front {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.canvas-collapsed-group-front > path:first-child {
+  fill: color-mix(in srgb, var(--primary) 31%, #b9e4ff);
+  stroke: color-mix(in srgb, var(--primary) 48%, #75bff0);
+  stroke-width: 1;
+}
+
+.canvas-collapsed-group-front-highlight {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.34);
+  stroke-width: 1;
+}
+
+.canvas-collapsed-group-icons {
+  position: absolute;
+  z-index: 4;
+  top: 101px;
+  right: 20px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  opacity: 0.84;
+  pointer-events: none;
+}
+
+.canvas-collapsed-group-icons svg {
+  width: 25px;
+  height: 25px;
+  stroke-width: 1.55;
+  stroke-linecap: round;
+}
+
+.canvas-collapsed-group-icons svg:last-child {
+  width: 22px;
+  height: 22px;
+  stroke-width: 1.7;
+}
+
+.canvas-collapsed-group-copy {
+  position: absolute;
+  z-index: 4;
+  right: 20px;
+  bottom: 20px;
+  left: 20px;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.canvas-collapsed-group-copy small,
+.canvas-collapsed-group-copy strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-collapsed-group-copy small {
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  opacity: 0.58;
+}
+
+.canvas-collapsed-group-copy strong {
+  margin-top: 4px;
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.canvas-node-collapsed-group:hover .canvas-collapsed-group-insert.is-slot-0 {
+  transform: translateY(-17px);
+  filter: saturate(1.05);
+}
+
+.canvas-node-collapsed-group:hover .canvas-collapsed-group-insert.is-slot-1 {
+  transform: translateY(-20px);
+  filter: saturate(1.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-collapsed-group-insert {
+    transition: none;
+  }
+
+  .canvas-node-collapsed-group:hover .canvas-collapsed-group-insert {
+    transform: none;
+  }
+}
