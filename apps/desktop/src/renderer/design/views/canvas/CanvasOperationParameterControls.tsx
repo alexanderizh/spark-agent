@@ -8,6 +8,7 @@ import { CanvasParameterControl } from './CanvasParameterControl'
 import {
   parameterSummaryValue,
   partitionParameterFields,
+  type CanvasParameterPresentation,
   type SchemaField,
 } from './canvasParameterPresentation'
 import {
@@ -33,12 +34,16 @@ export type CanvasOperationParameterControlsProps = {
   onParameterChange: (name: string, value: string) => void
 }
 
-function parameterIcon(control: string): ReactNode {
-  if (control === 'aspect-ratio') return <Icons.Crop size={13} />
-  if (control === 'resolution') return <Icons.Maximize size={13} />
-  if (control === 'duration') return <Icons.Clock size={13} />
-  if (control === 'count') return <Icons.Layers size={13} />
-  return <Icons.Sliders size={13} />
+function parameterPreviewValue(
+  presentation: CanvasParameterPresentation,
+  value: string,
+): string {
+  if (presentation.control === 'boolean') {
+    if (value === 'true') return `${presentation.label}开启`
+    if (value === 'false') return `${presentation.label}关闭`
+    return `${presentation.label}默认`
+  }
+  return parameterSummaryValue(presentation, value)
 }
 
 export function CanvasOperationParameterControls({
@@ -61,6 +66,11 @@ export function CanvasOperationParameterControls({
   const [commonOpen, setCommonOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(() => readCanvasComposerAdvancedOpen())
   const advancedAvailable = groups.advanced.length > 0 || advancedContent != null
+  const commonPreviewText = groups.common
+    .map((presentation) =>
+      parameterPreviewValue(presentation, values[presentation.field.name] ?? ''),
+    )
+    .join(' · ')
 
   const setAdvanced = (next: boolean) => {
     setAdvancedOpen(next)
@@ -109,25 +119,16 @@ export function CanvasOperationParameterControls({
               role="group"
               aria-label="常用任务参数"
             >
-              {groups.common.map((presentation) => {
-                const value = values[presentation.field.name] ?? ''
-                return (
-                  <button
-                    key={presentation.field.name}
-                    type="button"
-                    className="canvas-operation-parameter-summary"
-                    aria-label={`设置${presentation.label}`}
-                    disabled={disabled}
-                  >
-                    {parameterIcon(presentation.control)}
-                    <span className="canvas-operation-parameter-summary-label">
-                      {presentation.label}
-                    </span>
-                    <strong>{parameterSummaryValue(presentation, value)}</strong>
-                    <Icons.ChevronDown size={11} />
-                  </button>
-                )
-              })}
+              <button
+                type="button"
+                className="canvas-operation-parameter-summary is-unified"
+                aria-label={`常用参数：${commonPreviewText}`}
+                disabled={disabled}
+              >
+                <Icons.Sliders size={13} />
+                <strong>{commonPreviewText}</strong>
+                <Icons.ChevronDown size={11} />
+              </button>
             </div>
           </Popover>
         )}

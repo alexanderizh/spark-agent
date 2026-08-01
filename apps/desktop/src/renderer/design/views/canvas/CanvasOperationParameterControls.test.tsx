@@ -116,7 +116,7 @@ function model(): CanvasMediaModelSummary {
 }
 
 describe('CanvasOperationParameterControls', () => {
-  it('keeps common visual controls visible and folds advanced controls behind one button', async () => {
+  it('keeps model selection and one unified common-parameter trigger in the toolbar', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -131,9 +131,17 @@ describe('CanvasOperationParameterControls', () => {
           fields={[
             { name: 'aspect_ratio', title: '画幅', type: 'string', enumValues: ['1:1', '16:9'] },
             { name: 'resolution', title: '分辨率', type: 'string', enumValues: ['1K', '2K'] },
+            { name: 'duration', title: '时长', type: 'integer', enumValues: ['5', '10'] },
+            { name: 'generate_audio', title: '生成音频', type: 'boolean', enumValues: [] },
             { name: 'seed', title: '随机种子', type: 'integer', enumValues: [] },
           ]}
-          values={{ aspect_ratio: '1:1', resolution: '1K', seed: '' }}
+          values={{
+            aspect_ratio: '1:1',
+            resolution: '1K',
+            duration: '5',
+            generate_audio: 'true',
+            seed: '',
+          }}
           onModelChange={vi.fn()}
           onParameterChange={vi.fn()}
         />,
@@ -141,12 +149,17 @@ describe('CanvasOperationParameterControls', () => {
     )
 
     expect(container.querySelector('[aria-label="选择模型"]')).not.toBeNull()
-    expect(container.querySelector('[aria-label="设置画幅"]')).not.toBeNull()
-    expect(container.querySelector('[aria-label="设置分辨率"]')).not.toBeNull()
+    expect(container.querySelectorAll('.canvas-operation-parameter-summary')).toHaveLength(1)
+    const commonTrigger = container.querySelector<HTMLButtonElement>('[aria-label^="常用参数"]')
+    expect(commonTrigger).not.toBeNull()
+    expect(commonTrigger?.textContent).toContain('1:1 · 1K · 5秒 · 生成音频开启')
+    expect(commonTrigger?.textContent).not.toContain('4 项')
+    expect(container.querySelector('[aria-label="设置画幅"]')).toBeNull()
+    expect(container.querySelector('[aria-label="设置分辨率"]')).toBeNull()
     expect(container.querySelector('[data-parameter-name="seed"]')).toBeNull()
 
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="设置画幅"]')!.click(),
+      commonTrigger!.click(),
     )
     const commonPanel = container.querySelector('.canvas-operation-common-parameters')
     expect(commonPanel?.querySelector('[data-parameter-name="aspect_ratio"]')).not.toBeNull()
@@ -186,7 +199,7 @@ describe('CanvasOperationParameterControls', () => {
     expect(container.querySelector('[data-parameter-name="aspect_ratio"]')).not.toBeNull()
   })
 
-  it('reuses one common parameter popover from every parameter preview', async () => {
+  it('opens all common controls from the unified toolbar parameter trigger', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -209,7 +222,11 @@ describe('CanvasOperationParameterControls', () => {
     )
 
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('.canvas-operation-parameter-summary')!.click(),
+      container.querySelector<HTMLButtonElement>('[aria-label^="常用参数"]')!.click(),
+    )
+    expect(container.querySelectorAll('.canvas-operation-parameter-summary')).toHaveLength(1)
+    expect(container.querySelector('.canvas-operation-parameter-summary')?.textContent).toContain(
+      '16:9',
     )
     expect(container.querySelector('.canvas-operation-parameter-overlay.is-common')).not.toBeNull()
     expect(container.querySelector('.canvas-operation-common-parameters')).not.toBeNull()
