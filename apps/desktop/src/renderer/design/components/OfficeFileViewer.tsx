@@ -13,6 +13,7 @@ export default function OfficeFileViewer({
   const capabilities = useOptionalCapabilities()
   const resolvedTheme = useResolvedTheme()
   const [viewerTheme, setViewerTheme] = useState(resolvedTheme)
+  const [installError, setInstallError] = useState<string | null>(null)
   const viewerRef = useRef<FileViewerHandle>(null)
   const pendingViewStateRef = useRef<ViewerViewState | null>(null)
   const options = useMemo(
@@ -43,6 +44,14 @@ export default function OfficeFileViewer({
 
   const office = capabilities.snapshot?.capabilities.find((item) => item.id === 'office-viewer')
   const officeReady = office?.installedVersion != null && office.state !== 'damaged'
+  const installOfficeViewer = async () => {
+    setInstallError(null)
+    try {
+      await capabilities.install('office-viewer')
+    } catch (error) {
+      setInstallError(error instanceof Error ? error.message : 'Office 预览资源安装失败，请重试')
+    }
+  }
   if (!officeReady) {
     const progress = capabilities.progress['office-viewer']
     const installing =
@@ -56,13 +65,17 @@ export default function OfficeFileViewer({
             ? `需下载约 ${(office.downloadSize / 1024 / 1024).toFixed(1)} MB，安装后会自动重试预览。`
             : '当前平台暂时没有可用的 Office 预览资源。'}
         </span>
+        {office?.error && <span className="integrity-sdk-error">{office.error}</span>}
+        {installError && !office?.error && (
+          <span className="integrity-sdk-error">{installError}</span>
+        )}
         {installing ? (
           <span>{progress.message}{progress.percent != null ? ` · ${progress.percent}%` : ''}</span>
         ) : (
           <button
             type="button"
             disabled={office?.targetVersion == null}
-            onClick={() => void capabilities.install('office-viewer').catch(() => undefined)}
+            onClick={() => void installOfficeViewer()}
           >
             安装 Office 预览资源
           </button>

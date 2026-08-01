@@ -43,6 +43,16 @@ describe('IPC schemas', () => {
         capabilityId: 'computer-use',
       }),
     ).toThrow()
+    expect(
+      IpcSchemaRegistry['optional-capability:cancel'].parse({
+        capabilityId: 'office-viewer',
+      }),
+    ).toEqual({ capabilityId: 'office-viewer' })
+    expect(() =>
+      IpcSchemaRegistry['optional-capability:cancel'].parse({
+        capabilityId: 'computer-use',
+      }),
+    ).toThrow()
   })
 
   it('validates session image optimization batches', () => {

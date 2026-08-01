@@ -259,6 +259,10 @@ export interface BinaryArchiveInstallParams {
   destDir: string
   /** 进度回调（已下载字节数 / 总字节数，总字节数未知时为 0） */
   onProgress?: (downloaded: number, total: number) => void
+  /** 安装阶段回调，供 UI 准确区分下载、校验和解压。 */
+  onStage?: (stage: 'downloading' | 'verifying' | 'extracting') => void
+  /** 取消正在进行的下载；已进入解压时会在下一阶段边界停止。 */
+  signal?: AbortSignal
   /** 单个下载源的超时时间；大体积归档可按需覆盖，缺省 2 分钟 */
   downloadTimeoutMs?: number
 }
@@ -285,7 +289,16 @@ export interface BinaryArchiveInstallResult {
 export async function installBinaryArchive(
   params: BinaryArchiveInstallParams,
 ): Promise<BinaryArchiveInstallResult> {
-  const { url, fallbackUrls, sha256, destDir, onProgress, downloadTimeoutMs } = params
+  const {
+    url,
+    fallbackUrls,
+    sha256,
+    destDir,
+    onProgress,
+    onStage,
+    signal,
+    downloadTimeoutMs,
+  } = params
   const format =
     params.format ?? (url.toLowerCase().endsWith('.tar.gz') ? 'tar.gz' : 'zip')
 
@@ -296,14 +309,20 @@ export async function installBinaryArchive(
   const extractDir = join(tmpDir, 'extracted')
 
   try {
+    throwIfAborted(signal)
+    onStage?.('downloading')
     await downloadFromZipCandidates(
       [url, ...(fallbackUrls ?? [])],
       archivePath,
       sha256,
       onProgress,
       downloadTimeoutMs,
+      signal,
+      () => onStage?.('verifying'),
     )
 
+    throwIfAborted(signal)
+    onStage?.('extracting')
     mkdirSync(extractDir, { recursive: true })
     let extracted = false
     // zip 与 tar.gz 都先尝试系统 tar（bsdtar 按 magic 自动识别）；失败回落纯 JS。
@@ -477,15 +496,21 @@ async function downloadFile(
   token: string | undefined,
   onProgress?: (downloaded: number, total: number) => void,
   timeoutMs?: number,
+  signal?: AbortSignal,
 ): Promise<void> {
   const fetchTimeoutMs = timeoutMs ?? 120000
   const headers: Record<string, string> = { 'User-Agent': 'Spark-Agent' }
   if (token) headers.Authorization = `Bearer ${token}`
   let res: Response
   try {
-    res = await fetch(url, { headers, signal: AbortSignal.timeout(fetchTimeoutMs) })
+    const timeoutSignal = AbortSignal.timeout(fetchTimeoutMs)
+    res = await fetch(url, {
+      headers,
+      signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
+    })
   } catch (err) {
-    if (await downloadFileWithNativeTool(url, dest, onProgress, timeoutMs)) return
+    if (signal?.aborted) throw abortError()
+    if (await downloadFileWithNativeTool(url, dest, onProgress, timeoutMs, signal)) return
     throw err
   }
   if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`)
@@ -533,6 +558,7 @@ async function downloadFileWithNativeTool(
   dest: string,
   onProgress?: (downloaded: number, total: number) => void,
   timeoutMs?: number,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const nativeTimeoutMs = timeoutMs ?? 180000
   try {
@@ -543,6 +569,7 @@ async function downloadFileWithNativeTool(
 
   const curlOk = await runCommand('curl', ['-L', '-f', '-A', 'Spark-Agent', '-o', dest, url], {
     timeoutMs: nativeTimeoutMs,
+    ...(signal ? { signal } : {}),
   })
   if (curlOk && existsSync(dest)) {
     await reportNativeDownloadDone(dest, onProgress)
@@ -558,7 +585,7 @@ async function downloadFileWithNativeTool(
     const powershellOk = await runCommand(
       'powershell.exe',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script, url, dest],
-      { timeoutMs: nativeTimeoutMs },
+      { timeoutMs: nativeTimeoutMs, ...(signal ? { signal } : {}) },
     )
     if (powershellOk && existsSync(dest)) {
       await reportNativeDownloadDone(dest, onProgress)
@@ -585,22 +612,30 @@ async function reportNativeDownloadDone(
 function runCommand(
   command: string,
   args: string[],
-  options: { timeoutMs: number },
+  options: { timeoutMs: number; signal?: AbortSignal },
 ): Promise<boolean> {
   return new Promise((resolve) => {
     const child = spawn(command, args, { stdio: 'ignore' })
+    let settled = false
+    const finish = (result: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      options.signal?.removeEventListener('abort', onAbort)
+      resolve(result)
+    }
+    const onAbort = () => {
+      child.kill()
+      finish(false)
+    }
     const timer = setTimeout(() => {
       child.kill()
-      resolve(false)
+      finish(false)
     }, options.timeoutMs)
-    child.on('error', () => {
-      clearTimeout(timer)
-      resolve(false)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      resolve(code === 0)
-    })
+    options.signal?.addEventListener('abort', onAbort, { once: true })
+    if (options.signal?.aborted) onAbort()
+    child.on('error', () => finish(false))
+    child.on('close', (code) => finish(code === 0))
   })
 }
 
@@ -612,14 +647,19 @@ async function downloadFromZipCandidates(
   sha256?: string,
   onProgress?: (downloaded: number, total: number) => void,
   timeoutMs?: number,
+  signal?: AbortSignal,
+  beforeVerify?: () => void,
 ): Promise<void> {
   let lastErr: unknown
   for (const url of urls) {
     try {
-      await downloadFile(url, dest, undefined, onProgress, timeoutMs)
+      throwIfAborted(signal)
+      await downloadFile(url, dest, undefined, onProgress, timeoutMs, signal)
+      beforeVerify?.()
       if (sha256) await verifyFileSha256(dest, sha256)
       return
     } catch (err) {
+      if (signal?.aborted) throw abortError()
       lastErr = err
       try {
         rmSync(dest, { force: true })
@@ -627,7 +667,7 @@ async function downloadFromZipCandidates(
         // ignore cleanup failure
       }
       console.warn(
-        `[zip-installer] download via ${url} failed: ${
+        `[zip-installer] download via ${redactUrl(url)} failed: ${
           err instanceof Error ? err.message : err
         }${url !== urls[urls.length - 1] ? '; trying next source...' : ''}`,
       )
@@ -638,6 +678,27 @@ async function downloadFromZipCandidates(
       lastErr instanceof Error ? lastErr.message : lastErr
     }`,
   )
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError()
+}
+
+function abortError(): Error {
+  const error = new Error('Archive installation cancelled')
+  error.name = 'AbortError'
+  return error
+}
+
+function redactUrl(value: string): string {
+  try {
+    const url = new URL(value)
+    url.search = ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return '[invalid-url]'
+  }
 }
 
 async function verifyFileSha256(path: string, expected: string): Promise<void> {

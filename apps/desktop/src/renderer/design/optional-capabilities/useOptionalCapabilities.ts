@@ -61,7 +61,7 @@ async function refresh(forceRemote = false): Promise<OptionalCapabilitySnapshot>
 }
 
 async function mutate(
-  action: 'install' | 'update' | 'repair' | 'uninstall',
+  action: 'install' | 'update' | 'repair' | 'cancel' | 'uninstall',
   capabilityId: OptionalCapabilityId,
 ): Promise<void> {
   const result = await window.spark.invoke(`optional-capability:${action}`, { capabilityId })
@@ -89,6 +89,7 @@ export function useOptionalCapabilities() {
     install: (id: OptionalCapabilityId) => mutate('install', id),
     update: (id: OptionalCapabilityId) => mutate('update', id),
     repair: (id: OptionalCapabilityId) => mutate('repair', id),
+    cancel: (id: OptionalCapabilityId) => mutate('cancel', id),
     uninstall: (id: OptionalCapabilityId) => mutate('uninstall', id),
     setAutoUpdate,
   }

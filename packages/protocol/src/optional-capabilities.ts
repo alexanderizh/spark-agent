@@ -8,10 +8,21 @@ export type OptionalCapabilityPhase =
   | 'verifying'
   | 'extracting'
   | 'activating'
+  | 'cancelled'
   | 'ready'
   | 'update_available'
   | 'damaged'
   | 'error'
+
+export type OptionalCapabilityErrorCode =
+  | 'manifest_unavailable'
+  | 'artifact_unavailable'
+  | 'artifact_invalid'
+  | 'download_failed'
+  | 'package_invalid'
+  | 'activation_failed'
+  | 'cancelled'
+  | 'internal_error'
 
 export interface OptionalCapabilityItem {
   id: OptionalCapabilityId
@@ -24,6 +35,7 @@ export interface OptionalCapabilityItem {
   installedSize: number | null
   autoUpdate: boolean
   error?: string
+  errorCode?: OptionalCapabilityErrorCode
   retryable?: boolean
   entryUrl?: string
 }
@@ -45,7 +57,7 @@ export interface OptionalCapabilityProgress {
   queuePosition: number
   message: string
   version?: string
-  errorCode?: string
+  errorCode?: OptionalCapabilityErrorCode
   retryable?: boolean
 }
 
@@ -64,6 +76,7 @@ export interface OptionalCapabilityMutationRequest {
 export interface OptionalCapabilityMutationResponse {
   success: boolean
   message: string
+  errorCode?: OptionalCapabilityErrorCode
   snapshot: OptionalCapabilitySnapshot
 }
 

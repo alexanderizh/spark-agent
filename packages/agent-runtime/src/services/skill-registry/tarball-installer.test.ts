@@ -34,17 +34,20 @@ describe('installBinaryArchive', () => {
     try {
       const address = server.address()
       if (!address || typeof address === 'string') throw new Error('test server has no TCP port')
+      const stages: string[] = []
       await installBinaryArchive({
         url: `http://127.0.0.1:${address.port}/fixture.tar.gz`,
         format: 'tar.gz',
         contentRoot: '.',
         destDir,
+        onStage: (stage) => stages.push(stage),
       })
 
       await expect(readFile(join(destDir, 'model-package.json'), 'utf8')).resolves.toContain(
         'schemaVersion',
       )
       await expect(readFile(join(destDir, 'onnx', 'model.onnx'), 'utf8')).resolves.toBe('fixture')
+      expect(stages).toEqual(['downloading', 'verifying', 'extracting'])
     } finally {
       await new Promise<void>((resolveClose) => server.close(() => resolveClose()))
     }

@@ -1,15 +1,17 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { access, lstat, mkdir, readFile, realpath, rename, rm } from 'node:fs/promises'
+import { access, lstat, mkdir, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import type {
   OptionalCapabilityId,
+  OptionalCapabilityErrorCode,
   OptionalCapabilityItem,
   OptionalCapabilityMutationResponse,
   OptionalCapabilityPhase,
   OptionalCapabilityProgress,
   OptionalCapabilitySnapshot,
 } from '@spark/protocol'
+import { createLogger } from '@spark/shared'
 import {
   fetchSparkInstallManifest,
   resolveArtifactUrl,
@@ -46,7 +48,17 @@ export interface OptionalCapabilityManagerOptions {
   now?: () => Date
   onProgress?: (progress: OptionalCapabilityProgress) => void
   onSnapshot?: (snapshot: OptionalCapabilitySnapshot) => void
+  logger?: CapabilityLogger
 }
+
+type CapabilityLogger = Pick<ReturnType<typeof createLogger>, 'info' | 'warn' | 'error'>
+type CapabilityErrorState = {
+  code: OptionalCapabilityErrorCode
+  message: string
+  retryable: boolean
+}
+
+const MANIFEST_CACHE_TTL_MS = 24 * 60 * 60 * 1_000
 
 export class OptionalCapabilityManager {
   private readonly root: string
@@ -60,10 +72,15 @@ export class OptionalCapabilityManager {
     OptionalCapabilityId,
     Promise<OptionalCapabilityMutationResponse>
   >()
-  private readonly errors = new Map<OptionalCapabilityId, string>()
+  private readonly errors = new Map<OptionalCapabilityId, CapabilityErrorState>()
+  private readonly controllers = new Map<OptionalCapabilityId, AbortController>()
+  private readonly verifiedActiveStates = new Map<OptionalCapabilityId, string>()
+  private readonly logger: CapabilityLogger
   private queueTail: Promise<void> = Promise.resolve()
   private queuedJobs = 0
   private manifest: SparkInstallManifest | null = null
+  private manifestCheckedAt: Date | null = null
+  private manifestCacheLoaded = false
   private manifestAvailable = false
 
   constructor(private readonly options: OptionalCapabilityManagerOptions) {
@@ -74,19 +91,31 @@ export class OptionalCapabilityManager {
     this.now = options.now ?? (() => new Date())
     this.onProgress = options.onProgress
     this.onSnapshot = options.onSnapshot
+    this.logger = options.logger ?? createLogger('optional-capabilities')
   }
 
   async list(): Promise<OptionalCapabilitySnapshot> {
-    if (!this.manifest) await this.refreshManifest().catch(() => undefined)
+    await this.loadManifestCache()
     return this.buildSnapshot()
   }
 
   async check(forceRemote = false): Promise<OptionalCapabilitySnapshot> {
-    if (forceRemote || !this.manifest) await this.refreshManifest().catch(() => undefined)
+    await this.loadManifestCache()
+    const cacheAge = this.manifestCheckedAt
+      ? this.now().getTime() - this.manifestCheckedAt.getTime()
+      : Number.POSITIVE_INFINITY
+    const cacheFresh = cacheAge >= 0 && cacheAge < MANIFEST_CACHE_TTL_MS
+    if (forceRemote || !this.manifest || !cacheFresh) {
+      await this.refreshManifest().catch(() => undefined)
+    }
     const snapshot = await this.buildSnapshot()
     this.onSnapshot?.(snapshot)
     for (const capability of snapshot.capabilities) {
-      if (capability.state === 'update_available' && capability.autoUpdate) {
+      if (
+        this.manifestAvailable &&
+        capability.state === 'update_available' &&
+        capability.autoUpdate
+      ) {
         void this.enqueueInstall(capability.id)
       }
     }
@@ -105,11 +134,35 @@ export class OptionalCapabilityManager {
     return this.enqueueInstall(id)
   }
 
-  async uninstall(id: OptionalCapabilityId): Promise<OptionalCapabilityMutationResponse> {
-    await this.store.remove(id)
+  async cancel(id: OptionalCapabilityId): Promise<OptionalCapabilityMutationResponse> {
+    const controller = this.controllers.get(id)
+    const definition = getOptionalCapabilityDefinition(id)
+    if (!controller) {
+      const snapshot = await this.buildSnapshot()
+      return { success: false, message: `${definition.displayName}当前没有可取消的安装`, snapshot }
+    }
+    controller.abort()
     this.errors.delete(id)
+    this.logger.warn(`[${id}] install cancelled by user`)
+    this.emitProgress(id, definition.displayName, 'cancelled', 0, 0, 0, '安装已取消')
     const snapshot = await this.buildSnapshot()
     this.onSnapshot?.(snapshot)
+    return { success: true, message: `${definition.displayName}安装已取消`, snapshot }
+  }
+
+  async uninstall(id: OptionalCapabilityId): Promise<OptionalCapabilityMutationResponse> {
+    const activeInstall = this.installs.get(id)
+    if (activeInstall) {
+      this.controllers.get(id)?.abort()
+      await activeInstall
+    }
+    this.logger.info(`[${id}] uninstall started`)
+    await this.store.remove(id)
+    this.errors.delete(id)
+    this.verifiedActiveStates.delete(id)
+    const snapshot = await this.buildSnapshot()
+    this.onSnapshot?.(snapshot)
+    this.logger.info(`[${id}] uninstall completed`)
     return { success: true, message: '可选能力已卸载', snapshot }
   }
 
@@ -130,6 +183,14 @@ export class OptionalCapabilityManager {
   ): Promise<string | null> {
     const active = await this.store.read(id)
     if (!active) return null
+    const stateKey = activeStateKey(active)
+    if (this.verifiedActiveStates.get(id) !== stateKey) {
+      if (!(await validateActiveState(active, this.store.capabilityRoot(id)))) {
+        this.logger.warn(`[${id}] refused an invalid active capability state`)
+        return null
+      }
+      this.verifiedActiveStates.set(id, stateKey)
+    }
     const match = Object.entries(active.artifacts).find(([artifactId]) =>
       artifactId.startsWith(artifactIdPrefix),
     )
@@ -141,35 +202,66 @@ export class OptionalCapabilityManager {
     if (existing) return existing
 
     const definition = getOptionalCapabilityDefinition(id)
+    const controller = new AbortController()
+    this.controllers.set(id, controller)
     this.queuedJobs += 1
     this.emitProgress(id, definition.displayName, 'queued', 0, 0, this.queuedJobs, '等待安装')
     const job = this.queueTail.then(async () => {
       this.queuedJobs = Math.max(0, this.queuedJobs - 1)
-      return this.performInstall(id)
+      return this.performInstall(id, controller.signal)
     })
     this.queueTail = job.then(
       () => undefined,
       () => undefined,
     )
     this.installs.set(id, job)
-    void job.finally(() => this.installs.delete(id)).catch(() => undefined)
+    void job
+      .finally(() => {
+        this.installs.delete(id)
+        this.controllers.delete(id)
+      })
+      .catch(() => undefined)
     return job
   }
 
   private async performInstall(
     id: OptionalCapabilityId,
+    signal: AbortSignal,
   ): Promise<OptionalCapabilityMutationResponse> {
     const definition = getOptionalCapabilityDefinition(id)
     let stagingRoot: string | null = null
     let backupRoot: string | null = null
     let targetRoot: string | null = null
     try {
-      const manifest = await this.refreshManifest()
+      throwIfAborted(signal, definition.displayName)
+      this.logger.info(`[${id}] install started`)
+      const manifest = await this.refreshManifest().catch((error) => {
+        throw capabilityError(
+          'manifest_unavailable',
+          `${definition.displayName}安装失败：无法连接组件仓库，请检查网络后重试`,
+          true,
+          error,
+        )
+      })
+      throwIfAborted(signal, definition.displayName)
       const artifacts = definition.selectArtifacts(manifest, this.options.platform, this.options.arch)
       if (artifacts.length === 0) {
-        throw new Error(`当前平台没有可用的${definition.displayName}制品`)
+        throw capabilityError(
+          'artifact_unavailable',
+          `${definition.displayName}安装失败：当前平台暂无可用制品`,
+          false,
+        )
       }
-      validateArtifacts(artifacts)
+      try {
+        validateArtifacts(artifacts, manifest)
+      } catch (error) {
+        throw capabilityError(
+          'artifact_invalid',
+          `${definition.displayName}安装失败：远程制品清单无效`,
+          false,
+          error,
+        )
+      }
       const version = capabilityVersion(artifacts)
       const capabilityRoot = this.store.capabilityRoot(id)
       stagingRoot = join(capabilityRoot, `.staging-${randomUUID()}`)
@@ -179,7 +271,9 @@ export class OptionalCapabilityManager {
 
       const total = artifacts.reduce((sum, artifact) => sum + (artifact.size ?? 0), 0)
       let completed = 0
+      const installedSizes = new Map<string, number>()
       for (const artifact of artifacts) {
+        throwIfAborted(signal, definition.displayName)
         const destination = join(stagingRoot, safeSegment(artifact.id))
         this.emitProgress(
           id,
@@ -191,45 +285,84 @@ export class OptionalCapabilityManager {
           `正在下载 ${artifact.name}`,
           version,
         )
-        await this.installArchive({
-          url: resolveArtifactUrl(manifest, artifact),
-          ...(artifact.fallbackUrls?.length
-            ? {
-                fallbackUrls: artifact.fallbackUrls.map((url) =>
-                  resolveArtifactUrlString(manifest, url),
-                ),
-              }
-            : {}),
-          ...(artifact.sha256 ? { sha256: artifact.sha256 } : {}),
-          ...(artifact.archive?.format ? { format: artifact.archive.format } : {}),
-          ...(artifact.archive?.contentRoot != null
-            ? { contentRoot: artifact.archive.contentRoot }
-            : {}),
-          destDir: destination,
-          onProgress: (downloaded, reportedTotal) =>
-            this.emitProgress(
-              id,
-              definition.displayName,
-              'downloading',
-              Math.min(total, completed + downloaded),
-              total || reportedTotal,
-              0,
-              `正在下载 ${artifact.name}`,
-              version,
-            ),
-        })
+        try {
+          await this.installArchive({
+            url: resolveArtifactUrl(manifest, artifact),
+            ...(artifact.fallbackUrls?.length
+              ? {
+                  fallbackUrls: artifact.fallbackUrls.map((url) =>
+                    resolveArtifactUrlString(manifest, url),
+                  ),
+                }
+              : {}),
+            ...(artifact.sha256 ? { sha256: artifact.sha256 } : {}),
+            ...(artifact.archive?.format ? { format: artifact.archive.format } : {}),
+            ...(artifact.archive?.contentRoot != null
+              ? { contentRoot: artifact.archive.contentRoot }
+              : {}),
+            destDir: destination,
+            signal,
+            onStage: (stage) => {
+              if (stage === 'downloading') return
+              this.emitProgress(
+                id,
+                definition.displayName,
+                stage,
+                completed,
+                total,
+                0,
+                stage === 'verifying'
+                  ? `正在校验 ${artifact.name}`
+                  : `正在解压 ${artifact.name}`,
+                version,
+              )
+            },
+            onProgress: (downloaded, reportedTotal) =>
+              this.emitProgress(
+                id,
+                definition.displayName,
+                'downloading',
+                Math.min(total, completed + downloaded),
+                total || reportedTotal,
+                0,
+                `正在下载 ${artifact.name}`,
+                version,
+              ),
+          })
+          throwIfAborted(signal, definition.displayName)
+        } catch (error) {
+          throwIfAborted(signal, definition.displayName)
+          throw capabilityError(
+            'download_failed',
+            `${definition.displayName}安装失败：下载或解压制品失败，请检查网络后重试`,
+            true,
+            error,
+          )
+        }
         completed += artifact.size ?? 0
-        this.emitProgress(
-          id,
-          definition.displayName,
-          'extracting',
-          completed,
-          total,
-          0,
-          `正在解压 ${artifact.name}`,
-          version,
-        )
-        await validateInstalledArtifact(destination, id, artifact)
+        try {
+          this.emitProgress(
+            id,
+            definition.displayName,
+            'verifying',
+            completed,
+            total,
+            0,
+            `正在校验 ${artifact.name} 的包内文件`,
+            version,
+          )
+          installedSizes.set(
+            artifact.id,
+            await validateInstalledArtifact(destination, id, artifact),
+          )
+        } catch (error) {
+          throw capabilityError(
+            'package_invalid',
+            `${definition.displayName}安装失败：组件文件完整性校验未通过`,
+            true,
+            error,
+          )
+        }
       }
 
       this.emitProgress(
@@ -245,6 +378,7 @@ export class OptionalCapabilityManager {
       await mkdir(dirname(targetRoot), { recursive: true })
       let backedUp = false
       try {
+        throwIfAborted(signal, definition.displayName)
         await access(targetRoot)
         await rename(targetRoot, backupRoot)
         backedUp = true
@@ -278,7 +412,7 @@ export class OptionalCapabilityManager {
                 version: artifact.version,
                 sha256: artifact.sha256!,
                 directory: join(targetRoot!, safeSegment(artifact.id)),
-                size: artifact.size!,
+                size: installedSizes.get(artifact.id) ?? artifact.size!,
               },
             ]),
           ),
@@ -290,10 +424,17 @@ export class OptionalCapabilityManager {
           await rm(targetRoot, { recursive: true, force: true }).catch(() => undefined)
           await rename(backupRoot, targetRoot).catch(() => undefined)
         }
-        throw error
+        if (error instanceof OptionalCapabilityInstallError) throw error
+        throw capabilityError(
+          'activation_failed',
+          `${definition.displayName}安装失败：无法激活新版本，原版本已保留`,
+          true,
+          error,
+        )
       }
 
       this.errors.delete(id)
+      this.logger.info(`[${id}] install completed version=${version}`)
       this.emitProgress(
         id,
         definition.displayName,
@@ -308,12 +449,34 @@ export class OptionalCapabilityManager {
       this.onSnapshot?.(snapshot)
       return { success: true, message: `${definition.displayName}安装完成`, snapshot }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.errors.set(id, message)
-      this.emitProgress(id, definition.displayName, 'error', 0, 0, 0, message)
+      const failure = normalizeCapabilityError(error, definition.displayName)
+      if (failure.code === 'cancelled') this.errors.delete(id)
+      else this.errors.set(id, failure)
+      this.logger.warn(
+        `[${id}] install failed code=${failure.code}: ${safeDiagnostic(
+          failure.cause ?? failure.message,
+        )}`,
+      )
+      this.emitProgress(
+        id,
+        definition.displayName,
+        failure.code === 'cancelled' ? 'cancelled' : 'error',
+        0,
+        0,
+        0,
+        failure.message,
+        undefined,
+        failure.code,
+        failure.retryable,
+      )
       const snapshot = await this.buildSnapshot()
       this.onSnapshot?.(snapshot)
-      return { success: false, message, snapshot }
+      return {
+        success: false,
+        message: failure.message,
+        errorCode: failure.code,
+        snapshot,
+      }
     } finally {
       if (stagingRoot) await rm(stagingRoot, { recursive: true, force: true }).catch(() => undefined)
       if (backupRoot) await rm(backupRoot, { recursive: true, force: true }).catch(() => undefined)
@@ -324,12 +487,38 @@ export class OptionalCapabilityManager {
     try {
       const manifest = await this.fetchManifest()
       this.manifest = manifest
+      this.manifestCheckedAt = this.now()
       this.manifestAvailable = true
+      await this.store
+        .writeManifestCache({
+          schemaVersion: 1,
+          checkedAt: this.manifestCheckedAt.toISOString(),
+          manifest,
+        })
+        .catch((error) => {
+          this.logger.warn(`Failed to persist optional capability manifest cache: ${safeDiagnostic(error)}`)
+        })
       return manifest
     } catch (error) {
       this.manifestAvailable = false
       throw error
     }
+  }
+
+  private async loadManifestCache(): Promise<void> {
+    if (this.manifestCacheLoaded) return
+    this.manifestCacheLoaded = true
+    const cached = await this.store.readManifestCache().catch((error) => {
+      this.logger.warn(`Ignoring invalid optional capability manifest cache: ${safeDiagnostic(error)}`)
+      return null
+    })
+    if (!cached) return
+    const checkedAt = new Date(cached.checkedAt)
+    if (!Number.isFinite(checkedAt.getTime())) return
+    this.manifest = cached.manifest
+    this.manifestCheckedAt = checkedAt
+    // A disk cache avoids redundant startup traffic but is not evidence that the network is live.
+    this.manifestAvailable = false
   }
 
   private async buildSnapshot(): Promise<OptionalCapabilitySnapshot> {
@@ -343,9 +532,19 @@ export class OptionalCapabilityManager {
         const downloadSize = artifacts.reduce((sum, artifact) => sum + (artifact.size ?? 0), 0)
         const error = this.errors.get(definition.id)
         let state: OptionalCapabilityPhase = active ? 'ready' : 'missing'
-        if (active && !(await validateActiveState(active))) state = 'damaged'
-        else if (active && targetVersion && targetVersion !== active.version) state = 'update_available'
-        else if (error && !active) state = 'error'
+        if (active) {
+          const valid = await validateActiveState(
+            active,
+            this.store.capabilityRoot(definition.id),
+          )
+          if (valid) {
+            this.verifiedActiveStates.set(definition.id, activeStateKey(active))
+            if (targetVersion && targetVersion !== active.version) state = 'update_available'
+          } else {
+            this.verifiedActiveStates.delete(definition.id)
+            state = 'damaged'
+          }
+        } else if (error) state = 'error'
         return {
           id: definition.id,
           displayName: definition.displayName,
@@ -358,7 +557,9 @@ export class OptionalCapabilityManager {
             ? Object.values(active.artifacts).reduce((sum, artifact) => sum + artifact.size, 0)
             : null,
           autoUpdate: active?.autoUpdate ?? true,
-          ...(error ? { error, retryable: true } : {}),
+          ...(error
+            ? { error: error.message, errorCode: error.code, retryable: error.retryable }
+            : {}),
         }
       }),
     )
@@ -379,6 +580,8 @@ export class OptionalCapabilityManager {
     queuePosition: number,
     message: string,
     version?: string,
+    errorCode?: OptionalCapabilityErrorCode,
+    retryable?: boolean,
   ): void {
     this.onProgress?.({
       capabilityId,
@@ -390,12 +593,16 @@ export class OptionalCapabilityManager {
       queuePosition,
       message,
       ...(version ? { version } : {}),
-      ...(phase === 'error' ? { retryable: true } : {}),
+      ...(errorCode ? { errorCode } : {}),
+      ...(retryable != null ? { retryable } : {}),
     })
   }
 }
 
-function validateArtifacts(artifacts: SparkInstallArtifact[]): void {
+function validateArtifacts(
+  artifacts: SparkInstallArtifact[],
+  manifest: SparkInstallManifest,
+): void {
   for (const artifact of artifacts) {
     if (!/^[0-9a-f]{64}$/i.test(artifact.sha256 ?? '')) {
       throw new Error(`${artifact.id} 缺少有效的 SHA-256`)
@@ -403,8 +610,19 @@ function validateArtifacts(artifacts: SparkInstallArtifact[]): void {
     if (!Number.isSafeInteger(artifact.size) || (artifact.size ?? 0) <= 0) {
       throw new Error(`${artifact.id} 缺少有效的归档大小`)
     }
+    if (artifact.archive?.format !== 'tar.gz' && artifact.archive?.format !== 'zip') {
+      throw new Error(`${artifact.id} 缺少受支持的归档格式`)
+    }
     safeSegment(artifact.id)
     safeSegment(artifact.version)
+    for (const url of [
+      resolveArtifactUrl(manifest, artifact),
+      ...(artifact.fallbackUrls?.map((value) => resolveArtifactUrlString(manifest, value)) ?? []),
+    ]) {
+      if (new URL(url).protocol !== 'https:') {
+        throw new Error(`${artifact.id} 使用了不安全的下载地址`)
+      }
+    }
   }
 }
 
@@ -412,8 +630,22 @@ async function validateInstalledArtifact(
   directory: string,
   capabilityId: OptionalCapabilityId,
   artifact: SparkInstallArtifact,
-): Promise<void> {
+): Promise<number> {
   await validatePackageDirectory(directory, capabilityId, artifact.id, artifact.version)
+  return directorySize(directory)
+}
+
+async function directorySize(directory: string): Promise<number> {
+  let total = 0
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = join(directory, entry.name)
+    if (entry.isSymbolicLink()) {
+      throw new Error(`能力包不能包含符号链接：${entry.name}`)
+    }
+    if (entry.isDirectory()) total += await directorySize(entryPath)
+    else if (entry.isFile()) total += (await lstat(entryPath)).size
+  }
+  return total
 }
 
 async function validatePackageDirectory(
@@ -470,10 +702,14 @@ async function assertNoSymlinkEscape(
   }
 }
 
-async function validateActiveState(state: ActiveCapabilityState): Promise<boolean> {
+async function validateActiveState(
+  state: ActiveCapabilityState,
+  capabilityRoot: string,
+): Promise<boolean> {
   try {
     for (const [artifactId, artifact] of Object.entries(state.artifacts)) {
       if (basename(artifact.directory) !== safeSegment(artifactId)) return false
+      if (!isSamePathOrChild(resolve(artifact.directory), resolve(capabilityRoot))) return false
       await validatePackageDirectory(
         artifact.directory,
         state.capabilityId,
@@ -485,6 +721,80 @@ async function validateActiveState(state: ActiveCapabilityState): Promise<boolea
   } catch {
     return false
   }
+}
+
+function isSamePathOrChild(target: string, root: string): boolean {
+  return target === root || target.startsWith(root + sep)
+}
+
+function activeStateKey(state: ActiveCapabilityState): string {
+  return JSON.stringify([
+    state.activatedAt,
+    state.version,
+    Object.entries(state.artifacts)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([artifactId, artifact]) => [
+        artifactId,
+        artifact.version,
+        artifact.sha256,
+        artifact.directory,
+        artifact.size,
+      ]),
+  ])
+}
+
+class OptionalCapabilityInstallError extends Error {
+  constructor(
+    readonly code: OptionalCapabilityErrorCode,
+    message: string,
+    readonly retryable: boolean,
+    readonly cause?: unknown,
+  ) {
+    super(message)
+    this.name = 'OptionalCapabilityInstallError'
+  }
+}
+
+function capabilityError(
+  code: OptionalCapabilityErrorCode,
+  message: string,
+  retryable: boolean,
+  cause?: unknown,
+): OptionalCapabilityInstallError {
+  return new OptionalCapabilityInstallError(code, message, retryable, cause)
+}
+
+function normalizeCapabilityError(
+  error: unknown,
+  displayName: string,
+): OptionalCapabilityInstallError {
+  if (error instanceof OptionalCapabilityInstallError) return error
+  return capabilityError(
+    'internal_error',
+    `${displayName}安装失败：发生内部错误，请重试或前往完整性页修复`,
+    true,
+    error,
+  )
+}
+
+function throwIfAborted(signal: AbortSignal, displayName: string): void {
+  if (signal.aborted) {
+    throw capabilityError('cancelled', `${displayName}安装已取消`, true)
+  }
+}
+
+function safeDiagnostic(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? 'unknown error')
+  return raw.replace(/https?:\/\/[^\s]+/gi, (value) => {
+    try {
+      const url = new URL(value)
+      url.search = ''
+      url.hash = ''
+      return url.toString()
+    } catch {
+      return '[redacted-url]'
+    }
+  })
 }
 
 function safePackageFile(directory: string, relativePath: string): string {

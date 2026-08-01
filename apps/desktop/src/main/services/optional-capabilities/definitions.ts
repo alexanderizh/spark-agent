@@ -44,12 +44,16 @@ function latest(artifacts: SparkInstallArtifact[]): SparkInstallArtifact | null 
 function selectByPrefix(
   manifest: SparkInstallManifest,
   prefix: string,
+  type: SparkInstallArtifact['type'],
   platform: SupportedDesktopPlatform,
   arch: SupportedDesktopArch,
 ): SparkInstallArtifact | null {
   return latest(
     manifest.artifacts.filter(
-      (artifact) => artifact.id.startsWith(prefix) && isCompatible(artifact, platform, arch),
+      (artifact) =>
+        artifact.type === type &&
+        artifact.id.startsWith(prefix) &&
+        isCompatible(artifact, platform, arch),
     ),
   )
 }
@@ -63,6 +67,7 @@ export const OPTIONAL_CAPABILITY_DEFINITIONS: OptionalCapabilityDefinition[] = [
       const artifact = selectByPrefix(
         manifest,
         'archive.optional-office-viewer-',
+        'archive',
         platform,
         arch,
       )
@@ -77,12 +82,14 @@ export const OPTIONAL_CAPABILITY_DEFINITIONS: OptionalCapabilityDefinition[] = [
       const runtime = selectByPrefix(
         manifest,
         'runtime.optional-depth-',
+        'runtime',
         platform,
         arch,
       )
       const model = selectByPrefix(
         manifest,
         'model.depth-anything-v2-small-int8-',
+        'model',
         platform,
         arch,
       )

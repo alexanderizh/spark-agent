@@ -132,6 +132,9 @@ describe('OptionalCapabilityManager', () => {
       targetVersion: '2.2.3-1',
       downloadSize: 120,
     })
+    expect(
+      first.snapshot.capabilities.find((item) => item.id === 'office-viewer')?.installedSize,
+    ).toBeGreaterThan(120)
   })
 
   it('keeps the active version when an update fails before activation', async () => {
@@ -226,7 +229,8 @@ describe('OptionalCapabilityManager', () => {
 
     await expect(manager.install('office-viewer')).resolves.toMatchObject({
       success: false,
-      message: expect.stringContaining('符号链接'),
+      errorCode: 'package_invalid',
+      message: expect.stringContaining('完整性校验未通过'),
     })
   })
 
@@ -270,5 +274,191 @@ describe('OptionalCapabilityManager', () => {
         String(input.destDir).includes('local-depth'),
       ),
     ).toBe(false)
+  })
+
+  it('lists local state without making an eager manifest request', async () => {
+    const root = await fixtureRoot()
+    const fetchManifest = vi.fn(async () => manifest())
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest,
+    })
+
+    await expect(manager.list()).resolves.toMatchObject({ remoteAvailable: false })
+    expect(fetchManifest).not.toHaveBeenCalled()
+  })
+
+  it('reuses a successful manifest check for 24 hours without treating the cache as live network', async () => {
+    const root = await fixtureRoot()
+    let now = new Date('2026-08-02T00:00:00.000Z')
+    const firstFetch = vi.fn(async () => manifest())
+    const first = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: firstFetch,
+      now: () => now,
+    })
+    await expect(first.check(false)).resolves.toMatchObject({ remoteAvailable: true })
+    expect(firstFetch).toHaveBeenCalledOnce()
+
+    now = new Date('2026-08-02T12:00:00.000Z')
+    const cachedFetch = vi.fn(async () => {
+      throw new Error('offline')
+    })
+    const cached = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: cachedFetch,
+      now: () => now,
+    })
+    await expect(cached.check(false)).resolves.toMatchObject({
+      remoteAvailable: false,
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({ id: 'office-viewer', targetVersion: '2.2.3-1' }),
+      ]),
+    })
+    expect(cachedFetch).not.toHaveBeenCalled()
+
+    now = new Date('2026-08-03T01:00:00.000Z')
+    const expiredFetch = vi.fn(async () => manifest())
+    const expired = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: expiredFetch,
+      now: () => now,
+    })
+    await expect(expired.check(false)).resolves.toMatchObject({ remoteAvailable: true })
+    expect(expiredFetch).toHaveBeenCalledOnce()
+  })
+
+  it('rejects an artifact whose declared type does not match the capability definition', async () => {
+    const root = await fixtureRoot()
+    const invalidManifest = manifest()
+    invalidManifest.artifacts[0]!.type = 'binary'
+    const installArchive = vi.fn()
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: async () => invalidManifest,
+      installArchive,
+    })
+
+    await expect(manager.install('office-viewer')).resolves.toMatchObject({
+      success: false,
+      errorCode: 'artifact_unavailable',
+      message: expect.stringContaining('当前平台暂无可用制品'),
+    })
+    expect(installArchive).not.toHaveBeenCalled()
+  })
+
+  it('does not resolve an active artifact directory that was redirected outside its capability root', async () => {
+    const root = await fixtureRoot()
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: async () => manifest(),
+      installArchive: async ({ destDir }) => {
+        await writePackage(
+          destDir,
+          'office-viewer',
+          'archive.optional-office-viewer-2.2.3-1',
+          '2.2.3-1',
+        )
+        return { destPath: destDir, entries: [], fileCount: 2 }
+      },
+    })
+    await manager.install('office-viewer')
+    const activePath = join(
+      root,
+      'optional-capabilities',
+      'office-viewer',
+      'active.json',
+    )
+    const active = JSON.parse(await readFile(activePath, 'utf8')) as {
+      artifacts: Record<string, { directory: string }>
+    }
+    const artifactId = Object.keys(active.artifacts)[0]!
+    const outside = join(root, 'outside', artifactId)
+    await writePackage(outside, 'office-viewer', artifactId, '2.2.3-1')
+    active.artifacts[artifactId]!.directory = outside
+    await writeFile(activePath, JSON.stringify(active))
+
+    await expect(
+      manager.getArtifactDirectory('office-viewer', 'archive.optional-office-viewer-'),
+    ).resolves.toBeNull()
+  })
+
+  it('cancels an active download and reports a stable client error without leaking the raw URL', async () => {
+    const root = await fixtureRoot()
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+    const installStarted = Promise.withResolvers<void>()
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: async () => manifest(),
+      logger,
+      installArchive: async ({ signal }: { signal?: AbortSignal }) => {
+        installStarted.resolve()
+        await new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => reject(new Error('download aborted https://example.invalid/file?secret=value')),
+            { once: true },
+          )
+        })
+        throw new Error('unreachable')
+      },
+    })
+
+    const installing = manager.install('office-viewer')
+    await installStarted.promise
+    await expect(manager.cancel('office-viewer')).resolves.toMatchObject({ success: true })
+    await expect(installing).resolves.toMatchObject({
+      success: false,
+      errorCode: 'cancelled',
+      message: '离线 Office 预览安装已取消',
+    })
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('cancelled'),
+    )
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('secret=value')
+  })
+
+  it('cancels and drains an active install before uninstalling its files', async () => {
+    const root = await fixtureRoot()
+    const installStarted = Promise.withResolvers<void>()
+    let activeSignal: AbortSignal | undefined
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: async () => manifest(),
+      installArchive: async ({ signal }) => {
+        activeSignal = signal
+        installStarted.resolve()
+        await new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        })
+        throw new Error('unreachable')
+      },
+    })
+
+    const installing = manager.install('office-viewer')
+    await installStarted.promise
+    const uninstalled = await manager.uninstall('office-viewer')
+    const abortedBeforeCleanup = activeSignal?.aborted
+    if (!abortedBeforeCleanup) await manager.cancel('office-viewer')
+
+    expect(abortedBeforeCleanup).toBe(true)
+    expect(uninstalled).toMatchObject({ success: true })
+    await expect(installing).resolves.toMatchObject({ errorCode: 'cancelled' })
   })
 })
