@@ -1,6 +1,6 @@
 # 火山方舟多媒体、画布与 Files 适配
 
-> 状态: 已落地 | 最后核对: 2026-07-17
+> 状态: 已落地 | 最后核对: 2026-08-01
 
 ## 目标与边界
 
@@ -82,16 +82,20 @@ Seedance 1.0 Pro Fast 的 manifest 只声明一张首帧，不再向画布暴露
 
 ## Files API
 
-项目资产中心新增 `Files` 主 Tab，并预留渠道子 Tab；当前只实现火山方舟，xAI 等渠道后续通过同一 provider-discriminated IPC 契约接入。火山页可在同渠道的多个 Provider Profile 间切换，支持：
+项目资产中心的 `Files` 主 Tab 已通过同一 provider-discriminated IPC 契约接入火山方舟、xAI、阿里云百炼和 MiniMax。可用 Profile 只按显式 `mediaProvider` 识别，不再根据 `apiEndpoint` hostname 推断，避免把与多媒体共用域名的纯聊天渠道误纳入文件管理。
+
+火山页可在同渠道的多个 Provider Profile 间切换，支持：
 
 - 本地文件上传，以及 HTTP/HTTPS/TOS URI 导入；
 - 平台托管或指定 TOS `bucket/prefix`；
 - 1–30 天过期时间；
 - 视频 `fps/model/max_video_tokens/min_frame_tokens/max_frame_tokens/min_frames` 预处理；
-- `after` 游标分页、状态筛选、单项查询、自动轮询、批量删除；
+- Provider 游标分页与本地每页 20 条的前后翻页、状态筛选、单项查询、自动轮询、批量删除；
 - 显示 `processing/active/failed`、MIME、文件大小、TOS、过期时间和官方错误信息。
 
 Renderer 不直接持有 API Key；所有请求经 typed IPC 进入主进程，再由 `VolcengineArkFilesClient` 调用官方 `/api/v3/files`。即使 Provider 使用 `/api/coding/v3`，Files client 也会收敛到同源 `/api/v3/files`，避免错误请求到 Coding Plan 路径。
+
+Files client 的 `MediaProviderError` 在 IPC 边界统一映射为 `SparkError`：输入错误保持 `VALIDATION_FAILED`，缺少凭据或 401/403 映射为认证失败，402/429 分别映射为配额和限流，其余错误保留渠道名、HTTP 状态和原始摘要。Renderer 因此可以展示可诊断的渠道错误，而不会退化为通用“操作未完成”。
 
 Provider 编辑页的原“Codex API 类型”已改为通用“API 协议”。火山标准 `/api/v3` 模板显式默认 Chat Completions，Coding Plan `/api/coding/v3` 模板默认 Responses；选择结果继续由现有 `codexApiKind` 贯穿连接测试、主对话和画布文本生成路由。
 

@@ -35,6 +35,7 @@
 }
 
 .canvas-provider-files-toolbar {
+  position: relative;
   justify-content: space-between;
   padding: 12px;
   border: 1px solid var(--divider);
@@ -96,10 +97,77 @@
   white-space: pre-wrap;
 }
 
+.canvas-provider-file-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+}
+
+.canvas-provider-file-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  min-width: 0;
+  gap: 10px;
+}
+
+.canvas-provider-file-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.canvas-provider-file-id {
+  flex-shrink: 0;
+}
+
+.canvas-provider-file-attr {
+  color: var(--text);
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+.canvas-provider-file-submeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-provider-file-sep {
+  opacity: 0.45;
+}
+
+.canvas-provider-file-expiry {
+  color: color-mix(in srgb, var(--warning, #faad14) 75%, var(--text-muted));
+}
+
 .canvas-provider-files-pagination {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
-  padding-top: 4px;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.canvas-provider-files-pagination-info {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.canvas-provider-files-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-provider-files-pagination-page {
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .canvas-provider-files-upload-form {

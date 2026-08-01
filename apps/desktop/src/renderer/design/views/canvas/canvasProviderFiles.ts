@@ -7,17 +7,9 @@ export function providerFilesApiKindForProfile(
   if (profile.mediaProvider === 'volcengine-ark') return 'volcengine-ark'
   if (profile.mediaProvider === 'bailian') return 'bailian'
   if (profile.mediaProvider === 'minimax-hailuo') return 'minimax-hailuo'
-  if (!profile.apiEndpoint?.trim()) return null
-  try {
-    const hostname = new URL(profile.apiEndpoint).hostname.toLowerCase()
-    if (hostname === 'api.x.ai') return 'xai'
-    if (hostname === 'ark.cn-beijing.volces.com') return 'volcengine-ark'
-    if (hostname === 'dashscope.aliyuncs.com') return 'bailian'
-    if (hostname === 'api.minimaxi.com') return 'minimax-hailuo'
-    return null
-  } catch {
-    return null
-  }
+  // 不再凭 apiEndpoint 域名推断渠道：火山方舟等域名聊天与多媒体共用端点，
+  // 仅凭 hostname 会把纯聊天渠道（如「火山 claude」）误判为多媒体渠道混入 Files 下拉。
+  return null
 }
 
 export function isVolcengineArkFilesProfile(
