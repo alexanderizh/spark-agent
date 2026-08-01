@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -19,12 +19,16 @@ const {
   createSmokeEnvironment,
   detectWindowsPeArchitecture,
   parseArguments,
+  runFinalAppSmoke,
+  summarizeOutput,
   validatePackagedNativeHost,
 } = require('../../../../scripts/verify-packaged-native-host.js') as {
   assertSmokeReport: (report: unknown, expected: object) => void
   createSmokeEnvironment: (environment: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   detectWindowsPeArchitecture: (executable: Buffer) => string
   parseArguments: (argv: string[], required: string[]) => Record<string, unknown>
+  runFinalAppSmoke: (options: object) => Promise<unknown>
+  summarizeOutput: (...outputs: string[]) => string
   validatePackagedNativeHost: (options: object) => Promise<unknown>
 }
 
@@ -136,6 +140,42 @@ describe('packaged Native Host release verifier', () => {
         ELECTRON_RUN_AS_NODE: '1',
       }),
     ).toEqual({ PATH: '/usr/bin', HOME: '/Users/release' })
+  })
+
+  it('keeps the end of noisy App output where the Native Host failure is logged', () => {
+    expect(summarizeOutput(`startup-${'x'.repeat(3_000)}-native-host-parent-auth-failed`)).toContain(
+      'native-host-parent-auth-failed',
+    )
+  })
+
+  it('includes the structured smoke report when the final App exits unsuccessfully', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-native-verifier-'))
+    temporaryRoots.push(root)
+    const appExecutable = join(root, 'fake-app.js')
+    await writeFile(
+      appExecutable,
+      `#!/usr/bin/env node
+const { writeFileSync } = require('node:fs')
+writeFileSync(process.env.SPARK_NATIVE_HOST_SMOKE_REPORT, JSON.stringify({
+  ok: false,
+  capabilities: { available: false, unavailableReason: 'native_host_untrusted' },
+  diagnostics: { result: { diagnosticCode: 'parent_auth_failed', stage: 'handshake' } }
+}))
+process.exit(1)
+`,
+      { mode: 0o755 },
+    )
+
+    await expect(
+      runFinalAppSmoke({
+        appExecutable,
+        platform: 'windows',
+        architecture: 'x64',
+        env: { PATH: process.env.PATH },
+      }),
+    ).rejects.toThrow(/native_host_untrusted.*parent_auth_failed/)
+
+    await expect(readFile(appExecutable, 'utf8')).resolves.toContain('parent_auth_failed')
   })
 })
 

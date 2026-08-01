@@ -199,17 +199,32 @@ async function runFinalAppSmoke(options) {
         timeoutMs: options.timeoutMs ?? DEFAULT_SMOKE_TIMEOUT_MS,
       },
     )
+    const report = await readOptionalSmokeReport(reportPath)
     if (result.code !== 0) {
       throw new Error(
-        `Final App Native Host smoke exited with ${result.code}: ${summarizeOutput(result.stderr, result.stdout)}`,
+        `Final App Native Host smoke exited with ${result.code}: report=${summarizeSmokeReport(report)} output=${summarizeOutput(result.stderr, result.stdout)}`,
       )
     }
-    const report = await readJsonFile(reportPath)
+    if (report == null) throw new Error('Final App Native Host smoke did not write its report')
     assertSmokeReport(report, options)
     return report
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true })
   }
+}
+
+async function readOptionalSmokeReport(reportPath) {
+  try {
+    return await readJsonFile(reportPath)
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null
+    throw error
+  }
+}
+
+function summarizeSmokeReport(report) {
+  if (report == null) return '<missing report>'
+  return JSON.stringify(report).slice(0, 4_000)
 }
 
 function createSmokeEnvironment(environment) {
@@ -269,7 +284,8 @@ function runCommand(command, args, options = {}) {
 }
 
 function summarizeOutput(...outputs) {
-  return outputs.join('\n').trim().replace(/\s+/g, ' ').slice(0, 2_000) || '<empty output>'
+  const normalized = outputs.join('\n').trim().replace(/\s+/g, ' ')
+  return normalized.slice(-2_000) || '<empty output>'
 }
 
 function parseArguments(argv, required) {
@@ -307,5 +323,6 @@ module.exports = {
   readArtifactFile,
   runCommand,
   runFinalAppSmoke,
+  summarizeOutput,
   validatePackagedNativeHost,
 }

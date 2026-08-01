@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use windows::Win32::Foundation::{
-    CERT_E_UNTRUSTEDROOT, CloseHandle, FILETIME, HANDLE, HWND, STILL_ACTIVE,
-};
+use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE, HWND, STILL_ACTIVE};
 use windows::Win32::Security::Cryptography::{
     CERT_QUERY_ENCODING_TYPE, CertCompareCertificateName, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
 };
@@ -27,6 +25,7 @@ use windows::core::{PCWSTR, PWSTR};
 
 use crate::parent_auth::{
     ParentIdentity, ParentTrustPolicy, ReleaseBinaryIdentity, ReleaseBinaryTrustPolicy,
+    allows_pinned_self_signed_chain_failure,
 };
 
 #[derive(Debug, Error)]
@@ -231,11 +230,12 @@ fn verified_signer_thumbprint(path: &Path) -> Result<String, RuntimeAuthorizatio
         // scan the unauthenticated PKCS#7 certificate bag: an attacker can append a
         // public Spark certificate while signing the executable with another key.
         verified_leaf_thumbprint(trust_data.hWVTStateData, false)
-    } else if status == CERT_E_UNTRUSTEDROOT.0 {
+    } else if allows_pinned_self_signed_chain_failure(status) {
         // A self-signed Spark development publisher is cryptographically valid but
-        // intentionally absent from another machine's root store. Accept only a
-        // self-issued leaf; its SHA-256 fingerprint is still matched to the release
-        // identity embedded at build time below.
+        // intentionally absent from another machine's root store. Hosted release
+        // runners can also be unable to reach timestamp-chain revocation endpoints.
+        // Accept only those chain-availability statuses and a self-issued leaf; its
+        // SHA-256 fingerprint is still matched to the embedded release identity.
         verified_leaf_thumbprint(trust_data.hWVTStateData, true)
     } else {
         Err(RuntimeAuthorizationError::AuthenticodeInvalid)
