@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   NativeHostArtifactError,
+  WINDOWS_CODE_SIGNATURE_TIMEOUT_MS,
   buildWindowsCodeSignatureInspectionScript,
   createMacCodeRequirement,
   hasUnsafePosixArtifactPermissions,
@@ -229,6 +230,10 @@ describe('verifyWindowsNativeHostArtifact', () => {
       '$signature.SignerCertificate.Subject -eq $signature.SignerCertificate.Issuer',
     )
     expect(script).toContain('$signature.Status -ne "Valid" -and -not $selfSignedPublisher')
+  })
+
+  it('allows Authenticode inspection enough time for a cold Windows runner', () => {
+    expect(WINDOWS_CODE_SIGNATURE_TIMEOUT_MS).toBeGreaterThanOrEqual(30_000)
   })
 
   it('binds the EXE hash and WinVerifyTrust publisher thumbprint to the outer application signer', async () => {
