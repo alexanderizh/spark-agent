@@ -173,7 +173,10 @@ function parseRepositoryManifest(bytes) {
   try {
     manifest = JSON.parse(bytes.toString('utf8'))
   } catch (error) {
-    throw new Error(`制品仓库清单不是有效 JSON: ${error instanceof Error ? error.message : error}`)
+    throw new Error(
+      `制品仓库清单不是有效 JSON: ${error instanceof Error ? error.message : error}`,
+      { cause: error },
+    )
   }
   if (manifest?.schemaVersion !== 1 || !Array.isArray(manifest.artifacts)) {
     throw new Error('制品仓库清单 schema 无效')
