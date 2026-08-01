@@ -20,6 +20,7 @@ const {
   detectWindowsPeArchitecture,
   parseArguments,
   runFinalAppSmoke,
+  DEFAULT_SMOKE_TIMEOUT_MS,
   SMOKE_CLEANUP_OPTIONS,
   summarizeOutput,
   validatePackagedNativeHost,
@@ -29,6 +30,7 @@ const {
   detectWindowsPeArchitecture: (executable: Buffer) => string
   parseArguments: (argv: string[], required: string[]) => Record<string, unknown>
   runFinalAppSmoke: (options: object) => Promise<unknown>
+  DEFAULT_SMOKE_TIMEOUT_MS: number
   SMOKE_CLEANUP_OPTIONS: { maxRetries: number; retryDelay: number }
   summarizeOutput: (...outputs: string[]) => string
   validatePackagedNativeHost: (options: object) => Promise<unknown>
@@ -152,6 +154,10 @@ describe('packaged Native Host release verifier', () => {
   it('retries Windows smoke cleanup long enough for SQLite handles to close', () => {
     expect(SMOKE_CLEANUP_OPTIONS.maxRetries).toBeGreaterThanOrEqual(5)
     expect(SMOKE_CLEANUP_OPTIONS.retryDelay).toBeGreaterThanOrEqual(100)
+  })
+
+  it('allows two bounded Windows trust probes to finish before aborting the smoke', () => {
+    expect(DEFAULT_SMOKE_TIMEOUT_MS).toBeGreaterThanOrEqual(90_000)
   })
 
   it('keeps the end of noisy App output where the Native Host failure is logged', () => {

@@ -507,11 +507,24 @@ export async function inspectWindowsCodeSignature(
   }
   const powershell = join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
   const script = buildWindowsCodeSignatureInspectionScript()
-  const result = await execFileAsync(
-    powershell,
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
-    windowsCodeSignatureExecOptions(executablePath),
-  )
+  let result: { stdout: string; stderr: string }
+  try {
+    result = (await execFileAsync(
+      powershell,
+      [
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        script,
+      ],
+      windowsCodeSignatureExecOptions(executablePath),
+    )) as { stdout: string; stderr: string }
+  } catch (error) {
+    throw windowsCodeSignatureInspectionError(error)
+  }
   const encoded = result.stdout.trim()
   const digest = Buffer.from(encoded, 'base64')
   if (digest.length !== 32 || digest.toString('base64') !== encoded) {
@@ -528,6 +541,24 @@ export function windowsCodeSignatureExecOptions(executablePath: string) {
     windowsHide: true,
     env: { ...process.env, SPARK_AUTHENTICODE_PATH: executablePath },
   }
+}
+
+export function windowsCodeSignatureInspectionError(error: unknown): NativeHostArtifactError {
+  const details = error as { code?: unknown; killed?: unknown }
+  const timedOut = details.killed === true || details.code === 'ETIMEDOUT'
+  return untrusted(
+    timedOut
+      ? `Windows Authenticode inspection timed out after ${WINDOWS_CODE_SIGNATURE_TIMEOUT_MS}ms`
+      : 'Windows Authenticode inspection failed',
+    error,
+    timedOut
+      ? {
+          diagnosticCode: 'artifact_signature_timeout',
+          stage: 'verify',
+          repairAction: 'restart_app',
+        }
+      : undefined,
+  )
 }
 
 /**
