@@ -34,6 +34,7 @@ import {
   OptionalCapabilityStateStore,
   type ActiveCapabilityState,
 } from './OptionalCapabilityStateStore.js'
+import { validateCapabilityPackageHealth } from './CapabilityPackageHealth.js'
 
 type InstallArchive = (
   params: BinaryArchiveInstallParams,
@@ -75,6 +76,9 @@ export class OptionalCapabilityManager {
   private readonly errors = new Map<OptionalCapabilityId, CapabilityErrorState>()
   private readonly controllers = new Map<OptionalCapabilityId, AbortController>()
   private readonly verifiedActiveStates = new Map<OptionalCapabilityId, string>()
+  private readonly progressListeners = new Set<
+    (progress: OptionalCapabilityProgress) => void
+  >()
   private readonly logger: CapabilityLogger
   private queueTail: Promise<void> = Promise.resolve()
   private queuedJobs = 0
@@ -134,6 +138,11 @@ export class OptionalCapabilityManager {
     return this.enqueueInstall(id)
   }
 
+  subscribeProgress(listener: (progress: OptionalCapabilityProgress) => void): () => void {
+    this.progressListeners.add(listener)
+    return () => this.progressListeners.delete(listener)
+  }
+
   async cancel(id: OptionalCapabilityId): Promise<OptionalCapabilityMutationResponse> {
     const controller = this.controllers.get(id)
     const definition = getOptionalCapabilityDefinition(id)
@@ -143,7 +152,9 @@ export class OptionalCapabilityManager {
     }
     controller.abort()
     this.errors.delete(id)
-    this.logger.warn(`[${id}] install cancelled by user`)
+    this.logger.warn(
+      `event=optional_capability_install capability=${id} stage=cancelled status=cancelled source=user`,
+    )
     this.emitProgress(id, definition.displayName, 'cancelled', 0, 0, 0, '安装已取消')
     const snapshot = await this.buildSnapshot()
     this.onSnapshot?.(snapshot)
@@ -156,13 +167,17 @@ export class OptionalCapabilityManager {
       this.controllers.get(id)?.abort()
       await activeInstall
     }
-    this.logger.info(`[${id}] uninstall started`)
+    this.logger.info(
+      `event=optional_capability_uninstall capability=${id} stage=started status=running`,
+    )
     await this.store.remove(id)
     this.errors.delete(id)
     this.verifiedActiveStates.delete(id)
     const snapshot = await this.buildSnapshot()
     this.onSnapshot?.(snapshot)
-    this.logger.info(`[${id}] uninstall completed`)
+    this.logger.info(
+      `event=optional_capability_uninstall capability=${id} stage=completed status=succeeded`,
+    )
     return { success: true, message: '可选能力已卸载', snapshot }
   }
 
@@ -185,8 +200,17 @@ export class OptionalCapabilityManager {
     if (!active) return null
     const stateKey = activeStateKey(active)
     if (this.verifiedActiveStates.get(id) !== stateKey) {
-      if (!(await validateActiveState(active, this.store.capabilityRoot(id)))) {
-        this.logger.warn(`[${id}] refused an invalid active capability state`)
+      if (
+        !(await validateActiveState(
+          active,
+          this.store.capabilityRoot(id),
+          this.options.platform,
+          this.options.arch,
+        ))
+      ) {
+        this.logger.warn(
+          `event=optional_capability_health capability=${id} stage=active_check status=failed code=package_invalid`,
+        )
         return null
       }
       this.verifiedActiveStates.set(id, stateKey)
@@ -234,7 +258,9 @@ export class OptionalCapabilityManager {
     let targetRoot: string | null = null
     try {
       throwIfAborted(signal, definition.displayName)
-      this.logger.info(`[${id}] install started`)
+      this.logger.info(
+        `event=optional_capability_install capability=${id} stage=started status=running`,
+      )
       const manifest = await this.refreshManifest().catch((error) => {
         throw capabilityError(
           'manifest_unavailable',
@@ -358,7 +384,7 @@ export class OptionalCapabilityManager {
         } catch (error) {
           throw capabilityError(
             'package_invalid',
-            `${definition.displayName}安装失败：组件文件完整性校验未通过`,
+            `${definition.displayName}安装失败：组件缺少必需文件或完整性校验未通过，请重试安装`,
             true,
             error,
           )
@@ -434,7 +460,9 @@ export class OptionalCapabilityManager {
       }
 
       this.errors.delete(id)
-      this.logger.info(`[${id}] install completed version=${version}`)
+      this.logger.info(
+        `event=optional_capability_install capability=${id} stage=ready status=succeeded version=${version}`,
+      )
       this.emitProgress(
         id,
         definition.displayName,
@@ -453,7 +481,7 @@ export class OptionalCapabilityManager {
       if (failure.code === 'cancelled') this.errors.delete(id)
       else this.errors.set(id, failure)
       this.logger.warn(
-        `[${id}] install failed code=${failure.code}: ${safeDiagnostic(
+        `event=optional_capability_install capability=${id} stage=error status=failed code=${failure.code} error=${safeDiagnostic(
           failure.cause ?? failure.message,
         )}`,
       )
@@ -536,6 +564,8 @@ export class OptionalCapabilityManager {
           const valid = await validateActiveState(
             active,
             this.store.capabilityRoot(definition.id),
+            this.options.platform,
+            this.options.arch,
           )
           if (valid) {
             this.verifiedActiveStates.set(definition.id, activeStateKey(active))
@@ -583,7 +613,7 @@ export class OptionalCapabilityManager {
     errorCode?: OptionalCapabilityErrorCode,
     retryable?: boolean,
   ): void {
-    this.onProgress?.({
+    const progress: OptionalCapabilityProgress = {
       capabilityId,
       displayName,
       phase,
@@ -595,7 +625,9 @@ export class OptionalCapabilityManager {
       ...(version ? { version } : {}),
       ...(errorCode ? { errorCode } : {}),
       ...(retryable != null ? { retryable } : {}),
-    })
+    }
+    this.onProgress?.(progress)
+    for (const listener of this.progressListeners) listener(progress)
   }
 }
 
@@ -631,7 +663,7 @@ async function validateInstalledArtifact(
   capabilityId: OptionalCapabilityId,
   artifact: SparkInstallArtifact,
 ): Promise<number> {
-  await validatePackageDirectory(directory, capabilityId, artifact.id, artifact.version)
+  await validatePackageDirectory(directory, capabilityId, artifact)
   return directorySize(directory)
 }
 
@@ -651,9 +683,9 @@ async function directorySize(directory: string): Promise<number> {
 async function validatePackageDirectory(
   directory: string,
   capabilityId: OptionalCapabilityId,
-  artifactId: string,
-  version: string,
+  artifact: Pick<SparkInstallArtifact, 'id' | 'type' | 'version' | 'platform' | 'arch'>,
 ): Promise<void> {
+  const { id: artifactId, version } = artifact
   const isModel = artifactId.startsWith('model.')
   const manifestName = isModel ? 'model-package.json' : 'capability-package.json'
   const parsed = JSON.parse(await readFile(join(directory, manifestName), 'utf8')) as Record<
@@ -671,6 +703,7 @@ async function validatePackageDirectory(
   if (!parsed.files || typeof parsed.files !== 'object') {
     throw new Error(`${artifactId} 包内 manifest 缺少文件哈希`)
   }
+  validateCapabilityPackageHealth(capabilityId, artifact, parsed)
   for (const [relativePath, expectedHash] of Object.entries(parsed.files)) {
     if (!/^[0-9a-f]{64}$/i.test(String(expectedHash))) {
       throw new Error(`${artifactId} 包内文件哈希无效：${relativePath}`)
@@ -705,6 +738,8 @@ async function assertNoSymlinkEscape(
 async function validateActiveState(
   state: ActiveCapabilityState,
   capabilityRoot: string,
+  platform: SupportedDesktopPlatform,
+  arch: SupportedDesktopArch,
 ): Promise<boolean> {
   try {
     for (const [artifactId, artifact] of Object.entries(state.artifacts)) {
@@ -713,8 +748,16 @@ async function validateActiveState(
       await validatePackageDirectory(
         artifact.directory,
         state.capabilityId,
-        artifactId,
-        artifact.version,
+        {
+          id: artifactId,
+          type: artifactId.startsWith('model.')
+            ? 'model'
+            : artifactId.startsWith('runtime.')
+              ? 'runtime'
+              : 'archive',
+          version: artifact.version,
+          ...(artifactId.startsWith('runtime.') ? { platform, arch } : {}),
+        },
       )
     }
     return true
@@ -748,7 +791,7 @@ class OptionalCapabilityInstallError extends Error {
     readonly code: OptionalCapabilityErrorCode,
     message: string,
     readonly retryable: boolean,
-    readonly cause?: unknown,
+    override readonly cause?: unknown,
   ) {
     super(message)
     this.name = 'OptionalCapabilityInstallError'
