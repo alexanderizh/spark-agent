@@ -562,7 +562,7 @@ Provider manifest/能力表决定模型是否支持原生 computer tool、批量
 
 ### 9.4 通用模型
 
-实施状态（2026-07-28）：`GenericComputerDecisionAdapter` 已通过当前 Agent 的模型配置接收截图、前台身份、AX/UIA tree 和临时 element refs，只能返回一项严格 normalized action、请求只读 Verification 或 handoff。动作不会直接暴露为 MCP 工具，而由 `ComputerTaskOperator` 送入 Broker；Provider 异常、非法 JSON/动作均 fail-closed。Operator 已实现 lease heartbeat、精确 approval ID 轮询与同 envelope 重放、动作后重观察、感知指纹 noop、runtime/step 预算，以及 completed 前持久化 verification record。visual absence 仅可从完整当前证据判断，application running/window_exists 使用独立窗口清单而非 foreground 近似。
+实施状态（2026-08-01）：`GenericComputerDecisionAdapter` 已通过当前 Agent 的模型配置接收截图、前台身份、AX/UIA tree 和临时 element refs，可返回一项严格 normalized action、2–8 项低风险 batch、只读 Verification 或 handoff。batch 中每项仍由 `ComputerTaskOperator` 逐步送入 Broker，遇到 stale/noop/审批/目标变化立即停止余项并重新观察；Provider 异常、非法 JSON/动作均 fail-closed。Operator 已实现 lease heartbeat、精确 approval ticket、动作后重观察、感知指纹 noop、runtime/step 预算，以及 completed 前持久化 verification record。visual absence 仅可从完整当前证据判断，application running/window_exists 使用独立窗口清单而非 foreground 近似。V2 batch、Supervisor、持续捕获与增量树默认启用，任一链路仍可独立配置关闭或由运行期指标回退。
 
 - 不支持可靠视觉输入或当前 Host 不具备完整 observe/input 能力时，`executionAvailable=false`，Agent 不得宣称可执行。
 - 通用模型路径必须通过相同 benchmark，不能仅因 schema 可调用就标记为可用。
@@ -575,10 +575,13 @@ Provider manifest/能力表决定模型是否支持原生 computer tool、批量
 mcp__spark_computer__get_capabilities
 mcp__spark_computer__start_task
 mcp__spark_computer__get_status
+mcp__spark_computer__wait_for_completion
 mcp__spark_computer__pause
 mcp__spark_computer__resume
 mcp__spark_computer__stop
 mcp__spark_computer__takeover
+mcp__spark_computer__bind_target
+mcp__spark_computer__diagnose_native_host
 mcp__spark_computer__capture_app_snapshot
 ```
 

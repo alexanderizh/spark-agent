@@ -27,6 +27,8 @@ Phase 1 收口复核（2026-08-01）：desktop Computer Use/打包门禁 **44 �
 
 Phase 2.2 持久视觉切片复核（2026-08-01）：desktop Computer Use/打包门禁 **44 文件 / 310 测试全过**，protocol **5 文件 / 33 测试全过**，agent-runtime **2 文件 / 4 测试全过**；Swift 42 项、Rust 22 项、Windows x64/arm64 `clippy -D warnings`、全项目相关 typecheck 与完整 desktop build 均通过。
 
+V2 默认放量与总体复核（2026-08-01）：Host Supervisor、持久捕获、增量树和 action batch 已默认启用并保留环境 opt-out/运行期单项回退；Computer Use **44 文件 / 288 测试**、打包/afterSign **43 项**、protocol **33 项**、Swift **43 项**、Rust **23 项**、Windows x64/arm64 clippy、三套 typecheck 与 desktop production build 均通过。Storage Computer Use 测试因本机 Node/Electron `better-sqlite3` ABI 不一致未执行成功；migration 静态校验与真实 Electron dev 的 65 个迁移启动通过，未把 ABI 失败误记为业务回归。
+
 ## 进行中 / 待办
 
 | 阶段                           | 类型          | 说明                                                                                                                                              |

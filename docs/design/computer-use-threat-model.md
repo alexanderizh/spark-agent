@@ -161,3 +161,12 @@ dataClassDigest = SHA256(canonical(dataClasses + destination)) | null
 2. 给出命中的威胁编号和对应测试；
 3. 新风险无法由现有条目覆盖时先更新本文；
 4. 安全不变量变化必须新增 ADR，不允许只在代码评审评论中决定。
+
+## 10. 三通道执行边界
+
+ADR-002 采用 `background_semantic`、`foreground_input` 与预留 `isolated_desktop` 三通道：
+
+- 后台语义通道只允许 AX/UIA 与 AppControlBridge 的枚举动作，不激活目标应用、不移动系统指针；失败不得静默升级为任意脚本。
+- 前台输入通道必须显示控制状态、等待用户输入空闲、短时聚焦、持续复核目标身份，并在退出路径释放所有按键和恢复用户现场；用户点击目标或触发 takeover 时立即停止。
+- 隔离桌面不是本地安全旁路；未实现时必须诚实返回 unavailable，不能用隐藏窗口、浏览器 fallback 或新桌面字符串伪装完成。
+- execution lane 是严格 wire 字段；缺失时仅允许 Host 按动作类型安全推导，显式 lane 与动作不匹配必须在 App 与 Host 双端拒绝。
