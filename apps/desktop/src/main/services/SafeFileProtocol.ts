@@ -38,6 +38,10 @@ const log = createLogger('safe-file')
 export const SAFE_FILE_SCHEME = 'safe-file'
 
 const MIME_BY_EXT: Record<string, string> = {
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.aac': 'audio/aac',
   '.flac': 'audio/flac',
   '.otf': 'font/otf',
@@ -53,6 +57,8 @@ const MIME_BY_EXT: Record<string, string> = {
   '.opus': 'audio/opus',
   '.pdf': 'application/pdf',
   '.png': 'image/png',
+  '.ttf': 'font/ttf',
+  '.wasm': 'application/wasm',
   '.wav': 'audio/wav',
   '.webm': 'video/webm',
   '.webp': 'image/webp',

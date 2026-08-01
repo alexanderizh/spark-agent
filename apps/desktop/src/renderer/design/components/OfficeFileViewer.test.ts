@@ -54,6 +54,19 @@ describe('officeViewerOptions', () => {
     )
   })
 
+  it('can point every Office worker at an installed capability asset root', () => {
+    const options = createOfficeViewerOptions(
+      'dark',
+      'capability-asset://office-viewer/',
+    )
+    expect(options.docx?.workerUrl).toBe(
+      'capability-asset://office-viewer/vendor/docx/docx.worker.js',
+    )
+    expect(options.presentation?.pptWasmUrl).toBe(
+      'capability-asset://office-viewer/vendor/ppt/ppt-native.wasm',
+    )
+  })
+
   it('uses compact viewer chrome so the floating toolbar stays inside narrow panels', () => {
     expect(officeViewerOptions.ui.density).toBe('compact')
     expect(officeViewerOptions.toolbar.position).toBe('bottom-right')
@@ -65,7 +78,7 @@ describe('officeViewerOptions', () => {
     expect(createOfficeViewerOptions('dark').theme).toBe('dark')
     expect(officeViewerOptions).not.toHaveProperty('theme')
     expect(component).toContain('const resolvedTheme = useResolvedTheme()')
-    expect(component).toContain('createOfficeViewerOptions(viewerTheme)')
+    expect(component).toContain("createOfficeViewerOptions(viewerTheme, 'capability-asset://office-viewer/')")
     expect(component).toContain('viewerRef.current?.getViewState()')
     expect(component).toContain('viewerRef.current?.applyViewState(pendingViewState')
   })

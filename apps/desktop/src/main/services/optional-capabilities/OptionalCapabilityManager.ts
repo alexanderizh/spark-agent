@@ -124,6 +124,18 @@ export class OptionalCapabilityManager {
     return snapshot
   }
 
+  async getArtifactDirectory(
+    id: OptionalCapabilityId,
+    artifactIdPrefix: string,
+  ): Promise<string | null> {
+    const active = await this.store.read(id)
+    if (!active) return null
+    const match = Object.entries(active.artifacts).find(([artifactId]) =>
+      artifactId.startsWith(artifactIdPrefix),
+    )
+    return match?.[1].directory ?? null
+  }
+
   private enqueueInstall(id: OptionalCapabilityId): Promise<OptionalCapabilityMutationResponse> {
     const existing = this.installs.get(id)
     if (existing) return existing

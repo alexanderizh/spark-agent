@@ -92,6 +92,7 @@ import { ensureBundledBrowserEnv } from './services/PlaywrightEnvironment.js'
 import { detectFfmpegIntegrity } from './services/FfmpegIntegrityService.js'
 import { updateManagedFontAssetsInBackground } from './services/FontAssetService.js'
 import { registerSafeFileProtocol } from './services/SafeFileProtocol.js'
+import { registerCapabilityAssetProtocol } from './services/CapabilityAssetProtocol.js'
 import { registerSnapshotProtocol } from './services/computer-use/SnapshotProtocol.js'
 import { registerPrivilegedProtocolSchemes } from './services/PrivilegedProtocolSchemes.js'
 import { isWebviewSourceAllowed, openExternalUrlSafely } from './services/ExternalUrlPolicy.js'
@@ -1138,6 +1139,7 @@ if (ownsSingleInstanceLock) {
     // 必须在 createWindow() 之前注册协议 handler，
     // 否则首次加载的 HTML 里的 <img src="safe-file://..."> 会得到 ERR_UNKNOWN_URL_SCHEME
     registerSafeFileProtocol()
+    registerCapabilityAssetProtocol()
 
     // 注册应用菜单，使 F12 切换 DevTools 等快捷键生效
     setupApplicationMenu()
