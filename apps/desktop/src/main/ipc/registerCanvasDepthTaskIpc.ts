@@ -96,7 +96,7 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
             runningResponse(runtimeTaskId, {
               stage: 'installing_model',
               progress: total > 0 ? Math.round((downloaded / total) * 20) : 5,
-              message: '正在下载本地深度模型',
+              message: '资源下载中：正在下载本地深度模型',
             }),
           )
         })
@@ -205,9 +205,9 @@ function runningResponse(
 }
 
 function depthStageMessage(stage: DepthVideoProgress['stage']): string {
-  if (stage === 'decoding') return '正在解析输入视频'
-  if (stage === 'encoding') return '正在编码深度视频'
-  return '正在逐帧生成深度'
+  if (stage === 'decoding') return '任务执行中：正在解析输入视频'
+  if (stage === 'encoding') return '任务执行中：正在编码深度视频'
+  return '任务执行中：正在逐帧生成深度'
 }
 
 function assertAllowedInputPath(inputPath: string): void {
