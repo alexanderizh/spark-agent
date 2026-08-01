@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   ManagedAgent,
   TeamModeConfig,
@@ -24,6 +24,16 @@ import { GitSessionTrigger } from './ChatGitEnv'
 import { resolveAgentDisplay } from './ChatHero'
 import { ChatTitlebarEnd, ChatTitlebarStart } from './ChatTitlebar'
 import { ProjectOpenDropdown, TabbarIcon, TabbarTooltipButton } from './ChatToolbar'
+
+/**
+ * 顶栏运行态 spinner 的隐藏延迟。
+ * codex CLI 多 turn 会话里，每个 turn 结束都会发 agent_status(completed) 把 agentStatus
+ * 清空成 ''，下个 turn 的 thinking 紧接着又填回。这个 turn 间隙会让 spinner 瞬时消失再
+ * 重现，长会话累积后即“loading tag 没正常显示”。grace 在 agentStatus 变空时延迟隐藏、
+ * 期间保留上一文案；turn 间隙通常远小于此值可无缝衔接，单 turn 真正结束时 spinner 会
+ * 多亮一小段，属可接受折中。
+ */
+const AGENT_STATUS_GRACE_MS = 1500
 
 export function ChatTabbar({
   session,
@@ -95,6 +105,46 @@ export function ChatTabbar({
 }) {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
+  // 顶栏 spinner grace：agentStatus 变空时延迟 AGENT_STATUS_GRACE_MS 再隐藏，
+  // 期间保留上一文案，消除 codex CLI turn 边界的 spinner 闪烁。
+  const [displayStatus, setDisplayStatus] = useState(agentStatus)
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (hideTimerRef.current != null) {
+      clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+    if (agentStatus) {
+      setDisplayStatus(agentStatus)
+      return
+    }
+    hideTimerRef.current = setTimeout(() => {
+      hideTimerRef.current = null
+      setDisplayStatus('')
+    }, AGENT_STATUS_GRACE_MS)
+    return () => {
+      if (hideTimerRef.current != null) {
+        clearTimeout(hideTimerRef.current)
+        hideTimerRef.current = null
+      }
+    }
+  }, [agentStatus])
+
+  // 切换会话：立即清空，不带走上个会话的运行态
+  const sessionId = session?.id
+  const prevSessionIdRef = useRef(sessionId)
+  useEffect(() => {
+    if (prevSessionIdRef.current !== sessionId) {
+      prevSessionIdRef.current = sessionId
+      if (hideTimerRef.current != null) {
+        clearTimeout(hideTimerRef.current)
+        hideTimerRef.current = null
+      }
+      setDisplayStatus('')
+    }
+  }, [sessionId])
+
   const handleClearClick = () => {
     setShowClearConfirm(true)
   }
@@ -134,9 +184,9 @@ export function ChatTabbar({
                 ? '临时会话'
                 : (workspace?.name ?? '未归属项目')}
             </span>
-            {agentStatus && (
+            {displayStatus && (
               <span className="msg-running">
-                <Icons.Spinner size={11} /> {agentStatus}
+                <Icons.Spinner size={11} /> {displayStatus}
               </span>
             )}
             {teamConfig.enabled && (
