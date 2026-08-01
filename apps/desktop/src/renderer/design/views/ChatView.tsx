@@ -99,6 +99,16 @@ import {
   preserveExplicitEmptySessionTeamConfig,
   shouldResetEmptySessionTeamTouched,
 } from './chat/emptySessionTeamMode'
+import { getMessageImagePreview } from './chat/message-image-preview'
+import {
+  cancelOptimisticUserMessage,
+  commitOptimisticUserMessage,
+  createOptimisticUserMessage,
+  mergeOptimisticUserMessages,
+  pruneAcknowledgedOptimisticUserMessages,
+  type OptimisticImageSendCallbacks,
+  type OptimisticUserMessage,
+} from './chat/optimistic-user-messages'
 
 export { MarkdownText } from './chat/ChatMarkdown'
 import {
@@ -430,6 +440,40 @@ export function ChatView({
     null,
   )
   const [sideChatScrollToBottomTrigger, setSideChatScrollToBottomTrigger] = useState(0)
+  const persistedMessagesBySessionRef = useRef(new Map<string, UIMessage[]>())
+  const [optimisticUserMessages, setOptimisticUserMessages] = useState<OptimisticUserMessage[]>([])
+  const pruneOptimisticMessagesNextFrame = useCallback(
+    (sessionId: string, messages: UIMessage[]) => {
+      requestAnimationFrame(() => {
+        setOptimisticUserMessages((current) =>
+          pruneAcknowledgedOptimisticUserMessages(current, messages, sessionId),
+        )
+      })
+    },
+    [],
+  )
+  const optimisticImageSendCallbacks = useMemo<OptimisticImageSendCallbacks>(
+    () => ({
+      onBegin: (draft) => {
+        setOptimisticUserMessages((current) => [...current, createOptimisticUserMessage(draft)])
+      },
+      onCommit: (clientId, turnId) => {
+        setOptimisticUserMessages((current) =>
+          commitOptimisticUserMessage(current, clientId, turnId),
+        )
+        for (const [sessionId, messages] of persistedMessagesBySessionRef.current) {
+          if (messages.some((message) => message.role === 'user' && message.turnId === turnId)) {
+            pruneOptimisticMessagesNextFrame(sessionId, messages)
+            break
+          }
+        }
+      },
+      onCancel: (clientId) => {
+        setOptimisticUserMessages((current) => cancelOptimisticUserMessage(current, clientId))
+      },
+    }),
+    [pruneOptimisticMessagesNextFrame],
+  )
 
   // ── 按会话隔离的侧面板 UI 状态 ──
   // 切换会话时把当前面板状态存到 prevId 槽位，加载 active 对应快照；
@@ -852,6 +896,26 @@ export function ChatView({
   const chatLayoutRef = useRef<HTMLDivElement | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
+  const handleActiveMessagesChange = useCallback(
+    (messages: UIMessage[]) => {
+      setActiveMessages(messages)
+      if (active != null) {
+        persistedMessagesBySessionRef.current.set(active, messages)
+        pruneOptimisticMessagesNextFrame(active, messages)
+      }
+    },
+    [active, pruneOptimisticMessagesNextFrame],
+  )
+  const handleSideChatMessagesChange = useCallback(
+    (messages: UIMessage[]) => {
+      setSideChatMessages(messages)
+      if (sideChatSessionId != null) {
+        persistedMessagesBySessionRef.current.set(sideChatSessionId, messages)
+        pruneOptimisticMessagesNextFrame(sideChatSessionId, messages)
+      }
+    },
+    [pruneOptimisticMessagesNextFrame, sideChatSessionId],
+  )
   const storedModelSwitchMarkers = useMemo(() => readModelSwitchMarkers(active), [active])
   const [modelSwitchState, setModelSwitchState] = useState<{
     sessionId: SessionId | null
@@ -1955,6 +2019,7 @@ export function ChatView({
         onOpenSkillStore={openSkillStore}
         replyTo={null}
         onDispatchStateChange={setComposerDispatching}
+        optimisticImageSendCallbacks={optimisticImageSendCallbacks}
         onModelSwitch={handleModelSwitch}
         paletteCommandRequest={paletteCommandRequest}
       />
@@ -2012,6 +2077,7 @@ export function ChatView({
         replyTo={showEmptyHero ? null : replyTo}
         onClearReply={() => setReplyTo(null)}
         onDispatchStateChange={setComposerDispatching}
+        optimisticImageSendCallbacks={optimisticImageSendCallbacks}
         onModelSwitch={handleModelSwitch}
         paletteCommandRequest={paletteCommandRequest}
       />
@@ -2207,12 +2273,13 @@ export function ChatView({
             <ChatStream
               key="chat-stream"
               sessionId={active}
+              optimisticMessages={optimisticUserMessages}
               workspaceId={activeSessionWorkspaceId}
               workspaceRootPath={activeSessionWorkspace?.rootPath ?? null}
               onStatusChange={setAgentStatus}
               onUsageChange={setContextInputTokens}
               onUsageDataChange={setSessionUsageData}
-              onMessagesChange={setActiveMessages}
+              onMessagesChange={handleActiveMessagesChange}
               onSessionStatusChange={handleActiveSessionStatusChange}
               persistedSessionStatus={activeSession?.status ?? null}
               onContextUsageChange={setContextUsage}
@@ -2438,12 +2505,13 @@ export function ChatView({
                   <ChatStream
                     key={`side-chat-stream-${sideChatSessionId}`}
                     sessionId={sideChatSessionId}
+                    optimisticMessages={optimisticUserMessages}
                     workspaceId={sideChatWorkspace?.id ?? null}
                     workspaceRootPath={sideChatWorkspace?.rootPath ?? null}
                     onStatusChange={setSideChatAgentStatus}
                     onUsageChange={setSideChatContextInputTokens}
                     onUsageDataChange={() => {}}
-                    onMessagesChange={setSideChatMessages}
+                    onMessagesChange={handleSideChatMessagesChange}
                     onSessionStatusChange={(status) => setSessionStatus(sideChatSessionId, status)}
                     persistedSessionStatus={sideChatSession?.status ?? null}
                     onContextUsageChange={setSideChatContextUsage}
@@ -2503,6 +2571,7 @@ export function ChatView({
                     onOpenSkillStore={openSkillStore}
                     hideBranchSelect={hideComposerBranchSelect}
                     replyTo={null}
+                    optimisticImageSendCallbacks={optimisticImageSendCallbacks}
                   />
                 </>
               ) : (
@@ -2543,6 +2612,7 @@ export function ChatView({
 
 function ChatStream({
   sessionId,
+  optimisticMessages,
   workspaceId,
   workspaceRootPath,
   onStatusChange,
@@ -2571,6 +2641,7 @@ function ChatStream({
   showTurnNavigator = false,
 }: {
   sessionId: SessionId
+  optimisticMessages?: OptimisticUserMessage[]
   /** 当前会话工作区 ID。 */
   workspaceId: string | null
   /** 当前会话工作区根目录，用于路径展示与旧汇总中的嵌套 worktree 清理。 */
@@ -2626,7 +2697,11 @@ function ChatStream({
   const streamId = useId()
   const virtualMessageListRef = useRef<VirtualMessageListHandle | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
-  const turnNavItems = useMemo(() => buildChatTurnNavItems(messages), [messages])
+  const displayMessages = useMemo(
+    () => mergeOptimisticUserMessages(messages, optimisticMessages ?? [], sessionId),
+    [messages, optimisticMessages, sessionId],
+  )
+  const turnNavItems = useMemo(() => buildChatTurnNavItems(displayMessages), [displayMessages])
   const messagesRef = useRef<UIMessage[]>([])
   const [agentIsRunning, setAgentIsRunning] = useState(false)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
@@ -3333,7 +3408,7 @@ function ChatStream({
     }
 
     // 检测最新消息是否为用户消息（表示用户刚发送了新消息）
-    const latestMsg = messages[messages.length - 1]
+    const latestMsg = displayMessages[displayMessages.length - 1]
     const isNewUserMessage = latestMsg?.role === 'user'
 
     if (isNewUserMessage) {
@@ -3349,7 +3424,7 @@ function ChatStream({
     } else {
       setShowScrollToBottom(true)
     }
-  }, [messages, agentIsRunning])
+  }, [displayMessages, agentIsRunning])
 
   // 「贴底跟随」兜底（IM 标准行为）：
   // 流式文本、思考区展开/折叠、代码块/图片撑高等很多高度变化并不会触发 ChatStream 重渲染，
@@ -3399,7 +3474,7 @@ function ChatStream({
   // 团队模式 @ 指定成员时，该 turn 由被 @ 的成员直接执行（见后端 mention 路由）。
   // 「等待中」占位用最近一条用户消息的 @ 指定成员，避免「先显示主持人、流式开始后又切回成员」的视差。
   const placeholderIdentity = useMemo(() => {
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
+    const lastUserMsg = [...displayMessages].reverse().find((m) => m.role === 'user')
     const mentionId = lastUserMsg?.mentionAgentId
     if (mentionId != null && mentionId !== assistantAgentId) {
       const mentionAgent = agents.find((a) => a.id === mentionId)
@@ -3409,7 +3484,7 @@ function ChatStream({
       }
     }
     return { id: assistantAgentId, name: assistantName, avatarSrc: assistantAvatarSrc }
-  }, [messages, agents, assistantAgentId, assistantName, assistantAvatarSrc])
+  }, [displayMessages, agents, assistantAgentId, assistantName, assistantAvatarSrc])
 
   const selectedMessages = useMemo(
     () => messages.filter((msg) => selectedMessageIds.has(msg.id)),
@@ -3655,7 +3730,7 @@ function ChatStream({
           <ComputerActivityBlock sessionId={sessionId} />
           <VirtualMessageList
             ref={virtualMessageListRef}
-            items={messages}
+            items={displayMessages}
             scrollElementRef={streamRef}
             getItemKey={(msg) => msg.id}
             estimateSize={(msg) => (msg.role === 'user' ? 120 : 220)}
@@ -3677,7 +3752,9 @@ function ChatStream({
                           msg.mentionAgentId,
                       }
                     : {})}
-                  onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
+                  {...(msg.eventIds.length > 0
+                    ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
+                    : {})}
                   selectionMode={multiSelectMode}
                   selected={selectedMessageIds.has(msg.id)}
                   onToggleSelected={() => toggleMessageSelected(msg.id)}
@@ -3709,7 +3786,7 @@ function ChatStream({
                     assistantName,
                     assistantAvatarSrc,
                   )
-                  const retryPayload = buildErrorRetryPayload(messages, index)
+                  const retryPayload = buildErrorRetryPayload(displayMessages, index)
                   return (
                     <AssistantMessageRows
                       key={msg.id}
@@ -3781,7 +3858,7 @@ function ChatStream({
               {...(onFilePreview != null ? { onFilePreview } : {})}
             />
           )}
-          {messages.length === 0 && !showWaitingAgent && (
+          {displayMessages.length === 0 && !showWaitingAgent && (
             <div className="chat-stream-empty-state">
               <div className="empty-state">
                 {isLoadingHistory ? (
@@ -5927,33 +6004,25 @@ function UserMessageAttachments({ attachments }: { attachments: MessageAttachmen
 
 function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachment }) {
   const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
-  const [resolvedSrc, setResolvedSrc] = useState(() => resolveComposerImageSrc(attachment.path))
+  const [resolvedSrc, setResolvedSrc] = useState(
+    () => getMessageImagePreview(attachment, resolveComposerImageSrc).initialSrc,
+  )
   const [imgError, setImgError] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    const initialSrc = resolveComposerImageSrc(attachment.path)
-    setResolvedSrc(initialSrc)
+    const preview = getMessageImagePreview(attachment, resolveComposerImageSrc)
+    setResolvedSrc(preview.initialSrc)
     setImgError(false)
 
-    const trimmedPath = attachment.path.trim()
-    const lower = trimmedPath.toLowerCase()
-    const needsPreparedPreview =
-      trimmedPath.length > 0 &&
-      !lower.startsWith('http://') &&
-      !lower.startsWith('https://') &&
-      !lower.startsWith('data:') &&
-      !lower.startsWith('blob:') &&
-      !lower.startsWith(`${SAFE_FILE_SCHEME}:`)
-
-    if (!needsPreparedPreview)
+    if (!preview.needsPreparedPreview)
       return () => {
         cancelled = true
       }
 
-    void prepareImagePreview({ sourcePath: attachment.path })
+    void prepareImagePreview({ sourcePath: preview.sourcePath })
       .then((preview) => {
         if (!cancelled) setResolvedSrc(preview.fileUrl)
       })
@@ -5962,7 +6031,7 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
     return () => {
       cancelled = true
     }
-  }, [attachment.path, prepareImagePreview])
+  }, [attachment.path, attachment.previewPath, attachment.previewUrl, prepareImagePreview])
 
   const fileName = attachment.name ?? getFileNameFromPath(attachment.path)
 
@@ -6216,7 +6285,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             workspaceRootPath={workspaceRootPath}
             blocks={segment.blocks}
             isLatest={segmentIsLatest}
-            sessionRunning={sessionRunning}
+            {...(sessionRunning !== undefined ? { sessionRunning } : {})}
             assistantId={assistantId}
             assistantName={assistantName}
             assistantAvatarSrc={assistantAvatarSrc}
