@@ -321,7 +321,7 @@ pnpm build
 - Modify: `apps/desktop/src/renderer/design/views/chat/SessionSchedulePanel.less`
 - Modify: `apps/desktop/src/renderer/design/views/chat/SessionSchedulePanel.test.tsx`
 
-- [ ] **Step 1：写失败的主题 token 回归测试**
+- [x] **Step 1：写失败的主题 token 回归测试**
 
 读取 Less 文件并断言使用应用原生 token：
 
@@ -332,7 +332,7 @@ expect(styles).not.toContain('--color-bg-container')
 expect(styles).not.toContain('--color-text-')
 ```
 
-- [ ] **Step 2：运行 RED**
+- [x] **Step 2：运行 RED**
 
 运行：
 
@@ -342,18 +342,90 @@ pnpm --filter @spark/desktop exec vitest run src/renderer/design/views/chat/Sess
 
 预期：现有 Less 仍引用 `--color-bg-container` 和 `--color-text-*`，测试失败。
 
-- [ ] **Step 3：替换主题 token 并重整视觉层级**
+- [x] **Step 3：替换主题 token 并重整视觉层级**
 
 在 `.session-schedule-panel` 内建立局部语义变量，映射到 `--panel`、`--text`、`--border-strong`、`--primary` 等应用 token。面板、卡片、表单、空状态和按钮均从这些局部变量取色；空状态缩小高度并移除大面积虚线边框。
 
-- [ ] **Step 4：运行 GREEN 与视觉验收**
+- [x] **Step 4：运行 GREEN 与视觉验收**
 
 运行组件测试和 Desktop 构建，并分别在 `html[data-theme='light']`、`html[data-theme='dark']` 下打开列表态与表单态，确认文字对比、边框、焦点环和遮罩清晰。
+
+### Task 9：侧栏计划任务标记与筛选
+
+**Files:**
+
+- Create: `apps/desktop/src/renderer/design/session-schedule-summary.ts`
+- Create: `apps/desktop/src/renderer/design/session-schedule-summary.test.ts`
+- Modify: `apps/desktop/src/renderer/design/SessionSidebarContext.tsx`
+- Modify: `apps/desktop/src/renderer/design/SidebarSessionList.tsx`
+- Modify: `apps/desktop/src/renderer/design/SidebarSessionList.less`
+- Modify: `apps/desktop/src/renderer/design/SidebarSessionList.test.tsx`
+- Modify: `apps/desktop/src/renderer/design/SidebarFilterMenu.tsx`
+- Modify: `apps/desktop/src/renderer/design/SidebarFilterMenu.test.tsx`
+- Modify: `apps/desktop/src/renderer/design/i18n/locales.ts`
+- Modify: `apps/desktop/src/renderer/design/views/ChatView.tsx`
+- Modify: `apps/desktop/src/renderer/design/views/chat/SessionSchedulePanel.tsx`
+- Modify: `apps/desktop/src/renderer/design/views/chat/SessionSchedulePanel.test.tsx`
+
+- [ ] **Step 1：写失败的聚合与筛选测试**
+
+聚合测试输入多个会话任务，断言总数与启用数：
+
+```ts
+expect(buildSessionScheduleSummaries(tasks)).toEqual({
+  'session-a': { total: 2, enabled: 1 },
+  'session-b': { total: 1, enabled: 0 },
+})
+```
+
+侧栏测试分别断言品牌色与暂停色小时钟标记，并确认筛选为 `attached` 时只保留 `total > 0` 的会话。筛选菜单测试断言“计划任务”子菜单可选择“全部 / 已挂载 / 未挂载”。
+
+- [ ] **Step 2：运行 RED**
+
+运行：
+
+```bash
+pnpm --filter @spark/desktop exec vitest run src/renderer/design/session-schedule-summary.test.ts src/renderer/design/SidebarFilterMenu.test.tsx src/renderer/design/SidebarSessionList.test.tsx
+```
+
+预期：聚合模块、筛选字段和侧栏小时钟标记尚不存在，测试失败。
+
+- [ ] **Step 3：实现单次聚合与即时刷新**
+
+`SessionSidebarContext` 增加：
+
+```ts
+sessionScheduleSummaries: Record<string, { total: number; enabled: number }>
+refreshSessionScheduleSummaries(): Promise<void>
+```
+
+刷新函数只调用一次 `scheduled-task:list({ scope: 'session' })`，通过 `buildSessionScheduleSummaries` 聚合结果。面板成功完成 create/update/toggle/delete 后调用 `onTasksChange`，由 `ChatView` 转发给 Context 刷新函数。
+
+- [ ] **Step 4：实现 Lobe 图标标记与筛选状态**
+
+`SidebarFilterState` 增加：
+
+```ts
+scheduledTasks: 'all' | 'attached' | 'none'
+```
+
+会话行使用：
+
+```tsx
+<Icon icon={Clock3} size={12} />
+```
+
+并根据 `enabled > 0` 切换品牌色或中性灰样式。筛选逻辑把任务维度与状态、项目、最近活动组合执行。
+
+- [ ] **Step 5：运行 GREEN 与回归验证**
+
+运行聚合、筛选菜单、侧栏、面板相关测试，以及 Desktop typecheck、Prettier、ESLint 和生产构建；视觉检查普通、启用任务、仅暂停任务和筛选激活四种状态。
 
 ## 实施结果
 
 - Storage 全量测试：20 个文件、231 个测试通过。
-- 会话计划任务服务测试：10 个测试通过；桌面相关测试：6 个文件、29 个测试通过。
+- 会话计划任务服务测试：10 个测试通过；桌面相关测试：6 个文件、30 个测试通过。
 - Storage、Protocol、Agent Runtime、Desktop 类型检查通过；migration 65 静态校验和完整构建通过。
 - 变更文件 ESLint 为 0 error；仓库全量 lint 仍受未改动的 `packages/protocol/src/media-config.ts` 既有 `no-fallthrough` 错误阻塞。
 - 仓库全量测试中的既有 Canvas/Renderer 快照断言及附件快照测试仍失败；本功能相关套件均通过，失败文件不在本功能改动范围。
+- 计划任务浮层已完成深色、浅色及 560×640 窄窗口视觉验收；列表态、表单态、焦点状态和粘性操作栏均无文字反色、溢出或关键操作遮挡。
