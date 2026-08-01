@@ -13,6 +13,7 @@ import { WorkspaceRepository } from '../repositories/workspace.repository.js'
 import type { WorkspaceRow } from '../repositories/workspace.repository.js'
 import { EventRepository } from '../repositories/event.repository.js'
 import { TurnRequestRepository } from '../repositories/turn-request.repository.js'
+import { ScheduledTaskRepository } from '../repositories/scheduled-task.repository.js'
 import type { AgentEventRow } from '../repositories/event.repository.js'
 import { RulesRepository } from '../repositories/rules.repository.js'
 import { join } from 'path'
@@ -29,6 +30,195 @@ function createTestDb(testDir: string): SparkDatabase {
   db.runMigrations(migrationsDir)
   return db
 }
+
+// ─── ScheduledTaskRepository ─────────────────────────────────────────────
+
+describe('ScheduledTaskRepository session scope', () => {
+  let db: SparkDatabase
+  let repo: ScheduledTaskRepository
+  let sessionRepo: SessionRepository
+  let testDir: string
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `spark-test-scheduled-session-${Date.now()}`)
+    mkdirSync(testDir, { recursive: true })
+    db = createTestDb(testDir)
+    repo = new ScheduledTaskRepository(db)
+    sessionRepo = new SessionRepository(db)
+    sessionRepo.create({
+      id: 'session-a',
+      kind: 'chat',
+      title: 'Session A',
+      status: 'idle',
+      projectId: 'default',
+    })
+    sessionRepo.create({
+      id: 'session-b',
+      kind: 'chat',
+      title: 'Session B',
+      status: 'idle',
+      projectId: 'default',
+    })
+  })
+
+  afterEach(() => {
+    db.close()
+    rmSync(testDir, { recursive: true, force: true })
+  })
+
+  it('filters tasks by scope and bound session', () => {
+    repo.create({
+      id: 'global-task',
+      name: 'Global',
+      trigger_type: 'interval',
+      interval_seconds: 300,
+      prompt_template: 'Run globally',
+    })
+    repo.create({
+      id: 'task-a',
+      name: 'Session A task',
+      scope: 'session',
+      session_id: 'session-a',
+      trigger_type: 'interval',
+      interval_seconds: 300,
+      prompt_template: 'Run in A',
+    })
+    repo.create({
+      id: 'task-b',
+      name: 'Session B task',
+      scope: 'session',
+      session_id: 'session-b',
+      trigger_type: 'interval',
+      interval_seconds: 300,
+      prompt_template: 'Run in B',
+    })
+
+    expect(repo.listAll({ scope: 'global' }).map((row) => row.id)).toEqual(['global-task'])
+    expect(repo.listAll({ scope: 'session', sessionId: 'session-a' }).map((row) => row.id)).toEqual(
+      ['task-a'],
+    )
+  })
+
+  it('cascades a deleted session to its tasks and execution history', () => {
+    repo.create({
+      id: 'task-a',
+      name: 'Session A task',
+      scope: 'session',
+      session_id: 'session-a',
+      trigger_type: 'interval',
+      interval_seconds: 300,
+      prompt_template: 'Run in A',
+    })
+    db.raw
+      .prepare('INSERT INTO task_executions (id, task_id, session_id) VALUES (?, ?, ?)')
+      .run('execution-a', 'task-a', 'session-a')
+
+    expect(sessionRepo.deleteWithRelatedData('session-a')).toBe(true)
+
+    expect(repo.get('task-a')).toBeNull()
+    expect(
+      db.raw.prepare('SELECT id FROM task_executions WHERE id = ?').get('execution-a'),
+    ).toBeUndefined()
+  })
+
+  it('tracks only enabled tasks as paused by archival and restores them explicitly', () => {
+    repo.create({
+      id: 'enabled-task',
+      name: 'Enabled',
+      scope: 'session',
+      session_id: 'session-a',
+      trigger_type: 'interval',
+      interval_seconds: 300,
+      prompt_template: 'Enabled task',
+      next_run_at: '2026-08-01 09:00:00',
+    })
+    repo.create({
+      id: 'manual-paused-task',
+      name: 'Manual paused',
+      enabled: false,
+      scope: 'session',
+      session_id: 'session-a',
+      trigger_type: 'interval',
+      interval_seconds: 300,
+      prompt_template: 'Paused task',
+    })
+
+    expect(repo.pauseEnabledBySession('session-a')).toBe(1)
+    expect(repo.listArchivePausedBySession('session-a').map((task) => task.id)).toEqual([
+      'enabled-task',
+    ])
+    expect(repo.get('manual-paused-task')?.paused_by_archive).toBe(0)
+
+    repo.markRestoredFromArchive('enabled-task', '2026-08-01 10:00:00')
+    expect(repo.get('enabled-task')).toMatchObject({
+      enabled: 1,
+      status: 'idle',
+      paused_by_archive: 0,
+      next_run_at: '2026-08-01 10:00:00',
+    })
+  })
+
+  it('persists runtime status and error fields through the general update path', () => {
+    repo.create({
+      id: 'runtime-task',
+      name: 'Runtime state',
+      scope: 'session',
+      session_id: 'session-a',
+      trigger_type: 'interval',
+      interval_seconds: 300,
+      prompt_template: 'Run',
+    })
+
+    repo.update('runtime-task', {
+      enabled: false,
+      status: 'disabled',
+      last_error: 'No future run',
+    })
+
+    expect(repo.get('runtime-task')).toMatchObject({
+      enabled: 0,
+      status: 'disabled',
+      last_error: 'No future run',
+    })
+  })
+
+  it('recovers session tasks and execution rows interrupted by application shutdown', () => {
+    repo.create({
+      id: 'interrupted-task',
+      name: 'Interrupted',
+      scope: 'session',
+      session_id: 'session-a',
+      trigger_type: 'interval',
+      interval_seconds: 300,
+      prompt_template: 'Run',
+      next_run_at: '2026-08-01 09:00:00',
+    })
+    db.raw
+      .prepare(
+        `INSERT INTO task_executions (id, task_id, session_id, status)
+         VALUES (?, ?, ?, 'running')`,
+      )
+      .run('interrupted-execution', 'interrupted-task', 'session-a')
+    repo.updateStatus('interrupted-task', 'running')
+    repo.setCurrentExecution('interrupted-task', 'interrupted-execution')
+
+    expect(repo.recoverInterruptedSessionTasks()).toBe(1)
+    expect(repo.get('interrupted-task')).toMatchObject({
+      enabled: 1,
+      status: 'idle',
+      current_execution_id: null,
+      last_error: 'Execution interrupted by application shutdown',
+    })
+    expect(
+      db.raw
+        .prepare('SELECT status, error FROM task_executions WHERE id = ?')
+        .get('interrupted-execution'),
+    ).toMatchObject({
+      status: 'failed',
+      error: 'Execution interrupted by application shutdown',
+    })
+  })
+})
 
 // ─── WorkspaceRepository ──────────────────────────────────────────────────
 
@@ -238,14 +428,10 @@ describe('SessionRepository', () => {
       )
       .run('media-delete', 'sess-delete', 'image', 'image/png', '/tmp/media.png')
     db.raw
-      .prepare(
-        'INSERT INTO scheduled_tasks (id, name, prompt_template) VALUES (?, ?, ?)',
-      )
+      .prepare('INSERT INTO scheduled_tasks (id, name, prompt_template) VALUES (?, ?, ?)')
       .run('task-delete', 'Task', 'Run')
     db.raw
-      .prepare(
-        'INSERT INTO task_executions (id, task_id, session_id) VALUES (?, ?, ?)',
-      )
+      .prepare('INSERT INTO task_executions (id, task_id, session_id) VALUES (?, ?, ?)')
       .run('execution-delete', 'task-delete', 'sess-delete')
     db.raw
       .prepare(

@@ -4,6 +4,8 @@ import {
   formatDockBadge,
   formatUnreadToolTip,
   normalizeUnreadCount,
+  setActiveRendererSession,
+  shouldSuppressSessionNotification,
   type AppUnreadBadgeAdapter,
 } from './AppUnreadBadgeService'
 
@@ -46,6 +48,16 @@ describe('AppUnreadBadgeService', () => {
     expect(formatUnreadToolTip(3)).toBe('SparkWork · 3 个未读会话')
   })
 
+  it('suppresses a session notification only while that session is actively viewed', () => {
+    setActiveRendererSession('session-1')
+
+    expect(shouldSuppressSessionNotification('session-1', true)).toBe(true)
+    expect(shouldSuppressSessionNotification('session-2', true)).toBe(false)
+    expect(shouldSuppressSessionNotification('session-1', false)).toBe(false)
+
+    setActiveRendererSession(null)
+  })
+
   it('uses a numeric Dock badge on macOS', () => {
     const adapter = createAdapter()
     applyUnreadBadge(7, 'darwin', adapter)
@@ -68,16 +80,7 @@ describe('AppUnreadBadgeService', () => {
     applyUnreadBadge(5, 'win32', adapter)
     applyUnreadBadge(0, 'win32', adapter)
 
-    expect(adapter.setTaskbarOverlay).toHaveBeenNthCalledWith(
-      1,
-      true,
-      'SparkWork 有 5 个未读会话',
-    )
-    expect(adapter.setTaskbarOverlay).toHaveBeenNthCalledWith(
-      2,
-      false,
-      'SparkWork 无未读会话',
-    )
+    expect(adapter.setTaskbarOverlay).toHaveBeenNthCalledWith(1, true, 'SparkWork 有 5 个未读会话')
+    expect(adapter.setTaskbarOverlay).toHaveBeenNthCalledWith(2, false, 'SparkWork 无未读会话')
   })
 })
-

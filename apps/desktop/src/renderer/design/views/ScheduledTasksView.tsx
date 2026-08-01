@@ -7,29 +7,16 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import {
-  Button,
-  Empty,
-  Input,
-  Modal,
-  Select,
-  Tag,
-  TextArea,
-  Tooltip,
-} from '@lobehub/ui'
-import {
-  Badge,
-  InputNumber,
-  Popconfirm,
-  Radio,
-  Spin,
-  Switch,
-  message as antdMessage,
-} from 'antd'
+import { Button, Empty, Input, Modal, Select, Tag, TextArea, Tooltip } from '@lobehub/ui'
+import { Badge, InputNumber, Popconfirm, Radio, Spin, Switch, message as antdMessage } from 'antd'
 import { Icons } from '../Icons'
 import type {
-  ManagedAgent, ManagedTeam, ProviderProfile, WorkspaceInfo,
-  ScheduledTaskExportPayload, ScheduledTaskImportMode,
+  ManagedAgent,
+  ManagedTeam,
+  ProviderProfile,
+  WorkspaceInfo,
+  ScheduledTaskExportPayload,
+  ScheduledTaskImportMode,
 } from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
@@ -123,22 +110,32 @@ function formatTriggerType(task: ScheduledTaskItem): string {
 
 function statusColor(status: string): 'processing' | 'success' | 'default' | 'error' {
   switch (status) {
-    case 'running': return 'processing'
-    case 'idle': return 'success'
-    case 'disabled': return 'default'
-    case 'error': return 'error'
-    default: return 'default'
+    case 'running':
+      return 'processing'
+    case 'idle':
+      return 'success'
+    case 'disabled':
+      return 'default'
+    case 'error':
+      return 'error'
+    default:
+      return 'default'
   }
 }
 
 function executionStatusIcon(status: string): React.ReactNode {
   switch (status) {
-    case 'completed': return <Icons.CheckCircle style={{ color: 'var(--color-success-6)' }} />
+    case 'completed':
+      return <Icons.CheckCircle style={{ color: 'var(--color-success-6)' }} />
     case 'failed':
-    case 'timeout': return <Icons.XCircle style={{ color: 'var(--color-danger-6)' }} />
-    case 'running': return <Icons.Spinner style={{ color: 'var(--color-primary-6)' }} />
-    case 'cancelled': return <Icons.AlertTriangle style={{ color: 'var(--color-warning-6)' }} />
-    default: return null
+    case 'timeout':
+      return <Icons.XCircle style={{ color: 'var(--color-danger-6)' }} />
+    case 'running':
+      return <Icons.Spinner style={{ color: 'var(--color-primary-6)' }} />
+    case 'cancelled':
+      return <Icons.AlertTriangle style={{ color: 'var(--color-warning-6)' }} />
+    default:
+      return null
   }
 }
 
@@ -182,6 +179,7 @@ export function ScheduledTasksView() {
   const loadTasks = useCallback(async () => {
     try {
       const res = await ipcInvoke('scheduled-task:list', {
+        scope: 'global',
         ...(filter !== 'all' ? { enabled: filter === 'enabled' } : {}),
         ...(filter === 'error' ? { status: 'error' } : {}),
         ...(searchQuery ? { query: searchQuery } : {}),
@@ -194,7 +192,7 @@ export function ScheduledTasksView() {
     }
   }, [filter, searchQuery])
 
-  const triggerRefresh = useRefreshable(() => setRefreshKey(k => k + 1))
+  const triggerRefresh = useRefreshable(() => setRefreshKey((k) => k + 1))
 
   useEffect(() => {
     void loadTasks()
@@ -202,7 +200,7 @@ export function ScheduledTasksView() {
 
   // Auto-refresh every 10s for countdown updates
   useEffect(() => {
-    const timer = setInterval(() => setRefreshKey(k => k + 1), 10000)
+    const timer = setInterval(() => setRefreshKey((k) => k + 1), 10000)
     return () => clearInterval(timer)
   }, [])
 
@@ -216,15 +214,18 @@ export function ScheduledTasksView() {
 
   // Load executions for selected task
   useEffect(() => {
-    if (!selectedId) { setExecutions([]); return }
+    if (!selectedId) {
+      setExecutions([])
+      return
+    }
     ipcInvoke('task-execution:list', { taskId: selectedId, pageSize: 20 })
-      .then(res => setExecutions(res?.executions ?? []))
+      .then((res) => setExecutions(res?.executions ?? []))
       .catch(() => setExecutions([]))
   }, [selectedId, refreshKey])
 
   const selectedTask = useMemo(
-    () => tasks.find(t => t.id === selectedId) ?? null,
-    [tasks, selectedId]
+    () => tasks.find((t) => t.id === selectedId) ?? null,
+    [tasks, selectedId],
   )
 
   // ─── Actions ──────────────────────────────────────────────────────────────
@@ -232,40 +233,46 @@ export function ScheduledTasksView() {
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
     try {
       await ipcInvoke('scheduled-task:toggle', { id, enabled })
-      setRefreshKey(k => k + 1)
+      setRefreshKey((k) => k + 1)
       antdMessage.success(enabled ? '任务已启用' : '任务已禁用')
     } catch (err) {
       antdMessage.error(`操作失败: ${err}`)
     }
   }, [])
 
-  const handleRunNow = useCallback(async (id: string) => {
-    try {
-      const res = await ipcInvoke('scheduled-task:run-now', { id })
-      const sessionId: string | null = res?.execution?.sessionId ?? null
-      setRefreshKey(k => k + 1)
-      if (sessionId) {
-        antdMessage.success('任务已触发执行，正在打开会话')
-        sidebar.setActiveSession(sessionId as any)
-        setTweak('view', 'chat')
-      } else {
-        antdMessage.success('任务已触发执行，会话稍后会出现在会话栏「无项目对话」分组')
+  const handleRunNow = useCallback(
+    async (id: string) => {
+      try {
+        const res = await ipcInvoke('scheduled-task:run-now', { id })
+        const sessionId: string | null = res?.execution?.sessionId ?? null
+        setRefreshKey((k) => k + 1)
+        if (sessionId) {
+          antdMessage.success('任务已触发执行，正在打开会话')
+          sidebar.setActiveSession(sessionId as any)
+          setTweak('view', 'chat')
+        } else {
+          antdMessage.success('任务已触发执行，会话稍后会出现在会话栏「无项目对话」分组')
+        }
+      } catch (err) {
+        antdMessage.error(`执行失败: ${err}`)
       }
-    } catch (err) {
-      antdMessage.error(`执行失败: ${err}`)
-    }
-  }, [sidebar, setTweak])
+    },
+    [sidebar, setTweak],
+  )
 
-  const handleDelete = useCallback(async (id: string) => {
-    try {
-      await ipcInvoke('scheduled-task:delete', { id })
-      if (selectedId === id) setSelectedId(null)
-      setRefreshKey(k => k + 1)
-      antdMessage.success('任务已删除')
-    } catch (err) {
-      antdMessage.error(`删除失败: ${err}`)
-    }
-  }, [selectedId])
+  const handleDelete = useCallback(
+    async (id: string) => {
+      try {
+        await ipcInvoke('scheduled-task:delete', { id })
+        if (selectedId === id) setSelectedId(null)
+        setRefreshKey((k) => k + 1)
+        antdMessage.success('任务已删除')
+      } catch (err) {
+        antdMessage.error(`删除失败: ${err}`)
+      }
+    },
+    [selectedId],
+  )
 
   // ─── 多选 helpers ────────────────────────────────────────────────────────
 
@@ -280,7 +287,7 @@ export function ScheduledTasksView() {
   }, [])
 
   const toggleSelected = useCallback((id: string) => {
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -289,7 +296,7 @@ export function ScheduledTasksView() {
   }, [])
 
   const selectAll = useCallback(() => {
-    setSelectedIds(new Set(tasks.map(t => t.id)))
+    setSelectedIds(new Set(tasks.map((t) => t.id)))
   }, [tasks])
 
   const clearSelection = useCallback(() => {
@@ -297,7 +304,7 @@ export function ScheduledTasksView() {
   }, [])
 
   const invertSelection = useCallback(() => {
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const next = new Set<string>()
       for (const t of tasks) {
         if (!prev.has(t.id)) next.add(t.id)
@@ -324,7 +331,7 @@ export function ScheduledTasksView() {
         await deleteTask({ id })
         ok += 1
       } catch (err) {
-        const name = tasks.find(t => t.id === id)?.name ?? id
+        const name = tasks.find((t) => t.id === id)?.name ?? id
         errs.push(`${name}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
@@ -334,26 +341,38 @@ export function ScheduledTasksView() {
     if (selectedId && selectedIds.has(selectedId)) setSelectedId(null)
     clearSelection()
     exitMultiSelect()
-    setRefreshKey(k => k + 1)
-  }, [selectedIds, selectedId, requestConfirm, deleteTask, tasks, toast, clearSelection, exitMultiSelect])
+    setRefreshKey((k) => k + 1)
+  }, [
+    selectedIds,
+    selectedId,
+    requestConfirm,
+    deleteTask,
+    tasks,
+    toast,
+    clearSelection,
+    exitMultiSelect,
+  ])
 
   // ─── 导出 ────────────────────────────────────────────────────────────────
 
   /**
    * 弹保存对话框写文件。空 ids 表示导出全部。
    */
-  const handleExportToFile = useCallback(async (ids: string[]) => {
-    try {
-      const result = await exportTasksToFile({ ids })
-      if (!result.filePath) {
-        // 用户取消
-        return
+  const handleExportToFile = useCallback(
+    async (ids: string[]) => {
+      try {
+        const result = await exportTasksToFile({ ids })
+        if (!result.filePath) {
+          // 用户取消
+          return
+        }
+        toast.success(`已导出 ${result.count} 个任务`)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '导出失败')
       }
-      toast.success(`已导出 ${result.count} 个任务`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导出失败')
-    }
-  }, [exportTasksToFile, toast])
+    },
+    [exportTasksToFile, toast],
+  )
 
   const handleExportAll = useCallback(() => {
     void handleExportToFile([])
@@ -424,39 +443,36 @@ export function ScheduledTasksView() {
   /**
    * 预览确认后的写入操作。
    */
-  const handleImportConfirm = useCallback(async (
-    payload: ScheduledTaskExportPayload,
-    mode: ScheduledTaskImportMode,
-  ) => {
-    setImporting(true)
-    try {
-      const result = await importTasks({ payload, mode })
-      const parts: string[] = []
-      if (result.imported > 0) parts.push(`导入 ${result.imported}`)
-      if (result.skipped > 0) parts.push(`跳过 ${result.skipped}`)
-      if (parts.length > 0) {
-        toast.success(parts.join('，'))
-      } else if (result.errors.length === 0) {
-        toast.info('无任务被导入')
+  const handleImportConfirm = useCallback(
+    async (payload: ScheduledTaskExportPayload, mode: ScheduledTaskImportMode) => {
+      setImporting(true)
+      try {
+        const result = await importTasks({ payload, mode })
+        const parts: string[] = []
+        if (result.imported > 0) parts.push(`导入 ${result.imported}`)
+        if (result.skipped > 0) parts.push(`跳过 ${result.skipped}`)
+        if (parts.length > 0) {
+          toast.success(parts.join('，'))
+        } else if (result.errors.length === 0) {
+          toast.info('无任务被导入')
+        }
+        if (result.errors.length > 0) {
+          toast.error(`${result.errors.length} 个失败：${result.errors.slice(0, 2).join('；')}`)
+        }
+        setImportPreview(null)
+        // 关闭预览后刷新列表
+        setRefreshKey((k) => k + 1)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '导入失败')
+      } finally {
+        setImporting(false)
       }
-      if (result.errors.length > 0) {
-        toast.error(`${result.errors.length} 个失败：${result.errors.slice(0, 2).join('；')}`)
-      }
-      setImportPreview(null)
-      // 关闭预览后刷新列表
-      setRefreshKey(k => k + 1)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导入失败')
-    } finally {
-      setImporting(false)
-    }
-  }, [importTasks, toast])
+    },
+    [importTasks, toast],
+  )
 
   /** 已有 name 集合：用于预览时标记冲突 */
-  const existingNamesForPreview = useMemo(
-    () => new Set(tasks.map(t => t.name)),
-    [tasks],
-  )
+  const existingNamesForPreview = useMemo(() => new Set(tasks.map((t) => t.name)), [tasks])
 
   const handleEdit = useCallback((task: ScheduledTaskItem) => {
     setEditingTask(task)
@@ -473,7 +489,7 @@ export function ScheduledTasksView() {
     const wasEdit = editingTask != null
     setEditingTask(null)
     if (success) {
-      setRefreshKey(k => k + 1)
+      setRefreshKey((k) => k + 1)
       antdMessage.success(wasEdit ? '任务已更新' : '任务已创建')
     }
   }, [])
@@ -484,10 +500,7 @@ export function ScheduledTasksView() {
   if (showForm) {
     return (
       <div className="scheduled-tasks-view">
-        <TaskFormPage
-          task={editingTask}
-          onClose={handleFormClose}
-        />
+        <TaskFormPage task={editingTask} onClose={handleFormClose} />
       </div>
     )
   }
@@ -584,13 +597,23 @@ export function ScheduledTasksView() {
           <span className="st-multi-count">
             已选 <strong>{selectedIds.size}</strong> / {tasks.length}
           </span>
-          <Button size="middle" type="text" onClick={selectAll} disabled={selectedIds.size === tasks.length}>
+          <Button
+            size="middle"
+            type="text"
+            onClick={selectAll}
+            disabled={selectedIds.size === tasks.length}
+          >
             全选
           </Button>
           <Button size="middle" type="text" onClick={invertSelection} disabled={tasks.length === 0}>
             反选
           </Button>
-          <Button size="middle" type="text" onClick={clearSelection} disabled={selectedIds.size === 0}>
+          <Button
+            size="middle"
+            type="text"
+            onClick={clearSelection}
+            disabled={selectedIds.size === 0}
+          >
             取消选择
           </Button>
           <span style={{ flex: 1 }} />
@@ -620,13 +643,19 @@ export function ScheduledTasksView() {
       {/* Filter Bar */}
       <div className="st-filter-bar">
         <div className="st-filter-tabs">
-          {(['all', 'enabled', 'disabled', 'error'] as const).map(f => (
+          {(['all', 'enabled', 'disabled', 'error'] as const).map((f) => (
             <button
               key={f}
               className={`st-filter-tab ${filter === f ? 'active' : ''}`}
               onClick={() => setFilter(f)}
             >
-              {f === 'all' ? '全部' : f === 'enabled' ? '已启用' : f === 'disabled' ? '已禁用' : '异常'}
+              {f === 'all'
+                ? '全部'
+                : f === 'enabled'
+                  ? '已启用'
+                  : f === 'disabled'
+                    ? '已禁用'
+                    : '异常'}
             </button>
           ))}
         </div>
@@ -644,7 +673,9 @@ export function ScheduledTasksView() {
       {/* Main Content: List + Detail */}
       <div className="st-content">
         {loading ? (
-          <div className="st-loading"><Spin /></div>
+          <div className="st-loading">
+            <Spin />
+          </div>
         ) : tasks.length === 0 ? (
           <div className="st-empty">
             <Empty description="暂无定时任务" />
@@ -656,65 +687,69 @@ export function ScheduledTasksView() {
           <>
             {/* Left: Task List */}
             <div className="st-list">
-              {tasks.map(task => {
+              {tasks.map((task) => {
                 const isSelected = selectedIds.has(task.id)
                 return (
-                <div
-                  key={task.id}
-                  className={`st-task-card ${selectedId === task.id ? 'selected' : ''} ${multiSelect && isSelected ? 'multi-selected' : ''} ${multiSelect ? 'multi-mode' : ''}`}
-                  onClick={() => {
-                    if (multiSelect) toggleSelected(task.id)
-                    else setSelectedId(task.id)
-                  }}
-                >
-                  <div className="st-task-card-header">
-                    <div className="st-task-name-row">
-                      {multiSelect && (
-                        <span className={`st-checkbox ${isSelected ? 'checked' : ''}`}>
-                          {isSelected && <Icons.Check style={{ fontSize: 12 }} />}
-                        </span>
-                      )}
-                      <Badge
-                        status={statusColor(task.status)}
-                        style={{ marginRight: 8 }}
-                      />
-                      <span className="st-task-name">{task.name}</span>
-                    </div>
-                    {!multiSelect && (
-                      <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                        <Switch
-                          size="middle"
-                          checked={task.enabled}
-                          onChange={(checked: boolean) => { handleToggle(task.id, checked) }}
-                        />
+                  <div
+                    key={task.id}
+                    className={`st-task-card ${selectedId === task.id ? 'selected' : ''} ${multiSelect && isSelected ? 'multi-selected' : ''} ${multiSelect ? 'multi-mode' : ''}`}
+                    onClick={() => {
+                      if (multiSelect) toggleSelected(task.id)
+                      else setSelectedId(task.id)
+                    }}
+                  >
+                    <div className="st-task-card-header">
+                      <div className="st-task-name-row">
+                        {multiSelect && (
+                          <span className={`st-checkbox ${isSelected ? 'checked' : ''}`}>
+                            {isSelected && <Icons.Check style={{ fontSize: 12 }} />}
+                          </span>
+                        )}
+                        <Badge status={statusColor(task.status)} style={{ marginRight: 8 }} />
+                        <span className="st-task-name">{task.name}</span>
                       </div>
-                    )}
-                  </div>
-                  <div className="st-task-meta">
-                    <Tag size="middle" color="orangered">{formatTriggerType(task)}</Tag>
-                    {task.status === 'running' && (
-                      <Tag size="middle" color="blue" icon={<Icons.Spinner />}>运行中</Tag>
-                    )}
-                  </div>
-                  <div className="st-task-footer">
-                    <span className="st-task-countdown">
-                      {task.enabled
-                        ? `下次: ${formatCountdown(task.nextRunAt)}`
-                        : '已禁用'
-                      }
-                    </span>
-                    <span className="st-task-stats">
-                      {task.executionCount > 0 && (
-                        <>
-                          <span style={{ color: 'var(--color-success-6)' }}>✓{task.successCount}</span>
-                          {task.failureCount > 0 && (
-                            <span style={{ color: 'var(--color-danger-6)', marginLeft: 4 }}>✗{task.failureCount}</span>
-                          )}
-                        </>
+                      {!multiSelect && (
+                        <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                          <Switch
+                            size="middle"
+                            checked={task.enabled}
+                            onChange={(checked: boolean) => {
+                              handleToggle(task.id, checked)
+                            }}
+                          />
+                        </div>
                       )}
-                    </span>
+                    </div>
+                    <div className="st-task-meta">
+                      <Tag size="middle" color="orangered">
+                        {formatTriggerType(task)}
+                      </Tag>
+                      {task.status === 'running' && (
+                        <Tag size="middle" color="blue" icon={<Icons.Spinner />}>
+                          运行中
+                        </Tag>
+                      )}
+                    </div>
+                    <div className="st-task-footer">
+                      <span className="st-task-countdown">
+                        {task.enabled ? `下次: ${formatCountdown(task.nextRunAt)}` : '已禁用'}
+                      </span>
+                      <span className="st-task-stats">
+                        {task.executionCount > 0 && (
+                          <>
+                            <span style={{ color: 'var(--color-success-6)' }}>
+                              ✓{task.successCount}
+                            </span>
+                            {task.failureCount > 0 && (
+                              <span style={{ color: 'var(--color-danger-6)', marginLeft: 4 }}>
+                                ✗{task.failureCount}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </span>
+                    </div>
                   </div>
-                </div>
                 )
               })}
             </div>
@@ -757,7 +792,14 @@ export function ScheduledTasksView() {
 
 // ─── Task Detail Panel ──────────────────────────────────────────────────────
 
-function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelete }: {
+function TaskDetailPanel({
+  task,
+  executions,
+  onEdit,
+  onRunNow,
+  onToggle,
+  onDelete,
+}: {
   task: ScheduledTaskItem
   executions: TaskExecutionItem[]
   onEdit: () => void
@@ -773,10 +815,22 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
           <h3 className="st-detail-title">{task.name}</h3>
           <div className="st-detail-actions">
             <Tooltip title="立即执行">
-              <Button size="small" type="primary" shape="circle" icon={<Icons.Play />} onClick={onRunNow} />
+              <Button
+                size="small"
+                type="primary"
+                shape="circle"
+                icon={<Icons.Play />}
+                onClick={onRunNow}
+              />
             </Tooltip>
             <Tooltip title="编辑">
-              <Button size="small" type="text" shape="circle" icon={<Icons.Edit />} onClick={onEdit} />
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<Icons.Edit />}
+                onClick={onEdit}
+              />
             </Tooltip>
             <Popconfirm title="确定删除此任务？" onConfirm={onDelete}>
               <Tooltip title="删除">
@@ -801,11 +855,15 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
           <span className="st-stat-label">总执行</span>
         </div>
         <div className="st-stat-item">
-          <span className="st-stat-value" style={{ color: 'var(--color-success-6)' }}>{task.successCount}</span>
+          <span className="st-stat-value" style={{ color: 'var(--color-success-6)' }}>
+            {task.successCount}
+          </span>
           <span className="st-stat-label">成功</span>
         </div>
         <div className="st-stat-item">
-          <span className="st-stat-value" style={{ color: 'var(--color-danger-6)' }}>{task.failureCount}</span>
+          <span className="st-stat-value" style={{ color: 'var(--color-danger-6)' }}>
+            {task.failureCount}
+          </span>
           <span className="st-stat-label">失败</span>
         </div>
         <div className="st-stat-item">
@@ -831,7 +889,9 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
           <span className="st-config-label">重试</span>
           <span className="st-config-value">{task.maxRetries} 次</span>
           <span className="st-config-label">上次运行</span>
-          <span className="st-config-value">{task.lastRunAt ? new Date(task.lastRunAt).toLocaleString() : '-'}</span>
+          <span className="st-config-value">
+            {task.lastRunAt ? new Date(task.lastRunAt).toLocaleString() : '-'}
+          </span>
         </div>
         {task.lastError && (
           <div className="st-detail-error">
@@ -845,10 +905,12 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
       <div className="st-detail-executions">
         <h4>最近执行</h4>
         {executions.length === 0 ? (
-          <div style={{ color: 'var(--color-text-3)', fontSize: 12, padding: '8px 0' }}>暂无执行记录</div>
+          <div style={{ color: 'var(--color-text-3)', fontSize: 12, padding: '8px 0' }}>
+            暂无执行记录
+          </div>
         ) : (
           <div className="st-execution-list">
-            {executions.map(ex => (
+            {executions.map((ex) => (
               <div key={ex.id} className="st-execution-item">
                 <div className="st-execution-left">
                   {executionStatusIcon(ex.status)}
@@ -860,12 +922,16 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
                   <span className="st-execution-duration">{formatDuration(ex.durationMs)}</span>
                   {ex.sessionId && (
                     <Tooltip title={`Session: ${ex.sessionId.slice(0, 8)}...`}>
-                      <Tag size="middle" color="default">会话</Tag>
+                      <Tag size="middle" color="default">
+                        会话
+                      </Tag>
                     </Tooltip>
                   )}
                   {ex.error && (
                     <Tooltip title={ex.error}>
-                      <Tag size="middle" color="red">错误</Tag>
+                      <Tag size="middle" color="red">
+                        错误
+                      </Tag>
                     </Tooltip>
                   )}
                 </div>
@@ -880,7 +946,10 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
 
 // ─── Task Form Page (inline create/edit) ─────────────────────────────────────
 
-function TaskFormPage({ task, onClose }: {
+function TaskFormPage({
+  task,
+  onClose,
+}: {
   task: ScheduledTaskItem | null
   onClose: (success: boolean) => void
 }) {
@@ -892,7 +961,9 @@ function TaskFormPage({ task, onClose }: {
   // Form state
   const [name, setName] = useState(task?.name ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
-  const [triggerType, setTriggerType] = useState<'interval' | 'cron' | 'once'>(task?.triggerType ?? 'interval')
+  const [triggerType, setTriggerType] = useState<'interval' | 'cron' | 'once'>(
+    task?.triggerType ?? 'interval',
+  )
   const [intervalSeconds, setIntervalSeconds] = useState(task?.intervalSeconds ?? 3600)
   const [cronExpression, setCronExpression] = useState(task?.cronExpression ?? '0 */1 * * *')
   const [runAt, setRunAt] = useState(task?.runAt ?? '')
@@ -924,12 +995,14 @@ function TaskFormPage({ task, onClose }: {
       listTeams({ includeDisabled: false }).catch(() => ({ teams: [] })),
       listProviders({}).catch(() => ({ profiles: [] })),
       listWorkspaces({ limit: 100 }).catch(() => ({ workspaces: [] })),
-    ]).then(([agentRes, teamRes, providerRes, workspaceRes]) => {
-      setAgents(agentRes.agents ?? [])
-      setTeams(teamRes.teams ?? [])
-      setProviders(filterProvidersForVisibleUi(providerRes.profiles ?? []))
-      setWorkspaces(workspaceRes.workspaces ?? [])
-    }).catch(console.error)
+    ])
+      .then(([agentRes, teamRes, providerRes, workspaceRes]) => {
+        setAgents(agentRes.agents ?? [])
+        setTeams(teamRes.teams ?? [])
+        setProviders(filterProvidersForVisibleUi(providerRes.profiles ?? []))
+        setWorkspaces(workspaceRes.workspaces ?? [])
+      })
+      .catch(console.error)
   }, [listAgents, listTeams, listProviders, listWorkspaces])
 
   // Build model options from all providers' modelIds
@@ -939,22 +1012,16 @@ function TaskFormPage({ task, onClose }: {
       if (p.defaultModel) modelSet.add(p.defaultModel)
       for (const m of p.modelIds) modelSet.add(m)
     }
-    return Array.from(modelSet).map(m => ({ label: m, value: m }))
+    return Array.from(modelSet).map((m) => ({ label: m, value: m }))
   }, [providers])
 
-  const agentOptions = useMemo(
-    () => agents.map(a => ({ label: a.name, value: a.id })),
-    [agents]
-  )
+  const agentOptions = useMemo(() => agents.map((a) => ({ label: a.name, value: a.id })), [agents])
 
-  const teamOptions = useMemo(
-    () => teams.map(t => ({ label: t.name, value: t.id })),
-    [teams]
-  )
+  const teamOptions = useMemo(() => teams.map((t) => ({ label: t.name, value: t.id })), [teams])
 
   const workspaceOptions = useMemo(
-    () => workspaces.map(w => ({ label: w.name, value: w.id })),
-    [workspaces]
+    () => workspaces.map((w) => ({ label: w.name, value: w.id })),
+    [workspaces],
   )
 
   const canSave = name.trim().length > 0 && promptTemplate.trim().length > 0
@@ -1034,7 +1101,9 @@ function TaskFormPage({ task, onClose }: {
           </div>
         </div>
         <div className="st-form-page-actions">
-          <Button type="text" onClick={() => onClose(false)}>取消</Button>
+          <Button type="text" onClick={() => onClose(false)}>
+            取消
+          </Button>
           <Button
             type="text"
             loading={saving}
@@ -1045,7 +1114,12 @@ function TaskFormPage({ task, onClose }: {
           >
             保存并执行
           </Button>
-          <Button type="primary" loading={saving} disabled={!canSave} onClick={() => handleSave(false)}>
+          <Button
+            type="primary"
+            loading={saving}
+            disabled={!canSave}
+            onClick={() => handleSave(false)}
+          >
             {isEdit ? '保存修改' : '创建任务'}
           </Button>
         </div>
@@ -1123,7 +1197,7 @@ function TaskFormPage({ task, onClose }: {
           </div>
           <div className="st-form-section-body">
             <div className="st-trigger-cards">
-              {([
+              {[
                 {
                   value: 'interval' as const,
                   icon: <Icons.Refresh />,
@@ -1142,7 +1216,7 @@ function TaskFormPage({ task, onClose }: {
                   title: '单次执行',
                   desc: '在指定时间点执行一次',
                 },
-              ]).map(opt => (
+              ].map((opt) => (
                 <div
                   key={opt.value}
                   className={`st-trigger-card ${triggerType === opt.value ? 'active' : ''}`}
@@ -1174,9 +1248,11 @@ function TaskFormPage({ task, onClose }: {
                     size="middle"
                   />
                   <span className="st-interval-hint">
-                    {intervalSeconds < 60 ? `每 ${intervalSeconds} 秒`
-                      : intervalSeconds < 3600 ? `每 ${Math.round(intervalSeconds / 60)} 分钟`
-                      : `每 ${Math.round(intervalSeconds / 3600)} 小时`}
+                    {intervalSeconds < 60
+                      ? `每 ${intervalSeconds} 秒`
+                      : intervalSeconds < 3600
+                        ? `每 ${Math.round(intervalSeconds / 60)} 分钟`
+                        : `每 ${Math.round(intervalSeconds / 3600)} 小时`}
                   </span>
                 </div>
                 <div className="st-quick-intervals">
@@ -1188,7 +1264,7 @@ function TaskFormPage({ task, onClose }: {
                     { label: '1小时', val: 3600 },
                     { label: '6小时', val: 21600 },
                     { label: '1天', val: 86400 },
-                  ].map(qi => (
+                  ].map((qi) => (
                     <Tag
                       key={qi.val}
                       size="middle"
@@ -1218,7 +1294,7 @@ function TaskFormPage({ task, onClose }: {
                     { label: '每小时', expr: '0 */1 * * *' },
                     { label: '工作日 9 点', expr: '0 9 * * MON-FRI' },
                     { label: '每月 1 号', expr: '0 0 1 * *' },
-                  ].map(qc => (
+                  ].map((qc) => (
                     <Tag
                       key={qc.expr}
                       size="middle"
@@ -1351,7 +1427,8 @@ function TaskFormPage({ task, onClose }: {
                 autoSize={{ minRows: 4, maxRows: 12 }}
               />
               <div className="st-form-hint">
-                可用变量: {'{{date}}'}, {'{{time}}'}, {'{{taskName}}'}, {'{{executionCount}}'}, {'{{interval}}'}
+                可用变量: {'{{date}}'}, {'{{time}}'}, {'{{taskName}}'}, {'{{executionCount}}'},{' '}
+                {'{{interval}}'}
               </div>
             </div>
           </div>
@@ -1439,10 +1516,13 @@ function triggerLabel(t: ScheduledTaskExportPayload['tasks'][number]): string {
     case 'interval':
       return t.intervalSeconds == null
         ? 'Interval'
-        : t.intervalSeconds < 60 ? `每 ${t.intervalSeconds} 秒`
-        : t.intervalSeconds < 3600 ? `每 ${Math.round(t.intervalSeconds / 60)} 分钟`
-        : t.intervalSeconds < 86400 ? `每 ${Math.round(t.intervalSeconds / 3600)} 小时`
-        : `每 ${Math.round(t.intervalSeconds / 86400)} 天`
+        : t.intervalSeconds < 60
+          ? `每 ${t.intervalSeconds} 秒`
+          : t.intervalSeconds < 3600
+            ? `每 ${Math.round(t.intervalSeconds / 60)} 分钟`
+            : t.intervalSeconds < 86400
+              ? `每 ${Math.round(t.intervalSeconds / 3600)} 小时`
+              : `每 ${Math.round(t.intervalSeconds / 86400)} 天`
     case 'cron':
       return t.cronExpression ?? 'Cron'
     case 'once':
@@ -1461,7 +1541,7 @@ function TaskImportPreviewModal({
   const [mode, setMode] = useState<ScheduledTaskImportMode>('merge')
 
   const conflictCount = useMemo(
-    () => payload.tasks.filter(t => existingNames.has(t.name)).length,
+    () => payload.tasks.filter((t) => existingNames.has(t.name)).length,
     [payload, existingNames],
   )
 
@@ -1493,16 +1573,16 @@ function TaskImportPreviewModal({
       style={{ width: 680 }}
       footer={
         <div className="st-import-modal-footer">
-          <Button type="text" onClick={onClose} disabled={submitting}>取消</Button>
+          <Button type="text" onClick={onClose} disabled={submitting}>
+            取消
+          </Button>
           <Button
             type="primary"
             onClick={() => void handleConfirm()}
             disabled={submitting || payload.tasks.length === 0}
             loading={submitting}
           >
-            {submitting
-              ? '导入中…'
-              : `确认导入 ${payload.tasks.length} 个`}
+            {submitting ? '导入中…' : `确认导入 ${payload.tasks.length} 个`}
           </Button>
         </div>
       }
@@ -1512,7 +1592,9 @@ function TaskImportPreviewModal({
         <div className="st-import-meta">
           <div>
             <span className="muted">文件：</span>
-            <span className="mono-sm" title={filePath}>{filePath}</span>
+            <span className="mono-sm" title={filePath}>
+              {filePath}
+            </span>
           </div>
           <div>
             <span className="muted">版本：</span>
@@ -1528,7 +1610,9 @@ function TaskImportPreviewModal({
           </div>
           <div>
             <span className="muted">任务数：</span>
-            <span className="mono-sm"><strong>{payload.tasks.length}</strong></span>
+            <span className="mono-sm">
+              <strong>{payload.tasks.length}</strong>
+            </span>
           </div>
           {conflictCount > 0 && (
             <div className="st-import-conflict-warn">
@@ -1566,9 +1650,7 @@ function TaskImportPreviewModal({
           <span>状态</span>
         </div>
         <div className="st-import-list">
-          {payload.tasks.length === 0 && (
-            <div className="st-import-empty">该文件不含任何任务</div>
-          )}
+          {payload.tasks.length === 0 && <div className="st-import-empty">该文件不含任何任务</div>}
           {payload.tasks.map((t, idx) => {
             const conflict = existingNames.has(t.name)
             return (
@@ -1576,18 +1658,28 @@ function TaskImportPreviewModal({
                 key={`${t.name}-${idx}`}
                 className={`st-import-list-row${conflict ? ' conflict' : ''}`}
               >
-                <span className="cell-name" title={t.name}>{t.name}</span>
+                <span className="cell-name" title={t.name}>
+                  {t.name}
+                </span>
                 <span className="cell-trigger" title={triggerLabel(t)}>
                   {triggerLabel(t)}
                 </span>
                 <span className="cell-agent" title={t.agentId ?? t.teamId ?? '-'}>
-                  {t.agentId ? `Agent · ${t.agentId.slice(0, 6)}` : t.teamId ? `Team · ${t.teamId.slice(0, 6)}` : '-'}
+                  {t.agentId
+                    ? `Agent · ${t.agentId.slice(0, 6)}`
+                    : t.teamId
+                      ? `Team · ${t.teamId.slice(0, 6)}`
+                      : '-'}
                 </span>
                 <span className="cell-status">
                   {conflict ? (
-                    <Tag size="middle" color="orange">{mode === 'replace' ? '将更新' : '将跳过'}</Tag>
+                    <Tag size="middle" color="orange">
+                      {mode === 'replace' ? '将更新' : '将跳过'}
+                    </Tag>
                   ) : (
-                    <Tag size="middle" color="green">将新增</Tag>
+                    <Tag size="middle" color="green">
+                      将新增
+                    </Tag>
                   )}
                 </span>
               </div>
@@ -1598,7 +1690,9 @@ function TaskImportPreviewModal({
         <div className="st-import-tip">
           <Icons.AlertTriangle style={{ fontSize: 12 }} />
           <span>
-            导入的新任务默认 <strong>disabled = true</strong>(保留导入文件中的设置);merge 模式下不会覆盖本地同名任务,replace 模式会更新字段但保留运行时统计(status / 计数 / nextRunAt 等)。
+            导入的新任务默认 <strong>disabled = true</strong>(保留导入文件中的设置);merge
+            模式下不会覆盖本地同名任务,replace 模式会更新字段但保留运行时统计(status / 计数 /
+            nextRunAt 等)。
           </span>
         </div>
       </div>

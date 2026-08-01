@@ -1,0 +1,183 @@
+.session-schedule-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 68;
+  pointer-events: none;
+}
+
+.chat-session-schedule-icon { position: relative; display: inline-grid; place-items: center; }
+.chat-session-schedule-dot { position: absolute; top: -2px; right: -3px; width: 5px; height: 5px; border: 1px solid var(--color-bg-container, #fff); border-radius: 50%; background: var(--color-primary, #a77b2d); }
+
+.session-schedule-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--color-bg-mask, #111) 10%, transparent);
+  pointer-events: auto;
+}
+
+.session-schedule-panel {
+  position: absolute;
+  top: 58px;
+  right: 14px;
+  display: flex;
+  width: min(408px, calc(100% - 28px));
+  max-height: calc(100% - 76px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border, #d8d8d8) 76%, transparent);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--color-primary, #b48737) 9%, transparent), transparent 34%),
+    color-mix(in srgb, var(--color-bg-container, #fff) 96%, transparent);
+  box-shadow: 0 22px 64px rgba(18, 18, 16, 0.18), 0 2px 9px rgba(18, 18, 16, 0.08);
+  backdrop-filter: blur(24px) saturate(1.16);
+  pointer-events: auto;
+  animation: session-schedule-enter 180ms cubic-bezier(.22, .8, .32, 1);
+}
+
+@keyframes session-schedule-enter {
+  from { opacity: 0; transform: translateY(-7px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.session-schedule-head,
+.session-schedule-heading,
+.session-schedule-item-title-row,
+.session-schedule-item-meta,
+.session-schedule-item-actions,
+.session-schedule-form-actions,
+.session-schedule-enable-row {
+  display: flex;
+  align-items: center;
+}
+
+.session-schedule-head {
+  justify-content: space-between;
+  padding: 16px 17px 12px;
+}
+
+.session-schedule-heading { gap: 10px; }
+.session-schedule-heading h2 { margin: 1px 0 0; font-size: 17px; font-weight: 650; letter-spacing: -.02em; }
+.session-schedule-kicker { color: var(--color-text-3); font-size: 9px; font-weight: 700; letter-spacing: .13em; }
+
+.session-schedule-symbol {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 10px;
+  color: color-mix(in srgb, var(--color-primary, #a87b2c) 80%, #5d430f);
+  background: color-mix(in srgb, var(--color-primary, #c49b52) 13%, transparent);
+}
+
+.session-schedule-icon-button,
+.session-schedule-item-actions button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  color: var(--color-text-2);
+  background: transparent;
+  cursor: pointer;
+}
+
+.session-schedule-icon-button { width: 30px; height: 30px; }
+.session-schedule-icon-button:hover,
+.session-schedule-item-actions button:hover { color: var(--color-text-1); background: var(--color-fill-secondary); }
+
+.session-schedule-session-card {
+  display: flex;
+  margin: 0 17px 12px;
+  padding: 10px 12px;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid color-mix(in srgb, var(--color-border, #ddd) 70%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--color-fill-quaternary, #f5f5f2) 72%, transparent);
+}
+
+.session-schedule-session-name { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.session-schedule-session-note { color: var(--color-text-3); font-size: 10px; }
+
+.session-schedule-error {
+  display: flex;
+  margin: 0 17px 10px;
+  padding: 8px 10px;
+  align-items: flex-start;
+  gap: 7px;
+  border-radius: 9px;
+  color: var(--color-error, #c7483f);
+  background: color-mix(in srgb, var(--color-error, #d6584f) 10%, transparent);
+  font-size: 11px;
+}
+
+.session-schedule-list-view,
+.session-schedule-form { min-height: 0; overflow: auto; padding: 0 17px 17px; }
+
+.session-schedule-summary {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 1px 9px;
+  color: var(--color-text-3);
+  font-size: 10px;
+}
+
+.session-schedule-list { display: flex; flex-direction: column; gap: 8px; }
+.session-schedule-item { display: flex; border: 1px solid var(--color-border-secondary, #e5e5e2); border-radius: 13px; background: var(--color-bg-container, #fff); transition: border-color 150ms ease, transform 150ms ease; }
+.session-schedule-item:hover { border-color: color-mix(in srgb, var(--color-primary, #ae853a) 34%, var(--color-border)); transform: translateY(-1px); }
+.session-schedule-item.is-paused { opacity: .66; }
+.session-schedule-item-main { min-width: 0; flex: 1; padding: 11px 4px 11px 12px; }
+.session-schedule-item-title-row { justify-content: space-between; gap: 8px; }
+.session-schedule-item-title-row strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.session-schedule-item-main p { display: -webkit-box; margin: 5px 0 8px; overflow: hidden; color: var(--color-text-2); font-size: 10px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.session-schedule-item-meta { gap: 9px; color: var(--color-text-3); font-size: 9px; }
+.session-schedule-item-meta span + span::before { margin-right: 9px; content: '·'; }
+.session-schedule-item-actions { width: 34px; padding: 8px 6px 8px 0; flex-direction: column; justify-content: center; gap: 2px; }
+.session-schedule-item-actions button { width: 26px; height: 26px; }
+
+.session-schedule-switch { position: relative; width: 30px; height: 17px; flex: 0 0 auto; border: 0; border-radius: 999px; background: var(--color-fill, #c9c9c5); cursor: pointer; transition: background 150ms ease; }
+.session-schedule-switch span { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.18); transition: transform 150ms ease; }
+.session-schedule-switch.is-on { background: var(--color-primary, #a77b2d); }
+.session-schedule-switch.is-on span { transform: translateX(13px); }
+
+.session-schedule-empty { display: flex; min-height: 188px; align-items: center; justify-content: center; flex-direction: column; gap: 7px; border: 1px dashed var(--color-border, #d9d9d5); border-radius: 13px; color: var(--color-text-3); font-size: 11px; text-align: center; }
+.session-schedule-empty strong { color: var(--color-text-1); font-size: 12px; }
+
+.session-schedule-add { display: flex; width: 100%; height: 38px; margin-top: 10px; align-items: center; justify-content: center; gap: 7px; border: 1px solid color-mix(in srgb, var(--color-primary, #ad8334) 35%, var(--color-border)); border-radius: 11px; color: var(--color-primary, #987027); background: color-mix(in srgb, var(--color-primary, #c39b54) 8%, transparent); font-size: 12px; font-weight: 600; cursor: pointer; }
+.session-schedule-add:hover { background: color-mix(in srgb, var(--color-primary, #c39b54) 14%, transparent); }
+
+.session-schedule-form { display: flex; flex-direction: column; gap: 13px; }
+.session-schedule-form label,
+.session-schedule-form fieldset { display: flex; margin: 0; padding: 0; flex-direction: column; gap: 6px; border: 0; color: var(--color-text-2); font-size: 10px; }
+.session-schedule-form input,
+.session-schedule-form textarea { box-sizing: border-box; width: 100%; border: 1px solid var(--color-border, #d9d9d6); border-radius: 10px; outline: none; color: var(--color-text-1); background: color-mix(in srgb, var(--color-bg-container, #fff) 92%, transparent); font: inherit; font-size: 12px; }
+.session-schedule-form input { height: 36px; padding: 0 10px; }
+.session-schedule-form textarea { min-height: 106px; padding: 9px 10px; line-height: 1.5; resize: vertical; }
+.session-schedule-form input:focus,
+.session-schedule-form textarea:focus { border-color: color-mix(in srgb, var(--color-primary, #a97e30) 64%, var(--color-border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, #a97e30) 9%, transparent); }
+
+.session-schedule-trigger-tabs { display: grid; grid-template-columns: 1.2fr .9fr .7fr; gap: 5px; }
+.session-schedule-trigger-tabs button { display: flex; height: 33px; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--color-border, #ddd); border-radius: 9px; color: var(--color-text-2); background: transparent; font-size: 10px; cursor: pointer; }
+.session-schedule-trigger-tabs button.is-active { border-color: color-mix(in srgb, var(--color-primary, #a87c2d) 55%, var(--color-border)); color: var(--color-primary, #987027); background: color-mix(in srgb, var(--color-primary, #c49a4e) 10%, transparent); }
+
+.session-schedule-enable-row { flex-direction: row !important; justify-content: space-between; padding: 10px 11px !important; border: 1px solid var(--color-border-secondary, #e5e5e2) !important; border-radius: 10px; }
+.session-schedule-enable-row > span { display: flex; flex-direction: column; gap: 2px; }
+.session-schedule-enable-row strong { color: var(--color-text-1); font-size: 11px; }
+.session-schedule-enable-row small { color: var(--color-text-3); font-size: 9px; }
+.session-schedule-form-actions { justify-content: flex-end; gap: 7px; padding-top: 2px; }
+.session-schedule-form-actions button { height: 34px; padding: 0 13px; border: 0; border-radius: 9px; font-size: 11px; cursor: pointer; }
+.session-schedule-form-actions .is-ghost { color: var(--color-text-2); background: var(--color-fill-quaternary); }
+.session-schedule-form-actions .is-primary { color: #fff; background: var(--color-primary, #987027); }
+.session-schedule-form-actions .is-primary:disabled { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 680px) {
+  .session-schedule-panel { top: 50px; right: 7px; width: calc(100% - 14px); max-height: calc(100% - 58px); border-radius: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-schedule-panel { animation: none; }
+  .session-schedule-item,
+  .session-schedule-switch,
+  .session-schedule-switch span { transition: none; }
+}

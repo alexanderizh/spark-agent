@@ -10,6 +10,9 @@ function makeTask(overrides: Partial<ScheduledTaskRow> = {}): ScheduledTaskRow {
     name: 'Daily Review',
     description: 'Scan recent changes',
     enabled: 1,
+    scope: 'global',
+    session_id: null,
+    paused_by_archive: 0,
     trigger_type: 'interval',
     interval_seconds: 300,
     cron_expression: null,
@@ -101,34 +104,198 @@ function makeRepos() {
       if (id === task.id) task.last_error = error
     }),
     findDueTasks: vi.fn<() => ScheduledTaskRow[]>(() => []),
+    listOverdueSessionTasks: vi.fn<() => ScheduledTaskRow[]>(() => []),
+    recoverInterruptedSessionTasks: vi.fn(() => 0),
+    pauseEnabledBySession: vi.fn(() => 0),
+    listArchivePausedBySession: vi.fn<() => ScheduledTaskRow[]>(() => []),
+    markRestoredFromArchive: vi.fn(),
   }
 
   const executionRepo = {
     create: vi.fn(() => execution),
     get: vi.fn((id: string) => (id === execution.id ? execution : null)),
-    updateStatus: vi.fn((id: string, status: TaskExecutionRow['status'], params?: Record<string, unknown>) => {
-      if (id !== execution.id) return
-      execution.status = status
-      if (params?.completedAt !== undefined) execution.completed_at = String(params.completedAt)
-      if (params?.durationMs !== undefined) execution.duration_ms = Number(params.durationMs)
-      if (params?.output !== undefined) execution.output = String(params.output)
-      if (params?.sessionId !== undefined) execution.session_id = String(params.sessionId)
-    }),
+    updateStatus: vi.fn(
+      (id: string, status: TaskExecutionRow['status'], params?: Record<string, unknown>) => {
+        if (id !== execution.id) return
+        execution.status = status
+        if (params?.completedAt !== undefined) execution.completed_at = String(params.completedAt)
+        if (params?.durationMs !== undefined) execution.duration_ms = Number(params.durationMs)
+        if (params?.output !== undefined) execution.output = String(params.output)
+        if (params?.sessionId !== undefined) execution.session_id = String(params.sessionId)
+      },
+    ),
     findRunningByTaskId: vi.fn(() => []),
     findByTaskId: vi.fn(() => ({ executions: [execution], total: 1 })),
     cleanupOlderThan: vi.fn(() => 0),
-    getStats: vi.fn(() => ({ total: 1, completed: 1, failed: 0, avgDurationMs: 1200, totalTokenUsage: 12 })),
+    getStats: vi.fn(() => ({
+      total: 1,
+      completed: 1,
+      failed: 0,
+      avgDurationMs: 1200,
+      totalTokenUsage: 12,
+    })),
   }
 
   return { task, execution, taskRepo, executionRepo }
 }
 
 describe('ScheduledTaskService', () => {
+  it('maps and filters session-scoped tasks', () => {
+    const { task, taskRepo, executionRepo } = makeRepos()
+    task.scope = 'session'
+    task.session_id = 'session-1'
+
+    const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
+    const listed = service.listTasks({ scope: 'session', sessionId: 'session-1' })
+
+    expect(taskRepo.listAll).toHaveBeenCalledWith({ scope: 'session', sessionId: 'session-1' })
+    expect(listed[0]).toMatchObject({
+      scope: 'session',
+      sessionId: 'session-1',
+      pausedByArchive: false,
+    })
+  })
+
+  it('rejects invalid session schedule definitions before persistence', () => {
+    const { taskRepo, executionRepo } = makeRepos()
+    const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
+    const base = makeTask({
+      scope: 'session',
+      session_id: 'session-1',
+      paused_by_archive: 0,
+    })
+
+    expect(() => service.createTask({ ...base, interval_seconds: 5 })).toThrow(
+      'at least 10 seconds',
+    )
+    expect(() =>
+      service.createTask({
+        ...base,
+        trigger_type: 'cron',
+        cron_expression: 'not a cron',
+      }),
+    ).toThrow('valid five-field cron')
+    expect(() =>
+      service.createTask({
+        ...base,
+        trigger_type: 'cron',
+        cron_expression: '61 * * * *',
+      }),
+    ).toThrow('valid five-field cron')
+    expect(taskRepo.create).not.toHaveBeenCalled()
+  })
+
+  it('calculates the full five-field cron schedule in the configured timezone', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-01T09:01:00.000Z'))
+    try {
+      const { taskRepo, executionRepo } = makeRepos()
+      const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
+      const created = service.createTask({
+        ...makeTask({
+          scope: 'session',
+          session_id: 'session-1',
+          trigger_type: 'cron',
+          cron_expression: '0 9 * * *',
+          timezone: 'UTC',
+        }),
+      })
+
+      expect(created.nextRunAt).toBe('2026-08-02 09:00:00')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('moves overdue session intervals into the future without executing them', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-01T08:00:00.000Z'))
+    try {
+      const { task, taskRepo, executionRepo } = makeRepos()
+      task.scope = 'session'
+      task.session_id = 'session-1'
+      task.next_run_at = '2026-08-01 07:30:00'
+      task.interval_seconds = 300
+      taskRepo.listOverdueSessionTasks.mockReturnValue([task])
+      const executor = vi.fn()
+      const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
+      service.setExecutor(executor)
+
+      service.skipMissedSessionRuns()
+
+      expect(executor).not.toHaveBeenCalled()
+      expect(taskRepo.update).toHaveBeenCalledWith(
+        task.id,
+        expect.objectContaining({ next_run_at: '2026-08-01 08:05:00' }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('recovers interrupted session executions before skipping missed runs on startup', () => {
+    const { taskRepo, executionRepo } = makeRepos()
+    const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
+
+    service.startScheduler(60_000)
+    service.stopScheduler()
+
+    expect(taskRepo.recoverInterruptedSessionTasks).toHaveBeenCalledOnce()
+    expect(taskRepo.recoverInterruptedSessionTasks.mock.invocationCallOrder[0]).toBeLessThan(
+      taskRepo.listOverdueSessionTasks.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('disables an overdue one-time session task on startup', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-01T08:00:00.000Z'))
+    try {
+      const { task, taskRepo, executionRepo } = makeRepos()
+      task.scope = 'session'
+      task.session_id = 'session-1'
+      task.trigger_type = 'once'
+      task.run_at = '2026-08-01T07:00:00.000Z'
+      task.next_run_at = '2026-08-01 07:00:00'
+      taskRepo.listOverdueSessionTasks.mockReturnValue([task])
+      const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
+
+      service.skipMissedSessionRuns()
+
+      expect(taskRepo.update).toHaveBeenCalledWith(
+        task.id,
+        expect.objectContaining({ enabled: false, status: 'disabled', next_run_at: null }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('restores only tasks marked as paused by session archival', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-01T08:00:00.000Z'))
+    try {
+      const { task, taskRepo, executionRepo } = makeRepos()
+      task.scope = 'session'
+      task.session_id = 'session-1'
+      task.enabled = 0
+      task.paused_by_archive = 1
+      task.interval_seconds = 600
+      taskRepo.listArchivePausedBySession.mockReturnValue([task])
+      const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
+
+      service.setSessionArchived('session-1', true)
+      service.setSessionArchived('session-1', false)
+
+      expect(taskRepo.pauseEnabledBySession).toHaveBeenCalledWith('session-1')
+      expect(taskRepo.markRestoredFromArchive).toHaveBeenCalledWith(task.id, '2026-08-01 08:10:00')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('lists, updates, runs, and deletes tasks through repositories', async () => {
     const { task, execution, taskRepo, executionRepo } = makeRepos()
-    const executor = vi.fn(async (params: {
-      onSessionCreated?: (sessionId: string) => void
-    }) => {
+    const executor = vi.fn(async (params: { onSessionCreated?: (sessionId: string) => void }) => {
       params.onSessionCreated?.('session-1')
       return {
         sessionId: 'session-1',
@@ -150,31 +317,44 @@ describe('ScheduledTaskService', () => {
     })
 
     expect(updated?.name).toBe('Daily Review v2')
-    expect(taskRepo.update).toHaveBeenCalledWith('task-1', expect.objectContaining({
-      name: 'Daily Review v2',
-      prompt_template: 'review the repo carefully',
-      interval_seconds: 600,
-    }))
+    expect(taskRepo.update).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({
+        name: 'Daily Review v2',
+        prompt_template: 'review the repo carefully',
+        interval_seconds: 600,
+      }),
+    )
 
     const manualExecution = await service.runNow('task-1')
     expect(manualExecution.taskId).toBe('task-1')
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(executor).toHaveBeenCalledWith(expect.objectContaining({
-      agentId: 'agent-1',
-      taskName: 'Daily Review v2',
-      promptTemplate: expect.stringContaining('review the repo carefully'),
-    }))
-    expect(executor).toHaveBeenCalledWith(expect.objectContaining({
-      promptTemplate: expect.stringContaining("[Scheduled Task Context]"),
-    }))
-    expect(executor).toHaveBeenCalledWith(expect.objectContaining({
-      promptTemplate: expect.stringContaining('The schedule has already been configured. Do not ask the user what frequency, interval, cron, or timing to use.'),
-    }))
-    expect(executor).toHaveBeenCalledWith(expect.objectContaining({
-      promptTemplate: expect.stringContaining('Configured schedule: interval every 600 seconds'),
-    }))
+    expect(executor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: 'agent-1',
+        taskName: 'Daily Review v2',
+        promptTemplate: expect.stringContaining('review the repo carefully'),
+      }),
+    )
+    expect(executor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptTemplate: expect.stringContaining('[Scheduled Task Context]'),
+      }),
+    )
+    expect(executor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptTemplate: expect.stringContaining(
+          'The schedule has already been configured. Do not ask the user what frequency, interval, cron, or timing to use.',
+        ),
+      }),
+    )
+    expect(executor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptTemplate: expect.stringContaining('Configured schedule: interval every 600 seconds'),
+      }),
+    )
     expect(task.execution_count).toBe(1)
     expect(task.success_count).toBe(1)
     expect(execution.status).toBe('completed')
@@ -191,17 +371,19 @@ describe('ScheduledTaskService', () => {
     task.interval_seconds = 300
     taskRepo.findDueTasks.mockReturnValue([task])
 
-    const executor = vi.fn(async (params: {
-      promptTemplate: string
-      onSessionCreated?: (sessionId: string) => void
-    }) => {
-      params.onSessionCreated?.('session-2')
-      return {
-        sessionId: 'session-2',
-        output: params.promptTemplate,
-        tokenUsage: { total: 3 },
-      }
-    })
+    const executor = vi.fn(
+      async (params: {
+        promptTemplate: string
+        onSessionCreated?: (sessionId: string) => void
+      }) => {
+        params.onSessionCreated?.('session-2')
+        return {
+          sessionId: 'session-2',
+          output: params.promptTemplate,
+          tokenUsage: { total: 3 },
+        }
+      },
+    )
 
     const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
     service.setExecutor(executor)
@@ -219,8 +401,32 @@ describe('ScheduledTaskService', () => {
 
     const updatedNextRunAt = task.next_run_at
     expect(updatedNextRunAt).not.toBe('2026-06-08T00:05:00.000Z')
-    expect(executor).toHaveBeenCalledWith(expect.objectContaining({
-      promptTemplate: expect.stringContaining(`Next scheduled run: ${updatedNextRunAt}`),
-    }))
+    expect(executor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptTemplate: expect.stringContaining(`Next scheduled run: ${updatedNextRunAt}`),
+      }),
+    )
+  })
+
+  it('disables a one-time task after its normal scheduled execution', async () => {
+    const { task, taskRepo, executionRepo } = makeRepos()
+    task.scope = 'session'
+    task.session_id = 'session-1'
+    task.trigger_type = 'once'
+    task.run_at = '2026-08-01T08:00:00.000Z'
+    task.next_run_at = '2026-08-01 08:00:00'
+    taskRepo.findDueTasks.mockReturnValue([task])
+    const service = new ScheduledTaskService(taskRepo as never, executionRepo as never)
+    service.setExecutor(async (params) => {
+      params.onSessionCreated?.('session-1')
+      return { sessionId: 'session-1', output: 'queued' }
+    })
+
+    await (service as any).tick()
+    await vi.waitFor(() => {
+      expect(task.enabled).toBeFalsy()
+      expect(task.status).toBe('disabled')
+    })
+    expect(task.next_run_at).toBeNull()
   })
 })

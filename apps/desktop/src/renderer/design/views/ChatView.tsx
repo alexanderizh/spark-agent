@@ -59,6 +59,7 @@ import { GitReviewPanel } from './chat/ChatGitReview'
 import { useLiveWorkspaceGitStatus } from './chat/useLiveWorkspaceGitStatus'
 import { HeroTipsTicker, SingleAgentEmptyHero, TeamModeEmptyHero } from './chat/ChatHero'
 import { ChatTabbar } from './chat/ChatTabbar'
+import { SessionSchedulePanel } from './chat/SessionSchedulePanel'
 import {
   DocumentOutputCard,
   filterDocumentOutputFiles,
@@ -386,6 +387,7 @@ export function ChatView({
 
   // ── Local UI/runtime state ──
   const [showInspector, setShowInspector] = useState(false)
+  const [sessionScheduleEnabledCount, setSessionScheduleEnabledCount] = useState(0)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
   // 侧边聊天面板宽度：可拖拽伸缩，默认值按窗口宽度分档（见 defaultUnifiedSidePanelWidth）
@@ -1123,6 +1125,18 @@ export function ChatView({
 
   // ── Computed values ──
   const activeSession = sessions.find((s) => s.id === active) ?? null
+  const showSessionSchedule =
+    active != null && sessionCtx.sessionScheduleTargetId === active && activeSession != null
+
+  useEffect(() => {
+    setSessionScheduleEnabledCount(0)
+    if (
+      sessionCtx.sessionScheduleTargetId != null &&
+      sessionCtx.sessionScheduleTargetId !== active
+    ) {
+      sessionCtx.closeSessionSchedule()
+    }
+  }, [active, sessionCtx])
   const activeWorkspace =
     activeWorkspaceId == null
       ? null
@@ -2166,6 +2180,13 @@ export function ChatView({
                 onToggleConfig={toggleConfigPanel}
                 showUnifiedPanel={unifiedPanelOpen}
                 onToggleUnifiedPanel={toggleUnifiedPanel}
+                showSessionSchedule={showSessionSchedule}
+                sessionScheduleEnabledCount={sessionScheduleEnabledCount}
+                onToggleSessionSchedule={() => {
+                  if (active == null) return
+                  if (showSessionSchedule) sessionCtx.closeSessionSchedule()
+                  else sessionCtx.openSessionSchedule(active)
+                }}
                 showTerminalPanel={showTerminalPanel}
                 setShowTerminalPanel={(v) =>
                   v ? openUnifiedSidePanel('terminal') : closeUnifiedSidePanel('terminal')
@@ -2225,6 +2246,15 @@ export function ChatView({
               />
             )}
           </Fragment>
+        )}
+
+        {showSessionSchedule && activeSession != null && (
+          <SessionSchedulePanel
+            open
+            session={activeSession}
+            onClose={sessionCtx.closeSessionSchedule}
+            onEnabledCountChange={setSessionScheduleEnabledCount}
+          />
         )}
 
         {showGitEnvPanel && (

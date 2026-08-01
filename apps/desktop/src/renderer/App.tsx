@@ -697,6 +697,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           onOpenChange={setUserMenuOpen}
           trigger={['hover']}
           placement="topRight"
+          align={{ offset: [8, 0] }}
           mouseEnterDelay={0.2}
           mouseLeaveDelay={0.2}
           styles={{

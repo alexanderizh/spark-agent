@@ -4182,6 +4182,7 @@ export interface FileStatKindResponse {
 // ─── Scheduled Task Channels ──────────────────────────────────────────────────
 
 export type ScheduledTaskTriggerType = 'interval' | 'cron' | 'once'
+export type ScheduledTaskScope = 'global' | 'session'
 export type ScheduledTaskStatus = 'idle' | 'running' | 'disabled' | 'error'
 export type ScheduledTaskConcurrencyPolicy = 'skip' | 'queue' | 'cancel'
 export type ScheduledTaskRetryBackoff = 'fixed' | 'linear' | 'exponential'
@@ -4199,6 +4200,9 @@ export interface ScheduledTaskItem {
   name: string
   description: string
   enabled: boolean
+  scope: ScheduledTaskScope
+  sessionId: string | null
+  pausedByArchive: boolean
   triggerType: ScheduledTaskTriggerType
   intervalSeconds: number | null
   cronExpression: string | null
@@ -4238,6 +4242,8 @@ export interface ScheduledTaskCreateRequest {
   name: string
   description?: string
   enabled?: boolean
+  scope?: ScheduledTaskScope
+  sessionId?: string | null
   triggerType: ScheduledTaskTriggerType
   intervalSeconds?: number | null
   cronExpression?: string | null
@@ -4314,6 +4320,8 @@ export interface ScheduledTaskListRequest {
   enabled?: boolean
   tags?: string[]
   query?: string
+  scope?: ScheduledTaskScope
+  sessionId?: string
 }
 
 export interface ScheduledTaskListResponse {

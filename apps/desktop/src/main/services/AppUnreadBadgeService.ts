@@ -51,8 +51,20 @@ export function applyUnreadBadge(
 }
 
 let unreadCount = 0
+let activeRendererSessionId: string | null = null
 let appTray: Tray | null = null
 let windowsUnreadDot: Electron.NativeImage | null = null
+
+export function setActiveRendererSession(sessionId: string | null): void {
+  activeRendererSessionId = sessionId
+}
+
+export function shouldSuppressSessionNotification(
+  sessionId: string,
+  mainWindowFocused: boolean,
+): boolean {
+  return mainWindowFocused && activeRendererSessionId === sessionId
+}
 
 function runBadgeOperation(operation: string, action: () => void): void {
   try {
@@ -102,4 +114,3 @@ export function attachAppUnreadBadgeTray(tray: Tray): void {
   appTray = tray
   updateAppUnreadBadge(unreadCount)
 }
-

@@ -8,9 +8,11 @@ import type { SessionSummary } from './SessionSidebarContext'
 import { FlatGroup, ProjectSessionGroup, SidebarProjectToolbar } from './SidebarSessionList'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+const openSessionSchedule = vi.fn()
+
 vi.mock('./SessionSidebarContext', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./SessionSidebarContext')>()),
-  useSessionSidebar: () => ({ workspaces: [] }),
+  useSessionSidebar: () => ({ workspaces: [], openSessionSchedule }),
 }))
 
 vi.mock('./i18n', () => ({
@@ -45,6 +47,14 @@ describe('ProjectSessionGroup pagination', () => {
 
   beforeEach(() => {
     window.localStorage.setItem('spark-settings-general', JSON.stringify({ language: 'zh-CN' }))
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -54,6 +64,7 @@ describe('ProjectSessionGroup pagination', () => {
     act(() => root.unmount())
     container.remove()
     window.localStorage.clear()
+    vi.unstubAllGlobals()
   })
 
   it('reveals ten more sessions per click and collapses after all sessions are visible', () => {
@@ -183,6 +194,67 @@ describe('ProjectSessionGroup pagination', () => {
     expect(onArchiveSession).toHaveBeenCalledOnce()
     expect(onArchiveSession).toHaveBeenCalledWith(sessions[0])
     expect(document.querySelector('.action-menu')).toBeNull()
+  })
+
+  it('opens session schedules from the session actions menu', async () => {
+    const sessions = createSessions(1)
+    const onSelectSession = vi.fn()
+    const workspace: WorkspaceInfo = {
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      id: 'workspace-1',
+      name: 'Spark-Agent',
+      pinnedAt: null,
+      rootPath: '/tmp/spark-agent',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      worktreeMeta: null,
+    }
+
+    act(() => {
+      root.render(
+        <ProjectSessionGroup
+          group={{ workspace, sessions }}
+          activeSessionId={null}
+          activeWorkspaceId={workspace.id}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={{}}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          onSelectWorkspace={async () => undefined}
+          onSelectSession={onSelectSession}
+          onNewSession={() => undefined}
+          onRenameProject={() => undefined}
+          onToggleProjectPinned={() => undefined}
+          onArchiveProject={() => undefined}
+          onDeleteProject={() => undefined}
+          onOpenProjectFolder={() => undefined}
+          onRenameSession={() => undefined}
+          onCommitSessionTitle={async () => undefined}
+          onToggleSessionPinned={() => undefined}
+          onArchiveSession={() => undefined}
+          onDeleteSession={() => undefined}
+        />,
+      )
+    })
+
+    const moreButton = container.querySelector<HTMLButtonElement>(
+      '.session-item-actions .item-menu-wrap .item-menu-btn',
+    )
+    if (moreButton == null) throw new Error('Missing session actions button')
+    await act(async () => moreButton.click())
+
+    const scheduleButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.action-menu-item'),
+    ).find((button) => button.textContent?.includes('计划任务'))
+    if (scheduleButton == null) throw new Error('Missing session schedule menu item')
+    await act(async () => {
+      scheduleButton.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(onSelectSession).toHaveBeenCalledWith(sessions[0])
+    expect(openSessionSchedule).toHaveBeenCalledWith(sessions[0]!.id)
   })
 })
 
