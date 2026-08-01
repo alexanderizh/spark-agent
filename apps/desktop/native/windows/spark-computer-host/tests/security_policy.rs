@@ -1,6 +1,7 @@
 use spark_computer_host::input_policy::{InputAction, InputPolicy, TargetWindow};
 use spark_computer_host::parent_auth::{
     ParentIdentity, ParentTrustPolicy, ReleaseBinaryIdentity, ReleaseBinaryTrustPolicy,
+    allows_pinned_self_signed_chain_failure,
 };
 use spark_computer_host::uia_policy::{RawUiaNode, sanitize_uia_tree};
 
@@ -62,6 +63,25 @@ fn host_binary_must_itself_be_signed_by_the_embedded_release_publisher() {
         .is_err()
     );
     assert!(ReleaseBinaryTrustPolicy::validate(&trusted, &"B".repeat(64)).is_err());
+}
+
+#[test]
+fn pinned_self_signed_release_allows_only_chain_and_revocation_availability_failures() {
+    for status in [
+        0x800B0109_u32 as i32, // CERT_E_UNTRUSTEDROOT
+        0x80092013_u32 as i32, // CRYPT_E_REVOCATION_OFFLINE
+        0x800B010E_u32 as i32, // CERT_E_REVOCATION_FAILURE
+    ] {
+        assert!(allows_pinned_self_signed_chain_failure(status));
+    }
+
+    for status in [
+        0,
+        0x80096010_u32 as i32, // TRUST_E_BAD_DIGEST
+        0x800B0004_u32 as i32, // TRUST_E_SUBJECT_NOT_TRUSTED
+    ] {
+        assert!(!allows_pinned_self_signed_chain_failure(status));
+    }
 }
 
 #[test]

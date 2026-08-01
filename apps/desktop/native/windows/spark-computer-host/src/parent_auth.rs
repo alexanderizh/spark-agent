@@ -2,6 +2,20 @@ use thiserror::Error;
 
 pub const EXPECTED_PARENT_PRODUCT_NAME: &str = "SparkWork";
 
+const CERT_E_UNTRUSTEDROOT: i32 = 0x800B0109_u32 as i32;
+const CRYPT_E_REVOCATION_OFFLINE: i32 = 0x80092013_u32 as i32;
+const CERT_E_REVOCATION_FAILURE: i32 = 0x800B010E_u32 as i32;
+
+/// WinVerifyTrust has already authenticated the file digest before reporting these
+/// certificate-chain availability failures. Callers must additionally require a
+/// self-issued leaf and pin its SHA-256 certificate fingerprint to the release identity.
+pub fn allows_pinned_self_signed_chain_failure(status: i32) -> bool {
+    matches!(
+        status,
+        CERT_E_UNTRUSTEDROOT | CRYPT_E_REVOCATION_OFFLINE | CERT_E_REVOCATION_FAILURE
+    )
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParentIdentity {
     pub product_name: String,
