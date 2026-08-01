@@ -69,6 +69,7 @@ import {
 import { moveItem, sortByManualOrder } from './sidebar-manual-order'
 import { composeProjectGroupSessions } from './sidebar-session-sort'
 import { filterCanvasSessions, isCanvasWorkspace } from './workspace-visibility'
+import { SidebarProjectDropZone } from './components/SidebarProjectDropZone'
 
 const projectSortableId = (projectId: string): string => `project:${projectId}`
 const sessionSortableId = (projectId: string, sessionId: string): string =>
@@ -2008,7 +2009,8 @@ export function SidebarSessionList() {
   const showProjectToolbar = ctx.workspaces.length > 0 || ctx.sessions.length > 0
 
   return (
-    <div className="sidebar-session-list-inner">
+    <SidebarProjectDropZone onDropPaths={ctx.handleAddDroppedProjects}>
+      <div className="sidebar-session-list-inner">
       {/* Current session params panel 已移除 — 权限/推理控制在 ChatView Composer param bar 中 */}
 
       {showProjectToolbar && (
@@ -2306,6 +2308,7 @@ export function SidebarSessionList() {
           }}
         />
       )}
-    </div>
+      </div>
+    </SidebarProjectDropZone>
   )
 }
