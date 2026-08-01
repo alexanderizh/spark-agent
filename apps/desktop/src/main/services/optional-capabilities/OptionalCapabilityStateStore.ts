@@ -11,7 +11,13 @@ export interface ActiveCapabilityState {
   activatedAt: string
   artifacts: Record<
     string,
-    { version: string; sha256: string; directory: string; size: number }
+    {
+      version: string
+      sha256: string
+      manifestSha256: string
+      directory: string
+      size: number
+    }
   >
 }
 
@@ -39,7 +45,18 @@ export class OptionalCapabilityStateStore {
         typeof parsed.version !== 'string' ||
         typeof parsed.autoUpdate !== 'boolean' ||
         !parsed.artifacts ||
-        typeof parsed.artifacts !== 'object'
+        typeof parsed.artifacts !== 'object' ||
+        !Object.values(parsed.artifacts).every(
+          (artifact) =>
+            artifact != null &&
+            typeof artifact === 'object' &&
+            typeof artifact.version === 'string' &&
+            /^[0-9a-f]{64}$/i.test(String(artifact.sha256 ?? '')) &&
+            /^[0-9a-f]{64}$/i.test(String(artifact.manifestSha256 ?? '')) &&
+            typeof artifact.directory === 'string' &&
+            Number.isSafeInteger(artifact.size) &&
+            Number(artifact.size) > 0,
+        )
       ) {
         throw new Error(`Invalid active state for ${id}`)
       }

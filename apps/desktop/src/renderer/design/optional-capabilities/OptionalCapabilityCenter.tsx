@@ -14,7 +14,7 @@ const PROMPT_PREFERENCE_KEY = 'spark-optional-capability-prompt'
 export function OptionalCapabilityCenter() {
   const { setTweak } = useApp()
   const { snapshot, progress, install, cancel } = useOptionalCapabilities()
-  const [promptOpen, setPromptOpen] = useState(false)
+  const [promptDismissed, setPromptDismissed] = useState(false)
   const [selected, setSelected] = useState<OptionalCapabilityId[]>([])
   const [progressHidden, setProgressHidden] = useState(false)
   const [disableStartupReminder, setDisableStartupReminder] = useState(
@@ -31,21 +31,24 @@ export function OptionalCapabilityCenter() {
       ) ?? [],
     [snapshot],
   )
+  const shouldOpenPrompt = useMemo(
+    () => snapshot != null && shouldShowCapabilityPrompt(snapshot, readPromptPreference()),
+    [snapshot],
+  )
 
-  useEffect(() => {
-    if (!snapshot) return
-    const preference = readPromptPreference()
-    if (shouldShowCapabilityPrompt(snapshot, preference)) setPromptOpen(true)
-  }, [snapshot])
+  const promptOpen = shouldOpenPrompt && !promptDismissed
 
   const activeProgress = Object.values(progress).filter(
     (item) => item != null && item.phase !== 'missing',
   )
+  const hasStartingProgress = activeProgress.some(
+    (item) => item.phase === 'queued' || item.phase === 'downloading',
+  )
   useEffect(() => {
-    if (activeProgress.some((item) => item.phase === 'queued' || item.phase === 'downloading')) {
-      setProgressHidden(false)
-    }
-  }, [activeProgress])
+    if (!hasStartingProgress) return
+    const frame = window.requestAnimationFrame(() => setProgressHidden(false))
+    return () => window.cancelAnimationFrame(frame)
+  }, [hasStartingProgress])
 
   const dismissPrompt = () => {
     if (snapshot) {
@@ -58,7 +61,7 @@ export function OptionalCapabilityCenter() {
         } satisfies OptionalCapabilityPromptPreference),
       )
     }
-    setPromptOpen(false)
+    setPromptDismissed(true)
   }
 
   const installSelected = () => {
@@ -93,8 +96,12 @@ export function OptionalCapabilityCenter() {
         title="可选功能资源"
         onCancel={dismissPrompt}
         footer={[
-          <Button key="later" onClick={dismissPrompt}>稍后</Button>,
-          <Button key="settings" onClick={openIntegrity}>前往完整性</Button>,
+          <Button key="later" onClick={dismissPrompt}>
+            稍后
+          </Button>,
+          <Button key="settings" onClick={openIntegrity}>
+            前往完整性
+          </Button>,
           <Button
             key="install"
             type="primary"
@@ -141,7 +148,9 @@ export function OptionalCapabilityCenter() {
         <aside className="optional-capability-progress-card" aria-label="可选功能安装进度">
           <div className="optional-capability-progress-header">
             <strong>功能资源</strong>
-            <button type="button" onClick={() => setProgressHidden(true)} aria-label="收起">×</button>
+            <button type="button" onClick={() => setProgressHidden(true)} aria-label="收起">
+              ×
+            </button>
           </div>
           {activeProgress.map((item) => (
             <div key={item.capabilityId} className="optional-capability-progress-item">
@@ -155,7 +164,9 @@ export function OptionalCapabilityCenter() {
                 size="small"
               />
               <div className="optional-capability-progress-detail">
-                {item.total > 0 ? `${formatBytes(item.downloaded)} / ${formatBytes(item.total)}` : item.message}
+                {item.total > 0
+                  ? `${formatBytes(item.downloaded)} / ${formatBytes(item.total)}`
+                  : item.message}
                 {item.queuePosition > 0 ? ` · 队列 ${item.queuePosition}` : ''}
               </div>
               {(item.phase === 'queued' || item.phase === 'downloading') && (
@@ -170,7 +181,9 @@ export function OptionalCapabilityCenter() {
               )}
             </div>
           ))}
-          <Button type="link" onClick={openIntegrity}>查看详情</Button>
+          <Button type="link" onClick={openIntegrity}>
+            查看详情
+          </Button>
         </aside>
       )}
     </>

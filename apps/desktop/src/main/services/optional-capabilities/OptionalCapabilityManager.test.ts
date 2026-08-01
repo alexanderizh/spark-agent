@@ -174,10 +174,7 @@ async function writeDepthRuntimePackage(
   )
 }
 
-async function writeDepthModelPackage(
-  destination: string,
-  version: string,
-): Promise<void> {
+async function writeDepthModelPackage(destination: string, version: string): Promise<void> {
   const files = await writeHashedFiles(destination, {
     LICENSE: 'Apache-2.0',
     'config.json': '{"model_type":"depth_anything"}',
@@ -353,6 +350,46 @@ describe('OptionalCapabilityManager', () => {
     })
   })
 
+  it('anchors the package manifest hash so coordinated local tampering is detected', async () => {
+    const root = await fixtureRoot()
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: async () => manifest(),
+      installArchive: async ({ destDir }) => {
+        await writePackage(
+          destDir,
+          'office-viewer',
+          'archive.optional-office-viewer-2.2.3-1',
+          '2.2.3-1',
+        )
+        return { destPath: destDir, entries: [], fileCount: 2 }
+      },
+    })
+    await manager.install('office-viewer')
+    const active = JSON.parse(
+      await readFile(join(root, 'optional-capabilities', 'office-viewer', 'active.json'), 'utf8'),
+    ) as { artifacts: Record<string, { directory: string }> }
+    const directory = Object.values(active.artifacts)[0]!.directory
+    const tamperedPayload = 'tampered with matching file hash'
+    await writeFile(join(directory, 'payload.bin'), tamperedPayload)
+    const packageManifestPath = join(directory, 'capability-package.json')
+    const packageManifest = JSON.parse(await readFile(packageManifestPath, 'utf8')) as {
+      files: Record<string, string>
+    }
+    packageManifest.files['payload.bin'] = createHash('sha256')
+      .update(tamperedPayload)
+      .digest('hex')
+    await writeFile(packageManifestPath, JSON.stringify(packageManifest))
+
+    await expect(manager.list()).resolves.toMatchObject({
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({ id: 'office-viewer', state: 'damaged' }),
+      ]),
+    })
+  })
+
   it('rejects package files that escape through a symbolic link', async () => {
     const root = await fixtureRoot()
     const manager = new OptionalCapabilityManager({
@@ -418,9 +455,7 @@ describe('OptionalCapabilityManager', () => {
     expect(installArchive).toHaveBeenCalledTimes(2)
     // local-depth is missing and must not be installed merely because its artifacts exist.
     expect(
-      installArchive.mock.calls.some(([input]) =>
-        String(input.destDir).includes('local-depth'),
-      ),
+      installArchive.mock.calls.some(([input]) => String(input.destDir).includes('local-depth')),
     ).toBe(false)
   })
 
@@ -523,12 +558,7 @@ describe('OptionalCapabilityManager', () => {
       },
     })
     await manager.install('office-viewer')
-    const activePath = join(
-      root,
-      'optional-capabilities',
-      'office-viewer',
-      'active.json',
-    )
+    const activePath = join(root, 'optional-capabilities', 'office-viewer', 'active.json')
     const active = JSON.parse(await readFile(activePath, 'utf8')) as {
       artifacts: Record<string, { directory: string }>
     }

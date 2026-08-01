@@ -36,9 +36,7 @@ import {
 } from './OptionalCapabilityStateStore.js'
 import { validateCapabilityPackageHealth } from './CapabilityPackageHealth.js'
 
-type InstallArchive = (
-  params: BinaryArchiveInstallParams,
-) => Promise<BinaryArchiveInstallResult>
+type InstallArchive = (params: BinaryArchiveInstallParams) => Promise<BinaryArchiveInstallResult>
 
 export interface OptionalCapabilityManagerOptions {
   userDataDir: string
@@ -76,9 +74,7 @@ export class OptionalCapabilityManager {
   private readonly errors = new Map<OptionalCapabilityId, CapabilityErrorState>()
   private readonly controllers = new Map<OptionalCapabilityId, AbortController>()
   private readonly verifiedActiveStates = new Map<OptionalCapabilityId, string>()
-  private readonly progressListeners = new Set<
-    (progress: OptionalCapabilityProgress) => void
-  >()
+  private readonly progressListeners = new Set<(progress: OptionalCapabilityProgress) => void>()
   private readonly logger: CapabilityLogger
   private queueTail: Promise<void> = Promise.resolve()
   private queuedJobs = 0
@@ -255,7 +251,6 @@ export class OptionalCapabilityManager {
     const definition = getOptionalCapabilityDefinition(id)
     let stagingRoot: string | null = null
     let backupRoot: string | null = null
-    let targetRoot: string | null = null
     try {
       throwIfAborted(signal, definition.displayName)
       this.logger.info(
@@ -270,7 +265,11 @@ export class OptionalCapabilityManager {
         )
       })
       throwIfAborted(signal, definition.displayName)
-      const artifacts = definition.selectArtifacts(manifest, this.options.platform, this.options.arch)
+      const artifacts = definition.selectArtifacts(
+        manifest,
+        this.options.platform,
+        this.options.arch,
+      )
       if (artifacts.length === 0) {
         throw capabilityError(
           'artifact_unavailable',
@@ -291,13 +290,13 @@ export class OptionalCapabilityManager {
       const version = capabilityVersion(artifacts)
       const capabilityRoot = this.store.capabilityRoot(id)
       stagingRoot = join(capabilityRoot, `.staging-${randomUUID()}`)
-      targetRoot = join(capabilityRoot, 'versions', safeSegment(version))
+      const targetRoot = join(capabilityRoot, 'versions', safeSegment(version))
       backupRoot = `${targetRoot}.backup-${randomUUID()}`
       await mkdir(stagingRoot, { recursive: true })
 
       const total = artifacts.reduce((sum, artifact) => sum + (artifact.size ?? 0), 0)
       let completed = 0
-      const installedSizes = new Map<string, number>()
+      const installedArtifacts = new Map<string, { size: number; manifestSha256: string }>()
       for (const artifact of artifacts) {
         throwIfAborted(signal, definition.displayName)
         const destination = join(stagingRoot, safeSegment(artifact.id))
@@ -337,9 +336,7 @@ export class OptionalCapabilityManager {
                 completed,
                 total,
                 0,
-                stage === 'verifying'
-                  ? `正在校验 ${artifact.name}`
-                  : `正在解压 ${artifact.name}`,
+                stage === 'verifying' ? `正在校验 ${artifact.name}` : `正在解压 ${artifact.name}`,
                 version,
               )
             },
@@ -377,7 +374,7 @@ export class OptionalCapabilityManager {
             `正在校验 ${artifact.name} 的包内文件`,
             version,
           )
-          installedSizes.set(
+          installedArtifacts.set(
             artifact.id,
             await validateInstalledArtifact(destination, id, artifact),
           )
@@ -432,15 +429,23 @@ export class OptionalCapabilityManager {
           autoUpdate: previous?.autoUpdate ?? true,
           activatedAt: this.now().toISOString(),
           artifacts: Object.fromEntries(
-            artifacts.map((artifact) => [
-              artifact.id,
-              {
-                version: artifact.version,
-                sha256: artifact.sha256!,
-                directory: join(targetRoot!, safeSegment(artifact.id)),
-                size: installedSizes.get(artifact.id) ?? artifact.size!,
-              },
-            ]),
+            artifacts.map((artifact) => {
+              if (!artifact.sha256 || !artifact.size) {
+                throw new Error(`可选能力制品元数据缺失：${artifact.id}`)
+              }
+              const installed = installedArtifacts.get(artifact.id)
+              if (!installed) throw new Error(`可选能力制品校验结果缺失：${artifact.id}`)
+              return [
+                artifact.id,
+                {
+                  version: artifact.version,
+                  sha256: artifact.sha256,
+                  manifestSha256: installed.manifestSha256,
+                  directory: join(targetRoot, safeSegment(artifact.id)),
+                  size: installed.size,
+                },
+              ]
+            }),
           ),
         }
         await this.store.write(state)
@@ -463,16 +468,7 @@ export class OptionalCapabilityManager {
       this.logger.info(
         `event=optional_capability_install capability=${id} stage=ready status=succeeded version=${version}`,
       )
-      this.emitProgress(
-        id,
-        definition.displayName,
-        'ready',
-        total,
-        total,
-        0,
-        '安装完成',
-        version,
-      )
+      this.emitProgress(id, definition.displayName, 'ready', total, total, 0, '安装完成', version)
       const snapshot = await this.buildSnapshot()
       this.onSnapshot?.(snapshot)
       return { success: true, message: `${definition.displayName}安装完成`, snapshot }
@@ -506,7 +502,8 @@ export class OptionalCapabilityManager {
         snapshot,
       }
     } finally {
-      if (stagingRoot) await rm(stagingRoot, { recursive: true, force: true }).catch(() => undefined)
+      if (stagingRoot)
+        await rm(stagingRoot, { recursive: true, force: true }).catch(() => undefined)
       if (backupRoot) await rm(backupRoot, { recursive: true, force: true }).catch(() => undefined)
     }
   }
@@ -524,7 +521,9 @@ export class OptionalCapabilityManager {
           manifest,
         })
         .catch((error) => {
-          this.logger.warn(`Failed to persist optional capability manifest cache: ${safeDiagnostic(error)}`)
+          this.logger.warn(
+            `Failed to persist optional capability manifest cache: ${safeDiagnostic(error)}`,
+          )
         })
       return manifest
     } catch (error) {
@@ -537,7 +536,9 @@ export class OptionalCapabilityManager {
     if (this.manifestCacheLoaded) return
     this.manifestCacheLoaded = true
     const cached = await this.store.readManifestCache().catch((error) => {
-      this.logger.warn(`Ignoring invalid optional capability manifest cache: ${safeDiagnostic(error)}`)
+      this.logger.warn(
+        `Ignoring invalid optional capability manifest cache: ${safeDiagnostic(error)}`,
+      )
       return null
     })
     if (!cached) return
@@ -662,9 +663,12 @@ async function validateInstalledArtifact(
   directory: string,
   capabilityId: OptionalCapabilityId,
   artifact: SparkInstallArtifact,
-): Promise<number> {
+): Promise<{ size: number; manifestSha256: string }> {
   await validatePackageDirectory(directory, capabilityId, artifact)
-  return directorySize(directory)
+  return {
+    size: await directorySize(directory),
+    manifestSha256: await sha256File(join(directory, packageManifestName(artifact.id))),
+  }
 }
 
 async function directorySize(directory: string): Promise<number> {
@@ -687,7 +691,7 @@ async function validatePackageDirectory(
 ): Promise<void> {
   const { id: artifactId, version } = artifact
   const isModel = artifactId.startsWith('model.')
-  const manifestName = isModel ? 'model-package.json' : 'capability-package.json'
+  const manifestName = packageManifestName(artifactId)
   const parsed = JSON.parse(await readFile(join(directory, manifestName), 'utf8')) as Record<
     string,
     unknown
@@ -745,20 +749,20 @@ async function validateActiveState(
     for (const [artifactId, artifact] of Object.entries(state.artifacts)) {
       if (basename(artifact.directory) !== safeSegment(artifactId)) return false
       if (!isSamePathOrChild(resolve(artifact.directory), resolve(capabilityRoot))) return false
-      await validatePackageDirectory(
-        artifact.directory,
-        state.capabilityId,
-        {
-          id: artifactId,
-          type: artifactId.startsWith('model.')
-            ? 'model'
-            : artifactId.startsWith('runtime.')
-              ? 'runtime'
-              : 'archive',
-          version: artifact.version,
-          ...(artifactId.startsWith('runtime.') ? { platform, arch } : {}),
-        },
+      const manifestHash = await sha256File(
+        join(artifact.directory, packageManifestName(artifactId)),
       )
+      if (manifestHash !== artifact.manifestSha256) return false
+      await validatePackageDirectory(artifact.directory, state.capabilityId, {
+        id: artifactId,
+        type: artifactId.startsWith('model.')
+          ? 'model'
+          : artifactId.startsWith('runtime.')
+            ? 'runtime'
+            : 'archive',
+        version: artifact.version,
+        ...(artifactId.startsWith('runtime.') ? { platform, arch } : {}),
+      })
     }
     return true
   } catch {
@@ -780,6 +784,7 @@ function activeStateKey(state: ActiveCapabilityState): string {
         artifactId,
         artifact.version,
         artifact.sha256,
+        artifact.manifestSha256,
         artifact.directory,
         artifact.size,
       ]),
@@ -850,6 +855,10 @@ function safePackageFile(directory: string, relativePath: string): string {
     throw new Error(`能力包包含不安全路径：${relativePath}`)
   }
   return filePath
+}
+
+function packageManifestName(artifactId: string): string {
+  return artifactId.startsWith('model.') ? 'model-package.json' : 'capability-package.json'
 }
 
 async function sha256File(filePath: string): Promise<string> {

@@ -13,7 +13,7 @@ import {
   utimes,
   writeFile,
 } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 
@@ -42,7 +42,9 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
   await mkdir(join(packageDirectory, 'node_modules'), { recursive: true })
 
   const packages = await collectDependencyClosure(sourceRoot, ROOT_PACKAGE, platform, arch)
-  for (const [name, sourceDirectory] of [...packages.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [name, sourceDirectory] of [...packages.entries()].sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
     const destination = join(packageDirectory, 'node_modules', ...name.split('/'))
     await copyPackageDirectory(sourceDirectory, destination)
   }
@@ -50,7 +52,10 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
   await patchTransformersForNodeOnly(packageDirectory)
 
   const transformers = JSON.parse(
-    await readFile(join(packageDirectory, 'node_modules/@huggingface/transformers/package.json'), 'utf8'),
+    await readFile(
+      join(packageDirectory, 'node_modules/@huggingface/transformers/package.json'),
+      'utf8',
+    ),
   )
   const onnx = JSON.parse(
     await readFile(join(packageDirectory, 'node_modules/onnxruntime-node/package.json'), 'utf8'),
@@ -76,7 +81,10 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
   }
   for (const name of [...packages.keys()].sort()) {
     const packageJson = JSON.parse(
-      await readFile(join(packageDirectory, 'node_modules', ...name.split('/'), 'package.json'), 'utf8'),
+      await readFile(
+        join(packageDirectory, 'node_modules', ...name.split('/'), 'package.json'),
+        'utf8',
+      ),
     )
     packageManifest.packages[name] = packageJson.version
   }
@@ -282,9 +290,7 @@ async function main() {
   const platform = process.argv[2]
   const arch = process.argv[3]
   const revision = Number(process.argv[4] || 1)
-  const output = resolve(
-    process.argv[5] || `/private/tmp/spark-depth-runtime-${platform}-${arch}`,
-  )
+  const output = resolve(process.argv[5] || `/private/tmp/spark-depth-runtime-${platform}-${arch}`)
   const source = resolve(process.argv[6] || 'node_modules')
   const result = await prepareDepthRuntimeArtifact(source, output, { platform, arch, revision })
   console.log(

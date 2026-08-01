@@ -81,6 +81,7 @@ jobs:
           # workflow_dispatch 时为 'workflow_dispatch'，push 时为 'push'
           EVENT_NAME: ${{ github.event_name }}
           PUBLISH_TO_RELEASE: ${{ github.event.inputs.publish_to_release }}
+          OPTIONAL_CAPABILITIES_ONLY: ${{ github.event.inputs.optional_capabilities_only }}
         run: |
           git fetch --force --tags
           VERSION=$(node -p "require('./apps/desktop/package.json').version")
@@ -89,8 +90,10 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "ref=${{ github.event.inputs.ref || github.ref }}" >> "$GITHUB_OUTPUT"
 
-          # 手动的纯构建/签名验证不依赖 tag，也不会改变远端发布状态。
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ "${PUBLISH_TO_RELEASE}" != "true" ]; then
+          # 可选资源发布和手动的纯构建/签名验证都不依赖桌面 tag，
+          # 也不会创建或修改 GitHub Release。
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] \
+            && { [ "${OPTIONAL_CAPABILITIES_ONLY}" = "true" ] || [ "${PUBLISH_TO_RELEASE}" != "true" ]; }; then
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
             echo "[manual build-only] should_publish=true, version=${VERSION}"
             exit 0
@@ -470,15 +473,17 @@ jobs:
         run: |
           set -euo pipefail
           OFFICE_DIR="${RUNNER_TEMP}/spark-office-viewer-2.2.3-1"
-          DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-darwin-arm64"
+          TARGET_PLATFORM='darwin'
+          TARGET_ARCH='arm64'
+          DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-${TARGET_PLATFORM}-${TARGET_ARCH}"
           node scripts/prepare-office-viewer-artifact.mjs \
             2.2.3-1 apps/desktop/public/file-viewer "${OFFICE_DIR}"
           node scripts/prepare-depth-runtime-artifact.mjs \
-            darwin arm64 1 "${DEPTH_DIR}" node_modules
+            "${TARGET_PLATFORM}" "${TARGET_ARCH}" 1 "${DEPTH_DIR}" node_modules
           diff -u docs/release-manifests/office-viewer-2.2.3-1.json \
             "${OFFICE_DIR}/office-viewer-2.2.3-1-manifest.json"
-          diff -u docs/release-manifests/depth-runtime-4.2.0-1.24.3-1-darwin-arm64.json \
-            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-darwin-arm64-manifest.json"
+          diff -u "docs/release-manifests/depth-runtime-4.2.0-1.24.3-1-${TARGET_PLATFORM}-${TARGET_ARCH}.json" \
+            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json"
           node --test scripts/__tests__/prepare-office-viewer-artifact.test.mjs \
             scripts/__tests__/prepare-depth-runtime-artifact.test.mjs \
             scripts/__tests__/publish-optional-capabilities-to-minio.test.mjs
@@ -495,20 +500,22 @@ jobs:
         run: |
           set -euo pipefail
           OFFICE_DIR="${RUNNER_TEMP}/spark-office-viewer-2.2.3-1"
-          DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-darwin-arm64"
+          TARGET_PLATFORM='darwin'
+          TARGET_ARCH='arm64'
+          DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-${TARGET_PLATFORM}-${TARGET_ARCH}"
           node scripts/publish-optional-capabilities-to-minio.mjs \
             "${OFFICE_DIR}/office-viewer-2.2.3-1-manifest.json" \
             "${OFFICE_DIR}/office-viewer-2.2.3-1.tar.gz" \
-            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-darwin-arm64-manifest.json" \
-            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-darwin-arm64.tar.gz"
+            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json" \
+            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-${TARGET_PLATFORM}-${TARGET_ARCH}.tar.gz"
           node scripts/audit-artifact-repository.mjs
 
       - name: Preserve optional archives for delivery evidence
         uses: actions/upload-artifact@v4
         with:
-          name: optional-capabilities-darwin-arm64
+          name: optional-capabilities-macos-arm64
           path: |
             ${{ runner.temp }}/spark-office-viewer-2.2.3-1/*.tar.gz
-            ${{ runner.temp }}/spark-depth-runtime-darwin-arm64/*.tar.gz
+            ${{ runner.temp }}/spark-depth-runtime-darwin-*/depth-runtime-*.tar.gz
           if-no-files-found: error
           retention-days: 5
