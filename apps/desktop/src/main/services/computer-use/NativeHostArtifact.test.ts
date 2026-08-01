@@ -10,6 +10,7 @@ import {
   hasUnsafePosixArtifactPermissions,
   readNativeHostArtifactTrustMode,
   windowsCodeSignatureExecOptions,
+  windowsCodeSignatureInspectionError,
   verifyLocalNativeHostArtifact,
   verifyWindowsNativeHostArtifact,
   verifyNativeHostArtifact,
@@ -237,6 +238,13 @@ describe('verifyWindowsNativeHostArtifact', () => {
 
     expect(options.timeout).toBeGreaterThanOrEqual(30_000)
     expect(options.env.SPARK_AUTHENTICODE_PATH).toBe('C:\\Program Files\\SparkWork\\SparkWork.exe')
+  })
+
+  it('surfaces an actionable error when Windows Authenticode inspection times out', () => {
+    const error = windowsCodeSignatureInspectionError({ killed: true, signal: 'SIGTERM' })
+
+    expect(error).toBeInstanceOf(NativeHostArtifactError)
+    expect(error.message).toContain('timed out')
   })
 
   it('binds the EXE hash and WinVerifyTrust publisher thumbprint to the outer application signer', async () => {
