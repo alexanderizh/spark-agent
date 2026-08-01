@@ -949,6 +949,7 @@ function ProvidersView() {
   // ─── 卡片筛选 / 排序 状态 ───────────────────────────────────────────────
   const [cardSearch, setCardSearch] = useState('')
   const [cardKindFilter, setCardKindFilter] = useState<'all' | ProviderCardKind>('all')
+  const [cardEnabledFilter, setCardEnabledFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
   const [cardSortBy, setCardSortBy] = useState<'default' | 'nameAsc' | 'nameDesc'>('default')
 
   // ─── 多选 / 导入 / 导出 状态 ─────────────────────────────────────────────
@@ -1233,11 +1234,14 @@ function ProvidersView() {
     const keyword = cardSearch.trim().toLowerCase()
     const filtered = uiProfiles.filter((p) => {
       if (cardKindFilter !== 'all' && resolveProviderCardKind(p) !== cardKindFilter) return false
+      // 启用口径与卡片开关一致：enabled !== false 视为启用（undefined 旧数据按启用处理）
+      if (cardEnabledFilter === 'enabled' && p.enabled === false) return false
+      if (cardEnabledFilter === 'disabled' && p.enabled !== false) return false
       if (keyword && !p.name.toLowerCase().includes(keyword)) return false
       return true
     })
     return sortProviderProfilesForCards(filtered, cardSortBy)
-  }, [uiProfiles, cardSearch, cardKindFilter, cardSortBy])
+  }, [uiProfiles, cardSearch, cardKindFilter, cardEnabledFilter, cardSortBy])
 
   /** 点击 vendor 卡片 → 直接以 Anthropic 格式打开编辑面板 */
   const handleSelectVendor = (vendorId: string) => {
@@ -1411,6 +1415,17 @@ function ProvidersView() {
               value={cardKindFilter}
               onChange={(v) => setCardKindFilter(v as 'all' | ProviderCardKind)}
               options={[{ value: 'all', label: '全部类型' }, ...CARD_KIND_FILTER_OPTIONS]}
+            />
+            <Select
+              className="pv_filters_select"
+              size="middle"
+              value={cardEnabledFilter}
+              onChange={(v) => setCardEnabledFilter(v as 'all' | 'enabled' | 'disabled')}
+              options={[
+                { value: 'all', label: '全部状态' },
+                { value: 'enabled', label: '已启用' },
+                { value: 'disabled', label: '已禁用' },
+              ]}
             />
             <Select
               className="pv_filters_select"
