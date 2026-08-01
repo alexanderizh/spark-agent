@@ -6,6 +6,7 @@ const manifestUrl =
   process.argv.find((arg) => arg.startsWith('http')) ??
   'https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/index.json'
 const verifySkills = process.argv.includes('--verify-skills')
+const verifyAll = process.argv.includes('--verify-all')
 
 const response = await fetch(manifestUrl, { headers: { Accept: 'application/json' } })
 if (!response.ok) throw new Error(`manifest returned HTTP ${response.status}: ${manifestUrl}`)
@@ -61,8 +62,11 @@ for (let offset = 0; offset < artifacts.length; offset += 8) {
   errors.push(...results.filter(Boolean))
 }
 
-if (verifySkills) {
-  for (const artifact of artifacts.filter((item) => item.type === 'skill')) {
+if (verifySkills || verifyAll) {
+  const downloadableArtifacts = verifyAll
+    ? artifacts
+    : artifacts.filter((item) => item.type === 'skill')
+  for (const artifact of downloadableArtifacts) {
     const objectResponse = await fetch(`${baseUrl}/${artifact.url}`)
     if (!objectResponse.ok) {
       errors.push(`${artifact.id}: download returned HTTP ${objectResponse.status}`)
@@ -104,6 +108,7 @@ console.log(
       verifiedSkillArchives: verifySkills
         ? artifacts.filter((artifact) => artifact.type === 'skill').length
         : 0,
+      fullyVerifiedArtifacts: verifyAll ? artifacts.length : 0,
     },
     null,
     2,
