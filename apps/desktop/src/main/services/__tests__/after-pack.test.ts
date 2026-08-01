@@ -44,6 +44,7 @@ const {
 const { beforePack } = require('../../../../scripts/before-pack.js') as {
   beforePack: (context: {
     electronPlatformName: string
+    arch: string | number
     packager: {
       config: {
         files: Array<string | { from?: string; filter: string[] }>
@@ -317,6 +318,7 @@ describe('before-pack ONNX runtime filtering', () => {
 
     beforePack({
       electronPlatformName: 'darwin',
+      arch: 'arm64',
       packager: { config: { files } },
     })
 
@@ -327,42 +329,45 @@ describe('before-pack ONNX runtime filtering', () => {
       '!src/**',
       '!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**',
       '!**/node_modules/onnxruntime-node/bin/napi-v6/win32/**',
+      '!**/node_modules/onnxruntime-node/bin/napi-v6/darwin/x64/**',
     ])
   })
 
   it.each([
-    ['darwin', ['linux', 'win32']],
-    ['win32', ['darwin', 'linux']],
-    ['linux', ['darwin', 'win32']],
-  ])('preserves global rules and appends %s foreign-platform exclusions', (platform, excluded) => {
-    const originalRules = ['out/**/*', 'package.json', '!output{,/**/*}']
-    const macFiles = ['mac-extra/**/*']
-    const winFiles = ['win-extra/**/*']
-    const linuxFiles = ['linux-extra/**/*']
-    const config = {
-      files: [...originalRules],
-      mac: { files: macFiles },
-      win: { files: winFiles },
-      linux: { files: linuxFiles },
-    }
+    ['darwin', 'arm64', ['linux/**', 'win32/**', 'darwin/x64/**']],
+    ['win32', 'x64', ['darwin/**', 'linux/**', 'win32/arm64/**']],
+    ['linux', 'x64', ['darwin/**', 'win32/**', 'linux/arm64/**']],
+  ])(
+    'preserves global rules and appends %s foreign-runtime exclusions',
+    (platform, arch, excluded) => {
+      const originalRules = ['out/**/*', 'package.json', '!output{,/**/*}']
+      const macFiles = ['mac-extra/**/*']
+      const winFiles = ['win-extra/**/*']
+      const linuxFiles = ['linux-extra/**/*']
+      const config = {
+        files: [...originalRules],
+        mac: { files: macFiles },
+        win: { files: winFiles },
+        linux: { files: linuxFiles },
+      }
 
-    beforePack({ electronPlatformName: platform, packager: { config } })
+      beforePack({ electronPlatformName: platform, arch, packager: { config } })
 
-    expect(config.files).toEqual([
-      ...originalRules,
-      ...excluded.map(
-        (foreignPlatform) =>
-          `!**/node_modules/onnxruntime-node/bin/napi-v6/${foreignPlatform}/**`,
-      ),
-    ])
-    expect(config.mac.files).toBe(macFiles)
-    expect(config.win.files).toBe(winFiles)
-    expect(config.linux.files).toBe(linuxFiles)
-  })
+      expect(config.files).toEqual([
+        ...originalRules,
+        ...excluded.map(
+          (foreignRuntime) => `!**/node_modules/onnxruntime-node/bin/napi-v6/${foreignRuntime}`,
+        ),
+      ])
+      expect(config.mac.files).toBe(macFiles)
+      expect(config.win.files).toBe(winFiles)
+      expect(config.linux.files).toBe(linuxFiles)
+    },
+  )
 
   it('is idempotent when electron-builder invokes the hook more than once', () => {
     const config = { files: ['out/**/*'] }
-    const context = { electronPlatformName: 'darwin', packager: { config } }
+    const context = { electronPlatformName: 'darwin', arch: 'arm64', packager: { config } }
 
     beforePack(context)
     beforePack(context)
@@ -371,6 +376,7 @@ describe('before-pack ONNX runtime filtering', () => {
       'out/**/*',
       '!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**',
       '!**/node_modules/onnxruntime-node/bin/napi-v6/win32/**',
+      '!**/node_modules/onnxruntime-node/bin/napi-v6/darwin/x64/**',
     ])
   })
 
@@ -378,6 +384,7 @@ describe('before-pack ONNX runtime filtering', () => {
     expect(() =>
       beforePack({
         electronPlatformName: 'freebsd',
+        arch: 'x64',
         packager: { config: { files: ['out/**/*'] } },
       }),
     ).toThrow('Unsupported Electron platform for ONNX runtime filtering: freebsd')

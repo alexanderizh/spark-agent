@@ -99,4 +99,21 @@ describe('verifyPackagedOnnxRuntime', () => {
       }),
     ).rejects.toThrow('foreign ONNX runtime entries in app.asar: linux/x64')
   })
+
+  it('rejects a stale same-platform foreign architecture in the ASAR header', async () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-packaged-onnx-'))
+    writeNativeEntry(root, 'win32/x64')
+
+    await expect(
+      verifyPackagedOnnxRuntime({
+        resourcesPath: root,
+        platform: 'win32',
+        arch: 'x64',
+        listAsarFiles: async () => [
+          '/node_modules/onnxruntime-node/bin/napi-v6/win32/x64/onnxruntime_binding.node',
+          '/node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/onnxruntime_binding.node',
+        ],
+      }),
+    ).rejects.toThrow('foreign ONNX runtime entries in app.asar: win32/arm64')
+  })
 })
