@@ -22,6 +22,19 @@ async function collectNativeEntries(resourcesPath) {
   return entries.sort()
 }
 
+function collectAsarNativeEntries(files) {
+  const marker = 'node_modules/onnxruntime-node/bin/napi-v6/'
+  const entries = new Set()
+  for (const file of files) {
+    const normalized = file.replace(/\\/g, '/').replace(/^\/+/, '')
+    const markerIndex = normalized.indexOf(marker)
+    if (markerIndex < 0) continue
+    const [platform, arch] = normalized.slice(markerIndex + marker.length).split('/')
+    if (platform && arch) entries.add(`${platform}/${arch}`)
+  }
+  return [...entries].sort()
+}
+
 async function verifyPackagedOnnxRuntime({
   resourcesPath,
   platform,
@@ -39,6 +52,14 @@ async function verifyPackagedOnnxRuntime({
   }
 
   const asarFiles = await listAsarFiles(path.join(resourcesPath, 'app.asar'))
+  const foreignAsarEntries = collectAsarNativeEntries(asarFiles).filter(
+    (entry) => entry !== target,
+  )
+  if (foreignAsarEntries.length > 0) {
+    throw new Error(
+      `foreign ONNX runtime entries in app.asar: ${foreignAsarEntries.join(', ')}`,
+    )
+  }
   const webRuntimePresent = asarFiles.some((file) =>
     file.includes('node_modules/onnxruntime-web/'),
   )
@@ -78,4 +99,8 @@ if (require.main === module) {
   })
 }
 
-module.exports = { collectNativeEntries, verifyPackagedOnnxRuntime }
+module.exports = {
+  collectAsarNativeEntries,
+  collectNativeEntries,
+  verifyPackagedOnnxRuntime,
+}

@@ -19,6 +19,7 @@ buildDependenciesFromSource: false
 directories:
   buildResources: resources
   output: dist
+beforePack: scripts/before-pack.js
 afterPack: scripts/after-pack.js
 afterSign: scripts/notarize.js
 mac:
@@ -107,6 +108,8 @@ files:
   - '!src/**'
   - '!e2e/**'
   - '!browsers/**'
+  # 本地 Playwright/QA profile 可能包含指向用户目录的链接，绝不能进入发布包。
+  - '!output{,/**/*}'
   # 杂项：源码映射 / 文档 / TS 源 / 许可文本（运行时不需要）。
   # 不排除 .node / .sql(migrations) / .json(清单) / cli.js(@playwright/mcp)。
   - '!**/*.map'

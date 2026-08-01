@@ -41,6 +41,19 @@ const {
       },
     ) => Promise<{ kept: string[]; removed: string[] }>
   }
+const { beforePack } = require('../../../../scripts/before-pack.js') as {
+  beforePack: (context: {
+    electronPlatformName: string
+    packager: {
+      config: {
+        files: string[]
+        mac?: { files?: string[] }
+        win?: { files?: string[] }
+        linux?: { files?: string[] }
+      }
+    }
+  }) => void
+}
 const {
   createNativeHostManifest,
   createLocalNativeHostManifest,
@@ -245,6 +258,24 @@ describe('after-pack ONNX runtime pruning', () => {
     expect(config).toContain("'!**/node_modules/onnxruntime-web/**'")
   })
 
+  it('configures the beforePack hook that filters foreign ONNX native runtimes', () => {
+    const config = readFileSync(
+      join(__dirname, '../../../../electron-builder.yml'),
+      'utf8',
+    )
+
+    expect(config).toContain('beforePack: scripts/before-pack.js')
+  })
+
+  it('excludes local Playwright output from release packaging', () => {
+    const config = readFileSync(
+      join(__dirname, '../../../../electron-builder.yml'),
+      'utf8',
+    )
+
+    expect(config).toContain("'!output{,/**/*}'")
+  })
+
   it('resolves the packaged resources path and target architecture', async () => {
     const result = await pruneOnnxForContext(
       {
@@ -267,6 +298,61 @@ describe('after-pack ONNX runtime pruning', () => {
     )
 
     expect(result).toEqual({ kept: ['darwin/arm64'], removed: ['linux', 'win32'] })
+  })
+})
+
+describe('before-pack ONNX runtime filtering', () => {
+  it.each([
+    ['darwin', ['linux', 'win32']],
+    ['win32', ['darwin', 'linux']],
+    ['linux', ['darwin', 'win32']],
+  ])('preserves global rules and appends %s foreign-platform exclusions', (platform, excluded) => {
+    const originalRules = ['out/**/*', 'package.json', '!output{,/**/*}']
+    const macFiles = ['mac-extra/**/*']
+    const winFiles = ['win-extra/**/*']
+    const linuxFiles = ['linux-extra/**/*']
+    const config = {
+      files: [...originalRules],
+      mac: { files: macFiles },
+      win: { files: winFiles },
+      linux: { files: linuxFiles },
+    }
+
+    beforePack({ electronPlatformName: platform, packager: { config } })
+
+    expect(config.files).toEqual([
+      ...originalRules,
+      ...excluded.map(
+        (foreignPlatform) =>
+          `!**/node_modules/onnxruntime-node/bin/napi-v6/${foreignPlatform}/**`,
+      ),
+    ])
+    expect(config.mac.files).toBe(macFiles)
+    expect(config.win.files).toBe(winFiles)
+    expect(config.linux.files).toBe(linuxFiles)
+  })
+
+  it('is idempotent when electron-builder invokes the hook more than once', () => {
+    const config = { files: ['out/**/*'] }
+    const context = { electronPlatformName: 'darwin', packager: { config } }
+
+    beforePack(context)
+    beforePack(context)
+
+    expect(config.files).toEqual([
+      'out/**/*',
+      '!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**',
+      '!**/node_modules/onnxruntime-node/bin/napi-v6/win32/**',
+    ])
+  })
+
+  it('rejects unsupported Electron platforms with a clear error', () => {
+    expect(() =>
+      beforePack({
+        electronPlatformName: 'freebsd',
+        packager: { config: { files: ['out/**/*'] } },
+      }),
+    ).toThrow('Unsupported Electron platform for ONNX runtime filtering: freebsd')
   })
 })
 

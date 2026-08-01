@@ -82,4 +82,21 @@ describe('verifyPackagedOnnxRuntime', () => {
       }),
     ).rejects.toThrow('onnxruntime-web is present in app.asar')
   })
+
+  it('rejects stale foreign native entries in the ASAR header', async () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-packaged-onnx-'))
+    writeNativeEntry(root, 'darwin/arm64')
+
+    await expect(
+      verifyPackagedOnnxRuntime({
+        resourcesPath: root,
+        platform: 'darwin',
+        arch: 'arm64',
+        listAsarFiles: async () => [
+          '/node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/onnxruntime_binding.node',
+          '/node_modules/onnxruntime-node/bin/napi-v6/linux/x64/onnxruntime_binding.node',
+        ],
+      }),
+    ).rejects.toThrow('foreign ONNX runtime entries in app.asar: linux/x64')
+  })
 })
