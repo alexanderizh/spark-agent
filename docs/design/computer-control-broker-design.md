@@ -1,6 +1,6 @@
 # Computer Control Broker、租约与审批设计
 
-> 状态: 已落地 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-02
 
 本文记录 CU-02 已落地的主进程电脑控制安全边界。后续 Native Host、Provider Adapter、Monitor、Workflow、远程控制和 Verification Engine 必须调用本 Broker，不得建立第二条键鼠、Accessibility 或截图执行路径。
 
@@ -15,7 +15,7 @@
 - `ComputerKillSwitchService.ts`：全局快捷键注册、注册失败 fail-closed、重复触发合并和全部活动会话停止。
 - `ComputerUseServices.ts`：使用真实 Storage Repository 的主进程 composition root。
 - `AppControlBridge.ts` / `AppControlExecutorBackend.ts`：SparkWork 自身的会话绑定白名单 command 通道；生产默认只匹配固定 bundle id `com.spark-agent.desktop`，只接受协议枚举的主题、导航与空草稿填写命令，仍先经过 Broker policy/lease，主 Renderer 回执精确 `computerSessionId + actionId + commandId + uiRevision` 后重新观察。草稿填写不发送、不覆盖已有输入，敏感文本按 credential/L4 handoff；不提供 eval、selector、URL、shell 或任意 IPC。
-- `NativeHostComputerUseBackend.bindSessionTarget()`：把会话绑定到精确 `appId + windowId`；绑定存在时观察和动作后观察都不得跟随其他前台窗口。首次选择和后续新窗口加入均须经主进程校验任务契约中的最强应用身份规则；后续加入必须先暂停会话并由会话所有者显式请求。
+- `NativeHostComputerUseBackend.bindSessionTarget()`：把显式单窗口会话绑定到精确 `appId + windowId`；绑定存在时观察和动作后观察都不得跟随其他前台窗口。换绑必须先暂停并由会话所有者显式请求，但可选择任意可见应用窗口。默认全桌面任务不绑定窗口，也不使用应用白名单。
 - `computer-permission-action.ts`：`spark_computer` 任务级 MCP 权限映射；未知工具和低层动作永久拒绝。
 
 主进程启动完成数据库迁移后初始化这些服务。默认 factory 在支持的 macOS 架构上尝试连接受信 Host；缺失、ad-hoc/异团队签名、hash/manifest/握手不符或 Host 未声明所需能力时保持 unavailable。在任何平台都不会退化成坐标脚本、BrowserBridge 或其他假执行器。
@@ -53,7 +53,7 @@ Provider 或页面内容不能用该字段把风险降到 Broker 已知的动作
 - `type_text`、`set_value` 携带非 public 数据类别时至少为 L2；
 - credential 敏感输入和 `restricted` 副作用为 L4，只能接管。
 
-因此，普通导航点击在会话范围内不产生逐动作审批；模型 intent 命中提交/发送/支付/删除等外部副作用，未知目标、首次动态应用、非 public 数据或敏感字段仍会升档。Provider 不能扩大任务合同、目标应用或窗口，主进程继续取 effect、动作下限、目标与数据类别的最高风险。若后续加入可信 DOM/AX 语义分类，也只能由主进程受控分类器提高证明强度，不能让 Provider 自行降低已计算风险。
+因此，普通导航点击和应用切换不产生逐动作审批；模型 intent 命中提交/发送/支付/删除等外部副作用，未知目标、非 public 数据或敏感字段仍会升档。主进程继续取 effect、动作下限、目标与数据类别的最高风险。若后续加入可信 DOM/AX 语义分类，也只能由主进程受控分类器提高证明强度，不能让 Provider 自行降低已计算风险。
 
 ## 3. 派发顺序
 
@@ -62,7 +62,7 @@ Provider 或页面内容不能用该字段把风险降到 Broker 已知的动作
 1. 使用严格 schema 解析 envelope，未知字段或动作直接拒绝。
 2. 校验 session 可执行、lease ID/会话/Operator/规范环境 key 绑定、未释放且未过期。
 3. 读取 Broker 自己保存的最新 Observation；校验 frame、tree、前台 app 和 window。
-4. 校验任务最大运行时间、最大步数、允许应用、允许域名、禁止动作和数据类别。bundle/executable/signing allowlist 只能匹配 Native Host Observation 提供的对应身份字段，不能回退为字符串相等的 app ID。
+4. 校验任务最大运行时间、最大步数、允许域名、禁止动作和数据类别。旧任务合同中的 `allowedApps` 仅保留用于反序列化兼容，不参与派发决策。
 5. 计算风险；L4/无人值守 L2-L3 进入 handoff，越权动作 deny。
 6. 持久化 requested action。审批请求按 session/action 幂等复用。
 7. L2/L3 在消费一次性 ticket 前同步等待当前会话的 before-frame 证据链；落盘失败将 action 标为 blocked，ticket 不消费、backend 不执行。证据就绪后再消费 ticket，Storage 才允许 action 进入 `executing`。
@@ -94,20 +94,21 @@ Renderer 提交批准时必须回传它展示的 action/target/data-class digest
 - 心跳只能延长仍有效、未释放、同 Operator 的 lease，不能复活过期租约。
 - Pause/Cancel 首先 abort 会话信号并阻止新派发，然后释放 lease。
 - Broker Stop/Kill Switch 同步把 session 标为 canceled、清掉 Observation 和 pending approvals，再等待 backend `cancelSession()` 清空原生队列。
+- Agent turn 结束或手动终止时，MCP capability revoke 会停止该聊天会话拥有的所有 Computer Use 子会话；operator 自然成功或失败也会释放 Native Host 目标绑定和持续捕获，避免系统控制标记残留。
 - 全局快捷键注册失败时 `ComputerKillSwitchService.isArmed()` 保持 false；My Desktop 设置层不得在此状态下启用。
 
 重复的快捷键事件在第一次异步停止尚未结束时会被合并。触发一次 Kill Switch 会对当前进程内所有非终态 Computer Session 执行 best-effort 并行停止；单个 backend 失败不妨碍其余会话被撤销。
 
 ## 6. MCP PermissionService 映射
 
-| 工具                                 | Permission action        | 默认行为                              |
-| ------------------------------------ | ------------------------ | ------------------------------------- |
+| 工具                                                              | Permission action        | 默认行为                              |
+| ----------------------------------------------------------------- | ------------------------ | ------------------------------------- |
 | `get_status`、`wait_for_completion`、`capture_app_snapshot`、诊断 | `computer_observe`       | allow                                 |
-| `start_task`                         | `computer_task_start`    | ask                                   |
-| `resume`                             | `computer_resume`        | ask                                   |
-| `pause`、`stop`、`takeover`          | 独立安全控制 action      | 始终允许，不受旧 profile/记忆拒绝阻断 |
-| 未知 `spark_computer` 工具           | `computer_unknown`       | 永久 deny                             |
-| click/type/keypress 等低层 MCP 工具  | `computer_direct_action` | 永久 deny                             |
+| `start_task`                                                      | `computer_task_start`    | ask                                   |
+| `resume`                                                          | `computer_resume`        | ask                                   |
+| `pause`、`stop`、`takeover`                                       | 独立安全控制 action      | 始终允许，不受旧 profile/记忆拒绝阻断 |
+| 未知 `spark_computer` 工具                                        | `computer_unknown`       | 永久 deny                             |
+| click/type/keypress 等低层 MCP 工具                               | `computer_direct_action` | 永久 deny                             |
 
 普通 MCP 继续使用既有 `mcp_tool` 行为；只有 `mcp__spark_computer__*` 和 `mcp:spark_computer:*` 进入上述独立映射。PermissionService 只是任务入口的第一层权限，不能替代 Broker 的 action ticket。
 

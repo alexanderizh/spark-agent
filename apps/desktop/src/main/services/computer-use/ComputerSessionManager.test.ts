@@ -453,4 +453,23 @@ describe('ComputerSessionManager', () => {
     expect(signal.aborted).toBe(true)
     expect(leases.get(lease.id)?.released_at).not.toBeNull()
   })
+
+  it('releases the actuator lease when an operator hands control to the user', () => {
+    const { manager, leases } = createHarness()
+    createSession(manager, 'computer-session-1')
+    const lease = manager.acquireLease({
+      computerSessionId: 'computer-session-1',
+      environmentKey: 'my-desktop:local',
+      operatorId: 'operator-1',
+    })
+    manager.setPhase('computer-session-1', 'handoff_required')
+
+    manager.releaseLease('computer-session-1')
+
+    expect(manager.getSession('computer-session-1')).toMatchObject({
+      status: 'handoff_required',
+      actuatorLeaseId: null,
+    })
+    expect(leases.get(lease.id)?.released_at).not.toBeNull()
+  })
 })

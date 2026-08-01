@@ -52,7 +52,9 @@ export const ComputerTaskContractSchema = z
   .object({
     objective: z.string().trim().min(1).max(20_000),
     successCriteria: z.array(VerificationSpecSchema).min(1).max(100),
-    allowedApps: z.array(ComputerAppIdentityRuleSchema).min(1).max(200),
+    // Kept for persisted-contract compatibility only. Desktop execution no longer uses an
+    // application allowlist; new contracts store an empty array and legacy values are ignored.
+    allowedApps: z.array(ComputerAppIdentityRuleSchema).max(200),
     allowedDomains: z.array(AllowedDomainSchema).max(500),
     allowedDataClasses: z.array(ComputerDataClassSchema).max(20),
     forbiddenActions: z

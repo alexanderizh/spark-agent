@@ -7,9 +7,7 @@ import {
   VerificationSpecSchema,
 } from '@spark/protocol'
 import type {
-  ComputerAppIdentity,
   ComputerEnvironment,
-  ComputerTaskContract,
   ComputerUseSettings,
   NativeWindowDescriptor,
 } from '@spark/protocol'
@@ -145,11 +143,7 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
       const target =
         request.targetWindowId == null
           ? null
-          : requireAllowedTargetWindow(
-              await validatedWindows(runtime),
-              request.targetWindowId,
-              request.taskContract,
-            )
+          : requireTargetWindowById(await validatedWindows(runtime), request.targetWindowId)
 
       const input: CreateManagedComputerSessionInput = request
       const created = runtime.sessions.createSession(input)
@@ -258,11 +252,7 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
           'Pause the Computer Use session before changing its bound target window',
         )
       }
-      const target = requireAllowedTargetWindow(
-        await validatedWindows(runtime),
-        targetWindowId,
-        session.taskContract,
-      )
+      const target = requireTargetWindowById(await validatedWindows(runtime), targetWindowId)
       runtime.backend.bindSessionTarget?.({
         computerSessionId,
         appId: target.app.id,
@@ -491,38 +481,15 @@ async function validatedWindows(services: ComputerUseServices): Promise<NativeWi
   return parsed.data
 }
 
-function requireAllowedTargetWindow(
+function requireTargetWindowById(
   windows: NativeWindowDescriptor[],
   targetWindowId: string,
-  taskContract: ComputerTaskContract,
 ): NativeWindowDescriptor {
   const target = windows.find((window) => window.window.id === targetWindowId && !window.minimized)
   if (target == null) {
     throw new ComputerUseBrokerError('focus_mismatch', 'The selected target window is unavailable')
   }
-  if (!taskContract.allowedApps.some((rule) => appRuleMatches(rule, target.app))) {
-    throw new ComputerUseBrokerError(
-      'app_not_allowed',
-      'The selected target window is outside the task application allowlist',
-    )
-  }
   return target
-}
-
-function appRuleMatches(
-  rule: ComputerTaskContract['allowedApps'][number],
-  app: ComputerAppIdentity,
-): boolean {
-  switch (rule.kind) {
-    case 'app_id':
-      return app.id === rule.value
-    case 'bundle_id':
-      return app.bundleId === rule.value
-    case 'executable_identity':
-      return app.executableIdentity === rule.value
-    case 'signing_identity':
-      return app.signingIdentity === rule.value
-  }
 }
 
 function requireUsableNativeHost(

@@ -53,6 +53,7 @@ export function createComputerUseMcpProvider(
   provider.revokeSession = (sessionId) => {
     bridge?.revokeSession(sessionId)
     revokeSnapshotSession(sessionId)
+    void controller.stopOwnedSessions(sessionId)
   }
   return provider
 }

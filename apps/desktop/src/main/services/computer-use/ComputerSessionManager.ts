@@ -250,6 +250,16 @@ export class ComputerSessionManager {
     return toComputerLease(updated)
   }
 
+  /**
+   * Give the desktop actuator back while preserving a non-terminal session, such as one
+   * waiting for manual takeover. This is intentionally separate from cancel/fail: the user
+   * may still inspect or resume that session, but it must never block a new desktop task.
+   */
+  releaseLease(computerSessionId: string): void {
+    const runtime = this.ensureRuntime(computerSessionId)
+    this.releaseRuntimeLease(runtime, this.now().toISOString())
+  }
+
   assertDispatchAllowed(envelope: ComputerActionEnvelope): {
     session: ComputerSession
     lease: ComputerActuatorLease

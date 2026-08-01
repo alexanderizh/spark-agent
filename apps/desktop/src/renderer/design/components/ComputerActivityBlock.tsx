@@ -147,13 +147,9 @@ function ComputerActivityCard({
     setControlError(null)
     try {
       const response = await window.spark.invoke('computer-use:list-windows', {})
-      const allowed = response.windows.filter(
-        (window) =>
-          !window.minimized &&
-          session?.taskContract.allowedApps.some((rule) => appRuleMatches(rule, window)) === true,
-      )
-      setWindows(allowed)
-      setSelectedWindowId(allowed[0]?.window.id ?? '')
+      const visible = response.windows.filter((window) => !window.minimized)
+      setWindows(visible)
+      setSelectedWindowId(visible[0]?.window.id ?? '')
     } catch (error) {
       setControlError(error instanceof Error ? error.message : t('computerActivity.control.failed'))
     } finally {
@@ -198,7 +194,7 @@ function ComputerActivityCard({
         <div className="computer-activity-controls">
           <span className="computer-activity-target">
             {t('computerActivity.control.target', {
-              target: appRuleLabel(session.taskContract.allowedApps[0]),
+              target: t('computerActivity.control.allApplications'),
             })}
           </span>
           <div className="computer-activity-control-actions">
@@ -250,22 +246,6 @@ function ComputerActivityCard({
       )}
     </details>
   )
-}
-
-function appRuleMatches(
-  rule: ComputerSession['taskContract']['allowedApps'][number],
-  window: NativeWindowDescriptor,
-): boolean {
-  if (rule.kind === 'app_id') return window.app.id === rule.value
-  if (rule.kind === 'bundle_id') return window.app.bundleId === rule.value
-  if (rule.kind === 'executable_identity') return window.app.executableIdentity === rule.value
-  return window.app.signingIdentity === rule.value
-}
-
-function appRuleLabel(
-  rule: ComputerSession['taskContract']['allowedApps'][number] | undefined,
-): string {
-  return rule?.value ?? '—'
 }
 
 type Translate = ReturnType<typeof useI18n>['t']

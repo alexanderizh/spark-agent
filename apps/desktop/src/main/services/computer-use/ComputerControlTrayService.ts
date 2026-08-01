@@ -54,6 +54,5 @@ export class ComputerControlTrayService {
 }
 
 function targetLabel(session: ComputerSession): string {
-  const target = session.taskContract.allowedApps[0]
-  return target == null ? '桌面' : target.value
+  return session.environment === 'my_desktop' ? '所有应用' : '桌面'
 }

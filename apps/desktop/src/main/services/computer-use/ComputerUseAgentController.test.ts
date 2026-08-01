@@ -70,6 +70,28 @@ describe('ComputerUseAgentController', () => {
     expect(unsubscribe).toHaveBeenCalledTimes(1)
   })
 
+  it('reports a failed task instead of directing the agent to an unverifiable fallback', async () => {
+    const current = computerSession('failed')
+    const services = {
+      sessions: {
+        getSession: vi.fn(() => current),
+      },
+    }
+    const controller = new ComputerUseAgentController({ getServices: () => services as never })
+
+    await expect(
+      controller.invoke('session-1', 'wait_for_completion', {
+        computerSessionId: current.id,
+      }),
+    ).resolves.toMatchObject({
+      computerSession: { status: 'failed' },
+      continuation: {
+        action: 'report_computer_task_failure',
+        askUserToChooseFallback: true,
+      },
+    })
+  })
+
   it('requests missing operating-system permissions before declaring execution unavailable', async () => {
     const unavailable = {
       ...CAPABILITIES,
@@ -114,6 +136,7 @@ describe('ComputerUseAgentController', () => {
       backend: {
         getCapabilities: vi.fn(async () => CAPABILITIES),
         bindSessionTarget: vi.fn(),
+        cancelSession: vi.fn(async () => undefined),
         listWindows: vi.fn(async () => [
           {
             app: {
@@ -150,6 +173,7 @@ describe('ComputerUseAgentController', () => {
       broker: {},
       approvals: {},
       evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+      appControlBridge: { cancelSession: vi.fn() },
       killSwitch: { isArmed: vi.fn(() => false) },
     }
     const run = vi.fn(async () => ({ status: 'completed' as const }))
@@ -187,7 +211,7 @@ describe('ComputerUseAgentController', () => {
         turnId: 'turn-1',
         taskContract: expect.objectContaining({
           objective: '点击搜索框，输入 comfyui',
-          allowedApps: [{ kind: 'bundle_id', value: 'tv.danmaku.bilianime' }],
+          allowedApps: [],
           successCriteria: [
             {
               kind: 'visual',
@@ -206,6 +230,9 @@ describe('ComputerUseAgentController', () => {
       windowId: 'window-bilibili',
     })
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ session: computerSession, lease }))
+    await Promise.resolve()
+    expect(services.backend.cancelSession).toHaveBeenCalledWith(computerSession.id)
+    expect(services.appControlBridge.cancelSession).toHaveBeenCalledWith(computerSession.id)
   })
 
   it('starts an unbound desktop task that can follow the foreground window across applications', async () => {
@@ -282,13 +309,80 @@ describe('ComputerUseAgentController', () => {
     expect(services.sessions.createSession).toHaveBeenCalledWith(
       expect.objectContaining({
         taskContract: expect.objectContaining({
-          allowedApps: [
-            { kind: 'bundle_id', value: 'com.spark.desktop' },
-            { kind: 'bundle_id', value: 'com.browser.desktop' },
-          ],
+          allowedApps: [],
         }),
       }),
     )
+  })
+
+  it('stops a just-created task when the desktop actuator lease is unavailable', async () => {
+    const computerSession = {
+      id: 'computer-lease-conflict',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      status: 'preflighting',
+      taskContract: {},
+    }
+    const stop = vi.fn(async () => ({ ...computerSession, status: 'canceled' }))
+    const cancelSession = vi.fn(async () => undefined)
+    const services = {
+      backend: {
+        getCapabilities: vi.fn(async () => CAPABILITIES),
+        listWindows: vi.fn(async () => [
+          {
+            app: { id: 'app-1', name: 'Browser' },
+            window: {
+              id: 'window-1',
+              title: 'Browser',
+              bounds: { x: 0, y: 0, width: 800, height: 600 },
+            },
+            display: { id: 'display-1', width: 1920, height: 1080, scaleFactor: 1 },
+            focused: true,
+            minimized: false,
+          },
+        ]),
+        cancelSession,
+      },
+      sessions: {
+        createSession: vi.fn(() => computerSession),
+        acquireLease: vi.fn(() => {
+          throw new Error('active lease conflict')
+        }),
+      },
+      broker: { stop },
+      approvals: {},
+      evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+      appControlBridge: { cancelSession: vi.fn() },
+      killSwitch: { isArmed: vi.fn(() => false) },
+    }
+    const createOperator = vi.fn()
+    const controller = new ComputerUseAgentController({
+      getServices: () => services as never,
+      resolveDecisionModel: vi.fn(async () => ({
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      })),
+      createAdapter: vi.fn(() => ({ decide: vi.fn() }) as never),
+      createOperator,
+    })
+    controller.bindSessionContext('session-1', {
+      turnId: 'turn-1',
+      providerProfileId: 'provider-1',
+      modelId: 'vision-model',
+      permissionMode: 'codex-full-access',
+    })
+
+    await expect(
+      controller.invoke('session-1', 'start_task', {
+        goal: 'Search for ComfyUI tutorials',
+        environment: 'my_desktop',
+      }),
+    ).rejects.toThrow('active lease conflict')
+    expect(stop).toHaveBeenCalledWith(computerSession.id)
+    expect(cancelSession).toHaveBeenCalledWith(computerSession.id)
+    expect(createOperator).not.toHaveBeenCalled()
   })
 
   it('resumes an owned paused task with a fresh lease and a new full-observation operator run', async () => {
@@ -348,7 +442,7 @@ describe('ComputerUseAgentController', () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ session: resumed, lease }))
   })
 
-  it('explicitly rebinds an owned task only to a window allowed by its app provenance', async () => {
+  it('explicitly rebinds an owned paused task to a window from any application', async () => {
     const session = computerSession('paused')
     const bindSessionTarget = vi.fn()
     const services = {
@@ -617,6 +711,40 @@ describe('ComputerUseAgentController', () => {
       else expect(services.broker.pause).toHaveBeenCalledWith(running.id)
     },
   )
+
+  it('stops every active Computer Use task owned by a revoked Agent session', async () => {
+    const owned = computerSession('observing')
+    const other = { ...computerSession('observing'), id: 'computer-2', sessionId: 'session-2' }
+    const stop = vi.fn(async () => computerSession('canceled'))
+    const clearSession = vi.fn()
+    const sessionsById = new Map([
+      [owned.id, owned],
+      [other.id, other],
+    ])
+    const services = {
+      sessions: {
+        listActiveSessionIds: vi.fn(() => [owned.id, other.id]),
+        getSession: vi.fn((id: string) => sessionsById.get(id) ?? null),
+      },
+      broker: { stop },
+      evidence: { clearSession },
+    }
+    const controller = new ComputerUseAgentController({
+      getServices: () => services as never,
+    })
+    controller.bindSessionContext('session-1', {
+      turnId: 'turn-1',
+      providerProfileId: 'provider-1',
+      modelId: 'vision-model',
+      permissionMode: 'codex-full-access',
+    })
+
+    await controller.stopOwnedSessions('session-1')
+
+    expect(stop).toHaveBeenCalledTimes(1)
+    expect(stop).toHaveBeenCalledWith(owned.id)
+    expect(clearSession).toHaveBeenCalledWith(owned.id)
+  })
 })
 
 function computerSession(status: ComputerSession['status']): ComputerSession {

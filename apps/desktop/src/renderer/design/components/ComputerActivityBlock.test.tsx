@@ -105,6 +105,17 @@ describe('ComputerActivityBlock', () => {
                     focused: false,
                     minimized: false,
                   },
+                  {
+                    app: { id: 'app-2', name: 'bilibili', bundleId: 'tv.danmaku.bilianime' },
+                    window: {
+                      id: 'window-bilibili',
+                      title: 'Home',
+                      bounds: { x: 800, y: 0, width: 800, height: 600 },
+                    },
+                    display: { id: 'display-1', width: 1920, height: 1080, scaleFactor: 1 },
+                    focused: false,
+                    minimized: false,
+                  },
                 ],
               })
             }
@@ -150,7 +161,7 @@ describe('ComputerActivityBlock', () => {
     expect(container.textContent).toContain('risk=L2')
   })
 
-  it('pauses before offering the provenance-filtered target picker', async () => {
+  it('pauses before offering every visible application in the target picker', async () => {
     await act(async () => {
       root.render(<ComputerActivityBlock sessionId={'session-1' as SessionId} />)
     })
@@ -159,7 +170,10 @@ describe('ComputerActivityBlock', () => {
 
     await act(async () => button('computerActivity.control.pause')?.click())
     await act(async () => button('computerActivity.control.changeTarget')?.click())
-    expect(container.querySelector('option')?.textContent).toContain('Editor — Draft')
+    expect([...container.querySelectorAll('option')].map((option) => option.textContent)).toEqual([
+      'Editor — Draft',
+      'bilibili — Home',
+    ])
     await act(async () => button('computerActivity.control.bind')?.click())
 
     expect(window.spark.invoke).toHaveBeenCalledWith('computer-use:bind-target', {

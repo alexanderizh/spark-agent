@@ -512,6 +512,46 @@ describe('ComputerTaskOperator', () => {
     expect(sessions.fail).toHaveBeenCalledWith(SESSION.id)
   })
 
+  it('keeps its lease alive while a visual-model decision is slow', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveDecision: ((decision: { type: 'handoff'; reason: string }) => void) | undefined
+      const decide = vi.fn(
+        () =>
+          new Promise<{ type: 'handoff'; reason: string }>((resolve) => {
+            resolveDecision = resolve
+          }),
+      )
+      const sessions = sessionController()
+      const operator = new ComputerTaskOperator({
+        sessions,
+        broker: { observe: vi.fn(async () => BEFORE), dispatch: vi.fn() },
+        approvals: { takeApprovedTicket: vi.fn(() => null) },
+        evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+        verifications: verificationStore(),
+        now: () => Date.parse(SESSION.createdAt),
+        leaseHeartbeatIntervalMs: 1_000,
+      })
+
+      const run = operator.run({ session: SESSION, lease: LEASE, adapter: { decide } })
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(decide).toHaveBeenCalledTimes(1)
+      expect(sessions.heartbeatLease).toHaveBeenCalledTimes(5)
+
+      resolveDecision?.({ type: 'handoff', reason: 'User confirmation is required' })
+      await expect(run).resolves.toEqual({
+        status: 'handoff_required',
+        reason: 'User confirmation is required',
+      })
+
+      const heartbeatCountAfterStop = sessions.heartbeatLease.mock.calls.length
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(sessions.heartbeatLease).toHaveBeenCalledTimes(heartbeatCountAfterStop)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('re-observes after a noop and continues until a later action changes state', async () => {
     const decisions = [
       {
