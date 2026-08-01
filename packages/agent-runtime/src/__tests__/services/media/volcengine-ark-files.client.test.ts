@@ -76,6 +76,19 @@ describe('VolcengineArkFilesClient', () => {
     })
   })
 
+  it('treats HTTP 200 with empty body as an empty file list (no null deref)', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response('', { status: 200 }))
+    const client = new VolcengineArkFilesClient({ apiKey: 'test', fetch: fetchMock })
+
+    const result = await client.list()
+
+    expect(result).toMatchObject({
+      providerKind: 'volcengine-ark',
+      files: [],
+    })
+    expect(result.paginationToken).toBeUndefined()
+  })
+
   it('encodes URL, TOS and video preprocessing as official multipart nested fields', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({

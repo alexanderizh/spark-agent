@@ -108,27 +108,33 @@ export class VolcengineArkFilesClient {
     if (params.purpose) query.set('purpose', params.purpose)
     query.set('order', params.order === 'asc' ? 'asc' : 'desc')
     if (params.scopeId) query.set('scope_id', params.scopeId)
-    const raw = await this.request<RawVolcengineFileList>(`/files?${query.toString()}`)
+    // 火山方舟在文件列表为空等边界情况下会返回 HTTP 200 + 空 body，
+    // request 此时返回 null，视为空列表而非异常（与 data 为空数组等价）。
+    const raw = await this.request<RawVolcengineFileList | null>(`/files?${query.toString()}`)
     return {
       providerKind: 'volcengine-ark',
-      files: (raw.data ?? []).map(normalizeVolcengineFile),
-      ...(raw.first_id ? { firstId: raw.first_id } : {}),
-      ...(raw.last_id ? { lastId: raw.last_id } : {}),
-      ...(raw.has_more !== undefined ? { hasMore: raw.has_more } : {}),
-      ...(raw.has_more && raw.last_id ? { paginationToken: raw.last_id } : {}),
+      files: (raw?.data ?? []).map(normalizeVolcengineFile),
+      ...(raw?.first_id ? { firstId: raw.first_id } : {}),
+      ...(raw?.last_id ? { lastId: raw.last_id } : {}),
+      ...(raw?.has_more !== undefined ? { hasMore: raw.has_more } : {}),
+      ...(raw?.has_more && raw?.last_id ? { paginationToken: raw.last_id } : {}),
     }
   }
 
   async get(fileId: string): Promise<ProviderFileObject> {
     const id = requireFileId(fileId)
-    return normalizeVolcengineFile(
-      await this.request<RawVolcengineFile>(`/files/${encodeURIComponent(id)}`),
-    )
+    const raw = await this.request<RawVolcengineFile | null>(`/files/${encodeURIComponent(id)}`)
+    if (!raw) {
+      throw new MediaProviderError('provider_http_error', `火山方舟文件 ${id} 不存在或响应为空`)
+    }
+    return normalizeVolcengineFile(raw)
   }
 
   async delete(fileId: string): Promise<{ deleted: boolean; id: string }> {
     const id = requireFileId(fileId)
-    return this.request(`/files/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    // 火山方舟 DELETE 成功可能返回 200/204 + 空 body，不依赖响应体，请求成功即视为已删除。
+    await this.request(`/files/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    return { deleted: true, id }
   }
 
   async upload(input: {
@@ -205,9 +211,15 @@ export class VolcengineArkFilesClient {
     }
     appendVideoPreprocess(form, input.preprocessVideo)
 
-    const uploaded = normalizeVolcengineFile(
-      await this.request<RawVolcengineFile>('/files', { method: 'POST', body: form }, 300_000),
+    const uploadedRaw = await this.request<RawVolcengineFile | null>(
+      '/files',
+      { method: 'POST', body: form },
+      300_000,
     )
+    if (!uploadedRaw) {
+      throw new MediaProviderError('provider_http_error', '火山方舟文件上传响应为空')
+    }
+    const uploaded = normalizeVolcengineFile(uploadedRaw)
     return input.waitUntilActive === true ? this.waitUntilActive(uploaded.id) : uploaded
   }
 
