@@ -398,7 +398,8 @@ function assertNoPathTraversal(extractDir: string): void {
  *   4. 兜底取解压根
  */
 function resolveBinaryContentRoot(extractDir: string, contentRoot?: string): string {
-  if (contentRoot && contentRoot !== '.') {
+  if (contentRoot === '.') return extractDir
+  if (contentRoot) {
     const resolved = safeJoinWithin(resolve(extractDir), contentRoot)
     if (!resolved) throw new Error(`Invalid contentRoot in binary archive: ${contentRoot}`)
     return resolved
