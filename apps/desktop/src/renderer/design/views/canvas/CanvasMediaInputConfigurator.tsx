@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import { Select, Tooltip } from 'antd'
 import { Button } from '@lobehub/ui'
 import type { CanvasInputBinding, CanvasMediaInputMode } from '@spark/protocol'
@@ -33,6 +34,8 @@ export function CanvasMediaInputConfigurator({
   onChange,
   onMove,
   onRemove,
+  onQuickPick,
+  onQuickUpload,
 }: {
   options: readonly CanvasMediaInputModeOption[]
   value?: CanvasMediaInputMode | undefined
@@ -46,7 +49,11 @@ export function CanvasMediaInputConfigurator({
   onChange: (mode: CanvasMediaInputMode) => void
   onMove: (sourceNodeId: string, direction: -1 | 1) => void
   onRemove?: ((sourceNodeId: string) => void) | undefined
+  onQuickPick?: (() => void) | undefined
+  onQuickUpload?: ((file: File) => Promise<void> | void) | undefined
 }) {
+  const quickUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const [quickUploading, setQuickUploading] = useState(false)
   if (options.length === 0) return null
   const nodeById = new Map(nodes.map((node) => [node.id, node]))
   const assetById = new Map(assets.map((asset) => [asset.id, asset]))
@@ -115,7 +122,53 @@ export function CanvasMediaInputConfigurator({
         {assignments.length === 0 ? (
           <div className="canvas-media-input-track-empty">
             <Icons.Image size={16} />
-            <span>通过连线、@ 或“+”加入图片、视频与音频</span>
+            <div className="canvas-media-input-track-empty-copy">
+              <span>通过连线、@ 或“+”加入图片、视频与音频</span>
+              {onQuickPick || onQuickUpload ? (
+                <div className="canvas-media-input-track-empty-actions">
+                  {onQuickPick ? (
+                    <Button
+                      type="text"
+                      size="small"
+                      aria-label="从画布选择输入素材"
+                      disabled={disabled === true || quickUploading}
+                      onClick={onQuickPick}
+                    >
+                      从画布选择
+                    </Button>
+                  ) : null}
+                  {onQuickUpload ? (
+                    <>
+                      <Button
+                        type="text"
+                        size="small"
+                        aria-label="本地上传输入素材"
+                        disabled={disabled === true || quickUploading}
+                        onClick={() => quickUploadInputRef.current?.click()}
+                      >
+                        {quickUploading ? '上传中' : '本地上传'}
+                      </Button>
+                      <input
+                        ref={quickUploadInputRef}
+                        type="file"
+                        accept="image/*,video/*,audio/*"
+                        aria-label="选择本地输入素材"
+                        hidden
+                        onChange={(event) => {
+                          const file = event.target.files?.[0]
+                          event.target.value = ''
+                          if (!file) return
+                          setQuickUploading(true)
+                          void Promise.resolve(onQuickUpload(file)).finally(() =>
+                            setQuickUploading(false),
+                          )
+                        }}
+                      />
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : (
           assignments.map((assignment, index) => {

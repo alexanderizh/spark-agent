@@ -1824,9 +1824,11 @@ body.sidebar-resizing {
   -webkit-app-region: drag;
 }
 
-/* 预览层通过 portal 挂到 body，需要由组件自身显式消费系统标题栏安全区。 */
+/* 预览层通过 portal 挂到 body，需要由组件自身显式消费系统标题栏安全区。
+   fallback 链确保即使 :root 变量未继承到，也能落回 WCO env / 固定留白，
+   避免红绿黄灯盖住文件名。 */
 .image-lightbox-topbar.platform-darwin-safe-area {
-  padding-left: var(--window-titlebar-safe-left);
+  padding-left: var(--window-titlebar-safe-left, env(titlebar-area-x, 90px));
   padding-top: 14px;
 }
 
@@ -3304,7 +3306,7 @@ body.sidebar-resizing {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 0 0 12px;
+  padding: 0 0 4px;
 }
 
 .composer-image-card {
@@ -7277,7 +7279,7 @@ body.inspector-resizing {
   width: 216px;
   flex-shrink: 0;
   background: var(--bg-sunken);
-  padding: var(--pad-md);
+  padding: 0 var(--pad-md) var(--pad-md) var(--pad-md);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -12433,8 +12435,8 @@ body.inspector-resizing {
   padding: 0;
   background: transparent;
   border: 0;
-  font-size: var(--font-sm);
-  line-height: 1.65;
+  font-size: var(--font-md);
+  line-height: 2;
 }
 .plan-approval-textarea {
   width: 100%;

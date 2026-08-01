@@ -109,7 +109,7 @@ export function VideoWorkbenchTrackTimeline({
     null,
   )
   const [stripHover, setStripHover] = useState(false)
-  const [pixelsPerSecond, setPixelsPerSecond] = useState(40)
+  const [pixelsPerSecond, setPixelsPerSecond] = useState(8)
   const timelineContentRef = useRef<HTMLDivElement>(null)
   const timelineWidth = Math.max(640, totalDuration * pixelsPerSecond)
   const ticks = useMemo(

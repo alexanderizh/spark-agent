@@ -517,6 +517,13 @@
   gap: var(--pad-xs, 6px);
 }
 
+.skill-store-detail-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-sm, 8px);
+}
+
 .skill-store-detail-section-title {
   font-size: var(--font-xs, 11px);
   font-weight: 700;
@@ -597,6 +604,41 @@
   }
 
   // 兜底：代码块/表格在详情面板里不要撑破容器
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+// ── Prompt 全屏预览弹窗：长 systemPrompt 单独开大窗完整渲染 ──
+.skill-prompt-fullscreen-modal {
+  top: 0;
+
+  .ant-modal-body {
+    max-height: 86vh;
+    overflow-y: auto;
+    padding-top: var(--pad-md, 12px);
+  }
+}
+
+.skill-prompt-fullscreen-body {
+  font-size: var(--font-sm, 13px);
+  line-height: 1.7;
+  color: var(--text);
+
+  & > :first-child {
+    margin-top: 0;
+  }
+  & > :last-child {
+    margin-bottom: 0;
+  }
+
+  // 兜底：代码块/表格不撑破容器
   pre {
     max-width: 100%;
     overflow-x: auto;
@@ -815,17 +857,6 @@
   }
 }
 
-// ── 精选市场：文字图标（取名字前 3 字符）──────────────────────────────
-.skill-store-card-icon--text {
-  background: var(--primary);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  // 不渲染 emoji / 不渲染渐变 / 不渲染图片
-  text-transform: uppercase;
-}
-
 // ── 精选市场：行内「查看来源」链接 ────────────────────────────────────
 .skill-store-card-foot--inline-link {
   display: inline-flex;
@@ -840,4 +871,101 @@
   &:hover {
     color: var(--primary);
   }
+}
+
+// ── 已安装 Tab：简约列表（默认图标 + 单行副标题 + 小号开关） ──────────────
+.skill-store-page--installed {
+  // page 自身滚动；列表区不再做独立面板，卡片直接铺在 page 背景上
+  .skill-store-list {
+    border: none;
+    background: transparent;
+    overflow: visible;
+    padding: 0;
+    min-height: 0;
+  }
+
+  // section 标题：贴近参考稿的「已安装」+ 全宽细分割线
+  .skill-store-section-title {
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: var(--font-sm, 12px);
+    font-weight: 600;
+    color: var(--text-strong);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: var(--pad-sm, 8px);
+  }
+
+  .skill-store-cards {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--pad-sm, 8px);
+  }
+}
+
+// 已安装卡片：单行紧凑（略微放大，图标 + 字号更舒展）
+.skill-store-card--installed {
+  padding: 12px 14px;
+
+  .skill-store-card-icon {
+    width: 38px;
+    height: 38px;
+  }
+  .skill-store-card-title {
+    font-size: 13px;
+  }
+  .skill-store-card-subtitle {
+    font-size: 12px;
+  }
+}
+
+// 已安装卡片默认图标：圆形浅灰底 + 主色描边（替代文字首字母）
+.skill-store-card-icon--default {
+  border-radius: 50%;
+  background: var(--bg-soft);
+  color: var(--primary, #1d4ed8);
+}
+
+// ── 已安装 Tab：详情弹窗 ───────────────────────────────────────────────
+.skill-detail-modal {
+  top: 0; // 配合 centered 居中，避免 antd 默认 100px top 在高弹窗时溢出
+
+  .ant-modal-body {
+    padding-top: 20px;
+    max-height: 72vh;
+    overflow-y: auto;
+  }
+
+  // footer 走 antd .ant-modal-footer（独立于 body），body 滚动时按钮固定底部
+  .ant-modal-footer {
+    border-top: 1px solid var(--border);
+    padding-top: var(--pad-sm, 8px);
+    padding-bottom: var(--pad-md, 12px);
+  }
+
+  // hero 图标圆形
+  .skill-store-detail-icon {
+    border-radius: 50%;
+  }
+
+  // 弹窗内 Tag 统一小号
+  .ant-tag {
+    font-size: 11px;
+    padding: 0 6px;
+    line-height: 18px;
+    border-radius: 4px;
+  }
+}
+
+.skill-detail-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-sm, 8px);
+}
+
+.skill-detail-modal-footer-left,
+.skill-detail-modal-footer-right {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm, 8px);
 }

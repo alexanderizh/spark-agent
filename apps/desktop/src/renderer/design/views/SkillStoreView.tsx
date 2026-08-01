@@ -8,7 +8,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { ReactNode } from 'react'
-import { Pagination, Spin, Switch } from 'antd'
+import { Modal, Pagination, Spin, Switch } from 'antd'
 import type {
   InstallableSkillCatalogItem,
   LocalSkillCandidate,
@@ -22,7 +22,6 @@ import { Icons } from '../Icons'
 import {
   ActionIcon,
   Button,
-  Drawer,
   Empty,
   Input,
   SearchBar,
@@ -430,11 +429,7 @@ function InstalledTab({
     detail: null,
     error: '',
   })
-  const [mobileDetailVisible, setMobileDetailVisible] = useState(false)
-  const [isCompact, setIsCompact] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return window.matchMedia('(max-width: 960px)').matches
-  })
+  const [detailOpen, setDetailOpen] = useState(false)
   const { toast } = useToast()
 
   const dedupedSkills = useMemo(() => deduplicateSkills(skills), [skills])
@@ -451,7 +446,7 @@ function InstalledTab({
     const local = filteredSkills.filter((skill) => !skill.id.startsWith('builtin:'))
     return [
       // { id: 'builtin', title: 'Built-in Skills', skills: builtin },
-      { id: 'local', title: 'Installed Skills', skills: local },
+      { id: 'local', title: '已安装', skills: local },
     ].filter((section) => section.skills.length > 0)
   }, [filteredSkills])
 
@@ -462,16 +457,6 @@ function InstalledTab({
     }
     return filteredSkills[0]?.id ?? null
   }, [filteredSkills, preferredSkillId])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined
-    const mediaQuery = window.matchMedia('(max-width: 960px)')
-    const sync = (matches: boolean) => setIsCompact(matches)
-    sync(mediaQuery.matches)
-    const handler = (event: MediaQueryListEvent) => sync(event.matches)
-    mediaQuery.addEventListener('change', handler)
-    return () => mediaQuery.removeEventListener('change', handler)
-  }, [])
 
   useEffect(() => {
     if (activeSkillId == null) return
@@ -574,13 +559,10 @@ function InstalledTab({
     }
   }, [selectedDeleteIds, requestConfirm, deleteSkill, exitManagement, toast])
 
-  const openSkillDetail = useCallback(
-    (skill: SkillItem) => {
-      setPreferredSkillId(skill.id)
-      if (isCompact) setMobileDetailVisible(true)
-    },
-    [isCompact],
-  )
+  const openSkillDetail = useCallback((skill: SkillItem) => {
+    setPreferredSkillId(skill.id)
+    setDetailOpen(true)
+  }, [])
 
   const selectedSkill = filteredSkills.find((skill) => skill.id === activeSkillId) ?? null
   const detailLoading = activeSkillId != null && detailState.skillId !== activeSkillId
@@ -595,7 +577,7 @@ function InstalledTab({
 
   return (
     <>
-      <div className="skill-store-page skill-store-page--dual">
+      <div className="skill-store-page skill-store-page--installed">
         <div className="skill-store-header">
           <div>
             <div className="strong text-base font-semibold">Skills</div>
@@ -605,20 +587,20 @@ function InstalledTab({
           </div>
           <div className="skill-store-actions">
             <Input
-              size="middle"
-              placeholder="搜索已安装的 Skill..."
+              size="small"
+              placeholder="搜索技能"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               prefix={<Icons.Search size={14} />}
               allowClear
             />
             {/* 创建入口：搜索框右侧的主题色按钮 */}
-            <Button size="middle" type="primary" onClick={onCreate} icon={<Icons.Plus size={14} />}>
+            <Button size="small" type="primary" onClick={onCreate} icon={<Icons.Plus size={14} />}>
               创建
             </Button>
             {!managementMode ? (
               <Button
-                size="middle"
+                size="small"
                 type="text"
                 onClick={enterManagement}
                 disabled={total === 0}
@@ -628,7 +610,7 @@ function InstalledTab({
               </Button>
             ) : (
               <Button
-                size="middle"
+                size="small"
                 type="text"
                 onClick={exitManagement}
                 disabled={deleting}
@@ -639,7 +621,7 @@ function InstalledTab({
             )}
             <ActionIcon
               icon={Icons.Refresh}
-              size="middle"
+              size="small"
               variant="borderless"
               onClick={onRefresh}
               title="刷新 (Ctrl+R)"
@@ -653,11 +635,11 @@ function InstalledTab({
             <span>
               已选择 <span className="mgmt-count">{selectedDeleteIds.size}</span> 个
             </span>
-            <Button size="middle" type="text" onClick={toggleDeleteSelectAll} disabled={deleting}>
+            <Button size="small" type="text" onClick={toggleDeleteSelectAll} disabled={deleting}>
               {selectedDeleteIds.size === filteredSkills.length ? '取消全选' : '全选'}
             </Button>
             <Button
-              size="middle"
+              size="small"
               type="primary"
               danger
               onClick={() => void handleBatchDelete()}
@@ -684,50 +666,28 @@ function InstalledTab({
             <Empty description="没有找到匹配的 Skill，换个关键词试试。" />
           </div>
         ) : (
-          <div className="skill-store-shell">
-            <div className="skill-store-list">
-              {sections.map((section) => (
-                <section key={section.id} className="skill-store-section">
-                  <div className="skill-store-section-title">
-                    <span>{section.title}</span>
-                    <span>{section.skills.length}</span>
-                  </div>
-                  <div className="skill-store-cards">
-                    {section.skills.map((skill) => (
-                      <InstalledSkillCard
-                        key={skill.id}
-                        skill={skill}
-                        onToggle={toggleSkill}
-                        onDelete={handleDeleteSkill}
-                        managementMode={managementMode}
-                        selected={selectedDeleteIds.has(skill.id)}
-                        active={skill.id === activeSkillId}
-                        onToggleSelect={toggleDeleteSelect}
-                        onOpen={() => openSkillDetail(skill)}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-
-            {!isCompact && (
-              <aside className="skill-store-detail-panel">
-                <SkillDetailPanel
-                  skill={selectedSkill}
-                  detail={selectedDetail}
-                  loading={detailLoading}
-                  error={detailError}
-                  assignedAgentIds={assignedAgentIds}
-                  agents={agents}
-                  onAssignToAgents={() => {
-                    if (selectedSkill)
-                      onAssignToAgents({ id: selectedSkill.id, name: selectedSkill.name })
-                  }}
-                  onJumpToAgent={onJumpToAgent}
-                />
-              </aside>
-            )}
+          <div className="skill-store-list">
+            {sections.map((section) => (
+              <section key={section.id} className="skill-store-section">
+                <div className="skill-store-section-title">
+                  <span>{section.title}</span>
+                  <span>{section.skills.length}</span>
+                </div>
+                <div className="skill-store-cards">
+                  {section.skills.map((skill) => (
+                    <InstalledSkillCard
+                      key={skill.id}
+                      skill={skill}
+                      onToggle={toggleSkill}
+                      managementMode={managementMode}
+                      selected={selectedDeleteIds.has(skill.id)}
+                      onToggleSelect={toggleDeleteSelect}
+                      onOpen={() => openSkillDetail(skill)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
           </div>
         )}
 
@@ -735,12 +695,46 @@ function InstalledTab({
           {total} 个已安装 · {enabledCount} 个已启用
         </div>
       </div>
-      <Drawer
-        width="min(440px, 94vw)"
-        open={mobileDetailVisible}
-        title={selectedSkill?.name ?? 'Skill 详情'}
-        footer={null}
-        onClose={() => setMobileDetailVisible(false)}
+      <Modal
+        className="skill-detail-modal"
+        open={detailOpen}
+        title={null}
+        width="min(680px, 92vw)"
+        centered
+        destroyOnClose
+        onCancel={() => setDetailOpen(false)}
+        footer={
+          <div className="skill-detail-modal-footer">
+            <div className="skill-detail-modal-footer-left">
+              {selectedSkill && !selectedSkill.id.startsWith('builtin:') && (
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  onClick={() => {
+                    const id = selectedSkill.id
+                    void handleDeleteSkill(id).then(() => setDetailOpen(false))
+                  }}
+                >
+                  卸载
+                </Button>
+              )}
+            </div>
+            <div className="skill-detail-modal-footer-right">
+              <Button
+                size="small"
+                type="primary"
+                icon={<Icons.Bot size={14} />}
+                onClick={() => {
+                  if (selectedSkill)
+                    onAssignToAgents({ id: selectedSkill.id, name: selectedSkill.name })
+                }}
+              >
+                安装给 Agent
+              </Button>
+            </div>
+          </div>
+        }
       >
         <SkillDetailPanel
           skill={selectedSkill}
@@ -749,12 +743,12 @@ function InstalledTab({
           error={detailError}
           assignedAgentIds={assignedAgentIds}
           agents={agents}
-          onAssignToAgents={() => {
-            if (selectedSkill) onAssignToAgents({ id: selectedSkill.id, name: selectedSkill.name })
+          onToggle={() => {
+            if (selectedSkill) void toggleSkill(selectedSkill)
           }}
           onJumpToAgent={onJumpToAgent}
         />
-      </Drawer>
+      </Modal>
     </>
   )
 }
@@ -762,19 +756,15 @@ function InstalledTab({
 function InstalledSkillCard({
   skill,
   onToggle,
-  onDelete,
   managementMode,
   selected,
-  active,
   onToggleSelect,
   onOpen,
 }: {
   skill: SkillItem
   onToggle: (skill: SkillItem) => Promise<void>
-  onDelete: (id: string) => Promise<void>
   managementMode: boolean
   selected: boolean
-  active: boolean
   onToggleSelect: (id: string) => void
   onOpen: () => void
 }) {
@@ -783,7 +773,7 @@ function InstalledSkillCard({
     <div
       role="button"
       tabIndex={0}
-      className={`skill-store-card ${active ? 'is-selected' : ''}`}
+      className="skill-store-card skill-store-card--installed"
       onClick={onOpen}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -793,38 +783,21 @@ function InstalledSkillCard({
       }}
     >
       <div className="skill-store-card-top">
-        <div className="skill-store-card-icon">{skill.name.charAt(0).toUpperCase()}</div>
+        <div className="skill-store-card-icon skill-store-card-icon--default">
+          <Icons.Package size={20} />
+        </div>
         <div className="skill-store-card-info">
           <div className="skill-store-card-title">{skill.name}</div>
-          <div className="skill-store-card-subtitle">
-            {/* {meta.source} */}
-            <span className="skill-store-card-dot" />
-            {skill.version}
-          </div>
+          <div className="skill-store-card-subtitle">{meta.description || skill.version}</div>
         </div>
-        {managementMode && (
+        {managementMode ? (
           <label className="local-skill-check" onClick={(e) => e.stopPropagation()}>
             <input type="checkbox" checked={selected} onChange={() => onToggleSelect(skill.id)} />
             <span className="checkmark" />
           </label>
-        )}
-      </div>
-
-      <div className="skill-store-card-desc">{meta.description}</div>
-
-      <div className="skill-store-card-foot">
-        <div className="skill-store-card-tags">
-          <Tag color={skill.enabled ? 'blue' : 'default'}>{skill.enabled ? '可见' : '隐藏'}</Tag>
-          <Tag>{skill.id.startsWith('builtin:') ? '内置' : '本地'}</Tag>
-        </div>
-        {!managementMode && (
+        ) : (
           <div className="skill-store-card-actions" onClick={(event) => event.stopPropagation()}>
             <Switch size="small" checked={skill.enabled} onChange={() => void onToggle(skill)} />
-            {!skill.id.startsWith('builtin:') && (
-              <Button size="small" type="text" danger onClick={() => void onDelete(skill.id)}>
-                删除
-              </Button>
-            )}
           </div>
         )}
       </div>
@@ -839,7 +812,7 @@ function SkillDetailPanel({
   error,
   agents,
   assignedAgentIds,
-  onAssignToAgents,
+  onToggle,
   onJumpToAgent,
 }: {
   skill: SkillItem | null
@@ -848,7 +821,7 @@ function SkillDetailPanel({
   error: string
   agents: ManagedAgent[]
   assignedAgentIds: string[]
-  onAssignToAgents: () => void
+  onToggle?: () => void
   onJumpToAgent?: (agentId: string) => void
 }) {
   // Map 查表:assignedAgentIds.map(id => agents.find(...)) 是 O(N×M),
@@ -859,11 +832,13 @@ function SkillDetailPanel({
       assignedAgentIds.map((id) => agentMap.get(id)).filter((a): a is ManagedAgent => a != null),
     [assignedAgentIds, agentMap],
   )
+  // Prompt 全屏预览：弹窗内空间有限，长 systemPrompt 单独开大窗查看完整渲染
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   if (skill == null) {
     return (
       <div className="skill-store-detail-empty">
-        <Empty description="选择左侧一个 Skill 查看详情。" />
+        <Empty description="未选择 Skill。" />
       </div>
     )
   }
@@ -895,20 +870,20 @@ function SkillDetailPanel({
   return (
     <div className="skill-store-detail">
       <div className="skill-store-detail-hero">
-        <div className="skill-store-detail-icon">{skill.name.charAt(0).toUpperCase()}</div>
+        <div className="skill-store-detail-icon">
+          <Icons.Package size={24} />
+        </div>
         <div className="skill-store-detail-hero-copy">
           <h3>{skill.name}</h3>
           <p>{definition?.description || manifestMeta.description}</p>
         </div>
         <div className="skill-store-detail-hero-actions">
-          <Button
-            size="middle"
-            type="text"
-            icon={<Icons.Bot size={14} />}
-            onClick={onAssignToAgents}
-          >
-            安装给 Agent
-          </Button>
+          <Switch
+            size="small"
+            checked={skill.enabled}
+            onChange={() => onToggle?.()}
+            disabled={onToggle == null}
+          />
         </div>
       </div>
 
@@ -1000,20 +975,59 @@ function SkillDetailPanel({
       )}
 
       {definition?.systemPrompt && (
-        <DetailSection title="Prompt Preview">
+        <DetailSection
+          title="Prompt Preview"
+          action={
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Maximize size={14} />}
+              onClick={() => setPreviewOpen(true)}
+            >
+              打开预览
+            </Button>
+          }
+        >
           <div className="skill-store-prompt-preview">
             <MarkdownText content={definition.systemPrompt} />
           </div>
         </DetailSection>
       )}
+      {definition?.systemPrompt && (
+        <Modal
+          className="skill-prompt-fullscreen-modal"
+          open={previewOpen}
+          title={`${skill.name} · Prompt`}
+          footer={null}
+          width="min(960px, 94vw)"
+          centered
+          destroyOnClose
+          onCancel={() => setPreviewOpen(false)}
+        >
+          <div className="skill-prompt-fullscreen-body">
+            <MarkdownText content={definition.systemPrompt} />
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
 
-function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+function DetailSection({
+  title,
+  action,
+  children,
+}: {
+  title: string
+  action?: ReactNode
+  children: ReactNode
+}) {
   return (
     <section className="skill-store-detail-section">
-      <div className="skill-store-detail-section-title">{title}</div>
+      <div className="skill-store-detail-section-head">
+        <div className="skill-store-detail-section-title">{title}</div>
+        {action}
+      </div>
       {children}
     </section>
   )
@@ -1547,16 +1561,13 @@ function InstallableSkillCard({
     item.source.type === 'artifact'
       ? `Spark· ${item.source.artifactId ?? 'artifact'} `
       : `GitHub · ${item.source.repo}`
-  const installButtonLabel = item.source.type === 'artifact' ? '从自建源安装' : '安装'
-  const progressLabel = item.source.type === 'artifact' ? '自建源下载中' : '下载中'
+  const installButtonLabel = '安装'
+  const progressLabel = '下载中'
   return (
     <div className="skill-store-card skill-store-card--installable">
       <div className="skill-store-card-top">
-        <div className="skill-store-card-icon skill-store-card-icon--text">
-          {item.name
-            .replace(/[^A-Za-z0-9]/g, '')
-            .slice(0, 3)
-            .toUpperCase() || item.name.charAt(0).toUpperCase()}
+        <div className="skill-store-card-icon skill-store-card-icon--default">
+          <Icons.Package size={20} />
         </div>
         <div className="skill-store-card-info">
           <div className="skill-store-card-title">{item.name}</div>

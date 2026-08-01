@@ -32,7 +32,6 @@
     min-height: 39px;
     flex: 0 0 39px;
     padding: 0 11px;
-    border-bottom: 1px solid var(--canvas-v4-divider);
     background: var(--canvas-v4-surface);
   }
 
@@ -138,22 +137,13 @@
     width: 100%;
     margin: 0;
     padding: 0;
-    background: var(--canvas-v4-surface-muted);
   }
 
   .canvas-operation-output-media {
     margin: 0;
     padding: 0;
     border: 0;
-    background: var(--bg-sunken);
-  }
-
-  .canvas-operation-output-stage-label {
-    background: linear-gradient(
-      180deg,
-      transparent,
-      color-mix(in srgb, var(--bg-sunken) 92%, transparent)
-    );
+    background: var(--canvas-cinema-surface-2);
   }
 
   .canvas-node-content-title {
@@ -208,20 +198,10 @@
     min-height: 35px;
     flex: 0 0 35px;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 8px;
     padding: 0 10px;
-    border-top: 1px solid var(--canvas-v4-divider);
     background: var(--canvas-v4-surface);
-
-    > span {
-      min-width: 0;
-      overflow: hidden;
-      color: var(--text-faint);
-      font-size: 10px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
 
     > button {
       flex: none;
@@ -352,7 +332,7 @@
     box-sizing: border-box;
     min-height: 50px;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 10px;
     padding: 8px 10px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -375,31 +355,6 @@
       &:focus-visible {
         color: #fff;
       }
-    }
-  }
-
-  .canvas-node-image-overlay-copy {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: 2px;
-
-    strong,
-    small {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    strong {
-      color: rgba(255, 255, 255, 0.94);
-      font-size: 11px;
-      font-weight: 620;
-    }
-
-    small {
-      color: rgba(255, 255, 255, 0.58);
-      font-size: 9px;
     }
   }
 

@@ -52,6 +52,7 @@ import {
   resolveFlowNodeAbsoluteOrigin,
 } from './canvasFlowNodeCoordinates'
 import { CanvasMultiSelectToolbar } from './CanvasMultiSelectToolbar'
+import { shouldDelegateNodeDoubleClickToCollapsedGroup } from './canvasStageDoubleClick'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import { isOperationNode } from './canvas.capabilities'
 import { canvasNodeChromeExtraHeight, canvasNodeUsesFlatMediaFrame } from './canvasNodeChrome'
@@ -59,13 +60,9 @@ import {
   resolveCanvasImageNodePresentationSize,
   type CanvasImageSourceDimensions,
 } from './canvasImageNodePresentation'
-import {
-  CANVAS_NODE_META_BAR_HEIGHT,
-  OPERATION_NODE_DEFAULT_SIZE,
-  fitCollectionOperationNodeSize,
-  fitShotScriptOperationNodeSize,
-} from './canvasNodeSize'
-import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
+import { CANVAS_NODE_META_BAR_HEIGHT } from './canvasNodeSize'
+import { operationNodePresentationSize } from './canvasOperationNodePresentation'
+import { resolveCanvasVideoNodePresentationSize } from './canvasVideoNodePresentation'
 import { CANVAS_PIPELINE_MENU_GROUPS, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { getNodePipelineActions } from './canvasPipeline'
 import {
@@ -86,7 +83,6 @@ import {
   type CanvasOperationRunView,
 } from './canvasOperationRuns'
 import {
-  resolveCanvasOperationOutputState,
   resolveCanvasOperationResourceNode,
 } from './canvasOperationOutputModel'
 import { buildCanvasOperationProjection } from './canvasOperationProjection'
@@ -473,54 +469,6 @@ export type CanvasStageViewportControls = {
   ) => boolean
 }
 
-const OPERATION_RUN_NAV_HEIGHT = 31
-
-function operationNodePresentationSize(
-  node: SparkCanvasNode,
-  runs: CanvasOperationRunView[],
-): { width: number; height: number } {
-  if (!isOperationNode(node)) return { width: node.width, height: node.height }
-  const outputState = resolveCanvasOperationOutputState(node, runs)
-  const output = outputState.primaryOutput
-  const latestOutputs =
-    outputState.latestRunWithOutputsIndex >= 0
-      ? (runs[outputState.latestRunWithOutputsIndex]?.outputs ?? [])
-      : []
-  if (outputState.mode === 'collection' && latestOutputs.length > 0) {
-    const fittedSize = fitCollectionOperationNodeSize(latestOutputs.length)
-    return {
-      width: node.width <= OPERATION_NODE_DEFAULT_SIZE.width ? fittedSize.width : node.width,
-      height: node.height <= OPERATION_NODE_DEFAULT_SIZE.height ? fittedSize.height : node.height,
-    }
-  }
-  const storyboardRows = readRenderableShotScriptRows(output?.text)
-  if (storyboardRows.length > 0) {
-    const fittedSize = fitShotScriptOperationNodeSize(storyboardRows.length)
-    return {
-      width: node.width <= OPERATION_NODE_DEFAULT_SIZE.width ? fittedSize.width : node.width,
-      height: node.height <= OPERATION_NODE_DEFAULT_SIZE.height ? fittedSize.height : node.height,
-    }
-  }
-  if (!output || (output.type !== 'image' && output.type !== 'video')) {
-    return {
-      width: node.width,
-      height: Math.max(node.height, OPERATION_NODE_DEFAULT_SIZE.height),
-    }
-  }
-
-  const fallbackAspectRatio = output.type === 'video' ? 16 / 9 : 1
-  const aspectRatio =
-    output.width && output.height ? output.width / output.height : fallbackAspectRatio
-  const mediaHeight = Math.min(720, Math.max(160, Math.round(node.width / aspectRatio)))
-  return {
-    width: node.width,
-    height: Math.max(
-      node.height,
-      mediaHeight + CANVAS_NODE_META_BAR_HEIGHT + OPERATION_RUN_NAV_HEIGHT,
-    ),
-  }
-}
-
 function flowNodeToAutoLayoutNode(node: Node<CanvasFlowNodeData>): CanvasAutoLayoutNode {
   const width =
     typeof node.measured?.width === 'number'
@@ -564,6 +512,7 @@ function toFlowNode(
   const presentationSize =
     collapsedGroupPresentation?.size ??
     (resolveCanvasImageNodePresentationSize(node, imageSourceDimensions) ??
+      resolveCanvasVideoNodePresentationSize(node, imageSourceDimensions) ??
       operationNodePresentationSize(node, operationRuns))
   const baseRenderedHeight = presentationSize.height + cardChromeExtraHeight
   const data: CanvasFlowNodeData = {
@@ -720,12 +669,14 @@ function CanvasStageInner({
   onSubmitSelectedTasks,
   onOpenAiComposer,
   onEditNode,
+  onRenameNode,
   onSaveNodeToLibrary,
   onAnnotateImage,
   onSplitGridImage,
   onSplitStoryboard,
   onExtractCharacterSubview,
   onReplaceImage,
+  onReplaceVideo,
   onPreviewPanorama,
   onEditVideo,
   onExpandOperationOutputs,
@@ -788,6 +739,7 @@ function CanvasStageInner({
   onSubmitSelectedTasks?: (nodeIds: string[]) => void
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
+  onRenameNode?: (nodeId: string, title: string | null) => Promise<void> | void
   onSaveNodeToLibrary: (nodeId: string) => void
   onAnnotateImage: (nodeId: string) => void
   onSplitGridImage: (nodeId: string) => void
@@ -795,6 +747,8 @@ function CanvasStageInner({
   onExtractCharacterSubview?: (nodeId: string) => void
   /** 图片节点右键/chip/占位按钮 → 替换图片 */
   onReplaceImage?: (nodeId: string) => void
+  /** 空视频节点内上传按钮 → 替换当前视频内容 */
+  onReplaceVideo?: (nodeId: string, file: File) => void
   /** 360 全景产物节点右键 → 全景预览 */
   onPreviewPanorama: (nodeId: string) => void
   /** 视频节点右键 → 视频编辑（打开视频工作台） */
@@ -876,12 +830,14 @@ function CanvasStageInner({
       ...(onRunOperationNode ? { runOperationNode: onRunOperationNode } : {}),
       openAiComposer: onOpenAiComposer,
       editNode: onEditNode,
+      ...(onRenameNode ? { renameNode: onRenameNode } : {}),
       saveToLibrary: onSaveNodeToLibrary,
       annotateImage: onAnnotateImage,
       splitGridImage: onSplitGridImage,
       splitStoryboard: onSplitStoryboard,
       ...(onExtractCharacterSubview ? { extractCharacterSubview: onExtractCharacterSubview } : {}),
       ...(onReplaceImage ? { replaceImage: onReplaceImage } : {}),
+      ...(onReplaceVideo ? { replaceVideo: onReplaceVideo } : {}),
       previewPanorama: onPreviewPanorama,
       ...(onEditVideo ? { editVideo: onEditVideo } : {}),
       expandOperationOutputs: onExpandOperationOutputs,
@@ -899,12 +855,14 @@ function CanvasStageInner({
       onDissolveGroup,
       onDuplicateNode,
       onEditNode,
+      onRenameNode,
       onMergeGroupToImage,
       onMergeSelectionToImage,
       onOpenAiComposer,
       onAnnotateImage,
       onExtractCharacterSubview,
       onReplaceImage,
+      onReplaceVideo,
       onSplitGridImage,
       onSplitStoryboard,
       onPreviewPanorama,
@@ -1101,11 +1059,26 @@ function CanvasStageInner({
     if (internalNodes.length < 2) return null
     const bounds = instance.getNodesBounds(internalNodes)
     if (!bounds || (bounds.width === 0 && bounds.height === 0)) return null
-    const topCenter = instance.flowToScreenPosition({
-      x: bounds.x + bounds.width / 2,
-      y: bounds.y,
+    const centerX = bounds.x + bounds.width / 2
+    const topScreen = instance.flowToScreenPosition({ x: centerX, y: bounds.y })
+    const bottomScreen = instance.flowToScreenPosition({
+      x: centerX,
+      y: bounds.y + bounds.height,
     })
-    return { left: topCenter.x, top: topCenter.y }
+    // 工具栏实测高度约 36px（上下 padding 4 + 按钮 28）；与选区保持 16px 视觉间隙。
+    const TOOLBAR_HEIGHT = 36
+    const GAP = 16
+    const EDGE = 8
+    const stageHeight = stageRef.current?.clientHeight ?? 0
+    // 优先浮在选区正上方；当上方空间不足以容纳工具栏 + 间隙时翻转到选区下方，
+    // 避免被视口顶部 clamp 后压住最顶部的选中节点（即"位置太低/与节点重叠"的根因）。
+    const placeAbove = topScreen.y >= TOOLBAR_HEIGHT + GAP + EDGE
+    const idealTop = placeAbove ? topScreen.y - GAP - TOOLBAR_HEIGHT : bottomScreen.y + GAP
+    const top =
+      stageHeight > 0
+        ? Math.max(EDGE, Math.min(idealTop, stageHeight - TOOLBAR_HEIGHT - EDGE))
+        : idealTop
+    return { left: topScreen.x, top, placeAbove }
   }, [
     multiSelectToolbarTick,
     selectedNodeIds,
@@ -2347,6 +2320,7 @@ function CanvasStageInner({
       const nodeElement = target.closest<HTMLElement>('[data-canvas-node-id]')
       const nodeId = nodeElement?.dataset.canvasNodeId
       if (nodeId) {
+        if (shouldDelegateNodeDoubleClickToCollapsedGroup(target)) return
         event.preventDefault()
         event.stopPropagation()
         onEditNode(nodeId)
@@ -2640,7 +2614,7 @@ function CanvasStageInner({
             style={{
               position: 'absolute',
               left: multiSelectToolbarGeometry.left,
-              top: Math.max(12, multiSelectToolbarGeometry.top - 52),
+              top: multiSelectToolbarGeometry.top,
               transform: 'translateX(-50%)',
               zIndex: 'var(--z-canvas-context, 30)',
               pointerEvents: 'auto',
@@ -2653,6 +2627,7 @@ function CanvasStageInner({
               onCreateGroup={() => onCreateGroupFromSelection()}
               onAlign={(mode) => onAlignSelected?.(mode)}
               onArrangeGrid={(columns) => onArrangeGridSelection?.(columns)}
+              popoverSide={multiSelectToolbarGeometry.placeAbove ? 'bottom' : 'top'}
               onDuplicate={() => onDuplicateSelectedNodes?.()}
               onDelete={() => onDeleteSelectedNodes?.()}
             />

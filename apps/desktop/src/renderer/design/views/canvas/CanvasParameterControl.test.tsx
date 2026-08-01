@@ -5,29 +5,84 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CanvasParameterControl } from './CanvasParameterControl'
 import { presentField, type SchemaField } from './canvasParameterPresentation'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('antd', async () => {
   const ReactActual = await vi.importActual<typeof import('react')>('react')
   const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) =>
     ReactActual.createElement('input', props)
-  const AutoComplete = ({ value, onChange, placeholder }: { value?: string; onChange?: (value: string) => void; placeholder?: string }) =>
+  const AutoComplete = ({
+    value,
+    onChange,
+    placeholder,
+  }: {
+    value?: string
+    onChange?: (value: string) => void
+    placeholder?: string
+  }) =>
     ReactActual.createElement('input', {
       value: value ?? '',
       placeholder,
       onChange: (event: React.ChangeEvent<HTMLInputElement>) => onChange?.(event.target.value),
     })
-  const Select = ({ value, options, onChange }: { value?: string; options?: Array<{ value: string; label: string }>; onChange?: (value: string) => void }) =>
+  const Select = ({
+    value,
+    options,
+    onChange,
+  }: {
+    value?: string
+    options?: Array<{ value: string; label: string }>
+    onChange?: (value: string) => void
+  }) =>
     ReactActual.createElement(
       'select',
-      { value: value ?? '', onChange: (event: React.ChangeEvent<HTMLSelectElement>) => onChange?.(event.target.value) },
+      {
+        value: value ?? '',
+        onChange: (event: React.ChangeEvent<HTMLSelectElement>) => onChange?.(event.target.value),
+      },
       ReactActual.createElement('option', { value: '' }, '默认'),
-      ...(options ?? []).map((option) => ReactActual.createElement('option', { key: option.value, value: option.value }, option.label)),
+      ...(options ?? []).map((option) =>
+        ReactActual.createElement(
+          'option',
+          { key: option.value, value: option.value },
+          option.label,
+        ),
+      ),
     )
-  const Switch = ({ checked, onChange }: { checked?: boolean; onChange?: (checked: boolean) => void }) =>
-    ReactActual.createElement('button', { type: 'button', role: 'switch', 'aria-checked': checked, onClick: () => onChange?.(!checked) })
-  return { AutoComplete, Input, Select, Switch }
+  const Switch = ({
+    checked,
+    onChange,
+  }: {
+    checked?: boolean
+    onChange?: (checked: boolean) => void
+  }) =>
+    ReactActual.createElement('button', {
+      type: 'button',
+      role: 'switch',
+      'aria-checked': checked,
+      onClick: () => onChange?.(!checked),
+    })
+  const Slider = ({
+    value,
+    min,
+    max,
+    onChange,
+  }: {
+    value?: number
+    min?: number
+    max?: number
+    onChange?: (value: number) => void
+  }) =>
+    ReactActual.createElement('input', {
+      type: 'range',
+      role: 'slider',
+      value: value ?? min ?? 0,
+      min,
+      max,
+      onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+        onChange?.(Number(event.target.value)),
+    })
+  return { AutoComplete, Input, Select, Slider, Switch }
 })
 
 const mounted: Array<{ root: Root; container: HTMLDivElement }> = []
@@ -49,11 +104,7 @@ function field(
   return { name, title: name, type, enumValues, ...extra }
 }
 
-async function renderControl(
-  schemaField: SchemaField,
-  value: string,
-  onChange = vi.fn(),
-) {
+async function renderControl(schemaField: SchemaField, value: string, onChange = vi.fn()) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -84,31 +135,32 @@ describe('CanvasParameterControl', () => {
 
   it('uses compact pressed buttons for resolution, count, and duration', async () => {
     const resolution = await renderControl(field('resolution', ['1K', '2K', '4K']), '2K')
-    expect(resolution.container.querySelector('[data-param-value="2K"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(
+      resolution.container.querySelector('[data-param-value="2K"]')?.getAttribute('aria-pressed'),
+    ).toBe('true')
     const count = await renderControl(field('n', ['1', '2', '4']), '1')
     expect(count.container.textContent).toContain('2张')
     const duration = await renderControl(field('durationSeconds', ['5', '8']), '5')
     expect(duration.container.textContent).toContain('8秒')
   })
 
-  it('renders a bounded number input for duration ranges without enum options', async () => {
+  it('renders bounded duration ranges as a slider with numeric readout', async () => {
     const { container, onChange } = await renderControl(
       field('duration', [], 'integer', { minimum: 2, maximum: 15 }),
       '5',
     )
-    const input = container.querySelector('input')
+    const slider = container.querySelector<HTMLInputElement>('[role="slider"]')
 
-    expect(input?.type).toBe('number')
-    expect(input?.min).toBe('2')
-    expect(input?.max).toBe('15')
-    expect(input?.step).toBe('1')
+    expect(slider?.min).toBe('2')
+    expect(slider?.max).toBe('15')
+    expect(container.querySelector('.canvas-parameter-range-value')?.textContent).toContain('5秒')
 
-    if (!input) throw new Error('Expected duration input')
+    if (!slider) throw new Error('Expected duration slider')
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-    if (!valueSetter) throw new Error('Expected native input value setter')
+    if (!valueSetter) throw new Error('Expected native slider value setter')
     await act(async () => {
-      valueSetter.call(input, '8')
-      input.dispatchEvent(new Event('input', { bubbles: true }))
+      valueSetter.call(slider, '8')
+      slider.dispatchEvent(new Event('change', { bubbles: true }))
     })
     expect(onChange).toHaveBeenCalledWith('8')
   })
@@ -140,9 +192,17 @@ describe('CanvasParameterControl', () => {
     ).toBe('true')
   })
 
-  it('emits string boolean values', async () => {
-    const { container, onChange } = await renderControl(field('searchEnabled', [], 'boolean'), 'false')
-    await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click())
+  it('renders common booleans as explicit enabled and disabled choices', async () => {
+    const { container, onChange } = await renderControl(
+      field('generate_audio', [], 'boolean'),
+      'false',
+    )
+    expect(
+      container.querySelector('[data-param-value="false"]')?.getAttribute('aria-pressed'),
+    ).toBe('true')
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-param-value="true"]')!.click(),
+    )
     expect(onChange).toHaveBeenCalledWith('true')
   })
 

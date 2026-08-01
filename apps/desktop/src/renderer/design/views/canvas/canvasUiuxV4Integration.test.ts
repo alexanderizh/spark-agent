@@ -218,9 +218,13 @@ describe('canvas cinematic integration', () => {
     expect(node).toContain('canvas-node-media-full-bleed')
     expect(node).toContain('canvas-node-image-full-bleed')
     expect(node).toContain('canvas-node-video-full-bleed')
+    expect(node).not.toContain('canvas-node-image-overlay-copy')
     expect(node).toContain('canvas-node-image-overlay-footer')
     expect(nodeStyles).toContain('.canvas-node-media-full-bleed')
     expect(nodeStyles).toContain('.canvas-node-image-overlay-footer')
+    expect(nodeStyles).toMatch(
+      /\.canvas-node-image-overlay-footer\s*\{[\s\S]*?justify-content:\s*flex-end;/,
+    )
     expect(nodeStyles).toContain('background: linear-gradient(transparent, rgba(5, 7, 9, 0.84))')
   })
 
@@ -253,11 +257,11 @@ describe('canvas cinematic integration', () => {
     expect(shell).toContain('pointer-events: none')
   })
 
-  it('lays out node footer metadata and the edit action on opposite sides', () => {
+  it('keeps the metadata-free node footer action aligned to the right', () => {
     const nodeStyles = readCanvasSource('./cinematic/nodes.less')
 
     expect(nodeStyles).toMatch(
-      /\.canvas-node-quick-footer\s*\{[\s\S]*?display:\s*flex;[\s\S]*?justify-content:\s*space-between;/,
+      /\.canvas-node-quick-footer\s*\{[\s\S]*?display:\s*flex;[\s\S]*?justify-content:\s*flex-end;/,
     )
     expect(nodeStyles).toMatch(
       /\.canvas-node-quick-footer button\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;/,
@@ -326,5 +330,28 @@ describe('canvas cinematic integration', () => {
     expect(annotationStyles).toMatch(
       /\.canvas-image-annotation-workspace\.is-mac \.canvas-annotation-topbar\s*\{[^}]*padding-left:\s*var\(--window-titlebar-safe-left\)/s,
     )
+  })
+
+  it('renders the selected operation media switcher outside the clipped node core', () => {
+    const node = readCanvasSource('./CanvasNode.tsx')
+    const switcher = readCanvasSource('./CanvasOperationOutputThumbnailSwitcher.tsx')
+    const switcherStyles = readCanvasSource('./CanvasOperationOutputThumbnailSwitcher.less')
+
+    expect(node).toContain("import { CanvasOperationOutputThumbnailSwitcher }")
+    expect(node).toContain('<CanvasOperationOutputThumbnailSwitcher')
+    expect(node).toContain('runIndex={operationSelection.runIndex}')
+    expect(node).toContain("operationOutputState.mode !== 'collection'")
+    expect(node).toContain("operationOutputState.mode !== 'bundle'")
+    expect(node).not.toContain('<div className="canvas-operation-output-dots"')
+    expect(node).not.toContain('canvas-operation-output-stage-label')
+    expect(node.indexOf('<CanvasOperationOutputThumbnailSwitcher')).toBeGreaterThan(
+      node.indexOf('<div className="canvas-node-core">'),
+    )
+    expect(switcher).toContain('aria-label="历史媒体产物"')
+    expect(switcher).toContain("item.previewKind === 'video'")
+    expect(switcherStyles).toContain('top: calc(100% + 12px)')
+    expect(switcherStyles).toContain('width: 80%')
+    expect(switcherStyles).toContain('overflow-x: auto')
+    expect(switcherStyles).toContain('flex-wrap: nowrap')
   })
 })

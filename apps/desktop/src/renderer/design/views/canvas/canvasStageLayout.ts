@@ -14,6 +14,7 @@ function fromFlowNodes(
     const inlineToolbarHeight = flow.data.inlineToolbarHeight ?? 0
     const inlineExtraWidth = flow.data.inlinePanelExtraWidth ?? 0
     const cardChromeExtraHeight = flow.data.cardChromeExtraHeight ?? 0
+    const preservesProjectedSize = Boolean(flow.data.collapsedGroupPresentation)
     const measuredWidth =
       typeof flow.measured?.width === 'number'
         ? flow.measured.width
@@ -31,11 +32,12 @@ function fromFlowNodes(
       x: flow.position.x,
       y: flow.position.y,
       width:
-        inlineExtraWidth > 0 && Math.abs(measuredWidth - (node.width + inlineExtraWidth)) <= 1
+        preservesProjectedSize ||
+        (inlineExtraWidth > 0 && Math.abs(measuredWidth - (node.width + inlineExtraWidth)) <= 1)
           ? node.width
           : measuredWidth,
       height:
-        inlineExtraHeight > 0 || inlineToolbarHeight > 0
+        preservesProjectedSize || inlineExtraHeight > 0 || inlineToolbarHeight > 0
           ? node.height
           : Math.max(1, measuredHeight - cardChromeExtraHeight),
     }

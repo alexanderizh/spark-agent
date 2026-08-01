@@ -3,6 +3,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { __resetCanvasHotCache, canvasApi, type CanvasDb } from './canvas.api'
 
+const readVideoDimensionsMock = vi.hoisted(() => vi.fn())
+
+vi.mock('./canvas-safe-file', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./canvas-safe-file')>()),
+  readVideoDimensions: readVideoDimensionsMock,
+}))
+
 const STORAGE_KEY = 'spark-canvas:v1'
 const at = '2026-07-20T02:41:50.000Z'
 
@@ -130,9 +137,28 @@ function seedDb(status: 'completed' | 'failed'): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
 }
 
+function seedRunningVideoTask(): void {
+  seedDb('failed')
+  const db = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}') as CanvasDb
+  db.nodes = db.nodes.filter((node) => node.id === 'operation-1')
+  db.nodes[0]!.data.status = 'running'
+  db.nodes[0]!.data.progress = 50
+  db.edges = []
+  db.assets = []
+  db.tasks[0]!.status = 'running'
+  db.tasks[0]!.progress = 50
+  db.tasks[0]!.outputNodeIds = []
+  db.tasks[0]!.outputAssetIds = []
+  db.tasks[0]!.errorMsg = null
+  db.tasks[0]!.errorDetail = null
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+  __resetCanvasHotCache()
+}
+
 describe('canvas media output integrity', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    readVideoDimensionsMock.mockReset()
     Object.assign(window, {
       spark: {
         invoke: vi.fn().mockResolvedValue({ snapshotJson: null }),
@@ -176,5 +202,47 @@ describe('canvas media output integrity', () => {
     expect(snapshot.nodes.find((node) => node.id === 'operation-1')?.data.status).toBe('completed')
     expect(snapshot.edges).toHaveLength(1)
     expect(snapshot.assets).toHaveLength(1)
+  })
+
+  it('probes missing generated-video metadata before sizing the output node', async () => {
+    seedRunningVideoTask()
+    readVideoDimensionsMock.mockResolvedValue({ width: 1080, height: 1920, durationMs: 4200 })
+
+    const snapshot = await canvasApi.applyMediaTaskResult('project-1', 'task-1', {
+      status: 'succeeded',
+      mode: 'async',
+      runtimeTaskId: 'runtime-1',
+      requestId: 'provider-task-1',
+      providerProfileId: 'provider-1',
+      provider: 'apimart',
+      model: 'doubao-seedance-2-0-mini',
+      assets: [{ type: 'video', url: 'https://cdn.example.com/portrait.mp4', mimeType: 'video/mp4' }],
+    })
+
+    expect(readVideoDimensionsMock).toHaveBeenCalledWith('https://cdn.example.com/portrait.mp4')
+    expect(snapshot.assets[0]).toMatchObject({ width: 1080, height: 1920, durationMs: 4200 })
+    expect(snapshot.nodes.find((node) => node.type === 'video')).toMatchObject({
+      width: 405,
+      height: 720,
+    })
+  })
+
+  it('does not persist zero dimensions when generated-video metadata probing fails', async () => {
+    seedRunningVideoTask()
+    readVideoDimensionsMock.mockResolvedValue({ width: 0, height: 0 })
+
+    const snapshot = await canvasApi.applyMediaTaskResult('project-1', 'task-1', {
+      status: 'succeeded',
+      mode: 'async',
+      runtimeTaskId: 'runtime-1',
+      requestId: 'provider-task-1',
+      providerProfileId: 'provider-1',
+      provider: 'apimart',
+      model: 'doubao-seedance-2-0-mini',
+      assets: [{ type: 'video', url: 'https://cdn.example.com/broken.mp4', mimeType: 'video/mp4' }],
+    })
+
+    expect(snapshot.assets[0]).not.toHaveProperty('width')
+    expect(snapshot.assets[0]).not.toHaveProperty('height')
   })
 })

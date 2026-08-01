@@ -28,8 +28,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useApp } from '../AppContext'
 import './McpView.less'
-
-type StatusFilter = 'all' | 'ok' | 'warn' | 'err' | 'off'
+import { McpFilterPopover, SCOPES, type StatusFilter } from './McpFilterPopover'
 type McpOAuthStatus = 'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'
 type McpTransport = 'stdio' | 'http' | 'sse'
 
@@ -77,16 +76,6 @@ type DraftBase = {
   authClientSecret: string
   enabled: boolean
 }
-
-const SCOPES = ['system', 'user', 'project', 'team', 'session'] as const
-
-const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string; color: string }> = [
-  { value: 'all', label: '全部', color: 'gray' },
-  { value: 'ok', label: '在线', color: 'green' },
-  { value: 'warn', label: '需注意', color: 'orange' },
-  { value: 'err', label: '错误', color: 'red' },
-  { value: 'off', label: '未启用', color: 'gray' },
-]
 
 const EMPTY_DRAFT: DraftBase = {
   name: '',
@@ -466,6 +455,17 @@ export function McpView() {
           </div>
           {activeTab === 'mcp' && (
             <div className="mv_header_right">
+              <McpFilterPopover
+                statusFilter={statusFilter}
+                scopeFilter={scopeFilter}
+                statusCounts={statusCounts}
+                onStatusChange={setStatusFilter}
+                onScopeChange={setScopeFilter}
+                onReset={() => {
+                  setStatusFilter('all')
+                  setScopeFilter('all')
+                }}
+              />
               <div className="mv_search_wrap">
                 <LobeInput
                   size="middle"
@@ -516,50 +516,6 @@ export function McpView() {
           <ConnectorsPanel />
         ) : (
           <>
-            {/* ── 工具栏：状态过滤 + 作用域 ─────────────────────────────── */}
-            <div className="mv_toolbar">
-              <div className="mv_status_chips">
-                {STATUS_OPTIONS.map((option) => {
-                  const active = statusFilter === option.value
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`mv_status_chip ${active ? 'mv_chip_active' : ''}`}
-                      onClick={() => setStatusFilter(option.value)}
-                    >
-                      <span className="mv_status_chip_dot" />
-                      {option.label}
-                      <span style={{ opacity: 0.6, marginLeft: 2 }}>
-                        {statusCounts[option.value]}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-              <div className="mv_toolbar_spacer" />
-              <span className="mv_scope_label">作用域</span>
-              <div className="mv_segmented">
-                <button
-                  type="button"
-                  className={`mv_segmented_item ${scopeFilter === 'all' ? 'mv_segmented_active' : ''}`}
-                  onClick={() => setScopeFilter('all')}
-                >
-                  全部
-                </button>
-                {SCOPES.map((scope) => (
-                  <button
-                    key={scope}
-                    type="button"
-                    className={`mv_segmented_item ${scopeFilter === scope ? 'mv_segmented_active' : ''}`}
-                    onClick={() => setScopeFilter(scope)}
-                  >
-                    {scope.charAt(0).toUpperCase() + scope.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* ── 卡片网格 ─────────────────────────────────────────────── */}
             <div className="mv_grid_wrap">
               {loading && derived.length === 0 ? (

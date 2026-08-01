@@ -172,7 +172,7 @@ describe('canvasNodeSize', () => {
     })
   })
 
-  it('只对图片和视频节点锁定缩放比例', () => {
+  it('图片和视频节点都按素材比例缩放', () => {
     expect(keepsCanvasMediaNodeAspectRatio('image')).toBe(true)
     expect(keepsCanvasMediaNodeAspectRatio('video')).toBe(true)
     expect(keepsCanvasMediaNodeAspectRatio('audio')).toBe(false)

@@ -14,7 +14,7 @@ import type { WorkspaceInfo } from '@spark/protocol'
 import { isCanvasWorkspace } from './workspace-visibility'
 
 export type SidebarStatusFilter = 'active' | 'archived' | 'all'
-export type SidebarLastActivityFilter = '1d' | '3d' | '7d' | '30d' | 'all'
+export type SidebarLastActivityFilter = 'today' | '1d' | '3d' | '7d' | '30d' | 'all'
 export type SidebarGroupBy = 'date' | 'project' | 'state' | 'none'
 
 export interface SidebarFilterState {
@@ -48,6 +48,7 @@ const STATUS_OPTIONS: Array<{ value: SidebarStatusFilter; labelKey: string }> = 
 ]
 
 const LAST_ACTIVITY_OPTIONS: Array<{ value: SidebarLastActivityFilter; labelKey: string }> = [
+  { value: 'today', labelKey: 'sidebar.filter.activity.today' },
   { value: '1d', labelKey: 'sidebar.filter.activity.1d' },
   { value: '3d', labelKey: 'sidebar.filter.activity.3d' },
   { value: '7d', labelKey: 'sidebar.filter.activity.7d' },

@@ -65,7 +65,9 @@ export function CanvasBottomDock({
 }) {
   const items = useAddNodeMenuItems()
   const [addMenuOpen, setAddMenuOpen] = useState(false)
-  const deleteTooltip = selectedCount > 0 ? `删除选中节点（${selectedCount}）` : '选择节点后可删除'
+  const deleteTooltip = selectedCount > 0
+    ? `删除选中节点（${selectedCount}）· Delete / ⌫`
+    : '选择节点后可删除 · Delete / ⌫'
   const openAddMenu = () => {
     onOpenAddMenu()
     setAddMenuOpen(true)
@@ -90,22 +92,22 @@ export function CanvasBottomDock({
       )}
       <div className="canvas-bottom-dock">
         <div className="canvas-bottom-dock-group">
-          <Tooltip title="选择 · Tab 切换" placement="top">
+          <Tooltip title="选择 · Tab" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
               className={activeTool === 'select' ? 'canvas-dock-tool-active' : ''}
-              icon={<Icons.MousePointer size={15} />}
+              icon={<Icons.MousePointer size={14} />}
               aria-label="选择"
               onClick={() => onToolChange('select')}
             />
           </Tooltip>
-          <Tooltip title="平移 · Tab 切换" placement="top">
+          <Tooltip title="平移 · Tab / 按住 Space 拖拽" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
               className={activeTool === 'pan' ? 'canvas-dock-tool-active' : ''}
-              icon={<Icons.Hand size={15} />}
+              icon={<Icons.Hand size={14} />}
               aria-label="平移"
               onClick={() => onToolChange('pan')}
             />
@@ -117,9 +119,9 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-group">
           <Tooltip title="全部节点类型" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.Plus size={15} />}
+              icon={<Icons.Plus size={14} />}
               aria-label="全部节点类型"
               onClick={openAddMenu}
             />
@@ -131,54 +133,54 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-group">
           <Tooltip title="画布工作流（项目流程 / 个人库 / 从选区提取）" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.Workflow size={15} />}
+              icon={<Icons.Workflow size={14} />}
               aria-label="画布工作流"
               onClick={() => closeAddMenuAndRun(onOpenWorkflowLibrary)}
             />
           </Tooltip>
           <Tooltip title="项目资产中心（剧本/角色/场景/道具/分镜/提示词库）" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.Box size={15} />}
+              icon={<Icons.Box size={14} />}
               aria-label="项目资产中心"
               onClick={() => closeAddMenuAndRun(onOpenFilmCenter)}
             />
           </Tooltip>
           <Tooltip title="角色库（角色卡 / 子视图 / 快速应用到画布）" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.Users size={15} />}
+              icon={<Icons.Users size={14} />}
               aria-label="角色库"
               onClick={() => closeAddMenuAndRun(onOpenCharacterLibrary)}
             />
           </Tooltip>
           <Tooltip title="3D 导演台（人偶 / 道具 / 取景相机 / 提示词）" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.Film size={15} />}
+              icon={<Icons.Film size={14} />}
               aria-label="3D 导演台"
               onClick={() => closeAddMenuAndRun(onAddDirectorStage3D)}
             />
           </Tooltip>
           <Tooltip title="视频工作台（关键帧提取 / 剪辑 / 转码）" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.Video size={15} />}
+              icon={<Icons.Video size={14} />}
               aria-label="视频工作台"
               onClick={() => closeAddMenuAndRun(onAddVideoWorkbench)}
             />
           </Tooltip>
           <Tooltip title="画布 Agent 助手（对话操作画布）" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.Agent size={15} />}
+              icon={<Icons.Agent size={14} />}
               aria-label="画布 Agent 助手"
               onClick={() => closeAddMenuAndRun(onOpenAgent)}
             />
@@ -190,10 +192,10 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-group">
           <Tooltip title={deleteTooltip} placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
               danger
-              icon={<Icons.Trash style={{color: '#f87171'}} size={15} />}
+              icon={<Icons.Trash style={{color: '#f87171'}} size={14} />}
               aria-label="删除选中节点"
               disabled={selectedCount === 0}
               onClick={() => closeAddMenuAndRun(onDeleteSelected)}
@@ -204,11 +206,11 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-divider" />
 
         <div className="canvas-bottom-dock-group">
-          <Tooltip title="适配全部节点" placement="top">
+          <Tooltip title="适配全部节点 · Ctrl/⌘ 0" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.Maximize size={15} />}
+              icon={<Icons.Maximize size={14} />}
               aria-label="适配全部节点"
               onClick={() => closeAddMenuAndRun(onFitView)}
             />
@@ -218,9 +220,9 @@ export function CanvasBottomDock({
             placement="top"
           >
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.Crosshair size={15} />}
+              icon={<Icons.Crosshair size={14} />}
               aria-label="回到选中节点中心"
               disabled={selectedCount === 0}
               onClick={() => closeAddMenuAndRun(onCenterSelected)}
@@ -228,28 +230,28 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title={gridVisible ? '隐藏网格' : '显示网格'} placement="top">
             <Button
-              size="middle"
+              size="small"
               type={gridVisible ? 'primary' : 'text'}
-              icon={<Icons.Grid size={15} />}
+              icon={<Icons.Grid size={14} />}
               aria-label={gridVisible ? '隐藏网格' : '显示网格'}
               onClick={onToggleGrid}
             />
           </Tooltip>
-          <Tooltip title={canUndo ? '撤销上一步画布操作' : '暂无可撤销操作'} placement="top">
+          <Tooltip title={canUndo ? '撤销上一步画布操作 · Ctrl/⌘ Z' : '暂无可撤销操作 · Ctrl/⌘ Z'} placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.RotateCcw size={15} />}
+              icon={<Icons.RotateCcw size={14} />}
               aria-label="撤销"
               disabled={!canUndo}
               onClick={() => closeAddMenuAndRun(onUndo)}
             />
           </Tooltip>
-          <Tooltip title={canRedo ? '重做上一步画布操作' : '暂无可重做操作'} placement="top">
+          <Tooltip title={canRedo ? '重做上一步画布操作 · Ctrl/⌘ Shift Z' : '暂无可重做操作 · Ctrl/⌘ Shift Z'} placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.RotateCw size={15} />}
+              icon={<Icons.RotateCw size={14} />}
               aria-label="重做"
               disabled={!canRedo}
               onClick={() => closeAddMenuAndRun(onRedo)}
@@ -257,9 +259,9 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title="画布帮助 / 快捷键" placement="top">
             <Button
-              size="middle"
+              size="small"
               type="text"
-              icon={<Icons.HelpCircle size={15} />}
+              icon={<Icons.HelpCircle size={14} />}
               aria-label="画布帮助 / 快捷键"
               onClick={() => closeAddMenuAndRun(onOpenShortcutHelp)}
             />

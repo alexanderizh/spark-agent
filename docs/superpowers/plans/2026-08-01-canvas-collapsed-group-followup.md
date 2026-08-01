@@ -1,6 +1,6 @@
 # 无限画布折叠编组追加优化 Implementation Plan
 
-> 状态: 待开发 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-01
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -19,7 +19,7 @@
 - Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasWorkspaceView.less`
 - Modify: `apps/desktop/src/renderer/design/views/canvas/canvasGroupCollapseIntegration.test.ts`
 
-- [ ] **Step 1: 写失败的集成契约测试**
+- [x] **Step 1: 写失败的集成契约测试**
 
 在 `canvasGroupCollapseIntegration.test.ts` 断言组头部渲染可访问按钮并调用现有动作：
 
@@ -28,7 +28,7 @@ expect(nodeSource).toContain('aria-label="折叠编组"')
 expect(nodeSource).toContain("actions.updateNodeData?.(node.id, { collapsed: true })")
 ```
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run \
@@ -37,7 +37,7 @@ pnpm --filter @spark/desktop exec vitest run \
 
 Expected: FAIL，源码尚未包含头部按钮。
 
-- [ ] **Step 3: 实现按钮和事件隔离**
+- [x] **Step 3: 实现按钮和事件隔离**
 
 在 `nodeMetaBar` 的右侧区域仅为展开组加入按钮：
 
@@ -62,7 +62,7 @@ Expected: FAIL，源码尚未包含头部按钮。
 
 同时把 `.canvas-node-meta-bar` 的 `pointer-events` 保持为默认不可交互，只为 `.canvas-node-group-collapse-trigger` 设置 `pointer-events: auto`，并提供 hover、focus-visible 样式。
 
-- [ ] **Step 4: 运行测试确认 GREEN**
+- [x] **Step 4: 运行测试确认 GREEN**
 
 执行 Step 2 命令，Expected: PASS。
 
@@ -75,7 +75,7 @@ Expected: FAIL，源码尚未包含头部按钮。
 - Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasCollapsedGroup.less`
 - Modify: `apps/desktop/src/renderer/design/views/canvas/canvasGroupCollapseIntegration.test.ts`
 
-- [ ] **Step 1: 写失败尺寸测试**
+- [x] **Step 1: 写失败尺寸测试**
 
 ```ts
 expect(COLLAPSED_GROUP_SIZE).toEqual({ width: 420, height: 360 })
@@ -87,7 +87,7 @@ expect(COLLAPSED_GROUP_SIZE).toEqual({ width: 420, height: 360 })
 expect(collapsedGroupSource).toContain('viewBox="0 0 420 360"')
 ```
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run \
@@ -97,7 +97,7 @@ pnpm --filter @spark/desktop exec vitest run \
 
 Expected: FAIL，收到的高度仍为 300。
 
-- [ ] **Step 3: 调整投影和 SVG 下半部**
+- [x] **Step 3: 调整投影和 SVG 下半部**
 
 把展示尺寸改为：
 
@@ -107,7 +107,7 @@ export const COLLAPSED_GROUP_SIZE = { width: 420, height: 360 } as const
 
 把 SVG viewBox 改为 `0 0 420 360`，前挡板路径保持顶部曲线坐标不变，只把底部坐标从 `300` 延伸到 `360`、圆角控制点同步下移。Less 中数量、标题和颜色控件继续使用 bottom 定位，无需移动顶部插页与图标。
 
-- [ ] **Step 4: 运行测试确认 GREEN**
+- [x] **Step 4: 运行测试确认 GREEN**
 
 执行 Step 2 命令，Expected: PASS。
 
@@ -117,7 +117,7 @@ export const COLLAPSED_GROUP_SIZE = { width: 420, height: 360 } as const
 - Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasInlineNodeTitleEditor.tsx`
 - Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasInlineNodeTitleEditor.test.tsx`
 
-- [ ] **Step 1: 写失败的外部 pointerdown 测试**
+- [x] **Step 1: 写失败的外部 pointerdown 测试**
 
 进入编辑并修改标题后，模拟画布没有让输入框产生 blur：
 
@@ -130,7 +130,7 @@ expect(mounted.onRename).toHaveBeenCalledWith('外部点击保存')
 expect(mounted.renameButton().textContent).toBe('外部点击保存')
 ```
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run \
@@ -140,7 +140,7 @@ pnpm --filter @spark/desktop exec vitest run \
 
 Expected: FAIL，`onRename` 没有调用且输入框仍存在。
 
-- [ ] **Step 3: 增加捕获阶段外部提交**
+- [x] **Step 3: 增加捕获阶段外部提交**
 
 为组件根交互元素保留 ref；编辑期间注册文档监听：
 
@@ -159,7 +159,7 @@ useEffect(() => {
 
 保留 `onBlur` 作为键盘 Tab 和真实焦点切换的后备；`savingRef` 继续避免重复提交。
 
-- [ ] **Step 4: 运行标题编辑器完整测试**
+- [x] **Step 4: 运行标题编辑器完整测试**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run \
@@ -174,7 +174,7 @@ Expected: PASS；若现有 Ant notification teardown 仍出现，记录环境问
 - Modify: `docs/superpowers/specs/2026-08-01-canvas-collapsed-group-followup-design.md`
 - Modify: `docs/superpowers/plans/2026-08-01-canvas-collapsed-group-followup.md`
 
-- [ ] **Step 1: 运行定向测试**
+- [x] **Step 1: 运行定向测试**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run \
@@ -186,7 +186,7 @@ pnpm --filter @spark/desktop exec vitest run \
   src/renderer/design/views/canvas/CanvasInlineNodeTitleEditor.test.tsx
 ```
 
-- [ ] **Step 2: 运行静态验证**
+- [x] **Step 2: 运行静态验证**
 
 ```bash
 pnpm --filter @spark/desktop typecheck
@@ -194,7 +194,7 @@ pnpm --filter @spark/desktop build
 git diff --check
 ```
 
-- [ ] **Step 3: 更新文档状态**
+- [x] **Step 3: 更新文档状态**
 
 把本设计与计划状态更新为：
 
@@ -204,7 +204,7 @@ git diff --check
 
 并勾选所有完成步骤。
 
-- [ ] **Step 4: 更新 GitNexus 或按项目规则降级**
+- [x] **Step 4: 更新 GitNexus 或按项目规则降级**
 
 运行：
 
@@ -213,3 +213,50 @@ npx gitnexus analyze
 ```
 
 若继续因既有解析器问题失败，不重试；使用调用点检索、定向测试和 `git diff` 完成影响范围核对并记录原因。
+
+### Task 5: 修复 StrictMode 下保存后不退出编辑态
+
+**Files:**
+- Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasInlineNodeTitleEditor.tsx`
+- Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasInlineNodeTitleEditor.test.tsx`
+
+- [x] **Step 1: 使用 StrictMode 写失败测试**
+
+分别通过 Enter 和 blur 保存标题，断言输入框被标题按钮替换。
+
+- [x] **Step 2: 确认根因**
+
+应用入口使用 React `StrictMode`；原清理 effect 在模拟卸载时把 `mountedRef` 设为 `false`，重新建立 effect 时未恢复，导致异步保存后的 `finishEditing` 永远被跳过。
+
+- [x] **Step 3: 修复 mounted 生命周期**
+
+effect 建立时设置 `mountedRef.current = true`，真实或模拟清理时设置为 `false` 并递增保存代次。
+
+- [x] **Step 4: 验证回车、失焦和外部点击**
+
+完整标题编辑器测试覆盖普通模式和 StrictMode，确保三种提交入口都保存并退出编辑态。
+
+### Task 6: 折叠文件夹快捷展开按钮
+
+**Files:**
+- Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasCollapsedGroup.tsx`
+- Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasCollapsedGroup.less`
+- Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasCollapsedGroup.test.tsx`
+- Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasNode.tsx`
+- Modify: `apps/desktop/src/renderer/design/views/canvas/canvasGroupCollapseIntegration.test.ts`
+
+- [x] **Step 1: 写失败的按钮行为测试**
+
+断言折叠文件夹存在“展开编组”按钮，单击调用 `onExpand`，且不冒泡到文件夹主体手势。
+
+- [x] **Step 2: 将右侧图标改为可访问按钮**
+
+保留原图标外观，增加 hover、focus-visible、`aria-label` 和事件隔离。
+
+- [x] **Step 3: 接入现有折叠状态动作**
+
+`CanvasNode` 通过 `actions.updateNodeData?.(node.id, { collapsed: false })` 展开组，不增加新的持久化字段。
+
+- [x] **Step 4: 运行组件与集成回归**
+
+验证单击快捷展开、双击文件夹主体展开、标题编辑和颜色按钮之间互不干扰。

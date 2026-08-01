@@ -90,6 +90,32 @@ export function fitCanvasImageNodeSize(
   }
 }
 
+/** 视频节点按素材比例拟合尺寸；扁平媒体节点的标题栏为覆盖层，不额外占高度。 */
+export function fitCanvasVideoNodeSize(
+  width?: number | null,
+  height?: number | null,
+): { width: number; height: number } {
+  if (!width || !height) return VIDEO_NODE_DEFAULT_SIZE
+
+  const aspect = height / width
+  let nodeWidth = Math.min(Math.max(width, VIDEO_NODE_DEFAULT_SIZE.width), 680)
+  let nodeHeight = Math.round(nodeWidth * aspect)
+
+  if (nodeHeight > 720) {
+    nodeHeight = 720
+    nodeWidth = Math.max(CANVAS_NODE_MIN_SIZE.video.width, Math.round(nodeHeight / aspect))
+    nodeHeight = Math.round(nodeWidth * aspect)
+  }
+
+  if (nodeHeight < CANVAS_NODE_MIN_SIZE.video.height) {
+    nodeHeight = CANVAS_NODE_MIN_SIZE.video.height
+    nodeWidth = Math.max(CANVAS_NODE_MIN_SIZE.video.width, Math.round(nodeHeight / aspect))
+    nodeHeight = Math.round(nodeWidth * aspect)
+  }
+
+  return { width: nodeWidth, height: nodeHeight }
+}
+
 /**
  * 多图导入时使用的紧凑图片节点尺寸。已知素材尺寸时保持图片比例；竖图超过
  * 紧凑高度上限时同步收窄宽度，避免独立裁剪高度破坏比例。
@@ -106,7 +132,7 @@ export function fitCanvasGroupedImageNodeSize(
   return { width: Math.max(1, Math.round(260 / aspect)), height: 260 }
 }
 
-/** 图片和视频节点缩放时保持整体卡片比例，避免媒体区域被任意拉伸。 */
+/** 图片和视频节点缩放时保持素材比例，避免再次写入失真的节点宽高。 */
 export function keepsCanvasMediaNodeAspectRatio(type: string): boolean {
   return type === 'image' || type === 'video'
 }

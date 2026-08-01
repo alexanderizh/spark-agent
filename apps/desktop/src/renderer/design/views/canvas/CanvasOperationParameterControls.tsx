@@ -58,7 +58,7 @@ export function CanvasOperationParameterControls({
   onParameterChange,
 }: CanvasOperationParameterControlsProps) {
   const groups = useMemo(() => partitionParameterFields(fields), [fields])
-  const [activeParameter, setActiveParameter] = useState('')
+  const [commonOpen, setCommonOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(() => readCanvasComposerAdvancedOpen())
   const advancedAvailable = groups.advanced.length > 0 || advancedContent != null
 
@@ -82,45 +82,55 @@ export function CanvasOperationParameterControls({
             onChange={onModelChange}
           />
         )}
-        {groups.common.map((presentation) => {
-          const value = values[presentation.field.name] ?? ''
-          return (
-            <Popover
-              key={presentation.field.name}
-              trigger="click"
-              placement="bottomLeft"
-              overlayClassName={`canvas-operation-parameter-overlay is-${presentation.control}`}
-              arrow={false}
-              autoAdjustOverflow
-              open={activeParameter === presentation.field.name}
-              onOpenChange={(open) =>
-                setActiveParameter(open ? presentation.field.name : '')
-              }
-              content={
-                <CanvasParameterControl
-                  presentation={presentation}
-                  value={value}
-                  compact
-                  onChange={(next) => onParameterChange(presentation.field.name, next)}
-                />
-              }
+        {groups.common.length > 0 && (
+          <Popover
+            trigger="click"
+            placement="bottomLeft"
+            overlayClassName="canvas-operation-parameter-overlay is-common"
+            arrow={false}
+            autoAdjustOverflow
+            open={commonOpen}
+            onOpenChange={setCommonOpen}
+            content={
+              <div className="canvas-operation-common-parameters">
+                {groups.common.map((presentation) => (
+                  <CanvasParameterControl
+                    key={presentation.field.name}
+                    presentation={presentation}
+                    value={values[presentation.field.name] ?? ''}
+                    onChange={(next) => onParameterChange(presentation.field.name, next)}
+                  />
+                ))}
+              </div>
+            }
+          >
+            <div
+              className="canvas-operation-parameter-preview"
+              role="group"
+              aria-label="常用任务参数"
             >
-              <button
-                type="button"
-                className="canvas-operation-parameter-summary"
-                aria-label={`设置${presentation.label}`}
-                disabled={disabled}
-              >
-                {parameterIcon(presentation.control)}
-                <span className="canvas-operation-parameter-summary-label">
-                  {presentation.label}
-                </span>
-                <strong>{parameterSummaryValue(presentation, value)}</strong>
-                <Icons.ChevronDown size={11} />
-              </button>
-            </Popover>
-          )
-        })}
+              {groups.common.map((presentation) => {
+                const value = values[presentation.field.name] ?? ''
+                return (
+                  <button
+                    key={presentation.field.name}
+                    type="button"
+                    className="canvas-operation-parameter-summary"
+                    aria-label={`设置${presentation.label}`}
+                    disabled={disabled}
+                  >
+                    {parameterIcon(presentation.control)}
+                    <span className="canvas-operation-parameter-summary-label">
+                      {presentation.label}
+                    </span>
+                    <strong>{parameterSummaryValue(presentation, value)}</strong>
+                    <Icons.ChevronDown size={11} />
+                  </button>
+                )
+              })}
+            </div>
+          </Popover>
+        )}
         {advancedAvailable && (
           <Popover
             trigger="click"
@@ -214,10 +224,7 @@ export function CanvasOperationParameterControls({
               <Icons.Sliders size={14} />
               高级设置
             </span>
-            <Icons.ChevronDown
-              size={13}
-              {...(advancedOpen ? { className: 'is-open' } : {})}
-            />
+            <Icons.ChevronDown size={13} {...(advancedOpen ? { className: 'is-open' } : {})} />
           </button>
           {advancedOpen && (
             <div className="canvas-operation-advanced-panel">

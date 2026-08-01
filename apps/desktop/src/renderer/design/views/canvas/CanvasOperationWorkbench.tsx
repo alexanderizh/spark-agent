@@ -203,7 +203,7 @@ export function CanvasOperationWorkbench({
   )
 
   return (
-    <div className="canvas-operation-workbench">
+    <div className={`canvas-operation-workbench${fullscreen ? ' is-fullscreen' : ''}`}>
       {!state.editingOutput ? (
         <div className="canvas-operation-workbench-head">
           <div className="canvas-operation-workbench-tabs">

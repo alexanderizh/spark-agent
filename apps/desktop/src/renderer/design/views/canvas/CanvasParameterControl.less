@@ -107,6 +107,10 @@
   gap: 6px;
 }
 
+.canvas-parameter-option-rail.is-boolean {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .canvas-parameter-option {
   min-width: 0;
   min-height: 34px;
@@ -130,6 +134,33 @@
   background: color-mix(in srgb, var(--canvas-field-bg) 88%, transparent);
   color: var(--text-muted);
   font-size: 10px;
+}
+
+.canvas-parameter-range-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+
+  .ant-slider {
+    margin: 8px 5px;
+  }
+}
+
+.canvas-parameter-range-value {
+  min-width: 46px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--canvas-field-bg) 92%, var(--panel));
+  color: var(--text-strong);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.canvas-operation-common-parameters .canvas-aspect-ratio-grid {
+  grid-template-columns: repeat(5, minmax(52px, 1fr));
 }
 
 .canvas-parameter-control.is-compact .canvas-parameter-control-head small {

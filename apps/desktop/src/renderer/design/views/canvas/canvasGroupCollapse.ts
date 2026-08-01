@@ -1,6 +1,27 @@
-import type { CanvasEdge, CanvasNode } from './canvas.types'
+import type { CanvasEdge, CanvasGroupColorPreset, CanvasNode } from './canvas.types'
 
-export const COLLAPSED_GROUP_SIZE = { width: 246, height: 218 } as const
+export const COLLAPSED_GROUP_SIZE = { width: 420, height: 360 } as const
+
+export const CANVAS_GROUP_COLOR_PRESETS = [
+  'blue',
+  'indigo',
+  'purple',
+  'pink',
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'cyan',
+  'gray',
+] as const satisfies readonly CanvasGroupColorPreset[]
+
+const canvasGroupColorSet = new Set<string>(CANVAS_GROUP_COLOR_PRESETS)
+
+export function normalizeCanvasGroupColor(value: unknown): CanvasGroupColorPreset {
+  return typeof value === 'string' && canvasGroupColorSet.has(value)
+    ? (value as CanvasGroupColorPreset)
+    : 'blue'
+}
 
 export type CanvasGroupPreview =
   | { kind: 'image'; nodeId: string; url: string; title: string }
@@ -10,6 +31,7 @@ export type CanvasCollapsedGroupPresentation = {
   childCount: number
   previews: [CanvasGroupPreview, CanvasGroupPreview]
   size: typeof COLLAPSED_GROUP_SIZE
+  color: CanvasGroupColorPreset
 }
 
 export type CanvasGroupCollapseProjection = {
@@ -85,6 +107,7 @@ export function buildCanvasGroupCollapseProjection(
       childCount: descendants.length,
       previews: buildPreviews(descendants),
       size: COLLAPSED_GROUP_SIZE,
+      color: normalizeCanvasGroupColor(node.data.groupColor),
     })
   }
 

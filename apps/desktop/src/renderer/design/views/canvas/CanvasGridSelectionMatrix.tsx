@@ -28,7 +28,9 @@ export function normalizeGridRect(a: GridCell, b: GridCell): GridSelection {
 
 export function isCellInSelection(cell: GridCell, sel: GridSelection | null): boolean {
   if (!sel) return false
-  return cell.col >= sel.left && cell.col <= sel.right && cell.row >= sel.top && cell.row <= sel.bottom
+  return (
+    cell.col >= sel.left && cell.col <= sel.right && cell.row >= sel.top && cell.row <= sel.bottom
+  )
 }
 
 export type CanvasGridSelectionMatrixProps = {
@@ -58,8 +60,11 @@ export function CanvasGridSelectionMatrix({
 
   const [dragStart, setDragStart] = useState<GridCell | null>(null)
   const [dragEnd, setDragEnd] = useState<GridCell | null>(null)
-  const stateRef = useRef({ dragStart, dragEnd })
-  stateRef.current = { dragStart, dragEnd }
+  const [committedSelection, setCommittedSelection] = useState<GridSelection | null>(null)
+  const stateRef = useRef<{ dragStart: GridCell | null; dragEnd: GridCell | null }>({
+    dragStart: null,
+    dragEnd: null,
+  })
   const matrixRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -70,17 +75,22 @@ export function CanvasGridSelectionMatrix({
       // 同时防止吞掉目标按钮的 click（mousedown 不在目标上则 click 不触发）。
       const matrixEl = matrixRef.current
       if (matrixEl && event.target instanceof Node && !matrixEl.contains(event.target)) {
+        stateRef.current = { dragStart: null, dragEnd: null }
         setDragStart(null)
         setDragEnd(null)
         return
       }
       const moved = end && (end.col !== start.col || end.row !== start.row)
       if (moved && end) {
-        onChange(normalizeGridRect(start, end).cols)
+        const nextSelection = normalizeGridRect(start, end)
+        setCommittedSelection(nextSelection)
+        onChange(nextSelection.cols)
       } else {
         // 单击未拖动：取起点横轴序号 + 1 作为列数
+        setCommittedSelection(normalizeGridRect(start, start))
         onChange(start.col + 1)
       }
+      stateRef.current = { dragStart: null, dragEnd: null }
       setDragStart(null)
       setDragEnd(null)
     }
@@ -88,7 +98,8 @@ export function CanvasGridSelectionMatrix({
     return () => window.removeEventListener('mouseup', onMouseUp)
   }, [onChange])
 
-  const selection = dragStart && dragEnd ? normalizeGridRect(dragStart, dragEnd) : null
+  const selection =
+    dragStart && dragEnd ? normalizeGridRect(dragStart, dragEnd) : committedSelection
   // hint 始终用「实际行数 = ceil(nodeCount / 列数)」，而非拖选矩形的行数：
   // 矩阵最多渲染 maxRows 行，拖选行数会被截断，直接显示会误导。
   const activeCols = selection ? selection.cols : columns
@@ -96,11 +107,13 @@ export function CanvasGridSelectionMatrix({
   const hint = `每排 ${activeCols} 个 · 共 ${actualRows} 排`
 
   const handleMouseDown = (cell: GridCell) => {
+    stateRef.current = { dragStart: cell, dragEnd: cell }
     setDragStart(cell)
     setDragEnd(cell)
   }
   const handleMouseEnter = (cell: GridCell) => {
     if (stateRef.current.dragStart) {
+      stateRef.current.dragEnd = cell
       setDragEnd(cell)
     }
   }

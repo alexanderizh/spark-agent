@@ -63,6 +63,16 @@ function longAssetText(label: string): string {
   ).join('\n')
 }
 
+describe('fitMediaNodeSize', () => {
+  it('fits landscape videos to their intrinsic aspect ratio', () => {
+    expect(fitMediaNodeSize('video', 1920, 1080)).toEqual({ width: 680, height: 383 })
+  })
+
+  it('fits portrait videos without forcing the default node width', () => {
+    expect(fitMediaNodeSize('video', 1080, 1920)).toEqual({ width: 405, height: 720 })
+  })
+})
+
 describe('canvas asset insertion', () => {
   beforeEach(() => {
     window.localStorage.clear()

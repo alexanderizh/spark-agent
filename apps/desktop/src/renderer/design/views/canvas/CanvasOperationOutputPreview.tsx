@@ -14,11 +14,15 @@ export function CanvasOperationOutputPreview({
   output,
   variant = 'card',
   isolateWheel = true,
+  onVideoMetadata,
+  onVideoEdit,
 }: {
   output: CanvasOperationOutputView
   variant?: 'card' | 'detail'
   /** 位于未选中的画布节点中时关闭，让滚轮继续交给画布。 */
   isolateWheel?: boolean
+  onVideoMetadata?: (dimensions: { width: number; height: number }) => void
+  onVideoEdit?: () => void
 }) {
   const normalizedUrl = output.url ? normalizeEduAssetUrl(output.url) : ''
   const normalizedThumbnail = output.thumbnailUrl
@@ -49,7 +53,25 @@ export function CanvasOperationOutputPreview({
         className={`canvas-operation-output-media is-${variant} nodrag nopan`}
         src={normalizedUrl}
         controls
+        controlsList="noremoteplayback"
+        disablePictureInPicture
+        playsInline
         preload="metadata"
+        onLoadedMetadata={(event) => {
+          const width = event.currentTarget.videoWidth
+          const height = event.currentTarget.videoHeight
+          if (width > 0 && height > 0) onVideoMetadata?.({ width, height })
+        }}
+        onClickCapture={(event) => {
+          if (event.detail < 2) return
+          event.preventDefault()
+          event.stopPropagation()
+          onVideoEdit?.()
+        }}
+        onDoubleClickCapture={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+        }}
       />
     )
   }

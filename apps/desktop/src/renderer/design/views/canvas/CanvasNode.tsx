@@ -44,7 +44,7 @@ import {
   CANVAS_FUNCTIONAL_MENU_LABEL,
 } from './canvasNodeGenerationMenu'
 import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
-import { canvasNodeSecondaryLabel, canvasOperationRuntimeSummary } from './canvasNodeSecondaryLabel'
+import { canvasOperationRuntimeSummary } from './canvasNodeSecondaryLabel'
 import {
   getNodeCurrentSubtype,
   getNodeSubtypeOptions,
@@ -57,96 +57,24 @@ import {
   CanvasOperationOutputList,
   CanvasOperationOutputPreview,
 } from './CanvasOperationOutputPreview'
+import { CanvasOperationOutputThumbnailSwitcher } from './CanvasOperationOutputThumbnailSwitcher'
 import { CanvasShotScriptTable } from './CanvasShotScriptTable'
 import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
+import { buildCanvasOperationMediaThumbnailItems } from './canvasOperationOutputThumbnails'
+import { canvasNodeInlinePrimaryAction } from './canvasNodeInlinePrimaryAction'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationOutputMode, CanvasOperationType } from './canvas.types'
 import type { CanvasNodeData } from './canvas.types'
 import type { CanvasOperationRunView } from './canvasOperationRuns'
 import { effectiveCanvasOperationStatus } from './canvasTaskOutputIntegrity'
-import type {
-  CanvasCollapsedGroupPresentation,
-  CanvasGroupPreview,
-} from './canvasGroupCollapse'
+import type { CanvasCollapsedGroupPresentation } from './canvasGroupCollapse'
+import { CanvasCollapsedGroup } from './CanvasCollapsedGroup'
 
 /** 把 op 的图标 key 映射为 Icons 组件（找不到回退 Workflow） */
 function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.ReactNode {
   const map = Icons as unknown as Record<string, (p: { size?: number }) => React.ReactNode>
   const IconFn = (iconKey && map[iconKey]) || Icons.Workflow
   return <IconFn size={size} />
-}
-
-function CollapsedGroupInsert({ preview, slot }: { preview: CanvasGroupPreview; slot: number }) {
-  const [failed, setFailed] = useState(false)
-  const showImage = preview.kind === 'image' && !failed
-
-  return (
-    <div
-      className={`canvas-collapsed-group-insert is-slot-${slot}${showImage ? ' has-image' : ' is-fallback'}`}
-    >
-      {showImage ? (
-        <img
-          src={normalizeEduAssetUrl(preview.url)}
-          alt={preview.title}
-          loading="lazy"
-          decoding="async"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <span aria-hidden="true">
-          <Icons.Image size={26} />
-        </span>
-      )}
-    </div>
-  )
-}
-
-function CollapsedGroupCover({
-  node,
-  presentation,
-}: {
-  node: SparkCanvasNode
-  presentation: CanvasCollapsedGroupPresentation
-}) {
-  const displayTitle = node.title?.trim() || '编组'
-  return (
-    <div className="canvas-collapsed-group-cover" aria-label={`${displayTitle}，双击展开`}>
-      <div className="canvas-collapsed-group-back" aria-hidden="true" />
-      <div className="canvas-collapsed-group-inserts">
-        {presentation.previews.map((preview, index) => (
-          <CollapsedGroupInsert
-            key={preview.kind === 'image' ? preview.nodeId : `fallback-${preview.slot}`}
-            preview={preview}
-            slot={index}
-          />
-        ))}
-      </div>
-      <svg
-        className="canvas-collapsed-group-front"
-        viewBox="0 0 246 218"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <path d="M 0 106 C 0 91, 9 82, 24 82 L 90 82 C 107 82, 114 92, 127 97 C 140 102, 151 105, 170 105 L 222 105 C 238 105, 246 115, 246 130 L 246 190 C 246 208, 236 218, 218 218 L 28 218 C 10 218, 0 208, 0 190 Z" />
-        <path
-          className="canvas-collapsed-group-front-highlight"
-          d="M 1 106 C 1 92, 10 83, 24 83 L 90 83 C 107 83, 114 93, 127 98 C 140 103, 151 106, 170 106 L 222 106"
-        />
-      </svg>
-      <div className="canvas-collapsed-group-icons" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M7 3v18M17 3v18M3 8h18M3 16h18" />
-        </svg>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M8 9h9M11 15h6" />
-        </svg>
-      </div>
-      <div className="canvas-collapsed-group-copy">
-        <small>{presentation.childCount} 个节点</small>
-        <strong title={displayTitle}>{displayTitle}</strong>
-      </div>
-    </div>
-  )
 }
 
 /** 3D 导演台节点卡片：角色/道具计数 + 最近一次截图缩略图（若有）。 */
@@ -261,36 +189,35 @@ function OperationOutputDeck({
   mode,
   fallback,
   isolateWheel,
-  primaryRunIndex,
-  primaryOutputIndex,
+  runIndex,
+  outputIndex,
   onSelectOutput,
+  onVideoMetadata,
+  onVideoEdit,
 }: {
   runs: CanvasOperationRunView[]
   mode: CanvasOperationOutputMode
   fallback: ReactNode
   isolateWheel: boolean
-  primaryRunIndex: number
-  primaryOutputIndex: number
-  onSelectOutput?: (output: CanvasOperationRunView['outputs'][number]) => void
+  runIndex: number
+  outputIndex: number
+  onSelectOutput: (
+    runIndex: number,
+    outputIndex: number,
+    output?: CanvasOperationRunView['outputs'][number],
+  ) => void
+  onVideoMetadata?: (
+    output: CanvasOperationRunView['outputs'][number],
+    dimensions: { width: number; height: number },
+  ) => void
+  onVideoEdit?: () => void
 }) {
-  const [runIndex, setRunIndex] = useState(Math.max(0, primaryRunIndex))
-  const [outputIndex, setOutputIndex] = useState(Math.max(0, primaryOutputIndex))
-  const runsKey = runs.map((run) => `${run.taskId}:${run.status}:${run.outputs.length}`).join('|')
-
-  useEffect(() => {
-    // 跟随默认产物：新一轮运行进入、状态变化、或默认产物在别处被改变时，回到
-    // primaryRunIndex/primaryOutputIndex 指向的产物（未设置时上层取最新 run）。
-    // 用户在本卡片切换产物会同步写 primaryOutputId，触发这里对齐到切到的产物，不会循环。
-    setRunIndex(Math.max(0, primaryRunIndex))
-    setOutputIndex(Math.max(0, primaryOutputIndex))
-  }, [runsKey, primaryRunIndex, primaryOutputIndex])
-
   const activeRun = runs[runIndex]
   const outputs = activeRun?.outputs ?? []
   const activeOutput = outputs[Math.min(outputIndex, Math.max(0, outputs.length - 1))]
   const displayRunNumber = activeRun ? runs.length - runIndex : 0
   const isCollection = mode === 'collection' && outputs.length > 0
-  const shouldShowOutputNavigation = runs.length > 1 || (!isCollection && outputs.length > 1)
+  const shouldShowOutputNavigation = runs.length > 1
 
   if (!activeRun) return <>{fallback}</>
 
@@ -302,18 +229,15 @@ function OperationOutputDeck({
         ) : (
           <>
             {activeOutput ? (
-              <CanvasOperationOutputPreview output={activeOutput} isolateWheel={isolateWheel} />
+              <CanvasOperationOutputPreview
+                output={activeOutput}
+                isolateWheel={isolateWheel}
+                onVideoMetadata={(dimensions) => onVideoMetadata?.(activeOutput, dimensions)}
+                {...(onVideoEdit ? { onVideoEdit } : {})}
+              />
             ) : (
               fallback
             )}
-            <div className="canvas-operation-output-stage-label">
-              <span>{activeOutput?.title ?? operationStatusLabel(activeRun.status)}</span>
-              {outputs.length > 1 ? (
-                <span>
-                  {Math.min(outputIndex + 1, outputs.length)}/{outputs.length}
-                </span>
-              ) : null}
-            </div>
           </>
         )}
       </div>
@@ -327,10 +251,8 @@ function OperationOutputDeck({
               onClick={(event) => {
                 event.stopPropagation()
                 const nextRunIndex = Math.max(0, runIndex - 1)
-                setRunIndex(nextRunIndex)
-                setOutputIndex(0)
                 const next = runs[nextRunIndex]?.outputs[0]
-                if (next) onSelectOutput?.(next)
+                onSelectOutput(nextRunIndex, 0, next)
               }}
             >
               <Icons.ChevronLeft size={13} />
@@ -346,32 +268,13 @@ function OperationOutputDeck({
               onClick={(event) => {
                 event.stopPropagation()
                 const nextRunIndex = Math.min(runs.length - 1, runIndex + 1)
-                setRunIndex(nextRunIndex)
-                setOutputIndex(0)
                 const next = runs[nextRunIndex]?.outputs[0]
-                if (next) onSelectOutput?.(next)
+                onSelectOutput(nextRunIndex, 0, next)
               }}
             >
               <Icons.ChevronRight size={13} />
             </button>
           </div>
-          {!isCollection && outputs.length > 1 ? (
-            <div className="canvas-operation-output-dots" aria-label="本次运行产物">
-              {outputs.map((output, index) => (
-                <button
-                  key={output.id}
-                  type="button"
-                  className={index === outputIndex ? 'is-active' : ''}
-                  aria-label={`查看产物 ${index + 1}：${output.title}`}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    setOutputIndex(index)
-                    onSelectOutput?.(output)
-                  }}
-                />
-              ))}
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>
@@ -408,6 +311,7 @@ export type CanvasFlowNodeData = {
   actions: {
     duplicateNode: (nodeId: string) => void
     editNode: (nodeId: string) => void
+    renameNode?: (nodeId: string, title: string | null) => Promise<void> | void
     deleteNode: (nodeId: string) => void
     downloadMedia: (nodeId: string) => void
     toggleLockNode: (nodeId: string) => void
@@ -430,6 +334,8 @@ export type CanvasFlowNodeData = {
     extractCharacterSubview?: (nodeId: string) => void
     /** 图片节点：右键/chip/占位按钮 → 替换图片（复用画布替换管线） */
     replaceImage?: (nodeId: string) => void
+    /** 空视频节点：节点内上传按钮 → 写入当前视频节点。 */
+    replaceVideo?: (nodeId: string, file: File) => void
     /** 360 全景产物节点：右键 → 全景预览（与普通图片「编辑」解耦） */
     previewPanorama: (nodeId: string) => void
     /** 视频节点：右键 → 视频编辑（打开视频工作台） */
@@ -615,6 +521,7 @@ export const CanvasNode = memo(function CanvasNode({
     canvasNode: node,
     assetSubviewCount = 0,
     operationRuns = [],
+    operationRunsFingerprint = '',
     assetKinds = [],
     isGeneratedOutput = false,
     baseRenderedHeight = node.height,
@@ -646,6 +553,43 @@ export const CanvasNode = memo(function CanvasNode({
     () => resolveCanvasOperationOutputState(node, operationRuns),
     [node, operationRuns],
   )
+  const operationSelectionSyncKey = `${operationRunsFingerprint}:${operationOutputState.primaryRunIndex}:${operationOutputState.primaryOutputIndex}`
+  const [operationSelectionOverride, setOperationSelectionOverride] = useState<{
+    syncKey: string
+    runIndex: number
+    outputIndex: number
+  } | null>(null)
+  // 本地 override 让点击立即反馈；外部默认产物或运行历史变化后 syncKey 改变，自动回落
+  // 到持久化解析结果，无需在 effect 中同步 setState。
+  const operationSelection =
+    operationSelectionOverride?.syncKey === operationSelectionSyncKey
+      ? operationSelectionOverride
+      : {
+          runIndex: Math.max(0, operationOutputState.primaryRunIndex),
+          outputIndex: Math.max(0, operationOutputState.primaryOutputIndex),
+        }
+  const operationMediaThumbnails = useMemo(
+    () => buildCanvasOperationMediaThumbnailItems(operationRuns),
+    [operationRuns],
+  )
+  const activeOperationOutput =
+    operationRuns[operationSelection.runIndex]?.outputs[operationSelection.outputIndex]
+  const selectOperationOutput = (
+    runIndex: number,
+    outputIndex: number,
+    output?: CanvasOperationRunView['outputs'][number],
+  ) => {
+    setOperationSelectionOverride({
+      syncKey: operationSelectionSyncKey,
+      runIndex,
+      outputIndex,
+    })
+    if (!output) return
+    actions.updateNodeData?.(node.id, {
+      primaryOutputId: output.id,
+      primaryOutputSelection: 'manual',
+    })
+  }
   const contentNode = useMemo(
     () =>
       isTask ? operationOutputNodeForCapabilities(node, operationOutputState.primaryOutput) : node,
@@ -681,6 +625,7 @@ export const CanvasNode = memo(function CanvasNode({
   })
   const [resizeHovered, setResizeHovered] = useState(false)
   const [resizing, setResizing] = useState(false)
+  const videoUploadInputRef = useRef<HTMLInputElement | null>(null)
   // 未锁定节点在选中或悬浮时挂载缩放控件，无需先点击，同时避免所有节点常驻控件。
   const showResizer =
     !locked && !collapsedGroupPresentation && (selected || resizeHovered || resizing)
@@ -691,6 +636,7 @@ export const CanvasNode = memo(function CanvasNode({
   const useFlatMediaFrame = canvasNodeUsesFlatMediaFrame(node)
   const isEmptyImageNode = node.type === 'image' && !isFullBleedImageNode
   const isEmptyVideoNode = node.type === 'video' && !node.data.url
+  const inlinePrimaryAction = canvasNodeInlinePrimaryAction(node)
   const normalizedImageSrc = imageSrc ? normalizeEduAssetUrl(imageSrc) : ''
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
@@ -1310,10 +1256,6 @@ export const CanvasNode = memo(function CanvasNode({
           : isTextContentNode
             ? '可编辑'
             : '已就绪'
-  const nodeFooterLabel = canvasNodeSecondaryLabel(node, undefined, {
-    isResourceOutput,
-    isTextContentNode,
-  })
   const nodeStyle = {
     ...(roleMeta ? { ['--role-color' as string]: roleMeta.color } : {}),
     ...(hasInlineExtension
@@ -1361,6 +1303,23 @@ export const CanvasNode = memo(function CanvasNode({
             {passiveStatusLabel}
           </span>
         ) : null}
+        {isGroup ? (
+          <button
+            type="button"
+            className="canvas-node-group-collapse-trigger nodrag nopan"
+            aria-label="折叠编组"
+            title="折叠编组"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              actions.updateNodeData?.(node.id, { collapsed: true })
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <Icons.ChevronUp size={13} />
+          </button>
+        ) : null}
       </span>
     </div>
   )
@@ -1399,6 +1358,7 @@ export const CanvasNode = memo(function CanvasNode({
           onPointerEnter={() => setResizeHovered(true)}
           onPointerLeave={() => setResizeHovered(false)}
           onDoubleClick={(event) => {
+            event.preventDefault()
             event.stopPropagation()
             if (isGroup && actions.updateNodeData) {
               actions.updateNodeData(node.id, { collapsed: !collapsedGroupPresentation })
@@ -1429,7 +1389,16 @@ export const CanvasNode = memo(function CanvasNode({
           />
           <Handle type="target" position={Position.Left} className="canvas-node-handle" />
           {collapsedGroupPresentation ? (
-            <CollapsedGroupCover node={node} presentation={collapsedGroupPresentation} />
+            <CanvasCollapsedGroup
+              nodeId={node.id}
+              title={node.title}
+              presentation={collapsedGroupPresentation}
+              onRename={(nextTitle) => actions.renameNode?.(node.id, nextTitle)}
+              onColorChange={(groupColor) =>
+                actions.updateNodeData?.(node.id, { groupColor })
+              }
+              onExpand={() => actions.updateNodeData?.(node.id, { collapsed: false })}
+            />
           ) : (
             <>
           {inlineToolbar ? (
@@ -1528,7 +1497,31 @@ export const CanvasNode = memo(function CanvasNode({
                     className="canvas-node-image"
                     src={normalizedVideoSrc}
                     controls
+                    controlsList="nofullscreen noremoteplayback"
+                    disablePictureInPicture
+                    playsInline
                     preload="metadata"
+                    onLoadedMetadata={(event) => {
+                      const mediaWidth = event.currentTarget.videoWidth
+                      const mediaHeight = event.currentTarget.videoHeight
+                      if (
+                        mediaWidth > 0 &&
+                        mediaHeight > 0 &&
+                        (node.data.mediaWidth !== mediaWidth || node.data.mediaHeight !== mediaHeight)
+                      ) {
+                        actions.updateNodeData?.(node.id, { mediaWidth, mediaHeight })
+                      }
+                    }}
+                    onClickCapture={(event) => {
+                      if (event.detail < 2) return
+                      event.preventDefault()
+                      event.stopPropagation()
+                      actions.editNode(node.id)
+                    }}
+                    onDoubleClickCapture={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                    }}
                     onContextMenu={(e) => {
                       // 阻止 <video> 原生右键菜单，让事件冒泡到外层 Dropdown 的 contextMenu trigger
                       e.preventDefault()
@@ -1538,7 +1531,34 @@ export const CanvasNode = memo(function CanvasNode({
                   <div className="canvas-node-image-placeholder">
                     <Icons.Play size={30} />
                     <strong>{node.data.message ?? '暂无视频'}</strong>
-                    <span>运行任务后在这里预览</span>
+                    <span>上传后可直接在节点内预览</span>
+                    {inlinePrimaryAction?.kind === 'upload-video' ? (
+                      <>
+                        <button
+                          type="button"
+                          className="canvas-node-inline-primary-action nodrag nopan"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            videoUploadInputRef.current?.click()
+                          }}
+                        >
+                          {inlinePrimaryAction.label}
+                        </button>
+                        <input
+                          ref={videoUploadInputRef}
+                          type="file"
+                          accept="video/*"
+                          aria-label="上传视频"
+                          hidden
+                          onChange={(event) => {
+                            const file = event.target.files?.[0]
+                            event.target.value = ''
+                            if (file) actions.replaceVideo?.(node.id, file)
+                          }}
+                        />
+                      </>
+                    ) : null}
                   </div>
                 )
               ) : node.type === 'group' ? (
@@ -1558,14 +1578,22 @@ export const CanvasNode = memo(function CanvasNode({
                     runs={operationRuns}
                     mode={operationOutputState.mode}
                     isolateWheel={selected}
-                    primaryRunIndex={operationOutputState.primaryRunIndex}
-                    primaryOutputIndex={operationOutputState.primaryOutputIndex}
-                    onSelectOutput={(output) => {
-                      actions.updateNodeData?.(node.id, {
-                        primaryOutputId: output.id,
-                        primaryOutputSelection: 'manual',
+                    runIndex={operationSelection.runIndex}
+                    outputIndex={operationSelection.outputIndex}
+                    onSelectOutput={selectOperationOutput}
+                    onVideoMetadata={(output, dimensions) => {
+                      if (
+                        !output.nodeId ||
+                        (output.width === dimensions.width && output.height === dimensions.height)
+                      ) {
+                        return
+                      }
+                      actions.updateNodeData?.(output.nodeId, {
+                        mediaWidth: dimensions.width,
+                        mediaHeight: dimensions.height,
                       })
                     }}
+                    onVideoEdit={() => actions.editNode(node.id)}
                     fallback={
                       <div className="canvas-operation-empty-state">
                         <div className="canvas-operation-empty-icon">
@@ -1618,13 +1646,26 @@ export const CanvasNode = memo(function CanvasNode({
                   </div>
                 </div>
               ) : (
-                <div
-                  className={`canvas-node-text md-surface${isTextLong ? ' canvas-node-text-long' : ''}`}
-                >
-                  <MarkdownText
-                    content={node.data.text ?? node.data.message ?? '空节点 · 双击编辑'}
-                  />
-                </div>
+                 <div
+                   className={`canvas-node-text md-surface${isTextLong ? ' canvas-node-text-long' : ''}`}
+                 >
+                   <MarkdownText
+                     content={node.data.text ?? node.data.message ?? '空节点 · 双击编辑'}
+                   />
+                   {inlinePrimaryAction?.kind === 'edit' ? (
+                     <button
+                       type="button"
+                       className="canvas-node-inline-primary-action nodrag nopan"
+                       onClick={(event) => {
+                         event.preventDefault()
+                         event.stopPropagation()
+                         actions.editNode(node.id)
+                       }}
+                     >
+                       {inlinePrimaryAction.label}
+                     </button>
+                   ) : null}
+                 </div>
               )}
             </div>
             {/* 图片节点：有图走 full-bleed overlay、空状态走 placeholder，
@@ -1638,10 +1679,6 @@ export const CanvasNode = memo(function CanvasNode({
             ) : null}
             {useFlatMediaFrame ? (
               <div className="canvas-node-image-overlay-footer nodrag nopan">
-                <span className="canvas-node-image-overlay-copy">
-                  <strong title={title}>{title}</strong>
-                  <small title={nodeFooterLabel}>{nodeFooterLabel}</small>
-                </span>
                 <button
                   type="button"
                   onClick={(event) => {
@@ -1655,7 +1692,6 @@ export const CanvasNode = memo(function CanvasNode({
               </div>
             ) : (
               <div className="canvas-node-quick-footer nodrag nopan">
-                <span title={nodeFooterLabel}>{nodeFooterLabel}</span>
                 <button
                   type="button"
                   onClick={(event) => {
@@ -1669,6 +1705,18 @@ export const CanvasNode = memo(function CanvasNode({
               </div>
             )}
           </div>
+          {selected &&
+          isTask &&
+          operationOutputState.mode !== 'collection' &&
+          operationOutputState.mode !== 'bundle' ? (
+            <CanvasOperationOutputThumbnailSwitcher
+              items={operationMediaThumbnails}
+              activeOutputId={activeOperationOutput?.id}
+              onSelect={(item) =>
+                selectOperationOutput(item.runIndex, item.outputIndex, item.output)
+              }
+            />
+          ) : null}
           {renderedInlinePanel ? (
             <div
               className={`canvas-node-inline-panel nodrag nopan${selected ? ' nowheel' : ''}${inlinePanelVisible ? ' is-visible' : ' is-hiding'}`}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CanvasInlineNodeTitleEditor } from './CanvasInlineNodeTitleEditor'
@@ -22,11 +22,15 @@ async function mountEditor({
   title = '旧名称',
   fallbackTitle = 'Text note',
   onRename = vi.fn().mockResolvedValue(undefined),
+  activation = 'click',
+  strictMode = false,
 }: {
   nodeId?: string
   title?: string | null
   fallbackTitle?: string
   onRename?: ReturnType<typeof vi.fn>
+  activation?: 'click' | 'doubleClick'
+  strictMode?: boolean
 } = {}) {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -39,14 +43,16 @@ async function mountEditor({
     fallbackTitle?: string
   }) => {
     await act(async () => {
-      root.render(
+      const editor = (
         <CanvasInlineNodeTitleEditor
           nodeId={next?.nodeId ?? nodeId}
           title={next && 'title' in next ? (next.title ?? null) : title}
           fallbackTitle={next?.fallbackTitle ?? fallbackTitle}
           onRename={onRename}
-        />,
+          activation={activation}
+        />
       )
+      root.render(strictMode ? <StrictMode>{editor}</StrictMode> : editor)
     })
   }
 
@@ -63,6 +69,10 @@ async function mountEditor({
 
 async function click(element: HTMLElement) {
   await act(async () => element.click())
+}
+
+async function doubleClick(element: HTMLElement) {
+  await act(async () => element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
 }
 
 async function changeValue(input: HTMLInputElement, value: string) {
@@ -87,6 +97,16 @@ async function blur(input: HTMLInputElement) {
 }
 
 describe('CanvasInlineNodeTitleEditor', () => {
+  it('can require a double click before editing starts', async () => {
+    const mounted = await mountEditor({ activation: 'doubleClick' })
+
+    await click(mounted.renameButton())
+    expect(mounted.container.querySelector('[aria-label="节点名称"]')).toBeNull()
+
+    await doubleClick(mounted.renameButton())
+    expect(mounted.input()).toBe(document.activeElement)
+  })
+
   it('focuses and selects the current title when editing starts', async () => {
     const mounted = await mountEditor()
 
@@ -108,6 +128,19 @@ describe('CanvasInlineNodeTitleEditor', () => {
     expect(mounted.renameButton().textContent).toBe('新名称')
   })
 
+  it('exits edit mode after Enter under the application StrictMode lifecycle', async () => {
+    const mounted = await mountEditor({ strictMode: true })
+    await click(mounted.renameButton())
+    await changeValue(mounted.input(), '严格模式回车保存')
+
+    await pressKey(mounted.input(), 'Enter')
+
+    expect(mounted.onRename).toHaveBeenCalledWith('严格模式回车保存')
+    expect(
+      mounted.container.querySelector<HTMLButtonElement>('[aria-label="重命名节点"]')?.textContent,
+    ).toBe('严格模式回车保存')
+  })
+
   it('saves on blur and normalizes a blank title to null', async () => {
     const mounted = await mountEditor()
     await click(mounted.renameButton())
@@ -117,6 +150,32 @@ describe('CanvasInlineNodeTitleEditor', () => {
 
     expect(mounted.onRename).toHaveBeenCalledWith(null)
     expect(mounted.renameButton().textContent).toBe('Text note')
+  })
+
+  it('exits edit mode after blur under the application StrictMode lifecycle', async () => {
+    const mounted = await mountEditor({ strictMode: true })
+    await click(mounted.renameButton())
+    await changeValue(mounted.input(), '严格模式失焦保存')
+
+    await blur(mounted.input())
+
+    expect(mounted.onRename).toHaveBeenCalledWith('严格模式失焦保存')
+    expect(
+      mounted.container.querySelector<HTMLButtonElement>('[aria-label="重命名节点"]')?.textContent,
+    ).toBe('严格模式失焦保存')
+  })
+
+  it('saves and exits when an outside pointer is captured without a native blur', async () => {
+    const mounted = await mountEditor({ activation: 'doubleClick' })
+    await doubleClick(mounted.renameButton())
+    await changeValue(mounted.input(), '外部点击保存')
+
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+
+    expect(mounted.onRename).toHaveBeenCalledWith('外部点击保存')
+    expect(mounted.renameButton().textContent).toBe('外部点击保存')
   })
 
   it('cancels on Escape without letting the following blur save', async () => {

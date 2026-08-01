@@ -63,78 +63,125 @@
   width: 240px;
 }
 
-// ── 状态/作用域工具栏 ──────────────────────────────────────────────────────
+// ── 筛选弹窗选择器（McpFilterPopover） ────────────────────────────────────
 
-.mv_toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  margin-top: 4px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg, 12px);
+.mv_filter_btn {
+  // 触发按钮沿用 antd Button 默认态，仅约束收缩，避免被搜索框挤压。
   flex-shrink: 0;
-  flex-wrap: wrap;
 }
 
-.mv_status_chips {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+.mv_filter_btn_active {
+  color: var(--primary);
+  border-color: var(--primary);
 }
 
-.mv_status_chip {
+.mv_filter_badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 16px;
-  font-size: 13px;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+  background: var(--primary);
+  border-radius: 999px;
+}
+
+.mv_filter_popover {
+  width: 220px;
+  padding: 8px 0 4px;
+}
+
+.mv_filter_section {
+  & + .mv_filter_section {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+  }
+}
+
+.mv_filter_section_title {
+  padding: 0 12px;
+  margin-bottom: 4px;
+  font-size: 12px;
   font-weight: 500;
+  color: var(--text-faint);
+}
+
+.mv_filter_options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 6px;
+}
+
+.mv_filter_option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
   color: var(--text-muted);
+  text-align: left;
   background: transparent;
   border: none;
-  border-radius: var(--r-md);
+  border-radius: var(--r-md, 8px);
   cursor: pointer;
   font-family: inherit;
   transition:
     color 0.12s ease,
     background 0.12s ease;
-  user-select: none;
 
   &:hover {
     color: var(--text);
     background: var(--hover);
   }
 
-  &.mv_chip_active {
+  &.mv_filter_option_active {
     color: var(--primary);
     background: var(--primary-soft);
+    font-weight: 500;
   }
 }
 
-.mv_status_chip_dot {
+.mv_filter_option_dot {
   width: 6px;
   height: 6px;
+  flex-shrink: 0;
   border-radius: 999px;
   background: currentColor;
   opacity: 0.7;
 }
 
+.mv_filter_option_label {
+  flex: 1;
+}
+
+.mv_filter_count {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.mv_filter_footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--border);
+}
+
+// ── 通用 Segmented / 占位（drawer 内传输方式、认证方式等选择器复用） ────────
+
 .mv_toolbar_spacer {
   flex: 1;
   min-width: 12px;
 }
-
-.mv_scope_label {
-  font-size: 12px;
-  color: var(--text-faint);
-  font-weight: 500;
-  margin-right: 4px;
-}
-
-// ── 作用域 Segmented（Arco Design 无 Segmented，本地实现） ────────────────
 
 .mv_segmented {
   display: inline-flex;

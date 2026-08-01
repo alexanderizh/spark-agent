@@ -1,4 +1,4 @@
-import { AutoComplete, Input, Select, Switch } from 'antd'
+import { AutoComplete, Input, Select, Slider } from 'antd'
 import { aspectRatioShape, type CanvasParameterPresentation } from './canvasParameterPresentation'
 import './CanvasParameterControl.less'
 
@@ -19,21 +19,14 @@ function optionLabel(value: string, unit?: string): string {
  * 缺失时回退到 enum 值本身。仅用于 enum/autocomplete 下拉，不影响 aspect-ratio
  * 等几何值（那里 enumLabels 不适用）。
  */
-function enumOptionLabel(
-  field: CanvasParameterPresentation['field'],
-  option: string,
-): string {
+function enumOptionLabel(field: CanvasParameterPresentation['field'], option: string): string {
   const labels = field.enumLabels
   return labels && labels[option] ? labels[option] : option
 }
 
 function CompactOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
   return (
-    <div
-      className="canvas-parameter-option-rail"
-      role="group"
-      aria-label={presentation.label}
-    >
+    <div className="canvas-parameter-option-rail" role="group" aria-label={presentation.label}>
       {presentation.field.enumValues.map((option) => (
         <button
           key={option}
@@ -100,6 +93,54 @@ function AspectRatioOptions({ presentation, value, onChange }: CanvasParameterCo
   )
 }
 
+function BooleanOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
+  return (
+    <div
+      className="canvas-parameter-option-rail is-boolean"
+      role="group"
+      aria-label={presentation.label}
+    >
+      {[
+        { value: 'true', label: '开启' },
+        { value: 'false', label: '关闭' },
+      ].map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={`canvas-parameter-option${option.value === value ? ' is-selected' : ''}`}
+          data-param-value={option.value}
+          aria-pressed={option.value === value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function BoundedDuration({ presentation, value, onChange }: CanvasParameterControlProps) {
+  const minimum = presentation.field.minimum!
+  const maximum = presentation.field.maximum!
+  const parsed = Number(value)
+  const current = Number.isFinite(parsed) ? Math.min(maximum, Math.max(minimum, parsed)) : minimum
+  return (
+    <div className="canvas-parameter-range-control">
+      <Slider
+        min={minimum}
+        max={maximum}
+        {...(presentation.field.type === 'integer' ? { step: 1 } : {})}
+        value={current}
+        tooltip={{ open: false }}
+        onChange={(next) => onChange(String(next))}
+      />
+      <span className="canvas-parameter-range-value">
+        {optionLabel(String(current), presentation.unit)}
+      </span>
+    </div>
+  )
+}
+
 export function CanvasParameterControl({
   presentation,
   value,
@@ -130,13 +171,16 @@ export function CanvasParameterControl({
         compact={compact}
       />
     )
+  } else if (
+    control === 'duration' &&
+    field.enumValues.length === 0 &&
+    Number.isFinite(field.minimum) &&
+    Number.isFinite(field.maximum) &&
+    field.maximum! > field.minimum!
+  ) {
+    controlNode = <BoundedDuration presentation={presentation} value={value} onChange={onChange} />
   } else if (control === 'boolean') {
-    controlNode = (
-      <div className="canvas-parameter-switch-row">
-        <span>{value === 'true' ? '开启' : '关闭'}</span>
-        <Switch checked={value === 'true'} onChange={(checked) => onChange(String(checked))} />
-      </div>
-    )
+    controlNode = <BooleanOptions presentation={presentation} value={value} onChange={onChange} />
   } else if (control === 'autocomplete') {
     controlNode = (
       <AutoComplete
@@ -151,7 +195,9 @@ export function CanvasParameterControl({
         filterOption={(input, option) => {
           const query = input.toLowerCase()
           return [option?.value, option?.label].some((candidate) =>
-            String(candidate ?? '').toLowerCase().includes(query),
+            String(candidate ?? '')
+              .toLowerCase()
+              .includes(query),
           )
         }}
       />

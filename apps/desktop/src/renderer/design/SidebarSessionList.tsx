@@ -261,6 +261,17 @@ function filterByLastActivity(
   range: SidebarLastActivityFilter,
 ): SessionSummary[] {
   if (range === 'all') return sessions
+  if (range === 'today') {
+    // 「今天」按自然日对齐当天 0 点，与会话分组的「今天」语义一致，
+    // 区别于「1d / 3d ...」这类滚动 24 小时窗口。
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+    const cutoff = startOfToday.getTime()
+    return sessions.filter((session) => {
+      const updatedAt = new Date(session.updatedAt).getTime()
+      return Number.isFinite(updatedAt) && updatedAt >= cutoff
+    })
+  }
   const days = Number.parseInt(range, 10)
   if (!Number.isFinite(days)) return sessions
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000

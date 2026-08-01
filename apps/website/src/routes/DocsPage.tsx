@@ -133,21 +133,6 @@ export function DocsPage() {
         </div>
       </Section>
 
-      <Section
-        title="建议阅读路径"
-        intro="如果你是第一次接触 Spark Work，先按这条路径建立心智模型，再回头挑你当前需要的能力主题。"
-      >
-        <div className="workflow">
-          {recommendedPath.map((topic, index) => (
-            <div className="workflow-step" key={topic.slug}>
-              <span>{index + 1}</span>
-              <strong>{topic.title}</strong>
-              <p>{topic.detail}</p>
-            </div>
-          ))}
-        </div>
-      </Section>
-
       {visibleCount === 0 ? (
         <Section title="没有匹配的主题">
           <div className="doc-long">

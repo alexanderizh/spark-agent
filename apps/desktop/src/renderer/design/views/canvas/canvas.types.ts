@@ -246,10 +246,15 @@ export type CanvasNodeData = {
   nodeSequence?: number
   /** 编组是否以紧凑封面卡展示；缺省为展开。 */
   collapsed?: boolean
+  /** 折叠编组的预设文件夹颜色；缺省为 blue。 */
+  groupColor?: CanvasGroupColorPreset
   text?: string
   format?: 'plain' | 'markdown' | 'prompt'
   url?: string
   thumbnailUrl?: string
+  /** 浏览器从媒体元数据读取的原始视频宽高；用于修复旧资产和缺失 provider 元数据。 */
+  mediaWidth?: number
+  mediaHeight?: number
   /** 可继续编辑的图片标注侧车文档；实际场景不直接写入项目节点快照。 */
   imageAnnotation?: CanvasImageAnnotationRef
   mimeType?: string
@@ -357,6 +362,18 @@ export type CanvasNodeData = {
   /** 分镜脚本任务的结构化时长配置（UI 可调，运行时替换 prompt 占位槽 {maxClip}） */
   shotScriptConfig?: ShotScriptConfig
 }
+
+export type CanvasGroupColorPreset =
+  | 'blue'
+  | 'indigo'
+  | 'purple'
+  | 'pink'
+  | 'red'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'cyan'
+  | 'gray'
 
 /** 分镜脚本任务的时长配置：每镜最长时间上限（秒），约束 LLM 生成的每镜 durationSec */
 export type ShotScriptConfig = {
