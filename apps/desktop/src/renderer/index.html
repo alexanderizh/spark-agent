@@ -16,7 +16,7 @@
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data: safe-file:; img-src 'self' data: safe-file: spark-snapshot: https: http: blob:; media-src 'self' data: safe-file: https: http: blob:; connect-src 'self' safe-file:; frame-src 'self' safe-file:"
+      content="default-src 'self'; script-src 'self' capability-asset:; style-src 'self' 'unsafe-inline' capability-asset:; font-src 'self' data: safe-file: capability-asset:; img-src 'self' data: safe-file: capability-asset: spark-snapshot: https: http: blob:; media-src 'self' data: safe-file: https: http: blob:; connect-src 'self' safe-file: capability-asset:; worker-src 'self' blob: capability-asset:; frame-src 'self' safe-file: capability-asset:"
     />
     <title>SparkWork</title>
     <!--

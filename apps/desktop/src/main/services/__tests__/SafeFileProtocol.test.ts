@@ -124,4 +124,26 @@ describe('SafeFileProtocol', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('serves optional worker and WASM assets with executable MIME types', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'safe-file-mime-'))
+    const worker = join(dir, 'worker.mjs')
+    const wasm = join(dir, 'runtime.wasm')
+    writeFileSync(worker, 'export {}')
+    writeFileSync(wasm, Buffer.from([0, 97, 115, 109]))
+    try {
+      expect(
+        createSafeFileResponse(worker, new Request('safe-file://x/worker')).headers.get(
+          'content-type',
+        ),
+      ).toBe('text/javascript; charset=utf-8')
+      expect(
+        createSafeFileResponse(wasm, new Request('safe-file://x/wasm')).headers.get(
+          'content-type',
+        ),
+      ).toBe('application/wasm')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

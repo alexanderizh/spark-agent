@@ -67,6 +67,36 @@
   margin-top: 12px;
 }
 
+.office-viewer-capability-placeholder {
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  min-height: 220px;
+  padding: 24px;
+  color: var(--text-secondary);
+  text-align: center;
+
+  strong {
+    color: var(--text-primary);
+    font-size: 15px;
+  }
+
+  button {
+    justify-self: center;
+    padding: 7px 14px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--primary);
+    color: white;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
 .optional-capability-progress-label {
   margin-bottom: 4px;
   font-size: 13px;

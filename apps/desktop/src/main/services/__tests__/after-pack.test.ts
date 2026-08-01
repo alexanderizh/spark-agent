@@ -276,6 +276,15 @@ describe('after-pack ONNX runtime pruning', () => {
     expect(config).toContain("'!output{,/**/*}'")
   })
 
+  it('keeps optional Office Viewer assets out of the base package', () => {
+    const config = readFileSync(
+      join(__dirname, '../../../../electron-builder.yml'),
+      'utf8',
+    )
+
+    expect(config).toContain("'!out/renderer/file-viewer{,/**/*}'")
+  })
+
   it('resolves the packaged resources path and target architecture', async () => {
     const result = await pruneOnnxForContext(
       {
