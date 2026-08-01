@@ -61,6 +61,17 @@
     background: var(--canvas-cinema-surface-3);
   }
 
+  .canvas-pane-context-menu button.canvas-menu-item-danger,
+  .canvas-pane-context-submenu-panel button.canvas-menu-item-danger {
+    color: var(--canvas-cinema-danger);
+  }
+
+  .canvas-pane-context-menu button.canvas-menu-item-danger:hover,
+  .canvas-pane-context-submenu-panel button.canvas-menu-item-danger:focus-visible {
+    background: color-mix(in srgb, var(--canvas-cinema-danger) 14%, transparent);
+    color: var(--canvas-cinema-danger);
+  }
+
   .canvas-node-bottom-editor {
     border-color: var(--canvas-cinema-border-strong);
     border-radius: var(--canvas-cinema-radius-lg);

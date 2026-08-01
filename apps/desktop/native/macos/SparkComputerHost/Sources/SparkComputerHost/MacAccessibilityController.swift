@@ -4,13 +4,22 @@ import CoreGraphics
 import Foundation
 import SparkComputerHostCore
 
-final class MacAccessibilityController {
+final class MacAccessibilityController: @unchecked Sendable {
   private static let maxDepth = 48
   private static let maxElements = maxNativeTreeElements
 
   private var tree = NativeAXTreeState()
   private var elementsByRuntimeID: [String: AXUIElement] = [:]
   private var boundsByElementID: [String: NativeRect] = [:]
+  private var cachedRawElements: [NativeAXRawElement] = []
+  private var cachedProcessID: pid_t = 0
+  private var cachedWindow: AXUIElement?
+  private var lastTraversalUptime: TimeInterval = 0
+  private var observer: AXObserver?
+  private var observerSource: CFRunLoopSource?
+  private let dirtyLock = NSLock()
+  private var dirtyGeneration: UInt64 = 1
+  private var cachedGeneration: UInt64 = 0
 
   var isAvailable: Bool {
     AXIsProcessTrusted()
@@ -31,19 +40,41 @@ final class MacAccessibilityController {
       throw NativeHostPlatformError.focusMismatch
     }
 
+    let sameWindow = cachedProcessID == processID
+      && cachedWindow.map { CFEqual($0, focusedWindow) } == true
+    if !sameWindow {
+      configureObserver(processID: processID, application: application, window: focusedWindow)
+    }
+    let generation = currentDirtyGeneration()
+    if sameWindow,
+      cachedGeneration == generation,
+      !cachedRawElements.isEmpty,
+      ProcessInfo.processInfo.systemUptime - lastTraversalUptime <= 1
+    {
+      return try publishCached(
+        cachedRawElements,
+        previousTreeVersion: previousTreeVersion,
+        fullTree: fullTree
+      )
+    }
+
     var raw: [NativeAXRawElement] = []
     var elements: [String: AXUIElement] = [:]
     try collect(
       focusedWindow, path: "window", depth: 0, output: &raw, elements: &elements)
-    let snapshot = tree.publish(
-      elements: raw, previousTreeVersion: previousTreeVersion, fullTree: fullTree)
-    guard snapshot.elements.count <= Self.maxElements, snapshot.text.utf16.count <= 2_000_000 else {
-      tree.invalidate()
-      throw NativeHostPlatformError.resourceLimitExceeded
-    }
+    let snapshot = try publishCached(
+      raw,
+      previousTreeVersion: previousTreeVersion,
+      fullTree: fullTree
+    )
     elementsByRuntimeID = elements
     boundsByElementID = Dictionary(
       uniqueKeysWithValues: snapshot.elements.map { ($0.id, $0.bounds) })
+    cachedRawElements = raw
+    cachedProcessID = processID
+    cachedWindow = focusedWindow
+    lastTraversalUptime = ProcessInfo.processInfo.systemUptime
+    cachedGeneration = generation
     return snapshot
   }
 
@@ -106,6 +137,84 @@ final class MacAccessibilityController {
     tree.invalidate()
     elementsByRuntimeID.removeAll(keepingCapacity: true)
     boundsByElementID.removeAll(keepingCapacity: true)
+    cachedRawElements.removeAll(keepingCapacity: true)
+    cachedProcessID = 0
+    cachedWindow = nil
+    lastTraversalUptime = 0
+    removeObserver()
+    markDirty()
+  }
+
+  func markDirty() {
+    dirtyLock.withLock {
+      dirtyGeneration &+= 1
+      if dirtyGeneration == 0 { dirtyGeneration = 1 }
+    }
+  }
+
+  private func currentDirtyGeneration() -> UInt64 {
+    dirtyLock.withLock { dirtyGeneration }
+  }
+
+  private func publishCached(
+    _ raw: [NativeAXRawElement],
+    previousTreeVersion: String?,
+    fullTree: Bool
+  ) throws -> NativeAXTreeSnapshot {
+    let snapshot = tree.publish(
+      elements: raw,
+      previousTreeVersion: previousTreeVersion,
+      fullTree: fullTree
+    )
+    guard snapshot.elements.count <= Self.maxElements, snapshot.text.utf16.count <= 2_000_000 else {
+      tree.invalidate()
+      throw NativeHostPlatformError.resourceLimitExceeded
+    }
+    return snapshot
+  }
+
+  private func configureObserver(
+    processID: pid_t,
+    application: AXUIElement,
+    window: AXUIElement
+  ) {
+    removeObserver()
+    markDirty()
+    var created: AXObserver?
+    guard AXObserverCreate(processID, macAccessibilityObserverCallback, &created) == .success,
+      let created
+    else { return }
+    let refcon = Unmanaged.passUnretained(self).toOpaque()
+    for notification in [
+      kAXFocusedWindowChangedNotification,
+      kAXFocusedUIElementChangedNotification,
+    ] {
+      _ = AXObserverAddNotification(created, application, notification as CFString, refcon)
+    }
+    for notification in [
+      kAXValueChangedNotification,
+      kAXUIElementDestroyedNotification,
+      kAXMovedNotification,
+      kAXResizedNotification,
+      kAXTitleChangedNotification,
+      kAXCreatedNotification,
+      kAXSelectedTextChangedNotification,
+      kAXLayoutChangedNotification,
+    ] {
+      _ = AXObserverAddNotification(created, window, notification as CFString, refcon)
+    }
+    let source = AXObserverGetRunLoopSource(created)
+    CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    observer = created
+    observerSource = source
+  }
+
+  private func removeObserver() {
+    if let observerSource {
+      CFRunLoopRemoveSource(CFRunLoopGetMain(), observerSource, .commonModes)
+    }
+    observerSource = nil
+    observer = nil
   }
 
   private func resolve(_ elementID: String, treeVersion: String) throws -> AXUIElement {
@@ -272,6 +381,19 @@ final class MacAccessibilityController {
         element, kAXSelectedTextRangeAttribute as CFString, axRange) == .success
     else { throw NativeHostPlatformError.actionNoop }
   }
+}
+
+private func macAccessibilityObserverCallback(
+  _ observer: AXObserver,
+  _ element: AXUIElement,
+  _ notification: CFString,
+  _ refcon: UnsafeMutableRawPointer?
+) {
+  guard let refcon else { return }
+  Unmanaged<MacAccessibilityController>
+    .fromOpaque(refcon)
+    .takeUnretainedValue()
+    .markDirty()
 }
 
 private func copyAttribute<Value>(

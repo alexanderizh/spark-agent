@@ -1,20 +1,30 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+use std::time::{Duration, Instant};
 
 use thiserror::Error;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-    CoUninitialize,
+    CoUninitialize, SAFEARRAY,
 };
 use windows::Win32::UI::Accessibility::{
-    CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationExpandCollapsePattern,
-    IUIAutomationInvokePattern, IUIAutomationScrollPattern, IUIAutomationSelectionItemPattern,
+    CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationEventHandler,
+    IUIAutomationEventHandler_Impl, IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
+    IUIAutomationScrollPattern, IUIAutomationSelectionItemPattern,
+    IUIAutomationStructureChangedEventHandler, IUIAutomationStructureChangedEventHandler_Impl,
     IUIAutomationValuePattern, ScrollAmount_LargeDecrement, ScrollAmount_LargeIncrement,
     ScrollAmount_NoAmount, ScrollAmount_SmallDecrement, ScrollAmount_SmallIncrement,
-    TreeScope_Descendants, UIA_ExpandCollapsePatternId, UIA_InvokePatternId, UIA_ScrollPatternId,
-    UIA_SelectionItemPatternId, UIA_ValuePatternId,
+    StructureChangeType, TreeScope_Descendants, TreeScope_Subtree, UIA_EVENT_ID,
+    UIA_ExpandCollapsePatternId, UIA_InvokePatternId, UIA_LayoutInvalidatedEventId,
+    UIA_ScrollPatternId, UIA_SelectionItemPatternId, UIA_Text_TextChangedEventId,
+    UIA_Text_TextSelectionChangedEventId, UIA_ValuePatternId, UIA_Window_WindowClosedEventId,
+    UIA_Window_WindowOpenedEventId,
 };
-use windows::core::BSTR;
+use windows::core::{BSTR, Interface, Ref, implement};
 
 use crate::protocol::{ComputerAction, ElementAction};
 use crate::uia_policy::{
@@ -23,6 +33,57 @@ use crate::uia_policy::{
 
 const MAX_TREE_ELEMENTS: usize = 100_000;
 const MAX_TREE_TEXT_BYTES: usize = 2_000_000;
+const MAX_CACHE_AGE: Duration = Duration::from_secs(1);
+const CACHE_INVALIDATION_EVENTS: [UIA_EVENT_ID; 5] = [
+    UIA_LayoutInvalidatedEventId,
+    UIA_Text_TextChangedEventId,
+    UIA_Text_TextSelectionChangedEventId,
+    UIA_Window_WindowOpenedEventId,
+    UIA_Window_WindowClosedEventId,
+];
+
+#[implement(IUIAutomationEventHandler, IUIAutomationStructureChangedEventHandler)]
+struct UiaChangeHandler {
+    generation: Arc<AtomicU64>,
+}
+
+impl UiaChangeHandler {
+    fn invalidate(&self) {
+        increment_generation(&self.generation);
+    }
+}
+
+#[allow(non_snake_case)]
+impl IUIAutomationEventHandler_Impl for UiaChangeHandler_Impl {
+    fn HandleAutomationEvent(
+        &self,
+        _sender: Ref<'_, IUIAutomationElement>,
+        _eventid: UIA_EVENT_ID,
+    ) -> windows::core::Result<()> {
+        self.invalidate();
+        Ok(())
+    }
+}
+
+#[allow(non_snake_case)]
+impl IUIAutomationStructureChangedEventHandler_Impl for UiaChangeHandler_Impl {
+    fn HandleStructureChangedEvent(
+        &self,
+        _sender: Ref<'_, IUIAutomationElement>,
+        _changetype: StructureChangeType,
+        _runtimeid: *const SAFEARRAY,
+    ) -> windows::core::Result<()> {
+        self.invalidate();
+        Ok(())
+    }
+}
+
+struct UiaEventSubscription {
+    hwnd: isize,
+    root: IUIAutomationElement,
+    automation_handler: IUIAutomationEventHandler,
+    structure_handler: IUIAutomationStructureChangedEventHandler,
+}
 
 #[derive(Debug, Error)]
 pub enum UiaError {
@@ -45,6 +106,12 @@ pub struct UiaRuntime {
     tree: UiaTreeState,
     elements: HashMap<String, IUIAutomationElement>,
     secure_runtime_keys: HashSet<String>,
+    cached_nodes: Vec<RawUiaNode>,
+    cached_hwnd: Option<isize>,
+    cached_generation: u64,
+    last_traversal: Option<Instant>,
+    dirty_generation: Arc<AtomicU64>,
+    subscription: Option<UiaEventSubscription>,
     com_initialized: bool,
 }
 
@@ -67,6 +134,12 @@ impl UiaRuntime {
             tree: UiaTreeState::new(),
             elements: HashMap::new(),
             secure_runtime_keys: HashSet::new(),
+            cached_nodes: Vec::new(),
+            cached_hwnd: None,
+            cached_generation: 0,
+            last_traversal: None,
+            dirty_generation: Arc::new(AtomicU64::new(1)),
+            subscription: None,
             com_initialized: true,
         })
     }
@@ -79,6 +152,20 @@ impl UiaRuntime {
     ) -> Result<UiaTreeSnapshot, UiaError> {
         let root = unsafe { self.automation.ElementFromHandle(HWND(hwnd as *mut _)) }
             .map_err(|_| UiaError::Unavailable)?;
+        if self.subscription.as_ref().map(|value| value.hwnd) != Some(hwnd) {
+            self.replace_subscription(hwnd, &root);
+        }
+        let generation = self.dirty_generation.load(Ordering::Acquire);
+        let can_reuse = self.subscription.is_some()
+            && self.cached_hwnd == Some(hwnd)
+            && self.cached_generation == generation
+            && !self.cached_nodes.is_empty()
+            && self
+                .last_traversal
+                .is_some_and(|traversal| traversal.elapsed() <= MAX_CACHE_AGE);
+        if can_reuse {
+            return self.publish_nodes(self.cached_nodes.clone(), previous_tree_version, full_tree);
+        }
         let condition =
             unsafe { self.automation.CreateTrueCondition() }.map_err(|_| UiaError::Unavailable)?;
         let descendants = unsafe { root.FindAll(TreeScope_Descendants, &condition) }
@@ -114,19 +201,18 @@ impl UiaRuntime {
                 &mut secure_runtime_keys,
             );
         }
-        let snapshot = self
-            .tree
-            .observe(raw_nodes, previous_tree_version, full_tree);
-        if snapshot.elements.len() > MAX_TREE_ELEMENTS || snapshot.text.len() > MAX_TREE_TEXT_BYTES
-        {
-            return Err(UiaError::OperationFailed);
-        }
+        let snapshot = self.publish_nodes(raw_nodes.clone(), previous_tree_version, full_tree)?;
         self.elements = elements;
         self.secure_runtime_keys = secure_runtime_keys;
+        self.cached_nodes = raw_nodes;
+        self.cached_hwnd = Some(hwnd);
+        self.cached_generation = generation;
+        self.last_traversal = Some(Instant::now());
         Ok(snapshot)
     }
 
     pub fn execute(&mut self, action: &ComputerAction, tree_version: &str) -> Result<(), UiaError> {
+        self.mark_dirty();
         match action {
             ComputerAction::InvokeElement { element_id, action } => {
                 let element = self.resolve(element_id, tree_version)?;
@@ -342,15 +428,129 @@ impl UiaRuntime {
         nodes.push(node);
         elements.insert(runtime_key, element);
     }
+
+    fn publish_nodes(
+        &mut self,
+        nodes: Vec<RawUiaNode>,
+        previous_tree_version: Option<&str>,
+        full_tree: bool,
+    ) -> Result<UiaTreeSnapshot, UiaError> {
+        let snapshot = self.tree.observe(nodes, previous_tree_version, full_tree);
+        if snapshot.elements.len() > MAX_TREE_ELEMENTS || snapshot.text.len() > MAX_TREE_TEXT_BYTES
+        {
+            return Err(UiaError::OperationFailed);
+        }
+        Ok(snapshot)
+    }
+
+    fn mark_dirty(&self) {
+        increment_generation(&self.dirty_generation);
+    }
+
+    fn replace_subscription(&mut self, hwnd: isize, root: &IUIAutomationElement) {
+        self.remove_subscription();
+        self.mark_dirty();
+        self.cached_hwnd = None;
+        self.cached_nodes.clear();
+        self.last_traversal = None;
+
+        let event_handler: IUIAutomationEventHandler = UiaChangeHandler {
+            generation: Arc::clone(&self.dirty_generation),
+        }
+        .into();
+        let Ok(structure_handler) =
+            event_handler.cast::<IUIAutomationStructureChangedEventHandler>()
+        else {
+            return;
+        };
+        let Ok(cache_request) = (unsafe { self.automation.CreateCacheRequest() }) else {
+            return;
+        };
+        let mut registered_events = Vec::with_capacity(CACHE_INVALIDATION_EVENTS.len());
+        for event_id in CACHE_INVALIDATION_EVENTS {
+            if unsafe {
+                self.automation.AddAutomationEventHandler(
+                    event_id,
+                    root,
+                    TreeScope_Subtree,
+                    &cache_request,
+                    &event_handler,
+                )
+            }
+            .is_err()
+            {
+                self.remove_registered_events(root, &event_handler, &registered_events);
+                return;
+            }
+            registered_events.push(event_id);
+        }
+        if unsafe {
+            self.automation.AddStructureChangedEventHandler(
+                root,
+                TreeScope_Subtree,
+                &cache_request,
+                &structure_handler,
+            )
+        }
+        .is_err()
+        {
+            self.remove_registered_events(root, &event_handler, &registered_events);
+            return;
+        }
+        self.subscription = Some(UiaEventSubscription {
+            hwnd,
+            root: root.clone(),
+            automation_handler: event_handler,
+            structure_handler,
+        });
+    }
+
+    fn remove_registered_events(
+        &self,
+        root: &IUIAutomationElement,
+        handler: &IUIAutomationEventHandler,
+        event_ids: &[UIA_EVENT_ID],
+    ) {
+        for event_id in event_ids {
+            let _ = unsafe {
+                self.automation
+                    .RemoveAutomationEventHandler(*event_id, root, handler)
+            };
+        }
+    }
+
+    fn remove_subscription(&mut self) {
+        let Some(subscription) = self.subscription.take() else {
+            return;
+        };
+        self.remove_registered_events(
+            &subscription.root,
+            &subscription.automation_handler,
+            &CACHE_INVALIDATION_EVENTS,
+        );
+        let _ = unsafe {
+            self.automation.RemoveStructureChangedEventHandler(
+                &subscription.root,
+                &subscription.structure_handler,
+            )
+        };
+    }
 }
 
 impl Drop for UiaRuntime {
     fn drop(&mut self) {
+        self.remove_subscription();
         if self.com_initialized {
             unsafe { CoUninitialize() };
             self.com_initialized = false;
         }
     }
+}
+
+fn increment_generation(generation: &AtomicU64) {
+    let _ = generation.fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+        Some(if current == u64::MAX { 1 } else { current + 1 })
+    });
 }
 
 fn bstr_or(value: &windows::core::Result<BSTR>, fallback: &str) -> String {

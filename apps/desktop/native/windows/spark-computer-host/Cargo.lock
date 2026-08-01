@@ -280,6 +280,7 @@ dependencies = [
  "thiserror",
  "windows",
  "windows-capture",
+ "windows-core",
 ]
 
 [[package]]
