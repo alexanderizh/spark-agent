@@ -221,6 +221,8 @@ describe('verifyWindowsNativeHostArtifact', () => {
   it('only permits a valid chain or an explicitly self-signed untrusted publisher', () => {
     const script = buildWindowsCodeSignatureInspectionScript()
 
+    expect(script).toContain('$env:SPARK_AUTHENTICODE_PATH')
+    expect(script).not.toContain('$args[0]')
     expect(script).toContain('$signature.Status -eq "UnknownError"')
     expect(script).toContain('$signature.Status -eq "NotTrusted"')
     expect(script).toContain(
