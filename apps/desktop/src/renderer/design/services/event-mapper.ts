@@ -27,6 +27,9 @@ export interface UIMessage {
     type: 'image' | 'file' | 'directory'
     path: string
     name?: string
+    /** Renderer-only local preview fields used by optimistic user messages. */
+    previewPath?: string
+    previewUrl?: string
   }>
   usage: {
     inputTokens: number

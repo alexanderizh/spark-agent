@@ -78,6 +78,10 @@ export type MessageAttachment = {
   type: 'image' | 'file' | 'directory'
   path: string
   name?: string
+  /** Renderer-only local preview. Never forwarded to the Agent SDK. */
+  previewPath?: string
+  /** Renderer-only URL that can be displayed immediately. */
+  previewUrl?: string
 }
 
 export type ComposerPrefillPayload = {

@@ -123,6 +123,11 @@ import { useAppControlComposerPrefill } from './composerAppControl'
 import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
+import {
+  startOptimisticImageSend,
+  type OptimisticImageSendCallbacks,
+  type OptimisticImageSendLifecycle,
+} from './optimistic-user-messages'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -725,6 +730,7 @@ export function ComposerV2({
   resendRequest = null,
   onResendConsumed,
   onDispatchStateChange,
+  optimisticImageSendCallbacks,
   onModelSwitch,
   paletteCommandRequest = null,
 }: {
@@ -815,6 +821,8 @@ export function ComposerV2({
   // 暴露发送中状态给父组件。父组件用它在发送期间抑制 hero，
   // 覆盖 createSession→sendTurn→status=running 之间 hero 闪现的窗口。
   onDispatchStateChange?: (dispatching: boolean) => void
+  /** Renderer-only image bubble lifecycle; actual SDK attachments are prepared separately. */
+  optimisticImageSendCallbacks?: OptimisticImageSendCallbacks
   onModelSwitch?: (change: { fromModel: string; toModel: string; afterMessageId: string }) => void
   paletteCommandRequest?: { id: number; commandText: string } | null
 }) {
@@ -1520,6 +1528,7 @@ export function ComposerV2({
           return
         }
         setSending(true)
+        let optimisticSend: OptimisticImageSendLifecycle | null = null
         try {
           // 如果没有活跃 session，先创建一个（命令需要 session 上下文）。
           // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
@@ -1557,6 +1566,10 @@ export function ComposerV2({
           const res = await window.spark.invoke('command:execute', { sessionId, message: text })
           if (res.forwardToAgent) {
             // 转发给 Agent：作为普通消息发送
+            optimisticSend = startOptimisticImageSend(
+              { sessionId, content: text, attachments: turnAttachments },
+              optimisticImageSendCallbacks,
+            )
             const requestAttachments = await prepareRequestAttachments()
             setSending(false)
             await flushPendingRuntimePatch()
@@ -1576,6 +1589,7 @@ export function ComposerV2({
                 : {}),
               ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
             })
+            optimisticSend?.commit(sendRes.turnId)
             if (!sendRes.started) {
               setQueueVisible(true)
             } else if (queuedMessages.length === 0) {
@@ -1594,6 +1608,7 @@ export function ComposerV2({
             onSent(sessionId)
           }
         } catch (err) {
+          optimisticSend?.cancel()
           console.error('命令执行失败', err)
           toast.error(err instanceof Error ? err.message : '命令执行失败')
           setValue(text)
@@ -1606,6 +1621,7 @@ export function ComposerV2({
 
       if (selectedProvider == null) return
       setSending(true)
+      let optimisticSend: OptimisticImageSendLifecycle | null = null
       try {
         // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
         let targetSessionId =
@@ -1633,6 +1649,10 @@ export function ComposerV2({
           })
         }
         if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
+        optimisticSend = startOptimisticImageSend(
+          { sessionId: targetSessionId, content: text, attachments: turnAttachments },
+          optimisticImageSendCallbacks,
+        )
         await flushPendingRuntimePatch()
         const requestAttachments = await prepareRequestAttachments()
         const res = await sendTurn({
@@ -1651,6 +1671,7 @@ export function ComposerV2({
             : {}),
           ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
         })
+        optimisticSend?.commit(res.turnId)
         if (!res.started) {
           setQueueVisible(true)
         } else if (queuedMessages.length === 0) {
@@ -1660,6 +1681,7 @@ export function ComposerV2({
         clearDraftBuckets([draftBucketKey, targetSessionId, NEW_SESSION_DRAFT_BUCKET])
         onSent(targetSessionId)
       } catch (err) {
+        optimisticSend?.cancel()
         console.error('发送失败', err)
         toast.error(err instanceof Error ? err.message : '发送消息失败')
         setValue(text)
@@ -1699,6 +1721,7 @@ export function ComposerV2({
       pendingMention,
       prepareSessionImages,
       activeQuickReplies,
+      optimisticImageSendCallbacks,
     ],
   )
 
