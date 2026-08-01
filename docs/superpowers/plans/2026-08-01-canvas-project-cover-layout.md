@@ -1,6 +1,6 @@
 # 无限画布项目封面完整预览 Implementation Plan
 
-> 状态: 待开发 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-01
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -27,7 +27,7 @@
 **Files:**
 - Create: `apps/desktop/src/renderer/design/views/canvas/CanvasProjectDetail.cover.test.tsx`
 
-- [ ] **Step 1: 写行为测试与样式契约测试**
+- [x] **Step 1: 写行为测试与样式契约测试**
 
 创建测试文件，使用轻量 UI mock 隔离项目详情页：
 
@@ -185,7 +185,7 @@ describe('CanvasProjectDetail cover styles', () => {
 })
 ```
 
-- [ ] **Step 2: 运行测试，确认旧实现不满足契约**
+- [x] **Step 2: 运行测试，确认旧实现不满足契约**
 
 Run:
 
@@ -195,7 +195,7 @@ pnpm --filter @spark/desktop exec vitest run src/renderer/design/views/canvas/Ca
 
 Expected: FAIL，至少报告缺少 `.canvas-detail-cover-ambient`、`查看项目封面`、`更换项目封面` 和 `object-fit: contain`。
 
-- [ ] **Step 3: 提交失败测试**
+- [x] **Step 3: 提交失败测试**
 
 ```bash
 git add apps/desktop/src/renderer/design/views/canvas/CanvasProjectDetail.cover.test.tsx
@@ -208,7 +208,7 @@ git commit -m "test(canvas): define project cover preview behavior"
 - Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasProjectDetail.tsx:1-20,119-150,285-390,560-610`
 - Test: `apps/desktop/src/renderer/design/views/canvas/CanvasProjectDetail.cover.test.tsx`
 
-- [ ] **Step 1: 增加封面状态与互不冲突的事件入口**
+- [x] **Step 1: 增加封面状态与互不冲突的事件入口**
 
 将现有 `handleCoverClick` 替换为封面预览、失败降级和文件选择逻辑：
 
@@ -234,7 +234,7 @@ const openCoverPreview = useCallback(() => {
 
 保留现有 `handleCoverFileChange`；它继续清空 input value，允许重复选择同一文件。
 
-- [ ] **Step 2: 将封面 DOM 改为背景层、完整前景层和独立工具条**
+- [x] **Step 2: 将封面 DOM 改为背景层、完整前景层和独立工具条**
 
 用以下结构替换旧封面容器、整面 hover 遮罩和封面内项目操作：
 
@@ -299,7 +299,7 @@ const openCoverPreview = useCallback(() => {
 
 `Icons.Maximize` 与 `Icons.Edit` 已存在，直接复用，不扩展全局 `Icons` 契约。
 
-- [ ] **Step 3: 把置顶和更多菜单移动到标题操作区**
+- [x] **Step 3: 把置顶和更多菜单移动到标题操作区**
 
 将原 `.canvas-detail-cover-actions` 中的两个按钮移动到 `.canvas-detail-header-right`，并保留现有菜单 items 与回调：
 
@@ -350,7 +350,7 @@ const openCoverPreview = useCallback(() => {
 
 实现时可把现有 menu 配置原样内联移动，不能改菜单项顺序、文案或回调。
 
-- [ ] **Step 4: 增加独立封面预览 Modal**
+- [x] **Step 4: 增加独立封面预览 Modal**
 
 在资源预览 Modal 前加入：
 
@@ -377,7 +377,7 @@ const openCoverPreview = useCallback(() => {
 
 Ant Design Modal 默认提供遮罩点击关闭、`Escape` 关闭、关闭按钮和焦点管理，不重复实现全局键盘监听。
 
-- [ ] **Step 5: 运行行为测试**
+- [x] **Step 5: 运行行为测试**
 
 Run:
 
@@ -387,7 +387,7 @@ pnpm --filter @spark/desktop exec vitest run src/renderer/design/views/canvas/Ca
 
 Expected: 5 tests PASS；样式 describe 尚未执行。
 
-- [ ] **Step 6: 提交组件行为**
+- [x] **Step 6: 提交组件行为**
 
 ```bash
 git add apps/desktop/src/renderer/design/views/canvas/CanvasProjectDetail.tsx
@@ -400,7 +400,7 @@ git commit -m "feat(canvas): separate project cover preview and upload"
 - Modify: `apps/desktop/src/renderer/design/views/canvas/uiux-v4/projects.less:193-310`
 - Test: `apps/desktop/src/renderer/design/views/canvas/CanvasProjectDetail.cover.test.tsx`
 
-- [ ] **Step 1: 替换旧封面遮罩和裁切样式**
+- [x] **Step 1: 替换旧封面遮罩和裁切样式**
 
 在 `.canvas-projects-page` 范围内将封面相关样式调整为：
 
@@ -498,7 +498,7 @@ button.canvas-detail-cover-empty { cursor: pointer; }
 
 删除旧 `.canvas-detail-cover-overlay`、`.is-uploadable:hover` 整面遮罩、`object-fit: cover`、`object-position: top` 和 `.canvas-detail-cover-actions` 定位规则。
 
-- [ ] **Step 2: 调整标题操作区、预览层与响应式规则**
+- [x] **Step 2: 调整标题操作区、预览层与响应式规则**
 
 ```less
 .canvas-detail-header-right {
@@ -539,7 +539,7 @@ button.canvas-detail-cover-empty { cursor: pointer; }
 }
 ```
 
-- [ ] **Step 3: 运行全部封面测试**
+- [x] **Step 3: 运行全部封面测试**
 
 Run:
 
@@ -549,7 +549,7 @@ pnpm --filter @spark/desktop exec vitest run src/renderer/design/views/canvas/Ca
 
 Expected: 7 tests PASS。
 
-- [ ] **Step 4: 检查并仅暂存本任务样式块**
+- [x] **Step 4: 检查并仅暂存本任务样式块**
 
 Run:
 
@@ -561,7 +561,7 @@ git diff --cached --check
 
 Expected: 缓存区只包含封面、标题操作区、预览 Modal 和响应式样式；文件顶部用户已有的背景修改保持未暂存。
 
-- [ ] **Step 5: 提交样式与测试**
+- [x] **Step 5: 提交样式与测试**
 
 ```bash
 git add apps/desktop/src/renderer/design/views/canvas/CanvasProjectDetail.cover.test.tsx
@@ -574,7 +574,7 @@ git commit -m "style(canvas): show complete project covers"
 - Modify: `docs/superpowers/specs/2026-08-01-canvas-project-cover-layout-design.md`
 - Modify: `docs/superpowers/plans/2026-08-01-canvas-project-cover-layout.md`
 
-- [ ] **Step 1: 运行定向测试与 Desktop 类型检查**
+- [x] **Step 1: 运行定向测试与 Desktop 类型检查**
 
 Run:
 
@@ -585,7 +585,7 @@ pnpm --filter @spark/desktop typecheck
 
 Expected: 封面测试全部 PASS；两个 TypeScript project 均无错误退出。
 
-- [ ] **Step 2: 核对影响范围**
+- [x] **Step 2: 核对影响范围**
 
 本任务属于局部详情页交互调整，按项目降级规则不启动 GitNexus。使用以下命令确认只影响预期调用点：
 
@@ -598,7 +598,7 @@ git status --short
 
 Expected: 功能改动只涉及 `CanvasProjectDetail.tsx`、`projects.less` 和新测试；工作区原有 `ProvidersView.tsx` 与媒体服务修改保持未暂存、未提交。
 
-- [ ] **Step 3: 更新文档状态**
+- [x] **Step 3: 更新文档状态**
 
 将设计文档和本计划的状态行改为：
 
@@ -606,7 +606,7 @@ Expected: 功能改动只涉及 `CanvasProjectDetail.tsx`、`projects.less` 和�
 > 状态: 已落地 | 最后核对: 2026-08-01
 ```
 
-- [ ] **Step 4: 提交文档状态并完成最终核验**
+- [x] **Step 4: 提交文档状态并完成最终核验**
 
 ```bash
 git add docs/superpowers/specs/2026-08-01-canvas-project-cover-layout-design.md docs/superpowers/plans/2026-08-01-canvas-project-cover-layout.md
