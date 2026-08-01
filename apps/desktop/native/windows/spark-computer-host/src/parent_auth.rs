@@ -5,6 +5,7 @@ pub const EXPECTED_PARENT_PRODUCT_NAME: &str = "SparkWork";
 const CERT_E_UNTRUSTEDROOT: i32 = 0x800B0109_u32 as i32;
 const CRYPT_E_REVOCATION_OFFLINE: i32 = 0x80092013_u32 as i32;
 const CERT_E_REVOCATION_FAILURE: i32 = 0x800B010E_u32 as i32;
+const TRUST_E_SUBJECT_NOT_TRUSTED: i32 = 0x800B0004_u32 as i32;
 
 /// WinVerifyTrust has already authenticated the file digest before reporting these
 /// certificate-chain availability failures. Callers must additionally require a
@@ -12,7 +13,10 @@ const CERT_E_REVOCATION_FAILURE: i32 = 0x800B010E_u32 as i32;
 pub fn allows_pinned_self_signed_chain_failure(status: i32) -> bool {
     matches!(
         status,
-        CERT_E_UNTRUSTEDROOT | CRYPT_E_REVOCATION_OFFLINE | CERT_E_REVOCATION_FAILURE
+        CERT_E_UNTRUSTEDROOT
+            | CRYPT_E_REVOCATION_OFFLINE
+            | CERT_E_REVOCATION_FAILURE
+            | TRUST_E_SUBJECT_NOT_TRUSTED
     )
 }
 
