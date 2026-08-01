@@ -1,0 +1,81 @@
+.canvas-operation-image-input {
+  display: flex;
+  min-height: 148px;
+  align-items: stretch;
+  justify-content: center;
+  gap: 16px;
+  padding: 18px;
+  border: 1px dashed rgb(255 255 255 / 16%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.canvas-operation-image-input-preview {
+  display: flex;
+  min-width: 280px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--spark-text-secondary, rgb(255 255 255 / 56%));
+}
+
+.canvas-operation-image-input-preview.has-image {
+  justify-content: flex-start;
+}
+
+.canvas-operation-image-input-preview img {
+  width: 112px;
+  height: 112px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  object-fit: cover;
+  background: rgb(0 0 0 / 24%);
+}
+
+.canvas-operation-image-input-empty-icon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 14px;
+  background: rgb(124 92 255 / 12%);
+  color: rgb(161 139 255);
+}
+
+.canvas-operation-image-input-meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.canvas-operation-image-input-meta strong {
+  overflow: hidden;
+  color: var(--spark-text-primary, rgb(255 255 255 / 88%));
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-operation-image-input-meta span {
+  font-size: 12px;
+}
+
+.canvas-operation-image-input-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (width <= 760px) {
+  .canvas-operation-image-input {
+    flex-direction: column;
+  }
+
+  .canvas-operation-image-input-preview {
+    min-width: 0;
+  }
+}

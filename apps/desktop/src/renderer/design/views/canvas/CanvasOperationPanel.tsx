@@ -74,6 +74,19 @@ import {
 } from './CanvasInlineAiComposer'
 import { mediaModelKey } from './canvasModelPickerModel'
 import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
+import { CanvasOperationImageInput } from './CanvasOperationImageInput'
+import {
+  buildOperationPanelRunInputNodeIds,
+  buildVideoFrameInputRoles,
+  modelPrefersBase64Input,
+  normalizeVideoFrameNodeIds,
+  operationStatusLabel,
+} from './canvasOperationPanelInputModel'
+export {
+  buildOperationPanelRunInputNodeIds,
+  buildVideoFrameInputRoles,
+  mergeDefaultReferenceFrameNodeIds,
+} from './canvasOperationPanelInputModel'
 import { CanvasMediaInputConfigurator } from './CanvasMediaInputConfigurator'
 import {
   resolveCanvasDepthSubmitLabel,
@@ -510,6 +523,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [depthModelState, setDepthModelState] = useState<CanvasDepthModelState>('unknown')
   const [depthModelError, setDepthModelError] = useState('')
   const isTextOperation = panelMode.executionKind === 'text'
+  const usesTextRuntime = panelMode.runtimeKind === 'text_full'
   useEffect(() => {
     if (!panelMode.showLocalDepthNotice) return
     let active = true
@@ -733,6 +747,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     bindings: inputBindings,
     setBindings: setInputBindings,
     selectedInputNodeIds,
+    setSelectedInputNodeIds,
     firstFrameNodeId,
     setFirstFrameNodeId,
     lastFrameNodeId,
@@ -788,6 +803,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [draftRevision, setDraftRevision] = useState(0)
   const [cancelling, setCancelling] = useState(false)
   const [messageDraft, setMessageDraft] = useState(node.data.message ?? '')
+  const [pendingDedicatedImageNode, setPendingDedicatedImageNode] = useState<CanvasNode | null>(
+    null,
+  )
   const [activeTextPickerId, setActiveTextPickerId] = useState<string | null>(null)
   // 分镜时长配置草稿：preset 命中档位则用档位值，否则 'custom' + 自定义数字字符串。
   const [maxClipPreset, setMaxClipPreset] = useState<number | 'custom'>('custom')
@@ -1429,8 +1447,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       OperationDraftParams,
       'agentId' | 'providerProfileId' | 'manifestId' | 'modelId' | 'skillIds'
     > => ({
-      ...(isTextOperation && selectedAgentId ? { agentId: selectedAgentId } : {}),
-      ...(isTextOperation ? { skillIds: selectedSkillIds } : {}),
+      ...(usesTextRuntime && selectedAgentId ? { agentId: selectedAgentId } : {}),
+      ...(usesTextRuntime ? { skillIds: selectedSkillIds } : {}),
       ...(isTextOperation && selectedTextProviderId
         ? { providerProfileId: selectedTextProviderId }
         : selectedModel?.providerProfileId
@@ -1450,6 +1468,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       selectedSkillIds,
       selectedTextModelId,
       selectedTextProviderId,
+      usesTextRuntime,
     ],
   )
 
@@ -1638,8 +1657,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         ...(hiddenFunctionalSystemPrompt ? { systemPrompt: hiddenFunctionalSystemPrompt } : {}),
         ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
         inputNodeIds: runInputNodeIds,
-        ...(isTextOperation && selectedAgentId ? { agentId: selectedAgentId } : {}),
-        ...(isTextOperation ? { skillIds: selectedSkillIds } : {}),
+        ...(usesTextRuntime && selectedAgentId ? { agentId: selectedAgentId } : {}),
+        ...(usesTextRuntime ? { skillIds: selectedSkillIds } : {}),
         ...(modelPrefersBase64Input(selectedModel)
           ? { inputTransport: 'base64' as const }
           : { inputTransport: 'cloud_url' as const }),
@@ -1713,6 +1732,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     selectedTextProviderId,
     supportsImageRoles,
     supportsVideoFrameRoles,
+    usesTextRuntime,
   ])
 
   const nodeById = useMemo(
@@ -1765,6 +1785,21 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     () => snapshot.nodes.filter((item) => !item.hidden && item.id !== node.id),
     [node.id, snapshot.nodes],
   )
+  const dedicatedImageInputNode = useMemo(
+    () =>
+      pendingDedicatedImageNode ??
+      selectedInputNodeIds
+        .map((inputNodeId) => nodeById.get(inputNodeId))
+        .find((inputNode) => inputNode?.type === 'image') ??
+      null,
+    [nodeById, pendingDedicatedImageNode, selectedInputNodeIds],
+  )
+  useEffect(() => {
+    if (!pendingDedicatedImageNode || !nodeById.has(pendingDedicatedImageNode.id)) return
+    setSelectedInputNodeIds([pendingDedicatedImageNode.id])
+    setPendingDedicatedImageNode(null)
+    markConfigurationTouched()
+  }, [markConfigurationTouched, nodeById, pendingDedicatedImageNode, setSelectedInputNodeIds])
   const promptPresentationNodeBySourceId = useMemo(() => {
     const resolved = new Map<string, CanvasNode>()
     for (const candidate of promptCandidateNodes) {
@@ -1797,6 +1832,27 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       return true
     },
     [running],
+  )
+  const handleDedicatedImagePick = useCallback(() => {
+    onRequestCanvasNodePick?.((pickedNode) => {
+      if (pickedNode.type !== 'image') {
+        message.warning('图片反推仅支持图片节点')
+        return
+      }
+      setSelectedInputNodeIds([pickedNode.id])
+      markConfigurationTouched()
+    })
+  }, [markConfigurationTouched, onRequestCanvasNodePick, setSelectedInputNodeIds])
+  const handleDedicatedImageUpload = useCallback(
+    async (file: File) => {
+      if (!file.type.startsWith('image/')) {
+        message.warning('请选择图片文件')
+        return
+      }
+      const uploadedNode = await onUploadLocalFile?.(file)
+      if (uploadedNode?.type === 'image') setPendingDedicatedImageNode(uploadedNode)
+    },
+    [onUploadLocalFile],
   )
   const frameLabel = (id: string) =>
     String(frameImageOptions.find((option) => String(option.value) === id)?.label ?? id)
@@ -2091,34 +2147,54 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 disabled={running}
               />
             </label>
-            <span className="canvas-operation-panel-hint">资源和文本统一在提示词中用 @ 添加</span>
-          </div>
-        </div>
-
-        <div className="canvas-operation-composer-main">
-          <div className="canvas-operation-prompt-count-wrap">
-            <CanvasPromptMentionTextArea
-              className="canvas-operation-composer-prompt"
-              rows={6}
-              value={prompt}
-              document={promptDocument}
-              placeholder={`输入${operationText}的提示词...`}
-              mentionNodes={promptCandidateNodes}
-              presentationNodeBySourceId={mediaPresentationNodeBySourceId}
-              connectionNodes={promptConnectionNodes}
-              assets={snapshot.assets}
-              onChange={handlePromptChange}
-              onDocumentChange={setPromptDocument}
-              onMentionSelect={handlePromptMentionSelect}
-              {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
-              {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
-              disabled={running}
-            />
-            <span className="canvas-operation-prompt-count">
-              {promptCharCount.toLocaleString()} 字符
+            <span className="canvas-operation-panel-hint">
+              {panelMode.showDedicatedImageInput
+                ? '反推指令已内置，只需提供一张图片'
+                : '资源和文本统一在提示词中用 @ 添加'}
             </span>
           </div>
         </div>
+
+        {panelMode.showDedicatedImageInput ? (
+          <div className="canvas-operation-composer-main">
+            <CanvasOperationImageInput
+              node={dedicatedImageInputNode}
+              disabled={running}
+              {...(onRequestCanvasNodePick ? { onPick: handleDedicatedImagePick } : {})}
+              {...(onUploadLocalFile ? { onUpload: handleDedicatedImageUpload } : {})}
+              onClear={() => {
+                setPendingDedicatedImageNode(null)
+                setSelectedInputNodeIds([])
+                markConfigurationTouched()
+              }}
+            />
+          </div>
+        ) : panelMode.showPromptEditor ? (
+          <div className="canvas-operation-composer-main">
+            <div className="canvas-operation-prompt-count-wrap">
+              <CanvasPromptMentionTextArea
+                className="canvas-operation-composer-prompt"
+                rows={6}
+                value={prompt}
+                document={promptDocument}
+                placeholder={`输入${operationText}的提示词...`}
+                mentionNodes={promptCandidateNodes}
+                presentationNodeBySourceId={mediaPresentationNodeBySourceId}
+                connectionNodes={promptConnectionNodes}
+                assets={snapshot.assets}
+                onChange={handlePromptChange}
+                onDocumentChange={setPromptDocument}
+                onMentionSelect={handlePromptMentionSelect}
+                {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
+                {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
+                disabled={running}
+              />
+              <span className="canvas-operation-prompt-count">
+                {promptCharCount.toLocaleString()} 字符
+              </span>
+            </div>
+          </div>
+        ) : null}
 
         {mediaInputModeOptions.length > 0 && effectiveMediaInputMode && (
           <div className="canvas-operation-composer-input-rail">
@@ -2143,14 +2219,16 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           <div className="canvas-operation-composer-params">
             {isTextOperation && (
               <>
-                <AgentPickerInline
-                  agents={agents}
-                  selectedId={selectedAgentId}
-                  disabled={running || runtimeLoading || agents.length === 0}
-                  open={openRuntimeMenu === 'agent'}
-                  onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'agent' : null)}
-                  onChange={handleTextAgentChange}
-                />
+                {panelMode.runtimeKind === 'text_full' && (
+                  <AgentPickerInline
+                    agents={agents}
+                    selectedId={selectedAgentId}
+                    disabled={running || runtimeLoading || agents.length === 0}
+                    open={openRuntimeMenu === 'agent'}
+                    onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'agent' : null)}
+                    onChange={handleTextAgentChange}
+                  />
+                )}
                 <ProviderModelPickerInline
                   providers={textProviders}
                   selectedProviderId={selectedTextProvider?.id ?? ''}
@@ -2160,20 +2238,21 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'model' : null)}
                   onChange={handleTextProviderModelChange}
                 />
-                {renderTextClickSelector({
-                  pickerId: 'skills',
-                  title: '选择 Skills',
-                  label: 'Skills',
-                  valueText:
-                    selectedSkillIds.length > 0 ? `${selectedSkillIds.length} 个` : '未选择',
-                  disabled: running || runtimeLoading || skills.length === 0,
-                  content: renderMultiOptionList(
-                    skills.map((skill) => ({ value: skill.id, label: skill.name })),
-                    selectedSkillIds,
-                    handleSkillIdsChange,
-                    '清空 Skills',
-                  ),
-                })}
+                {panelMode.runtimeKind === 'text_full' &&
+                  renderTextClickSelector({
+                    pickerId: 'skills',
+                    title: '选择 Skills',
+                    label: 'Skills',
+                    valueText:
+                      selectedSkillIds.length > 0 ? `${selectedSkillIds.length} 个` : '未选择',
+                    disabled: running || runtimeLoading || skills.length === 0,
+                    content: renderMultiOptionList(
+                      skills.map((skill) => ({ value: skill.id, label: skill.name })),
+                      selectedSkillIds,
+                      handleSkillIdsChange,
+                      '清空 Skills',
+                    ),
+                  })}
                 {isShotScriptNode && (
                   <div
                     className="canvas-operation-shot-config"
@@ -2298,7 +2377,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   })}
               </>
             )}
-            {mediaCapabilityIds.length === 0 &&
+            {panelMode.showCustomParams &&
+              mediaCapabilityIds.length === 0 &&
               renderTextClickSelector({
                 pickerId: 'custom-params',
                 title: '自定义参数',
@@ -2619,6 +2699,23 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           </div>
         )}
 
+        {panelMode.showDedicatedImageInput && (
+          <div className="canvas-operation-panel-section canvas-operation-panel-section-inputs">
+            <div className="canvas-operation-panel-section-label">输入图片</div>
+            <CanvasOperationImageInput
+              node={dedicatedImageInputNode}
+              disabled={running}
+              {...(onRequestCanvasNodePick ? { onPick: handleDedicatedImagePick } : {})}
+              {...(onUploadLocalFile ? { onUpload: handleDedicatedImageUpload } : {})}
+              onClear={() => {
+                setPendingDedicatedImageNode(null)
+                setSelectedInputNodeIds([])
+                markConfigurationTouched()
+              }}
+            />
+          </div>
+        )}
+
         {/* Prompt 编辑 */}
         {panelMode.showPromptEditor && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-prompt">
@@ -2782,8 +2879,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         )}
         <Tooltip
           title={
-            selectedMediaInputIssue ??
-            (node.data.status === 'running' ? '运行中' : submitLabel)
+            selectedMediaInputIssue ?? (node.data.status === 'running' ? '运行中' : submitLabel)
           }
         >
           <Button
@@ -2887,97 +2983,4 @@ function inferCustomParamType(value: unknown): CustomParamType {
 function operationAcceptsTextInput(inputTypes: readonly string[] | undefined): boolean {
   if (!inputTypes) return false
   return inputTypes.includes('text') || inputTypes.includes('prompt')
-}
-
-export function buildOperationPanelRunInputNodeIds(input: {
-  selectedInputNodeIds: string[]
-  explicitFrameNodeIds: string[]
-  textInputNodeIds: string[]
-  supportsVideoFrameRoles: boolean
-  mediaInputOptions: Array<{ value: string; type: string }>
-}): string[] {
-  const explicitFrameSet = new Set(input.explicitFrameNodeIds)
-  const mediaTypeById = new Map(input.mediaInputOptions.map((item) => [item.value, item.type]))
-  const selectedIds = input.supportsVideoFrameRoles
-    ? input.selectedInputNodeIds.filter((id) => {
-        const type = mediaTypeById.get(id)
-        return type !== 'image' || explicitFrameSet.has(id)
-      })
-    : input.selectedInputNodeIds
-  return Array.from(
-    new Set([...selectedIds, ...input.explicitFrameNodeIds, ...input.textInputNodeIds]),
-  )
-}
-
-function modelPrefersBase64Input(model: CanvasMediaModelSummary | null | undefined): boolean {
-  return model?.providerKind === 'xai' || model?.providerKind === 'agnes'
-}
-
-export function buildVideoFrameInputRoles(
-  imageNodeIds: string[],
-  firstFrameNodeId: string,
-  lastFrameNodeId: string,
-  referenceFrameNodeIds: string[],
-): Record<string, CanvasTaskInputRoleSelection> {
-  const roles: Record<string, CanvasTaskInputRoleSelection> = {}
-  const referenceIds = new Set(referenceFrameNodeIds)
-  const addRole = (nodeId: string, role: CanvasTaskInputRole) => {
-    const current = roles[nodeId]
-    if (!current) {
-      roles[nodeId] = role
-      return
-    }
-    const currentList = Array.isArray(current) ? current : [current]
-    if (!currentList.includes(role)) roles[nodeId] = [...currentList, role]
-  }
-  for (const nodeId of imageNodeIds) {
-    if (nodeId === firstFrameNodeId) addRole(nodeId, 'first_frame')
-    if (nodeId === lastFrameNodeId) addRole(nodeId, 'last_frame')
-    if (referenceIds.has(nodeId)) addRole(nodeId, 'reference')
-  }
-  return roles
-}
-
-export function mergeDefaultReferenceFrameNodeIds(
-  currentIds: string[],
-  defaultImageNodeIds: string[],
-  candidateNodeIds: string[],
-): string[] {
-  const candidateSet = new Set(candidateNodeIds)
-  const result: string[] = []
-  const push = (id: string) => {
-    if (!id || !candidateSet.has(id) || result.includes(id)) return
-    result.push(id)
-  }
-  for (const id of currentIds) push(id)
-  for (const id of defaultImageNodeIds) push(id)
-  return sameIdList(result, currentIds) ? currentIds : result
-}
-
-function sameIdList(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index])
-}
-
-function normalizeVideoFrameNodeIds(
-  firstFrameNodeId: string,
-  lastFrameNodeId: string,
-  referenceFrameNodeIds: string[],
-): string[] {
-  const result: string[] = []
-  const push = (id: string) => {
-    if (!id || result.includes(id)) return
-    result.push(id)
-  }
-  push(firstFrameNodeId)
-  push(lastFrameNodeId)
-  for (const id of referenceFrameNodeIds) push(id)
-  return result
-}
-
-function operationStatusLabel(status: CanvasTask['status']): string {
-  if (status === 'completed') return '已完成'
-  if (status === 'failed') return '失败'
-  if (status === 'cancelled') return '已取消'
-  if (status === 'running') return '运行中'
-  return '待提交'
 }
