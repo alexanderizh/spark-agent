@@ -8,6 +8,7 @@ export type CanvasOperationPanelMode = {
   executionKind: CanvasOperationExecutionKind
   runtimeKind: CanvasOperationRuntimeKind
   showPromptEditor: boolean
+  showDedicatedImageInput: boolean
   showCustomParams: boolean
   showLocalDepthNotice: boolean
   submitLabel: string
@@ -22,6 +23,7 @@ export function resolveCanvasOperationPanelMode(
       executionKind,
       runtimeKind: 'vision_model',
       showPromptEditor: false,
+      showDedicatedImageInput: true,
       showCustomParams: false,
       showLocalDepthNotice: false,
       submitLabel: '生成提示词',
@@ -32,6 +34,7 @@ export function resolveCanvasOperationPanelMode(
       executionKind,
       runtimeKind: 'none',
       showPromptEditor: false,
+      showDedicatedImageInput: false,
       showCustomParams: false,
       showLocalDepthNotice: true,
       submitLabel: '生成深度视频',
@@ -42,6 +45,7 @@ export function resolveCanvasOperationPanelMode(
       executionKind,
       runtimeKind: 'text_full',
       showPromptEditor: true,
+      showDedicatedImageInput: false,
       showCustomParams: true,
       showLocalDepthNotice: false,
       submitLabel: '提交任务',
@@ -51,6 +55,7 @@ export function resolveCanvasOperationPanelMode(
     executionKind,
     runtimeKind: 'none',
     showPromptEditor: true,
+    showDedicatedImageInput: false,
     showCustomParams: false,
     showLocalDepthNotice: false,
     submitLabel: '提交任务',
