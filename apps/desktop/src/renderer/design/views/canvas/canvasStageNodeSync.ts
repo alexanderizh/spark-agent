@@ -45,6 +45,7 @@ export function flowNodeContentEqual(
   if (prev.data.inlinePanelExtraHeight !== next.data.inlinePanelExtraHeight) return false
   if (prev.data.inlineToolbarHeight !== next.data.inlineToolbarHeight) return false
   if (prev.data.inlinePanelExtraWidth !== next.data.inlinePanelExtraWidth) return false
+  if (prev.data.collapsedGroupPresentation !== next.data.collapsedGroupPresentation) return false
   if (prev.data.canvasNode === next.data.canvasNode) return true
   return (
     canvasNodeFingerprint(prev.data.canvasNode) === canvasNodeFingerprint(next.data.canvasNode)
@@ -92,6 +93,7 @@ export function canvasFlowNodeDataEqual(
   if (prev.inlinePanelExtraHeight !== next.inlinePanelExtraHeight) return false
   if (prev.inlineToolbarHeight !== next.inlineToolbarHeight) return false
   if (prev.inlinePanelExtraWidth !== next.inlinePanelExtraWidth) return false
+  if (prev.collapsedGroupPresentation !== next.collapsedGroupPresentation) return false
   if (prev.canvasNode === next.canvasNode) return true
   return canvasNodeFingerprint(prev.canvasNode) === canvasNodeFingerprint(next.canvasNode)
 }

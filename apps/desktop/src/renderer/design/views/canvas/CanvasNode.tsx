@@ -64,12 +64,89 @@ import type { CanvasOperationOutputMode, CanvasOperationType } from './canvas.ty
 import type { CanvasNodeData } from './canvas.types'
 import type { CanvasOperationRunView } from './canvasOperationRuns'
 import { effectiveCanvasOperationStatus } from './canvasTaskOutputIntegrity'
+import type {
+  CanvasCollapsedGroupPresentation,
+  CanvasGroupPreview,
+} from './canvasGroupCollapse'
 
 /** 把 op 的图标 key 映射为 Icons 组件（找不到回退 Workflow） */
 function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.ReactNode {
   const map = Icons as unknown as Record<string, (p: { size?: number }) => React.ReactNode>
   const IconFn = (iconKey && map[iconKey]) || Icons.Workflow
   return <IconFn size={size} />
+}
+
+function CollapsedGroupInsert({ preview, slot }: { preview: CanvasGroupPreview; slot: number }) {
+  const [failed, setFailed] = useState(false)
+  const showImage = preview.kind === 'image' && !failed
+
+  return (
+    <div
+      className={`canvas-collapsed-group-insert is-slot-${slot}${showImage ? ' has-image' : ' is-fallback'}`}
+    >
+      {showImage ? (
+        <img
+          src={normalizeEduAssetUrl(preview.url)}
+          alt={preview.title}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span aria-hidden="true">
+          <Icons.Image size={26} />
+        </span>
+      )}
+    </div>
+  )
+}
+
+function CollapsedGroupCover({
+  node,
+  presentation,
+}: {
+  node: SparkCanvasNode
+  presentation: CanvasCollapsedGroupPresentation
+}) {
+  const displayTitle = node.title?.trim() || '编组'
+  return (
+    <div className="canvas-collapsed-group-cover" aria-label={`${displayTitle}，双击展开`}>
+      <div className="canvas-collapsed-group-back" aria-hidden="true" />
+      <div className="canvas-collapsed-group-inserts">
+        {presentation.previews.map((preview, index) => (
+          <CollapsedGroupInsert
+            key={preview.kind === 'image' ? preview.nodeId : `fallback-${preview.slot}`}
+            preview={preview}
+            slot={index}
+          />
+        ))}
+      </div>
+      <svg
+        className="canvas-collapsed-group-front"
+        viewBox="0 0 246 218"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <path d="M 0 106 C 0 91, 9 82, 24 82 L 90 82 C 107 82, 114 92, 127 97 C 140 102, 151 105, 170 105 L 222 105 C 238 105, 246 115, 246 130 L 246 190 C 246 208, 236 218, 218 218 L 28 218 C 10 218, 0 208, 0 190 Z" />
+        <path
+          className="canvas-collapsed-group-front-highlight"
+          d="M 1 106 C 1 92, 10 83, 24 83 L 90 83 C 107 83, 114 93, 127 98 C 140 103, 151 106, 170 106 L 222 106"
+        />
+      </svg>
+      <div className="canvas-collapsed-group-icons" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M7 3v18M17 3v18M3 8h18M3 16h18" />
+        </svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M8 9h9M11 15h6" />
+        </svg>
+      </div>
+      <div className="canvas-collapsed-group-copy">
+        <small>{presentation.childCount} 个节点</small>
+        <strong title={displayTitle}>{displayTitle}</strong>
+      </div>
+    </div>
+  )
 }
 
 /** 3D 导演台节点卡片：角色/道具计数 + 最近一次截图缩略图（若有）。 */
@@ -326,6 +403,8 @@ export type CanvasFlowNodeData = {
   inlinePanelExtraHeight?: number
   inlineToolbarHeight?: number
   inlinePanelExtraWidth?: number
+  /** 编组折叠时使用的封面预览投影；不改变持久化布局。 */
+  collapsedGroupPresentation?: CanvasCollapsedGroupPresentation
   actions: {
     duplicateNode: (nodeId: string) => void
     editNode: (nodeId: string) => void
@@ -543,6 +622,7 @@ export const CanvasNode = memo(function CanvasNode({
     inlinePanel,
     inlinePanelExtraHeight,
     inlineToolbar,
+    collapsedGroupPresentation,
   } = data as CanvasFlowNodeData
   const locked = Boolean(node.locked)
   const connectionTargetsNode = connection != null
@@ -602,7 +682,8 @@ export const CanvasNode = memo(function CanvasNode({
   const [resizeHovered, setResizeHovered] = useState(false)
   const [resizing, setResizing] = useState(false)
   // 未锁定节点在选中或悬浮时挂载缩放控件，无需先点击，同时避免所有节点常驻控件。
-  const showResizer = !locked && (selected || resizeHovered || resizing)
+  const showResizer =
+    !locked && !collapsedGroupPresentation && (selected || resizeHovered || resizing)
   const imageSrc = node.data.thumbnailUrl ?? node.data.url
   const isFullBleedImageNode = isFullBleedCanvasImageNode(node)
   // 图片与视频无论 loaded / empty 都使用同一个扁平媒体 Frame，避免资源加载前后
@@ -1023,6 +1104,23 @@ export const CanvasNode = memo(function CanvasNode({
         ...(isGroup
           ? [
               {
+                key: 'toggle-group-collapse',
+                label: (
+                  <span className="canvas-menu-item">
+                    {collapsedGroupPresentation ? (
+                      <Icons.FolderOpen size={14} />
+                    ) : (
+                      <Icons.Folder size={14} />
+                    )}{' '}
+                    {collapsedGroupPresentation ? '展开编组' : '折叠编组'}
+                  </span>
+                ),
+                onClick: () =>
+                  actions.updateNodeData?.(node.id, {
+                    collapsed: !collapsedGroupPresentation,
+                  }),
+              },
+              {
                 key: 'merge-group-to-image',
                 label: (
                   <span className="canvas-menu-item">
@@ -1103,6 +1201,7 @@ export const CanvasNode = memo(function CanvasNode({
       canExtractCharacterSubview,
       canExpandOperationOutputs,
       canCreateOperationFromNode,
+      collapsedGroupPresentation,
       contentNode,
       contextMenuBoundary.maxHeight,
       contextMenuBoundary.maxWidth,
@@ -1295,12 +1394,16 @@ export const CanvasNode = memo(function CanvasNode({
       >
         <div
           data-canvas-node-id={node.id}
-          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && operationStatus === 'running' ? ' canvas-node-task-running' : ''}${isTask && operationStatus === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${useFlatMediaFrame ? ' canvas-node-media-full-bleed' : ''}${isFullBleedImageNode || isEmptyImageNode ? ' canvas-node-image-full-bleed' : ''}${node.type === 'video' && useFlatMediaFrame ? ' canvas-node-video-full-bleed' : ''}${isEmptyImageNode ? ' canvas-node-image-empty canvas-node-media-empty' : ''}${isEmptyVideoNode ? ' canvas-node-video-empty canvas-node-media-empty' : ''}${connectionTargetsNode ? ' canvas-node-connection-target' : ''}${connectionTargetIsValid ? ' canvas-node-connection-valid' : ''}`}
+          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${collapsedGroupPresentation ? ' canvas-node-collapsed-group' : ''}${isTask && operationStatus === 'running' ? ' canvas-node-task-running' : ''}${isTask && operationStatus === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${useFlatMediaFrame ? ' canvas-node-media-full-bleed' : ''}${isFullBleedImageNode || isEmptyImageNode ? ' canvas-node-image-full-bleed' : ''}${node.type === 'video' && useFlatMediaFrame ? ' canvas-node-video-full-bleed' : ''}${isEmptyImageNode ? ' canvas-node-image-empty canvas-node-media-empty' : ''}${isEmptyVideoNode ? ' canvas-node-video-empty canvas-node-media-empty' : ''}${connectionTargetsNode ? ' canvas-node-connection-target' : ''}${connectionTargetIsValid ? ' canvas-node-connection-valid' : ''}`}
           style={nodeStyle}
           onPointerEnter={() => setResizeHovered(true)}
           onPointerLeave={() => setResizeHovered(false)}
           onDoubleClick={(event) => {
             event.stopPropagation()
+            if (isGroup && actions.updateNodeData) {
+              actions.updateNodeData(node.id, { collapsed: !collapsedGroupPresentation })
+              return
+            }
             actions.editNode(node.id)
           }}
         >
@@ -1311,7 +1414,7 @@ export const CanvasNode = memo(function CanvasNode({
               style={{ left: connectionPointerPosition.left, top: connectionPointerPosition.top }}
             />
           ) : null}
-          {nodeMetaBar}
+          {!collapsedGroupPresentation ? nodeMetaBar : null}
           {/* 悬浮、选中或正在拉伸时显示缩放控件。 */}
           <NodeResizer
             color="var(--primary)"
@@ -1325,6 +1428,10 @@ export const CanvasNode = memo(function CanvasNode({
             onResizeEnd={() => setResizing(false)}
           />
           <Handle type="target" position={Position.Left} className="canvas-node-handle" />
+          {collapsedGroupPresentation ? (
+            <CollapsedGroupCover node={node} presentation={collapsedGroupPresentation} />
+          ) : (
+            <>
           {inlineToolbar ? (
             <div className="canvas-node-inline-toolbar nodrag nopan">{inlineToolbar}</div>
           ) : null}
@@ -1572,6 +1679,8 @@ export const CanvasNode = memo(function CanvasNode({
               {renderedInlinePanel}
             </div>
           ) : null}
+            </>
+          )}
           <Handle type="source" position={Position.Right} className="canvas-node-handle" />
         </div>
       </div>
