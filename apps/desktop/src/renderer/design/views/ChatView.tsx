@@ -5735,14 +5735,6 @@ const UserMsg = React.memo(
     const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
       if (contextMenu == null) return []
       const items: ContextMenuItem[] = []
-      if (contextMenu.selectedText != null && onReply != null) {
-        items.push({
-          key: 'quote-selection',
-          label: '引用对话',
-          icon: <Icons.CornerUpLeft size={14} />,
-          onClick: () => onReply(contextMenu.selectedText),
-        })
-      }
       if (contextMenu.imageSrc != null) {
         items.push({
           key: 'copy-image',
@@ -5765,11 +5757,13 @@ const UserMsg = React.memo(
         })
       }
       if (onReply != null) {
+        // 合并原「引用对话」与「回复」：选中文字时引用选中片段，否则引用整条消息
+        const replySelectedText = contextMenu.selectedText
         items.push({
           key: 'reply',
-          label: '回复',
+          label: replySelectedText != null ? '引用选中' : '回复',
           icon: <Icons.CornerUpLeft size={14} />,
-          onClick: () => onReply(),
+          onClick: () => onReply(replySelectedText),
         })
       }
       if (onStartMultiSelect != null) {
@@ -6507,14 +6501,6 @@ const AgentMsg = React.memo(function AgentMsg({
   const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (contextMenu == null) return []
     const items: ContextMenuItem[] = []
-    if (contextMenu.selectedText != null && onReply != null) {
-      items.push({
-        key: 'quote-selection',
-        label: '引用对话',
-        icon: <Icons.CornerUpLeft size={14} />,
-        onClick: () => onReply(contextMenu.selectedText),
-      })
-    }
     if (contextMenu.imageSrc != null) {
       items.push({
         key: 'copy-image',
@@ -6537,11 +6523,13 @@ const AgentMsg = React.memo(function AgentMsg({
       })
     }
     if (onReply != null) {
+      // 合并原「引用对话」与「回复」：选中文字时引用选中片段，否则引用整条消息
+      const replySelectedText = contextMenu.selectedText
       items.push({
         key: 'reply',
-        label: '回复',
+        label: replySelectedText != null ? '引用选中' : '回复',
         icon: <Icons.CornerUpLeft size={14} />,
-        onClick: () => onReply(),
+        onClick: () => onReply(replySelectedText),
       })
     }
     if (onStartMultiSelect != null) {
