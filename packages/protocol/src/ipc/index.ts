@@ -4167,6 +4167,35 @@ export interface FilePrepareImagePreviewResponse {
   fileUrl: string
 }
 
+export type SessionImageOptimizationStatus = 'original' | 'optimized' | 'fallback'
+export type SessionImageOptimizationReason =
+  | 'below_threshold'
+  | 'animated'
+  | 'unsupported'
+  | 'timeout'
+  | 'decode_error'
+  | 'encode_error'
+  | 'write_error'
+  | 'batch_timeout'
+
+export interface FilePrepareSessionImagesRequest {
+  sourcePaths: string[]
+}
+
+export interface SessionImageOptimizationResult {
+  sourcePath: string
+  outputPath: string
+  status: SessionImageOptimizationStatus
+  inputBytes: number
+  outputBytes: number
+  durationMs: number
+  reason?: SessionImageOptimizationReason
+}
+
+export interface FilePrepareSessionImagesResponse {
+  results: SessionImageOptimizationResult[]
+}
+
 /** 路径类别探测：用于「添加相关文件或目录」在前端判断选中项是文件还是目录 */
 export type FileStatKind = 'file' | 'directory' | 'absent'
 
@@ -5700,6 +5729,7 @@ export interface IpcChannelMap
   'file:save-pasted-media': [FileSavePastedMediaRequest, FileSavePastedMediaResponse]
   'file:save-canvas-annotation': [FileSaveCanvasAnnotationRequest, FileSaveCanvasAnnotationResponse]
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
+  'file:prepare-session-images': [FilePrepareSessionImagesRequest, FilePrepareSessionImagesResponse]
   'file:stat-kind': [FileStatKindRequest, FileStatKindResponse]
 
   // Canvas Media Generation (infinite canvas → platform adapter)

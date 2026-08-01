@@ -15,6 +15,7 @@ overrides:
   '@hono/node-server': 2.0.12
   '@xmldom/xmldom@0.7.13': 0.8.13
   axios: 1.18.1
+  sharp: 0.35.3
   body-parser: 2.3.0
   'brace-expansion@1.1.14': 1.1.16
   'brace-expansion@2.1.1': 2.1.2

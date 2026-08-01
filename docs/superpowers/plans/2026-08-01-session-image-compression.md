@@ -1,6 +1,6 @@
 # 工作台会话大图自适应压缩 Implementation Plan
 
-> 状态: 实施中 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-01
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Architecture:** 在主进程新增独立 `SessionImageOptimizer`，用 Sharp 完成元数据读取、三轮编码、并发/总时长预算和临时缓存；通过批量 typed IPC 暴露给 Composer。Renderer 在发送前调用纯函数辅助层替换本轮图片路径，IPC 或单图处理失败时保留原始附件。
 
-**Tech Stack:** Electron main process、TypeScript、Sharp 0.34.5、typed IPC/Zod、React Composer、Vitest。
+**Tech Stack:** Electron main process、TypeScript、Sharp 0.35.3、typed IPC/Zod、React Composer、Vitest。
 
 ---
 
@@ -29,6 +29,7 @@
 ### Task 1: 建立协议契约
 
 **Files:**
+
 - Modify: `packages/protocol/src/ipc/index.ts`
 - Modify: `packages/protocol/src/schemas/index.ts`
 
@@ -86,6 +87,7 @@ Expected: PASS，无 TypeScript 错误。
 ### Task 2: 用测试定义压缩服务行为
 
 **Files:**
+
 - Create: `apps/desktop/src/main/services/SessionImageOptimizer.test.ts`
 - Create: `apps/desktop/src/main/services/SessionImageOptimizer.ts`
 
@@ -156,6 +158,7 @@ Expected: PASS。
 ### Task 3: 注册批量 IPC 并声明 Sharp 直接依赖
 
 **Files:**
+
 - Create: `apps/desktop/src/main/ipc/registerSessionImageOptimizerIpc.ts`
 - Modify: `apps/desktop/src/main/ipc/index.ts`
 - Modify: `apps/desktop/package.json`
@@ -183,9 +186,9 @@ export function registerSessionImageOptimizerIpc(): void {
 
 - [ ] **Step 3: 声明已批准的直接依赖**
 
-Run: `pnpm --filter @spark/desktop add sharp@0.34.5`
+Run: `pnpm --filter @spark/desktop add sharp@0.35.3`
 
-Expected: `apps/desktop/package.json` 出现精确版本 `sharp: "0.34.5"`，lockfile 复用现有版本；当前 macOS arm64 打包产物预计净增接近 0。
+Expected: `apps/desktop/package.json` 出现精确版本 `sharp: "0.35.3"`；`pnpm-workspace.yaml` 通过安全 override 让 Transformers 复用同一修复版本，避免双份运行库。相对既有 0.34.5，macOS arm64 解包体积约增加 2～3 MiB。
 
 - [ ] **Step 4: 运行主进程类型检查**
 
@@ -196,6 +199,7 @@ Expected: PASS。
 ### Task 4: 用纯函数定义 Renderer 回退行为
 
 **Files:**
+
 - Create: `apps/desktop/src/renderer/design/services/session-image-attachments.ts`
 - Create: `apps/desktop/src/renderer/design/services/session-image-attachments.test.ts`
 
@@ -246,6 +250,7 @@ Expected: PASS。
 ### Task 5: 接入 Composer 发送链路
 
 **Files:**
+
 - Modify: `apps/desktop/src/renderer/design/views/chat/ComposerV2.tsx`
 
 - [ ] **Step 1: 注入 typed IPC hook**
@@ -279,6 +284,7 @@ Expected: PASS。
 ### Task 6: 性能、错误回退和交付审查
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-08-01-session-image-compression-design.md`
 - Modify: `docs/superpowers/plans/2026-08-01-session-image-compression.md`
 
