@@ -1048,7 +1048,7 @@ describe('EventRepository', () => {
     expect(row).toEqual({ seq: 7, event_mode: 'complete' })
   })
 
-  it('limits renderable turn pages by complete turns', () => {
+  it('returns all turns without splitting when total events fit the soft limit', () => {
     const events = [
       ...Array.from({ length: 3 }, (_, i) => ({ turnId: 'turn-old', seq: i })),
       ...Array.from({ length: 3 }, (_, i) => ({ turnId: 'turn-mid', seq: 10 + i })),
@@ -1064,18 +1064,58 @@ describe('EventRepository', () => {
       })
     }
 
-    const limited = repo.queryRenderableTurns({
+    // 总可渲染事件 9 条 ≤ eventLimit(5) × 软保护倍率(5) = 25 → 全返回 3 轮，不被切碎
+    const page = repo.queryRenderableTurns({
       sessionId: 'sess-1',
       turnLimit: 3,
       eventLimit: 5,
     })
 
-    expect(limited.events.map((event) => event.turn_id)).toEqual([
+    expect(page.events.map((event) => event.turn_id)).toEqual([
+      'turn-old',
+      'turn-old',
+      'turn-old',
+      'turn-mid',
+      'turn-mid',
+      'turn-mid',
       'turn-new',
       'turn-new',
       'turn-new',
     ])
-    expect(limited.events.map((event) => JSON.parse(event.event_json).seq)).toEqual([20, 21, 22])
+    expect(page.events.map((event) => JSON.parse(event.event_json).seq)).toEqual([
+      0, 1, 2, 10, 11, 12, 20, 21, 22,
+    ])
+    expect(page.hasMore).toBe(false)
+  })
+
+  it('falls back to eventLimit trimming when total events exceed the soft limit', () => {
+    // 3 轮 × 每轮 10 条 = 30 条；eventLimit=2 → 软保护阈值 2×5=10，30 > 10 触发降级
+    const events = [
+      ...Array.from({ length: 10 }, (_, i) => ({ turnId: 'turn-old', seq: i })),
+      ...Array.from({ length: 10 }, (_, i) => ({ turnId: 'turn-mid', seq: 100 + i })),
+      ...Array.from({ length: 10 }, (_, i) => ({ turnId: 'turn-new', seq: 200 + i })),
+    ]
+    for (const event of events) {
+      repo.insert({
+        id: `evt-soft-${event.seq}`,
+        sessionId: 'sess-1',
+        turnId: event.turnId,
+        eventType: 'tool_call',
+        eventJson: JSON.stringify({ seq: event.seq }),
+      })
+    }
+
+    const limited = repo.queryRenderableTurns({
+      sessionId: 'sess-1',
+      turnLimit: 3,
+      eventLimit: 2,
+    })
+
+    // 降级后按 eventLimit=2 从最近轮累加：turn-new(10) 已超 2，仅保留最近 1 轮
+    expect(limited.events.map((event) => event.turn_id)).toEqual(Array(10).fill('turn-new'))
+    expect(limited.events.map((event) => JSON.parse(event.event_json).seq)).toEqual([
+      200, 201, 202, 203, 204, 205, 206, 207, 208, 209,
+    ])
     expect(limited.hasMore).toBe(true)
   })
 

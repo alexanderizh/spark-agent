@@ -917,6 +917,15 @@ export class EventRepository extends BaseRepository {
   }
 }
 
+/**
+ * 软保护倍率：turnLimit 个轮次的总可渲染事件数 ≤ eventLimit × 此倍率时，优先保证轮次
+ * 完整性——全返回 turnIds，不被 eventLimit 切碎成更少的轮次（否则 agentic 会话单轮事件
+ * 密集时，eventLimit 会先把 turnLimit 轮砍成最近寥寥几轮，违背按轮分页的初衷）。
+ * 仅当超过此阈值（极端重密度会话，例如 12 轮累计数千条事件）才回退到按 eventLimit 累加
+ * 砍轮，防止首屏一次性加载过多事件导致卡顿。
+ */
+const RENDERABLE_TURN_EVENT_SOFT_LIMIT_MULTIPLIER = 5
+
 function selectTurnIdsWithinEventLimit(params: {
   raw: SqliteDatabase
   sessionId: string
@@ -935,6 +944,12 @@ function selectTurnIdsWithinEventLimit(params: {
   )
   const rows = stmt.all(sessionId, ...turnIds) as Array<{ turnId: string; count: number }>
   const counts = new Map(rows.map((row) => [row.turnId, row.count] as const))
+  const totalCount = turnIds.reduce((sum, turnId) => sum + (counts.get(turnId) ?? 0), 0)
+  // 总事件数在软保护阈值内：优先满足 turnLimit 轮完整性，全返回，避免被 eventLimit 切碎。
+  if (totalCount <= eventLimit * RENDERABLE_TURN_EVENT_SOFT_LIMIT_MULTIPLIER) {
+    return turnIds
+  }
+  // 超过软保护阈值：按 eventLimit 从最近轮累加砍轮，防首屏一次性加载过多事件。
   const selected: string[] = []
   let total = 0
   for (const turnId of turnIds) {
