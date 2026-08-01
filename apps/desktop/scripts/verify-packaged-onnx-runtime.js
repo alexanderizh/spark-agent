@@ -12,7 +12,14 @@ async function collectNativeEntries(resourcesPath) {
     'napi-v6',
   )
   const entries = []
-  for (const platformEntry of await fs.readdir(napiRoot, { withFileTypes: true })) {
+  let platformEntries
+  try {
+    platformEntries = await fs.readdir(napiRoot, { withFileTypes: true })
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return []
+    throw error
+  }
+  for (const platformEntry of platformEntries) {
     if (!platformEntry.isDirectory()) continue
     const platformPath = path.join(napiRoot, platformEntry.name)
     for (const archEntry of await fs.readdir(platformPath, { withFileTypes: true })) {
@@ -39,25 +46,34 @@ async function verifyPackagedOnnxRuntime({
   resourcesPath,
   platform,
   arch,
+  nativeRuntime = 'target',
   listAsarFiles = async (asarPath) => listPackage(asarPath),
 }) {
+  if (!['target', 'absent'].includes(nativeRuntime)) {
+    throw new Error(`Unsupported native runtime mode: ${nativeRuntime}`)
+  }
   const entries = await collectNativeEntries(resourcesPath)
   const target = `${platform}/${arch}`
-  const foreignEntries = entries.filter((entry) => entry !== target)
-  if (foreignEntries.length > 0) {
-    throw new Error(`foreign ONNX runtime entries: ${foreignEntries.join(', ')}`)
+  const unexpectedEntries =
+    nativeRuntime === 'absent' ? entries : entries.filter((entry) => entry !== target)
+  if (unexpectedEntries.length > 0) {
+    const label = nativeRuntime === 'absent' ? 'unexpected' : 'foreign'
+    throw new Error(`${label} ONNX runtime entries: ${unexpectedEntries.join(', ')}`)
   }
-  if (!entries.includes(target)) {
+  if (nativeRuntime === 'target' && !entries.includes(target)) {
     throw new Error(`missing ONNX runtime entry: ${target}`)
   }
 
   const asarFiles = await listAsarFiles(path.join(resourcesPath, 'app.asar'))
-  const foreignAsarEntries = collectAsarNativeEntries(asarFiles).filter(
-    (entry) => entry !== target,
-  )
-  if (foreignAsarEntries.length > 0) {
+  const asarEntries = collectAsarNativeEntries(asarFiles)
+  const unexpectedAsarEntries =
+    nativeRuntime === 'absent'
+      ? asarEntries
+      : asarEntries.filter((entry) => entry !== target)
+  if (unexpectedAsarEntries.length > 0) {
+    const label = nativeRuntime === 'absent' ? 'unexpected' : 'foreign'
     throw new Error(
-      `foreign ONNX runtime entries in app.asar: ${foreignAsarEntries.join(', ')}`,
+      `${label} ONNX runtime entries in app.asar: ${unexpectedAsarEntries.join(', ')}`,
     )
   }
   const webRuntimePresent = asarFiles.some((file) =>
@@ -66,7 +82,7 @@ async function verifyPackagedOnnxRuntime({
   if (webRuntimePresent) {
     throw new Error('onnxruntime-web is present in app.asar')
   }
-  return { target, foreignEntries, webRuntimePresent }
+  return { target, foreignEntries: unexpectedEntries, webRuntimePresent }
 }
 
 function readRequiredArgument(args, name) {
@@ -82,13 +98,22 @@ async function main(args = process.argv.slice(2)) {
   const resourcesPath = path.resolve(readRequiredArgument(args, '--resources'))
   const platform = readRequiredArgument(args, '--platform')
   const arch = readRequiredArgument(args, '--arch')
+  const nativeRuntime = readRequiredArgument(args, '--native')
   if (!['darwin', 'linux', 'win32'].includes(platform)) {
     throw new Error(`Unsupported platform: ${platform}`)
   }
   if (!['arm64', 'x64'].includes(arch)) {
     throw new Error(`Unsupported architecture: ${arch}`)
   }
-  const result = await verifyPackagedOnnxRuntime({ resourcesPath, platform, arch })
+  if (!['target', 'absent'].includes(nativeRuntime)) {
+    throw new Error(`Unsupported native runtime mode: ${nativeRuntime}`)
+  }
+  const result = await verifyPackagedOnnxRuntime({
+    resourcesPath,
+    platform,
+    arch,
+    nativeRuntime,
+  })
   console.log(JSON.stringify(result))
 }
 

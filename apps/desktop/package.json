@@ -38,7 +38,6 @@
   },
   "//deps-note": "dependencies 仅保留 main/preload 运行时真正 require 的包（已据 out/main bundle 权威核实）。所有纯渲染端依赖被 vite 打进 out/renderer，移到 devDependencies，使 electron-builder 仅收生产依赖闭包，避免渲染库及其传递依赖被重复打包。配合 pnpm nodeLinker:hoisted 平铺布局，electron-builder 才能完整收集生产闭包。",
   "dependencies": {
-    "@huggingface/transformers": "4.2.0",
     "@larksuiteoapi/node-sdk": "^1.66.1",
     "@openai/codex-sdk": "0.146.0",
     "@playwright/mcp": "^0.0.78",
@@ -67,6 +66,7 @@
     "@file-viewer/preset-office": "2.2.3",
     "@file-viewer/react": "^2.2.3",
     "@file-viewer/web": "^2.2.3",
+    "@huggingface/transformers": "4.2.0",
     "@lexical/react": "^0.47.0",
     "@lobehub/emojilib": "^1.0.0",
     "@lobehub/fluent-emoji": "^4.1.0",

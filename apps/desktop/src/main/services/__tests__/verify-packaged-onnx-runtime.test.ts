@@ -11,6 +11,7 @@ const { verifyPackagedOnnxRuntime } =
       platform: 'darwin' | 'linux' | 'win32'
       arch: 'arm64' | 'x64'
       listAsarFiles: (asarPath: string) => Promise<string[]>
+      nativeRuntime?: 'target' | 'absent'
     }) => Promise<{
       target: string
       foreignEntries: string[]
@@ -115,5 +116,60 @@ describe('verifyPackagedOnnxRuntime', () => {
         ],
       }),
     ).rejects.toThrow('foreign ONNX runtime entries in app.asar: win32/arm64')
+  })
+
+  it('accepts a fully externalized base package with no native ONNX runtime', async () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-packaged-onnx-'))
+
+    await expect(
+      verifyPackagedOnnxRuntime({
+        resourcesPath: root,
+        platform: 'darwin',
+        arch: 'arm64',
+        nativeRuntime: 'absent',
+        listAsarFiles: async () => ['/node_modules/@spark/protocol/package.json'],
+      }),
+    ).resolves.toMatchObject({
+      target: 'darwin/arm64',
+      foreignEntries: [],
+      webRuntimePresent: false,
+    })
+  })
+
+  it('rejects unpacked native ONNX files when the runtime must be absent', async () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-packaged-onnx-'))
+    mkdirSync(
+      join(
+        root,
+        'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64',
+      ),
+      { recursive: true },
+    )
+
+    await expect(
+      verifyPackagedOnnxRuntime({
+        resourcesPath: root,
+        platform: 'darwin',
+        arch: 'arm64',
+        nativeRuntime: 'absent',
+        listAsarFiles: async () => [],
+      }),
+    ).rejects.toThrow('unexpected ONNX runtime entries: darwin/arm64')
+  })
+
+  it('rejects native ONNX files inside ASAR when the runtime must be absent', async () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-packaged-onnx-'))
+
+    await expect(
+      verifyPackagedOnnxRuntime({
+        resourcesPath: root,
+        platform: 'darwin',
+        arch: 'arm64',
+        nativeRuntime: 'absent',
+        listAsarFiles: async () => [
+          '/node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/onnxruntime_binding.node',
+        ],
+      }),
+    ).rejects.toThrow('unexpected ONNX runtime entries in app.asar: darwin/arm64')
   })
 })
