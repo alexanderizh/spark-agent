@@ -296,6 +296,7 @@ describe('NativeHostComputerUseBackend', () => {
       windowId: 'window-1',
       previousTreeVersion: null,
       fullTree: true,
+      persistentCapture: true,
       signal: expect.any(AbortSignal),
     })
     expect(evidenceSink.persist).toHaveBeenCalledWith(
@@ -370,6 +371,7 @@ describe('NativeHostComputerUseBackend', () => {
       windowId: 'window-2',
       previousTreeVersion: 'tree-1',
       fullTree: false,
+      persistentCapture: true,
       signal,
     })
   })
@@ -412,6 +414,7 @@ describe('NativeHostComputerUseBackend', () => {
       windowId: 'window-1',
       previousTreeVersion: 'tree-1',
       fullTree: false,
+      persistentCapture: true,
       signal,
     })
     expect(evidenceSink.persist).toHaveBeenLastCalledWith(

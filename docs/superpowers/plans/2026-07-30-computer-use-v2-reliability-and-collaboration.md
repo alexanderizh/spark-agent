@@ -652,7 +652,7 @@ Windows：
 
 ### Phase 7：灰度、迁移与删除旧链路
 
-> 实施进度（2026-08-01）：统一 `ComputerUseV2FlagStore` 已接管既有 Supervisor/增量树/批处理环境开关，并纳入计划列出的诊断、持久捕获、后台语义、Timeline、可见控制标识；已落地产品链路默认开、实验执行链路默认关。`ComputerUseV2RolloutController` 使用有界样本和最小样本门槛评估 Host 崩溃、安装制品错误、错误动作、接管 P99 与持续捕获预算，只关闭关联 flag。Supervisor 回退会释放持久连接并切回基础单连接路径，batch 回退下一决策轮生效。Agent 新增 `wait_for_completion` 事件等待工具，系统提示明确禁止轮询 `get_status` 或创建后台等待任务。代码待本阶段独立提交；跨版本 Beta 百分比与两个稳定版本后删旧链路属于发布运营签收。
+> 实施进度（2026-08-01）：统一 `ComputerUseV2FlagStore` 已接管 Supervisor、持久捕获、增量树、批处理、诊断、后台语义、Timeline 与可见控制标识；全部已落地 V2 链路默认启用，环境变量可显式关闭，运行期指标只回退关联单项。`ComputerUseV2RolloutController` 使用有界样本和最小样本门槛评估 Host 崩溃、安装制品错误、错误动作、接管 P99 与持续捕获预算。Supervisor 回退会释放持久连接并切回基础单连接路径，batch 回退下一决策轮生效。Agent `wait_for_completion` 使用事件等待，系统提示明确禁止轮询 `get_status` 或创建后台等待任务。跨版本 Beta 百分比与两个稳定版本后删旧链路属于发布运营签收。
 
 #### Feature Flags
 

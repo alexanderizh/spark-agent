@@ -43,7 +43,7 @@ Phase 2.2 持久视觉切片复核（2026-08-01）：desktop Computer Use/打包
 
 click/type 基线 L1、T01 intent 升档、unknown→L2、L2/L3+unattended→handoff、sensitive→L4 handoff、codex-full-access/claude-bypass 跳过逐动作审批、digest/timeout fail-closed SIGKILL——所有已落地阶段均未触碰。
 
-## flag 清单（统一注册表；实验链路默认关，已落地产品链路默认开）
+## flag 清单（统一注册表；V2 产品链路默认开，可显式关闭并支持运行期单项回退）
 
 - `SPARK_COMPUTER_USE_V2_HOST_SUPERVISOR` — Phase 2.1
 - `SPARK_COMPUTER_USE_V2_INCREMENTAL_TREE` — Phase 2.2

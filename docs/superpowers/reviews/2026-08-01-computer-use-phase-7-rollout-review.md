@@ -4,7 +4,7 @@
 
 ## 结论
 
-Phase 7 自主代码范围已完成：V2 flags 统一注册、运行期单功能回退、Host Supervisor 基础路径回退、action batch 即时关闭和 Agent 事件驱动等待均已接线。自动回退不会关闭整个 Computer Use，也不会绕过 Broker。5%/25%/100% 跨版本放量和连续两个稳定版本后删除旧路径依赖发布运营数据，保留为发布签收项。
+Phase 7 自主代码范围已完成：V2 flags 统一注册，Host Supervisor、持续捕获、增量树和 action batch 已提升为默认产品路径；运行期单功能回退、Supervisor 基础路径回退、batch 即时关闭和 Agent 事件驱动等待均已接线。自动回退不会关闭整个 Computer Use，也不会绕过 Broker。5%/25%/100% 跨版本运营证据和连续两个稳定版本后删除旧路径仍保留为发布签收项。
 
 ## 三遍审查
 

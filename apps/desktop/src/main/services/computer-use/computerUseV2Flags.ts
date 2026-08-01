@@ -29,15 +29,14 @@ const ENVIRONMENT_KEYS: Record<ComputerUseV2FlagName, string> = {
   visibleControlIndicator: 'SPARK_COMPUTER_USE_V2_VISIBLE_CONTROL_INDICATOR',
 }
 
-// Features that already replaced their legacy path remain on unless an explicit
-// environment override or runtime rollback disables them. Experimental execution
-// paths stay opt-in until their release gates are signed off.
+// V2 is the shipped product path. Every optimization can still be disabled explicitly
+// through its environment key or independently rolled back for the current process.
 const DEFAULTS: Record<ComputerUseV2FlagName, boolean> = {
-  hostSupervisor: false,
+  hostSupervisor: true,
   installedArtifactDiagnostics: true,
-  persistentCapture: false,
-  incrementalTree: false,
-  actionBatch: false,
+  persistentCapture: true,
+  incrementalTree: true,
+  actionBatch: true,
   backgroundSemanticLane: true,
   activityTimeline: true,
   visibleControlIndicator: true,
