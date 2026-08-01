@@ -287,7 +287,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'nav.shared.mcp': '连接器与 MCP',
     'nav.canvas.newProject': '新建项目',
     'nav.canvas.projects': '画布项目',
-    'nav.canvas.workflowLibrary': '画布工作流库',
+    'nav.canvas.workflowLibrary': '画布工作流',
     'nav.canvas.empty': '还没有画布项目',
     'nav.canvas.openProject': '在窗口中打开',
     'settings.general.language.zh': '简体中文',

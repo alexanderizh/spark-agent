@@ -388,10 +388,10 @@ export function CanvasProjectsView({
             <div className="canvas-welcome-hero">
               <Icons.Canvas size={48} />
               <h3>选择左侧项目查看详情，或新建画布开始创作</h3>
-              <p>
+              {/* <p>
                 无限画布以项目为单位组织素材、节点、任务与生成血缘。
                 点击侧栏项目查看详情，双击直接进入画布。
-              </p>
+              </p> */}
               <Button
                 size="middle"
                 type="primary"

@@ -14,6 +14,7 @@ import { buildCanvasWorkflowExport, parseCanvasWorkflowImport } from './canvasWo
 import { useApp } from '../../AppContext'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import './canvas-workflow.less'
+import { Button } from  '@lobehub/ui'
 
 type ScopeFilter = 'all' | CanvasWorkflowScope | 'archived'
 const WORKFLOW_PAGE_SIZE = 30
@@ -56,7 +57,11 @@ function formatUpdatedAt(value: string): string {
   }).format(date)
 }
 
-export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects?: CanvasProject[] }) {
+export function CanvasWorkflowLibraryView({
+  projects: projectsProp,
+}: {
+  projects?: CanvasProject[]
+}) {
   // 作为独立 view 使用时不传 projects，自己从 store 获取；
   // 保留 prop 向后兼容（CanvasProjectsView 等仍可显式传入）。
   const { projects: projectsFromStore } = useCanvasProjects()
@@ -89,39 +94,42 @@ export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects
   const importInputRef = useRef<HTMLInputElement>(null)
   const loadSequenceRef = useRef(0)
 
-  const load = useCallback(async (offset = 0) => {
-    const reset = offset === 0
-    const sequence = ++loadSequenceRef.current
-    if (reset) setLoading(true)
-    else setLoadingMore(true)
-    setError('')
-    try {
-      const response = await canvasWorkflowApi.listPage({
-        ...(scope !== 'all' && scope !== 'archived' ? { scope } : {}),
-        ...(scope === 'archived' ? { status: 'archived' as const, includeArchived: true } : {}),
-        ...(query.trim() ? { query: query.trim() } : {}),
-        limit: WORKFLOW_PAGE_SIZE,
-        offset,
-      })
-      if (sequence !== loadSequenceRef.current) return
-      setWorkflows((current) => {
-        if (reset) return response.workflows
-        const byId = new Map(current.map((workflow) => [workflow.id, workflow]))
-        for (const workflow of response.workflows) byId.set(workflow.id, workflow)
-        return [...byId.values()]
-      })
-      setTotal(response.total)
-      setHasMore(response.hasMore)
-    } catch (loadError) {
-      if (sequence !== loadSequenceRef.current) return
-      setError(loadError instanceof Error ? loadError.message : '加载画布工作流失败')
-    } finally {
-      if (sequence === loadSequenceRef.current) {
-        setLoading(false)
-        setLoadingMore(false)
+  const load = useCallback(
+    async (offset = 0) => {
+      const reset = offset === 0
+      const sequence = ++loadSequenceRef.current
+      if (reset) setLoading(true)
+      else setLoadingMore(true)
+      setError('')
+      try {
+        const response = await canvasWorkflowApi.listPage({
+          ...(scope !== 'all' && scope !== 'archived' ? { scope } : {}),
+          ...(scope === 'archived' ? { status: 'archived' as const, includeArchived: true } : {}),
+          ...(query.trim() ? { query: query.trim() } : {}),
+          limit: WORKFLOW_PAGE_SIZE,
+          offset,
+        })
+        if (sequence !== loadSequenceRef.current) return
+        setWorkflows((current) => {
+          if (reset) return response.workflows
+          const byId = new Map(current.map((workflow) => [workflow.id, workflow]))
+          for (const workflow of response.workflows) byId.set(workflow.id, workflow)
+          return [...byId.values()]
+        })
+        setTotal(response.total)
+        setHasMore(response.hasMore)
+      } catch (loadError) {
+        if (sequence !== loadSequenceRef.current) return
+        setError(loadError instanceof Error ? loadError.message : '加载画布工作流失败')
+      } finally {
+        if (sequence === loadSequenceRef.current) {
+          setLoading(false)
+          setLoadingMore(false)
+        }
       }
-    }
-  }, [query, scope])
+    },
+    [query, scope],
+  )
 
   useEffect(() => {
     void load()
@@ -270,7 +278,10 @@ export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects
           workflow.id === result.workflow.id ? result.workflow : workflow,
         ),
       )
-      setVersions((current) => [result.version, ...current.filter((item) => item.version !== result.version.version)])
+      setVersions((current) => [
+        result.version,
+        ...current.filter((item) => item.version !== result.version.version),
+      ])
     } catch (publishError) {
       setError(publishError instanceof Error ? publishError.message : '发布画布工作流失败')
     } finally {
@@ -314,7 +325,7 @@ export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects
   }
 
   return (
-    <section className="canvas-workflow-library" aria-label="画布工作流库">
+    <section className="canvas-workflow-library" aria-label="画布工作流">
       <header
         className="canvas-workflow-page-header canvas-view-titlebar"
         onDoubleClick={() => {
@@ -331,7 +342,7 @@ export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects
           <Icons.ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} />
           <span>返回项目</span>
         </button>
-        <h2>画布工作流库</h2>
+        <h2>画布工作流</h2>
       </header>
       <div className="canvas-workflow-library-toolbar">
         <label className="canvas-workflow-search">
@@ -353,24 +364,25 @@ export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects
             if (file) void importWorkflow(file)
           }}
         />
-        <button
-          type="button"
-          className="canvas-workflow-toolbar-button"
-          aria-label="导入画布工作流"
-          disabled={actionBusy}
-          onClick={() => importInputRef.current?.click()}
-        >
-          <Icons.Upload size={15} /> 导入
-        </button>
-        <button
-          type="button"
-          className="canvas-workflow-primary-button"
-          aria-label="新建画布工作流"
-          onClick={() => setCreateOpen(true)}
-        >
-          <Icons.Plus size={15} />
-          新建工作流
-        </button>
+        <div>
+          <Button
+            aria-label="导入画布工作流"
+            size='middle'
+            style={{marginRight: 12}}
+            disabled={actionBusy}
+            onClick={() => importInputRef.current?.click()}
+          >
+            <Icons.Upload size={15} /> 导入
+          </Button>
+          <Button
+            size='middle'
+            aria-label="新建画布工作流"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Icons.Plus size={15} />
+            新建工作流
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -448,7 +460,9 @@ export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects
                 </button>
               ))}
               <div className="canvas-workflow-pagination">
-                <span>已显示 {visibleWorkflows.length} / {total}</span>
+                <span>
+                  已显示 {visibleWorkflows.length} / {total}
+                </span>
                 {hasMore && (
                   <button
                     type="button"
@@ -513,7 +527,11 @@ export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects
                 </div>
               )}
 
-              <div className="canvas-workflow-detail-tabs" role="tablist" aria-label="工作流详情视图">
+              <div
+                className="canvas-workflow-detail-tabs"
+                role="tablist"
+                aria-label="工作流详情视图"
+              >
                 {(
                   [
                     ['overview', '概览'],
@@ -533,115 +551,123 @@ export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects
                 ))}
               </div>
 
-              {detailTab === 'overview' && <><div className="canvas-workflow-contract">
-                <section>
-                  <h4>输入</h4>
-                  {selected.package.contract.inputs.length > 0 ? (
-                    selected.package.contract.inputs.map((input) => (
-                      <div key={input.id}>
-                        <strong>{input.name}</strong>
-                        <span>{workflowTypeLabel(input.valueType)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p>尚未定义输入</p>
-                  )}
-                </section>
-                <section>
-                  <h4>输出</h4>
-                  {selected.package.contract.outputs.length > 0 ? (
-                    selected.package.contract.outputs.map((output) => (
-                      <div key={output.id}>
-                        <strong>{output.name}</strong>
-                        <span>{workflowTypeLabel(output.valueType)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p>尚未定义输出</p>
-                  )}
-                </section>
-              </div>
+              {detailTab === 'overview' && (
+                <>
+                  <div className="canvas-workflow-contract">
+                    <section>
+                      <h4>输入</h4>
+                      {selected.package.contract.inputs.length > 0 ? (
+                        selected.package.contract.inputs.map((input) => (
+                          <div key={input.id}>
+                            <strong>{input.name}</strong>
+                            <span>{workflowTypeLabel(input.valueType)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p>尚未定义输入</p>
+                      )}
+                    </section>
+                    <section>
+                      <h4>输出</h4>
+                      {selected.package.contract.outputs.length > 0 ? (
+                        selected.package.contract.outputs.map((output) => (
+                          <div key={output.id}>
+                            <strong>{output.name}</strong>
+                            <span>{workflowTypeLabel(output.valueType)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p>尚未定义输出</p>
+                      )}
+                    </section>
+                  </div>
 
-              <dl className="canvas-workflow-facts">
-                <div>
-                  <dt>节点</dt>
-                  <dd>{selected.package.graph.nodes.length}</dd>
-                </div>
-                <div>
-                  <dt>版本</dt>
-                  <dd>v{selected.version}</dd>
-                </div>
-                <div>
-                  <dt>状态</dt>
-                  <dd>
-                    {selected.status === 'archived'
-                      ? '已归档'
-                      : selected.status === 'published'
-                        ? '已发布'
-                        : '草稿'}
-                  </dd>
-                </div>
-              </dl>
+                  <dl className="canvas-workflow-facts">
+                    <div>
+                      <dt>节点</dt>
+                      <dd>{selected.package.graph.nodes.length}</dd>
+                    </div>
+                    <div>
+                      <dt>版本</dt>
+                      <dd>v{selected.version}</dd>
+                    </div>
+                    <div>
+                      <dt>状态</dt>
+                      <dd>
+                        {selected.status === 'archived'
+                          ? '已归档'
+                          : selected.status === 'published'
+                            ? '已发布'
+                            : '草稿'}
+                      </dd>
+                    </div>
+                  </dl>
 
-              {selected.scope !== 'builtin' && (
-                <button
-                  type="button"
-                  className="canvas-workflow-publish-button"
-                  aria-label="发布画布工作流"
-                  disabled={actionBusy || selected.package.graph.nodes.length === 0}
-                  onClick={() => void publishSelected()}
-                >
-                  <Icons.Upload size={14} />
-                  {selected.status === 'published' ? '重新发布当前版本' : '发布当前版本'}
-                </button>
+                  {selected.scope !== 'builtin' && (
+                    <button
+                      type="button"
+                      className="canvas-workflow-publish-button"
+                      aria-label="发布画布工作流"
+                      disabled={actionBusy || selected.package.graph.nodes.length === 0}
+                      onClick={() => void publishSelected()}
+                    >
+                      <Icons.Upload size={14} />
+                      {selected.status === 'published' ? '重新发布当前版本' : '发布当前版本'}
+                    </button>
+                  )}
+
+                  <div className="canvas-workflow-project-target">
+                    <label htmlFor="canvas-workflow-target-project">使用到项目</label>
+                    <select
+                      id="canvas-workflow-target-project"
+                      value={targetProjectId}
+                      onChange={(event) => setTargetProjectId(event.target.value)}
+                    >
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.title}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!targetProjectId}
+                      onClick={() => void applyToProject()}
+                    >
+                      <Icons.ArrowRight size={15} />
+                      {selected.scope === 'project' && selected.projectId === targetProjectId
+                        ? '打开项目'
+                        : '添加到项目'}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="canvas-workflow-export-button"
+                    aria-label="导出画布工作流"
+                    onClick={exportSelected}
+                  >
+                    <Icons.Download size={14} /> 导出 JSON
+                  </button>
+
+                  {selected.scope !== 'builtin' && (
+                    <div className="canvas-workflow-secondary-actions">
+                      <button type="button" onClick={() => void archiveSelected()}>
+                        <Icons.Archive size={14} />
+                        {selected.status === 'archived' ? '恢复草稿' : '归档'}
+                      </button>
+                      <button
+                        type="button"
+                        className="is-danger"
+                        onClick={() => void deleteSelected()}
+                      >
+                        <Icons.Trash size={14} />
+                        删除
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
-
-              <div className="canvas-workflow-project-target">
-                <label htmlFor="canvas-workflow-target-project">使用到项目</label>
-                <select
-                  id="canvas-workflow-target-project"
-                  value={targetProjectId}
-                  onChange={(event) => setTargetProjectId(event.target.value)}
-                >
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.title}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  disabled={!targetProjectId}
-                  onClick={() => void applyToProject()}
-                >
-                  <Icons.ArrowRight size={15} />
-                  {selected.scope === 'project' && selected.projectId === targetProjectId
-                    ? '打开项目'
-                    : '添加到项目'}
-                </button>
-              </div>
-
-              <button
-                type="button"
-                className="canvas-workflow-export-button"
-                aria-label="导出画布工作流"
-                onClick={exportSelected}
-              >
-                <Icons.Download size={14} /> 导出 JSON
-              </button>
-
-              {selected.scope !== 'builtin' && (
-                <div className="canvas-workflow-secondary-actions">
-                  <button type="button" onClick={() => void archiveSelected()}>
-                    <Icons.Archive size={14} />
-                    {selected.status === 'archived' ? '恢复草稿' : '归档'}
-                  </button>
-                  <button type="button" className="is-danger" onClick={() => void deleteSelected()}>
-                    <Icons.Trash size={14} />
-                    删除
-                  </button>
-                </div>
-              )}</>}
 
               {detailTab === 'versions' && (
                 <div className="canvas-workflow-history-list">
@@ -649,12 +675,19 @@ export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects
                     <p>正在加载版本…</p>
                   ) : versions.length === 0 ? (
                     <p>暂无版本快照</p>
-                  ) : versions.map((version) => (
-                    <div key={version.version}>
-                      <strong>v{version.version} · {version.name}</strong>
-                      <span>{version.package.graph.nodes.length} 节点 · {formatUpdatedAt(version.createdAt)}</span>
-                    </div>
-                  ))}
+                  ) : (
+                    versions.map((version) => (
+                      <div key={version.version}>
+                        <strong>
+                          v{version.version} · {version.name}
+                        </strong>
+                        <span>
+                          {version.package.graph.nodes.length} 节点 ·{' '}
+                          {formatUpdatedAt(version.createdAt)}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
 
@@ -664,12 +697,19 @@ export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects
                     <p>正在加载运行记录…</p>
                   ) : runs.length === 0 ? (
                     <p>暂无运行记录</p>
-                  ) : runs.map((run) => (
-                    <div key={run.id}>
-                      <strong>{run.status} · v{run.workflowVersion}</strong>
-                      <span>{run.steps.filter((step) => step.status === 'completed').length}/{run.steps.length} 步骤 · {formatUpdatedAt(run.createdAt)}</span>
-                    </div>
-                  ))}
+                  ) : (
+                    runs.map((run) => (
+                      <div key={run.id}>
+                        <strong>
+                          {run.status} · v{run.workflowVersion}
+                        </strong>
+                        <span>
+                          {run.steps.filter((step) => step.status === 'completed').length}/
+                          {run.steps.length} 步骤 · {formatUpdatedAt(run.createdAt)}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </>

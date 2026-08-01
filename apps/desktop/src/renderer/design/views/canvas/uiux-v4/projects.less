@@ -5,12 +5,11 @@
   --canvas-v4-surface: color-mix(in srgb, var(--panel) 96%, var(--bg));
   --canvas-v4-surface-muted: color-mix(in srgb, var(--bg-sunken) 82%, var(--panel));
 
-  background: var(--bg);
+  background: var(--bg-soft);
 
   .canvas-projects-header {
     min-height: var(--window-titlebar-height);
     padding: 4px 28px;
-    background: var(--canvas-v4-surface);
     border-bottom: 0;
     display: flex;
     justify-content: space-between;
@@ -179,6 +178,7 @@
   .canvas-projects-detail-main {
     padding: 24px 32px 48px;
     overflow-y: auto;
+    background: none;
   }
 
   // ── 项目详情页 ────────────────────────────────────────────────────────
@@ -482,8 +482,8 @@
   // 瀑布流：CSS columns，列宽 140px 自动算列数，图片按原始比例展示不裁剪。
   // 顺序列优先（从上到下、再左到右），如需行优先 masonry 需要 JS 计算。
   .canvas-detail-asset-grid {
-    column-width: 140px;
-    column-gap: 6px;
+    column-width: 210px;
+    column-gap: 12px;
   }
   // 加载更多按钮：瀑布流下方居中，分页累加（每页 20）
   .canvas-detail-load-more {
@@ -508,7 +508,7 @@
     position: relative;
     display: block;
     break-inside: avoid;
-    margin: 0 0 6px;
+    margin: 0 0 12px;
     min-height: 80px; // 兜底：图片未加载/加载失败时保证最小高度，防止瀑布流塌缩
     border-radius: var(--canvas-v4-radius-sm);
     background: var(--canvas-v4-surface-muted);
