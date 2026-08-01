@@ -508,17 +508,14 @@ export async function inspectWindowsCodeSignature(
   const script = buildWindowsCodeSignatureInspectionScript()
   const result = await execFileAsync(
     powershell,
-    [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-Command',
-      script,
-      executablePath,
-    ],
-    { encoding: 'utf8', timeout: 10_000, maxBuffer: 16 * 1_024, windowsHide: true },
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+    {
+      encoding: 'utf8',
+      timeout: 10_000,
+      maxBuffer: 16 * 1_024,
+      windowsHide: true,
+      env: { ...process.env, SPARK_AUTHENTICODE_PATH: executablePath },
+    },
   )
   const encoded = result.stdout.trim()
   const digest = Buffer.from(encoded, 'base64')
@@ -537,7 +534,9 @@ export async function inspectWindowsCodeSignature(
 export function buildWindowsCodeSignatureInspectionScript(): string {
   return [
     '$ErrorActionPreference = "Stop"',
-    '$signature = Get-AuthenticodeSignature -LiteralPath $args[0]',
+    '$path = $env:SPARK_AUTHENTICODE_PATH',
+    'if ([string]::IsNullOrWhiteSpace($path)) { exit 3 }',
+    '$signature = Get-AuthenticodeSignature -LiteralPath $path',
     'if ($null -eq $signature.SignerCertificate) { exit 3 }',
     '$selfSignedPublisher = (($signature.Status -eq "UnknownError" -or $signature.Status -eq "NotTrusted") -and $signature.SignerCertificate.Subject -eq $signature.SignerCertificate.Issuer)',
     'if ($signature.Status -ne "Valid" -and -not $selfSignedPublisher) { exit 3 }',
