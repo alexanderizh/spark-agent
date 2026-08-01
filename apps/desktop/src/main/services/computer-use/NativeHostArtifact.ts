@@ -407,10 +407,17 @@ async function readTrustedFileStat(filePath: string, label: string) {
   if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
     throw untrusted(`Native Host ${label} must be a regular non-symlink file`)
   }
-  if ((fileStat.mode & 0o022) !== 0) {
+  if (hasUnsafePosixArtifactPermissions(fileStat.mode)) {
     throw untrusted(`Native Host ${label} must not be group- or world-writable`)
   }
   return fileStat
+}
+
+export function hasUnsafePosixArtifactPermissions(
+  mode: number,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform !== 'win32' && (mode & 0o022) !== 0
 }
 
 function parseManifest(bytes: Buffer): NativeHostArtifactManifest {
