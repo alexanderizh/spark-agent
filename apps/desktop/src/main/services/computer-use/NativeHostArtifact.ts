@@ -470,7 +470,7 @@ export async function inspectMacCodeSignature(
     ['--verify', '--strict', '--verbose=2', executablePath],
     {
       encoding: 'utf8',
-      timeout: WINDOWS_CODE_SIGNATURE_TIMEOUT_MS,
+      timeout: 10_000,
       maxBuffer: 64 * 1_024,
     },
   )
@@ -510,13 +510,7 @@ export async function inspectWindowsCodeSignature(
   const result = await execFileAsync(
     powershell,
     ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
-    {
-      encoding: 'utf8',
-      timeout: 10_000,
-      maxBuffer: 16 * 1_024,
-      windowsHide: true,
-      env: { ...process.env, SPARK_AUTHENTICODE_PATH: executablePath },
-    },
+    windowsCodeSignatureExecOptions(executablePath),
   )
   const encoded = result.stdout.trim()
   const digest = Buffer.from(encoded, 'base64')
@@ -524,6 +518,16 @@ export async function inspectWindowsCodeSignature(
     throw untrusted('Windows Authenticode signer certificate is invalid')
   }
   return { publisherThumbprint: digest.toString('hex') }
+}
+
+export function windowsCodeSignatureExecOptions(executablePath: string) {
+  return {
+    encoding: 'utf8' as const,
+    timeout: WINDOWS_CODE_SIGNATURE_TIMEOUT_MS,
+    maxBuffer: 16 * 1_024,
+    windowsHide: true,
+    env: { ...process.env, SPARK_AUTHENTICODE_PATH: executablePath },
+  }
 }
 
 /**

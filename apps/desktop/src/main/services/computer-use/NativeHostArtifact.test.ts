@@ -5,11 +5,11 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   NativeHostArtifactError,
-  WINDOWS_CODE_SIGNATURE_TIMEOUT_MS,
   buildWindowsCodeSignatureInspectionScript,
   createMacCodeRequirement,
   hasUnsafePosixArtifactPermissions,
   readNativeHostArtifactTrustMode,
+  windowsCodeSignatureExecOptions,
   verifyLocalNativeHostArtifact,
   verifyWindowsNativeHostArtifact,
   verifyNativeHostArtifact,
@@ -233,7 +233,10 @@ describe('verifyWindowsNativeHostArtifact', () => {
   })
 
   it('allows Authenticode inspection enough time for a cold Windows runner', () => {
-    expect(WINDOWS_CODE_SIGNATURE_TIMEOUT_MS).toBeGreaterThanOrEqual(30_000)
+    const options = windowsCodeSignatureExecOptions('C:\\Program Files\\SparkWork\\SparkWork.exe')
+
+    expect(options.timeout).toBeGreaterThanOrEqual(30_000)
+    expect(options.env.SPARK_AUTHENTICODE_PATH).toBe('C:\\Program Files\\SparkWork\\SparkWork.exe')
   })
 
   it('binds the EXE hash and WinVerifyTrust publisher thumbprint to the outer application signer', async () => {
