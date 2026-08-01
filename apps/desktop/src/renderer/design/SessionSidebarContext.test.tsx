@@ -24,9 +24,12 @@ const toastMocks = vi.hoisted(() => {
   return { dismiss: vi.fn(), toast }
 })
 
+const appContextMock = vi.hoisted(() => ({ view: 'chat' }))
+
 vi.mock('./AppContext', () => {
   return {
     useApp: () => ({
+      t: { view: appContextMock.view },
       requestConfirm: vi.fn(),
       requestPrompt: vi.fn(),
     }),
@@ -52,6 +55,7 @@ describe('SessionSidebarContext', () => {
   let root: Root | null = null
 
   beforeEach(() => {
+    appContextMock.view = 'chat'
     localStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -62,6 +66,110 @@ describe('SessionSidebarContext', () => {
     }
 
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  })
+
+  it('reports no actively viewed session while the main app is outside chat', async () => {
+    appContextMock.view = 'settings'
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>{null}</SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(invoke).toHaveBeenCalledWith('app:set-unread-count', {
+      count: 0,
+      activeSessionId: null,
+    })
+  })
+
+  it('marks a completed active session unread when the user is on another app page', async () => {
+    appContextMock.view = 'settings'
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const session = {
+      id: 'session-1',
+      title: 'Background task',
+      status: 'running',
+      workspaceIds: [],
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    } as unknown as SessionSummary
+    let onAgentEvent: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [session], total: 1 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+    const on = vi.fn((channel: string, handler: (event: Record<string, unknown>) => void) => {
+      if (channel === 'stream:session:agent-event') onAgentEvent = handler
+      return vi.fn()
+    })
+    vi.stubGlobal('spark', { invoke, on })
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 30))
+    })
+
+    await act(async () => {
+      onAgentEvent?.({ type: 'agent_status', status: 'completed', sessionId: 'session-1' })
+    })
+
+    expect(latestCtxRef.current?.unreviewedCompletedSessions.has('session-1')).toBe(true)
+  })
+
+  it('does not let a secondary window overwrite main-window activity reporting', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider reportAppActivity={false}>{null}</SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(invoke.mock.calls.some(([channel]) => channel === 'app:set-unread-count')).toBe(false)
   })
 
   afterEach(() => {
@@ -85,11 +193,14 @@ describe('SessionSidebarContext', () => {
       createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-01T00:00:00.000Z',
     }
-    const createdWorkspaces: typeof existingWorkspace[] = []
+    const createdWorkspaces: (typeof existingWorkspace)[] = []
     let currentWorkspace = existingWorkspace
     const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
       if (channel === 'workspace:list') {
-        return { workspaces: [existingWorkspace, ...createdWorkspaces], total: 1 + createdWorkspaces.length }
+        return {
+          workspaces: [existingWorkspace, ...createdWorkspaces],
+          total: 1 + createdWorkspaces.length,
+        }
       }
       if (channel === 'session:list') return { sessions: [], total: 0 }
       if (channel === 'workspace:get-current') return { workspace: currentWorkspace }
@@ -144,7 +255,9 @@ describe('SessionSidebarContext', () => {
     })
 
     expect(
-      invoke.mock.calls.filter(([channel]) => channel === 'workspace:open').map(([, request]) => request),
+      invoke.mock.calls
+        .filter(([channel]) => channel === 'workspace:open')
+        .map(([, request]) => request),
     ).toEqual([
       { create: { name: 'alpha', rootPath: '/work/alpha' } },
       { create: { name: 'beta', rootPath: '/work/beta' } },

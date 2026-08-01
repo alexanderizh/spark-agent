@@ -14,6 +14,7 @@
 import type { ScheduledTaskRepository, TaskExecutionRepository } from '@spark/storage'
 import type { ScheduledTaskRow, TaskExecutionRow } from '@spark/storage'
 import { createLogger } from '@spark/shared'
+import { CronExpressionParser } from 'cron-parser'
 import {
   SCHEDULED_TASK_EXPORT_VERSION,
   type ScheduledTaskExportPayload,
@@ -27,6 +28,7 @@ const log = createLogger('scheduled-task:service')
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type TriggerType = 'interval' | 'cron' | 'once'
+export type TaskScope = 'global' | 'session'
 export type ConcurrencyPolicy = 'skip' | 'queue' | 'cancel'
 export type RetryBackoff = 'fixed' | 'linear' | 'exponential'
 export type TaskStatus = 'idle' | 'running' | 'disabled' | 'error'
@@ -37,6 +39,9 @@ export interface ScheduledTaskItem {
   name: string
   description: string
   enabled: boolean
+  scope: TaskScope
+  sessionId: string | null
+  pausedByArchive: boolean
   triggerType: TriggerType
   intervalSeconds: number | null
   cronExpression: string | null
@@ -106,6 +111,7 @@ export interface ExecutionStats {
 }
 
 export type TaskExecutorFn = (params: {
+  sessionId?: string | null
   agentId?: string | null
   teamId?: string | null
   modelId?: string | null
@@ -147,7 +153,14 @@ export class ScheduledTaskService {
 
   // ─── CRUD ──────────────────────────────────────────────────────────────────
 
-  listTasks(filter?: { status?: string; enabled?: boolean; tags?: string[]; query?: string }): ScheduledTaskItem[] {
+  listTasks(filter?: {
+    status?: string
+    enabled?: boolean
+    tags?: string[]
+    query?: string
+    scope?: TaskScope
+    sessionId?: string
+  }): ScheduledTaskItem[] {
     const rows = this.taskRepo.listAll(filter)
     return rows.map(toTaskItem)
   }
@@ -157,9 +170,34 @@ export class ScheduledTaskService {
     return row ? toTaskItem(row) : null
   }
 
-  createTask(params: Omit<ScheduledTaskRow, 'status' | 'execution_count' | 'success_count' | 'failure_count' | 'last_run_at' | 'next_run_at' | 'last_error' | 'current_execution_id' | 'created_at' | 'updated_at'> & {
-    id: string; name: string; trigger_type: TriggerType; prompt_template: string
-  }): ScheduledTaskItem {
+  createTask(
+    params: Omit<
+      ScheduledTaskRow,
+      | 'status'
+      | 'execution_count'
+      | 'success_count'
+      | 'failure_count'
+      | 'last_run_at'
+      | 'next_run_at'
+      | 'last_error'
+      | 'current_execution_id'
+      | 'created_at'
+      | 'updated_at'
+    > & {
+      id: string
+      name: string
+      trigger_type: TriggerType
+      prompt_template: string
+    },
+  ): ScheduledTaskItem {
+    const scope = params.scope ?? 'global'
+    if (scope === 'session' && !params.session_id) {
+      throw new Error('Session-scoped scheduled tasks require a sessionId')
+    }
+    if (scope === 'global' && params.session_id) {
+      throw new Error('Global scheduled tasks cannot be bound to a session')
+    }
+    if (scope === 'session') validateSessionTaskDefinition(params)
     const nextRunAt = this.calculateNextRunAt(params as unknown as ScheduledTaskRow)
     const row = this.taskRepo.create({
       ...params,
@@ -169,12 +207,27 @@ export class ScheduledTaskService {
   }
 
   updateTask(id: string, params: Record<string, unknown>): ScheduledTaskItem | null {
+    if ('scope' in params || 'session_id' in params) {
+      throw new Error('Scheduled task scope and session binding cannot be changed')
+    }
+    const existing = this.taskRepo.get(id)
+    if (existing?.scope === 'session') {
+      validateSessionTaskDefinition({ ...existing, ...params } as ScheduledTaskRow)
+    }
     const updated = this.taskRepo.update(id, params as any)
     if (!updated) return null
 
     // Recalculate nextRunAt if trigger config changed
-    const triggerFields = ['trigger_type', 'interval_seconds', 'cron_expression', 'run_at', 'start_at', 'end_at', 'enabled']
-    const shouldRecalc = triggerFields.some(f => f in params)
+    const triggerFields = [
+      'trigger_type',
+      'interval_seconds',
+      'cron_expression',
+      'run_at',
+      'start_at',
+      'end_at',
+      'enabled',
+    ]
+    const shouldRecalc = triggerFields.some((f) => f in params)
     if (shouldRecalc && updated.enabled) {
       const nextRunAt = this.calculateNextRunAt(updated)
       this.taskRepo.update(id, { next_run_at: nextRunAt } as any)
@@ -198,7 +251,7 @@ export class ScheduledTaskService {
    * - 不包含运行时统计字段（executionCount/successCount/...）和 createdAt/updatedAt
    */
   exportTasks(ids: string[] = []): ScheduledTaskExportPayload {
-    const rows = this.taskRepo.listAll()
+    const rows = this.taskRepo.listAll({ scope: 'global' })
     const idSet = ids.length > 0 ? new Set(ids) : null
     const tasks: ScheduledTaskExportTask[] = []
     for (const row of rows) {
@@ -228,7 +281,7 @@ export class ScheduledTaskService {
     if (payload.tasks.length === 0) return result
 
     const existing = new Map<string, ScheduledTaskRow>()
-    for (const row of this.taskRepo.listAll()) {
+    for (const row of this.taskRepo.listAll({ scope: 'global' })) {
       existing.set(row.name, row)
     }
 
@@ -255,6 +308,9 @@ export class ScheduledTaskService {
           name: task.name,
           description: task.description,
           enabled: task.enabled ? 1 : 0,
+          scope: 'global',
+          session_id: null,
+          paused_by_archive: 0,
           trigger_type: task.triggerType,
           interval_seconds: task.intervalSeconds,
           cron_expression: task.cronExpression,
@@ -297,14 +353,23 @@ export class ScheduledTaskService {
     const task = this.taskRepo.get(id)
     if (!task) return null
     const nextRunAt = this.calculateNextRunAt(task)
-    this.taskRepo.update(id, { enabled: true, status: 'idle', next_run_at: nextRunAt } as any)
+    this.taskRepo.update(id, {
+      enabled: true,
+      status: 'idle',
+      next_run_at: nextRunAt,
+      paused_by_archive: false,
+    } as any)
     return toTaskItem(this.taskRepo.get(id)!)
   }
 
   disableTask(id: string): ScheduledTaskItem | null {
     const task = this.taskRepo.get(id)
     if (!task) return null
-    this.taskRepo.update(id, { enabled: false, status: 'disabled' } as any)
+    this.taskRepo.update(id, {
+      enabled: false,
+      status: 'disabled',
+      paused_by_archive: false,
+    } as any)
     return toTaskItem(this.taskRepo.get(id)!)
   }
 
@@ -370,6 +435,8 @@ export class ScheduledTaskService {
 
   startScheduler(intervalMs = 1000): void {
     if (this.schedulerTimer) return
+    this.taskRepo.recoverInterruptedSessionTasks()
+    this.skipMissedSessionRuns()
     log.info(`Scheduler started (interval: ${intervalMs}ms)`)
     this.schedulerTimer = setInterval(() => {
       void this.tick().catch((err) => {
@@ -383,6 +450,46 @@ export class ScheduledTaskService {
       clearInterval(this.schedulerTimer)
       this.schedulerTimer = null
       log.info('Scheduler stopped')
+    }
+  }
+
+  /**
+   * Session schedules intentionally do not catch up executions missed while the app was closed.
+   * Move recurring tasks to their next future slot and retire missed one-time tasks.
+   */
+  skipMissedSessionRuns(now = new Date()): void {
+    const overdue = this.taskRepo.listOverdueSessionTasks(toSQLiteUtc(now))
+    for (const task of overdue) {
+      if (task.trigger_type === 'once') {
+        this.taskRepo.update(task.id, {
+          enabled: false,
+          status: 'disabled',
+          next_run_at: null,
+          last_error: null,
+        } as any)
+        continue
+      }
+      const nextRunAt = this.calculateNextRunAt(task, now)
+      this.taskRepo.update(task.id, { next_run_at: nextRunAt } as any)
+    }
+  }
+
+  /** Pause on archive and restore only tasks that were enabled immediately before archival. */
+  setSessionArchived(sessionId: string, archived: boolean): void {
+    if (archived) {
+      this.taskRepo.pauseEnabledBySession(sessionId)
+      return
+    }
+    for (const task of this.taskRepo.listArchivePausedBySession(sessionId)) {
+      const nextRunAt = this.calculateNextRunAt(task)
+      if (nextRunAt == null) {
+        this.taskRepo.update(task.id, {
+          paused_by_archive: false,
+          last_error: 'Schedule has no future run after session restore',
+        } as any)
+        continue
+      }
+      this.taskRepo.markRestoredFromArchive(task.id, nextRunAt)
     }
   }
 
@@ -419,7 +526,12 @@ export class ScheduledTaskService {
 
         // Update nextRunAt BEFORE executing (so it doesn't re-trigger)
         const nextRunAt = this.calculateNextRunAt(task)
-        this.taskRepo.update(task.id, { next_run_at: nextRunAt } as any)
+        this.taskRepo.update(task.id, {
+          next_run_at: nextRunAt,
+          ...(task.trigger_type === 'once' && nextRunAt == null
+            ? { enabled: false, status: 'disabled' }
+            : {}),
+        } as any)
 
         // Execute asynchronously
         this.executeTask(task, execution.id, 'scheduled').catch((err) => {
@@ -433,7 +545,11 @@ export class ScheduledTaskService {
 
   // ─── Task Execution ───────────────────────────────────────────────────────
 
-  private async executeTask(task: ScheduledTaskRow, executionId: string, _triggerType: string): Promise<void> {
+  private async executeTask(
+    task: ScheduledTaskRow,
+    executionId: string,
+    _triggerType: string,
+  ): Promise<void> {
     const startTime = Date.now()
 
     // Mark task as running
@@ -456,6 +572,7 @@ export class ScheduledTaskService {
       // Execute via injected executor
       const result = await this.executeWithTimeout(
         this.executorFn({
+          sessionId: task.session_id,
           agentId: task.agent_id,
           teamId: task.team_id,
           modelId: task.model_id,
@@ -501,7 +618,6 @@ export class ScheduledTaskService {
         status: 'completed',
         output: result.output,
       })
-
     } catch (err) {
       const durationMs = Date.now() - startTime
       const errorMessage = err instanceof Error ? err.message : String(err)
@@ -526,17 +642,22 @@ export class ScheduledTaskService {
 
       // Handle retry
       await this.handleRetry(task, executionId, errorMessage)
-
     } finally {
       // Reset task status
       const currentTask = this.taskRepo.get(task.id)
       if (currentTask?.enabled) {
         this.taskRepo.updateStatus(task.id, 'idle')
+      } else if (currentTask != null && task.trigger_type === 'once') {
+        this.taskRepo.updateStatus(task.id, 'disabled')
       }
       this.taskRepo.setCurrentExecution(task.id, null)
 
       // Check if max executions reached
-      if (currentTask && currentTask.max_executions > 0 && currentTask.execution_count >= currentTask.max_executions) {
+      if (
+        currentTask &&
+        currentTask.max_executions > 0 &&
+        currentTask.execution_count >= currentTask.max_executions
+      ) {
         this.taskRepo.updateStatus(task.id, 'disabled')
       }
 
@@ -547,7 +668,11 @@ export class ScheduledTaskService {
     }
   }
 
-  private async handleRetry(task: ScheduledTaskRow, failedExecutionId: string, _error: string): Promise<void> {
+  private async handleRetry(
+    task: ScheduledTaskRow,
+    failedExecutionId: string,
+    _error: string,
+  ): Promise<void> {
     if (task.max_retries <= 0) return
 
     const failedExecution = this.executionRepo.get(failedExecutionId)
@@ -560,7 +685,11 @@ export class ScheduledTaskService {
     }
 
     // Calculate retry delay based on backoff strategy
-    const delay = this.calculateRetryDelay(task.retry_delay_seconds, currentAttempt, task.retry_backoff)
+    const delay = this.calculateRetryDelay(
+      task.retry_delay_seconds,
+      currentAttempt,
+      task.retry_backoff,
+    )
     log.info(`Scheduling retry #${currentAttempt + 1} for task ${task.id} in ${delay}ms`)
 
     // Wait for the delay
@@ -583,7 +712,11 @@ export class ScheduledTaskService {
     }
   }
 
-  private calculateRetryDelay(baseDelaySeconds: number, attempt: number, backoff: RetryBackoff): number {
+  private calculateRetryDelay(
+    baseDelaySeconds: number,
+    attempt: number,
+    backoff: RetryBackoff,
+  ): number {
     const base = baseDelaySeconds * 1000
     switch (backoff) {
       case 'fixed':
@@ -601,20 +734,27 @@ export class ScheduledTaskService {
     return Promise.race([
       promise,
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Execution timed out after ${timeoutMs / 1000}s`)), timeoutMs)
+        setTimeout(
+          () => reject(new Error(`Execution timed out after ${timeoutMs / 1000}s`)),
+          timeoutMs,
+        ),
       ),
     ])
   }
 
   // ─── Notifications ────────────────────────────────────────────────────────
 
-  private async sendNotifications(task: ScheduledTaskRow, event: { status: string; output?: string | undefined; error?: string | undefined }): Promise<void> {
+  private async sendNotifications(
+    task: ScheduledTaskRow,
+    event: { status: string; output?: string | undefined; error?: string | undefined },
+  ): Promise<void> {
     const notifications = safeJsonParse<NotificationConfig[]>(task.notifications, [])
     for (const notif of notifications) {
       try {
         const shouldSend =
           (event.status === 'completed' && notif.triggers.includes('onSuccess')) ||
-          ((event.status === 'failed' || event.status === 'timeout') && notif.triggers.includes('onFailure'))
+          ((event.status === 'failed' || event.status === 'timeout') &&
+            notif.triggers.includes('onFailure'))
 
         if (!shouldSend) continue
 
@@ -647,7 +787,10 @@ export class ScheduledTaskService {
 
   // ─── Query ─────────────────────────────────────────────────────────────────
 
-  getExecutions(taskId: string, options?: { page?: number; pageSize?: number; status?: string }): { executions: TaskExecutionItem[]; total: number } {
+  getExecutions(
+    taskId: string,
+    options?: { page?: number; pageSize?: number; status?: string },
+  ): { executions: TaskExecutionItem[]; total: number } {
     const result = this.executionRepo.findByTaskId(taskId, options)
     return {
       executions: result.executions.map(toExecutionItem),
@@ -666,8 +809,8 @@ export class ScheduledTaskService {
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
-  private calculateNextRunAt(task: ScheduledTaskRow): string | null {
-    const now = new Date()
+  private calculateNextRunAt(task: ScheduledTaskRow, from = new Date()): string | null {
+    const now = new Date(from)
 
     // Check if task has ended
     if (task.end_at && new Date(task.end_at) <= now) return null
@@ -686,7 +829,7 @@ export class ScheduledTaskService {
       }
       case 'cron': {
         const expr = task.cron_expression ?? '* * * * *'
-        const next = this.parseCronNextRun(expr, now)
+        const next = this.parseCronNextRun(expr, now, task.timezone)
         if (task.start_at && next && new Date(task.start_at) > next) {
           return toSQLiteUtc(new Date(task.start_at))
         }
@@ -702,53 +845,24 @@ export class ScheduledTaskService {
     }
   }
 
-  /**
-   * Basic cron next-run calculator.
-   * For production use, replace with `cron-parser` package.
-   */
-  private parseCronNextRun(expression: string, from: Date): Date | null {
-    const parts = expression.trim().split(/\s+/)
-    if (parts.length < 5) return null
-
-    const minute = parts[0]!
-    const hour = parts[1]!
-
-    const next = new Date(from)
-
-    // Handle */N pattern for minutes
-    if (minute.startsWith('*/')) {
-      const interval = parseInt(minute.slice(2), 10)
-      if (!isNaN(interval) && interval > 0) {
-        next.setMinutes(next.getMinutes() + interval, 0, 0)
-        return next
-      }
+  private parseCronNextRun(expression: string, from: Date, timezone: string): Date | null {
+    try {
+      const interval = CronExpressionParser.parse(expression, {
+        currentDate: from,
+        ...(timezone !== 'system' ? { tz: timezone } : {}),
+      })
+      return interval.next().toDate()
+    } catch (error) {
+      log.warn(`Invalid cron expression "${expression}": ${String(error)}`)
+      return null
     }
-
-    // Handle */N pattern for hours
-    if (hour.startsWith('*/')) {
-      const interval = parseInt(hour.slice(2), 10)
-      if (!isNaN(interval) && interval > 0) {
-        next.setHours(next.getHours() + interval, 0, 0, 0)
-        return next
-      }
-    }
-
-    // Handle specific minute (e.g., "0")
-    const minuteNum = parseInt(minute, 10)
-    if (!isNaN(minuteNum) && minuteNum >= 0 && minuteNum < 60) {
-      next.setMinutes(minuteNum, 0, 0)
-      if (next <= from) {
-        next.setHours(next.getHours() + 1)
-      }
-      return next
-    }
-
-    // Default: next minute
-    next.setMinutes(next.getMinutes() + 1, 0, 0)
-    return next
   }
 
-  private resolveTemplate(template: string, task: ScheduledTaskRow, extra?: Record<string, unknown>): string {
+  private resolveTemplate(
+    template: string,
+    task: ScheduledTaskRow,
+    extra?: Record<string, unknown>,
+  ): string {
     const now = new Date()
     const vars: Record<string, string> = {
       date: now.toISOString().split('T')[0] ?? '',
@@ -821,6 +935,9 @@ function toTaskItem(row: ScheduledTaskRow): ScheduledTaskItem {
     name: row.name,
     description: row.description,
     enabled: row.enabled === 1,
+    scope: row.scope,
+    sessionId: row.session_id,
+    pausedByArchive: row.paused_by_archive === 1,
     triggerType: row.trigger_type,
     intervalSeconds: row.interval_seconds,
     cronExpression: row.cron_expression,
@@ -876,6 +993,44 @@ function toExecutionItem(row: TaskExecutionRow): TaskExecutionItem {
   }
 }
 
+function validateSessionTaskDefinition(task: {
+  name: string
+  prompt_template: string
+  trigger_type: TriggerType
+  interval_seconds?: number | null
+  cron_expression?: string | null
+  run_at?: string | null
+  timezone: string
+}): void {
+  if (task.name.trim() === '') throw new Error('Session scheduled task name is required')
+  if (task.prompt_template.trim() === '') {
+    throw new Error('Session scheduled task prompt is required')
+  }
+  if (task.trigger_type === 'interval') {
+    if (task.interval_seconds == null || task.interval_seconds < 10) {
+      throw new Error('Session scheduled task interval must be at least 10 seconds')
+    }
+    return
+  }
+  if (task.trigger_type === 'cron') {
+    const expression = task.cron_expression?.trim() ?? ''
+    const parts = expression.split(/\s+/)
+    try {
+      if (parts.length !== 5) throw new Error('expected five fields')
+      CronExpressionParser.parse(expression, {
+        ...(task.timezone !== 'system' ? { tz: task.timezone } : {}),
+      })
+    } catch {
+      throw new Error('Session scheduled task requires a valid five-field cron expression')
+    }
+    return
+  }
+  const runAt = task.run_at == null ? Number.NaN : Date.parse(task.run_at)
+  if (!Number.isFinite(runAt) || runAt <= Date.now()) {
+    throw new Error('Session scheduled task runAt must be in the future')
+  }
+}
+
 function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
   if (json == null || json === '') return fallback
   try {
@@ -898,7 +1053,10 @@ function generateId(): string {
  * due tasks never match. Storing next_run_at in the same format fixes the comparison.
  */
 function toSQLiteUtc(date: Date): string {
-  return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '')
+  return date
+    .toISOString()
+    .replace('T', ' ')
+    .replace(/\.\d{3}Z$/, '')
 }
 
 /**

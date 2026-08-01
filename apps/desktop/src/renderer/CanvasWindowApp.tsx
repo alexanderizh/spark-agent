@@ -53,7 +53,7 @@ export function CanvasWindowApp() {
       <CanvasWindowThemeBridge>
         <AuthProvider>
           <ToastProvider>
-            <SessionSidebarProvider>
+            <SessionSidebarProvider reportAppActivity={false}>
               <CanvasWindowShell projectId={projectId} />
               <AppDialogHost />
             </SessionSidebarProvider>

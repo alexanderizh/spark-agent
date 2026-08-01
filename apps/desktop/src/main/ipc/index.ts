@@ -79,6 +79,7 @@ import {
   SparkError,
 } from '@spark/shared'
 import { getAppSkillsManager } from '../services/AppSkillsManager.js'
+import { shouldSuppressSessionNotification } from '../services/AppUnreadBadgeService.js'
 import { HistoryImportService } from '../services/HistoryImport/HistoryImportService.js'
 import type { ImportProviderResolution } from '../services/HistoryImport/HistoryImportService.js'
 import { registerAuthIpc } from '../services/Auth/registerAuthIpc.js'
@@ -156,6 +157,7 @@ import type {
 import * as keystore from '@spark/shared/keystore'
 import { ScheduledTaskService } from '@spark/agent-runtime'
 import type { TaskExecutorFn } from '@spark/agent-runtime'
+import { runSessionScheduledTaskTurn } from './scheduled-task-executor.js'
 import { compileMediaRequest } from '@spark/agent-runtime'
 import type {
   CommandParseResponse,
@@ -1744,6 +1746,20 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   const sessionService = getSessionService()
   const sessionRepo = new SessionRepository(getDatabase())
 
+  if (params.sessionId != null) {
+    return runSessionScheduledTaskTurn(
+      {
+        sessionId: params.sessionId,
+        promptTemplate: params.promptTemplate,
+        ...(params.onSessionCreated != null ? { onSessionCreated: params.onSessionCreated } : {}),
+      },
+      {
+        getSession: (sessionId) => sessionRepo.get(sessionId),
+        submitTurn: (turn) => sessionService.submitTurn(turn),
+      },
+    )
+  }
+
   // 按 user-selected model > agent's model > default 的优先级解析 provider/model
   const runtime = await resolveScheduledTaskRuntime({
     agentId: params.agentId,
@@ -3187,7 +3203,11 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('session:update', async (req) => {
     log.info(`session:update requested, sessionId=${req.sessionId}`)
-    return getSessionService().updateSession(req)
+    const result = await getSessionService().updateSession(req)
+    if (req.archived !== undefined) {
+      getScheduledTaskService().setSessionArchived(req.sessionId, req.archived)
+    }
+    return result
   })
 
   typedIpcHandle('session:delete', async (req) => {
@@ -7402,6 +7422,8 @@ export function registerAllIpcHandlers(): void {
       name: req.name,
       description: req.description ?? '',
       enabled: req.enabled !== false,
+      scope: req.scope ?? 'global',
+      session_id: req.scope === 'session' ? (req.sessionId ?? null) : null,
       trigger_type: req.triggerType,
       interval_seconds: req.intervalSeconds ?? null,
       cron_expression: req.cronExpression ?? null,
@@ -8894,6 +8916,15 @@ function showSystemNotification(
   body: string,
   navigationTarget?: SystemNotificationNavigateRequest,
 ): void {
+  if (
+    navigationTarget?.target === 'session' &&
+    shouldSuppressSessionNotification(
+      navigationTarget.sessionId,
+      getMainWindow()?.isFocused() === true,
+    )
+  ) {
+    return
+  }
   // 检查系统是否支持通知
   if (!Notification.isSupported()) {
     log.warn('System notifications are not supported on this platform')

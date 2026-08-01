@@ -5,7 +5,15 @@ import type {
   WorkspaceGitStatusResponse,
   WorkspaceInfo,
 } from '@spark/protocol'
-import { Copy, MoreHorizontal, PanelRight, Server, SlidersHorizontal, Trash } from 'lucide-react'
+import {
+  Clock3,
+  Copy,
+  MoreHorizontal,
+  PanelRight,
+  Server,
+  SlidersHorizontal,
+  Trash,
+} from 'lucide-react'
 import { Icons } from '../../Icons'
 import { NO_PROJECT_WORKSPACE_NAME, type SessionSummary } from '../../SessionSidebarContext'
 import type { OrchestrationSnapshot } from '../../services/event-mapper'
@@ -39,6 +47,9 @@ export function ChatTabbar({
   onToggleSideChat,
   showUnifiedPanel,
   onToggleUnifiedPanel,
+  showSessionSchedule,
+  sessionScheduleEnabledCount,
+  onToggleSessionSchedule,
   teamConfig,
   orchestration,
   effectiveHostAgentId,
@@ -69,6 +80,9 @@ export function ChatTabbar({
   onToggleSideChat: () => void
   showUnifiedPanel: boolean
   onToggleUnifiedPanel: () => void
+  showSessionSchedule: boolean
+  sessionScheduleEnabledCount: number
+  onToggleSessionSchedule: () => void
   teamConfig: TeamModeConfig
   orchestration: OrchestrationSnapshot | null
   effectiveHostAgentId: string | null
@@ -190,14 +204,16 @@ export function ChatTabbar({
             </span>
             <button
               className="btn ghost sm clear-confirm-cancel"
-              style={{background: 'none'}}
+              style={{ background: 'none' }}
               onClick={() => setShowClearConfirm(false)}
             >
               取消
             </button>
             <button
-              style={{background: 'none', border: 0}}
-              className="btn sm danger-btn" onClick={handleClearConfirm}>
+              style={{ background: 'none', border: 0 }}
+              className="btn sm danger-btn"
+              onClick={handleClearConfirm}
+            >
               清空
             </button>
           </div>
@@ -216,6 +232,19 @@ export function ChatTabbar({
             <TabbarIcon icon={Trash} />
           </TabbarTooltipButton>
         )}
+        <TabbarTooltipButton
+          title="计划任务"
+          ariaLabel="计划任务"
+          className={`icon-btn ${showSessionSchedule ? 'active' : ''}`}
+          onClick={onToggleSessionSchedule}
+        >
+          <span className="chat-session-schedule-icon">
+            <TabbarIcon icon={Clock3} />
+            {sessionScheduleEnabledCount > 0 && (
+              <span className="chat-session-schedule-dot" aria-hidden="true" />
+            )}
+          </span>
+        </TabbarTooltipButton>
         <TabbarTooltipButton
           title="配置面板（环境变量 / 提示词 / Skills / 工具）"
           ariaLabel="配置面板"

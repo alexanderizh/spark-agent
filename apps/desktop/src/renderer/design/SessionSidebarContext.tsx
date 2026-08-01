@@ -308,6 +308,9 @@ type SessionSidebarCtx = {
   activeWorkspaceId: string | null
   setActiveSession: (id: SessionId | null) => void
   setActiveWorkspace: (id: string | null) => void
+  sessionScheduleTargetId: SessionId | null
+  openSessionSchedule: (id: SessionId) => void
+  closeSessionSchedule: () => void
 
   // Agent status per session (fine-grained: waiting_permission, waiting_user, etc.)
   sessionAgentStatuses: Record<string, AgentStatusValue>
@@ -382,7 +385,14 @@ type SessionSidebarCtx = {
 
 const Ctx = createContext<SessionSidebarCtx | null>(null)
 
-export function SessionSidebarProvider({ children }: { children: ReactNode }) {
+export function SessionSidebarProvider({
+  children,
+  reportAppActivity = true,
+}: {
+  children: ReactNode
+  reportAppActivity?: boolean
+}) {
+  const { t: appState, requestConfirm, requestPrompt } = useApp()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
@@ -403,6 +413,9 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     }
   }, [])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
+  const [sessionScheduleTargetId, setSessionScheduleTargetId] = useState<SessionId | null>(null)
+  const openSessionSchedule = useCallback((id: SessionId) => setSessionScheduleTargetId(id), [])
+  const closeSessionSchedule = useCallback(() => setSessionScheduleTargetId(null), [])
   const [noProjectWorkspaceId, setNoProjectWorkspaceId] = useState<string | null>(null)
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [projectDialog, setProjectDialog] = useState<'create' | null>(null)
@@ -419,12 +432,22 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   // Sessions that just completed but the user hasn't viewed yet — used for the blue "unread" dot
   const [unreviewedCompleted, setUnreviewedCompleted] = useState<Set<string>>(() => new Set())
   const unreadSessionCount = unreviewedCompleted.size
+  const viewedSessionId = appState.view === 'chat' ? active : null
+  const viewedSessionRef = useRef<SessionId | null>(viewedSessionId)
 
   useEffect(() => {
+    viewedSessionRef.current = viewedSessionId
+  }, [viewedSessionId])
+
+  useEffect(() => {
+    if (!reportAppActivity) return
     void window.spark
-      ?.invoke('app:set-unread-count', { count: unreadSessionCount })
+      ?.invoke('app:set-unread-count', {
+        count: unreadSessionCount,
+        activeSessionId: viewedSessionId,
+      })
       .catch(() => undefined)
-  }, [unreadSessionCount])
+  }, [reportAppActivity, unreadSessionCount, viewedSessionId])
 
   const [sidebarOrder, setSidebarOrder] = useState<SidebarOrderState>({
     projectIds: [],
@@ -476,7 +499,6 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     })
   }, [])
   const toast = optionalToast?.toast ?? fallbackToast
-  const { requestConfirm, requestPrompt } = useApp()
   const { t } = useI18n()
 
   const { invoke: listSessions } = useIpcInvoke('session:list')
@@ -634,7 +656,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           return { ...prev, [sessionId]: status }
         })
         // Mark as unreviewed on completion (for the blue dot) — unless the user is already viewing it
-        if (status === 'completed' && activeRef.current !== sessionId) {
+        if (status === 'completed' && viewedSessionRef.current !== sessionId) {
           setUnreviewedCompleted((prev) => {
             if (prev.has(sessionId)) return prev
             const next = new Set(prev)
@@ -926,8 +948,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           optionAgentId ?? nonEmptyString(selectedAgent?.id) ?? 'platform-manager-agent'
         const reasoningEffort =
           (options.reasoningEffort as SessionReasoningEffort) ?? prefs.reasoningEffort ?? 'medium'
-        const debugMode =
-          typeof options.debugMode === 'boolean' ? options.debugMode : undefined
+        const debugMode = typeof options.debugMode === 'boolean' ? options.debugMode : undefined
 
         // 如果该项目下有未使用的会话（没有消息、未归档），直接复用。
         // 复用前必须把 provider/model/agent 等运行时同步到该空会话，否则 UI label
@@ -1740,6 +1761,9 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       activeWorkspaceId,
       setActiveSession: setActive,
       setActiveWorkspace,
+      sessionScheduleTargetId,
+      openSessionSchedule,
+      closeSessionSchedule,
       sessionAgentStatuses,
       sessionTerminalActivity,
       unreviewedCompletedSessions: unreviewedCompleted,
@@ -1793,6 +1817,9 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       agents,
       active,
       activeWorkspaceId,
+      sessionScheduleTargetId,
+      openSessionSchedule,
+      closeSessionSchedule,
       setActiveWorkspace,
       sessionAgentStatuses,
       sessionTerminalActivity,
