@@ -1,18 +1,28 @@
+const { targetArchitecture } = require('./package-standalone-node.js')
+
 const FOREIGN_ONNX_PLATFORMS = {
   darwin: ['linux', 'win32'],
   win32: ['darwin', 'linux'],
   linux: ['darwin', 'win32'],
 }
 
-function foreignOnnxRuntimeExclusions(platform) {
+const ONNX_ARCHITECTURES = ['arm64', 'x64']
+
+function foreignOnnxRuntimeExclusions(platform, arch) {
   const foreignPlatforms = FOREIGN_ONNX_PLATFORMS[platform]
   if (!foreignPlatforms) {
     throw new Error(`Unsupported Electron platform for ONNX runtime filtering: ${platform}`)
   }
-  return foreignPlatforms.map(
-    (foreignPlatform) =>
-      `!**/node_modules/onnxruntime-node/bin/napi-v6/${foreignPlatform}/**`,
-  )
+  const targetArch = targetArchitecture(arch)
+  return [
+    ...foreignPlatforms.map(
+      (foreignPlatform) => `!**/node_modules/onnxruntime-node/bin/napi-v6/${foreignPlatform}/**`,
+    ),
+    ...ONNX_ARCHITECTURES.filter((candidate) => candidate !== targetArch).map(
+      (foreignArch) =>
+        `!**/node_modules/onnxruntime-node/bin/napi-v6/${platform}/${foreignArch}/**`,
+    ),
+  ]
 }
 
 function appendFileExclusions(files, exclusions) {
@@ -42,7 +52,7 @@ function appendFileExclusions(files, exclusions) {
 function beforePack(context) {
   appendFileExclusions(
     context.packager.config.files,
-    foreignOnnxRuntimeExclusions(context.electronPlatformName),
+    foreignOnnxRuntimeExclusions(context.electronPlatformName, context.arch),
   )
 }
 
