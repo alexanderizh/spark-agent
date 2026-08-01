@@ -20,6 +20,7 @@ import type {
   SessionReasoningEffort,
 } from '@spark/protocol'
 import { captureCanvasAcceptanceTaskEvidence } from './acceptance/canvasAcceptanceEvidence'
+import type { CanvasProviderFileNodeInput } from './canvasProviderFileNode'
 import {
   applyCanvasNodeLayoutUpdates,
   type CanvasNodeLayoutUpdate,
@@ -561,6 +562,21 @@ export function useCanvasWorkspace(projectId: string) {
       const current = snapshot
       if (!current) return
       const node = await canvasApi.createMediaNode({
+        projectId,
+        boardId: current.board.id,
+        ...input,
+      })
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
+      return node
+    },
+    [applyCanvasMutationSnapshot, projectId, snapshot],
+  )
+
+  const createProviderFileNode = useCallback(
+    async (input: CanvasProviderFileNodeInput) => {
+      const current = snapshot
+      if (!current) return
+      const node = await canvasApi.createProviderFileNode({
         projectId,
         boardId: current.board.id,
         ...input,
@@ -1189,6 +1205,7 @@ export function useCanvasWorkspace(projectId: string) {
     createImageNode,
     createEmptyImageNode,
     createMediaNode,
+    createProviderFileNode,
     uploadImageAsset,
     createGroupNode,
     dissolveGroupNode,

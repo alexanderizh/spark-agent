@@ -14,6 +14,19 @@ function optionLabel(value: string, unit?: string): string {
   return `${value}${unit}`
 }
 
+/**
+ * 取 enum 选项的展示名：优先用 field.enumLabels（如 MiniMax 模板 id → 中文名），
+ * 缺失时回退到 enum 值本身。仅用于 enum/autocomplete 下拉，不影响 aspect-ratio
+ * 等几何值（那里 enumLabels 不适用）。
+ */
+function enumOptionLabel(
+  field: CanvasParameterPresentation['field'],
+  option: string,
+): string {
+  const labels = field.enumLabels
+  return labels && labels[option] ? labels[option] : option
+}
+
 function CompactOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
   return (
     <div
@@ -128,22 +141,29 @@ export function CanvasParameterControl({
     controlNode = (
       <AutoComplete
         value={value || undefined}
-        options={field.enumValues.map((option) => ({ value: option, label: option }))}
+        options={field.enumValues.map((option) => ({
+          value: option,
+          label: enumOptionLabel(field, option),
+        }))}
         placeholder={field.placeholder}
         allowClear
         onChange={(next) => onChange(next == null ? '' : String(next))}
-        filterOption={(input, option) =>
-          String(option?.value ?? '')
-            .toLowerCase()
-            .includes(input.toLowerCase())
-        }
+        filterOption={(input, option) => {
+          const query = input.toLowerCase()
+          return [option?.value, option?.label].some((candidate) =>
+            String(candidate ?? '').toLowerCase().includes(query),
+          )
+        }}
       />
     )
   } else if (control === 'enum') {
     controlNode = (
       <Select
         value={value || undefined}
-        options={field.enumValues.map((option) => ({ value: option, label: option }))}
+        options={field.enumValues.map((option) => ({
+          value: option,
+          label: enumOptionLabel(field, option),
+        }))}
         allowClear
         onChange={(next) => onChange(next == null ? '' : String(next))}
       />

@@ -3,6 +3,7 @@ import { validateAgnesMediaRequest } from './agnes-media.validator.js'
 import { validateApimartMediaRequest } from './apimart-media.validator.js'
 import { validateGoogleGenerativeAiMediaRequest } from './google-generative-ai-media.validator.js'
 import { validateMidjourneyMediaRequest } from './midjourney-media.validator.js'
+import { validateMinimaxHailuoMediaRequest } from './minimax-hailuo-media.validator.js'
 import { validateOpenAiCompatibleMediaRequest } from './openai-compatible-media.validator.js'
 import { validateTencentTokenhubMediaRequest } from './tencent-tokenhub-media.validator.js'
 import { validateVolcengineArkMediaRequest } from './volcengine-ark-media.validator.js'
@@ -20,6 +21,7 @@ const VALIDATORS = new Map<MediaProviderKind, MediaProviderValidator>([
   ['volcengine-ark', validateVolcengineArkMediaRequest],
   ['midjourney', validateMidjourneyMediaRequest],
   ['tencent-tokenhub', validateTencentTokenhubMediaRequest],
+  ['minimax-hailuo', validateMinimaxHailuoMediaRequest],
 ])
 
 export function mediaProviderValidator(

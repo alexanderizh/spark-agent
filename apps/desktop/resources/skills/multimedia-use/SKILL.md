@@ -151,6 +151,34 @@ tags:
 - 上传与管理文件：https://help.aliyun.com/zh/model-studio/upload-file-api 、https://help.aliyun.com/zh/model-studio/get-file-api
 - 异步任务管理：https://help.aliyun.com/zh/model-studio/manage-asynchronous-tasks
 
+## MiniMax（minimax-hailuo）专项规则
+
+以下规则仅适用于 `providerKind=minimax-hailuo` 的已启用 MiniMax Manifest（`image-01` / `image-01-live` / `Hailuo-2.3` / `Hailuo-2.3-Fast` / `MiniMax-H3` / 视频 Agent 模板）。语音 T2A 与音乐本轮**仅文档未开发**，preset 已移除，不要调用，也不要假设它们与视频共用参数。
+
+- 图像生成与编辑共用同一 endpoint `POST /v1/image_generation`，按是否传 `subject_reference` 区分能力，不是按 modelId 拆 endpoint。`image-01` 支持文生图 + 图生图（人物主体参考）；`image-01-live` 是画风增强模型，`style`（`style_type` ∈ 漫画/元气/中世纪/水彩 + `style_weight` ∈ (0,1] 默认 0.8）仅对它生效，传给 `image-01` 会被忽略。
+- `subject_reference` 当前仅支持 `type=character`（人像）、单张参考图、JPG/JPEG/PNG 且 <10MB；官方建议单人正面照。`width`/`height`（[512,2048] 且为 8 的倍数）仅 `image-01` 生效，`image-01-live` 不要传；与 `aspect_ratio` 同传时以 `aspect_ratio` 为准。`aspect_ratio` 含 `21:9` 但仅 `image-01` 可用。
+- 图像 prompt 上限 1500 字符；`n` ∈ 1–9；`response_format=url` 的图片链接有效期 24 小时，成功后应立即落盘。
+- 视频有 **v1 与 V2 两套独立协议**，endpoint、请求体形态、状态枚举、错误判定都不同，不要混用：
+  - **v1**（`MiniMax-Hailuo-2.3` 支持 t2v+i2v / `MiniMax-Hailuo-2.3-Fast` 仅 i2v）：endpoint `POST /v1/video_generation`，i2v 必填 `first_frame_image`（公网 URL 或 Base64，<20MB，短边 >300px）；`duration` 在 768P 为 6 或 10、1080P 仅 6；`resolution` ∈ 768P(默认)/1080P；prompt ≤2000 字符，支持 `[指令]` 运镜语法。状态枚举**首字母大写**（Preparing/Queueing/Processing/Success/Fail）。v1 的 `first_frame_image` 只接受公网 URL 或 Base64，**不接受 `mm_file://`**。
+  - **V2**（`MiniMax-H3`）：endpoint `POST /v2/video_generation`，用 `content[]` 多模态数组 + 5 种 role（`first_frame`/`last_frame`/`reference_image`/`reference_video`/`reference_audio`）。i2v（首帧/尾帧/首尾帧）与 r2v（参考）**互斥**——出现任一 `reference_*` role 就不能再出现 `first_frame`/`last_frame`；r2v 不能仅传音频，须至少 1 个参考视频或图片。`duration` ∈ [4,15] 整数、`resolution` 仅 `2K`、`text` ≤7000 字符；t2v 的 `ratio` 必填且不能是 `adaptive`，i2v 由输入图决定（传 `adaptive` 即可）。状态枚举**全小写**（queued/running/succeeded/failed/cancelled/expired），仅支持查询最近 7 天任务。
+- **本地文件输入按通道不同**：v1 通道的本地图片转 Base64、本地视频/音频只接受公网 URL（v1 不支持 `mm_file://`）；V2 的 `content[]` 接受公网 URL / `mm_file://{file_id}` / Base64，且请求体总大小 ≤64MB，大文件必须用 URL 或 `mm_file://`（Base64 会放大约 33%）。V2 媒体限制：图 ≤30MB、参考视频 ≤3 段（每段 2–15s、总 ≤15s）、参考音频 ≤3 段（≤15MB）。
+- **错误模型两套，不要交叉解析**：v1 / 视频 Agent 模板 / Files 接口 HTTP 恒为 200，错误在 body `base_resp.status_code`（0 成功 / 1002 限流 / 1004 鉴权 / 1008 余额 / 1026 敏感内容 / 2013 参数 / 2049 无效 Key）；V2 是真实 HTTP 状态码（401/400/429/402/422/500）+ OpenAI 风格 `error` 结构（业务码在 `error.message` 末尾括号内）。
+- **产物下载链路不同**：v1 视频先 `GET /v1/query/video_generation` 拿 `file_id`，再 `GET /v1/files/retrieve?file_id=` 拿 `download_url`（有效期 1 小时）；V2 任务成功后响应直接含 `content.url`（CDN 链接，有时效需及时下载）；视频 Agent 模板直接返回 `video_url`。`file_id` 官方在 query 页声明为 string、在 download 页声明为 int64，跨通道不一致——**统一按字符串透传**防止 JS 精度丢失。
+- 视频 Agent 模板（11 个官方 template_id）走 `video.generate`，`template_id` 在画布参数控件以中文名下拉呈现，选择中文名即对应数字 id，不要手动拼数字。
+- 用户要人工管理远端文件时，引导其打开「无限画布 → 项目资产中心 → Files → MiniMax」：可上传/列出/删除文件、复制 File ID，并把文件「加入视频生成」直接创建带 fileId 的画布节点（命中 adapter 的 `mm_file://` 短路，省去重复上传）。注意 Files 的 `purpose` 在 upload/list 是 `video_generation_input`、在 delete 是 `video_generation`，这是官方文档矛盾，按端点分别传值，不要统一。
+
+官方依据：
+
+- 图像生成（文生图）：https://platform.minimaxi.com/docs/api-reference/image-generation-t2i
+- 图像生成（图生图 / subject_reference）：https://platform.minimaxi.com/docs/api-reference/image-generation-i2i
+- 视频生成 v1（t2v / i2v）：https://platform.minimaxi.com/docs/api-reference/video-generation-t2v 、https://platform.minimaxi.com/docs/api-reference/video-generation-i2v
+- 视频生成 V2（H3）：https://platform.minimaxi.com/docs/api-reference/video-generation-v2-create 、https://platform.minimaxi.com/docs/api-reference/video-generation-v2-query
+- 视频 Agent 模板：https://platform.minimaxi.com/docs/api-reference/video-agent-create
+- 视频文件下载 / Files retrieve：https://platform.minimaxi.com/docs/api-reference/video-generation-download
+- 错误码汇总：https://platform.minimaxi.com/docs/api-reference/errorcode
+- 速率限制：https://platform.minimaxi.com/docs/guides/rate-limits
+- 模型家族：https://platform.minimaxi.com/docs/guides/models-intro
+
 ### 配音 / 转写
 
 1. 配音先确认语言、声线、语速、情绪、用途。

@@ -68,6 +68,7 @@ export const SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS: readonly MediaProviderKind[]
   'xai',
   'volcengine-ark',
   'bailian',
+  'minimax-hailuo',
   'openai-images',
   'google-generative-ai',
   'tencent-tokenhub',
