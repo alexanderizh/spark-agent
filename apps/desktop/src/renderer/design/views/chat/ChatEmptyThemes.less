@@ -556,6 +556,24 @@
   color: color-mix(in srgb, var(--eh-ink) 76%, var(--eh-muted));
 }
 
+/* 推理强度 max / fast 的高亮图标在空主题下也要保留各自主题色。
+   上一条通用 .composer-select:not(.is-disabled) .composer-select-icon 规则特异性同为 (0,6,0) 但更靠前，
+   会把这两个高亮态图标压成 eh-ink 灰墨，与同容器内已着色的 "Max"/"Fast" 文字产生不一致。
+   这里后置同特异性规则覆盖回主题色，与非空会话行为一致。 */
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-reasoning-select.is-max
+  .composer-select-icon {
+  color: var(--primary);
+}
+
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-reasoning-select.is-fast
+  .composer-select-icon {
+  color: color-mix(in srgb, var(--primary) 82%, var(--text));
+}
+
 .chat-main-empty[data-empty-theme] .composer-param-bar .composer-select:hover,
 .chat-main-empty[data-empty-theme] .composer-param-bar .composer-select.is-open,
 .chat-main-empty[data-empty-theme] .composer-param-bar .composer-select:focus-within,
