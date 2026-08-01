@@ -1,9 +1,14 @@
 import type { MessageAttachment } from './ChatComposerTypes'
 
 export interface MessageImagePreview {
-  initialSrc: string
+  initialSrc: string | null
   sourcePath: string
   needsPreparedPreview: boolean
+}
+
+export interface MessageImageRenderState {
+  resolvedSrc: string
+  imgError: boolean
 }
 
 export function getMessageImagePreview(
@@ -11,7 +16,6 @@ export function getMessageImagePreview(
   resolveSrc: (path: string) => string,
 ): MessageImagePreview {
   const sourcePath = attachment.previewPath ?? attachment.path
-  const initialSrc = attachment.previewUrl ?? resolveSrc(sourcePath)
   const lower = sourcePath.trim().toLowerCase()
   const alreadyDisplayable =
     attachment.previewUrl != null ||
@@ -21,10 +25,16 @@ export function getMessageImagePreview(
     lower.startsWith('blob:') ||
     lower.startsWith('safe-file:') ||
     lower.startsWith('spark-safe-file:')
+  const initialSrc =
+    attachment.previewUrl ?? (alreadyDisplayable ? resolveSrc(sourcePath) : null)
 
   return {
     initialSrc,
     sourcePath,
     needsPreparedPreview: sourcePath.trim().length > 0 && !alreadyDisplayable,
   }
+}
+
+export function preparedMessageImageRenderState(fileUrl: string): MessageImageRenderState {
+  return { resolvedSrc: fileUrl, imgError: false }
 }

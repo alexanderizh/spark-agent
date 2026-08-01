@@ -99,7 +99,10 @@ import {
   preserveExplicitEmptySessionTeamConfig,
   shouldResetEmptySessionTeamTouched,
 } from './chat/emptySessionTeamMode'
-import { getMessageImagePreview } from './chat/message-image-preview'
+import {
+  getMessageImagePreview,
+  preparedMessageImageRenderState,
+} from './chat/message-image-preview'
 import {
   cancelOptimisticUserMessage,
   commitOptimisticUserMessage,
@@ -6005,7 +6008,7 @@ function UserMessageAttachments({ attachments }: { attachments: MessageAttachmen
 function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachment }) {
   const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
   const [resolvedSrc, setResolvedSrc] = useState(
-    () => getMessageImagePreview(attachment, resolveComposerImageSrc).initialSrc,
+    () => getMessageImagePreview(attachment, resolveComposerImageSrc).initialSrc ?? '',
   )
   const [imgError, setImgError] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -6014,7 +6017,7 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
   useEffect(() => {
     let cancelled = false
     const preview = getMessageImagePreview(attachment, resolveComposerImageSrc)
-    setResolvedSrc(preview.initialSrc)
+    if (preview.initialSrc != null) setResolvedSrc(preview.initialSrc)
     setImgError(false)
 
     if (!preview.needsPreparedPreview)
@@ -6024,7 +6027,11 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
 
     void prepareImagePreview({ sourcePath: preview.sourcePath })
       .then((preview) => {
-        if (!cancelled) setResolvedSrc(preview.fileUrl)
+        if (!cancelled) {
+          const next = preparedMessageImageRenderState(preview.fileUrl)
+          setResolvedSrc(next.resolvedSrc)
+          setImgError(next.imgError)
+        }
       })
       .catch(() => {})
 
@@ -6048,11 +6055,11 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
           type="button"
           className="msg-user-image-button"
           onClick={() => {
-            if (!imgError) setPreviewOpen(true)
+            if (!imgError && resolvedSrc.length > 0) setPreviewOpen(true)
           }}
           title={fileName}
         >
-          {imgError ? (
+          {imgError || resolvedSrc.length === 0 ? (
             <div className="msg-user-image-fallback" aria-hidden="true">
               <Icons.Image size={18} />
             </div>
@@ -6067,7 +6074,7 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
           )}
         </button>
       </div>
-      {previewOpen && !imgError && (
+      {previewOpen && !imgError && resolvedSrc.length > 0 && (
         <ImagePreviewModal
           src={resolvedSrc}
           alt={fileName}
@@ -6075,7 +6082,7 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
           onClose={() => setPreviewOpen(false)}
         />
       )}
-      {menu != null && !imgError && (
+      {menu != null && !imgError && resolvedSrc.length > 0 && (
         <InlineContextMenu
           x={menu.x}
           y={menu.y}

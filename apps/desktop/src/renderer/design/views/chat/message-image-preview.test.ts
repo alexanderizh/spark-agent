@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest'
-import { getMessageImagePreview } from './message-image-preview'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  getMessageImagePreview,
+  preparedMessageImageRenderState,
+} from './message-image-preview'
 
 const resolveSrc = (path: string) => `resolved:${path}`
 
@@ -33,7 +36,7 @@ describe('message image preview', () => {
         resolveSrc,
       ),
     ).toEqual({
-      initialSrc: 'resolved:/tmp/original.png',
+      initialSrc: null,
       sourcePath: '/tmp/original.png',
       needsPreparedPreview: true,
     })
@@ -43,9 +46,32 @@ describe('message image preview', () => {
     expect(
       getMessageImagePreview({ type: 'image', path: '/tmp/image.png' }, resolveSrc),
     ).toEqual({
-      initialSrc: 'resolved:/tmp/image.png',
+      initialSrc: null,
       sourcePath: '/tmp/image.png',
       needsPreparedPreview: true,
+    })
+  })
+
+  it('does not synthesize a safe-file request for an arbitrary local path', () => {
+    const resolveLocalSrc = vi.fn((path: string) => `safe-file://encoded/${path}`)
+
+    expect(
+      getMessageImagePreview(
+        { type: 'image', path: '/Users/test/Pictures/outside-allowlist.jpg' },
+        resolveLocalSrc,
+      ),
+    ).toEqual({
+      initialSrc: null,
+      sourcePath: '/Users/test/Pictures/outside-allowlist.jpg',
+      needsPreparedPreview: true,
+    })
+    expect(resolveLocalSrc).not.toHaveBeenCalled()
+  })
+
+  it('clears a previous image error when a prepared preview becomes available', () => {
+    expect(preparedMessageImageRenderState('safe-file://x/copied-preview')).toEqual({
+      resolvedSrc: 'safe-file://x/copied-preview',
+      imgError: false,
     })
   })
 
