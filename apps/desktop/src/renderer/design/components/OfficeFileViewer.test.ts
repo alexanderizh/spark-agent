@@ -81,5 +81,7 @@ describe('officeViewerOptions', () => {
     expect(component).toContain("createOfficeViewerOptions(viewerTheme, 'capability-asset://office-viewer/')")
     expect(component).toContain('viewerRef.current?.getViewState()')
     expect(component).toContain('viewerRef.current?.applyViewState(pendingViewState')
+    expect(component).toContain('office?.error')
+    expect(component).toContain('setInstallError')
   })
 })

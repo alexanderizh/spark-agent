@@ -9,7 +9,14 @@ import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
 
 type Manager = Pick<
   OptionalCapabilityManager,
-  'list' | 'check' | 'install' | 'update' | 'repair' | 'uninstall' | 'setAutoUpdate'
+  | 'list'
+  | 'check'
+  | 'install'
+  | 'update'
+  | 'repair'
+  | 'cancel'
+  | 'uninstall'
+  | 'setAutoUpdate'
 >
 
 export interface RegisterOptionalCapabilityIpcOptions {
@@ -45,6 +52,7 @@ export function registerOptionalCapabilityIpc(
   registerMutation('optional-capability:install', (id) => manager.install(id), publish)
   registerMutation('optional-capability:update', (id) => manager.update(id), publish)
   registerMutation('optional-capability:repair', (id) => manager.repair(id), publish)
+  registerMutation('optional-capability:cancel', (id) => manager.cancel(id), publish)
   registerMutation('optional-capability:uninstall', (id) => manager.uninstall(id), publish)
   typedIpcHandle('optional-capability:set-auto-update', async (request) =>
     publish(await manager.setAutoUpdate(request.capabilityId, request.enabled)),
@@ -56,6 +64,7 @@ function registerMutation(
     | 'optional-capability:install'
     | 'optional-capability:update'
     | 'optional-capability:repair'
+    | 'optional-capability:cancel'
     | 'optional-capability:uninstall',
   mutate: (id: OptionalCapabilityId) => ReturnType<OptionalCapabilityManager['install']>,
   publish: (snapshot: OptionalCapabilitySnapshot) => OptionalCapabilitySnapshot,

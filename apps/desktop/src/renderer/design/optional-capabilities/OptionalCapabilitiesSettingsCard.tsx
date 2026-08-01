@@ -32,6 +32,15 @@ export function OptionalCapabilitiesSettingsCard() {
     if (confirmed) await run(item.id, () => actions.uninstall(item.id))
   }
 
+  const refresh = async () => {
+    setError(null)
+    try {
+      await actions.refresh(true)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   return (
     <section className="settings-section optional-capability-settings">
       <div className="voice-integrity-header">
@@ -39,7 +48,7 @@ export function OptionalCapabilitiesSettingsCard() {
           <h3>可选功能组件</h3>
           <p>Office 预览与本地深度处理资源按需安装，不占用基础安装包空间。</p>
         </div>
-        <Button loading={actions.loading} onClick={() => void actions.refresh(true)}>
+        <Button loading={actions.loading} onClick={() => void refresh()}>
           检查更新
         </Button>
       </div>
@@ -71,7 +80,9 @@ export function OptionalCapabilitiesSettingsCard() {
                     <Switch
                       size="small"
                       checked={item.autoUpdate}
-                      onChange={(enabled) => void actions.setAutoUpdate(item.id, enabled)}
+                      onChange={(enabled) =>
+                        void run(item.id, () => actions.setAutoUpdate(item.id, enabled))
+                      }
                     />
                   </label>
                 )}

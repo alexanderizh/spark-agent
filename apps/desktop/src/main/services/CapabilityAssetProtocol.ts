@@ -1,10 +1,12 @@
 import { protocol, type CustomScheme } from 'electron'
+import { createLogger } from '@spark/shared'
 import { lstat, realpath } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { getOptionalCapabilityManager } from '../ipc/registerOptionalCapabilityIpc.js'
 import { createSafeFileResponse } from './SafeFileProtocol.js'
 
 export const CAPABILITY_ASSET_SCHEME = 'capability-asset'
+const log = createLogger('capability-assets')
 
 export const CAPABILITY_ASSET_PRIVILEGED_SCHEME: CustomScheme = {
   scheme: CAPABILITY_ASSET_SCHEME,
@@ -68,6 +70,7 @@ export function registerCapabilityAssetProtocol(): void {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const missing = message.includes('not installed') || (error as NodeJS.ErrnoException).code === 'ENOENT'
+      if (!missing) log.warn(`Rejected capability asset request: ${message}`)
       return new Response(missing ? 'Not Found' : 'Forbidden', { status: missing ? 404 : 403 })
     }
   })

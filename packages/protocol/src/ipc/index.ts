@@ -5728,6 +5728,10 @@ export interface IpcChannelMap
     OptionalCapabilityMutationRequest,
     OptionalCapabilityMutationResponse,
   ]
+  'optional-capability:cancel': [
+    OptionalCapabilityMutationRequest,
+    OptionalCapabilityMutationResponse,
+  ]
   'optional-capability:uninstall': [
     OptionalCapabilityMutationRequest,
     OptionalCapabilityMutationResponse,

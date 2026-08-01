@@ -13,10 +13,13 @@ const PROMPT_PREFERENCE_KEY = 'spark-optional-capability-prompt'
 
 export function OptionalCapabilityCenter() {
   const { setTweak } = useApp()
-  const { snapshot, progress, install } = useOptionalCapabilities()
+  const { snapshot, progress, install, cancel } = useOptionalCapabilities()
   const [promptOpen, setPromptOpen] = useState(false)
   const [selected, setSelected] = useState<OptionalCapabilityId[]>([])
   const [progressHidden, setProgressHidden] = useState(false)
+  const [disableStartupReminder, setDisableStartupReminder] = useState(
+    () => readPromptPreference()?.disabled === true,
+  )
 
   const installable = useMemo(
     () =>
@@ -51,6 +54,7 @@ export function OptionalCapabilityCenter() {
         JSON.stringify({
           manifestUpdatedAt: snapshot.manifestUpdatedAt,
           dismissedAt: Date.now(),
+          ...(disableStartupReminder ? { disabled: true } : {}),
         } satisfies OptionalCapabilityPromptPreference),
       )
     }
@@ -62,6 +66,19 @@ export function OptionalCapabilityCenter() {
     dismissPrompt()
     setSelected([])
     for (const id of targets) void install(id).catch(() => undefined)
+  }
+
+  const updateStartupReminder = (disabled: boolean) => {
+    setDisableStartupReminder(disabled)
+    if (!snapshot) return
+    window.localStorage.setItem(
+      PROMPT_PREFERENCE_KEY,
+      JSON.stringify({
+        manifestUpdatedAt: snapshot.manifestUpdatedAt,
+        dismissedAt: Date.now(),
+        ...(disabled ? { disabled: true } : {}),
+      } satisfies OptionalCapabilityPromptPreference),
+    )
   }
 
   const openIntegrity = () => {
@@ -112,6 +129,12 @@ export function OptionalCapabilityCenter() {
             </Checkbox>
           ))}
         </div>
+        <Checkbox
+          checked={disableStartupReminder}
+          onChange={(event) => updateStartupReminder(event.target.checked)}
+        >
+          不再在启动时提醒（仍可在“设置 → 完整性”中安装）
+        </Checkbox>
       </Modal>
 
       {!progressHidden && activeProgress.length > 0 && (
@@ -135,6 +158,16 @@ export function OptionalCapabilityCenter() {
                 {item.total > 0 ? `${formatBytes(item.downloaded)} / ${formatBytes(item.total)}` : item.message}
                 {item.queuePosition > 0 ? ` · 队列 ${item.queuePosition}` : ''}
               </div>
+              {(item.phase === 'queued' || item.phase === 'downloading') && (
+                <Button
+                  type="link"
+                  danger
+                  size="small"
+                  onClick={() => void cancel(item.capabilityId).catch(() => undefined)}
+                >
+                  取消
+                </Button>
+              )}
             </div>
           ))}
           <Button type="link" onClick={openIntegrity}>查看详情</Button>
@@ -165,6 +198,7 @@ function phaseLabel(phase: string): string {
     verifying: '校验中',
     extracting: '解压中',
     activating: '激活中',
+    cancelled: '已取消',
     ready: '已完成',
     error: '失败',
   }

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { OptionalCapabilityId } from '@spark/protocol'
+import type { SparkInstallManifest } from '../../../../../../packages/agent-runtime/src/services/skill-registry/artifact-manifest.js'
 
 export interface ActiveCapabilityState {
   schemaVersion: 1
@@ -12,6 +13,12 @@ export interface ActiveCapabilityState {
     string,
     { version: string; sha256: string; directory: string; size: number }
   >
+}
+
+export interface OptionalCapabilityManifestCache {
+  schemaVersion: 1
+  checkedAt: string
+  manifest: SparkInstallManifest
 }
 
 export class OptionalCapabilityStateStore {
@@ -48,6 +55,34 @@ export class OptionalCapabilityStateStore {
     const temporary = `${target}.new`
     await mkdir(dirname(target), { recursive: true })
     await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 })
+    await rename(temporary, target)
+  }
+
+  async readManifestCache(): Promise<OptionalCapabilityManifestCache | null> {
+    try {
+      const parsed = JSON.parse(
+        await readFile(join(this.root, 'manifest-cache.json'), 'utf8'),
+      ) as Partial<OptionalCapabilityManifestCache>
+      if (
+        parsed.schemaVersion !== 1 ||
+        typeof parsed.checkedAt !== 'string' ||
+        !parsed.manifest ||
+        !Array.isArray(parsed.manifest.artifacts)
+      ) {
+        throw new Error('Invalid optional capability manifest cache')
+      }
+      return parsed as OptionalCapabilityManifestCache
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    }
+  }
+
+  async writeManifestCache(cache: OptionalCapabilityManifestCache): Promise<void> {
+    const target = join(this.root, 'manifest-cache.json')
+    const temporary = `${target}.new`
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(temporary, `${JSON.stringify(cache, null, 2)}\n`, { mode: 0o600 })
     await rename(temporary, target)
   }
 

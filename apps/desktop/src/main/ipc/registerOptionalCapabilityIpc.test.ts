@@ -35,12 +35,14 @@ describe('registerOptionalCapabilityIpc', () => {
       install: vi.fn(async () => ({ success: true, message: 'ok', snapshot })),
       update: vi.fn(async () => ({ success: true, message: 'ok', snapshot })),
       repair: vi.fn(async () => ({ success: true, message: 'ok', snapshot })),
+      cancel: vi.fn(async () => ({ success: true, message: 'ok', snapshot })),
       uninstall: vi.fn(async () => ({ success: true, message: 'ok', snapshot })),
       setAutoUpdate: vi.fn(async () => snapshot),
     }
     registerOptionalCapabilityIpc({ manager })
 
     expect([...harness.handlers.keys()].sort()).toEqual([
+      'optional-capability:cancel',
       'optional-capability:check',
       'optional-capability:install',
       'optional-capability:list',

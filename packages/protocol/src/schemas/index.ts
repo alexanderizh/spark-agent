@@ -1477,6 +1477,9 @@ export const IpcSchemaRegistry = {
   'optional-capability:repair': z
     .object({ capabilityId: OptionalCapabilityIdSchema })
     .strict(),
+  'optional-capability:cancel': z
+    .object({ capabilityId: OptionalCapabilityIdSchema })
+    .strict(),
   'optional-capability:uninstall': z
     .object({ capabilityId: OptionalCapabilityIdSchema })
     .strict(),
