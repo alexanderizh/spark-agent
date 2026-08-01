@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@lobehub/ui', () => ({ Button: 'button' }))
 
-import { CanvasOperationImageInput } from './CanvasOperationImageInput'
+import { CanvasOperationMediaInput } from './CanvasOperationMediaInput'
 import type { CanvasNode } from './canvas.types'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -30,14 +30,14 @@ const imageNode: CanvasNode = {
   updatedAt: '2026-08-01T00:00:00.000Z',
 }
 
-describe('CanvasOperationImageInput', () => {
+describe('CanvasOperationMediaInput', () => {
   it('asks for one image and supports choosing it from the canvas', async () => {
     const container = document.createElement('div')
     const root = createRoot(container)
     const onPick = vi.fn()
 
     await act(async () => {
-      root.render(<CanvasOperationImageInput onPick={onPick} />)
+      root.render(<CanvasOperationMediaInput onPick={onPick} />)
     })
 
     expect(container.textContent).toContain('连接或上传一张图片')
@@ -50,13 +50,27 @@ describe('CanvasOperationImageInput', () => {
     await act(async () => root.unmount())
   })
 
+  it('asks for one video when used by the depth-video operation', async () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<CanvasOperationMediaInput mediaKind="video" onUpload={vi.fn()} />)
+    })
+
+    expect(container.textContent).toContain('连接或上传一段视频')
+    expect(container.querySelector<HTMLInputElement>('input[type="file"]')?.accept).toBe('video/*')
+
+    await act(async () => root.unmount())
+  })
+
   it('shows the selected image and allows replacing or removing it', async () => {
     const container = document.createElement('div')
     const root = createRoot(container)
     const onClear = vi.fn()
 
     await act(async () => {
-      root.render(<CanvasOperationImageInput node={imageNode} onClear={onClear} />)
+      root.render(<CanvasOperationMediaInput node={imageNode} onClear={onClear} />)
     })
 
     expect(container.querySelector<HTMLImageElement>('img')?.src).toBe(

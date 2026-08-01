@@ -10,7 +10,7 @@ describe('resolveCanvasOperationPanelMode', () => {
       executionKind: 'text',
       runtimeKind: 'vision_model',
       showPromptEditor: false,
-      showDedicatedImageInput: true,
+      dedicatedMediaKind: 'image',
       showCustomParams: false,
       showLocalDepthNotice: false,
       submitLabel: '生成提示词',
@@ -22,7 +22,7 @@ describe('resolveCanvasOperationPanelMode', () => {
       executionKind: 'local_media',
       runtimeKind: 'none',
       showPromptEditor: false,
-      showDedicatedImageInput: false,
+      dedicatedMediaKind: 'video',
       showCustomParams: false,
       showLocalDepthNotice: true,
       submitLabel: '生成深度视频',
@@ -33,13 +33,13 @@ describe('resolveCanvasOperationPanelMode', () => {
     expect(resolveCanvasOperationPanelMode('text_generate')).toMatchObject({
       runtimeKind: 'text_full',
       showPromptEditor: true,
-      showDedicatedImageInput: false,
+      dedicatedMediaKind: null,
       showCustomParams: true,
     })
     expect(resolveCanvasOperationPanelMode('image_to_video')).toMatchObject({
       runtimeKind: 'none',
       showPromptEditor: true,
-      showDedicatedImageInput: false,
+      dedicatedMediaKind: null,
       showCustomParams: false,
     })
   })

@@ -74,7 +74,8 @@ import {
 } from './CanvasInlineAiComposer'
 import { mediaModelKey } from './canvasModelPickerModel'
 import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
-import { CanvasOperationImageInput } from './CanvasOperationImageInput'
+import { CanvasOperationMediaInput } from './CanvasOperationMediaInput'
+import { CanvasDepthModelNotice } from './CanvasDepthModelNotice'
 import {
   buildOperationPanelRunInputNodeIds,
   buildVideoFrameInputRoles,
@@ -520,6 +521,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
   const panelMode = resolveCanvasOperationPanelMode(operation)
+  const dedicatedMediaKind = panelMode.dedicatedMediaKind
   const [depthModelState, setDepthModelState] = useState<CanvasDepthModelState>('unknown')
   const [depthModelError, setDepthModelError] = useState('')
   const isTextOperation = panelMode.executionKind === 'text'
@@ -803,7 +805,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [draftRevision, setDraftRevision] = useState(0)
   const [cancelling, setCancelling] = useState(false)
   const [messageDraft, setMessageDraft] = useState(node.data.message ?? '')
-  const [pendingDedicatedImageNode, setPendingDedicatedImageNode] = useState<CanvasNode | null>(
+  const [pendingDedicatedMediaNode, setPendingDedicatedMediaNode] = useState<CanvasNode | null>(
     null,
   )
   const [activeTextPickerId, setActiveTextPickerId] = useState<string | null>(null)
@@ -1785,21 +1787,21 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     () => snapshot.nodes.filter((item) => !item.hidden && item.id !== node.id),
     [node.id, snapshot.nodes],
   )
-  const dedicatedImageInputNode = useMemo(
+  const dedicatedMediaInputNode = useMemo(
     () =>
-      pendingDedicatedImageNode ??
+      pendingDedicatedMediaNode ??
       selectedInputNodeIds
         .map((inputNodeId) => nodeById.get(inputNodeId))
-        .find((inputNode) => inputNode?.type === 'image') ??
+        .find((inputNode) => inputNode?.type === dedicatedMediaKind) ??
       null,
-    [nodeById, pendingDedicatedImageNode, selectedInputNodeIds],
+    [dedicatedMediaKind, nodeById, pendingDedicatedMediaNode, selectedInputNodeIds],
   )
   useEffect(() => {
-    if (!pendingDedicatedImageNode || !nodeById.has(pendingDedicatedImageNode.id)) return
-    setSelectedInputNodeIds([pendingDedicatedImageNode.id])
-    setPendingDedicatedImageNode(null)
+    if (!pendingDedicatedMediaNode || !nodeById.has(pendingDedicatedMediaNode.id)) return
+    setSelectedInputNodeIds([pendingDedicatedMediaNode.id])
+    setPendingDedicatedMediaNode(null)
     markConfigurationTouched()
-  }, [markConfigurationTouched, nodeById, pendingDedicatedImageNode, setSelectedInputNodeIds])
+  }, [markConfigurationTouched, nodeById, pendingDedicatedMediaNode, setSelectedInputNodeIds])
   const promptPresentationNodeBySourceId = useMemo(() => {
     const resolved = new Map<string, CanvasNode>()
     for (const candidate of promptCandidateNodes) {
@@ -1833,26 +1835,33 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     },
     [running],
   )
-  const handleDedicatedImagePick = useCallback(() => {
+  const handleDedicatedMediaPick = useCallback(() => {
     onRequestCanvasNodePick?.((pickedNode) => {
-      if (pickedNode.type !== 'image') {
-        message.warning('图片反推仅支持图片节点')
+      if (pickedNode.type !== dedicatedMediaKind) {
+        message.warning(
+          dedicatedMediaKind === 'video' ? '深度视频仅支持视频节点' : '图片反推仅支持图片节点',
+        )
         return
       }
       setSelectedInputNodeIds([pickedNode.id])
       markConfigurationTouched()
     })
-  }, [markConfigurationTouched, onRequestCanvasNodePick, setSelectedInputNodeIds])
-  const handleDedicatedImageUpload = useCallback(
+  }, [
+    dedicatedMediaKind,
+    markConfigurationTouched,
+    onRequestCanvasNodePick,
+    setSelectedInputNodeIds,
+  ])
+  const handleDedicatedMediaUpload = useCallback(
     async (file: File) => {
-      if (!file.type.startsWith('image/')) {
-        message.warning('请选择图片文件')
+      if (!dedicatedMediaKind || !file.type.startsWith(`${dedicatedMediaKind}/`)) {
+        message.warning(dedicatedMediaKind === 'video' ? '请选择视频文件' : '请选择图片文件')
         return
       }
       const uploadedNode = await onUploadLocalFile?.(file)
-      if (uploadedNode?.type === 'image') setPendingDedicatedImageNode(uploadedNode)
+      if (uploadedNode?.type === dedicatedMediaKind) setPendingDedicatedMediaNode(uploadedNode)
     },
-    [onUploadLocalFile],
+    [dedicatedMediaKind, onUploadLocalFile],
   )
   const frameLabel = (id: string) =>
     String(frameImageOptions.find((option) => String(option.value) === id)?.label ?? id)
@@ -2148,26 +2157,32 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               />
             </label>
             <span className="canvas-operation-panel-hint">
-              {panelMode.showDedicatedImageInput
+              {dedicatedMediaKind === 'image'
                 ? '反推指令已内置，只需提供一张图片'
-                : '资源和文本统一在提示词中用 @ 添加'}
+                : dedicatedMediaKind === 'video'
+                  ? '本地转换无需提示词，只需提供一段视频'
+                  : '资源和文本统一在提示词中用 @ 添加'}
             </span>
           </div>
         </div>
 
-        {panelMode.showDedicatedImageInput ? (
+        {dedicatedMediaKind ? (
           <div className="canvas-operation-composer-main">
-            <CanvasOperationImageInput
-              node={dedicatedImageInputNode}
+            <CanvasOperationMediaInput
+              node={dedicatedMediaInputNode}
+              mediaKind={dedicatedMediaKind}
               disabled={running}
-              {...(onRequestCanvasNodePick ? { onPick: handleDedicatedImagePick } : {})}
-              {...(onUploadLocalFile ? { onUpload: handleDedicatedImageUpload } : {})}
+              {...(onRequestCanvasNodePick ? { onPick: handleDedicatedMediaPick } : {})}
+              {...(onUploadLocalFile ? { onUpload: handleDedicatedMediaUpload } : {})}
               onClear={() => {
-                setPendingDedicatedImageNode(null)
+                setPendingDedicatedMediaNode(null)
                 setSelectedInputNodeIds([])
                 markConfigurationTouched()
               }}
             />
+            {panelMode.showLocalDepthNotice && (
+              <CanvasDepthModelNotice state={depthModelState} error={depthModelError} compact />
+            )}
           </div>
         ) : panelMode.showPromptEditor ? (
           <div className="canvas-operation-composer-main">
@@ -2429,15 +2444,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               )}
             <Tooltip
               title={
-                selectedMediaInputIssue ??
-                (node.data.status === 'running' ? '运行中' : panelMode.submitLabel)
+                selectedMediaInputIssue ?? (node.data.status === 'running' ? '运行中' : submitLabel)
               }
             >
               <Button
                 size="middle"
                 type="primary"
                 className="canvas-operation-composer-submit"
-                aria-label={panelMode.submitLabel}
+                aria-label={submitLabel}
                 icon={<Icons.Send size={14} />}
                 loading={running || submitting || node.data.status === 'running'}
                 disabled={
@@ -2558,16 +2572,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         )}
 
         {panelMode.showLocalDepthNotice && (
-          <div className="canvas-operation-panel-section canvas-operation-panel-section-runtime">
-            <div className="canvas-operation-panel-section-label">本地深度模型</div>
-            <div className="canvas-operation-panel-hint">
-              {depthModelState === 'ready'
-                ? '本地 Depth Anything V2 模型已就绪；运行时不会调用云端模型。'
-                : depthModelState === 'error'
-                  ? `深度模型状态读取失败：${depthModelError || '未知错误'}`
-                  : '使用本地 Depth Anything V2 生成近白远黑的深度视频；首次运行会下载模型，之后可离线使用。'}
-            </div>
-          </div>
+          <CanvasDepthModelNotice state={depthModelState} error={depthModelError} />
         )}
 
         {mediaCapabilityIds.length > 0 && (
@@ -2699,16 +2704,19 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           </div>
         )}
 
-        {panelMode.showDedicatedImageInput && (
+        {dedicatedMediaKind && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-inputs">
-            <div className="canvas-operation-panel-section-label">输入图片</div>
-            <CanvasOperationImageInput
-              node={dedicatedImageInputNode}
+            <div className="canvas-operation-panel-section-label">
+              {dedicatedMediaKind === 'video' ? '输入视频' : '输入图片'}
+            </div>
+            <CanvasOperationMediaInput
+              node={dedicatedMediaInputNode}
+              mediaKind={dedicatedMediaKind}
               disabled={running}
-              {...(onRequestCanvasNodePick ? { onPick: handleDedicatedImagePick } : {})}
-              {...(onUploadLocalFile ? { onUpload: handleDedicatedImageUpload } : {})}
+              {...(onRequestCanvasNodePick ? { onPick: handleDedicatedMediaPick } : {})}
+              {...(onUploadLocalFile ? { onUpload: handleDedicatedMediaUpload } : {})}
               onClear={() => {
-                setPendingDedicatedImageNode(null)
+                setPendingDedicatedMediaNode(null)
                 setSelectedInputNodeIds([])
                 markConfigurationTouched()
               }}
