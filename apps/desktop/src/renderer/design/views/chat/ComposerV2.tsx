@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './ComposerInlineMenus.less'
+import './ComposerAttachments.less'
 import { useVoiceIntegrity } from '../../voice/useVoiceIntegrity'
 import { useVoiceInput } from '../../voice/useVoiceInput'
 import { VoiceMicButton } from '../../voice/VoiceMicButton'
@@ -26,6 +27,7 @@ import {
   hasFileDataTransfer,
   isUnresolvableFileDrop,
 } from '../../services/composer-attachments'
+import { shouldHandleComposerFileDrop } from '../../services/project-folder-drop'
 import { canReuseComposerSession, canShowComposerWorktreeToggle } from '../chat-session-routing'
 import { resolveComposerRunningAgentIds } from '../../services/composer-working-state'
 import {
@@ -1777,16 +1779,23 @@ export function ComposerV2({
       dragDepthRef.current = 0
       setFileDropActive(false)
     }
-    const shouldHandle = (event: DragEvent) => !sending && hasFileDataTransfer(event.dataTransfer)
+    const shouldHandle = (event: DragEvent) =>
+      shouldHandleComposerFileDrop(event.dataTransfer, event.target, sending)
 
     const handleDragEnter = (event: DragEvent) => {
-      if (!shouldHandle(event)) return
+      if (!shouldHandle(event)) {
+        resetDragState()
+        return
+      }
       event.preventDefault()
       dragDepthRef.current += 1
       setFileDropActive(true)
     }
     const handleDragOver = (event: DragEvent) => {
-      if (!shouldHandle(event)) return
+      if (!shouldHandle(event)) {
+        resetDragState()
+        return
+      }
       event.preventDefault()
       if (event.dataTransfer != null) event.dataTransfer.dropEffect = 'copy'
       setFileDropActive(true)
@@ -3051,8 +3060,11 @@ export function ComposerV2({
         {fileDropActive && (
           <div className="composer-file-drop-overlay" aria-live="polite">
             <div className="composer-file-drop-target">
-              <Icons.FilePlus size={58} strokeWidth={1.5} />
-              <span>拖放文件或文件夹路径到此处</span>
+              <span className="composer-file-drop-icon" aria-hidden="true">
+                <Icons.FilePlus size={42} strokeWidth={1.6} />
+              </span>
+              <strong>松开即可添加到会话</strong>
+              <span>支持文件和文件夹</span>
             </div>
           </div>
         )}
@@ -3122,12 +3134,17 @@ export function ComposerV2({
               {fileAttachments.length > 0 && (
                 <div className="composer-attachment-strip">
                   {fileAttachments.map((attachment) => (
-                    <div key={attachment.id} className="composer-attachment-chip">
+                    <div
+                      key={attachment.id}
+                      className="composer-attachment-chip"
+                      title={attachment.path}
+                    >
                       <FileChipIcon path={attachment.path} size={13} />
                       <span>{attachment.name}</span>
                       <button
                         type="button"
                         title="移除附件"
+                        aria-label={`移除 ${attachment.name}`}
                         onClick={() => handleRemoveAttachment(attachment.id)}
                       >
                         <Icons.X size={12} />
@@ -3149,6 +3166,7 @@ export function ComposerV2({
                       <button
                         type="button"
                         title="移除引用"
+                        aria-label={`移除 ${attachment.name}`}
                         onClick={() => handleRemoveAttachment(attachment.id)}
                       >
                         <Icons.X size={12} />
