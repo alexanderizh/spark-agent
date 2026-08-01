@@ -332,4 +332,19 @@ describe('canvasTaskSubmissionValidation', () => {
       }),
     ).toMatchObject({ operation: 'video_depth_map' })
   })
+
+  it('materializes a canvas safe-file video URL for a depth task', () => {
+    const encodedPath = btoa('/canvas/input.mp4').replace(/\+/g, '-').replace(/\//g, '_')
+    const url = `safe-file://x/${encodedPath}`
+
+    expect(
+      validateCanvasLocalTaskSubmission({
+        operation: 'video_depth_map',
+        prompt: '',
+        inputFiles: [{ type: 'video', url, mimeType: 'video/mp4' }],
+      }),
+    ).toMatchObject({
+      inputFiles: [{ type: 'video', url, path: '/canvas/input.mp4' }],
+    })
+  })
 })

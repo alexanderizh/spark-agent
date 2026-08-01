@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from 'vitest'
-import { dataUrlToBlob, dataUrlToFile } from './canvas-safe-file'
+import {
+  dataUrlToBlob,
+  dataUrlToFile,
+  decodeCanvasSafeFileUrl,
+  encodeToSafeFileUrl,
+} from './canvas-safe-file'
 
 // 1x1 透明 PNG
 const PNG_DATA_URL =
@@ -33,5 +38,17 @@ describe('dataUrlToBlob / dataUrlToFile（不走 fetch，规避 CSP connect-src 
 
   it('非法 dataURL 抛错', () => {
     expect(() => dataUrlToBlob('not-a-data-url')).toThrow()
+  })
+})
+
+describe('canvas safe-file paths', () => {
+  it('round-trips an absolute path containing Unicode characters', () => {
+    const path = '/Users/张三/项目素材/动作参考.mp4'
+    expect(decodeCanvasSafeFileUrl(encodeToSafeFileUrl(path))).toBe(path)
+  })
+
+  it('rejects malformed and non-absolute safe-file payloads', () => {
+    expect(decodeCanvasSafeFileUrl('https://example.com/video.mp4')).toBeNull()
+    expect(decodeCanvasSafeFileUrl(encodeToSafeFileUrl('relative/video.mp4'))).toBeNull()
   })
 })

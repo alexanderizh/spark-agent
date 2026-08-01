@@ -5,6 +5,7 @@ import {
   type CanvasOperationSubmissionDependencies,
 } from './canvasOperationSubmission'
 import { CanvasTaskValidationError } from './canvasTaskSubmissionValidation'
+import { encodeToSafeFileUrl } from './canvas-safe-file'
 import type { CanvasNode, CanvasSnapshot, CanvasTask } from './canvas.types'
 
 function operationNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
@@ -228,7 +229,11 @@ describe('canvasOperationSubmission', () => {
       compile: vi.fn(async () => ({
         prompt: '',
         inputFiles: [
-          { type: 'video' as const, path: '/canvas/input.mp4', mimeType: 'video/mp4' },
+          {
+            type: 'video' as const,
+            url: encodeToSafeFileUrl('/canvas/input.mp4'),
+            mimeType: 'video/mp4',
+          },
         ],
       })),
     })
@@ -239,6 +244,9 @@ describe('canvasOperationSubmission', () => {
     )
 
     expect(prepared.operation).toBe('video_depth_map')
+    expect(prepared.params.inputFiles).toEqual([
+      expect.objectContaining({ type: 'video', path: '/canvas/input.mp4' }),
+    ])
     expect(deps.validateText).not.toHaveBeenCalled()
     expect(deps.validateMedia).not.toHaveBeenCalled()
   })

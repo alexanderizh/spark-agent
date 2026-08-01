@@ -3,6 +3,7 @@ import type { CanvasMediaTaskInputFile } from '@spark/protocol'
 import type { CanvasOperationType, CreateCanvasTaskRequest } from './canvas.types'
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
 import { IMAGE_PROMPT_REVERSE_PROMPT } from './canvasOperationPresets'
+import { decodeCanvasSafeFileUrl } from './canvas-safe-file'
 
 type CanvasTaskSubmissionRequest = Omit<CreateCanvasTaskRequest, 'boardId'> & {
   inputFiles?: CanvasMediaTaskInputFile[]
@@ -136,13 +137,20 @@ export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmission
     issues.push(issue('missing_required', '请连接一段输入视频', ['inputFiles']))
   } else if (videoCount !== 1 || files.length !== 1) {
     issues.push(issue('out_of_range', '深度视频仅支持一段输入视频', ['inputFiles']))
-  } else if (!files[0]?.path?.trim()) {
+  }
+  const inputFile = files[0]
+  const localPath = inputFile?.path?.trim() || decodeCanvasSafeFileUrl(inputFile?.url)
+  if (videoCount === 1 && files.length === 1 && !localPath) {
     issues.push(
       issue('missing_required', '深度视频需要可读取的本地视频路径', ['inputFiles', 0, 'path']),
     )
   }
   if (issues.length > 0) throw new CanvasTaskValidationError(issues)
-  return request
+  if (!inputFile || !localPath || inputFile.path === localPath) return request
+  return {
+    ...request,
+    inputFiles: [{ ...inputFile, path: localPath }],
+  }
 }
 
 function validateOptionalEnum(
