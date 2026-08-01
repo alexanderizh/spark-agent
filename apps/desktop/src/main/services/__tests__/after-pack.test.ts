@@ -259,6 +259,24 @@ describe('after-pack ONNX runtime pruning', () => {
     expect(config).toContain("'!**/node_modules/onnxruntime-web/**'")
   })
 
+  it('keeps the optional depth runtime dependency closure out of the base package', () => {
+    const config = readFileSync(
+      join(__dirname, '../../../../electron-builder.yml'),
+      'utf8',
+    )
+    const packageJson = JSON.parse(
+      readFileSync(join(__dirname, '../../../../package.json'), 'utf8'),
+    ) as {
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+    }
+
+    expect(config).toContain("'!**/node_modules/@huggingface/transformers/**'")
+    expect(config).toContain("'!**/node_modules/onnxruntime-node/**'")
+    expect(packageJson.dependencies).not.toHaveProperty('@huggingface/transformers')
+    expect(packageJson.devDependencies).toHaveProperty('@huggingface/transformers', '4.2.0')
+  })
+
   it('configures the beforePack hook that filters foreign ONNX native runtimes', () => {
     const config = readFileSync(
       join(__dirname, '../../../../electron-builder.yml'),

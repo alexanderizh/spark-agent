@@ -120,7 +120,9 @@ files:
   - '!**/{LICENSE,license,LICENSE.txt,*.LICENSE.txt,CHANGELOG.md}'
   # Codex JS SDK 保留，但 native vendor runtime 改由完整性页按平台按需下载。
   - '!**/node_modules/@openai/codex-*/vendor/**'
-  # 深度推理只在 Node worker 中运行，Transformers 的 Web Runtime 不进入桌面产物。
+  # 深度推理的 Transformers 与 ONNX runtime 均由可选能力包安装，基础包不携带。
+  - '!**/node_modules/@huggingface/transformers/**'
+  - '!**/node_modules/onnxruntime-node/**'
   - '!**/node_modules/onnxruntime-web/**'
 extraResources:
   # @playwright/mcp 由独立 standalone Node 子进程执行。外部 Node 无法读取 app.asar，
