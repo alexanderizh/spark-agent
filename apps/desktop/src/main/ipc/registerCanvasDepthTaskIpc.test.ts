@@ -48,9 +48,21 @@ describe('registerCanvasDepthTaskIpc', () => {
     const runner = {
       run: vi.fn(async (request: any) => {
         request.onProgress?.({
+          stage: 'decoding',
+          percent: 5,
+          frame: 0,
+          totalFrames: 10,
+        })
+        request.onProgress?.({
           stage: 'estimating_depth',
           percent: 60,
           frame: 6,
+          totalFrames: 10,
+        })
+        request.onProgress?.({
+          stage: 'encoding',
+          percent: 100,
+          frame: 10,
           totalFrames: 10,
         })
         return {
@@ -89,7 +101,20 @@ describe('registerCanvasDepthTaskIpc', () => {
     const runningStages = harness.events
       .filter((event) => event.payload.response.status === 'running')
       .map((event) => event.payload.response.stage)
-    expect(runningStages).toEqual(expect.arrayContaining(['installing_model', 'estimating_depth']))
+    expect(runningStages).toEqual(
+      expect.arrayContaining(['installing_model', 'decoding', 'estimating_depth', 'encoding']),
+    )
+    const runningMessages = Object.fromEntries(
+      harness.events
+        .filter((event) => event.payload.response.status === 'running')
+        .map((event) => [event.payload.response.stage, event.payload.response.message]),
+    )
+    expect(runningMessages).toMatchObject({
+      installing_model: '资源下载中：正在下载本地深度模型',
+      decoding: '任务执行中：正在解析输入视频',
+      estimating_depth: '任务执行中：正在逐帧生成深度',
+      encoding: '任务执行中：正在编码深度视频',
+    })
     const success = harness.events.find((event) => event.payload.response.status === 'succeeded')!
     expect(success.payload.response.assets).toEqual([
       expect.objectContaining({
