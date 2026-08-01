@@ -91,6 +91,10 @@ import {
 } from './canvasOperationOutputModel'
 import { buildCanvasOperationProjection } from './canvasOperationProjection'
 import {
+  buildCanvasGroupCollapseProjection,
+  type CanvasCollapsedGroupPresentation,
+} from './canvasGroupCollapse'
+import {
   calculateCanvasContextMenuPosition,
   CANVAS_CONTEXT_MENU_STAGE_INSETS,
   shouldOpenCanvasSelectionContextMenu,
@@ -553,12 +557,14 @@ function toFlowNode(
   assetKinds: CanvasPipelineAssetKind[] = [],
   isGeneratedOutput = false,
   imageSourceDimensions?: CanvasImageSourceDimensions,
+  collapsedGroupPresentation?: CanvasCollapsedGroupPresentation,
 ): Node<CanvasFlowNodeData> {
   const inlineToolbarHeight = inlineExtension?.toolbar ? INLINE_NODE_TOOLBAR_HEIGHT : 0
-  const cardChromeExtraHeight = canvasNodeChromeExtraHeight(node)
+  const cardChromeExtraHeight = collapsedGroupPresentation ? 0 : canvasNodeChromeExtraHeight(node)
   const presentationSize =
-    resolveCanvasImageNodePresentationSize(node, imageSourceDimensions) ??
-    operationNodePresentationSize(node, operationRuns)
+    collapsedGroupPresentation?.size ??
+    (resolveCanvasImageNodePresentationSize(node, imageSourceDimensions) ??
+      operationNodePresentationSize(node, operationRuns))
   const baseRenderedHeight = presentationSize.height + cardChromeExtraHeight
   const data: CanvasFlowNodeData = {
     actions,
@@ -573,6 +579,7 @@ function toFlowNode(
       : {}),
     ...(isGeneratedOutput ? { isGeneratedOutput: true } : {}),
     ...(baseRenderedHeight !== node.height ? { baseRenderedHeight } : {}),
+    ...(collapsedGroupPresentation ? { collapsedGroupPresentation } : {}),
     cardChromeExtraHeight,
     ...(lineage ? { lineage } : {}),
     ...(inlineExtension?.toolbar ? { inlineToolbar: inlineExtension.toolbar } : {}),
@@ -918,6 +925,14 @@ function CanvasStageInner({
     () => buildCanvasOperationProjection(snapshot.nodes, snapshot.edges),
     [snapshot.edges, snapshot.nodes],
   )
+  const groupCollapseProjection = useMemo(
+    () =>
+      buildCanvasGroupCollapseProjection(
+        operationProjection.visibleNodes,
+        operationProjection.visibleEdges,
+      ),
+    [operationProjection.visibleEdges, operationProjection.visibleNodes],
+  )
   const selectedNodeIdSet = useMemo(
     () =>
       new Set(
@@ -964,8 +979,8 @@ function CanvasStageInner({
     [],
   )
   const lineageSummaries = useMemo(
-    () => buildLineageSummaries(operationProjection.visibleEdges),
-    [operationProjection.visibleEdges],
+    () => buildLineageSummaries(groupCollapseProjection.visibleEdges),
+    [groupCollapseProjection.visibleEdges],
   )
   const assetById = useMemo(
     () => new Map(snapshot.assets.map((asset) => [asset.id, asset] as const)),
@@ -1025,7 +1040,7 @@ function CanvasStageInner({
   }, [assetById, operationRunsByNodeId, snapshot.nodes, snapshotNodeById])
   const nodes = useMemo(
     () =>
-      operationProjection.visibleNodes.map((node) =>
+      groupCollapseProjection.visibleNodes.map((node) =>
         toFlowNode(
           node,
           nodeActions,
@@ -1037,6 +1052,7 @@ function CanvasStageInner({
           assetKindsByNodeId.get(node.id) ?? [],
           generatedOutputNodeIds.has(node.id),
           node.assetId ? assetById.get(node.assetId) : undefined,
+          groupCollapseProjection.presentationByGroupId.get(node.id),
         ),
       ),
     [
@@ -1044,11 +1060,12 @@ function CanvasStageInner({
       assetById,
       assetKindsByNodeId,
       generatedOutputNodeIds,
+      groupCollapseProjection.presentationByGroupId,
+      groupCollapseProjection.visibleNodes,
       lineageSummaries,
       nodeActions,
       nodeInlineExtension,
       operationRunsByNodeId,
-      operationProjection.visibleNodes,
     ],
   )
   const boardId = snapshot.board.id
@@ -1168,10 +1185,10 @@ function CanvasStageInner({
   )
   const edges = useMemo(
     () =>
-      operationProjection.visibleEdges
+      groupCollapseProjection.visibleEdges
         .filter((edge) => edge.type !== 'group_contains')
         .map(toFlowEdge),
-    [operationProjection.visibleEdges],
+    [groupCollapseProjection.visibleEdges],
   )
 
   const notifyViewportChange = useCallback(

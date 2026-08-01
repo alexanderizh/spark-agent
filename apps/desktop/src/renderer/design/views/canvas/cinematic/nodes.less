@@ -316,6 +316,25 @@
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.018);
   }
 
+  .canvas-node.canvas-node-collapsed-group {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .canvas-node-collapsed-group .canvas-collapsed-group-back {
+    background: linear-gradient(180deg, #313d5d, #27364f);
+  }
+
+  .canvas-node-collapsed-group .canvas-collapsed-group-front > path:first-child {
+    fill: #314565;
+    stroke: rgba(138, 184, 230, 0.52);
+  }
+
+  .canvas-node-collapsed-group .canvas-collapsed-group-cover {
+    color: #8fc8f0;
+  }
+
   .canvas-node-group .canvas-node-core,
   .canvas-node-group .canvas-node-body {
     background: transparent;
