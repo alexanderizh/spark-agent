@@ -6,7 +6,7 @@
   "platform": "any",
   "arch": "any",
   "url": "dependencies/office-viewer/office-viewer-2.2.3-1.tar.gz",
-  "sha256": "7d417c506bdfede17ae2aa8898f4939a650baa5a23c5cfcda1dcb2ddd9cab5d0",
+  "sha256": "2fffb459e1b1919ac903f31dca5a6a481f7ee29f77df2549743875481d41e147",
   "size": 56272983,
   "archive": {
     "format": "tar.gz",

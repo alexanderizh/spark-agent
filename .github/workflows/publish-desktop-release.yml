@@ -30,6 +30,11 @@ on:
         required: true
         type: boolean
         default: false
+      optional_capabilities_only:
+        description: '仅构建并发布 Office 与本机深度可选资源，不构建桌面安装包'
+        required: true
+        type: boolean
+        default: false
       ref:
         description: '构建的分支/tag/commit（默认当前分支）'
         required: false
@@ -190,7 +195,9 @@ jobs:
   publish:
     name: Publish ${{ matrix.name }}
     needs: prepare
-    if: needs.prepare.outputs.should_publish == 'true'
+    if: >-
+      needs.prepare.outputs.should_publish == 'true'
+      && github.event.inputs.optional_capabilities_only != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -429,3 +436,79 @@ jobs:
         if: runner.os == 'macOS' && always()
         run: |
           security delete-keychain "$HOME/Library/Keychains/spark-build.keychain-db" 2>/dev/null || true
+
+  publish-optional-capabilities:
+    name: Publish optional Office and depth packages
+    needs: prepare
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && github.event.inputs.optional_capabilities_only == 'true'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout requested source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify optional capability archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          OFFICE_DIR="${RUNNER_TEMP}/spark-office-viewer-2.2.3-1"
+          DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-darwin-arm64"
+          node scripts/prepare-office-viewer-artifact.mjs \
+            2.2.3-1 apps/desktop/public/file-viewer "${OFFICE_DIR}"
+          node scripts/prepare-depth-runtime-artifact.mjs \
+            darwin arm64 1 "${DEPTH_DIR}" node_modules
+          diff -u docs/release-manifests/office-viewer-2.2.3-1.json \
+            "${OFFICE_DIR}/office-viewer-2.2.3-1-manifest.json"
+          diff -u docs/release-manifests/depth-runtime-4.2.0-1.24.3-1-darwin-arm64.json \
+            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-darwin-arm64-manifest.json"
+          node --test scripts/__tests__/prepare-office-viewer-artifact.test.mjs \
+            scripts/__tests__/prepare-depth-runtime-artifact.test.mjs \
+            scripts/__tests__/publish-optional-capabilities-to-minio.test.mjs
+
+      - name: Publish archives and atomically update repository manifest
+        shell: bash
+        env:
+          RELEASE_MINIO_ENDPOINT: ${{ secrets.RELEASE_MINIO_ENDPOINT }}
+          RELEASE_MINIO_BUCKET: ${{ secrets.RELEASE_MINIO_BUCKET }}
+          RELEASE_MINIO_ACCESS_KEY: ${{ secrets.RELEASE_MINIO_ACCESS_KEY }}
+          RELEASE_MINIO_SECRET_KEY: ${{ secrets.RELEASE_MINIO_SECRET_KEY }}
+          RELEASE_MINIO_PUBLIC_BASE_URL: https://minio.yiqibyte.com/spark-desktop
+          RELEASE_MINIO_ALLOW_INSECURE_HTTP: '1'
+        run: |
+          set -euo pipefail
+          OFFICE_DIR="${RUNNER_TEMP}/spark-office-viewer-2.2.3-1"
+          DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-darwin-arm64"
+          node scripts/publish-optional-capabilities-to-minio.mjs \
+            "${OFFICE_DIR}/office-viewer-2.2.3-1-manifest.json" \
+            "${OFFICE_DIR}/office-viewer-2.2.3-1.tar.gz" \
+            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-darwin-arm64-manifest.json" \
+            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-darwin-arm64.tar.gz"
+          node scripts/audit-artifact-repository.mjs
+
+      - name: Preserve optional archives for delivery evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: optional-capabilities-darwin-arm64
+          path: |
+            ${{ runner.temp }}/spark-office-viewer-2.2.3-1/*.tar.gz
+            ${{ runner.temp }}/spark-depth-runtime-darwin-arm64/*.tar.gz
+          if-no-files-found: error
+          retention-days: 5
