@@ -98,6 +98,20 @@ describe('NativeHostClient', () => {
     await client.close()
   })
 
+  it('preserves bounded Host stderr when the process exits during handshake', async () => {
+    const process = new FakeNativeHostProcess()
+    const connecting = NativeHostClient.connect({ artifact: ARTIFACT, spawnProcess: () => process })
+    process.stderr.write(
+      '[spark-computer-host] parent process authorization failed: publisher mismatch',
+    )
+    process.emit('exit', 77, null)
+
+    await expect(connecting).rejects.toMatchObject({
+      code: 'native_host_incompatible',
+      message: expect.stringContaining('publisher mismatch'),
+    })
+  })
+
   it('keeps a capture response adjacent to its binary frame and verifies the payload digest', async () => {
     const process = new FakeNativeHostProcess()
     const requests = observeRequests(process)

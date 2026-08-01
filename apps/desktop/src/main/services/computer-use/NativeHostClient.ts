@@ -29,6 +29,7 @@ const ACTION_TIMEOUT_GRACE_MS = 5_000
 const MAX_REQUEST_TIMEOUT_MS = 180_000
 const INPUT_RELEASE_GRACE_MS = 300
 const MAX_PENDING_REQUESTS = 64
+const MAX_STDERR_DIAGNOSTIC_BYTES = 2_000
 const log = createLogger('computer-use-native-host')
 
 export interface NativeHostChildProcess extends EventEmitter {
@@ -95,6 +96,7 @@ export class NativeHostClient {
   private awaitingBinary: AwaitingBinary | null = null
   private terminalError: ComputerUseBrokerError | null = null
   private maxMessageBytes = MAX_NATIVE_HOST_FRAME_PAYLOAD_BYTES
+  private stderrTail = ''
 
   private constructor(options: {
     artifact: VerifiedNativeHostArtifact
@@ -376,7 +378,9 @@ export class NativeHostClient {
       }
     })
     this.child.stderr.on('data', (chunk: Buffer) => {
-      const message = chunk.toString('utf8').trim().slice(0, 2_000)
+      const rawMessage = chunk.toString('utf8')
+      this.stderrTail = `${this.stderrTail}${rawMessage}`.slice(-MAX_STDERR_DIAGNOSTIC_BYTES)
+      const message = rawMessage.trim().slice(0, MAX_STDERR_DIAGNOSTIC_BYTES)
       if (message.length > 0) log.warn(`Native Host stderr: ${message}`)
     })
     this.child.once('error', () => {
@@ -387,8 +391,12 @@ export class NativeHostClient {
     })
     this.child.once('exit', () => {
       if (this.terminalError == null) {
+        const stderr = this.stderrTail.trim().replace(/\s+/g, ' ')
         this.terminate(
-          new ComputerUseBrokerError('native_host_incompatible', 'Native Host process exited'),
+          new ComputerUseBrokerError(
+            'native_host_incompatible',
+            stderr.length > 0 ? `Native Host process exited: ${stderr}` : 'Native Host process exited',
+          ),
           'SIGKILL',
         )
       }
