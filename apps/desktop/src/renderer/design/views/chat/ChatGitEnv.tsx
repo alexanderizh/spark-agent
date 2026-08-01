@@ -150,7 +150,6 @@ export function GitEnvPanel({
         </>
       )}
       {/* 环境快捷入口：终端打开常驻，git 与否都可用 */}
-      <div className="git-popover-divider" />
       <button type="button" className="git-env-row" onClick={onOpenTerminal}>
         <span className="git-env-icon">
           <Icons.Terminal size={14} />
@@ -254,7 +253,6 @@ function GitTaskProgressList({ tasks }: { tasks: InspectorTask[] }) {
 
   return (
     <div className="git-task-progress">
-      <div className="git-popover-divider" />
       <div className="git-task-progress-head">
         <span>进程</span>
         <span>
