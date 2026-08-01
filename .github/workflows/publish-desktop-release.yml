@@ -339,15 +339,66 @@ jobs:
             run_mac_build_with_retry
           fi
 
-      # ─── 自建版本中心双写：MinIO 公网桶 + edu-server 元数据 ──────────────
-      # 与 GitHub Release 平行，作为永久镜像，给国内/官网下载使用。
-      # 任一 RELEASE_* 缺失则整段跳过（仍保留 GitHub Release 主链路）。
-      - name: Check self-hosted release config
-        if: >-
-          needs.prepare.outputs.should_publish == 'true'
-          && ((github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_release == 'true')
-              || github.event_name == 'push')
-        id: release_config
+      # 上传安装包为「工作流构件」（私有，非公开 Release），供调试/测试下载。
+      # 正式发布时由审批后的 publish-to-official-website job 汇总这些构件；
+      # 关闭 publish_to_release 时也仍能拿到产物做签名/安装验证。
+      - name: Upload installers as workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.name }}
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.AppImage
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.deb
+            apps/desktop/dist/*.rpm
+            apps/desktop/dist/*.blockmap
+          if-no-files-found: warn
+          retention-days: 5
+
+      # 构建结束后清理钥匙串，避免证书残留在 runner 上（安全最佳实践）
+      - name: Cleanup keychain (macOS only)
+        if: runner.os == 'macOS' && always()
+        run: |
+          security delete-keychain "$HOME/Library/Keychains/spark-build.keychain-db" 2>/dev/null || true
+
+  # GitHub Release（含所有 matrix 产物）完成后才进入此 job。
+  # official-website-production Environment 的 required reviewer 会在 job
+  # 启动前统一拦截，因此一次审批即可控制 MinIO + edu-server 的正式发布。
+  publish-to-official-website:
+    name: Approve and publish to official website
+    needs:
+      - prepare
+      - publish
+    if: >-
+      needs.prepare.outputs.should_publish == 'true'
+      && ((github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_release == 'true')
+          || github.event_name == 'push')
+    environment:
+      name: official-website-production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout released source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download all platform installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: apps/desktop/dist
+          merge-multiple: true
+
+      - name: Check official release config
         shell: bash
         env:
           RELEASE_API_BASE: ${{ secrets.RELEASE_API_BASE }}
@@ -364,17 +415,11 @@ jobs:
             if [ -z "${!v}" ]; then missing+=("$v"); fi
           done
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "[self-hosted] 缺少 secrets: ${missing[*]} — 跳过 MinIO/edu-server 双写"
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "[self-hosted] 配置齐全，将上传至 MinIO 并注册到 edu-server"
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "::error::缺少正式发布 secrets: ${missing[*]}"
+            exit 1
           fi
 
-      - name: Upload artifacts to MinIO
-        id: upload_minio
-        if: steps.release_config.outputs.enabled == 'true'
-        continue-on-error: true
+      - name: Upload all artifacts to MinIO
         shell: bash
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_MINIO_ACCESS_KEY }}
@@ -387,10 +432,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           DEST="s3://${BUCKET}/${CHANNEL}/${VERSION}/"
-          echo "[mc] uploading apps/desktop/dist/* → ${DEST}"
-          # MinIO 兼容 S3：aws-cli 已预装在 GitHub Actions 各 runner 上
-          # 只上传安装包 + blockmap，不传 electron-builder 生成的 yml
-          # （server 端按 DB 视图重生 latest*.yml 并 PUT 回桶）
+          echo "[minio] uploading all approved installers → ${DEST}"
           aws s3 cp apps/desktop/dist/ "${DEST}" \
             --endpoint-url "${ENDPOINT_URL}" \
             --recursive \
@@ -404,41 +446,27 @@ jobs:
             --include "*.blockmap"
           aws s3 ls "${DEST}" --endpoint-url "${ENDPOINT_URL}"
 
-      - name: Warn when MinIO upload fails
-        if: steps.release_config.outputs.enabled == 'true' && steps.upload_minio.outcome != 'success'
-        shell: bash
-        run: |
-          echo "::warning title=MinIO upload skipped::Upload to MinIO failed for version ${{ needs.prepare.outputs.version }} on ${{ matrix.name }}. The workflow will continue, but edu-server registration is skipped for this matrix job."
-      - name: Register release in edu-server
-        if: steps.release_config.outputs.enabled == 'true' && steps.upload_minio.outcome == 'success'
+      - name: Register all built platforms in edu-server
         shell: bash
         env:
           RELEASE_API_BASE: ${{ secrets.RELEASE_API_BASE }}
           RELEASE_CI_TOKEN: ${{ secrets.RELEASE_CI_TOKEN }}
           VERSION: ${{ needs.prepare.outputs.version }}
-          PLATFORM: ${{ matrix.platform }}
-          ARCH: ${{ matrix.arch }}
           CHANNEL: stable
-        run: node apps/desktop/scripts/register-release.mjs
-
-      # 上传安装包为「工作流构件」（私有，非公开 Release），供调试/测试下载。
-      # 即使关闭发布（publish_to_release=false）也能拿到产物验证。
-      - name: Upload installers as workflow artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: installer-${{ matrix.name }}
-          path: |
-            apps/desktop/dist/*.dmg
-            apps/desktop/dist/*.exe
-          if-no-files-found: warn
-          retention-days: 5
-
-      # 构建结束后清理钥匙串，避免证书残留在 runner 上（安全最佳实践）
-      - name: Cleanup keychain (macOS only)
-        if: runner.os == 'macOS' && always()
+          BUILD_MATRIX: ${{ needs.prepare.outputs.build_matrix }}
         run: |
-          security delete-keychain "$HOME/Library/Keychains/spark-build.keychain-db" 2>/dev/null || true
+          node -e '
+            const targets = JSON.parse(process.env.BUILD_MATRIX)
+            for (const target of targets) {
+              process.stdout.write(`${target.platform}\t${target.arch}\n`)
+            }
+          ' > "${RUNNER_TEMP}/release-targets.tsv"
+
+          while IFS=$'\t' read -r platform arch; do
+            echo "[register] platform=${platform} arch=${arch}"
+            PLATFORM="${platform}" ARCH="${arch}" \
+              node apps/desktop/scripts/register-release.mjs
+          done < "${RUNNER_TEMP}/release-targets.tsv"
 
   publish-optional-capabilities:
     name: Publish optional Office and depth packages
