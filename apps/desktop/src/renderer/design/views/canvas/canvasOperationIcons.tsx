@@ -112,5 +112,29 @@ export function getOperationVisual(operation: CanvasOperationType): OperationVis
         category: 'video',
         colorClass: 'canvas-op-color-video',
       }
+    case 'image_prompt_reverse':
+      return {
+        icon: <Icons.Eye size={ICON_SIZE} />,
+        category: 'image',
+        colorClass: 'canvas-op-color-image',
+      }
+    case 'video_depth_map':
+      return {
+        icon: <Icons.Box size={ICON_SIZE} />,
+        category: 'video',
+        colorClass: 'canvas-op-color-video',
+      }
+    default: {
+      // 编译期 exhaustiveness 检查：新增 operation 忘补 case 时，
+      // `operation` 在此分支不再是 never，TS 会报错强制补全；
+      // 运行时则回落到通用 visual，避免画布渲染白屏（undefined.icon）。
+      const exhaustive: never = operation
+      console.warn(`[canvasOperationIcons] 未覆盖的 operation：${String(exhaustive)}`)
+      return {
+        icon: <Icons.Sparkles size={ICON_SIZE} />,
+        category: 'image',
+        colorClass: 'canvas-op-color-image',
+      }
+    }
   }
 }

@@ -1228,9 +1228,13 @@ export const CanvasNode = memo(function CanvasNode({
           {node.type === 'image' &&
             (node.data.panorama360 ? <Icons.Globe size={14} /> : <Icons.Image size={14} />)}
           {node.type === 'audio' && <Icons.Play size={14} />}
-          {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={14} />}
+          {!isDirectorStage3D &&
+            !isVideoWorkbench &&
+            (node.type === 'text' || node.type === 'prompt') && <Icons.File size={14} />}
           {isDirectorStage3D ? (
             <Icons.Box size={14} />
+          ) : isVideoWorkbench ? (
+            <Icons.Film size={14} />
           ) : isOperationNode(node) ? (
             operationNodeIcon(nodeOperation(node), operationWorkflow)
           ) : node.type === 'task' ? (

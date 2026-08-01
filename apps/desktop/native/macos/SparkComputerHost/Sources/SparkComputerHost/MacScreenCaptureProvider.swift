@@ -255,7 +255,10 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     guard binding.target.appID == envelope.targetAppID,
       binding.target.windowID == envelope.targetWindowID
     else { throw NativeHostPlatformError.focusMismatch }
-    defer { invalidateObservation(preserveAccessibilityBaseline: true) }
+    defer {
+      accessibility.markDirty()
+      invalidateObservation(preserveAccessibilityBaseline: true)
+    }
     let before = try await focusedTarget(
       appID: envelope.targetAppID, windowID: envelope.targetWindowID)
     try NativeInputPolicy.validateApplicationIdentity(

@@ -58,6 +58,7 @@ windows = { version = "0.62.2", features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
+windows-core = "0.62.2"
 windows-capture = "=2.0.0"
 
 [dev-dependencies]
