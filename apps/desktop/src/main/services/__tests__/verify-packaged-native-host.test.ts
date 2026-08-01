@@ -20,6 +20,7 @@ const {
   detectWindowsPeArchitecture,
   parseArguments,
   runFinalAppSmoke,
+  SMOKE_CLEANUP_OPTIONS,
   summarizeOutput,
   validatePackagedNativeHost,
 } = require('../../../../scripts/verify-packaged-native-host.js') as {
@@ -28,6 +29,7 @@ const {
   detectWindowsPeArchitecture: (executable: Buffer) => string
   parseArguments: (argv: string[], required: string[]) => Record<string, unknown>
   runFinalAppSmoke: (options: object) => Promise<unknown>
+  SMOKE_CLEANUP_OPTIONS: { maxRetries: number; retryDelay: number }
   summarizeOutput: (...outputs: string[]) => string
   validatePackagedNativeHost: (options: object) => Promise<unknown>
 }
@@ -132,6 +134,7 @@ describe('packaged Native Host release verifier', () => {
       createSmokeEnvironment({
         PATH: '/usr/bin',
         HOME: '/Users/release',
+        PSModulePath: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
         CSC_KEY_PASSWORD: 'secret',
         WIN_CSC_LINK: 'certificate',
         GH_TOKEN: 'token',
@@ -139,13 +142,22 @@ describe('packaged Native Host release verifier', () => {
         NODE_OPTIONS: '--require attack.js',
         ELECTRON_RUN_AS_NODE: '1',
       }),
-    ).toEqual({ PATH: '/usr/bin', HOME: '/Users/release' })
+    ).toEqual({
+      PATH: '/usr/bin',
+      HOME: '/Users/release',
+      PSModulePath: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
+    })
+  })
+
+  it('retries Windows smoke cleanup long enough for SQLite handles to close', () => {
+    expect(SMOKE_CLEANUP_OPTIONS.maxRetries).toBeGreaterThanOrEqual(5)
+    expect(SMOKE_CLEANUP_OPTIONS.retryDelay).toBeGreaterThanOrEqual(100)
   })
 
   it('keeps the end of noisy App output where the Native Host failure is logged', () => {
-    expect(summarizeOutput(`startup-${'x'.repeat(3_000)}-native-host-parent-auth-failed`)).toContain(
-      'native-host-parent-auth-failed',
-    )
+    expect(
+      summarizeOutput(`startup-${'x'.repeat(3_000)}-native-host-parent-auth-failed`),
+    ).toContain('native-host-parent-auth-failed')
   })
 
   it('includes the structured smoke report when the final App exits unsuccessfully', async () => {

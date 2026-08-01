@@ -8,6 +8,12 @@ const { NATIVE_HOST_PROTOCOL_VERSION, NATIVE_HOST_VERSION } = require('./native-
 const MAX_FILE_BYTES = 1024 * 1024
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024
 const DEFAULT_SMOKE_TIMEOUT_MS = 60_000
+const SMOKE_CLEANUP_OPTIONS = Object.freeze({
+  recursive: true,
+  force: true,
+  maxRetries: 10,
+  retryDelay: 200,
+})
 const SMOKE_ENVIRONMENT_ALLOWLIST = [
   'APPDATA',
   'ComSpec',
@@ -23,6 +29,7 @@ const SMOKE_ENVIRONMENT_ALLOWLIST = [
   'PATHEXT',
   'PROCESSOR_ARCHITECTURE',
   'ProgramData',
+  'PSModulePath',
   'SHELL',
   'SystemRoot',
   'TEMP',
@@ -209,7 +216,7 @@ async function runFinalAppSmoke(options) {
     assertSmokeReport(report, options)
     return report
   } finally {
-    await fs.rm(tempRoot, { recursive: true, force: true })
+    await fs.rm(tempRoot, SMOKE_CLEANUP_OPTIONS)
   }
 }
 
@@ -323,6 +330,7 @@ module.exports = {
   readArtifactFile,
   runCommand,
   runFinalAppSmoke,
+  SMOKE_CLEANUP_OPTIONS,
   summarizeOutput,
   validatePackagedNativeHost,
 }
