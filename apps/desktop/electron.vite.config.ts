@@ -4,6 +4,7 @@ import { dirname, resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { externalizeOptionalOfficeAssetsPlugin } from './src/main/services/optional-capabilities/optionalOfficeBuildAssets'
 
 const nodeRequire = createRequire(__filename)
 const emojilibJsonPath = resolve(
@@ -167,7 +168,7 @@ export default defineConfig({
         '@lobehub/emojilib': emojilibJsonPath,
       },
     },
-    plugins: [react(), tailwindcss(), dropWoffPlugin()],
+    plugins: [externalizeOptionalOfficeAssetsPlugin(), react(), tailwindcss(), dropWoffPlugin()],
     build: {
       rollupOptions: {
         input: {
