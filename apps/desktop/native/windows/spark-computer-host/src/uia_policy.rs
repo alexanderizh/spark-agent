@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -6,6 +7,22 @@ use thiserror::Error;
 
 const MAX_NAME_UTF16_UNITS: usize = 2_000;
 const MAX_VALUE_UTF16_UNITS: usize = 20_000;
+
+pub fn can_reuse_uia_cache(
+    same_target: bool,
+    subscription_active: bool,
+    cached_node_count: usize,
+    cached_generation: u64,
+    current_generation: u64,
+    age: Duration,
+    max_age: Duration,
+) -> bool {
+    same_target
+        && subscription_active
+        && cached_node_count > 0
+        && cached_generation == current_generation
+        && age <= max_age
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

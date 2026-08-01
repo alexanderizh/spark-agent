@@ -29,6 +29,7 @@ use windows::core::{BSTR, Interface, Ref, implement};
 use crate::protocol::{ComputerAction, ElementAction};
 use crate::uia_policy::{
     RawUiaNode, UiaRect, UiaTreeError, UiaTreeSnapshot, UiaTreeState, allow_value_write,
+    can_reuse_uia_cache,
 };
 
 const MAX_TREE_ELEMENTS: usize = 100_000;
@@ -156,13 +157,17 @@ impl UiaRuntime {
             self.replace_subscription(hwnd, &root);
         }
         let generation = self.dirty_generation.load(Ordering::Acquire);
-        let can_reuse = self.subscription.is_some()
-            && self.cached_hwnd == Some(hwnd)
-            && self.cached_generation == generation
-            && !self.cached_nodes.is_empty()
-            && self
-                .last_traversal
-                .is_some_and(|traversal| traversal.elapsed() <= MAX_CACHE_AGE);
+        let can_reuse = self.last_traversal.is_some_and(|traversal| {
+            can_reuse_uia_cache(
+                self.cached_hwnd == Some(hwnd),
+                self.subscription.is_some(),
+                self.cached_nodes.len(),
+                self.cached_generation,
+                generation,
+                traversal.elapsed(),
+                MAX_CACHE_AGE,
+            )
+        });
         if can_reuse {
             return self.publish_nodes(self.cached_nodes.clone(), previous_tree_version, full_tree);
         }

@@ -18,7 +18,8 @@
 | Phase 6 治理瘦身                             | `8549cc324`               | +4   | L0/L1 无审批热路径保持异步；L2/L3 执行前同步固化 before-frame，失败不消费 ticket、不执行 backend                   |
 | Phase 7 灰度与去轮询                         | `2b57e7f87`               | +61  | 统一 flag store、有界指标回退、Supervisor→基础连接回退、事件驱动 `wait_for_completion`                             |
 | Phase 1 原生打包自主门禁                     | `1bf47f601`               | +13  | 共享版本/provenance、最终字节/签名/架构验证、afterSign 阻断与最终 App-owned handshake；安装 VM 矩阵待签收          |
-| Phase 2.2 持久视觉捕获                       | 本阶段提交                | +4   | macOS SCStream/Windows WGC 长会话、有界帧队列、请求后新鲜帧、flag/cancel/目标变化释放与单次回退                    |
+| Phase 2.2 持久视觉捕获                       | `f1366b390`               | +4   | macOS SCStream/Windows WGC 长会话、有界帧队列、请求后新鲜帧、flag/cancel/目标变化释放与单次回退                    |
+| Phase 2.2 可访问性事件缓存                   | `c06d15f88` + 本次复核提交 | +2   | macOS AXObserver / Windows UIA 事件 generation 驱动缓存；目标、订阅、年龄与动作执行共同 fail-closed 失效          |
 
 Computer Use 最新主进程/协议/Renderer 回归：**45 文件 / 297 测试全过**（回环 HTTP 用例在允许监听 `127.0.0.1` 的测试环境运行）；storage **20 文件 / 226 测试全过**，迁移 064 已真实执行。desktop renderer/node、protocol 与 storage typecheck 均 exit 0；此前 Phase 2/3/5 严格测试类型债已清零。
 
@@ -36,7 +37,7 @@ Phase 2.2 持久视觉切片复核（2026-08-01）：desktop Computer Use/打包
 | Phase 4 人机协同               | 原生 + TS     | macOS/Windows 对等代码、Tray/产品控制卡、AppControlBridge、精确窗口绑定/picker 已落地；真实签名桌面的 20 动作、状态一致性与 300 ms P99 待发布签收 |
 | Phase 6 会话级授权             | 安全评审      | 自主代码与五轴/对抗审查完成；外部发布复核随总体签收执行                                                                                           |
 | Phase 1 安装包真机矩阵         | 原生/基建签收 | 自主门禁代码已落地；DMG 挂载安装、NSIS 静默安装、CI VM/签名证书、升级卸载与干净 VM 黄金任务 100 次需发布基建                                      |
-| Phase 2.2 可访问性事件/Picker  | 原生签收      | 持久 SCStream/WGC 代码已落地；AXObserver、UIA event cache、SCContentSharingPicker 与真实 CPU/P95 预算待下一切片/真机签收                          |
+| Phase 2.2 Picker/性能签收       | 原生/真机签收 | 持久 SCStream/WGC 与 AXObserver/UIA event cache 已落地；SCContentSharingPicker 及真实 CPU/P50/P95/P99 预算待真机签收                              |
 
 ## 安全不变量（贯穿所有阶段，零回归）
 

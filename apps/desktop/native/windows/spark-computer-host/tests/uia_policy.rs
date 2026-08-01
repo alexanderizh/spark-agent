@@ -1,9 +1,31 @@
 use spark_computer_host::uia_policy::{
-    RawUiaNode, TreeMode, UiaRect, UiaTreeError, UiaTreeState, allow_value_write, sanitize_uia_tree,
+    RawUiaNode, TreeMode, UiaRect, UiaTreeError, UiaTreeState, allow_value_write,
+    can_reuse_uia_cache, sanitize_uia_tree,
 };
+use std::time::Duration;
 
 fn button(runtime_key: &str, name: &str) -> RawUiaNode {
     RawUiaNode::text(name, "").with_runtime_key(runtime_key)
+}
+
+#[test]
+fn accessibility_cache_requires_matching_target_subscription_generation_and_age() {
+    let age = Duration::from_millis(500);
+    let max_age = Duration::from_secs(1);
+    assert!(can_reuse_uia_cache(true, true, 4, 7, 7, age, max_age));
+    assert!(!can_reuse_uia_cache(false, true, 4, 7, 7, age, max_age));
+    assert!(!can_reuse_uia_cache(true, false, 4, 7, 7, age, max_age));
+    assert!(!can_reuse_uia_cache(true, true, 0, 7, 7, age, max_age));
+    assert!(!can_reuse_uia_cache(true, true, 4, 7, 8, age, max_age));
+    assert!(!can_reuse_uia_cache(
+        true,
+        true,
+        4,
+        7,
+        7,
+        Duration::from_millis(1_001),
+        max_age,
+    ));
 }
 
 #[test]
