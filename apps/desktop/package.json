@@ -27,6 +27,7 @@
     "native:verify": "electron scripts/verify-native-electron-abi.cjs",
     "native:verify:packaged:mac": "node scripts/verify-packaged-native-host-macos.js",
     "native:verify:packaged:win": "node scripts/verify-packaged-native-host-windows.js",
+    "verify:packaged:onnx": "node scripts/verify-packaged-onnx-runtime.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",

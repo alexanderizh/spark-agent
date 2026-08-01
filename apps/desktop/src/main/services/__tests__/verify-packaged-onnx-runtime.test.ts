@@ -1,0 +1,85 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- packaged verifier is CommonJS */
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+
+const { verifyPackagedOnnxRuntime } =
+  require('../../../../scripts/verify-packaged-onnx-runtime.js') as {
+    verifyPackagedOnnxRuntime: (options: {
+      resourcesPath: string
+      platform: 'darwin' | 'linux' | 'win32'
+      arch: 'arm64' | 'x64'
+      listAsarFiles: (asarPath: string) => Promise<string[]>
+    }) => Promise<{
+      target: string
+      foreignEntries: string[]
+      webRuntimePresent: boolean
+    }>
+  }
+
+function writeNativeEntry(resourcesPath: string, entry: string): void {
+  const file = join(
+    resourcesPath,
+    'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6',
+    entry,
+    'onnxruntime_binding.node',
+  )
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, entry)
+}
+
+describe('verifyPackagedOnnxRuntime', () => {
+  let root = ''
+
+  afterEach(() => {
+    if (root) rmSync(root, { recursive: true, force: true })
+  })
+
+  it('accepts a package with only the target native runtime', async () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-packaged-onnx-'))
+    writeNativeEntry(root, 'darwin/arm64')
+
+    await expect(
+      verifyPackagedOnnxRuntime({
+        resourcesPath: root,
+        platform: 'darwin',
+        arch: 'arm64',
+        listAsarFiles: async () => ['/node_modules/@huggingface/transformers/package.json'],
+      }),
+    ).resolves.toEqual({
+      target: 'darwin/arm64',
+      foreignEntries: [],
+      webRuntimePresent: false,
+    })
+  })
+
+  it('rejects foreign native runtime directories', async () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-packaged-onnx-'))
+    writeNativeEntry(root, 'darwin/arm64')
+    writeNativeEntry(root, 'linux/x64')
+
+    await expect(
+      verifyPackagedOnnxRuntime({
+        resourcesPath: root,
+        platform: 'darwin',
+        arch: 'arm64',
+        listAsarFiles: async () => [],
+      }),
+    ).rejects.toThrow('foreign ONNX runtime entries: linux/x64')
+  })
+
+  it('rejects onnxruntime-web files in app.asar', async () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-packaged-onnx-'))
+    writeNativeEntry(root, 'darwin/arm64')
+
+    await expect(
+      verifyPackagedOnnxRuntime({
+        resourcesPath: root,
+        platform: 'darwin',
+        arch: 'arm64',
+        listAsarFiles: async () => ['/node_modules/onnxruntime-web/dist/ort.js'],
+      }),
+    ).rejects.toThrow('onnxruntime-web is present in app.asar')
+  })
+})
