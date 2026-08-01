@@ -1,6 +1,6 @@
 # 会话级计划任务实施计划
 
-> 状态: 已落地 | 最后核对: 2026-08-01
+> 状态: 实施中 | 最后核对: 2026-08-01
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -313,6 +313,42 @@ pnpm build
 若 CLI 因数据库版本或环境问题失败，按项目降级规则记录原因，不阻塞交付。
 
 本次不自动创建 Git commit，保留工作区变更供用户审阅。
+
+### Task 8：修复深浅主题和空状态层级
+
+**Files:**
+
+- Modify: `apps/desktop/src/renderer/design/views/chat/SessionSchedulePanel.less`
+- Modify: `apps/desktop/src/renderer/design/views/chat/SessionSchedulePanel.test.tsx`
+
+- [ ] **Step 1：写失败的主题 token 回归测试**
+
+读取 Less 文件并断言使用应用原生 token：
+
+```ts
+expect(styles).toContain('--schedule-panel: var(--panel)')
+expect(styles).toContain('--schedule-text: var(--text)')
+expect(styles).not.toContain('--color-bg-container')
+expect(styles).not.toContain('--color-text-')
+```
+
+- [ ] **Step 2：运行 RED**
+
+运行：
+
+```bash
+pnpm --filter @spark/desktop exec vitest run src/renderer/design/views/chat/SessionSchedulePanel.test.tsx
+```
+
+预期：现有 Less 仍引用 `--color-bg-container` 和 `--color-text-*`，测试失败。
+
+- [ ] **Step 3：替换主题 token 并重整视觉层级**
+
+在 `.session-schedule-panel` 内建立局部语义变量，映射到 `--panel`、`--text`、`--border-strong`、`--primary` 等应用 token。面板、卡片、表单、空状态和按钮均从这些局部变量取色；空状态缩小高度并移除大面积虚线边框。
+
+- [ ] **Step 4：运行 GREEN 与视觉验收**
+
+运行组件测试和 Desktop 构建，并分别在 `html[data-theme='light']`、`html[data-theme='dark']` 下打开列表态与表单态，确认文字对比、边框、焦点环和遮罩清晰。
 
 ## 实施结果
 
