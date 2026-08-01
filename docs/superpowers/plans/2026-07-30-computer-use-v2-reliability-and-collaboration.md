@@ -424,7 +424,7 @@ absent → verifying → starting → handshaking → ready
 
 #### 2.2 持续捕获与增量可访问性树
 
-> 实施进度（2026-08-01）：持久视觉捕获与可访问性事件缓存代码已落地并保持默认关闭。`observe` 增加向后兼容的可选 `persistentCapture` 扩展，仅在统一 flag 开启时发送；runtime rollback 后下一请求自动回到旧单帧路径。macOS 使用按 app/window/PID/代码身份绑定的 `SCStream`，Windows 使用按 HWND/进程/可执行身份绑定的 WGC 长会话；两端都只接受本次 observe 单调时钟起点之后的新帧，队列有界，目标/flag/cancel 变化立即释放，启动或 2 秒取帧失败最多回退一次既有单帧路径。AXObserver 与 UIA event handler 以目标身份、订阅状态、事件 generation 和 1 秒最大年龄共同决定树缓存复用；目标变化、事件、动作执行或超时都会强制重新遍历。Swift 43 项、Rust 23 项、Windows x64/arm64 `clippy -D warnings` 与 TS/协议聚焦回归通过。SCContentSharingPicker 和真实平台 CPU/P95 预算仍是发布签收项。
+> 实施进度（2026-08-01）：持久视觉捕获与可访问性事件缓存代码已落地并默认启用。`observe` 增加向后兼容的可选 `persistentCapture` 扩展；环境 opt-out 或 runtime rollback 后下一请求自动回到旧单帧路径。macOS 使用按 app/window/PID/代码身份绑定的 `SCStream`，Windows 使用按 HWND/进程/可执行身份绑定的 WGC 长会话；两端都只接受本次 observe 单调时钟起点之后的新帧，队列有界，目标/flag/cancel 变化立即释放，启动或 2 秒取帧失败最多回退一次既有单帧路径。AXObserver 与 UIA event handler 以目标身份、订阅状态、事件 generation 和 1 秒最大年龄共同决定树缓存复用；目标变化、事件、动作执行或超时都会强制重新遍历。Swift 43 项、Rust 23 项、Windows x64/arm64 `clippy -D warnings` 与 TS/协议聚焦回归通过。SCContentSharingPicker 和真实平台 CPU/P95 预算仍是发布签收项。
 
 macOS：
 
@@ -807,17 +807,17 @@ Windows：
 
 - [ ] macOS 最终 DMG 安装后 Host 握手通过。
 - [ ] Windows 最终 NSIS 安装后 Host 握手通过。
-- [ ] App、Host、manifest 的版本来自同一构建源。
-- [ ] 签名、hash、协议、架构错误均能显示独立诊断。
+- [x] App、Host、manifest 的版本来自同一构建源。
+- [x] 签名、hash、协议、架构错误均能显示独立诊断。
 - [ ] 首次权限、拒绝后重试、撤销权限流程通过。
 - [ ] 用户接管在 300 ms 内停止且释放全部输入。
-- [ ] Timeline 可实时展示并在重启后回放。
-- [ ] L0/L1 无审批，L2/L3 在副作用发生前拦截。
-- [ ] Host 信任、目标绑定和权限结果按失效条件缓存，不在每个动作重复全量校验。
+- [x] Timeline 可实时展示并在重启后回放。
+- [x] L0/L1 无审批，L2/L3 在副作用发生前拦截。
+- [x] Host 信任、目标绑定和权限结果按失效条件缓存，不在每个动作重复全量校验。
 - [ ] L0/L1 动作达到 20 ms 校验预算且没有同步审计写入。
-- [ ] stale element、窗口移动和 Host 短暂断连具有统一、有界的自动恢复。
-- [ ] 不把不等价网页 fallback 标为桌面任务成功。
-- [ ] 关键 SLO 已接入版本分桶指标和告警。
+- [x] stale element、窗口移动和 Host 短暂断连具有统一、有界的自动恢复。
+- [x] 不把不等价网页 fallback 标为桌面任务成功。
+- [x] 关键 SLO 已接入版本分桶指标和告警。
 - [ ] macOS/Windows 黄金任务在干净 VM 连续通过 100 次。
 
 ## 12. 完成定义

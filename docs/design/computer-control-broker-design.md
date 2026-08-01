@@ -117,9 +117,9 @@ Renderer 提交批准时必须回传它展示的 action/target/data-class digest
 
 `list-apps` 从严格校验的原生窗口描述中去重，冲突身份按 `native_host_incompatible` 拒绝；`get-verification` 只返回 session 匹配且可通过协议解析的持久化记录。迁移 064 提供 durable Computer Use activity event 表，Broker、SessionManager、Operator 与审批路径发射完整生命周期事件；`get-timeline` 按 `computerSessionId + seq` 游标回放，实时流使用相同事件契约。事件仅包含 ID、状态、风险和诊断码，不写截图、输入正文或 AX 文本；存储失败降级为内存实时流，不反向判死已通过治理的动作。
 
-## 8. 后续接入约束
+## 8. 已落地后续链路与维护约束
 
-- CU-03 下一阶段必须在 evidence sink 原子写入就绪后实现 `ComputerObserverBackend` 与 `ComputerExecutorBackend`；不得返回指向不存在 snapshot 的 Observation，也不得改变 Broker 顺序。
+- CU-03 的 `NativeHostComputerUseBackend` 已同时实现可信 Observer/Executor，并通过异步低风险 evidence 与高风险同步固化边界；不得返回指向不存在 snapshot 的 Observation，也不得改变 Broker 顺序。
 - CU-05 Provider Adapter 不能直接获得 backend 或 pipe，只能提交 normalized action。
 - CU-06 IPC/Monitor 使用 `ComputerUseServices` 单例；批准必须携带 UI 展示的三个 digest。
 - CU-07 只能根据持久化 action/observation/verification 记录完成 session，不能把模型 `done` 当成功。

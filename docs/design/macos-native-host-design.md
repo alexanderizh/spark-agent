@@ -73,6 +73,7 @@ Runtime 只接受 manifest 明确声明的两种模式：
 - macOS 13 manifest 诚实关闭 `captureWindow`，保留窗口枚举；不伪造兼容截图。
 - `request_permissions` 仅接受去重后的 `screen|accessibility`，分别调用系统 TCC API。
 - AXUIElement 从绑定 PID 的 focused window 生成最多 2,000 项、48 层的 full/diff tree；达到边界时截断而不是让整个任务失败。不再要求 AX 与 ScreenCaptureKit 的窗口标题和边界完全一致；单个应用拒绝或无法提供 AX 树时返回截图绑定的视觉 tree，使用系统 Vision OCR 提取可见文本并让视觉模型继续使用坐标。element ref 绑定 tree version，下一次观察后旧引用失效。
+- AXObserver 监听焦点窗口/元素、值、创建/销毁、移动、缩放、标题、选区和布局变化，以锁保护的 generation 使缓存失效。只有目标未变、订阅存在、缓存非空、generation 未变化且年龄不超过 1 秒时才复用原始节点；语义动作执行前主动标脏，动作后观察不依赖通知到达时序。
 - `AXSecureTextField` 不返回 value，不声明 `set_value`，并形成 `sensitiveRegions`；名称、value、role、action 和 geometry 全部本地有界清洗。
 - action envelope 带可验证 execution lane：Invoke/SetValue/SelectText 固定为 `background_semantic`，observe/wait 固定为 `passive`，CGEvent/focus/scroll 固定为 `foreground_input`。旧 App 未携带 lane 时 Host 按动作安全推导；显式 lane 与动作不匹配时 App Zod 与 Swift decoder 双端 fail-closed。
 - 后台语义动作直接对绑定 PID 的 AX 元素执行，不激活目标应用；元素 Scroll 当前仍按元素 bounds 经受管 CGEvent 执行，不伪装成 AX 语义动作。不支持或未产生效果返回稳定 `action_noop|action_not_allowed`。
@@ -123,7 +124,7 @@ CI 缺少 Developer ID 时构建必须失败；本地无证书时明确省略 Ho
 
 ## 8. 当前验收证据
 
-- Swift 42 项 unit 覆盖 frame、持久捕获可选 wire、完整 action envelope 严格解码、handler/稳定错误映射、AX tree/diff/secure redaction、输入/坐标/身份策略、窗口几何漂移、cancel registry fail-closed、DPR/window mapper、长连接非 EOF 读取，以及 host/parent identifier、Team ID、PID start token 和 Apple anchor 信任策略。
+- Swift 43 项 unit 覆盖 frame、持久捕获可选 wire、完整 action envelope 严格解码、handler/稳定错误映射、AX tree/diff/cache/secure redaction、输入/坐标/身份策略、窗口几何漂移、cancel registry fail-closed、DPR/window mapper、长连接非 EOF 读取，以及 host/parent identifier、Team ID、PID start token 和 Apple anchor 信任策略。
 - TypeScript unit 覆盖 framing、artifact/team trust、握手、binary hash、timeout、崩溃重连、动作后观察、跨平台 evidence noop、前台快照和 Vault 注册。
 - 本机真实 release Host 已在保持 stdin 打开的同一进程内完成 `list_windows -> capture_window`；PNG magic、byteLength 和 SHA-256 全部匹配。
 - 完整 Developer ID `.app` 的最终签名/公证验收必须由具有发布证书的 CI 执行，不能以本地 ad-hoc 构建替代。
