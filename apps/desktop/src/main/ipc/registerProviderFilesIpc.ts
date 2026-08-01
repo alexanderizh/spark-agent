@@ -1,12 +1,13 @@
 import {
   BailianFilesClient,
+  type MediaProviderError,
   MinimaxHailuoFilesClient,
   VolcengineArkFilesClient,
   XaiFilesClient,
   type MinimaxFileObject,
 } from '@spark/agent-runtime'
 import type { ProviderFileObject, ProviderFilesApiKind, ProviderProfile } from '@spark/protocol'
-import { SparkError } from '@spark/shared'
+import { type ErrorCode, SparkError } from '@spark/shared'
 import { readFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import { typedIpcHandle } from './typed-ipc.js'
@@ -66,20 +67,48 @@ export function resolveProviderFilesApiKind(
   if (profile.mediaProvider === 'volcengine-ark') return 'volcengine-ark'
   if (profile.mediaProvider === 'bailian') return 'bailian'
   if (profile.mediaProvider === 'minimax-hailuo') return 'minimax-hailuo'
-  const hostname = endpointHostname(profile.apiEndpoint)
-  if (hostname === 'api.x.ai') return 'xai'
-  if (hostname === 'ark.cn-beijing.volces.com') return 'volcengine-ark'
-  if (hostname === 'dashscope.aliyuncs.com') return 'bailian'
-  if (hostname === 'api.minimaxi.com') return 'minimax-hailuo'
+  // 不再凭 apiEndpoint 域名推断渠道：火山方舟等域名聊天与多媒体共用端点，
+  // 仅凭 hostname 会把纯聊天渠道（如「火山 claude」）误判为多媒体渠道。
   return null
 }
 
-function endpointHostname(endpoint: string | undefined): string | null {
-  if (!endpoint?.trim()) return null
+function resolveFilesErrorCode(error: MediaProviderError): ErrorCode {
+  if (error.code === 'invalid_input') return 'VALIDATION_FAILED'
+  if (error.code === 'api_key_missing' || error.code === 'auth_required') {
+    return 'PROVIDER_AUTH_FAILED'
+  }
+  if (error.statusCode === 401 || error.statusCode === 403) return 'PROVIDER_AUTH_FAILED'
+  if (error.statusCode === 429) return 'PROVIDER_RATE_LIMITED'
+  if (error.statusCode === 402) return 'PROVIDER_QUOTA_EXCEEDED'
+  return 'PROVIDER_UNAVAILABLE'
+}
+
+/**
+ * MediaProviderError 跨打包/模块实例时 instanceof 不可靠（vitest 与源码解析到的模块实例可能不同），
+ * 用 name 收窄更稳健，同时兼容生产环境。
+ */
+function isMediaProviderError(error: unknown): error is MediaProviderError {
+  return error instanceof Error && error.name === 'MediaProviderError'
+}
+
+/**
+ * 渠道 Files client 失败抛的是 MediaProviderError（携带真实 HTTP 状态码与归一错误摘要），
+ * 但 IPC 公共错误处理只识别 SparkError/ZodError，会把 MediaProviderError 当未知 Error 吞成
+ * 「操作未完成，请稍后重试」固定文案，真实原因无从排查。这里统一捕获并转成 SparkError 透传。
+ */
+export async function runFilesTask<T>(task: () => Promise<T>): Promise<T> {
   try {
-    return new URL(endpoint).hostname.toLowerCase()
-  } catch {
-    return null
+    return await task()
+  } catch (error) {
+    if (isMediaProviderError(error)) {
+      // 仅透传真实错误摘要 + HTTP 状态码标记；渠道前缀与 401/403/429 友好归类
+      // 统一交给前端 filesErrorMessage 处理，避免与前端兜底叠加成双重前缀。
+      throw new SparkError(
+        resolveFilesErrorCode(error),
+        `${error.message}${error.statusCode ? `（HTTP ${error.statusCode}）` : ''}`,
+      )
+    }
+    throw error
   }
 }
 
@@ -132,131 +161,139 @@ export function registerProviderFilesIpc(dependencies: {
 
   typedIpcHandle('provider:files:list', async (request) => {
     const resolved = await clientFor(request.providerProfileId)
-    if (resolved.kind === 'volcengine-ark') {
-      return resolved.client.list({
-        limit: request.limit ?? 100,
-        order: request.order ?? 'desc',
-        purpose: request.purpose === 'user_data' ? request.purpose : 'user_data',
-        ...((request.after ?? request.paginationToken)
-          ? { after: request.after ?? request.paginationToken }
-          : {}),
-        ...(request.scopeId ? { scopeId: request.scopeId } : {}),
-      })
-    }
-    if (resolved.kind === 'bailian') {
-      const pageNo = request.paginationToken ? Number(request.paginationToken) : 1
-      return resolved.client.list({
-        pageNo: Number.isInteger(pageNo) && pageNo > 0 ? pageNo : 1,
-        pageSize: request.limit ?? 20,
-      })
-    }
-    if (resolved.kind === 'minimax-hailuo') {
-      const files = await resolved.client.list(MINIMAX_FILES_PURPOSE)
-      return {
-        providerKind: 'minimax-hailuo',
-        files: files.map(toMinimaxProviderFile),
+    return runFilesTask(async () => {
+      if (resolved.kind === 'volcengine-ark') {
+        return resolved.client.list({
+          limit: request.limit ?? 100,
+          order: request.order ?? 'desc',
+          purpose: request.purpose === 'user_data' ? request.purpose : 'user_data',
+          ...((request.after ?? request.paginationToken)
+            ? { after: request.after ?? request.paginationToken }
+            : {}),
+          ...(request.scopeId ? { scopeId: request.scopeId } : {}),
+        })
       }
-    }
-    const page = await resolved.client.list({
-      limit: request.limit ?? 50,
-      order: request.order ?? 'desc',
-      sortBy: request.sortBy ?? 'created_at',
-      ...(request.paginationToken ? { paginationToken: request.paginationToken } : {}),
+      if (resolved.kind === 'bailian') {
+        const pageNo = request.paginationToken ? Number(request.paginationToken) : 1
+        return resolved.client.list({
+          pageNo: Number.isInteger(pageNo) && pageNo > 0 ? pageNo : 1,
+          pageSize: request.limit ?? 20,
+        })
+      }
+      if (resolved.kind === 'minimax-hailuo') {
+        const files = await resolved.client.list(MINIMAX_FILES_PURPOSE)
+        return {
+          providerKind: 'minimax-hailuo',
+          files: files.map(toMinimaxProviderFile),
+        }
+      }
+      const page = await resolved.client.list({
+        limit: request.limit ?? 50,
+        order: request.order ?? 'desc',
+        sortBy: request.sortBy ?? 'created_at',
+        ...(request.paginationToken ? { paginationToken: request.paginationToken } : {}),
+      })
+      return {
+        providerKind: 'xai' as const,
+        files: page.data.map((file) => ({
+          id: file.id,
+          filename: file.filename,
+          bytes: file.bytes,
+          createdAt: file.created_at,
+          ...(file.expires_at !== undefined ? { expiresAt: file.expires_at } : {}),
+          purpose: file.purpose,
+          object: file.object,
+          // xAI Files API 无异步处理概念，list 返回的文件均为立即可用，统一标记为 active。
+          status: 'active',
+        })),
+        ...(page.pagination_token ? { paginationToken: page.pagination_token } : {}),
+      }
     })
-    return {
-      providerKind: 'xai' as const,
-      files: page.data.map((file) => ({
-        id: file.id,
-        filename: file.filename,
-        bytes: file.bytes,
-        createdAt: file.created_at,
-        ...(file.expires_at !== undefined ? { expiresAt: file.expires_at } : {}),
-        purpose: file.purpose,
-        object: file.object,
-        // xAI Files API 无异步处理概念，list 返回的文件均为立即可用，统一标记为 active。
-        status: 'active',
-      })),
-      ...(page.pagination_token ? { paginationToken: page.pagination_token } : {}),
-    }
   })
 
   typedIpcHandle('provider:files:get', async (request) => {
     const resolved = await clientFor(request.providerProfileId)
-    if (resolved.kind === 'xai') {
-      throw new SparkError('VALIDATION_FAILED', '当前渠道尚未开放单文件查询')
-    }
-    if (resolved.kind === 'minimax-hailuo') {
-      const minimaxFile = await resolved.client.retrieve(request.fileId)
-      return { providerKind: 'minimax-hailuo', file: toMinimaxProviderFile(minimaxFile) }
-    }
-    return { providerKind: resolved.kind, file: await resolved.client.get(request.fileId) }
+    return runFilesTask(async () => {
+      if (resolved.kind === 'xai') {
+        throw new SparkError('VALIDATION_FAILED', '当前渠道尚未开放单文件查询')
+      }
+      if (resolved.kind === 'minimax-hailuo') {
+        const minimaxFile = await resolved.client.retrieve(request.fileId)
+        return { providerKind: 'minimax-hailuo', file: toMinimaxProviderFile(minimaxFile) }
+      }
+      return { providerKind: resolved.kind, file: await resolved.client.get(request.fileId) }
+    })
   })
 
   typedIpcHandle('provider:files:upload', async (request) => {
     const resolved = await clientFor(request.providerProfileId)
-    if (resolved.kind === 'xai') {
-      throw new SparkError('VALIDATION_FAILED', '当前渠道尚未开放文件上传')
-    }
-    if (resolved.kind === 'bailian') {
-      if (!request.filePath) {
-        throw new SparkError(
-          'VALIDATION_FAILED',
-          '百炼 Files 仅支持上传本地文件，不支持 URL 或 TOS 导入',
-        )
+    return runFilesTask(async () => {
+      if (resolved.kind === 'xai') {
+        throw new SparkError('VALIDATION_FAILED', '当前渠道尚未开放文件上传')
       }
-      if (
-        request.purpose !== 'fine-tune' &&
-        request.purpose !== 'file-extract' &&
-        request.purpose !== 'batch'
-      ) {
-        throw new SparkError(
-          'VALIDATION_FAILED',
-          '百炼 Files 必须选择 fine-tune、file-extract 或 batch purpose',
-        )
+      if (resolved.kind === 'bailian') {
+        if (!request.filePath) {
+          throw new SparkError(
+            'VALIDATION_FAILED',
+            '百炼 Files 仅支持上传本地文件，不支持 URL 或 TOS 导入',
+          )
+        }
+        if (
+          request.purpose !== 'fine-tune' &&
+          request.purpose !== 'file-extract' &&
+          request.purpose !== 'batch'
+        ) {
+          throw new SparkError(
+            'VALIDATION_FAILED',
+            '百炼 Files 必须选择 fine-tune、file-extract 或 batch purpose',
+          )
+        }
+        const file = await resolved.client.upload({
+          filePath: request.filePath,
+          purpose: request.purpose,
+          ...(request.description ? { description: request.description } : {}),
+        })
+        return { providerKind: resolved.kind, file }
+      }
+      if (resolved.kind === 'minimax-hailuo') {
+        if (!request.filePath) {
+          throw new SparkError(
+            'VALIDATION_FAILED',
+            'MiniMax Files 仅支持上传本地文件，不支持 URL 导入',
+          )
+        }
+        const buffer = await readFile(request.filePath)
+        const minimaxFile = await resolved.client.upload({
+          buffer,
+          filename: basename(request.filePath),
+          mimeType: mimeFromPath(request.filePath),
+          purpose: MINIMAX_FILES_PURPOSE,
+        })
+        return { providerKind: 'minimax-hailuo', file: toMinimaxProviderFile(minimaxFile) }
       }
       const file = await resolved.client.upload({
-        filePath: request.filePath,
-        purpose: request.purpose,
-        ...(request.description ? { description: request.description } : {}),
+        ...(request.filePath ? { filePath: request.filePath } : {}),
+        ...(request.url ? { url: request.url } : {}),
+        purpose: request.purpose === 'user_data' ? request.purpose : 'user_data',
+        ...(request.expireAt !== undefined ? { expireAt: request.expireAt } : {}),
+        ...(request.tos ? { tos: request.tos } : {}),
+        ...(request.preprocessVideo ? { preprocessVideo: request.preprocessVideo } : {}),
+        ...(request.waitUntilActive !== undefined
+          ? { waitUntilActive: request.waitUntilActive }
+          : {}),
       })
       return { providerKind: resolved.kind, file }
-    }
-    if (resolved.kind === 'minimax-hailuo') {
-      if (!request.filePath) {
-        throw new SparkError(
-          'VALIDATION_FAILED',
-          'MiniMax Files 仅支持上传本地文件，不支持 URL 导入',
-        )
-      }
-      const buffer = await readFile(request.filePath)
-      const minimaxFile = await resolved.client.upload({
-        buffer,
-        filename: basename(request.filePath),
-        mimeType: mimeFromPath(request.filePath),
-        purpose: MINIMAX_FILES_PURPOSE,
-      })
-      return { providerKind: 'minimax-hailuo', file: toMinimaxProviderFile(minimaxFile) }
-    }
-    const file = await resolved.client.upload({
-      ...(request.filePath ? { filePath: request.filePath } : {}),
-      ...(request.url ? { url: request.url } : {}),
-      purpose: request.purpose === 'user_data' ? request.purpose : 'user_data',
-      ...(request.expireAt !== undefined ? { expireAt: request.expireAt } : {}),
-      ...(request.tos ? { tos: request.tos } : {}),
-      ...(request.preprocessVideo ? { preprocessVideo: request.preprocessVideo } : {}),
-      ...(request.waitUntilActive !== undefined
-        ? { waitUntilActive: request.waitUntilActive }
-        : {}),
     })
-    return { providerKind: resolved.kind, file }
   })
 
   typedIpcHandle('provider:files:delete', async (request) => {
     const resolved = await clientFor(request.providerProfileId)
-    if (resolved.kind === 'minimax-hailuo') {
-      await resolved.client.delete({ fileId: request.fileId, purpose: MINIMAX_DELETE_PURPOSE })
-      return { deleted: true, id: request.fileId }
-    }
-    return resolved.client.delete(request.fileId)
+    return runFilesTask(async () => {
+      if (resolved.kind === 'minimax-hailuo') {
+        await resolved.client.delete({ fileId: request.fileId, purpose: MINIMAX_DELETE_PURPOSE })
+        return { deleted: true, id: request.fileId }
+      }
+      return resolved.client.delete(request.fileId)
+    })
   })
 }

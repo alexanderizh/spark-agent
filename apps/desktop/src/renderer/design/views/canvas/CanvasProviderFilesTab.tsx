@@ -22,11 +22,13 @@ import type {
 } from '@spark/protocol'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { Icons } from '../../Icons'
+import { CanvasOverlayBoundary } from './CanvasOverlayBoundary'
 import { providerFilesApiKindForProfile } from './canvasProviderFiles'
 import './CanvasProviderFilesTab.less'
 
 const MAX_BATCH_DELETE = 20
 const MAX_LOCAL_UPLOADS = 20
+const FILE_PAGE_SIZE = 20
 
 type FileStatusFilter = 'all' | 'processing' | 'active' | 'failed'
 type UploadSource = 'local' | 'url'
@@ -46,6 +48,7 @@ export function CanvasProviderFilesTab({
   const [providerProfileId, setProviderProfileId] = useState('')
   const [files, setFiles] = useState<ProviderFileObject[]>([])
   const [paginationToken, setPaginationToken] = useState<string>()
+  const [currentPage, setCurrentPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
@@ -56,9 +59,10 @@ export function CanvasProviderFilesTab({
   const pollingRef = useRef(false)
   const loadSequenceRef = useRef(0)
   const providerProfileIdRef = useRef(providerProfileId)
-  const providerKind = useMemo<
-    Extract<ProviderFilesApiKind, 'xai' | 'bailian' | 'volcengine-ark' | 'minimax-hailuo'> | null
-  >(
+  const providerKind = useMemo<Extract<
+    ProviderFilesApiKind,
+    'xai' | 'bailian' | 'volcengine-ark' | 'minimax-hailuo'
+  > | null>(
     () =>
       providerFilesApiKindForProfile(
         providers.find((profile) => profile.id === providerProfileId) ?? {},
@@ -99,7 +103,7 @@ export function CanvasProviderFilesTab({
 
   const loadFiles = useCallback(
     async (after?: string) => {
-      if (!providerProfileId) return
+      if (!providerProfileId) return false
       const sequence = ++loadSequenceRef.current
       try {
         const result = await listFiles({
@@ -113,14 +117,16 @@ export function CanvasProviderFilesTab({
             ? { paginationToken: after }
             : {}),
         })
-        if (sequence !== loadSequenceRef.current) return
+        if (sequence !== loadSequenceRef.current) return false
         setFiles((current) => (after ? mergeFiles(current, result.files) : result.files))
         setPaginationToken(result.paginationToken)
         if (!after) setSelectedIds(new Set())
         setErrorMessage('')
+        return true
       } catch (error) {
-        if (sequence !== loadSequenceRef.current) return
+        if (sequence !== loadSequenceRef.current) return false
         setErrorMessage(filesErrorMessage(error))
+        return false
       }
     },
     [listFiles, order, providerKind, providerProfileId],
@@ -174,6 +180,32 @@ export function CanvasProviderFilesTab({
       )
     })
   }, [files, query, statusFilter])
+
+  const totalCount = visibleFiles.length
+  const totalPages = Math.max(1, Math.ceil(totalCount / FILE_PAGE_SIZE))
+  // 删除文件后当前页可能越界，夹回到最末页
+  const safePage = Math.min(currentPage, totalPages)
+  const pagedFiles = useMemo(
+    () => visibleFiles.slice((safePage - 1) * FILE_PAGE_SIZE, safePage * FILE_PAGE_SIZE),
+    [visibleFiles, safePage],
+  )
+  const hasMoreFromProvider = Boolean(paginationToken)
+
+  const goToPrevPage = useCallback(() => {
+    setCurrentPage((page) => Math.max(1, page - 1))
+  }, [])
+
+  const goToNextPage = useCallback(async () => {
+    if (safePage < totalPages) {
+      setCurrentPage(safePage + 1)
+      return
+    }
+    // 已到已加载数据末页：若后端还有更多批次，先拉取再翻页（游标分页只能单向前进）
+    if (hasMoreFromProvider && paginationToken) {
+      const loaded = await loadFiles(paginationToken)
+      if (loaded) setCurrentPage((page) => page + 1)
+    }
+  }, [hasMoreFromProvider, loadFiles, paginationToken, safePage, totalPages])
 
   const refreshOne = async (fileId: string) => {
     const requestedProviderProfileId = providerProfileId
@@ -244,7 +276,8 @@ export function CanvasProviderFilesTab({
           {providerLabel}
         </button>
         <span className="canvas-provider-files-note">
-          已支持火山方舟、百炼 DashScope 与 MiniMax 原生 Files；MiniMax 文件可经 mm_file:// 供 H3 视频引用。
+          已支持火山方舟、百炼 DashScope 与 MiniMax 原生 Files；MiniMax 文件可经 mm_file:// 供 H3
+          视频引用。
         </span>
       </div>
 
@@ -264,7 +297,7 @@ export function CanvasProviderFilesTab({
         <Alert type="error" message={errorMessage} closable onClose={() => setErrorMessage('')} />
       )}
 
-      <div className="canvas-provider-files-toolbar">
+      <CanvasOverlayBoundary className="canvas-provider-files-toolbar">
         <div className="canvas-provider-files-toolbar-main">
           <Select
             value={providerProfileId || null}
@@ -279,6 +312,7 @@ export function CanvasProviderFilesTab({
               setProviderProfileId(profileId)
               setFiles([])
               setPaginationToken(undefined)
+              setCurrentPage(1)
               setSelectedIds(new Set())
               setDeletingIds(new Set())
               setErrorMessage('')
@@ -288,13 +322,19 @@ export function CanvasProviderFilesTab({
           <Input
             allowClear
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setCurrentPage(1)
+            }}
             placeholder="搜索文件名 / File ID / MIME"
             style={{ width: 220 }}
           />
           <Select
             value={statusFilter}
-            onChange={setStatusFilter}
+            onChange={(nextStatus) => {
+              setStatusFilter(nextStatus)
+              setCurrentPage(1)
+            }}
             options={[
               { value: 'all', label: '全部状态' },
               { value: 'active', label: '可用' },
@@ -305,7 +345,10 @@ export function CanvasProviderFilesTab({
           />
           <Select
             value={order}
-            onChange={setOrder}
+            onChange={(nextOrder) => {
+              setOrder(nextOrder)
+              setCurrentPage(1)
+            }}
             options={[
               { value: 'desc', label: '最新创建' },
               { value: 'asc', label: '最早创建' },
@@ -338,7 +381,7 @@ export function CanvasProviderFilesTab({
             </Button>
           )}
         </div>
-      </div>
+      </CanvasOverlayBoundary>
 
       {!providersLoading && providers.length === 0 ? (
         <Empty description="暂无可用的 Files Provider，请先在模型管理中配置 API Key 与官方 Base URL" />
@@ -349,7 +392,7 @@ export function CanvasProviderFilesTab({
         />
       ) : (
         <div className="canvas-provider-files-list">
-          {visibleFiles.map((file) => {
+          {pagedFiles.map((file) => {
             const deleting = deletingIds.has(file.id)
             return (
               <div
@@ -365,21 +408,37 @@ export function CanvasProviderFilesTab({
                     )
                   }
                 />
-                <div style={{ minWidth: 0 }}>
-                  <Tooltip title={`${file.filename}\n${file.id}`}>
-                    <div className="canvas-provider-file-name">{file.filename}</div>
-                  </Tooltip>
-                  <div className="canvas-provider-file-id">{file.id}</div>
+                <div className="canvas-provider-file-body">
+                  <div className="canvas-provider-file-head">
+                    <Tooltip title={`${file.filename}\n${file.id}`}>
+                      <span className="canvas-provider-file-name">{file.filename}</span>
+                    </Tooltip>
+                    <span className="canvas-provider-file-id">{shortenFileId(file.id)}</span>
+                  </div>
                   <div className="canvas-provider-files-meta">
                     <FileStatusTag status={file.status} />
-                    <Tag>{file.mimeType ?? '未知类型'}</Tag>
-                    <Tag>{formatBytes(file.bytes)}</Tag>
-                    <Tag>{file.purpose}</Tag>
-                    {file.tos?.bucket && <Tag color="blue">TOS · {file.tos.bucket}</Tag>}
-                    <span className="canvas-provider-files-note">{formatTime(file.createdAt)}</span>
-                    <ExpiryTag
-                      {...(file.expiresAt !== undefined ? { expiresAt: file.expiresAt } : {})}
-                    />
+                    <span className="canvas-provider-file-attr">{formatBytes(file.bytes)}</span>
+                    <span className="canvas-provider-file-sep">·</span>
+                    <span className="canvas-provider-file-attr">{file.mimeType ?? '未知类型'}</span>
+                  </div>
+                  <div className="canvas-provider-file-submeta">
+                    <span>{file.purpose}</span>
+                    <span className="canvas-provider-file-sep">·</span>
+                    <span>{formatTime(file.createdAt)}</span>
+                    {file.tos?.bucket && (
+                      <>
+                        <span className="canvas-provider-file-sep">·</span>
+                        <span>TOS · {file.tos.bucket}</span>
+                      </>
+                    )}
+                    {file.expiresAt !== undefined && (
+                      <>
+                        <span className="canvas-provider-file-sep">·</span>
+                        <span className="canvas-provider-file-expiry">
+                          到期 · {formatTime(file.expiresAt)}
+                        </span>
+                      </>
+                    )}
                   </div>
                   {file.status === 'failed' && (
                     <div className="canvas-provider-file-error">
@@ -392,15 +451,17 @@ export function CanvasProviderFilesTab({
                   <Button size="small" onClick={() => void copyFileId(file.id)}>
                     复制 ID
                   </Button>
-                  {providerKind === 'minimax-hailuo' && file.status === 'active' && onAddToCanvas && (
-                    <Button
-                      size="small"
-                      type="primary"
-                      onClick={() => onAddToCanvas(file, providerProfileId)}
-                    >
-                      加入视频生成
-                    </Button>
-                  )}
+                  {providerKind === 'minimax-hailuo' &&
+                    file.status === 'active' &&
+                    onAddToCanvas && (
+                      <Button
+                        size="small"
+                        type="primary"
+                        onClick={() => onAddToCanvas(file, providerProfileId)}
+                      >
+                        加入视频生成
+                      </Button>
+                    )}
                   {providerKind !== 'xai' && (
                     <Button
                       size="small"
@@ -425,11 +486,28 @@ export function CanvasProviderFilesTab({
         </div>
       )}
 
-      {paginationToken && (
+      {totalCount > 0 && (totalCount > FILE_PAGE_SIZE || hasMoreFromProvider) && (
         <div className="canvas-provider-files-pagination">
-          <Button loading={filesLoading} onClick={() => void loadFiles(paginationToken)}>
-            加载更多
-          </Button>
+          <span className="canvas-provider-files-pagination-info">
+            第 {Math.min((safePage - 1) * FILE_PAGE_SIZE + 1, totalCount)}–
+            {Math.min(safePage * FILE_PAGE_SIZE, totalCount)} 条，共 {totalCount} 条
+          </span>
+          <div className="canvas-provider-files-pagination-controls">
+            <Button size="small" disabled={safePage <= 1} onClick={goToPrevPage}>
+              上一页
+            </Button>
+            <span className="canvas-provider-files-pagination-page">
+              第 {safePage} / {totalPages} 页
+            </span>
+            <Button
+              size="small"
+              loading={filesLoading}
+              disabled={safePage >= totalPages && !hasMoreFromProvider}
+              onClick={() => void goToNextPage()}
+            >
+              下一页
+            </Button>
+          </div>
         </div>
       )}
 
@@ -1022,11 +1100,6 @@ function FileStatusTag({ status }: { status?: ProviderFileObject['status'] }) {
   return <Tag>状态未知</Tag>
 }
 
-function ExpiryTag({ expiresAt }: { expiresAt?: number }) {
-  if (!expiresAt) return null
-  return <Tag>到期 · {formatTime(expiresAt)}</Tag>
-}
-
 function mergeFiles(
   current: ProviderFileObject[],
   incoming: ProviderFileObject[],
@@ -1070,6 +1143,11 @@ function formatBytes(bytes: number): string {
 function formatTime(value: number): string {
   if (!value) return '创建时间未知'
   return new Date(toMilliseconds(value)).toLocaleString()
+}
+
+function shortenFileId(id: string): string {
+  if (id.length <= 16) return id
+  return `${id.slice(0, 12)}…${id.slice(-4)}`
 }
 
 function toMilliseconds(value: number): number {
