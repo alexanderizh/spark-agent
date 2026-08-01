@@ -61,6 +61,14 @@ export function isSidebarProjectDropTarget(target: EventTarget | null): boolean 
     : false
 }
 
+export function shouldHandleComposerFileDrop(
+  dataTransfer: DataTransfer | null | undefined,
+  target: EventTarget | null,
+  sending: boolean,
+): boolean {
+  return !sending && hasFileDataTransfer(dataTransfer) && !isSidebarProjectDropTarget(target)
+}
+
 export async function addProjectsFromDroppedPaths(
   paths: string[],
   dependencies: AddProjectsFromDroppedPathsDependencies,

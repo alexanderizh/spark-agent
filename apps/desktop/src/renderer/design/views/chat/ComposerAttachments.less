@@ -1,0 +1,53 @@
+.composer-v2 .composer-attachment-strip {
+  gap: 7px;
+}
+
+.composer-v2 .composer-attachment-chip {
+  gap: 7px;
+  height: 30px;
+  padding: 0 7px 0 10px;
+  border-color: transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-soft));
+  color: color-mix(in srgb, var(--text) 82%, var(--primary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 5%, transparent);
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease;
+}
+
+.composer-v2 .composer-attachment-chip:hover {
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg-soft));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--text);
+}
+
+.composer-v2 .composer-directory-chip {
+  background: color-mix(in srgb, var(--primary) 13%, var(--panel));
+  color: color-mix(in srgb, var(--primary) 78%, var(--text));
+}
+
+.composer-v2 .composer-directory-chip:hover {
+  background: color-mix(in srgb, var(--primary) 17%, var(--panel));
+}
+
+.composer-v2 .composer-attachment-chip button {
+  color: color-mix(in srgb, currentColor 54%, transparent);
+}
+
+.composer-v2 .composer-attachment-chip button:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.composer-v2 .composer-attachment-chip button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 58%, transparent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-v2 .composer-attachment-chip {
+    transition: none;
+  }
+}

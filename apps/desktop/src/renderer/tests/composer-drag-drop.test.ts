@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildComposerAttachmentsFromPaths,
@@ -5,6 +7,7 @@ import {
   hasFileDataTransfer,
   isUnresolvableFileDrop,
 } from '../design/services/composer-attachments'
+import { shouldHandleComposerFileDrop } from '../design/services/project-folder-drop'
 
 /**
  * Electron 32 起渲染进程的 File 上不再有 `path`，拖拽只能靠 preload 转发的
@@ -40,6 +43,19 @@ describe('composer drag and drop attachments', () => {
       '/Users/me/project/assets',
     ])
     expect(getPathForFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('lets the sidebar project drop zone own its file drag events', () => {
+    const zone = document.createElement('div')
+    const child = document.createElement('span')
+    const main = document.createElement('main')
+    zone.dataset.sidebarProjectDropZone = ''
+    zone.appendChild(child)
+    const dataTransfer = { types: ['Files'], items: [] } as unknown as DataTransfer
+
+    expect(shouldHandleComposerFileDrop(dataTransfer, child, false)).toBe(false)
+    expect(shouldHandleComposerFileDrop(dataTransfer, main, false)).toBe(true)
+    expect(shouldHandleComposerFileDrop(dataTransfer, main, true)).toBe(false)
   })
 
   it('flags an unresolvable drop instead of silently dropping the files', () => {
