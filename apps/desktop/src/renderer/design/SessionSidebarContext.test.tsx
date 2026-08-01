@@ -74,6 +74,86 @@ describe('SessionSidebarContext', () => {
     vi.clearAllMocks()
   })
 
+  it('adds dropped directories as projects without creating a session', async () => {
+    const existingWorkspace = {
+      id: 'workspace-existing',
+      name: 'Existing',
+      rootPath: '/work/existing',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    }
+    const createdWorkspaces: typeof existingWorkspace[] = []
+    let currentWorkspace = existingWorkspace
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') {
+        return { workspaces: [existingWorkspace, ...createdWorkspaces], total: 1 + createdWorkspaces.length }
+      }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: currentWorkspace }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'file:stat-kind') {
+        const path = String(request?.path ?? '')
+        return { kind: path.endsWith('.txt') ? 'file' : 'directory' }
+      }
+      if (channel === 'workspace:open') {
+        const create = request?.create as { name: string; rootPath: string }
+        const workspace = {
+          ...existingWorkspace,
+          id: `workspace-${create.name}`,
+          name: create.name,
+          rootPath: create.rootPath,
+        }
+        createdWorkspaces.push(workspace)
+        currentWorkspace = workspace
+        return { workspace }
+      }
+      return {}
+    })
+
+    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.handleAddDroppedProjects([
+        '/work/alpha',
+        '/work/readme.txt',
+        '/work/beta',
+      ])
+    })
+
+    expect(
+      invoke.mock.calls.filter(([channel]) => channel === 'workspace:open').map(([, request]) => request),
+    ).toEqual([
+      { create: { name: 'alpha', rootPath: '/work/alpha' } },
+      { create: { name: 'beta', rootPath: '/work/beta' } },
+    ])
+    expect(invoke.mock.calls.some(([channel]) => channel === 'session:create')).toBe(false)
+    expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-beta')
+    expect(toastMocks.toast.success).toHaveBeenCalledWith('已添加 2 个项目；忽略 1 个文件')
+  })
+
   it('keeps the selected workspace after creating a team-mode session', async () => {
     const workspaceA = {
       id: 'workspace-1',

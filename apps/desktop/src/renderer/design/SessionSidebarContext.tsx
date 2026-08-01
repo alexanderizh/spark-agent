@@ -39,6 +39,10 @@ import {
 import { resolveSessionGroupId, sortSessionsByPinned, toTime } from './sidebar-session-sort'
 import { isCanvasWorkspace } from './workspace-visibility'
 import { listAllWorkspaces } from './services/list-all-workspaces'
+import {
+  addProjectsFromDroppedPaths,
+  formatDroppedProjectSummary,
+} from './services/project-folder-drop'
 
 // 供 SidebarSessionList 等消费方在本地排序时复用（与后端 listSessions 排序对齐）。
 export { sortSessionsByPinned }
@@ -350,6 +354,7 @@ type SessionSidebarCtx = {
 
   // Create project dialog
   handleCreateProject: (useTempDir?: boolean) => Promise<void>
+  handleAddDroppedProjects: (paths: string[]) => Promise<void>
   handlePickProjectPath: () => Promise<void>
   projectDialog: 'create' | null
   setProjectDialog: (d: 'create' | null) => void
@@ -493,6 +498,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
   const { invoke: getTempProjectDir } = useIpcInvoke('app:get-temp-project-dir')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+  const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
   const { invoke: listSidebarOrder } = useIpcInvoke('sidebar-order:list')
   const { invoke: updateSidebarOrder } = useIpcInvoke('sidebar-order:update')
 
@@ -1134,6 +1140,28 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     ],
   )
 
+  const handleAddDroppedProjects = useCallback(
+    async (paths: string[]) => {
+      try {
+        const summary = await addProjectsFromDroppedPaths(paths, {
+          existingRootPaths: workspaces.map((workspace) => workspace.rootPath),
+          statFileKind,
+          openWorkspace,
+          refreshData,
+          setActiveWorkspace,
+        })
+        const message = formatDroppedProjectSummary(summary)
+        if (summary.added > 0) toast.success(message)
+        else if (summary.failed > 0) toast.error(message)
+        else toast.info(message)
+      } catch (err) {
+        console.error('Add dropped projects failed', err)
+        toast.error(err instanceof Error ? err.message : '拖拽添加项目失败')
+      }
+    },
+    [openWorkspace, refreshData, setActiveWorkspace, statFileKind, toast, workspaces],
+  )
+
   // Project actions
   const handleRenameProject = useCallback(
     async (workspace: WorkspaceInfo) => {
@@ -1741,6 +1769,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       handleReorderSessions,
       handleReorderPinnedSessions,
       handleCreateProject,
+      handleAddDroppedProjects,
       handlePickProjectPath,
       projectDialog,
       setProjectDialog,
@@ -1794,6 +1823,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       handleReorderSessions,
       handleReorderPinnedSessions,
       handleCreateProject,
+      handleAddDroppedProjects,
       handlePickProjectPath,
       projectDialog,
       projectName,
