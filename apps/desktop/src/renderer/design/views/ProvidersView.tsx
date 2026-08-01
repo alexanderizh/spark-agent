@@ -18,7 +18,6 @@ import {
 import { Badge, Switch } from 'antd'
 import { Icons } from '../Icons'
 import { ChipList } from '../components/ChipList'
-import { ProviderFilesPanel } from './provider/ProviderFilesPanel'
 import { ProviderConversationProtocolFields } from './provider/ProviderConversationProtocolFields'
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
 import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
@@ -3585,10 +3584,6 @@ export function ProviderEditPanel({
             closable
             onClose={() => setError('')}
           />
-        )}
-
-        {profileId && form.mediaProvider === 'xai' && (
-          <ProviderFilesPanel providerProfileId={profileId} />
         )}
 
         {/* ─── 服务商配置信息 ─── */}

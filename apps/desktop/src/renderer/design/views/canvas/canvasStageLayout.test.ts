@@ -101,6 +101,46 @@ describe('persistCanvasNodeLayoutChanges', () => {
     expect(nextNodes?.[0]?.y).toBe(72)
   })
 
+  it('keeps the real group size when a collapsed presentation moves', () => {
+    const node = createCanvasNode({
+      type: 'group',
+      width: 560,
+      height: 480,
+      data: { collapsed: true },
+    })
+    const baseFlowNode = createFlowNode(node)
+    const changes = [
+      { id: node.id, type: 'position', position: { x: 48, y: 72 }, dragging: false },
+    ] as NodeChange<Node<CanvasFlowNodeData>>[]
+
+    const nextNodes = persistCanvasNodeLayoutChanges(
+      [node],
+      [
+        createFlowNode(node, {
+          position: { x: 48, y: 72 },
+          width: 420,
+          height: 360,
+          measured: { width: 420, height: 360 },
+          data: {
+            ...baseFlowNode.data,
+            collapsedGroupPresentation: {
+              childCount: 2,
+              previews: [
+                { kind: 'fallback', slot: 0 },
+                { kind: 'fallback', slot: 1 },
+              ],
+              size: { width: 420, height: 360 },
+              color: 'blue',
+            },
+          },
+        }),
+      ],
+      changes,
+    )
+
+    expect(nextNodes?.[0]).toMatchObject({ x: 48, y: 72, width: 560, height: 480 })
+  })
+
   it('skips position changes that do not alter persisted coordinates', () => {
     const node = createCanvasNode()
     const changes = [

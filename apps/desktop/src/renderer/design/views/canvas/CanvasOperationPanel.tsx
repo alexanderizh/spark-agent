@@ -90,6 +90,10 @@ export {
 } from './canvasOperationPanelInputModel'
 import { CanvasMediaInputConfigurator } from './CanvasMediaInputConfigurator'
 import {
+  useCanvasMediaInputQuickActions,
+  type CanvasMediaInputQuickKind,
+} from './useCanvasMediaInputQuickActions'
+import {
   resolveCanvasDepthSubmitLabel,
   resolveCanvasOperationPanelMode,
   type CanvasDepthModelState,
@@ -120,13 +124,6 @@ import type {
   CanvasTask,
   ShotScriptConfig,
 } from './canvas.types'
-
-/**
- * 操作节点编辑面板。
- *
- * 默认定位在底部 dock 上方；双击节点时可切到 inline，作为节点卡片内部扩展区。
- * 三区：操作类型 / 输入预览 / 参数编辑。确定后运行。
- */
 
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
 type CanvasTaskInputRoleSelection = CanvasTaskInputRole | CanvasTaskInputRole[]
@@ -298,9 +295,6 @@ export function resolveOperationPanelEditablePrompt(params: {
   upstreamTextContext?: string | null
   hideFunctionalPrompt?: boolean
 }): string {
-  // Connected text is represented by Prompt Document reference blocks. Keep the
-  // visible editor limited to authored text; the compiler resolves upstream
-  // content at submission time.
   if (params.hideFunctionalPrompt) return ''
   return (params.nodePrompt ?? '').trim()
 }
@@ -799,8 +793,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
   const [running, setRunning] = useState(false)
-  // 提交中态：覆盖「点击 → closePanel 卸载按钮 → 乐观更新前」的反馈空窗，
-  // 并用于防重复提交（已 completed 节点重提时也拦得住）。
   const [submitting, setSubmitting] = useState(false)
   const [draftRevision, setDraftRevision] = useState(0)
   const [cancelling, setCancelling] = useState(false)
@@ -809,7 +801,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     null,
   )
   const [activeTextPickerId, setActiveTextPickerId] = useState<string | null>(null)
-  // 分镜时长配置草稿：preset 命中档位则用档位值，否则 'custom' + 自定义数字字符串。
   const [maxClipPreset, setMaxClipPreset] = useState<number | 'custom'>('custom')
   const [maxClipCustom, setMaxClipCustom] = useState('')
   const modelParamDraftEditedRef = useRef(false)
@@ -857,8 +848,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     setSelectedTextModelId(node.data.modelId ?? task?.modelId ?? operationPreset.modelId ?? '')
     setSelectedSkillIds(node.data.skillIds ?? task?.skillIds ?? operationPreset.skillIds)
     configurationTouchedRef.current = false
-    // 分镜时长配置草稿：从 node.data.shotScriptConfig 解析到 preset/custom（随节点切换重置）。
-    // 兼容脏数据：持久化的 maxClipSec 非法（缺省 / 非有限 / ≤0）时回退默认值，避免回显 -1 这类异常。
     const rawMaxClip = node.data.shotScriptConfig?.maxClipSec
     const safeMaxClip =
       typeof rawMaxClip === 'number' && Number.isFinite(rawMaxClip) && rawMaxClip > 0
@@ -866,7 +855,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         : DEFAULT_MAX_CLIP_SEC
     setMaxClipPreset(SHOT_MAX_CLIP_PRESETS.includes(safeMaxClip) ? safeMaxClip : 'custom')
     setMaxClipCustom(SHOT_MAX_CLIP_PRESETS.includes(safeMaxClip) ? '' : String(safeMaxClip))
-    // 只在切换节点时重载草稿，避免保存后的 snapshot 刷新把用户刚输入的配置重置掉。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id, task?.id])
 
@@ -990,9 +978,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       (task?.agentId ? agents.find((agent) => agent.id === task.agentId) : null) ??
       presetAgent ??
       pickDefaultTextAgent(agents)
-    // 旧节点可能只持久化了 modelId，没有 providerProfileId。此时不能直接
-    // 回落到 Agent 默认 Provider，否则模型会被判定为“不属于当前 Provider”并
-    // 替换成该 Provider 的 defaultModel（例如 Qwen3.6-3 → glm-5.2）。
+    // 旧节点缺 providerProfileId 时避免把 modelId 误归到 Agent 默认 Provider。
     const persistedModelId =
       node.data.modelId ?? task?.modelId ?? operationPreset.modelId ?? defaultAgent?.modelId
     const modelOwner = persistedModelId
@@ -1199,6 +1185,29 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     },
     [markConfigurationTouched, removeInputNode],
   )
+  const mediaInputQuickKinds = useMemo<CanvasMediaInputQuickKind[]>(() => {
+    const policy = selectedMediaInputModeOption?.rolePolicy
+    return [
+      ...(policy?.imageRoles?.length ? (['image'] as const) : []),
+      ...(policy?.videoRoles?.length ? (['video'] as const) : []),
+      ...(policy?.audioRoles?.length ? (['audio'] as const) : []),
+    ]
+  }, [selectedMediaInputModeOption])
+  const appendQuickMediaInput = useCallback(
+    (mediaNode: CanvasNode) => {
+      setSelectedInputNodeIds((current) => Array.from(new Set([...current, mediaNode.id])))
+      markConfigurationTouched()
+    },
+    [markConfigurationTouched, setSelectedInputNodeIds],
+  )
+  const mediaInputQuickActions = useCanvasMediaInputQuickActions({
+    nodes: snapshot.nodes,
+    acceptedKinds: mediaInputQuickKinds,
+    onRequestCanvasNodePick,
+    onUploadLocalFile,
+    onAppendNode: appendQuickMediaInput,
+    onInvalidNode: () => message.warning('所选素材类型不适用于当前生成模式'),
+  })
   const supportsVideoFrameRoles = useMemo(
     () =>
       (selectedCapability ? capabilitySupportsFrameRoles(selectedCapability) : false) &&
@@ -1504,9 +1513,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     return () => persistOnUnmountRef.current()
   }, [])
 
-  // 把 preset/custom 草稿解析成结构化时长配置。
-  // 分镜节点永远返回合法值——非法输入（空 / 非正）回退默认，绝不放任 {maxClip} 占位槽裸奔泄漏给 LLM；
-  // 非分镜节点返回 null。
   const resolveShotScriptConfig = useCallback((): ShotScriptConfig | null => {
     if (!isShotScriptNode) return null
     const parsed = maxClipPreset === 'custom' ? Number(maxClipCustom) : maxClipPreset
@@ -1573,8 +1579,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   }, [onCancelTask, task?.id])
 
   const handleRun = useCallback(async () => {
-    // 防重复提交：本地 running/submitting flag + 节点状态（含已完成节点重提场景）。
-    // 旧实现仅拦 running，已完成(completed)节点重提会穿透 → 产生重复任务。
     if (running || submitting || node.data.status === 'running') return
     if (selectedMediaInputIssue) {
       message.warning(selectedMediaInputIssue)
@@ -2226,6 +2230,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               onChange={handleMediaInputModeChange}
               onMove={handleMediaInputMove}
               onRemove={handleMediaInputRemove}
+              {...(onRequestCanvasNodePick ? { onQuickPick: mediaInputQuickActions.pick } : {})}
+              {...(onUploadLocalFile ? { onQuickUpload: mediaInputQuickActions.upload } : {})}
             />
           </div>
         )}
@@ -2621,6 +2627,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               onChange={handleMediaInputModeChange}
               onMove={handleMediaInputMove}
               onRemove={handleMediaInputRemove}
+              {...(onRequestCanvasNodePick ? { onQuickPick: mediaInputQuickActions.pick } : {})}
+              {...(onUploadLocalFile ? { onQuickUpload: mediaInputQuickActions.upload } : {})}
             />
           </div>
         )}
@@ -2983,11 +2991,7 @@ function inferCustomParamType(value: unknown): CustomParamType {
   return 'string'
 }
 
-/**
- * 能力是否接受文本输入（text/prompt）。
- * 接受文本输入的操作（如 panorama_360）可在仅有提示词、无图片节点时提交，
- * 不强制要求选择图片/视频节点。
- */
+/** 能力是否接受 text/prompt 输入。 */
 function operationAcceptsTextInput(inputTypes: readonly string[] | undefined): boolean {
   if (!inputTypes) return false
   return inputTypes.includes('text') || inputTypes.includes('prompt')

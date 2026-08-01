@@ -25,6 +25,13 @@ describe('isVolcengineArkFilesProfile', () => {
     ).toBe('bailian')
   })
 
+  it('includes xAI profiles for the unified Files tab', () => {
+    expect(providerFilesApiKindForProfile({ mediaProvider: 'xai' })).toBe('xai')
+    expect(
+      providerFilesApiKindForProfile({ apiEndpoint: 'https://api.x.ai/v1' }),
+    ).toBe('xai')
+  })
+
   it('does not expose unrelated provider profiles in the Volcengine channel tab', () => {
     expect(isVolcengineArkFilesProfile({ mediaProvider: 'xai' })).toBe(false)
     expect(isVolcengineArkFilesProfile({ apiEndpoint: 'https://api.openai.com/v1' })).toBe(false)

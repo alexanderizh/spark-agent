@@ -143,7 +143,7 @@ describe('CanvasPromptMentionTextArea', () => {
     await act(async () => root.unmount())
   })
 
-  it('shows the referenced node filename instead of the generic relation code', async () => {
+  it('shows only the referenced node name without the source filename', async () => {
     const document: CanvasPromptDocument = {
       version: 2,
       blocks: [
@@ -184,7 +184,8 @@ describe('CanvasPromptMentionTextArea', () => {
         />,
       ),
     )
-    expect(container.textContent).toContain('xiaoman-reference.png')
+    expect(container.textContent).toContain('主角小满')
+    expect(container.textContent).not.toContain('xiaoman-reference.png')
     expect(container.textContent).not.toContain('generic')
     await act(async () => root.unmount())
   })

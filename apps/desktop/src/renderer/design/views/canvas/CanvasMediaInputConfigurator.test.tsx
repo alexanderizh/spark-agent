@@ -55,6 +55,29 @@ describe('CanvasMediaInputConfigurator', () => {
     expect(html).toContain('aria-label="视频生成模式"')
     expect(html).not.toContain('video.image_to_video')
   })
+
+  it('offers simple pick and upload buttons when the task has no media input', () => {
+    const html = renderToStaticMarkup(
+      <CanvasMediaInputConfigurator
+        options={[firstFrameOption()]}
+        value="first_frame"
+        assignments={[]}
+        bindings={[]}
+        nodes={[]}
+        assets={[]}
+        variant="composer"
+        onChange={vi.fn()}
+        onMove={vi.fn()}
+        onQuickPick={vi.fn()}
+        onQuickUpload={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('aria-label="从画布选择输入素材"')
+    expect(html).toContain('aria-label="本地上传输入素材"')
+    expect(html).toContain('从画布选择')
+    expect(html).toContain('本地上传')
+  })
 })
 
 function firstFrameOption(): CanvasMediaInputModeOption {

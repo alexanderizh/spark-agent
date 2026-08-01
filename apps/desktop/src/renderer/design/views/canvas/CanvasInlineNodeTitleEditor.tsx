@@ -11,11 +11,13 @@ export function CanvasInlineNodeTitleEditor({
   title,
   fallbackTitle,
   onRename,
+  activation = 'click',
 }: {
   nodeId: string
   title: string | null | undefined
   fallbackTitle: string
   onRename(title: string | null): Promise<void> | void
+  activation?: 'click' | 'doubleClick'
 }) {
   const normalizedTitle = normalizeNodeTitle(title)
   const [editing, setEditing] = useState(false)
@@ -30,13 +32,13 @@ export function CanvasInlineNodeTitleEditor({
   const currentNodeIdRef = useRef(nodeId)
   const saveGenerationRef = useRef(0)
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
       mountedRef.current = false
       saveGenerationRef.current += 1
-    },
-    [],
-  )
+    }
+  }, [])
 
   useEffect(() => {
     if (currentNodeIdRef.current !== nodeId) {
@@ -112,18 +114,38 @@ export function CanvasInlineNodeTitleEditor({
     }
   }, [draft, finishEditing, nodeId, onRename, savedTitle])
 
+  useEffect(() => {
+    if (!editing) return
+    const commitFromOutsidePointer = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && inputRef.current?.input?.contains(target)) return
+      void commit()
+    }
+    document.addEventListener('pointerdown', commitFromOutsidePointer, true)
+    return () => document.removeEventListener('pointerdown', commitFromOutsidePointer, true)
+  }, [commit, editing])
+
   if (!editing) {
+    const startEditing = () => {
+      setDraft(savedTitle ?? '')
+      editingRef.current = true
+      skipBlurRef.current = false
+      setEditing(true)
+    }
     return (
       <button
         type="button"
         className="canvas-inline-node-title-trigger"
         aria-label="重命名节点"
-        title="点击修改节点名称"
-        onClick={() => {
-          setDraft(savedTitle ?? '')
-          editingRef.current = true
-          skipBlurRef.current = false
-          setEditing(true)
+        title={activation === 'doubleClick' ? '双击修改节点名称' : '点击修改节点名称'}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation()
+          if (activation === 'click') startEditing()
+        }}
+        onDoubleClick={(event) => {
+          event.stopPropagation()
+          if (activation === 'doubleClick') startEditing()
         }}
       >
         {savedTitle ?? fallbackTitle}
@@ -139,6 +161,9 @@ export function CanvasInlineNodeTitleEditor({
       value={draft}
       disabled={saving}
       onChange={(event) => setDraft(event.target.value)}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
       onBlur={() => void commit()}
       onKeyDown={(event) => {
         if (event.key === 'Enter') {

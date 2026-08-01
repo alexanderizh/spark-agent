@@ -1,0 +1,129 @@
+.canvas-operation-output-thumbnail-switcher {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 50%;
+  z-index: 12;
+  box-sizing: border-box;
+  width: 80%;
+  padding: 7px 34px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel-elev, var(--bg)) 94%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow-color, #000) 22%, transparent);
+  transform: translateX(-50%);
+  backdrop-filter: blur(12px);
+}
+
+.canvas-operation-output-thumbnail-scroll {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: flex;
+  width: 26px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--panel-elev, var(--bg)) 96%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  transform: translateY(-50%);
+
+  &.is-previous {
+    left: 5px;
+  }
+
+  &.is-next {
+    right: 5px;
+  }
+
+  &:hover:not(:disabled),
+  &:focus-visible {
+    background: color-mix(in srgb, var(--text) 14%, var(--panel-elev, var(--bg)));
+    color: var(--primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+  }
+
+  &:disabled {
+    color: var(--text-faint);
+    cursor: default;
+    opacity: 0.35;
+  }
+}
+
+.canvas-operation-output-thumbnail-track {
+  display: flex;
+  overflow-x: auto;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: nowrap;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  > button {
+    display: flex;
+    box-sizing: border-box;
+    width: 68px;
+    height: 44px;
+    flex: 0 0 68px;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 0;
+    border: 4px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition:
+      border-color 140ms ease,
+      background-color 140ms ease,
+      transform 140ms ease;
+
+    &:hover {
+      background: color-mix(in srgb, var(--text) 9%, transparent);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
+    }
+
+    &.is-active {
+      border-color: color-mix(in srgb, var(--text) 12%, transparent);
+      background: color-mix(in srgb, var(--text) 16%, transparent);
+    }
+
+    > img,
+    > video,
+    > .canvas-operation-output-thumbnail-placeholder {
+      width: 100%;
+      height: 100%;
+      border-radius: 6px;
+    }
+
+    > img,
+    > video {
+      display: block;
+      object-fit: cover;
+      pointer-events: none;
+    }
+  }
+}
+
+.canvas-operation-output-thumbnail-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-sunken);
+}

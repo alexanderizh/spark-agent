@@ -87,8 +87,8 @@ function operationOutputView(
   const thumbnailUrl = node?.data.thumbnailUrl ?? asset?.thumbnailUrl ?? undefined
   const text = node?.data.text ?? asset?.contentText ?? undefined
   const mimeType = node?.data.mimeType ?? asset?.mimeType ?? undefined
-  const width = asset?.width ?? undefined
-  const height = asset?.height ?? undefined
+  const width = node?.data.mediaWidth ?? asset?.width ?? undefined
+  const height = node?.data.mediaHeight ?? asset?.height ?? undefined
   const pipelineRole = outputPipelineRole(node, asset)
   return {
     id: node?.id ?? asset?.id ?? fallbackId,

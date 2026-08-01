@@ -23,6 +23,7 @@ type CanvasWorkspaceChromeProps = {
   onArrange: (options: {
     mode: CanvasAutoLayoutMode
     spacing: CanvasAutoLayoutSpacing
+    columns?: number
   }) => Promise<void>
   onSave: () => void
   onRefresh: () => void
@@ -80,6 +81,7 @@ export function CanvasWorkspaceChrome({
       </div>
       <CanvasToolbar
         saveState={saveState}
+        nodeCount={nodeCount}
         selectedCount={selectedCount}
         arranging={arranging}
         onArrange={onArrange}

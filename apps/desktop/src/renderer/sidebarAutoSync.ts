@@ -1,5 +1,5 @@
-export const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1040
-export const SIDEBAR_AUTO_RESTORE_WIDTH = 1120
+export const SIDEBAR_AUTO_COLLAPSE_WIDTH = 900
+export const SIDEBAR_AUTO_RESTORE_WIDTH = 940
 
 export type SidebarAutoSyncAction = 'hide' | 'show' | 'none'
 

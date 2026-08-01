@@ -12,7 +12,7 @@
  *   - 移动端 / 缩小窗口：图片保持长宽比自适应
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Icons } from '../Icons'
 import { useToast } from './Toast'
@@ -122,6 +122,16 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
     }
   }, [src, imgError, fileName, toast])
 
+  /** 点击图片周围的空白遮罩（stage 本体，非图片/错误块）→ 关闭预览。
+   *  用 target === currentTarget 判定来源：点图片本体或错误提示不会触发，
+   *  只有落到 stage 自身（图片缩放后四周的深色区域）才关闭。 */
+  const handleStageClick = useCallback(
+    (e: MouseEvent<HTMLDivElement>) => {
+      if (e.target === e.currentTarget) onClose()
+    },
+    [onClose],
+  )
+
   return createPortal(
     (
     <div
@@ -169,8 +179,9 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
         </button>
       </div>
 
-      {/* 图片 */}
-      <div className="image-lightbox-stage" onClick={(e) => e.stopPropagation()}>
+      {/* 图片。点击 stage 内图片周围的空白区域（遮罩）会关闭预览，
+          见 handleStageClick；点图片/错误块本体不关闭。 */}
+      <div className="image-lightbox-stage" onClick={handleStageClick}>
         {imgError ? (
           <div className="image-lightbox-error">
             <Icons.Image size={48} />

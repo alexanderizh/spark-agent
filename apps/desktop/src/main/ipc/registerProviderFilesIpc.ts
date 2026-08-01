@@ -173,6 +173,8 @@ export function registerProviderFilesIpc(dependencies: {
         ...(file.expires_at !== undefined ? { expiresAt: file.expires_at } : {}),
         purpose: file.purpose,
         object: file.object,
+        // xAI Files API 无异步处理概念，list 返回的文件均为立即可用，统一标记为 active。
+        status: 'active',
       })),
       ...(page.pagination_token ? { paginationToken: page.pagination_token } : {}),
     }

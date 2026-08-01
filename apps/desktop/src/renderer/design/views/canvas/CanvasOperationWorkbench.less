@@ -20,14 +20,21 @@
 
 .canvas-operation-workbench-head {
   display: grid;
-  min-height: 44px;
+  min-height: 40px;
   grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-auto-rows: 40px;
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  padding: 0;
+  // background: color-mix(in srgb, var(--panel) 92%, transparent);
+}
+
+.canvas-operation-workbench-tabs,
+.canvas-operation-workbench-context,
+.canvas-operation-workbench-actions {
+  height: 40px;
+  min-height: 40px;
 }
 
 .canvas-operation-workbench-tabs,
@@ -48,6 +55,7 @@
   overscroll-behavior-inline: contain;
   scrollbar-width: thin;
   white-space: nowrap;
+  padding: 0 4px;
 }
 
 .canvas-operation-workbench-actions {
@@ -271,10 +279,16 @@
   display: flex;
   min-height: 360px;
   flex: 1 1 auto;
-  align-items: stretch;
-  justify-content: stretch;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
   background: color-mix(in srgb, var(--bg-sunken) 88%, #080a0e);
+}
+
+.canvas-operation-workbench:not(.is-fullscreen):has(
+    .canvas-operation-workbench-preview .canvas-operation-output-media.is-detail
+  ) {
+  min-height: 0;
 }
 
 .canvas-operation-selection-bar {
@@ -430,8 +444,7 @@
 
   .canvas-operation-workbench-tabs {
     grid-column: 1 / -1;
-    padding-bottom: 6px;
-    border-bottom: 1px solid color-mix(in srgb, var(--divider) 55%, transparent);
+    padding-bottom: 0;
   }
 
   .canvas-operation-workbench-context {

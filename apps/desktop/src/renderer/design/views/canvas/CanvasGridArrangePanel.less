@@ -5,6 +5,11 @@
   width: 240px;
   padding: 4px 2px;
 
+  &.is-full-width {
+    box-sizing: border-box;
+    width: 100%;
+  }
+
   .canvas-grid-arrange-header {
     display: flex;
     align-items: baseline;
@@ -21,6 +26,12 @@
       font-size: 12px;
       color: var(--canvas-cinema-text-muted, #8a8a8a);
     }
+  }
+
+  .canvas-grid-arrange-description {
+    margin-top: -4px;
+    font-size: 11px;
+    color: var(--canvas-cinema-text-muted, #8a8a8a);
   }
 
   .canvas-grid-arrange-field {

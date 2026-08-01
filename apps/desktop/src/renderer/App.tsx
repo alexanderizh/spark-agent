@@ -996,20 +996,37 @@ function Shell() {
   useEffect(() => {
     const main = mainContentRef.current
     if (!main) return
-    const sync = () => {
-      const active = document.activeElement
-      setContentFocused(!!active && main.contains(active))
+    const isComposerTarget = (target: EventTarget | null) =>
+      target instanceof Element && target.closest('.composer-wrap') != null
+    const isContentTarget = (target: EventTarget | null) =>
+      target instanceof Element && main.contains(target) && !isComposerTarget(target)
+    const syncFromActiveElement = () => {
+      setContentFocused(isContentTarget(document.activeElement))
     }
-    // focusin 冒泡，覆盖键盘 Tab 与点击 focusable 元素；点侧栏时焦点转入侧栏，
-    // sync 会算出 contains=false，自动恢复原底色。
-    document.addEventListener('focusin', sync)
-    // 点击内容区非 focusable 元素（空白/画布）也计入聚焦态，避免点了没反应。
-    const onMainMouseDown = () => setContentFocused(true)
-    main.addEventListener('mousedown', onMainMouseDown)
-    sync()
+    // focusin/focusout 覆盖键盘 Tab、点击 focusable 元素以及焦点离开内容区的场景。
+    // 底部 composer 属于 main-content-area，但不属于会话内容区，必须排除。
+    const onFocusIn = (event: FocusEvent) => {
+      setContentFocused(isContentTarget(event.target))
+    }
+    const onFocusOut = (event: FocusEvent) => {
+      setContentFocused(isContentTarget(event.relatedTarget))
+    }
+    document.addEventListener('focusin', onFocusIn)
+    document.addEventListener('focusout', onFocusOut)
+    // 点击内容区非 focusable 元素（空白/画布）也计入聚焦态；点击 composer、侧栏或
+    // 其他区域都视为内容区失焦并恢复原色。
+    const onDocumentMouseDown = (event: MouseEvent) => {
+      setContentFocused(isContentTarget(event.target))
+    }
+    const onWindowBlur = () => setContentFocused(false)
+    document.addEventListener('mousedown', onDocumentMouseDown)
+    window.addEventListener('blur', onWindowBlur)
+    syncFromActiveElement()
     return () => {
-      document.removeEventListener('focusin', sync)
-      main.removeEventListener('mousedown', onMainMouseDown)
+      document.removeEventListener('focusin', onFocusIn)
+      document.removeEventListener('focusout', onFocusOut)
+      document.removeEventListener('mousedown', onDocumentMouseDown)
+      window.removeEventListener('blur', onWindowBlur)
     }
   }, [])
   useEffect(() => {

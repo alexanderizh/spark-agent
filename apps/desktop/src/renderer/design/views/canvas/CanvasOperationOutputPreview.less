@@ -37,6 +37,20 @@
   background: #080a0e;
 }
 
+.canvas-operation-workbench:not(.is-fullscreen) .canvas-operation-output-media.is-detail {
+  width: auto;
+  height: auto;
+  max-width: min(640px, 100%);
+  max-height: min(360px, 100%);
+}
+
+.canvas-operation-workbench.is-fullscreen .canvas-operation-output-media.is-detail {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+
 .canvas-operation-output-text.is-detail {
   align-items: flex-start;
   gap: 16px;

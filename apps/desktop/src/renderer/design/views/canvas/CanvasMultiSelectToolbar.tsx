@@ -32,6 +32,11 @@ export type CanvasMultiSelectToolbarProps = {
   onArrangeGrid: (columns: number) => void
   onDuplicate: () => void
   onDelete: () => void
+  /**
+   * Popover 面板相对工具栏的弹出方向：'bottom'（默认，面板在工具栏下方）或 'top'。
+   * 工具栏浮在选区上方时面板朝下弹；翻转到选区下方时面板朝上弹，避免被画布底边裁切。
+   */
+  popoverSide?: 'top' | 'bottom'
 }
 
 function autoColumnCount(count: number): number {
@@ -51,7 +56,10 @@ export function CanvasMultiSelectToolbar({
   onArrangeGrid,
   onDuplicate,
   onDelete,
+  popoverSide = 'bottom',
 }: CanvasMultiSelectToolbarProps) {
+  const alignPlacement = popoverSide === 'top' ? 'topLeft' : 'bottomLeft'
+  const gridPlacement = popoverSide === 'top' ? 'top' : 'bottom'
   const [alignOpen, setAlignOpen] = useState(false)
   const [gridOpen, setGridOpen] = useState(false)
   const [gridColumns, setGridColumns] = useState(() => autoColumnCount(selectedCount))
@@ -132,7 +140,7 @@ export function CanvasMultiSelectToolbar({
 
       <Popover
         trigger="click"
-        placement="bottomLeft"
+        placement={alignPlacement}
         open={alignOpen}
         onOpenChange={(open) => !arranging && setAlignOpen(open)}
         content={alignContent}
@@ -149,7 +157,7 @@ export function CanvasMultiSelectToolbar({
 
       <Popover
         trigger="click"
-        placement="bottom"
+        placement={gridPlacement}
         open={gridOpen}
         onOpenChange={(open) => !arranging && setGridOpen(open)}
         content={gridContent}

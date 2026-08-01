@@ -17,7 +17,12 @@ import type {
 } from './canvas.types'
 import { getCanvasCapability, isOperationNode } from './canvas.capabilities'
 import { inferCanvasConnectionType } from './canvasConnectionSemantics'
-import { encodeToSafeFileUrl, readFileAsDataUrl, resolveMediaDisplayUrl } from './canvas-safe-file'
+import {
+  encodeToSafeFileUrl,
+  readFileAsDataUrl,
+  readVideoDimensions,
+  resolveMediaDisplayUrl,
+} from './canvas-safe-file'
 import {
   type CanvasProviderFileNodeInput,
   resolveProviderFileTaskProfile,
@@ -47,13 +52,12 @@ import {
 import type { ChapterSplitMode, ParsedChapter } from './canvasManuscript'
 import {
   AUDIO_NODE_DEFAULT_SIZE,
-  CANVAS_NODE_META_BAR_HEIGHT,
   GROUP_NODE_DEFAULT_SIZE,
   IMAGE_NODE_DEFAULT_SIZE,
   OPERATION_NODE_DEFAULT_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
-  VIDEO_NODE_DEFAULT_SIZE,
   fitCanvasImageNodeSize,
+  fitCanvasVideoNodeSize,
   fitShotScriptOperationNodeSize,
   pickOperationNodeInitialSize,
   pickTextNodeSize,
@@ -1500,20 +1504,7 @@ export function fitMediaNodeSize(
     return fitCanvasImageNodeSize(width, height)
   }
   if (type === 'video') {
-    if (width && height) {
-      const aspect = height / width
-      let nodeWidth = Math.min(Math.max(width, VIDEO_NODE_DEFAULT_SIZE.width), 680)
-      let bodyHeight = Math.round(nodeWidth * aspect)
-      if (bodyHeight > 480) {
-        bodyHeight = 480
-        nodeWidth = Math.max(VIDEO_NODE_DEFAULT_SIZE.width, Math.round(bodyHeight / aspect))
-      }
-      return {
-        width: Math.round(nodeWidth),
-        height: Math.max(220, bodyHeight + CANVAS_NODE_META_BAR_HEIGHT),
-      }
-    }
-    return VIDEO_NODE_DEFAULT_SIZE
+    return fitCanvasVideoNodeSize(width, height)
   }
   if (type === 'audio') return AUDIO_NODE_DEFAULT_SIZE
   return TEXT_NODE_DEFAULT_SIZE
@@ -2041,6 +2032,58 @@ export const canvasApi = {
     board.viewport = viewport
     board.updatedAt = now()
     writeDb(db)
+  },
+
+  /**
+   * 把单个项目的当前 viewport 持久化到 localStorage + SQLite（视图偏好缓存）。
+   *
+   * 用于「无内容改动但需保留缩放比例」的场景（如关闭/切走画布）：
+   * - 不标记 dirty：viewport 属视图偏好，不应触发「未保存改动」提示，也不应被 discard 还原；
+   * - 只落当前项目：避免 saveCanvas 连带保存其他项目的未保存改动，违背 dirty 语义；
+   * - 写 SQLite：openSnapshot 在项目不 dirty 时优先读 SQLite，必须落库才能让下次加载读到新 viewport。
+   */
+  async persistProjectViewport(
+    projectId: string,
+    viewport: CanvasBoard['viewport'],
+    boardId?: string | null,
+  ): Promise<void> {
+    const db = readDb()
+    const board = boardId
+      ? db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+      : db.boards.find((item) => item.projectId === projectId)
+    if (!board) return
+    board.viewport = viewport
+    board.updatedAt = now()
+    // 立即落 localStorage，保留项目原有 dirty 状态（不主动标记 true，也不清除已 dirty）。
+    persistHotDb(db)
+    flushHotPersist()
+    // 单项目落 SQLite：构造只含本项目的 snapshot，复用 canvas:snapshot:save IPC，
+    // 不连带保存其他项目。序列化逻辑与 persistAllProjects 对齐（含多 board 与兼容字段）。
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) return
+    const resolved = resolveActiveBoard(readProjectBoards(db, projectId), board.id)
+    if (!resolved) return
+    const snapshot: CanvasSnapshot = {
+      project,
+      board: resolved.active,
+      boards: resolved.boards,
+      activeBoardId: resolved.active.id,
+      nodes: db.nodes.filter((n) => n.projectId === projectId),
+      edges: db.edges.filter((e) => e.projectId === projectId),
+      assets: db.assets.filter((a) => a.projectId === projectId),
+      tasks: db.tasks.filter((t) => t.projectId === projectId),
+    }
+    const req: CanvasSnapshotSaveRequest = {
+      projectId,
+      snapshotJson: JSON.stringify(snapshot),
+    }
+    req.meta = buildProjectMeta(project)
+    try {
+      await window.spark.invoke('canvas:snapshot:save', req)
+    } catch (err) {
+      // SQLite 落库失败不阻塞离开：localStorage 已有最新 viewport，下次若项目变 dirty 仍可读到。
+      console.error('[canvas] persistProjectViewport failed', projectId, err)
+    }
   },
 
   // ─── 多 board 管理（文档 §7.1）──────────────────────────────────────────
@@ -6223,8 +6266,17 @@ export const canvasApi = {
         assetType === 'image' && displayUrl && (assetOut.width == null || assetOut.height == null)
           ? await readDisplayImageDimensions(displayUrl)
           : null
-      const assetWidth = assetOut.width ?? detectedImageSize?.width ?? null
-      const assetHeight = assetOut.height ?? detectedImageSize?.height ?? null
+      const detectedVideoMetadata =
+        assetType === 'video' && displayUrl && (assetOut.width == null || assetOut.height == null)
+          ? await readVideoDimensions(displayUrl)
+          : null
+      const detectedVideoWidth = detectedVideoMetadata?.width || null
+      const detectedVideoHeight = detectedVideoMetadata?.height || null
+      const assetWidth =
+        assetOut.width ?? detectedImageSize?.width ?? detectedVideoWidth
+      const assetHeight =
+        assetOut.height ?? detectedImageSize?.height ?? detectedVideoHeight
+      const assetDurationMs = assetOut.durationMs ?? detectedVideoMetadata?.durationMs ?? null
       const isPanorama360 = task.operation === 'panorama_360' && assetType === 'image'
       const outputNodeType: CanvasNodeType =
         assetType === 'image' || assetType === 'audio' || assetType === 'video' ? assetType : 'text'
@@ -6258,7 +6310,7 @@ export const canvasApi = {
         contentText: assetOut.contentText ?? null,
         ...(assetWidth != null ? { width: assetWidth } : {}),
         ...(assetHeight != null ? { height: assetHeight } : {}),
-        ...(assetOut.durationMs != null ? { durationMs: assetOut.durationMs } : {}),
+        ...(assetDurationMs != null ? { durationMs: assetDurationMs } : {}),
         metadata: {
           taskId,
           ...(filmOwner ? { filmOwnerAssetId: filmOwner.id } : {}),

@@ -13,10 +13,12 @@ vi.mock('@lobehub/ui', async () => {
       children,
       icon,
       loading,
+      block: _block,
       ...props
     }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
       icon?: React.ReactNode
       loading?: boolean
+      block?: boolean
     }) =>
       ReactActual.createElement(
         'button',
@@ -35,7 +37,10 @@ vi.mock('@lobehub/ui', async () => {
 vi.mock('antd', async () => {
   const ReactActual = await vi.importActual<typeof import('react')>('react')
   return {
-    Popover: ({ children }: { children: React.ReactNode }) => children,
+    Popover: ({ children, content }: { children: React.ReactNode; content?: React.ReactNode }) =>
+      ReactActual.createElement(ReactActual.Fragment, null, children, content),
+    InputNumber: ({ value }: { value?: number }) =>
+      ReactActual.createElement('input', { type: 'number', value, readOnly: true }),
     Switch: ({ checked, onChange }: { checked?: boolean; onChange?: (checked: boolean) => void }) =>
       ReactActual.createElement('input', {
         type: 'checkbox',
@@ -128,5 +133,19 @@ describe('CanvasToolbar', () => {
     expect(agentButton).toBeDefined()
     await act(async () => agentButton?.click())
     expect(onOpenAgent).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the grid selector and forwards its columns when auto-arranging a grid', async () => {
+    const onArrange = vi.fn().mockResolvedValue(undefined)
+    const { container } = await renderToolbar({ nodeCount: 31, onArrange })
+
+    expect(container.querySelector('[aria-label="拖选网格规格"]')).not.toBeNull()
+    const applyButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('开始整理'),
+    )
+    if (applyButton == null) throw new Error('Grid arrange apply button was not rendered')
+    await act(async () => applyButton.click())
+
+    expect(onArrange).toHaveBeenCalledWith({ mode: 'grid', spacing: 'medium', columns: 6 })
   })
 })

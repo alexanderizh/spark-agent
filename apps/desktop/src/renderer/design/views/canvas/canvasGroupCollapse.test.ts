@@ -43,6 +43,10 @@ function edge(id: string, sourceNodeId: string, targetNodeId: string): CanvasEdg
 }
 
 describe('canvas group collapse projection', () => {
+  it('uses a collapsed size close to regular canvas nodes', () => {
+    expect(COLLAPSED_GROUP_SIZE).toEqual({ width: 420, height: 360 })
+  })
+
   it('hides every descendant and its connected edges while keeping the collapsed group', () => {
     const group = node('group', 'group', { data: { collapsed: true } })
     const child = node('child', 'text', { parentNodeId: group.id })
@@ -122,6 +126,23 @@ describe('canvas group collapse projection', () => {
     ])
   })
 
+  it('normalizes persisted folder colors to the supported palette', () => {
+    const defaultGroup = node('default-group', 'group', { data: { collapsed: true } })
+    const purpleGroup = node('purple-group', 'group', { data: { collapsed: true } })
+    const invalidGroup = node('invalid-group', 'group', { data: { collapsed: true } })
+    ;(purpleGroup.data as Record<string, unknown>).groupColor = 'purple'
+    ;(invalidGroup.data as Record<string, unknown>).groupColor = 'chartreuse'
+
+    const projection = buildCanvasGroupCollapseProjection(
+      [defaultGroup, purpleGroup, invalidGroup],
+      [],
+    )
+
+    expect(projection.presentationByGroupId.get(defaultGroup.id)?.color).toBe('blue')
+    expect(projection.presentationByGroupId.get(purpleGroup.id)?.color).toBe('purple')
+    expect(projection.presentationByGroupId.get(invalidGroup.id)?.color).toBe('blue')
+  })
+
   it('keeps legacy groups expanded and preserves nested collapsed state when the parent expands', () => {
     const parent = node('parent', 'group')
     const nested = node('nested', 'group', {
@@ -135,5 +156,45 @@ describe('canvas group collapse projection', () => {
     expect(projection.visibleNodes.map((item) => item.id)).toEqual(['parent', 'nested'])
     expect(projection.presentationByGroupId.has(parent.id)).toBe(false)
     expect(projection.presentationByGroupId.get(nested.id)?.childCount).toBe(1)
+  })
+
+  it('restores the original group and child state after a collapsed parent expands', () => {
+    const parent = node('parent', 'group', {
+      x: 80,
+      y: 120,
+      width: 720,
+      height: 480,
+      data: { collapsed: true, groupColor: 'green' },
+    })
+    const child = node('child', 'image', {
+      parentNodeId: parent.id,
+      x: 36,
+      y: 54,
+      width: 320,
+      height: 220,
+      locked: true,
+      hidden: true,
+      data: { productionState: 'confirmed', url: 'safe-file://child.png' },
+    })
+    const nested = node('nested', 'group', {
+      parentNodeId: parent.id,
+      x: 388,
+      y: 62,
+      width: 260,
+      height: 280,
+      data: { collapsed: true, groupColor: 'purple' },
+    })
+    const originalChild = structuredClone(child)
+    const originalNested = structuredClone(nested)
+
+    const collapsed = buildCanvasGroupCollapseProjection([parent, child, nested], [])
+    const expandedParent = { ...parent, data: { ...parent.data, collapsed: false } }
+    const expanded = buildCanvasGroupCollapseProjection([expandedParent, child, nested], [])
+
+    expect(collapsed.visibleNodes.map((item) => item.id)).toEqual(['parent'])
+    expect(expanded.visibleNodes.map((item) => item.id)).toEqual(['parent', 'child', 'nested'])
+    expect(expanded.visibleNodes.find((item) => item.id === child.id)).toEqual(originalChild)
+    expect(expanded.visibleNodes.find((item) => item.id === nested.id)).toEqual(originalNested)
+    expect(expanded.presentationByGroupId.get(nested.id)?.color).toBe('purple')
   })
 })

@@ -47,6 +47,7 @@ import {
   readVideoDimensions,
 } from './canvas-safe-file'
 import { classifyDroppedFile, layoutDroppedFiles, textFormatFromFileName } from './canvasFileDrop'
+import { replaceCanvasVideoNode } from './canvasMediaNodeReplacement'
 import { extractDocumentText } from './canvasDocumentParse'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
@@ -65,6 +66,7 @@ import {
   resolveCanvasOperationOutputState,
   selectCanvasOperationOutputs,
 } from './canvasOperationOutputModel'
+import { operationNodeAspectRatioSizePatch } from './canvasOperationNodePresentation'
 import { planCanvasOperationOutputMaterialization } from './canvasOperationOutputMaterialization'
 import { planCanvasOperationOutputDeletion } from './canvasOperationOutputDeletion'
 import {
@@ -224,7 +226,6 @@ import {
   placeAutoNodeToRight,
   stackAutoNodesToRight,
 } from './canvasAutoPlacement'
-import type { CanvasAutoLayoutMode, CanvasAutoLayoutSpacing } from './canvasAutoLayout'
 import type { CanvasAlignmentMode } from './canvasAlignment'
 import {
   GROUP_NODE_DEFAULT_SIZE,
@@ -707,6 +708,11 @@ export function CanvasWorkspaceView({
   })
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
+  // persistCurrentCanvasViewport 定义在下方（晚于 persistCanvas 等使用方），用 ref 桥接
+  // 打破 hooks 顺序依赖：使用方通过 ref 调用「最新版」viewport 持久化函数。
+  const persistViewportFnRef = useRef<
+    ((opts?: { silent?: boolean }) => Promise<unknown>) | null
+  >(null)
   const pendingCanvasViewportRestoreRef = useRef<Pick<
     CanvasStageViewport,
     'x' | 'y' | 'zoom'
@@ -935,6 +941,10 @@ export function CanvasWorkspaceView({
     setSaving(true)
     if (mode === 'auto') setAutoSaving(true)
     try {
+      // 保存前先把实时 viewport（缩放/平移）回写 hot storage，确保 zoom 随本次保存落盘。
+      // 非 silent：紧接的 saveCanvas 会落盘并清除 dirty，标记 dirty 在此无副作用。
+      // 通过 ref 调用，避免把 persistCurrentCanvasViewport 纳入 useCallback 依赖。
+      await persistViewportFnRef.current?.()
       const ok = await saveCanvas()
       if (ok) {
         if (mode === 'manual') message.success('画布已保存')
@@ -1177,24 +1187,40 @@ export function CanvasWorkspaceView({
     return true
   }, [activeCanvasTaskCount, requestConfirm, cancelActiveCanvasTasks])
 
+  // 离开画布（无内容改动）时静默保留当前缩放比例：立即落盘 localStorage，不污染 dirty。
+  // viewport 属于视图偏好，缓存失败不应阻塞离开流程。
+  const flushViewportSilentOnLeave = useCallback(async () => {
+    try {
+      await persistViewportFnRef.current?.({ silent: true })
+    } catch (err) {
+      console.warn('[canvas] flush viewport on leave failed', err)
+    }
+  }, [])
+
   // 注册导航守卫：侧边栏切换视图时若有未完成任务或 dirty，交给用户选择是否离开。
   useEffect(() => {
     registerNavGuard(async () => {
       const canLeaveActiveTasks = await confirmLeaveWithActiveTasks()
       if (!canLeaveActiveTasks) return false
-      if (!isCanvasDirty(projectId)) return true
+      if (!isCanvasDirty(projectId)) {
+        // 无内容改动也静默保留当前缩放比例（视图偏好），下次打开沿用。
+        await flushViewportSilentOnLeave()
+        return true
+      }
       const choice = await askLeave()
       if (choice === 'cancel') return false
       if (choice === 'discard') await revertProject(projectId)
       return true
     })
     return () => registerNavGuard(null)
-  }, [registerNavGuard, askLeave, projectId, confirmLeaveWithActiveTasks])
+  }, [registerNavGuard, askLeave, projectId, confirmLeaveWithActiveTasks, flushViewportSilentOnLeave])
 
   const handleBackWithGuard = useCallback(async () => {
     const canLeaveActiveTasks = await confirmLeaveWithActiveTasks()
     if (!canLeaveActiveTasks) return
     if (!isCanvasDirty(projectId)) {
+      // 无内容改动也静默保留当前缩放比例（视图偏好），下次打开沿用。
+      await flushViewportSilentOnLeave()
       await onBack()
       return
     }
@@ -1202,7 +1228,7 @@ export function CanvasWorkspaceView({
     if (choice === 'cancel') return
     if (choice === 'discard') await revertProject(projectId)
     await onBack()
-  }, [askLeave, onBack, projectId, confirmLeaveWithActiveTasks])
+  }, [askLeave, onBack, projectId, confirmLeaveWithActiveTasks, flushViewportSilentOnLeave])
 
   useEffect(() => {
     return window.spark.on('stream:canvas-window:close-request', (payload) => {
@@ -1405,22 +1431,32 @@ export function CanvasWorkspaceView({
     [],
   )
 
-  const persistCurrentCanvasViewport = useCallback(async () => {
-    const currentSnapshot = snapshotRef.current
-    if (!currentSnapshot) return null
-    const controls = canvasViewportControlsRef.current
-    const viewport = captureCanvasTaskViewport(controls, canvasViewportRef.current, {
-      x: currentSnapshot.board.viewport.x,
-      y: currentSnapshot.board.viewport.y,
-      zoom: currentSnapshot.board.viewport.zoom,
-    })
-    await canvasApi.updateViewport(
-      projectId,
-      { x: viewport.x, y: viewport.y, zoom: viewport.zoom },
-      currentSnapshot.board.id,
-    )
-    return viewport
-  }, [projectId, canvasViewportRef])
+  const persistCurrentCanvasViewport = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const currentSnapshot = snapshotRef.current
+      if (!currentSnapshot) return null
+      const controls = canvasViewportControlsRef.current
+      const viewport = captureCanvasTaskViewport(controls, canvasViewportRef.current, {
+        x: currentSnapshot.board.viewport.x,
+        y: currentSnapshot.board.viewport.y,
+        zoom: currentSnapshot.board.viewport.zoom,
+      })
+      const nextViewport = { x: viewport.x, y: viewport.y, zoom: viewport.zoom }
+      if (opts?.silent) {
+        // 视图偏好缓存：不标 dirty + 单项目落 SQLite，
+        // 确保关闭/切走画布后，下次加载（openSnapshot 不 dirty 时读 SQLite）仍沿用缩放比例。
+        await canvasApi.persistProjectViewport(projectId, nextViewport, currentSnapshot.board.id)
+      } else {
+        await canvasApi.updateViewport(projectId, nextViewport, currentSnapshot.board.id)
+      }
+      return viewport
+    },
+    [projectId, canvasViewportRef],
+  )
+  // 暴露给定义顺序更靠前的使用方（persistCanvas / 关闭守卫）通过 ref 调用，
+  // 避免把 persistCurrentCanvasViewport 整体上移引发的大面积 hooks 重排。
+  // 渲染期写入 ref 是安全的：不触发重渲染，读取只发生在远晚于渲染的事件回调中。
+  persistViewportFnRef.current = persistCurrentCanvasViewport
 
   const panoramaPreviewNode = useMemo(
     () => (panoramaPreviewNodeId ? resolveCanvasResourceActionNode(panoramaPreviewNodeId) : null),
@@ -1656,7 +1692,7 @@ export function CanvasWorkspaceView({
   }, [selectedNodeIds])
 
   const handleArrangeCanvas = useCallback(
-    async (options: { mode: CanvasAutoLayoutMode; spacing: CanvasAutoLayoutSpacing }) => {
+    async (options: Parameters<CanvasStageViewportControls['arrangeNodes']>[0]) => {
       const controls = canvasViewportControlsRef.current
       if (!controls) {
         message.warning('画布仍在初始化，请稍后重试')
@@ -2075,10 +2111,26 @@ export function CanvasWorkspaceView({
     [compositeContentNodesToImage, snapshot],
   )
 
-  const handleCreateGroup = useCallback(() => {
+  const handleCreateGroup = useCallback(async () => {
     if (selectedTopLevelNodes.length < 2) return
-    void createGroupNode(selectedTopLevelNodes.map((node) => node.id))
-  }, [createGroupNode, selectedTopLevelNodes])
+    const nodeIds = selectedTopLevelNodes.map((node) => node.id)
+    const nextSnapshot = await createGroupNode(nodeIds)
+    // 编组成功后把选区切到新组：原节点已折叠为子节点，保留旧 selection 会让
+    // 多选工具栏继续悬空显示（指向已折叠子节点）。通过子节点关系定位新组，
+    // 与 useCanvasFileInsertion 的编组选区逻辑保持一致。
+    const createdIdSet = new Set(nodeIds)
+    const groupNode = nextSnapshot?.nodes.find((node) => {
+      if (node.type !== 'group') return false
+      const childIds = nextSnapshot.nodes
+        .filter((child) => child.parentNodeId === node.id)
+        .map((child) => child.id)
+      return (
+        nodeIds.every((id) => childIds.includes(id)) &&
+        childIds.every((id) => createdIdSet.has(id))
+      )
+    })
+    setSelectedNodeIds(groupNode ? [groupNode.id] : [])
+  }, [createGroupNode, selectedTopLevelNodes, setSelectedNodeIds])
 
   const handleMergeSelectionToImage = useCallback(async () => {
     const summary = summarizeCanvasSelectionContext(selectedNodes)
@@ -2174,13 +2226,6 @@ export function CanvasWorkspaceView({
         return
       }
       if (node?.data.subtype === 'video_workbench') {
-        closeCanvasFloatPanels('node-edit')
-        setSelectedNodeIds([nodeId])
-        setVideoWorkbenchNodeId(nodeId)
-        return
-      }
-      // 普通视频节点双击 → 直接打开视频工作台（源视频就是该节点本身）
-      if (node?.type === 'video' && typeof node.data.url === 'string') {
         closeCanvasFloatPanels('node-edit')
         setSelectedNodeIds([nodeId])
         setVideoWorkbenchNodeId(nodeId)
@@ -3233,7 +3278,8 @@ export function CanvasWorkspaceView({
           message.info('请先选择至少两个节点，再创建组')
           return
         }
-        void createGroupNode(selectedTopLevelNodes.map((node) => node.id))
+        // 复用 handleCreateGroup：编组后把选区切到新组，避免多选工具栏悬空
+        void handleCreateGroup()
         return
       }
       // 图片：工厂菜单直接落空节点（后续再上传填充）
@@ -3295,7 +3341,7 @@ export function CanvasWorkspaceView({
     [
       addText,
       closeCanvasFloatPanels,
-      createGroupNode,
+      handleCreateGroup,
       createOperationNode,
       selectedTopLevelNodes,
       snapshot,
@@ -5650,6 +5696,29 @@ export function CanvasWorkspaceView({
     [],
   )
 
+  const handleReplaceVideo = useCallback(
+    async (nodeId: string, file: File) => {
+      const node = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
+      if (!node) {
+        message.error('未找到目标视频节点')
+        return
+      }
+      try {
+        await replaceCanvasVideoNode({
+          node,
+          file,
+          prepare: prepareCanvasMediaUpload,
+          patchNode: (targetId, patch) => patchNodes([targetId], patch),
+          updateNodeData,
+        })
+        message.success('已上传视频')
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '上传视频失败')
+      }
+    },
+    [patchNodes, prepareCanvasMediaUpload, updateNodeData],
+  )
+
   const insertPreparedImages = useCallback(
     async (
       preparedImages: PreparedImageUpload[],
@@ -7336,7 +7405,14 @@ export function CanvasWorkspaceView({
                     } else {
                       delete nextNodeData.prompt
                     }
+                    const aspectRatioSizePatch = operationNodeAspectRatioSizePatch(
+                      opNode,
+                      modelParams,
+                    )
                     await updateNodeData(opNode.id, nextNodeData)
+                    if (aspectRatioSizePatch) {
+                      await patchNodes([opNode.id], aspectRatioSizePatch)
+                    }
                     writeCanvasLastUsedPresetTarget(presetTargetId, {
                       ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
                       ...(params.agentId ? { agentId: params.agentId } : {}),
@@ -7600,6 +7676,7 @@ export function CanvasWorkspaceView({
             }}
             onOpenAiComposer={handleOpenInlineAi}
             onEditNode={handleEditNode}
+            onRenameNode={(nodeId, title) => patchNodes([nodeId], { title })}
             onEditVideo={handleEditVideo}
             onExpandOperationOutputs={handleExpandLatestOperationOutputs}
             onPreviewPanorama={handlePreviewPanorama}
@@ -7609,6 +7686,7 @@ export function CanvasWorkspaceView({
             onSplitStoryboard={(nodeId) => void handleSplitStoryboard(nodeId)}
             onExtractCharacterSubview={onExtractCharacterSubviewStable}
             onReplaceImage={onReplaceImageStable}
+            onReplaceVideo={handleReplaceVideo}
             onCreateOperationChild={onCreateOperationChildStable}
             onPipelineAction={onPipelineActionStable}
             onSetProductionState={onSetProductionStateStable}

@@ -10,6 +10,10 @@ export type CanvasGridArrangePanelProps = {
   onColumnsChange: (next: number) => void
   onApply: () => void
   applying?: boolean
+  title?: string
+  description?: string
+  applyLabel?: string
+  fullWidth?: boolean
 }
 
 /**
@@ -24,19 +28,32 @@ export function CanvasGridArrangePanel({
   onColumnsChange,
   onApply,
   applying = false,
+  title = '网格排列',
+  description,
+  applyLabel = '应用网格排列',
+  fullWidth = false,
 }: CanvasGridArrangePanelProps) {
   const maxColumns = Math.max(1, nodeCount)
   const safeColumns = Math.min(Math.max(1, Math.round(columns) || 1), maxColumns)
   const rowCount = Math.ceil(nodeCount / safeColumns)
 
   return (
-    <div className="canvas-grid-arrange-panel" role="dialog" aria-label="网格排列">
+    <div
+      className={`canvas-grid-arrange-panel${fullWidth ? ' is-full-width' : ''}`}
+      role="dialog"
+      aria-label="网格排列"
+    >
       <div className="canvas-grid-arrange-header">
-        <span className="canvas-grid-arrange-title">网格排列</span>
+        <span className="canvas-grid-arrange-title">{title}</span>
         <span className="canvas-grid-arrange-count">{nodeCount} 个节点</span>
       </div>
+      {description && <div className="canvas-grid-arrange-description">{description}</div>}
 
-      <CanvasGridSelectionMatrix nodeCount={nodeCount} columns={safeColumns} onChange={onColumnsChange} />
+      <CanvasGridSelectionMatrix
+        nodeCount={nodeCount}
+        columns={safeColumns}
+        onChange={onColumnsChange}
+      />
 
       <div className="canvas-grid-arrange-field">
         <span className="canvas-grid-arrange-label">每排数量</span>
@@ -56,8 +73,15 @@ export function CanvasGridArrangePanel({
         <span className="canvas-grid-arrange-rows">共 {rowCount} 排</span>
       </div>
 
-      <Button type="primary" block loading={applying} icon={<Icons.Grid size={14} />} onClick={onApply}>
-        应用网格排列
+      <Button
+        type="primary"
+        size="small"
+        block
+        loading={applying}
+        icon={<Icons.Grid size={14} />}
+        onClick={onApply}
+      >
+        {applyLabel}
       </Button>
     </div>
   )

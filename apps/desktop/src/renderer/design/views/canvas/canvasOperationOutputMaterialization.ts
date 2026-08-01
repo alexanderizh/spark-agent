@@ -5,8 +5,8 @@ import {
   AUDIO_NODE_DEFAULT_SIZE,
   IMAGE_NODE_DEFAULT_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
-  VIDEO_NODE_DEFAULT_SIZE,
   fitCanvasImageNodeSize,
+  fitCanvasVideoNodeSize,
   pickTextNodeSize,
 } from './canvasNodeSize'
 
@@ -54,7 +54,7 @@ export function planCanvasOperationOutputMaterialization({
 
   const sizes = missing.map((output) => {
     if (output.type === 'image') return fitCanvasImageNodeSize(output.width, output.height)
-    if (output.type === 'video') return VIDEO_NODE_DEFAULT_SIZE
+    if (output.type === 'video') return fitCanvasVideoNodeSize(output.width, output.height)
     if (output.type === 'audio') return AUDIO_NODE_DEFAULT_SIZE
     if (output.type === 'text' || output.type === 'prompt') return pickTextNodeSize(output.text)
     return output.type === 'file' ? TEXT_NODE_DEFAULT_SIZE : IMAGE_NODE_DEFAULT_SIZE

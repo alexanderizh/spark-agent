@@ -41,17 +41,24 @@
   --code-ligature: normal;
   /* backdrop blur — overridden by useAppearance */
   --backdrop-blur: none;
+
+  /* Window Controls Overlay geometry. Declared on :root so portals that mount
+     outside .app/.window (e.g. ImagePreviewModal via createPortal(document.body))
+     can still inherit the macOS traffic-light safe area. .window redeclares the
+     same tokens for its own subtree; values stay in sync. */
+  --window-titlebar-height: env(titlebar-area-height, 52px);
+  --window-titlebar-safe-left: env(titlebar-area-x, 90px);
 }
 
 /* ---------- THEME: LIGHT (default) — also on html for Arco popups outside .app ---------- */
 html[data-theme="light"],
 .app.theme-light {
-  --bg: #ffffff;
-  --bg-soft: #ffffff;
+  --bg: rgb(250,250,250);
+  --bg-soft: #fff;
   --bg-sunken: #f7f6f4;
   --composer-toolbar-bg: #f8f7f5;
-  --panel: #ffffff;
-  --panel-elev: #fff;
+  --panel: #fff;
+  --panel-elev: rgb(250,250,250);
   --canvas-edit-bg: var(--panel-elev);
   --hover: rgba(36, 32, 27, 0.045);
   --active: rgba(36, 32, 27, 0.07);
@@ -510,7 +517,7 @@ html[data-theme='dark'][data-backdrop-blur='1']
    :root 调小；light 主题白底混黑易发灰，已单独压到 6%。transition 由基础
    .sidebar-style-floating .floating-sidebar 规则提供，进出均平滑。 */
 .sidebar-style-floating.content-focused .floating-sidebar {
-  background: color-mix(in srgb, var(--panel-elev), #000 var(--sidebar-focus-darken, 6%));
+  background: color-mix(in srgb, var(--panel-elev), #000 var(--sidebar-focus-darken, 5%));
 }
 html[data-backdrop-blur='1'] .sidebar-style-floating.content-focused .floating-sidebar {
   background: color-mix(
@@ -550,7 +557,7 @@ html[data-theme='dark'][data-backdrop-blur='1']
    Floating keeps its token-based translucent background; flat dark
    theme keeps the elevated panel token. */
 .sidebar-style-flat.theme-light .floating-sidebar {
-  background: rgb(238, 238, 238);
+  background: rgb(242, 242, 242);
 }
 html[data-backdrop-blur="1"] .sidebar-style-flat .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 84%, transparent);

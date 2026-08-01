@@ -57,7 +57,7 @@ export function CanvasProviderFilesTab({
   const loadSequenceRef = useRef(0)
   const providerProfileIdRef = useRef(providerProfileId)
   const providerKind = useMemo<
-    Extract<ProviderFilesApiKind, 'bailian' | 'volcengine-ark' | 'minimax-hailuo'> | null
+    Extract<ProviderFilesApiKind, 'xai' | 'bailian' | 'volcengine-ark' | 'minimax-hailuo'> | null
   >(
     () =>
       providerFilesApiKindForProfile(
@@ -66,11 +66,13 @@ export function CanvasProviderFilesTab({
     [providerProfileId, providers],
   )
   const providerLabel =
-    providerKind === 'bailian'
-      ? '阿里云百炼'
-      : providerKind === 'minimax-hailuo'
-        ? 'MiniMax'
-        : '火山方舟'
+    providerKind === 'xai'
+      ? 'xAI'
+      : providerKind === 'bailian'
+        ? '阿里云百炼'
+        : providerKind === 'minimax-hailuo'
+          ? 'MiniMax'
+          : '火山方舟'
 
   useEffect(() => {
     providerProfileIdRef.current = providerProfileId
@@ -107,7 +109,9 @@ export function CanvasProviderFilesTab({
           ...(providerKind === 'volcengine-ark'
             ? { purpose: 'user_data' as const, ...(after ? { after } : {}) }
             : {}),
-          ...(providerKind === 'bailian' && after ? { paginationToken: after } : {}),
+          ...((providerKind === 'bailian' || providerKind === 'xai') && after
+            ? { paginationToken: after }
+            : {}),
         })
         if (sequence !== loadSequenceRef.current) return
         setFiles((current) => (after ? mergeFiles(current, result.files) : result.files))
@@ -247,11 +251,13 @@ export function CanvasProviderFilesTab({
       <Alert
         type="info"
         message={
-          providerKind === 'bailian'
-            ? '百炼 DashScope Files 仅用于文件解析、Batch 和模型微调；官方未声明 file_id 可直接传给万相图片或视频生成，因此画布不会自动引用它。该 API 仅在北京 Region 开放。'
-            : providerKind === 'minimax-hailuo'
-              ? 'MiniMax Files 以 mm_file://{file_id} 供 H3 视频生成引用（首帧 / 参考图 / 参考视频 / 参考音频）。purpose 固定为 video_generation_input，文件保留 7 天；file_id 按 int64 字符串透传。'
-              : 'Files API 用于 Chat / Responses 的图片、视频、音频和 PDF 输入；文件必须为 active 才能引用。远端文件属于所选 Provider 项目，不随当前画布复制或导出；Seedance 视频生成不使用 file_id。'
+          providerKind === 'xai'
+            ? 'xAI Files API 用于 Chat / Responses 的图片与 PDF 输入；官方单文件上限 48 MiB。该渠道当前仅支持列表浏览与删除，暂不开放上传与单文件查询。'
+            : providerKind === 'bailian'
+              ? '百炼 DashScope Files 仅用于文件解析、Batch 和模型微调；官方未声明 file_id 可直接传给万相图片或视频生成，因此画布不会自动引用它。该 API 仅在北京 Region 开放。'
+              : providerKind === 'minimax-hailuo'
+                ? 'MiniMax Files 以 mm_file://{file_id} 供 H3 视频生成引用（首帧 / 参考图 / 参考视频 / 参考音频）。purpose 固定为 video_generation_input，文件保留 7 天；file_id 按 int64 字符串透传。'
+                : 'Files API 用于 Chat / Responses 的图片、视频、音频和 PDF 输入；文件必须为 active 才能引用。远端文件属于所选 Provider 项目，不随当前画布复制或导出；Seedance 视频生成不使用 file_id。'
         }
       />
       {errorMessage && (
@@ -321,14 +327,16 @@ export function CanvasProviderFilesTab({
           >
             刷新
           </Button>
-          <Button
-            type="primary"
-            icon={<Icons.Upload size={13} />}
-            disabled={!providerProfileId}
-            onClick={() => setUploadOpen(true)}
-          >
-            上传 / 导入
-          </Button>
+          {providerKind !== 'xai' && (
+            <Button
+              type="primary"
+              icon={<Icons.Upload size={13} />}
+              disabled={!providerProfileId}
+              onClick={() => setUploadOpen(true)}
+            >
+              上传 / 导入
+            </Button>
+          )}
         </div>
       </div>
 
@@ -393,13 +401,15 @@ export function CanvasProviderFilesTab({
                       加入视频生成
                     </Button>
                   )}
-                  <Button
-                    size="small"
-                    loading={getFileLoading && file.status === 'processing'}
-                    onClick={() => void refreshOne(file.id)}
-                  >
-                    查询
-                  </Button>
+                  {providerKind !== 'xai' && (
+                    <Button
+                      size="small"
+                      loading={getFileLoading && file.status === 'processing'}
+                      onClick={() => void refreshOne(file.id)}
+                    >
+                      查询
+                    </Button>
+                  )}
                   <Button
                     size="small"
                     danger
@@ -423,7 +433,7 @@ export function CanvasProviderFilesTab({
         </div>
       )}
 
-      {providerKind === 'bailian' ? (
+      {providerKind === 'xai' ? null : providerKind === 'bailian' ? (
         <BailianFileUploadModal
           open={uploadOpen}
           providerProfileId={providerProfileId}

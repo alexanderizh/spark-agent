@@ -27,9 +27,12 @@
 }
 
 .vwb-shell {
+  width: 100%;
+  height: 100%;
   flex: 1;
-  margin: 28px 28px 28px 28px;
-  border-radius: 14px;
+  box-sizing: border-box;
+  margin: 0;
+  border-radius: 0;
   background: #1a1a1e;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
   display: flex;
@@ -1798,6 +1801,9 @@
 
 .vwb-timeline-viewport {
   position: relative;
+  height: 164px;
+  flex: 0 0 164px;
+  box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -1824,12 +1830,14 @@
 
 .vwb-timeline-content {
   position: relative;
+  height: 100%;
   min-width: 100%;
 }
 
 .vwb-timeline-ruler {
   position: relative;
   height: 28px;
+  box-sizing: border-box;
   cursor: crosshair;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   background: #18181c;
@@ -1861,9 +1869,11 @@
 
 .vwb-track-strip {
   display: flex;
+  height: calc(100% - 28px);
+  min-height: 0;
+  box-sizing: border-box;
   align-items: stretch;
   gap: 0;
-  min-height: 118px;
   padding: 8px 0 10px;
   background: rgba(0, 0, 0, 0.18);
   transition: border-color 0.12s;
@@ -1912,6 +1922,7 @@
 
 .vwb-track-clip {
   position: relative;
+  height: 100%;
   box-sizing: border-box;
   flex: 0 0 132px;
   min-width: 1px;

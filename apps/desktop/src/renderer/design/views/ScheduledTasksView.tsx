@@ -773,14 +773,14 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
           <h3 className="st-detail-title">{task.name}</h3>
           <div className="st-detail-actions">
             <Tooltip title="立即执行">
-              <Button size="middle" type="primary" shape="circle" icon={<Icons.Play />} onClick={onRunNow} />
+              <Button size="small" type="primary" shape="circle" icon={<Icons.Play />} onClick={onRunNow} />
             </Tooltip>
             <Tooltip title="编辑">
-              <Button size="middle" type="text" shape="circle" icon={<Icons.Edit />} onClick={onEdit} />
+              <Button size="small" type="text" shape="circle" icon={<Icons.Edit />} onClick={onEdit} />
             </Tooltip>
             <Popconfirm title="确定删除此任务？" onConfirm={onDelete}>
               <Tooltip title="删除">
-                <Button size="middle" type="text" danger shape="circle" icon={<Icons.Trash />} />
+                <Button size="small" type="text" danger shape="circle" icon={<Icons.Trash />} />
               </Tooltip>
             </Popconfirm>
           </div>

@@ -2,9 +2,14 @@ import { useState } from 'react'
 import { Button, Segmented, Tag, Tooltip } from '@lobehub/ui'
 import { Popover, Switch } from 'antd'
 import { Icons } from '../../Icons'
+import { CanvasGridArrangePanel } from './CanvasGridArrangePanel'
 import type { CanvasAutoLayoutMode, CanvasAutoLayoutSpacing } from './canvasAutoLayout'
 
 export type CanvasTool = 'select' | 'pan' | 'text' | 'image'
+
+function autoColumnCount(count: number): number {
+  return Math.max(1, Math.ceil(Math.sqrt(Math.max(1, count))))
+}
 
 /**
  * 顶部基础工具栏（文档 §7.5）。
@@ -23,6 +28,7 @@ export function CanvasToolbar({
   onExport,
   onUploadFiles,
   onOpenAgent,
+  nodeCount = 0,
   selectedCount = 0,
   arranging = false,
   onArrange,
@@ -37,6 +43,7 @@ export function CanvasToolbar({
   onDissolveGroup?: () => void
   onOpenAiComposer?: () => void
   onDeleteSelected?: () => void
+  nodeCount?: number
   selectedCount?: number
   canCreateGroup?: boolean
   canAddToGroup?: boolean
@@ -59,15 +66,30 @@ export function CanvasToolbar({
   onArrange: (options: {
     mode: CanvasAutoLayoutMode
     spacing: CanvasAutoLayoutSpacing
+    columns?: number
   }) => Promise<void>
 }) {
   const [arrangeOpen, setArrangeOpen] = useState(false)
   const [layoutMode, setLayoutMode] = useState<CanvasAutoLayoutMode>('grid')
   const [layoutSpacing, setLayoutSpacing] = useState<CanvasAutoLayoutSpacing>('medium')
   const partialLayout = selectedCount > 1
+  const arrangeNodeCount = Math.max(1, partialLayout ? selectedCount : nodeCount)
+  const [gridColumns, setGridColumns] = useState<number | null>(null)
+  const effectiveGridColumns = Math.min(
+    arrangeNodeCount,
+    Math.max(1, gridColumns ?? autoColumnCount(arrangeNodeCount)),
+  )
   const arrangeScopeLabel = partialLayout
     ? `仅整理所选 ${selectedCount} 个节点`
     : '整理全画布（单选仍按全画布处理）'
+
+  const handleArrange = (columns?: number) => {
+    void onArrange({
+      mode: layoutMode,
+      spacing: layoutSpacing,
+      ...(typeof columns === 'number' ? { columns } : {}),
+    }).then(() => setArrangeOpen(false))
+  }
 
   return (
     <div className="canvas-toolbar" role="toolbar" aria-label="Canvas toolbar">
@@ -164,19 +186,29 @@ export function CanvasToolbar({
                   ]}
                 />
               </label>
-              <Button
-                type="primary"
-                block
-                loading={arranging}
-                icon={<Icons.Grid size={15} />}
-                onClick={() =>
-                  void onArrange({ mode: layoutMode, spacing: layoutSpacing }).then(() =>
-                    setArrangeOpen(false),
-                  )
-                }
-              >
-                开始整理
-              </Button>
+              {layoutMode === 'grid' ? (
+                <CanvasGridArrangePanel
+                  nodeCount={arrangeNodeCount}
+                  columns={effectiveGridColumns}
+                  title="网格规格"
+                  applyLabel="开始整理"
+                  fullWidth
+                  onColumnsChange={setGridColumns}
+                  onApply={() => handleArrange(effectiveGridColumns)}
+                  applying={arranging}
+                />
+              ) : (
+                <Button
+                  type="primary"
+                  size="small"
+                  block
+                  loading={arranging}
+                  icon={<Icons.Grid size={15} />}
+                  onClick={() => handleArrange()}
+                >
+                  开始整理
+                </Button>
+              )}
             </div>
           }
         >
