@@ -7,6 +7,7 @@ import {
   NativeHostArtifactError,
   buildWindowsCodeSignatureInspectionScript,
   createMacCodeRequirement,
+  hasUnsafePosixArtifactPermissions,
   readNativeHostArtifactTrustMode,
   verifyLocalNativeHostArtifact,
   verifyWindowsNativeHostArtifact,
@@ -211,6 +212,12 @@ describe('verifyNativeHostArtifact', () => {
 })
 
 describe('verifyWindowsNativeHostArtifact', () => {
+  it('does not interpret Windows synthetic mode bits as POSIX write permissions', () => {
+    expect(hasUnsafePosixArtifactPermissions(0o666, 'win32')).toBe(false)
+    expect(hasUnsafePosixArtifactPermissions(0o666, 'darwin')).toBe(true)
+    expect(hasUnsafePosixArtifactPermissions(0o644, 'darwin')).toBe(false)
+  })
+
   it('only permits a valid chain or an explicitly self-signed untrusted publisher', () => {
     const script = buildWindowsCodeSignatureInspectionScript()
 
