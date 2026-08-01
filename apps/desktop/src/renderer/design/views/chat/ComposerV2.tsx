@@ -3112,6 +3112,7 @@ export function ComposerV2({
             <QuickReplySuggestions
               replies={activeQuickReplies.replies}
               onSelect={(reply) => void dispatchMessage(reply, [], null)}
+              onDismiss={() => setDismissedQuickReplyKey(activeQuickReplies.key)}
             />
           )}
         <div
