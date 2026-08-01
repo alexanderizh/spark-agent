@@ -88,6 +88,18 @@ import type {
   VoiceStopRequest,
   VoiceStopResponse,
 } from '../voice.js'
+import type {
+  OptionalCapabilityCheckRequest,
+  OptionalCapabilityCheckResponse,
+  OptionalCapabilityListRequest,
+  OptionalCapabilityListResponse,
+  OptionalCapabilityMutationRequest,
+  OptionalCapabilityMutationResponse,
+  OptionalCapabilityProgress,
+  OptionalCapabilitySetAutoUpdateRequest,
+  OptionalCapabilitySetAutoUpdateResponse,
+  OptionalCapabilitySnapshot,
+} from '../optional-capabilities.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -5695,6 +5707,36 @@ export interface IpcChannelMap
   'sdk:integrity-check': [SdkIntegrityCheckRequest, SdkIntegrityCheckResponse]
   'sdk:integrity-install': [SdkIntegrityInstallRequest, SdkIntegrityInstallResponse]
 
+  // Optional capability packages (Office Viewer and local depth only)
+  'optional-capability:list': [
+    OptionalCapabilityListRequest,
+    OptionalCapabilityListResponse,
+  ]
+  'optional-capability:check': [
+    OptionalCapabilityCheckRequest,
+    OptionalCapabilityCheckResponse,
+  ]
+  'optional-capability:install': [
+    OptionalCapabilityMutationRequest,
+    OptionalCapabilityMutationResponse,
+  ]
+  'optional-capability:update': [
+    OptionalCapabilityMutationRequest,
+    OptionalCapabilityMutationResponse,
+  ]
+  'optional-capability:repair': [
+    OptionalCapabilityMutationRequest,
+    OptionalCapabilityMutationResponse,
+  ]
+  'optional-capability:uninstall': [
+    OptionalCapabilityMutationRequest,
+    OptionalCapabilityMutationResponse,
+  ]
+  'optional-capability:set-auto-update': [
+    OptionalCapabilitySetAutoUpdateRequest,
+    OptionalCapabilitySetAutoUpdateResponse,
+  ]
+
   // Shell Environment & Runtime Detection
   'env:get-status': [EnvGetStatusRequest, EnvGetStatusResponse]
   'env:recheck': [EnvRecheckRequest, EnvRecheckResponse]
@@ -6092,6 +6134,10 @@ export interface IpcStreamChannelMap {
   'stream:sdk:integrity': SdkIntegrityCheckResponse
   /** SDK / managed runtime 安装进度 */
   'stream:sdk:install-progress': SdkIntegrityInstallProgress
+  /** Optional Office/depth capability state snapshot. */
+  'stream:optional-capability:snapshot': OptionalCapabilitySnapshot
+  /** Optional Office/depth capability install progress. */
+  'stream:optional-capability:progress': OptionalCapabilityProgress
   /** Shell 环境状态（PATH 修复 + 运行时工具检测结果）*/
   'stream:env:status': ShellEnvironmentStatus
   /** Playwright 安装/状态变化推送（Settings UI 监听）*/

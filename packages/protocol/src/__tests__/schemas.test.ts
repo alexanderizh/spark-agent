@@ -27,6 +27,24 @@ describe('ProviderMediaDefaultsSchema', () => {
 })
 
 describe('IPC schemas', () => {
+  it('accepts only the supported optional capability ids', () => {
+    expect(
+      IpcSchemaRegistry['optional-capability:install'].parse({
+        capabilityId: 'office-viewer',
+      }),
+    ).toEqual({ capabilityId: 'office-viewer' })
+    expect(
+      IpcSchemaRegistry['optional-capability:install'].parse({
+        capabilityId: 'local-depth',
+      }),
+    ).toEqual({ capabilityId: 'local-depth' })
+    expect(() =>
+      IpcSchemaRegistry['optional-capability:install'].parse({
+        capabilityId: 'computer-use',
+      }),
+    ).toThrow()
+  })
+
   it('validates session image optimization batches', () => {
     expect(
       IpcSchemaRegistry['file:prepare-session-images'].parse({

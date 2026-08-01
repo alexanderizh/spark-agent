@@ -80,6 +80,7 @@ export const SessionPermissionModeSchema = z.enum([
 ])
 export const RemoteChannelTypeSchema = z.enum(['telegram', 'feishu', 'qq', 'wechat-claw'])
 export const RemotePairingModeSchema = z.enum(['code', 'qr'])
+export const OptionalCapabilityIdSchema = z.enum(['office-viewer', 'local-depth'])
 
 const RemoteCredentialsSchema = z.object({
   botToken: z.string().max(400).optional(),
@@ -1459,6 +1460,32 @@ export const IpcSchemaRegistry = {
   'sdk:integrity-install': z.object({
     packageName: z.string().min(1).max(200),
   }),
+
+  // Optional capability packages (Computer Use is intentionally out of scope).
+  'optional-capability:list': z.object({}).strict(),
+  'optional-capability:check': z
+    .object({
+      forceRemote: z.boolean().optional(),
+    })
+    .strict(),
+  'optional-capability:install': z
+    .object({ capabilityId: OptionalCapabilityIdSchema })
+    .strict(),
+  'optional-capability:update': z
+    .object({ capabilityId: OptionalCapabilityIdSchema })
+    .strict(),
+  'optional-capability:repair': z
+    .object({ capabilityId: OptionalCapabilityIdSchema })
+    .strict(),
+  'optional-capability:uninstall': z
+    .object({ capabilityId: OptionalCapabilityIdSchema })
+    .strict(),
+  'optional-capability:set-auto-update': z
+    .object({
+      capabilityId: OptionalCapabilityIdSchema,
+      enabled: z.boolean(),
+    })
+    .strict(),
 
   // Playwright Browser Automation
   'playwright:status': z.object({}),
