@@ -1,15 +1,16 @@
 # ONNX 安装包精准裁剪验证记录
 
-日期：2026-08-01
+最后复核：2026-08-02
 
 ## 结论
 
-第一阶段 ONNX 安装包裁剪已在 macOS arm64 真实 DMG 上验证通过：
+第一阶段 ONNX 安装包裁剪已在 macOS arm64 真实 unpacked 产物上验证通过：
 
 - `onnxruntime-web` 未进入最终 `app.asar`；
 - `onnxruntime-node` 只保留 `darwin/arm64`；
-- 同版本本地 DMG 从 398,417,355 字节降到 352,482,777 字节；
-- 减少 45,934,578 字节（45.93 MB，11.53%）；
+- `app.asar` 可由 `@electron/asar.extractAll()` 完整解包，不存在已删除文件仍残留在 ASAR header
+  的失效条目；
+- 从解包目录可加载 Transformers `pipeline`、`RawImage` 和 ONNX Runtime 1.24.3；
 - 深度模型权重仍维持首次使用时从 Spark artifact repository 下载，本轮没有修改模型安装逻辑。
 
 Computer Use 的 Native Host、独立 Node Runtime、Playwright MCP 和相关运行逻辑不在本轮范围内，
@@ -18,9 +19,11 @@ Computer Use 的 Native Host、独立 Node Runtime、Playwright MCP 和相关运
 ## 变更内容
 
 1. electron-builder `files` 排除 `node_modules/onnxruntime-web/**`。
-2. `afterPack` 在不重构平台分支的前提下调用独立 ONNX 裁剪器。
-3. 裁剪器仅保留当前 `platform/arch` 下的 `onnxruntime-node/bin/napi-v6`。
-4. 独立产物门禁同时检查 ASAR Web Runtime 和 unpacked Native Runtime 范围。
+2. `beforePack` 在 electron-builder 创建 ASAR 前，把异平台 Native 排除项追加到已规范化
+   FileSet 的 `filter`；不能把排除字符串直接追加到 `config.files` 顶层，否则构建器会生成隐含
+   `**/*` 的第二个 matcher，把整个桌面项目重新收进 ASAR。
+3. `afterPack` 裁剪器继续作为安全兜底，仅保留当前 `platform/arch`。
+4. 独立产物门禁同时检查 ASAR header、Web Runtime 和 unpacked Native Runtime 范围。
 
 ## 真实产物
 
@@ -39,21 +42,22 @@ Computer Use 的 Native Host、独立 Node Runtime、Playwright MCP 和相关运
 
 | 项目 | 修复前 | 修复后 | 变化 |
 |---|---:|---:|---:|
-| macOS arm64 DMG | 398,417,355 B | 352,482,777 B | -45,934,578 B |
-| `app.asar` | 410,821,620 B | 299,982,632 B | -110,838,988 B |
-| `app.asar.unpacked` | 约 375 MiB | 322.52 MiB | 约 -52.5 MiB |
+| `app.asar` | 410,821,620 B | 300,403,286 B | -110,418,334 B |
+| `app.asar.unpacked` | 约 375 MiB | 约 324 MiB | 约 -51 MiB |
+| `.app` 总体积 | 未记录 | 约 981 MiB | — |
 
-DMG 是签名后的本地开发产物。构建环境缺少 Apple 公证账号环境变量，因此 electron-builder 按
-既有配置跳过 notarization；这不影响文件组成和体积比较，但该 DMG 不作为对外发布产物。
+曾构建过 352,482,777 B 的 DMG，但旧方案在 `afterPack` 删除文件后留下失效 ASAR header，因此
+该数字不能作为可发布结果。最终方案本轮使用 `electron-builder --dir` 验证，新的 DMG 体积需要在
+完成 Office 与深度 Runtime 远程化后统一重测，避免重复发布中间产物。
 
 ## 验证命令
 
 ```bash
 pnpm --filter @spark/desktop native:verify
 pnpm --filter @spark/desktop build:unpack
-pnpm --dir apps/desktop exec electron-builder --mac --arm64
-pnpm --filter @spark/desktop verify:packaged:onnx -- \
-  --resources "dist/mac-arm64/Spark Agent.app/Contents/Resources" \
+pnpm --dir apps/desktop exec electron-builder --dir -c.mac.identity=null
+node apps/desktop/scripts/verify-packaged-onnx-runtime.js \
+  --resources "apps/desktop/dist/mac-arm64/Spark Agent.app/Contents/Resources" \
   --platform darwin \
   --arch arm64
 ```
@@ -66,9 +70,8 @@ pnpm --filter @spark/desktop verify:packaged:onnx -- \
 
 定向测试：
 
-- `after-pack.test.ts`：23 项通过；
-- `verify-packaged-onnx-runtime.test.ts`：3 项通过；
-- desktop renderer/node TypeScript 检查通过；
+- `after-pack.test.ts`：31 项通过；
+- `verify-packaged-onnx-runtime.test.ts`：4 项通过；
 - Native ABI 验证通过：`better-sqlite3`、`keytar`、`node-pty` 均可由 Electron 43 加载。
 
 ## 待发布平台验证
