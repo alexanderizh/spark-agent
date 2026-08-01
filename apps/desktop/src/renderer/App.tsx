@@ -246,7 +246,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     setTweak('canvasCreateSignal', t.canvasCreateSignal + 1)
   }, [setTweak, t.canvasCreateSignal])
 
-  // 侧栏「画布工作流库」：直接切到独立工作流库页面（不再用弹窗/信号）。
+  // 侧栏「画布工作流」：直接切到独立工作流库页面（不再用弹窗/信号）。
   // 工作流库是画布模式的子页，点击确保 workspaceMode 在画布模式。
   const handleOpenCanvasWorkflowLib = useCallback(() => {
     setTweak('workspaceMode', 'canvas')

@@ -3,9 +3,7 @@
   min-height: 42px;
   align-items: flex-end;
   gap: 24px;
-  padding: 0 28px;
-  border-bottom: 1px solid var(--divider);
-  background: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  padding: 0 12px;
 
   button {
     position: relative;
@@ -50,19 +48,16 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  background: var(--bg);
   color: var(--text);
 }
 
 .canvas-workflow-library-toolbar {
   display: flex;
-  min-height: 58px;
+  min-height: 48px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 28px;
-  border-bottom: 1px solid var(--divider);
-  background: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  padding: 0px 12px;
 }
 
 .canvas-workflow-search {
@@ -96,7 +91,7 @@
 .canvas-workflow-primary-button,
 .canvas-workflow-project-target button {
   display: inline-flex;
-  min-height: 36px;
+  min-height: 30px;
   align-items: center;
   justify-content: center;
   gap: 7px;
@@ -130,7 +125,7 @@
 .canvas-workflow-toolbar-button,
 .canvas-workflow-export-button {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 30px;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -174,13 +169,12 @@
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: 190px minmax(360px, 1fr) minmax(300px, 360px);
+  grid-template-columns: 170px minmax(360px, 1fr) minmax(300px, 360px);
 }
 
 .canvas-workflow-scope-nav {
   padding: 14px 10px;
   border-right: 1px solid var(--divider);
-  background: color-mix(in srgb, var(--panel) 92%, var(--bg));
 
   button {
     display: flex;
@@ -381,9 +375,8 @@
 .canvas-workflow-detail {
   min-width: 0;
   overflow: auto;
-  padding: 20px;
+  padding: 14px 10px;
   border-left: 1px solid var(--divider);
-  background: color-mix(in srgb, var(--panel) 96%, var(--bg));
 }
 
 .canvas-workflow-detail-heading {
@@ -1552,7 +1545,7 @@
 .canvas-workflow-publish-button {
   display: inline-flex;
   width: 100%;
-  min-height: 34px;
+  min-height: 30px;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -1876,8 +1869,8 @@
   gap: 12px;
   min-height: var(--window-titlebar-height);
   padding: 8px 28px;
-  border-bottom: 1px solid var(--divider);
-  background: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  // border-bottom: 1px solid var(--divider);
+  // background: color-mix(in srgb, var(--panel) 96%, var(--bg));
   flex-shrink: 0;
 
   h2 {

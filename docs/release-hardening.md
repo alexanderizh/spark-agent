@@ -52,7 +52,7 @@
 
 - 全仓 typecheck、unit test、desktop lint 均为 0 error。
 - 生产构建、60 个 migration 静态校验和 `electron-builder --dir` 均通过。
-- Electron E2E 3/3 通过：首次引导、主侧栏、无限画布工作流库、创建 Canvas 项目与工作流抽屉。
+- Electron E2E 3/3 通过：首次引导、主侧栏、无限画布工作流、创建 Canvas 项目与工作流抽屉。
 - 依赖树确认不再包含 `electron-updater`，Playwright MCP CLI 与修复后的传递依赖可解析。
 - OSV 对 1458 个唯一 npm 包版本复核后仅剩两类已评估告警：旧版 `brace-expansion` 仅来自受控构建 glob，强升 5.x 会破坏旧 minimatch CJS；`react-router` 告警仅影响未使用的 unstable RSC API。二者均不进入当前可被外部输入触发的桌面运行路径。
 - GitNexus 索引刷新和 `git diff --check` 作为最终变更范围核对。

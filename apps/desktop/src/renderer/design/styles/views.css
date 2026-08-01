@@ -534,9 +534,9 @@ body.sidebar-resizing {
 }
 
 /* Project group in sidebar */
-.proj-group {
+/* .proj-group {
   margin-bottom: 4px;
-}
+} */
 .proj-group.active-project .proj-head {
   background: transparent;
   box-shadow: none;

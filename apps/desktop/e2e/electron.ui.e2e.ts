@@ -226,8 +226,8 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
     await page.getByRole('tab', { name: '画布', exact: true }).click()
     await expect(page.getByRole('heading', { name: '无限画布', exact: true })).toBeVisible()
 
-    await page.getByRole('button', { name: '画布工作流库', exact: true }).click()
-    await expect(page.getByRole('region', { name: '画布工作流库' })).toBeVisible()
+    await page.getByRole('button', { name: '画布工作流', exact: true }).click()
+    await expect(page.getByRole('region', { name: '画布工作流' })).toBeVisible()
     await expect(page.getByRole('navigation', { name: '工作流范围' })).toBeVisible()
     await expect(page.getByRole('button', { name: '新建画布工作流', exact: true })).toBeVisible()
     await page.screenshot({
