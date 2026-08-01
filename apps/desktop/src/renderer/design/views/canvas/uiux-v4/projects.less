@@ -195,46 +195,91 @@
     height: 240px;
     border-radius: var(--canvas-v4-radius-md);
     overflow: hidden;
-    background: var(--canvas-v4-surface-muted);
+    background: #111216;
     border: 1px solid var(--canvas-v4-border);
-    // 可上传时鼠标变手指，提示可点击
-    &.is-uploadable {
-      cursor: pointer;
-    }
   }
-  // 封面 hover 遮罩：半透明黑 + 上传图标/文案，默认透明 hover 显示
-  .canvas-detail-cover-overlay {
+  .canvas-detail-cover-preview-trigger {
     position: absolute;
     inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    color: #fff;
-    font-size: 13px;
-    font-weight: 500;
-    background: rgba(0, 0, 0, 0.45);
-    opacity: 0;
-    transition: opacity 0.18s ease;
-    pointer-events: none; // 不拦截点击，让 onClick 冒泡到 cover
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: zoom-in;
+    overflow: hidden;
   }
-  .canvas-detail-cover.is-uploadable:hover .canvas-detail-cover-overlay {
+  .canvas-detail-cover-preview-trigger:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -3px;
+  }
+  .canvas-detail-cover-ambient {
+    position: absolute;
+    inset: -24px;
+    width: calc(100% + 48px);
+    height: calc(100% + 48px);
+    object-fit: cover;
+    filter: blur(22px) brightness(0.52) saturate(0.82);
+    transform: scale(1.08);
+    opacity: 0.72;
+    pointer-events: none;
+  }
+  .canvas-detail-cover-image {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    display: block;
+    pointer-events: none;
+  }
+  .canvas-detail-cover-toolbar {
+    position: absolute;
+    z-index: 2;
+    right: 10px;
+    bottom: 10px;
+    display: flex;
+    gap: 6px;
+    opacity: 0;
+    transform: translateY(4px);
+    pointer-events: none;
+    transition: opacity 0.16s ease, transform 0.16s ease;
+  }
+  .canvas-detail-cover:hover .canvas-detail-cover-toolbar,
+  .canvas-detail-cover:focus-within .canvas-detail-cover-toolbar {
     opacity: 1;
+    transform: translateY(0);
+  }
+  .canvas-detail-cover-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 32px;
+    padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: var(--canvas-v4-radius-sm);
+    background: rgba(18, 18, 22, 0.78);
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    pointer-events: auto;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: background 0.12s ease;
+    &:hover {
+      background: rgba(18, 18, 22, 0.94);
+    }
   }
   .canvas-detail-cover-input {
     display: none;
   }
-  .canvas-detail-cover-image {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    object-position: top;
-  }
   .canvas-detail-cover-empty {
     width: 100%;
     height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -243,13 +288,8 @@
     color: var(--text-faint);
     font-size: 12px;
   }
-  .canvas-detail-cover-actions {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  button.canvas-detail-cover-empty {
+    cursor: pointer;
   }
   .canvas-detail-pin-btn,
   .canvas-detail-icon-btn {
@@ -288,6 +328,9 @@
     min-width: 0; // 允许标题 ellipsis
   }
   .canvas-detail-header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     flex-shrink: 0; // 打开按钮不被超长标题挤走
   }
   .canvas-detail-title {
@@ -310,6 +353,37 @@
     color: var(--text-muted);
     font-size: 13px;
     line-height: 1.6;
+  }
+
+  @media (max-width: 720px) {
+    .canvas-detail-cover {
+      height: 180px;
+    }
+    .canvas-detail-cover-tool {
+      width: 32px;
+      padding: 0;
+      justify-content: center;
+      span {
+        display: none;
+      }
+    }
+    .canvas-detail-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .canvas-detail-header-right {
+      width: 100%;
+      flex-wrap: wrap;
+      .ant-btn {
+        margin-left: auto;
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .canvas-detail-cover-toolbar {
+      transition: none;
+    }
   }
 
   .canvas-detail-stats {
@@ -587,6 +661,23 @@
       padding: 16px 20px 24px;
     }
   }
+}
+
+/* ─── 项目封面完整预览（Modal portal 到 body，全局样式） ─── */
+.canvas-detail-cover-preview-modal .ant-modal-body {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: calc(92vh - 60px);
+  overflow: auto;
+}
+.canvas-detail-cover-preview-image {
+  max-width: 88vw;
+  max-height: calc(92vh - 100px);
+  object-fit: contain;
+  border-radius: 6px;
+  display: block;
 }
 
 /* ─── 资源预览 lightbox（Modal portal 到 body，全局样式） ─── */
