@@ -1,6 +1,21 @@
 import CryptoKit
 import Foundation
 
+public enum NativeAccessibilityCachePolicy {
+  public static func canReuse(
+    sameTarget: Bool,
+    subscriptionActive: Bool,
+    cachedElementCount: Int,
+    cachedGeneration: UInt64,
+    currentGeneration: UInt64,
+    age: TimeInterval,
+    maxAge: TimeInterval
+  ) -> Bool {
+    sameTarget && subscriptionActive && cachedElementCount > 0
+      && cachedGeneration == currentGeneration && age >= 0 && age <= maxAge
+  }
+}
+
 public let maxNativeTreeElements = 2_000
 
 public enum NativeControlPolicyError: Error, Equatable, Sendable {

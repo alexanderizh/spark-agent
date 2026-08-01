@@ -4,6 +4,60 @@ import XCTest
 @testable import SparkComputerHostCore
 
 final class MacControlPolicyTests: XCTestCase {
+  func testAccessibilityCacheRequiresMatchingTargetSubscriptionGenerationAndAge() {
+    XCTAssertTrue(
+      NativeAccessibilityCachePolicy.canReuse(
+        sameTarget: true,
+        subscriptionActive: true,
+        cachedElementCount: 4,
+        cachedGeneration: 7,
+        currentGeneration: 7,
+        age: 0.5,
+        maxAge: 1
+      ))
+
+    XCTAssertFalse(
+      NativeAccessibilityCachePolicy.canReuse(
+        sameTarget: false,
+        subscriptionActive: true,
+        cachedElementCount: 4,
+        cachedGeneration: 7,
+        currentGeneration: 7,
+        age: 0.5,
+        maxAge: 1
+      ))
+    XCTAssertFalse(
+      NativeAccessibilityCachePolicy.canReuse(
+        sameTarget: true,
+        subscriptionActive: false,
+        cachedElementCount: 4,
+        cachedGeneration: 7,
+        currentGeneration: 7,
+        age: 0.5,
+        maxAge: 1
+      ))
+    XCTAssertFalse(
+      NativeAccessibilityCachePolicy.canReuse(
+        sameTarget: true,
+        subscriptionActive: true,
+        cachedElementCount: 4,
+        cachedGeneration: 7,
+        currentGeneration: 8,
+        age: 0.5,
+        maxAge: 1
+      ))
+    XCTAssertFalse(
+      NativeAccessibilityCachePolicy.canReuse(
+        sameTarget: true,
+        subscriptionActive: true,
+        cachedElementCount: 4,
+        cachedGeneration: 7,
+        currentGeneration: 7,
+        age: 1.01,
+        maxAge: 1
+      ))
+  }
+
   func testSanitizesSecureValuesAndPublishesVersionBoundReferences() throws {
     var state = NativeAXTreeState()
     let secure = NativeAXRawElement(

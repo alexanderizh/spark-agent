@@ -46,11 +46,15 @@ final class MacAccessibilityController: @unchecked Sendable {
       configureObserver(processID: processID, application: application, window: focusedWindow)
     }
     let generation = currentDirtyGeneration()
-    if sameWindow,
-      cachedGeneration == generation,
-      !cachedRawElements.isEmpty,
-      ProcessInfo.processInfo.systemUptime - lastTraversalUptime <= 1
-    {
+    if NativeAccessibilityCachePolicy.canReuse(
+      sameTarget: sameWindow,
+      subscriptionActive: observer != nil,
+      cachedElementCount: cachedRawElements.count,
+      cachedGeneration: cachedGeneration,
+      currentGeneration: generation,
+      age: ProcessInfo.processInfo.systemUptime - lastTraversalUptime,
+      maxAge: 1
+    ) {
       return try publishCached(
         cachedRawElements,
         previousTreeVersion: previousTreeVersion,
@@ -79,6 +83,9 @@ final class MacAccessibilityController: @unchecked Sendable {
   }
 
   func execute(_ action: NativeComputerAction, treeVersion: String) throws -> NativeActionStatus {
+    // Do not depend on AX notification delivery timing for the post-action observation.
+    // Mark the cached tree stale before touching the target so the next observe traverses it.
+    markDirty()
     switch action {
     case .invokeElement(let elementID, let requestedAction):
       let element = try resolve(elementID, treeVersion: treeVersion)

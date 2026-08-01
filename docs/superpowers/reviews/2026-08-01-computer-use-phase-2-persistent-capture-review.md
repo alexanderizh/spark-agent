@@ -1,6 +1,6 @@
 # Computer Use V2 Phase 2.2 持久视觉捕获审查
 
-> 日期: 2026-08-01 | 阶段: Phase 2.2 持久视觉切片 | 结论: 自主代码完成，事件树与真机性能待后续签收
+> 日期: 2026-08-01 | 阶段: Phase 2.2 持久视觉切片 | 结论: 自主代码完成，事件树缓存由后续独立审查收口，真机性能待签收
 
 ## 交付范围
 
@@ -25,8 +25,8 @@
 
 ## 明确未完成
 
-- AXObserver/UI Automation event handler 增量缓存尚未落地，当前树仍按 observe 请求遍历后由已有 tree state 生成 full/diff。
+- AXObserver/UI Automation event handler 增量缓存已由后续切片落地并在 `2026-08-01-computer-use-phase-2-accessibility-cache-review.md` 独立审查；本审查保留当时的交付边界记录。
 - SCContentSharingPicker 尚未成为绑定入口，当前继续使用产品窗口 picker 与严格 app/window identity。
 - 真实签名 macOS/Windows 的 idle CPU、capture CPU/内存、观察 P50/P95/P99 和 crash/permission/rebind 矩阵须发布真机执行。
 
-因此本提交只标记“持久视觉捕获代码完成”，不把 Phase 2 全部或真机 SLO 宣称为完成；下一切片继续实现可访问性事件缓存。
+因此本提交只标记“持久视觉捕获代码完成”，不把 Phase 2 全部或真机 SLO 宣称为完成；事件缓存完成后，剩余项为 Picker 产品入口与真实签名桌面 SLO 签收。

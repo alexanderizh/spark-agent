@@ -424,7 +424,7 @@ absent → verifying → starting → handshaking → ready
 
 #### 2.2 持续捕获与增量可访问性树
 
-> 实施进度（2026-08-01）：持久视觉捕获切片已落地并保持默认关闭。`observe` 增加向后兼容的可选 `persistentCapture` 扩展，仅在统一 flag 开启时发送；runtime rollback 后下一请求自动回到旧单帧路径。macOS 使用按 app/window/PID/代码身份绑定的 `SCStream`，Windows 使用按 HWND/进程/可执行身份绑定的 WGC 长会话；两端都只接受本次 observe 单调时钟起点之后的新帧，队列有界，目标/flag/cancel 变化立即释放，启动或 2 秒取帧失败最多回退一次既有单帧路径。Swift 42 项、Rust 22 项、Windows x64/arm64 `clippy -D warnings` 与 TS/协议聚焦回归通过。AXObserver/UIA event cache、SCContentSharingPicker 和真实平台 CPU/P95 预算仍是下一切片及发布签收项。
+> 实施进度（2026-08-01）：持久视觉捕获与可访问性事件缓存代码已落地并保持默认关闭。`observe` 增加向后兼容的可选 `persistentCapture` 扩展，仅在统一 flag 开启时发送；runtime rollback 后下一请求自动回到旧单帧路径。macOS 使用按 app/window/PID/代码身份绑定的 `SCStream`，Windows 使用按 HWND/进程/可执行身份绑定的 WGC 长会话；两端都只接受本次 observe 单调时钟起点之后的新帧，队列有界，目标/flag/cancel 变化立即释放，启动或 2 秒取帧失败最多回退一次既有单帧路径。AXObserver 与 UIA event handler 以目标身份、订阅状态、事件 generation 和 1 秒最大年龄共同决定树缓存复用；目标变化、事件、动作执行或超时都会强制重新遍历。Swift 43 项、Rust 23 项、Windows x64/arm64 `clippy -D warnings` 与 TS/协议聚焦回归通过。SCContentSharingPicker 和真实平台 CPU/P95 预算仍是发布签收项。
 
 macOS：
 
