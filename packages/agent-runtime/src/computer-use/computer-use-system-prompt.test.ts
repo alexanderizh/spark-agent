@@ -35,6 +35,8 @@ describe('buildComputerUseSystemPrompt', () => {
     expect(prompt).toContain('does not request per-action approval')
     expect(prompt).not.toContain('exact L2/L3 desktop action')
     expect(prompt).toContain('There is no application allowlist')
+    expect(prompt).toContain('remains bound to that target')
+    expect(prompt).toContain('restores the user foreground app')
     expect(prompt).toContain('verification')
     expect(prompt).toContain('pause')
     expect(prompt).toContain('stop')

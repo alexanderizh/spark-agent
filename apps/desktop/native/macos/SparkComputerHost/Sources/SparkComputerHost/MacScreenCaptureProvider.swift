@@ -267,7 +267,8 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       throw NativeHostPlatformError.userTakeover
     }
     userInput.bind(
-      sessionID: envelope.computerSessionID, bounds: before.identity.windowBounds,
+      sessionID: envelope.computerSessionID, processID: before.processID,
+      bounds: before.identity.windowBounds,
       observedAt: binding.capturedAt)
     if userInput.takeoverDetected(sessionID: envelope.computerSessionID) {
       throw NativeHostPlatformError.userTakeover

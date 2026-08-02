@@ -640,15 +640,6 @@ fn execute_action(
                     false,
                 );
             }
-            Err(user_input::UserInputError::Busy) => {
-                return write_platform_error(
-                    output,
-                    request_id,
-                    "action_timeout",
-                    "User input did not become idle before the action deadline",
-                    true,
-                );
-            }
         }
     }
     if matches!(

@@ -1,4 +1,6 @@
 import {
+  CanvasTextProviderError,
+  CanvasTextTimeoutError,
   generateCanvasText,
   type ComputerDecisionModelConfig,
   type GenerateCanvasTextParams,
@@ -11,12 +13,13 @@ import {
   type ComputerObservation,
   type VerificationSpec,
 } from '@spark/protocol'
+import { createLogger } from '@spark/shared'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 
 const MAX_TREE_PROMPT_CHARS = 200_000
 const MAX_ELEMENT_PROMPT_CHARS = 100_000
 const MAX_ELEMENT_PROMPT_COUNT = 2_000
-const MAX_DECISION_ATTEMPTS = 3
+const log = createLogger('computer-use-decision')
 export const MIN_BATCH_ACTIONS = 2
 export const MAX_BATCH_ACTIONS = 8
 const SUPPORTED_ACTIONS = new Set<ComputerAction['type']>([
@@ -97,20 +100,27 @@ export class GenericComputerDecisionAdapter {
 
   async decide(input: ComputerDecisionInput): Promise<ComputerDecision> {
     let lastError: unknown
-    for (let attempt = 0; attempt < MAX_DECISION_ATTEMPTS; attempt += 1) {
+    const attempts = decisionAttemptPlan(
+      this.model,
+      input.screenshot.length > 0,
+      hasUsefulAccessibilityState(input.observation),
+    )
+    for (const [attempt, candidate] of attempts.entries()) {
       try {
         const result = await this.generate({
-          providerType: this.model.providerType,
-          ...(this.model.apiKind == null ? {} : { apiKind: this.model.apiKind }),
-          apiKey: this.model.apiKey,
-          ...(this.model.apiEndpoint == null ? {} : { apiEndpoint: this.model.apiEndpoint }),
-          model: this.model.model,
-          maxTokens: Math.min(this.model.maxTokens ?? 4_096, 8_192),
+          providerType: candidate.model.providerType,
+          ...(candidate.model.apiKind == null ? {} : { apiKind: candidate.model.apiKind }),
+          apiKey: candidate.model.apiKey,
+          ...(candidate.model.apiEndpoint == null
+            ? {}
+            : { apiEndpoint: candidate.model.apiEndpoint }),
+          model: candidate.model.model,
+          maxTokens: Math.min(candidate.model.maxTokens ?? 4_096, 8_192),
           temperature: 0,
-          responseFormat: 'json',
+          responseFormat: candidate.responseFormat,
           system: buildDecisionSystemPrompt(this.platform, input.allowBatch === true),
           prompt: buildDecisionPrompt(input, attempt),
-          ...(input.screenshot.length === 0
+          ...(!candidate.includeScreenshot
             ? {}
             : {
                 images: [
@@ -124,24 +134,134 @@ export class GenericComputerDecisionAdapter {
         return parseDecision(result.text)
       } catch (error) {
         lastError = error
-        if (attempt + 1 < MAX_DECISION_ATTEMPTS) await this.wait(150 * (attempt + 1))
+        log.warn('Computer decision attempt failed; trying the next compatible path', {
+          attempt: attempt + 1,
+          attemptCount: attempts.length,
+          providerProfileId: candidate.model.providerProfileId,
+          model: candidate.model.model,
+          mode: candidate.includeScreenshot ? 'vision' : 'accessibility_only',
+          responseFormat: candidate.responseFormat,
+          failure: decisionFailureLabel(error),
+        })
+        if (attempt + 1 < attempts.length) await this.wait(150 * Math.min(3, attempt + 1))
       }
     }
     if (lastError instanceof ComputerUseBrokerError && lastError.code === 'decision_model_error') {
       throw lastError
     }
+    const diagnostic = decisionProviderDiagnostic(lastError)
     throw new ComputerUseBrokerError(
       'decision_model_error',
       'Computer decision model request failed',
-      undefined,
+      diagnostic.details,
       {
+        retryable: diagnostic.retryable,
         diagnostic: {
-          diagnosticCode: 'decision_provider_failed',
+          diagnosticCode: diagnostic.code,
           stage: 'verify_task',
-          repairAction: 'Check the selected multimodal model and provider connection, then retry.',
+          repairAction: diagnostic.repairAction,
         },
       },
     )
+  }
+}
+
+interface ComputerDecisionAttempt {
+  model: ComputerDecisionModelConfig
+  includeScreenshot: boolean
+  responseFormat: 'json' | 'text'
+}
+
+function decisionAttemptPlan(
+  primary: ComputerDecisionModelConfig,
+  screenshotAvailable: boolean,
+  preferAccessibility: boolean,
+): ComputerDecisionAttempt[] {
+  const primaryModel = withoutFallbackModels(primary)
+  const fallbacks = (primary.fallbackModels ?? []).map(withoutFallbackModels)
+  const candidates: ComputerDecisionAttempt[] = []
+  if (preferAccessibility) {
+    candidates.push({ model: primaryModel, includeScreenshot: false, responseFormat: 'json' })
+  }
+  if (screenshotAvailable) {
+    candidates.push({ model: primaryModel, includeScreenshot: true, responseFormat: 'json' })
+    for (const model of fallbacks) {
+      candidates.push({ model, includeScreenshot: true, responseFormat: 'json' })
+    }
+  }
+  if (!preferAccessibility) {
+    candidates.push({ model: primaryModel, includeScreenshot: false, responseFormat: 'json' })
+  }
+  for (const model of fallbacks) {
+    candidates.push({ model, includeScreenshot: false, responseFormat: 'json' })
+  }
+  candidates.push({ model: primaryModel, includeScreenshot: false, responseFormat: 'text' })
+  return dedupeDecisionAttempts(candidates).slice(0, 6)
+}
+
+function hasUsefulAccessibilityState(observation: ComputerObservation): boolean {
+  if (observation.elements.length > 0) return true
+  const tree = observation.tree.text.trim()
+  if (tree.length < 24) return false
+  return /\b(button|textbox|searchbox|combobox|link|menuitem|tab|checkbox|radio)\b|按钮|输入|搜索|链接|菜单|选项卡/iu.test(
+    tree,
+  )
+}
+
+function withoutFallbackModels(model: ComputerDecisionModelConfig): ComputerDecisionModelConfig {
+  const { fallbackModels: _fallbackModels, ...candidate } = model
+  return candidate
+}
+
+function dedupeDecisionAttempts(attempts: ComputerDecisionAttempt[]): ComputerDecisionAttempt[] {
+  const seen = new Set<string>()
+  return attempts.filter((attempt) => {
+    const key = [
+      attempt.model.providerProfileId,
+      attempt.model.model,
+      attempt.includeScreenshot,
+      attempt.responseFormat,
+    ].join(':')
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function decisionFailureLabel(error: unknown): string {
+  if (error instanceof CanvasTextProviderError) return `provider_http_${error.statusCode}`
+  if (error instanceof CanvasTextTimeoutError) return 'provider_timeout'
+  if (error instanceof ComputerUseBrokerError) return error.diagnostic?.diagnosticCode ?? error.code
+  return error instanceof Error ? error.name : 'unknown_error'
+}
+
+function decisionProviderDiagnostic(error: unknown): {
+  code: string
+  details?: Readonly<Record<string, string>>
+  repairAction: string
+  retryable: boolean
+} {
+  if (error instanceof CanvasTextProviderError) {
+    return {
+      code: `decision_provider_http_${error.statusCode}`,
+      details: { providerStatus: String(error.statusCode) },
+      repairAction:
+        'All configured Computer Use decision providers rejected the request. Check their model image support and API compatibility.',
+      retryable: error.statusCode === 408 || error.statusCode === 429 || error.statusCode >= 500,
+    }
+  }
+  if (error instanceof CanvasTextTimeoutError) {
+    return {
+      code: 'decision_provider_timeout',
+      repairAction: 'All configured Computer Use decision providers timed out.',
+      retryable: true,
+    }
+  }
+  return {
+    code: 'decision_provider_failed',
+    repairAction:
+      'All configured Computer Use decision paths failed. Check the selected and fallback model providers.',
+    retryable: true,
   }
 }
 
@@ -209,20 +329,16 @@ function serializeElements(elements: ComputerElementRef[]): string {
 }
 
 function parseDecision(text: string): ComputerDecision {
-  const normalized = text
-    .trim()
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/, '')
   let value: unknown
   try {
-    value = JSON.parse(normalized) as unknown
+    value = JSON.parse(extractDecisionJson(text)) as unknown
   } catch {
     throw invalidDecision()
   }
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     throw invalidDecision()
   }
-  const record = value as Record<string, unknown>
+  const record = normalizeDecisionRecord(value as Record<string, unknown>)
   if (record.type === 'action') {
     const action = ComputerActionSchema.safeParse(normalizeAction(record.action))
     if (
@@ -276,10 +392,67 @@ function invalidDecision(): ComputerUseBrokerError {
         diagnosticCode: 'decision_output_invalid',
         stage: 'verify_task',
         repairAction:
-          'Use a multimodal model that follows the documented Computer Action JSON schema.',
+          'The local Computer Use adapter could not normalize the returned action. Retry with accessibility-first or visual planning.',
       },
     },
   )
+}
+
+/**
+ * Compatible providers sometimes wrap otherwise valid JSON in a short explanation or a
+ * Markdown fence. Extract one balanced object while keeping action validation strict.
+ */
+function extractDecisionJson(text: string): string {
+  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+  try {
+    JSON.parse(trimmed)
+    return trimmed
+  } catch {
+    // Continue with bounded balanced-object extraction.
+  }
+  const start = trimmed.indexOf('{')
+  if (start < 0) throw invalidDecision()
+  let depth = 0
+  let quoted = false
+  let escaped = false
+  for (let index = start; index < trimmed.length; index += 1) {
+    const character = trimmed[index]
+    if (quoted) {
+      if (escaped) escaped = false
+      else if (character === '\\') escaped = true
+      else if (character === '"') quoted = false
+      continue
+    }
+    if (character === '"') quoted = true
+    else if (character === '{') depth += 1
+    else if (character === '}' && --depth === 0) return trimmed.slice(start, index + 1)
+  }
+  throw invalidDecision()
+}
+
+function normalizeDecisionRecord(record: Record<string, unknown>): Record<string, unknown> {
+  // Accept a validated bare action from providers that omit the outer decision envelope.
+  if (SUPPORTED_ACTIONS.has(record.type as ComputerAction['type'])) {
+    return {
+      type: 'action',
+      intent: typeof record.intent === 'string' ? record.intent : `Execute ${String(record.type)}`,
+      action: record,
+    }
+  }
+  // Some Anthropic-compatible providers return { action, reason } without type/intent.
+  if (record.type == null && record.action != null) {
+    return {
+      ...record,
+      type: 'action',
+      intent:
+        typeof record.intent === 'string'
+          ? record.intent
+          : typeof record.reason === 'string'
+            ? record.reason
+            : 'Execute the selected desktop action',
+    }
+  }
+  return record
 }
 
 function normalizeAction(value: unknown): unknown {

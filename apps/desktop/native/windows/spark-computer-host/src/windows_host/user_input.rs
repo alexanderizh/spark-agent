@@ -11,7 +11,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 const IDLE_WINDOW: Duration = Duration::from_millis(300);
-const MAX_IDLE_WAIT: Duration = Duration::from_secs(5);
+const MAX_IDLE_WAIT: Duration = Duration::from_millis(750);
 const RECENT_CLICK_WINDOW: Duration = Duration::from_secs(5);
 
 static STATE: OnceLock<Arc<Mutex<UserInputState>>> = OnceLock::new();
@@ -31,7 +31,6 @@ pub struct WindowsUserInputMonitor;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UserInputError {
     Takeover,
-    Busy,
 }
 
 impl WindowsUserInputMonitor {
@@ -89,7 +88,9 @@ impl WindowsUserInputMonitor {
                 return Ok(());
             }
             if started.elapsed() >= MAX_IDLE_WAIT {
-                return Err(UserInputError::Busy);
+                // Activity in another application is not a takeover. After a short debounce,
+                // continue controlling the bound target window.
+                return Ok(());
             }
             thread::sleep(Duration::from_millis(10));
         }

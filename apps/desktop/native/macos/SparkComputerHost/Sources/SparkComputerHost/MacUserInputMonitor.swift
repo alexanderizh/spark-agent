@@ -9,7 +9,7 @@ let sparkComputerInjectedEventTag: Int64 = 0x5350_4152_4B43_5553
 
 final class MacUserInputMonitor: @unchecked Sendable {
   private let lock = NSLock()
-  private var bindings: [String: NativeRect] = [:]
+  private var bindings: [String: UserInputBinding] = [:]
   private var takeoverSessions: Set<String> = []
   private var lastUserInputAt = Date.distantPast.timeIntervalSinceReferenceDate
   private var lastUserPointerDown: (at: TimeInterval, point: CGPoint)?
@@ -34,10 +34,10 @@ final class MacUserInputMonitor: @unchecked Sendable {
     start()
   }
 
-  func bind(sessionID: String, bounds: NativeRect, observedAt: TimeInterval) {
+  func bind(sessionID: String, processID: pid_t, bounds: NativeRect, observedAt: TimeInterval) {
     lock.withLock {
       let isNewBinding = bindings[sessionID] == nil
-      bindings[sessionID] = bounds
+      bindings[sessionID] = UserInputBinding(processID: processID, bounds: bounds)
       if isNewBinding {
         takeoverSessions.remove(sessionID)
         if let pointerDown = lastUserPointerDown,
@@ -64,7 +64,7 @@ final class MacUserInputMonitor: @unchecked Sendable {
   func waitForUserInputIdle(
     sessionID: String,
     idleFor: Duration = .milliseconds(300),
-    maximumWait: Duration = .seconds(5)
+    maximumWait: Duration = .milliseconds(750)
   ) async throws {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: maximumWait)
@@ -75,7 +75,9 @@ final class MacUserInputMonitor: @unchecked Sendable {
       if Date.timeIntervalSinceReferenceDate - lastInput >= idleSeconds { return }
       try await Task.sleep(for: .milliseconds(25))
     }
-    throw NativeHostPlatformError.userTakeover
+    // Continuous input in another application must not cancel the bound task. Only a
+    // target-window interaction recorded in `takeoverSessions` is an explicit takeover.
+    if takeoverDetected(sessionID: sessionID) { throw NativeHostPlatformError.userTakeover }
   }
 
   private func start() {
@@ -140,17 +142,29 @@ final class MacUserInputMonitor: @unchecked Sendable {
     }
     let now = Date.timeIntervalSinceReferenceDate
     let point = event.location
+    let frontmostProcessID =
+      type == .keyDown ? NSWorkspace.shared.frontmostApplication?.processIdentifier : nil
     lock.withLock {
       lastUserInputAt = now
+      if let frontmostProcessID {
+        for (sessionID, binding) in bindings where binding.processID == frontmostProcessID {
+          takeoverSessions.insert(sessionID)
+        }
+      }
       guard type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown else {
         return
       }
       lastUserPointerDown = (at: now, point: point)
-      for (sessionID, bounds) in bindings where contains(point, in: bounds) {
+      for (sessionID, binding) in bindings where contains(point, in: binding.bounds) {
         takeoverSessions.insert(sessionID)
       }
     }
   }
+}
+
+private struct UserInputBinding {
+  let processID: pid_t
+  let bounds: NativeRect
 }
 
 private func contains(_ point: CGPoint, in bounds: NativeRect) -> Bool {

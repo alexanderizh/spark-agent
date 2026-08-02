@@ -24,7 +24,7 @@ const OBSERVATION = {
 } satisfies ComputerObservation
 
 describe('GenericComputerDecisionAdapter', () => {
-  it('sends the persisted screenshot and untrusted UI tree to the current Agent model', async () => {
+  it('uses the accessibility tree before sending a screenshot to the current Agent model', async () => {
     const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
       text: JSON.stringify({
         type: 'action',
@@ -59,10 +59,76 @@ describe('GenericComputerDecisionAdapter', () => {
       expect.objectContaining({
         model: 'vision-model',
         responseFormat: 'json',
-        images: [{ dataUrl: 'data:image/png;base64,cG5n', mimeType: 'image/png' }],
         prompt: expect.stringContaining('button "Save" id=button-1'),
       }),
     )
+    expect(generate.mock.calls[0]?.[0]).not.toHaveProperty('images')
+  })
+
+  it('escalates from accessibility state to the screenshot only when tree planning fails', async () => {
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ text: 'I cannot identify the target from the tree.' })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          type: 'action',
+          intent: 'Click the visible search box',
+          action: { type: 'click', point: { x: 0.75, y: 0.08 } },
+        }),
+      })
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'anthropic',
+        apiKey: 'secret',
+        model: 'glm-5.2',
+      },
+      generate,
+      wait: vi.fn(async () => undefined),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Search for ComfyUI',
+        successCriteria: [],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).resolves.toMatchObject({ type: 'action', action: { type: 'click' } })
+
+    expect(generate.mock.calls[0]?.[0]).not.toHaveProperty('images')
+    expect(generate.mock.calls[1]?.[0]).toMatchObject({
+      model: 'glm-5.2',
+      images: [{ dataUrl: 'data:image/png;base64,cG5n', mimeType: 'image/png' }],
+    })
+  })
+
+  it('accepts a safe bare action embedded in an Anthropic-compatible explanation', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'anthropic',
+        apiKey: 'secret',
+        model: 'glm-5.2',
+      },
+      generate: vi.fn(async () => ({
+        text: '我将先聚焦窗口。\n```json\n{"type":"focus_window","windowId":"window-1"}\n```',
+      })),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Continue in Bilibili',
+        successCriteria: [],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).resolves.toMatchObject({
+      type: 'action',
+      action: { type: 'focus_window', windowId: 'window-1' },
+    })
   })
 
   it('fails closed when the model returns an unrecognized action', async () => {

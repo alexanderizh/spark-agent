@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { ComputerObservation, NativeBinaryPayloadDescriptor } from '@spark/protocol'
 import type { ApplicationSnapshotRepository } from '@spark/storage'
+import type { ComputerSessionRepository } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import type { NativeObservationEvidenceSink } from './NativeHostComputerUseBackend.js'
@@ -15,10 +16,12 @@ const MAX_CACHED_EVIDENCE_BYTES = 256 * 1024 * 1024
 const EXECUTION_EVIDENCE_TTL_MS = 24 * 60 * 60 * 1_000
 
 type EvidenceRepository = Pick<ApplicationSnapshotRepository, 'createWithBlobs'>
+type EvidenceSessionRepository = Pick<ComputerSessionRepository, 'get'>
 type EvidenceVault = Pick<SnapshotVault, 'writeManyRegistered'>
 
 export class ComputerObservationEvidenceStore implements NativeObservationEvidenceSink {
   private readonly repository: EvidenceRepository
+  private readonly sessions: EvidenceSessionRepository | undefined
   private readonly vault: EvidenceVault
   private readonly createId: () => string
   private readonly imageProcessor: (
@@ -39,6 +42,7 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
 
   constructor(options: {
     repository: EvidenceRepository
+    sessions?: EvidenceSessionRepository
     vault: EvidenceVault
     imageProcessor: (
       bytes: Buffer,
@@ -49,6 +53,7 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     maxCachedBytes?: number
   }) {
     this.repository = options.repository
+    this.sessions = options.sessions
     this.vault = options.vault
     this.imageProcessor = options.imageProcessor
     this.createId = options.createId ?? randomUUID
@@ -168,6 +173,13 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     imageSha256: string
     expiresAt: string
   }): Promise<void> {
+    const owner = this.sessions?.get(input.computerSessionId)
+    if (this.sessions != null && owner == null) {
+      throw new ComputerUseBrokerError(
+        'environment_unavailable',
+        'Computer observation owner could not be resolved',
+      )
+    }
     await this.vault.writeManyRegistered(
       [{ blobId: input.imageBlobId, kind: 'image', plaintext: input.processed.bytes }],
       (records) => {
@@ -179,8 +191,8 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
         this.repository.createWithBlobs({
           snapshot: {
             id: input.observation.screenshot.snapshotId,
-            sessionId: null,
-            turnId: null,
+            sessionId: owner?.session_id ?? null,
+            turnId: owner?.turn_id ?? null,
             computerSessionId: input.computerSessionId,
             kind: input.kind,
             appId: input.observation.foreground.app.id,
