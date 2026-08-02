@@ -515,7 +515,11 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     usage: UsageSection,
     archived: ArchivedSection,
     updates: UpdatesSection,
-    memory: () => <MemoryPanel />,
+    // 直接引用模块级组件，不要包箭头函数 —— 否则 Section 对象每次渲染都会拿到
+    // 全新的函数引用，<SectionBody /> 的组件类型随之变化，React 会卸载并重新挂载
+    // MemoryPanel，导致其内部 state（scope tab、新增/配置 Drawer 的 open）全部丢失：
+    // 表现为「tab 切换几秒后自动跳回 User」「新增/配置弹窗打不开」。
+    memory: MemoryPanel,
     about: AboutSection,
   }
   const SectionBody = Section[section]
