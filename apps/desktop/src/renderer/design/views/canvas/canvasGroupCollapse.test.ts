@@ -197,4 +197,81 @@ describe('canvas group collapse projection', () => {
     expect(expanded.visibleNodes.find((item) => item.id === nested.id)).toEqual(originalNested)
     expect(expanded.presentationByGroupId.get(nested.id)?.color).toBe('purple')
   })
+
+  it('includes image-generating task nodes (e.g. text_to_image) in previews', () => {
+    const group = node('group', 'group', { data: { collapsed: true } })
+    const task = node('task', 'text_to_image', {
+      parentNodeId: group.id,
+      title: '文生图',
+      data: { url: 'safe-file://task-output.png' },
+      createdAt: '2026-07-12T00:00:00.000Z',
+    })
+    // 文生图产物 output 节点已被 operation 投影内嵌，不在折叠投影的输入里；
+    // 用「任务节点 → 产物媒体类型」映射补齐类型信息，使任务节点被识别为图片预览候选。
+    const outputMediaKindByNodeId = new Map([['task', 'image' as const]])
+
+    const projection = buildCanvasGroupCollapseProjection([group, task], [], {
+      outputMediaKindByNodeId,
+    })
+
+    expect(projection.presentationByGroupId.get(group.id)?.previews).toEqual([
+      { kind: 'image', nodeId: 'task', title: '文生图', url: 'safe-file://task-output.png' },
+      { kind: 'fallback', slot: 1 },
+    ])
+  })
+
+  it('dedupes a task node and its materialized output node that share the same url', () => {
+    const group = node('group', 'group', { data: { collapsed: true } })
+    const task = node('task', 'text_to_image', {
+      parentNodeId: group.id,
+      title: '文生图',
+      data: { url: 'safe-file://shared.png' },
+      createdAt: '2026-07-12T00:00:00.000Z',
+    })
+    const output = node('output', 'image', {
+      parentNodeId: group.id,
+      title: '产物',
+      data: { url: 'safe-file://shared.png' },
+      createdAt: '2026-07-13T00:00:00.000Z',
+    })
+    const other = node('other', 'image', {
+      parentNodeId: group.id,
+      title: '另一张',
+      data: { url: 'safe-file://other.png' },
+      createdAt: '2026-07-14T00:00:00.000Z',
+    })
+    const outputMediaKindByNodeId = new Map([['task', 'image' as const]])
+
+    const projection = buildCanvasGroupCollapseProjection([group, task, output, other], [], {
+      outputMediaKindByNodeId,
+    })
+
+    const previews = projection.presentationByGroupId.get(group.id)?.previews ?? []
+    const urls: string[] = []
+    for (const preview of previews) {
+      if (preview.kind === 'image') urls.push(preview.url)
+    }
+    // shared.png 只出现一次（task 与 output 同 url 去重），另一槽位是 other.png
+    expect(urls).toEqual(['safe-file://other.png', 'safe-file://shared.png'])
+  })
+
+  it('does not include video-generating task nodes in image previews', () => {
+    const group = node('group', 'group', { data: { collapsed: true } })
+    const task = node('task', 'text_to_video', {
+      parentNodeId: group.id,
+      title: '文生视频',
+      data: { url: 'safe-file://task-output.mp4' },
+      createdAt: '2026-07-12T00:00:00.000Z',
+    })
+    const outputMediaKindByNodeId = new Map([['task', 'video' as const]])
+
+    const projection = buildCanvasGroupCollapseProjection([group, task], [], {
+      outputMediaKindByNodeId,
+    })
+
+    expect(projection.presentationByGroupId.get(group.id)?.previews).toEqual([
+      { kind: 'fallback', slot: 0 },
+      { kind: 'fallback', slot: 1 },
+    ])
+  })
 })
