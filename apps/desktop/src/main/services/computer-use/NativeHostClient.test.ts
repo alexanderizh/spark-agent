@@ -376,7 +376,10 @@ describe('NativeHostClient', () => {
     const client = await connecting
     const pending = Array.from({ length: 64 }, () => client.ping().catch(() => undefined))
 
-    await expect(client.ping()).rejects.toMatchObject({ code: 'actuator_lease_conflict' })
+    await expect(client.ping()).rejects.toMatchObject({
+      code: 'environment_unavailable',
+      retryable: true,
+    })
 
     await client.close()
     await Promise.all(pending)

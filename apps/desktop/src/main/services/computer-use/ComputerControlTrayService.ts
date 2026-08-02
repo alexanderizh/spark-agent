@@ -17,11 +17,16 @@ interface TrayBroker {
   stop(computerSessionId: string): Promise<unknown>
 }
 
+interface TrayCoordinator {
+  release(computerSessionId: string): void
+}
+
 /** Read-only status projection plus explicit user controls for the system tray. */
 export class ComputerControlTrayService {
   constructor(
     private readonly sessions: TraySessions,
     private readonly broker: TrayBroker,
+    private readonly coordinator?: TrayCoordinator,
   ) {}
 
   list(): ComputerControlTrayEntry[] {
@@ -40,16 +45,28 @@ export class ComputerControlTrayService {
   }
 
   async pause(computerSessionId: string): Promise<void> {
-    await this.broker.pause(computerSessionId)
+    try {
+      await this.broker.pause(computerSessionId)
+    } finally {
+      this.coordinator?.release(computerSessionId)
+    }
   }
 
   async takeover(computerSessionId: string): Promise<void> {
     // Taking over means the local user becomes authoritative and Agent execution is paused.
-    await this.broker.pause(computerSessionId)
+    try {
+      await this.broker.pause(computerSessionId)
+    } finally {
+      this.coordinator?.release(computerSessionId)
+    }
   }
 
   async stop(computerSessionId: string): Promise<void> {
-    await this.broker.stop(computerSessionId)
+    try {
+      await this.broker.stop(computerSessionId)
+    } finally {
+      this.coordinator?.release(computerSessionId)
+    }
   }
 }
 

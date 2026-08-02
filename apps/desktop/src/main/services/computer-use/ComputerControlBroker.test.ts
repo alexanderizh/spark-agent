@@ -1,7 +1,6 @@
 import type {
   ComputerActionEnvelope,
   ComputerActuatorLease,
-  ComputerApprovalTicket,
   ComputerObservation,
   ComputerSession,
 } from '@spark/protocol'
@@ -205,17 +204,14 @@ function createSessionController(): ComputerSessionController & {
   return {
     current: { ...session },
     controller: new AbortController(),
-    assertDispatchAllowed(action) {
+    assertDispatchAllowed(_action) {
       if (this.current.status === 'paused') {
         throw new ComputerUseBrokerError('session_paused', 'paused')
       }
       if (this.current.status === 'canceled') {
         throw new ComputerUseBrokerError('session_canceled', 'canceled')
       }
-      if (action.actuatorLeaseId !== lease.id) {
-        throw new ComputerUseBrokerError('actuator_lease_conflict', 'invalid lease')
-      }
-      return { session: this.current, lease, signal: this.controller.signal }
+      return { session: this.current, signal: this.controller.signal }
     },
     getAbortSignal() {
       if (this.current.status === 'canceled') {
@@ -255,6 +251,7 @@ function createHarness(
       recordAction(erroneous: boolean): void
       recordTakeoverStop(durationMs: number): void
     }
+    now?: () => Date
   } = {},
 ) {
   const actions = new MemoryActionStore()
@@ -285,7 +282,7 @@ function createHarness(
       ? {}
       : { flushHighRiskEvidence: options.flushHighRiskEvidence }),
     ...(options.rollout == null ? {} : { rollout: options.rollout }),
-    now: () => new Date('2026-07-28T05:00:02.000Z'),
+    now: options.now ?? (() => new Date('2026-07-28T05:00:02.000Z')),
   })
   return {
     broker,
@@ -340,7 +337,7 @@ describe('ComputerControlBroker', () => {
     expect(executor.execute).not.toHaveBeenCalled()
   })
 
-  it('persists an approval request and consumes its exact ticket before execution', async () => {
+  it('executes high-risk actions directly without approval or synchronous evidence gates', async () => {
     const flushHighRiskEvidence = vi.fn(async () => undefined)
     const { broker, approvals, actions, sessions, executor } = createHarness({
       flushHighRiskEvidence,
@@ -354,28 +351,16 @@ describe('ComputerControlBroker', () => {
       },
     })
 
-    await expect(broker.dispatch(governed)).rejects.toMatchObject({
-      code: 'approval_required',
-      details: { approvalId: 'approval-1' },
-    })
-    expect(sessions.current.status).toBe('waiting_approval')
-    expect(actions.get(governed.actionId)?.status).toBe('requested')
-    expect(approvals.request).toHaveBeenCalledWith(governed, 'L2')
-
-    const ticket = { id: 'approval-1' } as ComputerApprovalTicket
-    await expect(broker.dispatch(governed, ticket)).resolves.toMatchObject({ noop: false })
+    await expect(broker.dispatch(governed)).resolves.toMatchObject({ noop: false })
     expect(sessions.current.status).toBe('observing')
-    expect(flushHighRiskEvidence).toHaveBeenCalledWith(session.id)
-    expect(approvals.consume).toHaveBeenCalledWith(ticket, governed, 'L2')
-    expect(flushHighRiskEvidence.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(approvals.consume).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-    )
-    expect(flushHighRiskEvidence.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(executor.execute).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-    )
+    expect(actions.get(governed.actionId)?.status).toBe('executed')
+    expect(approvals.request).not.toHaveBeenCalled()
+    expect(approvals.consume).not.toHaveBeenCalled()
+    expect(flushHighRiskEvidence).not.toHaveBeenCalled()
+    expect(executor.execute).toHaveBeenCalledTimes(1)
   })
 
-  it('blocks an approved high-risk action when its before-frame cannot be persisted', async () => {
+  it('does not put optional evidence persistence in the direct execution hot path', async () => {
     const flushHighRiskEvidence = vi.fn(async () => {
       throw new ComputerUseBrokerError('environment_unavailable', 'disk full')
     })
@@ -389,15 +374,14 @@ describe('ComputerControlBroker', () => {
       },
     })
 
-    await expect(
-      broker.dispatch(governed, { id: 'approval-1' } as ComputerApprovalTicket),
-    ).rejects.toMatchObject({ code: 'environment_unavailable' })
+    await expect(broker.dispatch(governed)).resolves.toMatchObject({ noop: false })
     expect(actions.get(governed.actionId)).toMatchObject({
-      status: 'blocked',
-      error_code: 'environment_unavailable',
+      status: 'executed',
+      error_code: null,
     })
     expect(approvals.consume).not.toHaveBeenCalled()
-    expect(executor.execute).not.toHaveBeenCalled()
+    expect(flushHighRiskEvidence).not.toHaveBeenCalled()
+    expect(executor.execute).toHaveBeenCalledTimes(1)
   })
 
   it('records the action lifecycle on the timeline sink when executed', async () => {
@@ -424,7 +408,7 @@ describe('ComputerControlBroker', () => {
     })
   })
 
-  it('records an approval request on the timeline before the ticket is presented', async () => {
+  it('records high-risk actions without approval timeline events', async () => {
     const timeline = new ComputerUseTimelineStore({
       createId: () => 'ev',
       now: () => new Date('2026-07-28T05:00:02.000Z'),
@@ -439,19 +423,15 @@ describe('ComputerControlBroker', () => {
       },
     })
 
-    await expect(broker.dispatch(governed)).rejects.toMatchObject({ code: 'approval_required' })
+    await expect(broker.dispatch(governed)).resolves.toMatchObject({ noop: false })
 
     const { events } = timeline.read(session.id)
     expect(events.map((event) => event.type)).toEqual([
       'computer_observation_created',
       'computer_action_requested',
-      'computer_approval_requested',
+      'computer_action_executed',
     ])
-    expect(events[2]).toMatchObject({
-      approvalId: 'approval-1',
-      actionId: governed.actionId,
-      riskLevel: 'L2',
-    })
+    expect(events.some((event) => event.type === 'computer_approval_requested')).toBe(false)
   })
 
   it('records a noop as a failed action on the timeline', async () => {
@@ -527,7 +507,7 @@ describe('ComputerControlBroker', () => {
 
     const first = broker.dispatch(envelope())
     await expect(broker.dispatch(envelope({ actionId: 'action-2' }))).rejects.toMatchObject({
-      code: 'actuator_lease_conflict',
+      code: 'environment_unavailable',
     })
     expect(executor.execute).toHaveBeenCalledTimes(1)
     if (finishFirst == null) throw new Error('Expected first action to start')
@@ -591,5 +571,16 @@ describe('ComputerControlBroker', () => {
     await expect(
       broker.dispatch({ ...envelope(), action: { type: 'shell', command: 'whoami' } } as never),
     ).rejects.toMatchObject({ code: 'action_not_allowed' })
+  })
+
+  it('reports runtime exhaustion without misclassifying it as authorization failure', async () => {
+    const { broker } = createHarness({
+      now: () => new Date('2026-07-28T05:02:00.000Z'),
+    })
+    await broker.observe(session.id, true)
+
+    await expect(broker.dispatch(envelope())).rejects.toMatchObject({
+      code: 'task_runtime_exceeded',
+    })
   })
 })

@@ -219,6 +219,24 @@ function createSession(manager: ComputerSessionManager, id: string) {
 }
 
 describe('ComputerSessionManager', () => {
+  it('activates a session without creating a persistent actuator lease', () => {
+    const { manager, leases } = createHarness()
+    const session = createSession(manager, 'computer-session-direct')
+    const leaseLookup = vi.spyOn(leases, 'get')
+
+    const active = manager.activate(session.id)
+    const dispatch = manager.assertDispatchAllowed(actionEnvelope(session.id, session.id))
+
+    expect(active).toMatchObject({
+      id: session.id,
+      status: 'observing',
+      actuatorLeaseId: null,
+    })
+    expect(dispatch).toMatchObject({ session: { id: session.id, status: 'observing' } })
+    expect(dispatch).not.toHaveProperty('lease')
+    expect(leaseLookup).not.toHaveBeenCalled()
+  })
+
   it('publishes actual session status transitions without letting listeners break control flow', () => {
     const { manager } = createHarness()
     const statuses: string[] = []
@@ -314,29 +332,19 @@ describe('ComputerSessionManager', () => {
     ).toThrowError(expect.objectContaining({ code: 'actuator_lease_conflict' }))
   })
 
-  it('validates lease ownership, session binding and expiry before dispatch', () => {
+  it('validates active session state without consulting compatibility lease fields', () => {
     const { manager, advance } = createHarness()
-    createSession(manager, 'computer-session-1')
-    const lease = manager.acquireLease({
-      computerSessionId: 'computer-session-1',
-      environmentKey: 'my-desktop:local',
-      operatorId: 'operator-1',
-    })
+    const session = createSession(manager, 'computer-session-1')
+    manager.activate(session.id)
 
     expect(
-      manager.assertDispatchAllowed(actionEnvelope('computer-session-1', lease.id)),
-    ).toMatchObject({
-      session: { id: 'computer-session-1', status: 'observing' },
-      lease: { id: lease.id, operatorId: 'operator-1' },
-    })
-    expect(() =>
-      manager.assertDispatchAllowed(actionEnvelope('computer-session-1', 'wrong-lease')),
-    ).toThrowError(expect.objectContaining({ code: 'actuator_lease_conflict' }))
+      manager.assertDispatchAllowed(actionEnvelope('computer-session-1', 'compatibility-token')),
+    ).toMatchObject({ session: { id: 'computer-session-1', status: 'observing' } })
 
-    advance(10_000)
-    expect(() =>
-      manager.assertDispatchAllowed(actionEnvelope('computer-session-1', lease.id)),
-    ).toThrowError(expect.objectContaining({ code: 'actuator_lease_conflict' }))
+    advance(60_000)
+    expect(
+      manager.assertDispatchAllowed(actionEnvelope('computer-session-1', 'expired-token')),
+    ).toMatchObject({ session: { id: 'computer-session-1', status: 'observing' } })
   })
 
   it('heartbeats an active lease but cannot revive an expired lease', () => {
@@ -437,6 +445,7 @@ describe('ComputerSessionManager', () => {
     expect(() => manager.completeVerified('computer-session-1')).toThrowError(
       expect.objectContaining({ code: 'session_canceled' }),
     )
+    expect(manager.cancel('computer-session-1').status).toBe('completed')
   })
 
   it('terminates failed operator runs and releases their lease', () => {
@@ -452,6 +461,7 @@ describe('ComputerSessionManager', () => {
     expect(manager.fail('computer-session-1').status).toBe('failed')
     expect(signal.aborted).toBe(true)
     expect(leases.get(lease.id)?.released_at).not.toBeNull()
+    expect(manager.cancel('computer-session-1').status).toBe('failed')
   })
 
   it('releases the actuator lease when an operator hands control to the user', () => {

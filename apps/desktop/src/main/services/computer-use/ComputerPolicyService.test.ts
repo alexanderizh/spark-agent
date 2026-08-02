@@ -84,7 +84,7 @@ describe('ComputerPolicyService', () => {
     ).toMatchObject({ riskLevel: 'L1', decision: 'allow' })
   })
 
-  it('requires exact approval for external writes and high-impact actions', () => {
+  it('allows external writes and high-impact actions without per-action approval', () => {
     expect(
       policy.evaluate(
         envelope({
@@ -96,7 +96,7 @@ describe('ComputerPolicyService', () => {
         }),
         taskContract,
       ),
-    ).toMatchObject({ riskLevel: 'L2', decision: 'require_approval' })
+    ).toMatchObject({ riskLevel: 'L2', decision: 'allow', requiresUserPresence: false })
 
     expect(
       policy.evaluate(
@@ -111,12 +111,12 @@ describe('ComputerPolicyService', () => {
       ),
     ).toMatchObject({
       riskLevel: 'L3',
-      decision: 'require_approval',
-      requiresUserPresence: true,
+      decision: 'allow',
+      requiresUserPresence: false,
     })
   })
 
-  it('fails closed for unattended approvals, restricted effects and credentials', () => {
+  it('allows unattended, restricted, and credential actions after task-level authorization', () => {
     const unattended = { ...taskContract, userPresence: 'unattended' } as const
     expect(
       policy.evaluate(
@@ -129,7 +129,7 @@ describe('ComputerPolicyService', () => {
         }),
         unattended,
       ),
-    ).toMatchObject({ decision: 'require_handoff', reasonCode: 'handoff_required' })
+    ).toMatchObject({ riskLevel: 'L2', decision: 'allow', requiresUserPresence: false })
 
     expect(
       policy.evaluate(
@@ -142,7 +142,7 @@ describe('ComputerPolicyService', () => {
         }),
         taskContract,
       ),
-    ).toMatchObject({ riskLevel: 'L4', decision: 'require_handoff' })
+    ).toMatchObject({ riskLevel: 'L4', decision: 'allow', requiresUserPresence: false })
 
     expect(
       policy.evaluate(
@@ -156,7 +156,7 @@ describe('ComputerPolicyService', () => {
         }),
         { ...taskContract, allowedDataClasses: [...taskContract.allowedDataClasses, 'credential'] },
       ),
-    ).toMatchObject({ riskLevel: 'L4', decision: 'require_handoff' })
+    ).toMatchObject({ riskLevel: 'L4', decision: 'allow', requiresUserPresence: false })
 
     expect(
       policy.evaluate(
@@ -173,10 +173,10 @@ describe('ComputerPolicyService', () => {
         }),
         { ...taskContract, allowedDataClasses: [...taskContract.allowedDataClasses, 'credential'] },
       ),
-    ).toMatchObject({ riskLevel: 'L4', decision: 'require_handoff' })
+    ).toMatchObject({ riskLevel: 'L4', decision: 'allow', requiresUserPresence: false })
   })
 
-  it('allows every matching foreground application while still denying identity mismatches and scope violations', () => {
+  it('allows every matching foreground application and ignores legacy scope restrictions', () => {
     expect(
       policy.evaluate(envelope({ targetAppId: 'com.unapproved.App' }), taskContract),
     ).toMatchObject({ decision: 'allow', reasonCode: 'read_only_action' })
@@ -196,7 +196,7 @@ describe('ComputerPolicyService', () => {
 
     expect(
       policy.evaluate(envelope(), { ...taskContract, forbiddenActions: ['scroll'] }),
-    ).toMatchObject({ decision: 'deny' })
+    ).toMatchObject({ decision: 'allow' })
 
     expect(
       policy.evaluate(
@@ -209,10 +209,10 @@ describe('ComputerPolicyService', () => {
         }),
         taskContract,
       ),
-    ).toMatchObject({ decision: 'deny', reasonCode: 'sensitive_input_blocked' })
+    ).toMatchObject({ decision: 'allow' })
   })
 
-  it('escalates an unknown target instead of treating it as low-risk', () => {
+  it('records an unknown target as elevated risk without blocking execution', () => {
     expect(
       policy.evaluate(
         envelope({
@@ -224,7 +224,7 @@ describe('ComputerPolicyService', () => {
         }),
         taskContract,
       ),
-    ).toMatchObject({ riskLevel: 'L2', decision: 'require_approval' })
+    ).toMatchObject({ riskLevel: 'L2', decision: 'allow' })
   })
 
   it('allows reversible pointer navigation while preserving elevated data risk', () => {
@@ -268,7 +268,7 @@ describe('ComputerPolicyService', () => {
         }),
         taskContract,
       ),
-    ).toMatchObject({ riskLevel: 'L2', decision: 'require_approval' })
+    ).toMatchObject({ riskLevel: 'L2', decision: 'allow' })
   })
 
   it('allows only explicitly non-committing semantic navigation without per-action approval', () => {
@@ -289,7 +289,7 @@ describe('ComputerPolicyService', () => {
     }
   })
 
-  it('enforces exact and wildcard domain scopes', () => {
+  it('ignores legacy domain scopes for direct desktop execution', () => {
     const domainAction = envelope({
       policyContext: {
         effect: 'read_only',
@@ -299,8 +299,7 @@ describe('ComputerPolicyService', () => {
     })
 
     expect(policy.evaluate(domainAction, taskContract)).toMatchObject({
-      decision: 'deny',
-      reasonCode: 'domain_not_allowed',
+      decision: 'allow',
     })
     expect(
       policy.evaluate(domainAction, { ...taskContract, allowedDomains: ['*.example.com'] }),
@@ -316,7 +315,7 @@ describe('ComputerPolicyService', () => {
         },
         { ...taskContract, allowedDomains: ['*.example.com'] },
       ),
-    ).toMatchObject({ decision: 'deny', reasonCode: 'domain_not_allowed' })
+    ).toMatchObject({ decision: 'allow' })
   })
 
   it('ignores legacy application allowlist entries', () => {

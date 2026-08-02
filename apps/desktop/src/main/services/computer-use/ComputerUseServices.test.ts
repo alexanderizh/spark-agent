@@ -30,6 +30,7 @@ describe('ComputerUseServices', () => {
     }
     const services = createComputerUseServices(database, { backend })
 
+    expect(services.coordinator.activeSessionId()).toBeNull()
     await services.dispose()
 
     expect(dispose).toHaveBeenCalledTimes(1)

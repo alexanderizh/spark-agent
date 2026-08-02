@@ -40,6 +40,7 @@ import { getMainWindow } from '../../windows/index.js'
 import { AppControlBridge } from './AppControlBridge.js'
 import { AppControlExecutorBackend } from './AppControlExecutorBackend.js'
 import { computerUseV2RolloutController } from './ComputerUseV2RolloutController.js'
+import { ComputerDesktopExecutionCoordinator } from './ComputerDesktopExecutionCoordinator.js'
 
 export type TrustedComputerUseBackend = ComputerObserverBackend &
   ComputerExecutorBackend &
@@ -58,6 +59,7 @@ export interface ComputerUseServices {
   readonly backend: TrustedComputerUseBackend
   readonly killSwitch: ComputerKillSwitchService
   readonly appControlBridge: AppControlBridge
+  readonly coordinator: ComputerDesktopExecutionCoordinator
   readonly evidence?: NativeObservationEvidenceSink & {
     readLatestImage(computerSessionId: string, snapshotId: string): Promise<Buffer>
     clearSession(computerSessionId: string): void
@@ -158,6 +160,11 @@ export function createComputerUseServices(
           flushHighRiskEvidence: usableEvidence.flushPendingWritesOrThrow.bind(usableEvidence),
         }),
   })
+  const coordinator = new ComputerDesktopExecutionCoordinator({
+    stopSession: async (computerSessionId) => {
+      await broker.stop(computerSessionId)
+    },
+  })
   const killSwitch = new ComputerKillSwitchService(
     options.shortcutRegistrar ?? FAIL_CLOSED_SHORTCUT_REGISTRAR,
     options.onKillSwitchError,
@@ -175,6 +182,7 @@ export function createComputerUseServices(
     backend,
     killSwitch,
     appControlBridge,
+    coordinator,
     ...(usableEvidence == null ? {} : { evidence: usableEvidence }),
     ...(snapshotCapture == null ? {} : { snapshots: snapshotCapture }),
     armKillSwitch: (accelerator) =>
@@ -182,7 +190,13 @@ export function createComputerUseServices(
         const results = await Promise.allSettled(
           sessions
             .listActiveSessionIds()
-            .map(async (computerSessionId) => broker.killSwitch(computerSessionId)),
+            .map(async (computerSessionId) => {
+              try {
+                await broker.killSwitch(computerSessionId)
+              } finally {
+                coordinator.release(computerSessionId)
+              }
+            }),
         )
         const failures = results
           .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
@@ -193,6 +207,7 @@ export function createComputerUseServices(
       }),
     dispose: async () => {
       killSwitch.dispose()
+      await coordinator.dispose()
       await Promise.allSettled(
         sessions
           .listActiveSessionIds()

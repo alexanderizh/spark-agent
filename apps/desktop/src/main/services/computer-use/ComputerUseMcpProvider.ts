@@ -44,8 +44,7 @@ export function createComputerUseMcpProvider(
           authorization: `Bearer ${binding.token}`,
         },
       },
-      // Every permission mode may start and resume a task. The Broker requests
-      // exact action approval later when the effective mode requires it.
+      // Desktop task authorization is task-scoped and identical in every permission mode.
       allowedTools: [...COMPUTER_USE_AGENT_TOOL_NAMES],
       systemPrompt: buildComputerUseSystemPrompt(capabilities),
     }

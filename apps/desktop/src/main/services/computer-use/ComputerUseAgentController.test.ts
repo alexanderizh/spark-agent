@@ -4,6 +4,7 @@ import {
   ComputerUseAgentController,
   getExecutionCapabilitiesWithPermissionRequest,
 } from './ComputerUseAgentController.js'
+import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 
 const CAPABILITIES: ComputerUseCapabilitySummary = {
   available: true,
@@ -92,6 +93,118 @@ describe('ComputerUseAgentController', () => {
     })
   })
 
+  it('waits for the operator result before returning a terminal session status', async () => {
+    let current = computerSession('preflighting')
+    let listener: ((session: ComputerSession) => void) | undefined
+    let resolveRun:
+      | ((result: { status: 'failed'; reason: 'decision_model_error' }) => void)
+      | undefined
+    let finishNativeCleanup: (() => void) | undefined
+    const run = vi.fn(
+      () =>
+        new Promise<{ status: 'failed'; reason: 'decision_model_error' }>((resolve) => {
+          resolveRun = resolve
+        }),
+    )
+    const services = {
+      backend: {
+        getCapabilities: vi.fn(async () => CAPABILITIES),
+        listWindows: vi.fn(async () => [
+          {
+            app: { id: 'app-1', name: 'Spark' },
+            window: {
+              id: 'window-1',
+              title: 'Spark',
+              bounds: { x: 0, y: 0, width: 800, height: 600 },
+            },
+            display: { id: 'display-1', width: 1920, height: 1080, scaleFactor: 1 },
+            focused: true,
+            minimized: false,
+          },
+        ]),
+        cancelSession: vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              finishNativeCleanup = resolve
+            }),
+        ),
+      },
+      sessions: {
+        createSession: vi.fn(() => current),
+        activate: vi.fn(() => current),
+        getSession: vi.fn(() => current),
+        subscribeStatus: vi.fn((next: (session: ComputerSession) => void) => {
+          listener = next
+          return vi.fn()
+        }),
+      },
+      coordinator: { claim: vi.fn(async () => undefined), release: vi.fn() },
+      broker: { stop: vi.fn(async () => current) },
+      approvals: {},
+      evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+      killSwitch: { isArmed: vi.fn(() => false) },
+    }
+    const controller = new ComputerUseAgentController({
+      getServices: () => services as never,
+      resolveDecisionModel: vi.fn(async () => ({
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      })),
+      createAdapter: vi.fn(() => ({ decide: vi.fn() }) as never),
+      createOperator: vi.fn(() => ({ run }) as never),
+    })
+    controller.bindSessionContext('session-1', {
+      turnId: 'turn-1',
+      providerProfileId: 'provider-1',
+      modelId: 'vision-model',
+      permissionMode: 'codex-full-access',
+    })
+
+    await controller.invoke('session-1', 'start_task', {
+      goal: 'Open Bilibili',
+      environment: 'my_desktop',
+    })
+    current = computerSession('observing')
+    await expect(
+      controller.invoke('session-1', 'wait_for_completion', {
+        computerSessionId: current.id,
+        timeoutMs: 100,
+      }),
+    ).resolves.toMatchObject({
+      timedOut: true,
+      operator: { status: 'running' },
+    })
+    const waiting = controller.invoke('session-1', 'wait_for_completion', {
+      computerSessionId: current.id,
+      timeoutMs: 1_000,
+    })
+    current = computerSession('failed')
+    listener?.(current)
+    resolveRun?.({ status: 'failed', reason: 'decision_model_error' })
+    const lateWaiting = controller.invoke('session-1', 'wait_for_completion', {
+      computerSessionId: current.id,
+      timeoutMs: 1_000,
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(services.coordinator.release).not.toHaveBeenCalled()
+    finishNativeCleanup?.()
+
+    await expect(waiting).resolves.toMatchObject({
+      computerSession: { status: 'failed' },
+      operator: {
+        status: 'failed',
+        result: { status: 'failed', reason: 'decision_model_error' },
+      },
+    })
+    await expect(lateWaiting).resolves.toMatchObject({
+      computerSession: { status: 'failed' },
+      operator: { status: 'failed' },
+    })
+  })
+
   it('requests missing operating-system permissions before declaring execution unavailable', async () => {
     const unavailable = {
       ...CAPABILITIES,
@@ -123,7 +236,91 @@ describe('ComputerUseAgentController', () => {
     expect(requestPermissions).toHaveBeenCalledWith(['screen', 'accessibility'])
   })
 
-  it('starts governed execution when the optional emergency shortcut is unavailable', async () => {
+  it.each([
+    {
+      name: 'missing Native Host',
+      capabilities: { ...CAPABILITIES, available: false, nativeHost: null },
+      code: 'native_host_missing',
+    },
+    {
+      name: 'screen permission denied',
+      capabilities: {
+        ...CAPABILITIES,
+        permissions: { ...CAPABILITIES.permissions, screen: 'denied' as const },
+        nativeHost: {
+          ...CAPABILITIES.nativeHost!,
+          permissions: { ...CAPABILITIES.nativeHost!.permissions, screen: 'denied' as const },
+        },
+      },
+      code: 'screen_permission_denied',
+    },
+    {
+      name: 'accessibility permission denied without coordinate fallback',
+      capabilities: {
+        ...CAPABILITIES,
+        permissions: { ...CAPABILITIES.permissions, accessibility: 'denied' as const },
+        nativeHost: {
+          ...CAPABILITIES.nativeHost!,
+          permissions: {
+            ...CAPABILITIES.nativeHost!.permissions,
+            accessibility: 'denied' as const,
+          },
+          features: {
+            ...CAPABILITIES.nativeHost!.features,
+            fullTree: false,
+            semanticActions: false,
+            absolutePointer: false,
+            keyboard: false,
+          },
+        },
+      },
+      code: 'accessibility_permission_denied',
+    },
+    {
+      name: 'input permission denied without semantic fallback',
+      capabilities: {
+        ...CAPABILITIES,
+        permissions: { ...CAPABILITIES.permissions, input: 'denied' as const },
+        nativeHost: {
+          ...CAPABILITIES.nativeHost!,
+          permissions: { ...CAPABILITIES.nativeHost!.permissions, input: 'denied' as const },
+          features: {
+            ...CAPABILITIES.nativeHost!.features,
+            fullTree: false,
+            semanticActions: false,
+            absolutePointer: false,
+            keyboard: false,
+          },
+        },
+      },
+      code: 'privilege_mismatch',
+    },
+  ])('returns a precise startup error for $name', async ({ capabilities, code }) => {
+    const controller = new ComputerUseAgentController({
+      getServices: () =>
+        ({
+          backend: { getCapabilities: vi.fn(async () => capabilities) },
+        }) as never,
+    })
+
+    await expect(
+      controller.invoke('session-1', 'start_task', {
+        goal: 'Open Bilibili',
+        environment: 'my_desktop',
+      }),
+    ).rejects.toMatchObject({ code })
+  })
+
+  it.each([
+    'claude-ask',
+    'claude-auto-edits',
+    'claude-plan',
+    'claude-auto',
+    'claude-bypass',
+    'codex-default',
+    'codex-auto-review',
+    'codex-full-access',
+  ])('starts governed execution identically in %s mode', async (permissionMode) => {
     const computerSession = {
       id: 'computer-1',
       sessionId: 'session-1',
@@ -131,7 +328,6 @@ describe('ComputerUseAgentController', () => {
       status: 'observing',
       taskContract: {},
     }
-    const lease = { id: 'lease-1', operatorId: 'agent:session-1' }
     const services = {
       backend: {
         getCapabilities: vi.fn(async () => CAPABILITIES),
@@ -168,15 +364,17 @@ describe('ComputerUseAgentController', () => {
       },
       sessions: {
         createSession: vi.fn(() => computerSession),
-        acquireLease: vi.fn(() => lease),
+        activate: vi.fn(() => ({ ...computerSession, actuatorLeaseId: null })),
+        getSession: vi.fn(() => ({ ...computerSession, actuatorLeaseId: null })),
       },
+      coordinator: { claim: vi.fn(async () => undefined), release: vi.fn() },
       broker: {},
       approvals: {},
       evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
       appControlBridge: { cancelSession: vi.fn() },
       killSwitch: { isArmed: vi.fn(() => false) },
     }
-    const run = vi.fn(async () => ({ status: 'completed' as const }))
+    const run = vi.fn(async (_input: unknown) => ({ status: 'completed' as const }))
     const controller = new ComputerUseAgentController({
       getServices: () => services as never,
       resolveDecisionModel: vi.fn(async () => ({
@@ -192,7 +390,7 @@ describe('ComputerUseAgentController', () => {
       turnId: 'turn-1',
       providerProfileId: 'provider-1',
       modelId: 'vision-model',
-      permissionMode: 'claude-ask',
+      permissionMode,
     })
 
     await expect(
@@ -202,7 +400,7 @@ describe('ComputerUseAgentController', () => {
         targetWindowId: 'window-bilibili',
       }),
     ).resolves.toMatchObject({
-      computerSession: { id: 'computer-1' },
+      computerSession: { id: 'computer-1', actuatorLeaseId: null },
       operatorStatus: 'running',
     })
     expect(services.sessions.createSession).toHaveBeenCalledWith(
@@ -229,10 +427,20 @@ describe('ComputerUseAgentController', () => {
       appId: 'app-bilibili',
       windowId: 'window-bilibili',
     })
-    expect(run).toHaveBeenCalledWith(expect.objectContaining({ session: computerSession, lease }))
+    expect(services.coordinator.claim).toHaveBeenCalledWith(computerSession.id)
+    expect(services.sessions.activate).toHaveBeenCalledWith(computerSession.id)
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session: expect.objectContaining({ id: computerSession.id, actuatorLeaseId: null }),
+      }),
+    )
+    expect(run.mock.calls[0]?.[0]).not.toHaveProperty('lease')
     await Promise.resolve()
     expect(services.backend.cancelSession).toHaveBeenCalledWith(computerSession.id)
     expect(services.appControlBridge.cancelSession).toHaveBeenCalledWith(computerSession.id)
+    expect(services.backend.cancelSession.mock.invocationCallOrder[0]).toBeLessThan(
+      services.coordinator.release.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY,
+    )
   })
 
   it('starts an unbound desktop task that can follow the foreground window across applications', async () => {
@@ -275,8 +483,10 @@ describe('ComputerUseAgentController', () => {
       },
       sessions: {
         createSession: vi.fn(() => computerSession),
-        acquireLease: vi.fn(() => ({ id: 'lease-1', operatorId: 'agent:session-1' })),
+        activate: vi.fn(() => ({ ...computerSession, actuatorLeaseId: null })),
+        getSession: vi.fn(() => ({ ...computerSession, actuatorLeaseId: null })),
       },
+      coordinator: { claim: vi.fn(async () => undefined), release: vi.fn() },
       broker: {},
       approvals: {},
       evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
@@ -315,7 +525,7 @@ describe('ComputerUseAgentController', () => {
     )
   })
 
-  it('stops a just-created task when the desktop actuator lease is unavailable', async () => {
+  it('stops a just-created task when preempting the previous desktop task fails', async () => {
     const computerSession = {
       id: 'computer-lease-conflict',
       sessionId: 'session-1',
@@ -345,9 +555,13 @@ describe('ComputerUseAgentController', () => {
       },
       sessions: {
         createSession: vi.fn(() => computerSession),
-        acquireLease: vi.fn(() => {
-          throw new Error('active lease conflict')
+        activate: vi.fn(),
+      },
+      coordinator: {
+        claim: vi.fn(async () => {
+          throw new Error('previous desktop cleanup failed')
         }),
+        release: vi.fn(),
       },
       broker: { stop },
       approvals: {},
@@ -379,21 +593,88 @@ describe('ComputerUseAgentController', () => {
         goal: 'Search for ComfyUI tutorials',
         environment: 'my_desktop',
       }),
-    ).rejects.toThrow('active lease conflict')
+    ).rejects.toThrow('previous desktop cleanup failed')
     expect(stop).toHaveBeenCalledWith(computerSession.id)
     expect(cancelSession).toHaveBeenCalledWith(computerSession.id)
     expect(createOperator).not.toHaveBeenCalled()
   })
 
-  it('resumes an owned paused task with a fresh lease and a new full-observation operator run', async () => {
+  it('keeps coordinator ownership until failed Agent startup cleanup finishes', async () => {
+    const created = computerSession('preflighting')
+    let finishStop: (() => void) | undefined
+    const services = {
+      backend: {
+        getCapabilities: vi.fn(async () => CAPABILITIES),
+        listWindows: vi.fn(async () => [
+          {
+            app: { id: 'app-1', name: 'Spark' },
+            window: {
+              id: 'window-1',
+              title: 'Spark',
+              bounds: { x: 0, y: 0, width: 800, height: 600 },
+            },
+            display: { id: 'display-1', width: 1920, height: 1080, scaleFactor: 1 },
+            focused: true,
+            minimized: false,
+          },
+        ]),
+        cancelSession: vi.fn(async () => undefined),
+      },
+      sessions: {
+        createSession: vi.fn(() => created),
+        activate: vi.fn(() => {
+          throw new ComputerUseBrokerError('session_canceled', 'Activation failed')
+        }),
+      },
+      coordinator: { claim: vi.fn(async () => undefined), release: vi.fn() },
+      broker: {
+        stop: vi.fn(
+          () =>
+            new Promise((resolve) => {
+              finishStop = () => resolve(computerSession('canceled'))
+            }),
+        ),
+      },
+      evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+      appControlBridge: { cancelSession: vi.fn() },
+      killSwitch: { isArmed: vi.fn(() => false) },
+    }
+    const controller = new ComputerUseAgentController({
+      getServices: () => services as never,
+      resolveDecisionModel: vi.fn(async () => ({
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      })),
+    })
+    controller.bindSessionContext('session-1', {
+      turnId: 'turn-1',
+      providerProfileId: 'provider-1',
+      modelId: 'vision-model',
+      permissionMode: 'claude-ask',
+    })
+
+    const starting = controller.invoke('session-1', 'start_task', {
+      goal: 'Open Bilibili',
+      environment: 'my_desktop',
+    })
+    await vi.waitFor(() => expect(services.broker.stop).toHaveBeenCalledWith(created.id))
+    expect(services.coordinator.release).not.toHaveBeenCalled()
+    finishStop?.()
+
+    await expect(starting).rejects.toMatchObject({ code: 'session_canceled' })
+    expect(services.coordinator.release).toHaveBeenCalledWith(created.id)
+  })
+
+  it('resumes an owned paused task by reclaiming direct desktop control', async () => {
     const paused = computerSession('paused')
     const resumed = computerSession('observing')
-    const lease = { id: 'lease-resumed', operatorId: 'agent:session-1' }
     const services = {
       sessions: {
         getSession: vi.fn(() => paused),
-        acquireLease: vi.fn(() => lease),
       },
+      coordinator: { claim: vi.fn(async () => undefined), release: vi.fn() },
       broker: {
         resume: vi.fn(() => resumed),
         pause: vi.fn(async () => paused),
@@ -405,7 +686,7 @@ describe('ComputerUseAgentController', () => {
       },
       killSwitch: { isArmed: vi.fn(() => true) },
     }
-    const run = vi.fn(async () => ({ status: 'completed' as const }))
+    const run = vi.fn(async (_input: unknown) => ({ status: 'completed' as const }))
     const resolveDecisionModel = vi.fn(async () => ({
       providerProfileId: 'provider-1',
       providerType: 'openai' as const,
@@ -433,13 +714,10 @@ describe('ComputerUseAgentController', () => {
     })
     expect(resolveDecisionModel).toHaveBeenCalledWith('session-1')
     expect(services.broker.resume).toHaveBeenCalledWith(paused.id)
-    expect(services.sessions.acquireLease).toHaveBeenCalledWith({
-      computerSessionId: paused.id,
-      environmentKey: 'my-desktop:local',
-      operatorId: 'agent:session-1',
-    })
+    expect(services.coordinator.claim).toHaveBeenCalledWith(paused.id)
     expect(services.evidence.clearSession).toHaveBeenCalledWith(paused.id)
-    expect(run).toHaveBeenCalledWith(expect.objectContaining({ session: resumed, lease }))
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ session: resumed }))
+    expect(run.mock.calls[0]?.[0]).not.toHaveProperty('lease')
   })
 
   it('explicitly rebinds an owned paused task to a window from any application', async () => {
@@ -665,8 +943,9 @@ describe('ComputerUseAgentController', () => {
         sessions: {
           createSession: vi.fn(() => running),
           getSession: vi.fn(() => (toolName === 'stop' ? canceled : paused)),
-          acquireLease: vi.fn(() => ({ id: 'lease-1', operatorId: 'agent:session-1' })),
+          activate: vi.fn(() => running),
         },
+        coordinator: { claim: vi.fn(async () => undefined), release: vi.fn() },
         broker: {
           pause: vi.fn(async () => paused),
           stop: vi.fn(async () => canceled),
@@ -728,6 +1007,7 @@ describe('ComputerUseAgentController', () => {
       },
       broker: { stop },
       evidence: { clearSession },
+      coordinator: { claim: vi.fn(async () => undefined), release: vi.fn() },
     }
     const controller = new ComputerUseAgentController({
       getServices: () => services as never,

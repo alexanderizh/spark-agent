@@ -8,6 +8,7 @@ import type {
 } from '@spark/protocol'
 import type { ComputerVerificationRow } from '@spark/storage'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ComputerUseBrokerError } from '../services/computer-use/ComputerUseBrokerError.js'
 
 const harness = vi.hoisted(() => ({
   handlers: new Map<string, (request: any, event: any) => Promise<any>>(),
@@ -125,9 +126,12 @@ function createSettingsStore(initial: unknown = null) {
 
 function createServices(overrides: Record<string, unknown> = {}) {
   const sessions = {
-    createSession: vi.fn(() => ({ ...SESSION, actuatorLeaseId: null, status: 'preflighting' })),
+    createSession: vi.fn(
+      (): ComputerSession => ({ ...SESSION, actuatorLeaseId: null, status: 'preflighting' }),
+    ),
     acquireLease: vi.fn(() => ({ id: 'lease-1' })),
-    getSession: vi.fn(() => SESSION),
+    activate: vi.fn(() => ({ ...SESSION, actuatorLeaseId: null, status: 'observing' })),
+    getSession: vi.fn((): ComputerSession => ({ ...SESSION, actuatorLeaseId: null })),
     listActiveSessionIds: vi.fn((): string[] => []),
     listBySession: vi.fn(() => [SESSION]),
   }
@@ -159,6 +163,7 @@ function createServices(overrides: Record<string, unknown> = {}) {
     broker,
     approvals,
     backend,
+    coordinator: { claim: vi.fn(async () => undefined), release: vi.fn() },
     killSwitch: { isArmed: vi.fn(() => true), disarm: vi.fn() },
     armKillSwitch: vi.fn(() => true),
     verifications: { get: vi.fn(() => null) },
@@ -350,6 +355,7 @@ describe('registerComputerUseIpc', () => {
     await harness.handlers.get('computer-use:update-settings')!({ enabled: false }, event())
 
     expect(services.broker.stop).toHaveBeenCalledWith(SESSION.id)
+    expect(services.coordinator.release).toHaveBeenCalledWith(SESSION.id)
     expect(services.killSwitch.disarm).toHaveBeenCalledTimes(1)
     expect(settings.set).toHaveBeenCalledWith(
       'computer-use',
@@ -624,7 +630,7 @@ describe('registerComputerUseIpc', () => {
     expect(services.sessions.createSession).not.toHaveBeenCalled()
   })
 
-  it('binds the actuator lease to the calling renderer and canonical desktop key', async () => {
+  it('claims and activates direct desktop control without a persistent lease', async () => {
     const services = createServices()
     const enabled = {
       ...DEFAULT_SETTINGS,
@@ -646,12 +652,52 @@ describe('registerComputerUseIpc', () => {
         },
         event(),
       ),
-    ).resolves.toEqual({ computerSession: SESSION })
-    expect(services.sessions.acquireLease).toHaveBeenCalledWith({
-      computerSessionId: SESSION.id,
-      environmentKey: 'my-desktop:local',
-      operatorId: 'renderer:41',
+    ).resolves.toMatchObject({ computerSession: { id: SESSION.id, actuatorLeaseId: null } })
+    expect(services.coordinator.claim).toHaveBeenCalledWith(SESSION.id)
+    expect(services.sessions.activate).toHaveBeenCalledWith(SESSION.id)
+    expect(services.sessions.acquireLease).not.toHaveBeenCalled()
+  })
+
+  it('finishes startup cleanup before releasing coordinator ownership', async () => {
+    const services = createServices()
+    let finishStop: (() => void) | undefined
+    services.sessions.activate.mockImplementationOnce(() => {
+      throw new ComputerUseBrokerError('session_canceled', 'Activation failed')
     })
+    services.broker.stop.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishStop = () => resolve({ ...SESSION, status: 'canceled', actuatorLeaseId: null })
+        }),
+    )
+    const enabled = {
+      ...DEFAULT_SETTINGS,
+      enabled: true,
+      environments: { ...DEFAULT_SETTINGS.environments, myDesktop: true },
+    }
+    register({ settings: createSettingsStore(enabled), services })
+
+    const starting = harness.handlers.get('computer-use:start')!(
+      {
+        sessionId: SESSION.sessionId,
+        turnId: SESSION.turnId,
+        workflowRunId: null,
+        environment: SESSION.environment,
+        providerProfileId: SESSION.providerProfileId,
+        modelId: SESSION.modelId,
+        taskContract: SESSION.taskContract,
+      },
+      event(),
+    )
+    await vi.waitFor(() => expect(services.broker.stop).toHaveBeenCalledWith(SESSION.id))
+    expect(services.coordinator.release).not.toHaveBeenCalled()
+    finishStop?.()
+
+    await expect(starting).rejects.toMatchObject({ code: 'session_canceled' })
+    expect(services.coordinator.release).toHaveBeenCalledWith(SESSION.id)
+    expect(services.broker.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      services.coordinator.release.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    )
   })
 
   it('requires takeover before another renderer can resume a paused session', async () => {
@@ -672,12 +718,32 @@ describe('registerComputerUseIpc', () => {
     )
     await expect(
       harness.handlers.get('computer-use:resume')!({ computerSessionId: SESSION.id }, event(99)),
-    ).resolves.toEqual({ computerSession: SESSION })
-    expect(services.sessions.acquireLease).toHaveBeenLastCalledWith({
-      computerSessionId: SESSION.id,
-      environmentKey: 'my-desktop:local',
-      operatorId: 'renderer:99',
+    ).resolves.toMatchObject({ computerSession: { id: SESSION.id, actuatorLeaseId: null } })
+    expect(services.coordinator.claim).toHaveBeenCalledWith(SESSION.id)
+    expect(services.sessions.acquireLease).not.toHaveBeenCalled()
+  })
+
+  it('releases coordinator ownership when renderer resume fails', async () => {
+    const services = createServices()
+    const enabled = {
+      ...DEFAULT_SETTINGS,
+      enabled: true,
+      environments: { ...DEFAULT_SETTINGS.environments, myDesktop: true },
+    }
+    register({ settings: createSettingsStore(enabled), services })
+    await harness.handlers.get('computer-use:takeover')!(
+      { computerSessionId: SESSION.id },
+      event(99),
+    )
+    services.coordinator.release.mockClear()
+    services.broker.resume.mockImplementationOnce(() => {
+      throw new ComputerUseBrokerError('session_canceled', 'Session is terminal')
     })
+
+    await expect(
+      harness.handlers.get('computer-use:resume')!({ computerSessionId: SESSION.id }, event(99)),
+    ).rejects.toMatchObject({ code: 'session_canceled' })
+    expect(services.coordinator.release).toHaveBeenCalledWith(SESSION.id)
   })
 
   it('accepts an app-command acknowledgement only through the trusted renderer IPC', async () => {

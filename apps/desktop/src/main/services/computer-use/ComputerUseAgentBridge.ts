@@ -192,7 +192,7 @@ const MCP_TOOLS = [
   {
     name: 'wait_for_completion',
     description:
-      'Wait on the Computer Use session event stream until it completes, fails, pauses, needs approval/user takeover, or the bounded timeout expires. Prefer this over polling get_status.',
+      'Wait on the Computer Use session event stream until it completes, fails, pauses, needs user takeover, or the bounded timeout expires. Prefer this over polling get_status.',
     inputSchema: {
       type: 'object',
       properties: {

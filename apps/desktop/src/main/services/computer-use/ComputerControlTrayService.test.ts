@@ -55,6 +55,7 @@ describe('ComputerControlTrayService', () => {
     const service = new ComputerControlTrayService(
       { listActiveSessionIds: () => [], getSession: () => null },
       { pause, stop },
+      { release: vi.fn() },
     )
 
     await service.pause(SESSION.id)
@@ -64,5 +65,23 @@ describe('ComputerControlTrayService', () => {
     expect(pause).toHaveBeenNthCalledWith(1, SESSION.id)
     expect(pause).toHaveBeenNthCalledWith(2, SESSION.id)
     expect(stop).toHaveBeenCalledWith(SESSION.id)
+  })
+
+  it('releases coordinator ownership after every tray control', async () => {
+    const release = vi.fn()
+    const service = new ComputerControlTrayService(
+      { listActiveSessionIds: () => [], getSession: () => null },
+      { pause: vi.fn(), stop: vi.fn() },
+      { release },
+    )
+
+    await service.pause(SESSION.id)
+    await service.takeover(SESSION.id)
+    await service.stop(SESSION.id)
+
+    expect(release).toHaveBeenCalledTimes(3)
+    expect(release).toHaveBeenNthCalledWith(1, SESSION.id)
+    expect(release).toHaveBeenNthCalledWith(2, SESSION.id)
+    expect(release).toHaveBeenNthCalledWith(3, SESSION.id)
   })
 })

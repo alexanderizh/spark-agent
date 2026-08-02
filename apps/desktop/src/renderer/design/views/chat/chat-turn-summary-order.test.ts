@@ -5,7 +5,7 @@ import { reorderChatTurnSummaryBlocks } from './chat-turn-summary-order'
 describe('reorderChatTurnSummaryBlocks', () => {
   it('keeps an application snapshot at the point where the tool produced it', () => {
     const blocks: UIBlock[] = [
-      { kind: 'markdown', content: 'Inspecting the application.' },
+      { kind: 'text', content: 'Inspecting the application.', isStreaming: false },
       {
         kind: 'application_snapshot',
         snapshotId: 'snapshot-1',
@@ -14,14 +14,14 @@ describe('reorderChatTurnSummaryBlocks', () => {
         windowTitle: '搜索',
         capturedAt: '2026-08-02T00:00:00.000Z',
       },
-      { kind: 'markdown', content: 'Found the search box.' },
+      { kind: 'text', content: 'Found the search box.', isStreaming: false },
       { kind: 'presented_files', files: [{ path: '/workspace/result.md' }] },
     ]
 
     expect(reorderChatTurnSummaryBlocks(blocks).map((block) => block.kind)).toEqual([
-      'markdown',
+      'text',
       'application_snapshot',
-      'markdown',
+      'text',
       'presented_files',
     ])
   })

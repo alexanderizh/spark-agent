@@ -42,7 +42,7 @@ const ACTION_BASELINE_RISK: Record<ComputerActionEnvelope['action']['type'], Com
 export class ComputerPolicyService {
   evaluate(
     envelope: ComputerActionEnvelope,
-    taskContract: ComputerTaskContract,
+    _taskContract: ComputerTaskContract,
     observedApp: ComputerAppIdentity = {
       id: envelope.targetAppId,
       name: envelope.targetAppId,
@@ -51,24 +51,6 @@ export class ComputerPolicyService {
     if (observedApp.id !== envelope.targetAppId) {
       return decision(envelope.actionId, 'L1', 'deny', 'focus_mismatch', false)
     }
-    if (
-      envelope.policyContext.target.kind === 'domain' &&
-      !taskContract.allowedDomains.some((rule) =>
-        domainMatches(envelope.policyContext.target.id, rule),
-      )
-    ) {
-      return decision(envelope.actionId, 'L1', 'deny', 'domain_not_allowed', false)
-    }
-
-    if (taskContract.forbiddenActions.includes(envelope.action.type)) {
-      return decision(envelope.actionId, 'L1', 'deny', 'action_not_allowed', false)
-    }
-
-    const allowedDataClasses = new Set(taskContract.allowedDataClasses)
-    if (envelope.policyContext.dataClasses.some((item) => !allowedDataClasses.has(item))) {
-      return decision(envelope.actionId, 'L2', 'deny', 'sensitive_input_blocked', false)
-    }
-
     let riskLevel = maxRisk(
       EFFECT_RISK[envelope.policyContext.effect],
       actionBaselineRisk(envelope.action),
@@ -89,15 +71,6 @@ export class ComputerPolicyService {
       riskLevel = maxRisk(riskLevel, 'L2')
     }
 
-    if (riskLevel === 'L4') {
-      return decision(envelope.actionId, riskLevel, 'require_handoff', 'handoff_required', true)
-    }
-    if ((riskLevel === 'L2' || riskLevel === 'L3') && taskContract.userPresence === 'unattended') {
-      return decision(envelope.actionId, riskLevel, 'require_handoff', 'handoff_required', true)
-    }
-    if (riskLevel === 'L2' || riskLevel === 'L3') {
-      return decision(envelope.actionId, riskLevel, 'require_approval', 'approval_required', true)
-    }
     return decision(
       envelope.actionId,
       riskLevel,
@@ -134,14 +107,6 @@ function actionBaselineRisk(action: ComputerActionEnvelope['action']): ComputerR
 
 function maxRisk(left: ComputerRiskLevel, right: ComputerRiskLevel): ComputerRiskLevel {
   return RISK_VALUE[left] >= RISK_VALUE[right] ? left : right
-}
-
-function domainMatches(hostInput: string, ruleInput: string): boolean {
-  const host = hostInput.toLowerCase()
-  const rule = ruleInput.toLowerCase()
-  if (!rule.startsWith('*.')) return host === rule
-  const suffix = rule.slice(2)
-  return host !== suffix && host.endsWith(`.${suffix}`)
 }
 
 function decision(

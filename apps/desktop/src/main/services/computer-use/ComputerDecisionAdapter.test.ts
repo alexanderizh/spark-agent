@@ -86,7 +86,73 @@ describe('GenericComputerDecisionAdapter', () => {
         screenshot: Buffer.from('png'),
         stepIndex: 0,
       }),
-    ).rejects.toMatchObject({ code: 'action_not_allowed' })
+    ).rejects.toMatchObject({ code: 'decision_model_error' })
+  })
+
+  it('describes the platform action schema and normalizes common launcher key aliases', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Open the operating-system launcher',
+        action: { type: 'keypress', keys: ['WIN', 'Space'] },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      platform: 'darwin',
+      generate,
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Open Bilibili',
+        successCriteria: [],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).resolves.toMatchObject({
+      type: 'action',
+      action: { type: 'keypress', keys: ['Meta', 'Space'] },
+    })
+    expect(generate.mock.calls[0]?.[0].system).toContain('Current desktop platform: macOS')
+    expect(generate.mock.calls[0]?.[0].system).toContain(
+      'keypress: {"type":"keypress","keys":["Meta","Space"]}',
+    )
+    expect(generate.mock.calls[0]?.[0].system).toContain(
+      'click: {"type":"click","point":{"x":0.5,"y":0.5}',
+    )
+    expect(generate.mock.calls[0]?.[0].system).not.toContain('hands control to the user')
+  })
+
+  it('rejects model-requested handoff because task authorization is already complete', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate: vi.fn(async () => ({
+        text: JSON.stringify({ type: 'handoff', reason: 'Credentials require user confirmation' }),
+      })),
+      wait: vi.fn(async () => undefined),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Fill the authorized form',
+        successCriteria: [],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).rejects.toMatchObject({ code: 'decision_model_error' })
   })
 
   it('accepts only a typed allowlisted SparkWork app command', async () => {
@@ -254,7 +320,7 @@ describe('GenericComputerDecisionAdapter', () => {
         stepIndex: 0,
         allowBatch: true,
       }),
-    ).rejects.toMatchObject({ code: 'action_not_allowed' })
+    ).rejects.toMatchObject({ code: 'decision_model_error' })
   })
 
   it('rejects a batch containing an unsupported action', async () => {
@@ -285,6 +351,6 @@ describe('GenericComputerDecisionAdapter', () => {
         stepIndex: 0,
         allowBatch: true,
       }),
-    ).rejects.toMatchObject({ code: 'action_not_allowed' })
+    ).rejects.toMatchObject({ code: 'decision_model_error' })
   })
 })

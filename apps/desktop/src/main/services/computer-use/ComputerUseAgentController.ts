@@ -2,8 +2,6 @@ import type { ComputerDecisionModelConfig } from '@spark/agent-runtime'
 import {
   ComputerTaskContractSchema,
   VerificationSpecSchema,
-  type ComputerApprovalTicket,
-  type ComputerActuatorLease,
   type ComputerSession,
   type ComputerUseCapabilitySummary,
   type NativeHostCapabilityManifest,
@@ -13,10 +11,8 @@ import { z } from 'zod'
 import { createLogger } from '@spark/shared'
 import { GenericComputerDecisionAdapter } from './ComputerDecisionAdapter.js'
 import { ComputerTaskOperator, type ComputerTaskOperatorResult } from './ComputerTaskOperator.js'
-import type { ComputerActionApprovalRequest } from './ComputerTaskOperator.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import { getComputerUseServices, type ComputerUseServices } from './ComputerUseServices.js'
-import { MY_DESKTOP_ENVIRONMENT_KEY } from './ComputerSessionManager.js'
 import { getComputerUseV2FlagStore } from './computerUseV2Flags.js'
 
 const log = createLogger('computer-use-agent-controller')
@@ -49,12 +45,10 @@ export class ComputerUseAgentController {
     model: ComputerDecisionModelConfig,
   ) => GenericComputerDecisionAdapter
   private readonly createOperator: (services: ComputerUseServices) => ComputerTaskOperator
-  private readonly requestActionApproval:
-    | ((request: ComputerActionApprovalRequest) => Promise<ComputerApprovalTicket | null>)
-    | undefined
   private readonly sessionContexts = new Map<string, BoundAgentRuntime>()
   private readonly runs = new Map<string, OperatorRunState>()
   private readonly runTokens = new Map<string, object>()
+  private readonly runCompletions = new Map<string, Promise<void>>()
 
   constructor(
     options: {
@@ -62,9 +56,6 @@ export class ComputerUseAgentController {
       resolveDecisionModel?: (sessionId: string) => Promise<ComputerDecisionModelConfig>
       createAdapter?: (model: ComputerDecisionModelConfig) => GenericComputerDecisionAdapter
       createOperator?: (services: ComputerUseServices) => ComputerTaskOperator
-      requestActionApproval?: (
-        request: ComputerActionApprovalRequest,
-      ) => Promise<ComputerApprovalTicket | null>
     } = {},
   ) {
     this.getServices = options.getServices ?? getComputerUseServices
@@ -75,7 +66,6 @@ export class ComputerUseAgentController {
       })
     this.createAdapter =
       options.createAdapter ?? ((model) => new GenericComputerDecisionAdapter({ model }))
-    this.requestActionApproval = options.requestActionApproval
     this.createOperator =
       options.createOperator ??
       ((services) => {
@@ -85,16 +75,12 @@ export class ComputerUseAgentController {
         return new ComputerTaskOperator({
           sessions: services.sessions,
           broker: services.broker,
-          approvals: services.approvals,
           evidence: services.evidence,
           verifications: services.verifications,
           windowInventory: services.backend,
           getAbortSignal: (computerSessionId) =>
             services.sessions.getAbortSignal(computerSessionId),
           timeline: services.timeline,
-          ...(this.requestActionApproval == null
-            ? {}
-            : { requestApproval: this.requestActionApproval }),
         })
       })
   }
@@ -114,6 +100,7 @@ export class ComputerUseAgentController {
     const results = await Promise.allSettled(
       ownedSessionIds.map(async (computerSessionId) => {
         await services.broker.stop(computerSessionId)
+        services.coordinator.release(computerSessionId)
         this.invalidateRun(services, computerSessionId)
       }),
     )
@@ -207,18 +194,21 @@ export class ComputerUseAgentController {
       case 'pause': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
         const paused = await services.broker.pause(computerSession.id)
+        services.coordinator.release(computerSession.id)
         this.invalidateRun(services, computerSession.id)
         return { computerSession: paused }
       }
       case 'stop': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
         const stopped = await services.broker.stop(computerSession.id)
+        services.coordinator.release(computerSession.id)
         this.invalidateRun(services, computerSession.id)
         return { computerSession: stopped }
       }
       case 'takeover': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
         const paused = await services.broker.pause(computerSession.id)
+        services.coordinator.release(computerSession.id)
         this.invalidateRun(services, computerSession.id)
         return { computerSession: paused }
       }
@@ -236,20 +226,19 @@ export class ComputerUseAgentController {
         const operator = this.createOperator(services)
         const adapter = this.createAdapter(model)
         this.invalidateRun(services, computerSession.id)
-        const resumed = services.broker.resume(computerSession.id)
-        let lease: ComputerActuatorLease
         try {
-          lease = services.sessions.acquireLease({
-            computerSessionId: computerSession.id,
-            environmentKey: MY_DESKTOP_ENVIRONMENT_KEY,
-            operatorId: `agent:${sessionId}`,
-          })
+          await services.coordinator.claim(computerSession.id)
+          const resumed = services.broker.resume(computerSession.id)
+          this.launchOperator(services, resumed, operator, adapter)
+          return { computerSession: resumed, operatorStatus: 'running' }
         } catch (error) {
-          await services.broker.pause(computerSession.id).catch(() => undefined)
+          try {
+            await services.broker.pause(computerSession.id).catch(() => undefined)
+          } finally {
+            services.coordinator.release(computerSession.id)
+          }
           throw error
         }
-        this.launchOperator(services, resumed, lease, operator, adapter, context.permissionMode)
-        return { computerSession: resumed, operatorStatus: 'running' }
       }
       case 'capture_app_snapshot': {
         const context = this.sessionContexts.get(sessionId)
@@ -278,10 +267,7 @@ export class ComputerUseAgentController {
       case 'start_task': {
         const capabilities = await getExecutionCapabilitiesWithPermissionRequest(services.backend)
         if (!supportsExecution(capabilities)) {
-          throw unavailable(
-            capabilities.unavailableReason ??
-              'The trusted Native Host does not advertise governed observation and input',
-          )
+          throw executionUnavailable(capabilities)
         }
         const context = this.sessionContexts.get(sessionId)
         if (context == null) throw unavailable('Agent turn context is unavailable')
@@ -324,33 +310,25 @@ export class ComputerUseAgentController {
             windowId: target.window.id,
           })
         }
-        let lease: ComputerActuatorLease
         try {
-          lease = services.sessions.acquireLease({
-            computerSessionId: computerSession.id,
-            environmentKey: MY_DESKTOP_ENVIRONMENT_KEY,
-            operatorId: `agent:${sessionId}`,
-          })
+          await services.coordinator.claim(computerSession.id)
+          const activeSession = services.sessions.activate(computerSession.id)
+          const operator = this.createOperator(services)
+          const adapter = this.createAdapter(model)
+          this.launchOperator(services, activeSession, operator, adapter)
+          return {
+            computerSession: activeSession,
+            operatorStatus: 'running',
+          }
         } catch (error) {
-          // A session row exists before lease acquisition. Never leave that preflight row (or
-          // any native capture state it created) behind when another valid operator owns the
-          // desktop. Otherwise retries present a false "running" task and can accumulate stale
-          // state around the real lease holder.
-          await services.broker.stop(computerSession.id).catch(() => undefined)
-          this.releaseOperatorResources(services, computerSession.id, 'failed')
+          try {
+            await services.broker.stop(computerSession.id).catch(() => undefined)
+            await this.releaseOperatorResources(services, computerSession.id, 'failed')
+          } finally {
+            services.coordinator.release(computerSession.id)
+          }
           throw error
         }
-        const operator = this.createOperator(services)
-        const adapter = this.createAdapter(model)
-        this.launchOperator(
-          services,
-          computerSession,
-          lease,
-          operator,
-          adapter,
-          context.permissionMode,
-        )
-        return { computerSession, operatorStatus: 'running' }
       }
       default:
         throw new ComputerUseBrokerError('action_not_allowed', 'Unknown Computer Use task tool')
@@ -360,32 +338,27 @@ export class ComputerUseAgentController {
   private launchOperator(
     services: ComputerUseServices,
     session: ComputerSession,
-    lease: ComputerActuatorLease,
     operator: ComputerTaskOperator,
     adapter: GenericComputerDecisionAdapter,
-    permissionMode: string,
   ): void {
     const token = {}
     this.runTokens.set(session.id, token)
     this.runs.set(session.id, { status: 'running' })
-    const run = operator.run({ session, lease, adapter, permissionMode })
-    void run.then(
-      (result) => {
+    const run = operator.run({ session, adapter })
+    const completion = run.then(
+      async (result) => {
         if (this.runTokens.get(session.id) !== token) return
         this.runTokens.delete(session.id)
-        if (result.status === 'handoff_required') {
-          // Handoff retains the session for the user, but it must not retain the one global
-          // desktop actuator lease. A fresh task may start immediately after takeover.
-          services.sessions.releaseLease(session.id)
-        }
-        this.releaseOperatorResources(services, session.id, 'finished')
+        await this.releaseOperatorResources(services, session.id, 'finished')
+        services.coordinator.release(session.id)
         this.runs.set(session.id, { status: result.status, result })
         this.trimRunStates()
       },
-      (error) => {
+      async (error) => {
         if (this.runTokens.get(session.id) !== token) return
         this.runTokens.delete(session.id)
-        this.releaseOperatorResources(services, session.id, 'failed')
+        await this.releaseOperatorResources(services, session.id, 'failed')
+        services.coordinator.release(session.id)
         const result: ComputerTaskOperatorResult = {
           status: 'failed',
           reason:
@@ -399,23 +372,30 @@ export class ComputerUseAgentController {
         this.trimRunStates()
       },
     )
+    this.runCompletions.set(session.id, completion)
+    void completion.finally(() => {
+      if (this.runCompletions.get(session.id) === completion) {
+        this.runCompletions.delete(session.id)
+      }
+    })
   }
 
   private invalidateRun(services: ComputerUseServices, computerSessionId: string): void {
     this.runTokens.delete(computerSessionId)
     this.runs.delete(computerSessionId)
     services.evidence?.clearSession(computerSessionId)
+    services.coordinator.release(computerSessionId)
   }
 
-  private releaseOperatorResources(
+  private async releaseOperatorResources(
     services: ComputerUseServices,
     computerSessionId: string,
     outcome: 'finished' | 'failed',
-  ): void {
+  ): Promise<void> {
     services.evidence?.clearSession(computerSessionId)
     services.appControlBridge?.cancelSession(computerSessionId)
     if (services.backend == null || typeof services.backend.cancelSession !== 'function') return
-    void services.backend.cancelSession(computerSessionId).catch((error) =>
+    await services.backend.cancelSession(computerSessionId).catch((error) =>
       log.warn(`Failed to release Native Host resources after Computer Use ${outcome}`, {
         computerSessionId,
         error: error instanceof Error ? error.message : String(error),
@@ -448,27 +428,40 @@ export class ComputerUseAgentController {
     initial: ComputerSession,
     timeoutMs: number,
   ): Promise<Record<string, unknown>> {
-    if (WAIT_RETURN_STATUSES.has(initial.status)) {
+    if (WAIT_RETURN_STATUSES.has(initial.status) && !this.runCompletions.has(initial.id)) {
       return Promise.resolve(this.statusPayload(initial))
     }
     return new Promise((resolve) => {
       let settled = false
+      let unsubscribe = (): void => undefined
       const finish = (session: ComputerSession, timedOut = false) => {
         if (settled) return
         settled = true
         clearTimeout(timer)
         unsubscribe()
-        resolve(this.statusPayload(session, timedOut))
+        resolve(
+          this.statusPayload(services.sessions.getSession(initial.id) ?? session, timedOut),
+        )
       }
-      const unsubscribe = services.sessions.subscribeStatus((session) => {
-        if (session.id === initial.id && WAIT_RETURN_STATUSES.has(session.status)) finish(session)
+      const finishAfterCleanup = async (session: ComputerSession) => {
+        await this.runCompletions.get(initial.id)
+        finish(session)
+      }
+      unsubscribe = services.sessions.subscribeStatus((session) => {
+        if (session.id === initial.id && WAIT_RETURN_STATUSES.has(session.status)) {
+          const projectionTimer = setTimeout(() => void finishAfterCleanup(session), 0)
+          projectionTimer.unref?.()
+        }
       })
       const timer = setTimeout(() => {
         finish(services.sessions.getSession(initial.id) ?? initial, true)
       }, timeoutMs)
       timer.unref?.()
       const current = services.sessions.getSession(initial.id)
-      if (current != null && WAIT_RETURN_STATUSES.has(current.status)) finish(current)
+      if (current != null && WAIT_RETURN_STATUSES.has(current.status)) {
+        const projectionTimer = setTimeout(() => void finishAfterCleanup(current), 0)
+        projectionTimer.unref?.()
+      }
     })
   }
 
@@ -699,4 +692,36 @@ function invalidArguments(): ComputerUseBrokerError {
 
 function unavailable(message: string): ComputerUseBrokerError {
   return new ComputerUseBrokerError('environment_unavailable', message)
+}
+
+function executionUnavailable(capabilities: ComputerUseCapabilitySummary): ComputerUseBrokerError {
+  if (capabilities.nativeHost == null) {
+    return new ComputerUseBrokerError(
+      'native_host_missing',
+      'The trusted Computer Use Native Host is unavailable',
+    )
+  }
+  if (capabilities.permissions.screen !== 'granted') {
+    return new ComputerUseBrokerError(
+      'screen_permission_denied',
+      'Screen Recording permission is required for Computer Use',
+    )
+  }
+  if (capabilities.permissions.accessibility !== 'granted') {
+    return new ComputerUseBrokerError(
+      'accessibility_permission_denied',
+      'Accessibility permission is required for this Computer Use task',
+    )
+  }
+  if (capabilities.permissions.input !== 'granted') {
+    return new ComputerUseBrokerError(
+      'privilege_mismatch',
+      'Input control permission is required for this Computer Use task',
+    )
+  }
+  return new ComputerUseBrokerError(
+    'native_host_incompatible',
+    capabilities.unavailableReason ??
+      'The trusted Native Host does not advertise compatible observation and input features',
+  )
 }
