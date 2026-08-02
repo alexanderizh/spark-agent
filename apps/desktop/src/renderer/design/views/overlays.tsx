@@ -171,6 +171,33 @@ function saveRecentCommand(id: string): void {
 }
 
 /* ============================================================
+   Palette query persistence
+   The palette is unmounted on close, so its `query` useState is lost.
+   Persist the last query so reopening the palette recalls it (and the
+   debounced search re-runs automatically). Clearing the input writes an
+   empty value, which counts as a manual clear.
+   ============================================================ */
+
+const PALETTE_QUERY_KEY = 'spark-agent:palette-query'
+
+function loadPaletteQuery(): string {
+  try {
+    return localStorage.getItem(PALETTE_QUERY_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function savePaletteQuery(value: string): void {
+  try {
+    if (value) localStorage.setItem(PALETTE_QUERY_KEY, value)
+    else localStorage.removeItem(PALETTE_QUERY_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+/* ============================================================
    Fuzzy match
    ============================================================ */
 
@@ -410,7 +437,7 @@ export function CommandPalette({
     icon?: ReactNode
   }>
 }) {
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(loadPaletteQuery)
   const [ipcCommands, setIpcCommands] = useState<CommandListItem[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -719,6 +746,7 @@ export function CommandPalette({
       if (cmd.kind === 'session' && cmd.id.startsWith('session:')) {
         const sessionId = cmd.id.slice('session:'.length) as SessionId
         sidebar?.setActiveSession(sessionId)
+        sidebar?.revealSession(sessionId)
         onNavigate?.('chat')
         onClose()
         return
@@ -809,7 +837,11 @@ export function CommandPalette({
             placeholder={placeholder}
             autoFocus
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value
+              setQuery(next)
+              savePaletteQuery(next)
+            }}
             onKeyDown={handleKeyDown}
           />
           <span className="kbd">esc</span>
