@@ -2275,6 +2275,39 @@ body.git-review-tree-resizing {
   padding-bottom: 14px;
 }
 
+/* 会话区激活态背景 — Indigo 品牌色微光晕（仅浅色模式；暗色保持原透明态不动）
+   多层叠加：顶部主光晕 + 高光核 + 底部呼应 + 纵向 wash，落在极淡冷调底色上。
+   光晕透明度严格克制，消息气泡仍是主角。直接用 background（非伪元素），
+   不引入额外层叠、不碰子元素 z-index；不使用 container-type，避免破坏内部
+   position:fixed 的右键菜单定位。 */
+.app.theme-light .chat-main-active {
+  background:
+    /* 1. 顶部主光晕：宽幅、向上溢出、快速羽化 */
+    radial-gradient(125% 72% at 50% -10%,
+      rgba(99, 102, 241, 0.17) 0%,
+      rgba(99, 102, 241, 0.10) 20%,
+      rgba(99, 102, 241, 0.04) 46%,
+      transparent 72%),
+    /* 2. 顶部高光核：更亮更窄，模拟光源中心 */
+    radial-gradient(58% 32% at 50% -2%,
+      rgba(129, 140, 248, 0.15) 0%,
+      rgba(129, 140, 248, 0.05) 36%,
+      transparent 70%),
+    /* 3. 底部呼应：极淡，色调与顶部同源 */
+    radial-gradient(95% 42% at 50% 110%,
+      rgba(99, 102, 241, 0.05) 0%,
+      rgba(99, 102, 241, 0.02) 40%,
+      transparent 76%),
+    /* 4. 纵向 wash：首尾微调，消除大面积纯白的塑料感 */
+    linear-gradient(180deg,
+      rgba(99, 102, 241, 0.028) 0%,
+      transparent 28%,
+      transparent 70%,
+      rgba(99, 102, 241, 0.016) 100%),
+    /* 5. 底色：极淡冷调白，光晕叠加后过渡更自然（仅浅色激活态专用光晕底色） */
+    #fbfbfd;
+}
+
 .chat-main-active .composer-inner {
   padding-bottom: 0px;
 }
