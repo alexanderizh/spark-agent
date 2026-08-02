@@ -136,7 +136,26 @@ export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmission
   if (videoCount === 0) {
     issues.push(issue('missing_required', '请连接一段输入视频', ['inputFiles']))
   } else if (videoCount !== 1 || files.length !== 1) {
-    issues.push(issue('out_of_range', '深度视频仅支持一段输入视频', ['inputFiles']))
+    // __SPARK_DEBUG_START__
+    const __sparkDebugFiles = files.map((file, index) => ({
+      index,
+      type: file.type,
+      mimeType: file.mimeType,
+      hasUrl: Boolean(file.url),
+      urlHead: file.url ? String(file.url).slice(0, 64) : undefined,
+      pathHead: file.path ? String(file.path).slice(0, 64) : undefined,
+    }))
+    const __sparkDebugNodeIds = (request as { inputNodeIds?: unknown }).inputNodeIds
+    issues.push(
+      issue(
+        'out_of_range',
+        `深度视频仅支持一段输入视频 [spark-debug files=${files.length} videos=${videoCount} inputNodeIds=${JSON.stringify(
+          __sparkDebugNodeIds,
+        )} details=${JSON.stringify(__sparkDebugFiles)}]`,
+        ['inputFiles'],
+      ),
+    )
+    // __SPARK_DEBUG_END__
   }
   const inputFile = files[0]
   const localPath = inputFile?.path?.trim() || decodeCanvasSafeFileUrl(inputFile?.url)
