@@ -87,7 +87,7 @@ export function CanvasModelPicker({
         />
       </div>
       <div className="canvas-model-picker-layout">
-        <div className="canvas-model-picker-providers" aria-label="模型渠道">
+        <div className="canvas-model-picker-providers" aria-label="模型渠道" data-canvas-overlay-scroll>
           {filteredGroups.map((group) => {
             const active = group.key === visibleGroup?.key
             return (
@@ -119,7 +119,7 @@ export function CanvasModelPicker({
             <div className="canvas-model-picker-empty">没有匹配的渠道</div>
           )}
         </div>
-        <div className="canvas-model-picker-models" role="listbox" aria-label="模型列表">
+        <div className="canvas-model-picker-models" role="listbox" aria-label="模型列表" data-canvas-overlay-scroll>
           {allowEmpty && (
             <button
               type="button"
