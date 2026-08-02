@@ -9,6 +9,11 @@ const SESSION_TOKEN_TTL_MS = 15 * 60 * 1_000
 const ALLOWED_TOOLS = new Set([
   'get_capabilities',
   'diagnose_native_host',
+  'list_apps',
+  'list_windows',
+  'get_screen_state',
+  'get_app_state',
+  'open_app',
   'capture_app_snapshot',
   'start_task',
   'get_status',
@@ -123,6 +128,73 @@ const MCP_TOOLS = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
+    name: 'list_apps',
+    description:
+      'List running, installed, or all applications. Running state comes from the trusted native window inventory; the macOS installed catalog is cached and degrades safely if operating-system discovery is unavailable. Use this only when the target app is unknown.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeWindows: { type: 'boolean', default: true },
+        scope: { type: 'string', enum: ['running', 'installed', 'all'], default: 'all' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'list_windows',
+    description:
+      'List desktop windows, optionally filtered by an exact app display name, bundle id, or stable app id. Minimized windows are excluded by default.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        app: { type: 'string', minLength: 1, maxLength: 300 },
+        includeMinimized: { type: 'boolean', default: false },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_screen_state',
+    description:
+      'Read the current desktop state in one call: frontmost app/window, displays, running apps, and window counts. This is metadata-only and does not start a task.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeWindows: { type: 'boolean', default: true },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_app_state',
+    description:
+      'Get one application state directly by exact display name, bundle id, stable app id, or window id. App selectors launch or raise the app by default. Returns native window metadata plus an accessibility/visual observation when available. A chat snapshot is optional and its failure does not discard state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        app: { type: 'string', minLength: 1, maxLength: 300 },
+        windowId: { type: 'string', minLength: 1, maxLength: 256 },
+        launchIfNeeded: { type: 'boolean', default: true },
+        includeSnapshot: { type: 'boolean', default: false },
+      },
+      oneOf: [{ required: ['app'] }, { required: ['windowId'] }],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'open_app',
+    description:
+      'Open or raise an application directly by exact display name, bundle id, or stable app id and return its resolved native window state. Prefer this over operating-system launcher keystrokes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        app: { type: 'string', minLength: 1, maxLength: 300 },
+      },
+      required: ['app'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'capture_app_snapshot',
     description: 'Capture the focused application through the governed snapshot service.',
     inputSchema: {
@@ -158,6 +230,13 @@ const MCP_TOOLS = [
             'Optional exact window id returned by list_windows. When supplied, Spark binds the task to that window and will not follow another foreground window.',
           minLength: 1,
           maxLength: 256,
+        },
+        targetApp: {
+          type: 'string',
+          description:
+            'Optional exact application display name or bundle identifier. Prefer this whenever the user names an app; Spark launches or raises it directly before visual planning. Do not combine with targetWindowId.',
+          minLength: 1,
+          maxLength: 200,
         },
         acceptanceCriteria: {
           type: 'array',

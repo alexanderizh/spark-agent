@@ -120,6 +120,25 @@ export class NativeHostSupervisor {
   }
 
   /**
+   * A restart budget belongs to one governed task, while the supervisor itself is shared by
+   * the desktop process. Ending a task must therefore clear a previously exhausted budget;
+   * otherwise one old crash permanently bricks Computer Use until SparkWork is restarted.
+   */
+  resetSessionBudget(): void {
+    if (this.disposed) return
+    this.restartCount = 0
+    this.lastError = null
+    if (this.current != null) {
+      this.state = 'ready'
+      this.health.reset()
+      this.health.start()
+    } else {
+      this.state = 'absent'
+      this.health.stop()
+    }
+  }
+
+  /**
    * Return a ready connection. Connects lazily on first call, and reconnects
    * within the restart budget after a terminal failure. Once the budget is
    * exhausted the supervisor is `failed` and every acquire rejects.

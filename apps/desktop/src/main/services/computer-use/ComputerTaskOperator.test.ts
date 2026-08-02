@@ -455,6 +455,48 @@ describe('ComputerTaskOperator', () => {
     expect(dispatch).toHaveBeenCalledTimes(2)
   })
 
+  it('falls back to accessibility-only decisions when screenshot evidence is unavailable', async () => {
+    const decisions = [
+      {
+        type: 'action' as const,
+        intent: 'Use the accessible save element',
+        action: {
+          type: 'invoke_element' as const,
+          elementId: 'save-button',
+          action: 'invoke' as const,
+        },
+      },
+      { type: 'ready_for_verification' as const, reason: 'Saved status is accessible' },
+    ]
+    const decide = vi.fn(async () => decisions.shift()!)
+    const observe = vi
+      .fn()
+      .mockResolvedValueOnce(BEFORE)
+      .mockResolvedValueOnce(BEFORE)
+      .mockResolvedValueOnce(BEFORE)
+      .mockResolvedValue(AFTER)
+    const sessions = sessionController()
+    const operator = new ComputerTaskOperator({
+      sessions,
+      broker: {
+        observe,
+        dispatch: vi.fn(async () => ({ observation: AFTER, noop: false })),
+      },
+      evidence: { readLatestImage: vi.fn(async () => Promise.reject(new Error('disk busy'))) },
+      verifications: verificationStore(),
+      wait: vi.fn(async () => undefined),
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    await expect(
+      operator.run({ session: SESSION, lease: LEASE, adapter: { decide } }),
+    ).resolves.toMatchObject({ status: 'completed' })
+    expect(decide).toHaveBeenCalledWith(
+      expect.objectContaining({ screenshot: expect.objectContaining({ length: 0 }) }),
+    )
+    expect(sessions.fail).not.toHaveBeenCalled()
+  })
+
   it('falls back to re-observing and replanning when a stale frame cannot be locally relocated', async () => {
     const decisions = [
       {
@@ -510,9 +552,9 @@ describe('ComputerTaskOperator', () => {
     expect(sessions.fail).not.toHaveBeenCalled()
   })
 
-  it('fails after the task contract consecutive noop limit is reached', async () => {
+  it('switches strategy instead of failing at the consecutive noop limit', async () => {
     const sessions = sessionController()
-    const actionDecision = {
+    const semanticDecision = {
       type: 'action' as const,
       intent: 'Try the save button',
       action: {
@@ -521,10 +563,32 @@ describe('ComputerTaskOperator', () => {
         action: 'invoke' as const,
       },
     }
+    const keyboardDecision = {
+      type: 'action' as const,
+      intent: 'Use the keyboard save shortcut after accessibility failed',
+      action: { type: 'keypress' as const, keys: ['Meta', 'S'] },
+    }
+    const decisions = [
+      semanticDecision,
+      semanticDecision,
+      semanticDecision,
+      keyboardDecision,
+      { type: 'ready_for_verification' as const, reason: 'Saved status is visible' },
+    ]
     const observe = vi.fn(async () => BEFORE)
-    const dispatch = vi.fn(async () => {
-      throw new ComputerUseBrokerError('action_noop', 'Computer action made no observable change')
-    })
+    const dispatch = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ComputerUseBrokerError('action_noop', 'Computer action made no observable change'),
+      )
+      .mockRejectedValueOnce(
+        new ComputerUseBrokerError('action_noop', 'Computer action made no observable change'),
+      )
+      .mockRejectedValueOnce(
+        new ComputerUseBrokerError('action_noop', 'Computer action made no observable change'),
+      )
+      .mockResolvedValueOnce({ observation: AFTER, noop: false })
+    const decide = vi.fn(async () => decisions.shift()!)
     const operator = new ComputerTaskOperator({
       sessions,
       broker: { observe, dispatch },
@@ -538,12 +602,24 @@ describe('ComputerTaskOperator', () => {
       operator.run({
         session: SESSION,
         lease: LEASE,
-        adapter: { decide: vi.fn(async () => actionDecision) },
+        adapter: { decide },
       }),
-    ).resolves.toEqual({ status: 'failed', reason: 'maximum_consecutive_noops_reached' })
-    expect(dispatch).toHaveBeenCalledTimes(SESSION.taskContract.maxConsecutiveNoops)
-    expect(observe).toHaveBeenCalledTimes(SESSION.taskContract.maxConsecutiveNoops)
-    expect(sessions.fail).toHaveBeenCalledWith(SESSION.id)
+    ).resolves.toMatchObject({ status: 'completed' })
+    expect(dispatch).toHaveBeenCalledTimes(4)
+    expect(observe).toHaveBeenCalledTimes(4)
+    expect(decide).toHaveBeenNthCalledWith(
+      4,
+      expect.objectContaining({
+        previousActionFailure: {
+          code: 'action_noop',
+          actionType: 'invoke_element',
+          consecutiveFailures: SESSION.taskContract.maxConsecutiveNoops,
+          failedStrategies: ['accessibility'],
+          requiredAlternative: true,
+        },
+      }),
+    )
+    expect(sessions.fail).not.toHaveBeenCalled()
   })
 
   it('enforces maxRuntimeMs even when no Broker action is dispatched', async () => {
@@ -628,6 +704,34 @@ describe('ComputerTaskOperator', () => {
       }),
     )
     expect(sessions.completeVerified).toHaveBeenCalledWith(SESSION.id, ['verification-1'])
+  })
+
+  it('verifies from the current observation when window inventory is temporarily unavailable', async () => {
+    const sessions = sessionController()
+    const operator = new ComputerTaskOperator({
+      sessions,
+      broker: { observe: vi.fn(async () => AFTER), dispatch: vi.fn() },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      windowInventory: {
+        listWindows: vi.fn(async () => Promise.reject(new Error('Native Host inventory busy'))),
+      },
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    await expect(
+      operator.run({
+        session: SESSION,
+        lease: LEASE,
+        adapter: {
+          decide: vi.fn(async () => ({
+            type: 'ready_for_verification' as const,
+            reason: 'Saved status is visible',
+          })),
+        },
+      }),
+    ).resolves.toMatchObject({ status: 'completed' })
+    expect(sessions.fail).not.toHaveBeenCalled()
   })
 
   it('completes the turn even when the verification record cannot be persisted', async () => {

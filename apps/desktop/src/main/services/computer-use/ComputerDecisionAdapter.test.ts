@@ -127,7 +127,86 @@ describe('GenericComputerDecisionAdapter', () => {
     expect(generate.mock.calls[0]?.[0].system).toContain(
       'click: {"type":"click","point":{"x":0.5,"y":0.5}',
     )
+    expect(generate.mock.calls[0]?.[0].system).toContain(
+      'select_text: {"type":"select_text","elementId":"<id>"',
+    )
     expect(generate.mock.calls[0]?.[0].system).not.toContain('hands control to the user')
+  })
+
+  it('tells the model to switch away from a failed Electron semantic action', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Use the visible search field',
+        action: { type: 'click', point: { x: 0.5, y: 0.1 } },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Search in the app',
+      successCriteria: [],
+      observation: OBSERVATION,
+      screenshot: Buffer.from('png'),
+      stepIndex: 2,
+      previousActionFailure: {
+        code: 'action_noop',
+        actionType: 'invoke_element',
+        consecutiveFailures: 3,
+        failedStrategies: ['accessibility'],
+        requiredAlternative: true,
+      },
+    })
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining(
+          'Previous action failure: {"code":"action_noop","actionType":"invoke_element","consecutiveFailures":3,"failedStrategies":["accessibility"],"requiredAlternative":true}',
+        ),
+      }),
+    )
+  })
+
+  it('continues with accessibility state when no screenshot is available', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Use the accessible save element',
+        action: { type: 'invoke_element', elementId: 'save-button', action: 'invoke' },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Save the document',
+      successCriteria: [],
+      observation: OBSERVATION,
+      screenshot: Buffer.alloc(0),
+      stepIndex: 0,
+    })
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining('Screenshot available: false'),
+      }),
+    )
+    expect(generate.mock.calls[0]?.[0]).not.toHaveProperty('images')
   })
 
   it('rejects model-requested handoff because task authorization is already complete', async () => {
@@ -335,10 +414,7 @@ describe('GenericComputerDecisionAdapter', () => {
         text: JSON.stringify({
           type: 'actions',
           intent: 'Risky',
-          actions: [
-            { type: 'click', x: 1, y: 1 },
-            { type: 'shell' },
-          ],
+          actions: [{ type: 'click', x: 1, y: 1 }, { type: 'shell' }],
         }),
       }),
     })

@@ -41,6 +41,53 @@ const CAPABILITIES: ComputerUseCapabilitySummary = {
 }
 
 describe('ComputerUseAgentController', () => {
+  it('exposes composable desktop inventory and state tools without starting a task', async () => {
+    const listApps = vi.fn(async () => [{ app: { id: 'app-1', name: 'Editor' } }])
+    const listWindows = vi.fn(async () => [{ window: { id: 'window-1' } }])
+    const getScreenState = vi.fn(async () => ({ foreground: { app: { id: 'app-1' } } }))
+    const getAppState = vi.fn(async () => ({
+      target: { app: { id: 'app-1', name: 'Editor' }, window: { id: 'window-1' } },
+      state: { app: { id: 'app-1', name: 'Editor' }, running: true },
+    }))
+    const openApp = vi.fn(async () => ({
+      target: { app: { id: 'app-1', name: 'Editor' }, window: { id: 'window-1' } },
+      state: { app: { id: 'app-1', name: 'Editor' }, running: true },
+    }))
+    const desktopState = { listApps, listWindows, getScreenState, getAppState, openApp }
+    const controller = new ComputerUseAgentController({
+      getServices: () => ({ backend: {} }) as never,
+      createDesktopState: () => desktopState as never,
+    })
+
+    await expect(controller.invoke('session-1', 'list_apps', {})).resolves.toMatchObject({
+      count: 1,
+    })
+    await expect(
+      controller.invoke('session-1', 'list_windows', { app: 'Editor' }),
+    ).resolves.toMatchObject({ count: 1 })
+    await expect(controller.invoke('session-1', 'get_screen_state', {})).resolves.toMatchObject({
+      foreground: { app: { id: 'app-1' } },
+    })
+    await expect(
+      controller.invoke('session-1', 'get_app_state', {
+        app: 'Editor',
+        includeSnapshot: false,
+      }),
+    ).resolves.toMatchObject({ state: { running: true }, snapshot: null })
+    await expect(
+      controller.invoke('session-1', 'open_app', { app: 'Editor' }),
+    ).resolves.toMatchObject({ state: { running: true } })
+
+    expect(listApps).toHaveBeenCalledWith({ includeWindows: true, scope: 'all' })
+    expect(listWindows).toHaveBeenCalledWith({ app: 'Editor', includeMinimized: false })
+    expect(getScreenState).toHaveBeenCalledWith({ includeWindows: true })
+    expect(getAppState).toHaveBeenCalledWith({
+      app: 'Editor',
+      launchIfNeeded: true,
+    })
+    expect(openApp).toHaveBeenCalledWith('Editor')
+  })
+
   it('waits on session status events instead of polling get_status', async () => {
     let current = computerSession('observing')
     let listener: ((session: ComputerSession) => void) | undefined
