@@ -632,7 +632,17 @@ export interface ComputerUseMcpProvider {
     allowedTools: string[]
     systemPrompt: string
   } | null>
+  /**
+   * 轻量清理：仅撤销本 turn 的 MCP HTTP grant 与快照会话，**不取消**正在运行的
+   * Computer Use 桌面任务。在每个 agent turn 结束时调用——任务生命周期完全交由
+   * agent 自行管理（主动 stop 或用户 ESC 兜底），不再因 turn 边界被粗暴取消。
+   */
   revokeSession?(sessionId: string): void
+  /**
+   * 真正停止该 agent 会话拥有的 Computer Use 桌面任务（stopOwnedSessions）。
+   * 仅在会话被彻底销毁（clearSessionMemory）或用户显式 cancelTurn 时调用。
+   */
+  stopOwnedSessions?(sessionId: string): void
 }
 
 export class SessionService {
@@ -846,6 +856,23 @@ export class SessionService {
       this.computerUseMcpProvider?.revokeSession?.(sessionId)
     } catch (error) {
       log.warn('failed to revoke Computer Use session capability', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  /**
+   * 真正停止该 agent 会话拥有的 Computer Use 桌面任务。仅在会话被彻底销毁
+   * （clearSessionMemory）或用户显式 cancelTurn 时调用；普通 turn 结束不会触发，
+   * 以保证长任务的生命周期完全由 agent 决定。
+   */
+  private stopComputerUseSession(sessionId: string): void {
+    this.revokeComputerUseSession(sessionId)
+    try {
+      this.computerUseMcpProvider?.stopOwnedSessions?.(sessionId)
+    } catch (error) {
+      log.warn('failed to stop Computer Use sessions', {
         sessionId,
         error: error instanceof Error ? error.message : String(error),
       })
@@ -7862,7 +7889,7 @@ export class SessionService {
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
     const loop = this.activeLoops.get(sessionId)
-    this.revokeComputerUseSession(sessionId)
+    this.stopComputerUseSession(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
     // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
     this.onApprovalCancel?.(sessionId)
@@ -7992,7 +8019,7 @@ export class SessionService {
    * @returns 是否终止了一个正在运行的执行器（调用方据此决定要不要写取消事件）。
    */
   private clearSessionMemory(sessionId: string): boolean {
-    this.revokeComputerUseSession(sessionId)
+    this.stopComputerUseSession(sessionId)
     const activeLoop = this.activeLoops.get(sessionId)
     if (activeLoop != null) {
       try {

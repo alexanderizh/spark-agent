@@ -54,9 +54,14 @@ export function createComputerUseMcpProvider(
       systemPrompt: buildComputerUseSystemPrompt(capabilities),
     }
   }
+  // turn 边界轻清理：只撤销本 turn 的 HTTP grant 与快照会话，不取消正在运行的
+  // 桌面任务。任务生命周期交由 agent 管理（主动 stop / 用户 ESC 兜底）。
   provider.revokeSession = (sessionId) => {
     bridge?.revokeSession(sessionId)
     revokeSnapshotSession(sessionId)
+  }
+  // 真正停止该会话拥有的桌面任务，仅在会话彻底销毁 / 用户 cancelTurn 时调用。
+  provider.stopOwnedSessions = (sessionId) => {
     void controller.stopOwnedSessions(sessionId)
   }
   return provider

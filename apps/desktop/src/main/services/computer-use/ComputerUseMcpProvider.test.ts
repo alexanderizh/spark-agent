@@ -68,6 +68,10 @@ describe('createComputerUseMcpProvider', () => {
     ).resolves.toMatchObject({ status: 200 })
     provider.revokeSession?.('session-1')
     expect(revokeSnapshotSession).toHaveBeenCalledWith('session-1')
+    // revokeSession 现在只是 turn 边界的轻清理（撤销 HTTP grant），不再取消正在运行的
+    // 桌面任务——任务生命周期交由 agent 管理。真正停止走独立的 stopOwnedSessions。
+    expect(controller.stopOwnedSessions).not.toHaveBeenCalled()
+    provider.stopOwnedSessions?.('session-1')
     expect(controller.stopOwnedSessions).toHaveBeenCalledWith('session-1')
     await expect(
       fetch(serverUrl, {

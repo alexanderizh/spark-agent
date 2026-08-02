@@ -27,23 +27,30 @@ final class MacAccessibilityController: @unchecked Sendable {
 
   func observe(
     processID: pid_t,
+    preferredWindowBounds: NativeRect?,
     previousTreeVersion: String?,
     fullTree: Bool
   ) throws -> NativeAXTreeSnapshot {
     guard AXIsProcessTrusted() else { throw NativeHostPlatformError.accessibilityPermissionDenied }
     let application = AXUIElementCreateApplication(processID)
     AXUIElementSetMessagingTimeout(application, 2)
-    guard let focusedWindow: AXUIElement = copyAttribute(application, kAXFocusedWindowAttribute)
-    else { throw NativeHostPlatformError.focusMismatch }
-    var actualPID: pid_t = 0
-    guard AXUIElementGetPid(focusedWindow, &actualPID) == .success, actualPID == processID else {
-      throw NativeHostPlatformError.focusMismatch
-    }
+    // Chromium/Electron only build the web-content accessibility tree when
+    // accessibility is explicitly enabled. Setting these attributes on the
+    // application element flips Chromium's internal flag at runtime (no
+    // restart). Non-Chromium apps reject them, which we ignore. This is the
+    // single biggest reason competitors can read an Electron app's structure
+    // tree while we previously saw an almost-empty tree.
+    activateChromiumAccessibility(application)
+    let window = try selectAXWindow(
+      application: application,
+      processID: processID,
+      preferredBounds: preferredWindowBounds
+    )
 
     let sameWindow = cachedProcessID == processID
-      && cachedWindow.map { CFEqual($0, focusedWindow) } == true
+      && cachedWindow.map { CFEqual($0, window) } == true
     if !sameWindow {
-      configureObserver(processID: processID, application: application, window: focusedWindow)
+      configureObserver(processID: processID, application: application, window: window)
     }
     let generation = currentDirtyGeneration()
     if NativeAccessibilityCachePolicy.canReuse(
@@ -64,8 +71,21 @@ final class MacAccessibilityController: @unchecked Sendable {
 
     var raw: [NativeAXRawElement] = []
     var elements: [String: AXUIElement] = [:]
-    try collect(
-      focusedWindow, path: "window", depth: 0, output: &raw, elements: &elements)
+    try collect(window, path: "window", depth: 0, output: &raw, elements: &elements)
+    // Chromium populates the web-content tree asynchronously after we flip
+    // AXManualAccessibility. A near-empty first pass on a real window usually
+    // means the tree is still being built — wait briefly and retry a couple
+    // of times before giving up. Bounded and only triggered when the tree is
+    // suspiciously small.
+    if raw.count <= 3 {
+      for _ in 0..<2 {
+        Thread.sleep(forTimeInterval: 0.15)
+        raw.removeAll(keepingCapacity: true)
+        elements.removeAll(keepingCapacity: true)
+        try collect(window, path: "window", depth: 0, output: &raw, elements: &elements)
+        if raw.count > 3 { break }
+      }
+    }
     let snapshot = try publishCached(
       raw,
       previousTreeVersion: previousTreeVersion,
@@ -76,10 +96,69 @@ final class MacAccessibilityController: @unchecked Sendable {
       uniqueKeysWithValues: snapshot.elements.map { ($0.id, $0.bounds) })
     cachedRawElements = raw
     cachedProcessID = processID
-    cachedWindow = focusedWindow
+    cachedWindow = window
     lastTraversalUptime = ProcessInfo.processInfo.systemUptime
     cachedGeneration = generation
     return snapshot
+  }
+
+  /// Force Chromium-derived renderers (Electron, Chrome, Edge, Brave, ...)
+  /// to construct their accessibility tree. Without this the AX tree of an
+  /// Electron app is essentially empty (only the native chrome), which is
+  /// the root cause of "we cannot read the structure tree". Idempotent and
+  /// harmless for non-Chromium apps, which simply reject the attributes.
+  private func activateChromiumAccessibility(_ application: AXUIElement) {
+    _ = AXUIElementSetAttributeValue(
+      application, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+    _ = AXUIElementSetAttributeValue(
+      application, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+  }
+
+  /// Resolve the AX window we should traverse. Electron apps frequently own
+  /// a tiny tray/status/widget window that the system reports as focused;
+  /// naively reading kAXFocusedWindowAttribute binds us to that 66x20 window.
+  /// Prefer the window matching the bound CG window bounds, then a usable
+  /// focused window, then the largest usable window.
+  private func selectAXWindow(
+    application: AXUIElement,
+    processID: pid_t,
+    preferredBounds: NativeRect?
+  ) throws -> AXUIElement {
+    let windows: [AXUIElement] = copyAttribute(application, kAXWindowsAttribute) ?? []
+    var usable: [(window: AXUIElement, bounds: NativeRect, focused: Bool)] = []
+    for candidate in windows {
+      let bounds = elementBounds(candidate)
+      guard bounds.width >= 120, bounds.height >= 120 else { continue }
+      let focused =
+        (copyAttribute(candidate, kAXFocusedAttribute) as NSNumber?)?.boolValue ?? false
+      usable.append((candidate, bounds, focused))
+    }
+    if let preferred = preferredBounds,
+      let best = usable.min(by: {
+        windowDistance($0.bounds, preferred) < windowDistance($1.bounds, preferred)
+      }),
+      windowDistance(best.bounds, preferred) <= 24
+    {
+      return best.window
+    }
+    if let focused = usable.first(where: { $0.focused }) { return focused.window }
+    if let largest = usable.max(by: {
+      $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height
+    }) {
+      return largest.window
+    }
+    if let focused: AXUIElement = copyAttribute(application, kAXFocusedWindowAttribute) {
+      var actualPID: pid_t = 0
+      if AXUIElementGetPid(focused, &actualPID) == .success, actualPID == processID {
+        return focused
+      }
+    }
+    throw NativeHostPlatformError.focusMismatch
+  }
+
+  private func windowDistance(_ left: NativeRect, _ right: NativeRect) -> Double {
+    abs(left.x - right.x) + abs(left.y - right.y)
+      + abs(left.width - right.width) + abs(left.height - right.height)
   }
 
   func execute(_ action: NativeComputerAction, treeVersion: String) throws -> NativeActionStatus {

@@ -125,6 +125,30 @@ Anthropic 兼容接口正常返回但在 JSON 外附带简短说明、Markdown f
 
 任务只绑定目标窗口，而不绑定系统当前前台应用。Agent 执行前景输入时可短暂恢复目标窗口，动作后恢复用户原先的前台应用和指针位置。用户持续操作其他应用只触发最多 750 ms 的防碰撞等待，等待到期后任务继续；只有用户实际点击或在已绑定目标窗口输入才视为明确接管并进入 handoff。
 
+### 11. Electron/Chromium 可访问性激活与主窗口选择
+
+Chromium 系渲染器（Electron、Chrome、Edge、Brave 等）默认不为 Web 内容构建可访问性树，只有在显式开启可访问性后才会构建。此前直接递归 `kAXChildrenAttribute` 看到的 Electron 应用 AX 树几乎为空（只有原生窗口外壳），这是“竞品能拿到结构树、我们拿不到”的根因，也是任务被迫退化到纯截图坐标、又慢又易失败的原因。
+
+- 观察前对应用 AX 元素设置 `AXManualAccessibility=true` 与 `AXEnhancedUserInterface=true`。这是 Chromium 的运行时钩子，无需重启目标应用即可触发渲染器构建 Web 内容树；非 Chromium 应用拒绝这两个属性，设置忽略错误。
+- 首次激活后 Chromium 异步构建树，因此首轮遍历若返回 ≤3 个元素，以 150 ms 间隔重试至多两次，元素数增长即停止；该重试有界且仅在树异常稀疏时触发。
+- AX 遍历改为按“绑定的主窗口”而非系统 `kAXFocusedWindowAttribute`：从 `kAXWindowsAttribute` 中过滤掉宽或高 <120 px 的托盘/状态/小部件窗，优先选择与绑定窗口 bounds 匹配（曼哈顿距离 ≤24）的窗口，其次选可用且 focused 的窗口，再次选面积最大的可用窗口，全部失败才回退到系统 focused 窗口。这样 Electron 应用自带的 66×20 小部件窗不会再被误绑为主窗口。
+- TS 侧 `findApplicationWindow` 同步过滤 <120×120 的小部件窗，仅当全部候选都过小时才回退，避免单窗口小应用无法解析。
+
+### 12. 任务生命周期全权交由 Agent（移除自动取消 / 中断 / 上限）
+
+第六轮针对“任务被莫名其妙 `session_canceled`”的根因，移除了所有“非 agent 主动”的终止路径，使任务的生命周期完全由 agent 决定（主动 `stop` 或用户 ESC 兜底）。根因是 `SessionService` 在每个 agent turn 结束时无条件 `stopOwnedSessions`，把正在正常推进（甚至校验已通过）的桌面任务强行取消。
+
+- **turn 结束不再取消任务**：`revokeComputerUseSession` 拆为两个语义——turn 边界的“轻清理”（仅撤销 MCP HTTP grant 与快照会话，6 处 turn 完成/失败调用点保留）与新增的 `stopComputerUseSession`（真正 `stopOwnedSessions`，仅 `cancelTurn` / `clearSessionMemory` 调用）。`ComputerUseMcpProvider.revokeSession` 不再取消任务，新增独立 `stopOwnedSessions` 入口。
+- **移除运行时 / 步数硬上限**：`ComputerControlBroker.assertWithinRuntimeAndStepLimits` 整体移除；`ComputerTaskOperator` 主循环改为 `for(;;)`，不再因 `maxRuntimeMs` / `maxSteps` 终止。
+- **移除 focus_mismatch 中断**：前台窗口变化不再抛错。executor 始终操作 envelope 的 `targetAppId` / `targetWindowId`，用户切到别的应用不影响任务推进。
+- **移除自动校验**：`ready_for_verification` 不再调用 verification engine、不再持久化校验记录；模型声明完成即 `completed`，任务是否真达成交由 agent 自行核验（看截图 / `get_app_state`），不满意可再次 `start_task` 或用桌面状态工具继续。
+- **单步失败不阻断**：不可恢复的执行错误从“立即 throw → `sessions.fail`”改为“反馈给模型（`previousActionFailure`）+ 计数兜底”，只有 `handoff_required` / `session_canceled`（外部权威）或连续 `MAX_TRANSIENT_RECOVERIES` 次失败才退出。
+- **不可恢复错误不再 auto-pause**：Broker 执行失败统一 `setPhase observing`，把下一步决策权交还 operator / agent，不再因单步错误暂停会话。
+
+唯一终止路径：agent 主动 `stop`、用户 ESC（killSwitch）、`cancelTurn`、`clearSessionMemory`、模型声明完成、连续决策/执行失败超阈值。
+
+提示词同步：`buildComputerUseSystemPrompt` 明确写入“任务不会被自动取消，持续推进直到完成”“单步失败换方案（换元素 / 坐标 / 键盘导航 / 重读状态）”“由你判断完成、达成后立即 `stop` 释放控制”。
+
 ## 测试与验收
 
 ### 自动化

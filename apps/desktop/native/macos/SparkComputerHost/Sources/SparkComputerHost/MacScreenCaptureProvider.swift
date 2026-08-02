@@ -193,6 +193,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     )
     let tree = accessibilityOrVisualTree(
       processID: before.processID,
+      windowBounds: before.identity.windowBounds,
       captured: captured,
       previousTreeVersion: previousTreeVersion,
       fullTree: fullTree
@@ -450,6 +451,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
 
   private func accessibilityOrVisualTree(
     processID: pid_t,
+    windowBounds: NativeRect,
     captured: NativeCapturedWindow,
     previousTreeVersion: String?,
     fullTree: Bool
@@ -457,6 +459,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     if accessibility.isAvailable,
       let snapshot = try? accessibility.observe(
         processID: processID,
+        preferredWindowBounds: windowBounds,
         previousTreeVersion: previousTreeVersion,
         fullTree: fullTree
       )

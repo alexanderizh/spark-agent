@@ -160,7 +160,6 @@ export class ComputerControlBroker {
   ): Promise<{ observation: ComputerObservation; noop: boolean }> {
     const context = this.sessions.assertDispatchAllowed(envelope)
     const observation = this.requireCurrentObservation(envelope)
-    this.assertWithinRuntimeAndStepLimits(context.session)
 
     const policyDecision = this.policy.evaluate(
       envelope,
@@ -229,11 +228,10 @@ export class ComputerControlBroker {
           actionId: envelope.actionId,
           errorCode: brokerError.code,
         })
-        if (isRecoverableExecutionError(brokerError)) {
-          this.sessions.setPhase(envelope.computerSessionId, 'observing')
-        } else {
-          this.sessions.pause(envelope.computerSessionId)
-        }
+        // Never auto-pause/abort on an execution failure: a single failed action must not
+        // interrupt the task. Surface the error to the operator/agent so it can choose an
+        // alternative approach. Only an external authority (user stop / kill switch) cancels.
+        this.sessions.setPhase(envelope.computerSessionId, 'observing')
       }
       throw brokerError
     }
@@ -323,32 +321,11 @@ export class ComputerControlBroker {
     if (observation.treeVersion !== envelope.observedTreeVersion) {
       throw new ComputerUseBrokerError('stale_tree', 'Computer action references a stale tree')
     }
-    if (
-      observation.foreground.app.id !== envelope.targetAppId ||
-      observation.foreground.window.id !== envelope.targetWindowId
-    ) {
-      throw new ComputerUseBrokerError(
-        'focus_mismatch',
-        'Computer foreground application or window changed',
-      )
-    }
+    // Intentionally NOT checking foreground app/window against envelope targets: a bound task
+    // must keep operating its target window even when the user focuses another app. The
+    // executor always drives the envelope's targetAppId/targetWindowId, so a foreground change
+    // is normal and must not interrupt the task.
     return observation
-  }
-
-  private assertWithinRuntimeAndStepLimits(session: ComputerSession): void {
-    const elapsedMs = this.now().getTime() - Date.parse(session.createdAt)
-    if (elapsedMs >= session.taskContract.maxRuntimeMs) {
-      throw new ComputerUseBrokerError(
-        'task_runtime_exceeded',
-        'Computer task runtime limit reached',
-      )
-    }
-    if (this.actions.nextStepIndex(session.id) >= session.taskContract.maxSteps) {
-      throw new ComputerUseBrokerError(
-        'task_step_limit_exceeded',
-        'Computer task step limit reached',
-      )
-    }
   }
 
   private persistRequestedAction(
@@ -397,17 +374,6 @@ export class ComputerControlBroker {
       completedAt: this.now().toISOString(),
     })
   }
-}
-
-function isRecoverableExecutionError(error: ComputerUseBrokerError): boolean {
-  return new Set([
-    'action_timeout',
-    'stale_frame',
-    'stale_tree',
-    'focus_mismatch',
-    'native_host_incompatible',
-    'environment_unavailable',
-  ]).has(error.code)
 }
 
 function persistedActionPayload(envelope: ComputerActionEnvelope): Record<string, unknown> {

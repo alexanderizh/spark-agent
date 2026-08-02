@@ -321,7 +321,7 @@ describe('ComputerControlBroker', () => {
     expect(rollout.recordAction).toHaveBeenCalledWith(false)
   })
 
-  it('rejects stale frames, stale trees and foreground window drift before execution', async () => {
+  it('rejects stale frames and stale trees before execution', async () => {
     const { broker, executor } = createHarness()
     await broker.observe(session.id, true)
 
@@ -331,10 +331,17 @@ describe('ComputerControlBroker', () => {
     await expect(
       broker.dispatch(envelope({ observedTreeVersion: 'tree-stale' })),
     ).rejects.toMatchObject({ code: 'stale_tree' })
-    await expect(
-      broker.dispatch(envelope({ targetWindowId: 'window-drifted' })),
-    ).rejects.toMatchObject({ code: 'focus_mismatch' })
+    // focus_mismatch 已移除：前台窗口变化不再阻断动作（executor 始终操作绑定的目标窗口）。
     expect(executor.execute).not.toHaveBeenCalled()
+  })
+
+  it('keeps executing when the foreground window drifts off target', async () => {
+    const { broker, executor } = createHarness()
+    await broker.observe(session.id, true)
+    // 前台切到别的窗口：动作仍必须下发到绑定的目标窗口，不得抛 focus_mismatch。
+    await expect(broker.dispatch(envelope({ targetWindowId: 'window-drifted' }))).resolves
+      .toBeDefined()
+    expect(executor.execute).toHaveBeenCalled()
   })
 
   it('executes high-risk actions directly without approval or synchronous evidence gates', async () => {
@@ -573,14 +580,15 @@ describe('ComputerControlBroker', () => {
     ).rejects.toMatchObject({ code: 'action_not_allowed' })
   })
 
-  it('reports runtime exhaustion without misclassifying it as authorization failure', async () => {
-    const { broker } = createHarness({
+  it('no longer aborts on runtime exhaustion — tasks run until the agent stops them', async () => {
+    const { broker, executor } = createHarness({
       now: () => new Date('2026-07-28T05:02:00.000Z'),
     })
     await broker.observe(session.id, true)
 
-    await expect(broker.dispatch(envelope())).rejects.toMatchObject({
-      code: 'task_runtime_exceeded',
-    })
+    // 运行时硬上限已按产品设计移除：即使超过 createdAt + maxRuntimeMs，动作仍正常下发，
+    // 任务生命周期完全交由 agent（stop）或用户（ESC）决定。
+    await expect(broker.dispatch(envelope())).resolves.toBeDefined()
+    expect(executor.execute).toHaveBeenCalled()
   })
 })
