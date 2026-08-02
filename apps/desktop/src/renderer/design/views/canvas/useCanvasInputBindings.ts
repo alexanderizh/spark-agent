@@ -14,6 +14,7 @@ import type {
   CanvasPromptRelation,
 } from '@spark/protocol'
 import type { CanvasNode } from './canvas.types'
+import { type CanvasNodeMediaKind, resolveCanvasNodeMediaKind } from './canvasNodeMediaKind'
 import {
   activeCanvasInputBindings,
   addCanvasInputBinding,
@@ -37,6 +38,11 @@ export function useCanvasInputBindings(input: {
   nodes: readonly CanvasNode[]
   connectionNodeIds: readonly string[]
   promptOwnerNodeIdsBySourceNodeId?: ReadonlyMap<string, readonly string[]> | undefined
+  /**
+   * 任务节点 → 产物媒体类型映射。提供后，选中任务节点时 binding.kind 取其产物媒体类型
+   * （video/image/audio），而不是回落到 'file'。由调用方用 buildOutputMediaKindMap 预构建。
+   */
+  outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind> | undefined
 }) {
   const [state, setState] = useState<CanvasInputBindingState>(() => ({
     document: input.initialDocument,
@@ -151,6 +157,7 @@ export function useCanvasInputBindings(input: {
     nodes: input.nodes,
     connectionNodeIds: input.connectionNodeIds,
     promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+    outputMediaKindByNodeId: input.outputMediaKindByNodeId,
     currentValues: selectedInputNodeIds,
     accepts: (binding) => isMediaBinding(binding) && isDefaultMediaRole(binding.role),
     roleForNode: (node) => (node.type === 'image' ? 'reference' : 'input'),
@@ -160,6 +167,7 @@ export function useCanvasInputBindings(input: {
     nodes: input.nodes,
     connectionNodeIds: input.connectionNodeIds,
     promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+    outputMediaKindByNodeId: input.outputMediaKindByNodeId,
     currentValues: referenceFrameNodeIds,
     accepts: (binding) => binding.kind === 'image' && binding.role === 'reference',
     roleForNode: () => 'reference',
@@ -170,6 +178,7 @@ export function useCanvasInputBindings(input: {
     nodes: input.nodes,
     connectionNodeIds: input.connectionNodeIds,
     promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+    outputMediaKindByNodeId: input.outputMediaKindByNodeId,
     currentValue: firstFrameNodeId,
     role: 'first_frame',
   })
@@ -178,6 +187,7 @@ export function useCanvasInputBindings(input: {
     nodes: input.nodes,
     connectionNodeIds: input.connectionNodeIds,
     promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+    outputMediaKindByNodeId: input.outputMediaKindByNodeId,
     currentValue: lastFrameNodeId,
     role: 'last_frame',
   })
@@ -223,6 +233,7 @@ function useSingleRoleSelectionSetter(input: {
   nodes: readonly CanvasNode[]
   connectionNodeIds: readonly string[]
   promptOwnerNodeIdsBySourceNodeId?: ReadonlyMap<string, readonly string[]> | undefined
+  outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind> | undefined
   currentValue: string
   role: CanvasInputBindingRole
 }): Dispatch<SetStateAction<string>> {
@@ -233,6 +244,7 @@ function useSingleRoleSelectionSetter(input: {
         nodes: input.nodes,
         connectionNodeIds: input.connectionNodeIds,
         promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+        outputMediaKindByNodeId: input.outputMediaKindByNodeId,
         desiredNodeIds: values ? [values] : [],
         accepts: (binding) => binding.role === input.role,
         roleForNode: () => input.role,
@@ -247,6 +259,7 @@ function useRoleSelectionSetter(input: {
   nodes: readonly CanvasNode[]
   connectionNodeIds: readonly string[]
   promptOwnerNodeIdsBySourceNodeId?: ReadonlyMap<string, readonly string[]> | undefined
+  outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind> | undefined
   currentValues: string[]
   accepts: (binding: CanvasInputBinding) => boolean
   roleForNode: (node: CanvasNode) => CanvasInputBindingRole
@@ -259,6 +272,7 @@ function useRoleSelectionSetter(input: {
         nodes: input.nodes,
         connectionNodeIds: input.connectionNodeIds,
         promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+        outputMediaKindByNodeId: input.outputMediaKindByNodeId,
         desiredNodeIds: values,
         accepts: input.accepts,
         roleForNode: input.roleForNode,
@@ -275,6 +289,7 @@ function updateRoleSelection(
     nodes: readonly CanvasNode[]
     connectionNodeIds: readonly string[]
     promptOwnerNodeIdsBySourceNodeId?: ReadonlyMap<string, readonly string[]> | undefined
+    outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind> | undefined
     desiredNodeIds: readonly string[]
     accepts: (binding: CanvasInputBinding) => boolean
     roleForNode: (node: CanvasNode) => CanvasInputBindingRole
@@ -329,7 +344,7 @@ function updateRoleSelection(
         createCanvasInputBinding({
           sourceNodeId: node.id,
           origin: 'picker',
-          kind: inputKindForNode(node),
+          kind: inputKindForNode(node, input.outputMediaKindByNodeId),
           relation: relationForNodeAndRole(node, role),
           role,
           order: nextBindingOrder(bindings),
@@ -382,8 +397,12 @@ function uniqueNodeIds(bindings: readonly CanvasInputBinding[]): string[] {
   return Array.from(new Set(bindings.map((binding) => binding.sourceNodeId)))
 }
 
-function inputKindForNode(node: CanvasNode): CanvasInputBinding['kind'] {
-  if (node.type === 'image' || node.type === 'video' || node.type === 'audio') return node.type
+function inputKindForNode(
+  node: CanvasNode,
+  outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind>,
+): CanvasInputBinding['kind'] {
+  const resolved = resolveCanvasNodeMediaKind(node, outputMediaKindByNodeId)
+  if (resolved) return resolved
   if (node.type === 'text' || node.type === 'prompt') return 'text'
   return 'file'
 }

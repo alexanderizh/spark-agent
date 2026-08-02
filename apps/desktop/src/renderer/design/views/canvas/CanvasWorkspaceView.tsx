@@ -241,6 +241,7 @@ import { useCanvasWorkspace } from './canvas.store'
 import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
 import { buildTaskInputFiles, type CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
 import { pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
+import { executionOperationForCanvasMediaCapability } from './canvasMediaInputMode'
 import {
   buildCanvasPromptDocumentForInputs,
   buildCanvasPromptSubmission,
@@ -4203,6 +4204,8 @@ export function CanvasWorkspaceView({
     modelParams,
     inputTransport,
     inputRoles,
+    mediaInputMode,
+    capabilityId,
     agentId,
     skillIds,
     taskTitle,
@@ -4230,7 +4233,7 @@ export function CanvasWorkspaceView({
     outputPipelineRole?: CanvasPipelineRole
     droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
     modelParamWarnings?: Array<{ code: string; message: string }>
-  }) => {
+  } & Pick<CanvasPromptTaskFields, 'mediaInputMode' | 'capabilityId'>) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
     // Persist the live viewport before the task API refreshes the snapshot.
@@ -4317,6 +4320,8 @@ export function CanvasWorkspaceView({
             .map((node) => node.assetId)
             .filter((id): id is string => Boolean(id)),
           ...(inputFiles.length > 0 ? { inputFiles } : {}),
+          ...(mediaInputMode ? { mediaInputMode } : {}),
+          ...(capabilityId ? { capabilityId } : {}),
           ...(providerProfileId != null ? { providerProfileId } : {}),
           ...(manifestId != null ? { manifestId } : {}),
           ...(modelId != null ? { modelId } : {}),
@@ -7109,7 +7114,12 @@ export function CanvasWorkspaceView({
                       taskInputNodes,
                       snapshot.assets,
                     )
-                    const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
+                    const containerOperation = (opNode.data.operation ??
+                      opNode.type) as CanvasOperationType
+                    const operation = executionOperationForCanvasMediaCapability(
+                      params.capabilityId,
+                      containerOperation,
+                    )
                     const currentPresetTargetId = resolveCanvasPresetTarget({
                       operation,
                       taskPipelineRole:

@@ -10,11 +10,125 @@ import {
   canvasMediaInputAssignments,
   canvasMediaInputModeOptions,
   capabilityIdForCanvasMediaInputMode,
+  collapseVideoEditExtendOptions,
+  executionOperationForCanvasMediaCapability,
   executionCanvasInputBindings,
   resolveCanvasMediaInputMode,
 } from './canvasMediaInputMode'
 
 describe('canvasMediaInputMode', () => {
+  it('exposes every supported video mode from every compatible legacy video node', () => {    const summary = model([
+      capability('video.generate', {}),
+      capability('video.image_to_video', {
+        imageRoles: ['first_frame', 'last_frame'],
+        defaultRoleAssignment: 'first_then_last_then_reference',
+      }),
+      capability('video.reference_to_video', {
+        imageRoles: ['reference_image'],
+        videoRoles: ['reference_video'],
+        audioRoles: ['reference_audio'],
+        defaultRoleAssignment: 'all_reference',
+      }),
+      capability('video.edit', {
+        imageRoles: ['reference_image'],
+        videoRoles: ['input_video', 'reference_video'],
+        audioRoles: ['reference_audio'],
+        defaultRoleAssignment: 'none',
+      }),
+      capability('video.extend', {
+        imageRoles: ['reference_image'],
+        videoRoles: ['input_video', 'reference_video'],
+        audioRoles: ['reference_audio'],
+        defaultRoleAssignment: 'none',
+      }),
+    ])
+
+    for (const operation of [
+      'text_to_video',
+      'image_to_video',
+      'video_edit',
+      'video_extend',
+    ] as const) {
+      expect(
+        canvasMediaInputModeOptions(operation, summary).map((option) => option.mode),
+        operation,
+      ).toEqual(['text', 'first_frame', 'first_last_frame', 'reference', 'edit', 'extend'])
+    }
+  })
+
+  it('maps the selected capability to the actual task operation', () => {
+    expect(executionOperationForCanvasMediaCapability('video.generate', 'video_edit')).toBe(
+      'text_to_video',
+    )
+    expect(
+      executionOperationForCanvasMediaCapability('video.reference_to_video', 'image_to_video'),
+    ).toBe('text_to_video')
+    expect(
+      executionOperationForCanvasMediaCapability('video.image_to_video', 'text_to_video'),
+    ).toBe('image_to_video')
+    expect(executionOperationForCanvasMediaCapability('video.edit', 'text_to_video')).toBe(
+      'video_edit',
+    )
+    expect(executionOperationForCanvasMediaCapability('video.extend', 'text_to_video')).toBe(
+      'video_extend',
+    )
+  })
+
+  describe('collapseVideoEditExtendOptions', () => {
+    it('returns both options when the model supports edit and extend', () => {
+      const options = canvasMediaInputModeOptions(
+        'video_edit',
+        model([
+          capability('video.edit', {
+            videoRoles: ['input_video', 'reference_video'],
+            defaultRoleAssignment: 'none',
+          }),
+          capability('video.extend', {
+            videoRoles: ['input_video', 'reference_video'],
+            defaultRoleAssignment: 'none',
+          }),
+        ]),
+      )
+      const collapsed = collapseVideoEditExtendOptions(options)
+      expect(collapsed?.edit.mode).toBe('edit')
+      expect(collapsed?.extend.mode).toBe('extend')
+    })
+
+    it('returns null when only edit is supported', () => {
+      const options = canvasMediaInputModeOptions(
+        'video_edit',
+        model([
+          capability('video.edit', {
+            videoRoles: ['input_video'],
+            defaultRoleAssignment: 'none',
+          }),
+        ]),
+      )
+      expect(collapseVideoEditExtendOptions(options)).toBeNull()
+    })
+
+    it('returns null when only extend is supported', () => {
+      const options = canvasMediaInputModeOptions(
+        'video_extend',
+        model([
+          capability('video.extend', {
+            videoRoles: ['input_video'],
+            defaultRoleAssignment: 'none',
+          }),
+        ]),
+      )
+      expect(collapseVideoEditExtendOptions(options)).toBeNull()
+    })
+
+    it('returns null when neither edit nor extend is supported', () => {
+      const options = canvasMediaInputModeOptions(
+        'text_to_video',
+        model([capability('video.generate', {})]),
+      )
+      expect(collapseVideoEditExtendOptions(options)).toBeNull()
+    })
+  })
+
   it('matches the shipped Volcengine Seedance capability matrix', () => {
     const manifests = BUILTIN_MEDIA_MODEL_MANIFESTS.filter(
       (item) => item.providerKind === 'volcengine-ark' && item.modelId.includes('seedance'),
@@ -163,9 +277,9 @@ describe('canvasMediaInputMode', () => {
       ]),
     )
     expect(options.map((item) => item.mode)).toEqual([
-      'reference',
       'first_frame',
       'first_last_frame',
+      'reference',
     ])
     const option = options.find((item) => item.mode === 'first_last_frame')!
     const bindings = [
@@ -218,7 +332,7 @@ describe('canvasMediaInputMode', () => {
     expect(normalized.map((item) => item.relation)).toEqual(['first_frame', 'last_frame'])
   })
 
-  it('falls back from first-last to first-frame after the tail image is removed', () => {
+  it('keeps an explicitly selected first-last mode after the tail image is removed', () => {
     const options = canvasMediaInputModeOptions(
       'image_to_video',
       model([
@@ -240,8 +354,43 @@ describe('canvasMediaInputMode', () => {
         options,
         bindings: [binding('a', 'first_frame', 0)],
       }),
-    ).toBe('first_frame')
+    ).toBe('first_last_frame')
   })
+
+  it.each([
+    ['video_edit', 'edit'],
+    ['video_extend', 'extend'],
+  ] as const)(
+    'preserves the legacy %s node mode when no explicit mode was persisted',
+    (operation, expected) => {
+      const options = canvasMediaInputModeOptions(
+        operation,
+        model([
+          capability('video.generate', {}),
+          capability('video.reference_to_video', {
+            videoRoles: ['reference_video'],
+            defaultRoleAssignment: 'all_reference',
+          }),
+          capability('video.edit', {
+            videoRoles: ['input_video', 'reference_video'],
+            defaultRoleAssignment: 'none',
+          }),
+          capability('video.extend', {
+            videoRoles: ['input_video', 'reference_video'],
+            defaultRoleAssignment: 'none',
+          }),
+        ]),
+      )
+
+      expect(
+        resolveCanvasMediaInputMode({
+          operation,
+          options,
+          bindings: [binding('legacy-video', 'input', 0, 'connection', 'video')],
+        }),
+      ).toBe(expected)
+    },
+  )
 
   it('deduplicates one resource that arrived through connection and prompt mention', () => {
     const options = canvasMediaInputModeOptions(
@@ -342,6 +491,76 @@ describe('canvasMediaInputMode', () => {
     ])
   })
 
+  it('keeps compatible image, video and audio references beside an edit source video', () => {
+    const option = canvasMediaInputModeOptions(
+      'video_edit',
+      model([
+        capabilityWithLimits(
+          'video.edit',
+          {
+            imageRoles: ['reference_image'],
+            videoRoles: ['input_video', 'reference_video'],
+            audioRoles: ['reference_audio'],
+            defaultRoleAssignment: 'none',
+          },
+          { maxImages: 1, maxVideos: 2, maxAudios: 1 },
+        ),
+      ]),
+    ).find((item) => item.mode === 'edit')!
+    const bindings = [
+      binding('source', 'input', 0, 'picker', 'video'),
+      binding('video-ref', 'reference', 1, 'picker', 'video'),
+      binding('image-ref', 'reference', 2, 'picker', 'image'),
+      binding('audio-ref', 'reference', 3, 'picker', 'audio'),
+    ]
+
+    expect(
+      canvasMediaInputAssignments({ bindings, mode: 'edit', option }).map(
+        ({ sourceNodeId, role, used }) => ({ sourceNodeId, role, used }),
+      ),
+    ).toEqual([
+      { sourceNodeId: 'source', role: 'input', used: true },
+      { sourceNodeId: 'video-ref', role: 'reference', used: true },
+      { sourceNodeId: 'image-ref', role: 'reference', used: true },
+      { sourceNodeId: 'audio-ref', role: 'reference', used: true },
+    ])
+  })
+
+  it('keeps compatible references beside an extend source video', () => {
+    const option = canvasMediaInputModeOptions(
+      'video_extend',
+      model([
+        capabilityWithLimits(
+          'video.extend',
+          {
+            imageRoles: ['reference_image'],
+            videoRoles: ['input_video', 'reference_video'],
+            audioRoles: ['reference_audio'],
+            defaultRoleAssignment: 'none',
+          },
+          { maxImages: 1, maxVideos: 2, maxAudios: 1 },
+        ),
+      ]),
+    ).find((item) => item.mode === 'extend')!
+    const bindings = [
+      binding('source', 'input', 0, 'picker', 'video'),
+      binding('video-ref', 'reference', 1, 'picker', 'video'),
+      binding('image-ref', 'reference', 2, 'picker', 'image'),
+      binding('audio-ref', 'reference', 3, 'picker', 'audio'),
+    ]
+
+    expect(
+      canvasMediaInputAssignments({ bindings, mode: 'extend', option }).map(
+        ({ sourceNodeId, role, used }) => ({ sourceNodeId, role, used }),
+      ),
+    ).toEqual([
+      { sourceNodeId: 'source', role: 'input', used: true },
+      { sourceNodeId: 'video-ref', role: 'reference', used: true },
+      { sourceNodeId: 'image-ref', role: 'reference', used: true },
+      { sourceNodeId: 'audio-ref', role: 'reference', used: true },
+    ])
+  })
+
   it('keeps reference overflow visible but excludes it from execution', () => {
     const options = canvasMediaInputModeOptions(
       'text_to_video',
@@ -415,6 +634,21 @@ function capability(
     id,
     label: id,
     input: { required: [], ...(maxImages > 0 ? { maxImages } : {}) },
+    rolePolicy,
+    output: { types: ['video'] },
+    paramSchema: {},
+  }
+}
+
+function capabilityWithLimits(
+  id: string,
+  rolePolicy: MediaInputRolePolicy,
+  limits: { maxImages?: number; maxVideos?: number; maxAudios?: number },
+): CanvasMediaModelSummary['capabilities'][number] {
+  return {
+    id,
+    label: id,
+    input: { required: [], ...limits },
     rolePolicy,
     output: { types: ['video'] },
     paramSchema: {},

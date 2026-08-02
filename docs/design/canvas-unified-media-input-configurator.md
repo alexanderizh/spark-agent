@@ -1,6 +1,6 @@
 # 无限画布统一媒体任务输入配置器
 
-> 状态: 已落地 | 最后核对: 2026-07-28
+> 状态: 实施中 | 最后核对: 2026-08-02
 
 ## 1. 背景与问题
 
@@ -124,7 +124,10 @@ capabilityId?: MediaCapabilityId
 
 新增独立 `CanvasMediaInputConfigurator`，避免继续扩大 `CanvasOperationPanel.tsx`。
 
-- 素材编排标题后显示紧凑模式选择器，固定提供“文生视频 / 首帧生成 / 首尾帧生成 / 全能参考”四种模式；当前模型不支持的模式保留在下拉列表中并禁用。编辑、延长类独立操作仍只显示自身模式。
+- 素材编排标题后显示统一视频模式选择器，固定提供“文生视频 / 首帧生成 / 首尾帧生成 / 全能参考 / 视频编辑 / 视频延长”六种模式；当前模型不支持的模式保留在下拉列表中并禁用。
+- 模式可选性只由当前模型 Manifest 决定。缺少素材属于提交前校验，不得禁用模式；用户可以先选择模式，再补充该模式所需素材。
+- 新建菜单只暴露一个“视频生成”节点。历史 `text_to_video`、`image_to_video`、`video_edit`、`video_extend` 节点不迁移，打开后均使用同一套六模式配置器。
+- 节点展示类型与任务执行类型解耦：节点继续作为输出归属容器，任务按所选 capability 映射实际 operation。
 - “任务输入”托盘按 canonical binding 顺序展示资源缩略图。
 - 每项展示来源徽标（连线、Prompt、手动）、角色、序号、使用状态和模型限制。
 - 首帧/首尾帧模式展示明确槽位；参考模式展示有序参考列表。
@@ -152,7 +155,7 @@ capabilityId?: MediaCapabilityId
 
 ### 阶段 C：提交与运行时
 
-1. `OperationRunParams`、任务草稿、节点、任务和 IPC 传递显式字段。
+1. `OperationRunParams`、任务草稿、节点、任务和 IPC 传递显式字段，并根据 capability 映射实际执行 operation。
 2. 预校验使用显式 capability。
 3. 主进程将 capability 传入 `MediaTaskRuntimeService` / `MediaRouterService`。
 4. `buildTaskInputFiles` 对新任务禁止隐式首尾帧推断；历史兼容只在迁移层执行。
@@ -170,7 +173,9 @@ capabilityId?: MediaCapabilityId
 - 同一资源通过连线、`@`、加号重复加入时，任务输入托盘只出现一次。
 - 删除一个来源不会误删仍由其他来源持有的资源。
 - 首帧、尾帧和参考图的界面角色、relationManifest、inputFiles 与 Provider 请求一致。
-- 视频生成选择器始终提供文生视频、首帧生成、首尾帧生成、全能参考四种模式；模型不支持的模式明确禁用且不可提交，不支持的资源不会发送。
+- 视频生成选择器始终提供文生视频、首帧生成、首尾帧生成、全能参考、视频编辑、视频延长六种模式；模型不支持的模式明确禁用，缺少素材只阻止提交，不阻止选择模式。
+- Seedance 2.x 的全能参考可接收 Manifest 声明上限内的图片、视频和音频；编辑与延长模式把第一段视频作为主体，其余兼容素材作为参考。
+- 同一视频节点可连续运行不同模式，任务记录使用实际 operation，历史输出仍通过 `operationNodeId` 回写同一节点。
 - Manifest 同一 capability 同时声明帧角色与参考角色时，首帧/首尾帧模式允许混合参考素材：帧槽优先，剩余兼容图片、视频和音频按上限作为参考输入；全能参考模式则不占帧槽，全部按参考角色提交。
 - Seedance 1.x 请求体永不包含 `reference_image`；2.x reference 行为不变。
 - 旧任务可打开、保存、运行和重试。
@@ -201,3 +206,16 @@ capabilityId?: MediaCapabilityId
 - 火山 Seedance 1.x 实际 adapter 请求回归确认只包含 `first_frame` / `last_frame`，不包含 `reference_image` 或 `task_type=r2v`；Seedance 2.x 和 APIMart 参考模式保持独立。
 - 操作节点或分组标签解析到实际产物时，提示词 owner 与产物 binding 视为同一逻辑输入；任务边与素材轨道只保留实际产物，避免单条连线显示两份相同素材。
 - 最终验证覆盖 protocol 46 项、desktop 129 项、agent-runtime 74 项相关测试，三个包类型检查通过，变更文件 ESLint 无错误。
+
+## 12. 统一视频节点二期改造
+
+本次改造采用兼容型统一容器，不新增 `video_generation` 协议枚举，也不批量迁移旧画布：
+
+1. 新建视频节点固定创建为 `text_to_video` 容器，标题显示“视频生成”。
+2. 所有历史视频操作节点读取当前模型的全部视频 capability，不再先由旧 operation 裁剪模式或模型。
+3. `video.generate` / `video.reference_to_video` 映射 `text_to_video`，`video.image_to_video` 映射 `image_to_video`，`video.edit` 映射 `video_edit`，`video.extend` 映射 `video_extend`。
+4. 保存草稿时持久化 `mediaInputMode` 与 `capabilityId`；运行时把映射后的 operation 写入任务记录，但保持 `operationNodeId` 指向原容器节点。
+5. 编辑和延长的第一段视频固定为 `input`；其余图片、视频、音频仅在 rolePolicy 允许且未超过 Manifest 上限时作为 `reference` 发送。
+6. 内联快捷生成器与节点配置面板复用同一套模式、capability、素材分配和执行 operation 纯函数。
+7. 重试任务从 relationManifest 恢复图片、视频和音频的 reference 角色，避免二次运行退化为普通 input。
+8. 旧编辑/延长节点在缺少新模式字段时分别保持 edit/extend 语义；Workspace 在 prompt、preset、样式与参数处理前即完成实际 operation 映射。

@@ -94,6 +94,82 @@ describe('canvas operation inheritance', () => {
     })
   })
 
+  it('runs a unified video node with the operation mapped from the selected capability', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          settings: {},
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'video-node',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_video',
+          title: '视频生成',
+          parentNodeId: null,
+          x: 0,
+          y: 0,
+          width: 460,
+          height: 420,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_to_video', status: 'pending' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [],
+    })
+    const invoke = mockMediaInvoke({ status: 'running', assets: [] })
+    Object.assign(window, { spark: { invoke } })
+
+    const snapshot = await canvasApi.runOperationNode('project-1', 'video-node', {
+      prompt: '调整视频节奏',
+      inputNodeIds: [],
+      mediaInputMode: 'edit',
+      capabilityId: 'video.edit',
+      skipParameterValidation: true,
+    })
+
+    const node = snapshot.nodes.find((item) => item.id === 'video-node')
+    const task = snapshot.tasks.find((item) => item.id === node?.taskId)
+    expect(node?.type).toBe('text_to_video')
+    expect(task).toMatchObject({ operation: 'video_edit', operationNodeId: 'video-node' })
+    expect(invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.objectContaining({ operation: 'video_edit', capabilityId: 'video.edit' }),
+    )
+  })
+
   it('does not inherit a global generic prompt into a new project operation node', async () => {
     writeCanvasOperationPreset('text_to_image', {
       prompt: '另一个项目的角色身份板提示词',

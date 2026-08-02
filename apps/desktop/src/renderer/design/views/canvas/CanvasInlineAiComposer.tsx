@@ -18,9 +18,12 @@ import {
   videoImageLimitForCapability,
 } from '@spark/protocol'
 import type {
+  CanvasInputBinding,
+  CanvasMediaInputMode,
   CanvasMediaModelSummary,
   CanvasMediaTaskInputFile,
   ManagedAgent,
+  MediaCapabilityId,
   MediaInputRolePolicy,
 } from '@spark/protocol'
 import {
@@ -62,6 +65,16 @@ import {
 } from './canvasParameterPresentation'
 import { isModelParamDraftValueCompatible } from './canvasModelParamDraftState'
 import {
+  canvasInputRolesFromBindings,
+  canvasMediaCapabilityIdsForOperation,
+  canvasMediaInputModeIssue,
+  canvasMediaInputModeOptions,
+  capabilityIdForCanvasMediaInputMode,
+  executionCanvasInputBindings,
+  executionOperationForCanvasMediaCapability,
+  resolveCanvasMediaInputMode,
+} from './canvasMediaInputMode'
+import {
   readCanvasComposerAdvancedOpen,
   writeCanvasComposerAdvancedOpen,
 } from './canvasComposerPreferences'
@@ -74,9 +87,52 @@ import type {
 } from './canvas.types'
 
 const COMPOSER_CACHE_KEY = 'spark-canvas:inline-ai-composer:v1'
+const LEGACY_VIDEO_OPERATIONS = new Set<CanvasOperationType>([
+  'text_to_video',
+  'image_to_video',
+  'video_edit',
+  'video_extend',
+])
+const UNIFIED_VIDEO_MODE_CHOICES: ReadonlyArray<{
+  value: CanvasMediaInputMode
+  label: string
+}> = [
+  { value: 'text', label: '文生视频' },
+  { value: 'first_frame', label: '首帧生成' },
+  { value: 'first_last_frame', label: '首尾帧生成' },
+  { value: 'reference', label: '全能参考' },
+  { value: 'edit', label: '视频编辑' },
+  { value: 'extend', label: '视频延长' },
+]
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
 type CanvasTaskInputRoleSelection = CanvasTaskInputRole | CanvasTaskInputRole[]
 const EMPTY_MEDIA_INPUT_ROLE_POLICY: MediaInputRolePolicy = { defaultRoleAssignment: 'none' }
+
+export function unifiedCanvasComposerCapabilities<
+  T extends { operation: CanvasOperationType; label: string },
+>(capabilities: readonly T[]): T[] {
+  return capabilities.flatMap((capability) => {
+    if (!LEGACY_VIDEO_OPERATIONS.has(capability.operation)) return [{ ...capability }]
+    if (capability.operation !== 'text_to_video') return []
+    return [{ ...capability, label: '视频生成' }]
+  })
+}
+
+export function canRunUnifiedVideoFromMedia(
+  mode: CanvasMediaInputMode | undefined,
+  issue: string | undefined,
+  mediaCount: number,
+): boolean {
+  return mode != null && mode !== 'text' && issue == null && mediaCount > 0
+}
+
+export function shouldAttachCanvasMediaInputTransport(
+  needsImageInput: boolean,
+  isUnifiedVideoOperation: boolean,
+  unifiedMediaCount: number,
+): boolean {
+  return needsImageInput || (isUnifiedVideoOperation && unifiedMediaCount > 0)
+}
 
 export function CanvasInlineAiComposer({
   open,
@@ -105,6 +161,8 @@ export function CanvasInlineAiComposer({
     skipParameterValidation?: boolean
     inputTransport?: CanvasInputTransport
     inputRoles?: Record<string, CanvasTaskInputRoleSelection>
+    mediaInputMode?: CanvasMediaInputMode
+    capabilityId?: MediaCapabilityId
     /** 文本类操作可指定专属 agent（应用内 agent 管理配置的 ManagedAgent） */
     agentId?: string
     /** Contract V2 裁剪产物：被丢弃的字段及原因，供任务详情展示。 */
@@ -127,6 +185,7 @@ export function CanvasInlineAiComposer({
   const [firstFrameNodeId, setFirstFrameNodeId] = useState<string>('')
   const [lastFrameNodeId, setLastFrameNodeId] = useState<string>('')
   const [referenceFrameNodeIds, setReferenceFrameNodeIds] = useState<string[]>([])
+  const [mediaInputMode, setMediaInputMode] = useState<CanvasMediaInputMode | undefined>()
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -228,7 +287,7 @@ export function CanvasInlineAiComposer({
 
   const capabilities = useMemo(
     () =>
-      CANVAS_CAPABILITIES.map((capability) => ({
+      unifiedCanvasComposerCapabilities(CANVAS_CAPABILITIES).map((capability) => ({
         ...capability,
         recommended: isCapabilityRecommended(capability, selectedNodes),
       })),
@@ -260,6 +319,7 @@ export function CanvasInlineAiComposer({
       setFirstFrameNodeId(draft.firstFrameNodeId)
       setLastFrameNodeId(draft.lastFrameNodeId)
       setReferenceFrameNodeIds(draft.referenceFrameNodeIds)
+      setMediaInputMode(draft.mediaInputMode)
       // modelParamDraft 由下方 cacheKey effect 合并 capability defaults 恢复
       return
     }
@@ -273,7 +333,14 @@ export function CanvasInlineAiComposer({
     setNegativePrompt(mergeCanvasOperationPresetNegativePrompt('', nextPreset.negativePrompt))
   }, [capabilities, nodePromptContext, open, nodeCacheKey])
 
-  const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
+  const isUnifiedVideoOperation = operation === 'text_to_video'
+  const mediaCapabilityIds = useMemo(
+    () =>
+      isUnifiedVideoOperation
+        ? canvasMediaCapabilityIdsForOperation(operation)
+        : capabilityForOperation(operation),
+    [isUnifiedVideoOperation, operation],
+  )
   /** 当前 operation 对应的「节点预设」resolved 值（lastUsed > preset > builtin），
    *  用来补齐 InlineAiComposer UI 没暴露的字段（如 skillIds），写入 lastUsed 时不丢失。 */
   const resolvedPreset = useMemo(
@@ -296,19 +363,74 @@ export function CanvasInlineAiComposer({
     () => supportedMediaModels.find((model) => mediaModelKey(model) === selectedModelKey),
     [selectedModelKey, supportedMediaModels],
   )
+  const selectedMediaBindings = useMemo<CanvasInputBinding[]>(
+    () =>
+      selectedNodes.flatMap((node, order) => {
+        if (node.type !== 'image' && node.type !== 'video' && node.type !== 'audio') return []
+        return [
+          {
+            id: `picker:${node.id}:input`,
+            sourceNodeId: node.id,
+            origin: 'picker' as const,
+            kind: node.type,
+            relation: 'generic' as const,
+            role: 'input' as const,
+            enabled: true,
+            order,
+          },
+        ]
+      }),
+    [selectedNodes],
+  )
+  const unifiedVideoModeOptions = useMemo(
+    () =>
+      isUnifiedVideoOperation ? canvasMediaInputModeOptions(operation, selectedModel) : [],
+    [isUnifiedVideoOperation, operation, selectedModel],
+  )
+  const effectiveMediaInputMode = useMemo(
+    () =>
+      isUnifiedVideoOperation
+        ? resolveCanvasMediaInputMode({
+            preferred: mediaInputMode,
+            operation,
+            options: unifiedVideoModeOptions,
+            bindings: selectedMediaBindings,
+          })
+        : undefined,
+    [
+      isUnifiedVideoOperation,
+      mediaInputMode,
+      operation,
+      selectedMediaBindings,
+      unifiedVideoModeOptions,
+    ],
+  )
+  const selectedMediaInputModeOption = useMemo(
+    () => unifiedVideoModeOptions.find((option) => option.mode === effectiveMediaInputMode),
+    [effectiveMediaInputMode, unifiedVideoModeOptions],
+  )
   const selectedCapability = useMemo(() => {
     if (!selectedModel) return null
+    if (selectedMediaInputModeOption) return selectedMediaInputModeOption.capability
     return (
       selectedModel.capabilities.find((capability) =>
         (mediaCapabilityIds as readonly string[]).includes(capability.id),
       ) ?? null
     )
-  }, [mediaCapabilityIds, selectedModel])
+  }, [mediaCapabilityIds, selectedMediaInputModeOption, selectedModel])
+  const selectedCapabilityId = capabilityIdForCanvasMediaInputMode(
+    effectiveMediaInputMode,
+    unifiedVideoModeOptions,
+  )
+  const selectedMediaInputIssue = selectedMediaInputModeOption
+    ? canvasMediaInputModeIssue(selectedMediaInputModeOption, selectedMediaBindings)
+    : undefined
   const supportsVideoFrameRoles = useMemo(
     () =>
+      !isUnifiedVideoOperation &&
       (selectedCapability ? capabilitySupportsFrameRoles(selectedCapability) : false) &&
       frameCandidateImageNodes.length > 0,
-    [frameCandidateImageNodes.length, selectedCapability],
+    [frameCandidateImageNodes.length, isUnifiedVideoOperation, selectedCapability],
   )
   const videoFrameMaxImages = useMemo(
     () => videoImageLimitForCapability(operation, selectedCapability),
@@ -352,12 +474,19 @@ export function CanvasInlineAiComposer({
     [hasExplicitFrameInput, operation, selectedNodes],
   )
   const canSubmit =
-    prompt.trim().length > 0 ||
-    nodePromptContext.length > 0 ||
-    negativePrompt.trim().length > 0 ||
-    (includeProjectPrompt && projectPrompt.length > 0) ||
-    canRunFromInputOnly(operation, selectedNodes) ||
-    hasExplicitFrameInput
+    !selectedMediaInputIssue &&
+    (prompt.trim().length > 0 ||
+      nodePromptContext.length > 0 ||
+      negativePrompt.trim().length > 0 ||
+      (includeProjectPrompt && projectPrompt.length > 0) ||
+      (isUnifiedVideoOperation &&
+        canRunUnifiedVideoFromMedia(
+          effectiveMediaInputMode,
+          selectedMediaInputIssue,
+          selectedMediaBindings.length,
+        )) ||
+      canRunFromInputOnly(operation, selectedNodes) ||
+      hasExplicitFrameInput)
   const parameterFields = useMemo(
     () =>
       mergeSchemaFields(
@@ -474,6 +603,7 @@ export function CanvasInlineAiComposer({
         firstFrameNodeId,
         lastFrameNodeId,
         referenceFrameNodeIds,
+        ...(effectiveMediaInputMode ? { mediaInputMode: effectiveMediaInputMode } : {}),
       })
       saveTimerRef.current = null
     }, 400)
@@ -498,6 +628,7 @@ export function CanvasInlineAiComposer({
     firstFrameNodeId,
     lastFrameNodeId,
     referenceFrameNodeIds,
+    effectiveMediaInputMode,
     parameterFields,
   ])
 
@@ -538,6 +669,7 @@ export function CanvasInlineAiComposer({
       firstFrameNodeId,
       lastFrameNodeId,
       referenceFrameNodeIds,
+      ...(effectiveMediaInputMode ? { mediaInputMode: effectiveMediaInputMode } : {}),
     })
   }, [
     open,
@@ -554,6 +686,7 @@ export function CanvasInlineAiComposer({
     firstFrameNodeId,
     lastFrameNodeId,
     referenceFrameNodeIds,
+    effectiveMediaInputMode,
     parameterFields,
   ])
 
@@ -654,12 +787,25 @@ export function CanvasInlineAiComposer({
       )
       // Contract V2 裁剪：按目标 manifest 在提交前过滤 unsupported/forbidden 字段，
       // 避免 provider 400。manifest 缺省时 pruneModelParamsForCanvas 直接返回原值。
-      const pruned = await pruneModelParamsForCanvas({
+      const executionOperation = executionOperationForCanvasMediaCapability(
+        selectedCapabilityId,
         operation,
+      )
+      const unifiedExecutionBindings =
+        effectiveMediaInputMode && selectedMediaInputModeOption
+          ? executionCanvasInputBindings({
+              bindings: selectedMediaBindings,
+              mode: effectiveMediaInputMode,
+              option: selectedMediaInputModeOption,
+            })
+          : []
+      const pruned = await pruneModelParamsForCanvas({
+        operation: executionOperation,
         ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
         ...(selectedModel?.providerProfileId
           ? { providerProfileId: selectedModel.providerProfileId }
           : {}),
+        ...(selectedCapabilityId ? { capabilityId: selectedCapabilityId } : {}),
         modelParams: rawModelParams,
       })
       const modelParams = pruned.modelParams
@@ -680,7 +826,9 @@ export function CanvasInlineAiComposer({
       const videoFrameNodeIds = supportsVideoFrameRoles
         ? normalizeVideoFrameNodeIds(firstFrameNodeId, lastFrameNodeId, referenceFrameNodeIds)
         : []
-      const inputRoles = supportsVideoFrameRoles
+      const inputRoles = isUnifiedVideoOperation
+        ? canvasInputRolesFromBindings(unifiedExecutionBindings)
+        : supportsVideoFrameRoles
         ? buildVideoFrameInputRoles(
             videoFrameNodeIds,
             firstFrameNodeId,
@@ -690,9 +838,21 @@ export function CanvasInlineAiComposer({
         : selectedCapabilityRolePolicy.imageRoles?.includes('reference_image')
           ? buildReferenceImageInputRoles(selectedImageNodes.map((node) => node.id))
           : undefined
-      const inputNodeIds = supportsVideoFrameRoles
-        ? buildTaskInputNodeIds(selectedNodes, videoFrameNodeIds)
-        : undefined
+      const inputNodeIds = isUnifiedVideoOperation
+        ? Array.from(
+            new Set([
+              ...unifiedExecutionBindings.map((binding) => binding.sourceNodeId),
+              ...selectedNodes
+                .filter(
+                  (node) =>
+                    node.type !== 'image' && node.type !== 'video' && node.type !== 'audio',
+                )
+                .map((node) => node.id),
+            ]),
+          )
+        : supportsVideoFrameRoles
+          ? buildTaskInputNodeIds(selectedNodes, videoFrameNodeIds)
+          : undefined
       const payload: {
         operation: CanvasOperationType
         prompt: string
@@ -705,11 +865,13 @@ export function CanvasInlineAiComposer({
         skipParameterValidation?: boolean
         inputTransport?: CanvasInputTransport
         inputRoles?: Record<string, CanvasTaskInputRoleSelection>
+        mediaInputMode?: CanvasMediaInputMode
+        capabilityId?: MediaCapabilityId
         agentId?: string
         droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string }>
         modelParamWarnings?: Array<{ code: string; message: string }>
       } = {
-        operation,
+        operation: executionOperation,
         prompt: effectivePrompt,
         ...(readSkipCanvasParameterValidation() ? { skipParameterValidation: true } : {}),
       }
@@ -720,9 +882,19 @@ export function CanvasInlineAiComposer({
       if (selectedModel?.manifestId) payload.manifestId = selectedModel.manifestId
       if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
       if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
-      if (needsImageInput) payload.inputTransport = effectiveInputTransport
+      if (
+        shouldAttachCanvasMediaInputTransport(
+          needsImageInput,
+          isUnifiedVideoOperation,
+          unifiedExecutionBindings.length,
+        )
+      ) {
+        payload.inputTransport = effectiveInputTransport
+      }
       if (inputNodeIds && inputNodeIds.length > 0) payload.inputNodeIds = inputNodeIds
       if (inputRoles && Object.keys(inputRoles).length > 0) payload.inputRoles = inputRoles
+      if (effectiveMediaInputMode) payload.mediaInputMode = effectiveMediaInputMode
+      if (selectedCapabilityId) payload.capabilityId = selectedCapabilityId
       if (pruned.droppedParams.length > 0) {
         payload.droppedModelParams = pruned.droppedParams.map((d) => ({
           name: d.name,
@@ -894,6 +1066,23 @@ export function CanvasInlineAiComposer({
                 : supportedMediaModels.length > 0
                   ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
                   : '当前能力暂无已启用模型，请先到 Provider 绑定。'}
+            </div>
+          </div>
+        )}
+        {isUnifiedVideoOperation && unifiedVideoModeOptions.length > 0 && effectiveMediaInputMode && (
+          <div className="canvas-form-row">
+            <label>视频模式</label>
+            <LobeSelect
+              value={effectiveMediaInputMode}
+              onChange={(value) => setMediaInputMode(value as CanvasMediaInputMode)}
+              options={UNIFIED_VIDEO_MODE_CHOICES.map((choice) => ({
+                ...choice,
+                disabled: !unifiedVideoModeOptions.some((option) => option.mode === choice.value),
+              }))}
+            />
+            <div className="canvas-model-hint">
+              {selectedMediaInputIssue ??
+                `已选择 ${selectedMediaBindings.length} 项画布素材，提交时按 ${selectedCapabilityId ?? '当前能力'} 分配角色。`}
             </div>
           </div>
         )}
@@ -1437,6 +1626,7 @@ type ComposerDraft = {
   firstFrameNodeId: string
   lastFrameNodeId: string
   referenceFrameNodeIds: string[]
+  mediaInputMode?: CanvasMediaInputMode
 }
 
 type ComposerCache = {

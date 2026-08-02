@@ -4,13 +4,14 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useCanvasMediaInputQuickActions } from './useCanvasMediaInputQuickActions'
+import type { CanvasNodeMediaKind } from './canvasNodeMediaKind'
 import type { CanvasNode } from './canvas.types'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const mounted: Array<{ root: Root; container: HTMLDivElement }> = []
 const at = '2026-08-01T00:00:00.000Z'
 
-function mediaNode(id: string, type: 'image' | 'video'): CanvasNode {
+function mediaNode(id: string, type: 'image' | 'video' | 'audio'): CanvasNode {
   return {
     id,
     projectId: 'project-1',
@@ -29,6 +30,10 @@ function mediaNode(id: string, type: 'image' | 'video'): CanvasNode {
     createdAt: at,
     updatedAt: at,
   }
+}
+
+function taskNode(id: string, type: CanvasNode['type']): CanvasNode {
+  return { ...mediaNode(id, 'video'), type }
 }
 
 afterEach(() => {
@@ -59,34 +64,67 @@ describe('useCanvasMediaInputQuickActions', () => {
     expect(onAppendNode).toHaveBeenCalledWith(image)
   })
 
-  it('waits for an uploaded node to enter the snapshot before committing it', async () => {
-    const video = mediaNode('video-1', 'video')
+  it('accepts a video task node by resolving it to its output media node', async () => {
+    const t2v = taskNode('t2v', 'text_to_video')
+    const output = mediaNode('output-1', 'video')
+    const kindMap = new Map<string, CanvasNodeMediaKind>([['t2v', 'video']])
+    const nodeMap = new Map<string, CanvasNode>([['t2v', output]])
     const onAppendNode = vi.fn()
+    const onInvalidNode = vi.fn()
     let actions: ReturnType<typeof useCanvasMediaInputQuickActions> | null = null
-    const harness = await renderHarness({
-      nodes: [],
+
+    await renderHarness({
+      nodes: [t2v, output],
       acceptedKinds: ['video'],
-      onUploadLocalFile: vi.fn(async () => video),
+      outputMediaKindByNodeId: kindMap,
+      outputMediaNodeByNodeId: nodeMap,
+      onRequestCanvasNodePick: (onPick) => onPick(t2v),
       onAppendNode,
+      onInvalidNode,
       onActions: (next) => {
         actions = next
       },
     })
 
-    await act(async () => actions!.upload({ type: 'video/mp4' } as File))
-    expect(onAppendNode).not.toHaveBeenCalled()
+    await act(async () => actions!.pick())
+    expect(onInvalidNode).not.toHaveBeenCalled()
+    expect(onAppendNode).toHaveBeenCalledWith(output)
+  })
 
-    await harness.render({ nodes: [video] })
-    expect(onAppendNode).toHaveBeenCalledWith(video)
+  it('rejects a task node whose output kind is not accepted', async () => {
+    const t2i = taskNode('t2i', 'text_to_image')
+    const output = mediaNode('output-1', 'image')
+    const kindMap = new Map<string, CanvasNodeMediaKind>([['t2i', 'image']])
+    const onAppendNode = vi.fn()
+    const onInvalidNode = vi.fn()
+    let actions: ReturnType<typeof useCanvasMediaInputQuickActions> | null = null
+
+    await renderHarness({
+      nodes: [t2i, output],
+      acceptedKinds: ['video'],
+      outputMediaKindByNodeId: kindMap,
+      onRequestCanvasNodePick: (onPick) => onPick(t2i),
+      onAppendNode,
+      onInvalidNode,
+      onActions: (next) => {
+        actions = next
+      },
+    })
+
+    await act(async () => actions!.pick())
+    expect(onAppendNode).not.toHaveBeenCalled()
+    expect(onInvalidNode).toHaveBeenCalledWith(t2i)
   })
 })
 
 type HarnessProps = {
   nodes: CanvasNode[]
   acceptedKinds: Array<'image' | 'video' | 'audio'>
+  outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind>
+  outputMediaNodeByNodeId?: ReadonlyMap<string, CanvasNode>
   onRequestCanvasNodePick?: (onPick: (node: CanvasNode) => void) => void
-  onUploadLocalFile?: (file: File) => Promise<CanvasNode | null | undefined>
   onAppendNode: (node: CanvasNode) => void
+  onInvalidNode?: (node: CanvasNode) => void
   onActions: (actions: ReturnType<typeof useCanvasMediaInputQuickActions>) => void
 }
 

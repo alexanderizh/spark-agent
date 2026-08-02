@@ -44,10 +44,7 @@ export const CANVAS_BASE_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGroup[
     id: 'video',
     label: '视频',
     items: [
-      { operation: 'text_to_video', label: '文生视频', icon: 'Video' },
-      { operation: 'image_to_video', label: '图生视频', icon: 'Video' },
-      { operation: 'video_edit', label: '视频编辑', icon: 'Video' },
-      { operation: 'video_extend', label: '视频扩展', icon: 'Video' },
+      { operation: 'text_to_video', label: '视频生成', icon: 'Video' },
       { operation: 'video_depth_map', label: '深度视频', icon: 'Video' },
     ],
   },

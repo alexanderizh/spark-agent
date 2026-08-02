@@ -12,6 +12,7 @@ vi.mock('@spark/protocol', () => ({ capabilityForOperation: () => [] }))
 vi.mock('./canvas.api', () => ({ canvasApi: { listMediaModels: vi.fn() } }))
 
 import {
+  canRunUnifiedVideoFromMedia,
   isModelParamCoveredByFields,
   mergeSchemaFields,
   nodeDefaultModelParams,
@@ -19,6 +20,8 @@ import {
   readModelParamDraftValue,
   resolveInitialModelParamDraftValue,
   schemaFields,
+  unifiedCanvasComposerCapabilities,
+  shouldAttachCanvasMediaInputTransport,
   updateModelParamDraftValue,
   type SchemaField,
 } from './CanvasInlineAiComposer'
@@ -31,6 +34,35 @@ const field = (name: string): SchemaField => ({
 })
 
 describe('CanvasInlineAiComposer image dimension params', () => {
+  it('collapses legacy video operations into one video generation capability', () => {
+    expect(
+      unifiedCanvasComposerCapabilities([
+        { operation: 'text_to_image', label: '文生图' },
+        { operation: 'text_to_video', label: '文生视频' },
+        { operation: 'image_to_video', label: '图生视频' },
+        { operation: 'video_edit', label: '视频编辑' },
+        { operation: 'video_extend', label: '视频延长' },
+      ]).map(({ operation, label }) => ({ operation, label })),
+    ).toEqual([
+      { operation: 'text_to_image', label: '文生图' },
+      { operation: 'text_to_video', label: '视频生成' },
+    ])
+  })
+
+  it('allows input-only unified video modes after their media requirements are satisfied', () => {
+    expect(canRunUnifiedVideoFromMedia('edit', undefined, 1)).toBe(true)
+    expect(canRunUnifiedVideoFromMedia('extend', undefined, 1)).toBe(true)
+    expect(canRunUnifiedVideoFromMedia('reference', undefined, 2)).toBe(true)
+    expect(canRunUnifiedVideoFromMedia('reference', '请先添加参考资源', 0)).toBe(false)
+    expect(canRunUnifiedVideoFromMedia('text', undefined, 0)).toBe(false)
+  })
+
+  it('attaches the selected transport when a unified video mode sends media', () => {
+    expect(shouldAttachCanvasMediaInputTransport(false, true, 1)).toBe(true)
+    expect(shouldAttachCanvasMediaInputTransport(false, true, 0)).toBe(false)
+    expect(shouldAttachCanvasMediaInputTransport(true, false, 0)).toBe(true)
+  })
+
   it('shows and submits only size when the model schema accepts size', () => {
     const fields = mergeSchemaFields([field('size')], [field('aspect_ratio'), field('quality')])
 
