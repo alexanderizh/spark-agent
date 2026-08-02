@@ -65,6 +65,7 @@ import {
   filterDocumentOutputFiles,
   getDocumentOutputKey,
 } from './chat/ChatDocumentOutput'
+import { PresentedMediaList, filterMediaPresentedFiles } from './chat/PresentedMedia'
 import { MarkdownText } from './chat/ChatMarkdown'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
@@ -4330,21 +4331,23 @@ function renderBlocks(
       }
       case 'presented_files': {
         const documentFiles = filterDocumentOutputFiles(block.files)
-        if (documentFiles.length === 0) return null
+        const mediaFiles = filterMediaPresentedFiles(block.files)
+        if (documentFiles.length === 0 && mediaFiles.length === 0) return null
         return (
-          <div
-            key={i}
-            className="document-output-card-list"
-            style={{ marginTop: 8, marginBottom: 8 }}
-          >
-            {documentFiles.map((file) => (
-              <DocumentOutputCard
-                key={getDocumentOutputKey(file.path)}
-                filePath={file.path}
-                {...(file.title != null ? { label: file.title } : {})}
-                {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
-              />
-            ))}
+          <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
+            {documentFiles.length > 0 && (
+              <div className="document-output-card-list">
+                {documentFiles.map((file) => (
+                  <DocumentOutputCard
+                    key={getDocumentOutputKey(file.path)}
+                    filePath={file.path}
+                    {...(file.title != null ? { label: file.title } : {})}
+                    {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+                  />
+                ))}
+              </div>
+            )}
+            {mediaFiles.length > 0 && <PresentedMediaList files={mediaFiles} />}
           </div>
         )
       }

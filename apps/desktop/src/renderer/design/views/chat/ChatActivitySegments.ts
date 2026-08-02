@@ -1,5 +1,6 @@
 import type { UIBlock } from '../../services/event-mapper'
 import { filterDocumentOutputFiles } from './ChatDocumentOutput'
+import { filterMediaPresentedFiles } from './PresentedMedia'
 
 export type ToolLogGroupKind = 'read' | 'write' | 'command' | 'tool'
 
@@ -113,7 +114,9 @@ export function splitChatActivitySegments(blocks: UIBlock[]): ChatActivityTimeli
     if (
       block.kind === 'context_ledger' ||
       (block.kind === 'file_change' && (block.diff == null || block.diff.trim().length === 0)) ||
-      (block.kind === 'presented_files' && filterDocumentOutputFiles(block.files).length === 0)
+      (block.kind === 'presented_files' &&
+        filterDocumentOutputFiles(block.files).length === 0 &&
+        filterMediaPresentedFiles(block.files).length === 0)
     ) {
       return
     }

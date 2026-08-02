@@ -1,0 +1,52 @@
+// PresentedMedia — presented_files 中媒体(图/音/视)渲染样式
+// 图片复用全局 .md-image（见 styles/views.css），这里只统一外边距 + 给音/视频容器配套样式。
+// 设计 token 与 .md-image 对齐：--r-md / --border / --bg-soft / --text-muted。
+
+.presented-media-list {
+  display: flex;
+  flex-direction: column;
+  // 关键：flex 列容器默认 align-items: stretch，会把 .md-image 横向拉满到容器宽度，
+  // 而 .md-image-toolbar 是 absolute/right:6px 定位——锚点是被拉满的容器而非图片本身，
+  // 于是工具条跑到会话最右端、离图片很远。改 flex-start 让每个媒体项按内容宽度靠左，
+  // .md-image 收缩回图片自然宽度，工具条就贴回图片右上角。音频/视频同理按自身尺寸排布。
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0;
+
+  // 图片复用 MarkdownImage，抵消它默认的 6px 上下 margin，由本容器的 gap 统一间距
+  .md-image {
+    margin: 0;
+  }
+}
+
+.presented-media-audio {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 360px;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+
+  audio {
+    width: 100%;
+  }
+}
+
+.presented-media-label {
+  font-size: var(--font-xs, 12px);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presented-media-video {
+  display: block;
+  max-width: 100%;
+  max-height: 420px; // 与 .md-image-img 的最大高度对齐，避免视频撑爆会话气泡
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+}
