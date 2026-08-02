@@ -137,7 +137,7 @@ test('packages the Node depth dependency closure for only the target platform', 
       revision: 2,
       requireWindowsCodesign: true,
     }),
-    /requires sign tool, certificate, and certificate password/,
+    /requires sign tool, certificate, publisher fingerprint, and PowerShell/,
   )
 
   const windowsCommands = []
@@ -151,8 +151,11 @@ test('packages the Node depth dependency closure for only the target platform', 
       windowsSignTool: 'signtool.exe',
       windowsCertificate: 'spark-signing.pfx',
       windowsCertificatePassword: 'test-password',
+      windowsPublisherSha256: 'ab'.repeat(32),
+      windowsPowerShell: 'powershell.exe',
       requireWindowsCodesign: true,
       runCommand: async (command, args) => windowsCommands.push([command, ...args]),
+      captureCommand: async () => `${'ab'.repeat(32)}\n`,
     },
   )
   const windowsManifest = JSON.parse(await readFile(windowsResult.packageManifestPath, 'utf8'))
