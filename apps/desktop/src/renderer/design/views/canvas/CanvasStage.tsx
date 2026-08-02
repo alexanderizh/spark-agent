@@ -86,6 +86,7 @@ import {
   resolveCanvasOperationResourceNode,
 } from './canvasOperationOutputModel'
 import { buildCanvasOperationProjection } from './canvasOperationProjection'
+import { buildOutputMediaKindMap } from './canvasNodeMediaKind'
 import {
   buildCanvasGroupCollapseProjection,
   type CanvasCollapsedGroupPresentation,
@@ -888,8 +889,12 @@ function CanvasStageInner({
       buildCanvasGroupCollapseProjection(
         operationProjection.visibleNodes,
         operationProjection.visibleEdges,
+        // 文生图等任务节点的产物图挂在自身 data.url，但其 output 节点被 operation 投影内嵌隐藏，
+        // 不在 visibleNodes/visibleEdges 中；这里用原始快照构建「任务节点 → 产物媒体类型」映射，
+        // 让折叠预览能把图片产物任务节点也识别为预览候选。
+        { outputMediaKindByNodeId: buildOutputMediaKindMap(snapshot.nodes, snapshot.edges) },
       ),
-    [operationProjection.visibleEdges, operationProjection.visibleNodes],
+    [operationProjection.visibleEdges, operationProjection.visibleNodes, snapshot.nodes, snapshot.edges],
   )
   const selectedNodeIdSet = useMemo(
     () =>

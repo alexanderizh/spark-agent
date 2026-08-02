@@ -1,4 +1,5 @@
 import type { CanvasEdge, CanvasGroupColorPreset, CanvasNode } from './canvas.types'
+import { resolveCanvasNodeMediaKind, type CanvasNodeMediaKind } from './canvasNodeMediaKind'
 
 export const COLLAPSED_GROUP_SIZE = { width: 420, height: 360 } as const
 
@@ -61,12 +62,21 @@ function collectDescendants(
 
 function buildPreviews(
   descendants: readonly CanvasNode[],
+  outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind>,
 ): [CanvasGroupPreview, CanvasGroupPreview] {
+  // 同一张产物图可能同时挂在任务节点 data.url 与它的 output 节点上（output 已物化进编组时），
+  // 用 url 去重避免同一张图在两个预览槽位重复出现。
+  const seenUrls = new Set<string>()
   const images = descendants
     .flatMap((node) => {
-      if (node.type !== 'image') return []
+      // 纯图片节点直接纳入；任务节点（文生图等）按其产物媒体类型解析为 image 才纳入，
+      // 这样折叠预览也能展示文生图节点的产物图——展开态同样读 node.data.thumbnailUrl ?? node.data.url，取值口径一致。
+      // 视频产物任务节点的 url 是视频，mediaKind !== 'image' 不会误入导致 <img> 加载失败。
+      const mediaKind = resolveCanvasNodeMediaKind(node, outputMediaKindByNodeId)
+      if (mediaKind !== 'image') return []
       const url = node.data.thumbnailUrl ?? node.data.url
-      if (!url) return []
+      if (!url || seenUrls.has(url)) return []
+      seenUrls.add(url)
       return [
         {
           kind: 'image' as const,
@@ -87,6 +97,7 @@ function buildPreviews(
 export function buildCanvasGroupCollapseProjection(
   nodes: readonly CanvasNode[],
   edges: readonly CanvasEdge[],
+  options?: { outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind> },
 ): CanvasGroupCollapseProjection {
   const childrenByParentId = new Map<string, CanvasNode[]>()
   for (const node of nodes) {
@@ -105,7 +116,7 @@ export function buildCanvasGroupCollapseProjection(
     descendants.forEach((descendant) => hiddenNodeIds.add(descendant.id))
     presentationByGroupId.set(node.id, {
       childCount: descendants.length,
-      previews: buildPreviews(descendants),
+      previews: buildPreviews(descendants, options?.outputMediaKindByNodeId),
       size: COLLAPSED_GROUP_SIZE,
       color: normalizeCanvasGroupColor(node.data.groupColor),
     })
