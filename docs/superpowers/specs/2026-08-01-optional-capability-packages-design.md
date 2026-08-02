@@ -88,6 +88,11 @@ SparkWork 当前把本地深度推理运行时、独立 Node Runtime、Playwrigh
 主窗口完成加载后延迟执行 manifest 检查，不阻塞首屏。成功检查时间写入本地状态，24 小时内不
 重复请求。断网或仓库不可达时不弹选择窗口，不影响启动。
 
+renderer 首次订阅能力状态时必须调用带缓存策略的 `check`，不能只读本地 `list`。如果用户在启动
+检查完成前直接打开 Office 文件，功能入口显示“正在检查资源”；检查完成但当前平台仍没有目标
+版本时，入口再执行一次强制远程刷新，避免新发布的制品被 24 小时缓存遮蔽，确保干净安装无需
+先进入设置页手动“检查更新”。
+
 当 manifest 中存在当前平台可安装、尚未安装的能力时，展示“可选功能资源”弹窗：
 
 - 列出功能用途、下载大小和预估磁盘占用；
@@ -183,7 +188,11 @@ SHA-256 → 发布 staging manifest → 审计 → 原子替换正式 manifest�
 - 只接受 HTTPS 公网资源地址和允许的 Spark 资源域；
 - SHA-256、归档路径穿越、防符号链接逃逸和解压大小上限沿用现有 tarball installer；
 - 可执行制品必须匹配当前平台和架构；
-- macOS 可执行制品需要独立 Developer ID 签名和公证，Windows 需要 Authenticode 与时间戳；
+- macOS 可执行制品中的 `.node` 与 `.dylib` 必须使用与正式 App 相同 Team ID 的 Developer ID
+  Application 证书逐层签名，并在发布前校验 Team ID；仅做 ad-hoc 签名无法通过 Hardened Runtime
+  的 Library Validation。Windows 可执行制品需要 Authenticode 与时间戳；
+- 文件哈希健康检查通过但实际加载原生 Runtime 失败时，运行时探针必须持久化失败状态并把能力
+  标记为 `damaged`，直到修复、更新或重新安装成功，不能继续显示“已安装”；
 - Computer Use Native Host 继续执行现有 app/host 同身份、hash、协议和 handshake 门禁；
 - renderer 不能获得 MinIO 凭据或任意文件系统读取能力。
 

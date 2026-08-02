@@ -55,10 +55,7 @@ describe('officeViewerOptions', () => {
   })
 
   it('can point every Office worker at an installed capability asset root', () => {
-    const options = createOfficeViewerOptions(
-      'dark',
-      'capability-asset://office-viewer/',
-    )
+    const options = createOfficeViewerOptions('dark', 'capability-asset://office-viewer/')
     expect(options.docx?.workerUrl).toBe(
       'capability-asset://office-viewer/vendor/docx/docx.worker.js',
     )
@@ -78,10 +75,14 @@ describe('officeViewerOptions', () => {
     expect(createOfficeViewerOptions('dark').theme).toBe('dark')
     expect(officeViewerOptions).not.toHaveProperty('theme')
     expect(component).toContain('const resolvedTheme = useResolvedTheme()')
-    expect(component).toContain("createOfficeViewerOptions(viewerTheme, 'capability-asset://office-viewer/')")
+    expect(component).toContain(
+      "createOfficeViewerOptions(viewerTheme, 'capability-asset://office-viewer/')",
+    )
     expect(component).toContain('viewerRef.current?.getViewState()')
     expect(component).toContain('viewerRef.current?.applyViewState(pendingViewState')
     expect(component).toContain('office?.error')
     expect(component).toContain('setInstallError')
+    expect(component).toContain('refreshCapabilities(true)')
+    expect(component).toContain('正在检查当前平台可用的 Office 预览资源')
   })
 })

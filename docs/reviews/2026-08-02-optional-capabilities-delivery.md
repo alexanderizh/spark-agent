@@ -1,5 +1,18 @@
 # Office 与本地深度可选能力交付审查
 
+## 生产签名应用复核更正（2026-08-02）
+
+正式签名 App 的画布实测发现，revision 1 深度 Runtime 内的 `onnxruntime_binding.node` 与依赖
+`.dylib` 只有 ad-hoc 签名，无法通过 App Hardened Runtime 的 Library Validation，实际表现为
+`dlopen ... code signature rejected`。下文早期“真实功能验收”是在普通 Node 进程完成，只证明
+归档内容和推理链路可运行，不能证明它可被正式签名 App 加载；因此 revision 1 的深度验收结论
+作废，Office 验收结论不受影响。
+
+修复后的发布流程生成 revision 2 时，会用与正式 App 相同 Team ID 的 Developer ID Application
+证书逐个签名 `.dylib` 和 `.node`，并对每个文件执行严格签名与 Team ID 校验。客户端还会把原生
+Runtime 加载失败持久化为 `damaged`，重新启动后也不会误报“已安装”。revision 2 正式发布和
+签名 App 复测结果应作为新的深度交付依据。
+
 ## 结论
 
 离线 Office Viewer 与本地深度处理已经完成代码、资源发布、正式 MinIO 清单更新、干净目录安装、真实功能验收和 macOS arm64 产物审查。Computer Use 按本轮要求完全跳过，既未制品化，也未改变其代码和打包方式。
@@ -8,11 +21,11 @@
 
 正式清单：`https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/index.json`，发布后共 67 项制品，仓库全量审计通过。
 
-| 能力 | Artifact ID | 下载大小 | SHA-256 | 安装后大小 |
-| --- | --- | ---: | --- | ---: |
-| Office Viewer | `archive.optional-office-viewer-2.2.3-1` | 56,272,983 B | `2fffb459e1b1919ac903f31dca5a6a481f7ee29f77df2549743875481d41e147` | 146,330,723 B |
+| 能力                         | Artifact ID                                                            |     下载大小 | SHA-256                                                            |              安装后大小 |
+| ---------------------------- | ---------------------------------------------------------------------- | -----------: | ------------------------------------------------------------------ | ----------------------: |
+| Office Viewer                | `archive.optional-office-viewer-2.2.3-1`                               | 56,272,983 B | `2fffb459e1b1919ac903f31dca5a6a481f7ee29f77df2549743875481d41e147` |           146,330,723 B |
 | Depth Runtime / darwin-arm64 | `runtime.optional-depth-transformers-4.2.0-onnx-1.24.3-1-darwin-arm64` | 21,033,096 B | `c03d5699fe2d6411cf2c93ce4317a3c387284afe2769517d02446b2291f4b386` | 与模型合计 94,473,021 B |
-| Depth Anything V2 Small INT8 | `model.depth-anything-v2-small-int8-1.0.0` | 21,231,211 B | 由正式清单约束 | 计入上项合计 |
+| Depth Anything V2 Small INT8 | `model.depth-anything-v2-small-int8-1.0.0`                             | 21,231,211 B | 由正式清单约束                                                     |            计入上项合计 |
 
 发布严格执行本地 size/SHA 校验、正式清单备份、对象上传、HEAD、公网完整 GET 复算 SHA、staging 清单、全仓审计、正式清单替换和再次公网回读。备份对象为 `artifact-repository/v1/backups/index-2026-08-01T19-12-57-047Z.json`，staging 对象为 `artifact-repository/v1/staging/index-optional-1785611647738.json`。凭据未写入仓库、文档、测试快照或命令输出。
 
@@ -29,14 +42,14 @@
 
 本地验收产物位于 `/private/tmp/spark-optional-capabilities-delivery-final-20260802`：
 
-| 项目 | 最终值 |
-| --- | ---: |
-| `.app` | 801,329,152 B |
-| `app.asar` | 125,395,338 B |
-| `app.asar.unpacked` | 303,521,792 B |
-| DMG | 270,872,320 B |
-| DMG SHA-256 | `4e4ed1b32bf0aeaf6832e461d180c511fc1edcdcb83a84701f417b160b51d927` |
-| ASAR entries | 3,530 |
+| 项目                |                                                             最终值 |
+| ------------------- | -----------------------------------------------------------------: |
+| `.app`              |                                                      801,329,152 B |
+| `app.asar`          |                                                      125,395,338 B |
+| `app.asar.unpacked` |                                                      303,521,792 B |
+| DMG                 |                                                      270,872,320 B |
+| DMG SHA-256         | `4e4ed1b32bf0aeaf6832e461d180c511fc1edcdcb83a84701f417b160b51d927` |
+| ASAR entries        |                                                              3,530 |
 
 对比原始 398,417,355 B DMG，减少 127,545,035 B，约 32.0%。ASAR 已全量成功解包；路径与内容扫描确认不含 `out/renderer/file-viewer`、`@huggingface/transformers`、`onnxruntime-node`、`onnxruntime-web`，也不含 Vite 哈希生成的 `pptx.worker`、`ppt-native.wasm` 或 `ppt-font-cjk.otf`。ONNX absent 模式校验、Electron native ABI 校验和 `codesign --deep --strict` 均通过。
 

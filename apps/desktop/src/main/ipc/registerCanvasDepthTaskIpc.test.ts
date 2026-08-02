@@ -248,6 +248,46 @@ describe('registerCanvasDepthTaskIpc', () => {
     )
   })
 
+  it('marks the capability damaged when the installed native runtime cannot be loaded', async () => {
+    const reportRuntimeFailure = vi.fn(async () => ({ capabilities: [] }))
+    registerCanvasDepthTaskIpc({
+      capabilityManager: {
+        list: vi.fn(async () => ({
+          capabilities: [
+            { id: 'local-depth', state: 'ready', installedVersion: '4.2.0-1.24.3-1+1.0.0' },
+          ],
+        })),
+        install: vi.fn(),
+        repair: vi.fn(),
+        subscribeProgress: vi.fn(() => () => undefined),
+        getArtifactDirectory: vi.fn(async (_id: string, prefix: string) =>
+          prefix.startsWith('runtime.') ? '/managed/runtime' : '/managed/model',
+        ),
+        reportRuntimeFailure,
+      } as never,
+      createRunner: () => ({
+        run: vi.fn(async () => {
+          throw new Error('dlopen onnxruntime_binding.node: code signature rejected')
+        }),
+      }),
+      createRuntimeTaskId: () => 'depth-runtime-invalid',
+      createOutputPath: () => '/tmp/depth-output.mp4',
+    })
+
+    await harness.handlers.get('canvas:task:create-depth-video')!({
+      projectId: 'project-1',
+      clientTaskId: 'canvas-task-1',
+      inputPath: '/canvas/input.mp4',
+    })
+
+    await vi.waitFor(() =>
+      expect(reportRuntimeFailure).toHaveBeenCalledWith(
+        'local-depth',
+        expect.objectContaining({ message: expect.stringContaining('dlopen') }),
+      ),
+    )
+  })
+
   it('cancels only the task wait without cancelling a shared capability install', async () => {
     let resolveInstall!: (value: any) => void
     let markInstallStarted!: () => void

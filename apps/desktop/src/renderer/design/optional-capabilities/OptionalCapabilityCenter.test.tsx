@@ -92,6 +92,8 @@ describe('OptionalCapabilityCenter', () => {
     const cancelButton = [...document.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('取消'),
     )
+    const actions = document.querySelector('.optional-capability-progress-actions')
+    expect(actions?.textContent).toContain('查看详情')
     expect(cancelButton).toBeTruthy()
     await act(async () => cancelButton?.click())
     expect(mocks.cancel).toHaveBeenCalledWith('office-viewer')
@@ -100,12 +102,14 @@ describe('OptionalCapabilityCenter', () => {
   it('persists the choice to disable future startup reminders', async () => {
     await act(async () => root.render(<OptionalCapabilityCenter />))
 
-    const reminderCheckbox = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
-      .find((input) => input.closest('label')?.textContent?.includes('不再在启动时提醒'))
+    const reminderCheckbox = [
+      ...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    ].find((input) => input.closest('label')?.textContent?.includes('不再在启动时提醒'))
     expect(reminderCheckbox).toBeTruthy()
     await act(async () => reminderCheckbox?.click())
 
-    expect(JSON.parse(window.localStorage.getItem('spark-optional-capability-prompt') ?? '{}'))
-      .toMatchObject({ disabled: true })
+    expect(
+      JSON.parse(window.localStorage.getItem('spark-optional-capability-prompt') ?? '{}'),
+    ).toMatchObject({ disabled: true })
   })
 })

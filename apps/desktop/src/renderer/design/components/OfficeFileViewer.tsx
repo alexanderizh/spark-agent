@@ -16,6 +16,7 @@ export default function OfficeFileViewer({
   const [installError, setInstallError] = useState<string | null>(null)
   const viewerRef = useRef<FileViewerHandle>(null)
   const pendingViewStateRef = useRef<ViewerViewState | null>(null)
+  const manifestRefreshAttemptedRef = useRef(false)
   const options = useMemo(
     () => createOfficeViewerOptions(viewerTheme, 'capability-asset://office-viewer/'),
     [viewerTheme],
@@ -44,6 +45,21 @@ export default function OfficeFileViewer({
 
   const office = capabilities.snapshot?.capabilities.find((item) => item.id === 'office-viewer')
   const officeReady = office?.installedVersion != null && office.state !== 'damaged'
+  const { loading: capabilityLoading, refresh: refreshCapabilities, snapshot } = capabilities
+  useEffect(() => {
+    if (
+      officeReady ||
+      snapshot == null ||
+      office?.targetVersion != null ||
+      capabilityLoading ||
+      manifestRefreshAttemptedRef.current
+    ) {
+      return
+    }
+    manifestRefreshAttemptedRef.current = true
+    void refreshCapabilities(true).catch(() => undefined)
+  }, [capabilityLoading, refreshCapabilities, snapshot, office?.targetVersion, officeReady])
+
   const installOfficeViewer = async () => {
     setInstallError(null)
     try {
@@ -61,23 +77,28 @@ export default function OfficeFileViewer({
       <div className="office-viewer-capability-placeholder" role="status">
         <strong>需要安装离线 Office 预览资源</strong>
         <span>
-          {office?.targetVersion
-            ? `需下载约 ${(office.downloadSize / 1024 / 1024).toFixed(1)} MB，安装后会自动重试预览。`
-            : '当前平台暂时没有可用的 Office 预览资源。'}
+          {capabilities.loading
+            ? '正在检查当前平台可用的 Office 预览资源…'
+            : office?.targetVersion
+              ? `需下载约 ${(office.downloadSize / 1024 / 1024).toFixed(1)} MB，安装后会自动重试预览。`
+              : '当前平台暂时没有可用的 Office 预览资源。'}
         </span>
         {office?.error && <span className="integrity-sdk-error">{office.error}</span>}
         {installError && !office?.error && (
           <span className="integrity-sdk-error">{installError}</span>
         )}
         {installing ? (
-          <span>{progress.message}{progress.percent != null ? ` · ${progress.percent}%` : ''}</span>
+          <span>
+            {progress.message}
+            {progress.percent != null ? ` · ${progress.percent}%` : ''}
+          </span>
         ) : (
           <button
             type="button"
-            disabled={office?.targetVersion == null}
+            disabled={capabilities.loading || office?.targetVersion == null}
             onClick={() => void installOfficeViewer()}
           >
-            安装 Office 预览资源
+            {capabilities.loading ? '正在检查资源…' : '安装 Office 预览资源'}
           </button>
         )}
       </div>

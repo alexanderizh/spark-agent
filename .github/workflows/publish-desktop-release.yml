@@ -45,7 +45,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: publish-desktop-release
+  group: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.optional_capabilities_only == 'true' && 'publish-optional-capabilities' || 'publish-desktop-release' }}
   cancel-in-progress: false
 
 jobs:
@@ -496,8 +496,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Import Developer ID certificate for depth runtime
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          bash apps/desktop/scripts/import-cert-ci.sh
+          security find-identity -v -p codesigning | grep "Developer ID Application"
+
       - name: Build and verify optional capability archives
         shell: bash
+        env:
+          DEPTH_RUNTIME_CODESIGN_IDENTITY: Developer ID Application
+          DEPTH_RUNTIME_EXPECTED_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          DEPTH_RUNTIME_REQUIRE_CODESIGN: '1'
         run: |
           set -euo pipefail
           OFFICE_DIR="${RUNNER_TEMP}/spark-office-viewer-2.2.3-1"
@@ -507,11 +519,24 @@ jobs:
           node scripts/prepare-office-viewer-artifact.mjs \
             2.2.3-1 apps/desktop/public/file-viewer "${OFFICE_DIR}"
           node scripts/prepare-depth-runtime-artifact.mjs \
-            "${TARGET_PLATFORM}" "${TARGET_ARCH}" 1 "${DEPTH_DIR}" node_modules
+            "${TARGET_PLATFORM}" "${TARGET_ARCH}" 2 "${DEPTH_DIR}" node_modules
           diff -u docs/release-manifests/office-viewer-2.2.3-1.json \
             "${OFFICE_DIR}/office-viewer-2.2.3-1-manifest.json"
-          diff -u "docs/release-manifests/depth-runtime-4.2.0-1.24.3-1-${TARGET_PLATFORM}-${TARGET_ARCH}.json" \
-            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json"
+          DEPTH_MANIFEST="${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json"
+          node -e '
+            const fs = require("node:fs")
+            const entry = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+            const expected = {
+              id: "runtime.optional-depth-transformers-4.2.0-onnx-1.24.3-2-darwin-arm64",
+              type: "runtime",
+              version: "4.2.0-1.24.3-2",
+              platform: "darwin",
+              arch: "arm64",
+            }
+            for (const [key, value] of Object.entries(expected)) {
+              if (entry[key] !== value) throw new Error(`unexpected ${key}: ${entry[key]}`)
+            }
+          ' "${DEPTH_MANIFEST}"
           node --test scripts/__tests__/prepare-office-viewer-artifact.test.mjs \
             scripts/__tests__/prepare-depth-runtime-artifact.test.mjs \
             scripts/__tests__/publish-optional-capabilities-to-minio.test.mjs
@@ -534,8 +559,8 @@ jobs:
           node scripts/publish-optional-capabilities-to-minio.mjs \
             "${OFFICE_DIR}/office-viewer-2.2.3-1-manifest.json" \
             "${OFFICE_DIR}/office-viewer-2.2.3-1.tar.gz" \
-            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json" \
-            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-1-${TARGET_PLATFORM}-${TARGET_ARCH}.tar.gz"
+            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json" \
+            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}.tar.gz"
           node scripts/audit-artifact-repository.mjs
 
       - name: Preserve optional archives for delivery evidence
@@ -547,3 +572,8 @@ jobs:
             ${{ runner.temp }}/spark-depth-runtime-darwin-*/depth-runtime-*.tar.gz
           if-no-files-found: error
           retention-days: 5
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          security delete-keychain "$HOME/Library/Keychains/spark-build.keychain-db" 2>/dev/null || true
