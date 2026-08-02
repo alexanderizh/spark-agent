@@ -1019,9 +1019,20 @@ body.sidebar-resizing {
   padding-bottom: 8px;
 }
 
+/* 会话头与右侧各面板顶部头的统一高度。
+   默认 35px；集成标题栏模式跟随 --integrated-titlebar-height（mac/win/默认）。
+   右侧各面板顶部头（文件预览/终端/审查/侧聊/统一侧边面板 tabbar）统一引用此变量，
+   确保与会话头等高、顶部栏视觉连贯。 */
+:root {
+  --chat-header-height: 35px;
+}
+.titlebar-integrated {
+  --chat-header-height: var(--integrated-titlebar-height, 48px);
+}
+
 .chat-tabbar {
   display: flex;
-  height: 35px;
+  height: var(--chat-header-height);
   padding: 0 var(--pad-md);
   align-items: center;
   gap: 8px;
@@ -1030,7 +1041,8 @@ body.sidebar-resizing {
   -webkit-app-region: drag;
 }
 .titlebar-integrated .chat-tabbar {
-  height: var(--integrated-titlebar-height, 48px);
+  /* height 由基础规则 var(--chat-header-height) 统一控制（集成模式下变量已解析为 48px），
+     此处仅保留 macOS 红绿灯 / Win 窗口控件所需的左右内边距微调。 */
   padding-left: calc(var(--pad-md) + var(--integrated-titlebar-left-reserve, 0px));
   padding-right: var(--pad-md);
 }
