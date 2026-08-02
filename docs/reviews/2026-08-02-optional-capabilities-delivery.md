@@ -20,15 +20,16 @@ Windows 使用正式应用同一 PFX 对 `.dll` 和 `.node` 做带 RFC 3161 时�
 
 ## 正式制品
 
-正式清单：`https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/index.json`，发布后共 67 项制品，仓库全量审计通过。
+正式清单：`https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/index.json`，revision 2 发布后共 69 项制品，仓库全量审计通过。
 
-| 能力                         | Artifact ID                                                            |     下载大小 | SHA-256                                                            |              安装后大小 |
-| ---------------------------- | ---------------------------------------------------------------------- | -----------: | ------------------------------------------------------------------ | ----------------------: |
-| Office Viewer                | `archive.optional-office-viewer-2.2.3-1`                               | 56,272,983 B | `2fffb459e1b1919ac903f31dca5a6a481f7ee29f77df2549743875481d41e147` |           146,330,723 B |
-| Depth Runtime / darwin-arm64 | `runtime.optional-depth-transformers-4.2.0-onnx-1.24.3-1-darwin-arm64` | 21,033,096 B | `c03d5699fe2d6411cf2c93ce4317a3c387284afe2769517d02446b2291f4b386` | 与模型合计 94,473,021 B |
-| Depth Anything V2 Small INT8 | `model.depth-anything-v2-small-int8-1.0.0`                             | 21,231,211 B | 由正式清单约束                                                     |            计入上项合计 |
+| 能力                         | Artifact ID                                                            |     下载大小 | SHA-256                                                            |               安装后大小 |
+| ---------------------------- | ---------------------------------------------------------------------- | -----------: | ------------------------------------------------------------------ | -----------------------: |
+| Office Viewer                | `archive.optional-office-viewer-2.2.3-1`                               | 56,272,983 B | `2fffb459e1b1919ac903f31dca5a6a481f7ee29f77df2549743875481d41e147` |            146,330,723 B |
+| Depth Runtime / darwin-arm64 | `runtime.optional-depth-transformers-4.2.0-onnx-1.24.3-2-darwin-arm64` | 20,610,689 B | `3d60372f948ec094e9b474399f5926743350ba9c74c89e0a332072ae8fe91764` | 与模型合计按下载版本计算 |
+| Depth Runtime / win32-x64    | `runtime.optional-depth-transformers-4.2.0-onnx-1.24.3-2-win32-x64`    | 37,840,065 B | `7b8c2a90471ad8220a097ef2d62e5305440ed5161a4f69c9a4f4bcce62ea7fab` | 与模型合计按下载版本计算 |
+| Depth Anything V2 Small INT8 | `model.depth-anything-v2-small-int8-1.0.0`                             | 21,231,211 B | 由正式清单约束                                                     |             计入上项合计 |
 
-发布严格执行本地 size/SHA 校验、正式清单备份、对象上传、HEAD、公网完整 GET 复算 SHA、staging 清单、全仓审计、正式清单替换和再次公网回读。备份对象为 `artifact-repository/v1/backups/index-2026-08-01T19-12-57-047Z.json`，staging 对象为 `artifact-repository/v1/staging/index-optional-1785611647738.json`。凭据未写入仓库、文档、测试快照或命令输出。
+revision 2 由 GitHub Actions 运行 [30732735484](https://github.com/alexanderizh/spark-agent/actions/runs/30732735484) 发布成功。发布严格执行本地 size/SHA 校验、正式清单备份、对象上传、HEAD、公网完整 GET 复算 SHA、staging 清单、全仓审计、正式清单替换和再次公网回读。备份对象为 `artifact-repository/v1/backups/index-2026-08-02T04-42-12-107Z.json`，staging 对象为 `artifact-repository/v1/staging/index-optional-1785648518194.json`。凭据未写入仓库、文档、测试快照或命令输出。
 
 ## 流程验收
 
@@ -61,6 +62,7 @@ Windows 使用正式应用同一 PFX 对 `.dll` 和 `.node` 做带 RFC 3161 时�
 - Desktop 可选能力、Office、深度、IPC、构建钩子最终统一回归 15 个测试文件、93 项全部通过；真实短视频 acceptance 另计 1 项通过。较早一次 94 项回归中的两项失败分别定位为 workflow 平台字符串误匹配和验收环境错误选中 Homebrew FFmpeg，修复/改用受管 FFmpeg 后均通过。
 - 新增激活完整性回归：管理器 14 项通过；可选能力设置/进度 UI 3 项通过；Office 外部资源构建闭锁 3 项通过。
 - Protocol schema 35 项、agent-runtime manifest/tarball 2 项、制品生成与 MinIO publisher 7 项全部通过。
+- revision 2 CI 在 macOS 与 Windows runner 分别完成原生签名、归档和测试，再由单一任务原子发布；Windows runner 的 CRLF workflow 回归也已覆盖。公开清单、两个对象的大小与 SHA-256 已在发布后独立核对。
 - Protocol 与 agent-runtime TypeScript 检查通过；相关生产代码 ESLint 和 `git diff --check` 通过。
 - Desktop 全量 renderer typecheck 仍有 2 个与本功能无关的既存 chat 测试类型错误（`chat-turn-summary-order.test.ts` 的 `"markdown"`）；node typecheck 仍有 2 个被本轮明确排除的 Computer Use 类型错误（`NativeHostComputerUseBackend.ts` 的 `targetProcessId` exact optional）。本轮没有修改或掩盖这些文件。
 
