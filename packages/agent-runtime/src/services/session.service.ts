@@ -3340,6 +3340,20 @@ export class SessionService {
         eventRepo,
       )
     }
+    // 即时发出本轮新观察到的媒体：让生图/截图等产物紧跟对应工具调用就地展示，
+    // 而不是攒到 turn 末尾的 emitUnpresentedMedia 统一发（那样会被堆到消息流末尾、
+    // 与「在这里生成」的上下文脱节）。drainPending 内部按 emitted 去重，不会与
+    // agent 主动 present_files 或 turn 末兜底重复。
+    const emitPendingMedia = (): void => {
+      const files = mediaPresentationCollector.drainPending()
+      if (files.length === 0) return
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        { ...makeBase(), type: 'presented_files', files },
+        eventRepo,
+      )
+    }
     // 验证建议卡不再固定在轮末自动弹出——改为下面注册的 spark_verify 工具，
     // 由 agent 自主判断本轮是否值得建议验证后主动调用。
     let validationSuggestionEmitted = false
@@ -3492,6 +3506,8 @@ export class SessionService {
         }
       }
       this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
+      // 媒体产物（生图/截图等）紧跟其工具调用发出，而非堆到 turn 末尾
+      emitPendingMedia()
       const reportedChanges = extractReportedFileChanges(event, workspaceRootPath)
       if (reportedChanges != null) {
         for (const change of reportedChanges) {
@@ -3510,16 +3526,21 @@ export class SessionService {
           }
           mediaPresentationCollector.observe(fileChangeEvent)
           this.emitAndPersist(sessionId, turnId, fileChangeEvent, eventRepo)
+          emitPendingMedia()
         }
       }
       const presentedFiles = extractPresentedFiles(event, workspaceRootPath)
       if (presentedFiles != null) {
-        this.emitAndPersist(
-          sessionId,
-          turnId,
-          { ...makeBase(), type: 'presented_files', files: presentedFiles },
-          eventRepo,
-        )
+        // agent 主动展示：丢弃已被即时发出（emitPendingMedia）的相同文件，避免重复卡片
+        const deduped = mediaPresentationCollector.markAgentPresented(presentedFiles)
+        if (deduped.length > 0) {
+          this.emitAndPersist(
+            sessionId,
+            turnId,
+            { ...makeBase(), type: 'presented_files', files: deduped },
+            eventRepo,
+          )
+        }
       }
       // Plan 模式：agent 递交计划后，turn 即将完成。为避免 finally 里的
       // startNextQueuedTurn 把"用户审批前残留在队列里的旧 turn"自动顶出来执行
@@ -3886,6 +3907,20 @@ export class SessionService {
         eventRepo,
       )
     }
+    // 即时发出本轮新观察到的媒体：让生图/截图等产物紧跟对应工具调用就地展示，
+    // 而不是攒到 turn 末尾的 emitUnpresentedMedia 统一发（那样会被堆到消息流末尾、
+    // 与「在这里生成」的上下文脱节）。drainPending 内部按 emitted 去重，不会与
+    // agent 主动 present_files 或 turn 末兜底重复。
+    const emitPendingMedia = (): void => {
+      const files = mediaPresentationCollector.drainPending()
+      if (files.length === 0) return
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        { ...makeBase(), type: 'presented_files', files },
+        eventRepo,
+      )
+    }
     let pendingTerminalStatus: AgentStatusEvent | null = null
     const emitPendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
       if (pendingTerminalStatus == null) return null
@@ -3943,6 +3978,8 @@ export class SessionService {
         }
       }
       this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
+      // 媒体产物（生图/截图等）紧跟其工具调用发出，而非堆到 turn 末尾
+      emitPendingMedia()
       const reportedChanges = extractReportedFileChanges(event, config.workspaceRootPath)
       if (reportedChanges != null) {
         for (const change of reportedChanges) {
@@ -3960,16 +3997,21 @@ export class SessionService {
           }
           mediaPresentationCollector.observe(fileChangeEvent)
           this.emitAndPersist(sessionId, turnId, fileChangeEvent, eventRepo)
+          emitPendingMedia()
         }
       }
       const presentedFiles = extractPresentedFiles(event, config.workspaceRootPath)
       if (presentedFiles != null) {
-        this.emitAndPersist(
-          sessionId,
-          turnId,
-          { ...makeBase(), type: 'presented_files', files: presentedFiles },
-          eventRepo,
-        )
+        // agent 主动展示：丢弃已被即时发出（emitPendingMedia）的相同文件，避免重复卡片
+        const deduped = mediaPresentationCollector.markAgentPresented(presentedFiles)
+        if (deduped.length > 0) {
+          this.emitAndPersist(
+            sessionId,
+            turnId,
+            { ...makeBase(), type: 'presented_files', files: deduped },
+            eventRepo,
+          )
+        }
       }
       if (
         event.type === 'assistant_message' &&

@@ -85,6 +85,68 @@ describe('MediaPresentationCollector', () => {
 
     expect(collector.takeUnpresented()).toEqual([])
   })
+
+  it('drains newly observed media immediately so it can be shown inline, not at turn end', async () => {
+    const workspace = await createWorkspace()
+    const files = await createMediaFiles(workspace)
+    const collector = new MediaPresentationCollector(workspace)
+
+    collector.observe(
+      toolResult('mcp__spark_media__generate_image', { files: [{ filePath: files.image }] }),
+    )
+
+    // 即时 drain：返回刚观察到的图片，供 session 层紧跟工具调用发出
+    await expectCanonicalPaths(collector.drainPending(), [files.image])
+    // 已计入 emitted：再次 drain 空
+    expect(collector.drainPending()).toEqual([])
+    // turn 末兜底也不会重复发同一张图
+    expect(collector.takeUnpresented()).toEqual([])
+  })
+
+  it('markAgentPresented drops paths already emitted inline to avoid duplicate cards', async () => {
+    const workspace = await createWorkspace()
+    const files = await createMediaFiles(workspace)
+    const collector = new MediaPresentationCollector(workspace)
+
+    // 生图工具产出 → 即时 drain 发出 image（计入 emitted）
+    collector.observe(
+      toolResult('mcp__spark_media__generate_image', { files: [{ filePath: files.image }] }),
+    )
+    await expectCanonicalPaths(collector.drainPending(), [files.image])
+
+    // agent 又主动 present_files：同一张 image 应被去重，新 audio 保留
+    const imageResolved = await realpath(files.image)
+    const audioResolved = await realpath(files.audio)
+    const agentPresented = collector.markAgentPresented([
+      { path: imageResolved, title: 'dup' },
+      { path: audioResolved, title: 'new' },
+    ])
+    expect(agentPresented).toEqual([{ path: audioResolved, title: 'new' }])
+
+    // 兜底仍空：image 已 emit、audio 已被 markAgentPresented 记入 emitted
+    expect(collector.takeUnpresented()).toEqual([])
+  })
+
+  it('markAgentPresented keeps files the agent explicitly presented even though observe pre-populated presented', async () => {
+    const workspace = await createWorkspace()
+    const files = await createMediaFiles(workspace)
+    const collector = new MediaPresentationCollector(workspace)
+    const imageResolved = await realpath(files.image)
+
+    // agent 主动调 present_files：observe 会先把路径记入 presented 集合
+    collector.observe(
+      toolResult('mcp__spark_files__present_files', { files: [{ path: files.image }] }),
+    )
+    // 即时 drain 空（present_files 不入 pendingEmit）
+    expect(collector.drainPending()).toEqual([])
+
+    // markAgentPresented 不能因为 presented 已有该路径就丢弃——那会让 agent 主动展示的卡片全部消失
+    const agentPresented = collector.markAgentPresented([{ path: imageResolved }])
+    expect(agentPresented).toEqual([{ path: imageResolved }])
+
+    // 兜底仍空：image 已被 markAgentPresented 记入 emitted
+    expect(collector.takeUnpresented()).toEqual([])
+  })
 })
 
 async function createWorkspace(): Promise<string> {
