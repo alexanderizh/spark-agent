@@ -201,6 +201,53 @@ describe('NativeHostComputerUseBackend', () => {
     expect(connection.close).toHaveBeenCalledTimes(1)
   })
 
+  it('reads a full app state without creating a governed task session', async () => {
+    const connection = createControlConnection([OBSERVATION])
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect: async () => connection,
+      createId: () => 'snapshot-1',
+    })
+
+    await expect(
+      backend.inspectWindow({ appId: 'app-1', windowId: 'window-1', fullTree: true }),
+    ).resolves.toEqual(OBSERVATION)
+    expect(connection.observe).toHaveBeenCalledWith({
+      snapshotId: 'snapshot-1',
+      appId: 'app-1',
+      windowId: 'window-1',
+      previousTreeVersion: null,
+      fullTree: true,
+    })
+  })
+
+  it('isolates app-state inspection from an active task Host connection', async () => {
+    const taskConnection = createControlConnection([OBSERVATION])
+    const inspectionConnection = createControlConnection([OBSERVATION])
+    const connect = vi
+      .fn()
+      .mockResolvedValueOnce(taskConnection)
+      .mockResolvedValueOnce(inspectionConnection)
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: () => 'snapshot-1',
+    })
+    await backend.observe({
+      computerSessionId: 'computer-1',
+      fullTree: true,
+      signal: new AbortController().signal,
+    })
+
+    await expect(
+      backend.inspectWindow({ appId: 'app-1', windowId: 'window-1', fullTree: true }),
+    ).resolves.toEqual(OBSERVATION)
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(inspectionConnection.close).toHaveBeenCalledOnce()
+    expect(taskConnection.close).not.toHaveBeenCalled()
+  })
+
   it('transparently retries idempotent listWindows when the Host reports a recoverable failure', async () => {
     const windows = [{ window: { id: 'window-1' } }] as NativeWindowDescriptor[]
     const connection = createConnection(windows)
@@ -659,6 +706,18 @@ describe('NativeHostComputerUseBackend', () => {
     ).resolves.toEqual(reconnectedObservation)
     expect(first.close).toHaveBeenCalledOnce()
     expect(connect).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not launch a dead Host only to cancel local session state', async () => {
+    const connect = vi.fn(async () => createConnection([]))
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect,
+      enableHostSupervisor: true,
+    })
+
+    await expect(backend.cancelSession('computer-1')).resolves.toBeUndefined()
+    expect(connect).not.toHaveBeenCalled()
   })
 
   it('falls back to the baseline connection path after a host-supervisor rollback', async () => {

@@ -19,6 +19,15 @@
 - 模型非法输出使用 `decision_model_error`；启动路径精确区分 Host 缺失、屏幕录制、辅助功能、输入权限和 Host 不兼容。
 - Native Host 的签名、SHA-256、架构、版本、wire protocol 以及系统权限检查仍保留。
 - 快照消息保留实际产生顺序，不再被重排到会话末尾。
+- `start_task.targetApp` 在 macOS 直接启动/拉起目标应用并等待真实窗口后绑定，省去 Spotlight 多轮视觉操作；未知或无法启动的应用仍回到既有桌面导航。
+- Electron AX 语义动作失败信息会进入下一次模型决策，要求改走截图坐标，不再重复同一 `action_noop`。
+- Host supervisor 的重启预算按任务结束复位；取消已断连任务不会为了清理再次 acquire Host，后续任务无需重启 SparkWork 即可重新握手。
+- Agent 可在不创建长任务的情况下分别调用 `list_apps`、`list_windows`、`get_screen_state`、`get_app_state` 和 `open_app`；原快照与 `start_task` 路径继续保留。
+- 应用目录支持运行中、已安装和合并三种范围；已安装目录缓存 5 分钟，Spotlight 元数据查询失败时不阻断运行态结果。
+- 单应用状态包含 Native Host AX/视觉观察；活动任务存在时使用独立瞬时连接，避免改变任务连接的窗口绑定和增量观察状态。
+- `open_app` 不读取完整 AX 树；可选聊天快照失败时也不会丢弃已取得的应用元数据和观察结果。
+- 单步失败会携带失败码、连续次数和已失败交互策略重新规划；连续 noop 达阈值后强制读取完整状态并切换 AX、坐标、键盘、聚焦、原生命令或等待路径，不再立即结束任务。
+- 截图证据不可用时降级为 AX-only 决策；验收窗口目录和验收记录持久化故障不再覆盖有效的内存验收结论。
 
 ## 自动化证据
 
@@ -28,6 +37,12 @@
 - Desktop、Protocol、Agent Runtime TypeScript typecheck 通过。
 - Desktop production build 通过；migration SQL 干跑因本机 Node/Electron `better-sqlite3` ABI 不同而按既有脚本跳过，65 个 migration 静态校验通过。
 - `git diff --check` 通过。
+
+本次可靠性增量的完整 Computer Use 证据：43 个测试文件、294 项测试通过；Desktop TypeScript typecheck 与相关 ESLint 通过。真实哔哩哔哩端到端验收仍需在用户已解锁且安装目标应用的 DEV 环境执行。
+
+本次桌面状态能力增量的完整证据：45 个测试文件、306 项测试通过；Desktop、Protocol、Agent Runtime TypeScript typecheck、相关 ESLint、`git diff --check` 与 Desktop production build 通过。ESLint 只有既有测试文件中的 19 个 non-null assertion 警告，零 error；migration 静态校验通过，SQL 干跑仍因本机 Node/Electron `better-sqlite3` ABI 差异按既有脚本跳过。
+
+本次失败降级增量将完整回归提升为 45 个测试文件、309 项测试通过，Desktop main/node TypeScript typecheck、相关 ESLint 和 `git diff --check` 通过。完整 Desktop typecheck 当前被并行画布改动 `canvas.api.ts` 的 `"group"` 与 `CanvasOperationType` 不匹配阻塞；Computer Use 变更自身无类型错误。
 
 ## 真实 DEV 记录
 

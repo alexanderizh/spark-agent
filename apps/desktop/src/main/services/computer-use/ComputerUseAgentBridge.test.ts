@@ -136,6 +136,11 @@ describe('ComputerUseAgentBridge', () => {
         tools: expect.arrayContaining([
           expect.objectContaining({ name: 'get_capabilities' }),
           expect.objectContaining({ name: 'diagnose_native_host' }),
+          expect.objectContaining({ name: 'list_apps' }),
+          expect.objectContaining({ name: 'list_windows' }),
+          expect.objectContaining({ name: 'get_screen_state' }),
+          expect.objectContaining({ name: 'get_app_state' }),
+          expect.objectContaining({ name: 'open_app' }),
           expect.objectContaining({ name: 'start_task' }),
         ]),
       },
@@ -147,6 +152,11 @@ describe('ComputerUseAgentBridge', () => {
     expect(startTask.inputSchema.properties.targetWindowId).toMatchObject({
       type: 'string',
       minLength: 1,
+    })
+    expect(startTask.inputSchema.properties.targetApp).toMatchObject({
+      type: 'string',
+      minLength: 1,
+      maxLength: 200,
     })
     expect(startTask.inputSchema.required).toEqual(['goal', 'environment'])
     expect(startTask.inputSchema.properties.successCriteria.items).toMatchObject({
@@ -163,6 +173,19 @@ describe('ComputerUseAgentBridge', () => {
       ]),
     })
     expect(startTask.inputSchema.properties.successCriteria.items).not.toEqual({ type: 'object' })
+    const getAppState = listed.result.tools.find((tool: any) => tool.name === 'get_app_state')
+    expect(getAppState.inputSchema).toMatchObject({
+      oneOf: [{ required: ['app'] }, { required: ['windowId'] }],
+      properties: {
+        launchIfNeeded: { default: true },
+        includeSnapshot: { default: false },
+      },
+    })
+    const listApps = listed.result.tools.find((tool: any) => tool.name === 'list_apps')
+    expect(listApps.inputSchema.properties.scope).toMatchObject({
+      enum: ['running', 'installed', 'all'],
+      default: 'all',
+    })
 
     const call = await fetch(`http://127.0.0.1:${binding.port}/mcp`, {
       method: 'POST',

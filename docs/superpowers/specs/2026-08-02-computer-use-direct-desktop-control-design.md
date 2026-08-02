@@ -17,6 +17,8 @@ Computer Use 一经用户发起，即可在所有会话权限模式下直接、�
 5. 新任务自动取消当前执行中的旧桌面任务并立即接管，不排队，也不向 Agent 暴露租约冲突。
 6. 系统屏幕录制、辅助功能和输入权限继续保留；Native Host 签名、哈希、架构、版本与协议校验继续保留。它们只在连接或环境变化时校验，并使用现有缓存，不参与逐动作授权。
 7. Native Host 或模型输出确实无效时返回准确错误，例如 `decision_model_error`、`native_host_incompatible`、`permission_denied`，不得折叠成 `action_not_allowed` 或“未授权”。
+8. Agent 在用户明确命名应用时应把精确显示名或 bundle id 作为 `targetApp` 交给 `start_task`。macOS 主进程先复用并拉起已有应用，或通过固定 `/usr/bin/open` 参数直接启动，再以真实窗口清单完成强身份绑定；不再让视觉模型操作 Spotlight 来承担应用启动。
+9. AX 语义动作在 Electron/自绘界面返回 `action_noop` 后，下一轮模型输入必须携带失败码和动作类型，并切换到截图坐标路径，禁止原样重复同一失败动作。
 
 ## 方案选择
 
@@ -79,11 +81,37 @@ Computer Use 一经用户发起，即可在所有会话权限模式下直接、�
 
 任何阶段失败时，新 session 必须进入准确终态，coordinator 必须释放持有权。不得出现“operator 已失败但 session 仍 running”。
 
-### 5. 模型动作兼容与错误
+### 5. Codex 风格的应用直达与恢复
+
+`start_task.targetApp` 是可选的明确目标，不从不可信页面文字推断。macOS 解析器只调用固定绝对路径 `/usr/bin/open`，参数以数组传递且不经过 shell：显示名使用 `-a`，bundle id 使用 `-b`。启动后以 100 ms 间隔等待最多 8 秒，只有窗口清单中的 app name、bundle id 或稳定 app id 精确匹配时才绑定。无法解析时回到既有前台桌面导航，不伪造启动成功。
+
+Native Host supervisor 仍限制单任务内的自动重启次数，但任务结束时必须复位预算。取消一个已经断连的任务不得为了清理而重新启动 Host；没有活动连接时只清理本地 observation/target 状态并复位 supervisor，使下一任务可以重新握手。
+
+Operator 把最近一次可恢复动作失败以 `{code, actionType}` 注入下一次决策。对 Electron 常见的 `invoke_element|set_value + action_noop`，决策提示要求立即改用截图坐标点击与普通输入，避免连续消耗 noop 预算。
+
+### 6. 模型动作兼容与错误
 
 保留当前未提交的模型动作改进：完整动作 JSON 结构、平台提示、常见按键别名归一化，以及 `decision_model_error`。Parser 只兼容语义等价别名，不放行畸形坐标、未知动作或无法安全解释的 payload。
 
 Operator 将原始 `ComputerUseBrokerError.code` 写入 session 终态；Controller 返回 acquire/claim 后的最新 session，不再以旧对象中的 `actuatorLeaseId: null` 推断执行失败。
+
+### 7. 可组合的桌面状态与应用直达接口
+
+Agent 不应为了查询应用、窗口或屏幕状态而创建长生命周期任务。MCP 桥提供五个短调用：
+
+- `list_apps`：按 `running | installed | all` 返回运行中、已安装或合并应用；运行状态来自 Native Host 窗口清单，macOS 已安装目录来自固定 Spotlight 元数据查询并缓存 5 分钟；目录查询失败时自动降级为空，不阻断运行中应用结果。
+- `list_windows`：按显示名、bundle id 或稳定 app id 精确筛选窗口，可选择包含最小化窗口。
+- `get_screen_state`：一次返回前台窗口、显示器、运行中应用及窗口数量，不创建 Computer session。
+- `get_app_state`：按应用或窗口直达，返回窗口元数据和 Native Host 的完整 AX/视觉观察；聊天快照是独立的可选增强，其失败不得丢弃已经取得的状态。
+- `open_app`：只负责启动或拉起应用并返回真实窗口状态，不读取完整 AX 树，不使用 Spotlight 键盘导航。
+
+当已有桌面任务占用共享 Native Host 连接时，`get_app_state` 使用一次性观察连接，完成后立即关闭，不能修改活动任务的目标绑定、增量树版本或 supervisor 状态。模型应优先调用满足需求的最小接口：已知应用直接 `get_app_state`/`open_app`，只有目标未知时才枚举应用。
+
+### 8. 单步失败后的有界替代策略
+
+单个动作失败不能直接结束任务。Operator 记录失败码、动作类型、连续失败次数和已经失败的交互策略，并在重新获取完整状态后要求模型切换路径：AX 元素操作、截图坐标、键盘导航、窗口聚焦、原生应用命令和有界等待之间按实际可用性降级。连续 noop 达到任务阈值时不再立刻失败，而是强制完整观察并继续替代策略；总步骤数和总运行时间仍作为最终循环边界。
+
+观察失败使用指数退避和 Host 重连预算；截图证据读取失败时重新观察，仍不可用则以 AX 状态继续无图决策；验收用窗口清单或验收记录存储失败时，使用当前观察和内存验收结果继续。只有取消、真实用户接管、系统安全桌面、系统权限缺失、不可信 Host、任务总步骤/时间耗尽等无法安全替代的边界才能终止任务。
 
 ## 测试与验收
 

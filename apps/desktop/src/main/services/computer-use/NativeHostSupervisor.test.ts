@@ -85,12 +85,14 @@ async function flushMicrotasks(times = 20): Promise<void> {
   }
 }
 
-function buildSupervisor(config: {
-  maxRestarts?: number
-  onRebound?: () => void
-  probe?: () => Promise<void>
-  connectImpl?: () => Promise<FakeConnection>
-} = {}): BuiltSupervisor {
+function buildSupervisor(
+  config: {
+    maxRestarts?: number
+    onRebound?: () => void
+    probe?: () => Promise<void>
+    connectImpl?: () => Promise<FakeConnection>
+  } = {},
+): BuiltSupervisor {
   const connections: FakeConnection[] = []
   let connectCalls = 0
   let sequence = 0
@@ -206,6 +208,27 @@ describe('NativeHostSupervisor', () => {
     await expect(supervisor.acquire()).rejects.toMatchObject({
       code: 'native_host_incompatible',
     })
+  })
+
+  it('resets an exhausted restart budget when a governed task ends', async () => {
+    const { supervisor } = buildSupervisor({ maxRestarts: 1 })
+    const first = await supervisor.acquire()
+    await supervisor.reportTerminalFailure(
+      first,
+      new ComputerUseBrokerError('native_host_incompatible', 'first death'),
+    )
+    const second = await supervisor.acquire()
+    await supervisor.reportTerminalFailure(
+      second,
+      new ComputerUseBrokerError('native_host_incompatible', 'second death'),
+    )
+    expect(supervisor.getState()).toBe('failed')
+
+    supervisor.resetSessionBudget()
+
+    expect(supervisor.getState()).toBe('absent')
+    expect(supervisor.getRestartCount()).toBe(0)
+    await expect(supervisor.acquire()).resolves.toBeDefined()
   })
 
   it('reclaims and restarts the connection when the heartbeat goes unhealthy', async () => {

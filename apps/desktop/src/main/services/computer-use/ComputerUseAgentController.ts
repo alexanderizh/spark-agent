@@ -14,6 +14,8 @@ import { ComputerTaskOperator, type ComputerTaskOperatorResult } from './Compute
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import { getComputerUseServices, type ComputerUseServices } from './ComputerUseServices.js'
 import { getComputerUseV2FlagStore } from './computerUseV2Flags.js'
+import { ComputerApplicationTargetResolver } from './ComputerApplicationTargetResolver.js'
+import { ComputerDesktopStateService } from './ComputerDesktopStateService.js'
 
 const log = createLogger('computer-use-agent-controller')
 
@@ -49,6 +51,13 @@ export class ComputerUseAgentController {
   private readonly runs = new Map<string, OperatorRunState>()
   private readonly runTokens = new Map<string, object>()
   private readonly runCompletions = new Map<string, Promise<void>>()
+  private readonly appTargetResolver: Pick<ComputerApplicationTargetResolver, 'resolve'>
+  private readonly createDesktopState: (
+    backend: ComputerUseServices['backend'],
+  ) => Pick<
+    ComputerDesktopStateService,
+    'listApps' | 'listWindows' | 'getScreenState' | 'getAppState' | 'openApp'
+  >
 
   constructor(
     options: {
@@ -56,6 +65,13 @@ export class ComputerUseAgentController {
       resolveDecisionModel?: (sessionId: string) => Promise<ComputerDecisionModelConfig>
       createAdapter?: (model: ComputerDecisionModelConfig) => GenericComputerDecisionAdapter
       createOperator?: (services: ComputerUseServices) => ComputerTaskOperator
+      appTargetResolver?: Pick<ComputerApplicationTargetResolver, 'resolve'>
+      createDesktopState?: (
+        backend: ComputerUseServices['backend'],
+      ) => Pick<
+        ComputerDesktopStateService,
+        'listApps' | 'listWindows' | 'getScreenState' | 'getAppState' | 'openApp'
+      >
     } = {},
   ) {
     this.getServices = options.getServices ?? getComputerUseServices
@@ -83,6 +99,10 @@ export class ComputerUseAgentController {
           timeline: services.timeline,
         })
       })
+    this.appTargetResolver = options.appTargetResolver ?? new ComputerApplicationTargetResolver()
+    this.createDesktopState =
+      options.createDesktopState ??
+      ((backend) => new ComputerDesktopStateService(backend, this.appTargetResolver))
   }
 
   bindSessionContext(sessionId: string, context: BoundAgentRuntime): void {
@@ -151,6 +171,11 @@ export class ComputerUseAgentController {
           taskTools: [
             'get_capabilities',
             'diagnose_native_host',
+            'list_apps',
+            'list_windows',
+            'get_screen_state',
+            'get_app_state',
+            'open_app',
             'capture_app_snapshot',
             'start_task',
             'get_status',
@@ -165,6 +190,78 @@ export class ComputerUseAgentController {
       }
       case 'diagnose_native_host':
         return services.diagnostics.collect()
+      case 'list_apps': {
+        const request = parseListApps(args)
+        const apps = await this.createDesktopState(services.backend).listApps(request)
+        return { apps, count: apps.length }
+      }
+      case 'list_windows': {
+        const request = parseListWindows(args)
+        const windows = await this.createDesktopState(services.backend).listWindows({
+          includeMinimized: request.includeMinimized,
+          ...(request.app == null ? {} : { app: request.app }),
+        })
+        return { windows, count: windows.length }
+      }
+      case 'get_screen_state': {
+        const request = parseScreenState(args)
+        return this.createDesktopState(services.backend).getScreenState(request)
+      }
+      case 'open_app': {
+        const request = parseOpenApp(args)
+        return this.createDesktopState(services.backend).openApp(request.app)
+      }
+      case 'get_app_state': {
+        const request = parseGetAppState(args)
+        const result = await this.createDesktopState(services.backend).getAppState({
+          launchIfNeeded: request.launchIfNeeded,
+          ...(request.app == null ? {} : { app: request.app }),
+          ...(request.windowId == null ? {} : { windowId: request.windowId }),
+        })
+        if (!request.includeSnapshot) return { ...result, snapshot: null }
+        const context = this.sessionContexts.get(sessionId)
+        if (context == null || services.snapshots == null) {
+          return {
+            ...result,
+            snapshot: null,
+            snapshotUnavailableReason: 'snapshot_capture_unavailable',
+          }
+        }
+        try {
+          const snapshot = await services.snapshots.captureFrontmost({
+            sessionId,
+            turnId: context.turnId,
+            accessibleTextMode: 'visible_only',
+          })
+          if (snapshot.app.id !== result.target.app.id) {
+            return {
+              ...result,
+              snapshot: null,
+              snapshotUnavailableReason: 'target_not_frontmost',
+            }
+          }
+          return {
+            ...result,
+            snapshot,
+            ...(snapshot.previewUrl == null
+              ? {}
+              : {
+                  preview: {
+                    type: 'image',
+                    url: snapshot.previewUrl,
+                    alt: `${snapshot.app.name} — ${snapshot.window.title}`,
+                  },
+                }),
+          }
+        } catch (error) {
+          return {
+            ...result,
+            snapshot: null,
+            snapshotUnavailableReason:
+              error instanceof ComputerUseBrokerError ? error.code : 'snapshot_capture_failed',
+          }
+        }
+      }
       case 'get_status': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
         return this.statusPayload(computerSession)
@@ -275,8 +372,12 @@ export class ComputerUseAgentController {
         if (request.environment !== 'my_desktop') {
           throw unavailable('This build currently provides governed execution only on My Desktop')
         }
-        const windows = await services.backend.listWindows()
-        const target = requireTargetWindow(windows, request.targetWindowId)
+        const requestedAppTarget =
+          request.targetApp == null
+            ? null
+            : await this.appTargetResolver.resolve(request.targetApp, services.backend)
+        const windows = requestedAppTarget == null ? await services.backend.listWindows() : []
+        const target = requestedAppTarget ?? requireTargetWindow(windows, request.targetWindowId)
         const model = await this.resolveDecisionModel(sessionId)
         const successCriteria =
           request.successCriteria.length > 0
@@ -303,7 +404,7 @@ export class ComputerUseAgentController {
           modelId: model.model,
           taskContract,
         })
-        if (request.targetWindowId != null) {
+        if (request.targetWindowId != null || requestedAppTarget != null) {
           services.backend.bindSessionTarget?.({
             computerSessionId: computerSession.id,
             appId: target.app.id,
@@ -439,9 +540,7 @@ export class ComputerUseAgentController {
         settled = true
         clearTimeout(timer)
         unsubscribe()
-        resolve(
-          this.statusPayload(services.sessions.getSession(initial.id) ?? session, timedOut),
-        )
+        resolve(this.statusPayload(services.sessions.getSession(initial.id) ?? session, timedOut))
       }
       const finishAfterCleanup = async (session: ComputerSession) => {
         await this.runCompletions.get(initial.id)
@@ -497,8 +596,42 @@ const StartTaskSchema = z
     successCriteria: z.array(VerificationSpecSchema).min(1).max(100).optional(),
     acceptanceCriteria: z.array(z.string().trim().min(1).max(1_000)).min(1).max(50).optional(),
     targetWindowId: z.string().trim().min(1).max(256).optional(),
+    targetApp: z.string().trim().min(1).max(200).optional(),
   })
   .strict()
+  .refine((value) => value.targetApp == null || value.targetWindowId == null, {
+    message: 'targetApp and targetWindowId are mutually exclusive',
+  })
+
+const ListAppsSchema = z
+  .object({
+    includeWindows: z.boolean().default(true),
+    scope: z.enum(['running', 'installed', 'all']).default('all'),
+  })
+  .strict()
+
+const ListWindowsSchema = z
+  .object({
+    app: z.string().trim().min(1).max(300).optional(),
+    includeMinimized: z.boolean().default(false),
+  })
+  .strict()
+
+const ScreenStateSchema = z.object({ includeWindows: z.boolean().default(true) }).strict()
+
+const GetAppStateSchema = z
+  .object({
+    app: z.string().trim().min(1).max(300).optional(),
+    windowId: z.string().trim().min(1).max(256).optional(),
+    launchIfNeeded: z.boolean().default(true),
+    includeSnapshot: z.boolean().default(false),
+  })
+  .strict()
+  .refine((value) => (value.app == null) !== (value.windowId == null), {
+    message: 'Provide exactly one of app or windowId',
+  })
+
+const OpenAppSchema = z.object({ app: z.string().trim().min(1).max(300) }).strict()
 
 const SnapshotCaptureSchema = z
   .object({
@@ -519,6 +652,36 @@ function parseWaitForCompletion(args: unknown): z.infer<typeof WaitForCompletion
   return parsed.data
 }
 
+function parseListApps(args: unknown): z.infer<typeof ListAppsSchema> {
+  const parsed = ListAppsSchema.safeParse(args)
+  if (!parsed.success) throw invalidArguments()
+  return parsed.data
+}
+
+function parseListWindows(args: unknown): z.infer<typeof ListWindowsSchema> {
+  const parsed = ListWindowsSchema.safeParse(args)
+  if (!parsed.success) throw invalidArguments()
+  return parsed.data
+}
+
+function parseScreenState(args: unknown): z.infer<typeof ScreenStateSchema> {
+  const parsed = ScreenStateSchema.safeParse(args)
+  if (!parsed.success) throw invalidArguments()
+  return parsed.data
+}
+
+function parseGetAppState(args: unknown): z.infer<typeof GetAppStateSchema> {
+  const parsed = GetAppStateSchema.safeParse(args)
+  if (!parsed.success) throw invalidArguments()
+  return parsed.data
+}
+
+function parseOpenApp(args: unknown): z.infer<typeof OpenAppSchema> {
+  const parsed = OpenAppSchema.safeParse(args)
+  if (!parsed.success) throw invalidArguments()
+  return parsed.data
+}
+
 function parseSnapshotCapture(args: unknown): z.infer<typeof SnapshotCaptureSchema> {
   const parsed = SnapshotCaptureSchema.safeParse(args)
   if (!parsed.success) throw invalidArguments()
@@ -530,6 +693,7 @@ function parseStartTask(args: unknown): {
   environment: 'safe_browser' | 'safe_desktop' | 'my_desktop'
   successCriteria: z.infer<typeof VerificationSpecSchema>[]
   targetWindowId?: string
+  targetApp?: string
 } {
   const parsed = StartTaskSchema.safeParse(args)
   if (!parsed.success) throw invalidArguments()
@@ -537,6 +701,7 @@ function parseStartTask(args: unknown): {
     goal: parsed.data.goal,
     environment: parsed.data.environment,
     ...(parsed.data.targetWindowId == null ? {} : { targetWindowId: parsed.data.targetWindowId }),
+    ...(parsed.data.targetApp == null ? {} : { targetApp: parsed.data.targetApp }),
     successCriteria:
       parsed.data.successCriteria ??
       (parsed.data.acceptanceCriteria ?? []).map((expected) => ({

@@ -253,6 +253,53 @@ export class NativeHostComputerUseBackend
     return this.withConnection((connection) => connection.listWindows(), { idempotent: true })
   }
 
+  async inspectWindow(input: {
+    appId: string
+    windowId: string
+    fullTree: boolean
+    signal?: AbortSignal
+  }): Promise<ComputerObservation> {
+    const transient = this.observationSessions.size > 0
+    let connection: NativeHostConnection | null = null
+    try {
+      connection = transient ? await this.connect() : await this.getConnection()
+      const manifest = await connection.getCapabilities()
+      if (
+        !manifest.features.captureWindow ||
+        manifest.backends.screen === 'unavailable' ||
+        manifest.permissions.screen !== 'granted'
+      ) {
+        throw observationUnavailable()
+      }
+      const snapshotId = this.createId()
+      const result = await connection.observe({
+        snapshotId,
+        appId: input.appId,
+        windowId: input.windowId,
+        previousTreeVersion: null,
+        fullTree: input.fullTree,
+        ...(input.signal == null ? {} : { signal: input.signal }),
+      })
+      const observation = ComputerObservationSchema.parse(result.response.observation)
+      if (
+        observation.screenshot.snapshotId !== snapshotId ||
+        observation.foreground.app.id !== input.appId ||
+        observation.foreground.window.id !== input.windowId ||
+        (input.fullTree && observation.tree.mode !== 'full')
+      ) {
+        throw new ComputerUseBrokerError(
+          'native_host_incompatible',
+          'Native Host app state does not match its requested window',
+        )
+      }
+      return observation
+    } catch (error) {
+      throw normalizeBackendError(error)
+    } finally {
+      if (transient && connection != null) await connection.close().catch(() => undefined)
+    }
+  }
+
   bindSessionTarget(input: { computerSessionId: string; appId: string; windowId: string }): void {
     this.targetBindings.set(input.computerSessionId, {
       appId: input.appId,
@@ -370,13 +417,13 @@ export class NativeHostComputerUseBackend
     this.targetBindings.delete(computerSessionId)
     const supervisor = this.activeSupervisor()
     if (supervisor != null) {
-      let connection: NativeHostConnection
-      try {
-        connection = await supervisor.acquire()
-      } catch (error) {
-        // The supervisor has no live connection to cancel on; the local session
-        // is already cleared. Surface the underlying error for observability.
-        throw normalizeBackendError(error)
+      // Cancellation is cleanup, not a reason to launch or reconnect a dead Host. Acquiring
+      // here used to make an exhausted supervisor impossible to reset, so every later task
+      // failed until the whole SparkWork process restarted.
+      const connection = supervisor.getCurrentConnection()
+      if (connection == null) {
+        supervisor.resetSessionBudget()
+        return
       }
       try {
         await connection.cancelSession(computerSessionId)
@@ -385,7 +432,9 @@ export class NativeHostComputerUseBackend
         if (shouldInvalidateConnection(normalized)) {
           await this.invalidateConnection(connection, normalized)
         }
-        throw normalized
+        if (!shouldInvalidateConnection(normalized)) throw normalized
+      } finally {
+        supervisor.resetSessionBudget()
       }
       return
     }

@@ -40,6 +40,12 @@ export interface ComputerHostBackend {
     permissions: Array<'screen' | 'accessibility'>,
   ): Promise<NativeHostCapabilityManifest>
   listWindows(): Promise<NativeWindowDescriptor[]>
+  inspectWindow?(input: {
+    appId: string
+    windowId: string
+    fullTree: boolean
+    signal?: AbortSignal
+  }): Promise<ComputerObservation>
   bindSessionTarget?(input: { computerSessionId: string; appId: string; windowId: string }): void
 }
 

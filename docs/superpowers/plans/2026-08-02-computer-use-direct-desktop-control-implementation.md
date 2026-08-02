@@ -10,6 +10,10 @@
 
 **Tech Stack:** TypeScript strict、Electron main process、Vitest、Zod protocol schemas、macOS/Windows Native Host 既有取消协议。
 
+**2026-08-02 可靠性增量：** 已补充 Codex 风格 `targetApp` 应用直达、Electron AX 失败后的坐标降级提示，以及任务结束后的 Host supervisor 重启预算复位。macOS 使用固定 `/usr/bin/open -a|-b` 且不经过 shell，启动结果必须由真实窗口清单匹配后才能绑定；Windows 暂时保持原桌面导航路径。
+
+**2026-08-02 状态能力增量：** 新增无需 `start_task` 的 `list_apps`、`list_windows`、`get_screen_state`、`get_app_state`、`open_app`。应用列表同时支持 Native Host 运行态和 macOS 已安装目录，目录使用 5 分钟缓存并允许故障降级；活动任务期间的应用观察使用隔离连接，避免污染任务状态。
+
 ---
 
 ### Task 1: 主进程单执行器协调器
@@ -196,6 +200,33 @@ Run: `pnpm --filter @spark/desktop dev`
 在 DEV 实例执行：`打开我电脑上的哔哩哔哩应用，然后搜索comfyui教程。只有在应用内可见搜索结果后才报告完成。`
 
 Expected: `allowedApps=[]`、无 approval/handoff/lease conflict、哔哩哔哩内可见搜索结果；失败则以真实错误继续修复，不使用浏览器 fallback。
+
+### Task 6: 桌面状态多路查询与低阻断应用直达
+
+**Files:**
+- Create: `apps/desktop/src/main/services/computer-use/ComputerDesktopStateService.ts`
+- Create: `apps/desktop/src/main/services/computer-use/ComputerApplicationCatalog.ts`
+- Modify: `apps/desktop/src/main/services/computer-use/NativeHostComputerUseBackend.ts`
+- Modify: `apps/desktop/src/main/services/computer-use/ComputerUseAgentBridge.ts`
+- Modify: `apps/desktop/src/main/services/computer-use/ComputerUseAgentController.ts`
+- Modify: `packages/agent-runtime/src/computer-use/computer-use-system-prompt.ts`
+
+- [x] 暴露应用、窗口、屏幕和单应用状态查询，并保留原快照及长任务入口。
+- [x] `list_apps` 支持 `running | installed | all`，已安装目录缓存 5 分钟且失败自动降级。
+- [x] `get_app_state` 返回完整 Native Host AX/视觉观察；活动任务期间使用独立瞬时连接。
+- [x] `open_app` 只启动/拉起并验证真实窗口，不承担完整观察成本。
+- [x] 模型提示优先选择满足需求的最小确定性接口，减少枚举和长任务启动。
+- [x] 完成 Computer Use 全量回归、TypeScript、ESLint 和 production build。
+- [ ] 在用户已解锁桌面的最新 DEV 实例完成真实应用端到端验收。
+
+### Task 7: 单步失败的有界降级编排
+
+- [x] 动作失败上下文增加连续次数、失败策略和强制替代标记，并注入下一轮模型决策。
+- [x] 连续 noop 达阈值时强制完整观察和切换交互方式，不直接把任务标记失败。
+- [x] AX、截图坐标、键盘、窗口聚焦、原生命令和等待形成可枚举的替代策略集合。
+- [x] 截图证据失败时重新观察并支持 AX-only 决策。
+- [x] 验收窗口清单或验收记录存储失败时保留内存验收结果。
+- [ ] 在真实 Electron/自绘应用中验证 AX noop 后自动切换坐标及键盘路径。
 
 ## 自审
 

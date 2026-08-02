@@ -12,7 +12,12 @@ import type {
 } from '@spark/protocol'
 import { computerExecutionLaneForAction } from '@spark/protocol'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
-import type { ComputerDecision, GenericComputerDecisionAdapter } from './ComputerDecisionAdapter.js'
+import type {
+  ComputerActionFailureContext,
+  ComputerDecision,
+  ComputerInteractionStrategy,
+  GenericComputerDecisionAdapter,
+} from './ComputerDecisionAdapter.js'
 import { ComputerVerificationEngine } from './ComputerVerificationEngine.js'
 import { reconcileObservationTree } from './NativeHostTreeReconciler.js'
 import { isActionBatchEnabled, isIncrementalTreeEnabled } from './computerUseV2Flags.js'
@@ -150,6 +155,8 @@ export class ComputerTaskOperator {
     let consecutiveNoops = 0
     let consecutiveTransientFailures = 0
     let successfulActions = 0
+    let previousActionFailure: ComputerActionFailureContext | undefined
+    const failedStrategies = new Set<ComputerInteractionStrategy>()
     const abortSignal = this.getAbortSignal?.(input.session.id)
     try {
       observation = await this.observeWithRecovery(
@@ -167,10 +174,9 @@ export class ComputerTaskOperator {
           this.sessions.fail(input.session.id)
           return { status: 'failed', reason: 'maximum_runtime_reached' }
         }
-        const screenshot = await this.evidence.readLatestImage(
-          input.session.id,
-          observation.screenshot.snapshotId,
-        )
+        const decisionEvidence = await this.readDecisionEvidence(input.session.id, observation)
+        observation = decisionEvidence.observation
+        const screenshot = decisionEvidence.screenshot
         this.sessions.setPhase(input.session.id, 'planning')
         let decision: ComputerDecision
         try {
@@ -181,6 +187,7 @@ export class ComputerTaskOperator {
             screenshot,
             stepIndex,
             allowBatch: isActionBatchEnabled(),
+            ...(previousActionFailure == null ? {} : { previousActionFailure }),
           })
           consecutiveTransientFailures = 0
         } catch (error) {
@@ -211,7 +218,15 @@ export class ComputerTaskOperator {
               shouldRequestFullDecisionTree(),
             )
           }
-          const windows = await this.windowInventory?.listWindows()
+          let windows: NativeWindowDescriptor[] | undefined
+          try {
+            windows = await this.windowInventory?.listWindows()
+          } catch (error) {
+            log.warn('Computer window inventory unavailable during verification; using observation', {
+              computerSessionId: input.session.id,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
           const verification = this.verification.verify(
             input.session.taskContract.successCriteria,
             observation,
@@ -229,24 +244,30 @@ export class ComputerTaskOperator {
             computerSessionId: input.session.id,
             verificationId,
           })
-          this.verifications.create({
-            id: verificationId,
-            computerSessionId: input.session.id,
-            spec: { criteria: input.session.taskContract.successCriteria },
-            verifierModelId: input.session.modelId,
-            createdAt: completedAt,
-          })
-          const record = this.verifications.complete(verificationId, {
-            status: verification.passed ? 'passed' : 'failed',
-            evidence: verification.results,
-            confidence: verification.passed ? 1 : 0,
-            completedAt,
-          })
-          if (record == null) {
-            // The verification record could not be persisted, but the verification outcome
-            // is valid in-memory. Surface the storage fault for observability and proceed on
-            // the outcome instead of killing the whole turn over a non-action disk error.
-            log.warn('Computer verification record could not be persisted', { verificationId })
+          try {
+            this.verifications.create({
+              id: verificationId,
+              computerSessionId: input.session.id,
+              spec: { criteria: input.session.taskContract.successCriteria },
+              verifierModelId: input.session.modelId,
+              createdAt: completedAt,
+            })
+            const record = this.verifications.complete(verificationId, {
+              status: verification.passed ? 'passed' : 'failed',
+              evidence: verification.results,
+              confidence: verification.passed ? 1 : 0,
+              completedAt,
+            })
+            if (record == null) {
+              throw new Error('verification record unavailable')
+            }
+          } catch (error) {
+            // Persistence and inventory are supporting evidence paths. Once the in-memory
+            // verification result is valid, their failure must not cancel the desktop task.
+            log.warn('Computer verification record could not be persisted', {
+              verificationId,
+              error: error instanceof Error ? error.message : String(error),
+            })
           }
           this.timeline?.record({
             type: 'computer_verification_completed',
@@ -291,26 +312,51 @@ export class ComputerTaskOperator {
               consecutiveNoops = 0
               consecutiveTransientFailures = 0
               successfulActions += 1
+              previousActionFailure = undefined
+              failedStrategies.clear()
               observation = stepResult.observation
             } catch (error) {
               if (!(error instanceof ComputerUseBrokerError)) throw error
               if (error.code === 'session_canceled') throw error
               if (error.code === 'action_noop') {
                 consecutiveNoops += 1
-                if (consecutiveNoops >= input.session.taskContract.maxConsecutiveNoops) {
-                  this.sessions.fail(input.session.id)
-                  return { status: 'failed', reason: 'maximum_consecutive_noops_reached' }
-                }
+                const exhaustedNoopWindow =
+                  consecutiveNoops >= input.session.taskContract.maxConsecutiveNoops
+                failedStrategies.add(interactionStrategyFor(action))
+                previousActionFailure = actionFailureContext(
+                  error,
+                  action,
+                  consecutiveNoops,
+                  failedStrategies,
+                  true,
+                )
+                if (exhaustedNoopWindow) consecutiveNoops = 0
                 stopped = true
                 break
               }
               if (error.code === 'stale_frame') {
+                failedStrategies.add(interactionStrategyFor(action))
+                previousActionFailure = actionFailureContext(
+                  error,
+                  action,
+                  consecutiveTransientFailures + 1,
+                  failedStrategies,
+                  true,
+                )
                 // A later step's target drifted. Stop and re-plan — do not retry the stale step.
                 stopped = true
                 break
               }
               if (isRecoverableExecutionError(error)) {
                 consecutiveTransientFailures += 1
+                failedStrategies.add(interactionStrategyFor(action))
+                previousActionFailure = actionFailureContext(
+                  error,
+                  action,
+                  consecutiveTransientFailures,
+                  failedStrategies,
+                  true,
+                )
                 if (consecutiveTransientFailures > MAX_TRANSIENT_RECOVERIES) throw error
                 await this.wait(recoveryDelay(consecutiveTransientFailures))
                 stopped = true
@@ -322,23 +368,22 @@ export class ComputerTaskOperator {
           if (stopped) {
             observation = await this.observeWithRecovery(
               input.session.id,
-              shouldRequestFullDecisionTree(),
+              previousActionFailure?.requiredAlternative === true
+                ? true
+                : shouldRequestFullDecisionTree(),
             )
           }
           continue
         }
 
-        const envelope = createEnvelope(
-          input.session,
-          observation,
-          decision,
-          this.createId(),
-        )
+        const envelope = createEnvelope(input.session, observation, decision, this.createId())
         try {
           const result = await this.dispatchDirectly(envelope)
           consecutiveNoops = 0
           consecutiveTransientFailures = 0
           successfulActions += 1
+          previousActionFailure = undefined
+          failedStrategies.clear()
           observation = result.observation
         } catch (error) {
           if (!(error instanceof ComputerUseBrokerError)) {
@@ -346,12 +391,27 @@ export class ComputerTaskOperator {
           }
           if (error.code === 'action_noop') {
             consecutiveNoops += 1
-            if (consecutiveNoops >= input.session.taskContract.maxConsecutiveNoops) {
-              this.sessions.fail(input.session.id)
-              return { status: 'failed', reason: 'maximum_consecutive_noops_reached' }
-            }
+            const exhaustedNoopWindow =
+              consecutiveNoops >= input.session.taskContract.maxConsecutiveNoops
+            failedStrategies.add(interactionStrategyFor(decision.action))
+            previousActionFailure = actionFailureContext(
+              error,
+              decision.action,
+              consecutiveNoops,
+              failedStrategies,
+              true,
+            )
+            if (exhaustedNoopWindow) consecutiveNoops = 0
           } else if (isRecoverableExecutionError(error)) {
             consecutiveTransientFailures += 1
+            failedStrategies.add(interactionStrategyFor(decision.action))
+            previousActionFailure = actionFailureContext(
+              error,
+              decision.action,
+              consecutiveTransientFailures,
+              failedStrategies,
+              true,
+            )
             if (consecutiveTransientFailures > MAX_TRANSIENT_RECOVERIES) throw error
             await this.wait(recoveryDelay(consecutiveTransientFailures))
           } else {
@@ -359,7 +419,9 @@ export class ComputerTaskOperator {
           }
           observation = await this.observeWithRecovery(
             input.session.id,
-            shouldRequestFullDecisionTree(),
+            previousActionFailure?.requiredAlternative === true
+              ? true
+              : shouldRequestFullDecisionTree(),
           )
         }
       }
@@ -428,6 +490,34 @@ export class ComputerTaskOperator {
     throw lastError
   }
 
+  private async readDecisionEvidence(
+    computerSessionId: string,
+    initialObservation: ComputerObservation,
+  ): Promise<{ observation: ComputerObservation; screenshot: Buffer }> {
+    let observation = initialObservation
+    for (let attempt = 0; attempt <= MAX_DECISION_RECOVERIES; attempt += 1) {
+      try {
+        return {
+          observation,
+          screenshot: await this.evidence.readLatestImage(
+            computerSessionId,
+            observation.screenshot.snapshotId,
+          ),
+        }
+      } catch (error) {
+        if (attempt === MAX_DECISION_RECOVERIES) {
+          log.warn('Computer screenshot evidence unavailable; continuing with AX state', {
+            computerSessionId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          return { observation, screenshot: Buffer.alloc(0) }
+        }
+        observation = await this.observeWithRecovery(computerSessionId, true)
+      }
+    }
+    return { observation, screenshot: Buffer.alloc(0) }
+  }
+
   private async dispatchDirectly(
     envelope: ComputerActionEnvelope,
   ): Promise<{ observation: ComputerObservation; noop: boolean }> {
@@ -468,11 +558,6 @@ export class ComputerTaskOperator {
     }
     return this.broker.dispatch(refreshedEnvelope)
   }
-
-}
-
-function sessionCanceled(): ComputerUseBrokerError {
-  return new ComputerUseBrokerError('session_canceled', 'Computer session was canceled')
 }
 
 function isRecoverableExecutionError(error: ComputerUseBrokerError): boolean {
@@ -485,6 +570,47 @@ function isRecoverableExecutionError(error: ComputerUseBrokerError): boolean {
     'native_host_incompatible',
     'environment_unavailable',
   ]).has(error.code)
+}
+
+function actionFailureContext(
+  error: ComputerUseBrokerError,
+  action: ComputerAction,
+  consecutiveFailures: number,
+  failedStrategies: Set<ComputerInteractionStrategy>,
+  requiredAlternative: boolean,
+): ComputerActionFailureContext {
+  return {
+    code: error.code,
+    actionType: action.type,
+    consecutiveFailures,
+    failedStrategies: [...failedStrategies],
+    requiredAlternative,
+  }
+}
+
+function interactionStrategyFor(action: ComputerAction): ComputerInteractionStrategy {
+  switch (action.type) {
+    case 'invoke_element':
+    case 'set_value':
+    case 'select_text':
+      return 'accessibility'
+    case 'click':
+    case 'move':
+    case 'drag':
+    case 'scroll':
+      return 'pointer'
+    case 'keypress':
+    case 'type_text':
+      return 'keyboard'
+    case 'focus_window':
+      return 'window_focus'
+    case 'app_command':
+      return 'native_command'
+    case 'observe':
+    case 'wait_for':
+      return 'wait'
+  }
+  return 'wait'
 }
 
 function recoveryDelay(attempt: number): number {
@@ -554,8 +680,8 @@ function policyContextFor(
     action.type === 'type_text' || action.type === 'set_value'
       ? action.sensitive === true
       : action.type === 'app_command' &&
-          action.command.name === 'prefill_composer' &&
-          action.command.sensitive === true
+        action.command.name === 'prefill_composer' &&
+        action.command.sensitive === true
   return {
     effect: readOnly
       ? 'read_only'
