@@ -177,6 +177,35 @@ export class OptionalCapabilityManager {
     return { success: true, message: '可选能力已卸载', snapshot }
   }
 
+  async reportRuntimeFailure(
+    id: OptionalCapabilityId,
+    cause: unknown,
+  ): Promise<OptionalCapabilitySnapshot> {
+    const definition = getOptionalCapabilityDefinition(id)
+    const failure: CapabilityErrorState = {
+      code: 'package_invalid',
+      message: `${definition.displayName}运行验证失败：原生 Runtime 无法加载，请更新或修复组件`,
+      retryable: true,
+    }
+    const active = await this.store.read(id)
+    if (active) {
+      await this.store.write({
+        ...active,
+        runtimeFailure: {
+          ...failure,
+          reportedAt: this.now().toISOString(),
+        },
+      })
+    }
+    this.verifiedActiveStates.delete(id)
+    this.logger.warn(
+      `event=optional_capability_health capability=${id} stage=runtime_probe status=failed code=package_invalid error=${safeDiagnostic(cause)}`,
+    )
+    const snapshot = await this.buildSnapshot()
+    this.onSnapshot?.(snapshot)
+    return snapshot
+  }
+
   async setAutoUpdate(
     id: OptionalCapabilityId,
     enabled: boolean,
@@ -559,7 +588,8 @@ export class OptionalCapabilityManager {
           : []
         const targetVersion = artifacts.length > 0 ? capabilityVersion(artifacts) : null
         const downloadSize = artifacts.reduce((sum, artifact) => sum + (artifact.size ?? 0), 0)
-        const error = this.errors.get(definition.id)
+        const runtimeFailure = active?.runtimeFailure
+        const error = runtimeFailure ?? this.errors.get(definition.id)
         let state: OptionalCapabilityPhase = active ? 'ready' : 'missing'
         if (active) {
           const valid = await validateActiveState(
@@ -570,7 +600,8 @@ export class OptionalCapabilityManager {
           )
           if (valid) {
             this.verifiedActiveStates.set(definition.id, activeStateKey(active))
-            if (targetVersion && targetVersion !== active.version) state = 'update_available'
+            if (runtimeFailure) state = 'damaged'
+            else if (targetVersion && targetVersion !== active.version) state = 'update_available'
           } else {
             this.verifiedActiveStates.delete(definition.id)
             state = 'damaged'

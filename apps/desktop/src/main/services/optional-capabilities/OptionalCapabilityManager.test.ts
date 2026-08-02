@@ -280,6 +280,39 @@ describe('OptionalCapabilityManager', () => {
     await expect(
       manager.getArtifactDirectory('local-depth', 'model.depth-anything-v2-small-int8-'),
     ).resolves.toEqual(expect.stringContaining('model.depth-anything-v2-small-int8-'))
+
+    await expect(
+      manager.reportRuntimeFailure(
+        'local-depth',
+        new Error('dlopen onnxruntime_binding.node: code signature rejected'),
+      ),
+    ).resolves.toMatchObject({
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'local-depth',
+          state: 'damaged',
+          errorCode: 'package_invalid',
+          error: expect.stringContaining('原生 Runtime 无法加载'),
+        }),
+      ]),
+    })
+
+    const restartedManager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: async () => manifest(),
+      installArchive,
+    })
+    await expect(restartedManager.list()).resolves.toMatchObject({
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'local-depth',
+          state: 'damaged',
+          errorCode: 'package_invalid',
+        }),
+      ]),
+    })
   })
 
   it('keeps the active version when an update fails before activation', async () => {

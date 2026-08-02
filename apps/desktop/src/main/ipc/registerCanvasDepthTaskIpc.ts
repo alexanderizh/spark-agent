@@ -27,7 +27,12 @@ const DEPTH_RUNTIME_ENTRY = join(
 
 type CapabilityManager = Pick<
   ReturnType<typeof getOptionalCapabilityManager>,
-  'list' | 'install' | 'repair' | 'getArtifactDirectory' | 'subscribeProgress'
+  | 'list'
+  | 'install'
+  | 'repair'
+  | 'getArtifactDirectory'
+  | 'subscribeProgress'
+  | 'reportRuntimeFailure'
 >
 type Runner = Pick<DepthVideoRunner, 'run'>
 type DepthTaskResponse = CanvasMediaTaskCreateResponse & {
@@ -179,6 +184,15 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
         const cancelled =
           controller.signal.aborted || (error instanceof Error && error.message === 'cancelled')
         const diagnostic = safeDepthDiagnostic(error)
+        if (!cancelled && isDepthRuntimeLoadFailure(error)) {
+          await capabilityManager
+            .reportRuntimeFailure('local-depth', error)
+            .catch((reportError) => {
+              log.warn(
+                `event=canvas_depth_task task=${runtimeTaskId} stage=runtime_health status=failed error=${safeDepthDiagnostic(reportError)}`,
+              )
+            })
+        }
         pushResponse({
           runtimeTaskId,
           requestId: runtimeTaskId,
@@ -292,6 +306,11 @@ function safeDepthDiagnostic(error: unknown): string {
       }
     })
     .slice(0, 500)
+}
+
+function isDepthRuntimeLoadFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return /dlopen|onnxruntime_binding|本地深度 Runtime/i.test(message)
 }
 
 function runningResponse(

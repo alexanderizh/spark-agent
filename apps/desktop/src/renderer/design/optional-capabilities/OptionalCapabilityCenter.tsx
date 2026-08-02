@@ -181,9 +181,11 @@ export function OptionalCapabilityCenter() {
               )}
             </div>
           ))}
-          <Button type="link" onClick={openIntegrity}>
-            查看详情
-          </Button>
+          <div className="optional-capability-progress-actions">
+            <Button type="link" onClick={openIntegrity}>
+              查看详情
+            </Button>
+          </div>
         </aside>
       )}
     </>

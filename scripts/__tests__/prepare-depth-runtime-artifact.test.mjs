@@ -13,7 +13,10 @@ test.afterEach(async () => {
 async function writePackage(nodeModules, name, manifest, files = {}) {
   const directory = join(nodeModules, ...name.split('/'))
   await mkdir(directory, { recursive: true })
-  await writeFile(join(directory, 'package.json'), JSON.stringify({ name, version: '1.0.0', ...manifest }))
+  await writeFile(
+    join(directory, 'package.json'),
+    JSON.stringify({ name, version: '1.0.0', ...manifest }),
+  )
   for (const [relativePath, content] of Object.entries(files)) {
     const path = join(directory, relativePath)
     await mkdir(join(path, '..'), { recursive: true })
@@ -28,7 +31,10 @@ test('packages the Node depth dependency closure for only the target platform', 
   await writePackage(
     nodeModules,
     '@huggingface/transformers',
-    { version: '4.2.0', dependencies: { 'onnxruntime-node': '1.24.3', 'onnxruntime-web': '1.0.0' } },
+    {
+      version: '4.2.0',
+      dependencies: { 'onnxruntime-node': '1.24.3', 'onnxruntime-web': '1.0.0' },
+    },
     {
       'src/transformers.js': 'export const pipeline = () => {}',
       'src/backends/onnx.js': [
@@ -43,6 +49,7 @@ test('packages the Node depth dependency closure for only the target platform', 
     'onnxruntime-node',
     { version: '1.24.3', dependencies: { 'onnxruntime-common': '1.24.3' } },
     {
+      'bin/napi-v6/darwin/arm64/libonnxruntime.1.24.3.dylib': 'darwin-library',
       'bin/napi-v6/darwin/arm64/onnxruntime_binding.node': 'darwin',
       'bin/napi-v6/linux/x64/onnxruntime_binding.node': 'linux',
     },
@@ -80,9 +87,7 @@ test('packages the Node depth dependency closure for only the target platform', 
   await assert.rejects(
     access(join(result.packageDirectory, 'node_modules/onnxruntime-node/bin/napi-v6/linux')),
   )
-  await assert.rejects(
-    access(join(result.packageDirectory, 'node_modules/onnxruntime-web')),
-  )
+  await assert.rejects(access(join(result.packageDirectory, 'node_modules/onnxruntime-web')))
   const packageManifest = JSON.parse(await readFile(result.packageManifestPath, 'utf8'))
   assert.equal(
     packageManifest.runtimeEntry,
@@ -90,11 +95,36 @@ test('packages the Node depth dependency closure for only the target platform', 
   )
   assert.equal(packageManifest.packages['onnxruntime-web'], undefined)
   const patchedOnnxBackend = await readFile(
-    join(
-      result.packageDirectory,
-      'node_modules/@huggingface/transformers/src/backends/onnx.js',
-    ),
+    join(result.packageDirectory, 'node_modules/@huggingface/transformers/src/backends/onnx.js'),
     'utf8',
   )
   assert.doesNotMatch(patchedOnnxBackend, /from ['"]onnxruntime-web\/webgpu['"]/)
+
+  await assert.rejects(
+    prepareDepthRuntimeArtifact(nodeModules, join(root, 'signed-output'), {
+      platform: 'darwin',
+      arch: 'arm64',
+      revision: 2,
+      requireCodesign: true,
+    }),
+    /requires DEPTH_RUNTIME_CODESIGN_IDENTITY/,
+  )
+
+  const commands = []
+  const signedResult = await prepareDepthRuntimeArtifact(nodeModules, join(root, 'signed-output'), {
+    platform: 'darwin',
+    arch: 'arm64',
+    revision: 2,
+    codesignIdentity: 'Developer ID Application: Spark (CCUUJZC28D)',
+    expectedTeamId: 'CCUUJZC28D',
+    requireCodesign: true,
+    runCommand: async (command, args) => commands.push([command, ...args]),
+    captureCommand: async () => 'TeamIdentifier=CCUUJZC28D\n',
+  })
+  const signedManifest = JSON.parse(await readFile(signedResult.packageManifestPath, 'utf8'))
+  assert.equal(signedManifest.signingTeamId, 'CCUUJZC28D')
+  const signTargets = commands.filter((args) => args.includes('--sign')).map((args) => args.at(-1))
+  assert.equal(signTargets.length, 2)
+  assert.match(signTargets[0], /libonnxruntime\.1\.24\.3\.dylib$/)
+  assert.match(signTargets[1], /onnxruntime_binding\.node$/)
 })

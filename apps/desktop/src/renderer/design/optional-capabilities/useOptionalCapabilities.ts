@@ -43,7 +43,7 @@ function ensureStarted(): void {
   })
   emit({ ...state, loading: true })
   void window.spark
-    .invoke('optional-capability:list', {})
+    .invoke('optional-capability:check', { forceRemote: false })
     .then((snapshot) => emit({ ...state, snapshot, loading: false }))
     .catch(() => emit({ ...state, loading: false }))
 }
@@ -69,10 +69,7 @@ async function mutate(
   if (!result.success) throw new Error(result.message)
 }
 
-async function setAutoUpdate(
-  capabilityId: OptionalCapabilityId,
-  enabled: boolean,
-): Promise<void> {
+async function setAutoUpdate(capabilityId: OptionalCapabilityId, enabled: boolean): Promise<void> {
   const snapshot = await window.spark.invoke('optional-capability:set-auto-update', {
     capabilityId,
     enabled,

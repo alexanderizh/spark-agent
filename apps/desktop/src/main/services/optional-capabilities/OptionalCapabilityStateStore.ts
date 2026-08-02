@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { OptionalCapabilityId } from '@spark/protocol'
+import type { OptionalCapabilityErrorCode, OptionalCapabilityId } from '@spark/protocol'
 import type { SparkInstallManifest } from '../../../../../../packages/agent-runtime/src/services/skill-registry/artifact-manifest.js'
 
 export interface ActiveCapabilityState {
@@ -9,6 +9,12 @@ export interface ActiveCapabilityState {
   version: string
   autoUpdate: boolean
   activatedAt: string
+  runtimeFailure?: {
+    code: OptionalCapabilityErrorCode
+    message: string
+    retryable: boolean
+    reportedAt: string
+  }
   artifacts: Record<
     string,
     {
@@ -44,6 +50,12 @@ export class OptionalCapabilityStateStore {
         parsed.capabilityId !== id ||
         typeof parsed.version !== 'string' ||
         typeof parsed.autoUpdate !== 'boolean' ||
+        (parsed.runtimeFailure != null &&
+          (typeof parsed.runtimeFailure !== 'object' ||
+            parsed.runtimeFailure.code !== 'package_invalid' ||
+            typeof parsed.runtimeFailure.message !== 'string' ||
+            typeof parsed.runtimeFailure.retryable !== 'boolean' ||
+            typeof parsed.runtimeFailure.reportedAt !== 'string')) ||
         !parsed.artifacts ||
         typeof parsed.artifacts !== 'object' ||
         !Object.values(parsed.artifacts).every(

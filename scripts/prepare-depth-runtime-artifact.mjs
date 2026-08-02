@@ -28,6 +28,9 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
   const platform = options?.platform
   const arch = options?.arch
   const revision = options?.revision ?? 1
+  const codesignIdentity = options?.codesignIdentity
+  const expectedTeamId = options?.expectedTeamId
+  const requireCodesign = options?.requireCodesign === true
   if (!SUPPORTED_PLATFORMS.has(platform) || !SUPPORTED_ARCHITECTURES.has(arch)) {
     throw new Error(`Unsupported depth runtime target: ${platform}/${arch}`)
   }
@@ -50,6 +53,16 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
   }
   await pruneOnnxRuntime(packageDirectory, platform, arch)
   await patchTransformersForNodeOnly(packageDirectory)
+  const signingTeamId =
+    platform === 'darwin'
+      ? await signDarwinNativeFiles(packageDirectory, {
+          identity: codesignIdentity,
+          expectedTeamId,
+          required: requireCodesign,
+          runCommand: options?.runCommand ?? run,
+          captureCommand: options?.captureCommand ?? runCapture,
+        })
+      : null
 
   const transformers = JSON.parse(
     await readFile(
@@ -76,6 +89,7 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
     platform,
     arch,
     runtimeEntry: RUNTIME_ENTRY,
+    ...(signingTeamId ? { signingTeamId } : {}),
     packages: {},
     files,
   }
@@ -121,6 +135,51 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
   )
   await writeFile(releaseManifestPath, `${JSON.stringify(entry, null, 2)}\n`)
   return { archivePath, entry, packageDirectory, packageManifestPath, releaseManifestPath }
+}
+
+async function signDarwinNativeFiles(packageDirectory, options) {
+  if (!options.identity) {
+    if (options.required) {
+      throw new Error('Darwin depth runtime requires DEPTH_RUNTIME_CODESIGN_IDENTITY')
+    }
+    return null
+  }
+  if (!options.expectedTeamId) {
+    throw new Error('Darwin depth runtime signing requires DEPTH_RUNTIME_EXPECTED_TEAM_ID')
+  }
+
+  const nativeFiles = (await collectRegularFiles(packageDirectory))
+    .filter((path) => path.endsWith('.dylib') || path.endsWith('.node'))
+    .sort((left, right) => {
+      const leftBinding = left.endsWith('.node') ? 1 : 0
+      const rightBinding = right.endsWith('.node') ? 1 : 0
+      return leftBinding - rightBinding || left.localeCompare(right)
+    })
+  if (nativeFiles.length === 0) {
+    throw new Error('Darwin depth runtime contains no native files to sign')
+  }
+
+  for (const relativePath of nativeFiles) {
+    const absolutePath = join(packageDirectory, ...relativePath.split('/'))
+    await options.runCommand('codesign', [
+      '--force',
+      '--options',
+      'runtime',
+      '--timestamp',
+      '--sign',
+      options.identity,
+      absolutePath,
+    ])
+    await options.runCommand('codesign', ['--verify', '--strict', '--verbose=2', absolutePath])
+    const details = await options.captureCommand('codesign', ['-dv', '--verbose=4', absolutePath])
+    const teamId = details.match(/^TeamIdentifier=(.+)$/m)?.[1]?.trim()
+    if (teamId !== options.expectedTeamId) {
+      throw new Error(
+        `Darwin native file has unexpected Team ID: ${relativePath} (${teamId ?? 'missing'})`,
+      )
+    }
+  }
+  return options.expectedTeamId
 }
 
 async function collectDependencyClosure(sourceRoot, rootPackage, platform, arch) {
@@ -286,13 +345,35 @@ function run(command, args) {
   })
 }
 
+function runCapture(command, args) {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const chunks = []
+    child.stdout.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+    child.stderr.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+    child.on('error', rejectRun)
+    child.on('exit', (code) => {
+      const output = Buffer.concat(chunks).toString('utf8')
+      if (code === 0) resolveRun(output)
+      else rejectRun(new Error(`${command} failed with exit code ${code ?? 'unknown'}: ${output}`))
+    })
+  })
+}
+
 async function main() {
   const platform = process.argv[2]
   const arch = process.argv[3]
   const revision = Number(process.argv[4] || 1)
   const output = resolve(process.argv[5] || `/private/tmp/spark-depth-runtime-${platform}-${arch}`)
   const source = resolve(process.argv[6] || 'node_modules')
-  const result = await prepareDepthRuntimeArtifact(source, output, { platform, arch, revision })
+  const result = await prepareDepthRuntimeArtifact(source, output, {
+    platform,
+    arch,
+    revision,
+    codesignIdentity: process.env.DEPTH_RUNTIME_CODESIGN_IDENTITY,
+    expectedTeamId: process.env.DEPTH_RUNTIME_EXPECTED_TEAM_ID,
+    requireCodesign: process.env.DEPTH_RUNTIME_REQUIRE_CODESIGN === '1',
+  })
   console.log(
     JSON.stringify({
       archive: basename(result.archivePath),
