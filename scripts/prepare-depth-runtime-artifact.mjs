@@ -260,7 +260,7 @@ async function verifyWindowsAuthenticode(absolutePath, options) {
     '$certificate = $signature.SignerCertificate',
     'if ($null -eq $certificate) { throw "Authenticode signature has no signer certificate" }',
     '$sha = [System.Security.Cryptography.SHA256]::Create()',
-    'try { $fingerprint = [Convert]::ToHexString($sha.ComputeHash($certificate.RawData)).ToLowerInvariant() } finally { $sha.Dispose() }',
+    'try { $fingerprint = [BitConverter]::ToString($sha.ComputeHash($certificate.RawData)).Replace("-", "").ToLowerInvariant() } finally { $sha.Dispose() }',
     'if ($fingerprint -cne $env:SPARK_AUTHENTICODE_EXPECTED_PUBLISHER) { throw "Authenticode signer differs from the configured publisher" }',
     '$expectedSelfSignedPublisher = (($signature.Status -eq "UnknownError" -or $signature.Status -eq "NotTrusted") -and $certificate.Subject -eq $certificate.Issuer)',
     'if ($signature.Status -ne "Valid" -and -not $expectedSelfSignedPublisher) { throw "Authenticode verification failed: $($signature.Status) - $($signature.StatusMessage)" }',
