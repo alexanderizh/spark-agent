@@ -496,6 +496,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare Office viewer assets
+        run: pnpm --filter @spark/desktop prepare:file-viewer-assets
+
       - name: Import Developer ID certificate for depth runtime
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -622,8 +625,21 @@ jobs:
             Sort-Object FullName -Descending |
             Select-Object -First 1
           if ($null -eq $signTool) { throw 'signtool.exe was not found on the Windows runner' }
+          $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+          $certificates = [System.Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
+          $certificates.Import($certificatePath, $env:WIN_CSC_KEY_PASSWORD, $flags)
+          $certificate = $certificates | Where-Object HasPrivateKey | Select-Object -First 1
+          if ($null -eq $certificate) { throw 'Windows signing PFX has no private-key certificate' }
+          $sha = [System.Security.Cryptography.SHA256]::Create()
+          try {
+            $publisherSha256 = [Convert]::ToHexString($sha.ComputeHash($certificate.RawData)).ToLowerInvariant()
+          } finally {
+            $sha.Dispose()
+          }
           "DEPTH_RUNTIME_WINDOWS_CERTIFICATE=$certificatePath" | Out-File $env:GITHUB_ENV -Append
           "DEPTH_RUNTIME_WINDOWS_SIGNTOOL=$($signTool.FullName)" | Out-File $env:GITHUB_ENV -Append
+          "DEPTH_RUNTIME_WINDOWS_PUBLISHER_SHA256=$publisherSha256" | Out-File $env:GITHUB_ENV -Append
+          "DEPTH_RUNTIME_WINDOWS_POWERSHELL=powershell.exe" | Out-File $env:GITHUB_ENV -Append
 
       - name: Build and verify Windows depth archive
         shell: bash

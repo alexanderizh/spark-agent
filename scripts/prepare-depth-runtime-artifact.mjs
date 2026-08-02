@@ -34,6 +34,8 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
   const windowsSignTool = options?.windowsSignTool
   const windowsCertificate = options?.windowsCertificate
   const windowsCertificatePassword = options?.windowsCertificatePassword
+  const windowsPublisherSha256 = options?.windowsPublisherSha256
+  const windowsPowerShell = options?.windowsPowerShell
   const requireWindowsCodesign = options?.requireWindowsCodesign === true
   if (!SUPPORTED_PLATFORMS.has(platform) || !SUPPORTED_ARCHITECTURES.has(arch)) {
     throw new Error(`Unsupported depth runtime target: ${platform}/${arch}`)
@@ -73,8 +75,11 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
           signTool: windowsSignTool,
           certificate: windowsCertificate,
           certificatePassword: windowsCertificatePassword,
+          publisherSha256: windowsPublisherSha256,
+          powerShell: windowsPowerShell,
           required: requireWindowsCodesign,
           runCommand: options?.runCommand ?? run,
+          captureCommand: options?.captureCommand ?? runCapture,
         })
       : false
 
@@ -198,13 +203,22 @@ async function signDarwinNativeFiles(packageDirectory, options) {
 }
 
 async function signWindowsNativeFiles(packageDirectory, options) {
-  if (!options.signTool || !options.certificate || !options.certificatePassword) {
+  if (
+    !options.signTool ||
+    !options.certificate ||
+    !options.certificatePassword ||
+    !options.publisherSha256 ||
+    !options.powerShell
+  ) {
     if (options.required) {
       throw new Error(
-        'Windows depth runtime requires sign tool, certificate, and certificate password',
+        'Windows depth runtime requires sign tool, certificate, publisher fingerprint, and PowerShell',
       )
     }
     return false
+  }
+  if (!/^[0-9a-f]{64}$/i.test(options.publisherSha256)) {
+    throw new Error('Windows depth runtime publisher fingerprint must be SHA-256')
   }
 
   const nativeFiles = (await collectRegularFiles(packageDirectory))
@@ -234,9 +248,36 @@ async function signWindowsNativeFiles(packageDirectory, options) {
       options.certificatePassword,
       absolutePath,
     ])
-    await options.runCommand(options.signTool, ['verify', '/pa', '/all', '/v', absolutePath])
+    await verifyWindowsAuthenticode(absolutePath, options)
   }
   return true
+}
+
+async function verifyWindowsAuthenticode(absolutePath, options) {
+  const script = [
+    '$ErrorActionPreference = "Stop"',
+    '$signature = Get-AuthenticodeSignature -LiteralPath $env:SPARK_AUTHENTICODE_PATH',
+    '$certificate = $signature.SignerCertificate',
+    'if ($null -eq $certificate) { throw "Authenticode signature has no signer certificate" }',
+    '$sha = [System.Security.Cryptography.SHA256]::Create()',
+    'try { $fingerprint = [Convert]::ToHexString($sha.ComputeHash($certificate.RawData)).ToLowerInvariant() } finally { $sha.Dispose() }',
+    'if ($fingerprint -cne $env:SPARK_AUTHENTICODE_EXPECTED_PUBLISHER) { throw "Authenticode signer differs from the configured publisher" }',
+    '$expectedSelfSignedPublisher = (($signature.Status -eq "UnknownError" -or $signature.Status -eq "NotTrusted") -and $certificate.Subject -eq $certificate.Issuer)',
+    'if ($signature.Status -ne "Valid" -and -not $expectedSelfSignedPublisher) { throw "Authenticode verification failed: $($signature.Status) - $($signature.StatusMessage)" }',
+    'if ($null -eq $signature.TimeStamperCertificate) { throw "Authenticode signature has no RFC 3161 timestamp" }',
+    'Write-Output $fingerprint',
+  ].join('\n')
+  await options.captureCommand(
+    options.powerShell,
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+    {
+      env: {
+        ...process.env,
+        SPARK_AUTHENTICODE_PATH: absolutePath,
+        SPARK_AUTHENTICODE_EXPECTED_PUBLISHER: options.publisherSha256.toLowerCase(),
+      },
+    },
+  )
 }
 
 async function collectDependencyClosure(sourceRoot, rootPackage, platform, arch) {
@@ -402,9 +443,9 @@ function run(command, args) {
   })
 }
 
-function runCapture(command, args) {
+function runCapture(command, args, options = {}) {
   return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] })
     const chunks = []
     child.stdout.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
     child.stderr.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
@@ -433,6 +474,8 @@ async function main() {
     windowsSignTool: process.env.DEPTH_RUNTIME_WINDOWS_SIGNTOOL,
     windowsCertificate: process.env.DEPTH_RUNTIME_WINDOWS_CERTIFICATE,
     windowsCertificatePassword: process.env.DEPTH_RUNTIME_WINDOWS_CERTIFICATE_PASSWORD,
+    windowsPublisherSha256: process.env.DEPTH_RUNTIME_WINDOWS_PUBLISHER_SHA256,
+    windowsPowerShell: process.env.DEPTH_RUNTIME_WINDOWS_POWERSHELL,
     requireWindowsCodesign: process.env.DEPTH_RUNTIME_WINDOWS_REQUIRE_SIGNING === '1',
   })
   console.log(
