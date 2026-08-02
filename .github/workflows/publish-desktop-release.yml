@@ -31,7 +31,7 @@ on:
         type: boolean
         default: false
       optional_capabilities_only:
-        description: '仅构建并发布 Office、macOS 与 Windows 深度可选资源，不构建桌面安装包'
+        description: '仅构建并发布 macOS 与 Windows 深度可选资源，不构建桌面安装包'
         required: true
         type: boolean
         default: false
@@ -469,7 +469,7 @@ jobs:
           done < "${RUNNER_TEMP}/release-targets.tsv"
 
   build-optional-capabilities-macos:
-    name: Build optional Office and macOS depth packages
+    name: Build optional macOS depth package
     needs: prepare
     if: >-
       github.event_name == 'workflow_dispatch'
@@ -496,9 +496,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Prepare Office viewer assets
-        run: pnpm --filter @spark/desktop prepare:file-viewer-assets
-
       - name: Import Developer ID certificate for depth runtime
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -507,7 +504,7 @@ jobs:
           bash apps/desktop/scripts/import-cert-ci.sh
           security find-identity -v -p codesigning | grep "Developer ID Application"
 
-      - name: Build and verify optional capability archives
+      - name: Build and verify macOS depth archive
         shell: bash
         env:
           DEPTH_RUNTIME_CODESIGN_IDENTITY: Developer ID Application
@@ -515,16 +512,11 @@ jobs:
           DEPTH_RUNTIME_REQUIRE_CODESIGN: '1'
         run: |
           set -euo pipefail
-          OFFICE_DIR="${RUNNER_TEMP}/spark-office-viewer-2.2.3-1"
           TARGET_PLATFORM='darwin'
           TARGET_ARCH='arm64'
           DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-${TARGET_PLATFORM}-${TARGET_ARCH}"
-          node scripts/prepare-office-viewer-artifact.mjs \
-            2.2.3-1 apps/desktop/public/file-viewer "${OFFICE_DIR}"
           node scripts/prepare-depth-runtime-artifact.mjs \
             "${TARGET_PLATFORM}" "${TARGET_ARCH}" 2 "${DEPTH_DIR}" node_modules
-          diff -u docs/release-manifests/office-viewer-2.2.3-1.json \
-            "${OFFICE_DIR}/office-viewer-2.2.3-1-manifest.json"
           DEPTH_MANIFEST="${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json"
           node -e '
             const fs = require("node:fs")
@@ -540,22 +532,18 @@ jobs:
               if (entry[key] !== value) throw new Error(`unexpected ${key}: ${entry[key]}`)
             }
           ' "${DEPTH_MANIFEST}"
-          node --test scripts/__tests__/prepare-office-viewer-artifact.test.mjs \
-            scripts/__tests__/prepare-depth-runtime-artifact.test.mjs \
+          node --test scripts/__tests__/prepare-depth-runtime-artifact.test.mjs \
             scripts/__tests__/publish-optional-capability-workflow.test.mjs \
             scripts/__tests__/publish-optional-capabilities-to-minio.test.mjs
 
       - name: Stage optional archives for atomic publish
         run: |
           set -euo pipefail
-          OFFICE_DIR="${RUNNER_TEMP}/spark-office-viewer-2.2.3-1"
           TARGET_PLATFORM='darwin'
           TARGET_ARCH='arm64'
           DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-${TARGET_PLATFORM}-${TARGET_ARCH}"
           DELIVERY_DIR="${RUNNER_TEMP}/optional-delivery-macos"
           mkdir -p "${DELIVERY_DIR}"
-          cp "${OFFICE_DIR}/office-viewer-2.2.3-1-manifest.json" "${DELIVERY_DIR}/"
-          cp "${OFFICE_DIR}/office-viewer-2.2.3-1.tar.gz" "${DELIVERY_DIR}/"
           cp "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json" "${DELIVERY_DIR}/"
           cp "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}.tar.gz" "${DELIVERY_DIR}/"
 
@@ -632,7 +620,7 @@ jobs:
           if ($null -eq $certificate) { throw 'Windows signing PFX has no private-key certificate' }
           $sha = [System.Security.Cryptography.SHA256]::Create()
           try {
-            $publisherSha256 = [Convert]::ToHexString($sha.ComputeHash($certificate.RawData)).ToLowerInvariant()
+            $publisherSha256 = [BitConverter]::ToString($sha.ComputeHash($certificate.RawData)).Replace('-', '').ToLowerInvariant()
           } finally {
             $sha.Dispose()
           }
@@ -747,8 +735,6 @@ jobs:
           MAC_DIR="${RUNNER_TEMP}/optional-capabilities/macos"
           WIN_DIR="${RUNNER_TEMP}/optional-capabilities/windows"
           node scripts/publish-optional-capabilities-to-minio.mjs \
-            "${MAC_DIR}/office-viewer-2.2.3-1-manifest.json" \
-            "${MAC_DIR}/office-viewer-2.2.3-1.tar.gz" \
             "${MAC_DIR}/depth-runtime-4.2.0-1.24.3-2-darwin-arm64-manifest.json" \
             "${MAC_DIR}/depth-runtime-4.2.0-1.24.3-2-darwin-arm64.tar.gz" \
             "${WIN_DIR}/depth-runtime-4.2.0-1.24.3-2-win32-x64-manifest.json" \
