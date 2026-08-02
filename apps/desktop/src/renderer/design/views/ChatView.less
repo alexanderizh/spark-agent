@@ -1002,6 +1002,7 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  height: var(--chat-header-height);
   margin-bottom: 14px;
 }
 
@@ -4220,7 +4221,7 @@ body.side-chat-resizing {
 }
 
 .side-chat-panel-header {
-  min-height: 52px;
+  min-height: var(--chat-header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4489,12 +4490,11 @@ body.side-chat-resizing {
 // }
 
 .unified-side-panel-tabbar {
-  flex: 0 0 38px;
+  flex: 0 0 var(--chat-header-height);
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   /* 整条充当系统标题栏：空白区（含激活标签条右侧的留白）支持原生窗口拖拽，
      并由组件层 onDoubleClick 触发双击最大化。
      所有真正可交互的元素（按钮、关闭叉号、弹出菜单）在下方规则里显式 no-drag，
