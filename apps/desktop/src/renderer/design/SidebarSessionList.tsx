@@ -760,6 +760,8 @@ function ChatListItem({
   onArchive,
   onDelete,
   dragActivatorProps,
+  revealSessionId,
+  onRevealed,
 }: {
   session: SessionSummary
   active: SessionId | null
@@ -774,6 +776,10 @@ function ChatListItem({
   onArchive?: (session: SessionSummary) => void
   onDelete?: (session: SessionSummary) => void
   dragActivatorProps?: React.HTMLAttributes<HTMLDivElement> | undefined
+  // When this id matches the session, scroll it into view (set by the command
+  // palette via SessionSidebarContext.revealSession). Cleared via onRevealed.
+  revealSessionId?: SessionId | null | undefined
+  onRevealed?: (() => void) | undefined
 }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -781,6 +787,18 @@ function ChatListItem({
   // 悬浮卡 hover 开合（受控）；editing 时锁定不关，避免输入中被中断
   const [hoverOpen, setHoverOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  const itemRef = useRef<HTMLDivElement>(null)
+  // Reveal: when this item is the reveal target, scroll it into view on the next
+  // frame (the parent group expands / breaks pagination on the same reveal tick),
+  // then notify the parent so the reveal flag can be cleared.
+  useEffect(() => {
+    if (!revealSessionId || revealSessionId !== s.id) return
+    const raf = requestAnimationFrame(() => {
+      itemRef.current?.scrollIntoView({ block: 'nearest' })
+      onRevealed?.()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [revealSessionId, s.id, onRevealed])
   const { workspaces, noProjectWorkspace, openSessionSchedule, sessionScheduleSummaries } =
     useSessionSidebar()
   // 该会话关联的 workspace：用于解析项目名、worktree 分支等悬浮面板信息
@@ -851,6 +869,7 @@ function ChatListItem({
       align={{ offset: [-1, 0], overflow: { adjustY: true, shiftY: true } }}
     >
       <div
+        ref={itemRef}
         className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${contextOpen ? 'is-context-open' : ''} ${statusClass}`}
         {...dragActivatorProps}
         onClick={() => onClick(s.id)}
@@ -1038,6 +1057,8 @@ export function ProjectSessionGroup({
   onDeleteSession,
   projectDragActivatorProps,
   sessionSortProjectId,
+  revealSessionId,
+  onSessionRevealed,
 }: {
   group: ProjectGroup
   activeSessionId: SessionId | null
@@ -1062,6 +1083,8 @@ export function ProjectSessionGroup({
   onDeleteSession: (session: SessionSummary) => void
   projectDragActivatorProps?: React.HTMLAttributes<HTMLDivElement> | undefined
   sessionSortProjectId?: string
+  revealSessionId?: SessionId | null | undefined
+  onSessionRevealed?: (() => void) | undefined
 }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -1072,6 +1095,13 @@ export function ProjectSessionGroup({
   const hasMoreSessions = sessions.length > visibleSessionCount
   const canCollapseSessions = visibleSessionCount > PROJECT_SESSION_INITIAL_VISIBLE
   const visibleSessions = sessions.slice(0, visibleSessionCount)
+  // Reveal: if the target session lives in this group but falls beyond the
+  // paginated window, expand the window so it renders before we scroll to it.
+  useEffect(() => {
+    if (revealSessionId == null) return
+    const idx = sessions.findIndex((s) => s.id === revealSessionId)
+    if (idx >= visibleSessionCount) setVisibleSessionCount(idx + 1)
+  }, [revealSessionId, sessions, visibleSessionCount])
 
   return (
     <div className={`proj-group ${isActiveProject ? 'active-project' : ''}`}>
@@ -1243,6 +1273,8 @@ export function ProjectSessionGroup({
                         agentStatus={sessionAgentStatuses[session.id]}
                         terminalActivity={sessionTerminalActivity[session.id]}
                         unreviewed={unreviewedCompletedSessions.has(session.id)}
+                        revealSessionId={revealSessionId}
+                        onRevealed={onSessionRevealed}
                         onClick={() => onSelectSession(session)}
                         onRename={onRenameSession}
                         onCommitTitle={onCommitSessionTitle}
@@ -1326,6 +1358,8 @@ export function FlatGroup({
   actions,
   projectDragActivatorProps,
   sessionSortProjectId,
+  revealSessionId,
+  onSessionRevealed,
 }: {
   groupId: string
   label: string
@@ -1349,6 +1383,8 @@ export function FlatGroup({
   actions: FlatGroupActions
   projectDragActivatorProps?: React.HTMLAttributes<HTMLDivElement> | undefined
   sessionSortProjectId?: string
+  revealSessionId?: SessionId | null | undefined
+  onSessionRevealed?: (() => void) | undefined
 }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -1360,6 +1396,13 @@ export function FlatGroup({
   const hasMoreSessions = paginateSessions && sessions.length > visibleSessionCount
   const canCollapseSessions =
     paginateSessions && visibleSessionCount > PROJECT_SESSION_INITIAL_VISIBLE
+  // Reveal: only the paginated "no-project" group can hide a session beyond the
+  // window; expand the window so the target renders before scrolling to it.
+  useEffect(() => {
+    if (!paginateSessions || revealSessionId == null) return
+    const idx = sessions.findIndex((s) => s.id === revealSessionId)
+    if (idx >= visibleSessionCount) setVisibleSessionCount(idx + 1)
+  }, [paginateSessions, revealSessionId, sessions, visibleSessionCount])
 
   if (sessions.length === 0 && onNewSession == null) return null
   return (
@@ -1472,6 +1515,8 @@ export function FlatGroup({
                   terminalActivity={sessionTerminalActivity[session.id]}
                   unreviewed={unreviewedCompletedSessions.has(session.id)}
                   smallTitle={smallTitle}
+                  revealSessionId={revealSessionId}
+                  onRevealed={onSessionRevealed}
                   onClick={() => actions.onSelectSession(session)}
                   onRename={actions.onRenameSession}
                   onCommitTitle={actions.onCommitSessionTitle}
@@ -2036,13 +2081,28 @@ export function SidebarSessionList() {
   )
   const [collapsedProjectIds, setCollapsedProjectIds] = useState(() => getCollapsedProjects())
   const [collapsedFlatGroupIds, setCollapsedFlatGroupIds] = useState(() => getCollapsedFlatGroups())
+  // Reveal-driven forced open: transiently expand a group that the command
+  // palette navigated into, without touching the user's persisted collapse
+  // preference. Removed for a group the moment the user manually collapses it.
+  const [forcedOpenProjectIds, setForcedOpenProjectIds] = useState<Set<string>>(new Set())
+  const [forcedOpenFlatGroupIds, setForcedOpenFlatGroupIds] = useState<Set<string>>(new Set())
   const handleProjectOpenChange = useCallback((workspaceId: string, nextOpen: boolean) => {
     setProjectCollapsed(workspaceId, !nextOpen)
     setCollapsedProjectIds(getCollapsedProjects())
+    if (!nextOpen) {
+      setForcedOpenProjectIds((prev) =>
+        prev.has(workspaceId) ? new Set([...prev].filter((x) => x !== workspaceId)) : prev,
+      )
+    }
   }, [])
   const handleFlatGroupOpenChange = useCallback((groupId: string, nextOpen: boolean) => {
     setFlatGroupCollapsed(groupId, !nextOpen)
     setCollapsedFlatGroupIds(getCollapsedFlatGroups())
+    if (!nextOpen) {
+      setForcedOpenFlatGroupIds((prev) =>
+        prev.has(groupId) ? new Set([...prev].filter((x) => x !== groupId)) : prev,
+      )
+    }
   }, [])
   const allVisibleGroupsCollapsed = useMemo(() => {
     if (displayGroups.length === 0) return false
@@ -2065,6 +2125,23 @@ export function SidebarSessionList() {
     setCollapsedProjectIds(getCollapsedProjects())
     setCollapsedFlatGroupIds(getCollapsedFlatGroups())
   }, [allVisibleGroupsCollapsed, displayGroups])
+  // When the command palette reveals a session, force-open the group containing
+  // it so the highlight is visible. The reveal id is cleared by ChatListItem
+  // after it scrolls; the forced-open state persists until the user manually
+  // collapses the group (see handleProjectOpenChange / handleFlatGroupOpenChange).
+  useEffect(() => {
+    const id = ctx.revealSessionId
+    if (id == null) return
+    const matched = displayGroups.find((g) => g.sessions.some((s) => s.id === id))
+    if (!matched) return
+    if (matched.workspace) {
+      setForcedOpenProjectIds(new Set([matched.workspace.id]))
+      setForcedOpenFlatGroupIds(new Set())
+    } else {
+      setForcedOpenFlatGroupIds(new Set([matched.id]))
+      setForcedOpenProjectIds(new Set())
+    }
+  }, [ctx.revealSessionId, displayGroups])
   const showProjectToolbar = ctx.workspaces.length > 0 || ctx.sessions.length > 0
 
   return (
@@ -2186,9 +2263,12 @@ export function SidebarSessionList() {
                               sessionTerminalActivity={ctx.sessionTerminalActivity}
                               unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
                               open={
-                                !collapsedProjectIds.has(workspace.id) &&
-                                !autoCollapsedProjectIds.has(projectSortableId(workspace.id))
+                                (!collapsedProjectIds.has(workspace.id) &&
+                                  !autoCollapsedProjectIds.has(projectSortableId(workspace.id))) ||
+                                forcedOpenProjectIds.has(workspace.id)
                               }
+                              revealSessionId={ctx.revealSessionId}
+                              onSessionRevealed={ctx.clearRevealSession}
                               onOpenChange={(nextOpen) =>
                                 handleProjectOpenChange(workspace.id, nextOpen)
                               }
@@ -2247,10 +2327,13 @@ export function SidebarSessionList() {
                         sessionTerminalActivity={ctx.sessionTerminalActivity}
                         unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
                         open={
-                          !collapsedFlatGroupIds.has(group.id) &&
-                          (flatDragSortableId == null ||
-                            !autoCollapsedProjectIds.has(flatDragSortableId))
+                          (!collapsedFlatGroupIds.has(group.id) &&
+                            (flatDragSortableId == null ||
+                              !autoCollapsedProjectIds.has(flatDragSortableId))) ||
+                          forcedOpenFlatGroupIds.has(group.id)
                         }
+                        revealSessionId={ctx.revealSessionId}
+                        onSessionRevealed={ctx.clearRevealSession}
                         onOpenChange={(nextOpen) => handleFlatGroupOpenChange(group.id, nextOpen)}
                         onSelectGroup={
                           group.id === 'project:no-project'

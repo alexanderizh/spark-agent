@@ -311,6 +311,12 @@ type SessionSidebarCtx = {
   activeSessionId: SessionId | null
   activeWorkspaceId: string | null
   setActiveSession: (id: SessionId | null) => void
+  // Reveal target: set by the command palette when switching sessions, so the
+  // sidebar can expand/scroll the target into view. NOT set on manual clicks,
+  // so browsing the sidebar is never disrupted.
+  revealSessionId: SessionId | null
+  revealSession: (id: SessionId) => void
+  clearRevealSession: () => void
   setActiveWorkspace: (id: string | null) => void
   sessionScheduleTargetId: SessionId | null
   openSessionSchedule: (id: SessionId) => void
@@ -418,6 +424,13 @@ export function SessionSidebarProvider({
       })
     }
   }, [])
+  // Reveal target used by the command palette to request that the sidebar
+  // brings a session into view (expand its group + break pagination + scroll).
+  // Cleared after the target scrolls into view, so subsequent active changes
+  // (e.g. manual clicks) do not trigger scrolling.
+  const [revealSessionId, setRevealSessionId] = useState<SessionId | null>(null)
+  const revealSession = useCallback((id: SessionId) => setRevealSessionId(id), [])
+  const clearRevealSession = useCallback(() => setRevealSessionId(null), [])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [sessionScheduleTargetId, setSessionScheduleTargetId] = useState<SessionId | null>(null)
   const [sessionScheduleSummaries, setSessionScheduleSummaries] =
@@ -1806,6 +1819,9 @@ export function SessionSidebarProvider({
       activeSessionId: active,
       activeWorkspaceId,
       setActiveSession: setActive,
+      revealSessionId,
+      revealSession,
+      clearRevealSession,
       setActiveWorkspace,
       sessionScheduleTargetId,
       openSessionSchedule,
@@ -1864,6 +1880,9 @@ export function SessionSidebarProvider({
       providers,
       agents,
       active,
+      revealSessionId,
+      revealSession,
+      clearRevealSession,
       activeWorkspaceId,
       sessionScheduleTargetId,
       openSessionSchedule,
