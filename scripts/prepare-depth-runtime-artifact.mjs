@@ -132,7 +132,13 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
   await rm(tarPath, { force: true })
   await rm(archivePath, { force: true })
   const archiveFiles = ['capability-package.json', ...runtimeFiles].sort()
-  await run('tar', ['-cf', tarPath, '-C', packageDirectory, ...archiveFiles])
+  const archiveListPath = join(output, `${archiveName}.files`)
+  await writeFile(archiveListPath, `${archiveFiles.join('\n')}\n`)
+  try {
+    await run('tar', ['-cf', tarPath, '-C', packageDirectory, '-T', archiveListPath])
+  } finally {
+    await rm(archiveListPath, { force: true })
+  }
   await run('gzip', ['-n', '-9', '-f', tarPath])
 
   const entry = {
