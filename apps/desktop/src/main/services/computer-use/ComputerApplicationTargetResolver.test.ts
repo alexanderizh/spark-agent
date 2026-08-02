@@ -58,4 +58,25 @@ describe('findApplicationWindow', () => {
     expect(findApplicationWindow([BILIBILI], 'COM.BILIBILI.BILIBILIPC')).toEqual(BILIBILI)
     expect(findApplicationWindow([BILIBILI], 'APP-BILIBILI')).toEqual(BILIBILI)
   })
+
+  it('ignores a tiny tray/widget window even when it is reported as focused', () => {
+    const trayWidget = {
+      app: { id: 'app-bilibili', name: '哔哩哔哩', bundleId: 'com.bilibili.bilibiliPC' },
+      window: {
+        id: 'window-bilibili-tray',
+        title: '',
+        bounds: { x: 1180, y: 0, width: 66, height: 20 },
+      },
+      display: { id: 'display-1', scaleFactor: 2 },
+      focused: true,
+      minimized: false,
+    } as NativeWindowDescriptor
+    const main = {
+      ...BILIBILI,
+      focused: false,
+      window: { ...BILIBILI.window, id: 'window-bilibili-main' },
+    } as NativeWindowDescriptor
+    // The focused 66x20 widget must NOT win over the real main window.
+    expect(findApplicationWindow([trayWidget, main], '哔哩哔哩')).toEqual(main)
+  })
 })

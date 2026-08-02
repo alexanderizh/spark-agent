@@ -163,16 +163,9 @@ export class ComputerTaskOperator {
         input.session.id,
         shouldRequestFullDecisionTree(),
       )
-      for (let stepIndex = 0; stepIndex < input.session.taskContract.maxSteps; stepIndex += 1) {
+      for (let stepIndex = 0;; stepIndex += 1) {
         if (abortSignal?.aborted) {
           return { status: 'failed', reason: 'session_canceled' }
-        }
-        if (
-          this.now() - Date.parse(input.session.createdAt) >=
-          input.session.taskContract.maxRuntimeMs
-        ) {
-          this.sessions.fail(input.session.id)
-          return { status: 'failed', reason: 'maximum_runtime_reached' }
         }
         const decisionEvidence = await this.readDecisionEvidence(input.session.id, observation)
         observation = decisionEvidence.observation
@@ -218,77 +211,11 @@ export class ComputerTaskOperator {
             )
             continue
           }
-          this.sessions.setPhase(input.session.id, 'verifying')
-          if (observation.tree.mode !== 'full') {
-            observation = await this.observeWithRecovery(
-              input.session.id,
-              shouldRequestFullDecisionTree(),
-            )
-          }
-          let windows: NativeWindowDescriptor[] | undefined
-          try {
-            windows = await this.windowInventory?.listWindows()
-          } catch (error) {
-            log.warn('Computer window inventory unavailable during verification; using observation', {
-              computerSessionId: input.session.id,
-              error: error instanceof Error ? error.message : String(error),
-            })
-          }
-          const verification = this.verification.verify(
-            input.session.taskContract.successCriteria,
-            observation,
-            {
-              ...(windows == null ? {} : { windows }),
-              modelVisualApproval: successfulActions > 0,
-            },
-          )
-          const verificationId = this.createId()
-          const completedAt = new Date(this.now()).toISOString()
-          this.timeline?.record({
-            type: 'computer_verification_started',
-            sessionId: input.session.sessionId,
-            turnId: input.session.turnId,
-            computerSessionId: input.session.id,
-            verificationId,
-          })
-          try {
-            this.verifications.create({
-              id: verificationId,
-              computerSessionId: input.session.id,
-              spec: { criteria: input.session.taskContract.successCriteria },
-              verifierModelId: input.session.modelId,
-              createdAt: completedAt,
-            })
-            const record = this.verifications.complete(verificationId, {
-              status: verification.passed ? 'passed' : 'failed',
-              evidence: verification.results,
-              confidence: verification.passed ? 1 : 0,
-              completedAt,
-            })
-            if (record == null) {
-              throw new Error('verification record unavailable')
-            }
-          } catch (error) {
-            // Persistence and inventory are supporting evidence paths. Once the in-memory
-            // verification result is valid, their failure must not cancel the desktop task.
-            log.warn('Computer verification record could not be persisted', {
-              verificationId,
-              error: error instanceof Error ? error.message : String(error),
-            })
-          }
-          this.timeline?.record({
-            type: 'computer_verification_completed',
-            sessionId: input.session.sessionId,
-            turnId: input.session.turnId,
-            computerSessionId: input.session.id,
-            verificationId,
-            status: verification.passed ? 'passed' : 'failed',
-          })
-          if (verification.passed) {
-            this.sessions.completeVerified(input.session.id, [verificationId])
-            return { status: 'completed', verification }
-          }
-          continue
+          // 不再跑 verification engine 自动校验、不再因校验失败中断任务。模型声明完成即
+          // 视为本阶段结束；任务是否真正达成目标交由 agent 自行核验（看截图/应用状态），
+          // 不满意可再次 start_task 或用桌面状态工具继续操作。
+          this.sessions.completeVerified(input.session.id)
+          return { status: 'completed' }
         }
 
         if (decision.type === 'actions') {
@@ -324,7 +251,7 @@ export class ComputerTaskOperator {
               observation = stepResult.observation
             } catch (error) {
               if (!(error instanceof ComputerUseBrokerError)) throw error
-              if (error.code === 'session_canceled') throw error
+              if (error.code === 'session_canceled' || error.code === 'handoff_required') throw error
               if (error.code === 'action_noop') {
                 consecutiveNoops += 1
                 const exhaustedNoopWindow =
@@ -369,7 +296,20 @@ export class ComputerTaskOperator {
                 stopped = true
                 break
               }
-              throw error
+              // 不可恢复的执行错误也不立即终止任务：反馈给模型，让下一轮换一种方案；
+              // 只有连续失败次数用尽才放弃，避免真环境故障导致无限循环。
+              consecutiveTransientFailures += 1
+              failedStrategies.add(interactionStrategyFor(action))
+              previousActionFailure = actionFailureContext(
+                error,
+                action,
+                consecutiveTransientFailures,
+                failedStrategies,
+                true,
+              )
+              if (consecutiveTransientFailures > MAX_TRANSIENT_RECOVERIES) throw error
+              stopped = true
+              break
             }
           }
           if (stopped) {
@@ -396,6 +336,7 @@ export class ComputerTaskOperator {
           if (!(error instanceof ComputerUseBrokerError)) {
             throw error
           }
+          if (error.code === 'session_canceled' || error.code === 'handoff_required') throw error
           if (error.code === 'action_noop') {
             consecutiveNoops += 1
             const exhaustedNoopWindow =
@@ -422,7 +363,17 @@ export class ComputerTaskOperator {
             if (consecutiveTransientFailures > MAX_TRANSIENT_RECOVERIES) throw error
             await this.wait(recoveryDelay(consecutiveTransientFailures))
           } else {
-            throw error
+            // 不可恢复的执行错误也反馈给模型换方案，连续失败用尽才放弃。
+            consecutiveTransientFailures += 1
+            failedStrategies.add(interactionStrategyFor(decision.action))
+            previousActionFailure = actionFailureContext(
+              error,
+              decision.action,
+              consecutiveTransientFailures,
+              failedStrategies,
+              true,
+            )
+            if (consecutiveTransientFailures > MAX_TRANSIENT_RECOVERIES) throw error
           }
           observation = await this.observeWithRecovery(
             input.session.id,
@@ -432,8 +383,7 @@ export class ComputerTaskOperator {
           )
         }
       }
-      this.sessions.fail(input.session.id)
-      return { status: 'failed', reason: 'maximum_steps_reached' }
+      // for(;;) 只在 abortSignal / 模型声明完成 / 不可恢复决策错误时退出，不会自然结束。
     } catch (error) {
       if (error instanceof ComputerUseBrokerError && error.code === 'handoff_required') {
         this.sessions.setPhase(input.session.id, 'handoff_required')

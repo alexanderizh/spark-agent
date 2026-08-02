@@ -78,7 +78,6 @@ describe('ComputerTaskOperator', () => {
     const result = await operator.run({ session: SESSION, lease: LEASE, adapter })
     expect(result).toEqual({
       status: 'completed',
-      verification: expect.objectContaining({ passed: true }),
     })
     expect(broker.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -90,7 +89,7 @@ describe('ComputerTaskOperator', () => {
         policyContext: expect.objectContaining({ target: { kind: 'element', id: 'save-button' } }),
       }),
     )
-    expect(sessions.completeVerified).toHaveBeenCalledWith('computer-1', [expect.any(String)])
+    expect(sessions.completeVerified).toHaveBeenCalledWith('computer-1')
   })
 
   it('executes every action in a batch decision sequentially and then verifies', async () => {
@@ -127,7 +126,6 @@ describe('ComputerTaskOperator', () => {
     })
     expect(result).toEqual({
       status: 'completed',
-      verification: expect.objectContaining({ passed: true }),
     })
     expect(broker.dispatch).toHaveBeenCalledTimes(2)
   })
@@ -177,7 +175,6 @@ describe('ComputerTaskOperator', () => {
     })
     expect(result).toEqual({
       status: 'completed',
-      verification: expect.objectContaining({ passed: true }),
     })
     // The no-op second batch step stopped the batch; the model re-planned and the
     // third decision (single action) ran to completion.
@@ -221,7 +218,6 @@ describe('ComputerTaskOperator', () => {
     })
     expect(result).toEqual({
       status: 'completed',
-      verification: expect.objectContaining({ passed: true }),
     })
 
     // The stale frame was recovered locally: dispatch retried once with a refreshed envelope
@@ -622,154 +618,53 @@ describe('ComputerTaskOperator', () => {
     expect(sessions.fail).not.toHaveBeenCalled()
   })
 
-  it('enforces maxRuntimeMs even when no Broker action is dispatched', async () => {
-    const sessions = sessionController()
-    const startedAt = Date.parse(SESSION.createdAt)
-    const now = vi
-      .fn()
-      .mockReturnValueOnce(startedAt)
-      .mockReturnValue(startedAt + 60_000)
-    const decide = vi.fn(async () => ({
-      type: 'ready_for_verification' as const,
-      reason: 'Check current state',
-    }))
-    const operator = new ComputerTaskOperator({
-      sessions,
-      broker: { observe: vi.fn(async () => BEFORE), dispatch: vi.fn() },
-      approvals: { takeApprovedTicket: vi.fn(() => null) },
-      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
-      verifications: verificationStore(),
-      now,
-    })
+  // maxRuntimeMs / maxSteps 硬上限已按产品设计移除：任务生命周期完全交由 agent
+  // 管理，仅在 agent stop / 用户 ESC / 模型声明完成 / 连续决策失败时退出。原
+  // "enforces maxRuntimeMs" 用例随上限一并移除。
 
-    await expect(
-      operator.run({ session: SESSION, lease: LEASE, adapter: { decide } }),
-    ).resolves.toEqual({
-      status: 'failed',
-      reason: 'maximum_runtime_reached',
-    })
-    expect(decide).toHaveBeenCalledTimes(1)
-    expect(sessions.fail).toHaveBeenCalledWith(SESSION.id)
-  })
+  // verification engine 已移除：任务完成与否交由 agent 自行判断，不再自动校验/持久化
+  // verification evidence。原 persists-evidence / window-inventory / record-persist 三个
+  // 用例随引擎一并移除。
 
-  it('persists completed verification evidence before transitioning the session to completed', async () => {
+  it('completes immediately when the model declares ready (no automatic verification)', async () => {
     const sessions = sessionController()
     const verifications = verificationStore()
-    const timeline = { record: vi.fn() }
     const operator = new ComputerTaskOperator({
       sessions,
-      broker: { observe: vi.fn(async () => AFTER), dispatch: vi.fn() },
-      approvals: { takeApprovedTicket: vi.fn(() => null) },
-      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
-      verifications,
-      windowInventory: { listWindows: vi.fn(async () => []) },
-      createId: () => 'verification-1',
-      now: () => Date.parse(SESSION.createdAt),
-      timeline,
-    })
-
-    await expect(
-      operator.run({
-        session: SESSION,
-        lease: LEASE,
-        adapter: {
-          decide: vi.fn(async () => ({
-            type: 'ready_for_verification' as const,
-            reason: 'Saved status is visible',
-          })),
-        },
-      }),
-    ).resolves.toMatchObject({ status: 'completed' })
-    expect(verifications.create).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'verification-1', computerSessionId: SESSION.id }),
-    )
-    expect(verifications.complete).toHaveBeenCalledWith(
-      'verification-1',
-      expect.objectContaining({ status: 'passed', evidence: expect.any(Array) }),
-    )
-    expect(verifications.complete.mock.invocationCallOrder[0]).toBeLessThan(
-      sessions.completeVerified.mock.invocationCallOrder[0]!,
-    )
-    expect(timeline.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'computer_verification_started',
-        verificationId: 'verification-1',
-      }),
-    )
-    expect(timeline.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'computer_verification_completed',
-        verificationId: 'verification-1',
-        status: 'passed',
-      }),
-    )
-    expect(sessions.completeVerified).toHaveBeenCalledWith(SESSION.id, ['verification-1'])
-  })
-
-  it('verifies from the current observation when window inventory is temporarily unavailable', async () => {
-    const sessions = sessionController()
-    const operator = new ComputerTaskOperator({
-      sessions,
-      broker: { observe: vi.fn(async () => AFTER), dispatch: vi.fn() },
-      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
-      verifications: verificationStore(),
-      windowInventory: {
-        listWindows: vi.fn(async () => Promise.reject(new Error('Native Host inventory busy'))),
+      broker: {
+        observe: vi.fn(async () => AFTER),
+        dispatch: vi.fn(async () => ({ observation: AFTER, noop: false })),
       },
-      now: () => Date.parse(SESSION.createdAt),
-    })
-
-    await expect(
-      operator.run({
-        session: SESSION,
-        lease: LEASE,
-        adapter: {
-          decide: vi.fn(async () => ({
-            type: 'ready_for_verification' as const,
-            reason: 'Saved status is visible',
-          })),
-        },
-      }),
-    ).resolves.toMatchObject({ status: 'completed' })
-    expect(sessions.fail).not.toHaveBeenCalled()
-  })
-
-  it('completes the turn even when the verification record cannot be persisted', async () => {
-    const sessions = sessionController()
-    const verifications = {
-      create: vi.fn(() => ({ id: 'verification-1', status: 'pending' })),
-      complete: vi.fn(() => null),
-    }
-    const operator = new ComputerTaskOperator({
-      sessions,
-      broker: { observe: vi.fn(async () => AFTER), dispatch: vi.fn() },
       approvals: { takeApprovedTicket: vi.fn(() => null) },
       evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
       verifications,
-      windowInventory: { listWindows: vi.fn(async () => []) },
-      createId: () => 'verification-1',
+      createId: () => 'action-1',
       now: () => Date.parse(SESSION.createdAt),
     })
+    const decisions = [
+      {
+        type: 'action' as const,
+        intent: 'Save',
+        action: {
+          type: 'invoke_element' as const,
+          elementId: 'save-button',
+          action: 'invoke' as const,
+        },
+      },
+      { type: 'ready_for_verification' as const, reason: 'Saved status is visible' },
+    ]
 
     await expect(
       operator.run({
         session: SESSION,
         lease: LEASE,
-        adapter: {
-          decide: vi.fn(async () => ({
-            type: 'ready_for_verification' as const,
-            reason: 'Saved status is visible',
-          })),
-        },
+        adapter: { decide: vi.fn(async () => decisions.shift()!) },
       }),
     ).resolves.toMatchObject({ status: 'completed' })
-    expect(verifications.complete).toHaveBeenCalledWith(
-      'verification-1',
-      expect.objectContaining({ status: 'passed' }),
-    )
-    // A storage fault on the verification record must not fail the whole turn once the
-    // verification outcome itself is valid in-memory.
-    expect(sessions.completeVerified).toHaveBeenCalledWith(SESSION.id, ['verification-1'])
+    // 模型声明完成即完成：不再调用 verification engine、不再持久化校验记录、不再因校验
+    // 失败中断；completeVerified 仅用会话 id 调用，任务是否真达成交由 agent 自行核验。
+    expect(verifications.create).not.toHaveBeenCalled()
+    expect(sessions.completeVerified).toHaveBeenCalledWith(SESSION.id)
     expect(sessions.fail).not.toHaveBeenCalled()
   })
 

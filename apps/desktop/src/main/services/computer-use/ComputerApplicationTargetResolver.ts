@@ -46,6 +46,8 @@ export class ComputerApplicationTargetResolver {
   }
 }
 
+const MIN_USABLE_WINDOW_SIDE = 120
+
 export function findApplicationWindow(
   windows: NativeWindowDescriptor[],
   requestedApplication: string,
@@ -58,13 +60,26 @@ export function findApplicationWindow(
       .some((value) => value.trim().toLocaleLowerCase() === requested)
   })
   if (matches.length === 0) return null
-  return [...matches].sort((left, right) => {
+  // Electron apps (e.g. Bilibili) frequently own a tiny tray/status/widget
+  // window that the system reports as focused. Binding to that 66x20 window
+  // ruins the task. Prefer real main windows; only fall back to a sub-min
+  // candidate when it is the sole match so single-window apps still resolve.
+  const usable = matches.filter(isUsableMainWindow)
+  const pool = usable.length > 0 ? usable : matches
+  return [...pool].sort((left, right) => {
     if (left.focused !== right.focused) return left.focused ? -1 : 1
     return (
       right.window.bounds.width * right.window.bounds.height -
       left.window.bounds.width * left.window.bounds.height
     )
   })[0] as NativeWindowDescriptor
+}
+
+function isUsableMainWindow(window: NativeWindowDescriptor): boolean {
+  return (
+    window.window.bounds.width >= MIN_USABLE_WINDOW_SIDE &&
+    window.window.bounds.height >= MIN_USABLE_WINDOW_SIDE
+  )
 }
 
 function normalizeApplicationName(value: string): string {

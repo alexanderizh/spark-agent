@@ -4,7 +4,7 @@
 
 ## 审查结论
 
-直接控制的代码链已完成，自动化验证通过；真实 DEV 验收尚未完成，因此规格和计划继续保持「实施中」。解锁后的第二次真实运行暴露了三个实现缺陷：GLM 正常响应被严格 parser 误报为 `decision_model_error`、截图证据缺少 session/turn 所有权、其他应用的持续用户输入会被全局 idle 检查误判为接管。本轮均已修复，仍需重启最新 DEV 后复验。
+直接控制的代码链已完成，自动化验证通过；真实 DEV 验收尚未完成，因此规格和计划继续保持「实施中」。解锁后的第二次真实运行暴露了三个实现缺陷：GLM 正常响应被严格 parser 误报为 `decision_model_error`、截图证据缺少 session/turn 所有权、其他应用的持续用户输入会被全局 idle 检查误判为接管。第三轮均已修复。第三轮复验又暴露出 Electron 根因：哔哩哔哩等 Electron 应用的 AX 树几乎为空（Chromium 默认不构建 Web 内容树），且系统会把 66×20 的托盘小部件窗当作 focused window 绑定。第四轮（AX 激活）已通过运行时设置 `AXManualAccessibility`/`AXEnhancedUserInterface` 激活 Chromium 可访问性并按绑定主窗口选择 AX 窗口、TS 侧过滤小部件窗修复。第五轮针对真实运行中任务反复以 `session_canceled` 被打断的根因：每个 agent turn 结束时 `SessionService` 无条件 `stopOwnedSessions`，把正在正常推进（甚至校验已通过）的桌面任务强行取消。已移除 turn 结束自动取消、运行时/步数硬上限、`focus_mismatch` 中断与自动校验，并把单步失败改为「反馈模型换方案 + 计数兜底」；任务生命周期完全交由 agent（主动 `stop`）或用户 ESC 决定，仍需重启最新 DEV 后复验。
 
 ## 已核对行为
 
@@ -32,10 +32,18 @@
 - Anthropic 兼容响应可以包含简短说明、Markdown fence、裸白名单动作或省略 decision 外层；本地规范化后仍经完整 `ComputerActionSchema` 校验。
 - 截图证据从 `computer_sessions` 写入真实 session/turn 所有权，不再触发 `snapshot ownership does not match computer session`。
 - 用户操作其他应用只产生最多 750 ms 防碰撞等待；只有目标窗口内的输入才触发 handoff。前景动作后仍恢复用户原前台应用和指针。
+- 观察前对应用 AX 元素设置 `AXManualAccessibility` 与 `AXEnhancedUserInterface`，运行时激活 Chromium/Electron 的 Web 内容可访问性树；非 Chromium 应用拒绝忽略，首轮树异常稀疏时以 150 ms 间隔有界重试。
+- AX 遍历按绑定的主窗口选择（从 `kAXWindowsAttribute` 过滤 <120×120 小部件窗，按 bounds 匹配 → 可用 focused → 最大面积），不再盲用系统 `kAXFocusedWindowAttribute`，避免绑定 66×20 托盘窗。
+- TS 侧 `findApplicationWindow` 过滤 <120×120 小部件窗，仅当全部候选都过小时回退。
+- agent turn 结束只做轻清理（撤销 MCP HTTP grant 与快照会话），不再 `stopOwnedSessions`；只有 `cancelTurn` 与 `clearSessionMemory` 调用新增的 `stopComputerUseSession` 真正停止任务。正在运行的桌面任务不再因 turn 边界被取消。
+- `ComputerControlBroker.assertWithinRuntimeAndStepLimits` 整体移除；`ComputerTaskOperator` 主循环改为 `for(;;)`，不再因 `maxRuntimeMs`/`maxSteps` 终止任务。
+- `focus_mismatch` 检查移除：前台窗口变化不再抛错，executor 始终操作 envelope 的绑定目标窗口，用户操作别的应用不影响任务。
+- `ready_for_verification` 不再调用 verification engine 或持久化校验记录；模型声明完成即 `completed`，是否真达成交由 agent 自行核验。
+- 不可恢复的执行错误从“立即 throw → `sessions.fail`”改为“反馈模型 + 计数兜底”；只有 `handoff_required`/`session_canceled` 或连续 `MAX_TRANSIENT_RECOVERIES` 次失败才退出。Broker 执行失败统一 `setPhase observing`，不再 auto-pause。
 
 ## 自动化证据
 
-- Desktop Computer Use 与快照排序：42 个测试文件、312 项测试通过。
+- Desktop Computer Use 与快照排序：43 个测试文件、308 项测试通过。
 - Protocol Computer Use：5 个测试文件、33 项测试通过。
 - Agent Runtime Computer Use：2 个测试文件、4 项测试通过。
 - Desktop、Protocol、Agent Runtime TypeScript typecheck 通过。
@@ -49,6 +57,8 @@
 本次失败降级增量将完整回归提升为 45 个测试文件、309 项测试通过，Desktop main/node TypeScript typecheck、相关 ESLint 和 `git diff --check` 通过。完整 Desktop typecheck 当前被并行画布改动 `canvas.api.ts` 的 `"group"` 与 `CanvasOperationType` 不匹配阻塞；Computer Use 变更自身无类型错误。
 
 本次树优先与并行桌面增量的针对性证据：5 个测试文件、44 项测试通过；Agent Runtime 与 Desktop Node TypeScript typecheck 通过；macOS Native Host 43 项测试通过；Windows Host Rust 格式检查通过。最新 macOS Host 已复制到 DEV Electron resources，重启 DEV 即可加载。
+
+本次「任务生命周期全权交由 Agent」增量的针对性证据：Desktop Computer Use 43 个测试文件、306 项测试通过；Agent Runtime Computer Use 2 个测试文件、4 项测试通过；Desktop 与 Agent Runtime TypeScript typecheck 通过；相关 ESLint 零 error（仅既有测试文件 non-null assertion 警告）。Agent Runtime 全量套件中 memory/db、canvas bridge、platform-bridge、conversation-summarizer 等模块的既有失败与本次改动无关。
 
 ## 真实 DEV 记录
 
