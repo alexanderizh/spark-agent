@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../Icons'
 import { useResolvedTheme } from '../hooks/useResolvedTheme'
+import {
+  classifyCodeBlock,
+  isSemanticCodeBlockMode,
+  type CodeBlockMode,
+} from './markdown-code/codeBlockSemantics'
+import { SemanticCodeBody } from './markdown-code/SemanticCodeBody'
 
 type MarkdownCodeBlockProps = {
   code: string
@@ -94,14 +100,28 @@ export function MarkdownCodeBlock({
   const [highlightFailed, setHighlightFailed] = useState(false)
   const [copied, setCopied] = useState(false)
   const language = useMemo(() => normalizeLanguage(lang), [lang])
+  const semanticMode = useMemo(
+    () => classifyCodeBlock(lang, code),
+    [lang, code],
+  )
   const shikiTheme = SHIKI_THEME[resolvedTheme]
   const shouldHighlight = syntaxHighlight && !incomplete && code.length > 0
+  const renderSemantic =
+    syntaxHighlight && !incomplete && isSemanticCodeBlockMode(semanticMode)
 
   useEffect(() => {
     let cancelled = false
     setCopied(false)
 
     if (!shouldHighlight) {
+      setHtml(null)
+      setHighlightFailed(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    if (renderSemantic) {
       setHtml(null)
       setHighlightFailed(false)
       return () => {
@@ -137,7 +157,7 @@ export function MarkdownCodeBlock({
     return () => {
       cancelled = true
     }
-  }, [code, language, shikiTheme, shouldHighlight])
+  }, [code, language, shikiTheme, shouldHighlight, renderSemantic])
 
   const handleCopy = () => {
     navigator.clipboard
@@ -193,7 +213,9 @@ export function MarkdownCodeBlock({
           onClick={handleCopy}
         />
       )}
-      {html != null ? (
+      {renderSemantic ? (
+        <SemanticCodeBody code={code} mode={semanticMode as Exclude<CodeBlockMode, 'source'>} />
+      ) : html != null ? (
         <div className="md-code-highlighted" dangerouslySetInnerHTML={{ __html: html }} />
       ) : (
         <pre className={`md-code${incomplete ? ' md-code-incomplete' : ''}`}>
