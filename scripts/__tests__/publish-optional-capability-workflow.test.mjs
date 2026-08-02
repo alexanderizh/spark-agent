@@ -3,7 +3,9 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 test('builds signed macOS and Windows depth runtimes before one atomic publish', async () => {
-  const workflow = await readFile('.github/workflows/publish-desktop-release.yml', 'utf8')
+  const workflow = (
+    await readFile('.github/workflows/publish-desktop-release.yml', 'utf8')
+  ).replaceAll('\r\n', '\n')
 
   assert.match(workflow, /^  build-optional-capabilities-macos:/m)
   assert.match(workflow, /^  build-optional-capabilities-windows:/m)
