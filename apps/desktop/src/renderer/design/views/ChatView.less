@@ -4495,6 +4495,20 @@ body.side-chat-resizing {
   gap: 6px;
   padding: 4px 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  /* 整条充当系统标题栏：空白区（含激活标签条右侧的留白）支持原生窗口拖拽，
+     并由组件层 onDoubleClick 触发双击最大化。
+     所有真正可交互的元素（按钮、关闭叉号、弹出菜单）在下方规则里显式 no-drag，
+     避免点击被窗口拖拽吞掉而失去触发区。 */
+  -webkit-app-region: drag;
+}
+
+/* 标题栏内的可交互元素：必须逐元素显式 no-drag，保留按钮的可点击触发区。
+   app-region 不按继承生效，遗漏任一按钮都会让其点击被窗口拖拽吞掉。 */
+.unified-side-panel-tabbar button,
+.unified-side-panel-tabbar .unified-side-panel-tab-close,
+.unified-side-panel-tabbar .unified-side-panel-shortcuts,
+.unified-side-panel-tabbar .unified-side-panel-add-wrap,
+.unified-side-panel-tabbar .unified-side-panel-menu {
   -webkit-app-region: no-drag;
 }
 
