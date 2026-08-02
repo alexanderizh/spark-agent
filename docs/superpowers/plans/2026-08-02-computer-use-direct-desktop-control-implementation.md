@@ -14,6 +14,8 @@
 
 **2026-08-02 状态能力增量：** 新增无需 `start_task` 的 `list_apps`、`list_windows`、`get_screen_state`、`get_app_state`、`open_app`。应用列表同时支持 Native Host 运行态和 macOS 已安装目录，目录使用 5 分钟缓存并允许故障降级；活动任务期间的应用观察使用隔离连接，避免污染任务状态。
 
+**2026-08-02 树优先与并行桌面增量：** 决策改为 AX/HTML 树优先、截图按需升级，并兼容 Anthropic 接口在合法 JSON 外附带说明或直接返回安全动作；修复观察截图缺失 session/turn 所有权导致的后台写入异常。macOS/Windows 只把目标窗口内的真实输入视为接管，用户持续操作其他应用最多延迟 Agent 750 ms，不再令任务失败。
+
 ---
 
 ### Task 1: 主进程单执行器协调器
@@ -218,6 +220,17 @@ Expected: `allowedApps=[]`、无 approval/handoff/lease conflict、哔哩哔哩�
 - [x] 模型提示优先选择满足需求的最小确定性接口，减少枚举和长任务启动。
 - [x] 完成 Computer Use 全量回归、TypeScript、ESLint 和 production build。
 - [ ] 在用户已解锁桌面的最新 DEV 实例完成真实应用端到端验收。
+
+### Task 7: 树优先决策、GLM 输出兼容与跨应用并行
+
+- [x] 从真实 DEV 日志确认 GLM‑5.2 的九次多模态请求均成功返回，失败点位于本地动作解析，而非模型图像能力。
+- [x] 有可用 AX/HTML 状态时先做无图决策，失败后才向同一模型发送截图。
+- [x] 兼容说明文字、Markdown fence、裸安全动作和缺失外层 type 的 Anthropic 兼容响应，同时保持动作 Schema 白名单。
+- [x] 修复截图证据写入的 `session_id` / `turn_id` 所有权。
+- [x] macOS/Windows 将其他应用的持续用户输入从任务终止改为 750 ms 有界防碰撞等待；目标窗口内的明确接管仍停止 Agent 输入。
+- [x] 新增的五个桌面状态工具加入 Agent 允许调用清单。
+- [x] 完成适配器、Operator、MCP、证据存储和提示词回归，完成 Agent Runtime/Desktop Node typecheck、macOS Host 43 项测试及 Windows Rust 格式检查。
+- [ ] 重启最新 DEV 实例，完成哔哩哔哩应用内搜索及“用户同时操作其他应用”真实验收。
 
 ### Task 7: 单步失败的有界降级编排
 

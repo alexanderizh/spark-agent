@@ -9,6 +9,8 @@ export interface ComputerDecisionModelConfig {
   apiEndpoint?: string
   model: string
   maxTokens?: number
+  /** Ordered runtime fallbacks. Kept in-memory only; credentials are never persisted in tasks. */
+  fallbackModels?: ComputerDecisionModelConfig[]
 }
 
 export function buildComputerDecisionModelConfig(input: {

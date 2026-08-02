@@ -895,8 +895,18 @@ export class SessionService {
         !isBuiltInLocalCliProvider(provider) &&
         values.findIndex((candidate) => candidate?.id === provider.id) === index,
     )
+    const orderedCandidates = [
+      selected,
+      ...candidates
+        .filter((provider) => provider.id !== selected.id && isComputerVisionCandidate(provider))
+        .sort(
+          (left, right) =>
+            computerVisionCandidateScore(right) - computerVisionCandidateScore(left),
+        ),
+    ]
     let lastError: unknown
-    for (const provider of candidates) {
+    const resolved: ComputerDecisionModelConfig[] = []
+    for (const provider of orderedCandidates) {
       try {
         const providerConfig = JSON.parse(provider.config_json) as {
           defaultModel?: unknown
@@ -910,14 +920,22 @@ export class SessionService {
               : ''
         const selectedModel =
           provider.id === selected.id ? (active?.model ?? session.model_id) : undefined
-        return buildComputerDecisionModelConfig({
-          provider,
-          model: selectedModel ?? fallbackModel,
-          apiKey: await resolveProviderApiKey(provider),
-        })
+        resolved.push(
+          buildComputerDecisionModelConfig({
+            provider,
+            model: selectedModel ?? fallbackModel,
+            apiKey: await resolveProviderApiKey(provider),
+          }),
+        )
+        if (resolved.length >= 3) break
       } catch (error) {
         lastError = error
       }
+    }
+    const primary = resolved[0]
+    if (primary != null) {
+      const fallbackModels = resolved.slice(1)
+      return fallbackModels.length === 0 ? primary : { ...primary, fallbackModels }
     }
     throw lastError ?? new Error('No vision-capable Computer decision provider is configured')
   }
@@ -9975,6 +9993,34 @@ function uniqueSkillSummaries<T extends { id: string }>(skills: T[]): T[] {
     result.push(skill)
   }
   return result
+}
+
+function isComputerVisionCandidate(provider: ProviderProfileRow): boolean {
+  const config = parseComputerProviderConfig(provider.config_json)
+  return (
+    (config.modelType == null || config.modelType === 'multimodal') &&
+    (typeof config.defaultModel === 'string' || typeof config.model === 'string')
+  )
+}
+
+function computerVisionCandidateScore(provider: ProviderProfileRow): number {
+  const config = parseComputerProviderConfig(provider.config_json)
+  return (
+    (config.codexApiKind === 'responses' ? 100 : 0) +
+    (config.modelType === 'multimodal' ? 10 : 0) +
+    (provider.is_default === 1 ? 1 : 0)
+  )
+}
+
+function parseComputerProviderConfig(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
 }
 
 /** 历史加载时单个 prompt 段落内容的字符上限（超出截断，原始长度仍由 charCount 记录）。 */

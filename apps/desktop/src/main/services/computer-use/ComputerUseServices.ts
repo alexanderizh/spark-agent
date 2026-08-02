@@ -256,6 +256,7 @@ function createDefaultEvidenceSink(database: SparkDatabase): NativeObservationEv
   )
   return new ComputerObservationEvidenceStore({
     repository: new ApplicationSnapshotRepository(database),
+    sessions: new ComputerSessionRepository(database),
     vault: new SnapshotVault({
       rootDirectory: join(app.getPath('userData'), 'snapshot-vault', 'blobs'),
       keyProvider: new SnapshotVaultKeyProvider(),

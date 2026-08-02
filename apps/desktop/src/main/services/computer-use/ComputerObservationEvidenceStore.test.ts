@@ -49,6 +49,9 @@ describe('ComputerObservationEvidenceStore', () => {
     }
     const store = new ComputerObservationEvidenceStore({
       repository,
+      sessions: {
+        get: vi.fn(() => ({ session_id: 'session-1', turn_id: 'turn-1' }) as never),
+      },
       vault,
       imageProcessor: vi.fn(() => ({
         bytes: preview,
@@ -76,6 +79,8 @@ describe('ComputerObservationEvidenceStore', () => {
     expect(repository.createWithBlobs).toHaveBeenCalledWith({
       snapshot: expect.objectContaining({
         kind: 'execution_before',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
         textBlobId: null,
         retention: { mode: 'ttl', expiresAt: expect.any(String) },
       }),

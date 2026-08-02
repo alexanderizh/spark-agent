@@ -191,6 +191,13 @@ export class ComputerTaskOperator {
           })
           consecutiveTransientFailures = 0
         } catch (error) {
+          if (
+            error instanceof ComputerUseBrokerError &&
+            error.code === 'decision_model_error' &&
+            !error.retryable
+          ) {
+            throw error
+          }
           consecutiveTransientFailures += 1
           if (consecutiveTransientFailures > MAX_DECISION_RECOVERIES) throw error
           await this.wait(recoveryDelay(consecutiveTransientFailures))
