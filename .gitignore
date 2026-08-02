@@ -139,3 +139,5 @@ minio/
 .superpowers/
 .spark-agent/
 todo/
+.playwright-mcp/
+design-drafts/
