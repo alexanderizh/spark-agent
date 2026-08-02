@@ -21,6 +21,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
 import { MarkdownText } from '../views/ChatView'
 import { MarkdownImage } from './MarkdownImage'
+import type { FileViewerProps } from '@file-viewer/react'
 import type { PreviewFileType } from './ClickableFilePath'
 import { FileTypeIcon } from './FileDisplay'
 import {
@@ -344,6 +345,29 @@ export function FilePreviewPanel({
     }
   }, [openFile, openingExternal, resolvedFilePath, toast])
 
+  // Flyfish/FileViewer 的 viewerOptions useMemo 依赖了 onStateChange 引用：只要引用变化，
+  // 内部就会触发 controller.update() → loadSource() 重新解析整个文档。
+  // 父级 ChatView 在会话流式输出/定时器/IPC 期间会高频重渲染，若这里用内联回调，每次都会
+  // 产生新引用，导致 PPT 每隔几秒闪屏重新解析；PDF 还会因 ArrayBuffer 首次解析被 pdfjs
+  // transfer 给 worker 后 detach，第二次 loadSource 拿到空 buffer 报「PDF 缺少可读取的数据源」。
+  // 因此必须把 onStateChange 稳定下来：依赖里只放值稳定的 resolvedFilePath，
+  // 并用 functional setState 读取最新 source，避免把 viewerSource 闭包进依赖。
+  const handleViewerStateChange = useCallback<NonNullable<FileViewerProps['onStateChange']>>(
+    (state) => {
+      if (state.error == null) return
+      setViewerLoadState((prev) => {
+        if (prev == null || prev.filePath !== resolvedFilePath) return prev
+        return {
+          ...prev,
+          error:
+            formatViewerError(state.error) ??
+            'Flyfish Viewer 无法预览该文件，可尝试用外部应用打开',
+        }
+      })
+    },
+    [resolvedFilePath],
+  )
+
   const fileName = filePath.split(/[\\/]/).pop() ?? filePath
 
   return (
@@ -431,17 +455,7 @@ export function FilePreviewPanel({
                   ? { url: viewerSource.url }
                   : { buffer: viewerSource.buffer })}
                 filename={fileName}
-                onStateChange={(state) => {
-                  if (state.error != null) {
-                    setViewerLoadState({
-                      filePath: resolvedFilePath,
-                      source: viewerSource,
-                      error:
-                        formatViewerError(state.error) ??
-                        'Flyfish Viewer 无法预览该文件，可尝试用外部应用打开',
-                    })
-                  }
-                }}
+                onStateChange={handleViewerStateChange}
               />
             </Suspense>
           </div>
