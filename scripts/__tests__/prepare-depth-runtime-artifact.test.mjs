@@ -52,6 +52,8 @@ test('packages the Node depth dependency closure for only the target platform', 
       'bin/napi-v6/darwin/arm64/libonnxruntime.1.24.3.dylib': 'darwin-library',
       'bin/napi-v6/darwin/arm64/onnxruntime_binding.node': 'darwin',
       'bin/napi-v6/linux/x64/onnxruntime_binding.node': 'linux',
+      'bin/napi-v6/win32/x64/onnxruntime.dll': 'windows-library',
+      'bin/napi-v6/win32/x64/onnxruntime_binding.node': 'windows',
     },
   )
   await writePackage(nodeModules, 'onnxruntime-common', { version: '1.24.3' })
@@ -127,4 +129,40 @@ test('packages the Node depth dependency closure for only the target platform', 
   assert.equal(signTargets.length, 2)
   assert.match(signTargets[0], /libonnxruntime\.1\.24\.3\.dylib$/)
   assert.match(signTargets[1], /onnxruntime_binding\.node$/)
+
+  await assert.rejects(
+    prepareDepthRuntimeArtifact(nodeModules, join(root, 'unsigned-windows-output'), {
+      platform: 'win32',
+      arch: 'x64',
+      revision: 2,
+      requireWindowsCodesign: true,
+    }),
+    /requires sign tool, certificate, and certificate password/,
+  )
+
+  const windowsCommands = []
+  const windowsResult = await prepareDepthRuntimeArtifact(
+    nodeModules,
+    join(root, 'windows-output'),
+    {
+      platform: 'win32',
+      arch: 'x64',
+      revision: 2,
+      windowsSignTool: 'signtool.exe',
+      windowsCertificate: 'spark-signing.pfx',
+      windowsCertificatePassword: 'test-password',
+      requireWindowsCodesign: true,
+      runCommand: async (command, args) => windowsCommands.push([command, ...args]),
+    },
+  )
+  const windowsManifest = JSON.parse(await readFile(windowsResult.packageManifestPath, 'utf8'))
+  assert.equal(windowsManifest.authenticodeSigned, true)
+  assert.equal(windowsResult.entry.platform, 'win32')
+  assert.equal(windowsResult.entry.arch, 'x64')
+  const windowsSignTargets = windowsCommands
+    .filter((args) => args.includes('sign'))
+    .map((args) => args.at(-1))
+  assert.equal(windowsSignTargets.length, 2)
+  assert.match(windowsSignTargets[0], /onnxruntime\.dll$/)
+  assert.match(windowsSignTargets[1], /onnxruntime_binding\.node$/)
 })

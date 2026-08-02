@@ -31,7 +31,7 @@ on:
         type: boolean
         default: false
       optional_capabilities_only:
-        description: '仅构建并发布 Office 与本机深度可选资源，不构建桌面安装包'
+        description: '仅构建并发布 Office、macOS 与 Windows 深度可选资源，不构建桌面安装包'
         required: true
         type: boolean
         default: false
@@ -468,8 +468,8 @@ jobs:
               node apps/desktop/scripts/register-release.mjs
           done < "${RUNNER_TEMP}/release-targets.tsv"
 
-  publish-optional-capabilities:
-    name: Publish optional Office and depth packages
+  build-optional-capabilities-macos:
+    name: Build optional Office and macOS depth packages
     needs: prepare
     if: >-
       github.event_name == 'workflow_dispatch'
@@ -539,7 +539,183 @@ jobs:
           ' "${DEPTH_MANIFEST}"
           node --test scripts/__tests__/prepare-office-viewer-artifact.test.mjs \
             scripts/__tests__/prepare-depth-runtime-artifact.test.mjs \
+            scripts/__tests__/publish-optional-capability-workflow.test.mjs \
             scripts/__tests__/publish-optional-capabilities-to-minio.test.mjs
+
+      - name: Stage optional archives for atomic publish
+        run: |
+          set -euo pipefail
+          OFFICE_DIR="${RUNNER_TEMP}/spark-office-viewer-2.2.3-1"
+          TARGET_PLATFORM='darwin'
+          TARGET_ARCH='arm64'
+          DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-${TARGET_PLATFORM}-${TARGET_ARCH}"
+          DELIVERY_DIR="${RUNNER_TEMP}/optional-delivery-macos"
+          mkdir -p "${DELIVERY_DIR}"
+          cp "${OFFICE_DIR}/office-viewer-2.2.3-1-manifest.json" "${DELIVERY_DIR}/"
+          cp "${OFFICE_DIR}/office-viewer-2.2.3-1.tar.gz" "${DELIVERY_DIR}/"
+          cp "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json" "${DELIVERY_DIR}/"
+          cp "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}.tar.gz" "${DELIVERY_DIR}/"
+
+      - name: Upload macOS optional archives for atomic publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: optional-capabilities-macos
+          path: ${{ runner.temp }}/optional-delivery-macos/*
+          if-no-files-found: error
+          retention-days: 5
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          security delete-keychain "$HOME/Library/Keychains/spark-build.keychain-db" 2>/dev/null || true
+
+  build-optional-capabilities-windows:
+    name: Build optional Windows depth package
+    needs: prepare
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && github.event.inputs.optional_capabilities_only == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout requested source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare Windows Authenticode certificate
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK) -or
+              [string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD)) {
+            throw 'Windows depth runtime requires WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD'
+          }
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'optional-depth-signing.pfx'
+          $raw = $env:WIN_CSC_LINK.Trim()
+          if (Test-Path -LiteralPath $raw) {
+            Copy-Item -LiteralPath $raw -Destination $certificatePath
+          } elseif ($raw -match '^https://') {
+            Invoke-WebRequest -Uri $raw -OutFile $certificatePath
+          } else {
+            $base64 = [regex]::Replace($raw, '^data:.*?;base64,', '')
+            $base64 = [regex]::Replace($base64, '\s+', '')
+            [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($base64))
+          }
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($null -eq $signTool) { throw 'signtool.exe was not found on the Windows runner' }
+          "DEPTH_RUNTIME_WINDOWS_CERTIFICATE=$certificatePath" | Out-File $env:GITHUB_ENV -Append
+          "DEPTH_RUNTIME_WINDOWS_SIGNTOOL=$($signTool.FullName)" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Build and verify Windows depth archive
+        shell: bash
+        env:
+          DEPTH_RUNTIME_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          DEPTH_RUNTIME_WINDOWS_REQUIRE_SIGNING: '1'
+        run: |
+          set -euo pipefail
+          TARGET_PLATFORM='win32'
+          TARGET_ARCH='x64'
+          DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-${TARGET_PLATFORM}-${TARGET_ARCH}"
+          DELIVERY_DIR="${RUNNER_TEMP}/optional-delivery-windows"
+          node scripts/prepare-depth-runtime-artifact.mjs \
+            "${TARGET_PLATFORM}" "${TARGET_ARCH}" 2 "${DEPTH_DIR}" node_modules
+          DEPTH_MANIFEST="${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json"
+          node -e '
+            const fs = require("node:fs")
+            const entry = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+            const expected = {
+              id: "runtime.optional-depth-transformers-4.2.0-onnx-1.24.3-2-win32-x64",
+              type: "runtime",
+              version: "4.2.0-1.24.3-2",
+              platform: "win32",
+              arch: "x64",
+            }
+            for (const [key, value] of Object.entries(expected)) {
+              if (entry[key] !== value) throw new Error(`unexpected ${key}: ${entry[key]}`)
+            }
+          ' "${DEPTH_MANIFEST}"
+          node --test scripts/__tests__/prepare-depth-runtime-artifact.test.mjs \
+            scripts/__tests__/publish-optional-capability-workflow.test.mjs \
+            scripts/__tests__/publish-optional-capabilities-to-minio.test.mjs
+          mkdir -p "${DELIVERY_DIR}"
+          cp "${DEPTH_MANIFEST}" "${DELIVERY_DIR}/"
+          cp "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}.tar.gz" \
+            "${DELIVERY_DIR}/"
+
+      - name: Upload Windows optional archive for atomic publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: optional-capabilities-windows
+          path: ${{ runner.temp }}/optional-delivery-windows/*
+          if-no-files-found: error
+          retention-days: 5
+
+      - name: Cleanup Windows signing certificate
+        if: always()
+        shell: pwsh
+        run: Remove-Item -LiteralPath "$env:RUNNER_TEMP\optional-depth-signing.pfx" -Force -ErrorAction SilentlyContinue
+
+  publish-optional-capabilities:
+    name: Atomically publish optional capability packages
+    needs:
+      - prepare
+      - build-optional-capabilities-macos
+      - build-optional-capabilities-windows
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && github.event.inputs.optional_capabilities_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout publisher source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download macOS optional archives
+        uses: actions/download-artifact@v4
+        with:
+          name: optional-capabilities-macos
+          path: ${{ runner.temp }}/optional-capabilities/macos
+
+      - name: Download Windows optional archive
+        uses: actions/download-artifact@v4
+        with:
+          name: optional-capabilities-windows
+          path: ${{ runner.temp }}/optional-capabilities/windows
 
       - name: Publish archives and atomically update repository manifest
         shell: bash
@@ -552,28 +728,13 @@ jobs:
           RELEASE_MINIO_ALLOW_INSECURE_HTTP: '1'
         run: |
           set -euo pipefail
-          OFFICE_DIR="${RUNNER_TEMP}/spark-office-viewer-2.2.3-1"
-          TARGET_PLATFORM='darwin'
-          TARGET_ARCH='arm64'
-          DEPTH_DIR="${RUNNER_TEMP}/spark-depth-runtime-${TARGET_PLATFORM}-${TARGET_ARCH}"
+          MAC_DIR="${RUNNER_TEMP}/optional-capabilities/macos"
+          WIN_DIR="${RUNNER_TEMP}/optional-capabilities/windows"
           node scripts/publish-optional-capabilities-to-minio.mjs \
-            "${OFFICE_DIR}/office-viewer-2.2.3-1-manifest.json" \
-            "${OFFICE_DIR}/office-viewer-2.2.3-1.tar.gz" \
-            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}-manifest.json" \
-            "${DEPTH_DIR}/depth-runtime-4.2.0-1.24.3-2-${TARGET_PLATFORM}-${TARGET_ARCH}.tar.gz"
+            "${MAC_DIR}/office-viewer-2.2.3-1-manifest.json" \
+            "${MAC_DIR}/office-viewer-2.2.3-1.tar.gz" \
+            "${MAC_DIR}/depth-runtime-4.2.0-1.24.3-2-darwin-arm64-manifest.json" \
+            "${MAC_DIR}/depth-runtime-4.2.0-1.24.3-2-darwin-arm64.tar.gz" \
+            "${WIN_DIR}/depth-runtime-4.2.0-1.24.3-2-win32-x64-manifest.json" \
+            "${WIN_DIR}/depth-runtime-4.2.0-1.24.3-2-win32-x64.tar.gz"
           node scripts/audit-artifact-repository.mjs
-
-      - name: Preserve optional archives for delivery evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: optional-capabilities-macos-arm64
-          path: |
-            ${{ runner.temp }}/spark-office-viewer-2.2.3-1/*.tar.gz
-            ${{ runner.temp }}/spark-depth-runtime-darwin-*/depth-runtime-*.tar.gz
-          if-no-files-found: error
-          retention-days: 5
-
-      - name: Cleanup keychain
-        if: always()
-        run: |
-          security delete-keychain "$HOME/Library/Keychains/spark-build.keychain-db" 2>/dev/null || true

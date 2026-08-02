@@ -31,6 +31,10 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
   const codesignIdentity = options?.codesignIdentity
   const expectedTeamId = options?.expectedTeamId
   const requireCodesign = options?.requireCodesign === true
+  const windowsSignTool = options?.windowsSignTool
+  const windowsCertificate = options?.windowsCertificate
+  const windowsCertificatePassword = options?.windowsCertificatePassword
+  const requireWindowsCodesign = options?.requireWindowsCodesign === true
   if (!SUPPORTED_PLATFORMS.has(platform) || !SUPPORTED_ARCHITECTURES.has(arch)) {
     throw new Error(`Unsupported depth runtime target: ${platform}/${arch}`)
   }
@@ -63,6 +67,16 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
           captureCommand: options?.captureCommand ?? runCapture,
         })
       : null
+  const authenticodeSigned =
+    platform === 'win32'
+      ? await signWindowsNativeFiles(packageDirectory, {
+          signTool: windowsSignTool,
+          certificate: windowsCertificate,
+          certificatePassword: windowsCertificatePassword,
+          required: requireWindowsCodesign,
+          runCommand: options?.runCommand ?? run,
+        })
+      : false
 
   const transformers = JSON.parse(
     await readFile(
@@ -90,6 +104,7 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
     arch,
     runtimeEntry: RUNTIME_ENTRY,
     ...(signingTeamId ? { signingTeamId } : {}),
+    ...(authenticodeSigned ? { authenticodeSigned: true } : {}),
     packages: {},
     files,
   }
@@ -180,6 +195,48 @@ async function signDarwinNativeFiles(packageDirectory, options) {
     }
   }
   return options.expectedTeamId
+}
+
+async function signWindowsNativeFiles(packageDirectory, options) {
+  if (!options.signTool || !options.certificate || !options.certificatePassword) {
+    if (options.required) {
+      throw new Error(
+        'Windows depth runtime requires sign tool, certificate, and certificate password',
+      )
+    }
+    return false
+  }
+
+  const nativeFiles = (await collectRegularFiles(packageDirectory))
+    .filter((path) => /\.(dll|node)$/i.test(path))
+    .sort((left, right) => {
+      const leftBinding = /\.node$/i.test(left) ? 1 : 0
+      const rightBinding = /\.node$/i.test(right) ? 1 : 0
+      return leftBinding - rightBinding || left.localeCompare(right)
+    })
+  if (nativeFiles.length === 0) {
+    throw new Error('Windows depth runtime contains no native files to sign')
+  }
+
+  for (const relativePath of nativeFiles) {
+    const absolutePath = join(packageDirectory, ...relativePath.split('/'))
+    await options.runCommand(options.signTool, [
+      'sign',
+      '/fd',
+      'SHA256',
+      '/td',
+      'SHA256',
+      '/tr',
+      'http://timestamp.digicert.com',
+      '/f',
+      options.certificate,
+      '/p',
+      options.certificatePassword,
+      absolutePath,
+    ])
+    await options.runCommand(options.signTool, ['verify', '/pa', '/all', '/v', absolutePath])
+  }
+  return true
 }
 
 async function collectDependencyClosure(sourceRoot, rootPackage, platform, arch) {
@@ -373,6 +430,10 @@ async function main() {
     codesignIdentity: process.env.DEPTH_RUNTIME_CODESIGN_IDENTITY,
     expectedTeamId: process.env.DEPTH_RUNTIME_EXPECTED_TEAM_ID,
     requireCodesign: process.env.DEPTH_RUNTIME_REQUIRE_CODESIGN === '1',
+    windowsSignTool: process.env.DEPTH_RUNTIME_WINDOWS_SIGNTOOL,
+    windowsCertificate: process.env.DEPTH_RUNTIME_WINDOWS_CERTIFICATE,
+    windowsCertificatePassword: process.env.DEPTH_RUNTIME_WINDOWS_CERTIFICATE_PASSWORD,
+    requireWindowsCodesign: process.env.DEPTH_RUNTIME_WINDOWS_REQUIRE_SIGNING === '1',
   })
   console.log(
     JSON.stringify({
