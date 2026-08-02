@@ -783,10 +783,11 @@
 }
 
 /* === Plan / Todo list === */
+/* 扁平无边框：去掉描边与头部背景/分隔线，靠 bg-sunken 与父级 --bg 形成层次。 */
 .plan-card {
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--r-md);
-  background: var(--panel);
+  background: var(--bg-sunken);
   margin: 8px 0;
   overflow: hidden;
 }
@@ -794,9 +795,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--divider);
-  background: var(--bg-soft);
+  padding: 10px 12px 6px;
+  background: transparent;
   font-weight: 600;
   font-size: var(--font-sm);
   color: var(--text-strong);
@@ -809,7 +809,7 @@
   font-weight: 500;
 }
 .plan-list {
-  padding: 4px;
+  padding: 2px 4px 6px;
 }
 .plan-item {
   display: flex;
@@ -840,17 +840,16 @@
   color: var(--primary);
   text-decoration: underline;
 }
-.plan-item .check {
-  margin-top: 2px;
-}
 .plan-item:hover {
   background: var(--hover);
 }
+/* 状态徽标：方形 check 框。done 填充+对勾、running 填充+圆点 pulse、pending 空心。 */
 .plan-item .check {
-  width: 16px;
-  height: 16px;
+  width: 13px;
+  height: 13px;
   border: 1.5px solid var(--border-strong);
   border-radius: var(--r-xs);
+  margin-top: 3px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -862,8 +861,8 @@
   color: white;
 }
 .plan-item.done .check svg {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 .plan-item.done .text {
   color: var(--text-muted);
@@ -876,8 +875,8 @@
 }
 .plan-item.running .check::after {
   content: '';
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: white;
   animation: pulse 1.6s infinite;

@@ -2275,37 +2275,11 @@ body.git-review-tree-resizing {
   padding-bottom: 14px;
 }
 
-/* 会话区激活态背景 — Indigo 品牌色微光晕（仅浅色模式；暗色保持原透明态不动）
-   多层叠加：顶部主光晕 + 高光核 + 底部呼应 + 纵向 wash，落在极淡冷调底色上。
-   光晕透明度严格克制，消息气泡仍是主角。直接用 background（非伪元素），
-   不引入额外层叠、不碰子元素 z-index；不使用 container-type，避免破坏内部
-   position:fixed 的右键菜单定位。 */
-.app.theme-light .chat-main-active {
-  background:
-    /* 1. 顶部主光晕：宽幅、向上溢出、快速羽化 */
-    radial-gradient(125% 72% at 50% -10%,
-      rgba(99, 102, 241, 0.17) 0%,
-      rgba(99, 102, 241, 0.10) 20%,
-      rgba(99, 102, 241, 0.04) 46%,
-      transparent 72%),
-    /* 2. 顶部高光核：更亮更窄，模拟光源中心 */
-    radial-gradient(58% 32% at 50% -2%,
-      rgba(129, 140, 248, 0.15) 0%,
-      rgba(129, 140, 248, 0.05) 36%,
-      transparent 70%),
-    /* 3. 底部呼应：极淡，色调与顶部同源 */
-    radial-gradient(95% 42% at 50% 110%,
-      rgba(99, 102, 241, 0.05) 0%,
-      rgba(99, 102, 241, 0.02) 40%,
-      transparent 76%),
-    /* 4. 纵向 wash：首尾微调，消除大面积纯白的塑料感 */
-    linear-gradient(180deg,
-      rgba(99, 102, 241, 0.028) 0%,
-      transparent 28%,
-      transparent 70%,
-      rgba(99, 102, 241, 0.016) 100%),
-    /* 5. 底色：极淡冷调白，光晕叠加后过渡更自然（仅浅色激活态专用光晕底色） */
-    #fbfbfd;
+/* 内容区与侧边会话区在浅色激活态下改为透明，让 .chat-layout 上的统一光晕透出，
+   消除两区接缝。暗色保持各自原有底色不动。 */
+.app.theme-light .chat-layout > .chat-main-active,
+.app.theme-light .chat-layout > .unified-side-panel {
+  background: transparent;
 }
 
 .chat-main-active .composer-inner {
@@ -4254,7 +4228,7 @@ body.side-chat-resizing {
 }
 
 .side-chat-panel-header {
-  min-height: var(--chat-header-height);
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4286,6 +4260,190 @@ body.side-chat-resizing {
   color: var(--text-muted);
 }
 
+// 侧边聊天头部「会话切换」触发器：替代原硬编码的"侧边聊天"标题。
+// 视觉重量与原标题一致（同字号/字重），额外给出 hover/chevron 提示可点开下拉。
+// 不撑满父容器，按内容实际宽度收缩（short title 也只占标题本身长度），
+// 避免在大面板宽度下出现一条固定长度的"长条形"点击热区。
+.side-chat-panel-session-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%; // 防御性：长标题 + ellipsis 不会突破父容器
+  padding: 4px 8px;
+  margin-left: -8px; // 抵消自身 padding，与原标题左边缘(18px)对齐
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-md);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--text) 7%, transparent);
+  }
+
+  &:active:not(:disabled) {
+    background: color-mix(in srgb, var(--text) 10%, transparent);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.7;
+  }
+
+  .side-chat-panel-session-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+
+  // 末尾 chevron 弱化，提示可展开
+  > svg:last-child {
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+}
+
+// 侧边聊天会话下拉：视觉对齐 .composer-menu.permission-menu ——
+// 容器四周 6px 内边距、item min-height 40px + 8px 左右内边距 + 圆角 + 淡色 hover，
+// 搜索区固定在顶部、列表独立滚动；置顶会话通过 tag 显示"置顶"徽标并排在最前。
+.side-chat-session-menu.composer-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 280px;
+  max-width: min(360px, calc(100vw - 24px));
+  max-height: min(520px, calc(100vh - 24px));
+  padding: 6px;
+  overflow: hidden;
+
+  .side-chat-session-menu-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    padding: 7px 9px;
+    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    border-radius: 7px;
+    background: var(--bg-sunken);
+    color: var(--text-muted);
+
+    input {
+      min-width: 0;
+      flex: 1;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: var(--font-sm);
+    }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+  }
+
+  .side-chat-session-menu-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 2px 2px;
+  }
+
+  // 会话 item 对齐 .permission-menu-item 视觉：圆角 + 40px 最小高 + 8px 左右内边距 + 淡色 hover
+  .composer-menu-item.side-chat-session-menu-item {
+    min-height: 40px;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 8px;
+    border-radius: var(--r-sm);
+    transition:
+      background-color 0.18s ease,
+      color 0.18s ease;
+
+    &:hover,
+    &.active {
+      background: color-mix(in srgb, var(--text) 5%, transparent);
+    }
+
+    // 主区当前会话标灰 + 禁用 hover，避免误导
+    &.is-disabled {
+      opacity: 0.55;
+      pointer-events: none;
+    }
+  }
+
+  // 「新建会话」独立一行：保留 icon + 描述，与列表 item 视觉区分
+  .composer-menu-item.canvas-session-new {
+    min-height: 40px;
+    padding: 7px 8px;
+    border-radius: var(--r-sm);
+    transition:
+      background-color 0.18s ease,
+      color 0.18s ease;
+
+    &:hover {
+      background: color-mix(in srgb, var(--primary) 8%, transparent);
+      color: color-mix(in srgb, var(--primary) 72%, var(--text));
+    }
+  }
+
+  // 分隔线缩进到 item 内边距内，与 item 圆角不打架
+  .composer-menu-divider {
+    margin: 2px 6px;
+  }
+
+  .composer-menu-empty {
+    padding: 14px 8px;
+    color: var(--text-muted);
+    font-size: var(--font-sm);
+    text-align: center;
+  }
+
+  .composer-menu-item-copy {
+    gap: 4px;
+  }
+
+  // 置顶徽标：与「运行中」tag 共用基底，置顶色用 primary，区别于中性「主区当前」
+  .composer-menu-item-tag.pinned {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    color: color-mix(in srgb, var(--primary) 76%, var(--text));
+    font-weight: 600;
+
+    svg {
+      flex-shrink: 0;
+    }
+  }
+
+  .composer-menu-item-tag.muted {
+    background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+    color: var(--text-muted);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-chat-session-menu .composer-menu-item.side-chat-session-menu-item,
+  .side-chat-session-menu .composer-menu-item.canvas-session-new {
+    transition: none;
+  }
+}
+
 .side-chat-panel-content {
   flex: 1;
   min-height: 0;
@@ -4294,6 +4452,16 @@ body.side-chat-resizing {
   overflow: hidden;
   .composer-inner{
     padding-bottom: 8px;
+  }
+  /* 侧边聊天的消息流与输入框左右内边距：主会话靠 .chat-main-active 父级注入 padding，
+     侧边面板无该父级（父级链为 .unified-side-panel → .side-chat-panel-content），
+     需在此单独补齐，避免内容紧贴左右边缘。不复用主会话的 900px 限宽居中——
+     侧边面板宽度本身有限，撑满即可。仅作用于 .side-chat-panel-content，不影响主会话。 */
+  .chat-stream-inner,
+  .composer-inner {
+    box-sizing: border-box;
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
 

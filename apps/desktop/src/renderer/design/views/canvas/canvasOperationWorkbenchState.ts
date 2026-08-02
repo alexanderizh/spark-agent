@@ -33,7 +33,7 @@ export function createCanvasOperationWorkbenchState(
   outputIndex: number,
 ): CanvasOperationWorkbenchState {
   return {
-    tab: hasOutputs ? 'output' : 'config',
+    tab: 'config',
     runIndex: Math.max(0, runIndex),
     outputIndex: Math.max(0, outputIndex),
     editingOutput: false,

@@ -6291,6 +6291,19 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   box-shadow: none;
 }
 
+// 全屏后底部编辑器顶到窗口左上角；macOS hiddenInset 仅在侧栏隐藏时让原生红绿灯
+// 落在内容区上方，此时必须把顶部 toolbar（包含标题 / 状态 / 全屏 / 关闭按钮）
+// 推到红绿灯右侧，避免"图片编辑 / 已完成"标题被三个圆点压住。
+// 选用 .app.sidebar-hidden.platform-darwin 与 .canvas-workspace-header 一致。
+.app.sidebar-hidden.platform-darwin
+  .canvas-node-bottom-editor.is-fullscreen
+  .canvas-node-bottom-editor-toolbar,
+.app.sidebar-hidden.platform-darwin
+  .canvas-node-bottom-editor:has(.is-fullscreen)
+  .canvas-node-bottom-editor-toolbar {
+  padding-left: var(--window-titlebar-safe-left, env(titlebar-area-x, 90px));
+}
+
 @keyframes canvas-node-bottom-editor-in {
   from {
     opacity: 0;
@@ -11997,58 +12010,26 @@ body.canvas-agent-panel-resizing {
   transform: none;
 }
 
+// 全屏状态下按从上到下顺序排列各个 section，避免不同节点因 section 缺失
+// 造成 grid 空洞；section 自身在宽屏限制最大宽度并水平居中，body 仍可滚动。
 .canvas-operation-panel.is-fullscreen .canvas-operation-panel-body {
-  display: grid;
-  grid-template-columns: minmax(340px, 0.42fr) minmax(0, 1fr);
-  grid-template-areas:
-    'node prompt'
-    'inputs prompt'
-    'runtime prompt'
-    'model negative'
-    'params params'
-    'custom custom';
-  grid-auto-rows: min-content;
-  align-content: start;
-  gap: 10px;
-  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px 20px;
 }
 
 .canvas-operation-panel.is-fullscreen .canvas-operation-panel-section {
+  width: 100%;
+  max-width: 1100px;
+  margin-inline: auto;
   padding: 0;
   gap: 6px;
 }
 
-.canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-node {
-  grid-area: node;
-}
-
-.canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-inputs {
-  grid-area: inputs;
-}
-
-.canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-runtime {
-  grid-area: runtime;
-}
-
-.canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-model {
-  grid-area: model;
-}
-
 .canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-prompt {
-  grid-area: prompt;
-  min-height: min(520px, 58vh);
-}
-
-.canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-negative {
-  grid-area: negative;
-}
-
-.canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-params {
-  grid-area: params;
-}
-
-.canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-custom {
-  grid-area: custom;
+  min-height: 0;
 }
 
 .canvas-operation-panel-head {
@@ -12063,6 +12044,12 @@ body.canvas-agent-panel-resizing {
   background: var(--canvas-node-head-bg);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
+}
+
+// 全屏模式下画布节点配置面板顶到窗口边缘，需要给左侧 macOS 红绿灯留出安全区，
+// 避免红/黄/绿三圆点与标题文字重叠。仅作用于外层 panel + fullscreen + darwin 安全区组合。
+.canvas-operation-panel.is-fullscreen .canvas-operation-panel-head.platform-darwin-safe-area {
+  padding-left: var(--window-titlebar-safe-left, env(titlebar-area-x, 90px));
 }
 
 .canvas-operation-panel-title {
@@ -12344,7 +12331,7 @@ body.canvas-agent-panel-resizing {
 
 .canvas-operation-panel.is-fullscreen .canvas-operation-panel-prompt-input {
   flex: 1;
-  min-height: 390px !important;
+  min-height: clamp(280px, 38vh, 520px) !important;
 }
 
 .canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-prompt {
@@ -12456,12 +12443,16 @@ body.canvas-agent-panel-resizing {
     padding: 10px;
   }
 
+  .canvas-operation-panel.is-fullscreen .canvas-operation-panel-section {
+    max-width: 100%;
+  }
+
   .canvas-operation-panel.is-fullscreen .canvas-operation-panel-section-prompt {
     min-height: 260px;
   }
 
   .canvas-operation-panel.is-fullscreen .canvas-operation-panel-prompt-input {
-    min-height: 220px !important;
+    min-height: clamp(220px, 30vh, 280px) !important;
   }
 
   .canvas-film-center-panel {

@@ -1,6 +1,18 @@
 import React, { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Dropdown } from 'antd'
 import { Icons } from '../../Icons'
+
+// 侧边聊天头部下拉用的最小会话投影：解耦 SideChatPanel 与完整 Session 类型，
+// 由 ChatView 把 sessions 投影成该结构后注入。id 用 string 而非 SessionId brand，
+// 既避免这里反向依赖 @spark/protocol，也保持 onSelect 回传值可被 ChatView 安全 cast 回 SessionId。
+export type SideChatSessionOption = {
+  id: string
+  title: string
+  status?: string | null
+  messageCount?: number
+  pinned?: boolean
+}
 
 export type UnifiedSidePanelKind = 'config' | 'terminal' | 'side-chat' | 'review' | 'plan'
 
@@ -293,6 +305,146 @@ function UnifiedSidePanelMenu({
   )
 }
 
+// 侧边聊天头部「会话切换 + 新建」下拉。
+// 样式复用 canvas 头部 SessionPickerInline 的 composer-menu / composer-session-menu，
+// 仅渲染逻辑按侧边聊天的「单会话模型」裁剪：触发器始终显示当前会话标题，
+// 顶部"新建会话"项走 onCreate（replace 新建），列表项走 onSelect（纯切换）。
+function SideChatSessionDropdown({
+  sessions,
+  currentSessionId,
+  disabledSessionId,
+  creating,
+  onSelect,
+  onCreate,
+}: {
+  sessions: SideChatSessionOption[]
+  currentSessionId: string | null
+  disabledSessionId?: string | null
+  creating: boolean
+  onSelect: (id: string) => void
+  onCreate: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const current = sessions.find((session) => session.id === currentSessionId) ?? null
+  // 按标题做大小写不敏感的子串过滤；空查询直接返回全量，跳过额外开销。
+  const trimmedQuery = query.trim().toLowerCase()
+  // 过滤后置顶项排在前面：搜索时也保持置顶优先，避免用户翻找。
+  const visibleSessions = (trimmedQuery
+    ? sessions.filter((session) => (session.title || '未命名会话').toLowerCase().includes(trimmedQuery))
+    : sessions
+  )
+    .slice()
+    .sort((a, b) => {
+      const ap = a.pinned ? 1 : 0
+      const bp = b.pinned ? 1 : 0
+      return bp - ap
+    })
+  const triggerLabel = creating
+    ? '创建中…'
+    : current != null
+      ? current.title || '未命名会话'
+      : '侧边聊天'
+  return (
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      trigger={['click']}
+      placement="bottomLeft"
+      onOpenChange={(nextOpen) => {
+        // 创建中不允许展开下拉，避免在还没有 current session 时切换。
+        setOpen(creating ? false : nextOpen)
+        if (!nextOpen) setQuery('')
+      }}
+      popupRender={() => (
+        <div className="composer-menu composer-session-menu side-chat-session-menu">
+          <div className="side-chat-session-menu-search">
+            <Icons.Search size={14} />
+            <input
+              autoFocus
+              value={query}
+              placeholder="搜索会话"
+              aria-label="搜索会话"
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+            />
+            {query && (
+              <button type="button" aria-label="清空搜索" onClick={() => setQuery('')}>
+                <Icons.X size={13} />
+              </button>
+            )}
+          </div>
+          <div className="side-chat-session-menu-list">
+            <button
+              type="button"
+              className="composer-menu-item canvas-session-new"
+              onClick={() => {
+                setOpen(false)
+                setQuery('')
+                onCreate()
+              }}
+            >
+              <span className="composer-menu-item-copy">
+                <span className="composer-menu-item-label">
+                  <Icons.MessageSquarePlus size={13} />
+                  <span>新建会话</span>
+                </span>
+              </span>
+            </button>
+            <div className="composer-menu-divider" />
+            {visibleSessions.length === 0 ? (
+              <div className="composer-menu-empty">
+                {sessions.length === 0 ? '当前项目暂无其他会话' : '没有匹配的会话'}
+              </div>
+            ) : (
+              visibleSessions.map((session) => {
+                const active = session.id === currentSessionId
+                const disabled = session.id === disabledSessionId
+                return (
+                  <button
+                    key={session.id}
+                    type="button"
+                    className={`composer-menu-item side-chat-session-menu-item ${active ? 'active' : ''} ${disabled ? 'is-disabled' : ''}`}
+                    disabled={disabled}
+                    title={disabled ? '主区正在显示该会话' : undefined}
+                    onClick={() => {
+                      if (disabled) return
+                      setOpen(false)
+                      setQuery('')
+                      onSelect(session.id)
+                    }}
+                  >
+                    <span className="composer-menu-item-copy">
+                      <span className="composer-menu-item-label">
+                        <Icons.MessageSquare size={13} />
+                        <span>{session.title || '未命名会话'}</span>
+                        {session.status === 'running' && <span className="composer-menu-item-tag">运行中</span>}
+                        {disabled && <span className="composer-menu-item-tag muted">主区当前</span>}
+                      </span>
+                    </span>
+                    {active && <Icons.Check size={14} className="composer-menu-check" />}
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+    >
+      <button
+        type="button"
+        className="side-chat-panel-session-trigger"
+        title="切换会话 / 新建会话"
+        disabled={creating}
+      >
+        <Icons.MessageSquare size={14} />
+        <span className="side-chat-panel-session-label">{triggerLabel}</span>
+        <Icons.ChevronDown size={12} />
+      </button>
+    </Dropdown>
+  )
+}
+
 export function SideChatPanel({
   agentStatus,
   creating,
@@ -300,6 +452,10 @@ export function SideChatPanel({
   onWidthChange,
   onClose,
   onNew,
+  sessions,
+  currentSessionId,
+  disabledSessionId,
+  onSelectSession,
   children,
   embedded = false,
 }: {
@@ -310,6 +466,10 @@ export function SideChatPanel({
   onWidthChange: (width: number) => void
   onClose: () => void
   onNew: () => void
+  sessions: SideChatSessionOption[]
+  currentSessionId: string | null
+  disabledSessionId?: string | null
+  onSelectSession: (id: string) => void
   children: ReactNode
   embedded?: boolean
 }) {
@@ -349,17 +509,15 @@ export function SideChatPanel({
         onPointerCancel={handleResizeEnd}
       />
       <div className="side-chat-panel-header">
-        <div>
-          <div className="side-chat-panel-title">侧边聊天</div>
-        </div>
+        <SideChatSessionDropdown
+          sessions={sessions}
+          currentSessionId={currentSessionId}
+          disabledSessionId={disabledSessionId ?? null}
+          creating={creating}
+          onSelect={onSelectSession}
+          onCreate={onNew}
+        />
         <div className="side-chat-panel-header-actions">
-          {creating && <span className="side-chat-panel-status">创建中…</span>}
-          {!creating && agentStatus && (
-            <span className="side-chat-panel-status">{agentStatus}</span>
-          )}
-          <button className="btn ghost sm" onClick={onNew} disabled={creating}>
-            新建侧边会话
-          </button>
           <button className="icon-btn" aria-label="关闭侧边聊天" title="关闭" onClick={onClose}>
             <Icons.X size={14} />
           </button>

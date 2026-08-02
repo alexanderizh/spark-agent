@@ -219,7 +219,7 @@ function snapshotWithCurrentRun(
 }
 
 describe('CanvasOperationWorkbench', () => {
-  it('places history after node settings and keeps settings available without outputs', async () => {
+  it('orders task config first and keeps settings available without outputs', async () => {
     const node = operationNode()
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -241,14 +241,15 @@ describe('CanvasOperationWorkbench', () => {
       container.querySelectorAll<HTMLButtonElement>('.canvas-operation-workbench-tab'),
     )
     expect(tabs.map((tab) => tab.textContent?.trim())).toEqual([
-      '产物',
       '任务配置',
       '节点设置',
+      '产物',
       '运行历史',
     ])
-    expect(tabs[2]?.disabled).toBe(false)
+    expect(tabs[1]?.disabled).toBe(false)
+    expect(container.textContent).toContain('任务配置内容')
 
-    await act(async () => tabs[2]?.click())
+    await act(async () => tabs[1]?.click())
     expect(container.querySelector<HTMLInputElement>('[aria-label="节点名称"]')?.value).toBe(
       '海边日落',
     )
@@ -277,6 +278,11 @@ describe('CanvasOperationWorkbench', () => {
         />,
       )
     })
+
+    const outputTab = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.canvas-operation-workbench-tab'),
+    ).find((tab) => tab.textContent?.includes('产物'))
+    await act(async () => outputTab?.click())
 
     const actions = container.querySelector('[aria-label="产物操作"]')
     const outputStrip = container.querySelector<HTMLElement>(
@@ -310,6 +316,11 @@ describe('CanvasOperationWorkbench', () => {
         />,
       )
     })
+
+    const outputTab = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.canvas-operation-workbench-tab'),
+    ).find((tab) => tab.textContent?.includes('产物'))
+    await act(async () => outputTab?.click())
 
     // 运行中横幅可见（不自动切 tab，但进度要看得见）
     const banner = container.querySelector('[role="status"]')

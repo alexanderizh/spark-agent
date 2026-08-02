@@ -2120,14 +2120,20 @@ body.sidebar-resizing {
 .msg-content p:last-child {
   margin-bottom: 0;
 }
-.msg-content code {
+/* 行内 code（段落里 `foo`）的胶囊样式。
+   关键：用 :not(pre) > code 限定作用域，避免块级 <pre><code> 也被画胶囊。 */
+.msg-content :not(pre) > code {
   background: var(--md-inline-code-bg);
   color: var(--md-heading);
   padding: 0.06em 0.32em;
   border-radius: var(--r-xs);
+  line-height: 1.2;
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  font-size: 0.92em;
+  font-size: var(--font-base);
 }
+/* 块级 code 兜底：shiki 成功 / no-syntax / 流式三支都不要胶囊背景。 */
+.msg-content pre code,
+.msg-content .md-code code,
 .msg-content .md-code-highlighted code,
 .msg-content .md-code-highlighted .line,
 .msg-content .md-code-highlighted span {
@@ -4373,12 +4379,14 @@ body.sidebar-resizing {
   color: var(--text-faint);
   font-size: 10px;
   font-weight: 400;
+  color: var(--primary);
 }
 .composer-menu-item span {
-  min-width: 0;
+  min-width: 60px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  
 }
 .composer-menu-item svg {
   color: var(--text-muted);

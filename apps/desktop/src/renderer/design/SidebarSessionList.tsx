@@ -1092,16 +1092,25 @@ export function ProjectSessionGroup({
   const isActiveProject = activeWorkspaceId === group.workspace.id
 
   const sessions = group.sessions
-  const hasMoreSessions = sessions.length > visibleSessionCount
+  // 置顶会话始终展示、不占用折叠阈值名额；阈值只作用于非置顶会话。
+  // sessions 进入前已被 sortSessionsByPinned 预排为「置顶段在前、普通段在后」，
+  // 因此按 pinnedAt 拆分后顺序稳定，不会打乱置顶段内 / 普通段内的既有序。
+  const pinnedSessions = sessions.filter((s) => s.pinnedAt != null)
+  const unpinnedSessions = sessions.filter((s) => s.pinnedAt == null)
+  const hasMoreSessions = unpinnedSessions.length > visibleSessionCount
   const canCollapseSessions = visibleSessionCount > PROJECT_SESSION_INITIAL_VISIBLE
-  const visibleSessions = sessions.slice(0, visibleSessionCount)
+  const visibleSessions = [
+    ...pinnedSessions,
+    ...unpinnedSessions.slice(0, visibleSessionCount),
+  ]
   // Reveal: if the target session lives in this group but falls beyond the
   // paginated window, expand the window so it renders before we scroll to it.
+  // 置顶段始终全展示，故只需在非置顶段里定位目标；命中置顶则无需展开。
   useEffect(() => {
     if (revealSessionId == null) return
-    const idx = sessions.findIndex((s) => s.id === revealSessionId)
+    const idx = unpinnedSessions.findIndex((s) => s.id === revealSessionId)
     if (idx >= visibleSessionCount) setVisibleSessionCount(idx + 1)
-  }, [revealSessionId, sessions, visibleSessionCount])
+  }, [revealSessionId, unpinnedSessions, visibleSessionCount])
 
   return (
     <div className={`proj-group ${isActiveProject ? 'active-project' : ''}`}>
@@ -1305,7 +1314,7 @@ export function ProjectSessionGroup({
                   onClick={() => {
                     setVisibleSessionCount((current) =>
                       hasMoreSessions
-                        ? Math.min(current + PROJECT_SESSION_PAGE_SIZE, sessions.length)
+                        ? Math.min(current + PROJECT_SESSION_PAGE_SIZE, unpinnedSessions.length)
                         : PROJECT_SESSION_INITIAL_VISIBLE,
                     )
                   }}
@@ -1314,7 +1323,7 @@ export function ProjectSessionGroup({
                     <>
                       <span className="proj-show-more-label">{t('sidebar.showMore')}</span>
                       <span className="proj-show-more-count">
-                        {sessions.length - visibleSessionCount}
+                        {unpinnedSessions.length - visibleSessionCount}
                       </span>
                     </>
                   ) : (
@@ -1392,17 +1401,24 @@ export function FlatGroup({
   const smallTitle = groupId === 'project:no-project' || groupId === 'project:ungrouped'
   const isActiveProject = groupWorkspaceId != null && activeWorkspaceId === groupWorkspaceId
   const paginateSessions = groupId === 'project:no-project'
-  const visibleSessions = paginateSessions ? sessions.slice(0, visibleSessionCount) : sessions
-  const hasMoreSessions = paginateSessions && sessions.length > visibleSessionCount
+  // 置顶会话始终展示、不占用折叠阈值名额；阈值只作用于非置顶会话。
+  // 仅分页分组（no-project）需要拆分；非分页分组直接用原 sessions，避免无谓计算。
+  const pinnedSessions = paginateSessions ? sessions.filter((s) => s.pinnedAt != null) : []
+  const unpinnedSessions = paginateSessions ? sessions.filter((s) => s.pinnedAt == null) : sessions
+  const visibleSessions = paginateSessions
+    ? [...pinnedSessions, ...unpinnedSessions.slice(0, visibleSessionCount)]
+    : sessions
+  const hasMoreSessions = paginateSessions && unpinnedSessions.length > visibleSessionCount
   const canCollapseSessions =
     paginateSessions && visibleSessionCount > PROJECT_SESSION_INITIAL_VISIBLE
   // Reveal: only the paginated "no-project" group can hide a session beyond the
   // window; expand the window so the target renders before scrolling to it.
+  // 置顶段始终全展示，故只需在非置顶段里定位目标；命中置顶则无需展开。
   useEffect(() => {
     if (!paginateSessions || revealSessionId == null) return
-    const idx = sessions.findIndex((s) => s.id === revealSessionId)
+    const idx = unpinnedSessions.findIndex((s) => s.id === revealSessionId)
     if (idx >= visibleSessionCount) setVisibleSessionCount(idx + 1)
-  }, [paginateSessions, revealSessionId, sessions, visibleSessionCount])
+  }, [paginateSessions, revealSessionId, unpinnedSessions, visibleSessionCount])
 
   if (sessions.length === 0 && onNewSession == null) return null
   return (
@@ -1546,7 +1562,7 @@ export function FlatGroup({
               onClick={() => {
                 setVisibleSessionCount((current) =>
                   hasMoreSessions
-                    ? Math.min(current + PROJECT_SESSION_PAGE_SIZE, sessions.length)
+                    ? Math.min(current + PROJECT_SESSION_PAGE_SIZE, unpinnedSessions.length)
                     : PROJECT_SESSION_INITIAL_VISIBLE,
                 )
               }}
@@ -1555,7 +1571,7 @@ export function FlatGroup({
                 <>
                   <span className="proj-show-more-label">{t('sidebar.showMore')}</span>
                   <span className="proj-show-more-count">
-                    {sessions.length - visibleSessionCount}
+                    {unpinnedSessions.length - visibleSessionCount}
                   </span>
                 </>
               ) : (
