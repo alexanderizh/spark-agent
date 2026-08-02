@@ -234,7 +234,11 @@ import {
   isComposerSessionWorking,
   resolveComposerRunningAgentIds,
 } from '../services/composer-working-state'
-import { shouldShowScrollToBottom } from './chat-scroll'
+import {
+  PROGRAMMATIC_SCROLL_GUARD_MS,
+  SCROLL_TO_BOTTOM_LOCK_THRESHOLD,
+  shouldShowScrollToBottom,
+} from './chat-scroll'
 import {
   getLastAssistantMessageMarkdown,
   isLocalCopySlashCommand,
@@ -2744,6 +2748,19 @@ function ChatStream({
   // 初始贴底完成前，禁止「滚动到顶懒加载更早」触发——否则初次加载 scrollTop≈0 会立刻
   // 触发翻页 + 锚定，把视图一路拉到最早的消息（用户报告的「从最早开始 / 卡住」根因）。
   const initialScrollDoneRef = useRef(false)
+  // 程序性贴底（流式跟随 / 发送 / 切会话 pin）最近一次的时间戳。配合 pinToBottom 与
+  // handleScroll 的「程序滚动守卫」：程序写 scrollTop 会派生 scroll 事件，若不区分，handleScroll
+  // 会按 distance 重算 userScrolledRef，把用户由 wheel/touchstart 设定的「已上滚」状态冲掉——
+  // 这是「流式输出与用户上滚冲突、滚不上去被弹回」的根因。
+  const programmaticScrollAtRef = useRef(0)
+  // 统一程序性贴底入口：先记录时间戳（供 handleScroll 守卫忽略其派生的 scroll 事件），再写 scrollTop。
+  const pinToBottom = (el: HTMLElement) => {
+    programmaticScrollAtRef.current =
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now()
+    el.scrollTop = el.scrollHeight
+  }
   const usageRef = useRef<SessionUsageData>({
     inputTokens: 0,
     outputTokens: 0,
@@ -2866,7 +2883,6 @@ function ChatStream({
           callbacks.onStatusChange,
           callbacks.onSessionStatusChange,
           isStreamingRef,
-          userScrolledRef,
         )
         if (
           event.status === 'completed' ||
@@ -3073,7 +3089,6 @@ function ChatStream({
           callbacks.onStatusChange,
           callbacks.onSessionStatusChange,
           isStreamingRef,
-          userScrolledRef,
         )
       }
       const latestContext = getLatestContextUsageEvent(events)
@@ -3325,7 +3340,7 @@ function ChatStream({
     userScrolledRef.current = false
     setShowScrollToBottom(false)
     const pin = () => {
-      el.scrollTop = el.scrollHeight
+      pinToBottom(el)
     }
     pin()
     requestAnimationFrame(() => {
@@ -3342,9 +3357,22 @@ function ChatStream({
     if (!el) return
     const handleScroll = () => {
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-      const shouldShowButton = shouldShowScrollToBottom(distanceFromBottom)
-      userScrolledRef.current = shouldShowButton
-      setShowScrollToBottom(shouldShowButton)
+      setShowScrollToBottom(shouldShowScrollToBottom(distanceFromBottom))
+      // 程序性贴底（pinToBottom）会派生 scroll 事件；在其后 PROGRAMMATIC_SCROLL_GUARD_MS 窗口内
+      // 跳过 userScrolledRef 重算，避免把用户由 wheel/touchstart 设定的「已上滚」状态按 distance
+      // 冲掉（流式反弹根因）。同时采用滞后阈值：仅 distance<=LOCK 才解锁跟随、>VISIBILITY 才锁定，
+      // 中间区间保持原状，避免 0~50px 区间状态抖动被流式 pin 反复吃掉。
+      const now =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now()
+      if (now - programmaticScrollAtRef.current >= PROGRAMMATIC_SCROLL_GUARD_MS) {
+        if (distanceFromBottom <= SCROLL_TO_BOTTOM_LOCK_THRESHOLD) {
+          userScrolledRef.current = false
+        } else if (shouldShowScrollToBottom(distanceFromBottom)) {
+          userScrolledRef.current = true
+        }
+      }
       // 接近顶部时懒加载更早一页（窗口化）。
       // 必须等初始贴底完成（initialScrollDoneRef），且当前确实有可向下滚动的内容
       // （distanceFromBottom>0，排除内容不溢出时的误触发），否则会从最早开始狂翻页。
@@ -3360,6 +3388,33 @@ function ChatStream({
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // 用户主动上滚的「源事件」闸门：流式 pin（层2 effect 与 MutationObserver）都以 userScrolledRef
+  // 为闸门，但仅靠 scroll 事件的 distance 重算存在阈值延迟与程序 pin 干扰——用户第一帧小幅上滚时
+  // distance 仍 <50，会被当成「未上滚」，pin 随即把视图拉回，形成「滚不上去被弹回」的死锁。
+  // 这里直接监听 wheel(向上) / touchstart：用户一有上滚意图就立即锁定 userScrolledRef，让后续每帧
+  // 的程序 pin 在闸门处跳过，从根本上打破竞速（治本）。
+  useEffect(() => {
+    const el = streamRef.current
+    if (!el) return
+    const markUserScrolled = () => {
+      // 初始贴底进行中不拦截（切会话首次贴底必须完成）
+      if (scrollToBottomPendingRef.current) return
+      userScrolledRef.current = true
+    }
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) markUserScrolled() // 仅向上滚
+    }
+    const onTouchStart = () => {
+      markUserScrolled() // 触摸即视为用户接管
+    }
+    el.addEventListener('wheel', onWheel, { passive: true })
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('touchstart', onTouchStart)
+    }
   }, [])
 
   // 实时监听新事件 — useIpcStream 内部通过 ref 持有 callback，不会因 deps 变化重订阅
@@ -3390,7 +3445,7 @@ function ChatStream({
       scrollToBottomPendingRef.current = false
       userScrolledRef.current = false
       const pin = () => {
-        el.scrollTop = el.scrollHeight
+        pinToBottom(el)
       }
       pin()
       // 连续多帧 + 一次延后兜底，确保异步内容撑高后仍贴底
@@ -3419,11 +3474,11 @@ function ChatStream({
       userScrolledRef.current = false
       setShowScrollToBottom(false)
       requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight
+        pinToBottom(el)
       })
     } else if (!userScrolledRef.current) {
       requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight
+        pinToBottom(el)
       })
     } else {
       setShowScrollToBottom(true)
@@ -3445,7 +3500,7 @@ function ChatStream({
         rafId = null
         // 初始贴底进行中、或用户已上滚，则不跟随
         if (scrollToBottomPendingRef.current || userScrolledRef.current) return
-        el.scrollTop = el.scrollHeight
+        pinToBottom(el)
         // 视口未满兜底：内容不足以撑满视口时 scroll 事件不会派发，这里接力补载更早历史。
         maybeFillViewport()
       })
@@ -3453,7 +3508,9 @@ function ChatStream({
     observer.observe(el, {
       childList: true,
       subtree: true,
-      characterData: true,
+      // 不监听 characterData：流式 token 的文本增量会高频触发（每个 flush 都触发），而层2 effect
+      // （deps displayMessages）每个 flush 已能跟随文本增长，去掉可显著降低 rAF 调度频次。
+      // 保留 attributes(style/class) 以捕获代码高亮完成、折叠态切换等重排后继续贴底跟随。
       attributes: true,
       attributeFilter: ['style', 'class'],
     })
@@ -4016,7 +4073,6 @@ function applyAgentStatus(
   onStatusChange: (s: string) => void,
   onSessionStatusChange: (status: SessionSummary['status']) => void,
   isStreamingRef: { current: boolean },
-  userScrolledRef: { current: boolean },
 ): void {
   const labels: Record<AgentStatusValue, string> = {
     idle: '',
@@ -4041,7 +4097,8 @@ function applyAgentStatus(
   if (status === 'idle' || status === 'completed' || status === 'cancelled') {
     onSessionStatusChange('idle')
     isStreamingRef.current = false
-    userScrolledRef.current = false
+    // 不在此处重置 userScrolledRef：agent 结束瞬间若用户正在上滚浏览，无条件清零会把视图弹回底部
+    // （与「流式中反弹」独立的另一条反弹路径）。跟随状态交给下一次用户滚动 / 发送消息时按实际位置重算。
   }
   if (status === 'error') {
     onSessionStatusChange('error')
