@@ -135,7 +135,9 @@ export async function prepareDepthRuntimeArtifact(sourceNodeModules, outputDirec
   const archiveListPath = join(output, `${archiveName}.files`)
   await writeFile(archiveListPath, `${archiveFiles.join('\n')}\n`)
   try {
-    await run('tar', ['-cf', tarPath, '-C', packageDirectory, '-T', archiveListPath])
+    await run('tar', ['-cf', `../${basename(tarPath)}`, '-T', `../${basename(archiveListPath)}`], {
+      cwd: packageDirectory,
+    })
   } finally {
     await rm(archiveListPath, { force: true })
   }
@@ -438,9 +440,9 @@ function sha256File(filePath) {
   })
 }
 
-function run(command, args) {
+function run(command, args, options = {}) {
   return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(command, args, { stdio: 'inherit' })
+    const child = spawn(command, args, { ...options, stdio: 'inherit' })
     child.on('error', rejectRun)
     child.on('exit', (code) => {
       if (code === 0) resolveRun()
