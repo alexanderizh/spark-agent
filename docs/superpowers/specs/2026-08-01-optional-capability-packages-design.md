@@ -224,5 +224,6 @@ SHA-256 → 发布 staging manifest → 审计 → 原子替换正式 manifest�
 2. 通用可选能力管理器、协议、启动选择弹窗、右上角进度和设置页。
 3. Office 静态资源制品化、上传和按需加载。
 4. 深度 Runtime 制品化，与现有模型制品组成统一能力。
-5. macOS arm64 打包、安装、更新、回滚、MinIO 公网回读和体积审计；其他可信平台制品由对应 runner 后续生成。
+5. macOS arm64 与 Windows x64 分别由对应可信 runner 生成、签名和校验 Runtime，所有平台构建
+   成功后一次性原子发布到 MinIO；darwin-x64 等其他平台制品后续按相同门禁扩展。
 6. Computer Use 可选能力化延期，且不影响本轮 Office/深度交付。

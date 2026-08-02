@@ -8,10 +8,11 @@
 归档内容和推理链路可运行，不能证明它可被正式签名 App 加载；因此 revision 1 的深度验收结论
 作废，Office 验收结论不受影响。
 
-修复后的发布流程生成 revision 2 时，会用与正式 App 相同 Team ID 的 Developer ID Application
-证书逐个签名 `.dylib` 和 `.node`，并对每个文件执行严格签名与 Team ID 校验。客户端还会把原生
-Runtime 加载失败持久化为 `damaged`，重新启动后也不会误报“已安装”。revision 2 正式发布和
-签名 App 复测结果应作为新的深度交付依据。
+修复后的发布流程生成 revision 2 时，会同时构建 darwin-arm64 与 win32-x64 Runtime：macOS
+使用与正式 App 相同 Team ID 的 Developer ID Application 证书逐个签名 `.dylib` 和 `.node`；
+Windows 使用正式应用同一 PFX 对 `.dll` 和 `.node` 做带 RFC 3161 时间戳的 Authenticode 签名。
+两个 runner 的产物全部成功后，才由独立发布任务一次性原子更新 MinIO 清单，避免只发布一侧。
+客户端还会把原生 Runtime 加载失败持久化为 `damaged`，重新启动后也不会误报“已安装”。
 
 ## 结论
 
@@ -53,7 +54,7 @@ Runtime 加载失败持久化为 `damaged`，重新启动后也不会误报“�
 
 对比原始 398,417,355 B DMG，减少 127,545,035 B，约 32.0%。ASAR 已全量成功解包；路径与内容扫描确认不含 `out/renderer/file-viewer`、`@huggingface/transformers`、`onnxruntime-node`、`onnxruntime-web`，也不含 Vite 哈希生成的 `pptx.worker`、`ppt-native.wasm` 或 `ppt-font-cjk.otf`。ONNX absent 模式校验、Electron native ABI 校验和 `codesign --deep --strict` 均通过。
 
-产物使用 Developer ID 签名；当前环境未配置 Apple 公证凭据，因此 DMG 未公证，只适合本地验收。正式对外发布前仍需在发布环境完成 notarization。当前只发布了本机可真实验证的 darwin-arm64 深度 Runtime；darwin-x64/Windows 必须由对应可信 runner 生成，设置页在此之前会显示 unavailable，不会伪造制品。
+产物使用 Developer ID 签名；当前环境未配置 Apple 公证凭据，因此 DMG 未公证，只适合本地验收。正式对外发布前仍需在发布环境完成 notarization。revision 1 正式清单只含 darwin-arm64，导致 Windows 设置页显示 unavailable；revision 2 改由 macOS 与 Windows 可信 runner 分别生成并签名，二者通过后原子发布。darwin-x64 仍需后续可信 runner 制品。
 
 ## 测试与静态检查
 
