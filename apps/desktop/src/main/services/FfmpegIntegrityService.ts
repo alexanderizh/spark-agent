@@ -16,7 +16,7 @@
 
 import { execFile } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { app } from 'electron'
 import { createLogger } from '@spark/shared'
@@ -56,12 +56,52 @@ function getBinaryRootDir(): string {
 }
 
 /**
- * 扫描 `{userData}/bin/` 下所有子目录，找到含 ffmpeg 可执行文件的目录。
- * 目录名由 installBinaryArtifact 按 artifact.name 生成（如 "FFmpeg-7.1.1-macOS-Apple-Silicon"），
- * 这里不依赖具体名字，靠扫描内容定位，保证升级 / 换包后仍能找到。
+ * 从目录名解析 ffmpeg 版本号元组，如 "FFmpeg-8.1.2-Windows-x64" → [8, 1, 2]。
+ *
+ * installBinaryArtifact（skill-registry/index.ts）把 manifest 的 name 字段 sanitize 成
+ * 落盘目录名：去掉非法字符、空格转 "-"、去掉括号，但**数字和点原样保留**。
+ * 因此目录名里必然含可识别的版本号片段，用此正则提取即可。
+ * 无法识别时返回 null（调用方把 null 视为最旧版本）。
+ *
+ * 说明：之所以从目录名解析而非跑 `ffmpeg -version`，是为了保持 resolveManagedBinaryDir
+ * 同步签名（避免 async 化牵动 resolveFfmpegBin/doDetectFfmpegIntegrity 等调用方），
+ * 并规避在 Windows 上对陈旧 ffmpeg.exe 发起子进程（可能触发杀软）。
  */
-function resolveManagedBinaryDir(): string | null {
-  const root = getBinaryRootDir()
+const FFMPEG_VERSION_IN_NAME_REGEX = /(\d+(?:\.\d+){1,2})/
+export function parseVersionTuple(name: string | null | undefined): number[] | null {
+  if (!name) return null
+  const m = name.match(FFMPEG_VERSION_IN_NAME_REGEX)
+  if (!m) return null
+  return m[1]!.split('.').map((seg) => Number.parseInt(seg, 10) || 0)
+}
+
+/**
+ * 版本元组降序比较：版本高者排前。null（无法识别）永远排最后。
+ * 返回值语义同 Array.sort compare：负 = a 前，正 = b 前，0 = 相等。
+ */
+export function compareVersionTuples(a: number[] | null, b: number[] | null): number {
+  if (!a && !b) return 0
+  if (!a) return 1 // a 未知 → a 排后
+  if (!b) return -1 // b 未知 → b 排后
+  const len = Math.max(a.length, b.length)
+  for (let i = 0; i < len; i++) {
+    const d = (b[i] ?? 0) - (a[i] ?? 0) // 降序：b 大则 b 排前
+    if (d !== 0) return d
+  }
+  return 0
+}
+
+/**
+ * 扫描 `{userData}/bin/` 下所有子目录，找到含 ffmpeg 可执行文件的目录，并**选版本最高的**。
+ *
+ * 目录名由 installBinaryArtifact 按 artifact.name 生成（如 "FFmpeg-8.1.1-macOS-Apple-Silicon"），
+ * 版本号从目录名解析。当存在多个 ffmpeg 目录（如升级后旧的 4.1 与新的 8.1.2 并存）时，
+ * 选最高版本，避免靠 readdir 顺序误命中陈旧目录导致用户重下后仍报错。
+ *
+ * @param rootOverride 测试注入用：覆盖 `{userData}/bin` 根目录。
+ */
+export function resolveManagedBinaryDir(rootOverride?: string): string | null {
+  const root = rootOverride ?? getBinaryRootDir()
   if (!existsSync(root)) return null
   let entries: string[]
   try {
@@ -69,22 +109,70 @@ function resolveManagedBinaryDir(): string | null {
   } catch {
     return null
   }
+
+  // 收集所有「目录名含 ffmpeg + 该目录下存在 ffmpeg 可执行」的候选，记录解析出的版本。
+  const candidates: Array<{ dir: string; version: number[] | null }> = []
+  const seen = new Set<string>()
   for (const name of entries) {
-    // 目录名含 ffmpeg 字样优先（排除不相干的 bin 产物）
     if (!/ffmpeg/i.test(name)) continue
     const ffmpegPath = join(root, name, FFMPEG_EXE)
     if (existsSync(ffmpegPath)) {
-      return join(root, name)
+      const dir = join(root, name)
+      seen.add(dir)
+      candidates.push({ dir, version: parseVersionTuple(name) })
     }
   }
-  // 兜底：扫描所有子目录
+  // 兜底：扫描所有子目录（处理目录名不含 ffmpeg 字样但确实含 ffmpeg 二制的边缘情况）
   for (const name of entries) {
-    const ffmpegPath = join(root, name, FFMPEG_EXE)
+    const dir = join(root, name)
+    if (seen.has(dir)) continue
+    const ffmpegPath = join(dir, FFMPEG_EXE)
     if (existsSync(ffmpegPath)) {
-      return join(root, name)
+      candidates.push({ dir, version: parseVersionTuple(name) })
     }
   }
-  return null
+
+  if (candidates.length === 0) return null
+  candidates.sort((a, b) => compareVersionTuples(a.version, b.version))
+  return candidates[0]!.dir
+}
+
+/**
+ * 删除 `{userData}/bin/` 下除 keepDir 之外的其它 ffmpeg 目录。
+ *
+ * 仅清理「目录名含 ffmpeg 字样」的目录（避免误删 codex/playwright/node 等无关产物）。
+ * best-effort：删除失败只 warn 不抛错，不影响安装主流程。
+ * 二次防御：候选路径必须在 binaryRootDir 之下，绝不逃出。
+ *
+ * @param keepDir 当前生效的 ffmpeg 目录（installFfmpeg 刚落盘的新版本），保留不动。
+ * @param rootOverride 测试注入用。
+ */
+export async function cleanupOldFfmpegDirs(
+  keepDir: string,
+  rootOverride?: string,
+): Promise<void> {
+  const root = resolve(rootOverride ?? getBinaryRootDir())
+  let entries: string[]
+  try {
+    entries = readdirSync(root)
+  } catch {
+    return
+  }
+  const keep = resolve(keepDir)
+  const { rm } = await import('node:fs/promises')
+  for (const name of entries) {
+    if (!/ffmpeg/i.test(name)) continue
+    const candidate = resolve(join(root, name))
+    if (candidate === keep) continue
+    // 路径边界防御：必须在 root 之下
+    if (!candidate.startsWith(root + sep)) continue
+    try {
+      await rm(candidate, { recursive: true, force: true })
+      log.info(`[ffmpeg] 清理旧目录: ${candidate}`)
+    } catch (err) {
+      log.warn(`[ffmpeg] 清理旧目录失败 ${candidate}: ${String(err)}`)
+    }
+  }
 }
 
 // ─── Version Detection ──────────────────────────────────────────────────────
@@ -311,6 +399,14 @@ export async function installFfmpeg(
     log.error(message)
     cachedState = { ...nextState, lastError: message }
     return { success: false, message }
+  }
+
+  // 清理旧的 ffmpeg 目录（只保留当前 managed dir），避免下次 resolveManagedBinaryDir
+  // 命中陈旧版本（如从 4.1 升级到 8.1.2 后残留的 4.1 目录）。best-effort，失败不影响安装。
+  if (nextState.binaryPath) {
+    await cleanupOldFfmpegDirs(dirname(nextState.binaryPath)).catch((err) => {
+      log.warn(`[ffmpeg] 清理旧目录失败: ${String(err)}`)
+    })
   }
 
   onLog(`[ffmpeg] 安装成功，版本 ${nextState.ffmpegVersion}`)
