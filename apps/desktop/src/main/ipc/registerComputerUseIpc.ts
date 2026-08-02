@@ -18,10 +18,7 @@ import {
 } from '@spark/storage'
 import { getDatabase } from '../db.js'
 import { ComputerUseBrokerError } from '../services/computer-use/ComputerUseBrokerError.js'
-import {
-  MY_DESKTOP_ENVIRONMENT_KEY,
-  type CreateManagedComputerSessionInput,
-} from '../services/computer-use/ComputerSessionManager.js'
+import type { CreateManagedComputerSessionInput } from '../services/computer-use/ComputerSessionManager.js'
 import {
   getComputerUseServices,
   type ComputerUseServices,
@@ -154,21 +151,23 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
           windowId: target.window.id,
         })
       }
-      const operatorId = rendererOperatorId(event.sender.id)
       try {
-        runtime.sessions.acquireLease({
-          computerSessionId: created.id,
-          environmentKey: environmentKey(request.environment, created.id),
-          operatorId,
-        })
+        await runtime.coordinator.claim(created.id)
+        runtime.sessions.activate(created.id)
       } catch (error) {
-        await runtime.broker.stop(created.id).catch(() => undefined)
+        try {
+          await runtime.broker.stop(created.id).catch(() => undefined)
+        } finally {
+          runtime.coordinator.release(created.id)
+        }
         throw error
       }
+      const operatorId = rendererOperatorId(event.sender.id)
       owners.set(created.id, operatorId)
       const active = runtime.sessions.getSession(created.id)
       if (active == null) {
         await runtime.broker.stop(created.id).catch(() => undefined)
+        runtime.coordinator.release(created.id)
         throw new ComputerUseBrokerError(
           'session_canceled',
           'Computer session disappeared during startup',
@@ -186,12 +185,15 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
   typedIpcHandle('computer-use:pause', async ({ computerSessionId }, event) =>
     safeComputerUseIpc(async () => {
       assertRenderer(event)
-      return { computerSession: await services().broker.pause(computerSessionId) }
+      const runtime = services()
+      const computerSession = await runtime.broker.pause(computerSessionId)
+      runtime.coordinator.release(computerSessionId)
+      return { computerSession }
     }),
   )
 
   typedIpcHandle('computer-use:resume', async ({ computerSessionId }, event) =>
-    safeComputerUseIpc(() => {
+    safeComputerUseIpc(async () => {
       assertRenderer(event)
       const runtime = services()
       const operatorId = rendererOperatorId(event.sender.id)
@@ -201,22 +203,27 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
           'This renderer must take over the Computer Use session before resuming it',
         )
       }
-      const resumed = runtime.broker.resume(computerSessionId)
-      runtime.sessions.acquireLease({
-        computerSessionId,
-        environmentKey: environmentKey(resumed.environment, computerSessionId),
-        operatorId,
-      })
-      const active = runtime.sessions.getSession(computerSessionId)
-      if (active == null) throw new ComputerUseBrokerError('session_canceled', 'Session not found')
-      return { computerSession: active }
+      try {
+        await runtime.coordinator.claim(computerSessionId)
+        runtime.broker.resume(computerSessionId)
+        const active = runtime.sessions.getSession(computerSessionId)
+        if (active == null) {
+          throw new ComputerUseBrokerError('session_canceled', 'Session not found')
+        }
+        return { computerSession: active }
+      } catch (error) {
+        runtime.coordinator.release(computerSessionId)
+        throw error
+      }
     }),
   )
 
   typedIpcHandle('computer-use:stop', async ({ computerSessionId }, event) =>
     safeComputerUseIpc(async () => {
       assertRenderer(event)
-      const computerSession = await services().broker.stop(computerSessionId)
+      const runtime = services()
+      const computerSession = await runtime.broker.stop(computerSessionId)
+      runtime.coordinator.release(computerSessionId)
       owners.delete(computerSessionId)
       return { computerSession }
     }),
@@ -225,7 +232,9 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
   typedIpcHandle('computer-use:takeover', async ({ computerSessionId }, event) =>
     safeComputerUseIpc(async () => {
       assertRenderer(event)
-      const computerSession = await services().broker.pause(computerSessionId)
+      const runtime = services()
+      const computerSession = await runtime.broker.pause(computerSessionId)
+      runtime.coordinator.release(computerSessionId)
       owners.set(computerSessionId, rendererOperatorId(event.sender.id))
       return { computerSession }
     }),
@@ -411,7 +420,11 @@ async function applyDisabledEnvironmentTransition(
   for (const computerSessionId of services.sessions.listActiveSessionIds()) {
     const session = services.sessions.getSession(computerSessionId)
     if (session != null && (disabledAll || disabledEnvironments.has(session.environment))) {
-      await services.broker.stop(computerSessionId)
+      try {
+        await services.broker.stop(computerSessionId)
+      } finally {
+        services.coordinator.release(computerSessionId)
+      }
     }
   }
   if (!next.enabled || !next.environments.myDesktop) services.killSwitch.disarm()
@@ -450,11 +463,6 @@ function assertEnvironmentEnabled(
 
 function rendererOperatorId(senderId: number): string {
   return `renderer:${senderId}`
-}
-
-function environmentKey(environment: ComputerEnvironment, computerSessionId: string): string {
-  if (environment === 'my_desktop') return MY_DESKTOP_ENVIRONMENT_KEY
-  return `${environment === 'safe_browser' ? 'safe-browser' : 'safe-desktop'}:${computerSessionId}`
 }
 
 async function validatedWindows(services: ComputerUseServices): Promise<NativeWindowDescriptor[]> {

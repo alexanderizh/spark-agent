@@ -7,6 +7,7 @@ import type {
   ComputerObservation,
   ComputerPolicyContext,
   ComputerSession,
+  ComputerUseErrorCode,
   NativeWindowDescriptor,
 } from '@spark/protocol'
 import { computerExecutionLaneForAction } from '@spark/protocol'
@@ -33,34 +34,21 @@ function shouldRequestFullDecisionTree(): boolean {
   return !isIncrementalTreeEnabled()
 }
 
-const APPROVAL_POLL_MS = 250
-const MAX_APPROVAL_POLLS = 1_200
 const MAX_TRANSIENT_RECOVERIES = 8
 const MAX_DECISION_RECOVERIES = 2
-const MAX_MODEL_HANDOFF_REPLANS = 2
-const LEASE_HEARTBEAT_INTERVAL_MS = 2_000
 
 interface OperatorSessions {
-  heartbeatLease(input: {
-    computerSessionId: string
-    leaseId: string
-    operatorId: string
-  }): ComputerActuatorLease
   setPhase(computerSessionId: string, phase: 'planning' | 'verifying' | 'handoff_required'): unknown
   completeVerified(computerSessionId: string, verificationIds?: string[]): unknown
-  fail(computerSessionId: string, errorCode?: 'environment_unavailable'): unknown
+  fail(computerSessionId: string, errorCode?: ComputerUseErrorCode): unknown
 }
 
 interface OperatorBroker {
   observe(computerSessionId: string, fullTree?: boolean): Promise<ComputerObservation>
-  dispatch(
-    envelope: ComputerActionEnvelope,
-    ticket?: ComputerApprovalTicket,
-  ): Promise<{ observation: ComputerObservation; noop: boolean }>
-}
-
-interface OperatorApprovals {
-  takeApprovedTicket(approvalId: string): ComputerApprovalTicket | null
+  dispatch(envelope: ComputerActionEnvelope): Promise<{
+    observation: ComputerObservation
+    noop: boolean
+  }>
 }
 
 interface OperatorEvidence {
@@ -86,12 +74,17 @@ interface OperatorVerifications {
   ): unknown | null
 }
 
+/** @deprecated Persisted approval UI compatibility; direct execution never creates this. */
 export interface ComputerActionApprovalRequest {
   session: ComputerSession
   envelope: ComputerActionEnvelope
   approvalId: string
   riskLevel: 'L2' | 'L3'
   permissionMode: string
+}
+
+interface OperatorApprovals {
+  takeApprovedTicket(approvalId: string): ComputerApprovalTicket | null
 }
 
 interface DecisionAdapter {
@@ -107,7 +100,6 @@ export interface ComputerTaskOperatorResult {
 export class ComputerTaskOperator {
   private readonly sessions: OperatorSessions
   private readonly broker: OperatorBroker
-  private readonly approvals: OperatorApprovals
   private readonly evidence: OperatorEvidence
   private readonly verifications: OperatorVerifications
   private readonly windowInventory: { listWindows(): Promise<NativeWindowDescriptor[]> } | null
@@ -115,17 +107,14 @@ export class ComputerTaskOperator {
   private readonly createId: () => string
   private readonly wait: (milliseconds: number) => Promise<void>
   private readonly now: () => number
-  private readonly requestApproval:
-    | ((request: ComputerActionApprovalRequest) => Promise<ComputerApprovalTicket | null>)
-    | undefined
   private readonly getAbortSignal: ((computerSessionId: string) => AbortSignal) | undefined
   private readonly timeline: ComputerUseTimelineSink | undefined
-  private readonly leaseHeartbeatIntervalMs: number
 
   constructor(options: {
     sessions: OperatorSessions
     broker: OperatorBroker
-    approvals: OperatorApprovals
+    /** @deprecated Test and persisted UI compatibility; never read by direct execution. */
+    approvals?: OperatorApprovals
     evidence: OperatorEvidence
     verifications: OperatorVerifications
     windowInventory?: { listWindows(): Promise<NativeWindowDescriptor[]> }
@@ -133,16 +122,11 @@ export class ComputerTaskOperator {
     createId?: () => string
     wait?: (milliseconds: number) => Promise<void>
     now?: () => number
-    requestApproval?: (
-      request: ComputerActionApprovalRequest,
-    ) => Promise<ComputerApprovalTicket | null>
     getAbortSignal?: (computerSessionId: string) => AbortSignal
     timeline?: ComputerUseTimelineSink
-    leaseHeartbeatIntervalMs?: number
   }) {
     this.sessions = options.sessions
     this.broker = options.broker
-    this.approvals = options.approvals
     this.evidence = options.evidence
     this.verifications = options.verifications
     this.windowInventory = options.windowInventory ?? null
@@ -152,26 +136,21 @@ export class ComputerTaskOperator {
       options.wait ??
       ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)))
     this.now = options.now ?? Date.now
-    this.requestApproval = options.requestApproval
     this.getAbortSignal = options.getAbortSignal
     this.timeline = options.timeline
-    this.leaseHeartbeatIntervalMs =
-      options.leaseHeartbeatIntervalMs ?? LEASE_HEARTBEAT_INTERVAL_MS
   }
 
   async run(input: {
     session: ComputerSession
-    lease: ComputerActuatorLease
+    /** @deprecated Compatibility-only. Direct execution no longer uses persisted leases. */
+    lease?: ComputerActuatorLease
     adapter: DecisionAdapter
-    permissionMode?: string
   }): Promise<ComputerTaskOperatorResult> {
     let observation: ComputerObservation
     let consecutiveNoops = 0
     let consecutiveTransientFailures = 0
-    let modelHandoffReplans = 0
     let successfulActions = 0
     const abortSignal = this.getAbortSignal?.(input.session.id)
-    const leaseHeartbeat = this.keepLeaseAlive(input.session.id, input.lease)
     try {
       observation = await this.observeWithRecovery(
         input.session.id,
@@ -188,7 +167,6 @@ export class ComputerTaskOperator {
           this.sessions.fail(input.session.id)
           return { status: 'failed', reason: 'maximum_runtime_reached' }
         }
-        this.heartbeat(input.session.id, input.lease)
         const screenshot = await this.evidence.readLatestImage(
           input.session.id,
           observation.screenshot.snapshotId,
@@ -204,7 +182,6 @@ export class ComputerTaskOperator {
             stepIndex,
             allowBatch: isActionBatchEnabled(),
           })
-          leaseHeartbeat.assertHealthy()
           consecutiveTransientFailures = 0
         } catch (error) {
           consecutiveTransientFailures += 1
@@ -216,23 +193,6 @@ export class ComputerTaskOperator {
           )
           continue
         }
-        if (decision.type === 'handoff') {
-          if (
-            modelHandoffReplans < MAX_MODEL_HANDOFF_REPLANS &&
-            !requiresImmediateHandoff(decision.reason)
-          ) {
-            modelHandoffReplans += 1
-            await this.wait(recoveryDelay(modelHandoffReplans))
-            observation = await this.observeWithRecovery(
-              input.session.id,
-              shouldRequestFullDecisionTree(),
-            )
-            continue
-          }
-          this.sessions.setPhase(input.session.id, 'handoff_required')
-          return { status: 'handoff_required', reason: decision.reason }
-        }
-        modelHandoffReplans = 0
         if (decision.type === 'ready_for_verification') {
           if (
             successfulActions === 0 &&
@@ -305,7 +265,7 @@ export class ComputerTaskOperator {
 
         if (decision.type === 'actions') {
           // codex-style batch: execute the planned actions sequentially, re-checking the
-          // target before every step (dispatchWithApproval re-validates the envelope against
+          // target before every step (the Broker re-validates the envelope against
           // the latest observation). Element ids are globally unique per element, so a later
           // step's id either still resolves to the intended element or fails cleanly — it can
           // never collide with a different element. Any step failure stops the batch and lets
@@ -322,19 +282,12 @@ export class ComputerTaskOperator {
             }
             const stepEnvelope = createEnvelope(
               input.session,
-              input.lease,
               observation,
               stepDecision,
               this.createId(),
             )
             try {
-              const stepResult = await this.dispatchWithApproval(
-                input.session,
-                stepEnvelope,
-                input.lease,
-                input.permissionMode ?? 'claude-ask',
-                abortSignal,
-              )
+              const stepResult = await this.dispatchDirectly(stepEnvelope)
               consecutiveNoops = 0
               consecutiveTransientFailures = 0
               successfulActions += 1
@@ -377,19 +330,12 @@ export class ComputerTaskOperator {
 
         const envelope = createEnvelope(
           input.session,
-          input.lease,
           observation,
           decision,
           this.createId(),
         )
         try {
-          const result = await this.dispatchWithApproval(
-            input.session,
-            envelope,
-            input.lease,
-            input.permissionMode ?? 'claude-ask',
-            abortSignal,
-          )
+          const result = await this.dispatchDirectly(envelope)
           consecutiveNoops = 0
           consecutiveTransientFailures = 0
           successfulActions += 1
@@ -438,7 +384,10 @@ export class ComputerTaskOperator {
         return { status: 'failed', reason: 'session_canceled' }
       }
       try {
-        this.sessions.fail(input.session.id)
+        this.sessions.fail(
+          input.session.id,
+          error instanceof ComputerUseBrokerError ? error.code : 'environment_unavailable',
+        )
       } catch {
         // The session may already have been paused, stopped, or completed by another authority.
       }
@@ -446,8 +395,6 @@ export class ComputerTaskOperator {
         status: 'failed',
         reason: error instanceof ComputerUseBrokerError ? error.code : 'operator_failed',
       }
-    } finally {
-      leaseHeartbeat.stop()
     }
   }
 
@@ -481,76 +428,28 @@ export class ComputerTaskOperator {
     throw lastError
   }
 
-  private async dispatchWithApproval(
-    session: ComputerSession,
+  private async dispatchDirectly(
     envelope: ComputerActionEnvelope,
-    lease: ComputerActuatorLease,
-    permissionMode: string,
-    abortSignal?: AbortSignal,
   ): Promise<{ observation: ComputerObservation; noop: boolean }> {
     try {
       return await this.broker.dispatch(envelope)
     } catch (error) {
-      // L0/L1 path: the action was dispatched without an approval ticket. A stale_frame here
-      // usually means the decision-time frame drifted while the target window stayed put, so
-      // try one local re-observe + retry with the refreshed frame before bubbling the
-      // recoverable error up to the model loop. This stays safe precisely because there is no
-      // approval ticket: the refreshed observedFrameId changes actionDigest (which covers
-      // observedFrameId), which would invalidate an L2/L3 ticket — but this branch has none.
+      // The decision-time frame may drift while the target window stays put. Re-observe and
+      // retry the same action once against the refreshed frame before returning the recoverable
+      // error to the model loop.
       if (error instanceof ComputerUseBrokerError && error.code === 'stale_frame') {
         const relocated = await this.relocateStaleFrame(envelope)
         if (relocated != null) return relocated
       }
-      if (!(error instanceof ComputerUseBrokerError) || error.code !== 'approval_required') {
-        throw error
-      }
-      const approvalId = error.details?.approvalId
-      const riskLevel = error.details?.riskLevel
-      if (approvalId == null || (riskLevel !== 'L2' && riskLevel !== 'L3')) {
-        throw error
-      }
-      if (this.requestApproval != null) {
-        // Race the (possibly blocking, native-dialog-backed) approval await against the session
-        // abort signal so a user-initiated stop can interrupt the wait. Interrupting here stays
-        // fail-closed: the action has NOT been dispatched yet, so no L2/L3 effect occurs — the
-        // user declines-by-cancelling instead of being trapped on the dialog with no way out.
-        if (abortSignal?.aborted) throw sessionCanceled()
-        const ticket = await raceApprovalAgainstAbort(
-          this.requestApproval({
-            session,
-            envelope,
-            approvalId,
-            riskLevel,
-            permissionMode,
-          }),
-          abortSignal,
-        )
-        if (ticket == null) {
-          throw new ComputerUseBrokerError(
-            'action_not_allowed',
-            'The user denied the exact Computer Use action',
-          )
-        }
-        return this.broker.dispatch(envelope, ticket)
-      }
-      for (let poll = 0; poll < MAX_APPROVAL_POLLS; poll += 1) {
-        const ticket = this.approvals.takeApprovedTicket(approvalId)
-        if (ticket != null) return this.broker.dispatch(envelope, ticket)
-        await this.wait(APPROVAL_POLL_MS)
-        this.heartbeat(envelope.computerSessionId, lease)
-      }
-      throw new ComputerUseBrokerError('approval_expired', 'Computer action approval expired')
+      throw error
     }
   }
 
   /**
-   * Local deterministic recovery for a stale frame on a non-approval-bound action. Re-observes
-   * the same window; if the foreground app/window identity is unchanged it rebuilds the envelope
-   * against the refreshed frame and retries the exact same action once. If the foreground
-   * navigated away (real window change) it gives up and returns null so the caller re-throws
-   * stale_frame for the model loop to re-decide. The caller guarantees this only runs on the
-   * L0/L1 dispatch path, so the refreshed observedFrameId (which mutates actionDigest) cannot
-   * invalidate any approval ticket.
+   * Local deterministic recovery for a stale frame. Re-observes the same window; if the
+   * foreground app/window identity is unchanged it rebuilds the envelope against the refreshed
+   * frame and retries the exact same action once. A real window change returns control to the
+   * model loop for a new decision.
    */
   private async relocateStaleFrame(
     envelope: ComputerActionEnvelope,
@@ -570,76 +469,10 @@ export class ComputerTaskOperator {
     return this.broker.dispatch(refreshedEnvelope)
   }
 
-  private heartbeat(computerSessionId: string, lease: ComputerActuatorLease): void {
-    this.sessions.heartbeatLease({
-      computerSessionId,
-      leaseId: lease.id,
-      operatorId: lease.operatorId,
-    })
-  }
-
-  /**
-   * A visual model can take longer than the initial lease window to return its
-   * first decision. Lease maintenance therefore cannot depend on dispatching an
-   * action: it must remain live while waiting for observation, model, or
-   * approval I/O, otherwise a task races and loses its own actuator lease.
-   */
-  private keepLeaseAlive(computerSessionId: string, lease: ComputerActuatorLease): {
-    assertHealthy: () => void
-    stop: () => void
-  } {
-    let failure: unknown
-    const heartbeat = (): void => {
-      if (failure != null) return
-      try {
-        this.heartbeat(computerSessionId, lease)
-      } catch (error) {
-        failure = error
-      }
-    }
-
-    heartbeat()
-    const timer = setInterval(heartbeat, this.leaseHeartbeatIntervalMs)
-    timer.unref?.()
-    return {
-      assertHealthy: () => {
-        if (failure != null) throw failure
-      },
-      stop: () => clearInterval(timer),
-    }
-  }
 }
 
 function sessionCanceled(): ComputerUseBrokerError {
   return new ComputerUseBrokerError('session_canceled', 'Computer session was canceled')
-}
-
-/**
- * Resolves with the approval result, or rejects with session_canceled the instant the abort
- * signal fires. Lets a user-initiated stop interrupt a blocking approval dialog await without
- * first resolving the dialog. The approval promise itself is never cancelled — its eventual
- * resolution is simply ignored once the session has been aborted.
- */
-function raceApprovalAgainstAbort<T>(
-  approval: Promise<T>,
-  signal: AbortSignal | undefined,
-): Promise<T> {
-  if (signal == null) return approval
-  if (signal.aborted) throw sessionCanceled()
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => reject(sessionCanceled())
-    signal.addEventListener('abort', onAbort, { once: true })
-    approval.then(
-      (result) => {
-        signal.removeEventListener('abort', onAbort)
-        resolve(result)
-      },
-      (error: unknown) => {
-        signal.removeEventListener('abort', onAbort)
-        reject(error)
-      },
-    )
-  })
 }
 
 function isRecoverableExecutionError(error: ComputerUseBrokerError): boolean {
@@ -658,12 +491,6 @@ function recoveryDelay(attempt: number): number {
   return Math.min(2_000, 150 * 2 ** Math.max(0, attempt - 1))
 }
 
-function requiresImmediateHandoff(reason: string): boolean {
-  return /(credential|password|secure|privacy|system prompt|系统权限|密码|凭据|用户确认|user confirmation)/iu.test(
-    reason,
-  )
-}
-
 function requiresObservableProgress(
   criteria: ComputerSession['taskContract']['successCriteria'],
 ): boolean {
@@ -677,7 +504,6 @@ function requiresObservableProgress(
 
 function createEnvelope(
   session: ComputerSession,
-  lease: ComputerActuatorLease,
   observation: ComputerObservation,
   decision: Extract<ComputerDecision, { type: 'action' }>,
   actionId: string,
@@ -685,7 +511,7 @@ function createEnvelope(
   return {
     computerSessionId: session.id,
     actionId,
-    actuatorLeaseId: lease.id,
+    actuatorLeaseId: session.id,
     observedFrameId: observation.frameId,
     observedTreeVersion: observation.treeVersion,
     targetAppId: observation.foreground.app.id,

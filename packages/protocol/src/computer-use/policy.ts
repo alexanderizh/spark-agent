@@ -82,24 +82,6 @@ export const ComputerPolicyDecisionSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    if (
-      value.riskLevel === 'L4' &&
-      value.decision !== 'require_handoff' &&
-      value.decision !== 'deny'
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'L4 actions must be denied or handed off to the user',
-        path: ['decision'],
-      })
-    }
-    if (value.riskLevel === 'L4' && !value.requiresUserPresence) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'L4 actions require local user presence for handoff',
-        path: ['requiresUserPresence'],
-      })
-    }
     const allowReasons: ComputerPolicyReasonCode[] = [
       'read_only_action',
       'within_task_scope',

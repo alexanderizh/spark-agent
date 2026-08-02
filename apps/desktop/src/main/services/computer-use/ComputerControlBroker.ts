@@ -1,6 +1,5 @@
 import type {
   ComputerActionEnvelope,
-  ComputerActuatorLease,
   ComputerApprovalTicket,
   ComputerObservation,
   ComputerRiskLevel,
@@ -24,7 +23,6 @@ import type { ComputerUseV2RolloutController } from './ComputerUseV2RolloutContr
 export interface ComputerSessionController {
   assertDispatchAllowed(envelope: ComputerActionEnvelope): {
     session: ComputerSession
-    lease: ComputerActuatorLease
     signal: AbortSignal
   }
   getAbortSignal(computerSessionId: string): AbortSignal
@@ -86,7 +84,6 @@ export class ComputerControlBroker {
   private readonly observer: ComputerObserverBackend
   private readonly executor: ComputerExecutorBackend
   private readonly timeline: ComputerUseTimelineSink | undefined
-  private readonly flushHighRiskEvidence: ((computerSessionId: string) => Promise<void>) | undefined
   private readonly rollout:
     | Pick<ComputerUseV2RolloutController, 'recordAction' | 'recordTakeoverStop'>
     | undefined
@@ -102,7 +99,6 @@ export class ComputerControlBroker {
     this.observer = options.observer
     this.executor = options.executor
     this.timeline = options.timeline
-    this.flushHighRiskEvidence = options.flushHighRiskEvidence
     this.rollout = options.rollout
     this.now = options.now ?? (() => new Date())
   }
@@ -136,7 +132,7 @@ export class ComputerControlBroker {
 
   async dispatch(
     envelopeInput: ComputerActionEnvelope,
-    ticket?: ComputerApprovalTicket,
+    _ticket?: ComputerApprovalTicket,
   ): Promise<{ observation: ComputerObservation; noop: boolean }> {
     const parsedEnvelope = ComputerActionEnvelopeSchema.safeParse(envelopeInput)
     if (!parsedEnvelope.success) {
@@ -145,13 +141,15 @@ export class ComputerControlBroker {
     const envelope = parsedEnvelope.data
     if (this.activeDispatches.has(envelope.computerSessionId)) {
       throw new ComputerUseBrokerError(
-        'actuator_lease_conflict',
-        'Another computer action is already executing in this session',
+        'environment_unavailable',
+        'Another computer action is still completing in this session',
+        undefined,
+        { retryable: true },
       )
     }
     this.activeDispatches.add(envelope.computerSessionId)
     try {
-      return await this.dispatchExclusive(envelope, ticket)
+      return await this.dispatchExclusive(envelope)
     } finally {
       this.activeDispatches.delete(envelope.computerSessionId)
     }
@@ -159,7 +157,6 @@ export class ComputerControlBroker {
 
   private async dispatchExclusive(
     envelope: ComputerActionEnvelope,
-    ticket?: ComputerApprovalTicket,
   ): Promise<{ observation: ComputerObservation; noop: boolean }> {
     const context = this.sessions.assertDispatchAllowed(envelope)
     const observation = this.requireCurrentObservation(envelope)
@@ -192,83 +189,7 @@ export class ComputerControlBroker {
       })
       throw new ComputerUseBrokerError(errorCode, 'Computer action was denied by policy')
     }
-    if (policyDecision.decision === 'require_handoff') {
-      this.blockAction(actionRow.id, 'handoff_required')
-      this.sessions.setPhase(envelope.computerSessionId, 'handoff_required')
-      this.timeline?.record({
-        type: 'computer_handoff_required',
-        sessionId: context.session.sessionId,
-        turnId: context.session.turnId,
-        computerSessionId: envelope.computerSessionId,
-        errorCode: 'handoff_required',
-      })
-      throw new ComputerUseBrokerError('handoff_required', 'Computer action requires user takeover')
-    }
-
-    let approvalTicketId: string | null = null
-    if (policyDecision.decision === 'require_approval') {
-      const riskLevel = requireApprovalRisk(policyDecision.riskLevel)
-      if (ticket == null) {
-        const approval = this.approvals.request(envelope, riskLevel)
-        this.sessions.setPhase(envelope.computerSessionId, 'waiting_approval')
-        this.timeline?.record({
-          type: 'computer_approval_requested',
-          sessionId: context.session.sessionId,
-          turnId: context.session.turnId,
-          computerSessionId: envelope.computerSessionId,
-          approvalId: approval.id,
-          actionId: envelope.actionId,
-          riskLevel,
-        })
-        throw new ComputerUseBrokerError(
-          'approval_required',
-          'Computer action requires exact user approval',
-          { approvalId: approval.id, riskLevel },
-        )
-      }
-      try {
-        await this.flushHighRiskEvidence?.(envelope.computerSessionId)
-      } catch (error) {
-        const evidenceError =
-          error instanceof ComputerUseBrokerError
-            ? error
-            : new ComputerUseBrokerError(
-                'environment_unavailable',
-                'High-risk computer action evidence could not be persisted',
-                undefined,
-                {
-                  diagnostic: {
-                    diagnosticCode: 'high_risk_evidence_persist_failed',
-                    stage: 'persist',
-                    repairAction: 'Check available disk space and retry the action',
-                  },
-                },
-              )
-        this.blockAction(actionRow.id, evidenceError.code)
-        this.timeline?.record({
-          type: 'computer_action_blocked',
-          sessionId: context.session.sessionId,
-          turnId: context.session.turnId,
-          computerSessionId: envelope.computerSessionId,
-          actionId: envelope.actionId,
-          errorCode: evidenceError.code,
-        })
-        throw evidenceError
-      }
-      this.approvals.consume(ticket, envelope, riskLevel)
-      approvalTicketId = ticket.id
-      this.timeline?.record({
-        type: 'computer_approval_resolved',
-        sessionId: context.session.sessionId,
-        turnId: context.session.turnId,
-        computerSessionId: envelope.computerSessionId,
-        approvalId: ticket.id,
-        actionId: envelope.actionId,
-        decision: 'approved',
-      })
-    }
-
-    if (this.actions.startExecuting(envelope.actionId, approvalTicketId) == null) {
+    if (this.actions.startExecuting(envelope.actionId, null) == null) {
       throw new ComputerUseBrokerError(
         'action_not_allowed',
         'Computer action is no longer executable',
@@ -417,10 +338,16 @@ export class ComputerControlBroker {
   private assertWithinRuntimeAndStepLimits(session: ComputerSession): void {
     const elapsedMs = this.now().getTime() - Date.parse(session.createdAt)
     if (elapsedMs >= session.taskContract.maxRuntimeMs) {
-      throw new ComputerUseBrokerError('action_not_allowed', 'Computer task runtime limit reached')
+      throw new ComputerUseBrokerError(
+        'task_runtime_exceeded',
+        'Computer task runtime limit reached',
+      )
     }
     if (this.actions.nextStepIndex(session.id) >= session.taskContract.maxSteps) {
-      throw new ComputerUseBrokerError('action_not_allowed', 'Computer task step limit reached')
+      throw new ComputerUseBrokerError(
+        'task_step_limit_exceeded',
+        'Computer task step limit reached',
+      )
     }
   }
 
@@ -491,16 +418,6 @@ function persistedActionPayload(envelope: ComputerActionEnvelope): Record<string
     targetWindowId: envelope.targetWindowId,
     observedTreeVersion: envelope.observedTreeVersion,
   }
-}
-
-function requireApprovalRisk(
-  riskLevel: ComputerRiskLevel,
-): Extract<ComputerRiskLevel, 'L2' | 'L3'> {
-  if (riskLevel === 'L2' || riskLevel === 'L3') return riskLevel
-  throw new ComputerUseBrokerError(
-    'approval_mismatch',
-    'Computer approval was requested for an invalid risk level',
-  )
 }
 
 function normalizeExecutionError(error: unknown): ComputerUseBrokerError {

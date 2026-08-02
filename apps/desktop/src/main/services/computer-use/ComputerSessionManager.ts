@@ -228,6 +228,32 @@ export class ComputerSessionManager {
     return toComputerLease(leaseRow)
   }
 
+  /**
+   * Activates direct desktop execution without creating a persisted actuator lease.
+   * The main-process coordinator owns cross-session exclusion; this manager keeps
+   * only lifecycle and AbortSignal state.
+   */
+  activate(computerSessionId: string): ComputerSession {
+    const session = this.requireSessionRow(computerSessionId)
+    if (session.status === 'paused') throw sessionPaused()
+    if (
+      session.status === 'canceled' ||
+      session.status === 'completed' ||
+      session.status === 'failed'
+    ) {
+      throw sessionCanceled()
+    }
+    this.ensureRuntime(computerSessionId)
+    if (session.status === 'observing') return toComputerSession(session)
+    const updated = this.sessions.updateStatus(
+      computerSessionId,
+      'observing',
+      this.now().toISOString(),
+    )
+    if (updated == null) throw sessionCanceled()
+    return this.publishStatus(toComputerSession(updated))
+  }
+
   heartbeatLease(input: {
     computerSessionId: string
     leaseId: string
@@ -262,35 +288,15 @@ export class ComputerSessionManager {
 
   assertDispatchAllowed(envelope: ComputerActionEnvelope): {
     session: ComputerSession
-    lease: ComputerActuatorLease
     signal: AbortSignal
   } {
     const sessionRow = this.requireSessionRow(envelope.computerSessionId)
     if (sessionRow.status === 'paused') throw sessionPaused()
     if (!EXECUTABLE_STATUSES.has(sessionRow.status)) throw sessionCanceled()
-    if (sessionRow.actuator_lease_id !== envelope.actuatorLeaseId) throw leaseConflict()
-
-    const leaseRow = this.leases.get(envelope.actuatorLeaseId)
-    const now = this.now().toISOString()
-    if (
-      leaseRow == null ||
-      leaseRow.computer_session_id !== envelope.computerSessionId ||
-      leaseRow.released_at !== null ||
-      leaseRow.expires_at <= now
-    ) {
-      throw leaseConflict()
-    }
     const runtime = this.ensureRuntime(envelope.computerSessionId)
-    if (
-      runtime.leaseId != null &&
-      (runtime.leaseId !== leaseRow.id || runtime.operatorId !== leaseRow.operator_id)
-    ) {
-      throw leaseConflict()
-    }
     if (runtime.controller.signal.aborted) throw sessionCanceled()
     return {
       session: toComputerSession(sessionRow),
-      lease: toComputerLease(leaseRow),
       signal: runtime.controller.signal,
     }
   }
@@ -347,8 +353,13 @@ export class ComputerSessionManager {
 
   cancel(computerSessionId: string): ComputerSession {
     const session = this.requireSessionRow(computerSessionId)
-    if (session.status === 'canceled') return toComputerSession(session)
-    if (session.status === 'completed') throw sessionCanceled()
+    if (
+      session.status === 'canceled' ||
+      session.status === 'completed' ||
+      session.status === 'failed'
+    ) {
+      return toComputerSession(session)
+    }
     const now = this.now().toISOString()
     const updated = this.sessions.updateStatus(computerSessionId, 'canceled', now, now)
     if (updated == null) throw sessionCanceled()

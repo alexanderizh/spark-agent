@@ -319,8 +319,17 @@ export class NativeHostClient {
     if (this.pending.size >= MAX_PENDING_REQUESTS) {
       return Promise.reject(
         new ComputerUseBrokerError(
-          'actuator_lease_conflict',
+          'environment_unavailable',
           'Native Host already has the maximum number of in-flight requests',
+          undefined,
+          {
+            retryable: true,
+            diagnostic: {
+              diagnosticCode: 'native_host_request_capacity_reached',
+              stage: 'execute',
+              repairAction: 'Wait for the current Native Host requests to finish, then retry.',
+            },
+          },
         ),
       )
     }

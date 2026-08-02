@@ -240,9 +240,6 @@ import { registerFilePreviewIpc } from './registerFilePreviewIpc.js'
 import { registerSessionImageOptimizerIpc } from './registerSessionImageOptimizerIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
 import { ComputerUseAgentController } from '../services/computer-use/ComputerUseAgentController.js'
-import { getComputerUseServices } from '../services/computer-use/ComputerUseServices.js'
-import { createComputerActionApprovalPresenter } from '../services/computer-use/ComputerActionApprovalPresenter.js'
-import { createNativeComputerActionApprovalPrompt } from '../services/computer-use/NativeComputerActionApprovalPrompt.js'
 import { sparkMediaUploader } from '../services/media/SparkMediaUploader.js'
 import { registerPlatformModelIpc } from '../services/PlatformModel/registerPlatformModelIpc.js'
 import {
@@ -369,13 +366,6 @@ const computerUseMcpProvider: ComputerUseMcpProvider = createComputerUseMcpProvi
   controller: new ComputerUseAgentController({
     resolveDecisionModel: (sessionId) =>
       getSessionService().resolveComputerDecisionModel(sessionId),
-    requestActionApproval: createComputerActionApprovalPresenter({
-      getApprovals: () => getComputerUseServices().approvals,
-      requestExactApproval: createNativeComputerActionApprovalPrompt(),
-      timeline: {
-        record: (event) => getComputerUseServices().timeline.record(event),
-      },
-    }),
   }),
 })
 

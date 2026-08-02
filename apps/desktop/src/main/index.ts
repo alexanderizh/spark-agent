@@ -397,7 +397,11 @@ function createTray(): void {
   tray = new Tray(image)
   attachAppUnreadBadgeTray(tray)
   const computerUse = getComputerUseServices()
-  computerControlTray = new ComputerControlTrayService(computerUse.sessions, computerUse.broker)
+  computerControlTray = new ComputerControlTrayService(
+    computerUse.sessions,
+    computerUse.broker,
+    computerUse.coordinator,
+  )
   unsubscribeComputerControlStatus ??= computerUse.sessions.subscribeStatus(
     scheduleComputerControlTrayRefresh,
   )

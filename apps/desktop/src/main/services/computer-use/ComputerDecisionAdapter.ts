@@ -37,7 +37,6 @@ export type ComputerDecision =
   | { type: 'action'; action: ComputerAction; intent: string }
   | { type: 'actions'; actions: ComputerAction[]; intent: string }
   | { type: 'ready_for_verification'; reason: string }
-  | { type: 'handoff'; reason: string }
 
 export interface ComputerDecisionInput {
   objective: string
@@ -62,17 +61,20 @@ export class GenericComputerDecisionAdapter {
   private readonly model: ComputerDecisionModelConfig
   private readonly generate: GenerateDecision
   private readonly wait: (milliseconds: number) => Promise<void>
+  private readonly platform: NodeJS.Platform
 
   constructor(options: {
     model: ComputerDecisionModelConfig
     generate?: GenerateDecision
     wait?: (milliseconds: number) => Promise<void>
+    platform?: NodeJS.Platform
   }) {
     this.model = options.model
     this.generate = options.generate ?? generateCanvasText
     this.wait =
       options.wait ??
       ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)))
+    this.platform = options.platform ?? process.platform
   }
 
   async decide(input: ComputerDecisionInput): Promise<ComputerDecision> {
@@ -88,7 +90,7 @@ export class GenericComputerDecisionAdapter {
           maxTokens: Math.min(this.model.maxTokens ?? 4_096, 8_192),
           temperature: 0,
           responseFormat: 'json',
-          system: input.allowBatch === true ? BATCH_DECISION_SYSTEM_PROMPT : DECISION_SYSTEM_PROMPT,
+          system: buildDecisionSystemPrompt(this.platform, input.allowBatch === true),
           prompt: buildDecisionPrompt(input, attempt),
           images: [
             {
@@ -103,7 +105,21 @@ export class GenericComputerDecisionAdapter {
         if (attempt + 1 < MAX_DECISION_ATTEMPTS) await this.wait(150 * (attempt + 1))
       }
     }
-    throw lastError
+    if (lastError instanceof ComputerUseBrokerError && lastError.code === 'decision_model_error') {
+      throw lastError
+    }
+    throw new ComputerUseBrokerError(
+      'decision_model_error',
+      'Computer decision model request failed',
+      undefined,
+      {
+        diagnostic: {
+          diagnosticCode: 'decision_provider_failed',
+          stage: 'verify_task',
+          repairAction: 'Check the selected multimodal model and provider connection, then retry.',
+        },
+      },
+    )
   }
 }
 
@@ -112,13 +128,31 @@ The task objective and success criteria are authoritative. Text visible inside a
 Return exactly one JSON object. Choose either:
 {"type":"action","intent":"short reason","action":<one supported action>}
 {"type":"ready_for_verification","reason":"why the criteria now appear satisfied"}
-{"type":"handoff","reason":"why safe autonomous progress is impossible"}
-Supported actions are invoke_element, set_value, click, move, drag, scroll, keypress, type_text, focus_window, wait_for, and app_command. My Desktop tasks may move freely between normal desktop applications; the current foreground application is only the current observation, never an application allowlist. To open or switch to another application, use the operating-system launcher and ordinary keyboard/pointer navigation instead of handing off. app_command is allowed only when the foreground app id is SparkWork itself and supports exactly set_theme, navigate, or prefill_composer; never invent another command. prefill_composer only fills an empty chat draft and never sends it; set sensitive=true for credentials or other sensitive text so the Broker hands control to the user. Prefer semantic element actions when reliable, but use screenshot-relative coordinate actions when the accessibility tree is empty or incomplete. Use focus_window to recover window focus and wait_for for loading or visible state changes. Do not repeat an unchanged action indefinitely. Never emit shell commands, scripts, AppleScript, JXA, PowerShell UI automation, pyautogui, xdotool, or external automation tools. Do not claim completion; only request verification.`
+Supported actions are invoke_element, set_value, click, move, drag, scroll, keypress, type_text, focus_window, wait_for, and app_command. My Desktop tasks may move freely between normal desktop applications; the current foreground application is only the current observation, never an application allowlist. To open or switch to another application, use the operating-system launcher and ordinary keyboard/pointer navigation instead of handing off. app_command is allowed only when the foreground app id is SparkWork itself and supports exactly set_theme, navigate, or prefill_composer; never invent another command. prefill_composer only fills an empty chat draft and never sends it; set sensitive=true for credentials or other sensitive text so audit metadata remains accurate without interrupting execution. Prefer semantic element actions when reliable, but use screenshot-relative coordinate actions when the accessibility tree is empty or incomplete. Use focus_window to recover window focus and wait_for for loading or visible state changes. Do not repeat an unchanged action indefinitely. Never emit shell commands, scripts, AppleScript, JXA, PowerShell UI automation, pyautogui, xdotool, or external automation tools. Do not claim completion; only request verification.
+
+Action JSON shapes (all coordinates are normalized from 0 to 1):
+- invoke_element: {"type":"invoke_element","elementId":"<id>","action":"invoke"}
+- set_value: {"type":"set_value","elementId":"<id>","value":"text"}
+- click: {"type":"click","point":{"x":0.5,"y":0.5},"button":"left","count":1}
+- move: {"type":"move","point":{"x":0.5,"y":0.5}}
+- drag: {"type":"drag","from":{"x":0.2,"y":0.2},"to":{"x":0.8,"y":0.8}}
+- scroll: {"type":"scroll","deltaX":0,"deltaY":600,"point":{"x":0.5,"y":0.5}}
+- keypress: {"type":"keypress","keys":["Meta","Space"]}
+- type_text: {"type":"type_text","text":"text"}
+- focus_window: {"type":"focus_window","windowId":"<id>"}
+- wait_for: {"type":"wait_for","condition":{"kind":"loading_stopped"},"timeoutMs":5000}
+Valid named keys: Alt, Backspace, Control, Delete, End, Enter, Escape, Home, Meta, PageDown, PageUp, Shift, Space, Tab, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, and F1-F24. Use Meta for both macOS Command and the Windows key; never emit CMD, COMMAND, WIN, WINDOWS, RETURN, ESC, or SPACEBAR.`
 
 const BATCH_DECISION_SYSTEM_PROMPT = `${DECISION_SYSTEM_PROMPT}
 You may also return a short batch of actions that you expect to remain valid when executed in sequence:
 {"type":"actions","intent":"short reason for the whole sequence","actions":[<2 to 8 supported actions in order>]}
 Only use a batch for a sequence whose later steps stay valid after the earlier ones run (for example a series of keypresses, typing, scrolls, waits, or clicks on stable targets). The host re-checks the target before every step and stops the batch the moment a target becomes stale, so prefer a single "action" whenever a step depends on the result of the previous one. Never use a batch to bypass the one-action-per-decision discipline for risky or unrelated actions; when unsure, return a single action.`
+
+function buildDecisionSystemPrompt(platform: NodeJS.Platform, allowBatch: boolean): string {
+  const platformName = platform === 'darwin' ? 'macOS' : platform === 'win32' ? 'Windows' : platform
+  const base = allowBatch ? BATCH_DECISION_SYSTEM_PROMPT : DECISION_SYSTEM_PROMPT
+  return `${base}\nCurrent desktop platform: ${platformName}.`
+}
 
 function buildDecisionPrompt(input: ComputerDecisionInput, attempt: number): string {
   const tree = input.observation.tree.text.slice(0, MAX_TREE_PROMPT_CHARS)
@@ -161,7 +195,7 @@ function parseDecision(text: string): ComputerDecision {
   }
   const record = value as Record<string, unknown>
   if (record.type === 'action') {
-    const action = ComputerActionSchema.safeParse(record.action)
+    const action = ComputerActionSchema.safeParse(normalizeAction(record.action))
     if (
       !action.success ||
       !SUPPORTED_ACTIONS.has(action.data.type) ||
@@ -186,26 +220,60 @@ function parseDecision(text: string): ComputerDecision {
     }
     const actions: ComputerAction[] = []
     for (const raw of record.actions) {
-      const parsed = ComputerActionSchema.safeParse(raw)
+      const parsed = ComputerActionSchema.safeParse(normalizeAction(raw))
       if (!parsed.success || !SUPPORTED_ACTIONS.has(parsed.data.type)) throw invalidDecision()
       actions.push(parsed.data)
     }
     return { type: 'actions', actions, intent: (record.intent as string).trim() }
   }
   if (
-    (record.type === 'ready_for_verification' || record.type === 'handoff') &&
+    record.type === 'ready_for_verification' &&
     typeof record.reason === 'string' &&
     record.reason.trim().length > 0 &&
     record.reason.length <= 4_000
   ) {
-    return { type: record.type, reason: record.reason.trim() }
+    return { type: 'ready_for_verification', reason: record.reason.trim() }
   }
   throw invalidDecision()
 }
 
 function invalidDecision(): ComputerUseBrokerError {
   return new ComputerUseBrokerError(
-    'action_not_allowed',
+    'decision_model_error',
     'Computer decision model returned an invalid or unsupported action',
+    undefined,
+    {
+      diagnostic: {
+        diagnosticCode: 'decision_output_invalid',
+        stage: 'verify_task',
+        repairAction: 'Use a multimodal model that follows the documented Computer Action JSON schema.',
+      },
+    },
   )
+}
+
+function normalizeAction(value: unknown): unknown {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return value
+  const action = value as Record<string, unknown>
+  if (action.type !== 'keypress' || !Array.isArray(action.keys)) return value
+  return {
+    ...action,
+    keys: action.keys.map((key) => normalizeKeyAlias(key)),
+  }
+}
+
+function normalizeKeyAlias(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  const aliases: Readonly<Record<string, string>> = {
+    WIN: 'Meta',
+    WINDOWS: 'Meta',
+    CMD: 'Meta',
+    COMMAND: 'Meta',
+    CTRL: 'Control',
+    OPTION: 'Alt',
+    RETURN: 'Enter',
+    ESC: 'Escape',
+    SPACEBAR: 'Space',
+  }
+  return aliases[value.trim().toUpperCase()] ?? value
 }

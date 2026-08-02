@@ -108,7 +108,7 @@ describe('computer approval governance', () => {
     ).toBe(false)
   })
 
-  it('never permits an L4 action and requires a concrete reason for policy decisions', () => {
+  it('supports task-authorized L4 execution while requiring a concrete reason', () => {
     const schema = exportedSchema('ComputerPolicyDecisionSchema')
     const handoff = {
       actionId: 'action-8',
@@ -120,7 +120,14 @@ describe('computer approval governance', () => {
 
     expect(schema.parse(handoff)).toEqual(handoff)
     expect(schema.safeParse({ ...handoff, decision: 'allow' }).success).toBe(false)
-    expect(schema.safeParse({ ...handoff, requiresUserPresence: false }).success).toBe(false)
+    expect(
+      schema.safeParse({
+        ...handoff,
+        decision: 'allow',
+        reasonCode: 'within_task_scope',
+        requiresUserPresence: false,
+      }).success,
+    ).toBe(true)
     expect(schema.safeParse({ ...handoff, reasonCode: 'make_it_work' }).success).toBe(false)
     expect(
       schema.safeParse({
