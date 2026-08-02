@@ -120,6 +120,7 @@ import {
   defaultUnifiedSidePanelWidth,
   maxSideChatWidthForViewport,
   SideChatPanel,
+  type SideChatSessionOption,
   UnifiedSessionSidePanel,
   UnifiedSidePanelPicker,
   type UnifiedSidePanelKind,
@@ -1829,6 +1830,46 @@ export function ChatView({
     workspaces,
   ])
 
+  // 侧边聊天头部下拉候选：当前 workspace 下的全部会话。
+  // 复用 sideChatMatchesActiveWorkspace 的同款 workspace 判定，保证切过去一定 matches、
+  // 不会落入「跨 workspace」未覆盖的渲染路径。投影成最小 SideChatSessionOption，避免
+  // SideChatPanel 反向依赖完整 Session 类型。
+  const sideChatSessionCandidates = useMemo<SideChatSessionOption[]>(
+    () =>
+      sessions
+        .filter((session) => {
+          const wsId = session.workspaceIds[0]
+          return wsId != null && wsId === activeSideChatWorkspaceId
+        })
+        .map((session) => ({
+          id: session.id,
+          title: session.title,
+          status: session.status,
+          messageCount: session.messageCount,
+          pinned: session.pinnedAt != null,
+        })),
+    [sessions, activeSideChatWorkspaceId],
+  )
+  // 主区当前会话在下拉里禁选：主、侧两个 ChatStream 订阅同一 sessionId 会产生
+  // 双份消息流订阅与状态竞争（侧边发消息会串到主区）。下拉项标灰 + "主区当前"，这里再做一道兜底。
+  const disabledSideChatSessionId = activeSession?.id ?? null
+  // 纯切换既有侧边会话：只改 id，让 SessionStream 的 key（随 sideChatSessionId 变化）自动重订阅目标会话历史，
+  // 绝不走 ensureSideChatSession 的清空+新建路径。显式清一遍运行时展示态，避免新会话首帧残留旧会话消息
+  // （与 snap restore 的处理同思路）。
+  const switchSideChatSession = useCallback(
+    (targetId: string) => {
+      if (targetId === disabledSideChatSessionId) return
+      setSideChatSessionId(targetId as SessionId)
+      setSideChatMessages([])
+      setSideChatContextInputTokens(0)
+      setSideChatContextUsage(null)
+      setSideChatContextLedger(null)
+      setSideChatAgentStatus('')
+      setSideChatScrollToBottomTrigger((trigger) => trigger + 1)
+    },
+    [disabledSideChatSessionId],
+  )
+
   const createSideChatSession = useCallback(
     async (overrides: Record<string, unknown> = {}) => {
       const workspaceId = activeSessionWorkspace?.id ?? activeWorkspace?.id ?? activeWorkspaceId
@@ -2505,6 +2546,10 @@ export function ChatView({
               onNew={() => {
                 void openSideChatPanel({ replace: true })
               }}
+              sessions={sideChatSessionCandidates}
+              currentSessionId={sideChatSessionId}
+              disabledSessionId={disabledSideChatSessionId}
+              onSelectSession={switchSideChatSession}
               embedded
             >
               {sideChatSessionId != null &&
@@ -4281,7 +4326,7 @@ function renderBlocks(
         const items = parsePlanToItems(block.plan)
         return (
           <div key={i} className="tool-logs-collapsible" style={{ marginTop: 4, marginBottom: 4 }}>
-            <PlanCard title="Agent 计划" items={items} />
+            <PlanCard title="摘要" items={items} />
           </div>
         )
       }

@@ -480,6 +480,10 @@ function operationPickerPopoverClassName(popoverClassName?: string): string {
   return 'canvas-operation-text-picker-popover'
 }
 
+/** 全屏窗口模式下，左侧红绿灯会被标题区域遮挡。仅 macOS + 全屏状态下需要给头部留出安全区。 */
+const isCanvasPanelHostDarwin =
+  typeof window !== 'undefined' && window.spark?.platform === 'darwin'
+
 export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   node,
   snapshot,
@@ -2493,7 +2497,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       onMouseDown={(e) => e.stopPropagation()}
     >
       {placement !== 'inline' && (
-        <div className="canvas-operation-panel-head">
+        <div
+          className={`canvas-operation-panel-head${
+            fullscreen && isCanvasPanelHostDarwin ? ' platform-darwin-safe-area' : ''
+          }`}
+        >
           <div className="canvas-operation-panel-title">
             {operationLabel(operation)}
             {statusTag}

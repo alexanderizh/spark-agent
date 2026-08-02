@@ -207,9 +207,9 @@ export function CanvasOperationWorkbench({
       {!state.editingOutput ? (
         <div className="canvas-operation-workbench-head">
           <div className="canvas-operation-workbench-tabs">
-            {tabButton('output', '产物', <Icons.File size={13} />, outputCount)}
             {tabButton('config', '任务配置', <Icons.Settings size={13} />)}
             {tabButton('settings', '节点设置', <Icons.Edit size={13} />)}
+            {tabButton('output', '产物', <Icons.File size={13} />, outputCount)}
             {tabButton('history', '运行历史', <Icons.RotateCcw size={13} />, runs.length)}
           </div>
           {activeTab === 'output' && activeRun ? (
@@ -224,7 +224,7 @@ export function CanvasOperationWorkbench({
                   <Icons.ChevronLeft size={14} />
                 </button>
                 <span className="canvas-operation-workbench-run-label">
-                  第 {displayRunNumber} 次{runs.length > 1 ? ` / ${runs.length}` : ''}
+                  {displayRunNumber} {runs.length > 1 ? ` / ${runs.length}` : ''}
                 </span>
                 <button
                   type="button"
@@ -279,7 +279,7 @@ export function CanvasOperationWorkbench({
             <div className="canvas-operation-workbench-actions" aria-label="产物操作">
               {outputs.length > 1 ? (
                 <Button
-                  size="middle"
+                  size="small"
                   type={state.selectionMode ? 'primary' : 'text'}
                   icon={<Icons.Check size={13} />}
                   onClick={() => dispatch({ type: 'toggle-selection-mode' })}
@@ -376,27 +376,17 @@ export function CanvasOperationWorkbench({
                 }
               >
                 <Button
-                  size="middle"
+                  size="small"
                   type="text"
                   icon={<Icons.More size={14} />}
                   aria-label="更多产物操作"
                   title="更多产物操作"
                 />
               </Popover>
-              {activeOutputAssetId && onOpenAssetLibrary ? (
-                <Button
-                  size="middle"
-                  type="text"
-                  icon={<Icons.Folder size={13} />}
-                  onClick={() => onOpenAssetLibrary(activeOutputAssetId)}
-                >
-                  资源库
-                </Button>
-              ) : null}
               {outputNode ? (
                 <Button
-                  size="middle"
-                  type={state.editingOutput ? 'default' : 'primary'}
+                  size="small"
+                  type="text"
                   icon={state.editingOutput ? <Icons.Eye size={13} /> : <Icons.Edit size={13} />}
                   onClick={() => dispatch({ type: 'toggle-editing' })}
                 >

@@ -5,9 +5,9 @@ import {
 } from './canvasOperationWorkbenchState'
 
 describe('canvas operation workbench state', () => {
-  it('opens on the primary output and follows a new primary selection', () => {
+  it('opens on task config and follows a new primary selection', () => {
     const initial = createCanvasOperationWorkbenchState(true, 1, 2)
-    expect(initial).toMatchObject({ tab: 'output', runIndex: 1, outputIndex: 2 })
+    expect(initial).toMatchObject({ tab: 'config', runIndex: 1, outputIndex: 2 })
 
     expect(
       reduceCanvasOperationWorkbenchState(initial, {
@@ -16,7 +16,7 @@ describe('canvas operation workbench state', () => {
         runIndex: 0,
         outputIndex: 1,
       }),
-    ).toMatchObject({ tab: 'output', runIndex: 0, outputIndex: 1, editingOutput: false })
+    ).toMatchObject({ tab: 'config', runIndex: 0, outputIndex: 1, editingOutput: false })
   })
 
   it('requires explicit selection mode before tracking batch outputs', () => {
@@ -47,6 +47,7 @@ describe('canvas operation workbench state', () => {
     expect(
       reduceCanvasOperationWorkbenchState(state, { type: 'select-run', runIndex: 2 }),
     ).toMatchObject({
+      tab: 'output',
       runIndex: 2,
       outputIndex: 0,
       editingOutput: false,
