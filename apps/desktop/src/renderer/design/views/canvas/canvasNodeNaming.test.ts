@@ -56,6 +56,12 @@ describe('canvas node naming', () => {
     expect(nextCanvasNodeNumber(nodes, 'board-1')).toBe(4)
   })
 
+  it('names the unified text-to-video container as video generation', () => {
+    expect(
+      createCanvasNodeNaming({ nodes: [], boardId: 'board-1', type: 'text_to_video' }).title,
+    ).toBe('#1 视频生成')
+  })
+
   it('reads stored numbers and legacy suffix titles', () => {
     expect(readCanvasNodeNumber(node('自定义名', { nodeSequence: 8 }))).toBe(8)
     expect(readCanvasNodeNumber(node('文生图 #6'))).toBe(6)

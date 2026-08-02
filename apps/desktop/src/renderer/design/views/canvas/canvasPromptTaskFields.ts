@@ -38,6 +38,8 @@ function retryRoleForRelation(
   if (relation === 'last_frame') return 'last_frame'
   if (
     relation === 'reference_image' ||
+    relation === 'reference_video' ||
+    relation === 'reference_audio' ||
     relation === 'character' ||
     relation === 'supporting_character' ||
     relation === 'scene' ||

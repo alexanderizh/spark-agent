@@ -20,7 +20,7 @@ const NODE_TYPE_LABELS: Partial<Record<CanvasNodeType, string>> = {
   text_rewrite: '文本改写',
   prompt_optimize: 'Prompt 优化',
   image_prompt_reverse: '图片反推',
-  text_to_video: '文生视频',
+  text_to_video: '视频生成',
   image_to_video: '图生视频',
   video_edit: '视频编辑',
   video_extend: '视频扩展',

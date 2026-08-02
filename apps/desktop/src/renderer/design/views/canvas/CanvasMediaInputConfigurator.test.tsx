@@ -1,8 +1,46 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { CanvasInputBinding } from '@spark/protocol'
 import { CanvasMediaInputConfigurator } from './CanvasMediaInputConfigurator'
 import type { CanvasMediaInputModeOption } from './canvasMediaInputMode'
+
+vi.mock('@lobehub/ui', () => ({ Button: 'button' }))
+vi.mock('antd', () => ({
+  Select: ({
+    options = [],
+    classNames: _classNames,
+    ...props
+  }: {
+    options?: Array<{ value: string; label: string; disabled?: boolean }>
+    classNames?: unknown
+  }) => (
+    <select {...props}>
+      {options.map((option) => (
+        <option key={option.value} value={option.value} disabled={option.disabled}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ),
+  Segmented: ({
+    value,
+    options = [],
+    ...props
+  }: {
+    value?: string
+    options?: Array<{ value: string; label: string }>
+  }) => (
+    <div data-segmented-value={value} {...props}>
+      {options.map((option) => (
+        <span key={option.value} data-segmented-option={option.value}>
+          {option.label}
+        </span>
+      ))}
+    </div>
+  ),
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+}))
 
 describe('CanvasMediaInputConfigurator', () => {
   it('shows one unified resource tray with explicit mode, role and origin', () => {
@@ -56,7 +94,7 @@ describe('CanvasMediaInputConfigurator', () => {
     expect(html).not.toContain('video.image_to_video')
   })
 
-  it('offers simple pick and upload buttons when the task has no media input', () => {
+  it('offers only the canvas pick button when the task has no media input', () => {
     const html = renderToStaticMarkup(
       <CanvasMediaInputConfigurator
         options={[firstFrameOption()]}
@@ -69,14 +107,82 @@ describe('CanvasMediaInputConfigurator', () => {
         onChange={vi.fn()}
         onMove={vi.fn()}
         onQuickPick={vi.fn()}
-        onQuickUpload={vi.fn()}
       />,
     )
 
     expect(html).toContain('aria-label="从画布选择输入素材"')
-    expect(html).toContain('aria-label="本地上传输入素材"')
     expect(html).toContain('从画布选择')
-    expect(html).toContain('本地上传')
+    expect(html).not.toContain('本地上传')
+  })
+
+  it('keeps a supported multimodal reference mode selectable before media is added', () => {
+    const referenceOption: CanvasMediaInputModeOption = {
+      mode: 'reference',
+      label: '全能参考',
+      capabilityId: 'video.reference_to_video',
+      capability: {
+        id: 'video.reference_to_video',
+        label: '全能参考',
+        input: { required: [] },
+        rolePolicy: {
+          imageRoles: ['reference_image'],
+          videoRoles: ['reference_video'],
+          audioRoles: ['reference_audio'],
+          defaultRoleAssignment: 'all_reference',
+        },
+        output: { types: ['video'] },
+        paramSchema: {},
+      },
+      rolePolicy: {
+        imageRoles: ['reference_image'],
+        videoRoles: ['reference_video'],
+        audioRoles: ['reference_audio'],
+        defaultRoleAssignment: 'all_reference',
+      },
+    }
+    const html = renderToStaticMarkup(
+      <CanvasMediaInputConfigurator
+        options={[referenceOption]}
+        value="reference"
+        assignments={[]}
+        bindings={[]}
+        nodes={[]}
+        assets={[]}
+        variant="panel"
+        onChange={vi.fn()}
+        onMove={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('value="reference"')
+    expect(html).toContain('全能参考')
+    expect(html).not.toContain('value="reference" disabled')
+  })
+
+  it('merges video edit and extend into one mode with an edit/extend sub-toggle', () => {
+    const html = renderToStaticMarkup(
+      <CanvasMediaInputConfigurator
+        options={[videoSourceOption('edit', 'video.edit'), videoSourceOption('extend', 'video.extend')]}
+        value="extend"
+        assignments={[]}
+        bindings={[]}
+        nodes={[]}
+        assets={[]}
+        variant="panel"
+        onChange={vi.fn()}
+        onMove={vi.fn()}
+      />,
+    )
+
+    // Select 合并为单一「视频编辑 / 延长」条目，extend 不再作为独立 Select 项。
+    expect(html).toContain('视频编辑 / 延长')
+    expect(html).not.toContain('视频编辑</option>')
+    expect(html).not.toContain('<option value="extend"')
+    // 子开关存在，且反映当前真实模式 extend。
+    expect(html).toContain('aria-label="视频编辑或延长"')
+    expect(html).toContain('data-segmented-value="extend"')
+    expect(html).toContain('data-segmented-option="edit"')
+    expect(html).toContain('data-segmented-option="extend"')
   })
 })
 
@@ -99,6 +205,33 @@ function firstFrameOption(): CanvasMediaInputModeOption {
     rolePolicy: {
       imageRoles: ['first_frame'],
       defaultRoleAssignment: 'first_then_last_then_reference',
+    },
+  }
+}
+
+function videoSourceOption(
+  mode: 'edit' | 'extend',
+  capabilityId: 'video.edit' | 'video.extend',
+): CanvasMediaInputModeOption {
+  const label = mode === 'edit' ? '视频编辑' : '视频延长'
+  return {
+    mode,
+    label,
+    capabilityId,
+    capability: {
+      id: capabilityId,
+      label,
+      input: { required: ['video'], maxVideos: 1 },
+      rolePolicy: {
+        videoRoles: ['input_video', 'reference_video'],
+        defaultRoleAssignment: 'none',
+      },
+      output: { types: ['video'] },
+      paramSchema: {},
+    },
+    rolePolicy: {
+      videoRoles: ['input_video', 'reference_video'],
+      defaultRoleAssignment: 'none',
     },
   }
 }

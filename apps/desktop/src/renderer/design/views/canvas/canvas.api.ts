@@ -99,6 +99,7 @@ import type {
   SessionReasoningEffort,
 } from '@spark/protocol'
 import { buildCanvasRetryInputRoles, pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
+import { executionOperationForCanvasMediaCapability } from './canvasMediaInputMode'
 import { buildTaskInputFiles } from './canvasTaskInputFiles'
 import { summarizeCanvasTaskInputFiles } from './canvasTaskInputDiagnostics'
 import {
@@ -5139,7 +5140,8 @@ export const canvasApi = {
           ?.reasoningEffort
       : undefined
     const reasoningEffort = params.reasoningEffort ?? existingReasoningEffort ?? undefined
-    const operation = (node.data.operation ?? node.type) as CanvasOperationType
+    const nodeOperation = (node.data.operation ?? node.type) as CanvasOperationType
+    const operation = executionOperationForCanvasMediaCapability(params.capabilityId, nodeOperation)
     const presetTargetId = resolveCanvasPresetTarget({
       operation,
       taskPipelineRole: node.data.pipelineRole ?? null,
@@ -5518,7 +5520,8 @@ export const canvasApi = {
         ? bindNode.taskId
         : null
     if (bindNode) {
-      bindNode.data = { ...bindNode.data, ...taskNodeData }
+      const containerOperation = (bindNode.data.operation ?? bindNode.type) as CanvasOperationType
+      bindNode.data = { ...bindNode.data, ...taskNodeData, operation: containerOperation }
       syncCanvasNodeRuntimeData(bindNode.data, request)
       if (options != null && 'userPrompt' in options) {
         const userPrompt = options.userPrompt?.trim() ?? ''

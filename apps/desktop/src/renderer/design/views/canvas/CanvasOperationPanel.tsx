@@ -48,6 +48,7 @@ import { readCanvasTextInputContent } from './canvasTextInputPresentation'
 import { confirmVideoSubmission, isVideoSubmissionOperation } from './canvasVideoSubmissionGate'
 import { useCanvasInputBindings } from './useCanvasInputBindings'
 import { materializeCanvasInputBindingReferences } from './canvasInputBindings'
+import { buildOutputMediaKindMap, buildOutputMediaNodeMap } from './canvasNodeMediaKind'
 import { useCanvasOperationDraftAutosave } from './useCanvasOperationDraftAutosave'
 import { CanvasTaskValidationError } from './canvasTaskSubmissionValidation'
 import {
@@ -598,6 +599,16 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     () => buildOperationPanelPromptOwnerNodeIds(snapshot),
     [snapshot],
   )
+  // 任务节点 → 产物媒体类型 / 产物媒体节点。让「从画布选择」与连接路径里选中任务节点时，
+  // 等价于选中它的产物 output（视频/图片/音频）。
+  const outputMediaKindByNodeId = useMemo(
+    () => buildOutputMediaKindMap(snapshot.nodes, snapshot.edges),
+    [snapshot.nodes, snapshot.edges],
+  )
+  const outputMediaNodeByNodeId = useMemo(
+    () => buildOutputMediaNodeMap(snapshot.nodes, snapshot.edges),
+    [snapshot.nodes, snapshot.edges],
+  )
   const editableSourceMediaNodes = useMemo(
     () =>
       expandedSourceInputNodes.filter((item) =>
@@ -762,6 +773,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     nodes: snapshot.nodes,
     connectionNodeIds: bindingConnectionNodeIds,
     promptOwnerNodeIdsBySourceNodeId,
+    outputMediaKindByNodeId,
   })
   const [negativePrompt, setNegativePrompt] = useState(inheritedNegativePrompt)
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
@@ -1203,8 +1215,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const mediaInputQuickActions = useCanvasMediaInputQuickActions({
     nodes: snapshot.nodes,
     acceptedKinds: mediaInputQuickKinds,
+    outputMediaKindByNodeId,
+    outputMediaNodeByNodeId,
     onRequestCanvasNodePick,
-    onUploadLocalFile,
     onAppendNode: appendQuickMediaInput,
     onInvalidNode: () => message.warning('所选素材类型不适用于当前生成模式'),
   })
@@ -2231,7 +2244,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               onMove={handleMediaInputMove}
               onRemove={handleMediaInputRemove}
               {...(onRequestCanvasNodePick ? { onQuickPick: mediaInputQuickActions.pick } : {})}
-              {...(onUploadLocalFile ? { onQuickUpload: mediaInputQuickActions.upload } : {})}
             />
           </div>
         )}
@@ -2628,7 +2640,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               onMove={handleMediaInputMove}
               onRemove={handleMediaInputRemove}
               {...(onRequestCanvasNodePick ? { onQuickPick: mediaInputQuickActions.pick } : {})}
-              {...(onUploadLocalFile ? { onQuickUpload: mediaInputQuickActions.upload } : {})}
             />
           </div>
         )}

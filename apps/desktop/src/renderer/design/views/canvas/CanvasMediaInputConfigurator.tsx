@@ -1,5 +1,4 @@
-import { useRef, useState } from 'react'
-import { Select, Tooltip } from 'antd'
+import { Segmented, Select, Tooltip } from 'antd'
 import { Button } from '@lobehub/ui'
 import type { CanvasInputBinding, CanvasMediaInputMode } from '@spark/protocol'
 import { Icons } from '../../Icons'
@@ -7,6 +6,7 @@ import { AssetThumbnail } from './CanvasAssetThumbnail'
 import type { CanvasAsset, CanvasNode } from './canvas.types'
 import {
   canvasMediaInputModeIssue,
+  collapseVideoEditExtendOptions,
   type CanvasMediaInputAssignment,
   type CanvasMediaInputModeOption,
 } from './canvasMediaInputMode'
@@ -19,6 +19,8 @@ const VIDEO_GENERATION_MODES: ReadonlyArray<{
   { mode: 'first_frame', label: '首帧生成' },
   { mode: 'first_last_frame', label: '首尾帧生成' },
   { mode: 'reference', label: '全能参考' },
+  { mode: 'edit', label: '视频编辑' },
+  { mode: 'extend', label: '视频延长' },
 ]
 
 export function CanvasMediaInputConfigurator({
@@ -35,7 +37,6 @@ export function CanvasMediaInputConfigurator({
   onMove,
   onRemove,
   onQuickPick,
-  onQuickUpload,
 }: {
   options: readonly CanvasMediaInputModeOption[]
   value?: CanvasMediaInputMode | undefined
@@ -50,10 +51,7 @@ export function CanvasMediaInputConfigurator({
   onMove: (sourceNodeId: string, direction: -1 | 1) => void
   onRemove?: ((sourceNodeId: string) => void) | undefined
   onQuickPick?: (() => void) | undefined
-  onQuickUpload?: ((file: File) => Promise<void> | void) | undefined
 }) {
-  const quickUploadInputRef = useRef<HTMLInputElement | null>(null)
-  const [quickUploading, setQuickUploading] = useState(false)
   if (options.length === 0) return null
   const nodeById = new Map(nodes.map((node) => [node.id, node]))
   const assetById = new Map(assets.map((asset) => [asset.id, asset]))
@@ -62,15 +60,17 @@ export function CanvasMediaInputConfigurator({
   const currentIssue = current ? canvasMediaInputModeIssue(current, bindings) : undefined
   const usedCount = assignments.filter((assignment) => assignment.used).length
   const presentedModes = presentationModes(options)
+  const editExtendPair = collapseVideoEditExtendOptions(options)
+  const isEditExtendActive = Boolean(editExtendPair) && (value === 'edit' || value === 'extend')
+  // 合并行以 'edit' 作为 Select 取值；真正的 编辑/延长 选择由子开关承载。
+  const modeSelectValue = value === 'extend' && editExtendPair ? 'edit' : value
   const modeSelectOptions = presentedModes.map(({ mode, label, option }) => {
-    const issue = option
-      ? canvasMediaInputModeIssue(option, bindings)
-      : `当前模型不支持${label}模式`
-    const title = issue || option?.capability.label
+    const unsupportedReason = option ? undefined : `当前模型不支持${label}模式`
+    const title = unsupportedReason || option?.capability.label
     return {
       value: mode,
       label,
-      disabled: Boolean(issue),
+      disabled: option == null,
       ...(title ? { title } : {}),
     }
   })
@@ -91,11 +91,25 @@ export function CanvasMediaInputConfigurator({
             classNames={{ popup: { root: 'canvas-media-input-mode-select-popup' } }}
             size="small"
             aria-label="视频生成模式"
-            value={value ?? null}
+            value={modeSelectValue ?? null}
             options={modeSelectOptions}
             disabled={disabled === true}
             onChange={onChange}
           />
+          {isEditExtendActive ? (
+            <Segmented<CanvasMediaInputMode>
+              className="canvas-media-input-mode-editextend"
+              size="small"
+              aria-label="视频编辑或延长"
+              value={value === 'extend' ? 'extend' : 'edit'}
+              disabled={disabled === true}
+              onChange={(next) => onChange(next)}
+              options={[
+                { value: 'edit', label: '编辑' },
+                { value: 'extend', label: '延长' },
+              ]}
+            />
+          ) : null}
         </div>
 
         {current ? (
@@ -124,48 +138,17 @@ export function CanvasMediaInputConfigurator({
             <Icons.Image size={16} />
             <div className="canvas-media-input-track-empty-copy">
               <span>通过连线、@ 或“+”加入图片、视频与音频</span>
-              {onQuickPick || onQuickUpload ? (
+              {onQuickPick ? (
                 <div className="canvas-media-input-track-empty-actions">
-                  {onQuickPick ? (
-                    <Button
-                      type="text"
-                      size="small"
-                      aria-label="从画布选择输入素材"
-                      disabled={disabled === true || quickUploading}
-                      onClick={onQuickPick}
-                    >
-                      从画布选择
-                    </Button>
-                  ) : null}
-                  {onQuickUpload ? (
-                    <>
-                      <Button
-                        type="text"
-                        size="small"
-                        aria-label="本地上传输入素材"
-                        disabled={disabled === true || quickUploading}
-                        onClick={() => quickUploadInputRef.current?.click()}
-                      >
-                        {quickUploading ? '上传中' : '本地上传'}
-                      </Button>
-                      <input
-                        ref={quickUploadInputRef}
-                        type="file"
-                        accept="image/*,video/*,audio/*"
-                        aria-label="选择本地输入素材"
-                        hidden
-                        onChange={(event) => {
-                          const file = event.target.files?.[0]
-                          event.target.value = ''
-                          if (!file) return
-                          setQuickUploading(true)
-                          void Promise.resolve(onQuickUpload(file)).finally(() =>
-                            setQuickUploading(false),
-                          )
-                        }}
-                      />
-                    </>
-                  ) : null}
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label="从画布选择输入素材"
+                    disabled={disabled === true}
+                    onClick={onQuickPick}
+                  >
+                    从画布选择
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -263,6 +246,8 @@ function presentationModes(options: readonly CanvasMediaInputModeOption[]): Read
   mode: CanvasMediaInputMode
   label: string
   option: CanvasMediaInputModeOption | undefined
+  /** 合并分组时该展示行代表的备选模式（edit 行携带 extend），供子开关切换。 */
+  alternate?: CanvasMediaInputMode
 }> {
   const optionByMode = new Map(options.map((option) => [option.mode, option]))
   const isVideoGeneration = VIDEO_GENERATION_MODES.some(({ mode }) => optionByMode.has(mode))
@@ -273,11 +258,22 @@ function presentationModes(options: readonly CanvasMediaInputModeOption[]): Read
       option,
     }))
   }
-  return VIDEO_GENERATION_MODES.map(({ mode, label }) => ({
-    mode,
-    label,
-    option: optionByMode.get(mode),
-  }))
+  // 模型同时支持编辑与延长时，二者同构，合并为一个「视频编辑 / 延长」展示行 + 子开关。
+  const editExtendPair = collapseVideoEditExtendOptions(options)
+  return VIDEO_GENERATION_MODES.flatMap(({ mode, label }) => {
+    if (mode === 'extend' && editExtendPair) return []
+    if (mode === 'edit' && editExtendPair) {
+      return [
+        {
+          mode: 'edit',
+          label: '视频编辑 / 延长',
+          option: editExtendPair.edit,
+          alternate: 'extend' as CanvasMediaInputMode,
+        },
+      ]
+    }
+    return [{ mode, label, option: optionByMode.get(mode) }]
+  })
 }
 
 function collectOrigins(bindings: readonly CanvasInputBinding[]) {
@@ -363,7 +359,7 @@ function modeGuidance(
       : '轨道第 1 张图作为首帧，其余素材保留但不发送。'
   }
   if (mode === 'reference') return '已按模型能力分配参考素材；灰色素材不会发送。'
-  if (mode === 'edit') return '第 1 段视频为编辑主体，图片作为参考素材。'
-  if (mode === 'extend') return '第 1 段视频为延长主体，其余素材不发送。'
+  if (mode === 'edit') return '第 1 段视频为编辑主体，其余兼容素材按模型能力作为参考输入。'
+  if (mode === 'extend') return '第 1 段视频为延长主体，其余兼容素材按模型能力作为参考输入。'
   return '当前为纯文本生成，轨道素材不会发送。'
 }

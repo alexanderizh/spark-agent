@@ -46,12 +46,16 @@ describe('canvasNodeGenerationMenu', () => {
       'image_compose',
       'image_prompt_reverse',
       'text_to_video',
-      'image_to_video',
-      'video_edit',
-      'video_extend',
       'video_depth_map',
       'text_to_audio',
       'audio_transcribe',
+    ])
+  })
+
+  it('offers one unified video generation entry plus the independent depth tool', () => {
+    expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.find((group) => group.id === 'video')?.items).toEqual([
+      { operation: 'text_to_video', label: '视频生成', icon: 'Video' },
+      { operation: 'video_depth_map', label: '深度视频', icon: 'Video' },
     ])
   })
 })

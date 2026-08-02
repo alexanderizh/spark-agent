@@ -12,6 +12,19 @@ import {
 } from '@spark/protocol'
 
 const MEDIA_KINDS = new Set<CanvasInputBinding['kind']>(['image', 'video', 'audio', 'file'])
+const UNIFIED_VIDEO_OPERATIONS = new Set<CanvasOperationType>([
+  'text_to_video',
+  'image_to_video',
+  'video_edit',
+  'video_extend',
+])
+const UNIFIED_VIDEO_CAPABILITY_IDS: MediaCapabilityId[] = [
+  'video.generate',
+  'video.image_to_video',
+  'video.reference_to_video',
+  'video.edit',
+  'video.extend',
+]
 
 export type CanvasMediaInputModeOption = {
   mode: CanvasMediaInputMode
@@ -32,10 +45,21 @@ export type CanvasMediaInputAssignment = {
 export function canvasMediaCapabilityIdsForOperation(
   operation: CanvasOperationType,
 ): MediaCapabilityId[] {
-  if (operation === 'text_to_video' || operation === 'image_to_video') {
-    return ['video.generate', 'video.image_to_video', 'video.reference_to_video']
-  }
+  if (UNIFIED_VIDEO_OPERATIONS.has(operation)) return [...UNIFIED_VIDEO_CAPABILITY_IDS]
   return capabilityForOperation(operation)
+}
+
+export function executionOperationForCanvasMediaCapability(
+  capabilityId: MediaCapabilityId | undefined,
+  fallback: CanvasOperationType,
+): CanvasOperationType {
+  if (capabilityId === 'video.image_to_video') return 'image_to_video'
+  if (capabilityId === 'video.edit') return 'video_edit'
+  if (capabilityId === 'video.extend') return 'video_extend'
+  if (capabilityId === 'video.generate' || capabilityId === 'video.reference_to_video') {
+    return 'text_to_video'
+  }
+  return fallback
 }
 
 export function canvasMediaInputModeOptions(
@@ -66,14 +90,15 @@ export function resolveCanvasMediaInputMode(input: {
   options: readonly CanvasMediaInputModeOption[]
   bindings: readonly CanvasInputBinding[]
 }): CanvasMediaInputMode | undefined {
+  const supported = new Set(input.options.map((option) => option.mode))
+  if (input.preferred && supported.has(input.preferred)) return input.preferred
+  const legacyMode = legacyCanvasMediaInputMode(input.operation)
+  if (legacyMode && supported.has(legacyMode)) return legacyMode
   const available = new Set(
     input.options
       .filter((option) => !canvasMediaInputModeIssue(option, input.bindings))
       .map((option) => option.mode),
   )
-  if (input.preferred && available.has(input.preferred)) {
-    return input.preferred
-  }
   const media = canonicalMediaInventory(input.bindings)
   const images = media.filter((binding) => binding.kind === 'image')
   const hasVideoOrAudio = media.some(
@@ -96,6 +121,14 @@ export function resolveCanvasMediaInputMode(input: {
   return (
     input.options.find((option) => option.mode === input.preferred)?.mode ?? input.options[0]?.mode
   )
+}
+
+function legacyCanvasMediaInputMode(
+  operation: CanvasOperationType,
+): CanvasMediaInputMode | undefined {
+  if (operation === 'video_edit') return 'edit'
+  if (operation === 'video_extend') return 'extend'
+  return undefined
 }
 
 export function canvasMediaInputModeIssue(
@@ -133,6 +166,24 @@ export function capabilityIdForCanvasMediaInputMode(
   options: readonly CanvasMediaInputModeOption[],
 ): MediaCapabilityId | undefined {
   return options.find((option) => option.mode === mode)?.capabilityId
+}
+
+/**
+ * 视频编辑 / 延长合并判定：当模型同时支持 video.edit 与 video.extend 时，二者输入形状、参数、
+ * 角色策略完全同构（仅 provider 模型名后缀不同），可在 UI 上合并为一个「视频编辑 / 延长」模式，
+ * 用子开关切换。本函数返回这对选项供 UI 渲染合并行 + 动态子开关；任一缺失则返回 null（不合并）。
+ */
+export function collapseVideoEditExtendOptions(
+  options: readonly CanvasMediaInputModeOption[],
+): { edit: CanvasMediaInputModeOption; extend: CanvasMediaInputModeOption } | null {
+  let edit: CanvasMediaInputModeOption | undefined
+  let extend: CanvasMediaInputModeOption | undefined
+  for (const option of options) {
+    if (option.mode === 'edit') edit = option
+    else if (option.mode === 'extend') extend = option
+  }
+  if (!edit || !extend) return null
+  return { edit, extend }
 }
 
 export function applyCanvasMediaInputModeToBindings(input: {
@@ -404,36 +455,49 @@ function assignMediaInventory(
       return { ...item, role: 'input', used: false }
     })
   }
-  if (mode === 'edit') {
-    let usedVideo = false
-    let usedImages = 0
-    return result.map((item) => {
-      if (item.kind === 'video' && !usedVideo) {
-        usedVideo = true
-        return { ...item, role: 'input', used: true }
-      }
-      if (
-        item.kind === 'image' &&
-        policy.imageRoles?.includes('reference_image') &&
-        usedImages < (option.capability.input.maxImages ?? Number.POSITIVE_INFINITY)
-      ) {
-        usedImages += 1
-        return { ...item, role: 'reference', used: true }
-      }
-      return { ...item, role: 'input', used: false }
-    })
-  }
-  if (mode === 'extend') {
-    let usedVideo = false
-    return result.map((item) => {
-      if (item.kind === 'video' && !usedVideo) {
-        usedVideo = true
-        return { ...item, role: 'input', used: true }
-      }
-      return { ...item, role: 'input', used: false }
-    })
-  }
+  if (mode === 'edit' || mode === 'extend') return assignVideoSourceAndReferences(result, option)
   return result
+}
+
+function assignVideoSourceAndReferences(
+  inventory: readonly CanvasMediaInputAssignment[],
+  option: Pick<CanvasMediaInputModeOption, 'capability' | 'rolePolicy'>,
+): CanvasMediaInputAssignment[] {
+  const source = inventory.find((item) => item.kind === 'video')
+  let images = 0
+  let videos = source ? 1 : 0
+  let audios = 0
+  const maxImages = option.capability.input.maxImages ?? Number.POSITIVE_INFINITY
+  const maxVideos = option.capability.input.maxVideos ?? Number.POSITIVE_INFINITY
+  const maxAudios = option.capability.input.maxAudios ?? Number.POSITIVE_INFINITY
+  return inventory.map((item) => {
+    if (item === source) return { ...item, role: 'input', used: true }
+    if (
+      item.kind === 'image' &&
+      option.rolePolicy.imageRoles?.includes('reference_image') &&
+      images < maxImages
+    ) {
+      images += 1
+      return { ...item, role: 'reference', used: true }
+    }
+    if (
+      item.kind === 'video' &&
+      option.rolePolicy.videoRoles?.includes('reference_video') &&
+      videos < maxVideos
+    ) {
+      videos += 1
+      return { ...item, role: 'reference', used: true }
+    }
+    if (
+      item.kind === 'audio' &&
+      option.rolePolicy.audioRoles?.includes('reference_audio') &&
+      audios < maxAudios
+    ) {
+      audios += 1
+      return { ...item, role: 'reference', used: true }
+    }
+    return { ...item, role: 'input', used: false }
+  })
 }
 
 function rolePriority(role: CanvasInputBinding['role']): number {
@@ -444,9 +508,9 @@ function rolePriority(role: CanvasInputBinding['role']): number {
 
 const MODE_ORDER: CanvasMediaInputMode[] = [
   'text',
-  'reference',
   'first_frame',
   'first_last_frame',
+  'reference',
   'edit',
   'extend',
 ]
