@@ -1555,10 +1555,9 @@ body.sidebar-resizing {
   --md-quote-bg: color-mix(in srgb, var(--primary) 8%, var(--panel));
   --md-quote-border: color-mix(in srgb, var(--primary) 34%, var(--border));
   --md-inline-code-bg: color-mix(in srgb, var(--bg-soft) 88%, var(--panel));
-  --md-table-border: color-mix(in srgb, var(--border) 92%, transparent);
-  --md-table-head-bg: color-mix(in srgb, var(--primary) 7%, var(--panel));
-  --md-table-row-alt-bg: color-mix(in srgb, var(--bg-soft) 82%, var(--panel));
-  --md-table-shadow: 0 10px 26px color-mix(in srgb, black 4%, transparent);
+  --md-table-head-bg: color-mix(in srgb, var(--bg-sunken), var(--text) 6%);
+  --md-table-row-alt-bg: color-mix(in srgb, var(--bg-sunken), var(--panel) 15%);
+  --md-table-shadow: 0 1px 2px color-mix(in srgb, black 5%, transparent);
 }
 .msg-bubble-user .md-surface,
 .chat-panel-message-user .md-surface {
@@ -1570,9 +1569,8 @@ body.sidebar-resizing {
   --md-quote-bg: color-mix(in srgb, var(--panel) 62%, var(--primary-soft));
   --md-quote-border: color-mix(in srgb, var(--primary) 42%, var(--border));
   --md-inline-code-bg: color-mix(in srgb, var(--panel) 72%, var(--primary-soft));
-  --md-table-border: color-mix(in srgb, var(--primary) 18%, var(--border));
-  --md-table-head-bg: color-mix(in srgb, var(--panel) 56%, var(--primary-soft));
-  --md-table-row-alt-bg: color-mix(in srgb, var(--panel) 38%, var(--primary-soft));
+  --md-table-head-bg: color-mix(in srgb, var(--bg-sunken), var(--text) 8%);
+  --md-table-row-alt-bg: color-mix(in srgb, var(--bg-sunken), var(--panel) 12%);
 }
 .md-surface > :first-child {
   margin-top: 0;
@@ -1935,8 +1933,8 @@ body.sidebar-resizing {
 .md-surface .md-code {
   margin: 0;
   padding: 10px 12px;
-  border-radius: 0 0 var(--r-md) var(--r-md);
-  background: var(--code-bg);
+  border-radius: 0;
+  background: transparent;
   color: var(--code-fg);
   overflow: auto;
   white-space: pre;
@@ -1945,19 +1943,19 @@ body.sidebar-resizing {
   line-height: 1.55;
 }
 .md-code-highlighted {
-  background: var(--code-bg);
+  background: transparent;
   background-image: none;
 }
 .md-code-highlighted .shiki {
   margin: 0;
   padding: 10px 12px;
-  border-radius: 0 0 var(--r-md) var(--r-md);
+  border-radius: 0;
   overflow: auto;
   white-space: pre;
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: var(--font-xs);
   line-height: 1.55;
-  background: var(--code-bg) !important;
+  background: transparent !important;
   background-image: none !important;
   color: var(--code-fg);
 }
@@ -1978,16 +1976,20 @@ body.sidebar-resizing {
 .md-code-block {
   margin: 10px 0;
   position: relative;
-  border-radius: calc(var(--r-md) + 2px);
+  border-radius: var(--r-md);
   overflow: hidden;
-  background: var(--code-bg);
-  border: 1px solid var(--md-block-border);
-  box-shadow: 0 10px 28px color-mix(in srgb, black 6%, transparent);
+  background: var(--bg-sunken);
+  border: none;
+  box-shadow: none;
 }
 .md-code-block.no-syntax {
-  background: transparent;
-  border-color: var(--md-divider);
-  box-shadow: none;
+  background: var(--bg-sunken);
+}
+.app.theme-dark .md-code-block {
+  background: color-mix(in srgb, var(--bg-sunken), black 25%);
+}
+.app.theme-dark .md-surface {
+  --md-table-row-alt-bg: color-mix(in srgb, var(--bg-sunken), var(--panel) 18%);
 }
 .md-code-block.no-syntax .md-code {
   font-family: var(--font-sans);
@@ -1997,15 +1999,50 @@ body.sidebar-resizing {
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  background: color-mix(in srgb, var(--md-block-bg) 90%, var(--panel));
-  border-bottom: 1px solid var(--md-block-border);
+  background: color-mix(in srgb, var(--bg-sunken), var(--text) 5%);
+  border-bottom: 1px solid var(--md-divider);
 }
 .md-code-lang {
-  font-size: 10px;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+}
+.md-code-header-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.md-code-traffic {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.md-code-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: block;
+}
+.app.theme-light .md-code-dot-red {
+  background: #ec5d57;
+}
+.app.theme-light .md-code-dot-yellow {
+  background: #f4b13e;
+}
+.app.theme-light .md-code-dot-green {
+  background: #46c04f;
+}
+.app.theme-dark .md-code-dot-red {
+  background: #ff6058;
+}
+.app.theme-dark .md-code-dot-yellow {
+  background: #febc2e;
+}
+.app.theme-dark .md-code-dot-green {
+  background: #28c840;
 }
 .md-code-copy,
 .md-code-copy-float {
@@ -2036,18 +2073,15 @@ body.sidebar-resizing {
   right: 6px;
   z-index: 1;
 }
-.md-code-streaming-block .md-code {
-  border-radius: 0;
-}
 .md-code-streaming-badge {
   color: var(--text-faint);
 }
 .md-table-wrap {
   overflow: auto;
   margin: 10px 0;
-  border: 1px solid var(--md-table-border);
+  border: 0;
   border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--panel) 88%, var(--bg-soft));
+  background: var(--bg-sunken);
   box-shadow: var(--md-table-shadow);
 }
 .md-surface table {
@@ -2062,8 +2096,7 @@ body.sidebar-resizing {
   padding: 8px 10px;
   text-align: left;
   vertical-align: top;
-  border-right: 1px solid var(--md-table-border);
-  border-bottom: 1px solid var(--md-table-border);
+  border-bottom: 1px solid var(--md-divider);
   background: transparent;
   color: var(--text);
 }
@@ -2074,9 +2107,6 @@ body.sidebar-resizing {
 }
 .md-surface td {
   font-weight: 400;
-}
-.md-surface tr > :last-child {
-  border-right: 0;
 }
 .md-surface tbody tr:last-child td {
   border-bottom: 0;
@@ -6286,7 +6316,13 @@ body.inspector-resizing {
 }
 .md-code-cursor {
   display: inline;
-  color: var(--primary);
+  color: var(--code-fg);
+  animation: md-code-cursor-blink 1s steps(2, start) infinite;
+}
+@keyframes md-code-cursor-blink {
+  to {
+    opacity: 0.25;
+  }
 }
 
 /* --- Thinking section enhancements --- */
