@@ -30,8 +30,17 @@
 .mp_toolbar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  // 不换行：窄宽时优先让搜索框弹性收缩，再窄才横向滚动，避免筛选栏被挤成多行
+  flex-wrap: nowrap;
   gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+
+  // 各筛选器（scope Segmented / 类型 Select / 状态 Segmented）保持固有宽度，
+  // 不被压缩变形；搜索框通过自身的弹性 style 单独收缩。
+  > * {
+    flex-shrink: 0;
+  }
 }
 
 .mp_list {

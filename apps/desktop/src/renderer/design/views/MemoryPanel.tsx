@@ -226,7 +226,9 @@ export function MemoryPanel() {
           value={searchText}
           onChange={(e) => setSearchText((e.target as HTMLInputElement).value)}
           placeholder="搜索 name / description"
-          style={{ width: 220, marginLeft: 'auto' }}
+          // 弹性收缩：宽足够时撑到 240 占据右侧剩余空间，窄宽时优先收缩（min 120）
+          // 而不是把整行挤换行；marginLeft:auto 兜底把它推到最右
+          style={{ flex: '1 1 140px', minWidth: 120, maxWidth: 240, marginLeft: 'auto' }}
           allowClear
         />
       </div>
