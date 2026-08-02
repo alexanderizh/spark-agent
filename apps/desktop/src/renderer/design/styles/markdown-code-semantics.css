@@ -1,0 +1,195 @@
+/* ============================================================
+   Markdown fenced code block — semantic modes
+   （diff / terminal / log）共用一套 token 契约，与现有 HunkDiff
+   （HunkDiff 与 .diff-line.*）保持主题一致。HunkDiff 自身不动。
+   ============================================================ */
+
+.md-code-semantic {
+  margin: 0;
+  padding: 10px 0;
+  background: transparent;
+  color: var(--code-fg);
+  overflow: auto;
+  white-space: pre;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: var(--font-xs);
+  line-height: 1.6;
+}
+
+.md-code-semantic code {
+  display: block;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0;
+  white-space: inherit;
+}
+
+.md-code-semantic-line {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: start;
+  column-gap: 4px;
+  min-width: max-content;
+}
+
+.md-code-semantic-text {
+  white-space: pre;
+}
+
+/* ---- diff ---- */
+.md-code-semantic--diff {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.md-code-diff-marker {
+  text-align: center;
+  color: var(--text-faint);
+  user-select: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.md-code-diff-line--add {
+  background: var(--diff-add-bg);
+}
+.md-code-diff-line--add .md-code-diff-marker,
+.md-code-diff-line--add .md-code-semantic-text {
+  color: var(--diff-add-fg);
+}
+
+.md-code-diff-line--del {
+  background: var(--diff-del-bg);
+}
+.md-code-diff-line--del .md-code-diff-marker,
+.md-code-diff-line--del .md-code-semantic-text {
+  color: var(--diff-del-fg);
+}
+
+.md-code-diff-line--hunk {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  border-block: 1px solid var(--md-divider, var(--border));
+  margin-block: 4px;
+  padding-block: 2px;
+}
+.md-code-diff-line--hunk .md-code-semantic-text {
+  grid-column: 1 / -1;
+  padding-inline: 6px;
+}
+
+.md-code-diff-line--file,
+.md-code-diff-line--file-old,
+.md-code-diff-line--file-new,
+.md-code-diff-line--meta {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.md-code-diff-line--file-old .md-code-diff-marker {
+  color: var(--diff-del-fg);
+}
+.md-code-diff-line--file-new .md-code-diff-marker {
+  color: var(--diff-add-fg);
+}
+.md-code-diff-line--file .md-code-semantic-text,
+.md-code-diff-line--file-old .md-code-semantic-text,
+.md-code-diff-line--file-new .md-code-semantic-text,
+.md-code-diff-line--meta .md-code-semantic-text {
+  grid-column: 1 / -1;
+  padding-inline: 6px;
+}
+
+.md-code-diff-line--notice {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.md-code-diff-line--notice .md-code-semantic-text {
+  grid-column: 1 / -1;
+  padding-inline: 6px;
+}
+
+.md-code-diff-line--context {
+  color: var(--code-fg);
+}
+
+/* ---- terminal ---- */
+.md-code-semantic--terminal {
+  background: var(--term-bg);
+  color: var(--term-fg);
+  padding: 10px 12px;
+}
+
+.md-code-terminal-line {
+  background: transparent;
+  color: inherit;
+}
+
+.md-code-terminal-prompt {
+  color: var(--success);
+  user-select: none;
+  font-weight: 500;
+}
+
+.md-code-terminal-line--command {
+  color: var(--term-fg);
+}
+.md-code-terminal-line--command .md-code-terminal-prompt {
+  display: inline;
+}
+
+.md-code-terminal-line--output {
+  color: var(--term-fg);
+}
+
+.md-code-semantic-line--error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.md-code-semantic-line--warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.md-code-semantic-line--info {
+  background: var(--info-bg);
+  color: var(--info);
+}
+.md-code-semantic-line--success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.md-code-semantic-line--debug {
+  color: var(--text-faint);
+}
+
+/* ---- log ---- */
+.md-code-semantic--log {
+  padding: 10px 0;
+}
+
+.md-code-log-line {
+  padding-inline: 12px 0;
+  border-left: 2px solid transparent;
+}
+.md-code-semantic-line--error {
+  border-left-color: var(--danger);
+}
+.md-code-semantic-line--warning {
+  border-left-color: var(--warning);
+}
+.md-code-semantic-line--info {
+  border-left-color: var(--info);
+}
+.md-code-semantic-line--success {
+  border-left-color: var(--success);
+}
+.md-code-semantic-line--debug {
+  border-left-color: var(--text-faint);
+  color: var(--text-faint);
+}
+.md-code-semantic-line--neutral {
+  border-left-color: transparent;
+}
