@@ -135,7 +135,20 @@ export function UnifiedSessionSidePanel({
         onPointerUp={handleResizeEnd}
         onPointerCancel={handleResizeEnd}
       />
-      <div className="unified-side-panel-tabbar">
+      <div
+        className="unified-side-panel-tabbar"
+        onDoubleClick={(event) => {
+          // 点击落在任意按钮或关闭叉号上时不触发最大化，避免误触；
+          // 仅 tabbar 空白与无 onClick 的激活标签条充当标题栏。
+          if (
+            event.target instanceof Element &&
+            event.target.closest('button, .unified-side-panel-tab-close')
+          ) {
+            return
+          }
+          window.spark?.invoke('window:maximize', {}).catch(() => {})
+        }}
+      >
         <div className="unified-side-panel-active-tab">
           {activeTab != null &&
             (() => {
