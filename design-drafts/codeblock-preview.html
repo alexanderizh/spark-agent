@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>md-code-block 红绿灯 + dark 凹陷层加强 验证</title>
+<style>
+  :root {
+    --r-md: 8px; --r-xs: 4px; --font-xs: 12px; --font-mono: 'Geist Mono', ui-monospace, monospace;
+  }
+  .theme-light {
+    --bg: #fbfbfd; --bg-soft: #fff; --bg-sunken: #f2f2f2;
+    --panel: #fff; --border: #f6f3ec; --border-strong: #d7d2c9;
+    --text: #23231f; --text-muted: #b2a997; --text-faint: #9b9489;
+    --code-fg: #24211d; --hover: rgba(36,32,27,0.045);
+    --md-divider: color-mix(in srgb, var(--border) 74%, transparent);
+  }
+  .theme-dark {
+    --bg: #262626; --bg-soft: #2c2c2c; --bg-sunken: #1a1a1a;
+    --panel: #303030; --border: #3d3d3d; --border-strong: #4a4a4a;
+    --text: #e4e4e7; --text-muted: #9ca3af; --text-faint: #6b7280;
+    --code-fg: #d4d4d8; --hover: rgba(255,255,255,0.04);
+    --md-divider: color-mix(in srgb, var(--border) 74%, transparent);
+  }
+  body { margin:0; font-family:system-ui; display:flex; gap:0; }
+  .col { flex:1; padding:24px; background: var(--bg); }
+  .theme-light { color: var(--text); }
+  .theme-dark { color: var(--text); }
+  .label { font-size:11px; color:var(--text-faint); margin:18px 0 8px; letter-spacing:.5px; }
+  .label:first-child { margin-top:0; }
+
+  /* 助手气泡 transparent — 代码块直接落在会话流底色 --bg 上 (真实场景) */
+  .msg-agent { background: transparent; }
+
+  /* === 代码块 CSS (与 views.css 同步) === */
+  .md-code-block {
+    margin: 10px 0; position: relative; border-radius: var(--r-md); overflow: hidden;
+    background: var(--bg-sunken); border: none; box-shadow: none;
+  }
+  .md-code-block.no-syntax { background: var(--bg-sunken); }
+  /* dark 凹陷层加强: bg-sunken #1a1a1a + black 25% ≈ #141414 (明度差 ~7%) */
+  .theme-dark .md-code-block {
+    background: color-mix(in srgb, var(--bg-sunken), black 25%);
+  }
+  .md-code-header {
+    display:flex; align-items:center; justify-content:space-between; padding:6px 10px;
+    background: color-mix(in srgb, var(--bg-sunken), var(--text) 5%);
+    border-bottom: 1px solid var(--md-divider);
+  }
+  .md-code-header-left { display:inline-flex; align-items:center; gap:8px; min-width:0; }
+  .md-code-traffic { display:inline-flex; align-items:center; gap:5px; flex-shrink:0; }
+  .md-code-dot { width:10px; height:10px; border-radius:50%; display:block; }
+  .theme-light .md-code-dot-red { background:#ec5d57; }
+  .theme-light .md-code-dot-yellow { background:#f4b13e; }
+  .theme-light .md-code-dot-green { background:#46c04f; }
+  .theme-dark .md-code-dot-red { background:#ff6058; }
+  .theme-dark .md-code-dot-yellow { background:#febc2e; }
+  .theme-dark .md-code-dot-green { background:#28c840; }
+  .md-code-lang { font-size:11px; color:var(--text-muted); letter-spacing:.3px; font-family:var(--font-mono); }
+  /* 右侧 copy 占位 (模拟 hover 常驻态, 验证三者布局) */
+  .copy-slot { font-size:12px; color:var(--text-faint); width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; }
+  .md-surface .md-code {
+    margin:0; padding:10px 12px; border-radius:0; background:transparent; color:var(--code-fg);
+    overflow:auto; white-space:pre; font-family:var(--font-mono); font-size:var(--font-xs); line-height:1.55;
+  }
+  .md-code-highlighted { background:transparent; }
+  .md-code-highlighted .shiki {
+    margin:0; padding:10px 12px; border-radius:0; overflow:auto; white-space:pre;
+    font-family:var(--font-mono); font-size:var(--font-xs); line-height:1.55;
+    background:transparent !important; color:var(--code-fg);
+  }
+  .md-code-copy-float {
+    position:absolute; top:6px; right:6px; z-index:1; width:22px; height:22px;
+    background:transparent; border:none; color:var(--text-faint); border-radius:var(--r-xs); font-size:12px;
+  }
+  .md-code-cursor { color: var(--code-fg); animation: md-code-cursor-blink 1s steps(2) infinite; }
+  @keyframes md-code-cursor-blink { 0%,50%{opacity:1} 50.01%,100%{opacity:0} }
+
+  /* shiki token 近似色 (github-light / github-dark) */
+  .theme-light .tok-kw { color:#d73a49; } .theme-light .tok-fn { color:#6f42c1; }
+  .theme-light .tok-str { color:#032f62; } .theme-light .tok-num { color:#005cc5; }
+  .theme-light .tok-cmt { color:#6a737d; } .theme-light .tok-plain { color:#24211d; }
+  .theme-dark .tok-kw { color:#ff7b72; } .theme-dark .tok-fn { color:#d2a8ff; }
+  .theme-dark .tok-str { color:#a5d6ff; } .theme-dark .tok-num { color:#79c0ff; }
+  .theme-dark .tok-cmt { color:#8b949e; } .theme-dark .tok-plain { color:#d4d4d8; }
+</style>
+</head>
+<body>
+
+<!-- ============ LIGHT ============ -->
+<div class="theme-light">
+<div class="col">
+  <div class="label">LIGHT · 会话流底色 --bg #fbfbfd</div>
+  <div class="msg-agent md-surface">
+
+    <div class="label">① 有语言名 + 高亮 (红绿灯 + lang + copy 三段布局)</div>
+    <div class="md-code-block">
+      <div class="md-code-header">
+        <div class="md-code-header-left">
+          <span class="md-code-traffic">
+            <i class="md-code-dot md-code-dot-red"></i>
+            <i class="md-code-dot md-code-dot-yellow"></i>
+            <i class="md-code-dot md-code-dot-green"></i>
+          </span>
+          <span class="md-code-lang">tsx</span>
+        </div>
+        <span class="copy-slot">⧉</span>
+      </div>
+      <div class="md-code-highlighted"><pre class="shiki"><code><span class="tok-kw">const</span> <span class="tok-fn">Button</span> = <span class="tok-kw">function</span>(<span class="tok-plain">{ children }</span>: <span class="tok-fn">Props</span>) {
+  <span class="tok-kw">return</span> &lt;<span class="tok-fn">button</span> <span class="tok-plain">className=</span><span class="tok-str">"primary"</span>&gt;{children}&lt;/<span class="tok-fn">button</span>&gt;;
+};</code></pre></div>
+    </div>
+
+    <div class="label">② streaming 光标 (生成中, spinner 右侧)</div>
+    <div class="md-code-block md-code-streaming-block no-syntax">
+      <div class="md-code-header">
+        <div class="md-code-header-left">
+          <span class="md-code-traffic">
+            <i class="md-code-dot md-code-dot-red"></i>
+            <i class="md-code-dot md-code-dot-yellow"></i>
+            <i class="md-code-dot md-code-dot-green"></i>
+          </span>
+          <span class="md-code-lang">bash</span>
+        </div>
+        <span class="copy-slot" style="color:var(--text-faint)">◌</span>
+      </div>
+      <pre class="md-code md-code-incomplete"><code>npm install lodash --save<span class="md-code-cursor">▌</span></code></pre>
+    </div>
+
+    <div class="label">③ 无语言名 (无 header, 仅浮动复制按钮 — 无红绿灯)</div>
+    <div class="md-code-block">
+      <button class="md-code-copy-float">⧉</button>
+      <div class="md-code-highlighted"><pre class="shiki"><code><span class="tok-cmt">// 配置项</span>
+<span class="tok-plain">export const config = {</span>
+<span class="tok-plain">  port: </span><span class="tok-num">3000</span><span class="tok-plain">,</span>
+<span class="tok-plain">  host: </span><span class="tok-str">"0.0.0.0"</span>
+<span class="tok-plain">}</span></code></pre></div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ============ DARK ============ -->
+<div class="theme-dark">
+<div class="col">
+  <div class="label">DARK · 会话流底色 --bg #262626 · 凹陷层加强至 #141414</div>
+  <div class="msg-agent md-surface">
+
+    <div class="label">① 有语言名 + 高亮 (红绿灯 + lang + copy 三段布局)</div>
+    <div class="md-code-block">
+      <div class="md-code-header">
+        <div class="md-code-header-left">
+          <span class="md-code-traffic">
+            <i class="md-code-dot md-code-dot-red"></i>
+            <i class="md-code-dot md-code-dot-yellow"></i>
+            <i class="md-code-dot md-code-dot-green"></i>
+          </span>
+          <span class="md-code-lang">tsx</span>
+        </div>
+        <span class="copy-slot">⧉</span>
+      </div>
+      <div class="md-code-highlighted"><pre class="shiki"><code><span class="tok-kw">const</span> <span class="tok-fn">Button</span> = <span class="tok-kw">function</span>(<span class="tok-plain">{ children }</span>: <span class="tok-fn">Props</span>) {
+  <span class="tok-kw">return</span> &lt;<span class="tok-fn">button</span> <span class="tok-plain">className=</span><span class="tok-str">"primary"</span>&gt;{children}&lt;/<span class="tok-fn">button</span>&gt;;
+};</code></pre></div>
+    </div>
+
+    <div class="label">② streaming 光标 (生成中, spinner 右侧)</div>
+    <div class="md-code-block md-code-streaming-block no-syntax">
+      <div class="md-code-header">
+        <div class="md-code-header-left">
+          <span class="md-code-traffic">
+            <i class="md-code-dot md-code-dot-red"></i>
+            <i class="md-code-dot md-code-dot-yellow"></i>
+            <i class="md-code-dot md-code-dot-green"></i>
+          </span>
+          <span class="md-code-lang">bash</span>
+        </div>
+        <span class="copy-slot" style="color:var(--text-faint)">◌</span>
+      </div>
+      <pre class="md-code md-code-incomplete"><code>npm install lodash --save<span class="md-code-cursor">▌</span></code></pre>
+    </div>
+
+    <div class="label">③ 无语言名 (无 header, 仅浮动复制按钮 — 无红绿灯)</div>
+    <div class="md-code-block">
+      <button class="md-code-copy-float">⧉</button>
+      <div class="md-code-highlighted"><pre class="shiki"><code><span class="tok-cmt">// 配置项</span>
+<span class="tok-plain">export const config = {</span>
+<span class="tok-plain">  port: </span><span class="tok-num">3000</span><span class="tok-plain">,</span>
+<span class="tok-plain">  host: </span><span class="tok-str">"0.0.0.0"</span>
+<span class="tok-plain">}</span></code></pre></div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+</body>
+</html>

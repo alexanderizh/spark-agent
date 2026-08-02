@@ -161,7 +161,14 @@ export function MarkdownCodeBlock({
     >
       {lang && (
         <div className="md-code-header">
-          <span className="md-code-lang">{lang}</span>
+          <div className="md-code-header-left">
+            <span className="md-code-traffic" aria-hidden="true">
+              <i className="md-code-dot md-code-dot-red" />
+              <i className="md-code-dot md-code-dot-yellow" />
+              <i className="md-code-dot md-code-dot-green" />
+            </span>
+            <span className="md-code-lang">{lang}</span>
+          </div>
           {incomplete ? (
             <Icons.Spinner size={10} className="md-code-streaming-badge" />
           ) : (
