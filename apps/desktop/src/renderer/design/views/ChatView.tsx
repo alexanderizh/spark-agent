@@ -6847,23 +6847,26 @@ function ThinkingSection({
   // 绿色对勾只在首个（顶部）思考模块上显示，后续穿插的阶段性思考不重复显示。
   showDoneBadge?: boolean
 }) {
+  // 默认折叠：不在思考开始时自动展开，由用户主动点开查看。
   const [open, setOpen] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const [needsCollapse, setNeedsCollapse] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  // —— 「思考开始时自动展开一次」逻辑已禁用（改为默认折叠）。恢复方法：取消下方 4 处行首注释。
+  //    (a) 下面 2 个 ref 声明；(b) 下面的 useEffect；(c) handleToggleOpen 内的一行。
   // 每个 section 至多自动展开一次；用户手动折叠/展开后，后续思考不再自动展开（尊重用户）。
-  const autoExpandedRef = useRef(false)
-  const userToggledRef = useRef(false)
+  // const autoExpandedRef = useRef(false)
+  // const userToggledRef = useRef(false)
 
   const isThinkingActive = streaming && blocks.some((b) => b.isStreaming)
 
   // 仅首次开始思考时自动展开一次；之后（含多段思考）不再反复自动展开/折叠。
-  useEffect(() => {
-    if (isThinkingActive && !autoExpandedRef.current && !userToggledRef.current) {
-      autoExpandedRef.current = true
-      setOpen(true)
-    }
-  }, [isThinkingActive])
+  // useEffect(() => {
+  //   if (isThinkingActive && !autoExpandedRef.current && !userToggledRef.current) {
+  //     autoExpandedRef.current = true
+  //     setOpen(true)
+  //   }
+  // }, [isThinkingActive])
 
   // 稳定计算是否需要截断：恒按内容高度判断，不再随「思考活跃/结束」在 全高 ↔ 200px 间来回切换，
   // 避免一段一段思考时外层高度反复抖动、内容区跟着跳动。
@@ -6883,7 +6886,7 @@ function ThinkingSection({
   }, [blocks, isThinkingActive, isCollapsed])
 
   const handleToggleOpen = () => {
-    userToggledRef.current = true
+    // userToggledRef.current = true  // 已禁用（与上方自动展开 effect 配套，恢复时一并取消注释）
     setOpen((v) => !v)
   }
 
