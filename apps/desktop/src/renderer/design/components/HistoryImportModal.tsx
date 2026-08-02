@@ -477,7 +477,12 @@ export function HistoryImportModal() {
       width={1440}
       destroyOnHidden
       centered
-      className="history-import-modal"
+      className={classNames('history-import-modal', `is-phase-${phase}`)}
+      // @lobehub/ui Modal 默认会通过 inline styles.body 注入 paddingInline:16
+      // 与 maxHeight:75dvh / overflow:hidden auto，会覆盖 less 里的 padding:0 并破坏
+      // flex 高度链。这里显式置空，让 less 的 .ant-modal-body 样式生效。
+      paddings={{ desktop: 0 }}
+      styles={{ body: { padding: 0, maxHeight: 'none', overflow: 'unset' } }}
     >
       {phase === 'scanning' && (
         <div className="hi-scan-state" aria-live="polite">
