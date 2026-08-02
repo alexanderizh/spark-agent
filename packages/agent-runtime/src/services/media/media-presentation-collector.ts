@@ -61,6 +61,9 @@ export class MediaPresentationCollector {
   private readonly presented = new Set<string>()
   private readonly emitted = new Set<string>()
   private drained = false
+  // 新观察到的、尚未即时发出的候选。session 层在每个 event 流过后调 drainPending()
+  // 把它们就地发出，使媒体紧跟生图/截图等工具调用展示，而不是攒到 turn 末尾。
+  private readonly pendingEmit: PresentedMediaFile[] = []
 
   constructor(workspaceRootPath: string) {
     this.workspaceRoot = trustedWorkspaceRoot(workspaceRootPath)
@@ -103,13 +106,52 @@ export class MediaPresentationCollector {
     return files
   }
 
+  /**
+   * 即时取出本轮新观察到、且未被主动展示/已发出的媒体候选。由 session 层在每个
+   * event 流过后调用，使媒体产物紧跟生图/截图等工具调用就地展示。已发出的路径
+   * 记入 emitted，避免与 agent 主动 present_files 或 turn 末兜底重复。单 turn
+   * 总量受 MAX_PRESENTED_MEDIA_PER_TURN 约束（以 emitted 已计入的数量为准）。
+   */
+  drainPending(): PresentedMediaFile[] {
+    if (this.pendingEmit.length === 0) return []
+    const files: PresentedMediaFile[] = []
+    for (const file of this.pendingEmit) {
+      if (this.emitted.size >= MAX_PRESENTED_MEDIA_PER_TURN) break
+      if (this.presented.has(file.path) || this.emitted.has(file.path)) continue
+      files.push(file)
+      this.emitted.add(file.path)
+    }
+    this.pendingEmit.length = 0
+    return files
+  }
+
+  /**
+   * agent 主动调用 present_files 时的去重入口：丢弃已被即时发出（auto-inline）的路径，
+   * 保留下来的记入 emitted（供后续 drainPending / takeUnpresented 跳过，也避免 agent
+   * 重复 present_files 同一文件时二次出卡）。注意：不能检查 presented 集合——observe()
+   * 在处理同一个 present_files tool_result 时已把路径预填进 presented，若这里再用 presented
+   * 去重会把 agent 主动展示的文件全部误杀。入参 path 应为已解析（realpathSync）的绝对路径，
+   * 与 extractPresentedFiles 的返回格式一致。
+   */
+  markAgentPresented(files: PresentedMediaFile[]): PresentedMediaFile[] {
+    const deduped: PresentedMediaFile[] = []
+    for (const file of files) {
+      if (this.emitted.has(file.path)) continue
+      this.emitted.add(file.path)
+      deduped.push(file)
+    }
+    return deduped
+  }
+
   private addCandidate(candidatePath: string, title?: string): void {
     const resolved = this.resolveFile(candidatePath)
     if (resolved == null || this.candidates.has(resolved)) return
-    this.candidates.set(resolved, {
+    const file: PresentedMediaFile = {
       path: resolved,
       ...(title != null && title.trim() !== '' ? { title: title.trim().slice(0, 120) } : {}),
-    })
+    }
+    this.candidates.set(resolved, file)
+    this.pendingEmit.push(file)
   }
 
   private resolveFile(candidatePath: string): string | null {

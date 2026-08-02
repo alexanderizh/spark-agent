@@ -1746,7 +1746,7 @@ describe('SessionService runtime provider/model resolution', () => {
     ).toEqual(expect.arrayContaining(['agnes:agnes-image-2.0-flash', 'agnes:agnes-video-v2.0']))
   })
 
-  it('emits a real presented_files event at turn end when a media tool forgot present_files', async () => {
+  it('emits presented_files inline right after the media tool when it forgot present_files', async () => {
     const workspaceRoot = mkdtempSync(path.join(tmpdir(), 'spark-media-presentation-'))
     const imagePath = path.join(workspaceRoot, 'generated-preview.png')
     writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]))
@@ -1793,10 +1793,16 @@ describe('SessionService runtime provider/model resolution', () => {
         )
       })
       const presentedIndex = events.findIndex((event) => event.type === 'presented_files')
+      const resultIndex = events.findIndex(
+        (event) => event.type === 'tool_result' && event.toolCallId === 'image-call-1',
+      )
       const terminalIndex = events.findIndex(
         (event) => event.type === 'agent_status' && event.status === 'completed',
       )
       expect(presentedIndex).toBeGreaterThanOrEqual(0)
+      // 媒体紧跟生图工具结果就地发出，而非堆到 turn 末尾
+      expect(resultIndex).toBeGreaterThanOrEqual(0)
+      expect(presentedIndex).toBeGreaterThan(resultIndex)
       expect(terminalIndex).toBeGreaterThan(presentedIndex)
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true })
