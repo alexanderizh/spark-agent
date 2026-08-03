@@ -22,12 +22,12 @@ class FakeProcess extends EventEmitter {
 }
 
 describe('DepthVideoRunner', () => {
-  it('uses the FFmpeg 8 frame sync option for raw-video decoding', () => {
+  it('uses a frame sync option supported by legacy and current FFmpeg binaries', () => {
     const args = buildDepthVideoDecoderArgs('/tmp/source.mp4', 24)
-    expect(args).toContain('-fps_mode')
-    expect(args).toContain('passthrough')
+    expect(args).toContain('-vsync')
+    expect(args).toContain('0')
     expect(args).toContain('fps=24')
-    expect(args).not.toContain('-vsync')
+    expect(args).not.toContain('-fps_mode')
   })
 
   it('builds an H.264 gray-video encoder that preserves dimensions and drops audio', () => {
