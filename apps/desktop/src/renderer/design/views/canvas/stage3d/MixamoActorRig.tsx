@@ -5,7 +5,8 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import mixamoMannequinUrl from '../../../../assets/stage3d-actors/mixamo-mannequin.fbx?url'
 import type { Stage3DActor, Stage3DBodyType } from './stage3d.types'
-import { getPose, type JointId, type Vec3 } from './mannequin'
+import { type JointId, type Vec3 } from './mannequin'
+import { getMixamoPose } from './mixamoPosePresets'
 
 export type MixamoJointRefCallback = (jointId: JointId, group: THREE.Group | null) => void
 
@@ -50,7 +51,7 @@ const THUMB_CHAINS = {
 type RigInstance = {
   scene: THREE.Group
   bones: Map<string, THREE.Bone[]>
-  baseRotations: Map<THREE.Bone, THREE.Euler>
+  baseRotations: Map<THREE.Bone, THREE.Quaternion>
 }
 
 export type MixamoRootTransform = {
@@ -132,17 +133,13 @@ function makeRigInstance(source: THREE.Group, color: string): RigInstance {
   })
 
   const bones = collectBones(scene)
-  const baseRotations = new Map<THREE.Bone, THREE.Euler>()
+  const baseRotations = new Map<THREE.Bone, THREE.Quaternion>()
   for (const list of bones.values()) {
     for (const bone of list) {
-      baseRotations.set(bone, bone.rotation.clone())
+      baseRotations.set(bone, bone.quaternion.clone())
     }
   }
   return { scene, bones, baseRotations }
-}
-
-function addEuler(a: THREE.Euler, b: Vec3): THREE.Euler {
-  return new THREE.Euler(a.x + b[0], a.y + b[1], a.z + b[2], a.order)
 }
 
 export function getMixamoRootTransform(actor: Stage3DActor): MixamoRootTransform {
@@ -157,15 +154,11 @@ export function getMixamoRootTransform(actor: Stage3DActor): MixamoRootTransform
   }
 }
 
-function eulerFor(
-  jointId: JointId,
-  pose: ReturnType<typeof getPose>,
-  overrides: Stage3DActor['joints'],
-): Vec3 {
-  const base = pose[jointId] ?? [0, 0, 0]
-  const ov = overrides?.[jointId]
-  if (!ov) return base
-  return [base[0] + ov[0], base[1] + ov[1], base[2] + ov[2]]
+/** Applies a local pose delta without overwriting the FBX bone bind rotation. */
+export function applyMixamoPoseDelta(bindRotation: THREE.Quaternion, delta: Vec3): THREE.Quaternion {
+  return bindRotation
+    .clone()
+    .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...delta)))
 }
 
 function applyBodyShape(instance: RigInstance, actor: Stage3DActor): void {
@@ -175,30 +168,53 @@ function applyBodyShape(instance: RigInstance, actor: Stage3DActor): void {
 }
 
 function applyPose(instance: RigInstance, actor: Stage3DActor): void {
-  const pose = getPose(actor.pose)
-  for (const [jointId, boneName] of Object.entries(MIXAMO_BONE_BY_JOINT) as [JointId, string][]) {
+  const pose = getMixamoPose(actor.pose)
+  for (const [bone, bindRotation] of instance.baseRotations) {
+    bone.quaternion.copy(bindRotation)
+  }
+
+  for (const [boneName, delta] of Object.entries(pose.bones)) {
+    if (!delta) continue
     for (const bone of instance.bones.get(boneName) ?? []) {
-      const base = instance.baseRotations.get(bone)
-      if (base) bone.rotation.copy(addEuler(base, eulerFor(jointId, pose, actor.joints)))
+      const bindRotation = instance.baseRotations.get(bone)
+      if (bindRotation) bone.quaternion.copy(applyMixamoPoseDelta(bindRotation, delta))
+    }
+  }
+
+  for (const [jointId, boneName] of Object.entries(MIXAMO_BONE_BY_JOINT) as [JointId, string][]) {
+    const override = actor.joints?.[jointId]
+    if (!override) continue
+    for (const bone of instance.bones.get(boneName) ?? []) {
+      bone.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...override)))
     }
   }
 
   for (const side of ['L', 'R'] as const) {
-    const thumb = eulerFor(`thumb${side}` as JointId, pose, actor.joints)
-    const fingers = eulerFor(`fingers${side}` as JointId, pose, actor.joints)
+    const thumb = actor.joints?.[`thumb${side}` as JointId] ?? [0, 0, 0]
+    const fingers = actor.joints?.[`fingers${side}` as JointId] ?? [0, 0, 0]
     for (const prefix of THUMB_CHAINS[side]) {
       for (let i = 1; i <= 3; i++) {
         const bone = firstBone(instance.bones, `${prefix}${i}`)
-        const base = bone ? instance.baseRotations.get(bone) : null
-        if (bone && base) bone.rotation.copy(addEuler(base, [thumb[0] * 0.34, thumb[1] * 0.34, 0]))
+        if (bone) {
+          bone.quaternion.multiply(
+            new THREE.Quaternion().setFromEuler(
+              new THREE.Euler(thumb[0] * 0.34, thumb[1] * 0.34, 0),
+            ),
+          )
+        }
       }
     }
     for (const prefix of FINGER_CHAINS[side]) {
       for (let i = 1; i <= 3; i++) {
         const bone = firstBone(instance.bones, `${prefix}${i}`)
-        const base = bone ? instance.baseRotations.get(bone) : null
         const weight = i === 1 ? 0.42 : i === 2 ? 0.34 : 0.24
-        if (bone && base) bone.rotation.copy(addEuler(base, [fingers[0] * weight, fingers[1] * weight, 0]))
+        if (bone) {
+          bone.quaternion.multiply(
+            new THREE.Quaternion().setFromEuler(
+              new THREE.Euler(fingers[0] * weight, fingers[1] * weight, 0),
+            ),
+          )
+        }
       }
     }
   }

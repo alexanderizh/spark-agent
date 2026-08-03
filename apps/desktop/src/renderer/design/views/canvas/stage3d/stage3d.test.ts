@@ -34,7 +34,8 @@ import {
   mirrorPose,
   type Vec3,
 } from './mannequin'
-import { getMixamoRootTransform } from './MixamoActorRig'
+import { getMixamoPose } from './mixamoPosePresets'
+import { applyMixamoPoseDelta, getMixamoRootTransform } from './MixamoActorRig'
 import { buildStage3DPrompt } from './prompt'
 import { createStage3DLocalModelRuntimeUrl, inferStage3DLocalModelFormat } from './localModelImport'
 import {
@@ -373,9 +374,9 @@ describe('UE4ActorRig body scaling', () => {
     expect(worldBounds.min.y).toBeCloseTo(parent.position.y)
   })
 
-  it('把原始厘米制 UE4 模型换算为画布米制尺寸', () => {
-    expect(getUE4Stage3DBodyScale('standard')).toEqual([0.0254, 0.0254, 0.0254])
-    expect(getUE4Stage3DBodyScale('tall')).toEqual([0.02286, 0.028956, 0.02286])
+  it('UE4 GLB 已是米制，标准角色与默认角色保持同量级', () => {
+    expect(getUE4Stage3DBodyScale('standard')).toEqual([1, 1, 1])
+    expect(getUE4Stage3DBodyScale('tall')).toEqual([0.9, 1.14, 0.9])
   })
 
   it('把现有体型映射到参考项目 UE4 局部骨骼体型，而不是只缩放根节点', () => {
@@ -860,6 +861,46 @@ describe('MixamoActorRig', () => {
     expect(heavy[0]).toBeGreaterThanOrEqual(0.013)
     expect(tall[1]).toBeGreaterThanOrEqual(0.0125)
     expect(child[1]).toBeLessThanOrEqual(0.0068)
+  })
+})
+
+describe('Mixamo pose presets', () => {
+  it('keeps the original arm bind pose until an arm pose is fully retargeted', () => {
+    expect(getMixamoPose('stand').bones.mixamorigLeftShoulder).toBeUndefined()
+    expect(getMixamoPose('stand').bones.mixamorigRightShoulder).toBeUndefined()
+    expect(getMixamoPose('point').bones.mixamorigRightArm).toBeUndefined()
+    expect(getMixamoPose('wave').bones.mixamorigRightForeArm).toBeUndefined()
+  })
+
+  it('uses standalone local rotation deltas for lower-body safe poses', () => {
+    expect(getMixamoPose('walk').bones.mixamorigLeftUpLeg).toBeDefined()
+    expect(getMixamoPose('sit').bones.mixamorigLeftLeg).toBeDefined()
+  })
+
+  it('contains finite Euler deltas only and falls back safely for unknown poses', () => {
+    for (const poseId of ['stand', 'walk', 'sit', 'point', 'wave']) {
+      for (const [boneName, delta] of Object.entries(getMixamoPose(poseId).bones)) {
+        expect(boneName).toMatch(/^mixamorig/)
+        if (!delta) throw new Error(`${poseId} contains an empty bone delta`)
+        expect(delta).toHaveLength(3)
+        for (const value of delta) expect(Number.isFinite(value)).toBe(true)
+      }
+    }
+    expect(getMixamoPose('no-such-pose')).toEqual(getMixamoPose('stand'))
+  })
+
+  it('multiplies each delta onto the original bind rotation instead of replacing it', () => {
+    const bind = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.2, 0.1, -0.3))
+    const delta: Vec3 = [0.4, 0, 0]
+    const result = applyMixamoPoseDelta(bind, delta)
+    const expected = bind
+      .clone()
+      .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...delta)))
+
+    expect(result.equals(bind)).toBe(false)
+    expect(result.equals(expected)).toBe(true)
+    expect(result.length()).toBeCloseTo(1, 6)
+    expect(bind.equals(new THREE.Quaternion().setFromEuler(new THREE.Euler(0.2, 0.1, -0.3)))).toBe(true)
   })
 })
 
