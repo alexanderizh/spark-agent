@@ -134,6 +134,7 @@ import {
   createDefaultVideoWorkbenchData,
   type VideoWorkbenchData,
   type WorkbenchKeyframe,
+  type WorkbenchOutput,
 } from './videoWorkbench/videoWorkbench.types'
 import { isCanvasImageContentNode, isOperationNode } from './canvas.capabilities'
 import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
@@ -233,6 +234,7 @@ import {
   OPERATION_NODE_DEFAULT_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
   VIDEO_NODE_DEFAULT_SIZE,
+  fitCanvasVideoNodeSize,
 } from './canvasNodeSize'
 import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
@@ -3550,6 +3552,72 @@ export function CanvasWorkspaceView({
   )
 
   // 工作台「添加/更换视频」：文件选择器 → 复制进项目 → 写回当前工作台节点的 data.url
+  const handleMaterializeVideoOutput = useCallback(
+    async (output: WorkbenchOutput, mode: 'add' | 'replace'): Promise<string | undefined> => {
+      const current = snapshotRef.current
+      const target = current?.nodes.find((item) => item.id === videoWorkbenchNodeId)
+      if (!current || !target || !projectId) throw new Error('当前视频节点已不存在')
+
+      const sourcePath = output.outputPath
+      if (!sourcePath) throw new Error('产物文件路径为空')
+      const copied = await window.spark.invoke('canvas:asset:copy-to-project', {
+        projectId,
+        ...(current.project.rootPath ? { projectRootPath: current.project.rootPath } : {}),
+        sourcePath,
+        suggestedBaseName: output.summary || 'video-output',
+        type: 'video',
+      })
+      if (copied.error || !copied.filePath) {
+        throw new Error(copied.error ?? '产物复制到项目失败')
+      }
+
+      const filePath = copied.filePath as string
+      const fileUrl = encodeToSafeFileUrl(filePath)
+      const dimensions = await readVideoDimensions(fileUrl)
+      const fileName =
+        (copied.fileName as string | undefined) ??
+        output.outputPath.split(/[\\/]/).pop() ??
+        'video-output.mp4'
+
+      if (mode === 'replace') {
+        const size = fitCanvasVideoNodeSize(dimensions.width, dimensions.height)
+        const centerX = target.x + target.width / 2
+        const centerY = target.y + target.height / 2
+        await patchNodes([target.id], {
+          width: size.width,
+          height: size.height,
+          x: Math.round(centerX - size.width / 2),
+          y: Math.round(centerY - size.height / 2),
+        })
+        await updateNodeData(target.id, {
+          url: fileUrl,
+          mimeType: 'video/mp4',
+          ...(dimensions.width ? { mediaWidth: dimensions.width } : {}),
+          ...(dimensions.height ? { mediaHeight: dimensions.height } : {}),
+          ...(dimensions.durationMs ? { durationMs: dimensions.durationMs } : {}),
+        })
+        setSelectedNodeIds([target.id])
+        return target.id
+      }
+
+      const created = await createMediaNode({
+        kind: 'video',
+        fileName,
+        fileMimeType: 'video/mp4',
+        filePath,
+        x: target.x + target.width + 60,
+        y: target.y,
+        ...(dimensions.width ? { mediaWidth: dimensions.width } : {}),
+        ...(dimensions.height ? { mediaHeight: dimensions.height } : {}),
+        ...(dimensions.durationMs ? { durationMs: dimensions.durationMs } : {}),
+      })
+      if (!created) throw new Error('产物节点创建失败')
+      setSelectedNodeIds([created.id])
+      return created.id
+    },
+    [createMediaNode, patchNodes, projectId, updateNodeData, videoWorkbenchNodeId],
+  )
+
   const handleAddVideoToWorkbench = useCallback(async () => {
     if (!videoWorkbenchNode || !projectId) return
     const picked = await window.spark.invoke('dialog:open-file', {
@@ -7963,6 +8031,7 @@ export function CanvasWorkspaceView({
             onAddLocalResources={handleAddLocalWorkbenchResources}
             onPickCanvasResources={handlePickCanvasWorkbenchResources}
             onCollectUpstream={handleCollectUpstreamWorkbenchResources}
+            onMaterializeOutput={handleMaterializeVideoOutput}
           />
           <CanvasFilmAssetCenter
             open={filmCenterOpen}

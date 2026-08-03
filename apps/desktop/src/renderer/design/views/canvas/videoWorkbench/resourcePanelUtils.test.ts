@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   appendResourceToTrack,
+  backfillResourceMetadata,
   calculateTrackDuration,
   clipDurationSec,
   clipSeekTimeSec,
   clipStartSecInTrack,
   collectUpstreamResources,
   DEFAULT_IMAGE_STATIC_DURATION_SEC,
+  duplicateTrackClip,
   indexResourcesById,
   insertResourceIntoTrack,
   isResourceUsedInTrack,
@@ -18,6 +20,7 @@ import {
   resolveClipAtGlobalTime,
   shouldSeedSourceTrack,
   splitTrackClip,
+  trackNeedsMaterialization,
   upstreamNodeToResource,
   type UpstreamNodeRef,
 } from './resourcePanelUtils'
@@ -62,6 +65,30 @@ function makeClip(partial: Partial<TrackClip> & { id: string; resourceId: string
 }
 
 describe('resourcePanelUtils', () => {
+  describe('backfillResourceMetadata', () => {
+    it('backfills source video duration so its seeded track has visible length', () => {
+      const source = makeResource({ id: 'source:workbench' })
+      const resources = backfillResourceMetadata([source], source.id, {
+        durationSec: 24,
+        width: 720,
+        height: 1280,
+      })
+      const track = insertResourceIntoTrack([], resources[0]!)
+
+      expect(resources[0]?.durationSec).toBe(24)
+      expect(calculateTrackDuration(track, indexResourcesById(resources))).toBe(24)
+    })
+
+    it('does not overwrite metadata that is already present', () => {
+      const source = makeResource({ id: 'source:workbench', durationSec: 12 })
+      const original = [source]
+      const resources = backfillResourceMetadata(original, source.id, { durationSec: 24 })
+
+      expect(resources[0]?.durationSec).toBe(12)
+      expect(resources).toBe(original)
+    })
+  })
+
   describe('shouldSeedSourceTrack', () => {
     it('seeds a legacy source only when neither a track nor migrated resource exists', () => {
       const source = makeResource({ id: 'source:workbench' })
@@ -202,6 +229,23 @@ describe('resourcePanelUtils', () => {
       expect(
         insertResourceIntoTrack(track(), resource, 'a').map((clip) => clip.resourceId),
       ).toEqual(['r1', 'r3', 'r2'])
+    })
+  })
+
+  describe('duplicateTrackClip', () => {
+    it('duplicates a segment after the source and compacts order', () => {
+      const track = [
+        makeClip({ id: 'a', resourceId: 'r1', order: 0, range: { startSec: 2, endSec: 8 } }),
+        makeClip({ id: 'b', resourceId: 'r2', order: 1 }),
+      ]
+
+      const next = duplicateTrackClip(track, 'a')
+
+      expect(next).toHaveLength(3)
+      expect(next.map((clip) => clip.resourceId)).toEqual(['r1', 'r1', 'r2'])
+      expect(next.map((clip) => clip.order)).toEqual([0, 1, 2])
+      expect(next[1]?.id).not.toBe('a')
+      expect(next[1]?.range).toEqual({ startSec: 2, endSec: 8 })
     })
   })
 
@@ -443,6 +487,59 @@ describe('resourcePanelUtils', () => {
     it('clamps negative offsets to 0', () => {
       const clip = makeClip({ id: 'c1', resourceId: 'r1' })
       expect(clipSeekTimeSec(clip, -2)).toBe(0)
+    })
+  })
+
+  describe('trackNeedsMaterialization', () => {
+    const source = makeResource({
+      id: 'source:node-1',
+      source: 'canvas',
+      durationSec: 12,
+    })
+    const resources = indexResourcesById([source])
+
+    it('does not materialize an untouched source clip', () => {
+      expect(
+        trackNeedsMaterialization(
+          [makeClip({ id: 'clip-1', resourceId: source.id })],
+          resources,
+          source.id,
+        ),
+      ).toBe(false)
+    })
+
+    it('materializes a split range after one segment is removed', () => {
+      expect(
+        trackNeedsMaterialization(
+          [
+            makeClip({
+              id: 'clip-1',
+              resourceId: source.id,
+              range: { startSec: 0, endSec: 5 },
+            }),
+          ],
+          resources,
+          source.id,
+        ),
+      ).toBe(true)
+    })
+
+    it('materializes a track containing multiple clips', () => {
+      expect(
+        trackNeedsMaterialization(
+          [
+            makeClip({ id: 'clip-1', resourceId: source.id }),
+            makeClip({
+              id: 'clip-2',
+              resourceId: source.id,
+              order: 1,
+              range: { startSec: 6, endSec: 12 },
+            }),
+          ],
+          resources,
+          source.id,
+        ),
+      ).toBe(true)
     })
   })
 
