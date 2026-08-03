@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { join, resolve, isAbsolute, sep } from 'node:path'
+import { join, resolve, relative, isAbsolute, sep } from 'node:path'
 import { app } from 'electron'
 import type { VideoProcessRequest, VideoProcessResponse } from '@spark/protocol'
 import {
@@ -27,6 +27,7 @@ import {
   cropVideo,
   addWatermark,
   burnSubtitle,
+  ensureOutputDirectory,
   type FfmpegProgress,
   type KeyframeStrategy,
   type TranscodeOpts,
@@ -39,6 +40,24 @@ const log = createLogger('video-workbench')
 /** 视频产物落盘根目录：{userData}/.spark-artifacts/media/video-workbench/ */
 function getVideoArtifactDir(): string {
   return join(app.getPath('userData'), '.spark-artifacts', 'media', 'video-workbench')
+}
+
+/** 返回路径是否位于指定根目录内；Windows 下路径比较不区分大小写。 */
+function isPathWithinRoot(target: string, root: string): boolean {
+  const targetPath = resolve(target)
+  const rootPath = resolve(root)
+  const compare = (value: string) => (process.platform === 'win32' ? value.toLowerCase() : value)
+  const relativePath = relative(compare(rootPath), compare(targetPath))
+  return (
+    relativePath === '' ||
+    (relativePath !== '..' && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath))
+  )
+}
+
+/** 统一保证视频产物的父目录存在，覆盖所有视频处理操作。 */
+function prepareOutputPath(outputPath: string): string {
+  ensureOutputDirectory(outputPath)
+  return outputPath
 }
 
 /** 缓存白名单根目录（启动后基本不变，避免每次 IPC 都查 DB） */
@@ -70,14 +89,14 @@ function assertPathAllowed(p: string, mode: 'read' | 'write'): void {
     const artifactDir = resolve(getVideoArtifactDir())
     // outputPath 可能是产物目录里的文件，检查前缀
     const tempDir = resolve(app.getPath('temp'))
-    if (!abs.startsWith(artifactDir + sep) && !abs.startsWith(tempDir + sep)) {
+    if (!isPathWithinRoot(abs, artifactDir) && !isPathWithinRoot(abs, tempDir)) {
       throw new Error(`Write path outside allowed artifact directory: ${abs}`)
     }
     return
   }
   // 读路径：必须在任一白名单根目录下
   const roots = getAllowedRoots()
-  const allowed = roots.some((root) => abs.startsWith(resolve(root) + sep) || abs === resolve(root))
+  const allowed = roots.some((root) => isPathWithinRoot(abs, root))
   if (!allowed) {
     throw new Error(`Path outside allowed roots: ${abs}`)
   }
@@ -113,7 +132,9 @@ async function dispatch(
   onProgress?: (p: FfmpegProgress) => void,
 ): Promise<unknown> {
   const { operation, input, params } = req
-  log.debug(`dispatch operation=${operation} inputLength=${input.length} paramKeys=${Object.keys(params).join(',')}`)
+  log.debug(
+    `dispatch operation=${operation} inputLength=${input.length} paramKeys=${Object.keys(params).join(',')}`,
+  )
 
   // ── 统一输入校验：路径白名单 + 数值范围 ──────────────────────────
   assertPathAllowed(input, 'read')
@@ -160,7 +181,8 @@ async function dispatch(
     // ── 关键帧提取 ──────────────────────────────────────────────────
     case 'extractKeyframes': {
       const strategy = (params.strategy as KeyframeStrategy) ?? 'scene'
-      const outputDir = (params.outputDir as string) ?? join(getVideoArtifactDir(), `kf_${req.requestId}`)
+      const outputDir =
+        (params.outputDir as string) ?? join(getVideoArtifactDir(), `kf_${req.requestId}`)
       return extractKeyframes(input, {
         strategy,
         threshold: asNumber(params.threshold),
@@ -176,7 +198,8 @@ async function dispatch(
     // ── 指定时间点抽帧（手动标记）──────────────────────────────────
     case 'extractFramesAtTimes': {
       const times = (params.timesSec as number[]) ?? []
-      const outputDir = (params.outputDir as string) ?? join(getVideoArtifactDir(), `manual_${req.requestId}`)
+      const outputDir =
+        (params.outputDir as string) ?? join(getVideoArtifactDir(), `manual_${req.requestId}`)
       return extractFramesAtTimes(input, times, outputDir, {
         format: (params.format as 'jpg' | 'png') ?? 'jpg',
         quality: asNumber(params.quality, 2),
@@ -186,7 +209,7 @@ async function dispatch(
 
     // ── 缩略图生成 ──────────────────────────────────────────────────
     case 'generateThumbnail': {
-      const outputPath = (params.outputPath as string) ?? makeOutputPath('jpg')
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('jpg'))
       return generateThumbnail(input, outputPath, {
         atSec: asNumber(params.atSec, 1),
         width: asNumber(params.width),
@@ -195,7 +218,7 @@ async function dispatch(
 
     // ── 剪辑 ─────────────────────────────────────────────────────
     case 'trim': {
-      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return trimVideo(input, outputPath, {
         startSec: asNumber(params.startSec, 0),
         endSec: asNumber(params.endSec, 0),
@@ -205,25 +228,30 @@ async function dispatch(
     }
 
     case 'concat': {
-      const inputs = [input, ...(params.additionalInputs as string[] ?? [])]
-      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      const inputs = [input, ...((params.additionalInputs as string[]) ?? [])]
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return concatVideos(inputs, outputPath, { onProgress })
     }
 
     case 'segment': {
       const segSec = asNumber(params.segmentSec, 10)
       const pattern = join(getVideoArtifactDir(), `seg_${req.requestId}_%03d.mp4`)
+      prepareOutputPath(pattern)
       return segmentVideo(input, pattern, { segmentSec: segSec, onProgress })
     }
 
     // ── 转码 ─────────────────────────────────────────────────────
     case 'transcode': {
       const format = (params.format as TranscodeOpts['format']) ?? 'mp4'
-      const outputPath = (params.outputPath as string) ?? makeOutputPath(format)
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath(format))
       const opts: TranscodeOpts = {
         format,
-        ...(params.videoCodec ? { videoCodec: params.videoCodec as TranscodeOpts['videoCodec'] } : {}),
-        ...(params.audioCodec ? { audioCodec: params.audioCodec as TranscodeOpts['audioCodec'] } : {}),
+        ...(params.videoCodec
+          ? { videoCodec: params.videoCodec as TranscodeOpts['videoCodec'] }
+          : {}),
+        ...(params.audioCodec
+          ? { audioCodec: params.audioCodec as TranscodeOpts['audioCodec'] }
+          : {}),
         ...(params.resolution ? { resolution: params.resolution as { w: number; h: number } } : {}),
         ...(params.bitrate ? { bitrate: params.bitrate as string } : {}),
         ...(params.crf != null ? { crf: asNumber(params.crf, 23) } : {}),
@@ -234,13 +262,13 @@ async function dispatch(
 
     // ── 画面处理 ─────────────────────────────────────────────────
     case 'adjustSpeed': {
-      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       const factor = asNumber(params.factor, 1)
       return adjustSpeed(input, outputPath, factor, onProgress)
     }
 
     case 'reverse': {
-      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return reverseVideo(input, outputPath, {
         reverseAudio: params.reverseAudio === true,
         onProgress,
@@ -248,7 +276,7 @@ async function dispatch(
     }
 
     case 'crop': {
-      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return cropVideo(input, outputPath, {
         w: asNumber(params.w, 0),
         h: asNumber(params.h, 0),
@@ -261,9 +289,15 @@ async function dispatch(
     case 'watermark': {
       const logoPath = params.logoPath as string
       if (!logoPath) throw new Error('水印操作需要 logoPath 参数')
-      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return addWatermark(input, logoPath, outputPath, {
-        position: (params.position as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center') ?? 'bottom-right',
+        position:
+          (params.position as
+            | 'top-left'
+            | 'top-right'
+            | 'bottom-left'
+            | 'bottom-right'
+            | 'center') ?? 'bottom-right',
         scale: asNumber(params.scale, 0.2),
         onProgress,
       })
@@ -272,7 +306,7 @@ async function dispatch(
     case 'burnSubtitle': {
       const srtPath = params.srtPath as string
       if (!srtPath) throw new Error('烧录字幕需要 srtPath 参数')
-      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return burnSubtitle(input, srtPath, outputPath, onProgress)
     }
 

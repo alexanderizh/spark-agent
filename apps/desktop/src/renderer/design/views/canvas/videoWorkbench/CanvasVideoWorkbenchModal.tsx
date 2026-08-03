@@ -16,6 +16,7 @@ import { Button, Dropdown, Segmented, message } from 'antd'
 import type { MenuProps } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { encodeToSafeFileUrl } from '../canvas-safe-file'
+import { resolveVideoWorkbenchDiskPath as resolveDiskPath } from './videoWorkbenchPath'
 import type { FfmpegInstallProgress, VideoProcessRequest } from '@spark/protocol'
 import { Icons } from '../../../Icons'
 import type { CanvasNode } from '../canvas.types'
@@ -38,6 +39,8 @@ import type { ThumbnailMeta } from './VideoWorkbenchResourceThumb'
 import { VideoWorkbenchResourcePicker } from './VideoWorkbenchResourcePicker'
 import { useVideoWorkbenchPlayback } from './useVideoWorkbenchPlayback'
 import {
+  backfillResourceMetadata,
+  duplicateTrackClip,
   indexResourcesById,
   insertResourceIntoTrack,
   mergeResources,
@@ -45,6 +48,7 @@ import {
   resolveClipAtGlobalTime,
   shouldSeedSourceTrack,
   splitTrackClip,
+  trackNeedsMaterialization,
 } from './resourcePanelUtils'
 import type { TrackClip, WorkbenchResource } from './videoWorkbench.types'
 import './videoWorkbench.less'
@@ -57,27 +61,22 @@ function shortId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
+function prependWorkbenchOutput(
+  draft: VideoWorkbenchData,
+  output: WorkbenchOutput,
+): VideoWorkbenchData {
+  return {
+    ...draft,
+    outputs: [output, ...draft.outputs].slice(0, 20),
+    activeTab: 'output',
+  }
+}
+
 /**
  * 把 node.data.url（可能是 safe-file:// 编码 URL 或原始路径）解码为磁盘绝对路径。
  * ffmpeg 需要磁盘路径，不能接受 safe-file:// URL。
  * 解码逻辑与 CanvasWorkspaceView.decodeSafeFileUrl 一致。
  */
-function resolveDiskPath(url: string): string {
-  if (!url) return ''
-  if (!url.startsWith('safe-file://')) return url
-  try {
-    const rest = url.slice('safe-file://'.length)
-    const slashIndex = rest.indexOf('/')
-    if (slashIndex < 0) return url
-    const encoded = rest.slice(slashIndex + 1)
-    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
-    const padding = base64.length % 4 === 0 ? '' : '='.repeat(4 - (base64.length % 4))
-    return decodeURIComponent(escape(atob(base64 + padding)))
-  } catch {
-    return url
-  }
-}
-
 /** 画布上可选作源视频的节点（从画布选择用） */
 interface CanvasVideoOption {
   id: string
@@ -131,6 +130,10 @@ interface Props {
   onPickCanvasResources?: () => Promise<CanvasResourceOption[]>
   /** 资源面板：按上级连线自动收集上游节点首选产物（父级实现，传入一个已收集好的资源列表） */
   onCollectUpstream?: () => Promise<CanvasResourceOption[]>
+  onMaterializeOutput?: (
+    output: WorkbenchOutput,
+    mode: 'add' | 'replace',
+  ) => Promise<string | undefined>
 }
 
 function canvasResourceOptionToWorkbenchResource(
@@ -191,6 +194,7 @@ export function CanvasVideoWorkbenchModal({
   onAddLocalResources,
   onPickCanvasResources,
   onCollectUpstream,
+  onMaterializeOutput,
 }: Props): ReactElement | null {
   // 惰性初始化：只在 mount 时跑一次 readVideoWorkbenchData，避免每次 re-render 都重跑校验。
   // Modal 在父级用 key={node.id} 绑定节点，切换节点会完整 remount，所以这里不需要额外重置 draft。
@@ -213,6 +217,7 @@ export function CanvasVideoWorkbenchModal({
     null,
   )
   const [busy, setBusy] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
   /** 进度 0~100，null 表示无活动 */
   const [progress, setProgress] = useState<number | null>(null)
   const [progressStage, setProgressStage] = useState('')
@@ -227,6 +232,8 @@ export function CanvasVideoWorkbenchModal({
   const [currentTime, setCurrentTime] = useState(0)
   /** 资源面板当前选中的资源 id（用于在主预览区单独预览） */
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
+  /** 轨道中当前选中的分段 id（用于播放控制栏的分段操作） */
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
   /** 多段轨道连播状态机（active 时主预览区按 clip 顺序连播，详见 useVideoWorkbenchPlayback） */
   const playback = useVideoWorkbenchPlayback({
     track: draft.track,
@@ -286,6 +293,10 @@ export function CanvasVideoWorkbenchModal({
     playback.currentResource,
   ])
   const { selectedResource, previewUrl, previewKind, isPlayback } = preview
+  const selectedClip = useMemo(
+    () => draft.track.find((clip) => clip.id === selectedClipId) ?? null,
+    [draft.track, selectedClipId],
+  )
   // 解构 playback 的稳定函数与状态，避免依赖整个对象导致下游 useCallback 频繁重建
   const {
     toggle: playbackToggle,
@@ -427,7 +438,11 @@ export function CanvasVideoWorkbenchModal({
       })
       if (res.success && res.result) {
         const probeInfo = res.result as VideoProbeInfo
-        setDraft((d) => ({ ...d, probeInfo }))
+        setDraft((d) => ({
+          ...d,
+          probeInfo,
+          resourcePanel: backfillResourceMetadata(d.resourcePanel, `source:${n.id}`, probeInfo),
+        }))
       } else {
         // probe 返回失败（路径校验/ffmpeg 执行错误）—— 不阻塞，用 video 元素信息降级
         console.warn('[video-workbench] probe failed:', res.error)
@@ -626,23 +641,27 @@ export function CanvasVideoWorkbenchModal({
     (entries: Array<{ summary: string; outputPath: string; type: WorkbenchOutput['type'] }>) => {
       if (entries.length === 0) return
       setActiveTab('output')
-      setDraft((d) => {
-        const outputs = [
-          ...entries.map((entry) => ({
-            id: shortId(),
-            type: entry.type,
-            outputPath: entry.outputPath,
-            outputUrl: encodeToSafeFileUrl(entry.outputPath),
-            createdAt: Date.now(),
-            summary: entry.summary,
-          })),
-          ...d.outputs,
-        ].slice(0, 20) // 保留最近 20 条
-        return { ...d, outputs, activeTab: 'output' as const }
-      })
+      const outputs = entries.map((entry) => ({
+        id: shortId(),
+        type: entry.type,
+        outputPath: entry.outputPath,
+        outputUrl: encodeToSafeFileUrl(entry.outputPath),
+        createdAt: Date.now(),
+        summary: entry.summary,
+      }))
+      setDraft((d) => ({
+        ...d,
+        outputs: [...outputs, ...d.outputs].slice(0, 20),
+        activeTab: 'output',
+      }))
     },
     [],
   )
+
+  const appendOutput = useCallback((output: WorkbenchOutput) => {
+    setActiveTab('output')
+    setDraft((d) => prependWorkbenchOutput(d, output))
+  }, [])
 
   const recordOutput = useCallback(
     (summary: string, outputPath: string, type: WorkbenchOutput['type']) => {
@@ -657,6 +676,162 @@ export function CanvasVideoWorkbenchModal({
     setDraft((d) => updater(d))
   }, [])
 
+  const exportTrackOutput = useCallback(
+    async (track: TrackClip[]): Promise<WorkbenchOutput | null> => {
+      const sortedTrack = track.slice().sort((a, b) => a.order - b.order)
+      if (sortedTrack.length === 0) return null
+      const resourcesById = indexResourcesById(draft.resourcePanel)
+      const inputPaths: string[] = []
+      for (const clip of sortedTrack) {
+        const resource = resourcesById.get(clip.resourceId)
+        if (!resource || resource.kind !== 'video') {
+          throw new Error('当前轨道含有无法导出的图片或缺失资源')
+        }
+        const sourcePath = resolveDiskPath(resource.originPath || resource.url)
+        if (!sourcePath) throw new Error(`无法读取分段“${resource.title}”的文件路径`)
+
+        let clipPath = sourcePath
+        if (clip.range) {
+          const trimResult = await window.spark.invoke('video:process', {
+            operation: 'trim',
+            input: sourcePath,
+            params: { startSec: clip.range.startSec, endSec: clip.range.endSec },
+            requestId: shortId(),
+          })
+          if (!trimResult.success || !trimResult.result) {
+            throw new Error(trimResult.error ?? `分段“${resource.title}”导出失败`)
+          }
+          clipPath = (trimResult.result as { path?: string }).path ?? ''
+          if (!clipPath) throw new Error(`分段“${resource.title}”没有生成文件`)
+        }
+        inputPaths.push(clipPath)
+      }
+
+      const firstPath = inputPaths[0]
+      if (!firstPath) return null
+      let outputPath = firstPath
+      if (inputPaths.length > 1) {
+        const concatResult = await window.spark.invoke('video:process', {
+          operation: 'concat',
+          input: firstPath,
+          params: { additionalInputs: inputPaths.slice(1) },
+          requestId: shortId(),
+        })
+        if (!concatResult.success || !concatResult.result) {
+          throw new Error(concatResult.error ?? '轨道合成失败')
+        }
+        outputPath = (concatResult.result as { path?: string }).path ?? ''
+      }
+      if (!outputPath) throw new Error('轨道没有生成可用产物')
+      return {
+        id: shortId(),
+        type: inputPaths.length > 1 ? 'concat' : 'segment',
+        outputPath,
+        outputUrl: encodeToSafeFileUrl(outputPath),
+        createdAt: Date.now(),
+        summary: `轨道合成（${sortedTrack.length} 段）`,
+      }
+    },
+    [draft.resourcePanel],
+  )
+
+  const handleExportTrack = useCallback(async () => {
+    if (draft.track.length === 0) return
+    setBusy(true)
+    setProgress(null)
+    try {
+      const output = await exportTrackOutput(draft.track)
+      if (!output) return
+      appendOutput(output)
+      message.success('当前轨道已导出到产物面板')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+      setProgress(null)
+    }
+  }, [appendOutput, draft.track, exportTrackOutput])
+
+  const handleMaterializeOutput = useCallback(
+    async (output: WorkbenchOutput, mode: 'add' | 'replace') => {
+      if (!onMaterializeOutput) return
+      setBusy(true)
+      try {
+        const nodeId = await onMaterializeOutput(output, mode)
+        updateDraft((current) => ({
+          ...current,
+          outputs: current.outputs.map((item) =>
+            item.id === output.id && nodeId ? { ...item, canvasNodeId: nodeId } : item,
+          ),
+        }))
+        message.success(mode === 'add' ? '产物已添加到画布' : '当前视频节点已替换')
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : String(error))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [onMaterializeOutput, updateDraft],
+  )
+
+  const handleMaterializeClip = useCallback(
+    async (clip: TrackClip, mode: 'add' | 'replace') => {
+      if (!onMaterializeOutput) return
+      const resource = draft.resourcePanel.find((item) => item.id === clip.resourceId)
+      if (!resource || resource.kind !== 'video') {
+        message.error('当前分段不是可落地的视频资源')
+        return
+      }
+      const sourcePath = resolveDiskPath(resource.originPath || resource.url)
+      if (!sourcePath) {
+        message.error(`无法读取分段“${resource.title}”的文件路径`)
+        return
+      }
+
+      setBusy(true)
+      try {
+        let outputPath = sourcePath
+        if (clip.range) {
+          const trimResult = await window.spark.invoke('video:process', {
+            operation: 'trim',
+            input: sourcePath,
+            params: { startSec: clip.range.startSec, endSec: clip.range.endSec },
+            requestId: shortId(),
+          })
+          if (!trimResult.success || !trimResult.result) {
+            throw new Error(trimResult.error ?? `分段“${resource.title}”导出失败`)
+          }
+          outputPath = (trimResult.result as { path?: string }).path ?? ''
+          if (!outputPath) throw new Error(`分段“${resource.title}”没有生成文件`)
+        }
+
+        const startSec = clip.range?.startSec ?? 0
+        const endSec = clip.range?.endSec ?? resource.durationSec
+        const output: WorkbenchOutput = {
+          id: shortId(),
+          type: 'segment',
+          outputPath,
+          outputUrl: encodeToSafeFileUrl(outputPath),
+          createdAt: Date.now(),
+          summary:
+            endSec !== undefined
+              ? `分段：${resource.title}（${formatTimestamp(startSec)}-${formatTimestamp(endSec)}）`
+              : `分段：${resource.title}`,
+        }
+        const nodeId = await onMaterializeOutput(output, mode)
+        updateDraft((current) =>
+          prependWorkbenchOutput(current, nodeId ? { ...output, canvasNodeId: nodeId } : output),
+        )
+        message.success(mode === 'add' ? '分段已添加到画布' : '当前视频节点已替换为该分段')
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : String(error))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [draft.resourcePanel, onMaterializeOutput, updateDraft],
+  )
+
   // 旧工作台把 node.data.url 放在独立单视频时间线；首次打开时迁入统一资源轨道。
   // 工作台保持打开时若切换源视频，父级会重置持久化数据，这里同步重置本地 draft，
   // 避免防抖保存把旧轨道重新写回节点。
@@ -667,6 +842,7 @@ export function CanvasVideoWorkbenchModal({
     updateDraft((current) => {
       const resourceId = `source:${node?.id ?? 'video'}`
       const persistedSource = current.resourcePanel.find((resource) => resource.id === resourceId)
+      const sourceMetadata = current.probeInfo ?? persistedSource
       const sourceResource: WorkbenchResource = {
         id: resourceId,
         source: 'canvas',
@@ -675,6 +851,12 @@ export function CanvasVideoWorkbenchModal({
         url: sourceVideoUrl,
         originPath: resolveDiskPath(sourceVideoUrl) || sourceVideoUrl,
         importedAt: Date.now(),
+        ...(sourceMetadata?.durationSec !== undefined
+          ? { durationSec: sourceMetadata.durationSec }
+          : {}),
+        ...(sourceMetadata?.width !== undefined ? { width: sourceMetadata.width } : {}),
+        ...(sourceMetadata?.height !== undefined ? { height: sourceMetadata.height } : {}),
+        ...(sourceMetadata?.fileSize !== undefined ? { fileSize: sourceMetadata.fileSize } : {}),
       }
       if (sourceChanged || (persistedSource != null && persistedSource.url !== sourceVideoUrl)) {
         const reset = createDefaultVideoWorkbenchData()
@@ -684,7 +866,15 @@ export function CanvasVideoWorkbenchModal({
           track: insertResourceIntoTrack([], sourceResource),
         }
       }
-      if (!shouldSeedSourceTrack(current.track, current.resourcePanel, resourceId)) return current
+      if (!shouldSeedSourceTrack(current.track, current.resourcePanel, resourceId)) {
+        if (!sourceMetadata) return current
+        const resourcePanel = backfillResourceMetadata(
+          current.resourcePanel,
+          resourceId,
+          sourceMetadata,
+        )
+        return resourcePanel === current.resourcePanel ? current : { ...current, resourcePanel }
+      }
       const resourcePanel = mergeResources(current.resourcePanel, [sourceResource])
       return {
         ...current,
@@ -713,14 +903,44 @@ export function CanvasVideoWorkbenchModal({
 
   const handleRemoveClip = useCallback(
     (clipId: string) => {
+      setSelectedClipId((current) => (current === clipId ? null : current))
       updateDraft((d) => ({ ...d, track: removeTrackClip(d.track, clipId) }))
     },
     [updateDraft],
   )
 
   const handleClearTrack = useCallback(() => {
+    setSelectedClipId(null)
     updateDraft((d) => ({ ...d, track: [] }))
   }, [updateDraft])
+
+  const handleSelectClip = useCallback(
+    (clipId: string | null) => {
+      setSelectedClipId(clipId)
+      if (!clipId) return
+      const clip = draft.track.find((item) => item.id === clipId)
+      const resource = clip
+        ? draft.resourcePanel.find((item) => item.id === clip.resourceId)
+        : undefined
+      if (resource) {
+        playbackExit()
+        setSelectedResourceId(resource.id)
+      }
+    },
+    [draft.resourcePanel, draft.track, playbackExit],
+  )
+
+  const handleDuplicateClip = useCallback(
+    (clipId: string) => {
+      const nextTrack = duplicateTrackClip(draft.track, clipId)
+      if (nextTrack.length === draft.track.length) return
+      const originalIds = new Set(draft.track.map((clip) => clip.id))
+      const duplicate = nextTrack.find((clip) => !originalIds.has(clip.id))
+      handleReorderTrack(nextTrack)
+      if (duplicate) setSelectedClipId(duplicate.id)
+    },
+    [draft.track, handleReorderTrack],
+  )
 
   const handleTrackDurationChange = useCallback(
     (clipId: string, nextDuration: number) => {
@@ -1059,6 +1279,38 @@ export function CanvasVideoWorkbenchModal({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [open, onClose, handlePlayToggle, stepFrame, handleToStart, seekRelative])
 
+  const handleSaveAndClose = useCallback(async () => {
+    setSavingDraft(true)
+    try {
+      let nextDraft = draft
+      const sourceResourceId = node ? `source:${node.id}` : ''
+      const resourcesById = indexResourcesById(draft.resourcePanel)
+      if (
+        onMaterializeOutput &&
+        trackNeedsMaterialization(draft.track, resourcesById, sourceResourceId)
+      ) {
+        setBusy(true)
+        try {
+          const output = await exportTrackOutput(draft.track)
+          if (!output) throw new Error('当前轨道没有可保存的视频')
+          const nodeId = await onMaterializeOutput(output, 'add')
+          nextDraft = prependWorkbenchOutput(
+            draft,
+            nodeId ? { ...output, canvasNodeId: nodeId } : output,
+          )
+        } finally {
+          setBusy(false)
+        }
+      }
+      await onSave(nextDraft)
+      onClose()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存视频工作台失败')
+    } finally {
+      setSavingDraft(false)
+    }
+  }, [draft, exportTrackOutput, node, onClose, onMaterializeOutput, onSave])
+
   if (!open) return null
 
   return (
@@ -1103,6 +1355,16 @@ export function CanvasVideoWorkbenchModal({
                 </Button>
               </Dropdown>
             )}
+            <Button
+              size="small"
+              type="primary"
+              loading={savingDraft}
+              disabled={busy}
+              onClick={() => void handleSaveAndClose()}
+              icon={<Icons.Check size={14} />}
+            >
+              保存并关闭
+            </Button>
             <Button size="small" type="text" onClick={onClose} icon={<Icons.X size={16} />}>
               关闭
             </Button>
@@ -1216,6 +1478,59 @@ export function CanvasVideoWorkbenchModal({
                 <span className="vwb-player-duration">
                   {formatTimestamp(isPlayback ? playbackTotal : duration)}
                 </span>
+                {selectedClip ? (
+                  <div className="vwb-player-clip-actions" aria-label="分段操作">
+                    <span className="vwb-player-clip-label">已选分段</span>
+                    <button
+                      className="vwb-player-btn"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleDuplicateClip(selectedClip.id)
+                      }}
+                      disabled={busy}
+                      title="复制选中的分段"
+                    >
+                      <Icons.Copy size={14} />
+                      <span>复制</span>
+                    </button>
+                    <button
+                      className="vwb-player-btn"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void handleMaterializeClip(selectedClip, 'add')
+                      }}
+                      disabled={busy || !onMaterializeOutput}
+                      title="将选中的分段添加为新的画布视频节点"
+                    >
+                      <Icons.Plus size={14} />
+                      <span>添加到画布</span>
+                    </button>
+                    <button
+                      className="vwb-player-btn"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void handleMaterializeClip(selectedClip, 'replace')
+                      }}
+                      disabled={busy || !onMaterializeOutput}
+                      title="用选中的分段替换当前视频节点"
+                    >
+                      <Icons.Refresh size={14} />
+                      <span>替换当前</span>
+                    </button>
+                    <button
+                      className="vwb-player-btn vwb-player-btn-danger"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleRemoveClip(selectedClip.id)
+                      }}
+                      disabled={busy}
+                      title="删除选中的分段"
+                    >
+                      <Icons.Trash size={14} />
+                      <span>删除</span>
+                    </button>
+                  </div>
+                ) : null}
                 <div className="vwb-player-spacer" />
                 <button className="vwb-player-btn" onClick={handleToStart} title="回到开头（Home）">
                   <Icons.RotateCcw size={14} />
@@ -1230,6 +1545,8 @@ export function CanvasVideoWorkbenchModal({
               busy={busy}
               onReorder={handleReorderTrack}
               onRemoveClip={handleRemoveClip}
+              selectedClipId={selectedClip?.id ?? null}
+              onSelectClip={handleSelectClip}
               onPreviewResource={handlePreviewResource}
               onAddResourceToTrack={handleAddResourceToTrack}
               onClearTrack={handleClearTrack}
@@ -1323,7 +1640,16 @@ export function CanvasVideoWorkbenchModal({
               />
             )}
 
-            {activeTab === 'output' && <VideoWorkbenchOutputPanel outputs={draft.outputs} />}
+            {activeTab === 'output' && (
+              <VideoWorkbenchOutputPanel
+                outputs={draft.outputs}
+                trackLength={draft.track.length}
+                busy={busy}
+                onExportTrack={() => void handleExportTrack()}
+                onAddToCanvas={(output) => void handleMaterializeOutput(output, 'add')}
+                onReplaceCurrent={(output) => void handleMaterializeOutput(output, 'replace')}
+              />
+            )}
           </div>
         </div>
       </div>

@@ -32,6 +32,11 @@ import { resolveFfmpegBin } from './FfmpegIntegrityService.js'
 
 const log = createLogger('ffmpeg-runner')
 
+/** 确保所有 FFmpeg 输出文件的父目录存在。 */
+export function ensureOutputDirectory(outputPath: string): void {
+  mkdirSync(dirname(outputPath), { recursive: true })
+}
+
 // ─── 类型定义 ────────────────────────────────────────────────────────────────
 
 export interface FfmpegProgress {
@@ -278,9 +283,9 @@ function escapeFilterValue(s: string): string {
  */
 function escapeSubtitlePath(p: string): string {
   return p
-    .replace(/\\/g, '\\\\')  // 反斜杠先转义（后续转义产生的 \ 不会再被处理）
-    .replace(/:/g, '\\:')     // 冒号转义（Windows 盘符关键）
-    .replace(/'/g, "\\'")     // 单引号转义
+    .replace(/\\/g, '\\\\') // 反斜杠先转义（后续转义产生的 \ 不会再被处理）
+    .replace(/:/g, '\\:') // 冒号转义（Windows 盘符关键）
+    .replace(/'/g, "\\'") // 单引号转义
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -307,8 +312,10 @@ export interface VideoProbeInfo {
  */
 export async function probeVideo(input: string): Promise<VideoProbeInfo> {
   const out = await runFfprobe([
-    '-v', 'quiet',
-    '-print_format', 'json',
+    '-v',
+    'quiet',
+    '-print_format',
+    'json',
     '-show_format',
     '-show_streams',
     input,
@@ -440,7 +447,6 @@ export async function extractKeyframes(
   input: string,
   opts: ExtractKeyframesOpts,
 ): Promise<ExtractKeyframesResult> {
-
   const probe = await probeVideo(input)
   const duration = probe.durationSec
   if (duration <= 0) {
@@ -470,9 +476,7 @@ export async function extractKeyframes(
 
   // 上限保护：超过 maxFrames 退化均匀采样
   if (firstPass.timestamps.length > maxFrames && opts.strategy !== 'uniform') {
-    log.info(
-      `关键帧数 ${firstPass.timestamps.length} 超过上限 ${maxFrames}，退化为均匀采样`,
-    )
+    log.info(`关键帧数 ${firstPass.timestamps.length} 超过上限 ${maxFrames}，退化为均匀采样`)
     // 清理第一次的产物
     for (const f of firstPass.outputFiles) {
       try {
@@ -518,7 +522,6 @@ async function runKeyframePass(
     onProgress?: ((prog: FfmpegProgress) => void) | undefined
   },
 ): Promise<{ timestamps: number[]; outputFiles: string[] }> {
-
   let filter: string
   switch (p.strategy) {
     case 'scene':
@@ -533,10 +536,14 @@ async function runKeyframePass(
   }
 
   const args = [
-    '-i', input,
-    '-vf', filter,
-    '-fps_mode', 'vfr', // ffmpeg 5.1+ 语法（替代已移除的 -vsync vfr）
-    '-q:v', String(p.quality),
+    '-i',
+    input,
+    '-vf',
+    filter,
+    '-fps_mode',
+    'vfr', // ffmpeg 5.1+ 语法（替代已移除的 -vsync vfr）
+    '-q:v',
+    String(p.quality),
     '-an', // 丢弃音频（抽帧不需要）
     p.pattern,
   ]
@@ -569,10 +576,7 @@ async function runKeyframePass(
 }
 
 /** 把时间戳和文件列表组装成 ExtractedKeyframe[] */
-function buildKeyframeList(
-  timestamps: number[],
-  files: string[],
-): ExtractedKeyframe[] {
+function buildKeyframeList(timestamps: number[], files: string[]): ExtractedKeyframe[] {
   const len = Math.min(timestamps.length, files.length)
   const result: ExtractedKeyframe[] = []
   for (let i = 0; i < len; i++) {
@@ -607,7 +611,6 @@ export async function extractFramesAtTimes(
     onProgress?: ((p: FfmpegProgress) => void) | undefined
   } = {},
 ): Promise<ExtractedKeyframe[]> {
-
   mkdirSync(outputDir, { recursive: true })
   const format = opts.format ?? 'jpg'
   const quality = opts.quality ?? 2
@@ -621,17 +624,25 @@ export async function extractFramesAtTimes(
     const outPath = join(outputDir, `manual_${sessionId}_${String(i).padStart(4, '0')}.${format}`)
     // -ss 在 -i 前是 seek 模式（快），单帧提取用此
     const args = [
-      '-ss', String(Math.max(0, t)),
-      '-i', input,
-      '-frames:v', '1',
-      '-q:v', String(quality),
+      '-ss',
+      String(Math.max(0, t)),
+      '-i',
+      input,
+      '-frames:v',
+      '1',
+      '-q:v',
+      String(quality),
       '-an',
       outPath,
     ]
     const result = await runFfmpeg(args, {
       totalDurationSec: probe.durationSec,
       onProgress: opts.onProgress
-        ? (prog) => opts.onProgress!({ ...prog, percent: ((i + prog.currentTimeSec / Math.max(t, 0.1)) / timesSec.length) * 100 })
+        ? (prog) =>
+            opts.onProgress!({
+              ...prog,
+              percent: ((i + prog.currentTimeSec / Math.max(t, 0.1)) / timesSec.length) * 100,
+            })
         : undefined,
     })
     if (result.code !== 0) {
@@ -666,11 +677,15 @@ export async function generateThumbnail(
   const atSec = opts.atSec ?? 1
   const vf = opts.width ? `scale=${opts.width}:-2` : null
   const args = [
-    '-ss', String(atSec),
-    '-i', input,
-    '-frames:v', '1',
+    '-ss',
+    String(atSec),
+    '-i',
+    input,
+    '-frames:v',
+    '1',
     ...(vf ? ['-vf', vf] : []),
-    '-q:v', '3',
+    '-q:v',
+    '3',
     '-an',
     '-y', // 覆盖
     outputPath,
@@ -715,8 +730,20 @@ export async function trimVideo(
     args.push('-ss', String(startSec), '-i', input, '-t', String(duration), '-c', 'copy')
   } else {
     // 精确模式：-ss 在 -i 后，重编码
-    args.push('-ss', String(startSec), '-i', input, '-t', String(duration), '-c:v', 'libx264', '-c:a', 'aac')
+    args.push(
+      '-ss',
+      String(startSec),
+      '-i',
+      input,
+      '-t',
+      String(duration),
+      '-c:v',
+      'libx264',
+      '-c:a',
+      'aac',
+    )
   }
+  ensureOutputDirectory(outputPath)
   args.push('-y', outputPath)
 
   const result = await runFfmpeg(args, {
@@ -750,6 +777,7 @@ export async function concatVideos(
   const firstCodec = probes[0]!.videoCodec
   const allSameCodec = probes.every((p) => p.videoCodec === firstCodec)
   const totalDuration = probes.reduce((sum, p) => sum + p.durationSec, 0)
+  ensureOutputDirectory(outputPath)
 
   if (allSameCodec) {
     // concat demuxer（无损快）
@@ -760,7 +788,10 @@ export async function concatVideos(
 
     try {
       const args = ['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-y', outputPath]
-      const result = await runFfmpeg(args, { totalDurationSec: totalDuration, onProgress: opts.onProgress })
+      const result = await runFfmpeg(args, {
+        totalDurationSec: totalDuration,
+        onProgress: opts.onProgress,
+      })
       if (result.code !== 0) {
         throw new Error(`视频合并失败(demuxer): ${result.stderr.slice(-300)}`)
       }
@@ -777,23 +808,26 @@ export async function concatVideos(
   // concat filter（重编码，异源）
   // 根据是否所有输入都有音频，决定 concat 是否带音频流
   const allHaveAudio = probes.every((p) => p.hasAudio)
-  const inputLabels = inputs
-    .map((_, i) => `[${i}:v:0]${allHaveAudio ? `[${i}:a:0]` : ''}`)
-    .join('')
+  const inputLabels = inputs.map((_, i) => `[${i}:v:0]${allHaveAudio ? `[${i}:a:0]` : ''}`).join('')
   const args = [
     ...inputs.flatMap((f) => ['-i', f]),
     '-filter_complex',
     allHaveAudio
       ? `${inputLabels}concat=n=${inputs.length}:v=1:a=1[outv][outa]`
       : `${inputLabels}concat=n=${inputs.length}:v=1:a=0[outv]`,
-    '-map', '[outv]',
+    '-map',
+    '[outv]',
     ...(allHaveAudio ? ['-map', '[outa]'] : []),
-    '-c:v', 'libx264',
+    '-c:v',
+    'libx264',
     ...(allHaveAudio ? ['-c:a', 'aac'] : ['-an']),
     '-y',
     outputPath,
   ]
-  const result = await runFfmpeg(args, { totalDurationSec: totalDuration, onProgress: opts.onProgress })
+  const result = await runFfmpeg(args, {
+    totalDurationSec: totalDuration,
+    onProgress: opts.onProgress,
+  })
   if (result.code !== 0) {
     throw new Error(`视频合并失败(filter): ${result.stderr.slice(-300)}`)
   }
@@ -812,16 +846,25 @@ export async function segmentVideo(
   opts: { segmentSec: number; onProgress?: ((p: FfmpegProgress) => void) | undefined },
 ): Promise<{ paths: string[] }> {
   const probe = await probeVideo(input)
+  ensureOutputDirectory(outputPattern)
   const args = [
-    '-i', input,
-    '-f', 'segment',
-    '-segment_time', String(opts.segmentSec),
-    '-reset_timestamps', '1',
-    '-c', 'copy',
+    '-i',
+    input,
+    '-f',
+    'segment',
+    '-segment_time',
+    String(opts.segmentSec),
+    '-reset_timestamps',
+    '1',
+    '-c',
+    'copy',
     '-y',
     outputPattern, // 如 seg_%03d.mp4
   ]
-  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress: opts.onProgress })
+  const result = await runFfmpeg(args, {
+    totalDurationSec: probe.durationSec,
+    onProgress: opts.onProgress,
+  })
   if (result.code !== 0) {
     throw new Error(`视频分割失败: ${result.stderr.slice(-300)}`)
   }
@@ -862,6 +905,7 @@ export async function transcodeVideo(
   onProgress?: (p: FfmpegProgress) => void,
 ): Promise<{ path: string }> {
   const probe = await probeVideo(input)
+  ensureOutputDirectory(outputPath)
 
   // GIF 两 pass
   if (opts.format === 'gif' || outputPath.toLowerCase().endsWith('.gif')) {
@@ -909,7 +953,6 @@ async function transcodeToGif(
   duration: number,
   onProgress?: (p: FfmpegProgress) => void,
 ): Promise<{ path: string }> {
-
   mkdirSync(dirname(outputPath), { recursive: true })
   const palettePath = join(tmpdir(), `palette-${randomUUID()}.png`)
   const width = opts.resolution?.w ?? 480
@@ -917,9 +960,12 @@ async function transcodeToGif(
 
   // pass 1: 生成调色板
   const pass1Args = [
-    '-i', input,
-    '-vf', `fps=${fps},scale=${width}:-1:flags=lanczos,palettegen`,
-    '-y', palettePath,
+    '-i',
+    input,
+    '-vf',
+    `fps=${fps},scale=${width}:-1:flags=lanczos,palettegen`,
+    '-y',
+    palettePath,
   ]
   const pass1 = await runFfmpeg(pass1Args, { totalDurationSec: duration })
   if (pass1.code !== 0) {
@@ -929,10 +975,14 @@ async function transcodeToGif(
   // pass 2: 应用调色板
   try {
     const pass2Args = [
-      '-i', input,
-      '-i', palettePath,
-      '-filter_complex', `fps=${fps},scale=${width}:-1:flags=lanczos[x];[x][1:v]paletteuse`,
-      '-y', outputPath,
+      '-i',
+      input,
+      '-i',
+      palettePath,
+      '-filter_complex',
+      `fps=${fps},scale=${width}:-1:flags=lanczos[x];[x][1:v]paletteuse`,
+      '-y',
+      outputPath,
     ]
     const pass2 = await runFfmpeg(pass2Args, { totalDurationSec: duration, onProgress })
     if (pass2.code !== 0) {
@@ -966,12 +1016,22 @@ export async function adjustSpeed(
 ): Promise<{ path: string }> {
   if (factor <= 0) throw new Error(`无效的速度倍率: ${factor}`)
   const probe = await probeVideo(input)
+  ensureOutputDirectory(outputPath)
   const videoFilter = `setpts=${(1 / factor).toFixed(4)}*PTS`
   // atempo 链：0.5~2 一个单元，超出串接
   const atempoChain = buildAtempoChain(factor)
   const hasAudio = probe.hasAudio
   const args = hasAudio
-    ? ['-i', input, '-filter_complex', `[0:v]${videoFilter}[v];[0:a]${atempoChain}[a]`, '-map', '[v]', '-map', '[a]']
+    ? [
+        '-i',
+        input,
+        '-filter_complex',
+        `[0:v]${videoFilter}[v];[0:a]${atempoChain}[a]`,
+        '-map',
+        '[v]',
+        '-map',
+        '[a]',
+      ]
     : ['-i', input, '-vf', videoFilter]
   args.push('-c:v', 'libx264', ...(hasAudio ? ['-c:a', 'aac'] : ['-an']), '-y', outputPath)
 
@@ -1010,13 +1070,17 @@ export async function reverseVideo(
   } = {},
 ): Promise<{ path: string }> {
   const probe = await probeVideo(input)
+  ensureOutputDirectory(outputPath)
   const audioPart = opts.reverseAudio && probe.hasAudio ? ';[0:a]areverse[a]' : ''
   const args = audioPart
     ? ['-i', input, '-filter_complex', `[0:v]reverse[v]${audioPart}`, '-map', '[v]', '-map', '[a]']
     : ['-i', input, '-vf', 'reverse']
   args.push('-c:v', 'libx264', ...(audioPart ? ['-c:a', 'aac'] : ['-an']), '-y', outputPath)
 
-  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress: opts.onProgress })
+  const result = await runFfmpeg(args, {
+    totalDurationSec: probe.durationSec,
+    onProgress: opts.onProgress,
+  })
   if (result.code !== 0) {
     throw new Error(`倒放失败: ${result.stderr.slice(-300)}`)
   }
@@ -1038,13 +1102,23 @@ export async function cropVideo(
   },
 ): Promise<{ path: string }> {
   const probe = await probeVideo(input)
+  ensureOutputDirectory(outputPath)
   const args = [
-    '-i', input,
-    '-vf', `crop=${opts.w}:${opts.h}:${opts.x}:${opts.y}`,
-    '-c:v', 'libx264', '-c:a', 'aac',
-    '-y', outputPath,
+    '-i',
+    input,
+    '-vf',
+    `crop=${opts.w}:${opts.h}:${opts.x}:${opts.y}`,
+    '-c:v',
+    'libx264',
+    '-c:a',
+    'aac',
+    '-y',
+    outputPath,
   ]
-  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress: opts.onProgress })
+  const result = await runFfmpeg(args, {
+    totalDurationSec: probe.durationSec,
+    onProgress: opts.onProgress,
+  })
   if (result.code !== 0) {
     throw new Error(`画面裁剪失败: ${result.stderr.slice(-300)}`)
   }
@@ -1068,6 +1142,7 @@ export async function addWatermark(
   },
 ): Promise<{ path: string }> {
   const probe = await probeVideo(input)
+  ensureOutputDirectory(outputPath)
   const scale = opts.scale ?? 0.2
   const overlayExpr = {
     'top-left': '10:10',
@@ -1078,13 +1153,23 @@ export async function addWatermark(
   }[opts.position]
 
   const args = [
-    '-i', input,
-    '-i', logoPath,
-    '-filter_complex', `[1:v]scale=iw*${scale}:-1[wm];[0:v][wm]overlay=${overlayExpr}`,
-    '-c:v', 'libx264', '-c:a', 'copy',
-    '-y', outputPath,
+    '-i',
+    input,
+    '-i',
+    logoPath,
+    '-filter_complex',
+    `[1:v]scale=iw*${scale}:-1[wm];[0:v][wm]overlay=${overlayExpr}`,
+    '-c:v',
+    'libx264',
+    '-c:a',
+    'copy',
+    '-y',
+    outputPath,
   ]
-  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress: opts.onProgress })
+  const result = await runFfmpeg(args, {
+    totalDurationSec: probe.durationSec,
+    onProgress: opts.onProgress,
+  })
   if (result.code !== 0) {
     throw new Error(`添加水印失败: ${result.stderr.slice(-300)}`)
   }
@@ -1109,12 +1194,19 @@ export async function burnSubtitle(
   onProgress?: (p: FfmpegProgress) => void,
 ): Promise<{ path: string }> {
   const probe = await probeVideo(input)
+  ensureOutputDirectory(outputPath)
   const escapedSrt = escapeSubtitlePath(srtPath)
   const args = [
-    '-i', input,
-    '-vf', `subtitles='${escapedSrt}'`,
-    '-c:v', 'libx264', '-c:a', 'copy',
-    '-y', outputPath,
+    '-i',
+    input,
+    '-vf',
+    `subtitles='${escapedSrt}'`,
+    '-c:v',
+    'libx264',
+    '-c:a',
+    'copy',
+    '-y',
+    outputPath,
   ]
   const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress })
   if (result.code !== 0) {
