@@ -199,8 +199,11 @@ export function buildDepthVideoDecoderArgs(inputPath: string, fps?: number): str
     '-pix_fmt',
     'rgb24',
     ...(fps && fps > 0 ? ['-vf', `fps=${fps}`] : []),
-    '-fps_mode',
-    'passthrough',
+    // `-fps_mode` is unavailable in the FFmpeg 4.x binary still used by
+    // existing Windows installations. `-vsync 0` is supported by both the
+    // legacy and current managed binaries and preserves the fps filter output.
+    '-vsync',
+    '0',
     'pipe:1',
   ]
 }

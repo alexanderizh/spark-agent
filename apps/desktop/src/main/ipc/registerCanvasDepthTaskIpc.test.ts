@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
@@ -142,7 +143,14 @@ describe('registerCanvasDepthTaskIpc', () => {
       expect.objectContaining({
         modelDir: '/managed/model',
         runtimeEntryPath:
-          '/managed/runtime/node_modules/@huggingface/transformers/src/transformers.js',
+          join(
+            '/managed/runtime',
+            'node_modules',
+            '@huggingface',
+            'transformers',
+            'src',
+            'transformers.js',
+          ),
       }),
     )
     const success = harness.events.find((event) => event.payload.response.status === 'succeeded')!
