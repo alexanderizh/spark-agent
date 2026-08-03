@@ -1,15 +1,22 @@
 import { useMemo, useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
-import { Input, message } from 'antd'
+import { Input, Switch, message } from 'antd'
 import { CAMERA_PROMPT_LIBRARY, getCameraPromptExampleImage } from './canvasFilmPrompts'
 import { PERFORMANCE_PROMPT_LIBRARY } from './canvasFilmPerformancePrompts'
 import { readAssetKind } from './canvasFilmAssets'
 import type { CanvasAsset } from './canvas.types'
 import {
+  getPromptCategory,
+  readHideSystemPrompts,
+  saveHideSystemPrompts,
+} from './canvasPromptLibraryCategories'
+import { readPromptLibraryCover, readPromptLibraryText } from './canvasPromptLibraryData'
+import {
   canvasGeneratedPromptExampleUrl,
   canvasPromptExampleUrl,
 } from '../../assets/remoteAssetUrls'
 import { RemoteAssetImage } from '../../components/RemoteAssetImage'
+import './canvas-prompt-library.less'
 
 const promptExample = (fileName: string): string => canvasPromptExampleUrl(fileName)
 
@@ -43,16 +50,33 @@ export type CanvasPromptLibraryEntry = {
   id: string
   source: 'project' | 'camera' | 'performance'
   group: string
+  category?: string | undefined
   label: string
   text: string
   assetId?: string | undefined
+  coverUrl?: string | undefined
   description?: string | undefined
   exampleImageSrc?: string | undefined
   tags?: string[] | undefined
   negativePrompt?: string | undefined
 }
 
-type PromptLibraryCategoryKey = 'all' | 'project' | `group:${string}`
+export function isSystemPromptLibraryEntry(
+  entry: Pick<CanvasPromptLibraryEntry, 'source'>,
+): boolean {
+  return entry.source === 'camera' || entry.source === 'performance'
+}
+
+export function filterPromptLibraryEntries(
+  entries: readonly CanvasPromptLibraryEntry[],
+  hideSystemPrompts: boolean,
+): CanvasPromptLibraryEntry[] {
+  return hideSystemPrompts
+    ? entries.filter((entry) => !isSystemPromptLibraryEntry(entry))
+    : [...entries]
+}
+
+type PromptLibraryCategoryKey = 'all' | 'project' | `project:${string}` | `group:${string}`
 
 const GROUP_CATEGORY_ORDER = [
   '景别',
@@ -82,18 +106,21 @@ const GROUP_CATEGORY_ORDER = [
 ] as const
 
 function getEntryCategoryKey(entry: CanvasPromptLibraryEntry): PromptLibraryCategoryKey {
-  if (entry.source === 'project') return 'project'
+  if (entry.source === 'project') return `project:${entry.category ?? '未分类'}`
   return `group:${entry.group}`
 }
 
 function getCategoryLabel(category: PromptLibraryCategoryKey): string {
   if (category === 'all') return '全部'
   if (category === 'project') return '项目库'
+  if (category.startsWith('project:')) return category.slice('project:'.length)
   return category.slice('group:'.length)
 }
 
 function getPromptEntryExampleImage(entry: CanvasPromptLibraryEntry): string | undefined {
-  return entry.exampleImageSrc || GROUP_EXAMPLE_IMAGE_SRC[entry.group] || undefined
+  return (
+    entry.coverUrl || entry.exampleImageSrc || GROUP_EXAMPLE_IMAGE_SRC[entry.group] || undefined
+  )
 }
 
 function getGeneratedPromptExampleImage(itemId: string): string | undefined {
@@ -105,14 +132,17 @@ export function buildCanvasPromptLibraryEntries(assets: CanvasAsset[]): CanvasPr
   const projectEntries = assets
     .filter((asset) => readAssetKind(asset) === 'prompt_library')
     .map((asset): CanvasPromptLibraryEntry => {
-      const assetPrompt = typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt : ''
+      const category = getPromptCategory(asset) ?? '未分类'
+      const cover = readPromptLibraryCover(asset, assets)
       return {
         id: `project:${asset.id}`,
         source: 'project',
-        group: '项目提示词库',
+        group: category,
+        category,
         label: asset.title ?? '未命名提示词',
-        text: asset.contentText ?? assetPrompt,
+        text: readPromptLibraryText(asset),
         assetId: asset.id,
+        coverUrl: cover.url ?? undefined,
       }
     })
     .filter((entry) => entry.text.trim())
@@ -127,7 +157,8 @@ export function buildCanvasPromptLibraryEntries(assets: CanvasAsset[]): CanvasPr
         text: item.promptFragment,
         description: item.description,
         exampleImageSrc:
-          getCameraPromptExampleImage(item.exampleImageId) ?? getGeneratedPromptExampleImage(item.id),
+          getCameraPromptExampleImage(item.exampleImageId) ??
+          getGeneratedPromptExampleImage(item.id),
         tags: item.tags,
         negativePrompt: item.negativePrompt,
       }),
@@ -159,6 +190,7 @@ export function CanvasPromptLibraryPanel({
   className = '',
   onApply,
   getApplyLabel,
+  showSystemPromptFilter = false,
 }: {
   assets: CanvasAsset[]
   title?: string
@@ -168,24 +200,39 @@ export function CanvasPromptLibraryPanel({
   className?: string
   onApply: (entry: CanvasPromptLibraryEntry) => void | Promise<void>
   getApplyLabel?: (entry: CanvasPromptLibraryEntry) => string
+  showSystemPromptFilter?: boolean
 }) {
   const [query, setQuery] = useState('')
-  const [activeCategory, setActiveCategory] = useState<PromptLibraryCategoryKey>('group:景别')
+  const [hideSystemPrompts, setHideSystemPrompts] = useState(readHideSystemPrompts)
+  const [activeCategory, setActiveCategory] = useState<PromptLibraryCategoryKey>('all')
   const entries = useMemo(() => buildCanvasPromptLibraryEntries(assets), [assets])
+  const visibleEntries = useMemo(
+    () => filterPromptLibraryEntries(entries, hideSystemPrompts),
+    [entries, hideSystemPrompts],
+  )
 
   const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: entries.length }
-    for (const entry of entries) {
+    const counts: Record<string, number> = { all: visibleEntries.length }
+    for (const entry of visibleEntries) {
       const key = getEntryCategoryKey(entry)
       counts[key] = (counts[key] ?? 0) + 1
+      if (entry.source === 'project') counts.project = (counts.project ?? 0) + 1
     }
     return counts
-  }, [entries])
+  }, [visibleEntries])
 
   const visibleCategories = useMemo(() => {
-    const knownGroups = new Set(entries.map((entry) => entry.group))
+    const knownGroups = new Set(
+      visibleEntries.filter((entry) => entry.source !== 'project').map((entry) => entry.group),
+    )
+    const knownProjectCategories = new Set(
+      visibleEntries
+        .filter((entry) => entry.source === 'project')
+        .map((entry) => entry.category ?? '未分类'),
+    )
     const categories: PromptLibraryCategoryKey[] = []
     if ((categoryCounts.project ?? 0) > 0) categories.push('project')
+    for (const category of knownProjectCategories) categories.push(`project:${category}`)
     for (const group of GROUP_CATEGORY_ORDER) {
       if (knownGroups.has(group)) categories.push(`group:${group}`)
     }
@@ -199,24 +246,33 @@ export function CanvasPromptLibraryPanel({
       if (category !== 'all' && (categoryCounts[category] ?? 0) === 0) return false
       return list.indexOf(category) === index
     })
-  }, [categoryCounts, entries])
+  }, [categoryCounts, visibleEntries])
 
   const filteredEntries = useMemo(() => {
     const cleanQuery = query.trim().toLowerCase()
     const categoryEntries =
       activeCategory === 'all'
-        ? entries
-        : entries.filter((entry) => getEntryCategoryKey(entry) === activeCategory)
+        ? visibleEntries
+        : activeCategory === 'project'
+          ? visibleEntries.filter((entry) => entry.source === 'project')
+          : visibleEntries.filter((entry) => getEntryCategoryKey(entry) === activeCategory)
     const list = cleanQuery
       ? categoryEntries.filter((entry) => {
-          const haystack = `${entry.group} ${entry.label} ${entry.text} ${entry.description ?? ''} ${
-            entry.tags?.join(' ') ?? ''
-          } ${entry.negativePrompt ?? ''}`.toLowerCase()
+          const haystack =
+            `${entry.group} ${entry.label} ${entry.text} ${entry.description ?? ''} ${
+              entry.tags?.join(' ') ?? ''
+            } ${entry.negativePrompt ?? ''}`.toLowerCase()
           return haystack.includes(cleanQuery)
         })
       : categoryEntries
     return list.slice(0, limit)
-  }, [activeCategory, entries, limit, query])
+  }, [activeCategory, limit, query, visibleEntries])
+
+  const handleSystemPromptFilterChange = (checked: boolean) => {
+    setHideSystemPrompts(checked)
+    saveHideSystemPrompts(checked)
+    if (checked && activeCategory.startsWith('group:')) setActiveCategory('all')
+  }
 
   const handleCopy = async (entry: CanvasPromptLibraryEntry) => {
     try {
@@ -234,7 +290,21 @@ export function CanvasPromptLibraryPanel({
           <strong>{title}</strong>
           <span>{subtitle}</span>
         </div>
-        <span className="canvas-prompt-library-count">{filteredEntries.length} / {entries.length}</span>
+        <div className="canvas-prompt-library-head-actions">
+          {showSystemPromptFilter && (
+            <label className="canvas-prompt-library-system-filter">
+              <span>隐藏系统提示词</span>
+              <Switch
+                size="small"
+                checked={hideSystemPrompts}
+                onChange={handleSystemPromptFilterChange}
+              />
+            </label>
+          )}
+          <span className="canvas-prompt-library-count">
+            {filteredEntries.length} / {visibleEntries.length}
+          </span>
+        </div>
       </div>
       <div className="canvas-prompt-library-categories" role="tablist" aria-label="提示词分类">
         {visibleCategories.map((category) => (
@@ -295,6 +365,7 @@ export function CanvasPromptLibraryPanel({
                   <div className="canvas-prompt-library-entry-body">
                     <div className="canvas-prompt-library-entry-title-row">
                       <Tag
+                        className="canvas-prompt-library-entry-group"
                         color={
                           entry.source === 'project'
                             ? 'blue'
@@ -313,20 +384,15 @@ export function CanvasPromptLibraryPanel({
                         {entry.description}
                       </p>
                     )}
-                    <p className="canvas-prompt-library-entry-text" title={entry.text}>
-                      {entry.text}
-                    </p>
+                    <div className="canvas-prompt-library-entry-prompt-preview">
+                      <span>提示词预览</span>
+                      <p className="canvas-prompt-library-entry-text" title={entry.text}>
+                        {entry.text}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <div className="canvas-prompt-library-entry-actions">
-                  <Button
-                    size="small"
-                    type="text"
-                    className="canvas-prompt-library-entry-copy"
-                    onClick={() => void handleCopy(entry)}
-                  >
-                    复制提示词
-                  </Button>
                   <Button
                     size="small"
                     type="primary"
@@ -334,6 +400,15 @@ export function CanvasPromptLibraryPanel({
                     onClick={() => void onApply(entry)}
                   >
                     {applyLabel}
+                  </Button>
+                  <Button
+                    size="small"
+                    type="text"
+                    className="canvas-prompt-library-entry-copy"
+                    aria-label="复制提示词"
+                    onClick={() => void handleCopy(entry)}
+                  >
+                    复制
                   </Button>
                 </div>
               </article>

@@ -59,27 +59,72 @@ import {
   type UserQuestionQueues,
 } from './user-question-queue'
 
-const ChatView = React.lazy(async () => ({ default: (await import('./design/views/ChatView')).ChatView }))
-const ProjectView = React.lazy(async () => ({ default: (await import('./design/views/ProjectView')).ProjectView }))
-const WorkflowView = React.lazy(async () => ({ default: (await import('./design/views/WorkflowView')).WorkflowView }))
-const AgentsView = React.lazy(async () => ({ default: (await import('./design/views/AgentsView')).AgentsView }))
-const BoardView = React.lazy(async () => ({ default: (await import('./design/views/BoardView')).BoardView }))
-const CanvasProjectsView = React.lazy(async () => ({ default: (await import('./design/views/canvas/CanvasProjectsView')).CanvasProjectsView }))
-const CanvasWorkflowLibraryView = React.lazy(async () => ({ default: (await import('./design/views/canvas/CanvasWorkflowLibraryView')).CanvasWorkflowLibraryView }))
-const ScheduledTasksView = React.lazy(async () => ({ default: (await import('./design/views/ScheduledTasksView')).ScheduledTasksView }))
-const McpView = React.lazy(async () => ({ default: (await import('./design/views/McpView')).McpView }))
-const SkillStoreView = React.lazy(async () => ({ default: (await import('./design/views/SkillStoreView')).SkillStoreView }))
-const SettingsView = React.lazy(async () => ({ default: (await import('./design/views/SettingsView')).SettingsView }))
-const AccountCenterView = React.lazy(async () => ({ default: (await import('./design/views/AccountCenterView')).AccountCenterView }))
+const ChatView = React.lazy(async () => ({
+  default: (await import('./design/views/ChatView')).ChatView,
+}))
+const ProjectView = React.lazy(async () => ({
+  default: (await import('./design/views/ProjectView')).ProjectView,
+}))
+const WorkflowView = React.lazy(async () => ({
+  default: (await import('./design/views/WorkflowView')).WorkflowView,
+}))
+const AgentsView = React.lazy(async () => ({
+  default: (await import('./design/views/AgentsView')).AgentsView,
+}))
+const BoardView = React.lazy(async () => ({
+  default: (await import('./design/views/BoardView')).BoardView,
+}))
+const CanvasProjectsView = React.lazy(async () => ({
+  default: (await import('./design/views/canvas/CanvasProjectsView')).CanvasProjectsView,
+}))
+const CanvasWorkflowLibraryView = React.lazy(async () => ({
+  default: (await import('./design/views/canvas/CanvasWorkflowLibraryView'))
+    .CanvasWorkflowLibraryView,
+}))
+const CanvasPromptLibraryView = React.lazy(async () => ({
+  default: (await import('./design/views/canvas/CanvasPromptLibraryView')).CanvasPromptLibraryView,
+}))
+const ScheduledTasksView = React.lazy(async () => ({
+  default: (await import('./design/views/ScheduledTasksView')).ScheduledTasksView,
+}))
+const McpView = React.lazy(async () => ({
+  default: (await import('./design/views/McpView')).McpView,
+}))
+const SkillStoreView = React.lazy(async () => ({
+  default: (await import('./design/views/SkillStoreView')).SkillStoreView,
+}))
+const SettingsView = React.lazy(async () => ({
+  default: (await import('./design/views/SettingsView')).SettingsView,
+}))
+const AccountCenterView = React.lazy(async () => ({
+  default: (await import('./design/views/AccountCenterView')).AccountCenterView,
+}))
 const ProvidersView = React.lazy(() => import('./design/views/ProvidersView'))
-const LobePreviewView = React.lazy(async () => ({ default: (await import('./design/theme/LobePreviewView')).LobePreviewView }))
-const BrowserPanelView = React.lazy(async () => ({ default: (await import('./design/views/BrowserPanelView')).BrowserPanelView }))
-const PlatformQuotaGuideModal = React.lazy(async () => ({ default: (await import('./design/views/platform-model/PlatformQuotaGuideModal')).PlatformQuotaGuideModal }))
-const CommandPalette = React.lazy(async () => ({ default: (await import('./design/views/overlays')).CommandPalette }))
-const PermissionModal = React.lazy(async () => ({ default: (await import('./design/views/overlays')).PermissionModal }))
-const OnboardingView = React.lazy(async () => ({ default: (await import('./design/views/OnboardingView')).OnboardingView }))
-const GlobalQuickTaskModal = React.lazy(async () => ({ default: (await import('./design/components/GlobalQuickTaskModal')).GlobalQuickTaskModal }))
-const HistoryImportModal = React.lazy(async () => ({ default: (await import('./design/components/HistoryImportModal')).HistoryImportModal }))
+const LobePreviewView = React.lazy(async () => ({
+  default: (await import('./design/theme/LobePreviewView')).LobePreviewView,
+}))
+const BrowserPanelView = React.lazy(async () => ({
+  default: (await import('./design/views/BrowserPanelView')).BrowserPanelView,
+}))
+const PlatformQuotaGuideModal = React.lazy(async () => ({
+  default: (await import('./design/views/platform-model/PlatformQuotaGuideModal'))
+    .PlatformQuotaGuideModal,
+}))
+const CommandPalette = React.lazy(async () => ({
+  default: (await import('./design/views/overlays')).CommandPalette,
+}))
+const PermissionModal = React.lazy(async () => ({
+  default: (await import('./design/views/overlays')).PermissionModal,
+}))
+const OnboardingView = React.lazy(async () => ({
+  default: (await import('./design/views/OnboardingView')).OnboardingView,
+}))
+const GlobalQuickTaskModal = React.lazy(async () => ({
+  default: (await import('./design/components/GlobalQuickTaskModal')).GlobalQuickTaskModal,
+}))
+const HistoryImportModal = React.lazy(async () => ({
+  default: (await import('./design/components/HistoryImportModal')).HistoryImportModal,
+}))
 
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
@@ -140,6 +185,7 @@ const SYSTEM_NOTIFICATION_VIEW_TARGETS = new Set<ViewId>([
   'board',
   'canvas',
   'canvas-workflows',
+  'canvas-prompts',
   'scheduled-tasks',
   'skills',
   'skill-store',
@@ -155,7 +201,9 @@ function isSystemNotificationViewTarget(view: string): view is ViewId {
   return SYSTEM_NOTIFICATION_VIEW_TARGETS.has(view as ViewId)
 }
 
-function getUpdateSourceLabel(source?: UpdateStatus['updateSource'] | UpdateStatus['downloadSource']): string {
+function getUpdateSourceLabel(
+  source?: UpdateStatus['updateSource'] | UpdateStatus['downloadSource'],
+): string {
   if (source === 'version-center') return '官网版本中心'
   if (source === 'github') return 'GitHub Releases'
   return '尚未确定'
@@ -252,6 +300,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const handleOpenCanvasWorkflowLib = useCallback(() => {
     setTweak('workspaceMode', 'canvas')
     setTweak('view', 'canvas-workflows')
+  }, [setTweak])
+
+  const handleOpenCanvasPromptLibrary = useCallback(() => {
+    setTweak('workspaceMode', 'canvas')
+    setTweak('view', 'canvas-prompts')
   }, [setTweak])
 
   const { toast } = useToast()
@@ -581,7 +634,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       </div>
 
       {/* ── L1: 主动作（随模式） ── */}
-      <div className="sidebar-nav-section" style={{paddingBottom: 0}}>
+      <div className="sidebar-nav-section" style={{ paddingBottom: 0 }}>
         {isCanvasMode ? (
           <>
             <button
@@ -604,6 +657,16 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               </span>
               <span className="nav-label">{tr('nav.canvas.workflowLibrary')}</span>
             </button>
+            <button
+              className="nav-item"
+              onClick={handleOpenCanvasPromptLibrary}
+              title={tr('nav.canvas.promptLibrary')}
+            >
+              <span className="nav-icon">
+                <Icons.Book size={16} />
+              </span>
+              <span className="nav-label">{tr('nav.canvas.promptLibrary')}</span>
+            </button>
           </>
         ) : (
           <button className="nav-item" onClick={onNewTask} title={tr('app.sidebar.newTask')}>
@@ -620,7 +683,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       {!isCanvasMode && (
         <>
           {/* <div className="sidebar-section-label">{tr('nav.group.workbenchTools')}</div> */}
-          <div className="sidebar-nav-section" style={{paddingTop: 0}}>
+          <div className="sidebar-nav-section" style={{ paddingTop: 0 }}>
             {visibleItems.map((item) => navItem(item.id, item.label, item.icon))}
             {hasCollapsed && (
               <Dropdown
@@ -671,11 +734,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       {/* ── L3: 全局共享资源条（常驻，不随模式切换） ──
            智能体 / 模型服务 / 技能 / MCP 两边都用，沉到不漂移的位置；
            记忆按用户决策收归设置页，不在此列。 */}
-      <div
-        className="sidebar-shared-resources"
-        role="toolbar"
-        aria-label={tr('nav.group.shared')}
-      >
+      <div className="sidebar-shared-resources" role="toolbar" aria-label={tr('nav.group.shared')}>
         {pickNavItems(SHARED_RESOURCE_IDS).map((item) => (
           <Tooltip key={item.id} title={tr(item.labelKey)} mouseEnterDelay={0.05}>
             <button
@@ -693,244 +752,262 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       {/* Bottom area: user + window controls */}
       <div className="sidebar-bottom">
         <div className="sidebar-bottom-user">
-        <Dropdown
-          open={userMenuOpen}
-          onOpenChange={setUserMenuOpen}
-          trigger={['hover']}
-          placement="topRight"
-          align={{ offset: [8, 0] }}
-          mouseEnterDelay={0.2}
-          mouseLeaveDelay={0.2}
-          styles={{
-            root: {
-              width: 216,
-              minWidth: 216,
-              maxWidth: 'calc(100vw - 24px)',
-            },
-          }}
-          menu={
-            {
-              className: 'user-menu',
-              expandIcon: (
-                <span className="user-menu-expand-icon" aria-hidden="true">
-                  <Icons.ChevronRight size={10} strokeWidth={2.2} />
-                </span>
-              ),
-              items: [
-                ...(auth.isAuthenticated
-                  ? [
-                      {
-                        key: 'account',
-                        label: menuLabel(<Icons.User size={14} />, tr('app.user.accountRecharge')),
-                      },
-                    ]
-                  : [
-                      {
-                        key: 'login',
-                        label: menuLabel(<Icons.User size={14} />, tr('app.user.login')),
-                      },
-                    ]),
-                {
-                  key: 'theme',
-                  label: menuLabel(<Icons.Brush size={14} />, 'Theme'),
-                  children: [
-                    {
-                      key: 'theme-light',
-                      label: menuLabel(<Icons.Sun size={14} />, 'Light', t.theme === 'light'),
-                    },
-                    {
-                      key: 'theme-dark',
-                      label: menuLabel(<Icons.Moon size={14} />, 'Dark', t.theme === 'dark'),
-                    },
-                    {
-                      key: 'theme-system',
-                      label: menuLabel(<Icons.Monitor size={14} />, 'System', t.theme === 'system'),
-                    },
-                    {
-                      key: 'empty-hero-theme',
-                      label: menuLabel(<Icons.Layers size={14} />, '会话主题'),
-                      children: EMPTY_HERO_THEMES.map((theme) => ({
-                        key: `empty-hero-theme-${theme.id}`,
-                        title: theme.description,
-                        label: menuLabel(
-                          <span
-                            className="user-menu-accent-swatch"
-                            style={{ background: theme.preview }}
-                          />,
-                          theme.name,
-                          t.emptyHeroTheme === theme.id,
-                        ),
-                      })),
-                    },
-                    {
-                      key: 'accent',
-                      label: menuLabel(
-                        <span className="user-menu-accent-dot" style={{ background: t.primary }} />,
-                        tr('app.user.accent'),
-                      ),
-                      children: Object.entries(PRIMARIES).map(([color, info]) => ({
-                        key: `accent-${color}`,
-                        label: menuLabel(
-                          <span
-                            className="user-menu-accent-swatch"
-                            style={{ background: color }}
-                          />,
-                          info.name,
-                          t.primary === color,
-                        ),
-                      })),
-                    },
-                    {
-                      key: 'sidebar-style',
-                      label: menuLabel(<Icons.PanelLeft size={14} />, tr('app.sidebar.style')),
-                      children: [
-                        {
-                          key: 'sidebar-style-floating',
-                          label: menuLabel(
-                            <Icons.SidebarShow size={14} />,
-                            tr('app.sidebar.styleFloating'),
-                            t.sidebarStyle === 'floating',
-                          ),
-                        },
-                        {
-                          key: 'sidebar-style-flat',
-                          label: menuLabel(
-                            <Icons.PanelLeft size={14} />,
-                            tr('app.sidebar.styleFlat'),
-                            t.sidebarStyle === 'flat',
-                          ),
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  key: 'remote',
-                  label: menuLabel(<Icons.Globe size={14} />, tr('app.nav.remote')),
-                },
-                {
-                  key: 'contact',
-                  label: menuLabel(<Icons.Users size={14} />, tr('app.user.contactUs')),
-                  children: [
-                    {
-                      key: 'contact-qq',
-                      label: menuLabel(<Icons.Users size={14} />, tr('app.user.contactQQ')),
-                    },
-                    {
-                      key: 'contact-email',
-                      label: menuLabel(<Icons.Mail size={14} />, tr('app.user.contactEmail')),
-                    },
-                    {
-                      key: 'contact-github-issue',
-                      label: menuLabel(<Icons.AlertTriangle size={14} />, tr('app.user.contactGithubIssue')),
-                    },
-                  ],
-                },
-                {
-                  key: 'about-spark',
-                  label: menuLabel(<Icons.Sparkles size={14} />, tr('app.user.aboutSpark')),
-                  children: [
-                    { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
-                    { key: 'website', label: menuLabel(<Icons.Home size={14} />, tr('app.user.website')) },
-                    {
-                      key: 'app-version',
-                      label: menuLabel(
-                        <Icons.Hash size={14} />,
-                        `${appVersion ? `v${appVersion}` : '--'}`,
-                      ),
-                    },
-                  ],
-                },
-              ],
-              onClick: ({ key }: { key: string }) => {
-                switch (key) {
-                  case 'account':
-                    setTweak('view', 'account-center')
-                    break
-                  case 'login':
-                    auth.setFlow('login')
-                    setTweak('view', 'account-center')
-                    break
-                  case 'theme-light':
-                    setTweak('theme', 'light' as typeof t.theme)
-                    break
-                  case 'theme-dark':
-                    setTweak('theme', 'dark' as typeof t.theme)
-                    break
-                  case 'theme-system':
-                    setTweak('theme', 'system' as typeof t.theme)
-                    break
-                  case 'sidebar-style-floating':
-                    setTweak('sidebarStyle', 'floating')
-                    break
-                  case 'sidebar-style-flat':
-                    setTweak('sidebarStyle', 'flat')
-                    break
-                  default:
-                    if (key.startsWith('empty-hero-theme-')) {
-                      const nextTheme = key.slice('empty-hero-theme-'.length)
-                      const theme = EMPTY_HERO_THEMES.find((item) => item.id === nextTheme)
-                      if (theme != null) setTweak('emptyHeroTheme', theme.id)
-                    } else if (key.startsWith('accent-')) {
-                      setTweak('primary', key.slice('accent-'.length))
-                    } else if (key === 'remote') {
-                      setTweak('view', 'settings')
-                      setTweak('settingsSection', 'remote-connections')
-                    } else if (key === 'github') {
-                      handleOpenExternal(REPOSITORY_URL)
-                    } else if (key === 'website') {
-                      handleOpenExternal(OFFICIAL_SITE_URL)
-                    } else if (key === 'app-version') {
-                      setTweak('view', 'settings')
-                      setTweak('settingsSection', 'updates')
-                    } else if (key === 'lobe-preview') {
-                      setTweak('view', 'lobe-preview')
-                    } else if (key === 'contact-qq') {
-                      setContactModalOpen(true)
-                      return // don't close parent menu — modal stays open
-                    } else if (key === 'contact-email') {
-                      void handleCopyEmail()
-                    } else if (key === 'contact-github-issue') {
-                      handleOpenExternal(GITHUB_ISSUES_URL)
-                    }
-                  }
-                setUserMenuOpen(false)
+          <Dropdown
+            open={userMenuOpen}
+            onOpenChange={setUserMenuOpen}
+            trigger={['hover']}
+            placement="topRight"
+            align={{ offset: [8, 0] }}
+            mouseEnterDelay={0.2}
+            mouseLeaveDelay={0.2}
+            styles={{
+              root: {
+                width: 216,
+                minWidth: 216,
+                maxWidth: 'calc(100vw - 24px)',
               },
-            } as MenuProps
-          }
-        >
-          <button
-            className={`sidebar-user${auth.isAuthenticated ? '' : ' sidebar-user-guest'}`}
-            style={{ cursor: 'pointer' }}
-          >
-            <div className="avatar sidebar-user-avatar">
-              {userAvatarSrc ? (
-                <AvatarImage
-                  src={userAvatarSrc}
-                  seed={auth.user?.account || 'spark-user'}
-                  name={userName}
-                  alt={
-                    auth.isAuthenticated ? tr('app.user.avatarAlt') : tr('app.user.guestAvatarAlt')
+            }}
+            menu={
+              {
+                className: 'user-menu',
+                expandIcon: (
+                  <span className="user-menu-expand-icon" aria-hidden="true">
+                    <Icons.ChevronRight size={10} strokeWidth={2.2} />
+                  </span>
+                ),
+                items: [
+                  ...(auth.isAuthenticated
+                    ? [
+                        {
+                          key: 'account',
+                          label: menuLabel(
+                            <Icons.User size={14} />,
+                            tr('app.user.accountRecharge'),
+                          ),
+                        },
+                      ]
+                    : [
+                        {
+                          key: 'login',
+                          label: menuLabel(<Icons.User size={14} />, tr('app.user.login')),
+                        },
+                      ]),
+                  {
+                    key: 'theme',
+                    label: menuLabel(<Icons.Brush size={14} />, 'Theme'),
+                    children: [
+                      {
+                        key: 'theme-light',
+                        label: menuLabel(<Icons.Sun size={14} />, 'Light', t.theme === 'light'),
+                      },
+                      {
+                        key: 'theme-dark',
+                        label: menuLabel(<Icons.Moon size={14} />, 'Dark', t.theme === 'dark'),
+                      },
+                      {
+                        key: 'theme-system',
+                        label: menuLabel(
+                          <Icons.Monitor size={14} />,
+                          'System',
+                          t.theme === 'system',
+                        ),
+                      },
+                      {
+                        key: 'empty-hero-theme',
+                        label: menuLabel(<Icons.Layers size={14} />, '会话主题'),
+                        children: EMPTY_HERO_THEMES.map((theme) => ({
+                          key: `empty-hero-theme-${theme.id}`,
+                          title: theme.description,
+                          label: menuLabel(
+                            <span
+                              className="user-menu-accent-swatch"
+                              style={{ background: theme.preview }}
+                            />,
+                            theme.name,
+                            t.emptyHeroTheme === theme.id,
+                          ),
+                        })),
+                      },
+                      {
+                        key: 'accent',
+                        label: menuLabel(
+                          <span
+                            className="user-menu-accent-dot"
+                            style={{ background: t.primary }}
+                          />,
+                          tr('app.user.accent'),
+                        ),
+                        children: Object.entries(PRIMARIES).map(([color, info]) => ({
+                          key: `accent-${color}`,
+                          label: menuLabel(
+                            <span
+                              className="user-menu-accent-swatch"
+                              style={{ background: color }}
+                            />,
+                            info.name,
+                            t.primary === color,
+                          ),
+                        })),
+                      },
+                      {
+                        key: 'sidebar-style',
+                        label: menuLabel(<Icons.PanelLeft size={14} />, tr('app.sidebar.style')),
+                        children: [
+                          {
+                            key: 'sidebar-style-floating',
+                            label: menuLabel(
+                              <Icons.SidebarShow size={14} />,
+                              tr('app.sidebar.styleFloating'),
+                              t.sidebarStyle === 'floating',
+                            ),
+                          },
+                          {
+                            key: 'sidebar-style-flat',
+                            label: menuLabel(
+                              <Icons.PanelLeft size={14} />,
+                              tr('app.sidebar.styleFlat'),
+                              t.sidebarStyle === 'flat',
+                            ),
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  {
+                    key: 'remote',
+                    label: menuLabel(<Icons.Globe size={14} />, tr('app.nav.remote')),
+                  },
+                  {
+                    key: 'contact',
+                    label: menuLabel(<Icons.Users size={14} />, tr('app.user.contactUs')),
+                    children: [
+                      {
+                        key: 'contact-qq',
+                        label: menuLabel(<Icons.Users size={14} />, tr('app.user.contactQQ')),
+                      },
+                      {
+                        key: 'contact-email',
+                        label: menuLabel(<Icons.Mail size={14} />, tr('app.user.contactEmail')),
+                      },
+                      {
+                        key: 'contact-github-issue',
+                        label: menuLabel(
+                          <Icons.AlertTriangle size={14} />,
+                          tr('app.user.contactGithubIssue'),
+                        ),
+                      },
+                    ],
+                  },
+                  {
+                    key: 'about-spark',
+                    label: menuLabel(<Icons.Sparkles size={14} />, tr('app.user.aboutSpark')),
+                    children: [
+                      { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
+                      {
+                        key: 'website',
+                        label: menuLabel(<Icons.Home size={14} />, tr('app.user.website')),
+                      },
+                      {
+                        key: 'app-version',
+                        label: menuLabel(
+                          <Icons.Hash size={14} />,
+                          `${appVersion ? `v${appVersion}` : '--'}`,
+                        ),
+                      },
+                    ],
+                  },
+                ],
+                onClick: ({ key }: { key: string }) => {
+                  switch (key) {
+                    case 'account':
+                      setTweak('view', 'account-center')
+                      break
+                    case 'login':
+                      auth.setFlow('login')
+                      setTweak('view', 'account-center')
+                      break
+                    case 'theme-light':
+                      setTweak('theme', 'light' as typeof t.theme)
+                      break
+                    case 'theme-dark':
+                      setTweak('theme', 'dark' as typeof t.theme)
+                      break
+                    case 'theme-system':
+                      setTweak('theme', 'system' as typeof t.theme)
+                      break
+                    case 'sidebar-style-floating':
+                      setTweak('sidebarStyle', 'floating')
+                      break
+                    case 'sidebar-style-flat':
+                      setTweak('sidebarStyle', 'flat')
+                      break
+                    default:
+                      if (key.startsWith('empty-hero-theme-')) {
+                        const nextTheme = key.slice('empty-hero-theme-'.length)
+                        const theme = EMPTY_HERO_THEMES.find((item) => item.id === nextTheme)
+                        if (theme != null) setTweak('emptyHeroTheme', theme.id)
+                      } else if (key.startsWith('accent-')) {
+                        setTweak('primary', key.slice('accent-'.length))
+                      } else if (key === 'remote') {
+                        setTweak('view', 'settings')
+                        setTweak('settingsSection', 'remote-connections')
+                      } else if (key === 'github') {
+                        handleOpenExternal(REPOSITORY_URL)
+                      } else if (key === 'website') {
+                        handleOpenExternal(OFFICIAL_SITE_URL)
+                      } else if (key === 'app-version') {
+                        setTweak('view', 'settings')
+                        setTweak('settingsSection', 'updates')
+                      } else if (key === 'lobe-preview') {
+                        setTweak('view', 'lobe-preview')
+                      } else if (key === 'contact-qq') {
+                        setContactModalOpen(true)
+                        return // don't close parent menu — modal stays open
+                      } else if (key === 'contact-email') {
+                        void handleCopyEmail()
+                      } else if (key === 'contact-github-issue') {
+                        handleOpenExternal(GITHUB_ISSUES_URL)
+                      }
                   }
-                  className={`sidebar-user-avatar-image${auth.isAuthenticated ? '' : ' sidebar-user-avatar-image-guest'}`}
-                />
-              ) : null}
-            </div>
-            <div className="sidebar-user-info">
-              <div className="name">{userName}</div>
-            </div>
-            <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
-          </button>
-        </Dropdown>
-        <Tooltip title={tr('app.user.settings')} mouseEnterDelay={0.05}>
-          <button
-            className="sidebar-user-settings"
-            aria-label={tr('app.user.settings')}
-            onClick={() => setTweak('view', 'settings')}
+                  setUserMenuOpen(false)
+                },
+              } as MenuProps
+            }
           >
-            <Icons.Settings size={13} />
-          </button>
-        </Tooltip>
+            <button
+              className={`sidebar-user${auth.isAuthenticated ? '' : ' sidebar-user-guest'}`}
+              style={{ cursor: 'pointer' }}
+            >
+              <div className="avatar sidebar-user-avatar">
+                {userAvatarSrc ? (
+                  <AvatarImage
+                    src={userAvatarSrc}
+                    seed={auth.user?.account || 'spark-user'}
+                    name={userName}
+                    alt={
+                      auth.isAuthenticated
+                        ? tr('app.user.avatarAlt')
+                        : tr('app.user.guestAvatarAlt')
+                    }
+                    className={`sidebar-user-avatar-image${auth.isAuthenticated ? '' : ' sidebar-user-avatar-image-guest'}`}
+                  />
+                ) : null}
+              </div>
+              <div className="sidebar-user-info">
+                <div className="name">{userName}</div>
+              </div>
+              <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+            </button>
+          </Dropdown>
+          <Tooltip title={tr('app.user.settings')} mouseEnterDelay={0.05}>
+            <button
+              className="sidebar-user-settings"
+              aria-label={tr('app.user.settings')}
+              onClick={() => setTweak('view', 'settings')}
+            >
+              <Icons.Settings size={13} />
+            </button>
+          </Tooltip>
         </div>
         {/* Linux: custom HTML controls in sidebar. Windows/macOS use their own title bars. */}
         {!isPlatformDarwin && !isPlatformWin32 && <WindowControls />}
@@ -1093,7 +1170,7 @@ function Shell() {
       return
     }
     if (t.view === 'onboarding') return
-    if (!sessionCtx.providers.some(provider => provider.managed === true)) return
+    if (!sessionCtx.providers.some((provider) => provider.managed === true)) return
     const accountKey = auth.user?.account ?? '__authenticated__'
     if (lowBalanceCheckedAccountRef.current === accountKey) return
     lowBalanceCheckedAccountRef.current = accountKey
@@ -1101,14 +1178,17 @@ function Shell() {
     const lastShownAt = Number(window.localStorage.getItem(key) ?? 0)
     if (Date.now() - lastShownAt < 24 * 60 * 60 * 1000) return
     let cancelled = false
-    window.spark.invoke('platform-model:get-usage', undefined)
+    window.spark
+      .invoke('platform-model:get-usage', undefined)
       .then((usage) => {
         if (cancelled || usage.walletQuota > 0) return
         window.localStorage.setItem(key, String(Date.now()))
         setQuotaGuideReason('low-balance')
       })
       .catch(() => {})
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [auth.isAuthenticated, auth.user?.account, sessionCtx.providers, t.view])
 
   useEffect(() => {
@@ -1124,9 +1204,7 @@ function Shell() {
       const layout = document.querySelector('.chat-layout') as HTMLElement | null
       if (!layout) return 0
       const layoutStyle = window.getComputedStyle(layout)
-      const mainMinWidth = Number.parseFloat(
-        layoutStyle.getPropertyValue('--chat-main-min-width'),
-      )
+      const mainMinWidth = Number.parseFloat(layoutStyle.getPropertyValue('--chat-main-min-width'))
       const chatMainMinWidth = Number.isFinite(mainMinWidth) ? mainMinWidth : 520
       const sidePanelsWidth = Array.from(layout.children).reduce((sum, child) => {
         const el = child as HTMLElement
@@ -1149,11 +1227,13 @@ function Shell() {
       const layoutMinWidth = measureChatLayoutMinWidth()
       // sidebar 展开时主区可用宽度 ≈ width - (floatingSidebarWidth + SIDEBAR_VISIBLE_GUTTER)
       // sidebar 隐藏时主区可用宽度 ≈ width - SIDEBAR_HIDDEN_GUTTER_MIN
-      const sidebarVisibleAvailable = width - (floatingSidebarWidthRef.current + SIDEBAR_VISIBLE_GUTTER)
+      const sidebarVisibleAvailable =
+        width - (floatingSidebarWidthRef.current + SIDEBAR_VISIBLE_GUTTER)
       const sidebarHiddenAvailable = width - SIDEBAR_HIDDEN_GUTTER_MIN
       // 当没有 ChatView 时 (layoutMinWidth === 0)，让两个 fits 字段都短路为 true，
       // 这样保留原 innerWidth 阈值切换的兜底行为。
-      const fitsWithSidebarVisible = layoutMinWidth === 0 || sidebarVisibleAvailable >= layoutMinWidth
+      const fitsWithSidebarVisible =
+        layoutMinWidth === 0 || sidebarVisibleAvailable >= layoutMinWidth
       const fitsWithSidebarHidden = layoutMinWidth === 0 || sidebarHiddenAvailable >= layoutMinWidth
 
       // 仅在首次同步或窗口宽度继续朝当前 auto 行为方向变化时调整 sidebar：
@@ -1371,7 +1451,10 @@ function Shell() {
   )
 
   const [quickTaskOpen, setQuickTaskOpen] = useState(false)
-  const [paletteCommandRequest, setPaletteCommandRequest] = useState<{ id: number; commandText: string } | null>(null)
+  const [paletteCommandRequest, setPaletteCommandRequest] = useState<{
+    id: number
+    commandText: string
+  } | null>(null)
 
   // Toggle left sidebar visibility. Kept for non-shortcut UI entry points; Ctrl/Cmd+B
   // is now reserved for global quick task capture.
@@ -1457,7 +1540,10 @@ function Shell() {
       toast.warning(tr('app.permission.timedOut', { minutes: String(minutes) }), {
         duration: 10000,
         actions: [
-          { label: tr('app.permission.goReview'), onClick: () => navigateToSession(expired.sessionId) },
+          {
+            label: tr('app.permission.goReview'),
+            onClick: () => navigateToSession(expired.sessionId),
+          },
         ],
       })
     })
@@ -1504,7 +1590,7 @@ function Shell() {
     if (!api?.on) return
     return api.on('stream:session:agent-event', (event: AgentEvent) => {
       if (event.type === 'agent_error') {
-        const session = sessionCtx.sessions.find(item => item.id === event.sessionId)
+        const session = sessionCtx.sessions.find((item) => item.id === event.sessionId)
         if (isManagedPlatformQuotaError(event, session?.providerProfileId, sessionCtx.providers)) {
           setQuotaGuideReason('quota-exhausted')
         }
@@ -1533,7 +1619,14 @@ function Shell() {
         ],
       })
     })
-  }, [getSessionNotificationTitle, navigateToSession, sessionCtx.providers, sessionCtx.sessions, toast, tr])
+  }, [
+    getSessionNotificationTitle,
+    navigateToSession,
+    sessionCtx.providers,
+    sessionCtx.sessions,
+    toast,
+    tr,
+  ])
 
   const primary = t.primary
   const info = PRIMARIES[primary]
@@ -1581,6 +1674,8 @@ function Shell() {
         return <CanvasProjectsView onWorkspaceActiveChange={setCanvasWorkspaceActive} />
       case 'canvas-workflows':
         return <CanvasWorkflowLibraryView />
+      case 'canvas-prompts':
+        return <CanvasPromptLibraryView />
       case 'scheduled-tasks':
         return <ScheduledTasksView />
       case 'skills':
@@ -1629,7 +1724,8 @@ function Shell() {
   // canvas / canvas-workflows view 自己实现 header（含窗口拖拽、双击最大化、
   // 侧栏折叠展开按钮、macOS 红绿灯空间预留），不使用公用 MacWindowDragHeader
   // 与 shell-titlebar。Windows 仍保留 win-titlebar（窗口控制按钮必须存在）。
-  const canvasOwnHeader = t.view === 'canvas' || t.view === 'canvas-workflows'
+  const canvasOwnHeader =
+    t.view === 'canvas' || t.view === 'canvas-workflows' || t.view === 'canvas-prompts'
   // Keep the shared drag strip, but allow full-bleed views to extend their
   // surface into it. This preserves the native-window hit area while avoiding
   // a disconnected default-colour band above settings and the auth gate.
@@ -1709,10 +1805,9 @@ function Shell() {
                   此处不再渲染 expand 按钮以免出现两个展开菜单按钮（仅 Windows 旧逻辑漏判）。 */}
               {!useIntegratedTitlebar && isPlatformWin32 && (
                 <div className="win-titlebar">
-                  {t.sidebarHidden &&
-                    !(t.view === 'canvas' && canvasWorkspaceActive) && (
-                      <SidebarExpandButton onExpand={handleExpandSidebar} />
-                    )}
+                  {t.sidebarHidden && !(t.view === 'canvas' && canvasWorkspaceActive) && (
+                    <SidebarExpandButton onExpand={handleExpandSidebar} />
+                  )}
                   <div className="win-titlebar-controls">
                     <WindowControls />
                   </div>
@@ -1727,9 +1822,7 @@ function Shell() {
                 isPlatformDarwin &&
                 !sidebarHidden &&
                 !canvasOwnHeader &&
-                !(t.view === 'canvas' && canvasWorkspaceActive) && (
-                  <MacWindowDragHeader />
-                )}
+                !(t.view === 'canvas' && canvasWorkspaceActive) && <MacWindowDragHeader />}
 
               {t.view === 'chat' ? (
                 <div className="main-with-browser">

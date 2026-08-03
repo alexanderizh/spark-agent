@@ -39,6 +39,7 @@ export type ViewId =
   | 'board'
   | 'canvas'
   | 'canvas-workflows'
+  | 'canvas-prompts'
   | 'scheduled-tasks'
   | 'skills'
   | 'skill-store'

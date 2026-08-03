@@ -145,6 +145,10 @@ import {
   type ShotGroup,
   type ShotSegment,
 } from './canvasFilmAssets'
+import {
+  readPromptLibraryCategories,
+  writePromptLibraryCategories,
+} from './canvasPromptLibraryCategories'
 import type { FilmReferenceKind } from './canvasFilmTypes'
 import {
   buildCharacterSheetPrompt,
@@ -210,7 +214,12 @@ import {
   DEFAULT_SHOT_SCRIPT_CONFIG,
   applyShotScriptConfigToPrompt,
 } from './canvasAgentPromptPresets'
-import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
+import type { CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
+import { CanvasPromptLibraryQuickUseModal } from './CanvasPromptLibraryQuickUseModal'
+import {
+  isPromptLibraryCreateShortcut,
+  isPromptLibraryShortcut,
+} from './canvasPromptLibraryQuickUse'
 import {
   characterSourceImageUrl,
   cropCharacterSubviewToDataUrl,
@@ -463,6 +472,7 @@ const CANVAS_SHORTCUT_HELP_GROUPS: Array<{
     title: '创作 / 节点',
     items: [
       { keys: ['Tab'], desc: '在选择 / 平移工具之间切换' },
+      { keys: ['Ctrl / Cmd', 'E'], desc: '新建提示词并打开录入面板' },
       { keys: ['双击节点'], desc: '展开节点编辑面板' },
       { keys: ['Esc'], desc: '关闭当前浮层 / 弹窗 / 编辑面板' },
       { keys: ['Delete', 'Backspace'], desc: '删除选中节点或连线' },
@@ -498,6 +508,7 @@ const CANVAS_SHORTCUT_HELP_GROUPS: Array<{
     title: '其他 / 工具栏入口',
     items: [
       { keys: ['Ctrl / Cmd', 'S'], desc: '保存画布' },
+      { keys: ['Ctrl / Cmd', 'T'], desc: '打开提示词库查询 / 使用' },
       { keys: ['Ctrl / Cmd', 'Z'], desc: '撤销' },
       { keys: ['Ctrl / Cmd', 'Shift', 'Z'], desc: '重做' },
       { keys: ['Ctrl / Cmd', '\\'], desc: '展开 / 折叠右侧面板' },
@@ -583,10 +594,16 @@ export function CanvasWorkspaceView({
     retryOperationNode,
     runOperationNode,
   } = useCanvasWorkspace(projectId)
+  const promptLibraryCategories = useMemo(
+    () => readPromptLibraryCategories(snapshot?.project.metadata),
+    [snapshot?.project.metadata],
+  )
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
+  const [promptQuickUseOpen, setPromptQuickUseOpen] = useState(false)
+  const [promptCreateOpen, setPromptCreateOpen] = useState(false)
   const [filmCenterOpen, setFilmCenterOpen] = useState(false)
   const [characterLibraryOpen, setCharacterLibraryOpen] = useState(false)
   const [workflowDrawerOpen, setWorkflowDrawerOpen] = useState(false)
@@ -713,9 +730,9 @@ export function CanvasWorkspaceView({
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
   // persistCurrentCanvasViewport 定义在下方（晚于 persistCanvas 等使用方），用 ref 桥接
   // 打破 hooks 顺序依赖：使用方通过 ref 调用「最新版」viewport 持久化函数。
-  const persistViewportFnRef = useRef<
-    ((opts?: { silent?: boolean }) => Promise<unknown>) | null
-  >(null)
+  const persistViewportFnRef = useRef<((opts?: { silent?: boolean }) => Promise<unknown>) | null>(
+    null,
+  )
   const pendingCanvasViewportRestoreRef = useRef<Pick<
     CanvasStageViewport,
     'x' | 'y' | 'zoom'
@@ -744,6 +761,24 @@ export function CanvasWorkspaceView({
   const replaceImageNodeIdRef = useRef<string | null>(null)
   const activeToolRef = useRef<CanvasTool>('pan')
   const { registerNavGuard, requestConfirm, t, setTweak, setHasUnsavedChanges } = useApp()
+  const handleCreatePromptCategory = useCallback(
+    async (name: string): Promise<string | null> => {
+      const nextName = name.trim()
+      if (!nextName) return null
+      if (promptLibraryCategories.includes(nextName)) {
+        message.warning('分类已存在')
+        return null
+      }
+      await updateProjectMetadata(
+        writePromptLibraryCategories(snapshot?.project.metadata, [
+          ...promptLibraryCategories,
+          nextName,
+        ]),
+      )
+      return nextName
+    },
+    [promptLibraryCategories, snapshot?.project.metadata, updateProjectMetadata],
+  )
   useEffect(() => {
     const prevTheme = t.theme
     if (prevTheme !== 'dark') setTweak('theme', 'dark')
@@ -1216,7 +1251,13 @@ export function CanvasWorkspaceView({
       return true
     })
     return () => registerNavGuard(null)
-  }, [registerNavGuard, askLeave, projectId, confirmLeaveWithActiveTasks, flushViewportSilentOnLeave])
+  }, [
+    registerNavGuard,
+    askLeave,
+    projectId,
+    confirmLeaveWithActiveTasks,
+    flushViewportSilentOnLeave,
+  ])
 
   const handleBackWithGuard = useCallback(async () => {
     const canLeaveActiveTasks = await confirmLeaveWithActiveTasks()
@@ -1272,6 +1313,13 @@ export function CanvasWorkspaceView({
         .map((nodeId) => snapshotNodeById.get(nodeId))
         .filter((node): node is CanvasNode => Boolean(node)),
     [selectedNodeIds, snapshotNodeById],
+  )
+  const promptCreateNode = useMemo(
+    () =>
+      selectedNodes.find((node) => node.type === 'text' || node.type === 'prompt') ??
+      selectedNodes.find((node) => node.type === 'image') ??
+      null,
+    [selectedNodes],
   )
   const aiInputNodes = useMemo(
     () => (snapshot ? expandCanvasInputNodes(selectedNodes, snapshot) : []),
@@ -2128,8 +2176,7 @@ export function CanvasWorkspaceView({
         .filter((child) => child.parentNodeId === node.id)
         .map((child) => child.id)
       return (
-        nodeIds.every((id) => childIds.includes(id)) &&
-        childIds.every((id) => createdIdSet.has(id))
+        nodeIds.every((id) => childIds.includes(id)) && childIds.every((id) => createdIdSet.has(id))
       )
     })
     setSelectedNodeIds(groupNode ? [groupNode.id] : [])
@@ -2929,8 +2976,7 @@ export function CanvasWorkspaceView({
           : input.mimeType?.startsWith('audio/')
             ? 'audio'
             : 'image')
-      const nodeSize =
-        kind === 'image' ? IMAGE_NODE_DEFAULT_SIZE : VIDEO_NODE_DEFAULT_SIZE
+      const nodeSize = kind === 'image' ? IMAGE_NODE_DEFAULT_SIZE : VIDEO_NODE_DEFAULT_SIZE
       const position = positionNodeInViewport(canvasViewportRef.current, nodeSize, {
         x: 220,
         y: 180,
@@ -3077,6 +3123,46 @@ export function CanvasWorkspaceView({
       return true
     },
     [createTextNode, patchNodes, selectedNodes, snapshot],
+  )
+
+  const handleApplyPromptEntryFromQuickUse = useCallback(
+    async (entry: CanvasPromptLibraryEntry): Promise<boolean> => {
+      if (selectedNodes.length > 0) {
+        return handleApplyPromptEntryBesideSelection(entry)
+      }
+      if (!snapshot) return false
+
+      const promptText = entry.negativePrompt
+        ? `${entry.text}\n\nNegative prompt: ${entry.negativePrompt}`
+        : entry.text
+      const position = positionNodeInViewport(
+        canvasViewportRef.current,
+        { width: 520, height: 260 },
+        { x: 260, y: 180 },
+      )
+      const createdNode = await createTextNode({
+        text: promptText,
+        x: position.x,
+        y: position.y,
+      })
+      if (!createdNode) return false
+
+      await patchNodes([createdNode.id], {
+        title: `提示词：${entry.label}`,
+        width: 520,
+        height: 260,
+      })
+      setSelectedNodeIds([createdNode.id])
+      message.success(`已插入提示词节点：${entry.label}`)
+      return true
+    },
+    [
+      createTextNode,
+      handleApplyPromptEntryBesideSelection,
+      patchNodes,
+      selectedNodes.length,
+      snapshot,
+    ],
   )
 
   const handleInsertShotDirectorPrompt = useCallback(
@@ -3994,8 +4080,10 @@ export function CanvasWorkspaceView({
       if (
         leaveOpen ||
         saveToLibraryNodeId != null ||
+        promptCreateOpen ||
         annotatingImageNodeId != null ||
-        workflowToRun != null
+        workflowToRun != null ||
+        promptQuickUseOpen
       )
         return
       if (
@@ -4015,6 +4103,18 @@ export function CanvasWorkspaceView({
       const stop = () => {
         event.preventDefault()
         event.stopPropagation()
+      }
+
+      if (isPromptLibraryShortcut(event) && snapshot) {
+        stop()
+        setPromptQuickUseOpen(true)
+        return
+      }
+
+      if (isPromptLibraryCreateShortcut(event) && snapshot) {
+        stop()
+        setPromptCreateOpen(true)
+        return
       }
 
       if (
@@ -4108,6 +4208,8 @@ export function CanvasWorkspaceView({
     templateOpen,
     handleDeleteSelectedNodes,
     selectedNodes,
+    promptQuickUseOpen,
+    promptCreateOpen,
   ])
 
   // 全局 ESC：按优先级关闭最上层弹窗（避免多个弹窗同时收到事件）。
@@ -4123,6 +4225,10 @@ export function CanvasWorkspaceView({
         setLeaveOpen(false)
       } else if (saveToLibraryNodeId != null) {
         setSaveToLibraryNodeId(null)
+      } else if (promptCreateOpen) {
+        setPromptCreateOpen(false)
+      } else if (promptQuickUseOpen) {
+        setPromptQuickUseOpen(false)
       } else if (annotatingImageNodeId != null) {
         setAnnotatingImageNodeId(null)
       } else if (activeOperationPanelNodeId != null) {
@@ -4162,6 +4268,8 @@ export function CanvasWorkspaceView({
   }, [
     leaveOpen,
     saveToLibraryNodeId,
+    promptCreateOpen,
+    promptQuickUseOpen,
     annotatingImageNodeId,
     activeOperationPanelNodeId,
     editingNodeId,
@@ -8227,6 +8335,13 @@ export function CanvasWorkspaceView({
         onClose={() => setPresetModalOpen(false)}
         onPresetCountChange={setConfiguredPresetCount}
       />
+      <CanvasPromptLibraryQuickUseModal
+        open={promptQuickUseOpen}
+        assets={snapshot.assets}
+        selectedNodeCount={selectedNodes.length}
+        onClose={() => setPromptQuickUseOpen(false)}
+        onApply={handleApplyPromptEntryFromQuickUse}
+      />
       <Modal
         open={shortcutHelpOpen}
         title={null}
@@ -8286,10 +8401,16 @@ export function CanvasWorkspaceView({
       />
       {snapshot && (
         <SaveToLibraryDialog
-          open={Boolean(saveToLibraryNode)}
-          node={saveToLibraryNode}
+          open={Boolean(saveToLibraryNode) || promptCreateOpen}
+          node={promptCreateOpen ? promptCreateNode : saveToLibraryNode}
+          promptOnly={promptCreateOpen}
           snapshot={snapshot}
-          onClose={() => setSaveToLibraryNodeId(null)}
+          categories={promptLibraryCategories}
+          onCreateCategory={handleCreatePromptCategory}
+          onClose={() => {
+            setSaveToLibraryNodeId(null)
+            setPromptCreateOpen(false)
+          }}
           onSubmit={async (input) => {
             await createFilmAsset(input)
           }}

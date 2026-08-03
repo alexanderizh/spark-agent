@@ -1643,7 +1643,6 @@
   gap: 0;
 }
 
-
 .canvas-operation-output-media {
   width: 100%;
   height: 100%;
@@ -1692,9 +1691,6 @@
   margin-top: 2px;
   color: rgba(148, 163, 184, 0.68);
 }
-
-
-
 
 .canvas-operation-output-nav {
   display: flex;
@@ -2007,7 +2003,7 @@
 }
 
 .canvas-pane-context-section-title {
-  margin: 8px 6px ;
+  margin: 8px 6px;
   color: var(--text-tertiary, var(--text-secondary));
   font-size: 11px;
   font-weight: 600;
@@ -6774,9 +6770,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-media-input-mode-select {
   width: 116px;
   margin-left: 2px;
-  .ant-select-content-has-value{
-  font-size: 12px;
-
+  .ant-select-content-has-value {
+    font-size: 12px;
   }
 }
 
@@ -11833,7 +11828,6 @@ body.canvas-agent-panel-resizing {
 
 .canvas-film-save-dialog {
   --canvas-film-accent: #fbbf24;
-  --canvas-film-cyan: #22d3ee;
   --canvas-film-card: color-mix(in srgb, var(--panel-elev) 92%, var(--panel));
   --canvas-film-card-strong: color-mix(in srgb, var(--panel-elev) 96%, var(--bg-soft));
   display: flex;
@@ -11869,78 +11863,133 @@ body.canvas-agent-panel-resizing {
   gap: 8px;
   font-weight: 600;
 }
-.canvas-film-save-preview {
-  display: flex;
-  padding: 11px;
-  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
-  border-radius: var(--r-lg);
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--canvas-film-cyan) 10%, transparent),
-      transparent
-    ),
-    var(--canvas-film-card);
-}
-.canvas-film-save-node-preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-}
-.canvas-film-save-node-thumb {
-  flex: 0 0 auto;
-  width: 64px;
-  height: 64px;
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  background: var(--bg-sunken);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-  .canvas-asset-thumb-fallback {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-  }
-}
-.canvas-film-save-node-thumb-fallback {
-  color: var(--text-muted);
-}
-.canvas-film-save-node-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.canvas-film-save-node-title {
-  font-size: 14px;
-  font-weight: 600;
-}
-.canvas-film-save-node-type {
-  font-size: 11px;
-  color: var(--text-muted);
-}
 .canvas-film-save-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
+.canvas-film-save-cover-picker {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 132px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: var(--r-lg);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.canvas-film-save-cover-picker:hover {
+  border-color: var(--primary, #6366f1);
+}
+.canvas-film-save-cover-picker > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.canvas-film-save-cover-empty {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-direction: column;
+  font-size: 11px;
+}
+.canvas-film-save-cover-actions {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.canvas-film-save-cover-actions > span {
+  padding: 5px 9px;
+  border-radius: 5px;
+  background: rgb(0 0 0 / 58%);
+  color: #fff;
+  font-size: 11px;
+}
+.canvas-film-save-cover-grid {
+  display: grid;
+  max-height: 390px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  overflow: auto;
+}
+.canvas-film-save-cover-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: var(--r-lg);
+  background: var(--canvas-film-card-strong);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.canvas-film-save-cover-card:hover {
+  border-color: var(--primary, #6366f1);
+}
+.canvas-film-save-cover-card > img,
+.canvas-film-save-cover-card > .canvas-asset-thumb-fallback {
+  display: block;
+  width: 100%;
+  height: 92px;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  object-fit: cover;
+}
+.canvas-film-save-cover-card > span {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .canvas-film-save-field > span {
   font-size: 12px;
   color: var(--text-secondary, var(--text));
   font-weight: 500;
+}
+.canvas-film-save-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.canvas-film-save-inline-action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary, #6366f1);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+.canvas-film-save-inline-category {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 2px;
+}
+.canvas-film-save-inline-category .ant-input {
+  min-width: 0;
+  flex: 1;
+  height: 32px;
+  border-radius: var(--r-md);
+}
+.canvas-film-save-inline-category .ant-btn {
+  flex: 0 0 auto;
+  height: 32px;
+  border-radius: var(--r-md);
 }
 .canvas-film-save-reflist {
   display: flex;
