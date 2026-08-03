@@ -128,6 +128,16 @@ describe('canvas cinematic integration', () => {
     )
   })
 
+  it('does not reserve a hidden Agent column in the responsive canvas layout', () => {
+    const overlayStyles = readCanvasSource('./cinematic/overlays.less')
+    const responsiveRule = overlayStyles.match(
+      /@media \(max-width: 1180px\)[\s\S]*?\.canvas-workspace-body\s*\{([\s\S]*?)\n    \}/,
+    )?.[1]
+
+    expect(responsiveRule).toContain('var(--canvas-agent-panel-width)')
+    expect(responsiveRule).not.toContain('min(360px, 38vw)')
+  })
+
   it('removes the fake pointer avatar from canvas user messages while keeping agent identity', () => {
     const agentPanel = readCanvasSource('./CanvasAgentModal.tsx')
     const chatPanel = readCanvasSource('../../components/ChatPanel.tsx')

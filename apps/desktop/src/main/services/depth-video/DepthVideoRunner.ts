@@ -190,7 +190,16 @@ export function terminateDepthProcess(process: SpawnedProcess, graceMs = 2_000):
   process.once('close', () => clearTimeout(timer))
 }
 
-export function buildDepthVideoDecoderArgs(inputPath: string, fps?: number): string[] {
+export function buildDepthVideoDecoderArgs(
+  inputPath: string,
+  fps?: number,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  // FFmpeg 4.x on existing Windows installations does not support
+  // `-fps_mode`, while the current macOS bundle no longer accepts `-vsync`.
+  // Keep the platform-specific option here so both managed binary generations
+  // can decode the filtered raw-video stream.
+  const frameSyncArgs = platform === 'win32' ? ['-vsync', '0'] : ['-fps_mode', 'passthrough']
   return [
     '-i',
     inputPath,
@@ -199,11 +208,7 @@ export function buildDepthVideoDecoderArgs(inputPath: string, fps?: number): str
     '-pix_fmt',
     'rgb24',
     ...(fps && fps > 0 ? ['-vf', `fps=${fps}`] : []),
-    // `-fps_mode` is unavailable in the FFmpeg 4.x binary still used by
-    // existing Windows installations. `-vsync 0` is supported by both the
-    // legacy and current managed binaries and preserves the fps filter output.
-    '-vsync',
-    '0',
+    ...frameSyncArgs,
     'pipe:1',
   ]
 }

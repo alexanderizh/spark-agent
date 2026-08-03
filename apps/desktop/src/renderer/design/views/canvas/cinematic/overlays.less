@@ -87,7 +87,11 @@
 @media (max-width: 1180px) {
   .canvas-workspace.canvas-cinematic {
     .canvas-workspace-body {
-      grid-template-columns: minmax(0, 1fr) min(360px, 38vw) var(--canvas-side-panel-width);
+      // 保持与默认布局一致：Agent 关闭时必须收缩为 0，不能因为响应式
+      // 规则写死一个宽度而在画布右侧留下空白轨道。
+      grid-template-columns:
+        minmax(0, 1fr) var(--canvas-agent-panel-width)
+        var(--canvas-side-panel-width);
     }
 
     .canvas-cinematic-starters {
