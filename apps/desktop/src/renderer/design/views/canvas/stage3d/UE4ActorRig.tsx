@@ -123,11 +123,14 @@ export function stage3DBodyTypeToUE4BodyType(bodyType: Stage3DBodyType): UE4Stag
 export function getUE4Stage3DBodyScale(bodyType: Stage3DBodyType): Vec3 {
   switch (stage3DBodyTypeToUE4BodyType(bodyType)) {
     case 'child':
-      return [0.018288, 0.018288, 0.018288]
+      return [0.72, 0.72, 0.72]
     case 'tall':
-      return [0.02286, 0.028956, 0.02286]
+      return [0.9, 1.14, 0.9]
     default:
-      return [0.0254, 0.0254, 0.0254]
+      // The retopologized GLB is already exported in meters (about 1.82m tall).
+      // The old 0.0254 factor was a centimeters-to-inches conversion and made the
+      // character roughly 4.6cm tall in the stage.
+      return [1, 1, 1]
   }
 }
 
