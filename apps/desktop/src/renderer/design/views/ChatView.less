@@ -4751,6 +4751,9 @@ body.side-chat-resizing {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .unified-side-panel-tab {
@@ -4786,7 +4789,7 @@ body.side-chat-resizing {
 }
 
 .unified-side-panel-active-tab .unified-side-panel-tab {
-  cursor: default;
+  flex: 0 1 auto;
 }
 
 .unified-side-panel-tab-close {

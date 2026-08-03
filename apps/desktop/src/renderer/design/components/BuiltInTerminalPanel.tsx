@@ -337,7 +337,7 @@ function useResolvedTheme(): 'light' | 'dark' {
 
 const RESIZE_DEBOUNCE_MS = 80
 const TERMINAL_FONT_SIZE = 12
-const TERMINAL_LETTER_SPACING = -4
+const TERMINAL_LETTER_SPACING = 0.5
 const TERMINAL_LINE_HEIGHT = 1.5
 
 function TerminalBody({ tab, sessionId, isActive, workspace: _workspace }: TerminalBodyProps) {
