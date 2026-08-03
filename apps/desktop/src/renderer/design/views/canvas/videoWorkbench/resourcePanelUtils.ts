@@ -129,6 +129,41 @@ export function indexResourcesById(resources: WorkbenchResource[]): Map<string, 
   return map
 }
 
+/** 将探测到的媒体元数据补回资源，已有字段保持不变。 */
+export function backfillResourceMetadata(
+  resources: WorkbenchResource[],
+  resourceId: string,
+  metadata: Pick<WorkbenchResource, 'durationSec' | 'width' | 'height' | 'fileSize'>,
+): WorkbenchResource[] {
+  if (!Array.isArray(resources) || !resourceId) return resources
+  const index = resources.findIndex((resource) => resource.id === resourceId)
+  const resource = index >= 0 ? resources[index] : undefined
+  if (!resource) return resources
+
+  const shouldBackfillDuration =
+    resource.durationSec === undefined && metadata.durationSec !== undefined
+  const shouldBackfillWidth = resource.width === undefined && metadata.width !== undefined
+  const shouldBackfillHeight = resource.height === undefined && metadata.height !== undefined
+  const shouldBackfillFileSize = resource.fileSize === undefined && metadata.fileSize !== undefined
+  if (
+    !shouldBackfillDuration &&
+    !shouldBackfillWidth &&
+    !shouldBackfillHeight &&
+    !shouldBackfillFileSize
+  ) {
+    return resources
+  }
+
+  const nextResource: WorkbenchResource = {
+    ...resource,
+    ...(shouldBackfillDuration ? { durationSec: metadata.durationSec } : {}),
+    ...(shouldBackfillWidth ? { width: metadata.width } : {}),
+    ...(shouldBackfillHeight ? { height: metadata.height } : {}),
+    ...(shouldBackfillFileSize ? { fileSize: metadata.fileSize } : {}),
+  }
+  return resources.map((item, itemIndex) => (itemIndex === index ? nextResource : item))
+}
+
 /** 旧版独立源视频只在尚未迁入资源面板且轨道为空时自动加入一次。 */
 export function shouldSeedSourceTrack(
   track: TrackClip[],
@@ -190,6 +225,20 @@ export function insertResourceIntoTrack(
   return appended.some((clip) => clip.id === insertAfterClipId)
     ? reorderTrack(appended, newClip.id, insertAfterClipId)
     : appended
+}
+
+/** 复制指定分段，并将副本插入到原分段后面。 */
+export function duplicateTrackClip(track: TrackClip[], clipId: string): TrackClip[] {
+  if (!Array.isArray(track) || track.length === 0) return track.slice()
+  const sorted = track.slice().sort((a, b) => a.order - b.order)
+  const index = sorted.findIndex((clip) => clip.id === clipId)
+  if (index < 0) return track.slice()
+
+  const source = sorted[index]
+  if (!source) return track.slice()
+  const duplicate: TrackClip = { ...source, id: generateClipId() }
+  sorted.splice(index + 1, 0, duplicate)
+  return sorted.map((clip, order) => ({ ...clip, order }))
 }
 
 /**
@@ -317,6 +366,29 @@ export function calculateTrackDuration(
     total += clipDurationSec(clip, resourcesById.get(clip.resourceId))
   }
   return total
+}
+
+/**
+ * 判断保存工作台时是否需要把轨道物化为新的视频文件。
+ * 单个未裁剪的源视频仍然可以只保存工作台元数据；分割、删除、排序或替换资源后的轨道
+ * 都必须先导出，否则节点上的 data.url 仍然指向原始视频。
+ */
+export function trackNeedsMaterialization(
+  track: TrackClip[],
+  resourcesById: Map<string, WorkbenchResource>,
+  sourceResourceId: string,
+): boolean {
+  const sorted = track.slice().sort((a, b) => a.order - b.order)
+  if (sorted.length !== 1) return sorted.length > 0
+
+  const clip = sorted[0]
+  if (!clip || clip.resourceId !== sourceResourceId) return true
+  if (!clip.range) return false
+
+  const resource = resourcesById.get(clip.resourceId)
+  const duration = resource?.durationSec
+  if (duration === undefined) return true
+  return clip.range.startSec > 0.001 || clip.range.endSec < duration - 0.001
 }
 
 /** 合并去重：把新资源合入已有资源面板，按 id 去重，新条目覆盖旧条目。 */

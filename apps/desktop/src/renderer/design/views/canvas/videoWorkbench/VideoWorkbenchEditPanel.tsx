@@ -86,15 +86,17 @@ export function VideoWorkbenchEditPanel({
       successMsg: string,
       outputSummary: string,
       outputType: WorkbenchOutput['type'],
-      extractPath: (r: unknown) => string,
+      extractPath: (r: unknown) => string | string[],
     ): Promise<void> => {
       setDoingLabel(label)
       try {
         const res = await onProcess(operation, params)
         if (res.success && res.result) {
-          const path = extractPath(res.result)
           if (successMsg) message.success(successMsg)
-          if (path) onOutput?.(outputSummary, path, outputType)
+          const paths = extractPath(res.result)
+          for (const path of Array.isArray(paths) ? paths : [paths]) {
+            if (path) onOutput?.(outputSummary, path, outputType)
+          }
         } else {
           message.error(res.error ?? `${label}失败`)
         }
@@ -134,11 +136,11 @@ export function VideoWorkbenchEditPanel({
       '分割',
       '', // 成功消息在 extractPath 后动态生成
       `分割 × ${segSec}s`,
-      'concat',
+      'segment',
       (r) => {
         const paths = (r as { paths: string[] }).paths
         message.success(`已分割为 ${paths.length} 段（每段 ${segSec}s）`)
-        return paths[0] ?? ''
+        return paths
       },
     )
 
