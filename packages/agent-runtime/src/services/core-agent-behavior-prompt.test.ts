@@ -19,6 +19,8 @@ describe('SparkWork application foundation prompt', () => {
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('make a reasonable assumption')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('is not completion')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('observed evidence')
+    expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('durable task-state file')
+    expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('every conversation turn')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('distinct from assistant proposals')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('Lead with the outcome')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('Format responses for readability')
