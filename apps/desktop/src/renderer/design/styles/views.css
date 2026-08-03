@@ -1045,6 +1045,7 @@ body.sidebar-resizing {
      此处仅保留 macOS 红绿灯 / Win 窗口控件所需的左右内边距微调。 */
   padding-left: calc(var(--pad-md) + var(--integrated-titlebar-left-reserve, 0px));
   padding-right: var(--pad-md);
+  border-bottom: 1px solid var(--border);
 }
 .platform-win32.titlebar-integrated .chat-tabbar {
   padding-right: 0;
@@ -2950,7 +2951,7 @@ body.sidebar-resizing {
    - ChatStream 仍然 mount 保持 event 订阅，但视觉上完全隐藏 */
 .chat-main-empty {
   position: relative;
-  background: var(--bg);
+  /* background: var(--bg); */
   overflow: hidden;
   display: flex;
   flex-direction: column;
