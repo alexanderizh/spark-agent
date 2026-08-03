@@ -32,6 +32,7 @@ import {
 
 const DRAG_MIME = 'application/x-vwb-resource'
 const DRAG_CLIP_MIME = 'application/x-vwb-track-clip'
+const DEFAULT_PIXELS_PER_SECOND = 56
 
 /** 播放状态（由 useVideoWorkbenchPlayback 提供，透传给播放进度条） */
 export interface TrackPlaybackState {
@@ -49,6 +50,8 @@ interface Props {
   /** clip 从 fromId 移动到 toId 之后（按 UI 上的相邻语义） */
   onReorder: (nextTrack: TrackClip[]) => void
   onRemoveClip: (clipId: string) => void
+  selectedClipId: string | null
+  onSelectClip: (clipId: string | null) => void
   onPreviewResource: (resource: WorkbenchResource) => void
   /**
    * 资源面板拖入或"+"按钮 → 调父级把资源加入轨道。
@@ -85,6 +88,8 @@ export function VideoWorkbenchTrackTimeline({
   busy,
   onReorder,
   onRemoveClip,
+  selectedClipId,
+  onSelectClip,
   onPreviewResource,
   onAddResourceToTrack,
   onClearTrack,
@@ -109,7 +114,7 @@ export function VideoWorkbenchTrackTimeline({
     null,
   )
   const [stripHover, setStripHover] = useState(false)
-  const [pixelsPerSecond, setPixelsPerSecond] = useState(8)
+  const [pixelsPerSecond, setPixelsPerSecond] = useState(DEFAULT_PIXELS_PER_SECOND)
   const timelineContentRef = useRef<HTMLDivElement>(null)
   const timelineWidth = Math.max(640, totalDuration * pixelsPerSecond)
   const ticks = useMemo(
@@ -276,22 +281,26 @@ export function VideoWorkbenchTrackTimeline({
         <div className="vwb-track-tools" aria-label="轨道工具">
           <Tooltip title="在播放头处分割当前片段">
             <button type="button" onClick={onSplitAtPlayhead} disabled={sortedTrack.length === 0}>
-              <Icons.Scissors size={13} /><span>分割</span>
+              <Icons.Scissors size={13} />
+              <span>分割</span>
             </button>
           </Tooltip>
           <Tooltip title="提取或管理关键帧">
             <button type="button" onClick={onOpenFrames}>
-              <Icons.Image size={13} /><span>关键帧</span>
+              <Icons.Image size={13} />
+              <span>关键帧</span>
             </button>
           </Tooltip>
           <Tooltip title="裁剪、转码与高级设置">
             <button type="button" onClick={onOpenEdit}>
-              <Icons.Sliders size={13} /><span>剪辑设置</span>
+              <Icons.Sliders size={13} />
+              <span>剪辑设置</span>
             </button>
           </Tooltip>
           <Tooltip title="查看与导出产物">
             <button type="button" onClick={onOpenOutput}>
-              <Icons.Download size={13} /><span>产物</span>
+              <Icons.Download size={13} />
+              <span>产物</span>
             </button>
           </Tooltip>
         </div>
@@ -334,9 +343,7 @@ export function VideoWorkbenchTrackTimeline({
         </div>
       </div>
 
-      <div
-        className={`vwb-timeline-viewport${stripHover ? ' is-drop' : ''}`}
-      >
+      <div className={`vwb-timeline-viewport${stripHover ? ' is-drop' : ''}`}>
         <div
           ref={timelineContentRef}
           className="vwb-timeline-content"
@@ -361,11 +368,6 @@ export function VideoWorkbenchTrackTimeline({
             onDragOver={onStripDragOver}
             onDragLeave={() => setStripHover(false)}
             onDrop={onStripDrop}
-            onPointerDown={(event) => {
-              const target = event.target as HTMLElement
-              if (target.closest('button')) return
-              seekFromClientX(event.clientX)
-            }}
           >
             {sortedTrack.length === 0 ? (
               <div className="vwb-track-empty">
@@ -393,8 +395,10 @@ export function VideoWorkbenchTrackTimeline({
                     pixelsPerSecond={pixelsPerSecond}
                     dragging={isDragging}
                     active={playback.currentClipId === clip.id}
+                    selected={selectedClipId === clip.id}
                     dropClass={dropClass}
                     handlers={clipCardHandlers}
+                    onSelect={() => onSelectClip(clip.id)}
                     onPreviewResource={previewResource}
                     onRemoveClip={removeClip}
                     onDurationChange={onDurationChange}
@@ -442,8 +446,10 @@ interface ClipCardProps {
   pixelsPerSecond: number
   dragging: boolean
   active: boolean
+  selected: boolean
   dropClass: string
   handlers: ClipCardHandlers
+  onSelect: () => void
   onPreviewResource: (resource: WorkbenchResource) => void
   onRemoveClip: (clipId: string) => void
   onDurationChange: (clipId: string, durationSec: number) => void
@@ -456,8 +462,10 @@ const ClipCard = memo(function ClipCard({
   pixelsPerSecond,
   dragging,
   active,
+  selected,
   dropClass,
   handlers,
+  onSelect,
   onPreviewResource,
   onRemoveClip,
   onDurationChange,
@@ -468,13 +476,15 @@ const ClipCard = memo(function ClipCard({
 
   return (
     <div
-      className={`vwb-track-clip${dragging ? ' dragging' : ''}${active ? ' is-current' : ''}${dropClass}${!resource ? ' missing' : ''}`}
+      className={`vwb-track-clip${dragging ? ' dragging' : ''}${active ? ' is-current' : ''}${selected ? ' is-selected' : ''}${dropClass}${!resource ? ' missing' : ''}`}
       draggable
       data-clip-id={clip.id}
+      data-selected={selected ? 'true' : 'false'}
       onDragStart={handlers.onClipDragStart}
       onDragEnd={handlers.onClipDragEnd}
       onDragOver={handlers.onClipDragOver}
       onDrop={handlers.onClipDrop}
+      onClick={onSelect}
       onDoubleClick={() => {
         if (resource) onPreviewResource(resource)
       }}
@@ -482,21 +492,23 @@ const ClipCard = memo(function ClipCard({
       style={{ width: `${width}px`, flexBasis: `${width}px` }}
     >
       <div className="vwb-track-clip-thumb">
-        {Array.from({ length: frameCount }, (_, index) => (index + 0.5) / frameCount).map((ratio) => {
-          let frameResource = resource
-          if (resource?.kind === 'video' && resource.url) {
-            const { thumbnailUrl: _thumbnailUrl, ...withoutThumbnail } = resource
-            frameResource = {
-              ...withoutThumbnail,
-              url: `${resource.url.split('#')[0]}#t=${Math.max(0.1, duration * ratio).toFixed(2)}`,
+        {Array.from({ length: frameCount }, (_, index) => (index + 0.5) / frameCount).map(
+          (ratio) => {
+            let frameResource = resource
+            if (resource?.kind === 'video' && resource.url) {
+              const { thumbnailUrl: _thumbnailUrl, ...withoutThumbnail } = resource
+              frameResource = {
+                ...withoutThumbnail,
+                url: `${resource.url.split('#')[0]}#t=${Math.max(0.1, duration * ratio).toFixed(2)}`,
+              }
             }
-          }
-          return (
-            <span className="vwb-track-clip-frame" key={ratio}>
-              <ResourceThumb resource={frameResource} fallbackSize={16} />
-            </span>
-          )
-        })}
+            return (
+              <span className="vwb-track-clip-frame" key={ratio}>
+                <ResourceThumb resource={frameResource} fallbackSize={16} />
+              </span>
+            )
+          },
+        )}
       </div>
       <div className="vwb-track-clip-info">
         <div className="vwb-track-clip-name">
