@@ -37,6 +37,7 @@ export function CanvasFilmPromptLibraryTab({
       className="canvas-film-prompt-library"
       title="提示词库"
       subtitle="项目提示词 + 内置电影镜头/风格/表演词"
+      showSystemPromptFilter
       onApply={handleApply}
       getApplyLabel={(entry) =>
         handlers.hasPromptCanvasTarget?.()
