@@ -35,7 +35,11 @@ import {
   type Vec3,
 } from './mannequin'
 import { getMixamoPose } from './mixamoPosePresets'
-import { applyMixamoPoseDelta, getMixamoRootTransform } from './MixamoActorRig'
+import {
+  applyMixamoPoseDelta,
+  collectMixamoPoseBones,
+  getMixamoRootTransform,
+} from './MixamoActorRig'
 import { buildStage3DPrompt } from './prompt'
 import { createStage3DLocalModelRuntimeUrl, inferStage3DLocalModelFormat } from './localModelImport'
 import {
@@ -862,23 +866,77 @@ describe('MixamoActorRig', () => {
     expect(tall[1]).toBeGreaterThanOrEqual(0.0125)
     expect(child[1]).toBeLessThanOrEqual(0.0068)
   })
+
+  it('drives only the primary Beta_Surface skeleton, never its nested zero-offset helper bones', () => {
+    const scene = new THREE.Group()
+    const surfaceBone = new THREE.Bone()
+    surfaceBone.name = 'mixamorigLeftArm'
+    surfaceBone.position.set(0, 1, 0)
+    const surface = new THREE.SkinnedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial())
+    surface.name = 'Beta_Surface'
+    surface.add(surfaceBone)
+    surface.bind(new THREE.Skeleton([surfaceBone]))
+
+    const helperBone = new THREE.Bone()
+    helperBone.name = 'mixamorigLeftArm'
+    const helpers = new THREE.SkinnedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial())
+    helpers.name = 'Beta_Joints'
+    helpers.add(helperBone)
+    helpers.bind(new THREE.Skeleton([helperBone]))
+    scene.add(surface, helpers)
+
+    expect(collectMixamoPoseBones(scene).get('mixamorigLeftArm')).toEqual([surfaceBone])
+  })
 })
 
 describe('Mixamo pose presets', () => {
-  it('keeps the original arm bind pose until an arm pose is fully retargeted', () => {
-    expect(getMixamoPose('stand').bones.mixamorigLeftShoulder).toBeUndefined()
-    expect(getMixamoPose('stand').bones.mixamorigRightShoulder).toBeUndefined()
-    expect(getMixamoPose('point').bones.mixamorigRightArm).toBeUndefined()
-    expect(getMixamoPose('wave').bones.mixamorigRightForeArm).toBeUndefined()
+  it('uses coordinated shoulder, upper-arm, and forearm deltas for authored full-body poses', () => {
+    for (const poseId of ['stand', 'walk', 'run']) {
+      const bones = getMixamoPose(poseId).bones
+      expect(bones.mixamorigLeftShoulder).toBeDefined()
+      expect(bones.mixamorigLeftArm).toBeDefined()
+      expect(bones.mixamorigLeftForeArm).toBeDefined()
+      expect(bones.mixamorigRightShoulder).toBeDefined()
+      expect(bones.mixamorigRightArm).toBeDefined()
+      expect(bones.mixamorigRightForeArm).toBeDefined()
+    }
+    expect(getMixamoPose('t-pose').bones).toEqual({})
   })
 
   it('uses standalone local rotation deltas for lower-body safe poses', () => {
     expect(getMixamoPose('walk').bones.mixamorigLeftUpLeg).toBeDefined()
+    expect(getMixamoPose('run').bones.mixamorigRightUpLeg).toBeDefined()
     expect(getMixamoPose('sit').bones.mixamorigLeftLeg).toBeDefined()
   })
 
+  it('authors a distinct Mixamo pose for every visible pose preset', () => {
+    const stand = getMixamoPose('stand')
+    for (const { id } of POSE_PRESETS) {
+      const pose = getMixamoPose(id)
+      if (id === 'stand') {
+        expect(pose).toEqual(stand)
+      } else {
+        expect(pose).not.toEqual(stand)
+      }
+      if (id !== 't-pose') expect(Object.keys(pose.bones).length).toBeGreaterThan(0)
+    }
+  })
+
+  it('coordinates the limbs in every locomotion and combat Mixamo pose', () => {
+    for (const poseId of ['crouch', 'kneel', 'kick', 'horse-stance', 'flying-kick']) {
+      const bones = getMixamoPose(poseId).bones
+      expect(bones.mixamorigLeftUpLeg ?? bones.mixamorigRightUpLeg).toBeDefined()
+      expect(bones.mixamorigLeftLeg ?? bones.mixamorigRightLeg).toBeDefined()
+    }
+    for (const poseId of ['point', 'arms-crossed', 'think', 'wave', 'phone', 'punch', 'block', 'throw', 'push']) {
+      const bones = getMixamoPose(poseId).bones
+      expect(bones.mixamorigLeftArm ?? bones.mixamorigRightArm).toBeDefined()
+      expect(bones.mixamorigLeftForeArm ?? bones.mixamorigRightForeArm).toBeDefined()
+    }
+  })
+
   it('contains finite Euler deltas only and falls back safely for unknown poses', () => {
-    for (const poseId of ['stand', 'walk', 'sit', 'point', 'wave']) {
+    for (const { id: poseId } of POSE_PRESETS) {
       for (const [boneName, delta] of Object.entries(getMixamoPose(poseId).bones)) {
         expect(boneName).toMatch(/^mixamorig/)
         if (!delta) throw new Error(`${poseId} contains an empty bone delta`)

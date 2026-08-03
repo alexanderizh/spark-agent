@@ -99,14 +99,29 @@ function darker(color: string): THREE.Color {
   return c
 }
 
-function collectBones(scene: THREE.Group): Map<string, THREE.Bone[]> {
+/**
+ * The FBX contains Beta_Surface and Beta_Joints skeletons with nested, duplicate
+ * names. Only Beta_Surface deforms the character body, so pose each of its bones
+ * once instead of applying an offset to both parent and zero-offset child nodes.
+ */
+export function collectMixamoPoseBones(scene: THREE.Group): Map<string, THREE.Bone[]> {
   const bones = new Map<string, THREE.Bone[]>()
+  const surfaces: THREE.SkinnedMesh[] = []
   scene.traverse((obj) => {
-    if ((obj as THREE.Bone).isBone) {
-      const bone = obj as THREE.Bone
-      const list = bones.get(bone.name) ?? []
-      list.push(bone)
-      bones.set(bone.name, list)
+    if ((obj as THREE.SkinnedMesh).isSkinnedMesh && obj.name === 'Beta_Surface') {
+      surfaces.push(obj as THREE.SkinnedMesh)
+    }
+  })
+  const surface = surfaces[0]
+  if (surface) {
+    for (const bone of surface.skeleton.bones) bones.set(bone.name, [bone])
+    return bones
+  }
+
+  // Keep a safe single-bone fallback for a malformed/imported Mixamo asset.
+  scene.traverse((obj) => {
+    if ((obj as THREE.Bone).isBone && !bones.has(obj.name)) {
+      bones.set(obj.name, [obj as THREE.Bone])
     }
   })
   return bones
@@ -132,7 +147,7 @@ function makeRigInstance(source: THREE.Group, color: string): RigInstance {
     }
   })
 
-  const bones = collectBones(scene)
+  const bones = collectMixamoPoseBones(scene)
   const baseRotations = new Map<THREE.Bone, THREE.Quaternion>()
   for (const list of bones.values()) {
     for (const bone of list) {
