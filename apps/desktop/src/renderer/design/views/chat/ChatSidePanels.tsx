@@ -129,8 +129,12 @@ export function UnifiedSessionSidePanel({
     event.currentTarget.releasePointerCapture(event.pointerId)
     document.body.classList.remove('side-chat-resizing')
   }
+  const openedTabs = Array.from(new Set(tabs))
+  const selectedTab =
+    activeTab != null && openedTabs.includes(activeTab) ? activeTab : (openedTabs[0] ?? null)
   const openKind = (kind: UnifiedSidePanelKind) => {
-    onOpen(kind)
+    if (openedTabs.includes(kind)) onSelect(kind)
+    else onOpen(kind)
     setPickerOpen(false)
   }
   return (
@@ -161,42 +165,55 @@ export function UnifiedSessionSidePanel({
           window.spark?.invoke('window:maximize', {}).catch(() => {})
         }}
       >
-        <div className="unified-side-panel-active-tab">
-          {activeTab != null &&
-            (() => {
-              const meta = getUnifiedSidePanelMeta(activeTab)
-              return (
-                <button type="button" className="unified-side-panel-tab active" title={meta.title}>
-                  {meta.icon}
-                  <span>{meta.label}</span>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="unified-side-panel-tab-close"
-                    aria-label={`关闭${meta.label}`}
-                    onClick={(event) => {
+        <div
+          className="unified-side-panel-active-tab"
+          role="tablist"
+          aria-label="unified side panel tabs"
+        >
+          {openedTabs.map((kind) => {
+            const meta = getUnifiedSidePanelMeta(kind)
+            const active = kind === selectedTab
+            return (
+              <button
+                key={kind}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                data-tab-kind={kind}
+                className={`unified-side-panel-tab${active ? ' active' : ''}`}
+                title={meta.title}
+                onClick={() => onSelect(kind)}
+              >
+                {meta.icon}
+                <span>{meta.label}</span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="unified-side-panel-tab-close"
+                  aria-label={`关闭${meta.label}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onCloseTab(kind)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
                       event.stopPropagation()
-                      onCloseTab(activeTab)
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        onCloseTab(activeTab)
-                      }
-                    }}
-                  >
-                    <Icons.X size={10} />
-                  </span>
-                </button>
-              )
-            })()}
+                      onCloseTab(kind)
+                    }
+                  }}
+                >
+                  <Icons.X size={10} />
+                </span>
+              </button>
+            )
+          })}
         </div>
         <div className="unified-side-panel-shortcuts" aria-label="侧边面板快捷入口">
           {UNIFIED_SIDE_PANEL_QUICK_ITEMS.map((kind) => {
             const meta = getUnifiedSidePanelMeta(kind)
-            const opened = tabs.includes(kind)
-            const active = kind === activeTab
+            const opened = openedTabs.includes(kind)
+            const active = kind === selectedTab
             return (
               <button
                 key={kind}
@@ -221,17 +238,24 @@ export function UnifiedSessionSidePanel({
           >
             <Icons.Plus size={14} />
           </button>
-          {pickerOpen && <UnifiedSidePanelMenu onOpen={openKind} compact />}
+          {pickerOpen && (
+            <UnifiedSidePanelMenu
+              onOpen={openKind}
+              onSelect={onSelect}
+              openedTabs={openedTabs}
+              compact
+            />
+          )}
         </div>
       </div>
       <div className="unified-side-panel-content">
-        {activeTab == null ? (
+        {selectedTab == null ? (
           <div className="unified-side-panel-empty" role="status" aria-live="polite">
             <div className="unified-side-panel-empty-title">快捷打开</div>
             <div className="unified-side-panel-empty-cards">
               {UNIFIED_SIDE_PANEL_QUICK_ITEMS.map((kind) => {
                 const meta = getUnifiedSidePanelMeta(kind)
-                const opened = tabs.includes(kind)
+                const opened = openedTabs.includes(kind)
                 return (
                   <button
                     key={kind}
@@ -239,7 +263,7 @@ export function UnifiedSessionSidePanel({
                     className={`unified-side-panel-empty-card ${opened ? 'opened' : ''}`}
                     aria-label={meta.shortcutLabel}
                     title={meta.shortcutLabel}
-                    onClick={() => openKind(kind)}
+                    onClick={() => (opened ? onSelect(kind) : openKind(kind))}
                   >
                     <span className="unified-side-panel-empty-card-icon">{meta.icon}</span>
                     <span className="unified-side-panel-empty-card-text">
@@ -279,9 +303,13 @@ export function UnifiedSidePanelPicker({
 
 function UnifiedSidePanelMenu({
   onOpen,
+  onSelect,
+  openedTabs = [],
   compact = false,
 }: {
   onOpen: (kind: UnifiedSidePanelKind) => void
+  onSelect?: (kind: UnifiedSidePanelKind) => void
+  openedTabs?: UnifiedSidePanelKind[]
   compact?: boolean
 }) {
   const items = UNIFIED_SIDE_PANEL_QUICK_ITEMS
@@ -289,12 +317,16 @@ function UnifiedSidePanelMenu({
     <div className={`unified-side-panel-menu ${compact ? 'compact' : ''}`}>
       {items.map((kind) => {
         const meta = getUnifiedSidePanelMeta(kind)
+        const opened = openedTabs.includes(kind)
         return (
           <button
             key={kind}
             type="button"
             className="unified-side-panel-menu-item"
-            onClick={() => onOpen(kind)}
+            onClick={() => {
+              if (opened) onSelect?.(kind)
+              else onOpen(kind)
+            }}
           >
             {meta.icon}
             <span>{meta.label}</span>
