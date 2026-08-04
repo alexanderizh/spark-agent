@@ -269,6 +269,9 @@ const veoSchema = {
       enum: ['dont_allow', 'allow_adult', 'allow_all'],
       default: 'allow_adult',
     },
+    // seed 不放入 defaults（高阶，由用户手设），但需在 schema 声明：strict 模式下未声明字段会被
+    // adapter 的 filterByManifestSchema 丢弃，导致用户手设的 seed 永远进不去（参见 google adapter）。
+    seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
   },
 }
 

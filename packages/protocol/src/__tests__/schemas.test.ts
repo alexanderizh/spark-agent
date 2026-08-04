@@ -452,10 +452,11 @@ describe('IPC schemas', () => {
       expect(size?.pattern).toBe('^\\d+\\s*[xX]\\s*\\d+$')
     }
 
-    // 默认值修正：watermark=true（文档默认）；5.0 lite outputFormat=jpeg
-    expect(lite.capabilities[0]!.defaults?.watermark).toBe(true)
+    // 高阶参数不再自动注入 defaults：watermark 由 provider 官方默认(true)兜底；
+    // 5.0 lite 仍显式 outputFormat=jpeg（输出格式，产品设定）。
+    expect(lite.capabilities[0]!.defaults?.watermark).toBeUndefined()
     expect(lite.capabilities[0]!.defaults?.outputFormat).toBe('jpeg')
-    expect(fourZero.capabilities[0]!.defaults?.watermark).toBe(true)
+    expect(fourZero.capabilities[0]!.defaults?.watermark).toBeUndefined()
 
     // 5.0 Pro 支持多图编辑和 fast prompt 优化，不支持组图、流式或联网搜索。
     const proProps = pro.capabilities[0]!.paramSchema.properties as Record<
