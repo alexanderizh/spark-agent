@@ -222,6 +222,7 @@ import type {
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { isSafeFilePathAllowed, toSafeFileUrl } from '../services/SafeFileProtocol.js'
 import { isPathStrictlyInsideRoot } from '../services/CanvasProjectPath.js'
+import { collectCanvasVideoWorkbenchPaths } from '../services/canvasVideoWorkbenchPaths.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
 import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
@@ -660,6 +661,7 @@ async function copyCanvasAssetToProject(input: {
   filePath?: string
   fileName?: string
   relativePath?: string
+  fileSize?: number
   error?: string
 }> {
   const decodedSource = decodeSafeFileUrl(input.sourceUrl)
@@ -679,6 +681,7 @@ async function copyCanvasAssetToProject(input: {
         filePath: resolvedSource,
         fileName: path.basename(resolvedSource),
         relativePath: path.relative(directory.rootPath, resolvedSource),
+        fileSize: stat.size,
       }
     }
     const kind = input.type ?? guessAssetKindFromPath(resolvedSource)
@@ -688,7 +691,7 @@ async function copyCanvasAssetToProject(input: {
     const filePath = path.join(directory.rootPath, relativePath)
     await fs.mkdir(path.dirname(filePath), { recursive: true })
     await fs.copyFile(resolvedSource, filePath)
-    return { copied: true, filePath, fileName, relativePath }
+    return { copied: true, filePath, fileName, relativePath, fileSize: stat.size }
   } catch (err) {
     return { copied: false, error: err instanceof Error ? err.message : String(err) }
   }
@@ -860,6 +863,7 @@ function collectCanvasSnapshotLocalPaths(snapshot: any): Set<string> {
   for (const node of Array.isArray(snapshot?.nodes) ? snapshot.nodes : []) {
     add(node?.data?.url)
     add(node?.data?.thumbnailUrl)
+    for (const value of collectCanvasVideoWorkbenchPaths(node?.data?.videoWorkbench)) add(value)
   }
   return paths
 }

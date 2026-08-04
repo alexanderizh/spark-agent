@@ -17,6 +17,15 @@ export function canvasNodeUsesFlatMediaFrame(node: Pick<CanvasNode, 'type'>): bo
   return node.type === 'image' || node.type === 'video'
 }
 
+/** 图片节点的顶部栏优先展示用户可识别的节点名称。 */
+export function resolveCanvasNodeMetaLabel(
+  node: Pick<CanvasNode, 'type' | 'title'>,
+  fallback: string,
+): string {
+  const title = node.title?.trim()
+  return node.type === 'image' && title ? title : fallback
+}
+
 export function canvasNodeHasContentTitle(node: CanvasNode): boolean {
   if (isOperationNode(node) || isRenderedShotScript(node)) return false
   return ['text', 'prompt', 'image', 'audio', 'video'].includes(node.type)

@@ -3,6 +3,7 @@ import {
   CANVAS_NODE_CONTENT_TITLE_HEIGHT,
   CANVAS_NODE_QUICK_FOOTER_HEIGHT,
   canvasNodeChromeExtraHeight,
+  resolveCanvasNodeMetaLabel,
 } from './canvasNodeChrome'
 import type { CanvasNode } from './canvas.types'
 
@@ -84,5 +85,21 @@ describe('canvasNodeChromeExtraHeight', () => {
         createNode({ type: 'text', data: { text: SINGLE_SHOT_STORYBOARD } }),
       ),
     ).toBe(CANVAS_NODE_QUICK_FOOTER_HEIGHT)
+  })
+})
+
+describe('resolveCanvasNodeMetaLabel', () => {
+  it('shows an image node title in the top-left meta bar', () => {
+    expect(resolveCanvasNodeMetaLabel(createNode({ title: '关键帧 01' }), '图片')).toBe('关键帧 01')
+  })
+
+  it('falls back to the type label when an image has no title', () => {
+    expect(resolveCanvasNodeMetaLabel(createNode({ title: '  ' }), '图片')).toBe('图片')
+  })
+
+  it('keeps non-image nodes on their existing type label', () => {
+    expect(
+      resolveCanvasNodeMetaLabel(createNode({ type: 'video', title: '视频剪辑' }), '视频'),
+    ).toBe('视频')
   })
 })

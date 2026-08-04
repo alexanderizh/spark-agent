@@ -6,15 +6,17 @@
  *   - 「提取关键帧」按钮 + 进度条
  *   - 关键帧缩略图墙（时间戳 + 点击跳转 + 删除 + 批量导出画布）
  */
-import type { ReactElement } from 'react'
-import { Button, Segmented, Slider, Tooltip } from 'antd'
+import { useMemo, useState, type ReactElement } from 'react'
+import { Button, Checkbox, Segmented, Slider, Tooltip } from 'antd'
 import { Icons } from '../../../Icons'
 import {
   formatTimestamp,
   type KeyframeStrategy,
   type KeyframeExtractConfig,
   type VideoWorkbenchData,
+  type WorkbenchKeyframe,
 } from './videoWorkbench.types'
+import { selectKeyframesForImport, selectKeyframesForRemoval } from './videoWorkbenchKeyframeImport'
 
 interface Props {
   draft: VideoWorkbenchData
@@ -25,8 +27,8 @@ interface Props {
   onExtract: (strategy: KeyframeStrategy) => void
   onConfigChange: (cfg: KeyframeExtractConfig) => void
   onSeek: (sec: number) => void
-  onExport: () => void
-  onRemoveKeyframe: (index: number) => void
+  onExport: (frames: WorkbenchKeyframe[]) => void | Promise<void>
+  onRemoveKeyframes: (indexes: number[]) => void
 }
 
 const STRATEGY_DESCS: Record<KeyframeStrategy, string> = {
@@ -45,11 +47,49 @@ export function VideoWorkbenchFramePanel({
   onConfigChange,
   onSeek,
   onExport,
-  onRemoveKeyframe,
+  onRemoveKeyframes,
 }: Props): ReactElement {
   const cfg = draft.extractConfig
   const isScene = cfg.strategy === 'scene'
   const isUniform = cfg.strategy === 'uniform'
+  const [selectionState, setSelectionState] = useState<{
+    source: WorkbenchKeyframe[]
+    indexes: ReadonlySet<number>
+  }>(() => ({
+    source: draft.keyframes,
+    indexes: new Set(draft.keyframes.map((kf) => kf.index)),
+  }))
+  const selectedIndexes = useMemo(
+    () =>
+      selectionState.source === draft.keyframes
+        ? selectionState.indexes
+        : new Set(draft.keyframes.map((kf) => kf.index)),
+    [draft.keyframes, selectionState],
+  )
+  const selectedKeyframes = useMemo(
+    () => selectKeyframesForRemoval(draft.keyframes, selectedIndexes),
+    [draft.keyframes, selectedIndexes],
+  )
+  const selectedKeyframesForImport = useMemo(
+    () => selectKeyframesForImport(draft.keyframes, selectedIndexes),
+    [draft.keyframes, selectedIndexes],
+  )
+  const allKeyframesSelected =
+    draft.keyframes.length > 0 && selectedKeyframes.length === draft.keyframes.length
+
+  const toggleKeyframeSelection = (index: number) => {
+    const next = new Set(selectedIndexes)
+    if (next.has(index)) next.delete(index)
+    else next.add(index)
+    setSelectionState({ source: draft.keyframes, indexes: next })
+  }
+
+  const toggleAllKeyframes = () => {
+    setSelectionState({
+      source: draft.keyframes,
+      indexes: allKeyframesSelected ? new Set() : new Set(draft.keyframes.map((kf) => kf.index)),
+    })
+  }
 
   return (
     <div className="vwb-frame-panel">
@@ -134,8 +174,34 @@ export function VideoWorkbenchFramePanel({
             关键帧 <em>{draft.keyframes.length}</em>
           </span>
           {draft.keyframes.length > 0 && (
+            <div className="vwb-frame-selection-controls">
+              <span className="vwb-frame-selection-count">已选 {selectedKeyframes.length}</span>
+              <Button size="small" type="text" onClick={toggleAllKeyframes}>
+                {allKeyframesSelected ? '取消全选' : '全选'}
+              </Button>
+              <Tooltip title="删除选中的关键帧">
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  disabled={selectedKeyframes.length === 0}
+                  onClick={() => onRemoveKeyframes(selectedKeyframes.map((kf) => kf.index))}
+                  icon={<Icons.Trash size={14} />}
+                >
+                  删除选中
+                </Button>
+              </Tooltip>
+            </div>
+          )}
+          {draft.keyframes.length > 0 && (
             <Tooltip title="把关键帧导出为画布图片节点">
-              <Button size="small" type="text" onClick={onExport} icon={<Icons.Image size={14} />}>
+              <Button
+                size="small"
+                type="text"
+                disabled={selectedKeyframesForImport.length === 0}
+                onClick={() => void onExport(selectedKeyframesForImport)}
+                icon={<Icons.Image size={14} />}
+              >
                 导入画布
               </Button>
             </Tooltip>
@@ -151,7 +217,11 @@ export function VideoWorkbenchFramePanel({
         ) : (
           <div className="vwb-frame-grid">
             {draft.keyframes.map((kf) => (
-              <div key={kf.index} className="vwb-frame-card">
+              <div
+                key={kf.index}
+                className="vwb-frame-card"
+                data-selected={selectedIndexes.has(kf.index)}
+              >
                 <div className="vwb-frame-thumb" onClick={() => onSeek(kf.timestampSec)}>
                   <img src={kf.previewUrl} alt={`帧 ${kf.index}`} loading="lazy" />
                   <span className="vwb-frame-time">{formatTimestamp(kf.timestampSec)}</span>
@@ -163,9 +233,19 @@ export function VideoWorkbenchFramePanel({
                     </Tooltip>
                   )}
                 </div>
+                <Checkbox
+                  className="vwb-frame-select"
+                  checked={selectedIndexes.has(kf.index)}
+                  aria-label={`选择关键帧 ${kf.index + 1}`}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => {
+                    event.stopPropagation()
+                    toggleKeyframeSelection(kf.index)
+                  }}
+                />
                 <button
                   className="vwb-frame-remove"
-                  onClick={() => onRemoveKeyframe(kf.index)}
+                  onClick={() => onRemoveKeyframes([kf.index])}
                   title="删除"
                 >
                   <Icons.X size={10} />

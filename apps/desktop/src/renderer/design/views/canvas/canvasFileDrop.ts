@@ -46,15 +46,7 @@ const DOCUMENT_EXTENSIONS = new Set([
   'rtf', // 富文本
 ])
 
-const AUDIO_EXTENSIONS = new Set([
-  'mp3',
-  'wav',
-  'm4a',
-  'aac',
-  'flac',
-  'ogg',
-  'opus',
-])
+const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus'])
 
 const TEXT_EXTENSIONS = new Set([
   // 纯文本 / 文档

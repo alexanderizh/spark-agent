@@ -3409,6 +3409,7 @@ export const canvasApi = {
     boardId: string
     file: File
     filePath: string
+    fileSize?: number
     x: number
     y: number
     width?: number
@@ -3456,7 +3457,7 @@ export const canvasApi = {
       thumbnailUrl: fileUrl,
       width: input.imageWidth ?? null,
       height: input.imageHeight ?? null,
-      sizeBytes: input.file.size,
+      sizeBytes: input.fileSize ?? input.file.size,
       metadata: { storageAdapter: 'local-file', filePath: input.filePath },
       createdAt: now(),
       updatedAt: now(),
@@ -3634,10 +3635,12 @@ export const canvasApi = {
    * 上传短路（MiniMax H3 用 `mm_file://{fileId}` 直接引用，跳过上传）。
    * 节点无缩略图（provider 侧文件不可直接 fetch），渲染为占位，与 createEmptyImageNode 一致。
    */
-  async createProviderFileNode(input: {
-    projectId: string
-    boardId: string
-  } & CanvasProviderFileNodeInput): Promise<CanvasNode> {
+  async createProviderFileNode(
+    input: {
+      projectId: string
+      boardId: string
+    } & CanvasProviderFileNodeInput,
+  ): Promise<CanvasNode> {
     const db = readDb()
     const maxZ = Math.max(
       0,
@@ -3645,9 +3648,7 @@ export const canvasApi = {
     )
     const kind = input.kind ?? 'image'
     const fitted =
-      kind === 'image'
-        ? IMAGE_NODE_DEFAULT_SIZE
-        : fitMediaNodeSize(kind, undefined, undefined)
+      kind === 'image' ? IMAGE_NODE_DEFAULT_SIZE : fitMediaNodeSize(kind, undefined, undefined)
     const size = {
       width: input.width ?? fitted.width,
       height: input.height ?? fitted.height,
@@ -5240,14 +5241,14 @@ export const canvasApi = {
             },
           )
         : this.createMediaTask(
-          projectId,
-          { ...request, boardId: node.boardId },
-          {
-            bindToNodeId: nodeId,
-            ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
-            ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
-          },
-        )
+            projectId,
+            { ...request, boardId: node.boardId },
+            {
+              bindToNodeId: nodeId,
+              ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
+              ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+            },
+          )
   },
   async cancelTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
     const db = readDb()
@@ -6277,10 +6278,8 @@ export const canvasApi = {
           : null
       const detectedVideoWidth = detectedVideoMetadata?.width || null
       const detectedVideoHeight = detectedVideoMetadata?.height || null
-      const assetWidth =
-        assetOut.width ?? detectedImageSize?.width ?? detectedVideoWidth
-      const assetHeight =
-        assetOut.height ?? detectedImageSize?.height ?? detectedVideoHeight
+      const assetWidth = assetOut.width ?? detectedImageSize?.width ?? detectedVideoWidth
+      const assetHeight = assetOut.height ?? detectedImageSize?.height ?? detectedVideoHeight
       const assetDurationMs = assetOut.durationMs ?? detectedVideoMetadata?.durationMs ?? null
       const isPanorama360 = task.operation === 'panorama_360' && assetType === 'image'
       const outputNodeType: CanvasNodeType =

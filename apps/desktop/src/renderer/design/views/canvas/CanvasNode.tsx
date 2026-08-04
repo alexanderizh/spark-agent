@@ -29,7 +29,7 @@ import {
 import { operationLabel } from './canvas.api'
 import { isCanvasImageContentNode, isOperationNode, nodeOperation } from './canvas.capabilities'
 import { isFullBleedCanvasImageNode } from './canvasImageNodePresentation'
-import { canvasNodeUsesFlatMediaFrame } from './canvasNodeChrome'
+import { canvasNodeUsesFlatMediaFrame, resolveCanvasNodeMetaLabel } from './canvasNodeChrome'
 import {
   isLongText,
   keepsCanvasMediaNodeAspectRatio,
@@ -603,6 +603,7 @@ export const CanvasNode = memo(function CanvasNode({
     : roleMeta
       ? roleMeta.label
       : (NODE_TYPE_META_LABEL[displayType as SparkCanvasNode['type']] ?? displayType)
+  const metaLabel = resolveCanvasNodeMetaLabel(node, metaTypeLabel)
   const title =
     node.type === 'prompt' && (!node.title || node.title === 'Prompt')
       ? 'Text note'
@@ -1285,7 +1286,7 @@ export const CanvasNode = memo(function CanvasNode({
           {node.type === 'group' && <Icons.Layers size={14} />}
         </span>
         <span className="canvas-node-kind-label">
-          {node.data.panorama360 ? `360全景 · ${metaTypeLabel}` : metaTypeLabel}
+          {node.data.panorama360 ? `360全景 · ${metaLabel}` : metaLabel}
         </span>
       </span>
       <span className="canvas-node-meta-tags">
@@ -1394,339 +1395,345 @@ export const CanvasNode = memo(function CanvasNode({
               title={node.title}
               presentation={collapsedGroupPresentation}
               onRename={(nextTitle) => actions.renameNode?.(node.id, nextTitle)}
-              onColorChange={(groupColor) =>
-                actions.updateNodeData?.(node.id, { groupColor })
-              }
+              onColorChange={(groupColor) => actions.updateNodeData?.(node.id, { groupColor })}
               onExpand={() => actions.updateNodeData?.(node.id, { collapsed: false })}
             />
           ) : (
             <>
-          {inlineToolbar ? (
-            <div className="canvas-node-inline-toolbar nodrag nopan">{inlineToolbar}</div>
-          ) : null}
-          <div className="canvas-node-core">
-            {shouldShowContentTitle && isTextContentNode ? (
-              <div className="canvas-node-content-title canvas-node-content-title-text">
-                <strong title={title}>{title}</strong>
-              </div>
-            ) : null}
-            {/* 仅选中节点时用 nowheel 将滚轮留给节点内容区；未选中时交还画布缩放/平移。 */}
-            <div className={`canvas-node-body${selected ? ' nowheel' : ''}`}>
-              {node.type === 'image' ? (
-                node.data.url ? (
-                  <div className="canvas-node-image-wrap">
-                    <img
-                      className="canvas-node-image"
-                      src={normalizedImageSrc}
-                      alt={title}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    {!isTask && (
-                      <div className="canvas-node-image-chips">
+              {inlineToolbar ? (
+                <div className="canvas-node-inline-toolbar nodrag nopan">{inlineToolbar}</div>
+              ) : null}
+              <div className="canvas-node-core">
+                {shouldShowContentTitle && isTextContentNode ? (
+                  <div className="canvas-node-content-title canvas-node-content-title-text">
+                    <strong title={title}>{title}</strong>
+                  </div>
+                ) : null}
+                {/* 仅选中节点时用 nowheel 将滚轮留给节点内容区；未选中时交还画布缩放/平移。 */}
+                <div className={`canvas-node-body${selected ? ' nowheel' : ''}`}>
+                  {node.type === 'image' ? (
+                    node.data.url ? (
+                      <div className="canvas-node-image-wrap">
+                        <img
+                          className="canvas-node-image"
+                          src={normalizedImageSrc}
+                          alt={title}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                        {!isTask && (
+                          <div className="canvas-node-image-chips">
+                            <button
+                              type="button"
+                              className="canvas-node-subview-chip canvas-node-image-chip-replace"
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                actions.replaceImage?.(node.id)
+                              }}
+                            >
+                              <Icons.Refresh size={12} />
+                              <span>替换图片</span>
+                            </button>
+                            <button
+                              type="button"
+                              className={`canvas-node-subview-chip${assetSubviewCount > 0 ? ' has-subviews' : ''}`}
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                actions.extractCharacterSubview?.(node.id)
+                              }}
+                            >
+                              <Icons.Crop size={12} />
+                              <span>
+                                {assetSubviewCount > 0
+                                  ? `子视图 ${assetSubviewCount}`
+                                  : '提取子视图'}
+                              </span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="canvas-node-image-placeholder">
+                        <Icons.Image size={30} />
+                        <strong>{node.data.message ?? '图片节点'}</strong>
+                        <span>双击节点添加内容</span>
                         <button
                           type="button"
-                          className="canvas-node-subview-chip canvas-node-image-chip-replace"
+                          className="canvas-node-image-placeholder-upload"
                           onClick={(event) => {
                             event.preventDefault()
                             event.stopPropagation()
                             actions.replaceImage?.(node.id)
                           }}
                         >
-                          <Icons.Refresh size={12} />
-                          <span>替换图片</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={`canvas-node-subview-chip${assetSubviewCount > 0 ? ' has-subviews' : ''}`}
-                          onClick={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            actions.extractCharacterSubview?.(node.id)
-                          }}
-                        >
-                          <Icons.Crop size={12} />
-                          <span>
-                            {assetSubviewCount > 0 ? `子视图 ${assetSubviewCount}` : '提取子视图'}
-                          </span>
+                          <Icons.Upload size={14} />
+                          <span>上传图片</span>
                         </button>
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="canvas-node-image-placeholder">
-                    <Icons.Image size={30} />
-                    <strong>{node.data.message ?? '图片节点'}</strong>
-                    <span>双击节点添加内容</span>
-                    <button
-                      type="button"
-                      className="canvas-node-image-placeholder-upload"
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        actions.replaceImage?.(node.id)
-                      }}
+                    )
+                  ) : node.type === 'audio' ? (
+                    node.data.url ? (
+                      <div className="canvas-node-audio">
+                        <Icons.Play size={22} />
+                        <audio
+                          className="canvas-node-audio-player"
+                          src={normalizedAudioSrc}
+                          controls
+                          preload="metadata"
+                        />
+                        <span className="canvas-node-audio-name">
+                          {node.data.message ?? 'audio'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="canvas-node-image-placeholder">
+                        <Icons.Play size={30} />
+                        <strong>{node.data.message ?? '暂无音频'}</strong>
+                        <span>运行任务后在这里预览</span>
+                      </div>
+                    )
+                  ) : node.type === 'video' ? (
+                    node.data.url ? (
+                      <video
+                        className="canvas-node-image"
+                        src={normalizedVideoSrc}
+                        controls
+                        controlsList="nofullscreen noremoteplayback"
+                        disablePictureInPicture
+                        playsInline
+                        preload="metadata"
+                        onLoadedMetadata={(event) => {
+                          const mediaWidth = event.currentTarget.videoWidth
+                          const mediaHeight = event.currentTarget.videoHeight
+                          if (
+                            mediaWidth > 0 &&
+                            mediaHeight > 0 &&
+                            (node.data.mediaWidth !== mediaWidth ||
+                              node.data.mediaHeight !== mediaHeight)
+                          ) {
+                            actions.updateNodeData?.(node.id, { mediaWidth, mediaHeight })
+                          }
+                        }}
+                        onClickCapture={(event) => {
+                          if (event.detail < 2) return
+                          event.preventDefault()
+                          event.stopPropagation()
+                          actions.editNode(node.id)
+                        }}
+                        onDoubleClickCapture={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                        }}
+                        onContextMenu={(e) => {
+                          // 阻止 <video> 原生右键菜单，让事件冒泡到外层 Dropdown 的 contextMenu trigger
+                          e.preventDefault()
+                        }}
+                      />
+                    ) : (
+                      <div className="canvas-node-image-placeholder">
+                        <Icons.Play size={30} />
+                        <strong>{node.data.message ?? '暂无视频'}</strong>
+                        <span>上传后可直接在节点内预览</span>
+                        {inlinePrimaryAction?.kind === 'upload-video' ? (
+                          <>
+                            <button
+                              type="button"
+                              className="canvas-node-inline-primary-action nodrag nopan"
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                videoUploadInputRef.current?.click()
+                              }}
+                            >
+                              {inlinePrimaryAction.label}
+                            </button>
+                            <input
+                              ref={videoUploadInputRef}
+                              type="file"
+                              accept="video/*"
+                              aria-label="上传视频"
+                              hidden
+                              onChange={(event) => {
+                                const file = event.target.files?.[0]
+                                event.target.value = ''
+                                if (file) actions.replaceVideo?.(node.id, file)
+                              }}
+                            />
+                          </>
+                        ) : null}
+                      </div>
+                    )
+                  ) : node.type === 'group' ? (
+                    <div className="canvas-node-group-body">
+                      <div className="canvas-node-group-count">{node.data.text ?? '组'}</div>
+                      <div className="canvas-node-group-hint">
+                        {node.data.message ?? '节点已在组内排列'}
+                      </div>
+                    </div>
+                  ) : isDirectorStage3D ? (
+                    <Stage3DMini data={node.data} />
+                  ) : isVideoWorkbench ? (
+                    <VideoWorkbenchMini data={node.data} />
+                  ) : isOperationNode(node) ? (
+                    <div className="canvas-node-task canvas-node-operation">
+                      <OperationOutputDeck
+                        runs={operationRuns}
+                        mode={operationOutputState.mode}
+                        isolateWheel={selected}
+                        runIndex={operationSelection.runIndex}
+                        outputIndex={operationSelection.outputIndex}
+                        onSelectOutput={selectOperationOutput}
+                        onVideoMetadata={(output, dimensions) => {
+                          if (
+                            !output.nodeId ||
+                            (output.width === dimensions.width &&
+                              output.height === dimensions.height)
+                          ) {
+                            return
+                          }
+                          actions.updateNodeData?.(output.nodeId, {
+                            mediaWidth: dimensions.width,
+                            mediaHeight: dimensions.height,
+                          })
+                        }}
+                        onVideoEdit={() => actions.editNode(node.id)}
+                        fallback={
+                          <div className="canvas-operation-empty-state">
+                            <div className="canvas-operation-empty-icon">
+                              {operationNodeIcon(nodeOperation(node), operationWorkflow)}
+                            </div>
+                            {(operationStatus ?? 'pending') !== 'pending' ? (
+                              <Progress
+                                percent={node.data.progress ?? 0}
+                                size="middle"
+                                status={
+                                  operationStatus === 'failed'
+                                    ? 'exception'
+                                    : operationStatus === 'completed'
+                                      ? 'success'
+                                      : 'active'
+                                }
+                              />
+                            ) : null}
+                            {operationSummary ? (
+                              <div className="canvas-node-task-meta">{operationSummary}</div>
+                            ) : null}
+                            {operationParamSummary.length > 0 ? (
+                              <div className="canvas-operation-param-summary">
+                                {operationParamSummary.map((item) => (
+                                  <span key={item.key}>
+                                    <span>{item.label}</span>
+                                    <strong>{item.value}</strong>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                            <div className="canvas-node-task-msg">
+                              {node.data.message ??
+                                node.data.prompt ??
+                                '点击节点下方编辑面板调整参数后运行'}
+                            </div>
+                          </div>
+                        }
+                      />
+                    </div>
+                  ) : renderShotTable ? (
+                    <CanvasShotScriptTable rows={shotScriptRows} isolateWheel={selected} />
+                  ) : isResourceOutput && (node.type === 'text' || node.type === 'prompt') ? (
+                    <div className={`canvas-node-resource-text${selected ? ' nowheel' : ''}`}>
+                      <div className="canvas-node-resource-text-icon">
+                        <Icons.File size={26} />
+                      </div>
+                      <div className="canvas-node-resource-text-content md-surface">
+                        <MarkdownText
+                          content={node.data.text ?? node.data.message ?? '空文本产物'}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className={`canvas-node-text md-surface${isTextLong ? ' canvas-node-text-long' : ''}`}
                     >
-                      <Icons.Upload size={14} />
-                      <span>上传图片</span>
-                    </button>
-                  </div>
-                )
-              ) : node.type === 'audio' ? (
-                node.data.url ? (
-                  <div className="canvas-node-audio">
-                    <Icons.Play size={22} />
-                    <audio
-                      className="canvas-node-audio-player"
-                      src={normalizedAudioSrc}
-                      controls
-                      preload="metadata"
-                    />
-                    <span className="canvas-node-audio-name">{node.data.message ?? 'audio'}</span>
-                  </div>
-                ) : (
-                  <div className="canvas-node-image-placeholder">
-                    <Icons.Play size={30} />
-                    <strong>{node.data.message ?? '暂无音频'}</strong>
-                    <span>运行任务后在这里预览</span>
-                  </div>
-                )
-              ) : node.type === 'video' ? (
-                node.data.url ? (
-                  <video
-                    className="canvas-node-image"
-                    src={normalizedVideoSrc}
-                    controls
-                    controlsList="nofullscreen noremoteplayback"
-                    disablePictureInPicture
-                    playsInline
-                    preload="metadata"
-                    onLoadedMetadata={(event) => {
-                      const mediaWidth = event.currentTarget.videoWidth
-                      const mediaHeight = event.currentTarget.videoHeight
-                      if (
-                        mediaWidth > 0 &&
-                        mediaHeight > 0 &&
-                        (node.data.mediaWidth !== mediaWidth || node.data.mediaHeight !== mediaHeight)
-                      ) {
-                        actions.updateNodeData?.(node.id, { mediaWidth, mediaHeight })
-                      }
-                    }}
-                    onClickCapture={(event) => {
-                      if (event.detail < 2) return
-                      event.preventDefault()
-                      event.stopPropagation()
-                      actions.editNode(node.id)
-                    }}
-                    onDoubleClickCapture={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                    }}
-                    onContextMenu={(e) => {
-                      // 阻止 <video> 原生右键菜单，让事件冒泡到外层 Dropdown 的 contextMenu trigger
-                      e.preventDefault()
-                    }}
-                  />
-                ) : (
-                  <div className="canvas-node-image-placeholder">
-                    <Icons.Play size={30} />
-                    <strong>{node.data.message ?? '暂无视频'}</strong>
-                    <span>上传后可直接在节点内预览</span>
-                    {inlinePrimaryAction?.kind === 'upload-video' ? (
-                      <>
+                      <MarkdownText
+                        content={node.data.text ?? node.data.message ?? '空节点 · 双击编辑'}
+                      />
+                      {inlinePrimaryAction?.kind === 'edit' ? (
                         <button
                           type="button"
                           className="canvas-node-inline-primary-action nodrag nopan"
                           onClick={(event) => {
                             event.preventDefault()
                             event.stopPropagation()
-                            videoUploadInputRef.current?.click()
+                            actions.editNode(node.id)
                           }}
                         >
                           {inlinePrimaryAction.label}
                         </button>
-                        <input
-                          ref={videoUploadInputRef}
-                          type="file"
-                          accept="video/*"
-                          aria-label="上传视频"
-                          hidden
-                          onChange={(event) => {
-                            const file = event.target.files?.[0]
-                            event.target.value = ''
-                            if (file) actions.replaceVideo?.(node.id, file)
-                          }}
-                        />
-                      </>
-                    ) : null}
-                  </div>
-                )
-              ) : node.type === 'group' ? (
-                <div className="canvas-node-group-body">
-                  <div className="canvas-node-group-count">{node.data.text ?? '组'}</div>
-                  <div className="canvas-node-group-hint">
-                    {node.data.message ?? '节点已在组内排列'}
-                  </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
-              ) : isDirectorStage3D ? (
-                <Stage3DMini data={node.data} />
-              ) : isVideoWorkbench ? (
-                <VideoWorkbenchMini data={node.data} />
-              ) : isOperationNode(node) ? (
-                <div className="canvas-node-task canvas-node-operation">
-                  <OperationOutputDeck
-                    runs={operationRuns}
-                    mode={operationOutputState.mode}
-                    isolateWheel={selected}
-                    runIndex={operationSelection.runIndex}
-                    outputIndex={operationSelection.outputIndex}
-                    onSelectOutput={selectOperationOutput}
-                    onVideoMetadata={(output, dimensions) => {
-                      if (
-                        !output.nodeId ||
-                        (output.width === dimensions.width && output.height === dimensions.height)
-                      ) {
-                        return
-                      }
-                      actions.updateNodeData?.(output.nodeId, {
-                        mediaWidth: dimensions.width,
-                        mediaHeight: dimensions.height,
-                      })
-                    }}
-                    onVideoEdit={() => actions.editNode(node.id)}
-                    fallback={
-                      <div className="canvas-operation-empty-state">
-                        <div className="canvas-operation-empty-icon">
-                          {operationNodeIcon(nodeOperation(node), operationWorkflow)}
-                        </div>
-                        {(operationStatus ?? 'pending') !== 'pending' ? (
-                          <Progress
-                            percent={node.data.progress ?? 0}
-                            size="middle"
-                            status={
-                              operationStatus === 'failed'
-                                ? 'exception'
-                                : operationStatus === 'completed'
-                                  ? 'success'
-                                  : 'active'
-                            }
-                          />
-                        ) : null}
-                        {operationSummary ? (
-                          <div className="canvas-node-task-meta">{operationSummary}</div>
-                        ) : null}
-                        {operationParamSummary.length > 0 ? (
-                          <div className="canvas-operation-param-summary">
-                            {operationParamSummary.map((item) => (
-                              <span key={item.key}>
-                                <span>{item.label}</span>
-                                <strong>{item.value}</strong>
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                        <div className="canvas-node-task-msg">
-                          {node.data.message ??
-                            node.data.prompt ??
-                            '点击节点下方编辑面板调整参数后运行'}
-                        </div>
-                      </div>
-                    }
-                  />
-                </div>
-              ) : renderShotTable ? (
-                <CanvasShotScriptTable rows={shotScriptRows} isolateWheel={selected} />
-              ) : isResourceOutput && (node.type === 'text' || node.type === 'prompt') ? (
-                <div className={`canvas-node-resource-text${selected ? ' nowheel' : ''}`}>
-                  <div className="canvas-node-resource-text-icon">
-                    <Icons.File size={26} />
-                  </div>
-                  <div className="canvas-node-resource-text-content md-surface">
-                    <MarkdownText content={node.data.text ?? node.data.message ?? '空文本产物'} />
-                  </div>
-                </div>
-              ) : (
-                 <div
-                   className={`canvas-node-text md-surface${isTextLong ? ' canvas-node-text-long' : ''}`}
-                 >
-                   <MarkdownText
-                     content={node.data.text ?? node.data.message ?? '空节点 · 双击编辑'}
-                   />
-                   {inlinePrimaryAction?.kind === 'edit' ? (
-                     <button
-                       type="button"
-                       className="canvas-node-inline-primary-action nodrag nopan"
-                       onClick={(event) => {
-                         event.preventDefault()
-                         event.stopPropagation()
-                         actions.editNode(node.id)
-                       }}
-                     >
-                       {inlinePrimaryAction.label}
-                     </button>
-                   ) : null}
-                 </div>
-              )}
-            </div>
-            {/* 图片节点：有图走 full-bleed overlay、空状态走 placeholder，
+                {/* 图片节点：有图走 full-bleed overlay、空状态走 placeholder，
                 两种情况都不需要这条 media 标题栏（会多出一条 surface 栏 + 分隔线，
                 在空状态被夹在 placeholder 与 quick-footer 之间，形成“两层边框 / footer 错位”）。
                 content-title-media 仅留给 audio/video。 */}
-            {shouldShowContentTitle && isMediaContentNode && !useFlatMediaFrame ? (
-              <div className="canvas-node-content-title canvas-node-content-title-media">
-                <strong title={title}>{title}</strong>
+                {shouldShowContentTitle && isMediaContentNode && !useFlatMediaFrame ? (
+                  <div className="canvas-node-content-title canvas-node-content-title-media">
+                    <strong title={title}>{title}</strong>
+                  </div>
+                ) : null}
+                {useFlatMediaFrame ? (
+                  <div className="canvas-node-image-overlay-footer nodrag nopan">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        actions.editNode(node.id)
+                      }}
+                    >
+                      {nodeActionLabel}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="canvas-node-quick-footer nodrag nopan">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        actions.editNode(node.id)
+                      }}
+                    >
+                      {nodeActionLabel}
+                    </button>
+                  </div>
+                )}
               </div>
-            ) : null}
-            {useFlatMediaFrame ? (
-              <div className="canvas-node-image-overlay-footer nodrag nopan">
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    actions.editNode(node.id)
+              {selected &&
+              isTask &&
+              operationOutputState.mode !== 'collection' &&
+              operationOutputState.mode !== 'bundle' ? (
+                <CanvasOperationOutputThumbnailSwitcher
+                  items={operationMediaThumbnails}
+                  activeOutputId={activeOperationOutput?.id}
+                  onSelect={(item) =>
+                    selectOperationOutput(item.runIndex, item.outputIndex, item.output)
+                  }
+                />
+              ) : null}
+              {renderedInlinePanel ? (
+                <div
+                  className={`canvas-node-inline-panel nodrag nopan${selected ? ' nowheel' : ''}${inlinePanelVisible ? ' is-visible' : ' is-hiding'}`}
+                  style={{
+                    ['--canvas-node-inline-extra-height' as string]: `${inlinePanelDisplayHeight}px`,
                   }}
                 >
-                  {nodeActionLabel}
-                </button>
-              </div>
-            ) : (
-              <div className="canvas-node-quick-footer nodrag nopan">
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    actions.editNode(node.id)
-                  }}
-                >
-                  {nodeActionLabel}
-                </button>
-              </div>
-            )}
-          </div>
-          {selected &&
-          isTask &&
-          operationOutputState.mode !== 'collection' &&
-          operationOutputState.mode !== 'bundle' ? (
-            <CanvasOperationOutputThumbnailSwitcher
-              items={operationMediaThumbnails}
-              activeOutputId={activeOperationOutput?.id}
-              onSelect={(item) =>
-                selectOperationOutput(item.runIndex, item.outputIndex, item.output)
-              }
-            />
-          ) : null}
-          {renderedInlinePanel ? (
-            <div
-              className={`canvas-node-inline-panel nodrag nopan${selected ? ' nowheel' : ''}${inlinePanelVisible ? ' is-visible' : ' is-hiding'}`}
-              style={{
-                ['--canvas-node-inline-extra-height' as string]: `${inlinePanelDisplayHeight}px`,
-              }}
-            >
-              {renderedInlinePanel}
-            </div>
-          ) : null}
+                  {renderedInlinePanel}
+                </div>
+              ) : null}
             </>
           )}
           <Handle type="source" position={Position.Right} className="canvas-node-handle" />

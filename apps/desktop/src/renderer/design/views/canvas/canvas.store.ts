@@ -507,6 +507,7 @@ export function useCanvasWorkspace(projectId: string) {
     async (input: {
       file: File
       filePath: string
+      fileSize?: number
       x: number
       y: number
       width?: number

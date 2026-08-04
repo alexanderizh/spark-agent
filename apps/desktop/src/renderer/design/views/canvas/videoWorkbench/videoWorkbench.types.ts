@@ -61,6 +61,13 @@ export interface WorkbenchOutput {
   summary: string
 }
 
+/** 产物复制到项目并创建画布节点后的持久化引用。 */
+export interface WorkbenchCanvasMaterialization {
+  nodeId: string
+  outputPath: string
+  outputUrl: string
+}
+
 /** 工作台激活的 Tab */
 export type VideoWorkbenchTab = 'resources' | 'frames' | 'edit' | 'output'
 

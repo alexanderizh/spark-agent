@@ -5281,6 +5281,7 @@ export interface CanvasAssetCopyToProjectResponse {
   filePath?: string
   fileName?: string
   relativePath?: string
+  fileSize?: number
   error?: string
 }
 
@@ -5709,14 +5710,8 @@ export interface IpcChannelMap
   'sdk:integrity-install': [SdkIntegrityInstallRequest, SdkIntegrityInstallResponse]
 
   // Optional capability packages (Office Viewer and local depth only)
-  'optional-capability:list': [
-    OptionalCapabilityListRequest,
-    OptionalCapabilityListResponse,
-  ]
-  'optional-capability:check': [
-    OptionalCapabilityCheckRequest,
-    OptionalCapabilityCheckResponse,
-  ]
+  'optional-capability:list': [OptionalCapabilityListRequest, OptionalCapabilityListResponse]
+  'optional-capability:check': [OptionalCapabilityCheckRequest, OptionalCapabilityCheckResponse]
   'optional-capability:install': [
     OptionalCapabilityMutationRequest,
     OptionalCapabilityMutationResponse,

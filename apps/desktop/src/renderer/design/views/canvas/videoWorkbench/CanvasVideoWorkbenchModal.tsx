@@ -27,6 +27,7 @@ import {
   type KeyframeStrategy,
   type VideoProbeInfo,
   type VideoWorkbenchData,
+  type WorkbenchCanvasMaterialization,
   type WorkbenchKeyframe,
   type WorkbenchOutput,
 } from './videoWorkbench.types'
@@ -123,7 +124,10 @@ interface Props {
   onClose: () => void
   onSave: (data: VideoWorkbenchData) => Promise<void>
   /** 把关键帧导出为画布图片节点 */
-  onExportKeyframes?: (frames: WorkbenchKeyframe[], sourceNodeId: string) => Promise<void>
+  onExportKeyframes?: (
+    frames: WorkbenchKeyframe[],
+    sourceNodeId: string,
+  ) => Promise<WorkbenchKeyframe[] | undefined>
   /** 添加/切换源视频（文件选择器 → 落盘 → 写回 node.data.url） */
   onAddVideo?: () => Promise<void>
   /** 从画布选择视频作为源（传入画布视频节点的 url） */
@@ -139,7 +143,7 @@ interface Props {
   onMaterializeOutput?: (
     output: WorkbenchOutput,
     mode: 'add' | 'replace',
-  ) => Promise<string | undefined>
+  ) => Promise<WorkbenchCanvasMaterialization | undefined>
 }
 
 function canvasResourceOptionToWorkbenchResource(
@@ -648,15 +652,25 @@ export function CanvasVideoWorkbenchModal({
     playbackToggle()
   }, [selectedResourceId, playbackToggle])
 
-  const handleExportKeyframes = useCallback(async () => {
-    if (!node || !onExportKeyframes || draft.keyframes.length === 0) return
-    setBusy(true)
-    try {
-      await onExportKeyframes(draft.keyframes, node.id)
-    } finally {
-      setBusy(false)
-    }
-  }, [node, onExportKeyframes, draft.keyframes])
+  const handleExportKeyframes = useCallback(
+    async (frames: WorkbenchKeyframe[]) => {
+      if (!node || !onExportKeyframes || frames.length === 0) return
+      setBusy(true)
+      try {
+        const imported = await onExportKeyframes(frames, node.id)
+        if (imported && imported.length > 0) {
+          const importedByIndex = new Map(imported.map((frame) => [frame.index, frame]))
+          setDraft((current) => ({
+            ...current,
+            keyframes: current.keyframes.map((frame) => importedByIndex.get(frame.index) ?? frame),
+          }))
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [node, onExportKeyframes],
+  )
 
   // ── 通用视频处理（剪辑/转码/分割等），产物记录到 draft.outputs ──
   const handleProcess = useCallback(
@@ -858,11 +872,19 @@ export function CanvasVideoWorkbenchModal({
       if (!onMaterializeOutput) return
       setBusy(true)
       try {
-        const nodeId = await onMaterializeOutput(output, mode)
+        const materialized = await onMaterializeOutput(output, mode)
+        const nextOutput = materialized
+          ? {
+              ...output,
+              canvasNodeId: materialized.nodeId,
+              outputPath: materialized.outputPath,
+              outputUrl: materialized.outputUrl,
+            }
+          : output
         updateDraft((current) => ({
           ...current,
           outputs: current.outputs.map((item) =>
-            item.id === output.id && nodeId ? { ...item, canvasNodeId: nodeId } : item,
+            item.id === output.id ? { ...item, ...nextOutput } : item,
           ),
         }))
         message.success(mode === 'add' ? '产物已添加到画布' : '当前视频节点已替换')
@@ -919,10 +941,16 @@ export function CanvasVideoWorkbenchModal({
               ? `分段：${resource.title}（${formatTimestamp(startSec)}-${formatTimestamp(endSec)}）`
               : `分段：${resource.title}`,
         }
-        const nodeId = await onMaterializeOutput(output, mode)
-        updateDraft((current) =>
-          prependWorkbenchOutput(current, nodeId ? { ...output, canvasNodeId: nodeId } : output),
-        )
+        const materialized = await onMaterializeOutput(output, mode)
+        const nextOutput = materialized
+          ? {
+              ...output,
+              canvasNodeId: materialized.nodeId,
+              outputPath: materialized.outputPath,
+              outputUrl: materialized.outputUrl,
+            }
+          : output
+        updateDraft((current) => prependWorkbenchOutput(current, nextOutput))
         message.success(mode === 'add' ? '分段已添加到画布' : '当前视频节点已替换为该分段')
       } catch (error) {
         message.error(error instanceof Error ? error.message : String(error))
@@ -1397,20 +1425,22 @@ export function CanvasVideoWorkbenchModal({
     setSavingDraft(true)
     try {
       let nextDraft = draft
-      const sourceResourceId = node ? `source:${node.id}` : ''
-      const resourcesById = indexResourcesById(draft.resourcePanel)
-      if (
-        onMaterializeOutput &&
-        trackNeedsMaterialization(draft.track, resourcesById, sourceResourceId)
-      ) {
+      if (onMaterializeOutput && trackNeedsMaterialization(draft.track)) {
         setBusy(true)
         try {
           const output = await exportTrackOutput(draft.track)
           if (!output) throw new Error('当前轨道没有可保存的视频')
-          const nodeId = await onMaterializeOutput(output, 'add')
+          const materialized = await onMaterializeOutput(output, 'add')
           nextDraft = prependWorkbenchOutput(
             draft,
-            nodeId ? { ...output, canvasNodeId: nodeId } : output,
+            materialized
+              ? {
+                  ...output,
+                  canvasNodeId: materialized.nodeId,
+                  outputPath: materialized.outputPath,
+                  outputUrl: materialized.outputUrl,
+                }
+              : output,
           )
         } finally {
           setBusy(false)
@@ -1423,7 +1453,7 @@ export function CanvasVideoWorkbenchModal({
     } finally {
       setSavingDraft(false)
     }
-  }, [draft, exportTrackOutput, node, onClose, onMaterializeOutput, onSave])
+  }, [draft, exportTrackOutput, onClose, onMaterializeOutput, onSave])
 
   if (!open) return null
 
@@ -1753,8 +1783,14 @@ export function CanvasVideoWorkbenchModal({
                 }}
                 onSeek={seekTo}
                 onExport={handleExportKeyframes}
-                onRemoveKeyframe={(idx) => {
-                  setDraft((d) => ({ ...d, keyframes: d.keyframes.filter((k) => k.index !== idx) }))
+                onRemoveKeyframes={(indexes) => {
+                  const indexesToRemove = new Set(indexes)
+                  setDraft((d) => ({
+                    ...d,
+                    keyframes: d.keyframes.filter(
+                      (keyframe) => !indexesToRemove.has(keyframe.index),
+                    ),
+                  }))
                 }}
               />
             )}

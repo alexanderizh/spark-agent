@@ -54,7 +54,10 @@ describe('classifyDroppedFile', () => {
   it('classifies office documents by mime when present', () => {
     expect(
       classifyDroppedFile(
-        makeFile('report', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+        makeFile(
+          'report',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ),
       ),
     ).toBe('document')
     expect(
