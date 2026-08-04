@@ -13,6 +13,7 @@ import {
   QUICK_REPLIES_SYSTEM_PROMPT,
   WEB_SEARCH_SYSTEM_PROMPT,
 } from './session-mcp-tooling-helpers.js'
+import { SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT } from './session-schedule-agent-tools.js'
 
 describe('DEBUG_MODE_SYSTEM_PROMPT', () => {
   it('forces bug reports to enter the interactive loop before code edits', () => {
@@ -129,6 +130,24 @@ describe('QUICK_REPLIES_SYSTEM_PROMPT', () => {
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('mutually exclusive')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('AskUserQuestion')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('request_user_input')
+  })
+})
+
+describe('SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT', () => {
+  it('teaches the create-wait-wake-check-delete lifecycle', () => {
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('session_schedule_list')
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('session_schedule_create')
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('end the current turn')
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('Scheduled Task Context')
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('session_schedule_delete')
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('current session only')
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('`interval` requires `intervalSeconds`')
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain(
+      '`cron` requires a valid five-field `cronExpression`',
+    )
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain(
+      '`once` requires a future ISO-8601 `runAt`',
+    )
   })
 })
 
