@@ -3365,7 +3365,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
   {
     // MiniMax-H3（视频生成 V2，POST /v2/video_generation）：content[] 多模态数组。
     // t2v / i2v（首帧+尾帧）/ r2v（参考图+视频+音频）。i2v 与 r2v 互斥（adapter 强制）。
-    // resolution 固定 2K；错误走真实 HTTP 码 + OAI error（minimaxV2ErrorContract）。
+    // resolution 可选 768P / 2K（默认 2K）；错误走真实 HTTP 码 + OAI error（minimaxV2ErrorContract）。
     // 来源：docs/integrations/minimax/video-models-v2.md
     id: 'minimax:v2-h3',
     providerKind: 'minimax-hailuo',
@@ -3379,7 +3379,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxH3VideoT2VSchema,
-        defaults: { duration: 5, ratio: '16:9', aigc_watermark: false },
+        defaults: { duration: 5, resolution: '2K', ratio: '16:9', aigc_watermark: false },
       },
       {
         id: 'video.image_to_video',
@@ -3391,7 +3391,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxH3VideoSchema,
-        defaults: { duration: 5, ratio: 'adaptive', aigc_watermark: false },
+        defaults: { duration: 5, resolution: '2K', ratio: 'adaptive', aigc_watermark: false },
       },
       {
         id: 'video.reference_to_video',
@@ -3415,7 +3415,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxH3VideoSchema,
-        defaults: { duration: 5, ratio: 'adaptive', aigc_watermark: false },
+        defaults: { duration: 5, resolution: '2K', ratio: 'adaptive', aigc_watermark: false },
         rolePolicy: {
           imageRoles: ['reference_image'],
           videoRoles: ['reference_video'],

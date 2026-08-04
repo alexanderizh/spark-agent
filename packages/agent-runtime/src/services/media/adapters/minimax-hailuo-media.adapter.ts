@@ -368,7 +368,7 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
       throw new MediaProviderError('invalid_input', 'MiniMax H3 每次请求必须包含至少一个非空 text 项')
     }
     const params = buildMinimaxV2VideoParams(input, ctx, capability)
-    const body: Record<string, unknown> = { model, content, resolution: '2K', ...params }
+    const body: Record<string, unknown> = { model, content, ...params }
 
     const url = `${base}/v2/video_generation`
     logMediaCall({
@@ -516,26 +516,48 @@ function buildMinimaxV1VideoParams(input: MediaGenerateInput, ctx: MediaProvider
   return params
 }
 
-/** V2(H3) 视频请求参数：resolution 固定 2K（adapter 恒发），duration [4,15]，ratio，watermark。 */
+/**
+ * V2(H3) 视频请求参数：resolution 透传（768P/2K，默认 2K），duration [4,15]，ratio，watermark。
+ * resolution 是官方必填字段恒发；非枚举值兜底 2K（validator 已拦，此处二次防御）。
+ */
 function buildMinimaxV2VideoParams(
   input: MediaGenerateInput,
   ctx: MediaProviderContext,
   capability: MediaCapabilityId,
 ): Record<string, unknown> {
   const raw = removeBlankParams(input.modelParams)
+  // 先按 manifest aliases 归一，再读字段。
+  // 注意：公共 compiler (media-request-compiler.ts CANONICAL_ALIASES_FALLBACK) 会把
+  // 用户传入的 ratio→aspectRatio、duration→durationSeconds 改名，但 capability.defaults
+  // 里的 ratio/duration 不被改名，导致 compile 后两键并存：
+  //   { ratio: <默认值>, aspectRatio: <用户选的值> }
+  // 因此读取时必须让「被改名的用户值」优先（aspectRatio/durationSeconds 在前），
+  // 否则用户在画布选的画幅/时长会被默认值盖掉。aspectRatio/durationSeconds 两键只可能
+  // 来自用户 raw（defaults 用的是原键名），故该优先级是安全的。
+  const aliases = ctx.mediaManifestCapability?.aliases
+  const normalized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    normalized[aliases?.[key] ?? key] = value
+  }
   const params: Record<string, unknown> = {}
-  const duration = numberVal(raw.duration)
+  // resolution 官方枚举 768P / 2K，必填；缺省或非枚举值统一兜底 2K。
+  const resolutionRaw = stringVal(normalized.resolution)
+  params.resolution = resolutionRaw === '768P' || resolutionRaw === '2K' ? resolutionRaw : '2K'
+  const duration = numberVal(normalized.durationSeconds) ?? numberVal(normalized.duration)
   if (duration != null) params.duration = clampInt(duration, undefined, 5, 4, 15)
-  const ratio = stringVal(raw.ratio)
+  const ratio =
+    stringVal(normalized.aspectRatio) ??
+    stringVal(normalized.aspect_ratio) ??
+    stringVal(normalized.ratio)
   if (ratio) {
     params.ratio = ratio
   } else {
     // t2v 必填且不能为 adaptive；i2v/r2v 默认 adaptive。
     params.ratio = capability === 'video.generate' ? '16:9' : 'adaptive'
   }
-  const watermark = boolVal(raw.aigc_watermark)
+  const watermark = boolVal(normalized.aigc_watermark)
   if (watermark != null) params.aigc_watermark = watermark
-  const callbackUrl = stringVal(raw.callback_url) ?? stringVal(raw.callbackUrl)
+  const callbackUrl = stringVal(normalized.callback_url) ?? stringVal(normalized.callbackUrl)
   if (callbackUrl) params.callback_url = callbackUrl
   return params
 }

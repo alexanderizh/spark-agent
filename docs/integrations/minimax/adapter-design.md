@@ -2,6 +2,8 @@
 
 > 状态: 已落地 | 最后核对: 2026-08-04
 >
+> 2026-08-04 H3 参数补全（对照 `video-generation-v2-create` 官方文档复核）：V2 顶层仅 `model/content/resolution/duration/ratio/callback_url/aigc_watermark` 七项；`resolution` 官方支持 `768P`/`2K`（此前固定发 2K 且 UI 不暴露）。本次将 `resolution` 纳入 `minimaxH3VideoSchema`/`minimaxH3VideoT2VSchema` 的 enum 字段（默认 `2K`），manifest 三个 capability `defaults` 同步，adapter `buildMinimaxV2VideoParams` 透传 + 非法值兜底 2K，validator 补 `resolution` 枚举校验，单测覆盖 768P 透传与非法值兜底。`duration`/`ratio`/`aigc_watermark` 经核对已与文档一致，无需调整。`prompt_optimizer`/`seed`/`camera`/`negative_prompt` 等官方在该端点不存在，不补。
+>
 > 提交前风险修复：Files 响应在 JSON 边界保留未加引号的 int64 file_id，避免 JSON.parse 先行舍入；画布创建、运行与重试任务均校验 Provider 文件来源配置，禁止跨账号复用 file_id。
 >
 > 2026-07-31 实施落地（按用户「只开发主流和最新模型」指令）：
@@ -320,7 +322,7 @@ validator 阻断：`templateId` 不在 11 项枚举 → 报错；模板声明需
     { "type": "image_url", "image_url": { "url": "{{...}}" }, "role": "first_frame" }
     // role ∈ first_frame / last_frame / reference_image / reference_video / reference_audio
   ],
-  "resolution": "2K",                  // 仅 2K
+  "resolution": "2K",                  // 768P / 2K，默认 2K
   "duration": 5,                        // [4,15] 整数
   "ratio": "16:9",                      // adaptive / 21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16
   "aigc_watermark": false
@@ -339,6 +341,7 @@ validator 阻断：`templateId` 不在 11 项枚举 → 报错；模板声明需
 3. **i2v 与 r2v 互斥（强制）**：`reference_image`/`reference_video`/`reference_audio` 任一出现，就不能再出现 `first_frame`/`last_frame`（反之亦然）。validator 必须阻断同时出现。
 4. **`image_url.url` 三种形态**：公网 URL / `mm_file://{file_id}` / `data:image/<格式>;base64,...`（`<格式>` 小写）。**请求体总大小 ≤ 64MB**，大文件用 URL 或 `mm_file://`，**不要 base64**（放大约 33%）。
 5. **媒体限制**：图片 JPG/JPEG/PNG/WEBP/HEIC/HEIF ≤30MB、[256,5760]px；参考视频 MP4/MOV ≤50MB、≤3 段、每段 [2,15]s；参考音频 WAV/MP3 ≤15MB、≤3 段。
+6. **`resolution`（必填）**：官方支持 `768P` / `2K`。manifest `paramSchema` 以 enum 字段暴露（默认 `2K`），adapter 读取后透传；缺省或非枚举值兜底 `2K`（validator 已拦非法枚举，adapter 二次防御）。
 
 **轮询**：`GET /v2/query/video_generation/{task_id}`（path 参数，非 query），**仅支持最近 7 天内任务**。`inspect`：`status==='succeeded'`→done（取 `content.url`）/ `'failed'||'expired'`→failed / 其余 pending。状态枚举全小写（与 v1 首字母大写不同）。
 

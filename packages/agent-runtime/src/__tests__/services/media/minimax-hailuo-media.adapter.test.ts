@@ -344,6 +344,76 @@ describe('MinimaxHailuoMediaAdapter', () => {
     })
   })
 
+  it('V2 H3 generate(t2v): resolution=768P 透传到请求体', async () => {
+    const manifest = findManifest('minimax:v2-h3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-768' })
+      if (url.includes('/v2/query/video_generation/')) {
+        return jsonRes({ task: { status: 'succeeded', content: { url: 'https://cdn/h3-768.mp4' } } })
+      }
+      if (url === 'https://cdn/h3-768.mp4') return binaryRes(FAKE_MP4)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        prompt: '夜景车流',
+        modelParams: { duration: 8, resolution: '768P', ratio: '16:9' },
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: 'MiniMax-H3',
+        mediaApiType: 'async',
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+        mediaDefaults: { polling: { intervalMs: 1 } },
+      }),
+    )
+    const body = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+    )
+    expect(body.resolution).toBe('768P')
+    expect(body.duration).toBe(8)
+  })
+
+  it('V2 H3 generate(t2v): resolution 非枚举值兜底为 2K（adapter 二次防御）', async () => {
+    const manifest = findManifest('minimax:v2-h3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-fb' })
+      if (url.includes('/v2/query/video_generation/')) {
+        return jsonRes({ task: { status: 'succeeded', content: { url: 'https://cdn/h3-fb.mp4' } } })
+      }
+      if (url === 'https://cdn/h3-fb.mp4') return binaryRes(FAKE_MP4)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        prompt: '非法分辨率兜底',
+        modelParams: { ratio: '16:9', resolution: '4K' },
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: 'MiniMax-H3',
+        mediaApiType: 'async',
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+        mediaDefaults: { polling: { intervalMs: 1 } },
+      }),
+    )
+    const body = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+    )
+    // validator 会拦 '4K'，但 adapter 兜底保证即使绕过校验也只发合法枚举。
+    expect(body.resolution).toBe('2K')
+  })
+
   it('V2 H3: BaseURL 已带 /v2 时不会重复拼接版本路径', async () => {
     const manifest = findManifest('minimax:v2-h3')
     const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
@@ -415,6 +485,52 @@ describe('MinimaxHailuoMediaAdapter', () => {
       { type: 'image_url', image_url: { url: 'https://cdn/first.png' }, role: 'first_frame' },
     ])
     expect(body.ratio).toBe('adaptive')
+  })
+
+  it('V2 H3 i2v: 用户选的画幅/时长生效（compile 改名后 ratio+aspectRatio 并存时取用户值）', async () => {
+    const manifest = findManifest('minimax:v2-h3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.image_to_video')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-ratio' })
+      if (url.includes('/v2/query/video_generation/')) {
+        return jsonRes({ task: { status: 'succeeded', content: { url: 'https://cdn/h3r.mp4' } } })
+      }
+      if (url === 'https://cdn/h3r.mp4') return binaryRes(FAKE_MP4)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        prompt: '测试画幅',
+        inputFiles: [{ type: 'image', url: 'https://cdn/first.png', role: 'first_frame' }],
+        modelParams: {
+          // 模拟公共 compiler 改名后的 canonicalParams 现场：
+          // capability.defaults 的 ratio/duration 未改名 + 用户值被改名为 aspectRatio/durationSeconds，两键并存。
+          ratio: 'adaptive',
+          aspectRatio: '3:4',
+          duration: 5,
+          durationSeconds: 10,
+          resolution: '2K',
+        },
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: 'MiniMax-H3',
+        mediaApiType: 'async',
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+        mediaDefaults: { polling: { intervalMs: 1 } },
+      }),
+    )
+    const body = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+    )
+    // 用户选的 3:4 必须生效，不能被默认 adaptive 覆盖
+    expect(body.ratio).toBe('3:4')
+    // 用户选的 10s 必须生效，不能被默认 5s 覆盖
+    expect(body.duration).toBe(10)
   })
 
   it('V2 错误归一: HTTP 422 + OAI error.type=unprocessable_entity_error → content_policy_blocked', async () => {

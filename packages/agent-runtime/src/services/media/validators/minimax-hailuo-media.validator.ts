@@ -16,6 +16,7 @@ import {
 } from './media-validator.types.js'
 
 const V2_RATIOS = ['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16']
+const V2_RESOLUTIONS = ['768P', '2K']
 const TEMPLATE_ID_SET = new Set<string>(MINIMAX_VIDEO_TEMPLATE_IDS)
 
 export function validateMinimaxHailuoMediaRequest(context: MediaValidationContext): MediaContractIssue[] {
@@ -156,6 +157,15 @@ function validateV2VideoRequest(context: MediaValidationContext, prompt: string)
   const duration = numericParam(params, 'duration')
   if (duration != null && (duration < 4 || duration > 15)) {
     issues.push(validationIssue('out_of_range', 'MiniMax H3 时长必须在 4–15 秒', ['modelParams', 'duration']))
+  }
+  const resolution = stringParam(params, 'resolution')
+  if (resolution && !V2_RESOLUTIONS.includes(resolution)) {
+    issues.push(
+      validationIssue('invalid_enum', `MiniMax H3 resolution 不支持 ${resolution}，仅 768P / 2K`, [
+        'modelParams',
+        'resolution',
+      ]),
+    )
   }
   const ratio = stringParam(params, 'ratio')
   if (ratio && !V2_RATIOS.includes(ratio)) {

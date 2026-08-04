@@ -319,8 +319,8 @@ export const minimaxImage01LiveSchema = {
 /**
  * MiniMax-H3 视频生成 V2（POST /v2/video_generation，content[] 多模态数组）参数 schema。
  * 用于 i2v / r2v 场景：ratio 含 adaptive（由输入图或参考决定时用 adaptive）；t2v 用
- * minimaxH3VideoT2VSchema（ratio 必填且不含 adaptive）。resolution 官方当前固定 2K，
- * adapter 恒发 '2K'，不在 UI 暴露。
+ * minimaxH3VideoT2VSchema（ratio 必填且不含 adaptive）。resolution 官方支持 768P / 2K，
+ * 默认 2K（adapter 读取后透传，缺省发 2K）。
  * 来源：docs/integrations/minimax/video-models-v2.md §4
  */
 export const minimaxH3VideoSchema = {
@@ -328,6 +328,13 @@ export const minimaxH3VideoSchema = {
   additionalProperties: true,
   properties: {
     duration: { type: 'integer', title: '时长(秒)', minimum: 4, maximum: 15, default: 5 },
+    resolution: {
+      type: 'string',
+      title: '分辨率',
+      enum: ['768P', '2K'],
+      default: '2K',
+      description: '768P 出片更快更省，2K 画质更高（默认）',
+    },
     ratio: {
       type: 'string',
       title: '画幅',
@@ -340,13 +347,21 @@ export const minimaxH3VideoSchema = {
 
 /**
  * H3 文生视频（t2v, video.generate）专用比例 schema：ratio 必填且不能为 adaptive，
- * 故 enum 不含 adaptive（与 validator 约束一致）。来源：video-models-v2.md §4.3。
+ * 故 enum 不含 adaptive（与 validator 约束一致）；resolution 与 i2v/r2v 一致。
+ * 来源：video-models-v2.md §4.3。
  */
 export const minimaxH3VideoT2VSchema = {
   type: 'object',
   additionalProperties: true,
   properties: {
     duration: { type: 'integer', title: '时长(秒)', minimum: 4, maximum: 15, default: 5 },
+    resolution: {
+      type: 'string',
+      title: '分辨率',
+      enum: ['768P', '2K'],
+      default: '2K',
+      description: '768P 出片更快更省，2K 画质更高（默认）',
+    },
     ratio: {
       type: 'string',
       title: '画幅',
