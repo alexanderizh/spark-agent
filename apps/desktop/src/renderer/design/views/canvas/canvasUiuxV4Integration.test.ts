@@ -74,6 +74,27 @@ describe('canvas cinematic integration', () => {
     expect(dock).not.toContain('shortLabel="任务"')
   })
 
+  it('uses the ordinary arrow cursor for the select canvas tool', () => {
+    const legacyStyles = readCanvasSource('./CanvasWorkspaceView.less')
+
+    expect(legacyStyles).toMatch(
+      /\.canvas-stage-tool-select\s*\{[\s\S]*?cursor:\s*default;/,
+    )
+    expect(legacyStyles).toContain('.canvas-stage-tool-select .react-flow__pane')
+    expect(legacyStyles).toContain('cursor: default;')
+  })
+
+  it('gives the left floating dock a larger translucent glass surface', () => {
+    const shell = readCanvasSource('./cinematic/shell.less')
+
+    expect(shell).toMatch(/\.canvas-bottom-dock\s*\{[\s\S]*?width:\s*44px;/)
+    expect(shell).toMatch(/\.canvas-bottom-dock\s*\{[\s\S]*?backdrop-filter:\s*blur\(20px\)/)
+    expect(shell).toContain('background: rgba(25, 25, 25, 0.72);')
+    expect(shell).toContain('.canvas-bottom-dock .ant-btn')
+    expect(shell).toContain('width: 36px;')
+    expect(shell).toContain('height: 36px;')
+  })
+
   it('keeps workspace chrome, side panel, overlays and node editors in dedicated owners', () => {
     const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
     const floatingToolbar = readCanvasSource('./CanvasFloatingNodeToolbar.tsx')

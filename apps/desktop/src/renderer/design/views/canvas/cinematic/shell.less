@@ -189,20 +189,23 @@
     bottom: auto;
     left: 12px;
     display: flex;
-    width: 36px;
+    width: 44px;
     max-height: calc(100% - 72px);
     flex-direction: column;
-    gap: 2px;
-    padding: 3px;
-    border: 1px solid var(--canvas-cinema-border);
-    border-radius: 12px;
-    background: rgba(25, 25, 25, 0.94);
-    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.34);
+    gap: 4px;
+    padding: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px;
+    background: rgba(25, 25, 25, 0.72);
+    box-shadow:
+      0 18px 42px rgba(0, 0, 0, 0.34),
+      inset 0 1px rgba(255, 255, 255, 0.08);
     overflow-x: hidden;
     overflow-y: auto;
     transform: translateY(-50%);
     scrollbar-width: none;
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
   }
 
   .canvas-bottom-dock::-webkit-scrollbar {
@@ -212,16 +215,16 @@
   .canvas-bottom-dock-group {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
   }
 
   .canvas-bottom-dock .ant-btn {
-    width: 28px;
-    min-width: 28px;
-    height: 28px;
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
     padding: 0;
     border: 0;
-    border-radius: 8px;
+    border-radius: 10px;
     background: transparent;
     color: var(--canvas-cinema-text-faint);
   }
@@ -238,9 +241,9 @@
   }
 
   .canvas-bottom-dock-divider {
-    width: 20px;
+    width: 28px;
     height: 1px;
-    margin: 3px auto;
+    margin: 4px auto;
     background: var(--canvas-cinema-border);
   }
 
