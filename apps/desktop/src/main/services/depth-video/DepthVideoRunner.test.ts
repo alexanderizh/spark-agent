@@ -52,6 +52,34 @@ describe('DepthVideoRunner', () => {
     expect(args).toContain('-an')
   })
 
+  it('maps the source audio when audio preservation is enabled', () => {
+    const args = buildDepthVideoEncoderArgs({
+      inputPath: '/tmp/source.mp4',
+      width: 640,
+      height: 360,
+      fps: 24,
+      durationSec: 10,
+      outputPath: '/tmp/depth.mp4',
+      preserveAudio: true,
+    })
+    expect(args).toEqual(
+      expect.arrayContaining([
+        '-i',
+        '/tmp/source.mp4',
+        '-map',
+        '1:v:0',
+        '-map',
+        '0:a:0?',
+        '-c:a',
+        'aac',
+        '-t',
+        '10',
+      ]),
+    )
+    expect(args).not.toContain('-shortest')
+    expect(args).not.toContain('-an')
+  })
+
   it('preserves odd dimensions with an H.264-compatible non-subsampled pixel format', () => {
     const args = buildDepthVideoEncoderArgs({
       width: 641,

@@ -37,7 +37,7 @@ export function resolveCanvasOperationPanelMode(
       dedicatedMediaKind: 'video',
       showCustomParams: false,
       showLocalDepthNotice: true,
-      submitLabel: '生成深度视频',
+      submitLabel: '生成深度视频转换',
     }
   }
   if (executionKind === 'text') {
@@ -65,5 +65,5 @@ export function resolveCanvasOperationPanelMode(
 export function resolveCanvasDepthSubmitLabel(state: CanvasDepthModelState): string {
   if (state === 'missing') return '下载模型并运行'
   if (state === 'installing') return '正在下载深度模型'
-  return '生成深度视频'
+  return '生成深度视频转换'
 }

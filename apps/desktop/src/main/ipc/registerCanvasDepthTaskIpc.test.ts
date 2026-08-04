@@ -110,6 +110,7 @@ describe('registerCanvasDepthTaskIpc', () => {
       projectId: 'project-1',
       clientTaskId: 'canvas-task-1',
       inputPath: '/canvas/input.mp4',
+      preserveAudio: true,
     })
 
     expect(response).toMatchObject({ status: 'running', runtimeTaskId: 'depth-runtime-1' })
@@ -137,10 +138,11 @@ describe('registerCanvasDepthTaskIpc', () => {
       installing_model: '资源下载中：正在安装本地深度 Runtime 与模型',
       decoding: '任务执行中：正在解析输入视频',
       estimating_depth: '任务执行中：正在逐帧生成深度',
-      encoding: '任务执行中：正在编码深度视频',
+      encoding: '任务执行中：正在编码深度视频转换结果',
     })
     expect(runner.run).toHaveBeenCalledWith(
       expect.objectContaining({
+        preserveAudio: true,
         modelDir: '/managed/model',
         runtimeEntryPath:
           join(

@@ -25,7 +25,7 @@ describe('resolveCanvasOperationPanelMode', () => {
       dedicatedMediaKind: 'video',
       showCustomParams: false,
       showLocalDepthNotice: true,
-      submitLabel: '生成深度视频',
+      submitLabel: '生成深度视频转换',
     })
   })
 
@@ -46,7 +46,7 @@ describe('resolveCanvasOperationPanelMode', () => {
 
   it('announces the first-use model download before running depth video', () => {
     expect(resolveCanvasDepthSubmitLabel('missing')).toBe('下载模型并运行')
-    expect(resolveCanvasDepthSubmitLabel('ready')).toBe('生成深度视频')
+    expect(resolveCanvasDepthSubmitLabel('ready')).toBe('生成深度视频转换')
     expect(resolveCanvasDepthSubmitLabel('installing')).toBe('正在下载深度模型')
   })
 })

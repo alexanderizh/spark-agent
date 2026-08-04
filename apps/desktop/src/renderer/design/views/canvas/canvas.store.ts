@@ -678,7 +678,7 @@ export function useCanvasWorkspace(projectId: string) {
       if (!current) return
       const existingTaskIds = new Set(current.tasks.map((task) => task.id))
       let next: CanvasSnapshot
-      // 云媒体走平台 adapter，文本走模型，本地深度视频走受管本地推理器。
+      // 云媒体走平台 adapter，文本走模型，本地深度视频转换走受管本地推理器。
       const executionMethod = resolveCanvasTaskExecutionMethod(request.operation)
       if (executionMethod === 'cloud_media') {
         next = await applyTaskSnapshot(

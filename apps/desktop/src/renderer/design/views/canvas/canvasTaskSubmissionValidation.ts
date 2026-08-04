@@ -149,7 +149,7 @@ export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmission
     issues.push(
       issue(
         'out_of_range',
-        `深度视频仅支持一段输入视频 [spark-debug files=${files.length} videos=${videoCount} inputNodeIds=${JSON.stringify(
+        `深度视频转换仅支持一段输入视频 [spark-debug files=${files.length} videos=${videoCount} inputNodeIds=${JSON.stringify(
           __sparkDebugNodeIds,
         )} details=${JSON.stringify(__sparkDebugFiles)}]`,
         ['inputFiles'],
@@ -161,7 +161,7 @@ export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmission
   const localPath = inputFile?.path?.trim() || decodeCanvasSafeFileUrl(inputFile?.url)
   if (videoCount === 1 && files.length === 1 && !localPath) {
     issues.push(
-      issue('missing_required', '深度视频需要可读取的本地视频路径', ['inputFiles', 0, 'path']),
+      issue('missing_required', '深度视频转换需要可读取的本地视频路径', ['inputFiles', 0, 'path']),
     )
   }
   if (issues.length > 0) throw new CanvasTaskValidationError(issues)
