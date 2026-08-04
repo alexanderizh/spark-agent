@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { ensureOutputDirectory } from '../FfmpegRunner'
+import { buildKeyframeFrameSyncArgs, ensureOutputDirectory } from '../FfmpegRunner'
 
 const roots: string[] = []
 
@@ -21,5 +21,19 @@ describe('ensureOutputDirectory', () => {
     ensureOutputDirectory(outputPath)
 
     expect(existsSync(join(root, 'nested', 'video-workbench'))).toBe(true)
+  })
+})
+
+describe('buildKeyframeFrameSyncArgs', () => {
+  it('falls back to legacy vsync when FFmpeg rejects fps_mode', () => {
+    expect(
+      buildKeyframeFrameSyncArgs(
+        "Unrecognized option 'fps_mode'. Error splitting the argument list: Option not found",
+      ),
+    ).toEqual(['-vsync', 'vfr'])
+  })
+
+  it('uses fps_mode for modern FFmpeg by default', () => {
+    expect(buildKeyframeFrameSyncArgs()).toEqual(['-fps_mode', 'vfr'])
   })
 })

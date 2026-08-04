@@ -418,6 +418,20 @@ export interface ExtractKeyframesResult {
 const PTS_TIME_REGEX = /pts_time:(\d+\.?\d*)/g
 
 /**
+ * 构造关键帧提取的帧同步参数。
+ *
+ * FFmpeg 5.1+ 使用 `-fps_mode`，旧版（例如 Windows 上仍在使用的 4.x）
+ * 只接受 `-vsync`。传入上一次执行的 stderr 后，可以在参数不兼容时回退。
+ */
+export function buildKeyframeFrameSyncArgs(stderr = ''): string[] {
+  const hasUnsupportedFpsMode =
+    /(?:unrecognized|unknown|not found)[^\r\n]*\bfps_mode\b|\bfps_mode\b[^\r\n]*(?:unrecognized|unknown|not found)/i.test(
+      stderr,
+    )
+  return hasUnsupportedFpsMode ? ['-vsync', 'vfr'] : ['-fps_mode', 'vfr']
+}
+
+/**
  * 解析 ffmpeg stderr 中 showinfo 输出的时间戳列表。
  * showinfo 每个被选中的帧会输出一行含 `pts_time:X`。
  */
@@ -535,23 +549,28 @@ async function runKeyframePass(
       break
   }
 
-  const args = [
-    '-i',
-    input,
-    '-vf',
-    filter,
-    '-fps_mode',
-    'vfr', // ffmpeg 5.1+ 语法（替代已移除的 -vsync vfr）
+  const inputArgs = ['-i', input, '-vf', filter]
+  const outputArgs = [
     '-q:v',
     String(p.quality),
     '-an', // 丢弃音频（抽帧不需要）
     p.pattern,
   ]
+  const buildArgs = (frameSyncArgs: string[]) => [...inputArgs, ...frameSyncArgs, ...outputArgs]
 
-  const result = await runFfmpeg(args, {
+  let result = await runFfmpeg(buildArgs(buildKeyframeFrameSyncArgs()), {
     totalDurationSec: p.duration,
     onProgress: p.onProgress,
   })
+
+  // FFmpeg 4.x 在解析参数阶段直接拒绝 -fps_mode；仅在明确命中该兼容性错误时重试。
+  if (result.code !== 0 && buildKeyframeFrameSyncArgs(result.stderr)[0] === '-vsync') {
+    log.warn('当前 FFmpeg 不支持 -fps_mode，关键帧提取回退到 -vsync vfr')
+    result = await runFfmpeg(buildArgs(['-vsync', 'vfr']), {
+      totalDurationSec: p.duration,
+      onProgress: p.onProgress,
+    })
+  }
 
   if (result.code !== 0) {
     throw new Error(`关键帧提取失败 (退出码 ${result.code}): ${result.stderr.slice(-500)}`)

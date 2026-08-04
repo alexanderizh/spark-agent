@@ -369,26 +369,12 @@ export function calculateTrackDuration(
 }
 
 /**
- * 判断保存工作台时是否需要把轨道物化为新的视频文件。
- * 单个未裁剪的源视频仍然可以只保存工作台元数据；分割、删除、排序或替换资源后的轨道
- * 都必须先导出，否则节点上的 data.url 仍然指向原始视频。
+ * 判断保存并关闭工作台时是否需要把轨道物化为独立视频节点。
+ * 保存操作始终保留原工作台节点及其源资源；只要轨道有内容，就生成一个新节点。
+ * 空轨道没有可物化的视频结果，因此仍只允许保存工作台草稿。
  */
-export function trackNeedsMaterialization(
-  track: TrackClip[],
-  resourcesById: Map<string, WorkbenchResource>,
-  sourceResourceId: string,
-): boolean {
-  const sorted = track.slice().sort((a, b) => a.order - b.order)
-  if (sorted.length !== 1) return sorted.length > 0
-
-  const clip = sorted[0]
-  if (!clip || clip.resourceId !== sourceResourceId) return true
-  if (!clip.range) return false
-
-  const resource = resourcesById.get(clip.resourceId)
-  const duration = resource?.durationSec
-  if (duration === undefined) return true
-  return clip.range.startSec > 0.001 || clip.range.endSec < duration - 0.001
+export function trackNeedsMaterialization(track: TrackClip[]): boolean {
+  return track.length > 0
 }
 
 /** 合并去重：把新资源合入已有资源面板，按 id 去重，新条目覆盖旧条目。 */

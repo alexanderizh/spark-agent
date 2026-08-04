@@ -138,10 +138,17 @@ import { CanvasVideoWorkbenchModal } from './videoWorkbench/CanvasVideoWorkbench
 import { useCanvasVideoWorkbenchResources } from './videoWorkbench/useCanvasVideoWorkbenchResources'
 import {
   createDefaultVideoWorkbenchData,
+  type WorkbenchCanvasMaterialization,
   type VideoWorkbenchData,
   type WorkbenchKeyframe,
   type WorkbenchOutput,
 } from './videoWorkbench/videoWorkbench.types'
+import {
+  getKeyframeCanvasGridPosition,
+  getKeyframeCanvasNodeSize,
+  getKeyframeImportTitle,
+} from './videoWorkbench/videoWorkbenchKeyframeImport'
+import { resolveWorkbenchMaterializationMedia } from './videoWorkbench/videoWorkbenchMaterialization'
 import { isCanvasImageContentNode, isOperationNode } from './canvas.capabilities'
 import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
 import {
@@ -3648,19 +3655,26 @@ export function CanvasWorkspaceView({
 
   // 工作台「添加/更换视频」：文件选择器 → 复制进项目 → 写回当前工作台节点的 data.url
   const handleMaterializeVideoOutput = useCallback(
-    async (output: WorkbenchOutput, mode: 'add' | 'replace'): Promise<string | undefined> => {
+    async (
+      output: WorkbenchOutput,
+      mode: 'add' | 'replace',
+    ): Promise<WorkbenchCanvasMaterialization | undefined> => {
       const current = snapshotRef.current
       const target = current?.nodes.find((item) => item.id === videoWorkbenchNodeId)
       if (!current || !target || !projectId) throw new Error('当前视频节点已不存在')
 
       const sourcePath = output.outputPath
+      const media = resolveWorkbenchMaterializationMedia(sourcePath)
+      if (mode === 'replace' && media.kind === 'image') {
+        throw new Error('GIF 等图片产物只能添加为新的图片节点，不能替换视频节点')
+      }
       if (!sourcePath) throw new Error('产物文件路径为空')
       const copied = await window.spark.invoke('canvas:asset:copy-to-project', {
         projectId,
         ...(current.project.rootPath ? { projectRootPath: current.project.rootPath } : {}),
         sourcePath,
         suggestedBaseName: output.summary || 'video-output',
-        type: 'video',
+        type: media.kind,
       })
       if (copied.error || !copied.filePath) {
         throw new Error(copied.error ?? '产物复制到项目失败')
@@ -3668,11 +3682,31 @@ export function CanvasWorkspaceView({
 
       const filePath = copied.filePath as string
       const fileUrl = encodeToSafeFileUrl(filePath)
-      const dimensions = await readVideoDimensions(fileUrl)
       const fileName =
         (copied.fileName as string | undefined) ??
         output.outputPath.split(/[\\/]/).pop() ??
         'video-output.mp4'
+
+      if (media.kind === 'image') {
+        const dimensions = await readImageDimensions(fileUrl)
+        const imageWidth = dimensions.width || 320
+        const imageHeight = dimensions.height || 180
+        const imageNode = await createImageNode({
+          file: new File([], fileName, { type: media.mimeType }),
+          filePath,
+          ...(copied.fileSize !== undefined ? { fileSize: copied.fileSize } : {}),
+          x: target.x + target.width + 60,
+          y: target.y,
+          ...fitImageNodeSize(imageWidth, imageHeight),
+          imageWidth,
+          imageHeight,
+        })
+        if (!imageNode) throw new Error('产物节点创建失败')
+        setSelectedNodeIds([imageNode.id])
+        return { nodeId: imageNode.id, outputPath: filePath, outputUrl: fileUrl }
+      }
+
+      const dimensions = await readVideoDimensions(fileUrl)
 
       if (mode === 'replace') {
         const size = fitCanvasVideoNodeSize(dimensions.width, dimensions.height)
@@ -3686,19 +3720,20 @@ export function CanvasWorkspaceView({
         })
         await updateNodeData(target.id, {
           url: fileUrl,
-          mimeType: 'video/mp4',
+          mimeType: media.mimeType,
           ...(dimensions.width ? { mediaWidth: dimensions.width } : {}),
           ...(dimensions.height ? { mediaHeight: dimensions.height } : {}),
           ...(dimensions.durationMs ? { durationMs: dimensions.durationMs } : {}),
         })
         setSelectedNodeIds([target.id])
-        return target.id
+        return { nodeId: target.id, outputPath: filePath, outputUrl: fileUrl }
       }
 
       const created = await createMediaNode({
         kind: 'video',
         fileName,
-        fileMimeType: 'video/mp4',
+        fileMimeType: media.mimeType,
+        ...(copied.fileSize !== undefined ? { fileSize: copied.fileSize } : {}),
         filePath,
         x: target.x + target.width + 60,
         y: target.y,
@@ -3708,9 +3743,9 @@ export function CanvasWorkspaceView({
       })
       if (!created) throw new Error('产物节点创建失败')
       setSelectedNodeIds([created.id])
-      return created.id
+      return { nodeId: created.id, outputPath: filePath, outputUrl: fileUrl }
     },
-    [createMediaNode, patchNodes, projectId, updateNodeData, videoWorkbenchNodeId],
+    [createImageNode, createMediaNode, patchNodes, projectId, updateNodeData, videoWorkbenchNodeId],
   )
 
   const handleAddVideoToWorkbench = useCallback(async () => {
@@ -3755,11 +3790,22 @@ export function CanvasWorkspaceView({
 
   /** 把关键帧导出为画布图片节点（批量），连线到源视频工作台节点 */
   const handleExportKeyframes = useCallback(
-    async (frames: WorkbenchKeyframe[], sourceNodeId: string) => {
-      if (!snapshot || frames.length === 0) return
+    async (
+      frames: WorkbenchKeyframe[],
+      sourceNodeId: string,
+    ): Promise<WorkbenchKeyframe[] | undefined> => {
+      if (!snapshot || !projectId || frames.length === 0) return
       const source = snapshot.nodes.find((n) => n.id === sourceNodeId)
       const createdIds: string[] = []
-      const nodeSize = { width: 320, height: 180 }
+      const createdIdsByOrder: Array<string | undefined> = []
+      const copiedPathsByOrder: Array<string | undefined> = []
+      const copiedUrlsByOrder: Array<string | undefined> = []
+      const firstFrameDimensions = await readImageDimensions(frames[0]!.previewUrl)
+      const hasFrameDimensions = firstFrameDimensions.width > 0 && firstFrameDimensions.height > 0
+      const nodeSize = getKeyframeCanvasNodeSize(
+        firstFrameDimensions.width,
+        firstFrameDimensions.height,
+      )
       const baseX = source ? source.x + source.width + 60 : 260
       const baseY = source ? source.y : 200
 
@@ -3771,43 +3817,76 @@ export function CanvasWorkspaceView({
         key: loadingKey,
         duration: 0,
       })
-      for (let start = 0; start < frames.length; start += BATCH) {
-        const batch = frames.slice(start, start + BATCH)
-        const imageNodes = await Promise.all(
-          batch.map(async (kf, j) => {
-            const i = start + j
-            const fileName = `keyframe_${String(kf.index + 1).padStart(3, '0')}.jpg`
-            const file = new File([], fileName, { type: 'image/jpeg' })
-            const col = i % 4
-            const row = Math.floor(i / 4)
-            return createImageNode({
-              file,
-              filePath: kf.path,
-              x: baseX + col * (nodeSize.width + 24),
-              y: baseY + row * (nodeSize.height + 24),
-              width: nodeSize.width,
-              height: nodeSize.height,
-            })
-          }),
-        )
-        // patchNodes + connectNodes 串行（涉及 DB 写入，避免竞态）
-        for (let j = 0; j < imageNodes.length; j++) {
-          const imageNode = imageNodes[j]
-          const kf = batch[j]!
-          if (imageNode) {
-            await patchNodes([imageNode.id], {
-              title: `关键帧 ${String(kf.index + 1).padStart(2, '0')}`,
-            })
-            if (source) await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
-            createdIds.push(imageNode.id)
+      try {
+        for (let start = 0; start < frames.length; start += BATCH) {
+          const batch = frames.slice(start, start + BATCH)
+          const imageNodes = await Promise.all(
+            batch.map(async (kf, j) => {
+              const i = start + j
+              const fileName = `keyframe_${String(i + 1).padStart(3, '0')}.jpg`
+              const copied = await window.spark.invoke('canvas:asset:copy-to-project', {
+                projectId,
+                ...(snapshot.project.rootPath
+                  ? { projectRootPath: snapshot.project.rootPath }
+                  : {}),
+                sourcePath: kf.path,
+                suggestedBaseName: fileName.replace(/\.[^.]+$/, ''),
+                type: 'image',
+              })
+              if (copied.error || !copied.filePath) {
+                throw new Error(copied.error ?? `关键帧 ${i + 1} 复制到项目失败`)
+              }
+              const filePath = copied.filePath as string
+              const copiedFileName = (copied.fileName as string | undefined) ?? fileName
+              copiedPathsByOrder[i] = filePath
+              copiedUrlsByOrder[i] = encodeToSafeFileUrl(filePath)
+              const file = new File([], copiedFileName, {
+                type: resolveWorkbenchMaterializationMedia(filePath).mimeType,
+              })
+              const position = getKeyframeCanvasGridPosition(i, { x: baseX, y: baseY }, nodeSize)
+              return createImageNode({
+                file,
+                filePath,
+                ...(copied.fileSize !== undefined ? { fileSize: copied.fileSize } : {}),
+                ...position,
+                width: nodeSize.width,
+                height: nodeSize.height,
+                ...(hasFrameDimensions
+                  ? {
+                      imageWidth: firstFrameDimensions.width,
+                      imageHeight: firstFrameDimensions.height,
+                    }
+                  : {}),
+              })
+            }),
+          )
+          // patchNodes + connectNodes 串行（涉及 DB 写入，避免竞态）
+          for (let j = 0; j < imageNodes.length; j++) {
+            const imageNode = imageNodes[j]
+            if (imageNode) {
+              createdIdsByOrder[start + j] = imageNode.id
+              await patchNodes([imageNode.id], {
+                title: getKeyframeImportTitle(start + j),
+              })
+              if (source)
+                await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
+              createdIds.push(imageNode.id)
+            }
           }
         }
+      } finally {
+        message.destroy(loadingKey)
       }
-      message.destroy(loadingKey)
       if (createdIds.length > 0) setSelectedNodeIds(createdIds)
       message.success(`已导入 ${createdIds.length} 个关键帧到画布`)
+      return frames.map((frame, index) => ({
+        ...frame,
+        ...(copiedPathsByOrder[index] ? { path: copiedPathsByOrder[index] } : {}),
+        ...(copiedUrlsByOrder[index] ? { previewUrl: copiedUrlsByOrder[index] } : {}),
+        ...(createdIdsByOrder[index] ? { canvasNodeId: createdIdsByOrder[index] } : {}),
+      }))
     },
-    [connectNodes, createImageNode, patchNodes, snapshot],
+    [connectNodes, createImageNode, patchNodes, projectId, snapshot],
   )
 
   const handleAnnotateImageComplete = useCallback(
@@ -6202,7 +6281,7 @@ export function CanvasWorkspaceView({
     async (
       position: CanvasPoint,
       files: File[],
-      options?: { keepPanelsOpen?: boolean },
+      options?: { keepPanelsOpen?: boolean; groupImages?: boolean },
     ): Promise<CanvasNode[]> => {
       const current = snapshotRef.current
       if (!current || files.length === 0) return []
@@ -6232,7 +6311,7 @@ export function CanvasWorkspaceView({
       const groupImages = shouldGroupCanvasImages(images.length, options?.groupImages !== false)
 
       try {
-        // ── 图片：复用现有上传管线（含多图分组） ──────────────────────────
+        // ── 图片：复用现有上传管线；外部拖入时保持为独立节点 ────────────────
         if (images.length > 0) {
           const prepared = await Promise.all(
             images.map((file) => prepareCanvasImageUpload(file, { grouped: groupImages })),
