@@ -4,6 +4,11 @@ import type {
   ProviderMediaDefaults,
   ProviderModelType,
 } from '@spark/protocol'
+import {
+  getMinimaxImageEndpointPath,
+  getMinimaxVideoEndpointPath,
+  resolveMinimaxEndpoint,
+} from '@spark/protocol'
 
 export function mediaInterfaceTimeoutFormValue(
   defaults: ProviderMediaDefaults | undefined,
@@ -124,6 +129,9 @@ export function getMediaRequestPreviewUrl(
   mediaProvider: MediaProviderKind,
 ): string {
   if (form.modelType === 'image') {
+    if (mediaProvider === 'minimax-hailuo') {
+      return resolveMinimaxEndpoint(baseUrl, getMinimaxImageEndpointPath())
+    }
     if (mediaProvider === 'google-generative-ai' || mediaProvider === 'omni') {
       const model = form.defaultModel.trim()
       return model.startsWith('imagen-')
@@ -152,6 +160,9 @@ export function getMediaRequestPreviewUrl(
   }
 
   if (form.modelType === 'video') {
+    if (mediaProvider === 'minimax-hailuo') {
+      return resolveMinimaxEndpoint(baseUrl, getMinimaxVideoEndpointPath(form.defaultModel))
+    }
     if (mediaProvider === 'agnes' || mediaProvider === 'openai-images') return `${baseUrl}/videos`
     if (mediaProvider === 'google-generative-ai' || mediaProvider === 'omni') {
       const model = form.defaultModel.trim() || '{model}'

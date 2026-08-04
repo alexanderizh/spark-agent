@@ -1049,6 +1049,51 @@ describe('getMediaRequestPreviewUrl', () => {
     expect(preview('video', 'bailian')).toBe(`${BASE}/video-generation/video-synthesis`)
   })
 
+  it('MiniMax 按模型预览真实的视频 endpoint，并兼容 BaseURL 已带版本后缀', () => {
+    expect(
+      getMediaRequestPreviewUrl(
+        'http://127.0.0.1:13005',
+        { modelType: 'video', defaultModel: 'MiniMax-H3', mediaCapabilities: ['video.generate'] },
+        'minimax-hailuo',
+      ),
+    ).toBe('http://127.0.0.1:13005/v2/video_generation')
+    expect(
+      getMediaRequestPreviewUrl(
+        'http://127.0.0.1:13005/v2',
+        { modelType: 'video', defaultModel: 'MiniMax-H3', mediaCapabilities: ['video.generate'] },
+        'minimax-hailuo',
+      ),
+    ).toBe('http://127.0.0.1:13005/v2/video_generation')
+    expect(
+      getMediaRequestPreviewUrl(
+        'http://127.0.0.1:13005',
+        {
+          modelType: 'video',
+          defaultModel: 'MiniMax-Hailuo-2.3',
+          mediaCapabilities: ['video.generate'],
+        },
+        'minimax-hailuo',
+      ),
+    ).toBe('http://127.0.0.1:13005/v1/video_generation')
+    expect(
+      getMediaRequestPreviewUrl(
+        'http://127.0.0.1:13005',
+        { modelType: 'video', defaultModel: 'video-agent', mediaCapabilities: ['video.generate'] },
+        'minimax-hailuo',
+      ),
+    ).toBe('http://127.0.0.1:13005/v1/video_template_generation')
+  })
+
+  it('MiniMax 图片预览走 /v1/image_generation', () => {
+    expect(
+      getMediaRequestPreviewUrl(
+        'http://127.0.0.1:13005',
+        { modelType: 'image', defaultModel: 'image-01', mediaCapabilities: ['image.generate'] },
+        'minimax-hailuo',
+      ),
+    ).toBe('http://127.0.0.1:13005/v1/image_generation')
+  })
+
   it('回归：apimart 图片仍走 OpenAI 兼容 /images/generations', () => {
     expect(preview('image', 'apimart')).toBe(`${BASE}/images/generations`)
   })

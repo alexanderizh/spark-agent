@@ -25,6 +25,7 @@
  * 状态枚举：v1/模板首字母大写（Success/Fail）；V2 全小写（succeeded/failed/expired）。各自独立 inspect。
  */
 
+import { normalizeMinimaxBaseUrl } from '@spark/protocol'
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
@@ -643,7 +644,7 @@ function describeMinimaxV2PollResponse(value: unknown): Record<string, unknown> 
 
 function baseEndpoint(ctx: MediaProviderContext): string {
   // ProviderProfile.apiEndpoint = https://api.minimaxi.com（media preset）。去尾部斜杠，子路径在此拼接。
-  return (ctx.apiEndpoint ?? '').replace(/\/+$/, '')
+  return normalizeMinimaxBaseUrl(ctx.apiEndpoint ?? '')
 }
 
 function authHeaders(ctx: MediaProviderContext): Record<string, string> {
