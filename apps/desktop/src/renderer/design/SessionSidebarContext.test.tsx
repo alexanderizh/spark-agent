@@ -69,6 +69,8 @@ describe('SessionSidebarContext', () => {
   })
 
   it('loads all session schedules once per refresh and exposes aggregated summaries', async () => {
+    let scheduleListCount = 0
+    let configChangedHandler: ((event: Record<string, unknown>) => void) | null = null
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') return { workspaces: [], total: 0 }
       if (channel === 'session:list') return { sessions: [], total: 0 }
@@ -77,16 +79,26 @@ describe('SessionSidebarContext', () => {
       if (channel === 'agent:list') return { agents: [] }
       if (channel === 'terminal:list-active') return { sessions: [] }
       if (channel === 'scheduled-task:list') {
+        scheduleListCount += 1
         return {
           tasks: [
             { id: 'task-1', scope: 'session', sessionId: 'session-1', enabled: true },
             { id: 'task-2', scope: 'session', sessionId: 'session-1', enabled: false },
+            ...(scheduleListCount > 1
+              ? [{ id: 'task-3', scope: 'session', sessionId: 'session-2', enabled: true }]
+              : []),
           ],
         }
       }
       return {}
     })
-    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, handler: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:config:changed') configChangedHandler = handler
+        return vi.fn()
+      }),
+    })
     const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
     function CaptureContext() {
       latestCtxRef.current = useSessionSidebar()
@@ -108,6 +120,16 @@ describe('SessionSidebarContext', () => {
     expect(invoke).toHaveBeenCalledWith('scheduled-task:list', { scope: 'session' })
     expect(latestCtxRef.current?.sessionScheduleSummaries).toEqual({
       'session-1': { total: 2, enabled: 1 },
+    })
+
+    await act(async () => {
+      configChangedHandler?.({ scope: 'scheduled-task', action: 'create', id: 'task-3' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(scheduleListCount).toBe(2)
+    expect(latestCtxRef.current?.sessionScheduleSummaries).toEqual({
+      'session-1': { total: 2, enabled: 1 },
+      'session-2': { total: 1, enabled: 1 },
     })
   })
 

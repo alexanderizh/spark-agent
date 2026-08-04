@@ -416,6 +416,12 @@ export const PLATFORM_TOOL_NAMES: string[] = [
   'mcp__spark_platform__sessions_switch_mode',
   'mcp__spark_platform__sessions_switch_permission',
   'mcp__spark_platform__sessions_switch_reasoning_effort',
+  // Session Scheduled Tasks (current session only)
+  'mcp__spark_platform__session_schedule_list',
+  'mcp__spark_platform__session_schedule_get',
+  'mcp__spark_platform__session_schedule_create',
+  'mcp__spark_platform__session_schedule_update',
+  'mcp__spark_platform__session_schedule_delete',
   // Board Tasks
   'mcp__spark_platform__board_list',
   'mcp__spark_platform__board_get',
@@ -630,6 +636,7 @@ export const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   '- **Install Artifacts**: list, resolve (Spark self-hosted skill/runtime/dependency packages)',
   '- **Settings**: get, set, get_category, get_all',
   '- **Sessions (self)**: get, switch_model, switch_provider, switch_mode, switch_permission, switch_reasoning_effort',
+  '- **Session Scheduled Tasks**: list, get, create, update, delete (always limited to the current session)',
   '- **Board Tasks**: list, get, create, update, delete, batch_create, batch_update, batch_delete, restore, permanent_delete',
   '',
   'When the user asks to manage any of these, use the corresponding tool directly.',

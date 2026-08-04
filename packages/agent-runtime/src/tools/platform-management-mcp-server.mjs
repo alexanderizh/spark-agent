@@ -4,7 +4,7 @@
  *
  * Exposes tools for managing the Spark Agent platform:
  *   Skills, MCP Servers, Providers, Workflows, Agents, Teams,
- *   Settings, Sessions, and Board Tasks.
+ *   Settings, Sessions, Session Scheduled Tasks, and Board Tasks.
  *
  * Communicates with the main process via the PlatformBridge HTTP server
  * running on localhost. The bridge port is passed via SPARK_PLATFORM_BRIDGE_PORT.
@@ -70,6 +70,85 @@ function rpc(method, params) {
     req.write(body)
     req.end()
   })
+}
+
+const SESSION_SCHEDULE_MUTABLE_PROPERTIES = {
+  name: { type: 'string', minLength: 1, maxLength: 200, description: '任务名称' },
+  description: { type: 'string', maxLength: 2000, description: '可选说明' },
+  enabled: { type: 'boolean', description: '是否启用' },
+  triggerType: {
+    type: 'string',
+    enum: ['interval', 'cron', 'once'],
+    description: '触发方式：固定间隔、Cron 或单次',
+  },
+  intervalSeconds: {
+    anyOf: [{ type: 'integer', minimum: 10, maximum: 31536000 }, { type: 'null' }],
+    description: '固定间隔秒数，最少 10 秒',
+  },
+  cronExpression: {
+    anyOf: [{ type: 'string', minLength: 1, maxLength: 200 }, { type: 'null' }],
+    description: 'Cron 表达式',
+  },
+  runAt: {
+    anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }],
+    description: '单次执行时间（ISO 8601）',
+  },
+  timezone: {
+    type: 'string',
+    minLength: 1,
+    maxLength: 100,
+    description: '时区，默认 system',
+  },
+  startAt: {
+    anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }],
+    description: '可选开始时间（ISO 8601）',
+  },
+  endAt: {
+    anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }],
+    description: '可选结束时间（ISO 8601）',
+  },
+  maxExecutions: {
+    type: 'integer',
+    minimum: 0,
+    maximum: 1000000,
+    description: '最大执行次数；0 表示不限',
+  },
+  promptTemplate: {
+    type: 'string',
+    minLength: 1,
+    maxLength: 100000,
+    description: '唤醒时发送给当前会话的完整任务指令；应包含检查目标、完成条件和清理要求',
+  },
+  timeoutSeconds: { type: 'integer', minimum: 10, maximum: 86400, description: '单次执行超时秒数' },
+  maxRetries: { type: 'integer', minimum: 0, maximum: 100, description: '失败重试次数' },
+  retryDelaySeconds: {
+    type: 'integer',
+    minimum: 0,
+    maximum: 86400,
+    description: '重试初始延迟秒数',
+  },
+  retryBackoff: {
+    type: 'string',
+    enum: ['fixed', 'linear', 'exponential'],
+    description: '重试退避策略',
+  },
+  concurrencyPolicy: {
+    type: 'string',
+    enum: ['skip', 'queue', 'cancel'],
+    description: '上次执行仍在运行时的策略；默认 queue',
+  },
+  tags: {
+    type: 'array',
+    maxItems: 50,
+    items: { type: 'string', minLength: 1, maxLength: 80 },
+    description: '标签',
+  },
+  historyRetentionDays: {
+    type: 'integer',
+    minimum: 1,
+    maximum: 3650,
+    description: '执行记录保留天数',
+  },
 }
 
 // ─── Tool Definitions ────────────────────────────────────────────────
@@ -616,7 +695,7 @@ function toolDefinitions() {
         type: 'object',
         required: ['id'],
         properties: {
-          id: { type: 'string', description: '任务 ID' },
+          id: { type: 'string', minLength: 1, maxLength: 200, description: '任务 ID' },
         },
       },
     },
@@ -663,7 +742,7 @@ function toolDefinitions() {
         type: 'object',
         required: ['id'],
         properties: {
-          id: { type: 'string', description: '任务 ID' },
+          id: { type: 'string', minLength: 1, maxLength: 200, description: '任务 ID' },
           title: { type: 'string', description: '新标题' },
           description: { type: 'string', description: '新描述' },
           status: { type: 'string', description: '新状态', enum: ['todo', 'in-progress', 'done', 'accepted', 'closed', 'bug-fix'] },
@@ -1167,6 +1246,60 @@ function toolDefinitions() {
         },
       },
     },
+
+    // ── Current-session Scheduled Tasks ──
+    {
+      name: 'session_schedule_list',
+      description: '列出当前会话挂载的全部定时任务。创建轮询任务前先调用，避免重复创建。',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    {
+      name: 'session_schedule_get',
+      description: '读取当前会话中的一个定时任务。只能访问当前会话。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', minLength: 1, maxLength: 200, description: '任务 ID' },
+        },
+      },
+    },
+    {
+      name: 'session_schedule_create',
+      description:
+        '在当前会话创建持久化定时唤醒任务。任务会跟随会话当前 Agent、模型、权限与工作区配置；完成目标后必须删除。',
+      inputSchema: {
+        type: 'object',
+        required: ['name', 'triggerType', 'promptTemplate'],
+        properties: SESSION_SCHEDULE_MUTABLE_PROPERTIES,
+      },
+    },
+    {
+      name: 'session_schedule_update',
+      description: '修改当前会话中的定时任务，包括调度频率、唤醒指令和启停状态。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '任务 ID' },
+          ...SESSION_SCHEDULE_MUTABLE_PROPERTIES,
+        },
+      },
+    },
+    {
+      name: 'session_schedule_delete',
+      description: '删除当前会话中的定时任务。轮询目标完成、取消、永久阻塞或不再需要时应立即调用。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '任务 ID' },
+        },
+      },
+    },
   ]
 }
 
@@ -1238,6 +1371,11 @@ async function handleToolCall(name, args) {
     sessions_switch_mode: 'sessions.switch_mode',
     sessions_switch_permission: 'sessions.switch_permission',
     sessions_switch_reasoning_effort: 'sessions.switch_reasoning_effort',
+    session_schedule_list: 'session_schedule.list',
+    session_schedule_get: 'session_schedule.get',
+    session_schedule_create: 'session_schedule.create',
+    session_schedule_update: 'session_schedule.update',
+    session_schedule_delete: 'session_schedule.delete',
     board_list: 'board.list',
     board_get: 'board.get',
     board_create: 'board.create',
@@ -1258,9 +1396,16 @@ async function handleToolCall(name, args) {
     }
   }
 
-  // Auto-inject sessionId for session tools (read from env)
+  // Auto-inject sessionId for current-session tools (read from env). Never trust
+  // or forward a model-provided session id.
   const rpcArgs = { ...args }
-  if (name.startsWith('sessions_') && SESSION_ID) {
+  if (name.startsWith('sessions_') || name.startsWith('session_schedule_')) {
+    if (!SESSION_ID) {
+      return {
+        content: [{ type: 'text', text: 'Error: current session id is unavailable' }],
+        isError: true,
+      }
+    }
     rpcArgs.sessionId = SESSION_ID
   }
 

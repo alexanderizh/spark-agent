@@ -23,6 +23,8 @@ import {
   ConnectorConnectionRepository,
   TurnRequestRepository,
   SessionSummaryRepository,
+  ScheduledTaskRepository,
+  TaskExecutionRepository,
 } from '@spark/storage'
 import type {
   AgentItem,
@@ -199,6 +201,11 @@ import type { McpOAuthTokenProvider } from './mcp-server.service.js'
 import { resolveMcpConfig } from '../mcp/index.js'
 import type { McpChangeEvent } from './mcp-server.service.js'
 import { PlatformBridgeService } from './platform-bridge.service.js'
+import { ScheduledTaskService } from './scheduled-task.service.js'
+import {
+  SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT,
+  SessionScheduleAgentTools,
+} from './session-schedule-agent-tools.js'
 import { getDebugLogServer } from './debug-log-server.service.js'
 import {
   BROWSER_AUTOMATION_SYSTEM_PROMPT,
@@ -299,7 +306,16 @@ export type SessionRenamedHandler = (sessionId: string, title: string) => void
  * 用于向渲染进程广播 stream:config:changed 事件，让所有 UI 订阅方刷新缓存。
  */
 export type PlatformConfigChangedHandler = (
-  scope: 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt',
+  scope:
+    | 'provider'
+    | 'agent'
+    | 'team'
+    | 'skill'
+    | 'mcp'
+    | 'workflow'
+    | 'rule'
+    | 'prompt'
+    | 'scheduled-task',
   action: 'create' | 'update' | 'delete' | 'import',
   id?: string,
 ) => void
@@ -2739,6 +2755,7 @@ export class SessionService {
       imageGenerationContext?.systemPrompt,
       mediaGenerationContext?.systemPrompt,
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
+      platformMcpServer != null ? SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT : undefined,
       webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
       presentFilesMcpServer != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
       quickRepliesMcpServer != null ? QUICK_REPLIES_SYSTEM_PROMPT : undefined,
@@ -4738,6 +4755,13 @@ export class SessionService {
       agentRepo: new AgentRepository(this.db),
       teamRepo: new TeamDefinitionRepository(this.db),
       settingsRepo,
+      sessionScheduleTools: new SessionScheduleAgentTools(
+        new ScheduledTaskService(
+          new ScheduledTaskRepository(this.db),
+          new TaskExecutionRepository(this.db),
+        ),
+        (action, id) => this.onPlatformConfigChanged?.('scheduled-task', action, id),
+      ),
       githubConnectorService: new GitHubConnectorService(
         new ConnectorConnectionRepository(this.db),
       ),
@@ -6772,6 +6796,8 @@ export class SessionService {
         memberMcpServers.spark_memory != null ? MEMORY_BEHAVIOR_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_memory != null ? MEMORY_PROVENANCE_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_files != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
+        memberMcpServers.spark_platform != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
+        memberMcpServers.spark_platform != null ? SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_debug != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
       ) ?? ''
 
