@@ -1,0 +1,118 @@
+// 媒体节点编辑面板内的 tab 容器。
+.canvas-node-media-edit-tabs {
+  min-width: 0;
+}
+
+.canvas-node-media-edit-tabs .ant-tabs-content-holder,
+.canvas-node-media-edit-tabs .ant-tabs-tabpane {
+  min-width: 0;
+}
+
+.canvas-node-media-edit-fields {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+// 媒体节点预览态：弹窗正文只剩 tab + 预览区，压缩 6px 默认 gap 让预览拿到更多垂直空间。
+.canvas-node-edit-dialog.is-media-preview {
+  gap: 4px;
+}
+
+.canvas-node-edit-dialog.is-media-preview .canvas-node-media-edit-tabs .ant-tabs-content-holder {
+  overflow: hidden;
+}
+
+.canvas-node-edit-dialog.is-media-preview .canvas-node-media-preview-viewport {
+  min-height: 360px;
+  max-height: min(620px, 64vh);
+}
+
+.canvas-node-edit-dialog.is-media-preview .canvas-node-media-preview-media {
+  max-height: min(560px, 58vh);
+}
+
+.canvas-node-edit-dialog.is-media-preview .canvas-node-media-preview-media.is-video {
+  width: min(100%, 860px);
+}
+
+.canvas-node-media-preview {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  color: var(--text-secondary);
+}
+
+.canvas-node-media-preview-viewport {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 220px;
+  max-height: min(460px, 52vh);
+  align-items: center;
+  justify-items: center;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--divider);
+  border-radius: var(--canvas-v4-radius-sm, 8px);
+  background: var(--bg-sunken);
+  overscroll-behavior: contain;
+}
+
+.canvas-node-media-preview-viewport.is-empty,
+.canvas-node-media-preview-viewport.is-error {
+  align-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.canvas-node-media-preview-viewport.is-error {
+  color: var(--danger, #d66b6b);
+}
+
+.canvas-node-media-preview-media {
+  display: block;
+  max-width: 100%;
+  max-height: min(420px, 48vh);
+  object-fit: contain;
+}
+
+.canvas-node-media-preview-media.is-image {
+  min-height: 120px;
+}
+
+.canvas-node-media-preview-media.is-video {
+  width: min(100%, 720px);
+  background: #080a0e;
+}
+
+.canvas-node-media-preview-loading {
+  position: absolute;
+  z-index: 1;
+  padding: 6px 10px;
+  border-radius: var(--canvas-v4-radius-xs, 6px);
+  background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
+  color: var(--text-muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .canvas-node-media-preview-viewport {
+    min-height: 160px;
+    max-height: 42vh;
+    padding: 10px;
+  }
+
+  .canvas-node-media-preview-media {
+    max-height: 36vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-node-media-preview * {
+    transition: none !important;
+  }
+}
