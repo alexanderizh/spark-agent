@@ -441,7 +441,7 @@ summary:focus {
   top: var(--sidebar-frame-inset);
   left: var(--sidebar-frame-inset);
   bottom: var(--sidebar-frame-inset);
-  width: var(--sidebar-w, 210px);
+  width: var(--sidebar-w, 288px);
   z-index: 50;
   display: flex;
   flex-direction: column;

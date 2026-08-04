@@ -59,7 +59,7 @@ describe('AppContext visual tweak persistence', () => {
   })
 
   it('uses a wider sidebar for new users', () => {
-    expect(DEFAULT_TWEAKS.floatingSidebarWidth).toBe(272)
+    expect(DEFAULT_TWEAKS.floatingSidebarWidth).toBe(288)
   })
 
   it('uses the floating sidebar by default on desktop platforms', async () => {
