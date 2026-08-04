@@ -35,6 +35,11 @@ import type { UpdateAgentParams, CreateProviderParams } from '@spark/storage'
 import type { SettingsRepository } from '@spark/storage'
 import type { TeamDefinitionRepository } from '@spark/storage'
 import type { GitHubConnectorService } from './github-connector.service.js'
+import type {
+  SessionScheduleAgentTools,
+  SessionScheduleCreateInput,
+  SessionScheduleUpdateInput,
+} from './session-schedule-agent-tools.js'
 import { normalizeSparkReasoningEffort, type SparkReasoningEffort } from '../sdk/reasoning-effort.js'
 
 const log = createLogger('platform-bridge')
@@ -54,6 +59,12 @@ function normalizeTeamMaxDepth(value: unknown): number | undefined {
   return value
 }
 
+function requireSessionId(params: Record<string, unknown>): string {
+  const sessionId = String(params.sessionId ?? '').trim()
+  if (!sessionId) throw new Error('Missing parameter: sessionId')
+  return sessionId
+}
+
 // ─── Types ────────────────────────────────────────────────────────────
 
 export interface PlatformBridgeDeps {
@@ -68,6 +79,7 @@ export interface PlatformBridgeDeps {
   teamRepo: TeamDefinitionRepository
   settingsRepo: SettingsRepository
   githubConnectorService: GitHubConnectorService
+  sessionScheduleTools: SessionScheduleAgentTools
   sessionService: {
     updateSession(params: {
       sessionId: string
@@ -119,7 +131,16 @@ export interface PlatformBridgeDeps {
    * 内部调用的 pushConfigChanged 保持一致的事件语义。
    */
   onConfigChanged?: (
-    scope: 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt',
+    scope:
+      | 'provider'
+      | 'agent'
+      | 'team'
+      | 'skill'
+      | 'mcp'
+      | 'workflow'
+      | 'rule'
+      | 'prompt'
+      | 'scheduled-task',
     action: 'create' | 'update' | 'delete' | 'import',
     id?: string,
   ) => void
@@ -313,6 +334,13 @@ export class PlatformBridgeService {
       case 'sessions.switch_mode': return this.sessionSwitchMode(d, params)
       case 'sessions.switch_permission': return this.sessionSwitchPermission(d, params)
       case 'sessions.switch_reasoning_effort': return this.sessionSwitchReasoningEffort(d, params)
+
+      // ── Current-session scheduled tasks ──
+      case 'session_schedule.list': return this.sessionScheduleList(d, params)
+      case 'session_schedule.get': return this.sessionScheduleGet(d, params)
+      case 'session_schedule.create': return this.sessionScheduleCreate(d, params)
+      case 'session_schedule.update': return this.sessionScheduleUpdate(d, params)
+      case 'session_schedule.delete': return this.sessionScheduleDelete(d, params)
 
       // ── Memory（codex CLI / claude CLI 的 stdio spark_memory 子进程走这条路径）──
       case 'memory.search': return this.memorySearch(d, params)
@@ -1134,6 +1162,47 @@ export class PlatformBridgeService {
     if (!reasoningEffort) throw new Error('Missing parameter: reasoningEffort')
     const result = await d.sessionService.updateSession({ sessionId, reasoningEffort })
     return { session: result.session }
+  }
+
+  // ── Current-session scheduled task handlers ──
+
+  private sessionScheduleList(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return { tasks: d.sessionScheduleTools.list(requireSessionId(params)) }
+  }
+
+  private sessionScheduleGet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const taskId = String(params.id ?? '').trim()
+    if (!taskId) throw new Error('Missing parameter: id')
+    return { task: d.sessionScheduleTools.get(requireSessionId(params), taskId) }
+  }
+
+  private sessionScheduleCreate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const { sessionId: _sessionId, ...input } = params
+    return {
+      task: d.sessionScheduleTools.create(
+        requireSessionId(params),
+        input as unknown as SessionScheduleCreateInput,
+      ),
+    }
+  }
+
+  private sessionScheduleUpdate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const taskId = String(params.id ?? '').trim()
+    if (!taskId) throw new Error('Missing parameter: id')
+    const { id: _id, sessionId: _sessionId, ...input } = params
+    return {
+      task: d.sessionScheduleTools.update(
+        requireSessionId(params),
+        taskId,
+        input as SessionScheduleUpdateInput,
+      ),
+    }
+  }
+
+  private sessionScheduleDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const taskId = String(params.id ?? '').trim()
+    if (!taskId) throw new Error('Missing parameter: id')
+    return d.sessionScheduleTools.delete(requireSessionId(params), taskId)
   }
 
   // ── Memory handlers（codex CLI / claude CLI 的 stdio spark_memory 子进程桥接）──

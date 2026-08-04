@@ -884,6 +884,8 @@ vi.mock('@spark/storage', () => {
     }
   }
   class ConnectorConnectionRepository {}
+  class ScheduledTaskRepository {}
+  class TaskExecutionRepository {}
   class TurnRequestRepository {
     create(params: {
       id: string
@@ -964,6 +966,8 @@ vi.mock('@spark/storage', () => {
     MemoryEntityRepository,
     ModelProfileRepository,
     ConnectorConnectionRepository,
+    ScheduledTaskRepository,
+    TaskExecutionRepository,
     TurnRequestRepository,
   }
 })
@@ -1206,14 +1210,28 @@ describe('SessionService runtime provider/model resolution', () => {
       const config = mockState.sdkConfigs[0]
       expect(config?.mcpServers).toMatchObject({
         spark_computer: expect.objectContaining({ type: 'stdio' }),
+        spark_platform: expect.objectContaining({
+          type: 'stdio',
+          env: expect.objectContaining({ SPARK_SESSION_ID: sessionId }),
+        }),
       })
       expect(config?.allowedTools).toEqual(
         expect.arrayContaining([
           'mcp__spark_computer__get_capabilities',
           'mcp__spark_computer__start_task',
+          ...(agentAdapter === 'claude-sdk'
+            ? [
+                'mcp__spark_platform__session_schedule_list',
+                'mcp__spark_platform__session_schedule_create',
+                'mcp__spark_platform__session_schedule_delete',
+              ]
+            : []),
         ]),
       )
       expect(String(config?.skillSystemPrompt ?? '')).toContain('GOVERNED COMPUTER USE PROMPT')
+      expect(String(config?.skillSystemPrompt ?? '')).toContain(
+        'After creation succeeds, tell the user briefly and end the current turn',
+      )
     },
   )
 

@@ -894,6 +894,12 @@ export class ScheduledTaskService {
       '[Scheduled Task Context]',
       `This turn was started by Spark's scheduled task runner, not by an interactive user chat.`,
       `Task name: ${task.name}`,
+      ...(task.scope === 'session'
+        ? [
+            `Task id: ${task.id}`,
+            'This task is bound to the current session. If its objective is complete, canceled, permanently blocked, or no longer useful, call `mcp__spark_platform__session_schedule_delete` with this task id before finishing. If the awaited result is still pending, keep the task and end this turn after recording the current status.',
+          ]
+        : []),
       `Execution trigger: ${triggerType}`,
       `Configured schedule: ${this.describeSchedule(task)}`,
       task.next_run_at ? `Next scheduled run: ${task.next_run_at}` : 'Next scheduled run: none',

@@ -815,10 +815,12 @@ export function SessionSidebarProvider({
           void listAgents({})
             .then((res) => setAgents(Array.isArray(res.agents) ? res.agents : []))
             .catch(console.error)
+        } else if (event.scope === 'scheduled-task') {
+          void refreshSessionScheduleSummaries()
         }
       }) ?? (() => {})
     )
-  }, [listAgents, listProviders])
+  }, [listAgents, listProviders, refreshSessionScheduleSummaries])
 
   useEffect(() => {
     if (active) window.localStorage.setItem(LAST_SESSION_KEY, active)
