@@ -493,6 +493,35 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     void window.spark?.invoke('update:check', {})
   }, [setTweak, updateState])
 
+  const handleCheckUpdate = useCallback(() => {
+    if (updateState === 'checking') return
+    toast.info(tr('app.update.checking'))
+    const request = window.spark?.invoke('update:check', {})
+    if (request == null) {
+      toast.error(tr('app.update.error', { error: tr('app.update.retry') }))
+      return
+    }
+    void request
+      .then(({ status }) => {
+        if (status.state === 'not-available') {
+          toast.success(tr('app.update.notAvailable'))
+        } else if (status.state === 'available' && status.updateInfo != null) {
+          toast.success(tr('app.update.available', { version: status.updateInfo.version }).trim())
+        } else if (status.state === 'downloaded') {
+          toast.success(tr(isPlatformDarwin ? 'app.update.openInstaller' : 'app.update.install'))
+        } else if (status.state === 'error') {
+          toast.error(tr('app.update.error', { error: status.error ?? tr('app.update.retry') }))
+        }
+      })
+      .catch((error: unknown) => {
+        toast.error(
+          tr('app.update.error', {
+            error: error instanceof Error ? error.message : tr('app.update.retry'),
+          }),
+        )
+      })
+  }, [toast, tr, updateState])
+
   const getUpdateButtonTitle = () => {
     if (updateState === 'checking') return tr('app.update.checking')
     if (updateState === 'available')
@@ -565,9 +594,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         <div className="floating-sidebar-brand" />
         {/* <div className="sidebar-logo"><SparkLogoMark /></div> */}
         <div className="sidebar-header-actions">
-          {(updateState === 'available' ||
+          {(updateState === 'checking' ||
+            updateState === 'available' ||
             updateState === 'downloading' ||
-            updateState === 'downloaded') && (
+            updateState === 'downloaded' ||
+            updateState === 'error') && (
             <Tooltip title={getUpdateButtonTooltip()} mouseEnterDelay={0.05}>
               <button
                 className={`icon-btn sidebar-update-btn state-${updateState}`}
@@ -755,11 +786,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           <Dropdown
             open={userMenuOpen}
             onOpenChange={setUserMenuOpen}
-            trigger={['hover']}
-            placement="topRight"
-            align={{ offset: [8, 0] }}
-            mouseEnterDelay={0.2}
-            mouseLeaveDelay={0.2}
+            trigger={['click']}
+            placement="topLeft"
+            align={{ offset: [4, 0] }}
             styles={{
               root: {
                 width: 216,
@@ -899,6 +928,10 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                     ],
                   },
                   {
+                    key: 'check-update',
+                    label: menuLabel(<Icons.Refresh size={14} />, tr('app.update.check')),
+                  },
+                  {
                     key: 'about-spark',
                     label: menuLabel(<Icons.Sparkles size={14} />, tr('app.user.aboutSpark')),
                     children: [
@@ -967,6 +1000,8 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                         void handleCopyEmail()
                       } else if (key === 'contact-github-issue') {
                         handleOpenExternal(GITHUB_ISSUES_URL)
+                      } else if (key === 'check-update') {
+                        handleCheckUpdate()
                       }
                   }
                   setUserMenuOpen(false)
