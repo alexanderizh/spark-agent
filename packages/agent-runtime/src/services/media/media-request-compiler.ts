@@ -218,7 +218,14 @@ function mergeDefaults(
   providerDefaults: Record<string, unknown> | undefined,
   capabilityDefaults: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
-  return { ...(providerDefaults ?? {}), ...(capabilityDefaults ?? {}) }
+  // defaults 与 raw 走同一套 canonical 归一，确保 provider/capability/user 三方处在同一 canonical
+  // 键空间。否则当 defaults 用 provider 原生名（如 ratio/duration）而用户 raw 经归一变成
+  // canonical 名（aspectRatio/durationSeconds）时，spread 会让两组同义键并存，最终被一起透传给
+  // provider，表现为用户选择被默认值遮蔽或同义键重复（H3 类缺陷的根因）。
+  return {
+    ...normalizeCanonicalParams(providerDefaults ?? {}),
+    ...normalizeCanonicalParams(capabilityDefaults ?? {}),
+  }
 }
 
 function validateAgainstParamSchema(
