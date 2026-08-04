@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   paths: {
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     temp: '',
   },
   transcodeVideo: vi.fn(),
+  cropVideo: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
@@ -46,29 +47,30 @@ vi.mock('../FfmpegRunner.js', () => ({
   transcodeVideo: mocks.transcodeVideo,
   adjustSpeed: vi.fn(),
   reverseVideo: vi.fn(),
-  cropVideo: vi.fn(),
+  cropVideo: mocks.cropVideo,
   addWatermark: vi.fn(),
   burnSubtitle: vi.fn(),
 }))
 
 import { handleVideoProcess } from '../videoProcessHandler.js'
 
-let testRoot = ''
+const testRoot = mkdtempSync(join(tmpdir(), 'spark-video-handler-'))
+mocks.paths.userData = join(testRoot, 'user-data')
+mocks.paths.temp = join(testRoot, 'temp')
+mkdirSync(mocks.paths.userData, { recursive: true })
+mkdirSync(mocks.paths.temp, { recursive: true })
 
 afterEach(() => {
-  if (testRoot) rmSync(testRoot, { recursive: true, force: true })
-  testRoot = ''
   mocks.transcodeVideo.mockReset()
+  mocks.cropVideo.mockReset()
+})
+
+afterAll(() => {
+  rmSync(testRoot, { recursive: true, force: true })
 })
 
 describe('handleVideoProcess', () => {
   it('creates the artifact parent and accepts Windows path casing differences', async () => {
-    testRoot = mkdtempSync(join(tmpdir(), 'spark-video-handler-'))
-    mocks.paths.userData = join(testRoot, 'user-data')
-    mocks.paths.temp = join(testRoot, 'temp')
-    mkdirSync(mocks.paths.userData, { recursive: true })
-    mkdirSync(mocks.paths.temp, { recursive: true })
-
     mocks.transcodeVideo.mockImplementation(async (_input: string, outputPath: string) => {
       expect(existsSync(dirname(outputPath))).toBe(true)
       return { path: outputPath }
@@ -85,5 +87,18 @@ describe('handleVideoProcess', () => {
 
     expect(response.success).toBe(true)
     expect(mocks.transcodeVideo).toHaveBeenCalledOnce()
+  })
+
+  it('rejects negative crop coordinates before invoking ffmpeg', async () => {
+    const response = await handleVideoProcess({
+      operation: 'crop',
+      input: join(mocks.paths.userData, 'source.mp4'),
+      params: { w: 640, h: 360, x: -1, y: 0 },
+      requestId: 'crop-invalid-coordinate',
+    })
+
+    expect(response.success).toBe(false)
+    expect(response.error).toContain('crop x')
+    expect(mocks.cropVideo).not.toHaveBeenCalled()
   })
 })

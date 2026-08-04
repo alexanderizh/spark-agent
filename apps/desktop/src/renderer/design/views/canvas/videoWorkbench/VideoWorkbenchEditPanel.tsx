@@ -11,6 +11,7 @@ import type { ReactElement } from 'react'
 import { Button, InputNumber, Select, Slider, message } from 'antd'
 import { Icons } from '../../../Icons'
 import type { VideoProbeInfo, WorkbenchOutput } from './videoWorkbench.types'
+import { isVideoCropPixelsWithinBounds } from './videoCropModel'
 
 interface Props {
   probe: VideoProbeInfo | undefined
@@ -27,6 +28,8 @@ interface Props {
     operation: string,
     params: Record<string, unknown>,
   ) => Promise<{ success: boolean; result?: unknown; error?: string }>
+  /** 在左侧视频预览区开启可视化裁剪框 */
+  onStartCrop: () => void
   /** 转码/裁剪产物生成后的回调（用于刷新产物列表） */
   onOutput?: (summary: string, outputPath: string, type: WorkbenchOutput['type']) => void
 }
@@ -39,6 +42,7 @@ export function VideoWorkbenchEditPanel({
   probeFailed,
   fallbackDuration,
   onProcess,
+  onStartCrop,
   onOutput,
 }: Props): ReactElement {
   const duration = probe?.durationSec ?? fallbackDuration ?? 0
@@ -169,8 +173,22 @@ export function VideoWorkbenchEditPanel({
     )
 
   const handleCrop = (): Promise<void> => {
-    if (resolvedCropW <= 0 || resolvedCropH <= 0) {
-      message.error('裁剪宽高必须大于 0')
+    if (resolvedCropW < 2 || resolvedCropH < 2) {
+      message.error('裁剪宽高必须至少为 2×2')
+      return Promise.resolve()
+    }
+    if (!probe) {
+      message.error('视频尺寸尚未读取完成，请稍后再试')
+      return Promise.resolve()
+    }
+    if (
+      !isVideoCropPixelsWithinBounds(
+        { x: cropX, y: cropY, w: resolvedCropW, h: resolvedCropH },
+        probe.width,
+        probe.height,
+      )
+    ) {
+      message.error('裁剪区域必须至少为 2×2，且不能超出原视频画面')
       return Promise.resolve()
     }
     return runOp(
@@ -344,7 +362,23 @@ export function VideoWorkbenchEditPanel({
 
         {/* 画面裁剪 */}
         <div className="vwb-crop-controls">
-          <label>画面裁剪区域</label>
+          <div className="vwb-crop-label-row">
+            <label>画面裁剪区域</label>
+            <span>支持预览区框选</span>
+          </div>
+          <Button
+            size="small"
+            type="primary"
+            ghost
+            block
+            onClick={onStartCrop}
+            loading={busy}
+            disabled={busy}
+            icon={<Icons.Crop size={14} />}
+          >
+            在预览区框选并裁剪
+          </Button>
+          <div className="vwb-crop-manual-hint">也可以输入像素坐标进行精确裁剪</div>
           <div className="vwb-crop-grid">
             <div className="vwb-crop-field">
               <span>X</span>

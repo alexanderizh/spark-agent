@@ -1102,6 +1102,22 @@ export async function cropVideo(
   },
 ): Promise<{ path: string }> {
   const probe = await probeVideo(input)
+  if (
+    !Number.isFinite(opts.w) ||
+    !Number.isFinite(opts.h) ||
+    !Number.isFinite(opts.x) ||
+    !Number.isFinite(opts.y) ||
+    opts.w < 2 ||
+    opts.h < 2 ||
+    opts.x < 0 ||
+    opts.y < 0 ||
+    opts.x + opts.w > probe.width ||
+    opts.y + opts.h > probe.height
+  ) {
+    throw new Error(
+      `裁剪区域无效或超出原视频画面：${opts.w}×${opts.h} @ (${opts.x},${opts.y})，源视频为 ${probe.width}×${probe.height}`,
+    )
+  }
   ensureOutputDirectory(outputPath)
   const args = [
     '-i',
