@@ -16,6 +16,7 @@
  * 来源：docs/integrations/minimax/files-api.md
  */
 
+import { resolveMinimaxEndpoint } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import { MediaProviderError } from './media-adapter.types.js'
 import { assertMinimaxBaseResp } from './minimax-hailuo-error.js'
@@ -137,7 +138,7 @@ export class MinimaxHailuoFilesClient {
     log.debug(`event=request-started method=${method} path=${safePath} timeoutMs=${timeoutMs}`)
     try {
       const response = await (this.options.fetch ?? fetch)(
-        `${this.options.apiEndpoint.replace(/\/+$/, '')}${path}`,
+        resolveMinimaxEndpoint(this.options.apiEndpoint, path),
         {
           ...init,
           signal: controller.signal,

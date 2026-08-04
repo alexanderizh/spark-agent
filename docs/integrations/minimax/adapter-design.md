@@ -1,6 +1,6 @@
 # MiniMax 渠道适配设计
 
-> 状态: 已落地 | 最后核对: 2026-07-31
+> 状态: 已落地 | 最后核对: 2026-08-04
 >
 > 提交前风险修复：Files 响应在 JSON 边界保留未加引号的 int64 file_id，避免 JSON.parse 先行舍入；画布创建、运行与重试任务均校验 Provider 文件来源配置，禁止跨账号复用 file_id。
 >
@@ -390,6 +390,7 @@ validator 阻断：`templateId` 不在 11 项枚举 → 报错；模板声明需
 7. **V2 (H3) `content[]` 数组**：adapter 按 §4.6 规则组装，强制 i2v 与 r2v 互斥。
 8. **V2 OAI 风格错误响应**：HTTP 真实状态码，adapter 用本地 `minimaxV2ErrorExtractor`，不与 v1 共享 `minimaxErrorContract`。
 9. **现有 `hailuo-2.3` manifest 的 `video.edit` 能力存疑**：文档无独立 edit 端点；本轮核实是否保留，保留则需 adapter 明确端点。
+10. **Provider BaseURL 按服务根地址处理**：运行时与配置页预览都会去除末尾的 `/v1` / `/v2`，再按模型拼接真实路径，避免 H3 请求变成 `/v2/v2/video_generation`。Hailuo 2.3 / Fast 使用 `/v1/video_generation`，视频 Agent 使用 `/v1/video_template_generation`，H3 使用 `/v2/video_generation`。
 
 ## 8. 落地文件清单
 

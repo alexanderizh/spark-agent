@@ -2,6 +2,7 @@
 export * from './events/index.js'
 export * from './ipc/index.js'
 export * from './media-config.js'
+export * from './minimax-media-endpoints.js'
 export * from './media-model-contract.js'
 export * from './media-model-manifest.js'
 export * from './media-model-manifest-validation.js'

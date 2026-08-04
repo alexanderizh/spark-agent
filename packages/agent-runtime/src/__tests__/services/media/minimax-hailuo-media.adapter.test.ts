@@ -344,6 +344,41 @@ describe('MinimaxHailuoMediaAdapter', () => {
     })
   })
 
+  it('V2 H3: BaseURL 已带 /v2 时不会重复拼接版本路径', async () => {
+    const manifest = findManifest('minimax:v2-h3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-base-v2' })
+      if (url === `${ENDPOINT}/v2/query/video_generation/h3-base-v2`) {
+        return jsonRes({ task: { status: 'succeeded', content: { url: 'https://cdn/h3-base-v2.mp4' } } })
+      }
+      if (url === 'https://cdn/h3-base-v2.mp4') return binaryRes(FAKE_MP4)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        prompt: '基础地址带版本后缀',
+        modelParams: { duration: 5, ratio: '16:9' },
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        apiEndpoint: `${ENDPOINT}/v2`,
+        defaultModel: 'MiniMax-H3',
+        mediaApiType: 'async',
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+        mediaDefaults: { polling: { intervalMs: 1 } },
+      }),
+    )
+
+    expect(fetchImpl.mock.calls.some(([url]) => url === `${ENDPOINT}/v2/v2/video_generation`)).toBe(false)
+    expect(fetchImpl.mock.calls.some(([url]) => url === `${ENDPOINT}/v2/video_generation`)).toBe(true)
+  })
+
   it('V2 H3 i2v: content[] 含 first_frame image_url，本地 file 不走 mm_file 时用 URL', async () => {
     const manifest = findManifest('minimax:v2-h3')
     const cap = manifest.capabilities.find((c) => c.id === 'video.image_to_video')!
@@ -668,6 +703,7 @@ describe('MinimaxHailuoMediaAdapter', () => {
         outputDir: tmpDir,
       }),
       makeContext({
+        apiEndpoint: `${ENDPOINT}/v2`,
         defaultModel: 'MiniMax-H3',
         mediaApiType: 'async',
         fetch: fetchImpl,
