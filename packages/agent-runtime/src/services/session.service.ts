@@ -439,6 +439,24 @@ const RECOVERY_SESSION_LIMIT = 10_000
 const DEFAULT_MAX_CONCURRENT_SESSIONS = 6
 // HISTORY_CONTEXT_* 常量与对话历史相关纯函数已迁出至 ./session-history-helpers.ts（D-13）。
 const TERMINAL_AGENT_STATUSES = new Set<string>(['idle', 'completed', 'cancelled', 'error'])
+
+/**
+ * Executor 事件只能写回当前仍由 session 持有的 turn。
+ *
+ * cancel() 通常只是向 SDK/子进程发出中断信号，旧 executor 仍可能把已经缓冲的
+ * 事件回调出来。用 activeLoops 做所有权校验，再叠加已取消 turn 集合，避免旧 turn
+ * 在 cancelled 之后把会话状态重新写回 running。
+ */
+export function shouldAcceptSessionExecutorEvent(params: {
+  activeLoops: ReadonlyMap<string, unknown>
+  cancelledTurnIds: ReadonlySet<string>
+  sessionId: string
+  turnId: string
+  executor: unknown
+}): boolean {
+  if (params.cancelledTurnIds.has(params.turnId)) return false
+  return params.activeLoops.get(params.sessionId) === params.executor
+}
 // ENABLE_CLAUDE_SDK_RESUME 从 ./session-resume.ts 导入（D-13 拆分）。
 const UNATTENDED_AUTOMATION_SYSTEM_PROMPT = [
   '[Automation Execution]',
@@ -656,6 +674,12 @@ export class SessionService {
   private pendingTurns = new Map<string, PendingTurn[]>()
   /** Guards the async preflight window before an executor is registered in activeLoops. */
   private readonly startingSessions = new Set<string>()
+  /** sessionId → turnId for the queued turn currently in async preflight. */
+  private readonly startingTurnIds = new Map<string, string>()
+  /** sessionId → turnId for the executor currently owned by the session. */
+  private readonly runningTurnIds = new Map<string, string>()
+  /** Turn IDs explicitly cancelled by the user; late callbacks for these turns are ignored. */
+  private readonly cancelledTurnIds = new Set<string>()
   private readonly pendingSessionEventCleanups = new Set<string>()
   private orphanEventCleanupPending = false
   /** 画布 Agent MCP server 提供器（由主进程注入） */
@@ -1839,11 +1863,22 @@ export class SessionService {
         // 显式中断当前 loop（与 sendQueuedTurnNow 同模式），让批准消息立即起跑，
         // 不再依赖上一个 plan turn 的 finally 兜底（时机不可控，会被用户感知为"卡住"）。
         const loop = this.activeLoops.get(sessionId)!
+        const eventRepo = new EventRepository(this.db)
+        const interruptedTurnId =
+          this.runningTurnIds.get(sessionId) ?? getLatestTurnIdFromEvents(eventRepo, sessionId)
+        this.cancelledTurnIds.add(interruptedTurnId)
         this.onApprovalCancel?.(sessionId)
         // 仅收本会话的 team dispatch（原为 cancelAll，会误伤其他会话的协作）
         this.teamDispatchService?.cancelBySession(sessionId)
         loop.cancel()
         this.activeLoops.delete(sessionId)
+        this.runningTurnIds.delete(sessionId)
+        this.emitAndPersist(
+          sessionId,
+          interruptedTurnId,
+          createUserCancelledTurnEvent(sessionId, interruptedTurnId),
+          eventRepo,
+        )
         new SessionRepository(this.db).updateStatus(sessionId, 'idle')
       } else {
         this.enqueueTurn(sessionId, pendingTurn)
@@ -1921,7 +1956,11 @@ export class SessionService {
     //
     // goal 迭代不受误伤：它在该 session 的 turn 刚结束（activeLoops 已删、释放一个槽位）
     // 后发起，此时全局数 = max-1，不会触发这个检查。
-    if (this.activeLoops.size + this.startingSessions.size >= this.maxConcurrentSessions) {
+    const existingStartingTurnId = this.startingTurnIds.get(sessionId)
+    const ownsExistingStartingTurn = existingStartingTurnId === turnId
+    const inflightSessions =
+      this.activeLoops.size + this.startingSessions.size - (ownsExistingStartingTurn ? 1 : 0)
+    if (inflightSessions >= this.maxConcurrentSessions) {
       this.enqueueTurn(
         sessionId,
         this.makePendingTurn(
@@ -1937,6 +1976,60 @@ export class SessionService {
       return
     }
 
+    if (existingStartingTurnId != null && existingStartingTurnId !== turnId) {
+      this.enqueueTurn(
+        sessionId,
+        this.makePendingTurn(
+          turnId,
+          message,
+          runtimePatch,
+          skillId,
+          skillParams,
+          attachments,
+          mentionAgentId,
+        ),
+      )
+      return
+    }
+    const ownsStartingTurn = existingStartingTurnId == null
+    if (ownsStartingTurn) {
+      this.startingSessions.add(sessionId)
+      this.startingTurnIds.set(sessionId, turnId)
+    }
+
+    try {
+      await this.startTurnExecution(
+        sessionId,
+        turnId,
+        message,
+        runtimePatch,
+        skillId,
+        skillParams,
+        attachments,
+        mentionAgentId,
+        invocationObserver,
+      )
+    } finally {
+      if (ownsStartingTurn && this.startingTurnIds.get(sessionId) === turnId) {
+        this.startingTurnIds.delete(sessionId)
+        this.startingSessions.delete(sessionId)
+        this.cancelledTurnIds.delete(turnId)
+        if (!this.activeLoops.has(sessionId)) this.startNextQueuedTurn(sessionId)
+      }
+    }
+  }
+
+  private async startTurnExecution(
+    sessionId: string,
+    turnId: string,
+    message: string,
+    runtimePatch?: SessionRuntimePatch,
+    skillId?: string,
+    skillParams?: Record<string, unknown>,
+    attachments?: SessionAttachment[],
+    mentionAgentId?: string,
+    invocationObserver?: (snapshot: SDKInvocationSnapshot) => void,
+  ): Promise<void> {
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
     const eventRepo = new EventRepository(this.db)
@@ -3325,6 +3418,7 @@ export class SessionService {
       this.lastBuiltMcpVersion = this.mcpVersion
     }
 
+    if (this.cancelledTurnIds.has(turnId)) return
     const executor = new ClaudeSDKExecutor()
     const changedFiles = new Set<string>()
     const workspaceRootPath = config.workspaceRootPath
@@ -3464,6 +3558,17 @@ export class SessionService {
     const turnAgent = this.resolveAgent(options.agentId)
     executor.onEvent((event) => {
       if (
+        !shouldAcceptSessionExecutorEvent({
+          activeLoops: this.activeLoops,
+          cancelledTurnIds: this.cancelledTurnIds,
+          sessionId,
+          turnId,
+          executor,
+        })
+      ) {
+        return
+      }
+      if (
         event.type === 'agent_status' &&
         (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
       ) {
@@ -3563,6 +3668,7 @@ export class SessionService {
     })
 
     this.activeLoops.set(sessionId, executor)
+    this.runningTurnIds.set(sessionId, turnId)
     sessionRepo.updateStatus(sessionId, 'running')
     this.emitQueueChanged(sessionId)
 
@@ -3635,6 +3741,7 @@ export class SessionService {
     if (this.disposing || this.activeLoops.get(sessionId) !== executor) {
       if (this.activeLoops.get(sessionId) === executor) {
         this.activeLoops.delete(sessionId)
+        if (this.runningTurnIds.get(sessionId) === turnId) this.runningTurnIds.delete(sessionId)
         sessionRepo.updateStatus(sessionId, 'idle')
         this.emitQueueChanged(sessionId)
       }
@@ -3719,6 +3826,7 @@ export class SessionService {
       })
       .finally(() => {
         this.activeExecutionPromises.delete(executor)
+        this.cancelledTurnIds.delete(turnId)
         // 清理本 turn 的 dispatch 预算计数，避免长生命周期进程内存增长
         this.teamDispatchService?.clearTurn(turnId)
         this.clearTurnFileChangeKeys(sessionId, turnId)
@@ -3727,6 +3835,7 @@ export class SessionService {
         this.closeTeamMcpHandlesForTurn(turnId)
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
+          if (this.runningTurnIds.get(sessionId) === turnId) this.runningTurnIds.delete(sessionId)
           void this.continueGoalOrQueue(sessionId)
         }
       })
@@ -3887,6 +3996,7 @@ export class SessionService {
     }
 
     const useCodexCli = config.useLocalConfig === true || config.codexCliProvider != null
+    if (this.cancelledTurnIds.has(turnId)) return
     const executor = createCodexExecutorForConfig(config)
     const completeAssistantEvents: AssistantMessageEvent[] = []
     const mentionAgentId = options.mentionAgentId
@@ -3936,6 +4046,17 @@ export class SessionService {
     }
 
     executor.onEvent((event) => {
+      if (
+        !shouldAcceptSessionExecutorEvent({
+          activeLoops: this.activeLoops,
+          cancelledTurnIds: this.cancelledTurnIds,
+          sessionId,
+          turnId,
+          executor,
+        })
+      ) {
+        return
+      }
       if (
         event.type === 'agent_status' &&
         (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
@@ -4023,6 +4144,7 @@ export class SessionService {
     })
 
     this.activeLoops.set(sessionId, executor)
+    this.runningTurnIds.set(sessionId, turnId)
     sessionRepo.updateStatus(sessionId, 'running')
     this.emitQueueChanged(sessionId)
 
@@ -4046,6 +4168,7 @@ export class SessionService {
     if (this.disposing || this.activeLoops.get(sessionId) !== executor) {
       if (this.activeLoops.get(sessionId) === executor) {
         this.activeLoops.delete(sessionId)
+        if (this.runningTurnIds.get(sessionId) === turnId) this.runningTurnIds.delete(sessionId)
         sessionRepo.updateStatus(sessionId, 'idle')
         this.emitQueueChanged(sessionId)
       }
@@ -4110,12 +4233,14 @@ export class SessionService {
       })
       .finally(() => {
         this.activeExecutionPromises.delete(executor)
+        this.cancelledTurnIds.delete(turnId)
         this.teamDispatchService?.clearTurn(turnId)
         this.clearTurnFileChangeKeys(sessionId, turnId)
         // FR-0b 修复（审查 B-1）：回收本 turn 创建的 codex HTTP 桥接 handle（Host 主循环路径）。
         this.closeTeamMcpHandlesForTurn(turnId)
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
+          if (this.runningTurnIds.get(sessionId) === turnId) this.runningTurnIds.delete(sessionId)
           void this.continueGoalOrQueue(sessionId)
         }
       })
@@ -7015,6 +7140,14 @@ export class SessionService {
     event: AgentEvent,
     eventRepo: EventRepository,
   ): void {
+    // cancelTurn 先登记 turn，再取消 executor；这样同步/异步回调都不能在用户取消
+    // 之后继续写入旧 turn。唯一允许穿过闸门的是我们自己补发的 cancelled 终态事件。
+    if (
+      this.cancelledTurnIds.has(turnId) &&
+      !(event.type === 'agent_status' && event.status === 'cancelled')
+    ) {
+      return
+    }
     const seq = this.eventSequencer.reserve(sessionId, eventRepo)
     const sequenced = { ...event, seq }
     try {
@@ -7083,6 +7216,12 @@ export class SessionService {
     status: AgentStatusEvent['status'],
     message?: string,
   ): void {
+    if (
+      !TERMINAL_AGENT_STATUSES.has(status) &&
+      (this.cancelledTurnIds.has(turnId) || !this.activeLoops.has(sessionId))
+    ) {
+      return
+    }
     const event: AgentStatusEvent = {
       id: crypto.randomUUID(),
       type: 'agent_status',
@@ -7119,6 +7258,9 @@ export class SessionService {
       for (const execution of executions) execution.cancel()
       this.activeLoops.clear()
       this.startingSessions.clear()
+      this.startingTurnIds.clear()
+      this.runningTurnIds.clear()
+      this.cancelledTurnIds.clear()
       this.pendingTurns.clear()
       this.pendingPlanApprovals.clear()
       this.pendingUserQuestionGate.clear()
@@ -7207,16 +7349,19 @@ export class SessionService {
 
     // 中断当前正在执行的任务（不清理队列）
     const loop = this.activeLoops.get(sessionId)!
+    const eventRepo = new EventRepository(this.db)
+    const interruptedTurnId =
+      this.runningTurnIds.get(sessionId) ?? getLatestTurnIdFromEvents(eventRepo, sessionId)
+    this.cancelledTurnIds.add(interruptedTurnId)
     this.onApprovalCancel?.(sessionId)
     // 仅收本会话的 team dispatch，避免误伤其他会话（原为 cancelAll）
     this.teamDispatchService?.cancelBySession(sessionId)
     loop.cancel()
     this.activeLoops.delete(sessionId)
+    this.runningTurnIds.delete(sessionId)
 
     // 被插队打断的那一轮必须留下终结事件，否则时间线上是一段无解释的断尾：
     // 消息停在半截、没有终态 agent_status，回放时还会被当成"仍在运行"。
-    const eventRepo = new EventRepository(this.db)
-    const interruptedTurnId = getLatestTurnIdFromEvents(eventRepo, sessionId)
     this.emitAndPersist(
       sessionId,
       interruptedTurnId,
@@ -7310,6 +7455,7 @@ export class SessionService {
       return
     }
     this.startingSessions.add(sessionId)
+    this.startingTurnIds.set(sessionId, next.turnId)
     this.emitQueueChanged(sessionId)
     void this.startTurn(
       sessionId,
@@ -7324,6 +7470,10 @@ export class SessionService {
       .catch((error) => this.handleQueuedTurnStartFailure(sessionId, next, error))
       .finally(() => {
         this.startingSessions.delete(sessionId)
+        if (this.startingTurnIds.get(sessionId) === next.turnId) {
+          this.startingTurnIds.delete(sessionId)
+        }
+        this.cancelledTurnIds.delete(next.turnId)
         if (!this.activeLoops.has(sessionId)) this.startNextQueuedTurn(sessionId)
       })
   }
@@ -7337,6 +7487,7 @@ export class SessionService {
     if (activeLoop != null) {
       activeLoop.cancel()
       this.activeLoops.delete(sessionId)
+      if (this.runningTurnIds.get(sessionId) === turn.turnId) this.runningTurnIds.delete(sessionId)
     }
     this.teamDispatchService?.clearTurn(turn.turnId)
     this.closeTeamMcpHandlesForTurn(turn.turnId)
@@ -7931,6 +8082,14 @@ export class SessionService {
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
     const loop = this.activeLoops.get(sessionId)
+    const startingTurnId = this.startingTurnIds.get(sessionId)
+    const eventRepo = new EventRepository(this.db)
+    const activeTurnId =
+      loop != null
+        ? (this.runningTurnIds.get(sessionId) ?? getLatestTurnIdFromEvents(eventRepo, sessionId))
+        : null
+    const cancelledTurnId = activeTurnId ?? startingTurnId
+    if (cancelledTurnId != null) this.cancelledTurnIds.add(cancelledTurnId)
     this.stopComputerUseSession(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
     // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
@@ -7939,13 +8098,25 @@ export class SessionService {
     // 这里曾经是 cancelAll()，会把其他会话正在跑的团队协作一并打断。
     this.teamDispatchService?.cancelBySession(sessionId)
     if (loop == null) {
+      if (startingTurnId != null) {
+        this.emitAndPersist(
+          sessionId,
+          startingTurnId,
+          createUserCancelledTurnEvent(sessionId, startingTurnId),
+          eventRepo,
+        )
+        new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+        this.emitQueueChanged(sessionId)
+        return { cancelled: true }
+      }
       this.emitQueueChanged(sessionId)
       return { cancelled: false }
     }
-    const eventRepo = new EventRepository(this.db)
-    const turnId = getLatestTurnIdFromEvents(eventRepo, sessionId)
+    const turnId = activeTurnId ?? getLatestTurnIdFromEvents(eventRepo, sessionId)
+    this.cancelledTurnIds.add(turnId)
     loop.cancel()
     this.activeLoops.delete(sessionId)
+    this.runningTurnIds.delete(sessionId)
     const sessionRepo = new SessionRepository(this.db)
     this.emitAndPersist(
       sessionId,
@@ -8061,8 +8232,12 @@ export class SessionService {
    * @returns 是否终止了一个正在运行的执行器（调用方据此决定要不要写取消事件）。
    */
   private clearSessionMemory(sessionId: string): boolean {
-    this.stopComputerUseSession(sessionId)
     const activeLoop = this.activeLoops.get(sessionId)
+    const startingTurnId = this.startingTurnIds.get(sessionId)
+    const runningTurnId = this.runningTurnIds.get(sessionId)
+    if (runningTurnId != null) this.cancelledTurnIds.add(runningTurnId)
+    if (startingTurnId != null) this.cancelledTurnIds.add(startingTurnId)
+    this.stopComputerUseSession(sessionId)
     if (activeLoop != null) {
       try {
         activeLoop.cancel()
@@ -8074,9 +8249,11 @@ export class SessionService {
       }
     }
     this.activeLoops.delete(sessionId)
+    this.runningTurnIds.delete(sessionId)
     // 同一会话下正在进行的团队成员执行也要一起收掉，否则 member executor 会成为孤儿。
     this.teamDispatchService?.cancelBySession(sessionId)
     this.startingSessions.delete(sessionId)
+    this.startingTurnIds.delete(sessionId)
     this.pendingTurns.delete(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
     this.pendingUserQuestionGate.releaseSession(sessionId)

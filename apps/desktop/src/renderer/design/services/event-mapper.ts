@@ -1427,6 +1427,28 @@ export class MessageBuilder {
     return [...this.messages]
   }
 
+  /**
+   * Renderer 明确收到 session stop 后的兜底收尾。
+   * 正常路径仍由 agent_status 终态驱动；这里只处理终态事件丢失/晚到时仍停在
+   * streaming 的消息，避免“会话已结束但气泡仍显示执行任务中”。
+   */
+  finalizeRunningMessages(finalStatus: 'completed' | 'error' | 'cancelled' = 'completed'): boolean {
+    let changed = false
+    for (const message of this.messages) {
+      if (message.status !== 'streaming') continue
+      changed = true
+      message.status = finalStatus
+      this.finishStreamingBlocks(message, finalStatus === 'completed' ? 'completed' : 'error')
+      if (finalStatus === 'cancelled') {
+        if (!message.blocks.some((block) => block.kind === 'cancelled')) {
+          message.blocks.push({ kind: 'cancelled', message: '已取消本次任务' })
+        }
+      }
+      this.appendTurnSummary(message)
+    }
+    return changed
+  }
+
   private findSubagentBlock(identity: { turnId: string; toolCallId: string; taskId?: string }): {
     message: UIMessage
     block: Extract<UIBlock, { kind: 'subagent' }>

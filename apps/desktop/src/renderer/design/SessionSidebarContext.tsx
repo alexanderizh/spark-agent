@@ -612,6 +612,20 @@ export function SessionSidebarProvider({
         ])
       setWorkspaces(workspaceRes.workspaces)
       setSessions(sessionRes.sessions)
+      // The persisted session summary is the recovery source of truth. If a live terminal
+      // event was missed, do not let the transient agent-status map keep a stale spinner alive.
+      setSessionAgentStatuses((prev) => {
+        const runningSessionIds = new Set<string>(
+          sessionRes.sessions.filter((session) => session.status === 'running').map((s) => s.id),
+        )
+        let changed = false
+        const next: Record<string, AgentStatusValue> = {}
+        for (const [sessionId, status] of Object.entries(prev)) {
+          if (runningSessionIds.has(sessionId)) next[sessionId] = status
+          else changed = true
+        }
+        return changed ? next : prev
+      })
       // 收敛未读 Set：丢弃已不存在的会话 id，避免 dock 徽章因会话被删除/归档而永久虚高
       setUnreviewedCompleted((prev) => {
         if (prev.size === 0) return prev
@@ -675,6 +689,13 @@ export function SessionSidebarProvider({
             return item.status === 'running' ? { ...item, status: 'idle' } : item
           }),
         )
+        if (!snapshot.running) {
+          setSessionAgentStatuses((prev) => {
+            if (!(snapshot.sessionId in prev)) return prev
+            const { [snapshot.sessionId]: _, ...rest } = prev
+            return rest
+          })
+        }
       }) ?? (() => {})
     )
   }, [])
@@ -856,6 +877,13 @@ export function SessionSidebarProvider({
       setSessions((prev) =>
         prev.map((item) => (item.id === sessionId ? { ...item, ...patch } : item)),
       )
+      if (patch.status != null && patch.status !== 'running') {
+        setSessionAgentStatuses((prev) => {
+          if (!(sessionId in prev)) return prev
+          const { [sessionId]: _, ...rest } = prev
+          return rest
+        })
+      }
     },
     [],
   )

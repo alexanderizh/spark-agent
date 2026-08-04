@@ -195,6 +195,23 @@ describe('ChatTabbar agentStatus grace', () => {
     expect(spinner()?.textContent).toContain('调用工具')
   })
 
+  it('显式停止时绕过 grace，立即隐藏 spinner', () => {
+    vi.useFakeTimers()
+    act(() => {
+      root.render(<ChatTabbar {...baseProps('思考中')} stopTrigger={0} />)
+    })
+    expect(spinner()).not.toBeNull()
+
+    act(() => {
+      root.render(<ChatTabbar {...baseProps('')} stopTrigger={1} />)
+    })
+    expect(spinner()).toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(1500)
+    })
+    expect(spinner()).toBeNull()
+  })
+
   it('切换会话立即清空运行态，不残留上个会话的 spinner', () => {
     vi.useFakeTimers()
     act(() => {

@@ -17,6 +17,7 @@ import {
   isOpenAiOnlyCodexConsumer,
   resolveCodexMemberExecutionProfile,
   SessionService,
+  shouldAcceptSessionExecutorEvent,
   shouldRunTurnPostProcessing,
 } from '../../services/session.service.js'
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
@@ -59,6 +60,40 @@ function baseEvent(
 }
 
 describe('SessionService recovery helpers', () => {
+  it('rejects late events from a cancelled or replaced executor', () => {
+    const oldExecutor = {}
+    const currentExecutor = {}
+    const activeLoops = new Map([['session-1', currentExecutor]])
+
+    expect(
+      shouldAcceptSessionExecutorEvent({
+        activeLoops,
+        cancelledTurnIds: new Set(),
+        sessionId: 'session-1',
+        turnId: 'turn-old',
+        executor: oldExecutor,
+      }),
+    ).toBe(false)
+    expect(
+      shouldAcceptSessionExecutorEvent({
+        activeLoops: new Map([['session-1', oldExecutor]]),
+        cancelledTurnIds: new Set(['turn-old']),
+        sessionId: 'session-1',
+        turnId: 'turn-old',
+        executor: oldExecutor,
+      }),
+    ).toBe(false)
+    expect(
+      shouldAcceptSessionExecutorEvent({
+        activeLoops: new Map([['session-1', currentExecutor]]),
+        cancelledTurnIds: new Set(),
+        sessionId: 'session-1',
+        turnId: 'turn-current',
+        executor: currentExecutor,
+      }),
+    ).toBe(true)
+  })
+
   it('cancels and waits for active executors before shutdown completes', async () => {
     let finishExecution: (() => void) | undefined
     const executionDone = new Promise<void>((resolve) => {
@@ -76,6 +111,9 @@ describe('SessionService recovery helpers', () => {
       activeLoops: Map<string, typeof execution>
       dispose: () => Promise<void>
       startingSessions: Set<string>
+      startingTurnIds: Map<string, string>
+      runningTurnIds: Map<string, string>
+      cancelledTurnIds: Set<string>
       disposing: boolean
       onApprovalCancel: (sessionId: string) => void
       platformBridge: { stop: () => Promise<void> }
@@ -90,6 +128,9 @@ describe('SessionService recovery helpers', () => {
     ])
     service.activeLoops = new Map([['session-1', execution]])
     service.startingSessions = new Set()
+    service.startingTurnIds = new Map()
+    service.runningTurnIds = new Map()
+    service.cancelledTurnIds = new Set()
     service.disposing = false
     service.onApprovalCancel = onApprovalCancel
     service.platformBridge = { stop: platformStop }
@@ -516,6 +557,9 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     pendingTurns: Map<string, unknown[]>
     pendingUserQuestionGate: SessionQuestionGate
     startingSessions: Set<string>
+    startingTurnIds: Map<string, string>
+    runningTurnIds: Map<string, string>
+    cancelledTurnIds: Set<string>
     teamDispatchService: { cancelBySession: (sessionId: string) => number }
   }
 
@@ -533,6 +577,9 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     service.pendingTurns = new Map()
     service.pendingUserQuestionGate = new SessionQuestionGate()
     service.startingSessions = new Set()
+    service.startingTurnIds = new Map()
+    service.runningTurnIds = new Map()
+    service.cancelledTurnIds = new Set()
     service.teamDispatchService = { cancelBySession: vi.fn(() => 0) }
     return service
   }
@@ -742,6 +789,9 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
     ) => { turnId: string; message: string; enqueuedAt: string }
     maxConcurrentSessions: number
     startingSessions: Set<string>
+    startingTurnIds: Map<string, string>
+    cancelledTurnIds: Set<string>
+    startNextQueuedTurn: (sessionId: string) => void
     startTurn: (sessionId: string, turnId: string, message: string) => Promise<void>
   }
 
@@ -754,6 +804,9 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
     service.activeLoops = activeLoops
     service.maxConcurrentSessions = maxConcurrent
     service.startingSessions = new Set()
+    service.startingTurnIds = new Map()
+    service.cancelledTurnIds = new Set()
+    service.startNextQueuedTurn = vi.fn()
     service.enqueueTurn = vi.fn()
     service.makePendingTurn = vi.fn(
       (turnId: string, message: string) => ({
@@ -787,6 +840,31 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
     const enqueueTurn = service.enqueueTurn as unknown as ReturnType<typeof vi.fn>
     await service.startTurn('session-new', 'turn-1', 'hi').catch(() => {
       // 后续逻辑因桩 db 抛错，预期内
+    })
+
+    expect(enqueueTurn).not.toHaveBeenCalled()
+  })
+
+  it('direct startTurn registers a preflight guard and releases it on failure', async () => {
+    const service = makeStartTurnService(3, 2)
+
+    await service.startTurn('session-new', 'turn-1', 'hi').catch(() => {
+      // Minimal test double has no database; the assertion is about guard cleanup.
+    })
+
+    expect(service.startingSessions.has('session-new')).toBe(false)
+    expect(service.startingTurnIds.has('session-new')).toBe(false)
+    expect(service.cancelledTurnIds.has('turn-1')).toBe(false)
+  })
+
+  it('does not count its own queued preflight slot against the concurrency limit', async () => {
+    const service = makeStartTurnService(1, 0)
+    service.startingSessions.add('session-new')
+    service.startingTurnIds.set('session-new', 'turn-1')
+    const enqueueTurn = service.enqueueTurn as unknown as ReturnType<typeof vi.fn>
+
+    await service.startTurn('session-new', 'turn-1', 'hi').catch(() => {
+      // Minimal test double has no database; the assertion is about the limit check.
     })
 
     expect(enqueueTurn).not.toHaveBeenCalled()
