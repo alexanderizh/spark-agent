@@ -4707,7 +4707,9 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-node-edit-prompt-library-compact {
-  max-height: 320px;
+  // 320px 太矮：扣掉 head/分类/输入后 list 仅剩 ~196px，连一张完整卡片都装不下；
+  // 放宽到与外层 popover 协调的高度，让首屏至少看全 1 行卡片，其余滚动。
+  max-height: min(480px, 70vh);
 }
 
 .canvas-film-prompt-library {
