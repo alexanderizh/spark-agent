@@ -9079,6 +9079,25 @@ body.inspector-resizing {
   overflow: hidden;
 }
 
+.user-question-option-popover {
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.user-question-option-popover .popover-label {
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 4px;
+}
+
+.user-question-option-popover .popover-desc {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .question-option-check {
   position: absolute;
   top: 50%;

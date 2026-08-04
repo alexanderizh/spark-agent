@@ -1,5 +1,9 @@
 import React, { useState } from 'react'
-import { Input as LobeInput, TextArea as LobeTextArea } from '@lobehub/ui'
+import {
+  Input as LobeInput,
+  Popover as LobePopover,
+  TextArea as LobeTextArea,
+} from '@lobehub/ui'
 import type { UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { isOptionalUserQuestion } from '../../utils/user-question-readiness'
@@ -172,16 +176,11 @@ function UserQuestionWizard({
                   const selected = isMultiChoiceQuestion(currentQuestion)
                     ? (currentDraft.selectedLabels ?? []).includes(opt.label)
                     : currentDraft.selectedLabel === opt.label
-                  const tooltipText = opt.description
-                    ? `${opt.label}\n${opt.description}`
-                    : opt.label
-                  return (
+                  const optionButton = (
                     <button
-                      key={`${opt.label}-${optIndex}`}
                       className={`question-option ${selected ? 'selected' : ''}`}
                       onClick={() => handleSelectOption(opt)}
                       disabled={submitted}
-                      title={tooltipText}
                     >
                       <div className="option-label">{opt.label}</div>
                       {opt.description && <div className="option-desc">{opt.description}</div>}
@@ -191,6 +190,26 @@ function UserQuestionWizard({
                         </span>
                       )}
                     </button>
+                  )
+                  if (submitted) return optionButton
+                  return (
+                    <LobePopover
+                      key={`${opt.label}-${optIndex}`}
+                      trigger="hover"
+                      mouseEnterDelay={0}
+                      mouseLeaveDelay={0.1}
+                      placement="top"
+                      content={
+                        <div className="user-question-option-popover">
+                          <div className="popover-label">{opt.label}</div>
+                          {opt.description && (
+                            <div className="popover-desc">{opt.description}</div>
+                          )}
+                        </div>
+                      }
+                    >
+                      {optionButton}
+                    </LobePopover>
                   )
                 })}
               </div>
