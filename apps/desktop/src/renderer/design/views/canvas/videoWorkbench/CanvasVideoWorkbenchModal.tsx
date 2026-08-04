@@ -665,6 +665,8 @@ export function CanvasVideoWorkbenchModal({
             keyframes: current.keyframes.map((frame) => importedByIndex.get(frame.index) ?? frame),
           }))
         }
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '关键帧导入画布失败')
       } finally {
         setBusy(false)
       }
