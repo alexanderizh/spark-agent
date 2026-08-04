@@ -13,7 +13,10 @@ import {
 } from './canvasTextInputPresentation'
 import type { ParsedShotRow } from './canvasShotTableParse'
 import { appendPromptFragment, buildPromptOptimizationInstruction } from './canvasPromptEditing'
+import { CanvasNodeMediaPreview } from './CanvasNodeMediaPreview'
 import type { CanvasAsset, CanvasNode, CanvasTask } from './canvas.types'
+
+type MediaEditTab = 'edit' | 'preview'
 
 export function CanvasNodeEditModal({
   node,
@@ -47,6 +50,7 @@ export function CanvasNodeEditModal({
   const [negativePrompt, setNegativePrompt] = useState('')
   const [messageText, setMessageText] = useState('')
   const [url, setUrl] = useState('')
+  const [mediaEditTab, setMediaEditTab] = useState<MediaEditTab>('edit')
   const [editFullscreen, setEditFullscreen] = useState(false)
   const [shotRows, setShotRows] = useState<ParsedShotRow[]>([])
   const [optimizeModalOpen, setOptimizeModalOpen] = useState(false)
@@ -54,6 +58,7 @@ export function CanvasNodeEditModal({
   const [optimizing, setOptimizing] = useState(false)
   const effectiveFullscreen = fullscreen ?? editFullscreen
   const isTextLike = node?.type === 'text' || node?.type === 'prompt'
+  const isPreviewableMediaNode = node?.type === 'image' || node?.type === 'video'
   const isShotScriptNode = node?.type === 'text' && isRenderableShotScriptText(node.data.text)
 
   useEffect(() => {
@@ -80,10 +85,15 @@ export function CanvasNodeEditModal({
     setNegativePrompt('')
     setMessageText(node.data.message ?? '')
     setUrl(node.data.url ?? '')
+    setMediaEditTab('edit')
     setShotRows(resolveStoryboardRowsForEditing(node.data.text ?? '', nodes))
     setOptimizeModalOpen(false)
     setOptimizeRequirement('')
   }, [node, nodes])
+
+  useEffect(() => {
+    if (open) setMediaEditTab('edit')
+  }, [open, node?.id])
 
   const composerMainRef = useRef<HTMLDivElement>(null)
   const scrollComposerToEndRef = useRef(false)
@@ -390,22 +400,75 @@ export function CanvasNodeEditModal({
     )
   }
 
+  const isMediaEditPreview = isPreviewableMediaNode && mediaEditTab === 'preview'
+  const showMediaEditHeader = !isPreviewableMediaNode || mediaEditTab === 'edit'
+
+  const mediaEditTabs = isPreviewableMediaNode ? (
+    <Tabs
+      className="canvas-node-media-edit-tabs"
+      activeKey={mediaEditTab}
+      onChange={(key) => setMediaEditTab(key as MediaEditTab)}
+      items={[
+        {
+          key: 'edit',
+          label: '编辑',
+          children: (
+            <div className="canvas-node-media-edit-fields">
+              <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+                <span>媒体 URL</span>
+                <Input
+                  value={url}
+                  placeholder="https://、data: 或 safe-file: URL"
+                  onChange={(event) => setUrl(event.target.value)}
+                />
+              </label>
+              <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+                <span>备注 / 展示文本</span>
+                <Input.TextArea
+                  value={messageText}
+                  rows={5}
+                  placeholder="节点内展示的辅助文本"
+                  onChange={(event) => setMessageText(event.target.value)}
+                />
+              </label>
+            </div>
+          ),
+        },
+        {
+          key: 'preview',
+          label: '预览',
+          children: (
+            <CanvasNodeMediaPreview
+              type={node.type === 'image' ? 'image' : 'video'}
+              url={url}
+            />
+          ),
+        },
+      ]}
+    />
+  ) : null
+
   const content = (
-    <div className="canvas-node-edit-dialog">
-      <div className="canvas-node-edit-dialog-head">
-        <Tag color="default" bordered>
-          {node.type}
-        </Tag>
-        <span>{node.id}</span>
-      </div>
-      <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-        <span>标题</span>
-        <Input
-          value={title}
-          placeholder="节点标题"
-          onChange={(event) => setTitle(event.target.value)}
-        />
-      </label>
+    <div className={`canvas-node-edit-dialog${isMediaEditPreview ? ' is-media-preview' : ''}`}>
+      {mediaEditTabs}
+      {showMediaEditHeader && (
+        <>
+          <div className="canvas-node-edit-dialog-head">
+            <Tag color="default" bordered>
+              {node.type}
+            </Tag>
+            <span>{node.id}</span>
+          </div>
+          <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+            <span>标题</span>
+            <Input
+              value={title}
+              placeholder="节点标题"
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </label>
+        </>
+      )}
       {isTextLike && (
         <div className="canvas-node-edit-prompt-layout">
           <div className="canvas-node-edit-prompt-main">
@@ -457,26 +520,30 @@ export function CanvasNodeEditModal({
           />
         </div>
       )}
-      {(node.type === 'image' || node.type === 'video' || node.type === 'audio') && (
-        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-          <span>媒体 URL</span>
-          <Input
-            value={url}
-            placeholder="https:// 或 data: URL"
-            onChange={(event) => setUrl(event.target.value)}
-          />
-        </label>
-      )}
-      {node.type !== 'text' && node.type !== 'prompt' && (
-        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-          <span>备注 / 展示文本</span>
-          <Input.TextArea
-            value={messageText}
-            rows={5}
-            placeholder="节点内展示的辅助文本"
-            onChange={(event) => setMessageText(event.target.value)}
-          />
-        </label>
+      {!isPreviewableMediaNode && (
+        <>
+          {node.type === 'audio' && (
+            <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+              <span>媒体 URL</span>
+              <Input
+                value={url}
+                placeholder="https:// 或 data: URL"
+                onChange={(event) => setUrl(event.target.value)}
+              />
+            </label>
+          )}
+          {node.type !== 'text' && node.type !== 'prompt' && (
+            <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+              <span>备注 / 展示文本</span>
+              <Input.TextArea
+                value={messageText}
+                rows={5}
+                placeholder="节点内展示的辅助文本"
+                onChange={(event) => setMessageText(event.target.value)}
+              />
+            </label>
+          )}
+        </>
       )}
     </div>
   )
