@@ -10,7 +10,7 @@
  *
  * 挂载范式参考 stage3d/CanvasDirectorStage3DModal（自定义 overlay + open 控制）。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { Button, Dropdown, Segmented, message } from 'antd'
 import type { MenuProps } from 'antd'
@@ -38,6 +38,12 @@ import { VideoWorkbenchOutputPanel } from './VideoWorkbenchOutputPanel'
 import type { ThumbnailMeta } from './VideoWorkbenchResourceThumb'
 import { VideoWorkbenchResourcePicker } from './VideoWorkbenchResourcePicker'
 import { useVideoWorkbenchPlayback } from './useVideoWorkbenchPlayback'
+import { VideoCropOverlay } from './VideoCropOverlay'
+import {
+  DEFAULT_VIDEO_CROP_RECT,
+  videoCropRectToPixels,
+  type VideoCropRect,
+} from './videoCropModel'
 import {
   backfillResourceMetadata,
   duplicateTrackClip,
@@ -222,12 +228,23 @@ export function CanvasVideoWorkbenchModal({
   const [progress, setProgress] = useState<number | null>(null)
   const [progressStage, setProgressStage] = useState('')
   const videoRef = useRef<HTMLVideoElement>(null)
+  const videoStageRef = useRef<HTMLDivElement>(null)
+  const [cropMode, setCropMode] = useState(false)
+  const [cropRect, setCropRect] = useState<VideoCropRect>(DEFAULT_VIDEO_CROP_RECT)
+  const [cropMediaBounds, setCropMediaBounds] = useState<{
+    left: number
+    top: number
+    width: number
+    height: number
+  } | null>(null)
   /** probe in-flight 哨兵，防止自动 probe 重复触发 */
   const probingRef = useRef(false)
   /** probe 失败标记（无 ffmpeg / 路径问题），用于区分「探测中」和「探测失败」 */
   const [probeFailed, setProbeFailed] = useState(false)
   /** video 元素的 duration（probe 失败时兜底用） */
   const [videoMetaDuration, setVideoMetaDuration] = useState(0)
+  /** video 元素的原始尺寸（probe 失败时供可视化裁剪换算使用） */
+  const [videoMetaSize, setVideoMetaSize] = useState<{ width: number; height: number } | null>(null)
   /** 当前播放位置（秒），用于手动标记 */
   const [currentTime, setCurrentTime] = useState(0)
   /** 资源面板当前选中的资源 id（用于在主预览区单独预览） */
@@ -315,6 +332,40 @@ export function CanvasVideoWorkbenchModal({
 
   const probe = draft.probeInfo
   const duration = probe?.durationSec ?? videoMetaDuration ?? 0
+
+  const updateCropMediaBounds = useCallback(() => {
+    const stage = videoStageRef.current
+    const video = videoRef.current
+    if (!stage || !video || video.getBoundingClientRect().width <= 0) {
+      setCropMediaBounds(null)
+      return
+    }
+    const stageBounds = stage.getBoundingClientRect()
+    const videoBounds = video.getBoundingClientRect()
+    setCropMediaBounds({
+      left: videoBounds.left - stageBounds.left,
+      top: videoBounds.top - stageBounds.top,
+      width: videoBounds.width,
+      height: videoBounds.height,
+    })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!cropMode) return
+    const frameId = requestAnimationFrame(updateCropMediaBounds)
+    const stage = videoStageRef.current
+    const video = videoRef.current
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateCropMediaBounds) : null
+    if (stage) resizeObserver?.observe(stage)
+    if (video) resizeObserver?.observe(video)
+    window.addEventListener('resize', updateCropMediaBounds)
+    return () => {
+      cancelAnimationFrame(frameId)
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', updateCropMediaBounds)
+    }
+  }, [cropMode, previewUrl, updateCropMediaBounds, videoMetaDuration, videoMetaSize])
   // ── 检测 ffmpeg 可用性 ──────────────────────────────────────────
   useEffect(() => {
     if (!open) return
@@ -668,6 +719,56 @@ export function CanvasVideoWorkbenchModal({
       recordOutputs([{ summary, outputPath, type }])
     },
     [recordOutputs],
+  )
+
+  const handleStartCrop = useCallback(() => {
+    if (!sourceVideoUrl || previewKind !== 'video') {
+      message.info('请先准备一个可播放的视频源')
+      return
+    }
+    playbackExit()
+    setSelectedResourceId(null)
+    setActiveTab('edit')
+    setCropRect(DEFAULT_VIDEO_CROP_RECT)
+    setCropMode(true)
+  }, [playbackExit, previewKind, sourceVideoUrl])
+
+  const handleCancelCrop = useCallback(() => {
+    setCropMode(false)
+    setCropMediaBounds(null)
+  }, [])
+
+  const handleConfirmCrop = useCallback(
+    async (selection: VideoCropRect) => {
+      const video = videoRef.current
+      const sourceWidth = probe?.width ?? video?.videoWidth ?? 0
+      const sourceHeight = probe?.height ?? video?.videoHeight ?? 0
+      if (
+        !Number.isFinite(sourceWidth) ||
+        !Number.isFinite(sourceHeight) ||
+        sourceWidth < 2 ||
+        sourceHeight < 2
+      ) {
+        message.error('视频尺寸尚未读取完成，请稍后再试')
+        return
+      }
+      const crop = videoCropRectToPixels(selection, sourceWidth, sourceHeight)
+      setCropMode(false)
+      setCropMediaBounds(null)
+      const result = await handleProcess('crop', { ...crop })
+      if (!result.success || !result.result) {
+        message.error(result.error ?? '画面裁剪失败')
+        return
+      }
+      const outputPath = (result.result as { path?: string }).path ?? ''
+      if (!outputPath) {
+        message.error('画面裁剪完成，但没有返回产物文件')
+        return
+      }
+      recordOutput(`画面裁剪 ${crop.w}×${crop.h}`, outputPath, 'effect')
+      message.success(`已裁剪画面为 ${crop.w}×${crop.h}`)
+    },
+    [handleProcess, probe?.height, probe?.width, recordOutput],
   )
 
   // ── 资源面板 / 多段轨道 handlers ───────────────────────────────
@@ -1242,6 +1343,10 @@ export function CanvasVideoWorkbenchModal({
       if (e.key === 'Escape') {
         e.preventDefault()
         e.stopPropagation()
+        if (cropMode) {
+          handleCancelCrop()
+          return
+        }
         onClose()
         return
       }
@@ -1277,7 +1382,16 @@ export function CanvasVideoWorkbenchModal({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [open, onClose, handlePlayToggle, stepFrame, handleToStart, seekRelative])
+  }, [
+    open,
+    onClose,
+    cropMode,
+    handleCancelCrop,
+    handlePlayToggle,
+    stepFrame,
+    handleToStart,
+    seekRelative,
+  ])
 
   const handleSaveAndClose = useCallback(async () => {
     setSavingDraft(true)
@@ -1397,7 +1511,7 @@ export function CanvasVideoWorkbenchModal({
         <div className="vwb-body">
           {/* 左侧：视频预览 + 时间线 */}
           <div className="vwb-preview-pane">
-            <div className="vwb-video-stage">
+            <div ref={videoStageRef} className="vwb-video-stage">
               {selectedResource && (
                 <div className="vwb-preview-meta">
                   <Icons.Eye size={12} />
@@ -1423,6 +1537,13 @@ export function CanvasVideoWorkbenchModal({
                   onLoadedMetadata={(e) => {
                     const d = e.currentTarget.duration
                     if (Number.isFinite(d) && d > 0) setVideoMetaDuration(d)
+                    if (e.currentTarget.videoWidth > 0 && e.currentTarget.videoHeight > 0) {
+                      setVideoMetaSize({
+                        width: e.currentTarget.videoWidth,
+                        height: e.currentTarget.videoHeight,
+                      })
+                    }
+                    if (cropMode) requestAnimationFrame(updateCropMediaBounds)
                   }}
                   onPlay={playbackOnPlay}
                   onPause={playbackOnPause}
@@ -1441,6 +1562,17 @@ export function CanvasVideoWorkbenchModal({
                   <Icons.Film size={48} />
                   <span>未关联视频</span>
                 </div>
+              )}
+              {cropMode && cropMediaBounds && previewKind === 'video' && !isPlayback && (
+                <VideoCropOverlay
+                  bounds={cropMediaBounds}
+                  rect={cropRect}
+                  sourceWidth={probe?.width ?? videoMetaSize?.width ?? 0}
+                  sourceHeight={probe?.height ?? videoMetaSize?.height ?? 0}
+                  busy={busy}
+                  onConfirm={(selection) => void handleConfirmCrop(selection)}
+                  onCancel={handleCancelCrop}
+                />
               )}
             </div>
 
@@ -1636,6 +1768,7 @@ export function CanvasVideoWorkbenchModal({
                 probeFailed={probeFailed}
                 fallbackDuration={videoMetaDuration}
                 onProcess={handleProcess}
+                onStartCrop={handleStartCrop}
                 onOutput={recordOutput}
               />
             )}

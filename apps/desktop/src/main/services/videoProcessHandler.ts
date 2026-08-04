@@ -169,8 +169,10 @@ async function dispatch(
   assertNumRange(params.intervalSec, 0.1, 3600, 'intervalSec')
   assertNumRange(params.crf, 0, 51, 'crf')
   assertNumRange(params.fps, 1, 120, 'fps')
-  assertNumRange(params.w, 1, 16384, 'crop w')
-  assertNumRange(params.h, 1, 16384, 'crop h')
+  assertNumRange(params.x, 0, 16384, 'crop x')
+  assertNumRange(params.y, 0, 16384, 'crop y')
+  assertNumRange(params.w, 2, 16384, 'crop w')
+  assertNumRange(params.h, 2, 16384, 'crop h')
 
   switch (operation) {
     // ── 探测（无进度）──────────────────────────────────────────────
