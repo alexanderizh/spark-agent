@@ -987,6 +987,9 @@ export function ChatView({
   // idle（agent 自己切了分支）时 bump，让下方 listBranches effect 重新拉取最新分支。
   const [branchRefreshTick, setBranchRefreshTick] = useState(0)
   const [clearTrigger, setClearTrigger] = useState(0)
+  // 每个会话独立的显式停止触发器：停止请求返回后立即收拢 ChatStream，
+  // 不依赖终止事件必须先抵达 renderer 才能清理气泡中的 streaming 状态。
+  const [sessionStopTriggers, setSessionStopTriggers] = useState<Record<string, number>>({})
   // 用户发送消息时立即贴底（不等 user_message 事件从后端回来）：bump 这个计数器，
   // ChatStream 内部 effect 监听到变化即 scrollTop = scrollHeight。
   const [scrollToBottomTrigger, setScrollToBottomTrigger] = useState(0)
@@ -1184,6 +1187,10 @@ export function ChatView({
     async (sessionId: SessionId) => {
       try {
         const res = await cancelSessionTurn({ sessionId })
+        setSessionStopTriggers((prev) => ({
+          ...prev,
+          [sessionId]: (prev[sessionId] ?? 0) + 1,
+        }))
         setAgentStatus('')
         setSessionStatus(sessionId, 'idle')
         await sessionCtx.refreshData()
@@ -2264,6 +2271,7 @@ export function ChatView({
                 session={activeSession}
                 workspace={activeWorkspace}
                 agentStatus={agentStatus}
+                stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
                 branchState={branchState}
                 gitStatus={gitStatus}
                 isGitRepo={isGitRepo}
@@ -2343,6 +2351,7 @@ export function ChatView({
               onOrchestrationChange={setActiveSessionOrchestration}
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
+              stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
               scrollToBottomTrigger={scrollToBottomTrigger}
               teamConfig={teamConfig}
               onFilePreview={handleFilePreview}
@@ -2573,6 +2582,7 @@ export function ChatView({
                     onProjectContextChange={() => {}}
                     onPlanProposed={() => {}}
                     onTurnPromptSnapshotsChange={() => {}}
+                    stopTrigger={sessionStopTriggers[sideChatSessionId] ?? 0}
                     scrollToBottomTrigger={sideChatScrollToBottomTrigger}
                     teamConfig={teamConfig}
                     onFilePreview={handleFilePreview}
@@ -2683,6 +2693,7 @@ function ChatStream({
   onOrchestrationChange,
   onTurnPromptSnapshotsChange,
   clearTrigger,
+  stopTrigger,
   scrollToBottomTrigger,
   teamConfig,
   onReplyTo,
@@ -2720,6 +2731,8 @@ function ChatStream({
   onTurnPromptSnapshotsChange: (snapshots: TurnPromptSnapshotEvent[]) => void
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
+  /** 递增时立即结束当前会话的 renderer streaming 状态（用户显式停止兜底） */
+  stopTrigger?: number
   /** 递增时立即把会话内容区滚到底部（用户发送消息瞬间触发，无需等 user_message 事件回流） */
   scrollToBottomTrigger?: number
   /** 当前会话历史的加载状态变化（用于父级抑制「空会话 hero」误闪） */
@@ -2773,6 +2786,7 @@ function ChatStream({
   const hydratingRef = useRef(false)
   const bufferedEventsRef = useRef<AgentEvent[]>([])
   const liveEventBufferRef = useRef<LiveAgentEventBuffer | null>(null)
+  const previousStopTriggerRef = useRef(stopTrigger ?? 0)
   const processLiveEventBatchRef = useRef<(events: AgentEvent[]) => void>(() => {})
   const historyLoadIdRef = useRef(0)
   // 死循环护栏/探针：切换会话时历史加载 effect 正常只应跑 1 次。若同一会话 1s 内高频
@@ -3374,6 +3388,25 @@ function ChatStream({
     setAgentIsRunning(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearTrigger])
+
+  // 用户显式停止后立即收尾 renderer 状态。后端终止事件仍会正常回流并被去重；
+  // 这个触发器只负责在终止事件晚到/丢失时先消除气泡上的 streaming 标记。
+  useEffect(() => {
+    const previous = previousStopTriggerRef.current
+    previousStopTriggerRef.current = stopTrigger ?? 0
+    if (stopTrigger == null || stopTrigger === 0 || stopTrigger === previous) return
+    liveEventBufferRef.current?.clear()
+    bufferedEventsRef.current = []
+    const changed = builderRef.current.finalizeRunningMessages('cancelled')
+    if (changed) {
+      const nextMessages = builderRef.current.getAllMessages()
+      setMessages(nextMessages)
+      onMessagesChange(nextMessages)
+    }
+    setAgentIsRunning(false)
+    isStreamingRef.current = false
+    onStatusChange('')
+  }, [onMessagesChange, onStatusChange, stopTrigger])
 
   // 用户点了「发送」时立即贴底（IM 即时反馈）。
   // 不等 user_message 事件从后端回来——bump 后立刻 scrollTop = scrollHeight，并清掉

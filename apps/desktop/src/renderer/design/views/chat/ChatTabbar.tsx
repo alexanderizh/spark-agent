@@ -39,6 +39,7 @@ export function ChatTabbar({
   session,
   workspace,
   agentStatus,
+  stopTrigger,
   branchState,
   gitStatus,
   isGitRepo,
@@ -72,6 +73,8 @@ export function ChatTabbar({
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
   agentStatus: string
+  /** 用户显式停止后绕过 spinner grace，立即清掉旧 turn 的展示状态。 */
+  stopTrigger?: number
   branchState: BranchState
   gitStatus: WorkspaceGitStatusResponse | null
   isGitRepo: boolean
@@ -109,6 +112,7 @@ export function ChatTabbar({
   // 期间保留上一文案，消除 codex CLI turn 边界的 spinner 闪烁。
   const [displayStatus, setDisplayStatus] = useState(agentStatus)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previousStopTriggerRef = useRef(stopTrigger ?? 0)
 
   useEffect(() => {
     if (hideTimerRef.current != null) {
@@ -130,6 +134,17 @@ export function ChatTabbar({
       }
     }
   }, [agentStatus])
+
+  useEffect(() => {
+    const previous = previousStopTriggerRef.current
+    previousStopTriggerRef.current = stopTrigger ?? 0
+    if ((stopTrigger ?? 0) === previous) return
+    if (hideTimerRef.current != null) {
+      clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+    setDisplayStatus('')
+  }, [stopTrigger])
 
   // 切换会话：立即清空，不带走上个会话的运行态
   const sessionId = session?.id

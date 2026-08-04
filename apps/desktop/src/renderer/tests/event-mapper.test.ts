@@ -64,6 +64,27 @@ describe('MessageBuilder', () => {
     })
   })
 
+  it('finalizes streaming messages when an explicit stop arrives before the terminal event', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      type: 'assistant_message',
+      mode: 'delta',
+      content: 'partial answer',
+      isFinal: false,
+      provider: 'codex',
+    })
+
+    expect(builder.getAllMessages()[0]?.status).toBe('streaming')
+    expect(builder.finalizeRunningMessages('cancelled')).toBe(true)
+    expect(builder.getAllMessages()[0]).toMatchObject({
+      status: 'cancelled',
+      blocks: expect.arrayContaining([{ kind: 'cancelled', message: '已取消本次任务' }]),
+    })
+    expect(builder.finalizeRunningMessages('cancelled')).toBe(false)
+  })
+
   it('keeps restart interruptions as failures when cancelled status follows an error', () => {
     const builder = new MessageBuilder()
 

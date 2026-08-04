@@ -1214,6 +1214,7 @@ describe('SessionSidebarContext', () => {
   it('refreshes a session activity time when an old session starts running', async () => {
     const oldUpdatedAt = '2026-07-01T00:00:00.000Z'
     let queueChangedHandler: ((event: Record<string, unknown>) => void) | null = null
+    let agentEventHandler: ((event: Record<string, unknown>) => void) | null = null
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') return { workspaces: [], total: 0 }
       if (channel === 'session:list') {
@@ -1253,6 +1254,7 @@ describe('SessionSidebarContext', () => {
       invoke,
       on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
         if (channel === 'stream:session:queue-changed') queueChangedHandler = callback
+        if (channel === 'stream:session:agent-event') agentEventHandler = callback
         return vi.fn()
       }),
     })
@@ -1291,6 +1293,21 @@ describe('SessionSidebarContext', () => {
       new Date(latestCtxRef.current?.sessions[0]?.updatedAt ?? 0).getTime(),
     ).toBeGreaterThanOrEqual(activityStartedAt)
     expect(filterSessionsByTime(latestCtxRef.current?.sessions ?? [], '1d')).toHaveLength(1)
+
+    await act(async () => {
+      agentEventHandler?.({
+        type: 'agent_status',
+        sessionId: 'old-session',
+        status: 'thinking',
+      })
+    })
+    expect(latestCtxRef.current?.sessionAgentStatuses['old-session']).toBe('thinking')
+
+    await act(async () => {
+      await latestCtxRef.current?.refreshData()
+    })
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('idle')
+    expect(latestCtxRef.current?.sessionAgentStatuses['old-session']).toBeUndefined()
   })
 
   it('archives immediately and restores the session from the toast undo action', async () => {
