@@ -55,7 +55,7 @@ describe('canvasNodeGenerationMenu', () => {
   it('offers one unified video generation entry plus the independent depth tool', () => {
     expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.find((group) => group.id === 'video')?.items).toEqual([
       { operation: 'text_to_video', label: '视频生成', icon: 'Video' },
-      { operation: 'video_depth_map', label: '深度视频', icon: 'Video' },
+      { operation: 'video_depth_map', label: '深度视频转换', icon: 'Video' },
     ])
   })
 })

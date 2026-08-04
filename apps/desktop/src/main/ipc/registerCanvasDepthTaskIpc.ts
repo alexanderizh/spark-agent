@@ -99,7 +99,7 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
   typedIpcHandle('canvas:task:create-depth-video', async (request) => {
     assertAllowedInputPath(request.inputPath)
     if (runningTasks.size >= 1) {
-      throw new Error('已有深度视频任务正在运行，请等待完成或先取消当前任务')
+      throw new Error('已有深度视频转换任务正在运行，请等待完成或先取消当前任务')
     }
     const runtimeTaskId = createRuntimeTaskId()
     const outputPath = createOutputPath(runtimeTaskId)
@@ -142,6 +142,7 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
           outputPath,
           modelDir: resources.modelDir,
           runtimeEntryPath: resources.runtimeEntryPath,
+          preserveAudio: request.preserveAudio === true,
           signal: controller.signal,
           onProgress: (progress: DepthVideoProgress) => {
             const mappedProgress = 20 + Math.round(progress.percent * 0.8)
@@ -167,7 +168,7 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
           mode: 'async',
           progress: 100,
           stage: 'completed',
-          message: '深度视频已生成',
+          message: '深度视频转换已生成',
           assets: [
             {
               type: 'video',
@@ -203,7 +204,7 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
           mode: 'async',
           progress: 100,
           stage: cancelled ? 'cancelled' : 'failed',
-          message: cancelled ? '深度视频任务已取消' : '深度视频生成失败',
+          message: cancelled ? '深度视频转换任务已取消' : '深度视频转换失败',
           assets: [],
           error: {
             code: cancelled ? 'cancelled' : 'local_depth_failed',
@@ -332,12 +333,12 @@ function runningResponse(
 
 function depthStageMessage(stage: DepthVideoProgress['stage']): string {
   if (stage === 'decoding') return '任务执行中：正在解析输入视频'
-  if (stage === 'encoding') return '任务执行中：正在编码深度视频'
+  if (stage === 'encoding') return '任务执行中：正在编码深度视频转换结果'
   return '任务执行中：正在逐帧生成深度'
 }
 
 function assertAllowedInputPath(inputPath: string): void {
   if (!isSafeFilePathAllowed(inputPath)) {
-    throw new Error('深度视频输入路径不在允许的画布或工作区目录内')
+    throw new Error('深度视频转换输入路径不在允许的画布或工作区目录内')
   }
 }

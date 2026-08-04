@@ -5346,12 +5346,12 @@ export const canvasApi = {
     const request = validateCanvasLocalTaskSubmission(requestInput)
     const inputFile = request.inputFiles?.[0]
     const inputPath = inputFile?.path?.trim()
-    if (!inputPath) throw new Error('深度视频需要可读取的本地视频路径')
+    if (!inputPath) throw new Error('深度视频转换需要可读取的本地视频路径')
 
     const started = await this.startWorkflowTask(projectId, {
       boardId: request.boardId,
       operation: 'video_depth_map',
-      title: request.taskTitle ?? '深度视频',
+      title: request.taskTitle ?? '深度视频转换',
       prompt: '',
       inputNodeIds: request.inputNodeIds ?? [],
       inputAssetIds: request.inputAssetIds ?? [],
@@ -5359,6 +5359,7 @@ export const canvasApi = {
       ...(request.outputPlacement ? { outputPlacement: request.outputPlacement } : {}),
       provider: 'local_depth',
       modelId: 'depth-anything-v2-small-int8',
+      modelParams: request.modelParams ?? {},
       progress: 1,
       message: '准备本地深度模型',
     })
@@ -5369,6 +5370,7 @@ export const canvasApi = {
         projectId,
         clientTaskId: started.taskId,
         inputPath,
+        preserveAudio: request.modelParams?.preserveAudio === true,
       })
     } catch (error) {
       response = {

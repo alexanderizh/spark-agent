@@ -77,7 +77,7 @@ export const OPTIONAL_CAPABILITY_DEFINITIONS: OptionalCapabilityDefinition[] = [
   {
     id: 'local-depth',
     displayName: '本地深度处理',
-    description: '在本机生成深度图和深度视频所需的推理 Runtime 与模型。',
+    description: '在本机生成深度图和深度视频转换结果所需的推理 Runtime 与模型。',
     selectArtifacts(manifest, platform, arch) {
       const runtime = selectByPrefix(
         manifest,

@@ -67,7 +67,7 @@ export function CanvasOperationMediaInput({
               <strong>{isVideo ? '连接或上传一段视频' : '连接或上传一张图片'}</strong>
               <span>
                 {isVideo
-                  ? '本地生成黑白深度视频，无需填写提示词'
+                  ? '本地生成黑白深度视频转换结果，无需填写提示词'
                   : '反推指令已内置，无需填写提示词'}
               </span>
             </div>

@@ -5027,6 +5027,7 @@ export interface CanvasDepthVideoTaskCreateRequest {
   projectId: string
   clientTaskId: string
   inputPath: string
+  preserveAudio?: boolean
 }
 export interface CanvasDepthVideoTaskCancelRequest {
   runtimeTaskId: string

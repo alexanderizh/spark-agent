@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Input, InputNumber, Popover, Select, Tag, Tooltip, message } from 'antd'
+import { Input, InputNumber, Popover, Select, Switch, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { isProviderVisibleInUi } from '../../utils/auto-router-ui'
@@ -808,6 +808,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [openRuntimeMenu, setOpenRuntimeMenu] = useState<RuntimePickerMenu>(null)
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
+  const [preserveAudio, setPreserveAudio] = useState(
+    (node.data.modelParams?.preserveAudio ?? task?.modelParams?.preserveAudio) === true,
+  )
   const [running, setRunning] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [draftRevision, setDraftRevision] = useState(0)
@@ -827,6 +830,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     configurationTouchedRef.current = true
     markDraftDirty()
   }, [markDraftDirty])
+  useEffect(() => {
+    if (operation !== 'video_depth_map') return
+    const configuredValue = node.data.modelParams?.preserveAudio ?? task?.modelParams?.preserveAudio
+    setPreserveAudio(configuredValue === true)
+  }, [node.data.modelParams?.preserveAudio, operation, task?.modelParams?.preserveAudio])
   const handlePromptChange = useCallback(
     (value: string) => {
       markDraftDirty()
@@ -1372,21 +1380,28 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     task?.modelParams,
   ])
 
-  const buildCurrentModelParams = useCallback(
-    () =>
-      mergeCanvasPresetTargetModelParams(
-        presetTargetId,
-        normalizeModelParamsForSubmit(
-          {
-            ...buildModelParams(parameterFields, modelParamDraft),
-            ...buildCustomModelParams(customParams),
-          },
-          selectedCapability?.defaults ?? {},
-          parameterFields,
-        ),
-      ),
-    [customParams, modelParamDraft, parameterFields, presetTargetId, selectedCapability?.defaults],
-  )
+  const buildCurrentModelParams = useCallback(() => {
+    const modelParams = normalizeModelParamsForSubmit(
+      {
+        ...buildModelParams(parameterFields, modelParamDraft),
+        ...buildCustomModelParams(customParams),
+      },
+      selectedCapability?.defaults ?? {},
+      parameterFields,
+    )
+    return mergeCanvasPresetTargetModelParams(
+      presetTargetId,
+      operation === 'video_depth_map' ? { ...modelParams, preserveAudio } : modelParams,
+    )
+  }, [
+    customParams,
+    modelParamDraft,
+    operation,
+    parameterFields,
+    preserveAudio,
+    presetTargetId,
+    selectedCapability?.defaults,
+  ])
 
   const handleTextAgentChange = useCallback(
     (agentId: string) => {
@@ -1860,7 +1875,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     onRequestCanvasNodePick?.((pickedNode) => {
       if (pickedNode.type !== dedicatedMediaKind) {
         message.warning(
-          dedicatedMediaKind === 'video' ? '深度视频仅支持视频节点' : '图片反推仅支持图片节点',
+          dedicatedMediaKind === 'video' ? '深度视频转换仅支持视频节点' : '图片反推仅支持图片节点',
         )
         return
       }
@@ -2202,7 +2217,30 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               }}
             />
             {panelMode.showLocalDepthNotice && (
-              <CanvasDepthModelNotice state={depthModelState} error={depthModelError} compact />
+              <>
+                <CanvasDepthModelNotice state={depthModelState} error={depthModelError} compact />
+                <div
+                  className="canvas-operation-panel-hint"
+                  style={{
+                    alignItems: 'center',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginTop: 10,
+                  }}
+                >
+                  <span>是否保留音频</span>
+                  <Switch
+                    size="small"
+                    aria-label="是否保留音频"
+                    checked={preserveAudio}
+                    disabled={running}
+                    onChange={(checked) => {
+                      markConfigurationTouched()
+                      setPreserveAudio(checked)
+                    }}
+                  />
+                </div>
+              </>
             )}
           </div>
         ) : panelMode.showPromptEditor ? (
@@ -2598,7 +2636,36 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         )}
 
         {panelMode.showLocalDepthNotice && (
-          <CanvasDepthModelNotice state={depthModelState} error={depthModelError} />
+          <>
+            <CanvasDepthModelNotice state={depthModelState} error={depthModelError} />
+            <div
+              className="canvas-operation-panel-section canvas-operation-panel-section-runtime"
+              style={{ paddingTop: 0 }}
+            >
+              <div
+                style={{
+                  alignItems: 'center',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <div className="canvas-operation-panel-section-label">是否保留音频</div>
+                <Switch
+                  size="middle"
+                  aria-label="是否保留音频"
+                  checked={preserveAudio}
+                  disabled={running}
+                  onChange={(checked) => {
+                    markConfigurationTouched()
+                    setPreserveAudio(checked)
+                  }}
+                />
+              </div>
+              <div className="canvas-operation-panel-hint">
+                开启后会将原视频音轨保留到转换结果中。
+              </div>
+            </div>
+          </>
         )}
 
         {mediaCapabilityIds.length > 0 && (

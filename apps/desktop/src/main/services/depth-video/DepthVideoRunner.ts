@@ -31,6 +31,7 @@ export type DepthVideoRunRequest = {
   outputPath: string
   modelDir: string
   runtimeEntryPath: string
+  preserveAudio?: boolean
   signal?: AbortSignal
   onProgress?: (progress: DepthVideoProgress) => void
 }
@@ -94,10 +95,13 @@ export class DepthVideoRunner {
     const encoder = this.dependencies.spawnProcess(
       ffmpeg,
       buildDepthVideoEncoderArgs({
+        inputPath: request.inputPath,
         width: dimensions.width,
         height: dimensions.height,
         fps: processingFps,
+        durationSec: probe.durationSec,
         outputPath: temporaryPath,
+        preserveAudio: request.preserveAudio === true,
       }),
     )
     const decoderExit = waitForProcess(decoder, '视频解码')
@@ -214,13 +218,16 @@ export function buildDepthVideoDecoderArgs(
 }
 
 export function buildDepthVideoEncoderArgs(input: {
+  inputPath?: string
   width: number
   height: number
   fps: number
+  durationSec?: number
   outputPath: string
+  preserveAudio?: boolean
 }): string[] {
   const pixelFormat = input.width % 2 === 0 && input.height % 2 === 0 ? 'yuv420p' : 'yuv444p'
-  return [
+  const args = [
     '-f',
     'rawvideo',
     '-pixel_format',
@@ -231,7 +238,6 @@ export function buildDepthVideoEncoderArgs(input: {
     String(input.fps),
     '-i',
     'pipe:0',
-    '-an',
     '-c:v',
     'libx264',
     '-pix_fmt',
@@ -240,6 +246,25 @@ export function buildDepthVideoEncoderArgs(input: {
     '+faststart',
     '-y',
     input.outputPath,
+  ]
+  if (!input.preserveAudio) {
+    return [...args.slice(0, 10), '-an', ...args.slice(10)]
+  }
+  if (!input.inputPath) throw new Error('保留音频时缺少源视频路径')
+  if (!input.durationSec || input.durationSec <= 0) throw new Error('保留音频时缺少源视频时长')
+  return [
+    '-i',
+    input.inputPath,
+    ...args.slice(0, 10),
+    '-map',
+    '1:v:0',
+    '-map',
+    '0:a:0?',
+    '-c:a',
+    'aac',
+    '-t',
+    String(input.durationSec),
+    ...args.slice(10),
   ]
 }
 

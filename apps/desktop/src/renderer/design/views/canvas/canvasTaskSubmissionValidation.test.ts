@@ -320,7 +320,7 @@ describe('canvasTaskSubmissionValidation', () => {
           { type: 'video', path: '/canvas/two.mp4' },
         ],
       }),
-    ).toThrow('深度视频仅支持一段输入视频')
+    ).toThrow('深度视频转换仅支持一段输入视频')
   })
 
   it('accepts one materialized local video path for a depth task', () => {

@@ -26,7 +26,7 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
   },
   {
     id: 'canvas.video-depth-map',
-    label: '深度视频',
+    label: '深度视频转换',
     operation: 'video_depth_map',
     inputTypes: ['video'],
     outputTypes: ['video'],

@@ -1,12 +1,12 @@
-# 图片反推与深度视频节点实施计划
+# 图片反推与深度视频转换节点实施计划
 
-> 状态: 已落地 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-04
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 为无限画布增加图片反推提示词节点与完全本地运行的深度视频节点，并把 Depth Anything V2 Small ONNX 模型发布到 Spark MinIO 制品仓库。
+**Goal:** 为无限画布增加图片反推提示词节点与完全本地运行的深度视频转换节点，并把 Depth Anything V2 Small ONNX 模型发布到 Spark MinIO 制品仓库。
 
-**Architecture:** 图片反推作为显式文本 vision 操作复用现有 `canvas:task:generate-text` 链路；深度视频作为新的本地媒体任务，经受管模型完整性服务、独立推理 worker 和 FFmpeg 解码/编码后写回普通视频资产。模型采用版本化归档，使用 SHA-256 校验并从 MinIO 按需安装。
+**Architecture:** 图片反推作为显式文本 vision 操作复用现有 `canvas:task:generate-text` 链路；深度视频转换作为新的本地媒体任务，经受管模型完整性服务、独立推理 worker 和 FFmpeg 解码/编码后写回普通视频资产，并按配置决定是否映射原音轨。模型采用版本化归档，使用 SHA-256 校验并从 MinIO 按需安装。
 
 **Tech Stack:** TypeScript、Electron、React、Vitest、FFmpeg/ffprobe、Transformers.js、ONNX Runtime、Depth Anything V2 Small INT8、S3/MinIO SigV4。
 
@@ -178,7 +178,7 @@ it('shows vision selection without a prompt editor for image prompt reverse', ()
 
 it('shows local depth controls without provider controls', () => {
   const view = renderOperation('video_depth_map')
-  expect(view.getByText('生成深度视频')).toBeTruthy()
+  expect(view.getByText('生成深度视频转换')).toBeTruthy()
   expect(view.queryByText('Provider')).toBeNull()
 })
 ```
@@ -198,7 +198,7 @@ const showPromptEditor = !isImagePromptReverse && !isLocalDepthVideo
 const showProviderControls = !isLocalDepthVideo
 ```
 
-深度节点主按钮根据模型状态显示“下载模型并运行”或“生成深度视频”；图片反推使用图片理解 Provider 筛选器。
+深度节点主按钮根据模型状态显示“下载模型并运行”或“生成深度视频转换”，并提供“是否保留音频”开关；图片反推使用图片理解 Provider 筛选器。
 
 - [ ] **Step 4: 运行测试并提交**
 
