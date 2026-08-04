@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyDroppedFile,
   extractDroppedFiles,
+  layoutDroppedImages,
   layoutDroppedFiles,
+  shouldGroupCanvasImages,
   textFormatFromFileName,
 } from './canvasFileDrop'
 
@@ -132,5 +134,33 @@ describe('layoutDroppedFiles', () => {
 
   it('returns empty for zero count', () => {
     expect(layoutDroppedFiles(0, { x: 0, y: 0 }, { width: 100, height: 100 })).toEqual([])
+  })
+})
+
+describe('external multi-image drops', () => {
+  it('does not group multiple images when grouping is disabled for external drops', () => {
+    expect(shouldGroupCanvasImages(2, false)).toBe(false)
+    expect(shouldGroupCanvasImages(2, true)).toBe(true)
+    expect(shouldGroupCanvasImages(1, true)).toBe(false)
+  })
+
+  it('lays out image nodes independently from the drop origin', () => {
+    const placed = layoutDroppedImages(
+      [
+        { id: 'a', width: 200, height: 100 },
+        { id: 'b', width: 120, height: 150 },
+        { id: 'c', width: 180, height: 80 },
+        { id: 'd', width: 160, height: 90 },
+      ],
+      { x: 100, y: 200 },
+      { spacing: 24 },
+    )
+
+    expect(placed.map(({ id, x, y }) => ({ id, x, y }))).toEqual([
+      { id: 'a', x: 100, y: 200 },
+      { id: 'b', x: 324, y: 200 },
+      { id: 'c', x: 468, y: 200 },
+      { id: 'd', x: 100, y: 374 },
+    ])
   })
 })

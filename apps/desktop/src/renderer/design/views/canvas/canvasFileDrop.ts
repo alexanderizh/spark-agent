@@ -229,3 +229,50 @@ export function layoutDroppedFiles(
   }
   return points
 }
+
+/**
+ * 多张图片以独立节点落点时的网格布局：不添加分组节点的内边距和标题栏。
+ */
+export function layoutDroppedImages<T extends { width: number; height: number }>(
+  items: T[],
+  origin: { x: number; y: number },
+  options?: { spacing?: number; perRow?: number },
+): Array<T & { x: number; y: number }> {
+  if (items.length === 0) return []
+  const spacing = options?.spacing ?? 40
+  const perRow = Math.max(1, Math.floor(options?.perRow ?? 3))
+  const columns = Math.min(perRow, items.length)
+  const rows = Math.ceil(items.length / columns)
+  const columnWidths = Array.from({ length: columns }, () => 0)
+  const rowHeights = Array.from({ length: rows }, () => 0)
+
+  items.forEach((item, index) => {
+    const column = index % columns
+    const row = Math.floor(index / columns)
+    columnWidths[column] = Math.max(columnWidths[column] ?? 0, item.width)
+    rowHeights[row] = Math.max(rowHeights[row] ?? 0, item.height)
+  })
+
+  const columnOffsets = columnWidths.map(
+    (_, index) =>
+      columnWidths.slice(0, index).reduce((total, width) => total + width, 0) + index * spacing,
+  )
+  const rowOffsets = rowHeights.map(
+    (_, index) =>
+      rowHeights.slice(0, index).reduce((total, height) => total + height, 0) + index * spacing,
+  )
+
+  return items.map((item, index) => {
+    const column = index % columns
+    const row = Math.floor(index / columns)
+    return {
+      ...item,
+      x: Math.round(origin.x + (columnOffsets[column] ?? 0)),
+      y: Math.round(origin.y + (rowOffsets[row] ?? 0)),
+    }
+  })
+}
+
+export function shouldGroupCanvasImages(imageCount: number, groupingEnabled = true): boolean {
+  return groupingEnabled && imageCount > 1
+}

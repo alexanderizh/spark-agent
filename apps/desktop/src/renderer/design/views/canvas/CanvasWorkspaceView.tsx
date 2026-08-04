@@ -46,7 +46,13 @@ import {
   readImageDimensions,
   readVideoDimensions,
 } from './canvas-safe-file'
-import { classifyDroppedFile, layoutDroppedFiles, textFormatFromFileName } from './canvasFileDrop'
+import {
+  classifyDroppedFile,
+  layoutDroppedFiles,
+  layoutDroppedImages,
+  shouldGroupCanvasImages,
+  textFormatFromFileName,
+} from './canvasFileDrop'
 import { replaceCanvasVideoNode } from './canvasMediaNodeReplacement'
 import { extractDocumentText } from './canvasDocumentParse'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
@@ -328,6 +334,9 @@ type InsertPreparedImagesResult = {
   selectedNodeIds: string[]
   occupiedBounds?: LayoutBounds
   groupNodeId?: string
+}
+type InsertPreparedImagesOptions = {
+  grouped?: boolean
 }
 type CharacterSubviewEditorContext = {
   node: CanvasNode
@@ -5904,6 +5913,7 @@ export function CanvasWorkspaceView({
     async (
       preparedImages: PreparedImageUpload[],
       preferredPosition?: CanvasPoint | null,
+      options?: InsertPreparedImagesOptions,
     ): Promise<InsertPreparedImagesResult> => {
       if (preparedImages.length === 0) {
         return {
@@ -5964,21 +5974,28 @@ export function CanvasWorkspaceView({
         }
       }
 
-      const gridMetrics = getImageGridMetrics(preparedImages)
-      const groupSize = {
-        width: Math.max(360, gridMetrics.width + GROUP_IMAGE_PADDING_X * 2),
-        height: Math.max(
-          220,
-          GROUP_IMAGE_HEADER_HEIGHT + gridMetrics.height + GROUP_IMAGE_PADDING_BOTTOM,
-        ),
-      }
+      const shouldGroup = shouldGroupCanvasImages(preparedImages.length, options?.grouped !== false)
+      const groupSize = shouldGroup
+        ? (() => {
+            const gridMetrics = getImageGridMetrics(preparedImages)
+            return {
+              width: Math.max(360, gridMetrics.width + GROUP_IMAGE_PADDING_X * 2),
+              height: Math.max(
+                220,
+                GROUP_IMAGE_HEADER_HEIGHT + gridMetrics.height + GROUP_IMAGE_PADDING_BOTTOM,
+              ),
+            }
+          })()
+        : null
       const groupPosition = preferredPosition
         ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-        : positionNodeInViewport(canvasViewportRef.current, groupSize, {
+        : positionNodeInViewport(canvasViewportRef.current, groupSize ?? IMAGE_NODE_DEFAULT_SIZE, {
             x: 220,
             y: 180,
           })
-      const placedImages = layoutGroupedImages(preparedImages, groupPosition)
+      const placedImages = shouldGroup
+        ? layoutGroupedImages(preparedImages, groupPosition)
+        : layoutDroppedImages(preparedImages, groupPosition)
       const createdNodeIds: string[] = []
       const createdNodes: CanvasNode[] = []
       const createdBounds: LayoutBounds[] = []
@@ -6006,7 +6023,7 @@ export function CanvasWorkspaceView({
         }
       }
       let selectedNodeIds = createdNodeIds.length === 1 ? createdNodeIds : []
-      if (createdNodeIds.length > 1) {
+      if (shouldGroup && createdNodeIds.length > 1) {
         const nextSnapshot = await createGroupNode(createdNodeIds)
         const createdIdSet = new Set(createdNodeIds)
         const groupNode = nextSnapshot?.nodes.find((node) => {
@@ -6021,17 +6038,20 @@ export function CanvasWorkspaceView({
         })
         groupNodeId = groupNode?.id
         selectedNodeIds = groupNode ? [groupNode.id] : createdNodeIds
+      } else if (!shouldGroup && createdNodeIds.length > 1) {
+        selectedNodeIds = createdNodeIds
       }
+      const grouped = shouldGroup && createdNodeIds.length > 1
       return {
         createdNodeCount: createdNodeIds.length,
-        grouped: createdNodeIds.length > 1,
+        grouped,
         createdNodeIds,
         createdNodes,
         selectedNodeIds,
         ...(createdBounds.length > 0
           ? {
               occupiedBounds:
-                groupNodeId || createdNodeIds.length > 1
+                grouped && groupSize
                   ? {
                       left: groupPosition.x,
                       top: groupPosition.y,
@@ -6209,14 +6229,15 @@ export function CanvasWorkspaceView({
       const createdNodes: CanvasNode[] = []
       let selectionNodeIds: string[] = []
       let nextOrigin = origin
+      const groupImages = shouldGroupCanvasImages(images.length, options?.groupImages !== false)
 
       try {
         // ── 图片：复用现有上传管线（含多图分组） ──────────────────────────
         if (images.length > 0) {
           const prepared = await Promise.all(
-            images.map((file) => prepareCanvasImageUpload(file, { grouped: images.length > 1 })),
+            images.map((file) => prepareCanvasImageUpload(file, { grouped: groupImages })),
           )
-          const result = await insertPreparedImages(prepared, nextOrigin)
+          const result = await insertPreparedImages(prepared, nextOrigin, { grouped: groupImages })
           for (const id of result.createdNodeIds) createdNodeIds.push(id)
           createdNodes.push(...result.createdNodes)
           if (result.selectedNodeIds.length > 0) selectionNodeIds = result.selectedNodeIds
@@ -7878,7 +7899,9 @@ export function CanvasWorkspaceView({
             onSetProductionState={onSetProductionStateStable}
             onAddTextAtPosition={addText}
             onAddImageAtPosition={addEmptyImage}
-            onDropFiles={handleDropFiles}
+            onDropFiles={(position, files) =>
+              void handleDropFiles(position, files, { groupImages: false })
+            }
             onDropWorkflow={(position, workflowId) => {
               void handleDropCanvasWorkflow(position, workflowId)
             }}
