@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Tag, Tooltip } from '@lobehub/ui'
-import { Input, Modal, Popover, message } from 'antd'
+import { Input, Modal, Popover, Tabs, message } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasPromptLibraryPanel } from './CanvasPromptLibraryPanel'
@@ -85,8 +85,26 @@ export function CanvasNodeEditModal({
     setOptimizeRequirement('')
   }, [node, nodes])
 
+  const composerMainRef = useRef<HTMLDivElement>(null)
+  const scrollComposerToEndRef = useRef(false)
+
+  // 应用提示词后,聚焦文本框并滚动到末尾,让追加的片段立刻进入可视区。
+  // 否则当节点已有较长文本时,追加内容落在 textarea 可视范围之外,看起来像"没应用"。
+  // 仅在 insertPromptText 主动置位时触发,普通输入/节点切换不影响滚动与光标。
+  useEffect(() => {
+    if (!scrollComposerToEndRef.current) return
+    scrollComposerToEndRef.current = false
+    const textarea = composerMainRef.current?.querySelector<HTMLTextAreaElement>('textarea')
+    if (!textarea) return
+    textarea.focus()
+    textarea.scrollTop = textarea.scrollHeight
+    const end = textarea.value.length
+    textarea.setSelectionRange(end, end)
+  }, [text])
+
   const insertPromptText = (fragment: string) => {
     setText((current) => appendPromptFragment(current, fragment))
+    scrollComposerToEndRef.current = true
   }
 
   const openOptimizeModal = () => {
@@ -297,7 +315,7 @@ export function CanvasNodeEditModal({
             </div>
           </div>
 
-          <div className="canvas-node-text-composer-main">
+          <div ref={composerMainRef} className="canvas-node-text-composer-main">
             <Input.TextArea
               className="canvas-node-text-composer-textarea"
               value={text}
