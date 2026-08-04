@@ -50,6 +50,7 @@ function compile(opts: {
   capability?: MediaModelCapabilityManifest
   modelParams?: Record<string, unknown>
   inputFiles?: Array<{ type: string; role?: string }>
+  providerDefaults?: Record<string, unknown>
   mode?: 'canvas' | 'mcp' | 'adapter'
 }) {
   const capability = opts.capability ?? imageCapability()
@@ -62,6 +63,7 @@ function compile(opts: {
       ...(opts.modelParams !== undefined ? { modelParams: opts.modelParams } : {}),
       ...(opts.inputFiles !== undefined ? { inputFiles: opts.inputFiles } : {}),
     },
+    ...(opts.providerDefaults !== undefined ? { providerDefaults: opts.providerDefaults } : {}),
     mode: opts.mode ?? 'adapter',
   })
 }
@@ -392,5 +394,94 @@ describe('compileMediaRequest — Backward compatibility', () => {
     })
     const fooDrops = result.droppedParams.filter((d) => d.name === 'foo')
     expect(fooDrops).toHaveLength(1)
+  })
+})
+
+describe('compileMediaRequest — defaults canonical normalization', () => {
+  // 回归 H3 类缺陷：capability.defaults 用 provider 原生名（ratio/duration），
+  // 用户 raw 经 normalize 后变成 canonical 名（aspectRatio/durationSeconds）。
+  // 归一前两套同义键会在 merged 里并存并一起透传给 provider；归一后只保留一组。
+  it('regression: provider-native default keys no longer leak alongside canonical user input', () => {
+    const capability: MediaModelCapabilityManifest = {
+      id: 'video.image_to_video',
+      label: '图生视频',
+      input: { required: ['prompt'] },
+      output: { types: ['video'] },
+      // H3 风格：schema 用 provider 原生名，additionalProperties:true → 退化 strict:false passthrough
+      paramSchema: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          duration: { type: 'integer' },
+          ratio: { type: 'string' },
+          resolution: { type: 'string' },
+        },
+      },
+      // defaults 故意用 provider 原生名（模拟 H3 历史写法）
+      defaults: { duration: 5, ratio: 'adaptive', resolution: '2K' },
+    }
+    // 用户在 UI 选了 ratio=3:4、duration=10（schema 字段名）
+    const result = compile({ capability, modelParams: { ratio: '3:4', duration: 10 } })
+
+    // 归一后 merged 只剩一组键：aspectRatio='3:4'、durationSeconds=10（user 覆盖 defaults 归一值）
+    expect(result.providerParams.aspectRatio).toBe('3:4')
+    expect(result.providerParams.durationSeconds).toBe(10)
+    // 关键断言：defaults 的 provider 原生名（ratio/duration）不再作为同义键泄漏到请求体
+    expect(result.providerParams).not.toHaveProperty('ratio')
+    expect(result.providerParams).not.toHaveProperty('duration')
+  })
+
+  it('normalizes capability defaults so canonical user input overrides cleanly under strict + aliases', () => {
+    const capability: MediaModelCapabilityManifest = {
+      id: 'video.generate',
+      label: '文生视频',
+      input: { required: ['prompt'] },
+      output: { types: ['video'] },
+      paramSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          aspectRatio: { type: 'string', enum: ['16:9', '3:4'] },
+          durationSeconds: { type: 'integer', minimum: 1, maximum: 60 },
+        },
+      },
+      // defaults 用 provider 原生名，但 schema 声明的是 canonical 名
+      defaults: { ratio: '16:9', duration: 5 },
+      aliases: { aspectRatio: 'ratio', durationSeconds: 'duration' },
+      paramPolicy: { strict: true, passthrough: { enabled: false } },
+    }
+    const result = compile({ capability, modelParams: { aspectRatio: '3:4', durationSeconds: 10 } })
+    // 归一后 defaults.aspectRatio='16:9' 被 user '3:4' 覆盖；aliases 映射回 provider 名
+    expect(result.providerParams.ratio).toBe('3:4')
+    expect(result.providerParams.duration).toBe(10)
+    expect(result.providerParams).not.toHaveProperty('aspectRatio')
+    expect(result.providerParams).not.toHaveProperty('durationSeconds')
+  })
+
+  it('also normalizes provider-level defaults written in provider-native names', () => {
+    const capability: MediaModelCapabilityManifest = {
+      id: 'image.generate',
+      label: '文生图',
+      input: { required: ['prompt'] },
+      output: { types: ['image'] },
+      paramSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          aspectRatio: { type: 'string', enum: ['1:1', '16:9'] },
+        },
+      },
+      aliases: { aspectRatio: 'ratio' },
+      paramPolicy: { strict: true, passthrough: { enabled: false } },
+    }
+    // providerDefaults 用 provider 原生名 ratio（覆盖 capability 无 defaults 的场景）
+    const result = compile({
+      capability,
+      modelParams: { aspectRatio: '16:9' },
+      providerDefaults: { ratio: '1:1' },
+    })
+    // providerDefaults 归一为 aspectRatio='1:1'，再被 user '16:9' 覆盖
+    expect(result.providerParams.ratio).toBe('16:9')
+    expect(result.providerParams).not.toHaveProperty('aspectRatio')
   })
 })
