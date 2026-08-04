@@ -444,7 +444,7 @@ const apimartImageModelSchemas: Record<
         watermark: { type: 'boolean', title: '水印', default: false },
       },
     },
-    defaults: { n: 1, thinking_mode: true, enable_sequential: false, watermark: false },
+    defaults: { n: 1, thinking_mode: true },
   },
   'imagen-4.0-apimart': {
     schema: {
@@ -512,9 +512,6 @@ const apimartImageModelSchemas: Record<
       size: '1:1',
       resolution: '2K',
       n: 1,
-      output_format: 'jpeg',
-      sequential_image_generation: 'disabled',
-      watermark: false,
     },
   },
   'gemini-3.1-flash-image-preview': {
@@ -558,9 +555,6 @@ const apimartImageModelSchemas: Record<
     defaults: {
       resolution: '1K',
       n: 1,
-      google_search: false,
-      google_image_search: false,
-      official_fallback: false,
     },
   },
   'gemini-3-pro-image-preview': {
@@ -579,7 +573,7 @@ const apimartImageModelSchemas: Record<
         official_fallback: { type: 'boolean', title: '官方兜底', default: false },
       },
     },
-    defaults: { resolution: '1K', n: 1, official_fallback: false },
+    defaults: { resolution: '1K', n: 1 },
   },
   'gemini-2.5-flash-image-preview': {
     schema: {
@@ -597,7 +591,7 @@ const apimartImageModelSchemas: Record<
         official_fallback: { type: 'boolean', title: '官方兜底', default: false },
       },
     },
-    defaults: { resolution: '1K', n: 1, official_fallback: false },
+    defaults: { resolution: '1K', n: 1 },
   },
   /* ─── GPT-Image-1 / GPT-Image-1.5（APIMart OpenAI 兼容聚合）：官方 model id `*-official` ─── */
   'gpt-image-1-official': {
@@ -628,9 +622,6 @@ const apimartImageModelSchemas: Record<
       size: '1:1',
       n: 1,
       quality: 'auto',
-      background: 'auto',
-      moderation: 'auto',
-      output_format: 'png',
     },
   },
   'gpt-image-1.5-official': {
@@ -661,9 +652,6 @@ const apimartImageModelSchemas: Record<
       size: '1:1',
       n: 1,
       quality: 'auto',
-      background: 'auto',
-      moderation: 'auto',
-      output_format: 'png',
     },
   },
   /* ─── Seedream-4.0 / 4.5 / 5.0-Pro（APIMart 聚合，model id 与火山不同）─── */
@@ -699,9 +687,6 @@ const apimartImageModelSchemas: Record<
       size: '1:1',
       resolution: '2K',
       n: 1,
-      optimize_prompt_options: 'standard',
-      sequential_image_generation: 'disabled',
-      watermark: false,
     },
   },
   'doubao-seedream-4-5': {
@@ -736,9 +721,6 @@ const apimartImageModelSchemas: Record<
       size: '1:1',
       resolution: '2K',
       n: 1,
-      optimize_prompt_options: 'standard',
-      sequential_image_generation: 'disabled',
-      watermark: false,
     },
   },
   'doubao-seedream-5-0-pro': {
@@ -763,7 +745,7 @@ const apimartImageModelSchemas: Record<
         watermark: { type: 'boolean', title: '水印', default: false },
       },
     },
-    defaults: { size: '1:1', resolution: '2K', n: 1, output_format: 'jpeg', watermark: false },
+    defaults: { size: '1:1', resolution: '2K', n: 1 },
   },
   /* ─── Z-Image-Turbo（APIMart 自托管轻量模型）─── */
   'z-image-turbo': {
@@ -781,7 +763,7 @@ const apimartImageModelSchemas: Record<
         prompt_extend: { type: 'boolean', title: '提示词扩展', default: false },
       },
     },
-    defaults: { size: '1:1', resolution: '1K', prompt_extend: false },
+    defaults: { size: '1:1', resolution: '1K' },
   },
   /* ─── Qwen Image 2.0 Pro（APIMart 平台增强文本渲染）─── */
   'qwen-image-2.0-pro': {
@@ -991,7 +973,6 @@ const apimartVideoModelSchemas: Record<
       durationSeconds: 5,
       resolution: '720p',
       audio: true,
-      camerafixed: false,
     },
   },
   'doubao-seedance-1-0-pro-fast': {
@@ -1061,8 +1042,6 @@ const apimartVideoModelSchemas: Record<
     defaults: {
       durationSeconds: 8,
       resolution: '720p',
-      enable_gif: false,
-      official_fallback: false,
     },
   },
   'veo3.1-quality': {
@@ -1085,8 +1064,6 @@ const apimartVideoModelSchemas: Record<
     defaults: {
       durationSeconds: 8,
       resolution: '720p',
-      enable_gif: false,
-      official_fallback: false,
     },
   },
   'veo3.1-lite': {
@@ -1105,7 +1082,7 @@ const apimartVideoModelSchemas: Record<
         enable_gif: { type: 'boolean', title: '启用 GIF', default: false },
       },
     },
-    defaults: { durationSeconds: 8, resolution: '720p', enable_gif: false },
+    defaults: { durationSeconds: 8, resolution: '720p' },
   },
   /* ─── MiniMax Hailuo 2.3 / Fast / Hailuo-02（APIMart 平台独立 slug）─── */
   'MiniMax-Hailuo-2.3': {
@@ -1125,8 +1102,6 @@ const apimartVideoModelSchemas: Record<
       durationSeconds: 6,
       resolution: '768p',
       prompt_optimizer: true,
-      fast_pretreatment: false,
-      watermark: false,
       useFirstFrame: true,
     },
   },
@@ -1151,8 +1126,6 @@ const apimartVideoModelSchemas: Record<
       durationSeconds: 5,
       resolution: '768p',
       prompt_optimizer: true,
-      fast_pretreatment: false,
-      watermark: false,
     },
   },
   /* ─── SkyReels V4 fast / std ─── */
@@ -1240,8 +1213,6 @@ const apimartVideoModelSchemas: Record<
       aspectRatio: '16:9',
       durationSeconds: 5,
       resolution: '1080P',
-      watermark: false,
-      audio_setting: 'auto',
     },
   },
   'happyhorse-1.1': {
@@ -1261,7 +1232,7 @@ const apimartVideoModelSchemas: Record<
         seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '1080P', watermark: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '1080P' },
   },
   /* ─── Wan 2.5/2.6/2.7 全系（APIMart 统一入口）─── */
   'wan2.5-preview': {
@@ -1294,7 +1265,6 @@ const apimartVideoModelSchemas: Record<
       resolution: '720p',
       prompt_extend: true,
       audio: true,
-      watermark: false,
     },
   },
   'wan2.6': {
@@ -1343,7 +1313,6 @@ const apimartVideoModelSchemas: Record<
       durationSeconds: 5,
       resolution: '1080P',
       prompt_extend: true,
-      watermark: false,
     },
   },
   'wan2.7-r2v': {
@@ -1370,7 +1339,6 @@ const apimartVideoModelSchemas: Record<
       durationSeconds: 5,
       resolution: '1080P',
       prompt_extend: true,
-      watermark: false,
     },
   },
   'wan2.7-videoedit': {
@@ -1396,8 +1364,6 @@ const apimartVideoModelSchemas: Record<
       durationSeconds: 0,
       resolution: '1080P',
       prompt_extend: true,
-      watermark: false,
-      audio_setting: 'auto',
     },
   },
   /* ─── Kling 系列（APIMart 平台独立 model id）─── */
@@ -1423,8 +1389,6 @@ const apimartVideoModelSchemas: Record<
       aspectRatio: '16:9',
       durationSeconds: 5,
       mode: 'std',
-      audio: false,
-      watermark: false,
     },
   },
   'kling-v3': {
@@ -1449,8 +1413,6 @@ const apimartVideoModelSchemas: Record<
       aspectRatio: '16:9',
       durationSeconds: 5,
       mode: 'std',
-      audio: false,
-      watermark: false,
     },
   },
   'kling-v3-omni': {
@@ -1477,9 +1439,6 @@ const apimartVideoModelSchemas: Record<
       aspectRatio: '16:9',
       durationSeconds: 5,
       mode: 'std',
-      audio: false,
-      watermark: false,
-      multi_shot: false,
     },
   },
   'kling-3.0-turbo': {
@@ -1498,7 +1457,7 @@ const apimartVideoModelSchemas: Record<
         watermark: { type: 'boolean', title: '水印', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', watermark: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
   },
   'kling-video-o1': {
     schema: {
@@ -1516,7 +1475,7 @@ const apimartVideoModelSchemas: Record<
         watermark: { type: 'boolean', title: '水印', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, mode: 'std', watermark: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, mode: 'std' },
   },
   /* ─── Vidu Q3 全系（APIMart 平台独立 model id）─── */
   'viduq3-pro': {
@@ -1646,9 +1605,6 @@ const apimartVideoModelSchemas: Record<
       aspectRatio: '16:9',
       durationSeconds: 5,
       resolution: '540p',
-      audio: false,
-      watermark: false,
-      motion_mode: 'normal',
     },
   },
   /* ─── Gemini Omni Flash Preview（APIMart 平台独立 model id）─── */
@@ -1707,7 +1663,6 @@ const apimartVideoModelSchemas: Record<
       durationSeconds: 5,
       resolution: '720p',
       generate_audio: true,
-      return_last_frame: false,
     },
   },
   'doubao-seedance-2-0-mini': {
@@ -1733,7 +1688,6 @@ const apimartVideoModelSchemas: Record<
       durationSeconds: 5,
       resolution: '720p',
       generate_audio: true,
-      return_last_frame: false,
     },
   },
 }
@@ -2126,7 +2080,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: apimartGptImage2Schema,
-        defaults: { n: 1, size: '1:1', resolution: '1k', official_fallback: false },
+        defaults: { n: 1, size: '1:1', resolution: '1k' },
         aliases: { aspectRatio: 'size', outputFormat: 'output_format' },
         paramPolicy: apimartGptImage2ParamPolicy,
       },
@@ -2143,7 +2097,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: apimartGptImage2Schema,
-        defaults: { n: 1, size: '1:1', resolution: '1k', official_fallback: false },
+        defaults: { n: 1, size: '1:1', resolution: '1k' },
         aliases: { aspectRatio: 'size', outputFormat: 'output_format' },
         paramPolicy: apimartGptImage2ParamPolicy,
       },
@@ -2484,7 +2438,6 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
               durationSeconds: 5,
               resolution: '720p',
               generate_audio: true,
-              return_last_frame: false,
             }
           : (apimartVideoModelSchemas[entry.modelId]?.defaults ?? {
               aspectRatio: '16:9',
@@ -2974,8 +2927,6 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           aspectRatio: '1:1',
           response_format: 'url',
           n: 1,
-          prompt_optimizer: false,
-          aigc_watermark: false,
         },
         aliases: { aspectRatio: 'aspect_ratio' },
       },
@@ -2999,8 +2950,6 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           aspectRatio: '1:1',
           response_format: 'url',
           n: 1,
-          prompt_optimizer: false,
-          aigc_watermark: false,
         },
         aliases: { aspectRatio: 'aspect_ratio' },
       },
@@ -3050,8 +2999,6 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           aspectRatio: '1:1',
           response_format: 'url',
           n: 1,
-          prompt_optimizer: false,
-          aigc_watermark: false,
         },
         aliases: { aspectRatio: 'aspect_ratio' },
       },
@@ -3211,9 +3158,6 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         defaults: {
           durationSeconds: 6,
           resolution: '768P',
-          prompt_optimizer: true,
-          fast_pretreatment: false,
-          aigc_watermark: false,
         },
         aliases: { durationSeconds: 'duration' },
       },
@@ -3230,9 +3174,6 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         defaults: {
           durationSeconds: 6,
           resolution: '768P',
-          prompt_optimizer: true,
-          fast_pretreatment: false,
-          aigc_watermark: false,
         },
         aliases: { durationSeconds: 'duration' },
       },
@@ -3286,9 +3227,6 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         defaults: {
           durationSeconds: 6,
           resolution: '768P',
-          prompt_optimizer: true,
-          fast_pretreatment: false,
-          aigc_watermark: false,
         },
         aliases: { durationSeconds: 'duration' },
       },
@@ -3379,7 +3317,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxH3VideoT2VSchema,
-        defaults: { duration: 5, resolution: '2K', ratio: '16:9', aigc_watermark: false },
+        defaults: { duration: 5, resolution: '2K', ratio: '16:9' },
       },
       {
         id: 'video.image_to_video',
@@ -3391,7 +3329,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxH3VideoSchema,
-        defaults: { duration: 5, resolution: '2K', ratio: 'adaptive', aigc_watermark: false },
+        defaults: { duration: 5, resolution: '2K', ratio: 'adaptive' },
       },
       {
         id: 'video.reference_to_video',
@@ -3415,7 +3353,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxH3VideoSchema,
-        defaults: { duration: 5, resolution: '2K', ratio: 'adaptive', aigc_watermark: false },
+        defaults: { duration: 5, resolution: '2K', ratio: 'adaptive' },
         rolePolicy: {
           imageRoles: ['reference_image'],
           videoRoles: ['reference_video'],

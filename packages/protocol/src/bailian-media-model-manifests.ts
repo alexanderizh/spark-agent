@@ -188,7 +188,7 @@ function createQwenImageManifest(input: {
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: bailianQwenImageSchema,
-        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+        defaults: { size: '2048*2048', n: 1 },
       },
       {
         id: 'image.edit',
@@ -203,7 +203,7 @@ function createQwenImageManifest(input: {
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: bailianQwenImageSchema,
-        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+        defaults: { size: '2048*2048', n: 1 },
       },
     ],
     invocation: {
@@ -281,7 +281,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: bailianImageSchema,
-        defaults: { size: '2K', n: 1, thinking_mode: true, watermark: false },
+        defaults: { size: '2K', n: 1 },
       },
       {
         id: 'image.edit',
@@ -296,7 +296,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: bailianImageSchema,
-        defaults: { size: '2K', n: 1, watermark: false },
+        defaults: { size: '2K', n: 1 },
       },
     ],
     invocation: {
@@ -367,7 +367,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
             color_palette: { type: 'array', readOnly: true, title: '仅 Pro 版支持自定义颜色主题' },
           },
         },
-        defaults: { size: '2K', n: 1, thinking_mode: true, watermark: false },
+        defaults: { size: '2K', n: 1 },
       },
       {
         id: 'image.edit',
@@ -389,7 +389,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
             color_palette: { type: 'array', readOnly: true, title: '仅 Pro 版支持自定义颜色主题' },
           },
         },
-        defaults: { size: '2K', n: 1, watermark: false },
+        defaults: { size: '2K', n: 1 },
       },
     ],
     invocation: {
@@ -453,7 +453,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: bailianQwenImageSchema,
-        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+        defaults: { size: '2048*2048', n: 1 },
       },
       {
         id: 'image.edit',
@@ -468,7 +468,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: bailianQwenImageSchema,
-        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+        defaults: { size: '2048*2048', n: 1 },
       },
     ],
     invocation: {
@@ -532,7 +532,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: bailianQwenImageSchema,
-        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+        defaults: { size: '2048*2048', n: 1 },
       },
       {
         id: 'image.edit',
@@ -547,7 +547,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: bailianQwenImageSchema,
-        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+        defaults: { size: '2048*2048', n: 1 },
       },
     ],
     invocation: {
@@ -636,7 +636,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           durationSeconds: 'duration',
           promptExtend: 'prompt_extend',
         },
-        defaults: { resolution: '1080P', duration: 5, prompt_extend: true, watermark: false },
+        defaults: { resolution: '1080P', duration: 5, watermark: false },
       },
     ],
     invocation: {
@@ -710,7 +710,6 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           resolution: '1080P',
           ratio: '16:9',
           duration: 5,
-          prompt_extend: true,
           watermark: false,
         },
       },
@@ -784,7 +783,6 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           resolution: '1080P',
           ratio: '16:9',
           duration: 5,
-          prompt_extend: true,
           watermark: false,
         },
       },
@@ -883,7 +881,6 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           resolution: '1080P',
           ratio: '16:9',
           duration: 5,
-          prompt_extend: true,
           watermark: false,
         },
       },
@@ -978,8 +975,6 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         defaults: {
           resolution: '1080P',
           duration: 0,
-          audio_setting: 'auto',
-          prompt_extend: true,
           watermark: false,
         },
       },
@@ -1275,7 +1270,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     domains: ['video'],
     capabilities: [
       {
-        id: 'video.image_to_video',
+        id: 'video.reference_to_video',
         label: '参考生视频',
         input: {
           required: ['prompt', 'image'] as MediaManifestInputKind[],
@@ -1335,7 +1330,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     domains: ['video'],
     capabilities: [
       {
-        id: 'video.image_to_video',
+        id: 'video.reference_to_video',
         label: '参考生视频',
         input: {
           required: ['prompt', 'image'] as MediaManifestInputKind[],

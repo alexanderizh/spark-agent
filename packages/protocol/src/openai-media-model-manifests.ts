@@ -159,11 +159,8 @@ const imageManifests = imageModels.map(
         defaults: {
           size: 'auto',
           quality: 'auto',
-          background: 'auto',
-          moderation: 'auto',
           n: 1,
           outputFormat: 'png',
-          outputCompression: 100,
         },
         aliases: {
           outputFormat: 'output_format',
@@ -191,12 +188,8 @@ const imageManifests = imageModels.map(
         defaults: {
           size: 'auto',
           quality: 'auto',
-          background: 'auto',
-          moderation: 'auto',
-          ...(!modelId.startsWith('gpt-image-2') ? { inputFidelity: 'low' } : {}),
           n: 1,
           outputFormat: 'png',
-          outputCompression: 100,
         },
         aliases: {
           outputFormat: 'output_format',

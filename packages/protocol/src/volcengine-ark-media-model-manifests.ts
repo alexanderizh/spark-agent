@@ -186,15 +186,13 @@ function seedance2Capability(input: {
     rolePolicy: input.rolePolicy,
     output: { types: ['video'], mimeTypes: ['video/mp4'] },
     paramSchema: input.schema,
+    // defaults 只保留通用字段（画幅/时长/分辨率/联网搜索）。generateAudio/watermark/returnLastFrame/
+    // executionExpiresAfter/priority 均有 provider 默认值（官方文档明确），不自动注入；用户需要时在
+    // 高级区或自定义参数里设置。seed 故意不放入 defaults，避免哨兵值污染请求体（见 schema 注释）。
     defaults: {
       aspectRatio: '智能比例',
       durationSeconds: 5,
       resolution: '720p',
-      generateAudio: true,
-      watermark: false,
-      returnLastFrame: false,
-      executionExpiresAfter: 172800,
-      priority: 0,
       ...(input.id === 'video.generate' ? { searchEnabled: false } : {}),
     },
     aliases,
@@ -286,7 +284,10 @@ const seedance15Schema = {
     draft: { type: 'boolean', title: '样片模式', default: false },
     watermark: { type: 'boolean', title: '水印', default: false },
     returnLastFrame: { type: 'boolean', title: '返回尾帧图', default: false },
-    seed: { type: 'integer', title: '随机种子', minimum: -1, maximum: 4294967295, default: -1 },
+    // 文档标注 seed 范围 [-1, 2147483647]、-1 表示随机，但实际 endpoint 拒收 <0 的值
+    // （会返回 seed must be greater than or equal to 0）。这里对齐实现：minimum:0、不放 default，
+    // 用户不指定 seed 时不注入字段，由 provider 自行随机。
+    seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
     serviceTier: {
       type: 'string',
       title: '服务档位',
@@ -332,7 +333,10 @@ const seedance10Schema = {
     cameraFixed: { type: 'boolean', title: '固定摄像头', default: false },
     watermark: { type: 'boolean', title: '水印', default: false },
     returnLastFrame: { type: 'boolean', title: '返回尾帧图', default: false },
-    seed: { type: 'integer', title: '随机种子', minimum: -1, maximum: 4294967295, default: -1 },
+    // 文档标注 seed 范围 [-1, 2147483647]、-1 表示随机，但实际 endpoint 拒收 <0 的值
+    // （会返回 seed must be greater than or equal to 0）。这里对齐实现：minimum:0、不放 default，
+    // 用户不指定 seed 时不注入字段，由 provider 自行随机。
+    seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
     serviceTier: {
       type: 'string',
       title: '服务档位',
@@ -632,13 +636,13 @@ function seedreamManifest(input: {
 }): MediaModelManifest {
   const schema = seedreamSchema(input.variant)
   const pro = input.variant === 'pro'
+  // defaults 保留通用字段（尺寸/数量/联网搜索/输出格式）。watermark(官方默认 true)/responseFormat(默认 url)/
+  // optimizePromptMode(默认 standard)/sequentialImageGeneration(默认 disabled) 均与官方默认一致，不自动注入；
+  // 用户需要时在高级区或自定义参数设置。maxImages 保留是因为它表达生成数量且 edit 模式需给输入图留位（输入+输出≤15）。
   const defaults: Record<string, unknown> = {
     size: '2K',
-    responseFormat: 'url',
-    watermark: true,
-    optimizePromptMode: 'standard',
     ...(pro || input.variant === 'lite' ? { outputFormat: 'jpeg' } : {}),
-    ...(!pro ? { sequentialImageGeneration: 'disabled', maxImages: 15 } : {}),
+    ...(!pro ? { maxImages: 15 } : {}),
     ...(input.variant === 'lite' ? { searchEnabled: false } : {}),
   }
   const capability = (id: 'image.generate' | 'image.edit'): MediaModelCapabilityManifest => ({
@@ -740,13 +744,6 @@ export const VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[]
       aspectRatio: '智能比例',
       durationSeconds: 5,
       resolution: '720p',
-      generateAudio: true,
-      draft: false,
-      watermark: false,
-      returnLastFrame: false,
-      seed: -1,
-      serviceTier: 'default',
-      executionExpiresAfter: 172800,
     },
   }),
   seedanceLegacyManifest({
@@ -761,12 +758,6 @@ export const VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[]
       aspectRatio: '智能比例',
       durationSeconds: 5,
       resolution: '1080p',
-      cameraFixed: false,
-      watermark: false,
-      returnLastFrame: false,
-      seed: -1,
-      serviceTier: 'default',
-      executionExpiresAfter: 172800,
     },
   }),
   seedanceLegacyManifest({
@@ -781,12 +772,6 @@ export const VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[]
       aspectRatio: '智能比例',
       durationSeconds: 5,
       resolution: '1080p',
-      cameraFixed: false,
-      watermark: false,
-      returnLastFrame: false,
-      seed: -1,
-      serviceTier: 'default',
-      executionExpiresAfter: 172800,
     },
   }),
   seedreamManifest({
