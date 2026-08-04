@@ -295,6 +295,8 @@ describe('ScheduledTaskService', () => {
 
   it('lists, updates, runs, and deletes tasks through repositories', async () => {
     const { task, execution, taskRepo, executionRepo } = makeRepos()
+    task.scope = 'session'
+    task.session_id = 'session-1'
     const executor = vi.fn(async (params: { onSessionCreated?: (sessionId: string) => void }) => {
       params.onSessionCreated?.('session-1')
       return {
@@ -336,6 +338,16 @@ describe('ScheduledTaskService', () => {
         agentId: 'agent-1',
         taskName: 'Daily Review v2',
         promptTemplate: expect.stringContaining('review the repo carefully'),
+      }),
+    )
+    expect(executor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptTemplate: expect.stringContaining('Task id: task-1'),
+      }),
+    )
+    expect(executor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptTemplate: expect.stringContaining('session_schedule_delete'),
       }),
     )
     expect(executor).toHaveBeenCalledWith(

@@ -50,6 +50,15 @@ describe('spark_platform MCP server', () => {
       'teams_update',
       'teams_delete',
     ]))
+    expect(toolNames).toEqual(
+      expect.arrayContaining([
+        'session_schedule_list',
+        'session_schedule_get',
+        'session_schedule_create',
+        'session_schedule_update',
+        'session_schedule_delete',
+      ]),
+    )
   })
 
   it('responds to optional MCP resource and prompt list methods without hanging', async () => {
@@ -185,6 +194,56 @@ describe('spark_platform MCP server', () => {
       method: 'artifacts.resolve',
       params: {
         artifactId: 'runtime.python-3.11.9.win32-x64',
+      },
+    })
+  })
+
+  it('routes schedule calls with the trusted current session id', async () => {
+    let lastRpc: { method?: string; params?: unknown } | null = null
+    bridge = createServer((req, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+      req.on('end', () => {
+        lastRpc = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, data: { task: { id: 'schedule-1' } } }))
+      })
+    })
+    const port = await new Promise<number>((resolve) => {
+      bridge?.listen(0, '127.0.0.1', () => {
+        const address = bridge?.address()
+        if (!address || typeof address === 'string') throw new Error('Failed to bind bridge')
+        resolve(address.port)
+      })
+    })
+
+    child = start({
+      SPARK_PLATFORM_BRIDGE_PORT: String(port),
+      SPARK_SESSION_ID: 'trusted-session',
+    })
+    const res = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'session_schedule_create',
+        arguments: {
+          sessionId: 'model-supplied-session',
+          name: 'Check third-party job',
+          triggerType: 'interval',
+          intervalSeconds: 60,
+          promptTemplate: 'Check the job and delete this schedule when complete.',
+        },
+      },
+    })
+
+    expect(res.error).toBeUndefined()
+    expect(lastRpc).toMatchObject({
+      method: 'session_schedule.create',
+      params: {
+        sessionId: 'trusted-session',
+        name: 'Check third-party job',
+        triggerType: 'interval',
       },
     })
   })

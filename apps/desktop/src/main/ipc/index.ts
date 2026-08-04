@@ -381,6 +381,7 @@ type ConfigChangedScope =
   | 'workflow'
   | 'rule'
   | 'prompt'
+  | 'scheduled-task'
 type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
 
 function pushConfigChanged(
