@@ -442,7 +442,13 @@ async function prepareUploadPayload(params: {
     }
   }
   if (params.filePath) {
-    const buffer = await readFile(params.filePath)
+    let buffer: Buffer
+    try {
+      buffer = await readFile(params.filePath)
+    } catch {
+      // 不把原始错误（含完整本地路径）冒泡到渲染端，避免路径信息泄露。
+      throw new SparkError('VALIDATION_FAILED', '无法读取上传文件，请确认文件存在且可访问')
+    }
     const mimeType = params.mimeType ?? mimeFromExt(params.filePath)
     return {
       buffer,
@@ -475,7 +481,22 @@ function extFromMime(mimeType: string | undefined): string {
   if (normalized === 'image/webp') return '.webp'
   if (normalized === 'image/svg+xml') return '.svg'
   if (normalized === 'application/pdf') return '.pdf'
-  return '.png'
+  if (normalized === 'image/png') return '.png'
+  // 视频
+  if (normalized === 'video/mp4') return '.mp4'
+  if (normalized === 'video/quicktime') return '.mov'
+  if (normalized === 'video/webm') return '.webm'
+  if (normalized === 'video/x-matroska') return '.mkv'
+  if (normalized === 'video/x-msvideo') return '.avi'
+  // 音频
+  if (normalized === 'audio/mpeg') return '.mp3'
+  if (normalized === 'audio/wav') return '.wav'
+  if (normalized === 'audio/ogg') return '.ogg'
+  if (normalized === 'audio/aac') return '.aac'
+  if (normalized === 'audio/flac') return '.flac'
+  // 图片兜底（保留原行为）；其它未知类型用 .bin
+  if (normalized?.startsWith('image/')) return '.png'
+  return '.bin'
 }
 
 function mimeFromExt(filePath: string): string | undefined {
@@ -485,6 +506,18 @@ function mimeFromExt(filePath: string): string | undefined {
   if (ext === '.webp') return 'image/webp'
   if (ext === '.svg') return 'image/svg+xml'
   if (ext === '.pdf') return 'application/pdf'
+  // 视频
+  if (ext === '.mp4') return 'video/mp4'
+  if (ext === '.mov') return 'video/quicktime'
+  if (ext === '.webm') return 'video/webm'
+  if (ext === '.mkv') return 'video/x-matroska'
+  if (ext === '.avi') return 'video/x-msvideo'
+  // 音频
+  if (ext === '.mp3') return 'audio/mpeg'
+  if (ext === '.wav') return 'audio/wav'
+  if (ext === '.ogg') return 'audio/ogg'
+  if (ext === '.aac') return 'audio/aac'
+  if (ext === '.flac') return 'audio/flac'
   return undefined
 }
 

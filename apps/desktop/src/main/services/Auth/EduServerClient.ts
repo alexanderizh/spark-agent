@@ -29,6 +29,8 @@ export interface EduServerClientOptions {
   onTokenRefreshed: (session: AuthSession) => void
   /** 请求超时（毫秒）*/
   requestTimeoutMs?: number
+  /** 文件上传超时（毫秒）；大视频/音频上传默认走更宽松的超时，避免 30s 误杀 */
+  uploadTimeoutMs?: number
 }
 
 /** refresh 并发锁：多个 401 请求同时触发时，只发一次 refresh 请求 */
@@ -41,6 +43,7 @@ export class EduServerClient {
   private readonly onSessionExpired: () => void
   private readonly onTokenRefreshed: (session: AuthSession) => void
   private readonly timeoutMs: number
+  private readonly uploadTimeoutMs: number
 
   constructor(opts: EduServerClientOptions) {
     this.defaultBaseUrl = opts.defaultBaseUrl
@@ -49,6 +52,8 @@ export class EduServerClient {
     this.onSessionExpired = opts.onSessionExpired
     this.onTokenRefreshed = opts.onTokenRefreshed
     this.timeoutMs = opts.requestTimeoutMs ?? 30_000
+    // 上传（尤其视频/音频）体积远大于普通 API 请求，沿用 30s 会误杀合法上传；默认 5 分钟。
+    this.uploadTimeoutMs = opts.uploadTimeoutMs ?? 300_000
   }
 
   /** 获取当前 base URL */
@@ -173,7 +178,7 @@ export class EduServerClient {
   async uploadFile(
     input: { buffer: Buffer; fileName: string; mimeType?: string },
   ): Promise<AuthUploadFileResponse> {
-    const doUpload = (token?: string) => this.rawUpload('/upload', input, token)
+    const doUpload = (token?: string) => this.rawUpload('/upload', input, token, this.uploadTimeoutMs)
     let res = await doUpload(this.tokenStore.get().token)
     if (res.status === 401) {
       const refreshed = await this.tryRefresh()
@@ -288,15 +293,16 @@ export class EduServerClient {
     path: string,
     input: { buffer: Buffer; fileName: string; mimeType?: string },
     token: string | undefined,
+    timeoutMsOverride?: number,
   ): Promise<Response> {
     const url = this.resolveUrl(path)
     const form = new FormData()
-    const bytes = new Uint8Array(input.buffer)
-    form.append('file', new Blob([bytes], { type: input.mimeType ?? 'application/octet-stream' }), input.fileName)
+    // 直接以 Buffer 作为 BlobPart，避免 new Uint8Array(buffer) 再拷贝一份（大视频峰值内存翻倍）。
+    form.append('file', new Blob([input.buffer], { type: input.mimeType ?? 'application/octet-stream' }), input.fileName)
     const headers: Record<string, string> = { Accept: 'application/json' }
     if (token) headers.Authorization = `Bearer ${token}`
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    const timer = setTimeout(() => controller.abort(), timeoutMsOverride ?? this.timeoutMs)
     try {
       return await fetch(url, {
         method: 'POST',

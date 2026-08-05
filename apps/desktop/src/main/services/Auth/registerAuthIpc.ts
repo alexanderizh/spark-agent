@@ -21,6 +21,7 @@ import {
   type KeystoreRef,
 } from '@spark/shared/keystore'
 import { createCredentialVaultPersistence } from '../CredentialVaultPersistence.js'
+import { isSafeFilePathAllowed } from '../SafeFileProtocol.js'
 
 const KEYCHAIN_DISCLOSURE_VERSION = 1
 const log = createLogger('auth:keychain-preload')
@@ -177,12 +178,17 @@ export function registerAuthIpc(): void {
     return auth().bootstrap()
   })
 
-  typedIpcHandle('auth:upload-file', async (req) =>
-    auth().uploadFile({
+  typedIpcHandle('auth:upload-file', async (req) => {
+    // 渲染端 filePath 是不信任输入：必须落在 safe-file 白名单根目录内，
+    // 防止渲染进程被注入后用任意路径（如 ~/.ssh/id_rsa）借上传通道外传敏感文件。
+    if (req.filePath !== undefined && !isSafeFilePathAllowed(req.filePath)) {
+      throw new SparkError('VALIDATION_FAILED', '上传文件不在允许读取的项目或应用目录内')
+    }
+    return auth().uploadFile({
       ...(req.dataUrl !== undefined ? { dataUrl: req.dataUrl } : {}),
       ...(req.filePath !== undefined ? { filePath: req.filePath } : {}),
       ...(req.fileName !== undefined ? { fileName: req.fileName } : {}),
       ...(req.mimeType !== undefined ? { mimeType: req.mimeType } : {}),
-    }),
-  )
+    })
+  })
 }
