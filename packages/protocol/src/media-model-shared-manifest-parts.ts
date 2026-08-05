@@ -327,7 +327,7 @@ export const minimaxH3VideoSchema = {
   type: 'object',
   additionalProperties: true,
   properties: {
-    duration: { type: 'integer', title: '时长(秒)', minimum: 4, maximum: 15, default: 5 },
+    durationSeconds: { type: 'integer', title: '时长(秒)', minimum: 4, maximum: 15, default: 5 },
     resolution: {
       type: 'string',
       title: '分辨率',
@@ -335,7 +335,7 @@ export const minimaxH3VideoSchema = {
       default: '2K',
       description: '768P 出片更快更省，2K 画质更高（默认）',
     },
-    ratio: {
+    aspectRatio: {
       type: 'string',
       title: '画幅',
       enum: ['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
@@ -354,7 +354,7 @@ export const minimaxH3VideoT2VSchema = {
   type: 'object',
   additionalProperties: true,
   properties: {
-    duration: { type: 'integer', title: '时长(秒)', minimum: 4, maximum: 15, default: 5 },
+    durationSeconds: { type: 'integer', title: '时长(秒)', minimum: 4, maximum: 15, default: 5 },
     resolution: {
       type: 'string',
       title: '分辨率',
@@ -362,7 +362,7 @@ export const minimaxH3VideoT2VSchema = {
       default: '2K',
       description: '768P 出片更快更省，2K 画质更高（默认）',
     },
-    ratio: {
+    aspectRatio: {
       type: 'string',
       title: '画幅',
       enum: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
