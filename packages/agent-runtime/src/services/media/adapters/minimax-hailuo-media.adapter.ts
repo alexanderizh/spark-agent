@@ -526,14 +526,12 @@ function buildMinimaxV2VideoParams(
   capability: MediaCapabilityId,
 ): Record<string, unknown> {
   const raw = removeBlankParams(input.modelParams)
-  // 先按 manifest aliases 归一，再读字段。
-  // 注意：公共 compiler (media-request-compiler.ts CANONICAL_ALIASES_FALLBACK) 会把
-  // 用户传入的 ratio→aspectRatio、duration→durationSeconds 改名，但 capability.defaults
-  // 里的 ratio/duration 不被改名，导致 compile 后两键并存：
-  //   { ratio: <默认值>, aspectRatio: <用户选的值> }
-  // 因此读取时必须让「被改名的用户值」优先（aspectRatio/durationSeconds 在前），
-  // 否则用户在画布选的画幅/时长会被默认值盖掉。aspectRatio/durationSeconds 两键只可能
-  // 来自用户 raw（defaults 用的是原键名），故该优先级是安全的。
+  // 先按 manifest aliases 归一，再读字段。读取顺序统一为 canonical 优先、原生兜底：
+  // 经公共 compiler 的路径，modelParams 已统一为 canonical key（aspectRatio / durationSeconds）；
+  // 自 Phase 1 起 defaults 也与 raw 走同一套归一（见 mergeDefaults），不再出现同义键并存。
+  // 保留原生 key（ratio / duration / aspect_ratio）兜底，用于不经 compiler 的入口——
+  // custom manifest（isSynthesizedCustomManifest 绕过 compiler）、历史任务存库值、
+  // 画布直传与 adapter 直调——这些入口仍可能携带 provider 原生键名。
   const aliases = ctx.mediaManifestCapability?.aliases
   const normalized: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(raw)) {
