@@ -107,14 +107,23 @@ export async function materializeCanvasTaskInputFiles(
       // provider 文件（已有 provider 侧 fileId）不经 auth:upload-file 物质化：
       // adapter 直接用 provider 引用（如 MiniMax H3 的 mm_file://{id}），短路返回。
       if (file.fileId) return file
-      if (file.type !== 'image') return file
+      // 已是公网 URL 的直接用（图片/视频/音频统一）。
       if (file.url && /^https?:\/\//i.test(file.url)) return file
+      // 非媒体类型（如 file）不在此处理。
+      if (file.type !== 'image' && file.type !== 'video' && file.type !== 'audio') return file
       const filePath = file.url ? decodeSafeFileUrl(file.url) : null
+      // 既无可上传的本地路径、也无 dataUrl 时，原样交下游处理。
+      if (!filePath && !file.dataUrl) return file
+      // 视频保留原始扩展名（避免 mime 缺失导致后端落盘文件名无扩展）。
+      const fileName = filePath
+        ? (filePath.split(/[\\/]/).pop() ??
+          `canvas-input-${index + 1}.${extensionFromMime(file.mimeType)}`)
+        : `canvas-input-${index + 1}.${extensionFromMime(file.mimeType)}`
       try {
         const uploaded = await window.spark.invoke('auth:upload-file', {
           ...(file.dataUrl ? { dataUrl: file.dataUrl } : {}),
           ...(filePath ? { filePath } : {}),
-          fileName: `canvas-input-${index + 1}.${extensionFromMime(file.mimeType)}`,
+          fileName,
           ...(file.mimeType ? { mimeType: file.mimeType } : {}),
         })
         return {
@@ -124,38 +133,45 @@ export async function materializeCanvasTaskInputFiles(
           ...(file.mimeType ? { mimeType: file.mimeType } : {}),
         }
       } catch (uploadError) {
-        try {
-          const fallback = await materializeBase64Input(file)
-          if (fallback !== file) {
-            console.warn(
-              '[CanvasTaskInput] auth:upload-file failed; falling back to base64 input',
+        // 仅图片在平台上传失败时回退 base64；视频/音频过大不走 base64，直接抛错。
+        if (file.type === 'image') {
+          try {
+            const fallback = await materializeBase64Input(file)
+            if (fallback !== file) {
+              console.warn(
+                '[CanvasTaskInput] auth:upload-file failed; falling back to base64 input',
+                {
+                  index,
+                  role: file.role,
+                  mimeType: file.mimeType,
+                  uploadError,
+                },
+              )
+              return fallback
+            }
+          } catch (fallbackError) {
+            console.error(
+              '[CanvasTaskInput] Failed to materialize local input after upload failure',
               {
                 index,
                 role: file.role,
                 mimeType: file.mimeType,
                 uploadError,
+                fallbackError,
               },
             )
-            return fallback
           }
-        } catch (fallbackError) {
+        } else {
           console.error(
-            '[CanvasTaskInput] Failed to materialize local input after upload failure',
+            '[CanvasTaskInput] Failed to upload media input file for cloud_url transport',
             {
               index,
               role: file.role,
               mimeType: file.mimeType,
               uploadError,
-              fallbackError,
             },
           )
         }
-        console.error('[CanvasTaskInput] Failed to upload input file for cloud_url transport', {
-          index,
-          role: file.role,
-          mimeType: file.mimeType,
-          uploadError,
-        })
         throw uploadError
       }
     }),
@@ -320,7 +336,22 @@ function extensionFromMime(mimeType: string | undefined): string {
   const mime = (mimeType ?? '').toLowerCase()
   if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg'
   if (mime.includes('webp')) return 'webp'
-  return 'png'
+  if (mime.includes('png')) return 'png'
+  // 其它图片格式（gif/bmp/tiff 等或缺失具体 mime）兜底 png，保留历史行为，避免落 .bin。
+  if (mime.startsWith('image/')) return 'png'
+  // 视频
+  if (mime.includes('mp4')) return 'mp4'
+  if (mime.includes('quicktime')) return 'mov'
+  if (mime.includes('webm')) return 'webm'
+  if (mime.includes('matroska') || mime.includes('mkv')) return 'mkv'
+  if (mime.includes('x-msvideo')) return 'avi'
+  // 音频
+  if (mime.includes('mpeg')) return 'mp3'
+  if (mime.includes('wav')) return 'wav'
+  if (mime.includes('ogg')) return 'ogg'
+  if (mime.includes('aac')) return 'aac'
+  if (mime.includes('flac')) return 'flac'
+  return 'bin'
 }
 
 function decodeSafeFileUrl(safeFileUrl: string): string | null {

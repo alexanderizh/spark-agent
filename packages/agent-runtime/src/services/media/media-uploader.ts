@@ -7,6 +7,11 @@ export interface MediaUploadInput {
   targetProvider?: MediaProviderKind
   purpose?: string
   expiresAfter?: number
+  /**
+   * 本地文件绝对路径；提供时 SparkMediaUploader 优先直传（主进程读盘后 multipart），
+   * 避免大视频走 buffer→base64→dataUrl 的内存膨胀。adapter 仅有 buffer 时可不填。
+   */
+  filePath?: string
 }
 
 export interface MediaUploadResult {
