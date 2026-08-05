@@ -39,16 +39,21 @@ describe('canvasNodeGenerationMenu', () => {
     ])
   })
 
-  it('replaces the three general text entries with image prompt reverse and depth video', () => {
+  it('exposes the merged base task operations across image, video, and audio groups', () => {
     expect(canvasBaseCreateOperations().map((item) => item.operation)).toEqual([
       'text_to_image',
-      'image_edit',
-      'image_compose',
       'image_prompt_reverse',
       'text_to_video',
       'video_depth_map',
       'text_to_audio',
       'audio_transcribe',
+    ])
+  })
+
+  it('offers one unified image generation entry plus image prompt reverse', () => {
+    expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.find((group) => group.id === 'image')?.items).toEqual([
+      { operation: 'text_to_image', label: '图片生成', icon: 'Image' },
+      { operation: 'image_prompt_reverse', label: '图片反推', icon: 'FileText' },
     ])
   })
 

@@ -34,17 +34,21 @@ const field = (name: string): SchemaField => ({
 })
 
 describe('CanvasInlineAiComposer image dimension params', () => {
-  it('collapses legacy video operations into one video generation capability', () => {
+  it('collapses legacy video and image operations into unified generation capabilities', () => {
     expect(
       unifiedCanvasComposerCapabilities([
         { operation: 'text_to_image', label: '文生图' },
+        { operation: 'image_edit', label: '图生图 / 编辑' },
+        { operation: 'image_compose', label: '多图合成' },
+        { operation: 'image_prompt_reverse', label: '图片反推' },
         { operation: 'text_to_video', label: '文生视频' },
         { operation: 'image_to_video', label: '图生视频' },
         { operation: 'video_edit', label: '视频编辑' },
         { operation: 'video_extend', label: '视频延长' },
       ]).map(({ operation, label }) => ({ operation, label })),
     ).toEqual([
-      { operation: 'text_to_image', label: '文生图' },
+      { operation: 'text_to_image', label: '图片生成' },
+      { operation: 'image_prompt_reverse', label: '图片反推' },
       { operation: 'text_to_video', label: '视频生成' },
     ])
   })

@@ -4968,6 +4968,17 @@ export const canvasApi = {
     const oldTask = db.tasks.find((t) => t.id === sourceTaskId && t.projectId === projectId)
     if (!oldTask) throw new Error('未找到原任务')
     const useCurrentRuntime = options?.runtimeSource !== 'original-task'
+    // B8: retry 同样走 capability → operation 反向映射，让统一图片节点（容器 operation + capabilityId）
+    // 重试时按冻结的参考图数量还原出 image_edit / image_compose / text_to_image，而不是直接复用容器 operation。
+    const retryImageInputCount =
+      (oldTask.inputBindings ?? []).filter(
+        (binding) => binding.enabled && binding.kind === 'image',
+      ).length
+    const retryOperation = executionOperationForCanvasMediaCapability(
+      oldTask.capabilityId,
+      oldTask.operation,
+      retryImageInputCount > 0 ? { imageInputCount: retryImageInputCount } : undefined,
+    )
     const oldOutputNodes = db.nodes.filter((n) => oldTask.outputNodeIds.includes(n.id))
     const baseX =
       oldOutputNodes.length > 0
@@ -5021,7 +5032,7 @@ export const canvasApi = {
       ? (node.data.shotScriptConfig ?? oldTask.shotScriptConfig)
       : (oldTask.shotScriptConfig ?? node.data.shotScriptConfig)
     const retryPresetTargetId = resolveCanvasPresetTarget({
-      operation: oldTask.operation,
+      operation: retryOperation,
       taskPipelineRole: retryTaskPipelineRole ?? null,
       outputPipelineRole: retryOutputPipelineRole ?? null,
       workflow: requestedRetryModelParams.workflow,
@@ -5032,11 +5043,11 @@ export const canvasApi = {
     )
     const resolvedRetryTaskPipelineRole =
       retryTaskPipelineRole ??
-      (retryPresetTargetId !== oldTask.operation ? retryOutputPipelineRole : undefined)
+      (retryPresetTargetId !== retryOperation ? retryOutputPipelineRole : undefined)
     const project = db.projects.find((item) => item.id === projectId)
     const retrySystemPrompt = normalizeCanvasFunctionalSystemPrompt(
       sanitizeLegacyCanvasSystemPrompt({
-        operation: oldTask.operation,
+        operation: retryOperation,
         targetId: retryPresetTargetId,
         ...(oldTask.systemPrompt != null ? { systemPrompt: oldTask.systemPrompt } : {}),
         ...(project?.settings?.prompt != null ? { projectPrompt: project.settings.prompt } : {}),
@@ -5046,7 +5057,7 @@ export const canvasApi = {
     )
     const request: CreateCanvasTaskRequest & { inputFiles?: CanvasMediaTaskInputFile[] } = {
       boardId: node.boardId,
-      operation: oldTask.operation,
+      operation: retryOperation,
       prompt: oldTask.prompt ?? '',
       ...(oldTask.negativePrompt ? { negativePrompt: oldTask.negativePrompt } : {}),
       inputNodeIds: oldTask.inputNodeIds,
@@ -5142,7 +5153,17 @@ export const canvasApi = {
       : undefined
     const reasoningEffort = params.reasoningEffort ?? existingReasoningEffort ?? undefined
     const nodeOperation = (node.data.operation ?? node.type) as CanvasOperationType
-    const operation = executionOperationForCanvasMediaCapability(params.capabilityId, nodeOperation)
+    // B2: 标准 UI 路径下 params.inputFiles 为 undefined，参考图数量只能从 inputBindings 统计。
+    // image.edit capability 按参考图数量反推 image_edit(单图) / image_compose(多图)。
+    const imageInputCount =
+      (params.inputBindings ?? []).filter(
+        (binding) => binding.enabled && binding.kind === 'image',
+      ).length
+    const operation = executionOperationForCanvasMediaCapability(
+      params.capabilityId,
+      nodeOperation,
+      imageInputCount > 0 ? { imageInputCount } : undefined,
+    )
     const presetTargetId = resolveCanvasPresetTarget({
       operation,
       taskPipelineRole: node.data.pipelineRole ?? null,
@@ -6302,6 +6323,9 @@ export const canvasApi = {
         projectId,
         userId: USER_ID,
         type: assetType,
+        // B7 决策点：统一图片节点把 image_to_image（角色身份板）反推为 image_edit/image_compose 后，
+        // 其产物 asset.source 由 ai_generated 变为 ai_edited（与「基于参考图生成」语义一致，计划默认接受）。
+        // 若产品希望角色身份板产物仍归「AI 生成」，可在判定里显式纳入历史 operation。
         source:
           task.operation === 'image_edit' || task.operation === 'image_compose'
             ? 'ai_edited'

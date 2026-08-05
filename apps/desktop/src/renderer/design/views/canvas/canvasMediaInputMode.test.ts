@@ -7,6 +7,7 @@ import type {
 import { BUILTIN_MEDIA_MODEL_MANIFESTS } from '@spark/protocol'
 import {
   applyCanvasMediaInputModeToBindings,
+  canvasMediaCapabilityIdsForOperation,
   canvasMediaInputAssignments,
   canvasMediaInputModeOptions,
   capabilityIdForCanvasMediaInputMode,
@@ -582,6 +583,99 @@ describe('canvasMediaInputMode', () => {
       canvasMediaInputAssignments({ bindings, mode: 'reference', option }).map((item) => item.used),
     ).toEqual([true, false])
     expect(executionCanvasInputBindings({ bindings, mode: 'reference', option })).toHaveLength(1)
+  })
+})
+
+describe('canvasMediaInputMode — image unification', () => {
+  // 复用与视频测试一致的 image capability 构造，但显式给出 image.edit 的参考图角色策略。
+  const imageGenerate = capability('image.generate', {})
+  const imageEdit = capability('image.edit', {
+    imageRoles: ['reference_image'],
+    defaultRoleAssignment: 'all_reference',
+  })
+
+  it('exposes the unified image capability union for every legacy image operation', () => {
+    for (const operation of [
+      'text_to_image',
+      'image_edit',
+      'image_compose',
+      'image_to_image',
+    ] as const) {
+      expect(
+        canvasMediaCapabilityIdsForOperation(operation),
+        operation,
+      ).toEqual(['image.generate', 'image.edit'])
+    }
+  })
+
+  it('derives text/reference modes from the image model capabilities', () => {
+    const generateOnly = model([imageGenerate])
+    const editOnly = model([imageEdit])
+    const both = model([imageGenerate, imageEdit])
+
+    expect(canvasMediaInputModeOptions('text_to_image', generateOnly).map((o) => o.mode)).toEqual([
+      'text',
+    ])
+    expect(canvasMediaInputModeOptions('text_to_image', editOnly).map((o) => o.mode)).toEqual([
+      'reference',
+    ])
+    expect(canvasMediaInputModeOptions('text_to_image', both).map((o) => o.mode)).toEqual([
+      'text',
+      'reference',
+    ])
+  })
+
+  it('maps image capability and reference count to the actual task operation', () => {
+    expect(executionOperationForCanvasMediaCapability('image.generate', 'text_to_image')).toBe(
+      'text_to_image',
+    )
+    expect(
+      executionOperationForCanvasMediaCapability('image.edit', 'image_edit', {
+        imageInputCount: 1,
+      }),
+    ).toBe('image_edit')
+    expect(
+      executionOperationForCanvasMediaCapability('image.edit', 'image_edit', {
+        imageInputCount: 3,
+      }),
+    ).toBe('image_compose')
+    // 无 imageInputCount 时按单图兜底为 image_edit（保持向后兼容）
+    expect(executionOperationForCanvasMediaCapability('image.edit', 'image_edit')).toBe('image_edit')
+    // 视频分支不受图片扩展影响
+    expect(executionOperationForCanvasMediaCapability('video.edit', 'video_edit')).toBe('video_edit')
+    expect(
+      executionOperationForCanvasMediaCapability('video.image_to_video', 'text_to_video'),
+    ).toBe('image_to_video')
+  })
+
+  it('keeps legacy image operations on the reference mode instead of drifting to text', () => {
+    const both = model([imageGenerate, imageEdit])
+    for (const operation of ['image_edit', 'image_compose', 'image_to_image'] as const) {
+      const options = canvasMediaInputModeOptions(operation, both)
+      expect(
+        resolveCanvasMediaInputMode({ operation, options, bindings: [] }),
+        operation,
+      ).toBe('reference')
+    }
+    expect(
+      resolveCanvasMediaInputMode({
+        operation: 'text_to_image',
+        options: canvasMediaInputModeOptions('text_to_image', both),
+        bindings: [],
+      }),
+    ).toBe('text')
+  })
+
+  it('keeps the reference mode selected when a legacy image edit node already has images', () => {
+    const both = model([imageGenerate, imageEdit])
+    const options = canvasMediaInputModeOptions('image_edit', both)
+    expect(
+      resolveCanvasMediaInputMode({
+        operation: 'image_edit',
+        options,
+        bindings: [binding('ref-1', 'reference', 0), binding('ref-2', 'reference', 1)],
+      }),
+    ).toBe('reference')
   })
 })
 
