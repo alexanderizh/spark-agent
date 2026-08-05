@@ -23,6 +23,16 @@ const VIDEO_GENERATION_MODES: ReadonlyArray<{
   { mode: 'extend', label: '视频延长' },
 ]
 
+/**
+ * 合并后「图片生成」节点的模式表。image.generate → 文生图(text)，image.edit → 图生图/编辑(reference)。
+ * 图片与视频共享 text / reference 两个 mode，因此模式族必须按 capability 命名空间（image.* vs video.*）
+ * 区分，不能按 mode 判断——否则图片节点会被误判为视频族，泄露「文生视频 / 全能参考」等文案。
+ */
+const IMAGE_GENERATION_MODES: ReadonlyArray<{ mode: CanvasMediaInputMode; label: string }> = [
+  { mode: 'text', label: '文生图' },
+  { mode: 'reference', label: '图生图 / 编辑' },
+]
+
 export function CanvasMediaInputConfigurator({
   options,
   value,
@@ -60,6 +70,9 @@ export function CanvasMediaInputConfigurator({
   const currentIssue = current ? canvasMediaInputModeIssue(current, bindings) : undefined
   const usedCount = assignments.filter((assignment) => assignment.used).length
   const presentedModes = presentationModes(options)
+  // 模式族按 capability 命名空间判定，决定 Select 的 aria-label 文案。
+  const isImageFamily = options.some((option) => option.capabilityId.startsWith('image.'))
+  const modeSelectAriaLabel = isImageFamily ? '图片生成模式' : '视频生成模式'
   const editExtendPair = collapseVideoEditExtendOptions(options)
   const isEditExtendActive = Boolean(editExtendPair) && (value === 'edit' || value === 'extend')
   // 合并行以 'edit' 作为 Select 取值；真正的 编辑/延长 选择由子开关承载。
@@ -90,7 +103,7 @@ export function CanvasMediaInputConfigurator({
             className="canvas-media-input-mode-select"
             classNames={{ popup: { root: 'canvas-media-input-mode-select-popup' } }}
             size="small"
-            aria-label="视频生成模式"
+            aria-label={modeSelectAriaLabel}
             value={modeSelectValue ?? null}
             options={modeSelectOptions}
             disabled={disabled === true}
@@ -250,7 +263,17 @@ function presentationModes(options: readonly CanvasMediaInputModeOption[]): Read
   alternate?: CanvasMediaInputMode
 }> {
   const optionByMode = new Map(options.map((option) => [option.mode, option]))
-  const isVideoGeneration = VIDEO_GENERATION_MODES.some(({ mode }) => optionByMode.has(mode))
+  // 按 capability 命名空间判定模式族：image.* → 图片统一节点，video.* → 视频统一节点。
+  const isVideoGeneration = options.some((option) => option.capabilityId.startsWith('video.'))
+  const isImageGeneration = options.some((option) => option.capabilityId.startsWith('image.'))
+  if (isImageGeneration && !isVideoGeneration) {
+    // 图片统一节点：text / reference 两模式，无 edit/extend 合并，直接用 IMAGE_GENERATION_MODES 权威文案。
+    return IMAGE_GENERATION_MODES.flatMap(({ mode, label }) => {
+      const option = optionByMode.get(mode)
+      if (!option) return []
+      return [{ mode, label, option }]
+    })
+  }
   if (!isVideoGeneration) {
     return options.map((option) => ({
       mode: option.mode,
@@ -287,6 +310,8 @@ function collectOrigins(bindings: readonly CanvasInputBinding[]) {
 }
 
 function compactModeLabel(option: CanvasMediaInputModeOption): string {
+  // 图片统一节点直接复用 modeOptionsForCapability 给出的权威文案，避免视频专属词汇泄露。
+  if (option.capabilityId.startsWith('image.')) return option.label
   if (option.mode === 'text') return '文生视频'
   if (option.mode === 'first_frame') return '首帧生成'
   if (option.mode === 'first_last_frame') return '首尾帧生成'

@@ -83,6 +83,77 @@ function mockMediaInvoke(taskResponse: Record<string, unknown>) {
   })
 }
 
+/** 统一图片节点（text_to_image 容器）的最小画布种子。 */
+function seedImageUnifiedNode(nodeId = 'image-node'): void {
+  seedCanvasDb({
+    projects: [
+      {
+        id: 'project-1',
+        userId: 0,
+        title: 'Project',
+        status: 'active',
+        rootPath: '/tmp/project-1',
+        settings: {},
+        nodeCount: 1,
+        assetCount: 0,
+        taskCount: 0,
+        createdAt: at,
+        updatedAt: at,
+      },
+    ],
+    boards: [
+      {
+        id: 'board-1',
+        projectId: 'project-1',
+        userId: 0,
+        name: 'Board',
+        viewport: { x: 0, y: 0, zoom: 1 },
+        settings: {},
+        createdAt: at,
+        updatedAt: at,
+      },
+    ],
+    assets: [],
+    nodes: [
+      {
+        id: nodeId,
+        projectId: 'project-1',
+        boardId: 'board-1',
+        userId: 0,
+        type: 'text_to_image',
+        title: '图片生成',
+        parentNodeId: null,
+        x: 0,
+        y: 0,
+        width: 460,
+        height: 420,
+        rotation: 0,
+        zIndex: 1,
+        locked: false,
+        hidden: false,
+        data: { operation: 'text_to_image', status: 'pending' },
+        createdAt: at,
+        updatedAt: at,
+      },
+    ],
+    edges: [],
+    tasks: [],
+  })
+}
+
+function imageReferenceBinding(sourceNodeId: string, order: number) {
+  return {
+    id: `picker:${sourceNodeId}:reference:${order}`,
+    sourceNodeId,
+    origin: 'picker' as const,
+    kind: 'image' as const,
+    relation: 'reference_image' as const,
+    role: 'reference' as const,
+    enabled: true,
+    order,
+  }
+}
+
 describe('canvas operation inheritance', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -167,6 +238,239 @@ describe('canvas operation inheritance', () => {
     expect(invoke).toHaveBeenCalledWith(
       'canvas:task:create-media',
       expect.objectContaining({ operation: 'video_edit', capabilityId: 'video.edit' }),
+    )
+  })
+
+  it('runs a unified image node in text mode as text_to_image', async () => {
+    seedImageUnifiedNode()
+    Object.assign(window, { spark: { invoke: mockMediaInvoke({ status: 'running', assets: [] }) } })
+
+    const snapshot = await canvasApi.runOperationNode('project-1', 'image-node', {
+      prompt: '一只银渐层小猫',
+      inputNodeIds: [],
+      mediaInputMode: 'text',
+      capabilityId: 'image.generate',
+      skipParameterValidation: true,
+    })
+    const node = snapshot.nodes.find((item) => item.id === 'image-node')
+    const task = snapshot.tasks.find((item) => item.id === node?.taskId)
+    expect(task).toMatchObject({ operation: 'text_to_image', operationNodeId: 'image-node' })
+    expect(window.spark.invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.objectContaining({ operation: 'text_to_image', capabilityId: 'image.generate' }),
+    )
+  })
+
+  it('runs a unified image node in reference mode with one image as image_edit', async () => {
+    seedImageUnifiedNode()
+    Object.assign(window, { spark: { invoke: mockMediaInvoke({ status: 'running', assets: [] }) } })
+
+    const snapshot = await canvasApi.runOperationNode('project-1', 'image-node', {
+      prompt: '把背景换成夜晚',
+      inputNodeIds: [],
+      mediaInputMode: 'reference',
+      capabilityId: 'image.edit',
+      inputBindings: [imageReferenceBinding('node-ref-1', 0)],
+      skipParameterValidation: true,
+    })
+    const node = snapshot.nodes.find((item) => item.id === 'image-node')
+    const task = snapshot.tasks.find((item) => item.id === node?.taskId)
+    expect(task).toMatchObject({ operation: 'image_edit', operationNodeId: 'image-node' })
+    expect(window.spark.invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.objectContaining({ operation: 'image_edit', capabilityId: 'image.edit' }),
+    )
+  })
+
+  it('runs a unified image node in reference mode with multiple images as image_compose', async () => {
+    seedImageUnifiedNode()
+    Object.assign(window, { spark: { invoke: mockMediaInvoke({ status: 'running', assets: [] }) } })
+
+    const snapshot = await canvasApi.runOperationNode('project-1', 'image-node', {
+      prompt: '把两张参考图合成一张',
+      inputNodeIds: [],
+      mediaInputMode: 'reference',
+      capabilityId: 'image.edit',
+      inputBindings: [
+        imageReferenceBinding('node-ref-1', 0),
+        imageReferenceBinding('node-ref-2', 1),
+        imageReferenceBinding('node-ref-3', 2),
+      ],
+      skipParameterValidation: true,
+    })
+    const node = snapshot.nodes.find((item) => item.id === 'image-node')
+    const task = snapshot.tasks.find((item) => item.id === node?.taskId)
+    expect(task).toMatchObject({ operation: 'image_compose', operationNodeId: 'image-node' })
+    expect(window.spark.invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.objectContaining({ operation: 'image_compose' }),
+    )
+  })
+
+  it('retries a unified image task by reverse-mapping the frozen capability and image count', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          settings: {},
+          nodeCount: 3,
+          assetCount: 2,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [
+        {
+          id: 'asset-ref-1',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'upload',
+          title: '参考图 1',
+          url: 'https://cdn/ref-1.png',
+          metadata: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'asset-ref-2',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'upload',
+          title: '参考图 2',
+          url: 'https://cdn/ref-2.png',
+          metadata: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-ref-1',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'image',
+          title: '参考图 1',
+          assetId: 'asset-ref-1',
+          taskId: null,
+          parentNodeId: null,
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 120,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { url: 'https://cdn/ref-1.png', mimeType: 'image/png' },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'node-ref-2',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'image',
+          title: '参考图 2',
+          assetId: 'asset-ref-2',
+          taskId: null,
+          parentNodeId: null,
+          x: 0,
+          y: 160,
+          width: 200,
+          height: 120,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { url: 'https://cdn/ref-2.png', mimeType: 'image/png' },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'image-node',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_image',
+          title: '图片生成',
+          taskId: 'task-old',
+          parentNodeId: null,
+          x: 320,
+          y: 0,
+          width: 460,
+          height: 420,
+          rotation: 0,
+          zIndex: 2,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_to_image', status: 'failed' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-old',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          // 容器 operation(text_to_image) + capabilityId(image.edit) + 2 张参考图 → 重试应反推为 image_compose
+          operation: 'text_to_image',
+          capabilityId: 'image.edit',
+          inputBindings: [
+            imageReferenceBinding('node-ref-1', 0),
+            imageReferenceBinding('node-ref-2', 1),
+          ],
+          relationManifest: [
+            { blockId: 'r1', sourceNodeId: 'node-ref-1', relation: 'reference_image', order: 0 },
+            { blockId: 'r2', sourceNodeId: 'node-ref-2', relation: 'reference_image', order: 1 },
+          ],
+          status: 'failed',
+          progress: 100,
+          title: '图片生成',
+          prompt: '合成两张参考图',
+          inputNodeIds: ['node-ref-1', 'node-ref-2'],
+          inputAssetIds: ['asset-ref-1', 'asset-ref-2'],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+    Object.assign(window, { spark: { invoke: mockMediaInvoke({ status: 'running', assets: [] }) } })
+
+    const snapshot = await canvasApi.retryOperationNode('project-1', 'image-node')
+    const node = snapshot.nodes.find((item) => item.id === 'image-node')
+    const retriedTask = snapshot.tasks.find((item) => item.id === node?.taskId)
+    expect(retriedTask?.operation).toBe('image_compose')
+    expect(retriedTask?.operationNodeId).toBe('image-node')
+    expect(window.spark.invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.objectContaining({ operation: 'image_compose', capabilityId: 'image.edit' }),
     )
   })
 

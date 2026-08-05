@@ -19,7 +19,9 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     id: 'canvas.text-to-image',
     label: '文生图',
     operation: 'text_to_image',
-    inputTypes: ['text', 'prompt'],
+    // 合并后的「图片生成」容器：宽入口接受文本与图片，运行时按模式 + 参考图数量反推
+    // text_to_image / image_edit / image_compose（对齐 text_to_video 容器做法）。
+    inputTypes: ['text', 'prompt', 'image'],
     outputTypes: ['image'],
     enabled: true,
     paramsSchema: {},

@@ -60,6 +60,58 @@ describe('canvasTaskSubmissionValidation', () => {
     ).rejects.toMatchObject({ message: '请至少选择一张输入图片' })
   })
 
+  it('drives image validation by capability namespace for the unified image node', async () => {
+    // reference 模式（image.edit）：有 prompt 无图 → 必须阻断缺图
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'text_to_image',
+        capabilityId: 'image.edit',
+        prompt: '把背景换成夜晚',
+        inputFiles: [],
+      }),
+    ).rejects.toMatchObject({ message: '请至少选择一张输入图片' })
+
+    // reference 模式：有图无 prompt → 不应阻断（图生图 / 编辑提示词可选）
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'text_to_image',
+        capabilityId: 'image.edit',
+        prompt: '',
+        inputFiles: [{ type: 'image', dataUrl: 'data:image/png;base64,AAAA' }],
+      }),
+    ).resolves.toMatchObject({ capabilityId: 'image.edit' })
+
+    // text 模式（image.generate）：无 prompt → 阻断缺提示词（回归保护）
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'text_to_image',
+        capabilityId: 'image.generate',
+        prompt: '',
+        inputFiles: [],
+      }),
+    ).rejects.toMatchObject({ message: '请输入提示词' })
+  })
+
+  it('keeps video capability validation unaffected by the image capability branch', async () => {
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'text_to_video',
+        capabilityId: 'video.generate',
+        prompt: 'animate',
+        inputFiles: [],
+      }),
+    ).resolves.toMatchObject({ capabilityId: 'video.generate' })
+
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'video_edit',
+        capabilityId: 'video.edit',
+        prompt: 'restyle',
+        inputFiles: [],
+      }),
+    ).rejects.toMatchObject({ message: '请选择输入视频' })
+  })
+
   it('classifies generic file inputs by MIME type during basic validation', async () => {
     await expect(
       validateCanvasMediaTaskSubmission({

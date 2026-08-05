@@ -1,6 +1,6 @@
 # 无限画布统一媒体任务输入配置器
 
-> 状态: 实施中 | 最后核对: 2026-08-02
+> 状态: 实施中 | 最后核对: 2026-08-05
 
 ## 1. 背景与问题
 
@@ -219,3 +219,18 @@ capabilityId?: MediaCapabilityId
 6. 内联快捷生成器与节点配置面板复用同一套模式、capability、素材分配和执行 operation 纯函数。
 7. 重试任务从 relationManifest 恢复图片、视频和音频的 reference 角色，避免二次运行退化为普通 input。
 8. 旧编辑/延长节点在缺少新模式字段时分别保持 edit/extend 语义；Workspace 在 prompt、preset、样式与参数处理前即完成实际 operation 映射。
+
+## 13. 统一图片节点改造（文生图 / 图生图 / 编辑 / 多图合成合并）
+
+与 §12 视频二期改造同构，采用兼容型统一容器，不新增协议枚举、不批量迁移旧画布。将历史四种图片操作（`text_to_image` / `image_edit` / `image_compose` / `image_to_image`）合并为单一「图片生成」节点：
+
+1. 新建菜单图像组与内联快捷生成器只暴露 `text_to_image` 容器（标题「图片生成」）+ 图片反推；`CANVAS_CAPABILITIES` 中 `image_edit` / `image_compose` 条目保留以兼容旧节点。
+2. 容器 `text_to_image.inputTypes` 扩为宽入口 `['text','prompt','image']`（对齐 `text_to_video`）。
+3. 模式仅 2 种（协议层 `CanvasMediaInputMode` 已含，零枚举新增）：
+   - `text`（文生图）→ capability `image.generate` → operation `text_to_image` → 产物 `ai_generated`；
+   - `reference`（图生图 / 编辑）→ capability `image.edit` → operation 按参考图数量反推：≥2 张 `image_compose`，否则 `image_edit` → 产物 `ai_edited`。
+4. 模式可选性仅由模型 manifest 决定（缺素材只在提交时阻断，不禁用模式胶囊）；模式族按 capability 命名空间（`image.*` vs `video.*`）判定，**不可按 mode 判定**——图片与视频共享 `text` / `reference` mode，否则图片节点会泄露「文生视频 / 全能参考」文案。
+5. 提交链路 `imageInputCount` 必须取自 `params.inputBindings`（标准 UI 路径 `inputFiles` 始终为 undefined）；`retryOperationNode` 同样走 capability + 冻结 inputBindings 数量的反向映射，使统一任务重试还原出正确的 image_edit / image_compose。
+6. `validateBasicMediaSubmission` 校验改为 capability 命名空间分层：`image.generate` 要求 prompt、`image.edit` 要求图片，视频分支保持原样（capabilityId 缺失时回退字面 operation，兼容旧 retry / inline 边界）。
+7. 旧 `image_edit` / `image_compose` / `image_to_image` 节点默认落在 `reference` 模式（`legacyCanvasMediaInputMode`），`text_to_image` 默认 `text`，不漂移。
+8. 已知行为变化：`image_to_image`（角色身份板）反向映射后产物 `asset.source` 由 `ai_generated` 变为 `ai_edited`（与「基于参考图生成」语义一致，默认接受；若产品需保留旧标签，可在 `canvas.api.ts` asset.source 判定里显式纳入历史 operation）。

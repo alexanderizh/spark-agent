@@ -34,9 +34,9 @@ export const CANVAS_BASE_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGroup[
     id: 'image',
     label: '图像',
     items: [
-      { operation: 'text_to_image', label: '文生图', icon: 'Image' },
-      { operation: 'image_edit', label: '图生图 / 编辑', icon: 'Edit' },
-      { operation: 'image_compose', label: '多图合成', icon: 'Grid' },
+      // 文生图 / 图生图 / 编辑 / 多图合成已合并为单一「图片生成」容器（text_to_image），
+      // 运行时按所选模式 + 参考图数量反推 image.generate / image.edit 与实际 operation。
+      { operation: 'text_to_image', label: '图片生成', icon: 'Image' },
       { operation: 'image_prompt_reverse', label: '图片反推', icon: 'FileText' },
     ],
   },

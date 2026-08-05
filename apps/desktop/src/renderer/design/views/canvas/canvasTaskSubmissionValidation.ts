@@ -207,6 +207,9 @@ function validateBasicMediaSubmission(
   const videoCapability = request.capabilityId?.startsWith('video.')
     ? request.capabilityId
     : undefined
+  const imageCapability = request.capabilityId?.startsWith('image.')
+    ? request.capabilityId
+    : undefined
 
   for (const [index, file] of files.entries()) {
     if (file.dataUrl && !/^data:[^;,]+;base64,.+$/is.test(file.dataUrl)) {
@@ -220,15 +223,24 @@ function validateBasicMediaSubmission(
     }
   }
 
-  const requiresPrompt = videoCapability
-    ? videoCapability === 'video.generate'
-    : operationRequiresPrompt(request.operation)
-  const requiresImage = videoCapability
-    ? videoCapability === 'video.image_to_video'
-    : operationRequiresImage(request.operation)
-  const requiresVideo = videoCapability
-    ? videoCapability === 'video.edit' || videoCapability === 'video.extend'
-    : request.operation === 'video_edit' || request.operation === 'video_extend'
+  // 按 capability 命名空间分层判定，避免统一容器（text_to_image + image.edit reference 模式等）
+  // 误用字面 operation 的提示词 / 图片要求。capabilityId 缺失（旧 retry / inline 边界）时
+  // 回退字面 operation 判定，保持向后兼容。
+  const requiresPrompt = imageCapability
+    ? imageCapability === 'image.generate'
+    : videoCapability
+      ? videoCapability === 'video.generate'
+      : operationRequiresPrompt(request.operation)
+  const requiresImage = imageCapability
+    ? imageCapability === 'image.edit'
+    : videoCapability
+      ? videoCapability === 'video.image_to_video'
+      : operationRequiresImage(request.operation)
+  const requiresVideo = imageCapability
+    ? false
+    : videoCapability
+      ? videoCapability === 'video.edit' || videoCapability === 'video.extend'
+      : request.operation === 'video_edit' || request.operation === 'video_extend'
 
   if (requiresPrompt && !providerPrompt) {
     issues.push(issue('missing_required', '请输入提示词', ['prompt']))

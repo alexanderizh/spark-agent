@@ -25,6 +25,20 @@ const UNIFIED_VIDEO_CAPABILITY_IDS: MediaCapabilityId[] = [
   'video.edit',
   'video.extend',
 ]
+/**
+ * 合并后的「图片生成」容器覆盖的全部历史图片 operation。
+ *
+ * 与视频统一容器同构：新建菜单只产出 `text_to_image` 一种容器，但历史
+ * `image_edit` / `image_compose` / `image_to_image` 节点继续沿用同一套
+ * capability 池与模式选择器，运行时再按 mode + 参考图数量反推实际 operation。
+ */
+const UNIFIED_IMAGE_OPERATIONS = new Set<CanvasOperationType>([
+  'text_to_image',
+  'image_edit',
+  'image_compose',
+  'image_to_image',
+])
+const UNIFIED_IMAGE_CAPABILITY_IDS: MediaCapabilityId[] = ['image.generate', 'image.edit']
 
 export type CanvasMediaInputModeOption = {
   mode: CanvasMediaInputMode
@@ -46,18 +60,26 @@ export function canvasMediaCapabilityIdsForOperation(
   operation: CanvasOperationType,
 ): MediaCapabilityId[] {
   if (UNIFIED_VIDEO_OPERATIONS.has(operation)) return [...UNIFIED_VIDEO_CAPABILITY_IDS]
+  if (UNIFIED_IMAGE_OPERATIONS.has(operation)) return [...UNIFIED_IMAGE_CAPABILITY_IDS]
   return capabilityForOperation(operation)
 }
 
 export function executionOperationForCanvasMediaCapability(
   capabilityId: MediaCapabilityId | undefined,
   fallback: CanvasOperationType,
+  options?: { imageInputCount?: number | undefined },
 ): CanvasOperationType {
   if (capabilityId === 'video.image_to_video') return 'image_to_video'
   if (capabilityId === 'video.edit') return 'video_edit'
   if (capabilityId === 'video.extend') return 'video_extend'
   if (capabilityId === 'video.generate' || capabilityId === 'video.reference_to_video') {
     return 'text_to_video'
+  }
+  if (capabilityId === 'image.generate') return 'text_to_image'
+  if (capabilityId === 'image.edit') {
+    // 图生图 / 编辑 / 多图合成共用 image.edit capability，按参考图数量反推 operation：
+    // ≥2 张 → image_compose，否则 image_edit。imageInputCount 缺失按单图兜底，保持向后兼容。
+    return (options?.imageInputCount ?? 0) >= 2 ? 'image_compose' : 'image_edit'
   }
   return fallback
 }
@@ -128,6 +150,16 @@ function legacyCanvasMediaInputMode(
 ): CanvasMediaInputMode | undefined {
   if (operation === 'video_edit') return 'edit'
   if (operation === 'video_extend') return 'extend'
+  // 图片统一容器：历史 image_edit / image_compose / image_to_image 节点默认落在
+  // reference 模式（图生图 / 编辑），text_to_image 默认 text，避免旧节点漂移到文生图。
+  if (operation === 'text_to_image') return 'text'
+  if (
+    operation === 'image_edit' ||
+    operation === 'image_compose' ||
+    operation === 'image_to_image'
+  ) {
+    return 'reference'
+  }
   return undefined
 }
 
@@ -302,6 +334,10 @@ function modeOptionsForCapability(
     capability,
     rolePolicy,
   })
+  // 图片统一容器：image.generate 固定文生图（text），image.edit 固定图生图 / 编辑（reference）。
+  // 模式可选性完全由模型 manifest 声明的 capability 决定——缺素材只在提交时阻断。
+  if (capabilityId === 'image.generate') return [option('text', '文生图')]
+  if (capabilityId === 'image.edit') return [option('reference', '图生图 / 编辑')]
   if (capabilityId === 'video.generate') {
     const hasReferences =
       (rolePolicy.imageRoles?.includes('reference_image') ?? false) ||

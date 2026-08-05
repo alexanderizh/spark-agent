@@ -159,8 +159,34 @@ describe('CanvasMediaInputConfigurator', () => {
     expect(html).not.toContain('value="reference" disabled')
   })
 
-  it('merges video edit and extend into one mode with an edit/extend sub-toggle', () => {
+  it('renders unified image generation modes with image-specific labels and aria-label', () => {
     const html = renderToStaticMarkup(
+      <CanvasMediaInputConfigurator
+        options={[
+          imageOption('text', 'image.generate', '文生图'),
+          imageOption('reference', 'image.edit', '图生图 / 编辑'),
+        ]}
+        value="reference"
+        assignments={[]}
+        bindings={[]}
+        nodes={[]}
+        assets={[]}
+        variant="panel"
+        onChange={vi.fn()}
+        onMove={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('文生图')
+    expect(html).toContain('图生图 / 编辑')
+    expect(html).toContain('aria-label="图片生成模式"')
+    // 不得泄露视频专属文案
+    expect(html).not.toContain('文生视频')
+    expect(html).not.toContain('全能参考')
+    expect(html).not.toContain('aria-label="视频生成模式"')
+  })
+
+  it('merges video edit and extend into one mode with an edit/extend sub-toggle', () => {    const html = renderToStaticMarkup(
       <CanvasMediaInputConfigurator
         options={[videoSourceOption('edit', 'video.edit'), videoSourceOption('extend', 'video.extend')]}
         value="extend"
@@ -233,5 +259,31 @@ function videoSourceOption(
       videoRoles: ['input_video', 'reference_video'],
       defaultRoleAssignment: 'none',
     },
+  }
+}
+
+function imageOption(
+  mode: 'text' | 'reference',
+  capabilityId: 'image.generate' | 'image.edit',
+  label: string,
+): CanvasMediaInputModeOption {
+  const hasReference = mode === 'reference'
+  return {
+    mode,
+    label,
+    capabilityId,
+    capability: {
+      id: capabilityId,
+      label,
+      input: { required: hasReference ? ['image'] : [], ...(hasReference ? { maxImages: 6 } : {}) },
+      rolePolicy: hasReference
+        ? { imageRoles: ['reference_image'], defaultRoleAssignment: 'all_reference' }
+        : { defaultRoleAssignment: 'none' },
+      output: { types: ['image'] },
+      paramSchema: {},
+    },
+    rolePolicy: hasReference
+      ? { imageRoles: ['reference_image'], defaultRoleAssignment: 'all_reference' }
+      : { defaultRoleAssignment: 'none' },
   }
 }
