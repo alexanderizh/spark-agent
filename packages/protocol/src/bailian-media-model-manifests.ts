@@ -51,13 +51,13 @@ const happyhorseTextOrReferenceVideoSchema = {
   additionalProperties: true,
   properties: {
     resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
-    ratio: {
+    aspectRatio: {
       type: 'string',
       title: '宽高比',
       enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '4:5', '5:4', '9:21', '21:9'],
       default: '16:9',
     },
-    duration: { type: 'integer', title: '时长（秒）', minimum: 3, maximum: 15, default: 5 },
+    durationSeconds: { type: 'integer', title: '时长（秒）', minimum: 3, maximum: 15, default: 5 },
     watermark: { type: 'boolean', title: '水印', default: true },
     seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
   },
@@ -72,7 +72,7 @@ const happyhorseImageToVideoSchema = {
   additionalProperties: true,
   properties: {
     resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
-    duration: { type: 'integer', title: '时长（秒）', minimum: 3, maximum: 15, default: 5 },
+    durationSeconds: { type: 'integer', title: '时长（秒）', minimum: 3, maximum: 15, default: 5 },
     watermark: { type: 'boolean', title: '水印', default: true },
     seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
   },
@@ -105,7 +105,7 @@ const wanVideoSchema = {
   additionalProperties: true,
   properties: {
     resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
-    duration: { type: 'integer', title: '时长（秒）', minimum: 2, maximum: 15, default: 5 },
+    durationSeconds: { type: 'integer', title: '时长（秒）', minimum: 2, maximum: 15, default: 5 },
     prompt_extend: { type: 'boolean', title: '提示词智能改写', default: true },
     watermark: { type: 'boolean', title: '水印', default: false },
     seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
@@ -121,13 +121,13 @@ const wanTextToVideoSchema = {
   additionalProperties: true,
   properties: {
     resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
-    ratio: {
+    aspectRatio: {
       type: 'string',
       title: '宽高比',
       enum: ['16:9', '9:16', '1:1', '4:3', '3:4'],
       default: '16:9',
     },
-    duration: { type: 'integer', title: '时长（秒）', minimum: 2, maximum: 15, default: 5 },
+    durationSeconds: { type: 'integer', title: '时长（秒）', minimum: 2, maximum: 15, default: 5 },
     prompt_extend: { type: 'boolean', title: '提示词智能改写', default: true },
     watermark: { type: 'boolean', title: '水印', default: false },
     seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
@@ -144,12 +144,12 @@ const wanVideoEditSchema = {
   additionalProperties: true,
   properties: {
     resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
-    ratio: {
+    aspectRatio: {
       type: 'string',
       title: '宽高比',
       enum: ['16:9', '9:16', '1:1', '4:3', '3:4'],
     },
-    duration: {
+    durationSeconds: {
       type: 'integer',
       title: '时长（秒，0 表示跟随输入视频）',
       minimum: 0,
@@ -636,7 +636,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           durationSeconds: 'duration',
           promptExtend: 'prompt_extend',
         },
-        defaults: { resolution: '1080P', duration: 5, watermark: false },
+        defaults: { resolution: '1080P', durationSeconds: 5, watermark: false },
       },
     ],
     invocation: {
@@ -708,8 +708,8 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         defaults: {
           resolution: '1080P',
-          ratio: '16:9',
-          duration: 5,
+          aspectRatio: '16:9',
+          durationSeconds: 5,
           watermark: false,
         },
       },
@@ -781,8 +781,8 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         defaults: {
           resolution: '1080P',
-          ratio: '16:9',
-          duration: 5,
+          aspectRatio: '16:9',
+          durationSeconds: 5,
           watermark: false,
         },
       },
@@ -879,8 +879,8 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         defaults: {
           resolution: '1080P',
-          ratio: '16:9',
-          duration: 5,
+          aspectRatio: '16:9',
+          durationSeconds: 5,
           watermark: false,
         },
       },
@@ -974,7 +974,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         defaults: {
           resolution: '1080P',
-          duration: 0,
+          durationSeconds: 0,
           watermark: false,
         },
       },
@@ -1045,7 +1045,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: happyhorseTextOrReferenceVideoSchema,
-        defaults: { resolution: '1080P', ratio: '16:9', duration: 5, watermark: true },
+        defaults: { resolution: '1080P', aspectRatio: '16:9', durationSeconds: 5, watermark: true },
       },
     ],
     invocation: {
@@ -1101,7 +1101,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: happyhorseTextOrReferenceVideoSchema,
-        defaults: { resolution: '1080P', ratio: '16:9', duration: 5, watermark: true },
+        defaults: { resolution: '1080P', aspectRatio: '16:9', durationSeconds: 5, watermark: true },
       },
     ],
     invocation: {
@@ -1161,7 +1161,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: happyhorseImageToVideoSchema,
-        defaults: { resolution: '1080P', duration: 5, watermark: true },
+        defaults: { resolution: '1080P', durationSeconds: 5, watermark: true },
       },
     ],
     invocation: {
@@ -1220,7 +1220,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: happyhorseImageToVideoSchema,
-        defaults: { resolution: '1080P', duration: 5, watermark: true },
+        defaults: { resolution: '1080P', durationSeconds: 5, watermark: true },
       },
     ],
     invocation: {
@@ -1279,7 +1279,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: happyhorseTextOrReferenceVideoSchema,
-        defaults: { resolution: '1080P', ratio: '16:9', duration: 5, watermark: true },
+        defaults: { resolution: '1080P', aspectRatio: '16:9', durationSeconds: 5, watermark: true },
       },
     ],
     invocation: {
@@ -1339,7 +1339,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: happyhorseTextOrReferenceVideoSchema,
-        defaults: { resolution: '1080P', ratio: '16:9', duration: 5, watermark: true },
+        defaults: { resolution: '1080P', aspectRatio: '16:9', durationSeconds: 5, watermark: true },
       },
     ],
     invocation: {

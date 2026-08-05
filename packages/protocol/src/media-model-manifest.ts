@@ -1213,6 +1213,9 @@ const apimartVideoModelSchemas: Record<
       aspectRatio: '16:9',
       durationSeconds: 5,
       resolution: '1080P',
+      // audio_setting 仅在 video.edit 下保留默认 'auto'，
+      // 其他 capability 由 apimartVideoCapabilityDefaults 删除。
+      audio_setting: 'auto',
     },
   },
   'happyhorse-1.1': {
@@ -3317,7 +3320,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxH3VideoT2VSchema,
-        defaults: { duration: 5, resolution: '2K', ratio: '16:9' },
+        defaults: { durationSeconds: 5, resolution: '2K', aspectRatio: '16:9' },
       },
       {
         id: 'video.image_to_video',
@@ -3329,7 +3332,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxH3VideoSchema,
-        defaults: { duration: 5, resolution: '2K', ratio: 'adaptive' },
+        defaults: { durationSeconds: 5, resolution: '2K', aspectRatio: 'adaptive' },
       },
       {
         id: 'video.reference_to_video',
@@ -3353,7 +3356,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxH3VideoSchema,
-        defaults: { duration: 5, resolution: '2K', ratio: 'adaptive' },
+        defaults: { durationSeconds: 5, resolution: '2K', aspectRatio: 'adaptive' },
         rolePolicy: {
           imageRoles: ['reference_image'],
           videoRoles: ['reference_video'],
