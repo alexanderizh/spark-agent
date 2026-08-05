@@ -542,7 +542,6 @@ export function HistoryImportModal() {
             <div className="hi-overview">
               <div className="hi-overview-total">
                 <strong>{items.length.toLocaleString()}</strong>
-                <span>个会话已找到</span>
               </div>
               <i />
               <div className="hi-overview-detail">
