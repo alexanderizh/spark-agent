@@ -1,6 +1,6 @@
 # 多媒体参数契约与画布画幅失效联合复核报告（2026-08-04）
 
-> 状态: 已落地 | 最后核对: 2026-08-04
+> 状态: 已落地 | 最后核对: 2026-08-05（落地进展见文末附录）
 
 ## 一、结论
 
@@ -353,3 +353,20 @@ MiniMax 和 Bailian 音频应二选一：
 - packages/agent-runtime/src/services/media/adapters/google-generative-ai-media.adapter.ts:665-710
 - packages/protocol/src/openai-media-model-manifests.ts:86-100,175-205
 - packages/agent-runtime/src/services/media/adapters/openai-official-media.adapter.ts:97-105,304-325
+
+---
+
+## 附录：后续落地进展（2026-08-05 更新）
+
+> 本节为 2026-08-05 追加。正文（一~十节）是 2026-08-04 的历史复核快照，保持原样；此处登记之后实际落地的修复，便于读者对照当前代码状态。状态行的「已落地」指复核结论本身成文，**不代表正文所有问题均已修复**——各项真实进展见下表。
+
+| 第九节建议 / 报告条目 | 进展 | 对应改动 |
+|---|---|---|
+| 建议 2 normalize defaults and canonicalize H3 contract（§3.2 compiler 确定性缺陷） | **已落地** | commit `7feec56f8`：`mergeDefaults` 对 providerDefaults / capabilityDefaults 各走 `normalizeCanonicalParams`，根除「defaults 用原生 key、raw 经归一变 canonical 导致同义键并存」根因。commit `1e0aea4a0`：H3 与 bailian HappyHorse 的 schema 属性 + defaults 统一到 canonical key，使 schema 校验对这些字段从失效转为生效。 |
+| 建议 3 generate capability contract audit | **已落地** | 新增 `media-manifest-parameter-audit.test.ts`，把 aliases 方向反转（硬卡 0）、defaults/schema 原生 fallback key、重复 modelId 固化为 CI 检查，baseline 只降不升；compiler 导出 `CANONICAL_ALIASES_FALLBACK` 作单一真相源。 |
+| defaults 非必需高阶参数治理（§4.2） | **已落地** | commit `b4d3aaeaf`：火山 Seedance/Seedream、MiniMax、Bailian、OpenAI、APIMart、腾讯清理非必需 defaults（`seed:-1` 哨兵、`watermark`/`thinking_mode`/`prompt_extend` 等高阶开关），保留画幅/时长/分辨率/尺寸/数量等通用字段；Seedance seed schema 从 `minimum:-1` 收紧为 `minimum:0`。provider 自有默认兜底，移除字段仍在 schema 声明，用户手设能力完整。 |
+| 建议 1 remove or implement unsupported audio capabilities（§4.1 P0） | **未处理 / 已降级** | 复核确认这 4 个音频能力由 template adapter 按 manifest 模板执行，不会抛 capability_not_supported；真实风险是模板路径缺 adapter 的错误映射，降级为 P1，留待后续。 |
+| 阶段 4 按 capability 收紧 paramPolicy（全局 strict） | **未完成 / 已收为 baseline** | strict 的阻塞前置是「schema 属性仍用原生 fallback key（审计 baseline 当前 83 处）」，开启 strict 会丢这些字段。当前靠 non-strict 兼容透传 + 各专门 adapter 的 canonical→原生兜底读取维持工作，**不影响正常使用**；需先逐 provider 统一 schema key 后才能开 strict，属后续独立工程。 |
+| §4.4 重复 modelId / dead code | **部分登记** | 重复 modelId（原厂与 APIMart 并存，10 处）已纳入审计 baseline 硬卡；Google 共享死配置常量未清理。 |
+
+> `c65b657d5` 的 H3 adapter 多别名兜底（`aspectRatio ?? ratio` 等）作为防御性读取保留，与 Phase 1 的 compiler 根治互不冲突——前者兼容不经 compiler 的入口（custom manifest / 历史任务 / 画布直传 / adapter 直调），后者根治 compiler 路径的同义键并存。

@@ -89,9 +89,21 @@ export function isSynthesizedCustomManifest(
 // 仅在本地产物命名使用、永远不应进入 provider 请求的字段。
 const LOCAL_ONLY_FIELDS = new Set(['filename'])
 
-// Provider 写法 -> canonical camelCase 的固定映射表。
-// 仅在 paramPolicy 没显式声明 aliases 时作为兜底；不强行覆盖 provider 原生命。
-const CANONICAL_ALIASES_FALLBACK: Record<string, string> = {
+/**
+ * compiler 归一用的兜底别名:provider 原生 key → canonical camelCase key。
+ *
+ * normalizeCanonicalParams 无条件使用此表，把 raw 与 defaults 统一归一到 canonical 空间，
+ * 使 validateAgainstParamSchema / filterCanonicalParams 能与 schema.properties 对齐
+ * (故 schema 属性必须用 canonical key;若用原生 key，strict 下会被丢——见审计 baseline
+ * media-manifest-parameter-audit.test.ts)。
+ *
+ * 方向注意:此表是「原生 → canonical」，与 capability.aliases 相反——aliases 在
+ * toProviderParams 阶段把 canonical 反向映射回 provider 原生 key，最终发给 provider 的
+ * 键名由 aliases 决定，此表不参与输出。两个阶段不可混用。
+ *
+ * 同时作为 schema/defaults/aliases 合规审计的单一真相源导出，避免审计脚本另行维护一份。
+ */
+export const CANONICAL_ALIASES_FALLBACK: Record<string, string> = {
   aspect_ratio: 'aspectRatio',
   ratio: 'aspectRatio',
   duration: 'durationSeconds',
