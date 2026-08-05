@@ -55,6 +55,7 @@ import {
   getCanvasAgentProviderModels,
   resolveCanvasAgentModelSelection,
   resolveCanvasAgentProviderModel,
+  type CanvasAgentModelGroup,
 } from './canvas-agent-model-options'
 
 interface Props {
@@ -1705,6 +1706,7 @@ export function ProviderModelPickerInline({
   onChange: (providerId: string, modelId: string) => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const [search, setSearch] = useState('')
   const conversationalProviders = useMemo(
     () => filterCanvasAgentConversationProviders(providers),
     [providers],
@@ -1718,9 +1720,29 @@ export function ProviderModelPickerInline({
     () => buildCanvasAgentModelOptions(conversationalProviders),
     [conversationalProviders],
   )
+  // 模糊搜索：命中供应商名则保留其全部模型，否则只保留模型 id/label 命中的
+  const normalizedSearch = search.trim().toLowerCase()
+  const filteredModelGroups = useMemo(() => {
+    if (normalizedSearch === '') return modelGroups
+    const next: CanvasAgentModelGroup[] = []
+    for (const group of modelGroups) {
+      if (group.provider.name.toLowerCase().includes(normalizedSearch)) {
+        next.push(group)
+        continue
+      }
+      const matchedModels = group.models.filter(
+        (item) =>
+          item.modelId.toLowerCase().includes(normalizedSearch) ||
+          item.label.toLowerCase().includes(normalizedSearch),
+      )
+      if (matchedModels.length > 0) next.push({ ...group, models: matchedModels })
+    }
+    return next
+  }, [modelGroups, normalizedSearch])
   const menuHeight = Math.min(
     420,
-    24 + modelGroups.reduce((sum, group) => sum + 36 + group.models.length * 34, 0),
+    // 顶部留白 24 + 搜索框(36 高 + 4 margin)；模型组标题 36 + 每个模型 34
+    24 + 40 + modelGroups.reduce((sum, group) => sum + 36 + group.models.length * 34, 0),
   )
   const placement = useComposerDropdownPlacement(rootRef, open, menuHeight, 320)
   return (
@@ -1735,49 +1757,67 @@ export function ProviderModelPickerInline({
           return
         }
         onOpenChange(nextOpen)
+        if (!nextOpen) setSearch('')
       }}
       popupRender={() => (
-        <div className="composer-menu composer-dropdown-menu composer-model-menu">
-          {conversationalProviders.length === 0 && (
-            <div className="composer-menu-empty">未配置对话模型</div>
+        <div className="composer-dropdown-menu composer-model-menu">
+          {conversationalProviders.length > 0 && (
+            <div className="composer-model-search">
+              <Icons.Search size={13} />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="搜索模型或供应商"
+                autoFocus
+              />
+            </div>
           )}
-          {modelGroups.map(({ provider, models }) => {
-            const groupVendor = resolveProviderVendor(provider)
-            return (
-              <div key={provider.id} className="composer-model-group">
-                <div className="composer-model-group-title">
-                  {groupVendor && (
-                    <span className="composer-model-group-icon">
-                      <ProviderLogo
-                        vendor={groupVendor}
-                        icon={provider.providerIcon}
-                        size={14}
-                        shape="rounded"
-                      />
-                    </span>
-                  )}
-                  <span>{provider.name}</span>
+          <div className="composer-model-list">
+            {conversationalProviders.length === 0 && (
+              <div className="composer-menu-empty">未配置对话模型</div>
+            )}
+            {conversationalProviders.length > 0 && filteredModelGroups.length === 0 && (
+              <div className="composer-menu-empty">没有匹配结果</div>
+            )}
+            {filteredModelGroups.map(({ provider, models }) => {
+              const groupVendor = resolveProviderVendor(provider)
+              return (
+                <div key={provider.id} className="composer-model-group">
+                  <div className="composer-model-group-title">
+                    {groupVendor && (
+                      <span className="composer-model-group-icon">
+                        <ProviderLogo
+                          vendor={groupVendor}
+                          icon={provider.providerIcon}
+                          size={14}
+                          shape="rounded"
+                        />
+                      </span>
+                    )}
+                    <span>{provider.name}</span>
+                  </div>
+                  {models.map(({ modelId, label: modelLabel }) => {
+                    const active = provider.id === selectedProviderId && modelId === selectedModelId
+                    return (
+                      <button
+                        key={`${provider.id}:${modelId}`}
+                        type="button"
+                        className={`composer-menu-item ${active ? 'active' : ''}`}
+                        onClick={() => {
+                          onOpenChange(false)
+                          setSearch('')
+                          onChange(provider.id, modelId)
+                        }}
+                      >
+                        <span>{modelLabel}</span>
+                        {active && <Icons.Check size={14} className="composer-menu-check" />}
+                      </button>
+                    )
+                  })}
                 </div>
-                {models.map(({ modelId, label: modelLabel }) => {
-                  const active = provider.id === selectedProviderId && modelId === selectedModelId
-                  return (
-                    <button
-                      key={`${provider.id}:${modelId}`}
-                      type="button"
-                      className={`composer-menu-item ${active ? 'active' : ''}`}
-                      onClick={() => {
-                        onOpenChange(false)
-                        onChange(provider.id, modelId)
-                      }}
-                    >
-                      <span>{modelLabel}</span>
-                      {active && <Icons.Check size={14} className="composer-menu-check" />}
-                    </button>
-                  )
-                })}
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       )}
     >

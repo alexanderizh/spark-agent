@@ -7908,9 +7908,42 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   overflow-y: auto;
 }
 
+/* 模型选择器：搜索框固定顶部，下方列表自身滚动。对齐 chat 端 ComposerV2 的标杆实现，
+   覆盖 views.css 里 .composer-model-menu 的 overflow（改为内层 .composer-model-list 滚动），
+   也覆盖 base .composer-menu/.composer-dropdown-menu 的 overflow:auto（外层改为 hidden）。 */
 .composer-model-menu {
-  max-height: min(var(--composer-menu-max-height, 420px), calc(100vh - 48px));
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  max-height: min(var(--composer-menu-max-height, 420px), calc(100vh - 96px));
+  overflow: hidden;
+}
+
+.composer-model-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  flex-shrink: 0;
+  margin: 0 0 4px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--text-faint);
+}
+
+.composer-model-search input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  outline: none;
+}
+
+.composer-model-list {
+  overflow: auto;
+  flex: 1 1 auto;
 }
 
 .canvas-node-floating-panel .canvas-node-edit-bottom-panel.is-composer:not(.is-fullscreen) {
