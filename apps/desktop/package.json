@@ -1,12 +1,12 @@
 {
   "name": "@spark/desktop",
-  "version": "0.9.21",
+  "version": "0.9.22",
   "description": "SparkWork desktop application — Electron + React + TypeScript",
   "author": "SparkWork Team",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "pnpm run prepare:file-viewer-assets && pnpm run prepare:computer-use-host && electron-vite dev",
+    "dev": "pnpm run prepare:file-viewer-assets && pnpm run prepare:computer-use-host && node scripts/ensure-native-electron.mjs && node scripts/run-electron-vite-dev.mjs",
     "dev:rebuild": "pnpm run rebuild:native",
     "verify:migrations": "node ../../packages/storage/scripts/verify-migrations.mjs",
     "build": "pnpm run verify:migrations && pnpm run prepare:file-viewer-assets && node scripts/run-electron-vite-build.js",
