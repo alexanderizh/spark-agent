@@ -251,6 +251,64 @@ describe('ProviderEditPanel progressive configuration', () => {
     }))
   })
 
+  it('persists the API protocol format switch when saving an edited provider', async () => {
+    const profile = {
+      id: 'provider-protocol-switch',
+      name: 'Protocol Switch Provider',
+      provider: 'anthropic',
+      defaultModel: 'claude-sonnet-4-20250514',
+      modelIds: ['claude-sonnet-4-20250514'],
+      apiEndpoint: 'https://api.anthropic.com',
+      supportsMillionContext: false,
+      isDefault: false,
+      enabled: true,
+      keystoreRef: 'anthropic-provider-protocol-switch',
+      createdAt: '',
+      updatedAt: '',
+    }
+    mocks.invokers.set('provider:list', vi.fn(async () => ({ profiles: [profile] })))
+    mocks.invokers.set('provider:get-api-key', vi.fn(async () => ({ apiKey: 'sk-ant-saved' })))
+    const updateProvider = vi.fn(async (_request: Record<string, unknown>) => ({ profile }))
+    mocks.invokers.set('provider:update', updateProvider)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel
+          visible
+          profileId="provider-protocol-switch"
+          onClose={() => undefined}
+        />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const protocolSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="anthropic"]'),
+    ) as HTMLSelectElement | undefined
+    expect(protocolSelect).toBeDefined()
+    act(() => {
+      if (!protocolSelect) return
+      protocolSelect.value = 'openai'
+      protocolSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(updateProvider).toHaveBeenCalledTimes(1)
+    expect(updateProvider.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ id: 'provider-protocol-switch', provider: 'openai' }),
+    )
+  })
+
   it('saves a manually selected provider icon and keeps it while other fields change', async () => {
     await act(async () => {
       root = createRoot(container)

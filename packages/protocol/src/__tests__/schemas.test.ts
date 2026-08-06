@@ -105,6 +105,26 @@ describe('IPC schemas', () => {
     })
   })
 
+  it('accepts the API protocol format switch through provider:update validation', () => {
+    expect(
+      IpcSchemaRegistry['provider:update'].parse({
+        id: '00000000-0000-4000-8000-000000000001',
+        provider: 'openai',
+        name: 'Switched',
+      }),
+    ).toMatchObject({
+      id: '00000000-0000-4000-8000-000000000001',
+      provider: 'openai',
+      name: 'Switched',
+    })
+    expect(() =>
+      IpcSchemaRegistry['provider:update'].parse({
+        id: '00000000-0000-4000-8000-000000000001',
+        provider: 'unsupported-kind',
+      }),
+    ).toThrow()
+  })
+
   it('preserves selected agent fields during session creation', () => {
     const request = SessionCreateRequestSchema.parse({
       providerProfileId: '00000000-0000-4000-8000-000000000001',

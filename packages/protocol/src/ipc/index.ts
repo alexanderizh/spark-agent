@@ -814,6 +814,8 @@ export interface ProviderUpdateRequest {
   id: string
   /** 全局可用状态；false 时从会话、画布和多媒体工具中排除。 */
   enabled?: boolean
+  /** API 协议格式；切换时下发（anthropic ↔ openai），不修改则不传。 */
+  provider?: 'anthropic' | 'openai'
   name?: string
   defaultModel?: string
   modelIds?: string[]
