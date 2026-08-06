@@ -28,6 +28,30 @@ export function ProviderMediaModelCatalog({
   const filteredModels = useMemo(() => filterProviderMediaModels(models, query), [models, query])
   const hasQuery = query.trim().length > 0
 
+  const visibleSelectedCount = useMemo(
+    () => filteredModels.reduce((count, model) => (selectedManifestIds.has(model.manifestId) ? count + 1 : count), 0),
+    [filteredModels, selectedManifestIds],
+  )
+  const allVisibleSelected = filteredModels.length > 0 && visibleSelectedCount === filteredModels.length
+  const noneVisibleSelected = visibleSelectedCount === 0
+  const selectAllDisabled = loading || filteredModels.length === 0 || allVisibleSelected
+  const deselectAllDisabled = loading || filteredModels.length === 0 || noneVisibleSelected
+
+  const handleSelectAll = () => {
+    filteredModels.forEach((model) => {
+      if (!selectedManifestIds.has(model.manifestId)) {
+        onToggleModel(model, true)
+      }
+    })
+  }
+  const handleDeselectAll = () => {
+    filteredModels.forEach((model) => {
+      if (selectedManifestIds.has(model.manifestId)) {
+        onToggleModel(model, false)
+      }
+    })
+  }
+
   return (
     <div className="pv_media_catalog">
       <div className="pv_media_catalog_search">
@@ -40,6 +64,28 @@ export function ProviderMediaModelCatalog({
           allowClear
           disabled={loading || models.length === 0}
         />
+        <div className="pv_media_catalog_bulk">
+          <Button
+            size="small"
+            type="text"
+            onClick={handleSelectAll}
+            disabled={selectAllDisabled}
+            aria-label="全选当前可见模型"
+            title="全选当前可见模型"
+          >
+            全选
+          </Button>
+          <Button
+            size="small"
+            type="text"
+            onClick={handleDeselectAll}
+            disabled={deselectAllDisabled}
+            aria-label="全不选当前可见模型"
+            title="全不选当前可见模型"
+          >
+            全不选
+          </Button>
+        </div>
         {hasQuery && !loading && (
           <span className="pv_media_catalog_count" aria-live="polite">
             {filteredModels.length} / {models.length}
