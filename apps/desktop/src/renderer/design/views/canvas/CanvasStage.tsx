@@ -32,7 +32,6 @@ import {
   type Viewport,
   type XYPosition,
 } from '@xyflow/react'
-import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
 import { CanvasZoomControls } from './CanvasZoomControls'
@@ -64,12 +63,10 @@ import { CANVAS_NODE_META_BAR_HEIGHT } from './canvasNodeSize'
 import { operationNodePresentationSize } from './canvasOperationNodePresentation'
 import { resolveCanvasVideoNodePresentationSize } from './canvasVideoNodePresentation'
 import { CANVAS_PIPELINE_MENU_GROUPS, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
-import { getNodePipelineActions } from './canvasPipeline'
 import {
-  CANVAS_BASE_CREATE_OPERATION_GROUPS,
-  CANVAS_BASE_TASK_MENU_LABEL,
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
   CANVAS_FUNCTIONAL_MENU_LABEL,
+  canvasVisibleBaseCreateOperations,
 } from './canvasNodeGenerationMenu'
 import { getOperationVisual } from './canvasOperationIcons'
 import { readCharacterSubviews } from './canvasCharacterLibrary'
@@ -82,9 +79,6 @@ import {
   canvasOperationRunsFingerprint,
   type CanvasOperationRunView,
 } from './canvasOperationRuns'
-import {
-  resolveCanvasOperationResourceNode,
-} from './canvasOperationOutputModel'
 import {
   buildCanvasOperationProjection,
   resolveCanvasSelectionNodeId,
@@ -355,89 +349,54 @@ function CanvasPaneResourceNodeActions({
   return (
     <>
       {onAddText && (
-        <Button
-          type="text"
+        <button
+          type="button"
           role="menuitem"
-          size="middle"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            minHeight: 36
-          }}
           onClick={onAddText}
         >
           <Icons.File size={14} />
           <span>添加文本</span>
-        </Button>
+        </button>
       )}
       {onAddImage && (
-        <Button
-          type="text"
+        <button
+          type="button"
           role="menuitem"
-          size="middle"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            minHeight: 36
-          }}
           onClick={onAddImage}
         >
           <Icons.Image size={14} />
           <span>图片节点</span>
-        </Button>
+        </button>
       )}
       {onAddDirectorStage3D && (
-        <Button
-          type="text"
+        <button
+          type="button"
           role="menuitem"
-          size="middle"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            minHeight: 36
-          }}
           onClick={onAddDirectorStage3D}
         >
           <Icons.Box size={14} />
           <span>新建 3D 导演台</span>
-        </Button>
+        </button>
       )}
       {onAddVideoWorkbench && (
-        <Button
-          type="text"
+        <button
+          type="button"
           role="menuitem"
-          size="middle"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            minHeight: 36
-          }}
           onClick={onAddVideoWorkbench}
         >
           <Icons.Video size={14} />
           <span>新建视频工作台</span>
-        </Button>
+        </button>
       )}
       {onInsertAsset && (
-        <Button
-          type="text"
+        <button
+          type="button"
           role="menuitem"
-          size="middle"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            minHeight: 36
-          }}
           onClick={onInsertAsset}
         >
           <Icons.Folder size={14} />
           <span>从资产选择</span>
-        </Button>
+        </button>
       )}
     </>
   )
@@ -1096,7 +1055,7 @@ function CanvasStageInner({
       y: bounds.y + bounds.height,
     })
     // 工具栏实测高度约 36px（上下 padding 4 + 按钮 28）；与选区保持 16px 视觉间隙。
-    const TOOLBAR_HEIGHT = 36
+    const TOOLBAR_HEIGHT = 38
     const GAP = 16
     const EDGE = 8
     const stageHeight = stageRef.current?.clientHeight ?? 0
@@ -1158,26 +1117,8 @@ function CanvasStageInner({
     maxHeight: number
     anchorPoint: CanvasStagePoint
   } | null>(null)
-  /**
-   * 牵线到空白处时，菜单应以连线起点节点为上下文展示后续流水线操作。
-   * 没有牵线上下文时保留空白画布原有的通用文本/抽取操作。
-   */
-  const panePipelineOperations = useMemo(() => {
-    const sourceNode = paneContextMenu?.pendingConnection
-      ? snapshotNodeById.get(paneContextMenu.pendingConnection.sourceNodeId)
-      : undefined
-    if (!sourceNode) {
-      return CANVAS_PIPELINE_OPS.filter(
-        (op) => op.appliesToText && (op.kind === 'text' || op.kind === 'extract'),
-      )
-    }
-    const contentNode = isOperationNode(sourceNode)
-      ? (resolveCanvasOperationResourceNode(sourceNode, snapshot) ?? sourceNode)
-      : sourceNode
-    return getNodePipelineActions(contentNode, {
-      assetKinds: assetKindsByNodeId.get(sourceNode.id) ?? [],
-    })
-  }, [assetKindsByNodeId, paneContextMenu, snapshot, snapshotNodeById])
+  /** 影视创作菜单暂时展示完整动作目录，后续再恢复按节点语义筛选。 */
+  const panePipelineOperations = CANVAS_PIPELINE_OPS
   const panePipelineOperationGroups = useMemo(
     () =>
       CANVAS_PIPELINE_MENU_GROUPS.map((group) => ({
@@ -2906,21 +2847,15 @@ function CanvasStageInner({
                   <div key={group.id} className="canvas-pane-context-group">
                     <div className="canvas-pane-context-section-title">{group.label}</div>
                     {group.actions.map((op) => (
-                      <Button
+                      <button
+                        type="button"
                         key={op.id}
-                        type="text"
                         role="menuitem"
-                        size="middle"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'flex-start',
-                        }}
                         onClick={() => handleCreatePipelineFromPane(op.id)}
                       >
                         <Icons.Workflow size={14} />
                         <span>{op.label}</span>
-                      </Button>
+                      </button>
                     ))}
                   </div>
                 ))}
@@ -2928,64 +2863,41 @@ function CanvasStageInner({
                 {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => {
                   const visual = getOperationVisual(item.operation)
                   return (
-                    <Button
+                    <button
+                      type="button"
                       key={item.operation}
-                      size="middle"
-                      type="text"
                       role="menuitem"
-                      style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'flex-start',
-                          minHeight: 36
-                        }}
                       className={`canvas-pane-context-op ${visual.colorClass}`}
                       onClick={() => handleCreateOperationFromPane(item.operation)}
                     >
                       <span className="canvas-pane-context-op-icon">{visual.icon}</span>
                       <span>{item.label}</span>
-                    </Button>
+                    </button>
                   )
                 })}
               </CanvasPaneContextSubmenu>
             )}
-            {onCreateOperationAtPosition && (
-              <CanvasPaneContextSubmenu
-                icon={<Icons.Sparkles size={14} />}
-                label={CANVAS_BASE_TASK_MENU_LABEL}
-                openLeft={paneContextMenu.openSubmenusLeft}
-                openUp={paneContextMenu.openSubmenusUp}
-              >
+            {onCreateOperationAtPosition &&
+              <>
                 <CanvasPaneResourceNodeActions onAddText={handleAddTextFromPane} />
                 <div className="canvas-pane-context-divider" />
-                {CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => (
-                  <div key={group.id} className="canvas-pane-context-group">
-                    <div className="canvas-pane-context-section-title">{group.label}</div>
-                    {group.items.map((item) => {
-                      const visual = getOperationVisual(item.operation)
-                      return (
-                        <Button
-                          type="text"
-                          role="menuitem"
-                          size="middle"
-                          key={item.operation}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'flex-start',
-                          }}
-                          className={`canvas-pane-context-op ${visual.colorClass}`}
-                          onClick={() => handleCreateOperationFromPane(item.operation)}
-                        >
-                          <span className="canvas-pane-context-op-icon">{visual.icon}</span>
-                          <span>{item.label}</span>
-                        </Button>
-                      )
-                    })}
-                  </div>
-                ))}
-              </CanvasPaneContextSubmenu>
-            )}
+                {canvasVisibleBaseCreateOperations().map((item) => {
+                  const visual = getOperationVisual(item.operation)
+                  return (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      key={item.operation}
+                      className={`canvas-pane-context-op ${visual.colorClass}`}
+                      onClick={() => handleCreateOperationFromPane(item.operation)}
+                    >
+                      <span className="canvas-pane-context-op-icon">{visual.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  )
+                })}
+              </>
+            }
             <div className="canvas-pane-context-divider" />
             <div className="canvas-pane-context-section-title">画布</div>
             <button type="button" role="menuitem" onClick={handleResetZoom}>

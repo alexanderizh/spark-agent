@@ -11912,7 +11912,7 @@ body.inspector-resizing {
   gap: 6px;
   padding: 8px;
   background: var(--bg-soft);
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--r-md);
 }
 /* EnvVarRow 内 input 默认 width:100% / flex-basis:100% 在窄面板下无法 shrink，

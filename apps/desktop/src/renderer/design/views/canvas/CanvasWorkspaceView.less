@@ -14253,6 +14253,78 @@ body.canvas-agent-panel-resizing {
   }
 }
 
+/* ── 画布节点悬浮工具栏 ──────────────────────────────────────────── */
+.canvas-node-toolbar-surface {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--primary, #ff5f66) 28%, transparent);
+  border-radius: 999px;
+  background: var(--panel-elev, #171a20);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.3);
+  color: var(--text-strong, #f8fbff);
+  user-select: none;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+
+.canvas-node-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text, #e9edf5);
+  font-size: 11px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.canvas-node-toolbar-button > span:not(.ant-btn-icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.canvas-node-toolbar-button:hover:not(:disabled),
+.canvas-node-toolbar-button:focus-visible {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-strong);
+}
+
+.canvas-node-toolbar-button.is-active {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--primary);
+}
+
+.canvas-node-toolbar-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.canvas-node-toolbar-button-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+.canvas-node-toolbar-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  flex: 0 0 1px;
+  background: color-mix(in srgb, var(--divider) 86%, transparent);
+}
+
 /* ── 画布音频节点呈现层 ────────────────────────────────────────────
  * 节点外壳 + 自绘波形条 + 选中工具栏(in-node chip) + 截取/变速 inline 面板。
  * 与 .canvas-node-image-chips / .canvas-node-subview-chip 同一视觉层级。
@@ -14349,24 +14421,16 @@ body.canvas-agent-panel-resizing {
 .canvas-node-audio-chips {
   position: absolute;
   right: auto;
-  top: -75px;
+  top: auto;
+  bottom: calc(100% + 10px);
   left: 50%;
   z-index: 4;
   display: flex;
   align-items: center;
-  gap: 6px;
-  box-sizing: border-box;
   max-width: calc(100% - 16px);
-  padding: 6px 8px;
   transform: translateX(-50%);
-  border: 1px solid color-mix(in srgb, var(--primary, #ff5f66) 28%, transparent);
-  border-radius: 999px;
-  background: var(--panel-elev, #171a20);
   white-space: nowrap;
   pointer-events: auto;
-  overflow-x: auto;
-  overscroll-behavior: contain;
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.3);
 }
 
 /* ── 截取 in-node 面板 ──────────────────────────────────────── */

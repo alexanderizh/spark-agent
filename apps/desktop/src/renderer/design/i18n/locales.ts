@@ -52,7 +52,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'sidebar.showLess': '收起',
     'sidebar.showMore': '显示更多',
     'sidebar.project.createTitle': '新建项目',
-    'sidebar.project.createSubtitle': '选择一个本地文件夹作为项目地址，或直接创建一个空项目。',
+    'sidebar.project.createSubtitle':
+      '选择一个本地文件夹作为项目地址，或直接将文件夹拖动到侧边栏。',
     'sidebar.project.name': '项目名称',
     'sidebar.project.placeholder': '例如 Spark-Agent',
     'sidebar.project.folderOptional': '项目文件夹地址（可选）',

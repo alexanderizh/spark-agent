@@ -10,7 +10,7 @@
  *   - 「生成」「应用」 → 各自回调 onTrimApply / onSpeedApply，由上层完成 IPC + 物化
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../../../Icons'
 import type { CanvasAudioSpeedDrawerProps } from './CanvasAudioSpeedDrawer'
 import { CanvasAudioSpeedDrawer, SPEED_CEIL, SPEED_FLOOR } from './CanvasAudioSpeedDrawer'
@@ -177,25 +177,6 @@ export function CanvasAudioNodePresentation({
     [actions],
   )
 
-  const chipStyle: CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '4px 10px',
-    borderRadius: 999,
-    background: 'transparent',
-    color: '#f8fbff',
-    fontSize: 11,
-    lineHeight: 1,
-    border: 'none',
-    cursor: 'pointer',
-  }
-  const chipDivider: CSSProperties = {
-    width: 1,
-    height: 14,
-    background: 'rgba(255,255,255,0.18)',
-  }
-
   return (
     <div className="canvas-node-audio-shell">
       <div className="canvas-node-audio-header">
@@ -245,29 +226,43 @@ export function CanvasAudioNodePresentation({
 
       {selected && mode === 'idle' && (
         <div
-          className="canvas-node-audio-chips nodrag nopan"
+          className="canvas-node-toolbar-surface canvas-node-audio-chips nodrag nopan"
           role="toolbar"
           aria-label="音频节点工具栏"
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <button type="button" style={chipStyle} onClick={onTrim} aria-label="音频截取">
-            <Icons.Scissors size={12} />
-            <span>截取</span>
-          </button>
-          <span style={chipDivider} aria-hidden />
-          <button type="button" style={chipStyle} onClick={onSpeed} aria-label="音频变速">
-            <Icons.Sliders size={12} />
-            <span>变速</span>
-          </button>
-          <span style={chipDivider} aria-hidden />
-          <button
-            type="button"
-            style={chipStyle}
+          <Button
+            size="small"
+            type="text"
+            className="canvas-node-toolbar-button canvas-node-audio-chip"
+            icon={<Icons.Scissors size={12} />}
+            onClick={onTrim}
+            aria-label="音频截取"
+          >
+            截取
+          </Button>
+          <span className="canvas-node-toolbar-divider" aria-hidden />
+          <Button
+            size="small"
+            type="text"
+            className="canvas-node-toolbar-button canvas-node-audio-chip"
+            icon={<Icons.Sliders size={12} />}
+            onClick={onSpeed}
+            aria-label="音频变速"
+          >
+            变速
+          </Button>
+          <span className="canvas-node-toolbar-divider" aria-hidden />
+          <Button
+            size="small"
+            type="text"
+            className="canvas-node-toolbar-button canvas-node-audio-chip"
+            icon={<Icons.Download size={12} />}
             onClick={onDownloadClick}
             aria-label="下载音频到本地"
           >
-            <Icons.Download size={12} />
-          </button>
+            下载
+          </Button>
         </div>
       )}
 
