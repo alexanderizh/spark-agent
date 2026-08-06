@@ -9316,13 +9316,14 @@ function withAgentSnapshot(event: AgentEvent, agent: AgentItem): AgentEvent {
   } as AgentEvent
 }
 
-/** Advisory, non-mandatory nudge toward using the native Task subagent tool — shown on every host turn. */
+/** Advisory nudge toward using the native Task subagent tool, framed as a net-gain decision — shown on every host turn. */
 const SUBAGENT_USAGE_HINT_SYSTEM_PROMPT = [
   '[Subagent Usage]',
   "You have a general-purpose subagent tool (Task) available for delegating self-contained, parallelizable, or context-heavy sub-tasks — e.g. broad codebase research, independent multi-file investigations, or exploratory searches whose raw output you don't need in your own context.",
-  'Consider offloading such work to it rather than doing everything inline; this keeps your context focused and can run independent work in parallel.',
+  'Decide by NET GAIN, not by default: delegate when the subtask genuinely benefits from its own agent — it saves wall-clock time (e.g. independent work that can run in parallel), or offloading it protects the main context from being diluted by large raw output you only need the conclusion of. When delegating buys no time or context savings (small, tightly sequential, already-clear work), handle it inline instead — dispatching has overhead and is not the default.',
+  'If the user explicitly asks you to use a subagent (or names a specific agent) for something, comply and dispatch it even if you believe you could handle it inline.',
+  'Before dispatching, briefly state why this subtask is worth its own agent — e.g. parallel time savings, or isolating a large context (files/long outputs) from the main conversation.',
   'After you dispatch a Task subagent, do not end the user-facing turn with a promise to wait; keep the turn alive and wait for the subagent result, or use SendMessage to retrieve/continue it when the tool result says the agent is running in the background. Only answer the user once you have incorporated the subagent result or can report a real failure.',
-  'Use judgment — skip it for small, tightly sequential, or already-clear tasks.',
 ].join('\n')
 
 /**
@@ -9507,10 +9508,12 @@ function buildHostRosterPrompt(
     '════════════════════════════════════════════════════════════════════════',
     '',
     'Core principles:',
-    '- Collaboration first. This is a team session. Prefer delegating to the right specialist over doing the work yourself, even when you technically could answer directly.',
+    '- Collaboration with net benefit. This is a team session — when delegating to a specialist has a real gain (their unique expertise, parallel execution, or keeping a large chunk of work out of your context), prefer delegating over doing it yourself. When a question is quick, self-contained, and within your own abilities, answering directly is fine — dispatching is not the default.',
     "- Match by expertise. Read each member's description below and route each subtask to whoever does it best — coding to the coder, review to the reviewer, and so on.",
-    '- You orchestrate, members execute. Decide WHAT needs doing and WHO does it, then dispatch. Do not write/edit code, run commands, or produce the deliverable yourself when a capable member exists — that is what delegation is for.',
-    "- When unsure, lean toward delegating. If a member could plausibly help, err on the side of dispatching rather than defaulting to solo work — that's the point of this mode.",
+    '- You orchestrate, members execute. Decide WHAT needs doing and WHO does it, then dispatch. When a capable member exists AND delegating has a real gain (expertise, parallelism, or context isolation), do not do the hands-on work yourself — that is what delegation is for.',
+    "- Delegate on gain, not on default. Before dispatching, ask: does this subtask benefit from its own agent — e.g. it needs a member's unique expertise, it can run in parallel with other work, or its raw output would bloat the main context? If yes, dispatch; if not (a quick answer you can give in one step), answer directly. Do not dispatch merely because a member exists.",
+    '- If the user explicitly asks to involve a specific member (or use a subagent), comply and dispatch even if you could handle it inline.',
+    "- Before each dispatch, state briefly why this subtask is worth a dedicated agent — e.g. time savings from parallelism, or isolating a large context from the main conversation.",
     "- Talk with your team. Give each dispatch a clear instruction and the minimum context it needs (paste code/snippets into `attachments`, don't rely on shared memory). After replies come back, react, ask follow-ups, or chain to another member — treat it like a working conversation, not one-shot calls.",
     '- Cross-team @ is supported. The user may @-mention any member directly; you may also have members collaborate with each other within the depth limit below.',
     ...(teamConfig.enablePeerMessaging === true
@@ -9539,6 +9542,7 @@ function buildHostRosterPrompt(
     '',
     'Guardrails:',
     `- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`,
+    "- A quick question you can answer directly in one step does NOT need a dispatch round — handle it inline unless the user explicitly asked for a specific member.",
     '- Drive the session in EXPLICIT rounds (not open-ended looping): gather input from the right members this round, then call team_round_advance to close it; repeat until the objective is met, then call team_conclude. If a round is going in circles, summarize for the user instead of dispatching again.',
     '- Do NOT repeat, paraphrase, or list out member replies — they stream directly to the user in the chat UI. Stay silent and end the turn unless the user explicitly asked you to synthesize across members, you must ask a follow-up question, or a dispatch failed and you need to report what is missing.',
   )
