@@ -245,10 +245,11 @@ function formatQuota(value: number): string {
   return new Intl.NumberFormat('zh-CN').format(value)
 }
 
-function formatUsageQuota(value: number): string {
+function formatUsageQuota(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
   return new Intl.NumberFormat('zh-CN', {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 6,
+    maximumFractionDigits: 2,
   }).format(value)
 }
 
