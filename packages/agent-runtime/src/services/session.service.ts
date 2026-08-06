@@ -9323,7 +9323,8 @@ const SUBAGENT_USAGE_HINT_SYSTEM_PROMPT = [
   'Decide by NET GAIN, not by default: delegate when the subtask genuinely benefits from its own agent — it saves wall-clock time (e.g. independent work that can run in parallel), or offloading it protects the main context from being diluted by large raw output you only need the conclusion of. When delegating buys no time or context savings (small, tightly sequential, already-clear work), handle it inline instead — dispatching has overhead and is not the default.',
   'If the user explicitly asks you to use a subagent (or names a specific agent) for something, comply and dispatch it even if you believe you could handle it inline.',
   'Before dispatching, briefly state why this subtask is worth its own agent — e.g. parallel time savings, or isolating a large context (files/long outputs) from the main conversation.',
-  'After you dispatch a Task subagent, do not end the user-facing turn with a promise to wait; keep the turn alive and wait for the subagent result, or use SendMessage to retrieve/continue it when the tool result says the agent is running in the background. Only answer the user once you have incorporated the subagent result or can report a real failure.',
+  'KEEP THE SESSION ALIVE after dispatching. Do not end the conversation early to wait for a subagent — ending the session terminates the in-flight subagents along with it and their work is lost. Keep the turn running and wait for the result, or use SendMessage to retrieve/continue a background agent when the tool result says it is still running. Only answer the user once you have incorporated the subagent result or can report a real failure.',
+  'For long-running background tasks, pair them with a session-level scheduled wake-up (session schedule): if you must end the turn while background work is still pending, create the schedule task (interval or one-shot) BEFORE ending the turn — it will wake the session later so the result can be collected after the interruption. Never rely on an ended session to deliver subagent results on its own.',
 ].join('\n')
 
 /**
@@ -9544,6 +9545,7 @@ function buildHostRosterPrompt(
     `- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`,
     "- A quick question you can answer directly in one step does NOT need a dispatch round — handle it inline unless the user explicitly asked for a specific member.",
     '- Drive the session in EXPLICIT rounds (not open-ended looping): gather input from the right members this round, then call team_round_advance to close it; repeat until the objective is met, then call team_conclude. If a round is going in circles, summarize for the user instead of dispatching again.',
+    '- KEEP THE SESSION ALIVE after dispatching members or subagents — do not end the conversation early to wait for their results; ending the session shuts down the in-flight subagents along with it. If you must end the turn while background work is still pending, set a session-level scheduled wake-up (session schedule, interval or one-shot) BEFORE ending the turn, so the session is woken later to collect the results.',
     '- Do NOT repeat, paraphrase, or list out member replies — they stream directly to the user in the chat UI. Stay silent and end the turn unless the user explicitly asked you to synthesize across members, you must ask a follow-up question, or a dispatch failed and you need to report what is missing.',
   )
   return lines.join('\n')
