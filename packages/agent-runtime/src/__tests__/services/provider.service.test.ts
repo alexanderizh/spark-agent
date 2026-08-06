@@ -165,6 +165,31 @@ describe('ProviderService', () => {
     expect([...importedRepo.rows.values()][0]?.enabled).toBe(0)
   })
 
+  it('switches the API protocol format when provider is passed to updateProvider', async () => {
+    const profile = await service.createProvider({
+      name: 'Protocol Switcher',
+      provider: 'anthropic',
+      defaultModel: 'claude-sonnet-4-20250514',
+      apiKey: 'sk-ant-1',
+    })
+    expect(profile.provider).toBe('anthropic')
+
+    const updated = await service.updateProvider({
+      id: profile.id,
+      provider: 'openai',
+      codexApiKind: 'responses',
+      defaultModel: 'gpt-5',
+    })
+
+    expect(repo.update).toHaveBeenCalledWith(
+      profile.id,
+      expect.objectContaining({ providerType: 'openai' }),
+    )
+    expect(updated.provider).toBe('openai')
+    expect(updated.defaultModel).toBe('gpt-5')
+    expect(updated.codexApiKind).toBe('responses')
+  })
+
   it('preserves providerIcon through create, export, and import', async () => {
     const profile = await service.createProvider({
       name: 'Iconic Provider',
