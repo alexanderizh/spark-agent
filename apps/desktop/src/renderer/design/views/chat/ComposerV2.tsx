@@ -4661,7 +4661,7 @@ function ProviderModelPicker({
               <div className="composer-menu-empty">没有匹配结果</div>
             )}
             {pinnedEntries.length > 0 && (
-              <div className="composer-model-group">
+              <div className="composer-model-group pinned-composer-model-group">
                 <div className="composer-model-group-title">
                   <span className="composer-model-group-icon">
                     <Icons.PinFill size={12} />
@@ -4682,6 +4682,7 @@ function ProviderModelPicker({
                       leading={
                         vendor ? (
                           <ProviderLogo
+                            style={{minWidth: 14}}
                             vendor={vendor}
                             size={getProviderPickerLogoSize(provider)}
                             shape="rounded"
