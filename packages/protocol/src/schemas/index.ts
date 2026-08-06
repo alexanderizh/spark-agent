@@ -489,6 +489,8 @@ export const ProviderUpdateRequestSchema = z.object({
   id: ProfileIdSchema,
   /** 全局可用状态；必须保留到主进程，供 ProviderService 持久化。 */
   enabled: z.boolean().optional(),
+  /** API 协议格式；切换时下发（anthropic ↔ openai），不修改则不传。 */
+  provider: ProviderKindSchema.optional(),
   name: z.string().min(1).max(100).optional(),
   defaultModel: z.string().min(1).max(200).optional(),
   modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),

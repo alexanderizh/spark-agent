@@ -3296,6 +3296,7 @@ export function ProviderEditPanel({
       if (profileId) {
         const req: ProviderUpdateRequest = {
           id: profileId,
+          provider: form.provider,
           name: form.name.trim(),
           defaultModel: effectiveDefaultModel,
           modelIds,
