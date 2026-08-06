@@ -205,6 +205,37 @@ export function logMediaCall(input: MediaCallLogInput): void {
   writeConsoleSummary(input)
 }
 
+/**
+ * 统一诊断前缀：媒体输入解析 / 文件上传链路专用。
+ *
+ * 排障时在「设置 → 遥测与日志」或 main.log 里直接搜 `[MEDIA_IO]` 即可拿到
+ * 一次请求的完整轨迹：输入文件如何被解析成 ref、有没有走 Spark 平台上传、
+ * 上传响应是什么、最终发给三方的请求失败在哪一层。
+ *
+ * 注意：apps/desktop 侧（SparkMediaUploader / EduServerClient）目前未接入该前缀；
+ * 若未来在桌面端上传链路打印同前缀日志，请保持格式一致，便于一次搜索拿全轨迹。
+ */
+export const MEDIA_IO_LOG_PREFIX = '[MEDIA_IO]'
+
+/**
+ * 单行打印一条媒体输入/上传链路诊断日志。
+ *
+ * 输出形如：
+ *   [...INFO...] [media:adapter] [MEDIA_IO] event=video-input-resolved provider="apimart" ...
+ */
+export function logMediaDiag(event: string, fields: Record<string, unknown> = {}): void {
+  const parts: string[] = [MEDIA_IO_LOG_PREFIX, `event=${event}`]
+  const safeFields = redactPrivateContentForLog(fields) as Record<string, unknown>
+  for (const [key, value] of Object.entries(safeFields)) {
+    parts.push(`${key}=${formatExtraValue(value)}`)
+  }
+  try {
+    log.info(parts.join(' '))
+  } catch {
+    /* 日志失败不影响业务路径 */
+  }
+}
+
 export interface MediaCallResultInput {
   provider: string
   capability?: MediaCapabilityId | string | undefined

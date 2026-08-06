@@ -10,10 +10,13 @@
  * 解析策略由 `allowMmFile` 开关区分目标通道：
  *   - v1 通道（image subject_reference / v1 视频 first_frame）：allowMmFile=false → 本地文件读成 base64；
  *   - V2 通道（H3 content[] 图/视频/音频）：allowMmFile=true → 本地文件上传拿 file_id → mm_file://（视频/音频强制上传，base64 过大）。
+ *
+ * 回退策略：官方 mm_file 上传失败时，图片落 base64 data URL；视频/音频回退
+ * Spark 平台公开上传（fallbackUploader）拿公网 https URL（V2 通道接受公网 URL）。
  */
 
 import { readFile } from 'node:fs/promises'
-import { basename } from 'node:path'
+import { basename, isAbsolute } from 'node:path'
 import { createLogger } from '@spark/shared'
 import type { MediaInputFile, MediaProviderContext } from './media-adapter.types.js'
 import { MediaProviderError } from './media-adapter.types.js'
@@ -90,12 +93,45 @@ export async function resolveMinimaxHailuoMediaReference(
       )
       return `mm_file://${uploaded.fileId}`
     } catch (error) {
-      // 图片上传失败可落 base64 兜底；视频/音频无 base64 路径，直接抛错。
+      // 图片上传失败可落 base64 兜底；视频/音频回退 Spark 平台公开上传（V2 通道接受公网 URL）。
       if (kind === 'image' && file.dataUrl) {
         log.warn(
           `event=upload-fallback kind=image transport=data_url reason=${JSON.stringify(error instanceof Error ? error.message : String(error))}`,
         )
         return file.dataUrl
+      }
+      if (kind !== 'image' && ctx.fallbackUploader?.canHandle('minimax-hailuo')) {
+        try {
+          const fallback = await ctx.fallbackUploader.upload({
+            buffer: materialized.buffer,
+            filename: materialized.filename,
+            ...(materialized.mimeType ? { mimeType: materialized.mimeType } : {}),
+            ...(materialized.filePath ? { filePath: materialized.filePath } : {}),
+            targetProvider: 'minimax-hailuo',
+          })
+          const publicUrl = fallback.publicUrl ?? fallback.url
+          if (publicUrl && /^https?:\/\//i.test(publicUrl)) {
+            log.warn(
+              `event=upload-fallback kind=${kind} transport=spark-url reason=${JSON.stringify(error instanceof Error ? error.message : String(error))}`,
+            )
+            return publicUrl
+          }
+        } catch (fallbackError) {
+          // 回退失败可能是未登录（SparkMediaUploader 前置检查抛 PROVIDER_AUTH_FAILED），
+          // 也可能是网络/超时/大小超限——仅鉴权类失败归 auth_required，其余归
+          // provider_http_error，避免「网络不通」被误导为「请登录」（code 会落任务 errorCode）。
+          const isAuthFailure =
+            typeof fallbackError === 'object' &&
+            fallbackError !== null &&
+            'code' in fallbackError &&
+            /AUTH|LOGIN|SESSION/i.test(String((fallbackError as { code?: unknown }).code ?? ''))
+          throw new MediaProviderError(
+            isAuthFailure ? 'auth_required' : 'provider_http_error',
+            isAuthFailure
+              ? `MiniMax 官方上传失败，Spark 平台回退也失败；请登录后重试。MiniMax: ${errorMessage(error)}；Spark: ${errorMessage(fallbackError)}`
+              : `MiniMax 官方上传失败，Spark 平台回退也失败。MiniMax: ${errorMessage(error)}；Spark: ${errorMessage(fallbackError)}`,
+          )
+        }
       }
       throw error
     }
@@ -116,6 +152,7 @@ async function materializeInput(file: MediaInputFile): Promise<{
   buffer: Buffer
   filename: string
   mimeType?: string
+  filePath?: string
 } | null> {
   if (file.dataUrl) {
     const parsed = parseDataUrl(file.dataUrl)
@@ -131,6 +168,7 @@ async function materializeInput(file: MediaInputFile): Promise<{
   return {
     buffer: await readFile(localPath),
     filename: basename(localPath) || filenameFor(file.mimeType),
+    filePath: localPath,
     ...(file.mimeType ? { mimeType: file.mimeType } : {}),
   }
 }
@@ -151,10 +189,16 @@ function safeFilePath(value: string | undefined): string | undefined {
   const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
   const padding = base64.length % 4 === 0 ? '' : '='.repeat(4 - (base64.length % 4))
   const decoded = Buffer.from(base64 + padding, 'base64').toString('utf8')
-  return decoded || undefined
+  // 与主进程 SafeFileProtocol 解码对齐：非绝对路径视为无效。
+  if (!decoded || !isAbsolute(decoded)) return undefined
+  return decoded
 }
 
 function filenameFor(mimeType: string | undefined): string {
   const extension = mimeType?.split('/')[1]?.replace('jpeg', 'jpg') ?? 'bin'
   return `spark-input-${Date.now()}.${extension}`
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

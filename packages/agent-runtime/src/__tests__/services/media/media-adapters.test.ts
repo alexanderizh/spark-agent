@@ -822,6 +822,198 @@ describe('MediaRouterService', () => {
     expect(captured.body.reference_images).toBeUndefined()
   })
 
+  it('APIMart video.reference_to_video uploads local video/audio via fallbackUploader and sends public URLs', async () => {
+    // 本地 .mp4 / .mp3 走 Spark 平台公开上传：验证 filePath 直传透传 + 请求体使用公网 URL。
+    const localVideoPath = path.join(tmpDir, 'local-motion.mp4')
+    const localAudioPath = path.join(tmpDir, 'local-voice.mp3')
+    writeFileSync(localVideoPath, Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70]))
+    writeFileSync(localAudioPath, Buffer.from([0xff, 0xfb, 0x90, 0x00]))
+    const uploads: Array<Record<string, unknown>> = []
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:doubao-seedance-2.0',
+    )
+    expect(manifest).toBeDefined()
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const fetchMock = makeFetch([
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { video_url: 'https://cdn/reference.mp4' } }
+        },
+      },
+      {
+        match: 'https://cdn/reference.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.reference_to_video',
+        outputDir: tmpDir,
+        prompt: '',
+        inputFiles: [
+          { type: 'file', role: 'reference', mimeType: 'video/mp4', path: localVideoPath },
+          { type: 'file', role: 'reference', mimeType: 'audio/mpeg', path: localAudioPath },
+        ],
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'doubao-seedance-2.0',
+            mediaCapabilities: ['video.reference_to_video'],
+            mediaModelManifests: manifest ? [manifest] : [],
+          }),
+        ],
+        fetch: fetchMock,
+        fallbackUploader: {
+          canHandle: (provider) => provider === 'apimart',
+          upload: async (input) => {
+            uploads.push({
+              filename: input.filename,
+              mimeType: input.mimeType,
+              filePath: input.filePath,
+              targetProvider: input.targetProvider,
+              bytes: input.buffer.byteLength,
+            })
+            return {
+              provider: 'apimart',
+              publicUrl: `https://minio.yiqibyte.com/spark-desktop/${input.filename}`,
+            }
+          },
+        },
+      },
+    )
+
+    expect(uploads).toHaveLength(2)
+    // uploads 顺序由并发 readFile 完成顺序决定，不保证 video 先于 audio——按文件名定位断言。
+    const videoUpload = uploads.find((entry) => entry.filename === 'local-motion.mp4')
+    const audioUpload = uploads.find((entry) => entry.filename === 'local-voice.mp3')
+    expect(videoUpload).toMatchObject({
+      filename: 'local-motion.mp4',
+      filePath: localVideoPath,
+      mimeType: 'video/mp4',
+      targetProvider: 'apimart',
+      bytes: 8,
+    })
+    expect(audioUpload).toMatchObject({
+      filename: 'local-voice.mp3',
+      filePath: localAudioPath,
+      mimeType: 'audio/mpeg',
+    })
+    expect(captured.body.video_urls).toEqual([
+      'https://minio.yiqibyte.com/spark-desktop/local-motion.mp4',
+    ])
+    expect(captured.body.audio_urls).toEqual([
+      'https://minio.yiqibyte.com/spark-desktop/local-voice.mp3',
+    ])
+  })
+
+  it('APIMart video.reference_to_video decodes safe-file:// inputs and uploads via fallbackUploader', async () => {
+    // 画布传参形态：safe-file://{scope}/{base64url path}，必须解码成真实路径再上传。
+    const localVideoPath = path.join(tmpDir, 'safe-motion.mp4')
+    writeFileSync(localVideoPath, Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70]))
+    const encoded = Buffer.from(localVideoPath)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+    const safeFileUrl = `safe-file://spark-media-test/${encoded}`
+    const uploads: Array<Record<string, unknown>> = []
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:doubao-seedance-2.0',
+    )
+    expect(manifest).toBeDefined()
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const fetchMock = makeFetch([
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { video_url: 'https://cdn/safe.mp4' } }
+        },
+      },
+      {
+        match: 'https://cdn/safe.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.reference_to_video',
+        outputDir: tmpDir,
+        prompt: '',
+        inputFiles: [
+          { type: 'file', role: 'reference', mimeType: 'video/mp4', url: safeFileUrl },
+        ],
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'doubao-seedance-2.0',
+            mediaCapabilities: ['video.reference_to_video'],
+            mediaModelManifests: manifest ? [manifest] : [],
+          }),
+        ],
+        fetch: fetchMock,
+        fallbackUploader: {
+          canHandle: (provider) => provider === 'apimart',
+          upload: async (input) => {
+            uploads.push({ filePath: input.filePath, filename: input.filename })
+            return { provider: 'apimart', publicUrl: 'https://minio.yiqibyte.com/spark-desktop/safe-motion.mp4' }
+          },
+        },
+      },
+    )
+
+    expect(uploads).toHaveLength(1)
+    expect(uploads[0]).toMatchObject({ filePath: localVideoPath, filename: 'safe-motion.mp4' })
+    expect(captured.body.video_urls).toEqual([
+      'https://minio.yiqibyte.com/spark-desktop/safe-motion.mp4',
+    ])
+  })
+
+  it('APIMart video.reference_to_video with local video and no uploader rejects with auth_required', async () => {
+    const localVideoPath = path.join(tmpDir, 'local-motion.mp4')
+    writeFileSync(localVideoPath, Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70]))
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:doubao-seedance-2.0',
+    )
+    expect(manifest).toBeDefined()
+
+    await expect(
+      router.invoke(
+        {
+          operation: 'image_to_video',
+          capability: 'video.reference_to_video',
+          outputDir: tmpDir,
+          prompt: '',
+          inputFiles: [
+            { type: 'file', role: 'reference', mimeType: 'video/mp4', path: localVideoPath },
+          ],
+        },
+        {
+          providers: [
+            makeProvider({
+              defaultModel: 'doubao-seedance-2.0',
+              mediaCapabilities: ['video.reference_to_video'],
+              mediaModelManifests: manifest ? [manifest] : [],
+            }),
+          ],
+          fetch: makeFetch([]),
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'auth_required',
+      message: expect.stringContaining('没有可用的公开上传服务'),
+    })
+  })
+
   it('APIMart Seedance 1.5 sends first and last frames with documented roles', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
