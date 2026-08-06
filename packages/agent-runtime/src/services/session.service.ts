@@ -89,6 +89,13 @@ import { buildWorkflowBindingAuthorityPrompt } from './workflow-system-prompt.js
 import { buildContextLedger } from './context-ledger.js'
 import { createCanvasMcpUnavailableEvents } from './canvas-mcp-startup-events.js'
 
+/** Read the runtime-log toggle from the telemetry settings object shared with the renderer. */
+export function readRuntimeLogEnabled(settings: Pick<SettingsRepository, 'get'>): boolean {
+  const telemetryData = settings.get('telemetry', 'data')
+  if (telemetryData == null || typeof telemetryData !== 'object') return false
+  return (telemetryData as { runtimeLogEnabled?: unknown }).runtimeLogEnabled === true
+}
+
 // ─── D-13 拆分出的小工具 ───
 import { ResumeGateManager, type AgentAdapterKind } from './session-resume-gate.js'
 export { isSdkResumeSafe, makeSdkRuntimeSessionId } from './session-resume-gate.js'
@@ -2798,12 +2805,11 @@ export class SessionService {
 
     // ── 白盒提示词快照 ─────────────────────────────────────────────────────
     // 捕获本轮完整提示词组成，发送到 Renderer 供审计面板展示。
-    // 运行时日志开关（telemetry.runtimeLogEnabled，默认关闭）：关闭时仅保留续会话
+    // 运行时日志开关（telemetry.data.runtimeLogEnabled，默认关闭）：关闭时仅保留续会话
     // 所需元数据，丢弃 systemPromptSections / userMessage / runtimeLoadStatus 三大
     // 文本块，避免每轮几十 KB 的提示词快照长期累积撑大 spark.db。
     {
-      const runtimeLogEnabled =
-        new SettingsRepository(this.db).get('telemetry', 'runtimeLogEnabled') === true
+      const runtimeLogEnabled = readRuntimeLogEnabled(new SettingsRepository(this.db))
       const promptSections: Array<{ label: string; content: string; charCount: number }> = []
       if (composedSkillSystemPrompt && composedSkillSystemPrompt.trim().length > 0) {
         promptSections.push({

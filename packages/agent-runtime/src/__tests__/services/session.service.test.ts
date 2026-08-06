@@ -16,6 +16,7 @@ import {
   mapSessionAttachmentsToDispatch,
   isOpenAiOnlyCodexConsumer,
   resolveCodexMemberExecutionProfile,
+  readRuntimeLogEnabled,
   SessionService,
   shouldAcceptSessionExecutorEvent,
   shouldRunTurnPostProcessing,
@@ -23,6 +24,29 @@ import {
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
 import { SessionQuestionGate } from '../../services/session-question-gate.js'
 import { CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor } from '../../sdk/index.js'
+
+describe('runtime log setting', () => {
+  it('reads the toggle from telemetry data shared with the inspector panel', () => {
+    const get = vi.fn((category: string, key: string): unknown => {
+      if (category === 'telemetry' && key === 'data') {
+        return { runtimeLogEnabled: true }
+      }
+      return null
+    })
+
+    expect(readRuntimeLogEnabled({ get })).toBe(true)
+    expect(get).toHaveBeenCalledWith('telemetry', 'data')
+  })
+
+  it('does not treat the obsolete top-level setting as enabled', () => {
+    const get = vi.fn((category: string, key: string): unknown => {
+      if (category === 'telemetry' && key === 'runtimeLogEnabled') return true
+      return null
+    })
+
+    expect(readRuntimeLogEnabled({ get })).toBe(false)
+  })
+})
 
 describe('SparkWork application identity prompt', () => {
   it('introduces the platform and its core capabilities', () => {
