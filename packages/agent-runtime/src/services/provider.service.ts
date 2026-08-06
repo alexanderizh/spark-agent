@@ -651,6 +651,8 @@ export class ProviderService {
 
   async updateProvider(params: {
     id: string
+    /** API 协议格式；切换时下发（anthropic ↔ openai），不修改则不传。 */
+    provider?: string
     name?: string
     defaultModel?: string
     modelIds?: string[]
@@ -688,6 +690,10 @@ export class ProviderService {
       throw new Error('平台官方 Provider 由系统管理，不能手动编辑')
     }
 
+    // 协议格式切换（anthropic ↔ openai）：同步 provider_type，并让配置按新类型重新归一化。
+    const nextProviderType =
+      params.provider !== undefined ? normalizeProviderType(params.provider) : existing.provider_type
+
     let updatedKeystoreRef: string | undefined
     if (params.apiKey !== undefined) {
       const ref = existing.keystore_ref || keystore.makeKeystoreRef(existing.provider_type, params.id)
@@ -697,7 +703,7 @@ export class ProviderService {
     }
 
     const existingConfig = normalizeProviderConfigForProviderType(
-      existing.provider_type,
+      nextProviderType,
       JSON.parse(existing.config_json) as ProviderConfig,
     )
     const nextDefaultModel = params.defaultModel ?? params.model
@@ -820,10 +826,11 @@ export class ProviderService {
     }
     // 重新走 normalize，确保 image→media 同步、能力兜底、枚举校验一致
     if (newConfig !== undefined) {
-      Object.assign(newConfig, normalizeProviderConfigForProviderType(existing.provider_type, newConfig))
+      Object.assign(newConfig, normalizeProviderConfigForProviderType(nextProviderType, newConfig))
     }
 
     this.repo.update(params.id, {
+      ...(nextProviderType !== existing.provider_type && { providerType: nextProviderType }),
       ...(params.enabled !== undefined && { enabled: params.enabled }),
       ...(params.name !== undefined && { name: params.name }),
       ...(newConfig !== undefined && { config: newConfig }),
