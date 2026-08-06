@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => ({
   transcodeVideo: vi.fn(),
   cropVideo: vi.fn(),
   trimVideo: vi.fn(),
+  trimAudio: vi.fn(),
   adjustSpeed: vi.fn(),
+  adjustAudioSpeed: vi.fn(),
   extractAudio: vi.fn(),
   probeVideo: vi.fn(),
 }))
@@ -46,10 +48,12 @@ vi.mock('../FfmpegRunner.js', () => ({
   extractFramesAtTimes: vi.fn(),
   generateThumbnail: vi.fn(),
   trimVideo: mocks.trimVideo,
+  trimAudio: mocks.trimAudio,
   concatVideos: vi.fn(),
   segmentVideo: vi.fn(),
   transcodeVideo: mocks.transcodeVideo,
   adjustSpeed: mocks.adjustSpeed,
+  adjustAudioSpeed: mocks.adjustAudioSpeed,
   reverseVideo: vi.fn(),
   cropVideo: mocks.cropVideo,
   addWatermark: vi.fn(),
@@ -74,7 +78,9 @@ afterEach(() => {
   mocks.transcodeVideo.mockReset()
   mocks.cropVideo.mockReset()
   mocks.trimVideo.mockReset()
+  mocks.trimAudio.mockReset()
   mocks.adjustSpeed.mockReset()
+  mocks.adjustAudioSpeed.mockReset()
   mocks.extractAudio.mockReset()
   mocks.probeVideo.mockReset()
 })
@@ -219,7 +225,7 @@ describe('handleVideoProcess', () => {
       hasAudio: true,
       audioCodec: 'mp3',
     })
-    mocks.trimVideo.mockImplementation(async (_input: string, outputPath: string) => ({
+    mocks.trimAudio.mockImplementation(async (_input: string, outputPath: string) => ({
       path: outputPath,
       mimeType: 'audio/mpeg',
       durationMs: 9_160,
@@ -236,15 +242,15 @@ describe('handleVideoProcess', () => {
 
     expect(response.success).toBe(true)
     expect(mocks.probeVideo).toHaveBeenCalledOnce()
-    expect(mocks.trimVideo).toHaveBeenCalledOnce()
-    const [, outputPath, opts] = mocks.trimVideo.mock.calls[0] as [
+    expect(mocks.trimAudio).toHaveBeenCalledOnce()
+    expect(mocks.trimVideo).not.toHaveBeenCalled()
+    const [, outputPath, opts] = mocks.trimAudio.mock.calls[0] as [
       string,
       string,
-      { startSec: number; endSec: number; copy: boolean },
+      { startSec: number; endSec: number },
     ]
     expect(opts.startSec).toBe(0)
     expect(opts.endSec).toBe(9.16)
-    expect(opts.copy).toBe(false)
     expect(outputPath).toMatch(/\.mp3$/)
   })
 
@@ -265,7 +271,7 @@ describe('handleVideoProcess', () => {
 
     expect(response.success).toBe(false)
     expect(response.error).toContain('超出音频时长')
-    expect(mocks.trimVideo).not.toHaveBeenCalled()
+    expect(mocks.trimAudio).not.toHaveBeenCalled()
   })
 
   it('adjusts audio speed within the 0.1x–4.0x UI bounds', async () => {
@@ -274,7 +280,7 @@ describe('handleVideoProcess', () => {
       hasAudio: true,
       audioCodec: 'aac',
     })
-    mocks.adjustSpeed.mockImplementation(async (_input: string, outputPath: string) => ({
+    mocks.adjustAudioSpeed.mockImplementation(async (_input: string, outputPath: string) => ({
       path: outputPath,
       mimeType: 'audio/mp4',
       durationMs: 20_000,
@@ -290,13 +296,16 @@ describe('handleVideoProcess', () => {
     })
 
     expect(response.success).toBe(true)
-    expect(mocks.adjustSpeed).toHaveBeenCalledOnce()
-    const [, outputPath, factor] = mocks.adjustSpeed.mock.calls[0] as [
+    expect(mocks.adjustAudioSpeed).toHaveBeenCalledOnce()
+    expect(mocks.adjustSpeed).not.toHaveBeenCalled()
+    const [, outputPath, factor, opts] = mocks.adjustAudioSpeed.mock.calls[0] as [
       string,
       string,
       number,
+      { audioCodec: string },
     ]
     expect(factor).toBe(1.5)
+    expect(opts.audioCodec).toBe('aac')
     expect(outputPath).toMatch(/\.m4a$/)
   })
 
@@ -312,7 +321,7 @@ describe('handleVideoProcess', () => {
     expect(response.success).toBe(false)
     expect(response.error).toContain('音频变速 factor=5 超出允许范围')
     expect(mocks.probeVideo).not.toHaveBeenCalled()
-    expect(mocks.adjustSpeed).not.toHaveBeenCalled()
+    expect(mocks.adjustAudioSpeed).not.toHaveBeenCalled()
   })
 
   it('refuses video-only operations when kind=audio is set', async () => {

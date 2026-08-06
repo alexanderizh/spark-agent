@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   audioExtForCodec,
+  buildAudioSpeedArgs,
+  buildAudioTrimArgs,
   buildFfmpegEnv,
   buildKeyframeFrameSyncArgs,
   ensureOutputDirectory,
@@ -75,17 +77,27 @@ describe('injectNoSslVerifyForHttpsInputs', () => {
   it('ffmpeg 形态：https 输入在 -i 前注入 -tls_verify 0', () => {
     const args = ['-i', 'https://example.com/v.mp4', '-vn', '-c:a', 'copy', 'out.m4a']
     expect(injectNoSslVerifyForHttpsInputs(args)).toEqual([
-      '-tls_verify', '0',
-      '-i', 'https://example.com/v.mp4',
-      '-vn', '-c:a', 'copy', 'out.m4a',
+      '-tls_verify',
+      '0',
+      '-i',
+      'https://example.com/v.mp4',
+      '-vn',
+      '-c:a',
+      'copy',
+      'out.m4a',
     ])
   })
 
   it('ffprobe 形态：https 输入为末尾位置参数时在其前注入', () => {
     const args = ['-v', 'error', '-print_format', 'json', 'https://example.com/v.mp4']
     expect(injectNoSslVerifyForHttpsInputs(args)).toEqual([
-      '-v', 'error', '-print_format', 'json',
-      '-tls_verify', '0', 'https://example.com/v.mp4',
+      '-v',
+      'error',
+      '-print_format',
+      'json',
+      '-tls_verify',
+      '0',
+      'https://example.com/v.mp4',
     ])
   })
 
@@ -119,5 +131,38 @@ describe('audioExtForCodec', () => {
   it('falls back to mka for unknown codecs (Matroska can hold almost anything)', () => {
     expect(audioExtForCodec(null)).toBe('mka')
     expect(audioExtForCodec('dts')).toBe('mka')
+  })
+})
+
+describe('audio-only ffmpeg arguments', () => {
+  it('trims only the audio stream without referencing a video stream', () => {
+    expect(buildAudioTrimArgs('/tmp/source.mp3', '/tmp/clip.mp3', 2, 8)).toEqual([
+      '-ss',
+      '2',
+      '-i',
+      '/tmp/source.mp3',
+      '-t',
+      '6',
+      '-map',
+      '0:a:0',
+      '-vn',
+      '-c:a',
+      'copy',
+      '-avoid_negative_ts',
+      'make_zero',
+      '-y',
+      '/tmp/clip.mp3',
+    ])
+  })
+
+  it('changes audio speed with an audio filter and no video filter input', () => {
+    const args = buildAudioSpeedArgs('/tmp/source.m4a', '/tmp/speed.m4a', 2.75, 'aac')
+    expect(args).toContain('-filter:a')
+    expect(args).toContain('atempo=2,atempo=1.3750')
+    expect(args).toContain('-map')
+    expect(args).toContain('0:a:0')
+    expect(args).not.toContain('[0:v]')
+    expect(args).not.toContain('setpts')
+    expect(args).toContain('aac')
   })
 })

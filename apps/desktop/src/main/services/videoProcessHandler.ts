@@ -19,10 +19,12 @@ import {
   extractFramesAtTimes,
   generateThumbnail,
   trimVideo,
+  trimAudio,
   concatVideos,
   segmentVideo,
   transcodeVideo,
   adjustSpeed,
+  adjustAudioSpeed,
   reverseVideo,
   cropVideo,
   addWatermark,
@@ -241,18 +243,13 @@ async function dispatch(
         const probe = await probeVideo(input)
         if (!probe.hasAudio) throw new Error('该文件没有音轨，无法截取音频')
         if (endSec > (probe.durationSec ?? Number.MAX_SAFE_INTEGER) + 0.5) {
-          throw new Error(
-            `trim endSec ${endSec}s 超出音频时长 ${probe.durationSec?.toFixed(2)}s`,
-          )
+          throw new Error(`trim endSec ${endSec}s 超出音频时长 ${probe.durationSec?.toFixed(2)}s`)
         }
         const ext = audioExtForCodec(probe.audioCodec)
-        const outputPath = prepareOutputPath(
-          (params.outputPath as string) ?? makeOutputPath(ext),
-        )
-        return trimVideo(input, outputPath, {
+        const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath(ext))
+        return trimAudio(input, outputPath, {
           startSec,
           endSec,
-          copy: false, // 音频截取走 atempo/合并重编码更稳定，避免 copy 模式下时间戳精度问题
           onProgress,
         })
       }
@@ -309,10 +306,11 @@ async function dispatch(
         const probe = await probeVideo(input)
         if (!probe.hasAudio) throw new Error('该文件没有音轨，无法变速')
         const ext = audioExtForCodec(probe.audioCodec)
-        const outputPath = prepareOutputPath(
-          (params.outputPath as string) ?? makeOutputPath(ext),
-        )
-        return adjustSpeed(input, outputPath, factor, onProgress)
+        const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath(ext))
+        return adjustAudioSpeed(input, outputPath, factor, {
+          audioCodec: probe.audioCodec,
+          onProgress,
+        })
       }
       const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return adjustSpeed(input, outputPath, factor, onProgress)
