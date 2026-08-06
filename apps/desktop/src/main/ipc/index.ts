@@ -222,6 +222,10 @@ import type {
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { isSafeFilePathAllowed, toSafeFileUrl } from '../services/SafeFileProtocol.js'
 import { isPathStrictlyInsideRoot } from '../services/CanvasProjectPath.js'
+import {
+  PASTED_IMAGE_MAX_EDGE,
+  resizePastedImageBuffer,
+} from '../services/PastedImageResizer.js'
 import { collectCanvasVideoWorkbenchPaths } from '../services/canvasVideoWorkbenchPaths.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
@@ -8100,7 +8104,11 @@ export function registerAllIpcHandlers(): void {
     )
     const fileName = `${baseName}-${crypto.randomUUID()}.${extension}`
     const filePath = path.join(rootDir, fileName)
-    await fs.writeFile(filePath, buffer)
+
+    // 落盘前把像素尺寸收敛到 <=2000px，避免 agent 后续 read_file 撞 SDK 的 2000x2000 限制。
+    // resize 失败时内部降级返回原 buffer，这里不会抛错，落盘流程不受影响。
+    const resized = await resizePastedImageBuffer(buffer, { maxEdge: PASTED_IMAGE_MAX_EDGE })
+    await fs.writeFile(filePath, resized.buffer)
     return { filePath, fileName }
   })
 

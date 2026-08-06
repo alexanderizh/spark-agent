@@ -9,27 +9,16 @@
     border: 1px solid var(--canvas-cinema-border);
     border-radius: var(--canvas-cinema-radius-md);
     background: var(--canvas-cinema-surface-2);
-    box-shadow:
-      0 18px 38px rgba(0, 0, 0, 0.26),
-      inset 0 1px rgba(255, 255, 255, 0.025);
-    transition:
-      border-color var(--canvas-cinema-motion-fast) ease,
-      box-shadow var(--canvas-cinema-motion-fast) ease;
+    transition: border-color var(--canvas-cinema-motion-fast) ease;
   }
 
   .canvas-node:hover {
     border-color: var(--canvas-cinema-border-strong);
-    box-shadow:
-      0 22px 44px rgba(0, 0, 0, 0.34),
-      inset 0 1px rgba(255, 255, 255, 0.04);
     transform: none;
   }
 
   .canvas-node.canvas-node-selected {
     border-color: var(--canvas-cinema-accent-bright);
-    box-shadow:
-      0 0 0 3px rgba(119, 108, 246, 0.15),
-      0 26px 52px rgba(0, 0, 0, 0.44);
   }
 
   .canvas-node.canvas-node-task-running {
@@ -66,12 +55,17 @@
     z-index: var(--z-canvas-selection);
     inset: 0;
     border-radius: inherit;
-    box-shadow:
-      inset 0 0 0 1px rgba(145, 137, 255, 0.28),
-      0 0 20px rgba(119, 108, 246, 0.12);
     content: '';
     pointer-events: none;
     animation: canvas-cinema-running-breathe 1.2s ease-in-out infinite alternate;
+  }
+
+  // 画布平移/缩放交互期间，暂停运行中节点的无限动画（conic-gradient 旋转边框 + 呼吸），
+  // 把每帧的 paint 预算让给交互合成。conic-gradient + mask-composite 是最贵的 paint 之一，
+  // 多个运行中节点会持续抢占帧预算导致掉帧。交互结束自动恢复。
+  .canvas-stage[data-viewport-moving='true'] .canvas-node-task-running::before,
+  .canvas-stage[data-viewport-moving='true'] .canvas-node-task-running::after {
+    animation-play-state: paused;
   }
 
   .canvas-node.canvas-node-task-failed {
@@ -134,12 +128,34 @@
     border-radius: 0 0 10px 10px;
   }
 
+  // 视口外节点跳过内容渲染，削减 pan/zoom 时的合成与光栅化成本。
+  // 落在 body（最内层内容区）：Handle/NodeResizer 在 core 之外不受影响，
+  // core 已有 overflow:hidden 裁切媒体，contain:paint 不会额外丢失可见内容。
+  // RF wrapper 有 inline width/height（measured 后锁定），body 跳过 paint 不冲击 RF 测量链路。
+  // contain-intrinsic-size 的 auto 关键字让浏览器记忆节点上次可见时的真实尺寸，
+  // 视口外用记忆尺寸占位，避免尺寸坍缩；240x160 仅作首次 fallback。
+  .canvas-node-body {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px 160px;
+  }
+
+  // 视频节点同样应用 content-visibility: auto（继承上方全局规则）：
+  // 视口外 <video> 跳过 paint/合成，DOM 不卸载、<video> 状态与播放进度保留，
+  // 进视口恢复 paint。这与 RF culling（onlyRenderVisibleElements 卸载 DOM 致
+  // video 重挂载/重解码）根本不同，不会引发重新进视口抖动。
+  // 原先在此对视频显式 content-visibility: visible 的排除，混淆了「跳过 paint」
+  // 与「卸载 DOM」，已修正。若实测播放中视频移出视口出现异常，可在此为
+  // .canvas-node-video-playing 单独恢复 visible。
+  .canvas-node-video .canvas-node-body,
+  .canvas-node-video-full-bleed .canvas-node-body {
+    /* 继承 .canvas-node-body 的 content-visibility: auto */
+  }
+
   .canvas-node.canvas-node-media-full-bleed {
     // Handle 与 NodeResizer 会跨出节点边界；媒体内容仍由 .canvas-node-core 裁切。
     overflow: visible;
     border-color: rgba(255, 255, 255, 0.09);
     background: #07090b;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.26);
   }
 
   .canvas-node-media-full-bleed .canvas-node-meta-bar {
@@ -292,7 +308,6 @@
   .canvas-node.canvas-node-group {
     border-color: rgba(255, 255, 255, 0.11);
     background: rgba(15, 18, 22, 0.62);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.018);
   }
 
   .canvas-node.canvas-node-collapsed-group {
@@ -388,7 +403,6 @@
     box-sizing: border-box;
     border: 2px solid var(--canvas-cinema-surface-2);
     background: #69727d;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.13);
   }
 
   .canvas-node-handle::after {
@@ -413,7 +427,6 @@
   .canvas-node-handle:hover,
   .canvas-node-handle.connectingto.valid {
     background: var(--canvas-cinema-accent-bright);
-    box-shadow: 0 0 10px rgba(119, 108, 246, 0.7);
   }
 
   .canvas-floating-toolbar-shell {
@@ -422,7 +435,6 @@
     border-color: var(--canvas-cinema-border-strong);
     border-radius: 9px;
     background: rgba(22, 26, 31, 0.96);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
     backdrop-filter: blur(12px);
   }
 
