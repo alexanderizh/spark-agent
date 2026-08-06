@@ -4427,6 +4427,10 @@ body.sidebar-resizing {
   padding-left: 8px;
   padding-right: 8px;
 }
+
+.pinned-composer-model-group .composer-model-item .composer-menu-item .composer-menu-item-leading-icon{
+  min-width: 14px;
+}
 /* 模型选择器 trigger 的 chevron 展开时翻转 */
 .composer-model-picker .composer-select-trigger svg {
   transition: transform 0.2s ease;
