@@ -87,6 +87,8 @@ import {
 } from './composer-drafts'
 import { ComposerBranchSelect } from './BranchPicker'
 import { ReasoningMaxParticles } from './ReasoningMaxParticles'
+import { ModelPickerMenuItem } from './ModelPickerMenuItem'
+import { resolvePinnedModelEntries, usePinnedModels } from './pinned-models'
 import {
   getProviderPickerLogoSize,
   prioritizeManagedProviderGroups,
@@ -4491,6 +4493,7 @@ function ProviderModelPicker({
   const [search, setSearch] = useState('')
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [placement, setPlacement] = useState<'topLeft' | 'topRight'>('topLeft')
+  const { pinned, isPinned, togglePinned } = usePinnedModels()
   const { invoke: listModels } = useIpcInvoke('model:list')
   const [modelCards, setModelCards] = useState<ModelProfile[]>([])
   const refreshModelCards = useCallback(async () => {
@@ -4576,6 +4579,8 @@ function ProviderModelPicker({
       })
       .filter((group) => group.models.length > 0),
   )
+  // 置顶模型汇总到顶部「常用」组；解析基于过滤后的分组，搜索时「常用」组同步收窄
+  const pinnedEntries = resolvePinnedModelEntries(pinned, filteredProviderGroups)
   const selectedProviderById = conversationalProviders.find(
     (provider) => provider.id === selectedProviderId,
   )
@@ -4655,6 +4660,45 @@ function ProviderModelPicker({
             {conversationalProviders.length > 0 && filteredProviderGroups.length === 0 && (
               <div className="composer-menu-empty">没有匹配结果</div>
             )}
+            {pinnedEntries.length > 0 && (
+              <div className="composer-model-group">
+                <div className="composer-model-group-title">
+                  <span className="composer-model-group-icon">
+                    <Icons.PinFill size={12} />
+                  </span>
+                  <span>常用</span>
+                </div>
+                {pinnedEntries.map(({ provider, modelId }) => {
+                  const vendor = resolveProviderVendor(provider)
+                  return (
+                    <ModelPickerMenuItem
+                      key={`pinned:${provider.id}:${modelId}`}
+                      label={getPickerModelDisplayLabel(provider, modelId, modelNameById)}
+                      active={
+                        provider.id === resolvedSelectedProviderId && modelId === selectedModelId
+                      }
+                      pinned
+                      // 「常用」组混合了多个供应商，同名模型要靠 logo 区分来源
+                      leading={
+                        vendor ? (
+                          <ProviderLogo
+                            vendor={vendor}
+                            size={getProviderPickerLogoSize(provider)}
+                            shape="rounded"
+                          />
+                        ) : undefined
+                      }
+                      onSelect={() => {
+                        setOpen(false)
+                        setSearch('')
+                        void onChange(provider.id, modelId)
+                      }}
+                      onTogglePin={() => togglePinned(provider.id, modelId)}
+                    />
+                  )
+                })}
+              </div>
+            )}
             {filteredProviderGroups.map(({ provider, models }) => {
               const vendor = resolveProviderVendor(provider)
               return (
@@ -4675,19 +4719,18 @@ function ProviderModelPicker({
                     const active =
                       provider.id === resolvedSelectedProviderId && modelId === selectedModelId
                     return (
-                      <button
+                      <ModelPickerMenuItem
                         key={`${provider.id}:${modelId}`}
-                        type="button"
-                        className={`composer-menu-item ${active ? 'active' : ''}`}
-                        onClick={() => {
+                        label={getPickerModelDisplayLabel(provider, modelId, modelNameById)}
+                        active={active}
+                        pinned={isPinned(provider.id, modelId)}
+                        onSelect={() => {
                           setOpen(false)
                           setSearch('')
                           void onChange(provider.id, modelId)
                         }}
-                      >
-                        <span>{getPickerModelDisplayLabel(provider, modelId, modelNameById)}</span>
-                        {active && <Icons.Check size={14} />}
-                      </button>
+                        onTogglePin={() => togglePinned(provider.id, modelId)}
+                      />
                     )
                   })}
                 </div>

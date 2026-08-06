@@ -2630,6 +2630,91 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   flex: 1 1 auto;
 }
 
+/* ─── 模型行：模型名按钮 + 右侧置顶按钮 ───
+ * 置顶按钮是 .composer-menu-item 的兄弟节点（后者本身是 <button>，不能嵌套），
+ * 因此 hover 背景要提到行容器上：否则鼠标移到置顶按钮时整行会失去高亮。
+ * 全部限定在 .composer-model-menu 内，避免影响同样复用 .composer-menu-item
+ * 的权限菜单 / enriched 菜单。
+ */
+.composer-model-menu .composer-model-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+}
+
+.composer-model-menu .composer-model-item .composer-menu-item {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 8px;
+}
+
+/* 背景统一由行容器画。内层按钮已不再占满整行，若它自己还画一层 hover 背景，
+   会和行背景叠加出「左深右浅」的断层，所以这里显式压平（带 :hover/.active
+   是为了盖过 views.css 里同名的 .composer-dropdown-menu .composer-menu-item:hover）。 */
+.composer-model-menu .composer-model-item .composer-menu-item,
+.composer-model-menu .composer-model-item .composer-menu-item:hover,
+.composer-model-menu .composer-model-item .composer-menu-item.active {
+  background: transparent;
+}
+
+.composer-model-menu .composer-model-item:hover,
+.composer-model-menu .composer-model-item:focus-within,
+.composer-model-menu .composer-model-item.is-active {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.composer-model-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 置顶按钮：默认透明但常驻占位（用 opacity 而非 display，避免悬浮时布局抖动），
+   hover 行或键盘聚焦时显形。 */
+.composer-model-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-right: 6px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.composer-model-item:hover .composer-model-pin,
+.composer-model-item:focus-within .composer-model-pin,
+.composer-model-pin:focus-visible {
+  opacity: 1;
+}
+
+.composer-model-pin:hover {
+  color: var(--text-strong);
+  background: var(--hover);
+}
+
+.composer-model-pin.is-pinned {
+  color: var(--primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-model-pin {
+    transition: none;
+  }
+}
+
 /* ─── 参数选择栏：宽度不够时右侧覆盖左侧 ───
  * 覆盖 views.css 的 `.composer-controls { flex-wrap: wrap }`。
  * 右侧组（worktree/hint/send）放入 `.composer-param-tail`，绝对定位贴
