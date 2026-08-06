@@ -1448,9 +1448,9 @@
   max-height: 360px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   overflow: auto;
-  padding: 8px;
+  padding: 6px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-soft);
@@ -1465,24 +1465,24 @@
 
 .pv_media_manifest_item {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--border);
+  padding: 6px 8px;
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
-  background: var(--panel);
+  background: var(--bg-sunken);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 
   &:hover {
+    background: color-mix(in srgb, var(--bg-sunken) 88%, var(--text) 12%);
     border-color: var(--border-strong, var(--primary));
   }
 }
 
 .pv_media_manifest_item_selected {
-  border-color: var(--primary);
-  background: var(--primary-soft);
+  background: color-mix(in srgb, var(--primary) 6%, var(--bg-sunken));
 }
 
 .pv_media_manifest_main {
@@ -1490,14 +1490,14 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .pv_media_manifest_title,
 .pv_media_manifest_caps {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   flex-wrap: wrap;
 }
@@ -1550,7 +1550,6 @@
   align-items: center;
   gap: 2px;
   margin-left: auto;
-  align-self: center;
 }
 
 .pv_custom_model_add {
