@@ -9,6 +9,8 @@
  * 子类通过 options 注入这些差异；通用 HTTP/解析/落盘逻辑在此复用。
  */
 
+import { readFile } from 'node:fs/promises'
+import { basename, isAbsolute } from 'node:path'
 import { capabilityForOperation } from '@spark/protocol'
 import type {
   MediaCapabilityId,
@@ -33,7 +35,7 @@ import {
   fetchJson,
   pollTask,
 } from '../media-http.util.js'
-import { logMediaCall, logMediaResult } from '../media-debug-log.js'
+import { logMediaCall, logMediaDiag, logMediaResult } from '../media-debug-log.js'
 import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { apimartNativeModelId, buildApimartVideoInputFields } from './apimart-video-input.js'
 
@@ -608,13 +610,17 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     const referenceImageRefs = referenceImages
       .map((file) => mediaInputRef(file, ctx.mediaProvider))
       .filter((ref): ref is string => Boolean(ref))
-    const inputVideoRef = inputVideo ? mediaInputRef(inputVideo, ctx.mediaProvider) : undefined
-    const referenceVideoRefs = referenceVideos
-      .map((file) => mediaInputRef(file, ctx.mediaProvider))
-      .filter((ref): ref is string => Boolean(ref))
-    const referenceAudioRefs = referenceAudios
-      .map((file) => mediaInputRef(file, ctx.mediaProvider))
-      .filter((ref): ref is string => Boolean(ref))
+    // 视频/音频本地输入必须提前走 Spark 平台公开上传：本地 path / safe-file:// 对第三方
+    // 平台不可访问，原样塞进请求体必失败（APIMart 曾报「不支持 .mp4 上传」）；https URL 直接透传。
+    const [inputVideoRef, rawVideoRefs, rawAudioRefs] = await Promise.all([
+      inputVideo
+        ? resolveMediaInputRefForUpload(inputVideo, 'video', ctx)
+        : Promise.resolve(undefined),
+      Promise.all(referenceVideos.map((file) => resolveMediaInputRefForUpload(file, 'video', ctx))),
+      Promise.all(referenceAudios.map((file) => resolveMediaInputRefForUpload(file, 'audio', ctx))),
+    ])
+    const referenceVideoRefs = rawVideoRefs.filter((ref): ref is string => Boolean(ref))
+    const referenceAudioRefs = rawAudioRefs.filter((ref): ref is string => Boolean(ref))
     const isApimart = ctx.mediaProvider === 'apimart'
     const aspectRatio =
       input.modelParams?.aspectRatio ??
@@ -824,6 +830,9 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
  *
  * 该顺序对所有 provider 一致；xAI 的 image.edit / image_to_video、以及 OpenAI 兼容
  * provider 的 image.edit 都经过这里，避免「同一份输入在不同路径取值逻辑不一致」。
+ *
+ * 注意：本函数仅用于图片（base64 体积可控）。视频/音频输入必须走
+ * resolveMediaInputRefForUpload（本地素材先上传为公网 URL，base64 会撑爆请求体）。
  */
 function mediaInputRef(
   file: { url?: string | undefined; dataUrl?: string | undefined; path?: string | undefined },
@@ -833,6 +842,144 @@ function mediaInputRef(
   if (file.dataUrl) return file.dataUrl
   if (file.url && !file.url.startsWith('safe-file://')) return file.url
   return file.path
+}
+
+interface MaterializedMediaFile {
+  buffer: Buffer
+  filename: string
+  mimeType?: string
+  /** 本地文件绝对路径；存在时上传器可直传（multipart），避免 buffer→base64 内存膨胀。 */
+  filePath?: string
+}
+
+/**
+ * 视频/音频输入引用解析（异步）：公网 https URL 直接透传；本地 path / safe-file:// /
+ * dataUrl 一律物化后走 Spark 平台公开上传（fallbackUploader），返回公网 https URL。
+ *
+ * 与 mediaInputRef 的分工：图片 base64 体积可控可直接内联给三方；视频/音频 base64
+ * 会撑爆请求体（APIMart 等平台有 ~3MiB 上限），本地素材必须提前上传。失败抛出带
+ * 明确原因的错误，避免「本地路径原样发出 → 三方报不支持上传」的难排查链路。
+ */
+async function resolveMediaInputRefForUpload(
+  file: {
+    url?: string | undefined
+    dataUrl?: string | undefined
+    path?: string | undefined
+    mimeType?: string | undefined
+  },
+  kind: 'video' | 'audio',
+  ctx: MediaProviderContext,
+): Promise<string | undefined> {
+  if (file.url && /^https?:\/\//i.test(file.url)) return file.url
+  if (file.url && !file.url.startsWith('safe-file://')) return file.url
+  const materialized = await materializeMediaInput(file)
+  if (!materialized) {
+    throw new MediaProviderError(
+      'invalid_input',
+      `${kind} 输入必须是公网 https URL、data URL 或可读本地文件`,
+    )
+  }
+  if (!ctx.fallbackUploader?.canHandle(ctx.mediaProvider)) {
+    throw new MediaProviderError(
+      'auth_required',
+      `${kind} 输入是本地文件，但当前渠道没有可用的公开上传服务（Spark 平台），请登录后重试`,
+    )
+  }
+  logMediaDiag('media-input-upload-started', {
+    provider: ctx.mediaProvider,
+    kind,
+    bytes: materialized.buffer.byteLength,
+    mime: materialized.mimeType ?? 'unknown',
+    via: 'spark',
+  })
+  let uploaded: { publicUrl?: string; url?: string }
+  try {
+    uploaded = await ctx.fallbackUploader.upload({
+      buffer: materialized.buffer,
+      filename: materialized.filename,
+      ...(materialized.mimeType ? { mimeType: materialized.mimeType } : {}),
+      ...(materialized.filePath ? { filePath: materialized.filePath } : {}),
+      targetProvider: ctx.mediaProvider,
+    })
+  } catch (uploadError) {
+    const message = uploadError instanceof Error ? uploadError.message : String(uploadError)
+    logMediaDiag('media-input-upload-failed', { provider: ctx.mediaProvider, kind, error: message })
+    throw new MediaProviderError(
+      'provider_http_error',
+      `${kind} 本地文件上传 Spark 平台失败：${message}`,
+    )
+  }
+  const publicUrl = uploaded.publicUrl ?? uploaded.url
+  if (!publicUrl || !/^https?:\/\//i.test(publicUrl)) {
+    throw new MediaProviderError(
+      'provider_http_error',
+      `${kind} 上传成功但返回了无效的访问 URL`,
+    )
+  }
+  logMediaDiag('media-input-upload-finished', {
+    provider: ctx.mediaProvider,
+    kind,
+    transport: 'spark-url',
+  })
+  return publicUrl
+}
+
+async function materializeMediaInput(file: {
+  url?: string | undefined
+  dataUrl?: string | undefined
+  path?: string | undefined
+  mimeType?: string | undefined
+}): Promise<MaterializedMediaFile | null> {
+  if (file.dataUrl) {
+    const parsed = parseDataUrl(file.dataUrl)
+    if (!parsed) return null
+    return {
+      buffer: parsed.buffer,
+      filename: filenameForMime(parsed.mimeType),
+      mimeType: file.mimeType ?? parsed.mimeType,
+    }
+  }
+  const localPath = file.path ?? decodeSafeFilePath(file.url)
+  if (!localPath) return null
+  try {
+    return {
+      buffer: await readFile(localPath),
+      filename: basename(localPath) || filenameForMime(file.mimeType),
+      filePath: localPath,
+      ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+    }
+  } catch (error) {
+    throw new MediaProviderError(
+      'invalid_input',
+      `本地文件不可读：${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+function parseDataUrl(value: string): { buffer: Buffer; mimeType: string } | null {
+  const match = /^data:([^;,]+);base64,(.*)$/is.exec(value)
+  if (!match?.[1] || match[2] == null) return null
+  return { mimeType: match[1], buffer: Buffer.from(match[2], 'base64') }
+}
+
+function decodeSafeFilePath(value: string | undefined): string | undefined {
+  if (!value?.startsWith('safe-file://')) return undefined
+  const rest = value.slice('safe-file://'.length)
+  const slashIndex = rest.indexOf('/')
+  if (slashIndex < 0) return undefined
+  const encoded = rest.slice(slashIndex + 1)
+  if (!encoded) return undefined
+  const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
+  const padding = base64.length % 4 === 0 ? '' : '='.repeat(4 - (base64.length % 4))
+  const decoded = Buffer.from(base64 + padding, 'base64').toString('utf8')
+  // 与主进程 SafeFileProtocol 解码对齐：非绝对路径（相对路径/空串）视为无效。
+  if (!decoded || !isAbsolute(decoded)) return undefined
+  return decoded
+}
+
+function filenameForMime(mimeType: string | undefined): string {
+  const extension = mimeType?.split('/')[1]?.replace('jpeg', 'jpg') ?? 'bin'
+  return `spark-input-${Date.now()}.${extension}`
 }
 
 function clampInt(

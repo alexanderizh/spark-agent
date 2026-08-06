@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { rmSync, mkdirSync, existsSync } from 'node:fs'
+import { rmSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { MinimaxHailuoMediaAdapter } from '../../../services/media/adapters/minimax-hailuo-media.adapter.js'
@@ -840,6 +840,84 @@ describe('MinimaxHailuoMediaAdapter', () => {
         type: 'image_url',
         image_url: { url: 'mm_file://398574688191234048' },
         role: 'first_frame',
+      },
+    ])
+  })
+
+  it('V2 H3 本地视频: 官方 Files 上传失败 → 回退 Spark 平台公开上传（https URL）', async () => {
+    const manifest = findManifest('minimax:v2-h3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.reference_to_video')!
+    const localVideoPath = path.join(tmpDir, 'ref-motion.mp4')
+    writeFileSync(localVideoPath, FAKE_MP4)
+    const uploads: Array<Record<string, unknown>> = []
+    const fetchImpl = mockFetch(async (url) => {
+      // 官方 Files 上传失败（HTTP 401）
+      if (url === `${ENDPOINT}/v1/files/upload`) {
+        return jsonRes({ message: 'unauthorized' }, 401)
+      }
+      if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-ref' })
+      if (url.includes('/v2/query/video_generation/')) {
+        return jsonRes({ task: { status: 'succeeded', content: { url: 'https://cdn/ref.mp4' } } })
+      }
+      if (url === 'https://cdn/ref.mp4') return binaryRes(FAKE_MP4)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'image_to_video',
+        capability: 'video.reference_to_video',
+        prompt: '参照视频动起来',
+        inputFiles: [
+          { type: 'video', role: 'reference', mimeType: 'video/mp4', path: localVideoPath },
+        ],
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        apiEndpoint: `${ENDPOINT}/v2`,
+        defaultModel: 'MiniMax-H3',
+        mediaApiType: 'async',
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+        mediaDefaults: { polling: { intervalMs: 1 } },
+        fallbackUploader: {
+          canHandle: (provider) => provider === 'minimax-hailuo',
+          upload: async (input) => {
+            uploads.push({
+              filePath: input.filePath,
+              filename: input.filename,
+              mimeType: input.mimeType,
+              targetProvider: input.targetProvider,
+            })
+            return {
+              provider: 'minimax-hailuo',
+              publicUrl: 'https://minio.yiqibyte.com/spark-desktop/ref-motion.mp4',
+            }
+          },
+        },
+      }),
+    )
+    // 官方上传失败一次（HTTP 401），回退上传一次
+    const officialUploadCalls = fetchImpl.mock.calls.filter(
+      ([u]) => u === `${ENDPOINT}/v1/files/upload`,
+    )
+    expect(officialUploadCalls).toHaveLength(1)
+    expect(uploads).toHaveLength(1)
+    expect(uploads[0]).toMatchObject({
+      filePath: localVideoPath,
+      filename: 'ref-motion.mp4',
+      mimeType: 'video/mp4',
+      targetProvider: 'minimax-hailuo',
+    })
+    const createBody = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+    )
+    expect(createBody.content).toEqual([
+      { type: 'text', text: '参照视频动起来' },
+      {
+        type: 'video_url',
+        video_url: { url: 'https://minio.yiqibyte.com/spark-desktop/ref-motion.mp4' },
+        role: 'reference_video',
       },
     ])
   })
