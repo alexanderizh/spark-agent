@@ -119,7 +119,7 @@ function CanvasProjectSidebarListComponent() {
     (projectId: string) => {
       Modal.confirm({
         title: '删除 Canvas 项目？',
-        content: '项目会被标记为删除，后续可接入恢复机制。',
+        content: '项目会被标记为删除。',
         okText: '删除',
         cancelText: '取消',
         okButtonProps: { danger: true },

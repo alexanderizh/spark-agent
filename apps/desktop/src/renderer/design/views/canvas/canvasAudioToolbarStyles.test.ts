@@ -18,9 +18,7 @@ describe('canvas audio toolbar overflow styles', () => {
   it('keeps audio body content paintable when cinematic uses content-visibility for other nodes', () => {
     const source = readSource('./cinematic/nodes.less')
 
-    expect(source).not.toMatch(
-      /\.canvas-node-body\s*\{[\s\S]*?content-visibility:\s*auto\s*;/,
-    )
+    expect(source).not.toMatch(/\.canvas-node-body\s*\{[\s\S]*?content-visibility:\s*auto\s*;/)
   })
 
   it('keeps node footer actions visible at compact and overview zoom levels', () => {
@@ -35,10 +33,17 @@ describe('canvas audio toolbar overflow styles', () => {
   })
 
   it('anchors the toolbar ten pixels above the node with an opaque surface', () => {
-    const source = readSource('./CanvasWorkspaceView.less')
+    const styles = readSource('./CanvasWorkspaceView.less')
+    const presentation = readSource('./audioNode/CanvasAudioNodePresentation.tsx')
 
-    expect(source).toMatch(
-      /\.canvas-node-audio-chips\s*\{[\s\S]*?bottom:\s*calc\(100%\s*\+\s*10px\)\s*;[\s\S]*?background:\s*var\(--panel-elev/,
+    expect(styles).toMatch(
+      /\.canvas-node-toolbar-surface\s*\{[\s\S]*?border-radius:\s*999px\s*;[\s\S]*?background:\s*var\(--panel-elev/,
+    )
+    expect(styles).toMatch(
+      /\.canvas-node-audio-chips\s*\{[\s\S]*?bottom:\s*calc\(100%\s*\+\s*10px\)\s*;/,
+    )
+    expect(presentation).toContain(
+      'canvas-node-toolbar-surface canvas-node-audio-chips nodrag nopan',
     )
   })
 })

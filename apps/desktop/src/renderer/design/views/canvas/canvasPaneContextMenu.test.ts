@@ -47,23 +47,20 @@ describe('canvas pane context menu', () => {
   })
 
   it('applies the scroll boundary class to every node submenu portal', () => {
-    expect(nodeSource.match(/popupClassName: 'canvas-node-context-submenu-popup'/g)).toHaveLength(3)
+    expect(nodeSource.match(/popupClassName: 'canvas-node-context-submenu-popup'/g)).toHaveLength(2)
     expect(contextMenuStyles).toMatch(
       /\.canvas-node-context-submenu-popup \.ant-dropdown-menu\s*{[\s\S]*?max-height:\s*min\(440px, calc\(100dvh - 96px\)\)/,
     )
   })
 
-  it('splits resource creation actions between the two task submenus without duplication', () => {
+  it('keeps functional resource actions separate from flat base task entries', () => {
     const taskMenuSource = stageSource.slice(
       stageSource.indexOf('<div className="canvas-pane-context-section-title">任务节点</div>'),
       stageSource.indexOf('<div className="canvas-pane-context-section-title">画布</div>'),
     )
     const filmMenuSource = taskMenuSource.slice(
       taskMenuSource.indexOf('label={CANVAS_FUNCTIONAL_MENU_LABEL}'),
-      taskMenuSource.indexOf('label={CANVAS_BASE_TASK_MENU_LABEL}'),
-    )
-    const baseMenuSource = taskMenuSource.slice(
-      taskMenuSource.indexOf('label={CANVAS_BASE_TASK_MENU_LABEL}'),
+      taskMenuSource.indexOf('canvasVisibleBaseCreateOperations().map'),
     )
 
     expect(taskMenuSource.match(/<CanvasPaneResourceNodeActions/g)).toHaveLength(2)
@@ -72,24 +69,38 @@ describe('canvas pane context menu', () => {
     expect(filmMenuSource).toContain('onAddDirectorStage3D=')
     expect(filmMenuSource).toContain('onAddVideoWorkbench=')
     expect(filmMenuSource).toContain('onInsertAsset=')
-    expect(filmMenuSource).not.toContain('onAddText=')
     expect(filmMenuSource).not.toContain('onAddPrompt=')
-    expect(baseMenuSource).toContain('onAddText={handleAddTextFromPane}')
+    expect(taskMenuSource).toContain('onAddText={handleAddTextFromPane}')
     expect(taskMenuSource).not.toContain('新建 Prompt')
-    expect(baseMenuSource).not.toContain('onAddPrompt=')
-    expect(baseMenuSource).not.toContain('onAddImage=')
-    expect(baseMenuSource).not.toContain('onAddDirectorStage3D=')
-    expect(baseMenuSource).not.toContain('onInsertAsset=')
     expect(filmMenuSource).toContain('panePipelineOperationGroups.map')
-    expect(baseMenuSource).toContain('CANVAS_BASE_CREATE_OPERATION_GROUPS.map')
+    expect(taskMenuSource).toContain('canvasVisibleBaseCreateOperations().map')
+    expect(taskMenuSource).not.toContain('CANVAS_BASE_TASK_MENU_LABEL')
   })
 
-  it('uses the same categorized task menus for content and functional nodes with outputs', () => {
+  it('uses the same task operation source for content and functional nodes with outputs', () => {
     expect(nodeSource).toContain('CANVAS_PIPELINE_MENU_GROUPS.flatMap')
-    expect(nodeSource).toContain('CANVAS_BASE_CREATE_OPERATION_GROUPS.map')
+    expect(nodeSource).toContain('canvasVisibleBaseCreateOperations().map')
+    expect(nodeSource).not.toContain('CANVAS_BASE_TASK_MENU_LABEL')
     expect(floatingToolbarSource).toContain('CANVAS_PIPELINE_MENU_GROUPS.map')
-    expect(floatingToolbarSource).toContain('pipelineActionGroups.map')
+    expect(floatingToolbarSource).toContain('const pipelineActionGroups =')
     expect(workspaceSource).toContain('<CanvasFloatingNodeToolbar')
+  })
+
+  it('flattens right-click image and video creation entries beside add text', () => {
+    const operationMenuStart = stageSource.indexOf(
+      '<CanvasPaneResourceNodeActions onAddText={handleAddTextFromPane}',
+    )
+    const operationMenuSource = stageSource.slice(operationMenuStart)
+    expect(operationMenuStart).toBeGreaterThanOrEqual(0)
+    expect(operationMenuSource).toContain(
+      'CanvasPaneResourceNodeActions onAddText={handleAddTextFromPane}',
+    )
+    expect(operationMenuSource).toContain('canvasVisibleBaseCreateOperations().map')
+    expect(operationMenuSource).not.toContain('<CanvasPaneContextSubmenu')
+    expect(operationMenuSource).toContain('<button')
+    expect(operationMenuSource).not.toContain('<Button')
+    expect(nodeSource).toContain('canvasVisibleBaseCreateOperations().map')
+    expect(nodeSource).toContain('<span className="canvas-menu-item">')
   })
 
   it('keeps text as the only direct text-like node creation entry', () => {

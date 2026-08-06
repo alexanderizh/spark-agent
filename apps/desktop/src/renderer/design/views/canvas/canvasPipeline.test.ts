@@ -3,6 +3,7 @@ import type { CanvasNodeData } from './canvas.types'
 import {
   collectDownstream,
   confirmPatch,
+  getAllPipelineActions,
   getPipelineActions,
   getNodePipelineActions,
   humanEditPatch,
@@ -51,6 +52,14 @@ describe('canvasPipeline', () => {
     it('无角色或未知角色返回空', () => {
       expect(getPipelineActions(undefined)).toEqual([])
       expect(getPipelineActions('style_bible')).toEqual([])
+    })
+
+    it('影视创作菜单可展示完整动作目录，不按节点条件裁剪', () => {
+      const actions = getAllPipelineActions()
+      expect(actions.map((action) => action.id)).toContain('chapter.to_screenplay')
+      expect(actions.map((action) => action.id)).toContain('character.three_view')
+      expect(actions.map((action) => action.id)).toContain('shot.to_video')
+      expect(new Set(actions.map((action) => action.id)).size).toBe(actions.length)
     })
 
     it('节点关联同类型资产时可放宽到对应出图任务', () => {

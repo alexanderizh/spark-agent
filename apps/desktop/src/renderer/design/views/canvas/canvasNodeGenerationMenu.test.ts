@@ -4,7 +4,9 @@ import {
   CANVAS_BASE_CREATE_OPERATION_GROUPS,
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
   CANVAS_FUNCTIONAL_MENU_LABEL,
+  CANVAS_VISIBLE_BASE_CREATE_OPERATION_GROUPS,
   canvasBaseCreateOperations,
+  canvasVisibleBaseCreateOperations,
 } from './canvasNodeGenerationMenu'
 
 describe('canvasNodeGenerationMenu', () => {
@@ -45,6 +47,7 @@ describe('canvasNodeGenerationMenu', () => {
       'image_prompt_reverse',
       'text_to_video',
       'video_depth_map',
+      'extract_audio',
       'text_to_audio',
       'audio_transcribe',
     ])
@@ -61,6 +64,25 @@ describe('canvasNodeGenerationMenu', () => {
     expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.find((group) => group.id === 'video')?.items).toEqual([
       { operation: 'text_to_video', label: '视频生成', icon: 'Video' },
       { operation: 'video_depth_map', label: '深度视频转换', icon: 'Video' },
+      { operation: 'extract_audio', label: '分离音频', icon: 'Audio' },
+    ])
+  })
+
+  it('hides audio from the current right-click menu without deleting its definitions', () => {
+    expect(CANVAS_VISIBLE_BASE_CREATE_OPERATION_GROUPS.map((group) => group.id)).toEqual([
+      'image',
+      'video',
+    ])
+    expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => group.id)).toContain('audio')
+  })
+
+  it('flattens visible image and video operations for the right-click menu', () => {
+    expect(canvasVisibleBaseCreateOperations().map((item) => item.operation)).toEqual([
+      'text_to_image',
+      'image_prompt_reverse',
+      'text_to_video',
+      'video_depth_map',
+      'extract_audio',
     ])
   })
 })

@@ -23,6 +23,7 @@ import type {
 } from './canvasFilmTypes'
 import { readFilmMetadata, writeFilmMetadata } from './canvasFilmTypes'
 import {
+  CANVAS_PIPELINE_OPS,
   getOpsForRole,
   getOpsForNode,
   type CanvasPipelineAssetKind,
@@ -62,6 +63,11 @@ function toAction(op: CanvasPipelineOp): PipelineAction {
 /** 解析某流水线角色「下一步」可执行的编排动作 */
 export function getPipelineActions(role: CanvasPipelineRole | undefined): PipelineAction[] {
   return getOpsForRole(role).map(toAction)
+}
+
+/** 影视创作菜单展示用的完整动作目录，不按当前节点角色裁剪。 */
+export function getAllPipelineActions(): PipelineAction[] {
+  return CANVAS_PIPELINE_OPS.map(toAction)
 }
 
 /** 解析某节点「下一步」可执行的编排动作（无 role 的文本节点也能拿到剧本类入口） */

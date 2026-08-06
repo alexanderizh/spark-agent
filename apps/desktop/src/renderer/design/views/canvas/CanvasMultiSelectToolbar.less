@@ -1,89 +1,5 @@
 .canvas-multi-select-toolbar {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px 6px;
-  border-radius: var(--canvas-cinema-radius-md, 11px);
-  background: var(--canvas-cinema-surface-3, #292929);
-  border: 1px solid var(--canvas-cinema-border-strong, rgba(255, 255, 255, 0.14));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
-  color: var(--canvas-cinema-text-strong, #f1f1f1);
-  user-select: none;
-
-  .canvas-multi-select-toolbar-divider {
-    width: 1px;
-    height: 16px;
-    margin: 0 4px;
-    background: var(--canvas-cinema-border-strong, rgba(255, 255, 255, 0.14));
-  }
-
-  .canvas-multi-select-toolbar-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: none;
-    border-radius: var(--canvas-cinema-radius-xs, 6px);
-    background: transparent;
-    color: var(--canvas-cinema-text, #cccccc);
-    cursor: pointer;
-    transition:
-      background-color var(--canvas-cinema-motion-fast, 160ms) ease,
-      color var(--canvas-cinema-motion-fast, 160ms) ease;
-
-    &:hover:not(:disabled) {
-      background: var(--canvas-cinema-surface-4, #343434);
-      color: var(--canvas-cinema-text-strong, #f1f1f1);
-    }
-
-    &.is-active {
-      background: var(--canvas-cinema-accent-soft, rgba(119, 108, 246, 0.16));
-      color: var(--canvas-cinema-accent-bright, #9189ff);
-    }
-
-    &:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-
-    &.canvas-multi-select-toolbar-btn-danger:hover:not(:disabled) {
-      background: rgba(239, 107, 118, 0.16);
-      color: var(--canvas-cinema-danger, #ef6b76);
-    }
-
-    // 轻量 hover 提示：纯 CSS，约 60ms 显示，比原生 title(~500ms) 快得多；
-    // 不 clone 子元素，与 Popover trigger 按钮零 ref 冲突。
-    &[data-hint]::after {
-      content: attr(data-hint);
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 4px 8px;
-      border-radius: var(--canvas-cinema-radius-xs, 6px);
-      background: rgba(20, 20, 20, 0.96);
-      color: var(--canvas-cinema-text-strong, #f1f1f1);
-      font-size: 11px;
-      line-height: 1.4;
-      white-space: nowrap;
-      pointer-events: none;
-      opacity: 0;
-      z-index: 20;
-      border: 1px solid var(--canvas-cinema-border-strong, rgba(255, 255, 255, 0.14));
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-      transition: opacity 100ms ease 0ms;
-    }
-
-    // Popover 打开时按钮进入 is-active 态，此时不再显示 data-hint，
-    // 避免 ::after 浮层与下方 Popover content（含同名标题）视觉重叠。
-    &[data-hint]:hover:not(.is-active)::after {
-      opacity: 1;
-      transition: opacity 100ms ease 60ms;
-    }
-  }
+  max-width: min(100%, 760px);
 }
 
 .canvas-multi-select-align-panel {
@@ -111,18 +27,14 @@
       gap: 2px;
     }
 
-    .canvas-multi-select-align-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
+    .canvas-multi-select-align-btn.ant-btn {
+      min-width: 28px;
       height: 28px;
       padding: 0;
       border: none;
       border-radius: var(--canvas-cinema-radius-xs, 6px);
       background: transparent;
       color: var(--canvas-cinema-text, #cccccc);
-      cursor: pointer;
       transition:
         background-color var(--canvas-cinema-motion-fast, 160ms) ease,
         color var(--canvas-cinema-motion-fast, 160ms) ease;

@@ -35,14 +35,14 @@ import {
   keepsCanvasMediaNodeAspectRatio,
   pickCanvasNodeMinSize,
 } from './canvasNodeSize'
-import { getNodePipelineActions } from './canvasPipeline'
+import { getAllPipelineActions } from './canvasPipeline'
 import { CANVAS_PIPELINE_MENU_GROUPS, type CanvasPipelineAssetKind } from './canvasPipelineOps'
 import {
-  CANVAS_BASE_CREATE_OPERATION_GROUPS,
-  CANVAS_BASE_TASK_MENU_LABEL,
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
   CANVAS_FUNCTIONAL_MENU_LABEL,
+  canvasVisibleBaseCreateOperations,
 } from './canvasNodeGenerationMenu'
+import { getOperationVisual } from './canvasOperationIcons'
 import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
 import { canvasOperationRuntimeSummary } from './canvasNodeSecondaryLabel'
 import {
@@ -78,6 +78,8 @@ function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.Reac
   const IconFn = (iconKey && map[iconKey]) || Icons.Workflow
   return <IconFn size={size} />
 }
+
+const ALL_PIPELINE_ACTIONS = getAllPipelineActions()
 
 /** 3D 导演台节点卡片：角色/道具计数 + 最近一次截图缩略图（若有）。 */
 function Stage3DMini({ data }: { data: SparkCanvasNode['data'] }) {
@@ -536,7 +538,6 @@ export const CanvasNode = memo(function CanvasNode({
     assetSubviewCount = 0,
     operationRuns = [],
     operationRunsFingerprint = '',
-    assetKinds = [],
     isGeneratedOutput = false,
     baseRenderedHeight = node.height,
     cardChromeExtraHeight = 0,
@@ -665,7 +666,7 @@ export const CanvasNode = memo(function CanvasNode({
 
   const hasOperationOutput = !isTask || Boolean(operationOutputState.primaryOutput)
   const canCreateOperationFromNode = !isTask || hasOperationOutput
-  const pipelineActions = contentNode ? getNodePipelineActions(contentNode, { assetKinds }) : []
+  const pipelineActions = ALL_PIPELINE_ACTIONS
   // 子类型切换（仅 image/text）：当前子类型 + 可选项，供右键菜单「切换类型」渲染。
   const subtypeSwitch = useMemo(() => {
     if (!isSubtypeSwitchable(node)) return null
@@ -982,27 +983,15 @@ export const CanvasNode = memo(function CanvasNode({
             ]
           : []),
         ...(canCreateOperationFromNode
-          ? [
-              {
-                key: 'add-operation',
-                popupClassName: 'canvas-node-context-submenu-popup',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Sparkles size={14} /> {CANVAS_BASE_TASK_MENU_LABEL}
-                  </span>
-                ),
-                children: CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => ({
-                  type: 'group' as const,
-                  key: `base-task-group-${group.id}`,
-                  label: group.label,
-                  children: group.items.map((item) => ({
-                    key: `op-${item.operation}`,
-                    label: item.label,
-                    onClick: () => actions.createOperationChild(node.id, item.operation),
-                  })),
-                })),
-              },
-            ]
+          ? canvasVisibleBaseCreateOperations().map((item) => ({
+              key: `op-${item.operation}`,
+              label: (
+                <span className="canvas-menu-item">
+                  {getOperationVisual(item.operation).icon} {item.label}
+                </span>
+              ),
+              onClick: () => actions.createOperationChild(node.id, item.operation),
+            }))
           : []),
         ...((isImageContent ||
           contentNode?.type === 'video' ||

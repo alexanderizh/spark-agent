@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react'
-import { Tooltip } from '@lobehub/ui'
+import { Button, Tooltip } from '@lobehub/ui'
 import { Popover } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasGridArrangePanel } from './CanvasGridArrangePanel'
@@ -91,14 +91,14 @@ export function CanvasMultiSelectToolbar({
       <div className="canvas-multi-select-align-buttons">
         {items.map((item) => (
           <Tooltip key={item.mode} title={item.label}>
-            <button
-              type="button"
+            <Button
+              size="small"
+              type="text"
               className="canvas-multi-select-align-btn"
               aria-label={item.label}
+              icon={<item.Icon size={15} />}
               onClick={() => handleAlignClick(item.mode)}
-            >
-              <item.Icon size={15} />
-            </button>
+            />
           </Tooltip>
         ))}
       </div>
@@ -123,20 +123,26 @@ export function CanvasMultiSelectToolbar({
   )
 
   return (
-    <div className="canvas-multi-select-toolbar" role="toolbar" aria-label="多选节点工具栏">
+    <div
+      className="canvas-node-toolbar-surface canvas-multi-select-toolbar"
+      role="toolbar"
+      aria-label="多选节点工具栏"
+    >
       <Tooltip title={canCreateGroup ? '创建组' : '选中 2 个以上未分组节点以创建组'}>
-        <button
-          type="button"
-          className="canvas-multi-select-toolbar-btn"
+        <Button
+          size="small"
+          type="text"
+          className="canvas-node-toolbar-button canvas-multi-select-toolbar-btn"
+          icon={<Icons.Group size={15} />}
           aria-label="创建组"
           disabled={!canCreateGroup}
           onClick={onCreateGroup}
         >
-          <Icons.Group size={15} />
-        </button>
+          创建组
+        </Button>
       </Tooltip>
 
-      <span className="canvas-multi-select-toolbar-divider" />
+      <span className="canvas-node-toolbar-divider" />
 
       <Popover
         trigger="click"
@@ -145,14 +151,15 @@ export function CanvasMultiSelectToolbar({
         onOpenChange={(open) => !arranging && setAlignOpen(open)}
         content={alignContent}
       >
-        <button
-          type="button"
-          className={`canvas-multi-select-toolbar-btn${alignOpen ? ' is-active' : ''}`}
+        <Button
+          size="small"
+          type="text"
+          className={`canvas-node-toolbar-button canvas-multi-select-toolbar-btn${alignOpen ? ' is-active' : ''}`}
+          icon={<Icons.AlignCenterHorizontal size={15} />}
           aria-label="对齐与分布"
-          data-hint="对齐与分布"
         >
-          <Icons.AlignCenterHorizontal size={15} />
-        </button>
+          对齐
+        </Button>
       </Popover>
 
       <Popover
@@ -162,38 +169,43 @@ export function CanvasMultiSelectToolbar({
         onOpenChange={(open) => !arranging && setGridOpen(open)}
         content={gridContent}
       >
-        <button
-          type="button"
-          className={`canvas-multi-select-toolbar-btn${gridOpen ? ' is-active' : ''}`}
+        <Button
+          size="small"
+          type="text"
+          className={`canvas-node-toolbar-button canvas-multi-select-toolbar-btn${gridOpen ? ' is-active' : ''}`}
+          icon={<Icons.Grid size={15} />}
           aria-label="网格排列"
-          data-hint="网格排列"
         >
-          <Icons.Grid size={15} />
-        </button>
+          网格
+        </Button>
       </Popover>
 
-      <span className="canvas-multi-select-toolbar-divider" />
+      <span className="canvas-node-toolbar-divider" />
 
       <Tooltip title="复制选中节点">
-        <button
-          type="button"
-          className="canvas-multi-select-toolbar-btn"
+        <Button
+          size="small"
+          type="text"
+          className="canvas-node-toolbar-button canvas-multi-select-toolbar-btn"
+          icon={<Icons.Copy size={15} />}
           aria-label="复制选中节点"
           onClick={onDuplicate}
         >
-          <Icons.Copy size={15} />
-        </button>
+          复制
+        </Button>
       </Tooltip>
 
       <Tooltip title="删除选中节点">
-        <button
-          type="button"
-          className="canvas-multi-select-toolbar-btn canvas-multi-select-toolbar-btn-danger"
+        <Button
+          size="small"
+          type="text"
+          className="canvas-node-toolbar-button canvas-node-toolbar-button-danger canvas-multi-select-toolbar-btn"
+          icon={<Icons.Trash size={15} />}
           aria-label="删除选中节点"
           onClick={onDelete}
         >
-          <Icons.Trash size={15} />
-        </button>
+          删除
+        </Button>
       </Tooltip>
     </div>
   )
