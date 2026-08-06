@@ -841,6 +841,119 @@ export async function trimVideo(
 }
 
 /**
+ * 构造纯音频截取参数。
+ *
+ * 音频文件没有 `0:v` 流，不能复用 trimVideo 的视频编码参数；这里明确只映射
+ * 第一条音轨并保留原编码，输出容器由调用方根据源音频编码选择。
+ */
+export function buildAudioTrimArgs(
+  input: string,
+  outputPath: string,
+  startSec: number,
+  endSec: number,
+): string[] {
+  const duration = endSec - startSec
+  if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || duration <= 0) {
+    throw new Error(`无效的音频截取区间: ${startSec}~${endSec}`)
+  }
+  return [
+    '-ss',
+    String(startSec),
+    '-i',
+    input,
+    '-t',
+    String(duration),
+    '-map',
+    '0:a:0',
+    '-vn',
+    '-c:a',
+    'copy',
+    '-avoid_negative_ts',
+    'make_zero',
+    '-y',
+    outputPath,
+  ]
+}
+
+/** 选择与源音频扩展名/容器兼容的重编码器，用于 atempo 之后的输出。 */
+function audioEncoderForCodec(codec: string | null): string {
+  switch (codec) {
+    case 'mp3':
+      return 'libmp3lame'
+    case 'aac':
+      return 'aac'
+    case 'alac':
+      return 'alac'
+    case 'opus':
+      return 'libopus'
+    case 'vorbis':
+      return 'libvorbis'
+    case 'flac':
+      return 'flac'
+    case 'ac3':
+    case 'eac3':
+      return 'ac3'
+    case 'pcm_s16le':
+    case 'pcm_s16be':
+    case 'pcm_u8':
+    case 'pcm_s24le':
+    case 'pcm_f32le':
+      return 'pcm_s16le'
+    default:
+      // 未知编码输出为 mka，libopus 在该容器中兼容性最好。
+      return 'libopus'
+  }
+}
+
+/** 构造纯音频变速参数，绝不创建或引用视频滤镜流。 */
+export function buildAudioSpeedArgs(
+  input: string,
+  outputPath: string,
+  factor: number,
+  audioCodec: string | null,
+): string[] {
+  if (!Number.isFinite(factor) || factor <= 0) {
+    throw new Error(`无效的音频速度倍率: ${factor}`)
+  }
+  return [
+    '-i',
+    input,
+    '-map',
+    '0:a:0',
+    '-vn',
+    '-filter:a',
+    buildAtempoChain(factor),
+    '-c:a',
+    audioEncoderForCodec(audioCodec),
+    '-y',
+    outputPath,
+  ]
+}
+
+/** 纯音频截取：只处理音轨，避免视频 trim 参数污染音频文件。 */
+export async function trimAudio(
+  input: string,
+  outputPath: string,
+  opts: {
+    startSec: number
+    endSec: number
+    onProgress?: ((p: FfmpegProgress) => void) | undefined
+  },
+): Promise<{ path: string }> {
+  const duration = opts.endSec - opts.startSec
+  const args = buildAudioTrimArgs(input, outputPath, opts.startSec, opts.endSec)
+  ensureOutputDirectory(outputPath)
+  const result = await runFfmpeg(args, {
+    totalDurationSec: duration,
+    onProgress: opts.onProgress,
+  })
+  if (result.code !== 0) {
+    throw new Error(`音频截取失败: ${result.stderr.slice(-300)}`)
+  }
+  return { path: outputPath }
+}
+
+/**
  * 合并多个视频。
  *
  * 先 probe 各段编码是否一致：
@@ -1243,6 +1356,25 @@ export async function adjustSpeed(
   const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress })
   if (result.code !== 0) {
     throw new Error(`变速失败: ${result.stderr.slice(-300)}`)
+  }
+  return { path: outputPath }
+}
+
+/** 纯音频变速：atempo 只作用于第一条音轨，输出编码与源容器保持兼容。 */
+export async function adjustAudioSpeed(
+  input: string,
+  outputPath: string,
+  factor: number,
+  opts: {
+    audioCodec: string | null
+    onProgress?: ((p: FfmpegProgress) => void) | undefined
+  },
+): Promise<{ path: string }> {
+  const args = buildAudioSpeedArgs(input, outputPath, factor, opts.audioCodec)
+  ensureOutputDirectory(outputPath)
+  const result = await runFfmpeg(args, { onProgress: opts.onProgress })
+  if (result.code !== 0) {
+    throw new Error(`音频变速失败: ${result.stderr.slice(-300)}`)
   }
   return { path: outputPath }
 }
