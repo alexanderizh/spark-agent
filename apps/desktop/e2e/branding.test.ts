@@ -19,7 +19,11 @@ interface BuilderConfig {
       NSMicrophoneUsageDescription?: string
     }
   }
-  nsis?: { shortcutName?: string; uninstallDisplayName?: string }
+  nsis?: {
+    shortcutName?: string
+    uninstallDisplayName?: string
+    allowToChangeInstallationDirectory?: boolean
+  }
   linux?: { desktop?: { entry?: { Name?: string } } }
 }
 
@@ -37,6 +41,7 @@ describe('desktop branding boundaries', () => {
     expect(config.mac?.extendInfo?.NSMicrophoneUsageDescription).toContain('麦克风')
     expect(config.nsis?.shortcutName).toBe('SparkWork')
     expect(config.nsis?.uninstallDisplayName).toBe('SparkWork ${version}')
+    expect(config.nsis?.allowToChangeInstallationDirectory).toBe(true)
     expect(config.linux?.desktop?.entry?.Name).toBe('SparkWork')
   })
 
