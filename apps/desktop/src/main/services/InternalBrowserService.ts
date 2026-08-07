@@ -1,6 +1,8 @@
 import { app, BrowserWindow, session as electronSession } from 'electron'
+import type { WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { createLogger } from '@spark/shared'
+import { buildInternalBrowserShellUrl } from './internal-browser-shell.js'
 
 const log = createLogger('internal-browser')
 
@@ -94,6 +96,10 @@ type WindowState = {
   profileId: string
   partition: string
   win: BrowserWindow
+  pageWebContents: WebContents | null
+  pageReady: Promise<WebContents>
+  resolvePageReady: ((contents: WebContents) => void) | null
+  networkHooksInstalled: boolean
   createdAt: string
   lastActiveAt: string
   url: string | null
@@ -152,6 +158,17 @@ function matchesRule(rule: NetworkRule, url: string): boolean {
   }
 }
 
+function createPageReady(): {
+  promise: Promise<WebContents>
+  resolve: (contents: WebContents) => void
+} {
+  let resolve!: (contents: WebContents) => void
+  const promise = new Promise<WebContents>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 export class InternalBrowserService {
   private readonly windows = new Map<string, WindowState>()
   private lifecycleBound = false
@@ -196,14 +213,20 @@ export class InternalBrowserService {
         nodeIntegration: false,
         sandbox: true,
         webSecurity: true,
+        webviewTag: true,
       },
     })
     const now = new Date().toISOString()
+    const pageReady = createPageReady()
     const state: WindowState = {
       windowId,
       profileId,
       partition,
       win,
+      pageWebContents: null,
+      pageReady: pageReady.promise,
+      resolvePageReady: pageReady.resolve,
+      networkHooksInstalled: false,
       createdAt: now,
       lastActiveAt: now,
       url: null,
@@ -218,7 +241,7 @@ export class InternalBrowserService {
     }
     this.windows.set(windowId, state)
     this.attachWindowEvents(state)
-    this.installNetworkHooks(state)
+    await win.loadURL(buildInternalBrowserShellUrl(partition))
     await this.navigate(windowId, targetUrl)
     return this.meta(state)
   }
@@ -227,9 +250,10 @@ export class InternalBrowserService {
     const state = this.requireWindow(windowId)
     const targetUrl = normalizeUrl(url)
     try {
-      await state.win.loadURL(targetUrl)
-      state.url = state.win.webContents.getURL() || targetUrl
-      state.title = state.win.getTitle() || null
+      const page = await this.getPageWebContents(state)
+      await page.loadURL(targetUrl)
+      state.url = page.getURL() || targetUrl
+      state.title = page.getTitle() || null
       state.lastActiveAt = new Date().toISOString()
       await this.runInjectedScripts(state)
       return { url: state.url, title: state.title }
@@ -244,8 +268,9 @@ export class InternalBrowserService {
   async evalJs(windowId: string | undefined, code: string): Promise<unknown> {
     const state = this.requireWindow(windowId)
     try {
+      const page = await this.getPageWebContents(state)
       state.lastActiveAt = new Date().toISOString()
-      return await state.win.webContents.executeJavaScript(code, true)
+      return await page.executeJavaScript(code, true)
     } catch (err) {
       throw new InternalBrowserError('EVAL_FAILED', err instanceof Error ? err.message : String(err), {
         windowId: state.windowId,
@@ -258,7 +283,8 @@ export class InternalBrowserService {
     const id = scriptId?.trim() || `script-${randomUUID()}`
     state.injectedScripts.set(id, { scriptId: id, code, createdAt: new Date().toISOString() })
     try {
-      await state.win.webContents.executeJavaScript(code, true)
+      const page = await this.getPageWebContents(state)
+      await page.executeJavaScript(code, true)
       return { scriptId: id }
     } catch (err) {
       state.injectedScripts.delete(id)
@@ -277,18 +303,19 @@ export class InternalBrowserService {
 
   async screenshot(windowId: string | undefined): Promise<{ dataUrl: string; url: string | null; title: string | null }> {
     const state = this.requireWindow(windowId)
+    const page = await this.getPageWebContents(state)
     const image = await state.win.webContents.capturePage()
-    return { dataUrl: image.toDataURL(), url: state.url ?? state.win.webContents.getURL() ?? null, title: state.title ?? state.win.getTitle() ?? null }
+    return { dataUrl: image.toDataURL(), url: state.url ?? page.getURL() ?? null, title: state.title ?? page.getTitle() ?? null }
   }
 
   getUrl(windowId: string | undefined): { url: string | null } {
     const state = this.requireWindow(windowId)
-    return { url: state.win.webContents.getURL() || state.url }
+    return { url: state.pageWebContents?.getURL() || state.url }
   }
 
   getTitle(windowId: string | undefined): { title: string | null } {
     const state = this.requireWindow(windowId)
-    return { title: state.win.getTitle() || state.title }
+    return { title: state.pageWebContents?.getTitle() || state.title }
   }
 
   listWindows(): InternalBrowserMeta[] {
@@ -386,26 +413,40 @@ export class InternalBrowserService {
   }
 
   private attachWindowEvents(state: WindowState): void {
-    state.win.webContents.setWindowOpenHandler(({ url }) => {
+    state.win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    state.win.webContents.on('did-attach-webview', (_event, contents: WebContents) => {
+      state.pageWebContents = contents
+      state.resolvePageReady?.(contents)
+      state.resolvePageReady = null
+      this.attachPageEvents(state, contents)
+      this.installNetworkHooks(state, contents)
+    })
+    state.win.on('closed', () => {
+      this.windows.delete(state.windowId)
+    })
+  }
+
+  private attachPageEvents(state: WindowState, page: WebContents): void {
+    page.setWindowOpenHandler(({ url }) => {
       void this.navigate(state.windowId, url).catch((err) => log.warn(`windowOpen navigate failed: ${String(err)}`))
       return { action: 'deny' }
     })
-    state.win.webContents.on('did-navigate', (_event, url) => {
+    page.on('did-navigate', (_event, url) => {
       state.url = url
       state.lastActiveAt = new Date().toISOString()
     })
-    state.win.webContents.on('did-navigate-in-page', (_event, url) => {
+    page.on('did-navigate-in-page', (_event, url) => {
       state.url = url
       state.lastActiveAt = new Date().toISOString()
     })
-    state.win.webContents.on('page-title-updated', (_event, title) => {
+    page.on('page-title-updated', (_event, title) => {
       state.title = title
       state.lastActiveAt = new Date().toISOString()
     })
-    state.win.webContents.on('dom-ready', () => {
+    page.on('dom-ready', () => {
       void this.runInjectedScripts(state)
     })
-    state.win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    page.on('console-message', (_event, level, message, line, sourceId) => {
       if (!state.consoleCapture) return
       pushBounded(state.consoleEvents, {
         seq: ++state.consoleSeq,
@@ -416,16 +457,14 @@ export class InternalBrowserService {
         ts: Date.now(),
       })
     })
-    state.win.on('closed', () => {
-      this.windows.delete(state.windowId)
-    })
   }
 
-  private installNetworkHooks(state: WindowState): void {
+  private installNetworkHooks(state: WindowState, page: WebContents): void {
+    if (state.networkHooksInstalled) return
+    state.networkHooksInstalled = true
     const filter = { urls: ['*://*/*', 'file://*/*', 'data:*'] }
-    const webContents = state.win.webContents
-    const webContentsId = webContents.id
-    const ses = webContents.session
+    const webContentsId = page.id
+    const ses = page.session
     const isActive = (): boolean => this.windows.get(state.windowId) === state
     ses.webRequest.onBeforeRequest(filter, (details, callback) => {
       if (!isActive() || details.webContentsId !== webContentsId) return callback({})
@@ -478,12 +517,34 @@ export class InternalBrowserService {
   }
 
   private async runInjectedScripts(state: WindowState): Promise<void> {
+    const page = state.pageWebContents
+    if (page == null || page.isDestroyed()) return
     for (const script of state.injectedScripts.values()) {
       try {
-        await state.win.webContents.executeJavaScript(script.code, true)
+        await page.executeJavaScript(script.code, true)
       } catch (err) {
         log.warn(`Persistent script failed windowId=${state.windowId} scriptId=${script.scriptId}: ${String(err)}`)
       }
+    }
+  }
+
+  private async getPageWebContents(state: WindowState): Promise<WebContents> {
+    const current = state.pageWebContents
+    if (current != null && !current.isDestroyed()) return current
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        state.pageReady,
+        new Promise<never>((_resolve, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Browser page did not attach')), 10_000)
+        }),
+      ])
+    } catch (err) {
+      throw new InternalBrowserError('NAVIGATION_FAILED', err instanceof Error ? err.message : String(err), {
+        windowId: state.windowId,
+      })
+    } finally {
+      if (timeoutId != null) clearTimeout(timeoutId)
     }
   }
 
@@ -502,8 +563,8 @@ export class InternalBrowserService {
       windowId: state.windowId,
       profileId: state.profileId,
       visible: state.win.isVisible(),
-      url: state.win.webContents.getURL() || state.url,
-      title: state.win.getTitle() || state.title,
+      url: state.pageWebContents?.getURL() || state.url,
+      title: state.pageWebContents?.getTitle() || state.title,
       injectedScriptCount: state.injectedScripts.size,
       networkRuleCount: state.networkRules.size,
       consoleEventCount: state.consoleEvents.length,
