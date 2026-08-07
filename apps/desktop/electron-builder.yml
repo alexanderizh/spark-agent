@@ -78,6 +78,8 @@ win:
 nsis:
   shortcutName: SparkWork
   uninstallDisplayName: SparkWork ${version}
+  # Show the NSIS install directory page so Windows users can choose a location.
+  allowToChangeInstallationDirectory: true
 linux:
   icon: resources/icon.png
   electronLanguages:
