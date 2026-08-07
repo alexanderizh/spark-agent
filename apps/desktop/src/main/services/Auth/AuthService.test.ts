@@ -215,6 +215,91 @@ describe('AuthService account lifecycle hooks', () => {
     })
   })
 
+  it('does not rerun login hooks when another renderer bootstraps the same session', async () => {
+    mocks.initialSession = session('user-restored')
+    mocks.nextGet = { id: 'user-restored' } as unknown as AuthMeResponse
+    const auth = createAuth()
+    const loginHook = vi.fn(async () => undefined)
+    auth.addLoginHook(loginHook)
+
+    await auth.start()
+    await auth.bootstrap()
+    await auth.bootstrap()
+
+    expect(loginHook).toHaveBeenCalledOnce()
+  })
+
+  it('shares an in-flight login hook between concurrent renderer bootstraps', async () => {
+    mocks.initialSession = session('user-restored')
+    mocks.nextGet = { id: 'user-restored' } as unknown as AuthMeResponse
+    const auth = createAuth()
+    let releaseHook!: () => void
+    const hookGate = new Promise<void>((resolve) => {
+      releaseHook = resolve
+    })
+    const loginHook = vi.fn(async () => hookGate)
+    auth.addLoginHook(loginHook)
+
+    await auth.start()
+    const first = auth.bootstrap()
+    await vi.waitFor(() => expect(loginHook).toHaveBeenCalledOnce())
+    const second = auth.bootstrap()
+
+    expect(loginHook).toHaveBeenCalledOnce()
+    releaseHook()
+    await Promise.all([first, second])
+  })
+
+  it('reruns login hooks after an explicit same-account login', async () => {
+    mocks.initialSession = session('user-restored')
+    mocks.nextGet = { id: 'user-restored' } as unknown as AuthMeResponse
+    const auth = createAuth()
+    const loginHook = vi.fn(async () => undefined)
+    auth.addLoginHook(loginHook)
+
+    await auth.start()
+    await auth.bootstrap()
+    mocks.nextPost = session('user-restored')
+    await auth.login({ account: 'user@example.com', loginMode: 'password', password: 'secret' })
+
+    expect(loginHook).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries login hooks after a failed bootstrap recovery', async () => {
+    mocks.initialSession = session('user-restored')
+    mocks.nextGet = { id: 'user-restored' } as unknown as AuthMeResponse
+    const auth = createAuth()
+    const loginHook = vi.fn()
+      .mockRejectedValueOnce(new Error('temporary platform outage'))
+      .mockResolvedValue(undefined)
+    auth.addLoginHook(loginHook)
+
+    await auth.start()
+    await auth.bootstrap()
+    await auth.bootstrap()
+
+    expect(loginHook).toHaveBeenCalledTimes(2)
+  })
+
+  it('clears the bootstrap marker when forced login recovery fails', async () => {
+    mocks.initialSession = session('user-restored')
+    mocks.nextGet = { id: 'user-restored' } as unknown as AuthMeResponse
+    const auth = createAuth()
+    const loginHook = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('temporary platform outage'))
+      .mockResolvedValueOnce(undefined)
+    auth.addLoginHook(loginHook)
+
+    await auth.start()
+    await auth.bootstrap()
+    mocks.nextPost = session('user-restored')
+    await auth.login({ account: 'user@example.com', loginMode: 'password', password: 'secret' })
+    await auth.bootstrap()
+
+    expect(loginHook).toHaveBeenCalledTimes(3)
+  })
+
   it('removes hooks through the returned unsubscribe callback', async () => {
     const auth = createAuth()
     const loginHook = vi.fn(async () => undefined)

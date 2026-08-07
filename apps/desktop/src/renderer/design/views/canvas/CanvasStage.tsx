@@ -1108,6 +1108,7 @@ function CanvasStageInner({
   const prevSelectedIdSetRef = useRef(selectedNodeIdSet)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
+  const [stageAreaElement, setStageAreaElement] = useState<HTMLElement | null>(null)
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([])
   const [minimapOpen, setMinimapOpen] = useState(true)
   const [edgeContextMenu, setEdgeContextMenu] = useState<{
@@ -1127,6 +1128,13 @@ function CanvasStageInner({
       })).filter((group) => group.actions.length > 0),
     [panePipelineOperations],
   )
+  const handleStageRef = useCallback((element: HTMLDivElement | null) => {
+    stageRef.current = element
+    const nextStageAreaElement = element?.parentElement ?? null
+    setStageAreaElement((current) =>
+      current === nextStageAreaElement ? current : nextStageAreaElement,
+    )
+  }, [])
   const edges = useMemo(
     () =>
       groupCollapseProjection.visibleEdges
@@ -2298,16 +2306,11 @@ function CanvasStageInner({
         return
       }
       if (!target.closest('.react-flow__pane')) return
-      const instance = flowInstanceRef.current
-      if (!instance) return
       event.preventDefault()
       event.stopPropagation()
-      const position = instance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      void Promise.resolve(onAddTextAtPosition(position)).then((created) => {
-        if (created && typeof created === 'object' && created.id) onEditNode(created.id)
-      })
+      openPaneContextMenuAt(event)
     },
-    [onAddTextAtPosition, onEditNode],
+    [onEditNode, openPaneContextMenuAt],
   )
 
   const handleSelectionChange = useCallback(
@@ -2429,7 +2432,7 @@ function CanvasStageInner({
           snapshot.board.settings.grid === true ? '' : ' canvas-stage-grid-off'
         }${dropActive ? ' canvas-stage-drop-active' : ''}`}
         data-zoom-lod={resolveCanvasZoomLod(boardViewport.zoom)}
-        ref={stageRef}
+        ref={handleStageRef}
         onPointerMove={handleStagePointerMove}
         onPointerLeave={handleStagePointerLeave}
         onDoubleClickCapture={handleStageDoubleClickCapture}
@@ -2604,7 +2607,8 @@ function CanvasStageInner({
             />
           </div>
         )}
-        {paneContextMenu && (
+        {paneContextMenu &&
+          createPortal(
           <div
             ref={paneContextMenuRef}
             className={`canvas-pane-context-menu${
@@ -2904,7 +2908,8 @@ function CanvasStageInner({
               <Icons.RotateCcw size={14} />
               <span>复原缩放比例</span>
             </button>
-          </div>
+          </div>,
+          stageAreaElement ?? document.body,
         )}
       </div>
     </>

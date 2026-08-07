@@ -48,6 +48,8 @@ export class AuthService {
   private baseUrlSource: BaseUrlSource = 'default'
   private readonly logoutHooks = new Set<(userId: string | null) => Promise<void>>()
   private readonly loginHooks = new Set<(userId: string) => Promise<void>>()
+  private readonly loginHookInflight = new Map<string, Promise<void>>()
+  private loginHookUserId: string | null = null
   private sessionExpiryCleanup: Promise<void> | null = null
 
   constructor(config: AuthServiceConfig) {
@@ -170,6 +172,7 @@ export class AuthService {
       }
     }
     await this.tokenStore.clear()
+    this.loginHookUserId = null
     this.emitStateChanged(false)
     return { ok: true }
   }
@@ -366,17 +369,39 @@ export class AuthService {
     }
     await this.tokenStore.save(session)
     this.emitStateChanged(true, session.userId)
-    await this.notifyLoginHooks(session.userId)
+    await this.notifyLoginHooks(session.userId, true)
   }
 
-  private async notifyLoginHooks(userId: string): Promise<void> {
-    await Promise.all([...this.loginHooks].map(async hook => {
-      try {
-        await hook(userId)
-      } catch (error) {
-        log.warn(`login hook failed: ${(error as Error).message}`)
+  private async notifyLoginHooks(userId: string, force = false): Promise<void> {
+    // 每个渲染窗口都会调用 auth:bootstrap；被动恢复钩子是进程级副作用，
+    // 同一账号只执行一次，并共享并发恢复请求。显式登录则由 force 保留原语义。
+    if (!force && this.loginHookUserId === userId) return
+    const existing = this.loginHookInflight.get(userId)
+    if (existing) return existing
+
+    const operation = (async () => {
+      let allSucceeded = true
+      await Promise.all([...this.loginHooks].map(async hook => {
+        try {
+          await hook(userId)
+        } catch (error) {
+          allSucceeded = false
+          log.warn(`login hook failed: ${(error as Error).message}`)
+        }
+      }))
+      if (!allSucceeded && force && this.loginHookUserId === userId) {
+        this.loginHookUserId = null
       }
-    }))
+      if (allSucceeded && this.getCurrentUserId() === userId) {
+        this.loginHookUserId = userId
+      }
+    })().finally(() => {
+      if (this.loginHookInflight.get(userId) === operation) {
+        this.loginHookInflight.delete(userId)
+      }
+    })
+    this.loginHookInflight.set(userId, operation)
+    await operation
   }
 
   private handleTokenRefreshed(session: AuthSession): void {
@@ -399,6 +424,7 @@ export class AuthService {
         }
       }))
       await this.tokenStore.clear()
+      this.loginHookUserId = null
       this.emitStateChanged(false)
       this.emitStream('stream:auth:session-expired', {})
     })().finally(() => {

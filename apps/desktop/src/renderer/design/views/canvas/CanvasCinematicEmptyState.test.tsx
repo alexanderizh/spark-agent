@@ -44,6 +44,10 @@ describe('CanvasCinematicEmptyState', () => {
       ),
     )
 
+    expect(container.querySelector('.canvas-cinematic-command-hint')?.textContent).toBe(
+      '双击画布创建第一个节点',
+    )
+
     const input = container.querySelector<HTMLTextAreaElement>(
       '[aria-label="向画布 Agent 发送消息"]',
     )

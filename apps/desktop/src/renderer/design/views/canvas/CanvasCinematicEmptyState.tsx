@@ -68,6 +68,7 @@ export function CanvasCinematicEmptyState({
             <Icons.ArrowRight size={16} />
           </button>
         </form>
+        <p className="canvas-cinematic-command-hint">双击画布创建第一个节点</p>
 
         <div className="canvas-cinematic-starters">
           <button type="button" onClick={onOpenInlineAi}>

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { shouldDelegateNodeDoubleClickToCollapsedGroup } from './canvasStageDoubleClick'
 
 describe('canvas stage double click routing', () => {
@@ -31,5 +33,30 @@ describe('canvas stage double click routing', () => {
     regularNode.append(content)
 
     expect(shouldDelegateNodeDoubleClickToCollapsedGroup(content)).toBe(false)
+  })
+
+  it('opens the pane context menu instead of creating a text node on empty-pane double click', () => {
+    const stageSource = readFileSync(
+      resolve(process.cwd(), 'src/renderer/design/views/canvas/CanvasStage.tsx'),
+      'utf8',
+    )
+    const handlerStart = stageSource.indexOf('const handleStageDoubleClickCapture = useCallback(')
+    const handlerEnd = stageSource.indexOf('const handleSelectionChange', handlerStart)
+    const doubleClickHandler = stageSource.slice(handlerStart, handlerEnd)
+
+    expect(handlerStart).toBeGreaterThanOrEqual(0)
+    expect(handlerEnd).toBeGreaterThan(handlerStart)
+    expect(doubleClickHandler).toContain('openPaneContextMenuAt(event)')
+    expect(doubleClickHandler).not.toContain('onAddTextAtPosition')
+  })
+
+  it('renders the pane menu in the stage-area stacking context', () => {
+    const stageSource = readFileSync(
+      resolve(process.cwd(), 'src/renderer/design/views/canvas/CanvasStage.tsx'),
+      'utf8',
+    )
+
+    expect(stageSource).toContain('createPortal(')
+    expect(stageSource).toContain('stageAreaElement ?? document.body')
   })
 })
