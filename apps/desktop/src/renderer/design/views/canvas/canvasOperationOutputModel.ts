@@ -120,6 +120,10 @@ function outputToInputNode(
   const url = output.url ?? asset.url ?? undefined
   const thumbnailUrl = output.thumbnailUrl ?? asset.thumbnailUrl ?? undefined
   const mimeType = output.mimeType ?? asset.mimeType ?? undefined
+  const filePath =
+    output.filePath ??
+    asset.storageKey ??
+    (typeof asset.metadata.filePath === 'string' ? asset.metadata.filePath : undefined)
   return {
     id: `operation-output:${outputIdentity(output)}`,
     projectId: operationNode.projectId,
@@ -147,6 +151,7 @@ function outputToInputNode(
         : {
             ...(url ? { url } : {}),
             ...(thumbnailUrl ? { thumbnailUrl } : {}),
+            ...(filePath ? { filePath } : {}),
             ...(mimeType ? { mimeType } : {}),
             origin: 'task_output',
             ...(output.pipelineRole ? { pipelineRole: output.pipelineRole } : {}),

@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   },
   transcodeVideo: vi.fn(),
   cropVideo: vi.fn(),
+  extractAudio: vi.fn(),
+  probeVideo: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
@@ -37,7 +39,7 @@ vi.mock('../FfmpegRunner.js', () => ({
   ensureOutputDirectory: (outputPath: string) => {
     mkdirSync(dirname(outputPath), { recursive: true })
   },
-  probeVideo: vi.fn(),
+  probeVideo: mocks.probeVideo,
   extractKeyframes: vi.fn(),
   extractFramesAtTimes: vi.fn(),
   generateThumbnail: vi.fn(),
@@ -50,6 +52,12 @@ vi.mock('../FfmpegRunner.js', () => ({
   cropVideo: mocks.cropVideo,
   addWatermark: vi.fn(),
   burnSubtitle: vi.fn(),
+  extractAudio: mocks.extractAudio,
+  audioExtForCodec: (codec: string | null) => {
+    if (codec === 'aac') return 'm4a'
+    if (codec === 'mp3') return 'mp3'
+    return 'mka'
+  },
 }))
 
 import { handleVideoProcess } from '../videoProcessHandler.js'
@@ -63,6 +71,8 @@ mkdirSync(mocks.paths.temp, { recursive: true })
 afterEach(() => {
   mocks.transcodeVideo.mockReset()
   mocks.cropVideo.mockReset()
+  mocks.extractAudio.mockReset()
+  mocks.probeVideo.mockReset()
 })
 
 afterAll(() => {
@@ -100,5 +110,101 @@ describe('handleVideoProcess', () => {
     expect(response.success).toBe(false)
     expect(response.error).toContain('crop x')
     expect(mocks.cropVideo).not.toHaveBeenCalled()
+  })
+
+  it('forwards extractAudio copy mode with extension derived from the source audio codec', async () => {
+    mocks.probeVideo.mockResolvedValue({
+      durationSec: 10,
+      hasAudio: true,
+      audioCodec: 'aac',
+    })
+    mocks.extractAudio.mockImplementation(async (_input: string, outputPath: string) => ({
+      path: outputPath,
+      mimeType: 'audio/mp4',
+      durationMs: 10_000,
+      audioCodec: 'aac',
+    }))
+
+    const response = await handleVideoProcess({
+      operation: 'extractAudio',
+      input: join(mocks.paths.userData, 'source.mp4'),
+      params: { audioFormat: 'copy' },
+      requestId: 'extract-copy',
+    })
+
+    expect(response.success).toBe(true)
+    expect(mocks.probeVideo).toHaveBeenCalledOnce()
+    expect(mocks.extractAudio).toHaveBeenCalledOnce()
+    const [, outputPath, opts] = mocks.extractAudio.mock.calls[0] as [
+      string,
+      string,
+      { format: string },
+    ]
+    expect(opts.format).toBe('copy')
+    expect(outputPath).toMatch(/\.m4a$/)
+  })
+
+  it('defaults extractAudio to mp3 re-encode without probing', async () => {
+    mocks.extractAudio.mockImplementation(async (_input: string, outputPath: string) => ({
+      path: outputPath,
+      mimeType: 'audio/mpeg',
+      durationMs: 10_000,
+      audioCodec: 'mp3',
+    }))
+
+    const response = await handleVideoProcess({
+      operation: 'extractAudio',
+      input: join(mocks.paths.userData, 'source.mp4'),
+      params: {},
+      requestId: 'extract-default',
+    })
+
+    expect(response.success).toBe(true)
+    expect(mocks.probeVideo).not.toHaveBeenCalled()
+    const [, outputPath, opts] = mocks.extractAudio.mock.calls[0] as [
+      string,
+      string,
+      { format: string },
+    ]
+    expect(opts.format).toBe('mp3')
+    expect(outputPath).toMatch(/\.mp3$/)
+  })
+
+  it('reports a friendly error when the source video has no audio track', async () => {
+    mocks.probeVideo.mockResolvedValue({
+      durationSec: 10,
+      hasAudio: false,
+      audioCodec: null,
+    })
+
+    const response = await handleVideoProcess({
+      operation: 'extractAudio',
+      input: join(mocks.paths.userData, 'silent.mp4'),
+      params: { audioFormat: 'copy' },
+      requestId: 'extract-silent',
+    })
+
+    expect(response.success).toBe(false)
+    expect(response.error).toContain('该视频没有音轨，无法分离音频')
+    expect(mocks.extractAudio).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unknown audio format before invoking ffmpeg', async () => {
+    mocks.probeVideo.mockResolvedValue({
+      durationSec: 10,
+      hasAudio: true,
+      audioCodec: 'aac',
+    })
+
+    const response = await handleVideoProcess({
+      operation: 'extractAudio',
+      input: join(mocks.paths.userData, 'source.mp4'),
+      params: { audioFormat: 'flac' },
+      requestId: 'extract-bad-format',
+    })
+
+    expect(response.success).toBe(false)
+    expect(response.error).toContain('未知的音频输出格式')
+    expect(mocks.extractAudio).not.toHaveBeenCalled()
   })
 })

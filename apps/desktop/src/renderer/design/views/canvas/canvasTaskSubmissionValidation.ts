@@ -131,6 +131,9 @@ export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmission
   request: T,
 ): T {
   const issues: MediaContractIssue[] = []
+  // local_media 通道的 operation 共用一段视频校验，文案按 operation 区分
+  const isExtractAudio = request.operation === 'extract_audio'
+  const taskTitle = isExtractAudio ? '分离音频' : '深度视频转换'
   const files = request.inputFiles ?? []
   const videoCount = files.filter((file) => matchesMediaKind(file, 'video')).length
   if (videoCount === 0) {
@@ -149,7 +152,7 @@ export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmission
     issues.push(
       issue(
         'out_of_range',
-        `深度视频转换仅支持一段输入视频 [spark-debug files=${files.length} videos=${videoCount} inputNodeIds=${JSON.stringify(
+        `${taskTitle}仅支持一段输入视频 [spark-debug files=${files.length} videos=${videoCount} inputNodeIds=${JSON.stringify(
           __sparkDebugNodeIds,
         )} details=${JSON.stringify(__sparkDebugFiles)}]`,
         ['inputFiles'],
@@ -158,10 +161,18 @@ export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmission
     // __SPARK_DEBUG_END__
   }
   const inputFile = files[0]
-  const localPath = inputFile?.path?.trim() || decodeCanvasSafeFileUrl(inputFile?.url)
+  const localPath =
+    inputFile?.path?.trim() ||
+    decodeCanvasSafeFileUrl(inputFile?.url) ||
+    // 云产物/云端素材（如视频生成任务的 https:// 产物 URL）：ffmpeg 可直读，不再要求本地路径
+    (inputFile?.url && /^https?:\/\//i.test(inputFile.url) ? inputFile.url : null)
   if (videoCount === 1 && files.length === 1 && !localPath) {
     issues.push(
-      issue('missing_required', '深度视频转换需要可读取的本地视频路径', ['inputFiles', 0, 'path']),
+      issue(
+        'missing_required',
+        `${taskTitle}需要可读取的本地视频路径或可访问的视频 URL`,
+        ['inputFiles', 0, 'path'],
+      ),
     )
   }
   if (issues.length > 0) throw new CanvasTaskValidationError(issues)

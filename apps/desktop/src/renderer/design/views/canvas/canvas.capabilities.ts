@@ -36,6 +36,15 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     paramsSchema: {},
   },
   {
+    id: 'canvas.extract-audio',
+    label: '分离音频',
+    operation: 'extract_audio',
+    inputTypes: ['video'],
+    outputTypes: ['audio'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
     id: 'canvas.image-edit',
     label: '图生图 / 图片编辑',
     operation: 'image_edit',
@@ -179,6 +188,7 @@ export const OPERATION_NODE_TYPES: ReadonlySet<string> = new Set<CanvasNodeType>
   'video_edit',
   'video_extend',
   'video_depth_map',
+  'extract_audio',
   'text_to_audio',
   'audio_transcribe',
 ])
@@ -242,6 +252,8 @@ export function operationNodeIcon(op: CanvasOperationType | null): string {
       return '⏩'
     case 'video_depth_map':
       return '◐'
+    case 'extract_audio':
+      return '🎼'
     case 'text_to_audio':
       return '🎵'
     case 'audio_transcribe':

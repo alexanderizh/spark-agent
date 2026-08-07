@@ -124,6 +124,12 @@ export function getOperationVisual(operation: CanvasOperationType): OperationVis
         category: 'video',
         colorClass: 'canvas-op-color-video',
       }
+    case 'extract_audio':
+      return {
+        icon: <Icons.AudioLines size={ICON_SIZE} />,
+        category: 'audio',
+        colorClass: 'canvas-op-color-audio',
+      }
     default: {
       // 编译期 exhaustiveness 检查：新增 operation 忘补 case 时，
       // `operation` 在此分支不再是 never，TS 会报错强制补全；

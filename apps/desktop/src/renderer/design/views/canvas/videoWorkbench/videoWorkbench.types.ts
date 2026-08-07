@@ -49,7 +49,7 @@ export interface KeyframeExtractConfig {
 /** 工作台产物（剪辑/转码等操作的结果） */
 export interface WorkbenchOutput {
   id: string
-  type: 'keyframes' | 'trim' | 'segment' | 'concat' | 'transcode' | 'effect'
+  type: 'keyframes' | 'trim' | 'segment' | 'concat' | 'transcode' | 'effect' | 'audio'
   /** 产物文件路径 */
   outputPath: string
   /** safe-file 编码后的预览/播放 URL */

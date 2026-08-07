@@ -283,6 +283,7 @@ export const CanvasOperationTypeSchema = z.enum([
   'video_edit',
   'video_extend',
   'video_depth_map',
+  'extract_audio',
 ])
 export type CanvasOperationType = z.infer<typeof CanvasOperationTypeSchema>
 
@@ -320,6 +321,8 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
     case 'image_prompt_reverse':
     // 深度视频走本地 ONNX 推理，不经过云端 media adapter。
     case 'video_depth_map':
+    // 分离音频走本地 ffmpeg，不经过云端 media adapter。
+    case 'extract_audio':
       return []
     default:
       return []

@@ -40,6 +40,17 @@ export function resolveCanvasOperationPanelMode(
       submitLabel: '生成深度视频转换',
     }
   }
+  if (operation === 'extract_audio') {
+    return {
+      executionKind,
+      runtimeKind: 'none',
+      showPromptEditor: false,
+      dedicatedMediaKind: 'video',
+      showCustomParams: false,
+      showLocalDepthNotice: false,
+      submitLabel: '分离音频',
+    }
+  }
   if (executionKind === 'text') {
     return {
       executionKind,

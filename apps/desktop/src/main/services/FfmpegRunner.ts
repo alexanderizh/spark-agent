@@ -37,6 +37,66 @@ export function ensureOutputDirectory(outputPath: string): void {
   mkdirSync(dirname(outputPath), { recursive: true })
 }
 
+// ─── TLS/网络输入处理 ────────────────────────────────────────────────────────
+// 应用内置的 ffmpeg/ffprobe 静态构建（7.1.1）默认 CA 路径缺失/过旧，拉 https 流时
+// OpenSSL 报 certificate verify failed（curl 正常是因为走 macOS 系统验证）。
+// 该构建的 http 协议未编译 -http_ssl_verify / -http_ssl_cacert 选项，但 tls 协议
+// 自带 -tls_verify 选项：对 https 输入在 -i 之前注入 -tls_verify 0 即可跳过证书
+// 校验，支持自签名证书 / IP 地址证书 / 过期证书等任何 https 资源。
+// SSL_CERT_FILE 注入系统 CA 作为辅助手段保留（无害；tls_verify=0 时 OpenSSL 不再校验）。
+
+/** 各平台系统 CA bundle 候选路径（按优先级排列，取第一个存在者）。 */
+const SYSTEM_CA_CANDIDATES = [
+  '/etc/ssl/cert.pem', // macOS / FreeBSD（Apple 维护的完整系统根证书）
+  '/etc/ssl/certs/ca-certificates.crt', // Debian / Ubuntu
+  '/etc/pki/tls/certs/ca-bundle.crt', // RHEL / Fedora
+  '/etc/ssl/ca-bundle.pem', // openSUSE
+]
+
+/** 探测系统 CA bundle；无候选存在时返回 undefined（保持不注入）。 */
+export function resolveSystemCaBundle(): string | undefined {
+  return SYSTEM_CA_CANDIDATES.find((p) => existsSync(p))
+}
+
+/** 子进程 env：透传 process.env，并注入系统 CA；用户已有显式 SSL_CERT_FILE 时不覆盖。 */
+export function buildFfmpegEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  if (!env.SSL_CERT_FILE) {
+    const caBundle = resolveSystemCaBundle()
+    if (caBundle) env.SSL_CERT_FILE = caBundle
+  }
+  return env
+}
+
+function isHttpsUrl(input: string): boolean {
+  return /^https:\/\//i.test(input)
+}
+
+/**
+ * 对 https:// 输入注入 `-tls_verify 0`（跳过证书校验），保证任意来源的 https 流
+ * （正规证书、自签名、IP 地址证书、过期证书）都能被读取。http:// 与本地路径无
+ * TLS，不注入。协议选项必须位于输入之前，因此：
+ * - ffmpeg 形态（`-i <input>`）：在对应 `-i` 前插入；
+ * - ffprobe 形态（输入为末尾位置参数，无 `-i`）：在末尾输入前插入。
+ */
+export function injectNoSslVerifyForHttpsInputs(args: string[]): string[] {
+  const out: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    // i < args.length 保证索引存在（noUncheckedIndexedAccess 下需要显式断言）
+    const a = args[i]!
+    if (a === '-i') {
+      const next = args[i + 1]
+      if (next && isHttpsUrl(next)) out.push('-tls_verify', '0')
+      out.push(a)
+    } else if (i === args.length - 1 && isHttpsUrl(a)) {
+      out.push('-tls_verify', '0', a)
+    } else {
+      out.push(a)
+    }
+  }
+  return out
+}
+
 // ─── 类型定义 ────────────────────────────────────────────────────────────────
 
 export interface FfmpegProgress {
@@ -111,16 +171,17 @@ function parseTimeToSec(h: string, m: string, s: string): number {
 async function runFfmpeg(args: string[], opts: RunOpts = {}): Promise<ExecResult> {
   const { ffmpeg } = await resolveFfmpegBin()
   const timeoutMs = opts.timeoutMs ?? 180_000
-  log.info(`ffmpeg ${args.join(' ')}`)
+  const finalArgs = injectNoSslVerifyForHttpsInputs(args)
+  log.info(`ffmpeg ${finalArgs.join(' ')}`)
 
   await acquireSlot()
   try {
     return await new Promise<ExecResult>((resolve, reject) => {
-      const child = spawn(ffmpeg, args, {
+      const child = spawn(ffmpeg, finalArgs, {
         shell: false,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env },
+        env: buildFfmpegEnv(),
       })
 
       let stdout = ''
@@ -220,14 +281,16 @@ function gracefulKill(child: { kill: (signal?: NodeJS.Signals) => boolean }): vo
  */
 async function runFfprobe(args: string[]): Promise<string> {
   const { ffprobe } = await resolveFfmpegBin()
-  log.info(`ffprobe ${args.join(' ')}`)
+  const finalArgs = injectNoSslVerifyForHttpsInputs(args)
+  log.info(`ffprobe ${finalArgs.join(' ')}`)
   await acquireSlot()
   try {
     return await new Promise<string>((resolve, reject) => {
-      const child = spawn(ffprobe, args, {
+      const child = spawn(ffprobe, finalArgs, {
         shell: false,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: buildFfmpegEnv(),
       })
       let settled = false
       let stdout = ''
@@ -311,9 +374,11 @@ export interface VideoProbeInfo {
  * 探测视频元数据。用 ffprobe -show_format -show_streams 拿 JSON。
  */
 export async function probeVideo(input: string): Promise<VideoProbeInfo> {
+  // 注意用 -v error 而非 -v quiet：quiet 会连 ERROR 日志一起抑制，
+  // 拉流/读文件失败时 stderr 为空，只剩退出码，无法排查 403/超时等真实原因
   const out = await runFfprobe([
     '-v',
-    'quiet',
+    'error',
     '-print_format',
     'json',
     '-show_format',
@@ -1014,6 +1079,127 @@ async function transcodeToGif(
     } catch {
       /* ignore */
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5.5 音频提取（从视频中分离音轨为独立音频文件）
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** 音频分离格式：copy=原轨抽取（最快无损），其余为重编码 */
+export type AudioExtractFormat = 'copy' | 'mp3' | 'aac' | 'wav'
+
+export interface ExtractAudioOpts {
+  /** 输出格式，默认 'copy'（原轨抽取，扩展名按源音轨编码自动定） */
+  format?: AudioExtractFormat | undefined
+  onProgress?: ((p: FfmpegProgress) => void) | undefined
+  /** 取消信号 */
+  signal?: AbortSignal | undefined
+}
+
+export interface ExtractAudioResult {
+  path: string
+  mimeType: string
+  durationMs: number
+  /** 源视频的音轨编码（copy 模式产物与其一致） */
+  audioCodec: string
+}
+
+/** 音轨编码 → 适合 copy 抽取的容器扩展名（未知编码用 mka 兜底，Matroska 几乎可装任意编码） */
+export function audioExtForCodec(codec: string | null): string {
+  switch (codec) {
+    case 'aac':
+    case 'alac':
+      return 'm4a'
+    case 'mp3':
+      return 'mp3'
+    case 'ac3':
+    case 'eac3':
+      return 'ac3'
+    case 'opus':
+    case 'vorbis':
+      return 'ogg'
+    case 'flac':
+      return 'flac'
+    case 'pcm_s16le':
+    case 'pcm_s16be':
+    case 'pcm_u8':
+    case 'pcm_s24le':
+    case 'pcm_f32le':
+      return 'wav'
+    default:
+      return 'mka'
+  }
+}
+
+function mimeTypeForAudio(format: AudioExtractFormat, codec: string | null): string {
+  if (format === 'mp3') return 'audio/mpeg'
+  if (format === 'wav') return 'audio/wav'
+  if (format === 'aac') return 'audio/mp4'
+  // copy 模式按源音轨编码定
+  switch (codec) {
+    case 'mp3':
+      return 'audio/mpeg'
+    case 'aac':
+      return 'audio/mp4'
+    case 'opus':
+    case 'vorbis':
+      return 'audio/ogg'
+    case 'flac':
+      return 'audio/flac'
+    case 'ac3':
+      return 'audio/ac3'
+    default:
+      return 'audio/x-matroska'
+  }
+}
+
+/**
+ * 从视频中分离音频为独立音频文件。
+ *
+ * - copy：`-vn -c:a copy` 原轨无损抽取（最快），扩展名由调用方按 `audioExtForCodec` 决定
+ * - mp3：`-c:a libmp3lame -q:a 2`（VBR 高质量）
+ * - aac：`-c:a aac -b:a 192k`（输出 m4a 容器）
+ * - wav：`-c:a pcm_s16le`
+ *
+ * @throws 若视频无音轨，抛「该视频没有音轨，无法分离音频」
+ */
+export async function extractAudio(
+  input: string,
+  outputPath: string,
+  opts: ExtractAudioOpts = {},
+): Promise<ExtractAudioResult> {
+  const probe = await probeVideo(input)
+  if (!probe.hasAudio || !probe.audioCodec) {
+    throw new Error('该视频没有音轨，无法分离音频')
+  }
+  ensureOutputDirectory(outputPath)
+  const format = opts.format ?? 'copy'
+
+  let args: string[]
+  if (format === 'copy') {
+    args = ['-i', input, '-vn', '-c:a', 'copy', '-y', outputPath]
+  } else if (format === 'mp3') {
+    args = ['-i', input, '-vn', '-c:a', 'libmp3lame', '-q:a', '2', '-y', outputPath]
+  } else if (format === 'aac') {
+    args = ['-i', input, '-vn', '-c:a', 'aac', '-b:a', '192k', '-y', outputPath]
+  } else {
+    args = ['-i', input, '-vn', '-c:a', 'pcm_s16le', '-y', outputPath]
+  }
+
+  const result = await runFfmpeg(args, {
+    totalDurationSec: probe.durationSec,
+    onProgress: opts.onProgress,
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  })
+  if (result.code !== 0) {
+    throw new Error(`音频分离失败: ${result.stderr.slice(-300)}`)
+  }
+  return {
+    path: outputPath,
+    mimeType: mimeTypeForAudio(format, probe.audioCodec),
+    durationMs: Math.round(probe.durationSec * 1000),
+    audioCodec: probe.audioCodec,
   }
 }
 

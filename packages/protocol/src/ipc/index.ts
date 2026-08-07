@@ -3900,6 +3900,7 @@ export interface VideoProcessRequest {
     | 'crop'
     | 'watermark'
     | 'burnSubtitle'
+    | 'extractAudio'
   /** 源视频文件绝对路径 */
   input: string
   /** 各操作的参数（结构因 operation 而异） */
@@ -5037,6 +5038,21 @@ export interface CanvasDepthVideoTaskCancelRequest {
 export interface CanvasDepthVideoTaskCancelResponse {
   cancelled: boolean
 }
+export interface CanvasAudioExtractTaskCreateRequest {
+  projectId: string
+  clientTaskId: string
+  inputPath: string
+  /** 'copy'=原轨抽取；mp3/aac/wav 为重编码（默认 mp3） */
+  audioFormat?: 'copy' | 'mp3' | 'aac' | 'wav'
+  /** 源视频文件名（不含扩展名），用于语义化产物命名，如 `宣传片_audio.mp3` */
+  sourceFileName?: string
+}
+export interface CanvasAudioExtractTaskCancelRequest {
+  runtimeTaskId: string
+}
+export interface CanvasAudioExtractTaskCancelResponse {
+  cancelled: boolean
+}
 
 /**
  * `canvas:task:generate-text` — 通过文本模型(Provider)执行一次文本生成。
@@ -5372,6 +5388,23 @@ export interface CanvasProjectCleanupOrphansResponse {
   deletedBytes: number
   scannedFiles: number
   dryRun: boolean
+}
+
+/**
+ * 画布删除节点 / 删除资源时附带清理源文件：批量删 Provider 平台文件 + 本地磁盘文件。
+ *
+ * 任意一项缺失 / 类型不对会被对应实现忽略，单条失败也不抛错，整体返回
+ * deleted/failed 列表，调用方按需 toast 提示。
+ */
+export interface CanvasAssetCleanupFilesRequest {
+  providerFiles?: Array<{ providerProfileId: string; fileId: string }>
+  localPaths?: string[]
+}
+export interface CanvasAssetCleanupFilesResponse {
+  providerDeleted: Array<{ providerProfileId: string; fileId: string }>
+  providerFailed: Array<{ providerProfileId: string; fileId: string; error: string }>
+  localDeleted: string[]
+  localFailed: Array<{ path: string; error: string }>
 }
 
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
@@ -5805,6 +5838,14 @@ export interface IpcChannelMap
     CanvasDepthVideoTaskCancelRequest,
     CanvasDepthVideoTaskCancelResponse,
   ]
+  'canvas:task:extract-audio': [
+    CanvasAudioExtractTaskCreateRequest,
+    CanvasMediaTaskCreateResponse,
+  ]
+  'canvas:task:cancel-extract-audio': [
+    CanvasAudioExtractTaskCancelRequest,
+    CanvasAudioExtractTaskCancelResponse,
+  ]
   'canvas:task:generate-text': [CanvasTextTaskCreateRequest, CanvasTextTaskCreateResponse]
   'canvas:task:cancel-media': [CanvasMediaTaskCancelRequest, CanvasMediaTaskCancelResponse]
 
@@ -5842,6 +5883,10 @@ export interface IpcChannelMap
   'canvas:project:cleanup-orphans': [
     CanvasProjectCleanupOrphansRequest,
     CanvasProjectCleanupOrphansResponse,
+  ]
+  'canvas:asset:cleanup-files': [
+    CanvasAssetCleanupFilesRequest,
+    CanvasAssetCleanupFilesResponse,
   ]
 
   // Remote Connections

@@ -49,6 +49,14 @@ import { confirmVideoSubmission, isVideoSubmissionOperation } from './canvasVide
 import { useCanvasInputBindings } from './useCanvasInputBindings'
 import { materializeCanvasInputBindingReferences } from './canvasInputBindings'
 import { buildOutputMediaKindMap, buildOutputMediaNodeMap } from './canvasNodeMediaKind'
+
+/** 分离音频的输出格式选项（copy=原轨无损抽取，其余为重编码） */
+const AUDIO_FORMAT_OPTIONS: Array<{ value: 'copy' | 'mp3' | 'aac' | 'wav'; label: string }> = [
+  { value: 'copy', label: '原轨抽取（最快无损）' },
+  { value: 'mp3', label: 'MP3（兼容性最好）' },
+  { value: 'aac', label: 'AAC / M4A' },
+  { value: 'wav', label: 'WAV（无损）' },
+]
 import { useCanvasOperationDraftAutosave } from './useCanvasOperationDraftAutosave'
 import { CanvasTaskValidationError } from './canvasTaskSubmissionValidation'
 import {
@@ -811,6 +819,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [preserveAudio, setPreserveAudio] = useState(
     (node.data.modelParams?.preserveAudio ?? task?.modelParams?.preserveAudio) === true,
   )
+  const [audioFormat, setAudioFormat] = useState<'copy' | 'mp3' | 'aac' | 'wav'>(
+    (node.data.modelParams?.audioFormat as 'copy' | 'mp3' | 'aac' | 'wav' | undefined) ??
+      (task?.modelParams?.audioFormat as 'copy' | 'mp3' | 'aac' | 'wav' | undefined) ??
+      'mp3',
+  )
   const [running, setRunning] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [draftRevision, setDraftRevision] = useState(0)
@@ -835,6 +848,16 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     const configuredValue = node.data.modelParams?.preserveAudio ?? task?.modelParams?.preserveAudio
     setPreserveAudio(configuredValue === true)
   }, [node.data.modelParams?.preserveAudio, operation, task?.modelParams?.preserveAudio])
+  useEffect(() => {
+    if (operation !== 'extract_audio') return
+    const configuredValue = (node.data.modelParams?.audioFormat ??
+      task?.modelParams?.audioFormat) as 'copy' | 'mp3' | 'aac' | 'wav' | undefined
+    if (configuredValue === 'mp3' || configuredValue === 'aac' || configuredValue === 'wav') {
+      setAudioFormat(configuredValue)
+    } else {
+      setAudioFormat('mp3')
+    }
+  }, [node.data.modelParams?.audioFormat, operation, task?.modelParams?.audioFormat])
   const handlePromptChange = useCallback(
     (value: string) => {
       markDraftDirty()
@@ -1391,9 +1414,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     )
     return mergeCanvasPresetTargetModelParams(
       presetTargetId,
-      operation === 'video_depth_map' ? { ...modelParams, preserveAudio } : modelParams,
+      operation === 'video_depth_map'
+        ? { ...modelParams, preserveAudio }
+        : operation === 'extract_audio'
+          ? { ...modelParams, audioFormat }
+          : modelParams,
     )
   }, [
+    audioFormat,
     customParams,
     modelParamDraft,
     operation,
@@ -2242,6 +2270,31 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 </div>
               </>
             )}
+            {operation === 'extract_audio' && (
+              <div
+                className="canvas-operation-panel-hint"
+                style={{
+                  alignItems: 'center',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginTop: 10,
+                }}
+              >
+                <span>音频格式</span>
+                <Select
+                  size="small"
+                  aria-label="音频格式"
+                  value={audioFormat}
+                  disabled={running}
+                  style={{ width: 150 }}
+                  onChange={(value) => {
+                    markConfigurationTouched()
+                    setAudioFormat(value)
+                  }}
+                  options={AUDIO_FORMAT_OPTIONS}
+                />
+              </div>
+            )}
           </div>
         ) : panelMode.showPromptEditor ? (
           <div className="canvas-operation-composer-main">
@@ -2666,6 +2719,30 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               </div>
             </div>
           </>
+        )}
+
+        {operation === 'extract_audio' && (
+          <div
+            className="canvas-operation-panel-section canvas-operation-panel-section-runtime"
+            style={{ paddingTop: 0 }}
+          >
+            <div className="canvas-operation-panel-section-label">音频格式</div>
+            <Select
+              size="middle"
+              aria-label="音频格式"
+              value={audioFormat}
+              disabled={running}
+              style={{ width: '100%' }}
+              onChange={(value) => {
+                markConfigurationTouched()
+                setAudioFormat(value)
+              }}
+              options={AUDIO_FORMAT_OPTIONS}
+            />
+            <div className="canvas-operation-panel-hint">
+              原轨抽取最快无损，其余选项为按需重编码。
+            </div>
+          </div>
         )}
 
         {mediaCapabilityIds.length > 0 && (

@@ -399,4 +399,28 @@ describe('canvasTaskSubmissionValidation', () => {
       inputFiles: [{ type: 'video', url, path: '/canvas/input.mp4' }],
     })
   })
+
+  it('accepts a remote https video URL for audio extraction (cloud task output node)', () => {
+    const url = 'https://ark.example.com/videos/sample.mp4?token=abc'
+
+    expect(
+      validateCanvasLocalTaskSubmission({
+        operation: 'extract_audio',
+        prompt: '',
+        inputFiles: [{ type: 'video', url, mimeType: 'video/mp4' }],
+      }),
+    ).toMatchObject({
+      inputFiles: [{ type: 'video', url, path: url }],
+    })
+  })
+
+  it('rejects an extract_audio input with neither a local path nor a usable URL', () => {
+    expect(() =>
+      validateCanvasLocalTaskSubmission({
+        operation: 'extract_audio',
+        prompt: '',
+        inputFiles: [{ type: 'video', mimeType: 'video/mp4' }],
+      }),
+    ).toThrow('分离音频需要可读取的本地视频路径或可访问的视频 URL')
+  })
 })
