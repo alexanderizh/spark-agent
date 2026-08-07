@@ -1537,6 +1537,7 @@ body.sidebar-resizing {
 }
 .msg-agent-main .md-surface{
   margin-top: 10px;
+  margin-bottom: 10px;
 }
 .msg-agent-main .md-surface:first-child{
   margin-top: 0px;
@@ -4974,12 +4975,6 @@ body.sidebar-resizing {
   font-size: 12px;
   color: var(--text-muted);
 }
-.tool-chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  padding-top: 4px;
-}
-
 /* Tool output / error within tool-call */
 .tool-output-pre {
   margin: 0;
@@ -11876,9 +11871,6 @@ body.inspector-resizing {
 .mini-check.disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-.runtime-hint {
-  margin-top: 8px;
 }
 .runtime-prompt-block {
   display: grid;

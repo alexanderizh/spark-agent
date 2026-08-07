@@ -106,6 +106,12 @@
     border-radius: 0 0 7px 7px;
   }
 
+  // 音频选中工具栏位于节点顶部之外；主题的高优先级 core 裁剪不能覆盖它。
+  .canvas-node-core-audio,
+  .canvas-node-body-audio {
+    overflow: visible !important;
+  }
+
   .canvas-node-resize-line {
     z-index: 9 !important;
   }

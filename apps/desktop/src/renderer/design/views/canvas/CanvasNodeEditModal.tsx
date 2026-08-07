@@ -296,26 +296,22 @@ export function CanvasNodeEditModal({
               <label className="canvas-node-text-composer-title-input">
                 <span>标题</span>
                 <Input
-                  size="middle"
+                  size="small"
                   value={title}
                   placeholder="节点标题"
                   onChange={(event) => setTitle(event.target.value)}
                 />
               </label>
-              <div className="canvas-node-text-composer-file">
-                <Icons.File size={13} />
-                <span>{node.id}</span>
-              </div>
             </div>
             <div className="canvas-node-text-composer-actions">
               {showInlineBack ? (
-                <Button size="middle" type="text" icon={<Icons.Eye size={13} />} onClick={onClose}>
+                <Button size="small" type="text" icon={<Icons.Eye size={13} />} onClick={onClose}>
                   返回预览
                 </Button>
               ) : null}
               <Tooltip title="全屏编辑">
                 <Button
-                  size="middle"
+                  size="small"
                   type="text"
                   icon={<Icons.Maximize size={15} />}
                   aria-label="全屏编辑"
@@ -353,7 +349,7 @@ export function CanvasNodeEditModal({
                   </div>
                 }
               >
-                <Button size="middle" icon={<Icons.Folder size={13} />}>
+                <Button size="small" icon={<Icons.Folder size={13} />}>
                   提示词库
                 </Button>
               </Popover>
@@ -374,12 +370,12 @@ export function CanvasNodeEditModal({
                   </div>
                 }
               >
-                <Button size="middle" type={negativePrompt.trim() ? 'primary' : 'default'}>
+                <Button size="small" type={negativePrompt.trim() ? 'primary' : 'default'}>
                   反向提示词
                 </Button>
               </Popover>
               <Button
-                size="middle"
+                size="small"
                 icon={<Icons.Sparkles size={13} />}
                 disabled={text.trim().length === 0}
                 onClick={openOptimizeModal}
@@ -389,7 +385,7 @@ export function CanvasNodeEditModal({
             </div>
             <div className="canvas-node-text-composer-save">
               <span>{text.trim().length} 字符</span>
-              <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
+              <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
                 保存
               </Button>
             </div>

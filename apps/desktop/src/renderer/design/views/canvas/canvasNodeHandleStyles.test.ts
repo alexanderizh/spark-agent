@@ -60,10 +60,14 @@ describe('canvas node handle styles', () => {
     )
     expect(cinematicNodeStyles).toMatch(/\.canvas-node-handle::after\s*\{[\s\S]*?content:\s*none;/)
     expect(cinematicNodeStyles).toMatch(
-      /\.canvas-node-handle\.react-flow__handle-left\s*\{[\s\S]*?transform:\s*translate\(-50%, -50%\);/,
+      /\.canvas-node-handle\.react-flow__handle-left\s*\{[\s\S]*?transform:\s*translate\(-50%, -50%\) scale\(var\(--canvas-node-handle-scale\)\);/,
     )
     expect(cinematicNodeStyles).toMatch(
-      /\.canvas-node-handle\.react-flow__handle-right\s*\{[\s\S]*?transform:\s*translate\(50%, -50%\);/,
+      /\.canvas-node-handle\.react-flow__handle-right\s*\{[\s\S]*?transform:\s*translate\(50%, -50%\) scale\(var\(--canvas-node-handle-scale\)\);/,
+    )
+    expect(cinematicNodeStyles).toContain('--canvas-node-handle-scale: 1;')
+    expect(cinematicNodeStyles).toMatch(
+      /\.canvas-node:hover \.canvas-node-handle,[\s\S]*?--canvas-node-handle-scale: 1\.35;/,
     )
     expect(cinematicNodeStyles).toContain('.canvas-node-selected .canvas-node-handle')
     expect(v4StageStyles).toMatch(

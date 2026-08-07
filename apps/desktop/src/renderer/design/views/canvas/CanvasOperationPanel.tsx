@@ -2210,7 +2210,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       >
         <div className="canvas-operation-composer-top has-no-media">
           <div className="canvas-operation-composer-inputs">
-            <label className="canvas-operation-composer-mini-field is-message">
+            {/* <label className="canvas-operation-composer-mini-field is-message">
               <span>备注</span>
               <Input
                 size="middle"
@@ -2219,7 +2219,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 onChange={(event) => handleMessageDraftChange(event.target.value)}
                 disabled={running}
               />
-            </label>
+            </label> */}
             <span className="canvas-operation-panel-hint">
               {dedicatedMediaKind === 'image'
                 ? '反推指令已内置，只需提供一张图片'
@@ -2520,7 +2520,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           <div className="canvas-operation-composer-actions">
             <Tooltip title="重试任务">
               <Button
-                size="middle"
+                size="small"
                 type="text"
                 aria-label="重试任务"
                 icon={<Icons.RotateCcw size={14} />}
@@ -2533,10 +2533,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             </Tooltip>
             <Tooltip title={saveDraftTooltip}>
               <Button
-                size="middle"
+                size="small"
                 type="text"
                 aria-label="保存配置"
-                icon={<Icons.Check size={14} />}
+                icon={<Icons.Check size={16} />}
                 loading={savingDraft}
                 disabled={running || node.data.status === 'running'}
                 onClick={() => void handleSaveDraft()}
@@ -2546,7 +2546,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               task?.id &&
               onCancelTask && (
                 <Button
-                  size="middle"
+                  size="small"
                   danger
                   type="text"
                   aria-label="取消任务"
@@ -2561,7 +2561,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               }
             >
               <Button
-                size="middle"
+                size="small"
                 type="primary"
                 className="canvas-operation-composer-submit"
                 aria-label={submitLabel}

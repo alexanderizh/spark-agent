@@ -247,10 +247,10 @@ export function CanvasMediaInputConfigurator({
         )}
       </div>
 
-      <div className={`canvas-media-input-configurator-foot${currentIssue ? ' is-warning' : ''}`}>
+      {/* <div className={`canvas-media-input-configurator-foot${currentIssue ? ' is-warning' : ''}`}>
         <span>{currentIssue ? '!' : 'i'}</span>
         {currentIssue || modeGuidance(value, current)}
-      </div>
+      </div> */}
     </section>
   )
 }

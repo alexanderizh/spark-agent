@@ -57,7 +57,9 @@ import {
   CanvasOperationOutputList,
   CanvasOperationOutputPreview,
 } from './CanvasOperationOutputPreview'
+import type { CanvasAudioPreviewActions } from './CanvasOperationOutputPreview'
 import { CanvasOperationOutputThumbnailSwitcher } from './CanvasOperationOutputThumbnailSwitcher'
+import { CanvasAudioNodePresentation } from './audioNode/CanvasAudioNodePresentation'
 import { CanvasShotScriptTable } from './CanvasShotScriptTable'
 import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
 import { buildCanvasOperationMediaThumbnailItems } from './canvasOperationOutputThumbnails'
@@ -194,6 +196,8 @@ function OperationOutputDeck({
   onSelectOutput,
   onVideoMetadata,
   onVideoEdit,
+  selected,
+  audioActions,
 }: {
   runs: CanvasOperationRunView[]
   mode: CanvasOperationOutputMode
@@ -211,6 +215,8 @@ function OperationOutputDeck({
     dimensions: { width: number; height: number },
   ) => void
   onVideoEdit?: () => void
+  selected: boolean
+  audioActions?: CanvasAudioPreviewActions
 }) {
   const activeRun = runs[runIndex]
   const outputs = activeRun?.outputs ?? []
@@ -223,7 +229,9 @@ function OperationOutputDeck({
 
   return (
     <div className="canvas-operation-output-deck">
-      <div className={`canvas-operation-output-stage${isCollection ? ' is-collection' : ''}`}>
+      <div
+        className={`canvas-operation-output-stage${isCollection ? ' is-collection' : ''}${activeOutput?.type === 'audio' ? ' is-audio' : ''}`}
+      >
         {isCollection ? (
           <CanvasOperationOutputList outputs={outputs} isolateWheel={isolateWheel} />
         ) : (
@@ -232,6 +240,8 @@ function OperationOutputDeck({
               <CanvasOperationOutputPreview
                 output={activeOutput}
                 isolateWheel={isolateWheel}
+                selected={selected}
+                {...(audioActions ? { audioActions } : {})}
                 onVideoMetadata={(dimensions) => onVideoMetadata?.(activeOutput, dimensions)}
                 {...(onVideoEdit ? { onVideoEdit } : {})}
               />
@@ -340,6 +350,10 @@ export type CanvasFlowNodeData = {
     previewPanorama: (nodeId: string) => void
     /** 视频节点：右键 → 视频编辑（打开视频工作台） */
     editVideo?: (nodeId: string) => void
+    /** 音频节点：截取（返回开始/结束秒），由父级触发 IPC 并物化新子节点 */
+    audioTrim?: (nodeId: string, startSec: number, endSec: number) => void
+    /** 音频节点：变速（factor 由 IPC 校验 0.1x–4.0x），由父级触发 IPC 并物化新子节点 */
+    audioSpeed?: (nodeId: string, factor: number) => void
     /** 多产物操作节点：右键一键展开最近一次运行的全部产物节点 */
     expandOperationOutputs?: (nodeId: string) => void
     createOperationChild: (
@@ -574,6 +588,7 @@ export const CanvasNode = memo(function CanvasNode({
   )
   const activeOperationOutput =
     operationRuns[operationSelection.runIndex]?.outputs[operationSelection.outputIndex]
+  const isAudioTaskNode = isTask && node.data.operation === 'extract_audio'
   const selectOperationOutput = (
     runIndex: number,
     outputIndex: number,
@@ -623,6 +638,7 @@ export const CanvasNode = memo(function CanvasNode({
         (node.data.pipelineRole === 'shot' || node.data.outputPipelineRole === 'shot')))
   const minSize = pickCanvasNodeMinSize(node.type, node.data.text, {
     shotScriptOperation: isShotScriptOperation,
+    audioOperation: isAudioTaskNode,
   })
   const [resizeHovered, setResizeHovered] = useState(false)
   const [resizing, setResizing] = useState(false)
@@ -1246,7 +1262,7 @@ export const CanvasNode = memo(function CanvasNode({
   const isMediaContentNode =
     (node.type === 'image' || node.type === 'audio' || node.type === 'video') &&
     !isOperationNode(node)
-  const shouldShowContentTitle = isTextContentNode || isMediaContentNode
+  const shouldShowContentTitle = isTextContentNode
   const passiveStatusLabel = isResourceOutput
     ? '产物'
     : productionBadge?.label
@@ -1336,7 +1352,7 @@ export const CanvasNode = memo(function CanvasNode({
       autoAdjustOverflow
     >
       <div
-        className="canvas-node-shell"
+        className={`canvas-node-shell${selected ? ' canvas-node-shell-selected' : ''}`}
         onContextMenuCapture={(event) => {
           const stage = event.currentTarget.closest<HTMLElement>('.canvas-stage')
           if (!stage) return
@@ -1406,14 +1422,18 @@ export const CanvasNode = memo(function CanvasNode({
               {inlineToolbar ? (
                 <div className="canvas-node-inline-toolbar nodrag nopan">{inlineToolbar}</div>
               ) : null}
-              <div className="canvas-node-core">
+              <div
+                className={`canvas-node-core${node.type === 'audio' || (isTask && activeOperationOutput?.type === 'audio') ? ' canvas-node-core-audio' : ''}`}
+              >
                 {shouldShowContentTitle && isTextContentNode ? (
                   <div className="canvas-node-content-title canvas-node-content-title-text">
                     <strong title={title}>{title}</strong>
                   </div>
                 ) : null}
                 {/* 仅选中节点时用 nowheel 将滚轮留给节点内容区；未选中时交还画布缩放/平移。 */}
-                <div className={`canvas-node-body${selected ? ' nowheel' : ''}`}>
+                <div
+                  className={`canvas-node-body${selected ? ' nowheel' : ''}${node.type === 'audio' || (isTask && activeOperationOutput?.type === 'audio') ? ' canvas-node-body-audio' : ''}`}
+                >
                   {node.type === 'image' ? (
                     node.data.url ? (
                       <div className="canvas-node-image-wrap">
@@ -1478,18 +1498,24 @@ export const CanvasNode = memo(function CanvasNode({
                     )
                   ) : node.type === 'audio' ? (
                     node.data.url ? (
-                      <div className="canvas-node-audio">
-                        <Icons.Play size={22} />
-                        <audio
-                          className="canvas-node-audio-player"
-                          src={normalizedAudioSrc}
-                          controls
-                          preload="metadata"
-                        />
-                        <span className="canvas-node-audio-name">
-                          {node.data.message ?? 'audio'}
-                        </span>
-                      </div>
+                      <CanvasAudioNodePresentation
+                        src={normalizedAudioSrc}
+                        fileName={node.data.message ?? node.title ?? '音频'}
+                        durationSec={node.data.audioDurationSec ?? 0}
+                        cachedPeaks={node.data.audioWaveformPeaks}
+                        selected={Boolean(selected)}
+                        actions={{
+                          onTrimApply: (start, end) =>
+                            actions.audioTrim?.(node.id, start, end),
+                          onSpeedApply: (factor) =>
+                            actions.audioSpeed?.(node.id, factor),
+                          onDownload: () => actions.downloadMedia(node.id),
+                          onPeaks: (peaks) =>
+                            actions.updateNodeData?.(node.id, {
+                              audioWaveformPeaks: peaks,
+                            }),
+                        }}
+                      />
                     ) : (
                       <div className="canvas-node-image-placeholder">
                         <Icons.Play size={30} />
@@ -1602,6 +1628,30 @@ export const CanvasNode = memo(function CanvasNode({
                           })
                         }}
                         onVideoEdit={() => actions.editNode(node.id)}
+                        selected={selected}
+                        {...(activeOperationOutput?.type === 'audio' && activeOperationOutput.nodeId
+                          ? {
+                              audioActions: {
+                                onTrimApply: (start: number, end: number) => {
+                                  void actions.audioTrim?.(
+                                    activeOperationOutput.nodeId!,
+                                    start,
+                                    end,
+                                  )
+                                },
+                                onSpeedApply: (factor: number) => {
+                                  void actions.audioSpeed?.(activeOperationOutput.nodeId!, factor)
+                                },
+                                onDownload: () =>
+                                  actions.downloadMedia(activeOperationOutput.nodeId!),
+                                onPeaks: (peaks: number[]) => {
+                                  void actions.updateNodeData?.(activeOperationOutput.nodeId!, {
+                                    audioWaveformPeaks: peaks,
+                                  })
+                                },
+                              },
+                            }
+                          : {})}
                         fallback={
                           <div className="canvas-operation-empty-state">
                             <div className="canvas-operation-empty-icon">
@@ -1678,15 +1728,6 @@ export const CanvasNode = memo(function CanvasNode({
                     </div>
                   )}
                 </div>
-                {/* 图片节点：有图走 full-bleed overlay、空状态走 placeholder，
-                两种情况都不需要这条 media 标题栏（会多出一条 surface 栏 + 分隔线，
-                在空状态被夹在 placeholder 与 quick-footer 之间，形成“两层边框 / footer 错位”）。
-                content-title-media 仅留给 audio/video。 */}
-                {shouldShowContentTitle && isMediaContentNode && !useFlatMediaFrame ? (
-                  <div className="canvas-node-content-title canvas-node-content-title-media">
-                    <strong title={title}>{title}</strong>
-                  </div>
-                ) : null}
                 {useFlatMediaFrame ? (
                   <div className="canvas-node-image-overlay-footer nodrag nopan">
                     <button

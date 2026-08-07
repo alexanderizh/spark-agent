@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   },
   transcodeVideo: vi.fn(),
   cropVideo: vi.fn(),
+  trimVideo: vi.fn(),
+  adjustSpeed: vi.fn(),
   extractAudio: vi.fn(),
   probeVideo: vi.fn(),
 }))
@@ -43,11 +45,11 @@ vi.mock('../FfmpegRunner.js', () => ({
   extractKeyframes: vi.fn(),
   extractFramesAtTimes: vi.fn(),
   generateThumbnail: vi.fn(),
-  trimVideo: vi.fn(),
+  trimVideo: mocks.trimVideo,
   concatVideos: vi.fn(),
   segmentVideo: vi.fn(),
   transcodeVideo: mocks.transcodeVideo,
-  adjustSpeed: vi.fn(),
+  adjustSpeed: mocks.adjustSpeed,
   reverseVideo: vi.fn(),
   cropVideo: mocks.cropVideo,
   addWatermark: vi.fn(),
@@ -71,6 +73,8 @@ mkdirSync(mocks.paths.temp, { recursive: true })
 afterEach(() => {
   mocks.transcodeVideo.mockReset()
   mocks.cropVideo.mockReset()
+  mocks.trimVideo.mockReset()
+  mocks.adjustSpeed.mockReset()
   mocks.extractAudio.mockReset()
   mocks.probeVideo.mockReset()
 })
@@ -206,5 +210,122 @@ describe('handleVideoProcess', () => {
     expect(response.success).toBe(false)
     expect(response.error).toContain('未知的音频输出格式')
     expect(mocks.extractAudio).not.toHaveBeenCalled()
+  })
+
+  // ── kind:'audio' 模式：纯音频截取 / 变速 / 探测 ──────────────────
+  it('trims an audio-only file via the kind=audio dispatcher branch', async () => {
+    mocks.probeVideo.mockResolvedValue({
+      durationSec: 27,
+      hasAudio: true,
+      audioCodec: 'mp3',
+    })
+    mocks.trimVideo.mockImplementation(async (_input: string, outputPath: string) => ({
+      path: outputPath,
+      mimeType: 'audio/mpeg',
+      durationMs: 9_160,
+      audioCodec: 'mp3',
+    }))
+
+    const response = await handleVideoProcess({
+      kind: 'audio',
+      operation: 'trim',
+      input: join(mocks.paths.userData, 'song.mp3'),
+      params: { startSec: 0, endSec: 9.16 },
+      requestId: 'audio-trim',
+    })
+
+    expect(response.success).toBe(true)
+    expect(mocks.probeVideo).toHaveBeenCalledOnce()
+    expect(mocks.trimVideo).toHaveBeenCalledOnce()
+    const [, outputPath, opts] = mocks.trimVideo.mock.calls[0] as [
+      string,
+      string,
+      { startSec: number; endSec: number; copy: boolean },
+    ]
+    expect(opts.startSec).toBe(0)
+    expect(opts.endSec).toBe(9.16)
+    expect(opts.copy).toBe(false)
+    expect(outputPath).toMatch(/\.mp3$/)
+  })
+
+  it('rejects audio trim when endSec exceeds the probed duration', async () => {
+    mocks.probeVideo.mockResolvedValue({
+      durationSec: 27,
+      hasAudio: true,
+      audioCodec: 'mp3',
+    })
+
+    const response = await handleVideoProcess({
+      kind: 'audio',
+      operation: 'trim',
+      input: join(mocks.paths.userData, 'song.mp3'),
+      params: { startSec: 5, endSec: 60 },
+      requestId: 'audio-trim-overflow',
+    })
+
+    expect(response.success).toBe(false)
+    expect(response.error).toContain('超出音频时长')
+    expect(mocks.trimVideo).not.toHaveBeenCalled()
+  })
+
+  it('adjusts audio speed within the 0.1x–4.0x UI bounds', async () => {
+    mocks.probeVideo.mockResolvedValue({
+      durationSec: 30,
+      hasAudio: true,
+      audioCodec: 'aac',
+    })
+    mocks.adjustSpeed.mockImplementation(async (_input: string, outputPath: string) => ({
+      path: outputPath,
+      mimeType: 'audio/mp4',
+      durationMs: 20_000,
+      audioCodec: 'aac',
+    }))
+
+    const response = await handleVideoProcess({
+      kind: 'audio',
+      operation: 'adjustSpeed',
+      input: join(mocks.paths.userData, 'song.m4a'),
+      params: { factor: 1.5 },
+      requestId: 'audio-speed',
+    })
+
+    expect(response.success).toBe(true)
+    expect(mocks.adjustSpeed).toHaveBeenCalledOnce()
+    const [, outputPath, factor] = mocks.adjustSpeed.mock.calls[0] as [
+      string,
+      string,
+      number,
+    ]
+    expect(factor).toBe(1.5)
+    expect(outputPath).toMatch(/\.m4a$/)
+  })
+
+  it('refuses audio speed outside the 0.1x–4.0x bounds without invoking ffmpeg', async () => {
+    const response = await handleVideoProcess({
+      kind: 'audio',
+      operation: 'adjustSpeed',
+      input: join(mocks.paths.userData, 'song.mp3'),
+      params: { factor: 5 },
+      requestId: 'audio-speed-overflow',
+    })
+
+    expect(response.success).toBe(false)
+    expect(response.error).toContain('音频变速 factor=5 超出允许范围')
+    expect(mocks.probeVideo).not.toHaveBeenCalled()
+    expect(mocks.adjustSpeed).not.toHaveBeenCalled()
+  })
+
+  it('refuses video-only operations when kind=audio is set', async () => {
+    const response = await handleVideoProcess({
+      kind: 'audio',
+      operation: 'crop',
+      input: join(mocks.paths.userData, 'song.mp3'),
+      params: { w: 100, h: 100, x: 0, y: 0 },
+      requestId: 'audio-mismatch-crop',
+    })
+
+    expect(response.success).toBe(false)
+    expect(response.error).toContain('音频模式不支持该操作')
+    expect(mocks.cropVideo).not.toHaveBeenCalled()
   })
 })

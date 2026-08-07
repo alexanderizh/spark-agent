@@ -780,6 +780,12 @@ export class ClaudeSDKExecutor {
                     const questionCallback = config.questionCallback
                     if (questionCallback != null) {
                       const releasePromptHold = interactivePrompt?.holdOpen() ?? (() => undefined)
+                      log.info('[QUESTION-DIAG] canUseTool entering AskUserQuestion branch', {
+                        sessionId,
+                        toolUseId: callbackOptions.toolUseID,
+                        requestId: callbackOptions.requestId,
+                        signalAborted: callbackOptions.signal?.aborted ?? null,
+                      })
                       try {
                         // Extract questions from input
                         const questions = extractQuestionsFromInput(input)
@@ -794,12 +800,28 @@ export class ClaudeSDKExecutor {
                           questions,
                           questionContext,
                         )
+                        log.info('[QUESTION-DIAG] canUseTool questionCallback resolved', {
+                          sessionId,
+                          toolUseId: callbackOptions.toolUseID,
+                          answerKeys: Object.keys(answers ?? {}),
+                        })
                         // Return SDK-compatible answers keyed by question text.
                         return allowTool(
                           buildAskUserQuestionInputWithAnswers(input, questions, answers),
                           callbackOptions.toolUseID,
                           'user_temporary',
                         )
+                      } catch (error) {
+                        log.error('[QUESTION-DIAG] canUseTool questionCallback threw', {
+                          sessionId,
+                          toolUseId: callbackOptions.toolUseID,
+                          signalAborted: callbackOptions.signal?.aborted ?? null,
+                          errorName: error instanceof Error ? error.name : undefined,
+                          errorMessage:
+                            error instanceof Error ? error.message : String(error),
+                          stack: error instanceof Error ? error.stack : undefined,
+                        })
+                        throw error
                       } finally {
                         releasePromptHold()
                       }
@@ -873,7 +895,17 @@ export class ClaudeSDKExecutor {
                         scopePermissionUpdates(callbackOptions.suggestions, approval.scope),
                       )
                     : denyTool('User denied tool execution', callbackOptions.toolUseID)
-                } catch {
+                } catch (error) {
+                  log.error('[QUESTION-DIAG] canUseTool outer catch', {
+                    sessionId,
+                    toolName,
+                    toolUseId: callbackOptions.toolUseID,
+                    signalAborted: callbackOptions.signal?.aborted ?? null,
+                    errorName: error instanceof Error ? error.name : undefined,
+                    errorMessage:
+                      error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                  })
                   return denyTool('Permission check failed', callbackOptions.toolUseID)
                 }
               },

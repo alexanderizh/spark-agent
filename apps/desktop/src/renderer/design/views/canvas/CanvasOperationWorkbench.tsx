@@ -190,16 +190,16 @@ export function CanvasOperationWorkbench({
     icon: ReactNode,
     count?: number,
   ) => (
-    <button
-      type="button"
-      className={`canvas-operation-workbench-tab${activeTab === tab ? ' is-active' : ''}`}
+    <Button
+      type="text"
+      size="small"
       disabled={(tab === 'output' || tab === 'history') && !hasOutputs}
       onClick={() => dispatch({ type: 'select-tab', tab })}
     >
       {icon}
       {label}
       {count ? <span className="canvas-operation-workbench-count">{count}</span> : null}
-    </button>
+    </Button>
   )
 
   return (
@@ -215,25 +215,27 @@ export function CanvasOperationWorkbench({
           {activeTab === 'output' && activeRun ? (
             <div className="canvas-operation-workbench-context">
               <div className="canvas-operation-workbench-run-nav">
-                <button
-                  type="button"
+                <Button
+                  type="text"
+                  size="small"
                   aria-label="查看更新的一次运行"
                   disabled={effectiveRunIndex === 0}
                   onClick={() => dispatch({ type: 'select-run', runIndex: effectiveRunIndex - 1 })}
                 >
                   <Icons.ChevronLeft size={14} />
-                </button>
+                </Button>
                 <span className="canvas-operation-workbench-run-label">
                   {displayRunNumber} {runs.length > 1 ? ` / ${runs.length}` : ''}
                 </span>
-                <button
-                  type="button"
+                <Button
+                  type="text"
+                  size="small"
                   aria-label="查看更早的一次运行"
                   disabled={effectiveRunIndex >= runs.length - 1}
                   onClick={() => dispatch({ type: 'select-run', runIndex: effectiveRunIndex + 1 })}
                 >
                   <Icons.ChevronRight size={14} />
-                </button>
+                </Button>
               </div>
               <div
                 className="canvas-operation-workbench-output-list"
@@ -249,11 +251,14 @@ export function CanvasOperationWorkbench({
                     const selected = selectedOutputIdSet.has(output.id)
                     const primary = outputState.primaryOutput?.id === output.id
                     return (
-                      <button
+                      <Button
+                        type="text"
+                        size="small"
                         key={output.id}
-                        type="button"
                         className={`${index === effectiveOutputIndex ? 'is-active' : ''}${selected ? ' is-selected' : ''}`}
-                        aria-pressed={state.selectionMode ? selected : index === effectiveOutputIndex}
+                        aria-pressed={
+                          state.selectionMode ? selected : index === effectiveOutputIndex
+                        }
                         onClick={() => {
                           dispatch({ type: 'select-output', outputIndex: index })
                           if (state.selectionMode) {
@@ -262,13 +267,15 @@ export function CanvasOperationWorkbench({
                         }}
                       >
                         {state.selectionMode ? (
-                          <span className="canvas-operation-output-check">{selected ? '✓' : ''}</span>
+                          <span className="canvas-operation-output-check">
+                            {selected ? '✓' : ''}
+                          </span>
                         ) : null}
                         <span>{output.title}</span>
                         {primary ? (
                           <small>{outputState.mode === 'collection' ? '默认' : '主'}</small>
                         ) : null}
-                      </button>
+                      </Button>
                     )
                   })
                 )}

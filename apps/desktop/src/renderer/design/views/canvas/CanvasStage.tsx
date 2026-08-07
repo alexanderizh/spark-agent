@@ -85,7 +85,10 @@ import {
 import {
   resolveCanvasOperationResourceNode,
 } from './canvasOperationOutputModel'
-import { buildCanvasOperationProjection } from './canvasOperationProjection'
+import {
+  buildCanvasOperationProjection,
+  resolveCanvasSelectionNodeId,
+} from './canvasOperationProjection'
 import { buildOutputMediaKindMap } from './canvasNodeMediaKind'
 import {
   buildCanvasGroupCollapseProjection,
@@ -680,6 +683,8 @@ function CanvasStageInner({
   onReplaceVideo,
   onPreviewPanorama,
   onEditVideo,
+  onAudioTrim,
+  onAudioSpeed,
   onExpandOperationOutputs,
   onCreateOperationChild,
   onPipelineAction,
@@ -754,6 +759,10 @@ function CanvasStageInner({
   onPreviewPanorama: (nodeId: string) => void
   /** 视频节点右键 → 视频编辑（打开视频工作台） */
   onEditVideo: (nodeId: string) => void
+  /** 音频节点 in-node chip "截取" → 触发 ffmpeg 截取 + 物化新节点 */
+  onAudioTrim?: (nodeId: string, startSec: number, endSec: number) => void
+  /** 音频节点 in-node chip "变速" → 触发 ffmpeg atempo + 物化新节点 */
+  onAudioSpeed?: (nodeId: string, factor: number) => void
   /** 多产物操作节点右键 → 展开最近一次运行的全部产物 */
   onExpandOperationOutputs: (nodeId: string) => void
   onCreateOperationChild: (
@@ -841,6 +850,8 @@ function CanvasStageInner({
       ...(onReplaceVideo ? { replaceVideo: onReplaceVideo } : {}),
       previewPanorama: onPreviewPanorama,
       ...(onEditVideo ? { editVideo: onEditVideo } : {}),
+      ...(onAudioTrim ? { audioTrim: onAudioTrim } : {}),
+      ...(onAudioSpeed ? { audioSpeed: onAudioSpeed } : {}),
       expandOperationOutputs: onExpandOperationOutputs,
       createOperationChild: onCreateOperationChild,
       pipelineAction: onPipelineAction,
@@ -868,6 +879,8 @@ function CanvasStageInner({
       onSplitStoryboard,
       onPreviewPanorama,
       onEditVideo,
+      onAudioTrim,
+      onAudioSpeed,
       onExpandOperationOutputs,
       onRemoveNodeFromGroup,
       onAddNodeToAgent,
@@ -897,13 +910,25 @@ function CanvasStageInner({
     [operationProjection.visibleEdges, operationProjection.visibleNodes, snapshot.nodes, snapshot.edges],
   )
   const selectedNodeIdSet = useMemo(
-    () =>
-      new Set(
-        selectedNodeIds.map(
-          (nodeId) => operationProjection.producerByOutputNodeId.get(nodeId) ?? nodeId,
+    () => {
+      const visibleNodeIds = new Set(
+        groupCollapseProjection.visibleNodes.map((node) => node.id),
+      )
+      return new Set(
+        selectedNodeIds.map((nodeId) =>
+          resolveCanvasSelectionNodeId(
+            nodeId,
+            visibleNodeIds,
+            operationProjection.producerByOutputNodeId,
+          ),
         ),
-      ),
-    [operationProjection.producerByOutputNodeId, selectedNodeIds],
+      )
+    },
+    [
+      groupCollapseProjection.visibleNodes,
+      operationProjection.producerByOutputNodeId,
+      selectedNodeIds,
+    ],
   )
   const snapshotNodeById = useMemo(
     () => new Map(snapshot.nodes.map((node) => [node.id, node] as const)),

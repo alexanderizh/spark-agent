@@ -3901,6 +3901,8 @@ export interface VideoProcessRequest {
     | 'watermark'
     | 'burnSubtitle'
     | 'extractAudio'
+  /** 媒体类型；缺省 'video'。audio 模式下只允许 trim / adjustSpeed / probe / extractAudio。 */
+  kind?: 'video' | 'audio'
   /** 源视频文件绝对路径 */
   input: string
   /** 各操作的参数（结构因 operation 而异） */
@@ -5848,6 +5850,11 @@ export interface IpcChannelMap
   ]
   'canvas:task:generate-text': [CanvasTextTaskCreateRequest, CanvasTextTaskCreateResponse]
   'canvas:task:cancel-media': [CanvasMediaTaskCancelRequest, CanvasMediaTaskCancelResponse]
+
+  // 画布音频节点原地处理（截取 / 变速 / 探测）；复用视频处理 IPC 通道结构
+  'canvas:task:audio-trim': [VideoProcessRequest, VideoProcessResponse]
+  'canvas:task:audio-speed': [VideoProcessRequest, VideoProcessResponse]
+  'canvas:task:audio-probe': [VideoProcessRequest, VideoProcessResponse]
 
   // Canvas Persistence (SQLite-backed production storage)
   'canvas:snapshot:save': [CanvasSnapshotSaveRequest, CanvasSnapshotSaveResponse]

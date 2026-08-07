@@ -79,6 +79,17 @@ describe('canvasNodeChromeExtraHeight', () => {
     ).toBe(CANVAS_NODE_QUICK_FOOTER_HEIGHT)
   })
 
+  it('does not reserve a duplicate content title for audio resources or extract-audio tasks', () => {
+    expect(canvasNodeChromeExtraHeight(createNode({ type: 'audio' }))).toBe(
+      CANVAS_NODE_QUICK_FOOTER_HEIGHT,
+    )
+    expect(
+      canvasNodeChromeExtraHeight(
+        createNode({ type: 'extract_audio', data: { operation: 'extract_audio' } }),
+      ),
+    ).toBe(CANVAS_NODE_QUICK_FOOTER_HEIGHT)
+  })
+
   it('uses storyboard chrome for a split node containing one shot', () => {
     expect(
       canvasNodeChromeExtraHeight(

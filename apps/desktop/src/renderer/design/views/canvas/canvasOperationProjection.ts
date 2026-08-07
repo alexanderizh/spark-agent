@@ -9,6 +9,21 @@ export type CanvasOperationProjection = {
 }
 
 /**
+ * 解析外部选中态对应的画布节点。
+ *
+ * 产物被 operation projection 内嵌时，画布上没有产物节点，需要把选中态投影到生产任务；
+ * 产物已经物化为可见节点时，必须保留产物自身选中态，否则资源节点无法显示自己的操作入口。
+ */
+export function resolveCanvasSelectionNodeId(
+  nodeId: string,
+  visibleNodeIds: ReadonlySet<string>,
+  producerByOutputNodeId: ReadonlyMap<string, string>,
+): string {
+  if (visibleNodeIds.has(nodeId)) return nodeId
+  return producerByOutputNodeId.get(nodeId) ?? nodeId
+}
+
+/**
  * 将「操作节点 → generated → 产物节点」投影为一个可见操作节点。
  *
  * 产物节点仍保留在快照中供任务历史、资产、编辑和导出使用；这里只影响画布显示。
