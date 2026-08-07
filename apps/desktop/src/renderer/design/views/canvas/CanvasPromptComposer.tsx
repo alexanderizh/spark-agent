@@ -136,7 +136,7 @@ export function CanvasPromptComposer({
           ref={composerRef}
           className={`canvas-prompt-composer${className ? ` ${className}` : ''}`}
         >
-          <CanvasPromptToolbar
+          {/* <CanvasPromptToolbar
             open={insertMenuOpen}
             disabled={disabled}
             mentionItems={mentionItems}
@@ -145,7 +145,7 @@ export function CanvasPromptComposer({
             onMentionSelect={onMentionSelect}
             {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
             {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
-          />
+          /> */}
           <CanvasPromptEditorSurface
             document={document}
             placeholder={placeholder ?? '输入内容，或使用 @ 引用上游节点与画布资源'}

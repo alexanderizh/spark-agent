@@ -559,11 +559,22 @@
   overflow: visible !important;
 }
 
+/* React Flow 的层级挂在节点宿主上，音频工具栏虽在节点内部渲染，仍需让宿主置顶，
+   否则会被相邻节点的卡片覆盖。 */
+.canvas-stage .react-flow__node.selected {
+  z-index: 9999 !important;
+}
+
 .canvas-node-shell {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: visible !important;
+}
+
+.canvas-node-shell-selected {
+  /* 音频工具栏位于节点外部时，提升整个 React Flow 节点的绘制层级。 */
+  z-index: 20;
 }
 
 .canvas-minimap {
@@ -862,6 +873,8 @@
 .canvas-node-selected {
   border-color: color-mix(in srgb, #f8fafc 72%, var(--text-muted));
   box-shadow: var(--canvas-node-shadow-selected);
+  /* 节点外的音频操作工具栏不能被相邻节点盖住。 */
+  z-index: 20;
 }
 
 [data-theme='light'] .canvas-node-selected {
@@ -1365,6 +1378,11 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
+}
+
+/* 音频资源预览的截取/变速工具栏位于卡片上方，不能被操作节点的预览舞台裁掉。 */
+.canvas-operation-output-stage.is-audio {
+  overflow: visible;
 }
 
 .canvas-operation-output-media {
@@ -1947,8 +1965,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 10px;
-  padding: 14px;
+  padding: 0;
   background: var(--canvas-node-body-bg);
   color: var(--text-muted);
 }
@@ -1962,6 +1979,7 @@
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
 }
 
 .canvas-node-group-count {
@@ -2115,6 +2133,7 @@
 
 .canvas-node-handle {
   --canvas-node-handle-scale: 1;
+  --canvas-node-handle-hit-scale: 1;
   z-index: 8;
   // React Flow 的临时线取中心、已有边取外缘；零尺寸让两种坐标都落在节点边界。
   width: 0;
@@ -2133,6 +2152,7 @@
   border-radius: 50%;
   content: '';
   pointer-events: inherit;
+  transition: transform 0.12s ease;
 }
 
 .canvas-node-handle::after {
@@ -2166,7 +2186,7 @@
 
 .canvas-node-handle.react-flow__handle-left::before {
   left: 0;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scale(var(--canvas-node-handle-hit-scale));
 }
 
 .canvas-node-handle.react-flow__handle-right {
@@ -2180,13 +2200,14 @@
 
 .canvas-node-handle.react-flow__handle-right::before {
   right: 0;
-  transform: translate(50%, -50%);
+  transform: translate(50%, -50%) scale(var(--canvas-node-handle-hit-scale));
 }
 
 .canvas-node:hover .canvas-node-handle,
 .canvas-node-selected .canvas-node-handle,
 .canvas-node-handle:hover {
   --canvas-node-handle-scale: 1.22;
+  --canvas-node-handle-hit-scale: 1.22;
 }
 
 .canvas-node:hover .canvas-node-handle::after,
@@ -2200,6 +2221,7 @@
 
 .canvas-node-handle.connectingto.valid {
   --canvas-node-handle-scale: 1.34;
+  --canvas-node-handle-hit-scale: 1.34;
 }
 
 .canvas-node-handle.connectingto.valid::after {
@@ -6266,14 +6288,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: 16px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
-    var(--canvas-edit-bg);
-  box-shadow:
-    0 24px 62px rgba(0, 0, 0, 0.38),
-    0 5px 18px rgba(0, 0, 0, 0.22);
   transform: translateX(-50%);
   pointer-events: auto;
   animation: canvas-node-bottom-editor-in 0.18s ease-out;
@@ -6322,7 +6337,6 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   flex: 0 0 auto;
   min-width: 0;
   padding: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--divider) 78%, transparent);
 }
 
 .canvas-node-bottom-editor-toolbar .canvas-floating-toolbar-shell {
@@ -6589,9 +6603,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border: 0;
   // 内联面板位于浮层/编辑器内部，外层容器统一负责圆角。
   border-radius: 0;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 3%, transparent), transparent 120px),
-    var(--canvas-edit-bg);
+
   box-shadow:
     0 20px 54px rgba(0, 0, 0, 0.3),
     0 2px 10px rgba(0, 0, 0, 0.18);
@@ -6613,6 +6625,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-node-floating-panel .canvas-operation-composer-top.has-no-media {
   grid-template-columns: minmax(0, 1fr) auto;
   row-gap: 6px;
+  padding: 0;
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-title {
@@ -6726,9 +6739,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border-strong) 58%, transparent);
   border-radius: 11px;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, #27c2b8 5%, transparent), transparent 22%),
-    color-mix(in srgb, var(--bg-sunken) 54%, var(--canvas-edit-bg));
+  background:var(--panel-elev)
 }
 
 .canvas-media-input-configurator-head {
@@ -7616,7 +7627,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-node-floating-panel .canvas-operation-composer-bottom {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: stretch;
   gap: 6px;
   padding: 0 12px 10px;
@@ -7625,7 +7636,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-node-floating-panel .canvas-operation-composer-bottom > .canvas-operation-composer-params {
   display: flex;
   flex: 0 0 auto;
-  width: 100%;
+  flex-grow: 1;
   min-width: 0;
   align-items: center;
   justify-content: flex-start;
@@ -14239,5 +14250,430 @@ body.canvas-agent-panel-resizing {
 
   .canvas-character-subview-side {
     grid-template-rows: 148px auto minmax(0, 1fr);
+  }
+}
+
+/* ── 画布音频节点呈现层 ────────────────────────────────────────────
+ * 节点外壳 + 自绘波形条 + 选中工具栏(in-node chip) + 截取/变速 inline 面板。
+ * 与 .canvas-node-image-chips / .canvas-node-subview-chip 同一视觉层级。
+ */
+.canvas-node-audio-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  min-height: 96px;
+  background: var(--canvas-node-body-bg);
+  color: var(--text-strong);
+  overflow: visible;
+}
+
+// 音频节点的选中工具栏位于卡片上方；节点正文默认 overflow:hidden，需为该节点
+// 单独放开两层裁剪，否则 toolbar 会被 core/body 截断一半。
+.canvas-node-core-audio,
+.canvas-node-body-audio {
+  overflow: visible;
+}
+
+.canvas-node-audio-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-strong);
+}
+
+.canvas-node-audio-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-node-audio-waveform-row {
+  position: relative;
+  width: 100%;
+  background: color-mix(in srgb, var(--bg-sunken) 88%, transparent);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.canvas-node-audio-hidden {
+  display: none;
+}
+
+.canvas-node-audio-waveform {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+}
+
+.canvas-node-audio-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-node-audio-time {
+  min-width: 56px;
+  text-align: center;
+}
+
+.canvas-node-audio-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 50%, transparent);
+  color: var(--primary);
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease;
+}
+
+.canvas-node-audio-play:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+.canvas-node-audio-chips {
+  position: absolute;
+  right: auto;
+  top: -75px;
+  left: 50%;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: calc(100% - 16px);
+  padding: 6px 8px;
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--primary, #ff5f66) 28%, transparent);
+  border-radius: 999px;
+  background: var(--panel-elev, #171a20);
+  white-space: nowrap;
+  pointer-events: auto;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.3);
+}
+
+/* ── 截取 in-node 面板 ──────────────────────────────────────── */
+.canvas-node-audio-overlay-backdrop {
+  position: absolute;
+  inset: 8px;
+  background: color-mix(in srgb, var(--bg-soft) 92%, rgba(0, 0, 0, 0.55));
+  border-radius: inherit;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 12px;
+  gap: 12px;
+  z-index: 5;
+}
+
+.canvas-node-audio-trim-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.canvas-node-audio-trim-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.canvas-node-audio-trim-cancel,
+.canvas-node-audio-trim-apply {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--primary) 36%, transparent);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.canvas-node-audio-trim-cancel {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: color-mix(in srgb, var(--text-muted) 28%, transparent);
+}
+
+.canvas-node-audio-trim-apply[disabled],
+.canvas-node-audio-trim-cancel[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.canvas-node-audio-trim-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.canvas-node-audio-trim-range {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.canvas-node-audio-trim-stage {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  margin: 4px 0 2px;
+  min-width: 0;
+}
+
+.canvas-node-audio-trim-range-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.canvas-node-audio-trim-rect {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvas-node-audio-trim-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-sunken) 92%, transparent);
+  color: var(--text-strong);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.canvas-node-audio-trim-handle {
+  border: 0;
+  background: transparent;
+  margin: 0;
+  padding: 0;
+}
+
+.canvas-node-audio-trim-handle:active {
+  cursor: ew-resize;
+}
+
+/* ── 变速 in-node 抽屉 ──────────────────────────────────────── */
+.canvas-node-audio-speed-drawer {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: auto auto auto minmax(110px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-soft) 96%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
+  backdrop-filter: blur(10px);
+  font-size: 12px;
+  color: var(--text-strong);
+  pointer-events: auto;
+  box-sizing: border-box;
+}
+
+.canvas-node-audio-speed-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 28%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.canvas-node-audio-speed-label {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.canvas-node-audio-speed-floor,
+.canvas-node-audio-speed-ceil {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-node-audio-speed-range {
+  min-width: 0;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+}
+
+.canvas-node-audio-speed-slider {
+  width: 100%;
+  appearance: none;
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(
+    to right,
+    var(--primary) 0%,
+    var(--primary) var(--speed-progress, 0%),
+    color-mix(in srgb, var(--text-muted) 36%, transparent) var(--speed-progress, 0%),
+    color-mix(in srgb, var(--text-muted) 36%, transparent) 100%
+  );
+  cursor: pointer;
+  outline: none;
+}
+
+.canvas-node-audio-speed-slider[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.canvas-node-audio-speed-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--primary);
+  border: 2px solid var(--bg-sunken);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.canvas-node-audio-speed-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--primary);
+  border: 2px solid var(--bg-sunken);
+  cursor: pointer;
+}
+
+.canvas-node-audio-speed-value-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
+  background: color-mix(in srgb, var(--bg-sunken) 88%, transparent);
+}
+
+.canvas-node-audio-speed-value {
+  min-width: 48px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-node-audio-speed-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.canvas-node-audio-speed-step:hover {
+  background: color-mix(in srgb, var(--text-muted) 16%, transparent);
+  color: var(--text-strong);
+}
+
+.canvas-node-audio-speed-apply {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+.canvas-node-audio-speed-apply[disabled] {
+  background: color-mix(in srgb, var(--primary) 38%, transparent);
+  cursor: not-allowed;
+}
+
+@media (max-width: 460px) {
+  .canvas-node-audio-speed-drawer {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .canvas-node-audio-speed-floor,
+  .canvas-node-audio-speed-ceil {
+    display: none;
+  }
+
+  .canvas-node-audio-speed-value-group {
+    grid-column: 3;
+    grid-row: 2;
+    justify-self: end;
+  }
+
+  .canvas-node-audio-speed-apply {
+    grid-column: 4;
+    grid-row: 1 / span 2;
+  }
+}
+
+@media (max-width: 380px) {
+  .canvas-node-audio-shell {
+    padding-inline: 10px;
+  }
+
+  .canvas-node-audio-chips {
+    max-width: calc(100vw - 32px);
+  }
+
+  .canvas-node-audio-trim-row {
+    gap: 6px;
+  }
+
+  .canvas-node-audio-trim-label {
+    display: none;
   }
 }

@@ -128,28 +128,15 @@
     border-radius: 0 0 10px 10px;
   }
 
-  // 视口外节点跳过内容渲染，削减 pan/zoom 时的合成与光栅化成本。
-  // 落在 body（最内层内容区）：Handle/NodeResizer 在 core 之外不受影响，
-  // core 已有 overflow:hidden 裁切媒体，contain:paint 不会额外丢失可见内容。
-  // RF wrapper 有 inline width/height（measured 后锁定），body 跳过 paint 不冲击 RF 测量链路。
-  // contain-intrinsic-size 的 auto 关键字让浏览器记忆节点上次可见时的真实尺寸，
-  // 视口外用记忆尺寸占位，避免尺寸坍缩；240x160 仅作首次 fallback。
-  .canvas-node-body {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 240px 160px;
+  // 音频选中工具栏位于节点顶部之外；主题的高优先级 core 裁剪不能覆盖它。
+  .canvas-node-core-audio,
+  .canvas-node-body-audio {
+    overflow: visible !important;
   }
 
-  // 视频节点同样应用 content-visibility: auto（继承上方全局规则）：
-  // 视口外 <video> 跳过 paint/合成，DOM 不卸载、<video> 状态与播放进度保留，
-  // 进视口恢复 paint。这与 RF culling（onlyRenderVisibleElements 卸载 DOM 致
-  // video 重挂载/重解码）根本不同，不会引发重新进视口抖动。
-  // 原先在此对视频显式 content-visibility: visible 的排除，混淆了「跳过 paint」
-  // 与「卸载 DOM」，已修正。若实测播放中视频移出视口出现异常，可在此为
-  // .canvas-node-video-playing 单独恢复 visible。
-  .canvas-node-video .canvas-node-body,
-  .canvas-node-video-full-bleed .canvas-node-body {
-    /* 继承 .canvas-node-body 的 content-visibility: auto */
-  }
+  // 节点正文必须始终参与绘制。React Flow 节点位于 transform 画布内时，
+  // content-visibility:auto 可能把仍在 DOM 中的正文误判为不可见，最终只剩
+  // 节点外框和占位尺寸；节点数量优化交给 React Flow 的可见节点策略处理。
 
   .canvas-node.canvas-node-media-full-bleed {
     // Handle 与 NodeResizer 会跨出节点边界；媒体内容仍由 .canvas-node-core 裁切。
@@ -253,8 +240,7 @@
     font-size: 8px;
   }
 
-  .canvas-node-media-full-bleed .canvas-node-image-chips,
-  .canvas-node-media-full-bleed .canvas-node-image-overlay-footer > button {
+  .canvas-node-media-full-bleed .canvas-node-image-chips {
     opacity: 0;
     pointer-events: none;
     transform: translateY(3px);
@@ -264,11 +250,15 @@
   }
 
   .canvas-node-media-full-bleed:hover .canvas-node-image-chips,
-  .canvas-node-media-full-bleed:hover .canvas-node-image-overlay-footer > button,
   .canvas-node-media-full-bleed.canvas-node-selected .canvas-node-image-chips,
-  .canvas-node-media-full-bleed.canvas-node-selected .canvas-node-image-overlay-footer > button,
-  .canvas-node-media-full-bleed:focus-within .canvas-node-image-chips,
-  .canvas-node-media-full-bleed:focus-within .canvas-node-image-overlay-footer > button {
+  .canvas-node-media-full-bleed:focus-within .canvas-node-image-chips {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  // 主操作按钮不能跟随 hover 才出现，否则媒体节点只剩图片占位，用户无法发现入口。
+  .canvas-node-media-full-bleed .canvas-node-image-overlay-footer > button {
     opacity: 1;
     pointer-events: auto;
     transform: translateY(0);
@@ -396,6 +386,7 @@
   .canvas-node-handle {
     // 直接用真实 Handle 绘制圆点，并让自身中心落在节点边界上。这样不再受
     // React Flow 默认 min-size 与零尺寸伪元素定位共同计算造成的水平偏移影响。
+    --canvas-node-handle-scale: 1;
     width: 13px;
     min-width: 13px;
     height: 13px;
@@ -416,16 +407,18 @@
   }
 
   .canvas-node-handle.react-flow__handle-left {
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%) scale(var(--canvas-node-handle-scale));
   }
 
   .canvas-node-handle.react-flow__handle-right {
-    transform: translate(50%, -50%);
+    transform: translate(50%, -50%) scale(var(--canvas-node-handle-scale));
   }
 
+  .canvas-node:hover .canvas-node-handle,
   .canvas-node-selected .canvas-node-handle,
   .canvas-node-handle:hover,
   .canvas-node-handle.connectingto.valid {
+    --canvas-node-handle-scale: 1.35;
     background: var(--canvas-cinema-accent-bright);
   }
 
@@ -434,7 +427,6 @@
     padding: 3px;
     border-color: var(--canvas-cinema-border-strong);
     border-radius: 9px;
-    background: rgba(22, 26, 31, 0.96);
     backdrop-filter: blur(12px);
   }
 
@@ -453,8 +445,7 @@
 
   .canvas-stage[data-zoom-lod='compact'] {
     .canvas-node-meta-chip-state,
-    .canvas-node-content-title span,
-    .canvas-node-quick-footer button {
+    .canvas-node-content-title span {
       display: none;
     }
 
@@ -470,8 +461,6 @@
   .canvas-stage[data-zoom-lod='overview'] {
     .canvas-node-meta-tags,
     .canvas-node-content-title,
-    .canvas-node-quick-footer,
-    .canvas-node-image-overlay-footer button,
     .canvas-operation-param-summary,
     .canvas-node-task-msg {
       display: none;
@@ -486,6 +475,14 @@
 
     .canvas-node-kind-label {
       font-size: 9px;
+    }
+
+    .canvas-node-quick-footer {
+      display: flex;
+    }
+
+    .canvas-node-image-overlay-footer button {
+      display: inline-flex;
     }
 
     .canvas-node-image-overlay-footer {

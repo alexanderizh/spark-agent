@@ -3,6 +3,7 @@ import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { MarkdownText } from '../chat/ChatMarkdown'
 import { CanvasShotScriptTable } from './CanvasShotScriptTable'
+import { CanvasAudioNodePresentation } from './audioNode/CanvasAudioNodePresentation'
 import {
   isReadableCanvasOperationTextOutput,
   resolveCanvasTextOutputPresentation,
@@ -10,10 +11,19 @@ import {
 import type { CanvasOperationOutputView } from './canvasOperationRuns'
 import './CanvasOperationOutputPreview.less'
 
+export type CanvasAudioPreviewActions = {
+  onTrimApply?: (start: number, end: number) => Promise<void> | void
+  onSpeedApply?: (factor: number) => Promise<void> | void
+  onDownload?: () => void
+  onPeaks?: (peaks: number[]) => void
+}
+
 export function CanvasOperationOutputPreview({
   output,
   variant = 'card',
   isolateWheel = true,
+  selected = false,
+  audioActions,
   onVideoMetadata,
   onVideoEdit,
 }: {
@@ -21,6 +31,9 @@ export function CanvasOperationOutputPreview({
   variant?: 'card' | 'detail'
   /** 位于未选中的画布节点中时关闭，让滚轮继续交给画布。 */
   isolateWheel?: boolean
+  /** 操作节点被选中时，音频预览复用资源节点的操作工具栏。 */
+  selected?: boolean
+  audioActions?: CanvasAudioPreviewActions
   onVideoMetadata?: (dimensions: { width: number; height: number }) => void
   onVideoEdit?: () => void
 }) {
@@ -78,8 +91,13 @@ export function CanvasOperationOutputPreview({
   if (output.type === 'audio' && normalizedUrl) {
     return (
       <div className={`canvas-operation-output-audio is-${variant}`}>
-        <Icons.Play size={variant === 'detail' ? 36 : 28} />
-        <audio className="nodrag nopan" src={normalizedUrl} controls preload="metadata" />
+        <CanvasAudioNodePresentation
+          src={normalizedUrl}
+          fileName={output.title}
+          durationSec={0}
+          selected={selected && Boolean(output.nodeId)}
+          actions={audioActions ?? {}}
+        />
       </div>
     )
   }

@@ -135,9 +135,18 @@ async function dispatch(
   onProgress?: (p: FfmpegProgress) => void,
 ): Promise<unknown> {
   const { operation, input, params } = req
+  const kind: 'video' | 'audio' = req.kind ?? 'video'
   log.debug(
-    `dispatch operation=${operation} inputLength=${input.length} paramKeys=${Object.keys(params).join(',')}`,
+    `dispatch operation=${operation} kind=${kind} inputLength=${input.length} paramKeys=${Object.keys(params).join(',')}`,
   )
+
+  // ── kind:'audio' 模式只允许纯音频语义，避免与视频专属操作混用 ──
+  const audioAllowedOps = new Set(['probe', 'trim', 'adjustSpeed'])
+  if (kind === 'audio' && !audioAllowedOps.has(operation)) {
+    throw new Error(
+      `音频模式不支持该操作: ${operation};仅允许 ${Array.from(audioAllowedOps).join('/')}`,
+    )
+  }
 
   // ── 统一输入校验：路径白名单 + 数值范围 ──────────────────────────
   assertPathAllowed(input, 'read')
@@ -223,10 +232,34 @@ async function dispatch(
 
     // ── 剪辑 ─────────────────────────────────────────────────────
     case 'trim': {
+      const startSec = asNumber(params.startSec, 0)
+      const endSec = asNumber(params.endSec, 0)
+      if (startSec < 0) throw new Error('trim startSec 不能为负')
+      if (endSec <= startSec) throw new Error('trim endSec 必须大于 startSec')
+      if (kind === 'audio') {
+        // 纯音频模式输出扩展名按 probe 出的 audioCodec 推断；不可用时退回 m4a
+        const probe = await probeVideo(input)
+        if (!probe.hasAudio) throw new Error('该文件没有音轨，无法截取音频')
+        if (endSec > (probe.durationSec ?? Number.MAX_SAFE_INTEGER) + 0.5) {
+          throw new Error(
+            `trim endSec ${endSec}s 超出音频时长 ${probe.durationSec?.toFixed(2)}s`,
+          )
+        }
+        const ext = audioExtForCodec(probe.audioCodec)
+        const outputPath = prepareOutputPath(
+          (params.outputPath as string) ?? makeOutputPath(ext),
+        )
+        return trimVideo(input, outputPath, {
+          startSec,
+          endSec,
+          copy: false, // 音频截取走 atempo/合并重编码更稳定，避免 copy 模式下时间戳精度问题
+          onProgress,
+        })
+      }
       const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return trimVideo(input, outputPath, {
-        startSec: asNumber(params.startSec, 0),
-        endSec: asNumber(params.endSec, 0),
+        startSec,
+        endSec,
         copy: params.copy !== false,
         onProgress,
       })
@@ -267,8 +300,21 @@ async function dispatch(
 
     // ── 画面处理 ─────────────────────────────────────────────────
     case 'adjustSpeed': {
-      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       const factor = asNumber(params.factor, 1)
+      if (kind === 'audio') {
+        // 音频变速：UI 限定 0.1x – 4.0x；超出拒绝
+        if (factor < 0.1 || factor > 4) {
+          throw new Error(`音频变速 factor=${factor} 超出允许范围 [0.1, 4.0]`)
+        }
+        const probe = await probeVideo(input)
+        if (!probe.hasAudio) throw new Error('该文件没有音轨，无法变速')
+        const ext = audioExtForCodec(probe.audioCodec)
+        const outputPath = prepareOutputPath(
+          (params.outputPath as string) ?? makeOutputPath(ext),
+        )
+        return adjustSpeed(input, outputPath, factor, onProgress)
+      }
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return adjustSpeed(input, outputPath, factor, onProgress)
     }
 

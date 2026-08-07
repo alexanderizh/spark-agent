@@ -1961,14 +1961,43 @@ function getWorkspaceService(): WorkspaceService {
 let _sessionService: SessionService | null = null
 const pendingUserQuestions = new PendingUserQuestionStore({
   onRequest: (request) => {
-    pushStreamEvent('stream:session:user-question', request)
+    log.info('[QUESTION-DIAG] push stream:session:user-question', {
+      sessionId: request.sessionId,
+      questionId: request.questionId,
+    })
+    try {
+      pushStreamEvent('stream:session:user-question', request)
+    } catch (error) {
+      log.error('[QUESTION-DIAG] push stream:session:user-question threw', {
+        sessionId: request.sessionId,
+        questionId: request.questionId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      })
+      throw error
+    }
   },
   onClose: (request, reason) => {
-    pushStreamEvent('stream:session:user-question-closed', {
-      questionId: request.questionId,
+    log.info('[QUESTION-DIAG] push stream:session:user-question-closed', {
       sessionId: request.sessionId,
+      questionId: request.questionId,
       reason,
     })
+    try {
+      pushStreamEvent('stream:session:user-question-closed', {
+        questionId: request.questionId,
+        sessionId: request.sessionId,
+        reason,
+      })
+    } catch (error) {
+      log.error('[QUESTION-DIAG] push stream:session:user-question-closed threw', {
+        sessionId: request.sessionId,
+        questionId: request.questionId,
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      })
+    }
   },
   onDetachedAnswer: async (request, answers, context) => {
     const message = buildDetachedQuestionContinuationMessage(request, answers)
@@ -2162,6 +2191,15 @@ function getSessionService(): SessionService {
       pushStreamEvent('stream:session:queue-changed', snapshot)
     }
     const onQuestion: QuestionHandler = async (sessionId, questions, context) => {
+      log.info('[QUESTION-DIAG] QuestionHandler invoked by SDK executor', {
+        sessionId,
+        turnId: context.turnId ?? null,
+        questionId: context.questionId ?? null,
+        signalProvided: context.signal != null,
+        signalAborted: context.signal?.aborted ?? null,
+        requestId: context.requestId ?? null,
+        questionCount: questions.length,
+      })
       return pendingUserQuestions.request({
         questionId: context.questionId ?? crypto.randomUUID(),
         sessionId,
@@ -8489,6 +8527,46 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('video:probe', async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {
     return handleVideoProcess(req)
   })
+
+  /** 音频节点能力：探测 / 截取 / 变速。复用 handleVideoProcess(kind:'audio')。 */
+  typedIpcHandle(
+    'canvas:task:audio-probe',
+    async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {
+      return handleVideoProcess({ ...req, kind: 'audio', operation: 'probe' })
+    },
+  )
+
+  typedIpcHandle(
+    'canvas:task:audio-trim',
+    async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {
+      return handleVideoProcess(
+        { ...req, kind: 'audio', operation: 'trim' },
+        (progress) => {
+          pushStreamEvent('stream:video:process-progress', {
+            requestId: req.requestId,
+            percent: progress.percent,
+            stage: `frame=${progress.frame} fps=${progress.fps}`,
+          })
+        },
+      )
+    },
+  )
+
+  typedIpcHandle(
+    'canvas:task:audio-speed',
+    async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {
+      return handleVideoProcess(
+        { ...req, kind: 'audio', operation: 'adjustSpeed' },
+        (progress) => {
+          pushStreamEvent('stream:video:process-progress', {
+            requestId: req.requestId,
+            percent: progress.percent,
+            stage: `frame=${progress.frame} fps=${progress.fps}`,
+          })
+        },
+      )
+    },
+  )
 
   typedIpcHandle('browser:open-external', async (req) => {
     log.info('browser:open-external requested')

@@ -54,7 +54,29 @@ function videoOutput(id: string, width: number, height: number) {
   }
 }
 
+function audioOutput(id: string) {
+  return {
+    id,
+    nodeId: `node-${id}`,
+    type: 'audio' as const,
+    title: id,
+    createdAt: at,
+    updatedAt: at,
+  }
+}
+
 describe('operation video presentation size', () => {
+  it('uses the horizontal audio resource size for extract-audio tasks', () => {
+    const node = operationNode({
+      type: 'extract_audio',
+      data: { operation: 'extract_audio' },
+    })
+    expect(operationNodePresentationSize(node, [])).toEqual({ width: 520, height: 220 })
+    expect(operationNodePresentationSize(node, [run('run-1', [audioOutput('audio')])])).toEqual({
+      width: 520,
+      height: 220,
+    })
+  })
   it('shrinks a completed landscape task instead of retaining its default height', () => {
     expect(
       operationNodePresentationSize(operationNode(), [

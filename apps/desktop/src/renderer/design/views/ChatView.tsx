@@ -218,11 +218,9 @@ import { CheckpointTimelinePanel } from '../components/CheckpointTimelinePanel'
 import { BuiltInTerminalPanel } from '../components/BuiltInTerminalPanel'
 import { MentionPopover, type MentionCandidate } from '../components/MentionPopover'
 import { AvatarImage } from '../components/AvatarImage'
-import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { ComposerActionsMenu } from '../components/ComposerActionsMenu'
 import { SKILL_STORE_TARGET_TAB_EVENT, SKILL_STORE_TARGET_TAB_STORAGE_KEY } from './SkillStoreView'
 import { requestAgentsTargetTab } from '../teamNavigation'
-import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
 import { MessageBuilder } from '../services/event-mapper'
@@ -256,7 +254,6 @@ import {
   resolveDisplayedGitBranch,
 } from './chat-session-routing'
 import { useToast } from '../components/Toast'
-import { parseSkillManifest } from '../utils/skills-data'
 import {
   getPreferredProviderForAdapter,
   getProviderAdapterKind,

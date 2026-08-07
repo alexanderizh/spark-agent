@@ -9,6 +9,7 @@ import {
   TEXT_NODE_DEFAULT_SIZE,
   TEXT_NODE_LONG_MIN_SIZE,
   TEXT_NODE_LONG_SIZE,
+  AUDIO_NODE_DEFAULT_SIZE,
   fitCanvasGroupedImageNodeSize,
   fitCanvasImageNodeSize,
   fitCollectionOperationNodeSize,
@@ -92,6 +93,7 @@ describe('canvasNodeSize', () => {
     it('创建时使用专用大尺寸，普通任务尺寸保持不变', () => {
       expect(pickOperationNodeInitialSize(true)).toEqual(SHOT_SCRIPT_OPERATION_NODE_SIZE)
       expect(pickOperationNodeInitialSize(false)).toEqual({ width: 460, height: 420 })
+      expect(pickOperationNodeInitialSize(false, true)).toEqual(AUDIO_NODE_DEFAULT_SIZE)
     })
 
     it('完成后按镜头数有限增高', () => {

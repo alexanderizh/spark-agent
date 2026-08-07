@@ -47,7 +47,8 @@ export const SHOT_SCRIPT_NODE_MIN_SIZE = { width: 760, height: 460 } as const
 /** 媒体节点默认尺寸（新建节点使用，旧节点不批量迁移） */
 export const IMAGE_NODE_DEFAULT_SIZE = { width: 460, height: 300 } as const
 export const VIDEO_NODE_DEFAULT_SIZE = { width: 500, height: 300 } as const
-export const AUDIO_NODE_DEFAULT_SIZE = { width: 360, height: 280 } as const
+/** 音频资源是时间轴型内容：横向留出波形与操作控件，避免默认方形卡片挤压交互。 */
+export const AUDIO_NODE_DEFAULT_SIZE = { width: 520, height: 220 } as const
 
 /** 节点内嵌 meta 头部高度；媒体节点尺寸计算需要把它计入节点总高度。 */
 export const CANVAS_NODE_META_BAR_HEIGHT = 38
@@ -66,7 +67,7 @@ export const CANVAS_NODE_MIN_SIZE = {
   default: { width: 300, height: 240 },
   image: { width: 320, height: 218 },
   video: { width: 360, height: 210 },
-  audio: { width: 300, height: 240 },
+  audio: { width: 380, height: 180 },
   operation: { width: 360, height: 320 },
   group: { width: 400, height: 320 },
 } as const
@@ -196,10 +197,14 @@ export function fitCollectionOperationNodeSize(outputCount: number): {
 }
 
 /** 根据任务语义选择操作节点创建尺寸。 */
-export function pickOperationNodeInitialSize(isShotScript: boolean): {
+export function pickOperationNodeInitialSize(
+  isShotScript: boolean,
+  isAudioOperation = false,
+): {
   width: number
   height: number
 } {
+  if (isAudioOperation) return { ...AUDIO_NODE_DEFAULT_SIZE }
   return isShotScript ? { ...SHOT_SCRIPT_OPERATION_NODE_SIZE } : { ...OPERATION_NODE_DEFAULT_SIZE }
 }
 
@@ -216,8 +221,9 @@ export function pickTextNodeMinSize(text: string | null | undefined): {
 export function pickCanvasNodeMinSize(
   type: string,
   text?: string | null,
-  options?: { shotScriptOperation?: boolean },
+  options?: { shotScriptOperation?: boolean; audioOperation?: boolean },
 ): { width: number; height: number } {
+  if (options?.audioOperation) return CANVAS_NODE_MIN_SIZE.audio
   if (options?.shotScriptOperation) return SHOT_SCRIPT_OPERATION_NODE_MIN_SIZE
   if (type === 'text' || type === 'prompt') return pickTextNodeMinSize(text)
   if (type === 'group') return CANVAS_NODE_MIN_SIZE.group

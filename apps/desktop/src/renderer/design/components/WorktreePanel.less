@@ -31,8 +31,8 @@
     border-radius: 3px;
 
     &:hover:not(:disabled) {
-      background: var(--hover-bg, rgba(0, 0, 0, 0.06));
-      color: var(--text-muted, #555);
+      background: var(--hover, rgba(255, 255, 255, 0.06));
+      color: var(--text-muted, #9ca3af);
     }
 
     &:disabled {
@@ -43,7 +43,7 @@
 
   &__empty {
     font-size: 11px;
-    color: var(--text-secondary, #888);
+    color: var(--text-faint, #9b9489);
     margin: 6px 0 0;
   }
 
@@ -64,7 +64,7 @@
     transition: background 0.12s;
 
     &:hover {
-      background: var(--hover-bg, rgba(0, 0, 0, 0.03));
+      background: var(--hover, rgba(255, 255, 255, 0.04));
     }
 
     &.is-current {
@@ -82,7 +82,7 @@
     &__branch {
       font-size: 12px;
       font-weight: 500;
-      color: var(--text-primary, #222);
+      color: var(--text, #23231f);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -97,10 +97,11 @@
       margin-top: 2px;
       padding-left: 15px; // 与分支名对齐（图标宽度 11 + gap 4）
       font-size: 10px;
-      color: var(--text-faint, #999);
+      color: var(--text-faint, #9b9489);
 
       code {
         font-family: var(--font-mono, monospace);
+        color: var(--text-faint, #9b9489);
       }
     }
 
@@ -127,16 +128,16 @@
         line-height: 1.4;
 
         &:hover:not(:disabled) {
-          background: var(--hover-bg, rgba(0, 0, 0, 0.06));
-          color: var(--text-primary, #222);
+          background: var(--hover, rgba(255, 255, 255, 0.06));
+          color: var(--text, #e4e4e7);
         }
 
         &.danger {
-          color: var(--danger-color, #e5484d);
-          border-color: color-mix(in srgb, var(--danger-color, #e5484d) 30%, transparent);
+          color: var(--danger, #ef4444);
+          border-color: color-mix(in srgb, var(--danger, #ef4444) 30%, transparent);
 
           &:hover:not(:disabled) {
-            background: color-mix(in srgb, var(--danger-color, #e5484d) 8%, transparent);
+            background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
           }
         }
 

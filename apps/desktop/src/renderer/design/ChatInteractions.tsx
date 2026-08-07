@@ -779,10 +779,7 @@ export function SubagentCard({
   const rawRoleText = normalizeSubagentText(role)
   const roleText = rawRoleText.length > 0 && !isGenericSubagentName(rawRoleText) ? rawRoleText : ''
   const instanceTitle = resolveSubagentInstanceTitle(name, role, task)
-  const cardTitle =
-    instanceTitle.length > 0
-      ? t('chat.subagent.derived', { name: instanceTitle })
-      : t('chat.subagent.defaultName')
+  const cardTitle = instanceTitle
   const taskPreview = taskText.length > 0 ? clipSubagentLabel(firstTaskLine(taskText), 86) : ''
   const progressText = progressSummary?.trim() ?? ''
   const resultSummaryText = resultSummary?.trim() ?? ''

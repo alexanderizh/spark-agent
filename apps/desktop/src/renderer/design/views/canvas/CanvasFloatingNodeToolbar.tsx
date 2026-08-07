@@ -272,14 +272,14 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
           />
         )}
         {isOperation && (
-          <Tag color={operationStatusColor} bordered>
+          <Tag color={operationStatusColor} size='small' bordered>
             {floatingOperationStatusLabel(operationStatus)}
           </Tag>
         )}
       </div>
       <div className="canvas-floating-toolbar-divider" />
       <Tooltip title="聚焦节点">
-        <Button size="middle" type="text" icon={<Icons.Crosshair size={14} />} onClick={onFocus}>
+        <Button size="small" type="text" icon={<Icons.Crosshair size={14} />} onClick={onFocus}>
           聚焦
         </Button>
       </Tooltip>
@@ -314,7 +314,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
             </div>
           }
         >
-          <Button size="middle" type="text" icon={<Icons.Folder size={14} />}>
+          <Button size="small" type="text" icon={<Icons.Folder size={14} />}>
             素材
           </Button>
         </Popover>
@@ -323,7 +323,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
       {isOperation && (
         <Tooltip title={operationFullscreen ? '退出全屏' : '全屏展示'}>
           <Button
-            size="middle"
+            size="small"
             type="text"
             icon={operationFullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
             onClick={() => onOperationFullscreenChange?.(!operationFullscreen)}
@@ -355,13 +355,13 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
           </div>
         }
       >
-        <Button size="middle" type="text" icon={<Icons.More size={14} />}>
+        <Button size="small" type="text" icon={<Icons.More size={14} />}>
           更多
         </Button>
       </Popover>
       <div className="canvas-floating-toolbar-divider" />
       <Tooltip title="关闭编辑">
-        <Button size="middle" type="text" icon={<Icons.X size={14} />} onClick={onClose} />
+        <Button size="small" type="text" icon={<Icons.X size={14} />} onClick={onClose} />
       </Tooltip>
     </div>
   )

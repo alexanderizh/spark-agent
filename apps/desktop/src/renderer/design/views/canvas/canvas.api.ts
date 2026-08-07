@@ -1558,6 +1558,49 @@ export function readAssetTextForNode(asset: CanvasAsset): string {
   return asset.title?.trim() ?? ''
 }
 
+/**
+ * 解析音频节点的本地文件路径：优先 node.data.filePath，回退到关联 asset.storageKey。
+ *
+ * 仅供音频截取/变速等本地 ffmpeg 链路使用；非本地（http(s) URL）资源不进入这些链路，
+ * 调用方收到 null 时应当走"放弃"分支（toast 友好提示）。
+ */
+export function readAudioLocalFilePath(
+  node: Pick<CanvasNode, 'id' | 'assetId' | 'data'>,
+  db?: CanvasDb,
+): string | null {
+  const direct = typeof node.data?.filePath === 'string' ? node.data.filePath.trim() : ''
+  if (direct) return direct
+  const fromUrl = readAudioFilePathFromUrl(node.data?.url)
+  if (fromUrl) return fromUrl
+  if (!db || !node.assetId) return null
+  const asset = db.assets.find((a) => a.id === node.assetId)
+  if (!asset) return null
+  const meta = (asset.metadata ?? {}) as { filePath?: unknown }
+  if (typeof meta.filePath === 'string' && meta.filePath) return meta.filePath
+  if (typeof asset.storageKey === 'string' && asset.storageKey) return asset.storageKey
+  return null
+}
+
+/** 从 `safe-file:///` 或 `file://` 形式的 url 反解成本地路径；其它形式返回 null */
+function readAudioFilePathFromUrl(url: unknown): string | null {
+  if (typeof url !== 'string' || url.length === 0) return null
+  if (url.startsWith('safe-file:///')) {
+    try {
+      return decodeURIComponent(url.slice('safe-file:///'.length))
+    } catch {
+      return null
+    }
+  }
+  if (url.startsWith('file://')) {
+    try {
+      return decodeURIComponent(url.slice('file://'.length))
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
 function readDisplayImageDimensions(
   src: string,
 ): Promise<{ width: number; height: number } | null> {
@@ -3703,6 +3746,135 @@ export const canvasApi = {
   },
 
   /**
+   * 触发音频节点截取：调 IPC 完成 ffmpeg trim，物化为新 audio 子节点，
+   * 并用 `generated` 边与父节点相连，原节点保留。
+   *
+   * @param projectId    当前项目
+   * @param boardId      父节点所在 board
+   * @param parentNodeId 源音频节点 id
+   * @param filePath     源音频本地路径（来自 node.data.filePath || url 解码）
+   * @param fileName     源音频文件名（用于生成产物节点标题）
+   * @param mimeType     源文件 mime
+   * @param startSec     截取起点（秒）
+   * @param endSec       截取终点（秒）
+   */
+  async materializeAudioTrim(input: {
+    projectId: string
+    boardId: string
+    parentNodeId: string
+    filePath: string
+    fileName: string
+    mimeType?: string | null
+    startSec: number
+    endSec: number
+  }): Promise<CanvasNode | null> {
+    const db = readDb()
+    const parent = db.nodes.find(
+      (n) => n.id === input.parentNodeId && n.projectId === input.projectId,
+    )
+    if (!parent) return null
+
+    const response = await window.spark.invoke('canvas:task:audio-trim', {
+      operation: 'trim',
+      input: input.filePath,
+      params: { startSec: input.startSec, endSec: input.endSec },
+      requestId: `audio_trim_${input.parentNodeId}_${Date.now()}`,
+    })
+    const result = (response as { success: boolean; result?: { path?: string }; error?: string })
+      ?.result
+    if (!(response as { success: boolean })?.success || !result?.path) {
+      const err = (response as { error?: string })?.error ?? '音频截取失败'
+      throw new Error(err)
+    }
+
+    const newNode = await this.createMediaNode({
+      projectId: input.projectId,
+      boardId: input.boardId,
+      kind: 'audio',
+      fileName: `${input.fileName} 截取`,
+      ...(input.mimeType ? { fileMimeType: input.mimeType } : {}),
+      filePath: result.path,
+      x: parent.x + parent.width + 48,
+      y: parent.y,
+    })
+    if (!newNode) throw new Error('截取产物节点创建失败')
+
+    db.edges.push({
+      id: uid('canvas_edge'),
+      userId: USER_ID,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      sourceNodeId: input.parentNodeId,
+      targetNodeId: newNode.id,
+      type: 'generated',
+      taskId: null,
+      metadata: { audioOp: 'trim', startSec: input.startSec, endSec: input.endSec },
+      createdAt: now(),
+    })
+    writeDb(db)
+    return newNode
+  },
+
+  /**
+   * 触发音频节点变速：调 IPC 完成 ffmpeg atempo，物化为新 audio 子节点。
+   */
+  async materializeAudioSpeed(input: {
+    projectId: string
+    boardId: string
+    parentNodeId: string
+    filePath: string
+    fileName: string
+    mimeType?: string | null
+    factor: number
+  }): Promise<CanvasNode | null> {
+    const db = readDb()
+    const parent = db.nodes.find(
+      (n) => n.id === input.parentNodeId && n.projectId === input.projectId,
+    )
+    if (!parent) return null
+
+    const response = await window.spark.invoke('canvas:task:audio-speed', {
+      operation: 'adjustSpeed',
+      input: input.filePath,
+      params: { factor: input.factor },
+      requestId: `audio_speed_${input.parentNodeId}_${Date.now()}`,
+    })
+    const result = (response as { success: boolean; result?: { path?: string }; error?: string })
+      ?.result
+    if (!(response as { success: boolean })?.success || !result?.path) {
+      const err = (response as { error?: string })?.error ?? '音频变速失败'
+      throw new Error(err)
+    }
+
+    const newNode = await this.createMediaNode({
+      projectId: input.projectId,
+      boardId: input.boardId,
+      kind: 'audio',
+      fileName: `${input.fileName} ${input.factor.toFixed(2)}x`,
+      ...(input.mimeType ? { fileMimeType: input.mimeType } : {}),
+      filePath: result.path,
+      x: parent.x + parent.width + 48,
+      y: parent.y,
+    })
+    if (!newNode) throw new Error('变速产物节点创建失败')
+
+    db.edges.push({
+      id: uid('canvas_edge'),
+      userId: USER_ID,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      sourceNodeId: input.parentNodeId,
+      targetNodeId: newNode.id,
+      type: 'generated',
+      taskId: null,
+      metadata: { audioOp: 'speed', factor: input.factor },
+      createdAt: now(),
+    })
+    writeDb(db)
+    return newNode
+  },
+
+  /**
    * 创建「Provider 文件」节点（来自「素材中心 → Files」上传的 MiniMax 等文件）。
    *
    * 与 createMediaNode 的区别：不创建本地 asset、无本地 url——文件实体在 provider 侧，
@@ -4432,6 +4604,7 @@ export const canvasApi = {
     const taskId = uid('canvas_task')
     const taskNodeSize = pickOperationNodeInitialSize(
       request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
+      request.operation === 'extract_audio',
     )
     const { x, y } = resolveCollisionFreeNodePosition({
       preferred: {
@@ -4545,12 +4718,13 @@ export const canvasApi = {
     const at = now()
     const taskId = uid('canvas_task')
     const operation = request.operation ?? 'text_generate'
+    const taskNodeSize = pickOperationNodeInitialSize(false, operation === 'extract_audio')
     const { x, y } = resolveCollisionFreeNodePosition({
       preferred: {
         x: request.outputPlacement?.x ?? 360,
         y: request.outputPlacement?.y ?? 320,
       },
-      size: OPERATION_NODE_DEFAULT_SIZE,
+      size: taskNodeSize,
       nodes: db.nodes,
       boardId: board.id,
     })
@@ -4623,8 +4797,8 @@ export const canvasApi = {
         title: request.title,
         x,
         y,
-        width: OPERATION_NODE_DEFAULT_SIZE.width,
-        height: OPERATION_NODE_DEFAULT_SIZE.height,
+        width: taskNodeSize.width,
+        height: taskNodeSize.height,
         data: taskNodeData,
         at,
       })
@@ -4925,6 +5099,7 @@ export const canvasApi = {
     const operationNodeSize = pickOperationNodeInitialSize(
       Boolean(input.shotScriptConfig) ||
         (input.operation === 'text_generate' && taskPipelineRole === 'shot'),
+      input.operation === 'extract_audio',
     )
     const position = resolveCollisionFreeNodePosition({
       preferred: { x: input.x, y: input.y },
@@ -5657,12 +5832,16 @@ export const canvasApi = {
     }
     const at = now()
     const taskId = uid('canvas_task')
+    const taskNodeSize = pickOperationNodeInitialSize(
+      request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
+      request.operation === 'extract_audio',
+    )
     const { x, y } = resolveCollisionFreeNodePosition({
       preferred: {
         x: request.outputPlacement?.x ?? 360,
         y: request.outputPlacement?.y ?? 320,
       },
-      size: OPERATION_NODE_DEFAULT_SIZE,
+      size: taskNodeSize,
       nodes: db.nodes,
       boardId: board.id,
     })
@@ -5747,8 +5926,8 @@ export const canvasApi = {
         title: defaultTaskTitle,
         x,
         y,
-        width: OPERATION_NODE_DEFAULT_SIZE.width,
-        height: OPERATION_NODE_DEFAULT_SIZE.height,
+        width: taskNodeSize.width,
+        height: taskNodeSize.height,
         data: taskNodeData,
         at,
       })
@@ -5882,6 +6061,7 @@ export const canvasApi = {
     const taskId = uid('canvas_task')
     const taskNodeSize = pickOperationNodeInitialSize(
       request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
+      request.operation === 'extract_audio',
     )
     const { x, y } = resolveCollisionFreeNodePosition({
       preferred: {

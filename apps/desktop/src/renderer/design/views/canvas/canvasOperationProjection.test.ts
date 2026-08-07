@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { buildCanvasOperationProjection } from './canvasOperationProjection'
+import {
+  buildCanvasOperationProjection,
+  resolveCanvasSelectionNodeId,
+} from './canvasOperationProjection'
 import type { CanvasEdge, CanvasNode } from './canvas.types'
 
 function node(id: string, type: CanvasNode['type']): CanvasNode {
@@ -43,6 +46,32 @@ function edge(
 }
 
 describe('canvas operation projection', () => {
+  it('keeps a visible generated audio resource selected instead of remapping it to its producer', () => {
+    const producerByOutputNodeId = new Map([['audio-output', 'split-audio-task']])
+    const visibleNodeIds = new Set(['split-audio-task', 'audio-output'])
+
+    expect(
+      resolveCanvasSelectionNodeId(
+        'audio-output',
+        visibleNodeIds,
+        producerByOutputNodeId,
+      ),
+    ).toBe('audio-output')
+  })
+
+  it('remaps an embedded generated output to its producer task', () => {
+    const producerByOutputNodeId = new Map([['audio-output', 'split-audio-task']])
+    const visibleNodeIds = new Set(['split-audio-task'])
+
+    expect(
+      resolveCanvasSelectionNodeId(
+        'audio-output',
+        visibleNodeIds,
+        producerByOutputNodeId,
+      ),
+    ).toBe('split-audio-task')
+  })
+
   it('embeds generated outputs and folds downstream edges back to the operation node', () => {
     const nodes = [
       node('extract-characters', 'text_generate'),

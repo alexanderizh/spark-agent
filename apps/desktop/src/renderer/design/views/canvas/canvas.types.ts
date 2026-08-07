@@ -365,6 +365,12 @@ export type CanvasNodeData = {
   }
   /** 分镜脚本任务的结构化时长配置（UI 可调，运行时替换 prompt 占位槽 {maxClip}） */
   shotScriptConfig?: ShotScriptConfig
+  /** 音频节点时长（秒）。由 IPC audio-probe 或上传时 ffmpeg 探测回填；waveform / trim / 进度都依赖它。 */
+  audioDurationSec?: number
+  /** 音频波形下采样后的峰值数组（0..1 归一化），用于自绘波形条；240 桶左右。 */
+  audioWaveformPeaks?: number[]
+  /** 音频节点生效的播放速率；缺省 1.0。截取/变速后由子节点回填。 */
+  audioSpeed?: number
 }
 
 export type CanvasGroupColorPreset =

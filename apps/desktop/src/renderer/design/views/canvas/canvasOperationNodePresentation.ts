@@ -2,6 +2,7 @@ import { getCanvasCapability, isOperationNode, nodeOperation } from './canvas.ca
 import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
 import type { CanvasOperationRunView } from './canvasOperationRuns'
 import {
+  AUDIO_NODE_DEFAULT_SIZE,
   CANVAS_NODE_META_BAR_HEIGHT,
   OPERATION_NODE_DEFAULT_SIZE,
   fitCollectionOperationNodeSize,
@@ -46,6 +47,7 @@ export function operationNodePresentationSize(
 ): { width: number; height: number } {
   if (!isOperationNode(node)) return { width: node.width, height: node.height }
 
+  const isAudioOperation = node.data.operation === 'extract_audio'
   const outputState = resolveCanvasOperationOutputState(node, runs)
   const output = outputState.primaryOutput
   const latestOutputs =
@@ -67,6 +69,21 @@ export function operationNodePresentationSize(
     return {
       width: node.width <= OPERATION_NODE_DEFAULT_SIZE.width ? fittedSize.width : node.width,
       height: node.height <= OPERATION_NODE_DEFAULT_SIZE.height ? fittedSize.height : node.height,
+    }
+  }
+
+  // 分离音频任务的可见卡片就是音频资源播放器；旧任务节点可能仍保存普通
+  // 操作节点的 460×420，因此这里也按默认尺寸做一次展示层兼容收敛。
+  if (isAudioOperation || output?.type === 'audio') {
+    const width = node.width <= OPERATION_NODE_DEFAULT_SIZE.width
+      ? AUDIO_NODE_DEFAULT_SIZE.width
+      : node.width
+    const height = node.height <= OPERATION_NODE_DEFAULT_SIZE.height
+      ? AUDIO_NODE_DEFAULT_SIZE.height
+      : node.height
+    return {
+      width,
+      height: height + (runs.length > 1 ? OPERATION_RUN_NAV_HEIGHT : 0),
     }
   }
 

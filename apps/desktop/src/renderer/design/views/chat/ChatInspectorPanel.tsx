@@ -4,13 +4,10 @@ import { CheckCircle, Save } from 'lucide-react'
 import { Popover } from '@lobehub/ui'
 import { Switch } from 'antd'
 import { Icons } from '../../Icons'
-import { SkillsPickerModal } from '../../components/SkillsPickerModal'
 import { TeamInspectorSection } from '../../components/TeamInspectorSection'
 import { WorktreePanel } from '../../components/WorktreePanel'
 import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
-import { parseSkillManifest } from '../../utils/skills-data'
-import { CODING_AGENT_TOOLS } from '../../data/available-tools'
 import { renderPlanInline } from '../../ChatInteractions'
 import { clamp, formatTokenCount } from './ChatViewUtils'
 import {
@@ -30,7 +27,6 @@ import type {
   SessionReasoningEffort,
   SessionChatMode,
   SessionId,
-  SkillConfigGetResponse,
   TeamModeConfig,
   TurnPromptSnapshotEvent,
   UsageGetSessionResponse,
@@ -97,21 +93,6 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
   )
 }
 
-function normalizeSkillConfig(value: unknown): SkillConfigGetResponse {
-  const config = isRecord(value) ? value : {}
-  return {
-    skills: asArray<SkillConfigGetResponse['skills'][number]>(config.skills),
-    systemSkillIds: asArray<string>(config.systemSkillIds),
-    agentSkillIds: asArray<string>(config.agentSkillIds),
-    projectSkillIds: asArray<string>(config.projectSkillIds),
-    sessionSkillIds: asArray<string>(config.sessionSkillIds),
-    agentDisabledSkillIds: asArray<string>(config.agentDisabledSkillIds),
-    projectDisabledSkillIds: asArray<string>(config.projectDisabledSkillIds),
-    sessionDisabledSkillIds: asArray<string>(config.sessionDisabledSkillIds),
-    effectiveSkillIds: asArray<string>(config.effectiveSkillIds),
-  }
-}
-
 function normalizePromptConfig(value: unknown): PromptConfigGetResponse {
   const config = isRecord(value) ? value : {}
   return {
@@ -162,10 +143,6 @@ function normalizeEnvLayer(value: unknown): EnvConfigGetResponse['project'] {
   }
 }
 
-function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : []
-}
-
 export function ChatConfigPanel({
   session,
   workspace,
@@ -184,11 +161,8 @@ export function ChatConfigPanel({
 }) {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const { toast } = useToast()
-  const [skillsCollapsed, setSkillsCollapsed] = useState(false)
   const [promptsCollapsed, setPromptsCollapsed] = useState(false)
   const [envCollapsed, setEnvCollapsed] = useState(false)
-  const [toolsCollapsed, setToolsCollapsed] = useState(false)
-  const [skillConfig, setSkillConfig] = useState<SkillConfigGetResponse | null>(null)
   const [promptConfig, setPromptConfig] = useState<PromptConfigGetResponse | null>(null)
   const [envConfig, setEnvConfig] = useState<EnvConfigGetResponse | null>(null)
   const [projectPromptDraft, setProjectPromptDraft] = useState('')
@@ -196,19 +170,10 @@ export function ChatConfigPanel({
   const [projectEnvDraft, setProjectEnvDraft] = useState<EnvVarItem[]>([])
   const [sessionEnvDraft, setSessionEnvDraft] = useState<EnvVarItem[]>([])
   const [savingRuntime, setSavingRuntime] = useState(false)
-  // 全量 skills 列表（供 picker 弹窗选择）& picker 可见状态
-  const [allSkills, setAllSkills] = useState<SkillConfigGetResponse['skills']>([])
-  const [showSkillPicker, setShowSkillPicker] = useState(false)
-  // Picker 本地草稿：打开时初始化为空（会话级 picker 用于"新增"），关闭/完成时再提交。
-  // 这样列表项的勾选只更新 draft，不会立刻触发 onChange 关闭弹窗。
-  const [pickerDraft, setPickerDraft] = useState<string[]>([])
-  const { invoke: getSkillConfig } = useIpcInvoke('skill-config:get')
-  const { invoke: updateSkillConfig } = useIpcInvoke('skill-config:update')
   const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
   const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
   const { invoke: getEnvConfig } = useIpcInvoke('env-config:get')
   const { invoke: updateEnvConfig } = useIpcInvoke('env-config:update')
-  const { invoke: listAllSkills } = useIpcInvoke('skill:list')
   const sessionId = session?.id as string | undefined
   const workspaceId = workspace?.id
 
@@ -218,36 +183,22 @@ export function ChatConfigPanel({
       ...(sessionId != null ? { sessionId } : {}),
       ...(agentId != null ? { agentId } : {}),
     }
-    const [skillsRes, promptsRes, envRes] = await Promise.all([
-      getSkillConfig(req),
+    const [promptsRes, envRes] = await Promise.all([
       getPromptConfig(req),
       getEnvConfig(req),
     ])
-    const normalizedSkills = normalizeSkillConfig(skillsRes)
     const normalizedPrompts = normalizePromptConfig(promptsRes)
     const normalizedEnv = normalizeEnvConfig(envRes)
-    setSkillConfig(normalizedSkills)
     setPromptConfig(normalizedPrompts)
     setEnvConfig(normalizedEnv)
     setProjectPromptDraft(normalizedPrompts.project.content)
     setSessionPromptDraft(normalizedPrompts.session.content)
     setProjectEnvDraft(normalizedEnv.project.vars)
     setSessionEnvDraft(normalizedEnv.session.vars)
-  }, [getEnvConfig, getPromptConfig, getSkillConfig, sessionId, workspaceId, agentId])
-
-  // 加载全量 skills 列表（供 picker 使用）
-  const loadAllSkills = useCallback(async () => {
-    try {
-      const res = await listAllSkills({})
-      setAllSkills(res.skills ?? [])
-    } catch {
-      /* non-critical */
-    }
-  }, [listAllSkills])
+  }, [getEnvConfig, getPromptConfig, sessionId, workspaceId, agentId])
 
   useEffect(() => {
     if (sessionId == null) {
-      setSkillConfig(null)
       setPromptConfig(null)
       setEnvConfig(null)
       setProjectPromptDraft('')
@@ -258,66 +209,6 @@ export function ChatConfigPanel({
     }
     void loadRuntimeConfig()
   }, [loadRuntimeConfig, sessionId])
-
-  // 首次渲染时加载全量 skills
-  useEffect(() => {
-    void loadAllSkills()
-  }, [loadAllSkills])
-
-  const toggleRuntimeSkill = useCallback(
-    async (scope: 'project' | 'session', scopeRef: string, skillId: string, active: boolean) => {
-      if (skillConfig == null) return
-      const currentDisabled =
-        scope === 'project'
-          ? skillConfig.projectDisabledSkillIds
-          : skillConfig.sessionDisabledSkillIds
-      const currentSelected =
-        scope === 'project' ? skillConfig.projectSkillIds : skillConfig.sessionSkillIds
-      const nextDisabled = active
-        ? currentDisabled.filter((id) => id !== skillId)
-        : Array.from(new Set([...currentDisabled, skillId]))
-      // When activating, also add to the selected list if not already present
-      const nextSelected = active
-        ? Array.from(new Set([...currentSelected, skillId]))
-        : currentSelected
-      setSavingRuntime(true)
-      try {
-        await updateSkillConfig({
-          scope,
-          scopeRef,
-          skillIds: nextSelected,
-          disabledSkillIds: nextDisabled,
-        })
-        await loadRuntimeConfig()
-      } finally {
-        setSavingRuntime(false)
-      }
-    },
-    [loadRuntimeConfig, skillConfig, updateSkillConfig],
-  )
-
-  /** 通过 Picker 添加 skills 到会话级别 */
-  const handleAddSessionSkills = useCallback(
-    async (newIds: string[]) => {
-      if (skillConfig == null || sessionId == null) return
-      const nextSelected = Array.from(new Set([...skillConfig.sessionSkillIds, ...newIds]))
-      // 从 disabled 中移除新增的 skill
-      const nextDisabled = skillConfig.sessionDisabledSkillIds.filter((id) => !newIds.includes(id))
-      setSavingRuntime(true)
-      try {
-        await updateSkillConfig({
-          scope: 'session',
-          scopeRef: sessionId,
-          skillIds: nextSelected,
-          disabledSkillIds: nextDisabled,
-        })
-        await loadRuntimeConfig()
-      } finally {
-        setSavingRuntime(false)
-      }
-    },
-    [loadRuntimeConfig, skillConfig, sessionId, updateSkillConfig],
-  )
 
   const savePromptLayer = useCallback(
     async (scope: 'project' | 'session', scopeRef: string, content: string) => {
@@ -564,156 +455,6 @@ export function ChatConfigPanel({
           </div>
         )}
 
-        {/* Skills — 显示本次会话可用的所有 skills（agent 配置 + 会话额外添加） */}
-        {session != null &&
-          skillConfig != null &&
-          (() => {
-            const agentSkillSet = new Set(skillConfig.agentSkillIds)
-            const effectiveSet = new Set(skillConfig.effectiveSkillIds)
-            const visibleSkills = skillConfig.skills.filter((s) => effectiveSet.has(s.id))
-            // Picker 中可选的 skills = 全量 skills 中尚未在 effective 中的
-            const pickerSkills = allSkills.filter((s) => !effectiveSet.has(s.id))
-            return (
-              <div className="inspector-section">
-                <h4
-                  className="config-panel-header"
-                  onClick={() => setSkillsCollapsed(!skillsCollapsed)}
-                >
-                  <Icons.Skills size={11} />
-                  Skills
-                  <span className="inspector-count">{visibleSkills.length}</span>
-                  <span className="spacer" />
-                  {!skillsCollapsed && (
-                    <button
-                      type="button"
-                      className="btn ghost sm"
-                      style={{ fontSize: 10, padding: '2px 8px', marginRight: 4 }}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setPickerDraft([])
-                        setShowSkillPicker(true)
-                      }}
-                      title="为本次会话添加额外 Skill"
-                    >
-                      <Icons.Plus size={10} /> 添加
-                    </button>
-                  )}
-                  <Icons.ChevronRight
-                    size={10}
-                    className={`chev ${skillsCollapsed ? '' : 'chev-open'}`}
-                  />
-                </h4>
-                {!skillsCollapsed && (
-                  <>
-                    <div className="runtime-skill-list">
-                      {visibleSkills.map((skill) => {
-                        const isAgentSkill = agentSkillSet.has(skill.id)
-                        const meta = parseSkillManifest(skill.manifestJson)
-                        return (
-                          <div className="runtime-skill-row" key={skill.id}>
-                            <div className="runtime-skill-main min-w-0">
-                              <div className="runtime-skill-name truncate">
-                                {skill.name}
-                                {isAgentSkill && (
-                                  <span
-                                    style={{
-                                      display: 'inline-block',
-                                      marginLeft: 4,
-                                      padding: '0 4px',
-                                      borderRadius: 4,
-                                      fontSize: 9,
-                                      fontWeight: 700,
-                                      lineHeight: '16px',
-                                      background: 'var(--primary-soft)',
-                                      color: 'var(--primary)',
-                                    }}
-                                    title="来自 Agent 配置"
-                                  >
-                                    A
-                                  </span>
-                                )}
-                              </div>
-                              <div className="runtime-skill-desc truncate">
-                                {meta.source}
-                                {meta.desc ? ` · ${meta.desc}` : ''}
-                              </div>
-                            </div>
-                            {/* 会话级额外添加的 skill 可移除（× 按钮） */}
-                            {!isAgentSkill && sessionId != null && (
-                              <button
-                                type="button"
-                                className="btn ghost sm"
-                                style={{
-                                  padding: '0 4px',
-                                  minWidth: 20,
-                                  fontSize: 11,
-                                  lineHeight: '18px',
-                                  color: 'var(--text-muted)',
-                                }}
-                                title="从本次会话移除此 Skill"
-                                disabled={savingRuntime}
-                                onClick={() =>
-                                  void toggleRuntimeSkill('session', sessionId, skill.id, false)
-                                }
-                              >
-                                ×
-                              </button>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                    <div className="inspector-muted runtime-hint">
-                      {visibleSkills.length > 0
-                        ? 'A = Agent 配置；点击「添加」为本会话补充额外 Skill'
-                        : '在 Agent 管理中配置 Skills，或点击「添加」为本会话补充'}
-                    </div>
-                  </>
-                )}
-                <SkillsPickerModal
-                  visible={showSkillPicker}
-                  skills={pickerSkills.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled }))}
-                  selectedIds={pickerDraft}
-                  onChange={(ids) => setPickerDraft(ids)}
-                  onConfirm={() => {
-                    const ids = pickerDraft
-                    setShowSkillPicker(false)
-                    setPickerDraft([])
-                    if (ids.length > 0) void handleAddSessionSkills(ids)
-                  }}
-                  onClose={() => {
-                    // 取消：仅关闭，不提交
-                    setShowSkillPicker(false)
-                    setPickerDraft([])
-                  }}
-                />
-              </div>
-            )
-          })()}
-
-        {/* 可用工具 */}
-        <div className="inspector-section">
-          <h4 className="config-panel-header" onClick={() => setToolsCollapsed(!toolsCollapsed)}>
-            <Icons.Wrench size={11} />
-            可用工具
-            <span className="inspector-count">{CODING_AGENT_TOOLS.length}</span>
-            <Icons.ChevronRight size={10} className={`chev ${toolsCollapsed ? '' : 'chev-open'}`} />
-          </h4>
-          {!toolsCollapsed && (
-            <div className="tool-chip-list">
-              {CODING_AGENT_TOOLS.map((tool) => (
-                <span
-                  key={tool.name}
-                  className="tool-chip"
-                  title={`${tool.group} · ${tool.status === 'built-in' ? '内置' : '扩展接入'}`}
-                >
-                  <Icons.Wrench />
-                  {tool.name}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   )

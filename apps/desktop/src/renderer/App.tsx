@@ -775,6 +775,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               aria-label={tr(item.labelKey)}
             >
               <item.icon size={16} />
+              <span className='shared-resource-btn-label'>{tr(item.labelKey)}</span>
             </button>
           </Tooltip>
         ))}
@@ -1588,6 +1589,12 @@ function Shell() {
     const api = window.spark
     if (!api?.on) return
     const offQuestion = api.on('stream:session:user-question', (req) => {
+      console.info('[QUESTION-DIAG] renderer received stream:session:user-question', {
+        sessionId: req.sessionId,
+        questionId: req.questionId,
+        questionCount: req.questions?.length ?? 0,
+        createdAt: req.createdAt,
+      })
       setUserQuestions((current) => enqueueUserQuestions(current, [req]))
 
       const isVisibleInCurrentSession =
@@ -1604,6 +1611,11 @@ function Shell() {
       })
     })
     const offClosed = api.on('stream:session:user-question-closed', (req) => {
+      console.info('[QUESTION-DIAG] renderer received stream:session:user-question-closed', {
+        sessionId: req.sessionId,
+        questionId: req.questionId,
+        reason: req.reason,
+      })
       setUserQuestions((current) => removeUserQuestion(current, req.sessionId, req.questionId))
     })
     void api

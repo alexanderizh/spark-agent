@@ -266,7 +266,7 @@ import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace } from './canvas.store'
-import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
+import { canvasApi, isCanvasDirty, readAudioLocalFilePath, revertProject, saveCanvas } from './canvas.api'
 import { buildTaskInputFiles, type CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
 import { pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
 import { executionOperationForCanvasMediaCapability } from './canvasMediaInputMode'
@@ -2357,6 +2357,77 @@ export function CanvasWorkspaceView({
     [closeCanvasFloatPanels],
   )
 
+  // 音频截取 → ffmpeg trim → 物化成新 audio 子节点 + generated 连线
+  const handleAudioTrim = useCallback(
+    async (nodeId: string, startSec: number, endSec: number) => {
+      const snap = snapshotRef.current
+      if (!projectId || !snap) return
+      const source = snap.nodes.find((n) => n.id === nodeId)
+      if (!source || source.type !== 'audio') return
+      const filePath = readAudioLocalFilePath(source)
+      if (!filePath) {
+        message.error('无法定位源音频文件')
+        return
+      }
+      try {
+        const fileName = source.title ?? source.data.message ?? 'audio'
+        const created = await canvasApi.materializeAudioTrim({
+          projectId,
+          boardId: snap.board.id,
+          parentNodeId: nodeId,
+          filePath,
+          fileName,
+          ...(source.data.mimeType ? { mimeType: source.data.mimeType } : {}),
+          startSec,
+          endSec,
+        })
+        if (created) {
+          await refreshTaskSnapshot()
+          message.success(`已生成截取片段 ${(endSec - startSec).toFixed(2)}s`)
+        }
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error)
+        message.error(`音频截取失败: ${text}`)
+      }
+    },
+    [projectId, refreshTaskSnapshot],
+  )
+
+  // 音频变速 → ffmpeg atempo → 物化成新 audio 子节点 + generated 连线
+  const handleAudioSpeed = useCallback(
+    async (nodeId: string, factor: number) => {
+      const snap = snapshotRef.current
+      if (!projectId || !snap) return
+      const source = snap.nodes.find((n) => n.id === nodeId)
+      if (!source || source.type !== 'audio') return
+      const filePath = readAudioLocalFilePath(source)
+      if (!filePath) {
+        message.error('无法定位源音频文件')
+        return
+      }
+      try {
+        const fileName = source.title ?? source.data.message ?? 'audio'
+        const created = await canvasApi.materializeAudioSpeed({
+          projectId,
+          boardId: snap.board.id,
+          parentNodeId: nodeId,
+          filePath,
+          fileName,
+          ...(source.data.mimeType ? { mimeType: source.data.mimeType } : {}),
+          factor,
+        })
+        if (created) {
+          await refreshTaskSnapshot()
+          message.success(`已生成 ${factor.toFixed(2)}x 变速副本`)
+        }
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error)
+        message.error(`音频变速失败: ${text}`)
+      }
+    },
+    [projectId, refreshTaskSnapshot],
+  )
+
   // 360 全景产物节点的「全景预览」入口（由右键菜单触发，与「编辑」解耦）。
   const handlePreviewPanorama = useCallback(
     (nodeId: string) => {
@@ -2624,6 +2695,13 @@ export function CanvasWorkspaceView({
           y: item.y,
         })
         if (!created) continue
+        // 资产记录可能保留旧的方形音频尺寸；分离音频展开后统一落成长条资源节点。
+        if (item.output.type === 'audio') {
+          await patchNodes([created.id], {
+            width: AUDIO_NODE_DEFAULT_SIZE.width,
+            height: AUDIO_NODE_DEFAULT_SIZE.height,
+          })
+        }
         const isTextOutput = item.output.type === 'text' || item.output.type === 'prompt'
         const outputText = item.output.text?.trim() ?? ''
         await updateNodeData(created.id, {
@@ -2675,7 +2753,7 @@ export function CanvasWorkspaceView({
         )
       }
     },
-    [connectNodes, insertAsset, updateNodeData],
+    [connectNodes, insertAsset, patchNodes, updateNodeData],
   )
 
   const handleExpandOperationOutputScope = useCallback(
@@ -8075,6 +8153,8 @@ export function CanvasWorkspaceView({
             onEditNode={handleEditNode}
             onRenameNode={(nodeId, title) => patchNodes([nodeId], { title })}
             onEditVideo={handleEditVideo}
+            onAudioTrim={handleAudioTrim}
+            onAudioSpeed={handleAudioSpeed}
             onExpandOperationOutputs={handleExpandLatestOperationOutputs}
             onPreviewPanorama={handlePreviewPanorama}
             onSaveNodeToLibrary={onSaveNodeToLibraryStable}

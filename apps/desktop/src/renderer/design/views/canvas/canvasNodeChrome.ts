@@ -27,6 +27,8 @@ export function resolveCanvasNodeMetaLabel(
 }
 
 export function canvasNodeHasContentTitle(node: CanvasNode): boolean {
+  // 音频播放器自身已经包含文件名 header，不再额外预留一条重复标题栏。
+  if (node.type === 'audio' || node.type === 'extract_audio') return false
   if (isOperationNode(node) || isRenderedShotScript(node)) return false
   return ['text', 'prompt', 'image', 'audio', 'video'].includes(node.type)
 }
