@@ -187,4 +187,95 @@ describe('canvas node deletion', () => {
     const runs = buildCanvasOperationRunViews(operation, snapshot)
     expect(runs.flatMap((run) => run.outputs)).toEqual([])
   })
+
+  it('never dispatches cleanup-files IPC when deleting nodes, even if they carry source files', async () => {
+    // 画布内删节点是软删（hidden=true，可撤销），刻意不清理源文件：
+    // 同一素材可能仍被其它节点/分镜引用，真正的源文件清理只在管理页资源瀑布流触发。
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    expect(raw).toBeTruthy()
+    const seeded = JSON.parse(raw!) as CanvasDb
+    seeded.nodes.push(
+      node('provider-source', 'image', {
+        data: { url: 'https://example.com/p.png', providerProfileId: 'profile-x', fileId: 'pf-1' },
+      }),
+      node('local-source', 'image', {
+        data: { url: 'safe-file:///tmp/local.png', filePath: '/tmp/canvas-media/local.png' },
+      }),
+    )
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded))
+    __resetCanvasHotCache()
+
+    const invokeMock = window.spark.invoke as unknown as ReturnType<typeof vi.fn>
+    invokeMock.mockClear()
+
+    await canvasApi.deleteNodes('project-1', ['provider-source', 'local-source'])
+    // 让潜在的 fire-and-forget 微任务落定后再断言
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const cleanupCalls = invokeMock.mock.calls.filter(
+      (call) => call[0] === 'canvas:asset:cleanup-files',
+    )
+    expect(cleanupCalls.length).toBe(0)
+  })
+
+  it('cleans asset source files only when deleteFilmAsset is called with hardDelete', async () => {
+    // 管理页瀑布流走 hardDelete=true → 清源文件；画布内（资产中心 / agent 工具)
+    // 不传该选项 → 只移除引用。
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    expect(raw).toBeTruthy()
+    const seeded = JSON.parse(raw!) as CanvasDb
+    seeded.assets.push(
+      {
+        id: 'asset-soft',
+        projectId: 'project-1',
+        userId: 0,
+        type: 'image',
+        source: 'upload',
+        title: 'Soft',
+        url: 'https://example.com/soft.png',
+        storageKey: '/tmp/project-1/soft.png',
+        metadata: {},
+        createdAt: at,
+        updatedAt: at,
+      },
+      {
+        id: 'asset-hard',
+        projectId: 'project-1',
+        userId: 0,
+        type: 'image',
+        source: 'upload',
+        title: 'Hard',
+        url: 'https://example.com/hard.png',
+        storageKey: '/tmp/project-1/hard.png',
+        metadata: { providerProfileId: 'profile-x', fileId: 'pf-1' },
+        createdAt: at,
+        updatedAt: at,
+      },
+    )
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded))
+    __resetCanvasHotCache()
+
+    const invokeMock = window.spark.invoke as unknown as ReturnType<typeof vi.fn>
+    invokeMock.mockClear()
+
+    await canvasApi.deleteFilmAsset('project-1', 'asset-soft')
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(
+      invokeMock.mock.calls.filter((call) => call[0] === 'canvas:asset:cleanup-files').length,
+    ).toBe(0)
+
+    await canvasApi.deleteFilmAsset('project-1', 'asset-hard', { hardDelete: true })
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const cleanupCalls = invokeMock.mock.calls.filter(
+      (call) => call[0] === 'canvas:asset:cleanup-files',
+    )
+    expect(cleanupCalls.length).toBe(1)
+    const payload = cleanupCalls[0]?.[1] as {
+      providerFiles: Array<{ providerProfileId: string; fileId: string }>
+      localPaths: string[]
+    }
+    expect(payload.providerFiles).toEqual([{ providerProfileId: 'profile-x', fileId: 'pf-1' }])
+    expect(payload.localPaths).toEqual(['/tmp/project-1/hard.png'])
+  })
 })
