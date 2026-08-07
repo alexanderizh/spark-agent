@@ -78,6 +78,8 @@ win:
 nsis:
   shortcutName: SparkWork
   uninstallDisplayName: SparkWork ${version}
+  # A selectable installation directory requires the assisted NSIS installer.
+  oneClick: false
   # Show the NSIS install directory page so Windows users can choose a location.
   allowToChangeInstallationDirectory: true
 linux:
