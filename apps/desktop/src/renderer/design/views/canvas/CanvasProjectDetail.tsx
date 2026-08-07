@@ -169,6 +169,13 @@ export function CanvasProjectDetail({
   const [assets, setAssets] = useState<CanvasAsset[]>([])
   const [assetsLoading, setAssetsLoading] = useState(true)
   const [assetFilter, setAssetFilter] = useState<'all' | CanvasAssetType>('all')
+  /**
+   * 右键「删除」二次确认与提交：
+   *  - hardDelete=true：管理页独有的「硬删」语义，连同源文件一起清理；
+   *    画布内的删除不传该选项，只移除引用
+   *  - assetRev：删除后触发 useEffect 重新拉一次 snapshot，避免乐观更新与 DB 漂移
+   */
+  const [assetRev, setAssetRev] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -187,7 +194,36 @@ export function CanvasProjectDetail({
     return () => {
       cancelled = true
     }
-  }, [project.id])
+  }, [project.id, assetRev])
+
+  const handleRequestDeleteAsset = useCallback(
+    (asset: CanvasAsset) => {
+      const label = asset.title ?? '未命名资源'
+      Modal.confirm({
+        title: `删除「${label}」？`,
+        content: '该资源会从项目资源库移除，并删除其源文件（本地文件与已上传的平台文件），此操作不可撤销。',
+        okText: '删除',
+        okButtonProps: { danger: true },
+        cancelText: '取消',
+        onOk: async () => {
+          // 乐观更新：先把被删条目从本地列表移除
+          setAssets((current) => current.filter((item) => item.id !== asset.id))
+          try {
+            // hardDelete=true 是这里独有的语义：管理页的删除要连源文件一起清，
+            // 画布内的删除（节点 / 资产中心）只移除引用，不动磁盘与 Provider 文件。
+            await canvasApi.deleteFilmAsset(project.id, asset.id, { hardDelete: true })
+            message.success('已删除资源')
+          } catch (error) {
+            message.error(error instanceof Error ? error.message : '删除失败')
+          } finally {
+            // 触发后台同步一次完整 snapshot，避免本地乐观更新与 DB 长期漂移
+            setAssetRev((value) => value + 1)
+          }
+        },
+      })
+    },
+    [project.id],
+  )
 
   // 「全部」只含图片+视频；筛选时按 type 过滤；分页加载（首批 20，点击加载更多）
   const filteredAssets = useMemo(
@@ -525,6 +561,14 @@ export function CanvasProjectDetail({
                       key: 'copy-url',
                       label: '复制链接',
                       onClick: () => void handleCopyUrl(asset),
+                    },
+                    { type: 'divider' as const },
+                    {
+                      key: 'delete',
+                      icon: <Icons.Trash size={14} />,
+                      label: '删除',
+                      danger: true,
+                      onClick: () => handleRequestDeleteAsset(asset),
                     },
                   ],
                 }}

@@ -7,10 +7,13 @@ import {
   type MinimaxFileObject,
 } from '@spark/agent-runtime'
 import type { ProviderFileObject, ProviderFilesApiKind, ProviderProfile } from '@spark/protocol'
-import { type ErrorCode, SparkError } from '@spark/shared'
-import { readFile } from 'node:fs/promises'
+import { type ErrorCode, createLogger, SparkError } from '@spark/shared'
+import { readFile, unlink } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import { typedIpcHandle } from './typed-ipc.js'
+import { isSafeFilePathAllowed } from '../services/SafeFileProtocol.js'
+
+const log = createLogger('ipc:provider-files')
 
 type ProviderFilesClient =
   | { kind: 'xai'; client: XaiFilesClient }
@@ -286,14 +289,86 @@ export function registerProviderFilesIpc(dependencies: {
     })
   })
 
-  typedIpcHandle('provider:files:delete', async (request) => {
+  // Provider 文件删除的纯 helper：抽出供 `provider:files:delete` 与
+  // `canvas:asset:cleanup-files` 共用，避免重复封装客户端解析与错误转换。
+  const deleteProviderFile = async (
+    request: { providerProfileId: string; fileId: string },
+  ): Promise<{ deleted: true; id: string }> => {
     const resolved = await clientFor(request.providerProfileId)
     return runFilesTask(async () => {
       if (resolved.kind === 'minimax-hailuo') {
         await resolved.client.delete({ fileId: request.fileId, purpose: MINIMAX_DELETE_PURPOSE })
-        return { deleted: true, id: request.fileId }
+        return { deleted: true as const, id: request.fileId }
       }
-      return resolved.client.delete(request.fileId)
+      await resolved.client.delete(request.fileId)
+      return { deleted: true as const, id: request.fileId }
     })
+  }
+
+  typedIpcHandle('provider:files:delete', async (request) => {
+    return deleteProviderFile(request)
+  })
+
+  /**
+   * 画布删除节点 / 删除资源时附带清理源文件：
+   *  - providerFiles：远端平台文件，调用各渠道 Files API delete
+   *  - localPaths：本地磁盘文件，限定允许路径后 fs.unlink
+   *
+   * 单个文件删除失败不阻塞其它清理，最终聚合 deleted/failed 列表返回给渲染端。
+   * 该通道不抛错，避免数据库行已删除却被主进程错误回滚 UI 状态。
+   */
+  typedIpcHandle('canvas:asset:cleanup-files', async (request) => {
+    const providerFiles = Array.isArray(request?.providerFiles) ? request.providerFiles : []
+    const localPaths = Array.isArray(request?.localPaths) ? request.localPaths : []
+    const providerDeleted: Array<{ providerProfileId: string; fileId: string }> = []
+    const providerFailed: Array<{ providerProfileId: string; fileId: string; error: string }> = []
+    const localDeleted: string[] = []
+    const localFailed: Array<{ path: string; error: string }> = []
+
+    for (const item of providerFiles) {
+      if (!item || typeof item.providerProfileId !== 'string' || typeof item.fileId !== 'string') {
+        continue
+      }
+      try {
+        await deleteProviderFile({ providerProfileId: item.providerProfileId, fileId: item.fileId })
+        providerDeleted.push({ providerProfileId: item.providerProfileId, fileId: item.fileId })
+      } catch (error) {
+        providerFailed.push({
+          providerProfileId: item.providerProfileId,
+          fileId: item.fileId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        log.warn(
+          `canvas:asset:cleanup-files failed to delete provider file ${item.providerProfileId}/${item.fileId}: ${String(error)}`,
+        )
+      }
+    }
+
+    for (const candidate of localPaths) {
+      if (typeof candidate !== 'string' || candidate.length === 0) continue
+      if (!isSafeFilePathAllowed(candidate)) {
+        localFailed.push({ path: candidate, error: 'path not allowed' })
+        log.warn(`canvas:asset:cleanup-files refused local path outside safe roots: ${candidate}`)
+        continue
+      }
+      try {
+        await unlink(candidate)
+        localDeleted.push(candidate)
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException
+        // 文件不存在视为已清理（幂等性），不计入失败列表
+        if (err?.code === 'ENOENT') {
+          localDeleted.push(candidate)
+          continue
+        }
+        localFailed.push({
+          path: candidate,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        log.warn(`canvas:asset:cleanup-files failed to unlink ${candidate}: ${String(error)}`)
+      }
+    }
+
+    return { providerDeleted, providerFailed, localDeleted, localFailed }
   })
 }
