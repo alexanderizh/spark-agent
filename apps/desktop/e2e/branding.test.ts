@@ -22,6 +22,7 @@ interface BuilderConfig {
   nsis?: {
     shortcutName?: string
     uninstallDisplayName?: string
+    oneClick?: boolean
     allowToChangeInstallationDirectory?: boolean
   }
   linux?: { desktop?: { entry?: { Name?: string } } }
@@ -41,6 +42,7 @@ describe('desktop branding boundaries', () => {
     expect(config.mac?.extendInfo?.NSMicrophoneUsageDescription).toContain('麦克风')
     expect(config.nsis?.shortcutName).toBe('SparkWork')
     expect(config.nsis?.uninstallDisplayName).toBe('SparkWork ${version}')
+    expect(config.nsis?.oneClick).toBe(false)
     expect(config.nsis?.allowToChangeInstallationDirectory).toBe(true)
     expect(config.linux?.desktop?.entry?.Name).toBe('SparkWork')
   })
