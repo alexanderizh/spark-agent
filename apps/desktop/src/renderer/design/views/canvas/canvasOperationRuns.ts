@@ -14,6 +14,8 @@ export type CanvasOperationOutputView = {
   title: string
   url?: string
   thumbnailUrl?: string
+  /** 本地产物在磁盘上的路径；本地媒体任务（如分离音频）直读用。 */
+  filePath?: string
   text?: string
   mimeType?: string
   width?: number
@@ -90,6 +92,10 @@ function operationOutputView(
   const width = node?.data.mediaWidth ?? asset?.width ?? undefined
   const height = node?.data.mediaHeight ?? asset?.height ?? undefined
   const pipelineRole = outputPipelineRole(node, asset)
+  const filePath =
+    node?.data.filePath ??
+    asset?.storageKey ??
+    (typeof asset?.metadata.filePath === 'string' ? asset.metadata.filePath : undefined)
   return {
     id: node?.id ?? asset?.id ?? fallbackId,
     ...(node ? { nodeId: node.id } : {}),
@@ -98,6 +104,7 @@ function operationOutputView(
     title: node?.title ?? asset?.title ?? '未命名产物',
     ...(url ? { url } : {}),
     ...(thumbnailUrl ? { thumbnailUrl } : {}),
+    ...(filePath ? { filePath } : {}),
     ...(text ? { text } : {}),
     ...(mimeType ? { mimeType } : {}),
     ...(width ? { width } : {}),

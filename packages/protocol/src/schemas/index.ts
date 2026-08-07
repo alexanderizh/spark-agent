@@ -1252,6 +1252,16 @@ export const IpcSchemaRegistry = {
   'canvas:task:cancel-depth-video': z.object({
     runtimeTaskId: z.string().min(1).max(200),
   }),
+  'canvas:task:extract-audio': z.object({
+    projectId: z.string().min(1).max(200),
+    clientTaskId: z.string().min(1).max(200),
+    inputPath: z.string().min(1).max(4096),
+    audioFormat: z.enum(['copy', 'mp3', 'aac', 'wav']).optional(),
+    sourceFileName: z.string().min(1).max(255).optional(),
+  }),
+  'canvas:task:cancel-extract-audio': z.object({
+    runtimeTaskId: z.string().min(1).max(200),
+  }),
   'canvas:task:cancel-media': z.object({
     runtimeTaskId: z.string().min(1).max(200),
   }),

@@ -13,6 +13,6 @@ export function canvasOperationKind(
   ) {
     return 'text'
   }
-  if (operation === 'video_depth_map') return 'local_media'
+  if (operation === 'video_depth_map' || operation === 'extract_audio') return 'local_media'
   return 'cloud_media'
 }

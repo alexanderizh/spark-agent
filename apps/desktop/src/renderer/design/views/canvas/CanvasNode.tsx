@@ -988,7 +988,10 @@ export const CanvasNode = memo(function CanvasNode({
               },
             ]
           : []),
-        ...((isImageContent || contentNode?.type === 'video') && hasOperationOutput
+        ...((isImageContent ||
+          contentNode?.type === 'video' ||
+          contentNode?.type === 'audio') &&
+          hasOperationOutput
           ? [
               {
                 key: 'download-media',

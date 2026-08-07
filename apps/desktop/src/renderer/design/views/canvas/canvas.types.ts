@@ -38,6 +38,7 @@ export type CanvasNodeType =
   | 'video_edit'
   | 'video_extend'
   | 'video_depth_map'
+  | 'extract_audio'
   | 'text_to_audio'
   | 'audio_transcribe'
   /** @deprecated 旧通用任务节点，保留读取兼容，新代码不再创建 */
@@ -63,6 +64,7 @@ export type CanvasOperationType =
   | 'video_edit'
   | 'video_extend'
   | 'video_depth_map'
+  | 'extract_audio'
 
 export type CanvasInputTransport = 'auto' | 'cloud_url' | 'base64'
 export type CanvasTaskInputPayloadField = 'url' | 'dataUrl' | 'path' | 'unknown'
@@ -252,6 +254,8 @@ export type CanvasNodeData = {
   format?: 'plain' | 'markdown' | 'prompt'
   url?: string
   thumbnailUrl?: string
+  /** 媒体在磁盘上的本地路径（本地产物/上传资源）；本地媒体任务（如 ffmpeg 分离音频）优先直读，避免 URL 编解码。 */
+  filePath?: string
   /** 浏览器从媒体元数据读取的原始视频宽高；用于修复旧资产和缺失 provider 元数据。 */
   mediaWidth?: number
   mediaHeight?: number

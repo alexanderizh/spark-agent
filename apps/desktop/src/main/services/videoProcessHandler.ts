@@ -27,7 +27,10 @@ import {
   cropVideo,
   addWatermark,
   burnSubtitle,
+  extractAudio,
+  audioExtForCodec,
   ensureOutputDirectory,
+  type AudioExtractFormat,
   type FfmpegProgress,
   type KeyframeStrategy,
   type TranscodeOpts,
@@ -310,6 +313,27 @@ async function dispatch(
       if (!srtPath) throw new Error('烧录字幕需要 srtPath 参数')
       const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return burnSubtitle(input, srtPath, outputPath, onProgress)
+    }
+
+    // ── 音频分离 ──────────────────────────────────────────────────
+    case 'extractAudio': {
+      const format = (params.audioFormat as AudioExtractFormat) ?? 'mp3'
+      if (!['copy', 'mp3', 'aac', 'wav'].includes(format)) {
+        throw new Error(`未知的音频输出格式: ${String(format)}`)
+      }
+      // copy 模式扩展名取决于源音轨编码，先 probe 再定输出路径
+      let outputPath: string
+      if (format === 'copy') {
+        const probe = await probeVideo(input)
+        if (!probe.hasAudio) throw new Error('该视频没有音轨，无法分离音频')
+        outputPath = prepareOutputPath(
+          (params.outputPath as string) ?? makeOutputPath(audioExtForCodec(probe.audioCodec)),
+        )
+      } else {
+        const ext = format === 'wav' ? 'wav' : format === 'mp3' ? 'mp3' : 'm4a'
+        outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath(ext))
+      }
+      return extractAudio(input, outputPath, { format, onProgress })
     }
 
     default:

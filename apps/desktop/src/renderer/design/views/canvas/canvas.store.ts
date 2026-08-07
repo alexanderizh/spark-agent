@@ -544,6 +544,22 @@ export function useCanvasWorkspace(projectId: string) {
     [applyCanvasMutationSnapshot, projectId, snapshot],
   )
 
+  /** 创建空视频/音频节点（工厂菜单直接落位、后续上传填充；不建 asset）。 */
+  const createEmptyMediaNode = useCallback(
+    async (input: { kind: 'video' | 'audio'; x: number; y: number; width?: number; height?: number }) => {
+      const current = snapshot
+      if (!current) return
+      const node = await canvasApi.createEmptyMediaNode({
+        projectId,
+        boardId: current.board.id,
+        ...input,
+      })
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
+      return node
+    },
+    [applyCanvasMutationSnapshot, projectId, snapshot],
+  )
+
   /** 创建视频/音频节点（拖入外部媒体文件时使用），与 createImageNode 对称。 */
   const createMediaNode = useCallback(
     async (input: {
@@ -949,8 +965,10 @@ export function useCanvasWorkspace(projectId: string) {
   )
 
   const deleteFilmAsset = useCallback(
-    async (assetId: string) => {
-      await applyCanvasMutationSnapshot(canvasApi.deleteFilmAsset(projectId, assetId))
+    async (assetId: string, options?: { hardDelete?: boolean }) => {
+      await applyCanvasMutationSnapshot(
+        canvasApi.deleteFilmAsset(projectId, assetId, options),
+      )
     },
     [applyCanvasMutationSnapshot, projectId],
   )
@@ -1205,6 +1223,7 @@ export function useCanvasWorkspace(projectId: string) {
     createTextNode,
     createImageNode,
     createEmptyImageNode,
+    createEmptyMediaNode,
     createMediaNode,
     createProviderFileNode,
     uploadImageAsset,

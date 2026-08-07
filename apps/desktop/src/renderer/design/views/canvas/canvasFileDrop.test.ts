@@ -24,6 +24,7 @@ describe('classifyDroppedFile', () => {
     expect(classifyDroppedFile(makeFile('photo.jpg'))).toBe('image')
     expect(classifyDroppedFile(makeFile('clip.webm'))).toBe('video')
     expect(classifyDroppedFile(makeFile('song.flac'))).toBe('audio')
+    expect(classifyDroppedFile(makeFile('song.mp3'))).toBe('audio')
     expect(classifyDroppedFile(makeFile('script.ts'))).toBe('text')
     expect(classifyDroppedFile(makeFile('data.json'))).toBe('text')
   })

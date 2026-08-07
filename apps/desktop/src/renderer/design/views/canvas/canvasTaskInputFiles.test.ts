@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { CanvasNode } from './canvas.types'
-import { buildReferenceImageInputRoles, buildTaskInputFiles } from './canvasTaskInputFiles'
+import {
+  buildReferenceImageInputRoles,
+  buildTaskInputFiles,
+  canvasInputSourceBaseName,
+} from './canvasTaskInputFiles'
 
 function imageNode(id: string, url = `safe-file:///tmp/${id}.png`): CanvasNode {
   return {
@@ -107,5 +111,49 @@ describe('canvasTaskInputFiles', () => {
         mimeType: 'image/png',
       },
     ])
+  })
+
+  it('prefers node data.filePath as the local path for media nodes (local ffmpeg tasks)', () => {
+    // 本地产物/上传资源节点带磁盘路径时，inputFiles 应优先产出 path 供
+    // local_media 通道（如分离音频）直读，同时保留 url 供渲染与其他通道使用。
+    const videoNode: CanvasNode = {
+      ...imageNode('video-a', 'safe-file:///tmp/video-a.mp4'),
+      type: 'video',
+      title: 'video-a',
+      data: { url: 'safe-file:///tmp/video-a.mp4', filePath: '/tmp/video-a.mp4', mimeType: 'video/mp4' },
+    }
+    expect(buildTaskInputFiles([videoNode], { 'video-a': 'input' })).toEqual([
+      {
+        type: 'video',
+        role: 'input',
+        path: '/tmp/video-a.mp4',
+        url: 'safe-file:///tmp/video-a.mp4',
+        mimeType: 'video/mp4',
+      },
+    ])
+  })
+})
+
+describe('canvasInputSourceBaseName', () => {
+  it('extracts base name from a local absolute path', () => {
+    expect(canvasInputSourceBaseName({ path: '/Users/x/media/宣传片.mp4' })).toBe('宣传片')
+  })
+
+  it('extracts base name from a safe-file:// url (decoded)', () => {
+    // encodeToSafeFileUrl('/tmp/trailer.mp4') 的 base64url 形式
+    const encoded = btoa('/tmp/trailer.mp4').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+    expect(canvasInputSourceBaseName({ url: `safe-file://x/${encoded}` })).toBe('trailer')
+  })
+
+  it('strips query string from an https url and keeps the last path segment', () => {
+    expect(
+      canvasInputSourceBaseName({ url: 'https://cdn.example.com/videos/promo.mp4?token=abc123&expires=9' }),
+    ).toBe('promo')
+  })
+
+  it('returns undefined for empty or dot-only names', () => {
+    expect(canvasInputSourceBaseName(undefined)).toBeUndefined()
+    expect(canvasInputSourceBaseName({})).toBeUndefined()
+    expect(canvasInputSourceBaseName({ path: '/tmp/.hidden' })).toBeUndefined()
   })
 })

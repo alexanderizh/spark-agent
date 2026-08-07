@@ -46,6 +46,7 @@ export const CANVAS_BASE_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGroup[
     items: [
       { operation: 'text_to_video', label: '视频生成', icon: 'Video' },
       { operation: 'video_depth_map', label: '深度视频转换', icon: 'Video' },
+      { operation: 'extract_audio', label: '分离音频', icon: 'Audio' },
     ],
   },
   {

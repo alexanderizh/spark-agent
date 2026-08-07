@@ -470,6 +470,7 @@ const OPERATION_TYPES: CanvasOperationType[] = [
   'image_to_video',
   'video_edit',
   'video_extend',
+  'extract_audio',
 ]
 
 const FILM_ASSET_KINDS = [

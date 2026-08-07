@@ -56,6 +56,11 @@ export function VideoWorkbenchEditPanel({
   // 分割
   const [segSec, setSegSec] = useState(10)
 
+  // 音频分离
+  const [audioExtractFormat, setAudioExtractFormat] = useState<'copy' | 'mp3' | 'aac' | 'wav'>(
+    'copy',
+  )
+
   // 画面处理
   const [speedFactor, setSpeedFactor] = useState(2)
   const [cropW, setCropW] = useState(probe?.width ?? 0)
@@ -171,6 +176,20 @@ export function VideoWorkbenchEditPanel({
       'effect',
       (r) => (r as { path: string }).path,
     )
+
+  const handleExtractAudio = (): Promise<void> => {
+    const formatLabel =
+      audioExtractFormat === 'copy' ? '原轨' : audioExtractFormat.toUpperCase()
+    return runOp(
+      'extractAudio',
+      { audioFormat: audioExtractFormat },
+      '分离音频',
+      '已分离音频',
+      `分离音频 (${formatLabel})`,
+      'audio',
+      (r) => (r as { path: string }).path,
+    )
+  }
 
   const handleCrop = (): Promise<void> => {
     if (resolvedCropW < 2 || resolvedCropH < 2) {
@@ -326,6 +345,36 @@ export function VideoWorkbenchEditPanel({
           </div>
           <Button block onClick={handleSegment} loading={busy} icon={<Icons.Scissors size={14} />}>
             分割视频
+          </Button>
+        </div>
+      </div>
+
+      {/* ── 音频分离 ── */}
+      <div className="vwb-section">
+        <div className="vwb-section-title">音频分离</div>
+        <div className="vwb-tc-controls">
+          <div className="vwb-tc-param">
+            <label>输出格式</label>
+            <Select
+              size="small"
+              value={audioExtractFormat}
+              onChange={(v) => setAudioExtractFormat(v)}
+              style={{ width: '100%' }}
+              options={[
+                { label: '原轨抽取（最快无损）', value: 'copy' },
+                { label: 'MP3', value: 'mp3' },
+                { label: 'AAC / M4A', value: 'aac' },
+                { label: 'WAV（无损）', value: 'wav' },
+              ]}
+            />
+          </div>
+          <Button
+            block
+            onClick={handleExtractAudio}
+            loading={busy}
+            icon={<Icons.AudioLines size={14} />}
+          >
+            分离音频
           </Button>
         </div>
       </div>

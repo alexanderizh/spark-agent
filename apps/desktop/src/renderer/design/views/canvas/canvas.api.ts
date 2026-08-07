@@ -56,6 +56,7 @@ import {
   IMAGE_NODE_DEFAULT_SIZE,
   OPERATION_NODE_DEFAULT_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
+  VIDEO_NODE_DEFAULT_SIZE,
   fitCanvasImageNodeSize,
   fitCanvasVideoNodeSize,
   fitShotScriptOperationNodeSize,
@@ -100,7 +101,7 @@ import type {
 } from '@spark/protocol'
 import { buildCanvasRetryInputRoles, pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
 import { executionOperationForCanvasMediaCapability } from './canvasMediaInputMode'
-import { buildTaskInputFiles } from './canvasTaskInputFiles'
+import { buildTaskInputFiles, canvasInputSourceBaseName } from './canvasTaskInputFiles'
 import { summarizeCanvasTaskInputFiles } from './canvasTaskInputDiagnostics'
 import {
   appendCanvasTaskRuntimeEvent,
@@ -2970,12 +2971,35 @@ export const canvasApi = {
     return this.openSnapshot(projectId)
   },
 
-  /** 删除影视资产（从项目移除引用，保留文件由 cleanup 单独处理，文档 §11.3） */
-  async deleteFilmAsset(projectId: string, assetId: string): Promise<CanvasSnapshot> {
+  /**
+   * 删除影视资产（默认只从项目移除引用，不动源文件，文档 §11.3）。
+   *
+   * `hardDelete=true` 时才额外清理该资产关联的源文件（Provider 文件 + 本地路径），
+   * 目前只有项目管理页的资源瀑布流会这样调用。
+   */
+  async deleteFilmAsset(
+    projectId: string,
+    assetId: string,
+    options?: { hardDelete?: boolean },
+  ): Promise<CanvasSnapshot> {
     const db = readDb()
+    const target = db.assets.find(
+      (item) => item.id === assetId && item.projectId === projectId,
+    )
     db.assets = db.assets.filter((item) => !(item.id === assetId && item.projectId === projectId))
     updateProjectCounts(db, projectId)
     writeDb(db)
+
+    // 默认只移除引用，不动磁盘 / Provider 上的源文件：画布内的删除（资产中心、
+    // agent 工具）都走这条默认路径，语义与改造前一致。
+    // 只有项目管理页的资源瀑布流会显式传 hardDelete=true，表示「连源文件一起删」。
+    const hardDelete = options?.hardDelete === true
+    if (hardDelete && target) {
+      cleanupAssetSourceFiles(target).catch((error) => {
+        logCanvasAssetCleanupWarning('deleteFilmAsset', error)
+      })
+    }
+
     return this.openSnapshot(projectId)
   },
 
@@ -3516,6 +3540,57 @@ export const canvasApi = {
       projectId: input.projectId,
       boardId: input.boardId,
       type: 'image',
+      title: null,
+      assetId: null,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      data: {},
+    })
+    node.zIndex = maxZ + 1
+    db.nodes.push(node)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
+  },
+
+  /**
+   * 创建空视频/音频节点（工厂菜单「视频/音频」直接落位、后续再上传填充）。
+   * 与 createEmptyImageNode 对称：不构建 CanvasAsset，仅写 type + 空 data；
+   * video 渲染层自带「上传视频」占位按钮，audio 由菜单/双击流程立即触发文件选择。
+   */
+  async createEmptyMediaNode(input: {
+    projectId: string
+    boardId: string
+    kind: 'video' | 'audio'
+    x: number
+    y: number
+    width?: number
+    height?: number
+  }): Promise<CanvasNode> {
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
+    const defaultSize =
+      input.kind === 'video' ? VIDEO_NODE_DEFAULT_SIZE : AUDIO_NODE_DEFAULT_SIZE
+    const size = {
+      width: input.width ?? defaultSize.width,
+      height: input.height ?? defaultSize.height,
+    }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+    })
+    const node = createNodeBase({
+      nodes: db.nodes,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: input.kind,
       title: null,
       assetId: null,
       x: position.x,
@@ -4342,6 +4417,10 @@ export const canvasApi = {
     })
     updateProjectCounts(db, projectId)
     writeDb(db)
+
+    // 画布内删节点只做软删（hidden=true，可撤销），刻意不清理源文件：
+    // 同一张图/视频可能被多个节点或分镜引用，画布上的删除是「从画面移走」而不是
+    // 「从磁盘删掉」。真正的源文件清理放在项目管理页的资源瀑布流里手动触发。
   },
 
   async createTask(projectId: string, request: CreateCanvasTaskRequest): Promise<CanvasSnapshot> {
@@ -5253,14 +5332,23 @@ export const canvasApi = {
           },
         )
       : executionKind === 'local_media'
-        ? this.createLocalDepthTask(
-            projectId,
-            { ...request, boardId: node.boardId },
-            {
-              bindToNodeId: nodeId,
-              ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
-            },
-          )
+        ? request.operation === 'extract_audio'
+          ? this.createLocalAudioExtractTask(
+              projectId,
+              { ...request, boardId: node.boardId },
+              {
+                bindToNodeId: nodeId,
+                ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+              },
+            )
+          : this.createLocalDepthTask(
+              projectId,
+              { ...request, boardId: node.boardId },
+              {
+                bindToNodeId: nodeId,
+                ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+              },
+            )
         : this.createMediaTask(
             projectId,
             { ...request, boardId: node.boardId },
@@ -5290,6 +5378,10 @@ export const canvasApi = {
       try {
         if (task.operation === 'video_depth_map') {
           await window.spark.invoke('canvas:task:cancel-depth-video', {
+            runtimeTaskId: task.requestId,
+          })
+        } else if (task.operation === 'extract_audio') {
+          await window.spark.invoke('canvas:task:cancel-extract-audio', {
             runtimeTaskId: task.requestId,
           })
         } else {
@@ -5429,6 +5521,93 @@ export const canvasApi = {
         status: 'running',
         progress: response.progress ?? 1,
         message: response.message ?? '本地深度任务已创建',
+      }
+      taskNode.updatedAt = now()
+    }
+    writeDb(db)
+    return this.openSnapshot(projectId, request.boardId)
+  },
+
+  /**
+   * 创建本地「分离音频」任务（走 main process → FfmpegRunner.extractAudio）。
+   *
+   * 与 createLocalDepthTask 同通道（local_media），但无模型下载：
+   * ffmpeg 是基础能力，产物通过 applyMediaTaskResult 物化为 audio 节点 + generated 连线。
+   */
+  async createLocalAudioExtractTask(
+    projectId: string,
+    requestInput: CreateCanvasTaskRequest & { inputFiles?: CanvasMediaTaskInputFile[] },
+    options?: {
+      bindToNodeId?: string
+      validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
+    },
+  ): Promise<CanvasSnapshot> {
+    const request = validateCanvasLocalTaskSubmission(requestInput)
+    const inputFile = request.inputFiles?.[0]
+    const inputPath = inputFile?.path?.trim()
+    if (!inputPath) throw new Error('分离音频需要可读取的本地视频路径')
+
+    const started = await this.startWorkflowTask(projectId, {
+      boardId: request.boardId,
+      operation: 'extract_audio',
+      title: request.taskTitle ?? '分离音频',
+      prompt: '',
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      ...(options?.bindToNodeId ? { bindToNodeId: options.bindToNodeId } : {}),
+      ...(request.outputPlacement ? { outputPlacement: request.outputPlacement } : {}),
+      provider: 'local_ffmpeg',
+      modelId: 'ffmpeg-extract-audio',
+      modelParams: request.modelParams ?? {},
+      progress: 1,
+      message: '准备本地 ffmpeg 音频分离',
+    })
+
+    let response: CanvasMediaTaskCreateResponse
+    try {
+      const sourceFileName = canvasInputSourceBaseName(inputFile)
+      response = await window.spark.invoke('canvas:task:extract-audio', {
+        projectId,
+        clientTaskId: started.taskId,
+        inputPath,
+        audioFormat: (request.modelParams?.audioFormat as 'copy' | 'mp3' | 'aac' | 'wav') ?? 'mp3',
+        ...(sourceFileName ? { sourceFileName } : {}),
+      })
+    } catch (error) {
+      response = {
+        status: 'failed',
+        providerProfileId: '',
+        provider: 'local_ffmpeg',
+        model: 'ffmpeg-extract-audio',
+        mode: 'async',
+        assets: [],
+        error: {
+          code: 'ipc_error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }
+    }
+    if (response.status !== 'running') {
+      return this.applyMediaTaskResult(projectId, started.taskId, response)
+    }
+
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === started.taskId && item.projectId === projectId)
+    const taskNode = task?.operationNodeId
+      ? db.nodes.find((item) => item.id === task.operationNodeId && item.projectId === projectId)
+      : null
+    if (task) {
+      task.requestId = response.runtimeTaskId ?? response.requestId ?? null
+      task.progress = response.progress ?? task.progress
+      task.inputFileDiagnostics = summarizeCanvasTaskInputFiles(request.inputFiles ?? [])
+      task.updatedAt = now()
+    }
+    if (taskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'running',
+        progress: response.progress ?? 1,
+        message: response.message ?? '本地音频分离任务已创建',
       }
       taskNode.updatedAt = now()
     }
@@ -6377,6 +6556,7 @@ export const canvasApi = {
       if (taskNode.data.outputPipelineRole) nodeData.pipelineRole = taskNode.data.outputPipelineRole
       if (nodeType !== 'text') {
         if (displayUrl) nodeData.url = displayUrl
+        if (assetOut.filePath) nodeData.filePath = assetOut.filePath
         if (asset.mimeType) nodeData.mimeType = asset.mimeType
         if (assetType === 'image' && asset.thumbnailUrl) nodeData.thumbnailUrl = asset.thumbnailUrl
         if (isPanorama360)
@@ -6632,4 +6812,91 @@ async function ensureVideoThumbnail(
   } finally {
     thumbnailsInFlight.delete(assetId)
   }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 源文件清理：仅在项目管理页删除资源时，同步清理数据库外的实际文件
+ * ──────────────────────────────────────────────────────────────────────────
+ *
+ * 当前删除语义：
+ *  - canvas.api.deleteNodes：节点本地 DB 行只设 hidden=true（软删，可撤销），
+ *    **不清理任何源文件**——画布上的删除只是「从画面移走」，同一素材可能仍被
+ *    其它节点 / 分镜引用。
+ *  - canvas.api.deleteFilmAsset：从 db.assets 移除（硬删，无撤销）；只有显式
+ *    传 hardDelete=true 时（项目管理页的资源瀑布流）才继续清理源文件。
+ *
+ * cleanupAssetSourceFiles 从 CanvasAsset 上识别 (providerProfileId, fileId) /
+ * 本地路径，去重后通过 `canvas:asset:cleanup-files` 让主进程执行删除。
+ * 单文件失败由主进程日志兜底，渲染端只把异常冒泡给调用方决定是否 toast 提示。
+ */
+
+type CleanupRequest = {
+  providerFiles: Array<{ providerProfileId: string; fileId: string }>
+  localPaths: string[]
+}
+
+function logCanvasAssetCleanupWarning(source: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error)
+  // eslint-disable-next-line no-console
+  console.warn(`[canvas-asset-cleanup] ${source} failed:`, message)
+}
+
+function invokeCleanup(request: CleanupRequest): Promise<unknown> {
+  // 去重，避免多次清理同一文件
+  const providerMap = new Map<string, { providerProfileId: string; fileId: string }>()
+  for (const item of request.providerFiles) {
+    if (!item.providerProfileId || !item.fileId) continue
+    const key = `${item.providerProfileId}::${item.fileId}`
+    if (!providerMap.has(key)) providerMap.set(key, item)
+  }
+  const localSet = new Set<string>()
+  for (const path of request.localPaths) {
+    if (typeof path === 'string' && path.length > 0) localSet.add(path)
+  }
+  const providerFiles = [...providerMap.values()]
+  const localPaths = [...localSet]
+  if (providerFiles.length === 0 && localPaths.length === 0) return Promise.resolve(null)
+  return window.spark.invoke('canvas:asset:cleanup-files', { providerFiles, localPaths })
+}
+
+function collectCleanupRequestFromAsset(asset: CanvasAsset): CleanupRequest {
+  const providerFiles: CleanupRequest['providerFiles'] = []
+  const localPaths: string[] = []
+  const meta = (asset.metadata ?? {}) as Record<string, unknown>
+  const metaProviderProfileId =
+    typeof meta.providerProfileId === 'string' ? meta.providerProfileId : undefined
+  const metaFileId = typeof meta.fileId === 'string' ? meta.fileId : undefined
+  const dataProviderProfileId = metaProviderProfileId
+  const dataFileId = metaFileId
+  if (dataProviderProfileId && dataFileId) {
+    providerFiles.push({ providerProfileId: dataProviderProfileId, fileId: dataFileId })
+  }
+  // asset 上拿不到 data.providerProfileId / data.fileId（结构上是 data 的字段），
+  // 仅当元数据中显式记录时才按 provider 路径清理，否则退回本地路径或跳过。
+  void dataProviderProfileId
+  void dataFileId
+
+  // 本地路径：storageKey 是项目目录内的本地绝对路径
+  if (asset.storageKey && typeof asset.storageKey === 'string') {
+    localPaths.push(asset.storageKey)
+  }
+  // 兼容 metadata.filePath 老格式
+  if (typeof meta.filePath === 'string' && meta.filePath.length > 0) {
+    localPaths.push(meta.filePath)
+  }
+  // 缩略图（不强制）：仅当是本地路径时才纳入
+  if (
+    asset.thumbnailKey &&
+    typeof asset.thumbnailKey === 'string' &&
+    asset.thumbnailKey !== asset.storageKey
+  ) {
+    localPaths.push(asset.thumbnailKey)
+  }
+  return { providerFiles, localPaths }
+}
+
+async function cleanupAssetSourceFiles(asset: CanvasAsset): Promise<unknown> {
+  const request = collectCleanupRequestFromAsset(asset)
+  if (request.providerFiles.length === 0 && request.localPaths.length === 0) return null
+  return invokeCleanup(request)
 }

@@ -53,7 +53,10 @@ import {
   shouldGroupCanvasImages,
   textFormatFromFileName,
 } from './canvasFileDrop'
-import { replaceCanvasVideoNode } from './canvasMediaNodeReplacement'
+import {
+  replaceCanvasVideoNode,
+  replaceCanvasAudioNode,
+} from './canvasMediaNodeReplacement'
 import { extractDocumentText } from './canvasDocumentParse'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
@@ -252,6 +255,7 @@ import {
 import type { CanvasAlignmentMode } from './canvasAlignment'
 import {
   GROUP_NODE_DEFAULT_SIZE,
+  AUDIO_NODE_DEFAULT_SIZE,
   IMAGE_NODE_DEFAULT_SIZE,
   OPERATION_NODE_DEFAULT_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
@@ -561,6 +565,7 @@ export function CanvasWorkspaceView({
     createTextNode,
     createImageNode,
     createEmptyImageNode,
+    createEmptyMediaNode,
     createMediaNode,
     createProviderFileNode,
     uploadImageAsset,
@@ -775,6 +780,9 @@ export function CanvasWorkspaceView({
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   /** 非空时表示下一次 fileInput 选择是「替换该图片节点」而非新增节点 */
   const replaceImageNodeIdRef = useRef<string | null>(null)
+  /** 非空时表示下一次 audioFileInput 选择是「填充该空音频节点」而非其他用途 */
+  const pendingAudioNodeIdRef = useRef<string | null>(null)
+  const audioFileInputRef = useRef<HTMLInputElement>(null)
   const activeToolRef = useRef<CanvasTool>('pan')
   const { registerNavGuard, requestConfirm, t, setTweak, setHasUnsavedChanges } = useApp()
   const handleCreatePromptCategory = useCallback(
@@ -2303,6 +2311,12 @@ export function CanvasWorkspaceView({
         fileInputRef.current?.click()
         return
       }
+      // 空音频节点双击 → 触发上传（音频空节点无占位上传按钮）
+      if (node?.type === 'audio' && !node.data.url) {
+        pendingAudioNodeIdRef.current = nodeId
+        audioFileInputRef.current?.click()
+        return
+      }
       closeCanvasFloatPanels('node-edit')
       setInlinePanelFocusRequest({ nodeId, nonce: Date.now() })
       setSelectedNodeIds([nodeId])
@@ -2403,8 +2417,18 @@ export function CanvasWorkspaceView({
     const resolved = isOperationNode(node)
       ? resolveCanvasOperationResourceNode(node, currentSnapshot)
       : node
-    if (!resolved || (!isCanvasImageContentNode(resolved) && resolved.type !== 'video')) {
-      message.warning('当前节点没有可下载的图片或视频内容')
+    const resolvedKind: 'image' | 'video' | 'audio' | null =
+      resolved && !isCanvasImageContentNode(resolved)
+        ? resolved.type === 'video'
+          ? 'video'
+          : resolved.type === 'audio'
+            ? 'audio'
+            : null
+        : resolved
+          ? 'image'
+          : null
+    if (!resolved || resolvedKind == null) {
+      message.warning('当前节点没有可下载的图片、视频或音频内容')
       return
     }
     const linkedAsset = resolved.assetId
@@ -2412,12 +2436,12 @@ export function CanvasWorkspaceView({
       : null
     await downloadCanvasResource({
       id: linkedAsset?.id ?? resolved.id,
-      type: linkedAsset?.type ?? (resolved.type === 'video' ? 'video' : 'image'),
+      type: linkedAsset?.type ?? resolvedKind,
       title: linkedAsset?.title ?? resolved.title ?? null,
       suggestedFileName: canvasNodeDownloadName(
         node,
         linkedAsset?.title ?? resolved.title,
-        resolved.type === 'video' ? '视频' : '图片',
+        resolvedKind === 'video' ? '视频' : resolvedKind === 'audio' ? '音频' : '图片',
       ),
       mimeType: linkedAsset?.mimeType ?? resolved.data.mimeType ?? null,
       storageKey: linkedAsset?.storageKey ?? null,
@@ -2804,6 +2828,52 @@ export function CanvasWorkspaceView({
       return node
     },
     [createEmptyImageNode],
+  )
+
+  /** 工厂菜单「视频」直接落空节点（节点自带「上传视频」占位按钮，后续再上传填充）。不建 asset。 */
+  const addEmptyVideo = useCallback(
+    async (preferredPosition?: CanvasPoint) => {
+      const position = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
+            x: 140,
+            y: 120,
+          })
+      const node = await createEmptyMediaNode({
+        kind: 'video',
+        x: position.x,
+        y: position.y,
+      })
+      if (node) {
+        setSelectedNodeIds([node.id])
+      }
+      return node
+    },
+    [createEmptyMediaNode],
+  )
+
+  /** 工厂菜单「音频」直接落空节点，并立即触发文件选择填充（音频空节点无占位上传按钮）。 */
+  const addEmptyAudio = useCallback(
+    async (preferredPosition?: CanvasPoint) => {
+      const position = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : positionNodeInViewport(canvasViewportRef.current, AUDIO_NODE_DEFAULT_SIZE, {
+            x: 140,
+            y: 120,
+          })
+      const node = await createEmptyMediaNode({
+        kind: 'audio',
+        x: position.x,
+        y: position.y,
+      })
+      if (node) {
+        setSelectedNodeIds([node.id])
+        pendingAudioNodeIdRef.current = node.id
+        audioFileInputRef.current?.click()
+      }
+      return node
+    },
+    [createEmptyMediaNode],
   )
 
   const handleSplitStoryboard = useCallback(
@@ -3390,6 +3460,15 @@ export function CanvasWorkspaceView({
       // 图片：工厂菜单直接落空节点（后续再上传填充）
       if (item.nodeType === 'image') {
         void addEmptyImage()
+        return
+      }
+      // 视频：落空节点（自带「上传视频」占位按钮）；音频：落空节点并立即触发文件选择
+      if (item.nodeType === 'video') {
+        void addEmptyVideo()
+        return
+      }
+      if (item.nodeType === 'audio') {
+        void addEmptyAudio()
         return
       }
       // 旧入口兜底：选图即加
@@ -5988,6 +6067,38 @@ export function CanvasWorkspaceView({
     [patchNodes, prepareCanvasMediaUpload, updateNodeData],
   )
 
+  /** 音频文件选择回调：填充工厂菜单「音频」落下的空节点（复用媒体落盘管线）。 */
+  const handleAudioFileChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      event.target.value = ''
+      const nodeId = pendingAudioNodeIdRef.current
+      pendingAudioNodeIdRef.current = null
+      if (!file || !nodeId) return
+      if (!file.type.startsWith('audio/')) {
+        message.warning('请选择音频文件')
+        return
+      }
+      const node = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
+      if (!node) {
+        message.error('未找到目标音频节点')
+        return
+      }
+      try {
+        await replaceCanvasAudioNode({
+          node,
+          file,
+          prepare: prepareCanvasMediaUpload,
+          updateNodeData,
+        })
+        message.success('已上传音频')
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '上传音频失败')
+      }
+    },
+    [prepareCanvasMediaUpload, updateNodeData],
+  )
+
   const insertPreparedImages = useCallback(
     async (
       preparedImages: PreparedImageUpload[],
@@ -8491,6 +8602,13 @@ export function CanvasWorkspaceView({
         multiple
         style={{ display: 'none' }}
         onChange={(event) => void handleFileChange(event)}
+      />
+      <input
+        ref={audioFileInputRef}
+        type="file"
+        accept="audio/*"
+        style={{ display: 'none' }}
+        onChange={(event) => void handleAudioFileChange(event)}
       />
       <input
         ref={uploadFilesInputRef}
