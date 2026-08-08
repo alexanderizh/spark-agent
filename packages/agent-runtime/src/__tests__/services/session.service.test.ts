@@ -1091,6 +1091,39 @@ describe('resolveCodexMemberExecutionProfile (FR-0a codex member executor routin
     expect(profile.extras.codexCliProvider).toBeUndefined()
   })
 
+  it('keeps local Codex CLI while attaching a Spark provider for an override', () => {
+    const profile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'codex',
+      isLocalCli: true,
+      cliSparkOverride: true,
+      providerType: 'openai',
+      providerProfileId: 'p1',
+      providerName: 'Spark OpenAI',
+      apiKey: 'sk-x',
+      codexApiKind: 'responses',
+      apiEndpoint: 'https://api.openai.com/v1',
+    })
+    expect(profile.extras.useLocalConfig).toBe(true)
+    expect(profile.extras.codexCliProvider).toMatchObject({
+      wireApi: 'responses',
+      envKey: 'SPARK_CODEX_API_KEY_P1',
+    })
+    expect(createCodexExecutorForConfig(profile.extras)).toBeInstanceOf(CodexCliExecutor)
+  })
+
+  it('does not inherit host Claude config when a local Claude member has a Spark override', () => {
+    const profile = resolveCodexMemberExecutionProfile({
+      memberAdapter: 'claude-sdk',
+      isLocalCli: true,
+      cliSparkOverride: true,
+      providerType: 'anthropic',
+      providerProfileId: 'p1',
+      providerName: 'Spark Anthropic',
+      apiKey: 'sk-ant',
+    })
+    expect(profile.extras).toEqual({})
+  })
+
   it('keeps anthropic-provider codex members free of codexCliProvider (native anthropic auth)', () => {
     const profile = resolveCodexMemberExecutionProfile({
       memberAdapter: 'codex',

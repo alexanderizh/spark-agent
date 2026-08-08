@@ -465,7 +465,10 @@ function buildCodexArgs(
     '--skip-git-repo-check',
   ]
   if (profileName != null) args.splice(1, 0, '-p', profileName)
-  if (!config.useLocalConfig && config.model.trim().length > 0) {
+  if (
+    (!config.useLocalConfig || config.codexCliProvider != null) &&
+    config.model.trim().length > 0
+  ) {
     args.push('--model', config.model)
   }
   args.push(...buildCodexPermissionArgs(config))
@@ -520,6 +523,7 @@ function buildCodexModelProviderConfigArgs(config: SDKExecutorConfig): string[] 
   if (provider == null) return []
   const id = sanitizeConfigKey(provider.id)
   const result = [
+    ...(config.model.trim().length > 0 ? [`model=${tomlString(config.model.trim())}`] : []),
     `model_provider=${tomlString(id)}`,
     `model_providers.${id}.wire_api=${tomlString(provider.wireApi)}`,
   ]

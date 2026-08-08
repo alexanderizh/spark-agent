@@ -3,6 +3,7 @@ import type {
   SessionAgentAdapter,
   SessionAttachment,
   SessionChatMode,
+  CliSparkOverride,
   SessionPermissionMode,
   SessionReasoningEffort,
   WorkspaceGitBranch,
@@ -45,6 +46,7 @@ export type SessionRuntimePatch = {
   chatMode?: SessionChatMode
   reasoningEffort?: SessionReasoningEffort
   debugMode?: boolean
+  cliSparkOverride?: CliSparkOverride | null
 }
 
 export type QueuedMessage = {

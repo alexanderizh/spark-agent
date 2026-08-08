@@ -196,6 +196,11 @@ export interface SessionGoalResponse {
 
 // ─── Session Channels ─────────────────────────────────────────────────────────
 
+export interface CliSparkOverride {
+  providerProfileId: string
+  modelId: string
+}
+
 export interface SessionCreateRequest {
   /** Provider 配置 Profile ID */
   providerProfileId: string
@@ -212,6 +217,8 @@ export interface SessionCreateRequest {
   reasoningEffort?: SessionReasoningEffort
   /** Whether the session should start with the interactive debug workflow enabled. */
   debugMode?: boolean
+  /** Optional Spark provider/model used by a local CLI provider. Persisted in session metadata. */
+  cliSparkOverride?: CliSparkOverride | null
   /** 会话标题（可选，默认自动生成）*/
   title?: string
   /** 关联的 Workspace ID（可选）*/
@@ -235,6 +242,10 @@ export interface SessionSendTurnRequest {
   permissionMode?: SessionPermissionMode
   chatMode?: SessionChatMode
   reasoningEffort?: SessionReasoningEffort
+  /** Optional Spark provider/model override for a local CLI turn. */
+  cliSparkOverride?: CliSparkOverride | null
+  /** 当前 turn 使用的会话 Skills；传入时替换 runtime agent 的 Skills 配置。 */
+  skillIds?: string[]
   skillId?: string
   skillParams?: Record<string, unknown>
   attachments?: SessionAttachment[]
@@ -370,6 +381,8 @@ export interface SessionUpdateRequest {
   reasoningEffort?: SessionReasoningEffort
   /** 调试模式开关（per-session，持久化到 metadata） */
   debugMode?: boolean
+  /** Optional Spark provider/model used by a local CLI provider. null clears it. */
+  cliSparkOverride?: CliSparkOverride | null
 }
 
 export interface SessionUpdateResponse {
@@ -562,6 +575,8 @@ export interface SessionListResponse {
     importedFrom?: HistoryImportSource
     /** 调试模式（per-session 能力开关）：与权限模式正交，开启后挂载 spark_debug + 显示快捷回复 */
     debugMode?: boolean
+    /** Spark provider/model override for a local CLI provider. */
+    cliSparkOverride?: CliSparkOverride | null
   }>
   total: number
 }

@@ -198,6 +198,7 @@ describe('IPC schemas', () => {
       permissionMode: 'claude-auto-edits',
       chatMode: 'agent',
       reasoningEffort: 'high',
+      skillIds: ['builtin:canvas-studio', 'skill-extra'],
     })
 
     expect(request).toMatchObject({
@@ -206,7 +207,40 @@ describe('IPC schemas', () => {
       permissionMode: 'claude-auto-edits',
       chatMode: 'agent',
       reasoningEffort: 'high',
+      skillIds: ['builtin:canvas-studio', 'skill-extra'],
     })
+  })
+
+  it('preserves the local CLI Spark override across session requests', () => {
+    const cliSparkOverride = {
+      providerProfileId: '00000000-0000-4000-8000-000000000003',
+      modelId: 'claude-sonnet-4-20250514',
+    }
+    expect(
+      SessionCreateRequestSchema.parse({
+        providerProfileId: 'local-cli',
+        cliSparkOverride,
+      }).cliSparkOverride,
+    ).toEqual(cliSparkOverride)
+    expect(
+      SessionUpdateRequestSchema.parse({
+        sessionId: '00000000-0000-4000-8000-000000000002',
+        cliSparkOverride,
+      }).cliSparkOverride,
+    ).toEqual(cliSparkOverride)
+    expect(
+      SessionSendTurnRequestSchema.parse({
+        sessionId: '00000000-0000-4000-8000-000000000002',
+        message: 'hello',
+        cliSparkOverride,
+      }).cliSparkOverride,
+    ).toEqual(cliSparkOverride)
+    expect(
+      SessionUpdateRequestSchema.parse({
+        sessionId: '00000000-0000-4000-8000-000000000002',
+        cliSparkOverride: null,
+      }).cliSparkOverride,
+    ).toBeNull()
   })
 
   it('requires session-scoped correlation when answering a structured question', () => {

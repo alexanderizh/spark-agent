@@ -209,6 +209,11 @@ export const TeamListDispatchesRequestSchema = z.object({
 
 // ─── Session Schema ───────────────────────────────────────────────────────────
 
+const CliSparkOverrideSchema = z.object({
+  providerProfileId: z.string().min(1).max(200),
+  modelId: z.string().min(1).max(200),
+})
+
 export const SessionCreateRequestSchema = z.object({
   providerProfileId: ProfileIdSchema,
   modelId: z.string().min(1).max(200).optional(),
@@ -218,6 +223,7 @@ export const SessionCreateRequestSchema = z.object({
   chatMode: SessionChatModeSchema.optional().default('agent'),
   reasoningEffort: SessionReasoningEffortSchema.optional().default('max'),
   debugMode: z.boolean().optional(),
+  cliSparkOverride: CliSparkOverrideSchema.nullable().optional(),
   title: z.string().max(200).optional(),
   workspaceId: z.string().uuid().optional(),
 })
@@ -232,6 +238,8 @@ export const SessionSendTurnRequestSchema = z.object({
   permissionMode: SessionPermissionModeSchema.optional(),
   chatMode: SessionChatModeSchema.optional(),
   reasoningEffort: SessionReasoningEffortSchema.optional(),
+  cliSparkOverride: CliSparkOverrideSchema.nullable().optional(),
+  skillIds: z.array(z.string().min(1).max(160)).max(200).optional(),
   skillId: z.string().min(1).max(160).optional(),
   skillParams: z.record(z.string(), z.unknown()).optional(),
   attachments: z
@@ -369,6 +377,7 @@ export const SessionUpdateRequestSchema = z.object({
   chatMode: SessionChatModeSchema.optional(),
   reasoningEffort: SessionReasoningEffortSchema.optional(),
   debugMode: z.boolean().optional(),
+  cliSparkOverride: CliSparkOverrideSchema.nullable().optional(),
 })
 
 export const SessionDeleteRequestSchema = z.object({

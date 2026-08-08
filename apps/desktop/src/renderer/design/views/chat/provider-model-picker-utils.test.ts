@@ -6,6 +6,7 @@ import {
   resolveAvailableProviderModel,
   resolveManagedPlatformVendor,
 } from './provider-model-picker-utils'
+import { getCliSparkOverrideProviders } from '../../utils/provider-adapter'
 
 function provider(overrides: Partial<ProviderProfile>): ProviderProfile {
   return {
@@ -71,5 +72,20 @@ describe('provider model picker utilities', () => {
 
     expect(resolveAvailableProviderModel('qwen3.6-plus', thirdParty)).toBe('')
     expect(resolveAvailableProviderModel('claude-sonnet', thirdParty)).toBe('claude-sonnet')
+  })
+
+  it('filters local CLI Spark overrides to concrete compatible providers', () => {
+    const localClaude = provider({ id: 'local-cli', provider: 'anthropic' })
+    const localCodex = provider({ id: 'local-codex-cli', provider: 'openai' })
+    const anthropic = provider({ id: 'anthropic', provider: 'anthropic' })
+    const openai = provider({ id: 'openai', provider: 'openai' })
+    const router = provider({ id: 'claude-auto-router', provider: 'anthropic' })
+
+    expect(
+      getCliSparkOverrideProviders([localClaude, anthropic, openai, router], localClaude),
+    ).toEqual([anthropic])
+    expect(
+      getCliSparkOverrideProviders([localCodex, anthropic, openai, router], localCodex),
+    ).toEqual([openai])
   })
 })
