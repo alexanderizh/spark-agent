@@ -752,6 +752,34 @@ describe('CodexCliExecutor', () => {
     )
   })
 
+  it('passes a Spark override model while retaining local Codex CLI mode', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
+
+    const executor = new CodexCliExecutor()
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({
+        useLocalConfig: true,
+        model: 'gpt-5-codex',
+        codexCliProvider: {
+          id: 'spark-provider',
+          name: 'Spark OpenAI',
+          baseUrl: 'https://provider.example.com/v1',
+          wireApi: 'responses',
+          envKey: 'SPARK_CODEX_API_KEY_TEST',
+          env: { SPARK_CODEX_API_KEY_TEST: 'sk-third-party' },
+        },
+      }),
+    )
+
+    const args = spawnMock.mock.calls[0]?.[1] as string[]
+    expect(args).toEqual(expect.arrayContaining(['--model', 'gpt-5-codex']))
+    expect(lastProfileConfig).toContain("model='gpt-5-codex'")
+    expect(lastProfileConfig).toContain("model_provider='spark-provider'")
+  })
+
   it('maps Codex JSONL deltas and completed agent messages to assistant stream events', async () => {
     spawnMock.mockImplementation(
       (_command: string, args: string[]) =>

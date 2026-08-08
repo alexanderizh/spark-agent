@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@lobehub/ui'
-import { Empty, Input, Modal, Select, Spin, Switch, Tag, message } from 'antd'
+import { Empty, Input, Modal, Popconfirm, Select, Spin, Switch, message } from 'antd'
 import { Icons } from '../../Icons'
 import { useApp } from '../../AppContext'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { RemoteAssetImage } from '../../components/RemoteAssetImage'
-import { useCanvasProjectSelection } from './CanvasProjectSelectionContext'
 import { useCanvasProjects } from './canvas.store'
 import { canvasApi } from './canvas.api'
-import { readFileAsDataUrl, encodeToSafeFileUrl } from './canvas-safe-file'
+import { readFileAsDataUrl } from './canvas-safe-file'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot } from './canvas.types'
-import { readAssetKind } from './canvasFilmAssets'
+import { filmUid, readAssetKind } from './canvasFilmAssets'
 import {
   getPromptCategory,
   getPromptCategoryUsage,
@@ -19,7 +18,6 @@ import {
   readPromptLibraryCategories,
   saveHideSystemPrompts,
   saveLastPromptCategory,
-  writePromptLibraryCategories,
 } from './canvasPromptLibraryCategories'
 import {
   isPromptTextNode,
@@ -32,6 +30,13 @@ import {
   isSystemPromptLibraryEntry,
   type CanvasPromptLibraryEntry,
 } from './CanvasPromptLibraryPanel'
+import {
+  globalPromptToCanvasAsset,
+  readGlobalPromptLibrary,
+  writeGlobalPromptLibrary,
+  type GlobalPromptLibraryItem,
+  type GlobalPromptLibraryState,
+} from './canvasPromptLibraryStore'
 import './canvas-prompt-library.less'
 
 type PromptEditorState = {
@@ -60,17 +65,6 @@ const EMPTY_EDITOR: PromptEditorState = {
   coverPreviewUrl: null,
 }
 
-function readAssetAttributes(asset: CanvasAsset | null): Record<string, string> {
-  if (!asset) return {}
-  const attributes = asset.metadata?.attributes
-  if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) return {}
-  return Object.fromEntries(
-    Object.entries(attributes).filter(
-      (entry): entry is [string, string] => typeof entry[1] === 'string',
-    ),
-  )
-}
-
 function nodeText(node: CanvasNode, snapshot: CanvasSnapshot): string {
   if (!isPromptTextNode(node)) return ''
   const text = node.data?.text
@@ -89,8 +83,8 @@ function defaultCategory(categories: string[]): string {
   return (last && categories.includes(last) ? last : categories[0]) ?? ''
 }
 
-function editorFromAsset(asset: CanvasAsset, snapshot: CanvasSnapshot): PromptEditorState {
-  const cover = readPromptLibraryCover(asset, snapshot.assets)
+function editorFromAsset(asset: CanvasAsset, snapshot: CanvasSnapshot | null): PromptEditorState {
+  const cover = readPromptLibraryCover(asset, snapshot?.assets ?? [])
   return {
     assetId: asset.id,
     title: asset.title ?? '',
@@ -107,28 +101,33 @@ function editorFromAsset(asset: CanvasAsset, snapshot: CanvasSnapshot): PromptEd
   }
 }
 
-function buildAttributes(
-  editor: PromptEditorState,
-  uploadedCover: { url: string; mimeType: string } | null,
-): Record<string, string> {
-  const directCoverUrl = uploadedCover?.url ?? (!editor.coverAssetId ? editor.coverUrl : null)
-  const directCoverMimeType =
-    uploadedCover?.mimeType ?? (!editor.coverAssetId ? editor.coverMimeType : null)
+function legacyAssetToGlobalItem(asset: CanvasAsset, snapshot: CanvasSnapshot): GlobalPromptLibraryItem | null {
+  if (readAssetKind(asset) !== 'prompt_library') return null
+  const text = readPromptLibraryText(asset)
+  if (!text) return null
+  const cover = readPromptLibraryCover(asset, snapshot.assets)
+  const now = new Date().toISOString()
   return {
-    promptCategory: editor.category.trim(),
-    ...(editor.coverAssetId ? { coverAssetId: editor.coverAssetId } : { coverAssetId: '' }),
-    ...(directCoverUrl && directCoverMimeType
-      ? { coverUrl: directCoverUrl, coverMimeType: directCoverMimeType }
-      : { coverUrl: '', coverMimeType: '' }),
+    id: `legacy:${asset.id}`,
+    title: asset.title?.trim() || '-',
+    text,
+    category: getPromptCategory(asset) ?? '',
+    tags: Array.isArray(asset.metadata.tags)
+      ? asset.metadata.tags.filter((item): item is string => typeof item === 'string')
+      : [],
+    coverUrl: cover.url || null,
+    coverMimeType: cover.mimeType || null,
+    usageCount: Number(asset.metadata.usageCount ?? 0),
+    createdAt: asset.createdAt || now,
+    updatedAt: asset.updatedAt || now,
   }
 }
 
 export function CanvasPromptLibraryView() {
   const { t } = useApp()
   const { projects } = useCanvasProjects()
-  const { selectedProjectId } = useCanvasProjectSelection()
-  const activeProjectId = selectedProjectId ?? projects[0]?.id ?? null
   const [snapshot, setSnapshot] = useState<CanvasSnapshot | null>(null)
+  const [library, setLibrary] = useState<GlobalPromptLibraryState | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
@@ -144,16 +143,43 @@ export function CanvasPromptLibraryView() {
 
   const reload = useCallback(async () => {
     const requestId = ++reloadRequestRef.current
-    if (!activeProjectId) {
-      setSnapshot(null)
-      setLoading(false)
-      return
-    }
     setLoading(true)
     setError('')
     try {
-      const nextSnapshot = await canvasApi.openSnapshot(activeProjectId)
-      if (requestId === reloadRequestRef.current) setSnapshot(nextSnapshot)
+      let nextLibrary = await readGlobalPromptLibrary()
+      const nextSnapshot = projects[0] ? await canvasApi.openSnapshot(projects[0].id) : null
+      if (!nextLibrary.legacyMigrated && projects.length > 0) {
+        const legacySnapshots = await Promise.all(
+          projects.map(async (project) => {
+            try {
+              return await canvasApi.openSnapshot(project.id)
+            } catch {
+              return null
+            }
+          }),
+        )
+        const legacyItems = legacySnapshots.flatMap((legacySnapshot) =>
+          legacySnapshot
+            ? legacySnapshot.assets
+                .map((asset) => legacyAssetToGlobalItem(asset, legacySnapshot))
+                .filter((item): item is GlobalPromptLibraryItem => item !== null)
+            : [],
+        )
+        const existingIds = new Set(nextLibrary.items.map((item) => item.id))
+        nextLibrary = {
+          ...nextLibrary,
+          items: [
+            ...nextLibrary.items,
+            ...legacyItems.filter((item) => !existingIds.has(item.id)),
+          ],
+          legacyMigrated: true,
+        }
+        await writeGlobalPromptLibrary(nextLibrary)
+      }
+      if (requestId === reloadRequestRef.current) {
+        setLibrary(nextLibrary)
+        setSnapshot(nextSnapshot)
+      }
     } catch (loadError) {
       if (requestId === reloadRequestRef.current) {
         setError(loadError instanceof Error ? loadError.message : '提示词库加载失败')
@@ -161,7 +187,7 @@ export function CanvasPromptLibraryView() {
     } finally {
       if (requestId === reloadRequestRef.current) setLoading(false)
     }
-  }, [activeProjectId])
+  }, [projects])
 
   useEffect(() => {
     void reload()
@@ -177,15 +203,15 @@ export function CanvasPromptLibraryView() {
     setCategoryManagerOpen(false)
     setActiveCategory('all')
     setQuery('')
-  }, [activeProjectId])
+  }, [])
 
   const promptAssets = useMemo(
-    () => snapshot?.assets.filter((asset) => readAssetKind(asset) === 'prompt_library') ?? [],
-    [snapshot],
+    () => library?.items.map(globalPromptToCanvasAsset) ?? [],
+    [library],
   )
   const categories = useMemo(
-    () => readPromptLibraryCategories(snapshot?.project.metadata),
-    [snapshot?.project.metadata],
+    () => library?.categories.length ? library.categories : readPromptLibraryCategories(undefined),
+    [library],
   )
   const usage = useMemo(() => getPromptCategoryUsage(promptAssets), [promptAssets])
   const systemPromptEntries = useMemo(
@@ -248,7 +274,6 @@ export function CanvasPromptLibraryView() {
   }, [categoryManagerOpen, editor, openCreatePrompt, snapshot, textPickerOpen])
 
   const openEditPrompt = (asset: CanvasAsset) => {
-    if (!snapshot) return
     setEditor(editorFromAsset(asset, snapshot))
   }
 
@@ -279,55 +304,48 @@ export function CanvasPromptLibraryView() {
   }
 
   const handleSavePrompt = async () => {
-    if (!activeProjectId || !snapshot || !editor) return
-    if (!editor.title.trim() || !editor.text.trim()) {
-      message.warning('请填写名称和提示词')
+    if (!library || !editor) return
+    const promptText = editor.text.trim()
+    if (!promptText) {
+      message.warning('请填写提示词')
       return
     }
-    if (!editor.category.trim()) {
-      message.warning('请选择分类')
-      return
-    }
+    const promptTitle = editor.title.trim() || '-'
     setSaving(true)
     try {
       let uploadedCover: { url: string; mimeType: string } | null = null
       if (editor.coverFile) {
         const dataUrl = await readFileAsDataUrl(editor.coverFile)
-        const written = await window.spark.invoke('canvas:asset:write-data-url', {
-          projectId: activeProjectId,
-          projectRootPath: snapshot.project.rootPath ?? null,
-          dataUrl,
-          mimeType: editor.coverFile.type,
-          suggestedBaseName: 'prompt-cover',
-          type: 'image',
-        })
         uploadedCover = {
-          url: encodeToSafeFileUrl(written.filePath),
+          url: dataUrl,
           mimeType: editor.coverFile.type,
         }
       }
-      const attributes = buildAttributes(editor, uploadedCover)
-      const nextSnapshot = editor.assetId
-        ? await canvasApi.updateFilmAsset(activeProjectId, editor.assetId, {
-            title: editor.title.trim(),
-            contentText: editor.text.trim(),
-            prompt: editor.text.trim(),
-            tags: editor.tags,
-            attributes,
-          })
-        : await (async () => {
-            await canvasApi.createFilmAsset(activeProjectId, {
-              kind: 'prompt_library',
-              name: editor.title.trim(),
-              text: editor.text.trim(),
-              prompt: editor.text.trim(),
-              tags: editor.tags,
-              attributes,
-            })
-            return canvasApi.openSnapshot(activeProjectId)
-          })()
+      const existing = editor.assetId
+        ? library.items.find((item) => item.id === editor.assetId)
+        : undefined
+      const now = new Date().toISOString()
+      const nextItem: GlobalPromptLibraryItem = {
+        id: existing?.id ?? filmUid('prompt'),
+        title: promptTitle,
+        text: promptText,
+        category: editor.category.trim(),
+        tags: editor.tags,
+        coverUrl: uploadedCover?.url ?? editor.coverUrl,
+        coverMimeType: uploadedCover?.mimeType ?? editor.coverMimeType,
+        usageCount: existing?.usageCount ?? 0,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      }
+      const nextLibrary = {
+        ...library,
+        items: existing
+          ? library.items.map((item) => (item.id === existing.id ? nextItem : item))
+          : [...library.items, nextItem],
+      }
+      await writeGlobalPromptLibrary(nextLibrary)
+      setLibrary(nextLibrary)
       saveLastPromptCategory(editor.category)
-      setSnapshot(nextSnapshot)
       closeEditor()
       message.success(editor.assetId ? '提示词已保存' : '提示词已创建')
     } catch (saveError) {
@@ -338,14 +356,12 @@ export function CanvasPromptLibraryView() {
   }
 
   const persistCategories = async (nextCategories: string[]) => {
-    if (!activeProjectId || !snapshot) return
+    if (!library) return
     setCategorySaving(true)
     try {
-      const next = await canvasApi.updateProjectMetadata(
-        activeProjectId,
-        writePromptLibraryCategories(snapshot.project.metadata, nextCategories),
-      )
-      setSnapshot(next)
+      const next = { ...library, categories: nextCategories }
+      await writeGlobalPromptLibrary(next)
+      setLibrary(next)
       return next
     } finally {
       setCategorySaving(false)
@@ -369,63 +385,23 @@ export function CanvasPromptLibraryView() {
     }
   }
 
-  const migratePromptCategory = async (from: string, to: string) => {
-    if (!activeProjectId || !snapshot) return null
-    const affectedAssets = promptAssets.filter((asset) => getPromptCategory(asset) === from)
-    const originalAttributes = new Map(
-      affectedAssets.map((asset) => [asset.id, readAssetAttributes(asset)] as const),
-    )
-    let nextSnapshot = snapshot
-
-    const rollback = async (): Promise<CanvasSnapshot> => {
-      let rollbackSnapshot = snapshot
-      let rollbackFailed = false
-      for (const asset of affectedAssets) {
-        try {
-          rollbackSnapshot = await canvasApi.updateFilmAsset(activeProjectId, asset.id, {
-            attributes: originalAttributes.get(asset.id) ?? {},
-          })
-        } catch {
-          rollbackFailed = true
-        }
-      }
-      if (!rollbackFailed) return rollbackSnapshot
-      try {
-        return await canvasApi.openSnapshot(activeProjectId)
-      } catch {
-        return rollbackSnapshot
-      }
-    }
-
-    try {
-      for (const asset of affectedAssets) {
-        nextSnapshot = await canvasApi.updateFilmAsset(activeProjectId, asset.id, {
-          attributes: { ...originalAttributes.get(asset.id), promptCategory: to },
-        })
-      }
-    } catch (error) {
-      setSnapshot(await rollback())
-      throw error
-    }
-
-    return { snapshot: nextSnapshot, rollback }
-  }
-
   const renameCategory = async (from: string, to: string) => {
     const nextName = to.trim()
     if (!nextName || nextName === from || categories.includes(nextName)) return
-    if (!activeProjectId || !snapshot) return
-    let migration: Awaited<ReturnType<typeof migratePromptCategory>> = null
     try {
-      migration = await migratePromptCategory(from, nextName)
-      const nextSnapshot = await persistCategories(
-        categories.map((category) => (category === from ? nextName : category)),
-      )
-      setSnapshot(nextSnapshot ?? migration?.snapshot ?? snapshot)
+      const nextCategories = categories.map((category) => (category === from ? nextName : category))
+      await persistCategories(nextCategories)
+      if (library) {
+        const nextItems = library.items.map((item) =>
+          item.category === from ? { ...item, category: nextName, updatedAt: new Date().toISOString() } : item,
+        )
+        const next = { ...library, categories: nextCategories, items: nextItems }
+        await writeGlobalPromptLibrary(next)
+        setLibrary(next)
+      }
       if (activeCategory === from) setActiveCategory(nextName)
     } catch (error) {
-      if (migration) setSnapshot(await migration.rollback())
-      message.error(error instanceof Error ? error.message : '重命名分类失败，已恢复原数据')
+      message.error(error instanceof Error ? error.message : '重命名分类失败')
     }
   }
 
@@ -434,7 +410,6 @@ export function CanvasPromptLibraryView() {
       message.warning('至少保留一个分类')
       return
     }
-    if (!activeProjectId || !snapshot) return
     const fallback = categories.find((item) => item !== category) ?? categories[0] ?? ''
     const count = usage[category] ?? 0
     if (
@@ -442,31 +417,17 @@ export function CanvasPromptLibraryView() {
       !window.confirm(`分类“${category}”有 ${count} 条提示词，将迁移到“${fallback}”，继续吗？`)
     )
       return
-    let migration: Awaited<ReturnType<typeof migratePromptCategory>> = null
     try {
-      migration = await migratePromptCategory(category, fallback)
-      const nextSnapshot = await persistCategories(categories.filter((item) => item !== category))
-      setSnapshot(nextSnapshot ?? migration?.snapshot ?? snapshot)
+      const nextCategories = categories.filter((item) => item !== category)
+      const nextItems = library?.items.map((item) =>
+        item.category === category ? { ...item, category: fallback, updatedAt: new Date().toISOString() } : item,
+      ) ?? []
+      const next = { ...(library as GlobalPromptLibraryState), categories: nextCategories, items: nextItems }
+      await writeGlobalPromptLibrary(next)
+      setLibrary(next)
       if (activeCategory === category) setActiveCategory('all')
     } catch (error) {
-      if (migration) setSnapshot(await migration.rollback())
-      message.error(error instanceof Error ? error.message : '删除分类失败，已恢复原数据')
-    }
-  }
-
-  const handleInsertAsset = async (asset: CanvasAsset) => {
-    if (!activeProjectId || !snapshot) return
-    try {
-      await canvasApi.insertAssetToBoard({
-        projectId: activeProjectId,
-        boardId: snapshot.board.id,
-        assetId: asset.id,
-        x: 260,
-        y: 180,
-      })
-      message.success('已插入当前画布')
-    } catch (insertError) {
-      message.error(insertError instanceof Error ? insertError.message : '插入画布失败')
+      message.error(error instanceof Error ? error.message : '删除分类失败')
     }
   }
 
@@ -476,6 +437,22 @@ export function CanvasPromptLibraryView() {
       message.success(`已复制提示词：${label}`)
     } catch {
       message.error('复制失败，请稍后重试')
+    }
+  }
+
+  const handleDeletePrompt = async (asset: CanvasAsset) => {
+    if (!library) return
+    try {
+      const nextLibrary = {
+        ...library,
+        items: library.items.filter((item) => item.id !== asset.id),
+      }
+      await writeGlobalPromptLibrary(nextLibrary)
+      setLibrary(nextLibrary)
+      if (editor?.assetId === asset.id) closeEditor()
+      message.success(`已删除提示词：${asset.title ?? '提示词'}`)
+    } catch (deleteError) {
+      message.error(deleteError instanceof Error ? deleteError.message : '删除提示词失败')
     }
   }
 
@@ -491,26 +468,17 @@ export function CanvasPromptLibraryView() {
       >
         {t.sidebarHidden && <SidebarExpandButton />}
         <div className="canvas-prompt-library-title-wrap">
-          <Icons.Edit size={17} />
-          <div>
             <h2>提示词库管理</h2>
-            <span>
-              {snapshot?.project.title ?? '选择一个画布项目'} · {promptAssets.length} 条自建 ·{' '}
-              {systemPromptEntries.length} 条内置
-            </span>
-          </div>
         </div>
         <div className="canvas-prompt-library-header-actions">
           <span className="canvas-prompt-library-shortcut">⌘/Ctrl + E 新建</span>
-          <Button type="primary" onClick={openCreatePrompt} disabled={!snapshot}>
+          <Button type="primary" onClick={openCreatePrompt} disabled={!library}>
             <Icons.Plus size={15} /> 新建提示词
           </Button>
         </div>
       </header>
 
-      {!activeProjectId ? (
-        <Empty description="请先创建或选择一个画布项目" />
-      ) : loading ? (
+      {loading ? (
         <div className="canvas-prompt-library-loading">
           <Spin />
         </div>
@@ -518,7 +486,7 @@ export function CanvasPromptLibraryView() {
         <div className="canvas-prompt-library-error" role="alert">
           {error}
         </div>
-      ) : snapshot ? (
+      ) : library ? (
         <div className="canvas-prompt-library-content">
           <div className="canvas-prompt-library-toolbar">
             <div
@@ -580,9 +548,8 @@ export function CanvasPromptLibraryView() {
           ) : (
             <div className="canvas-prompt-library-card-grid">
               {filteredAssets.map((asset) => {
-                const coverUrl = readPromptLibraryCover(asset, snapshot.assets).url
+                const coverUrl = readPromptLibraryCover(asset, snapshot?.assets ?? []).url
                 const category = getPromptCategory(asset)
-                const count = Number(asset.metadata.usageCount ?? 0)
                 return (
                   <article
                     key={asset.id}
@@ -602,7 +569,7 @@ export function CanvasPromptLibraryView() {
                         <img src={coverUrl} alt="" />
                       ) : (
                         <div className="canvas-prompt-library-card-cover-fallback">
-                          <Icons.Edit size={20} />
+                          <Icons.Edit size={14} />
                           <span>{category ?? '未分类'}</span>
                         </div>
                       )}
@@ -613,9 +580,13 @@ export function CanvasPromptLibraryView() {
                     <div className="canvas-prompt-library-card-body">
                       <div className="canvas-prompt-library-card-title-row">
                         <h3>{asset.title || '未命名提示词'}</h3>
+                      </div>
+                      <p>{readPromptLibraryText(asset) || '暂无提示词文案'}</p>
+                      <div className="canvas-prompt-library-card-actions">
                         <button
                           type="button"
                           className="canvas-prompt-library-copy"
+                          aria-label={`复制${asset.title ?? '提示词'}`}
                           onClick={(event) => {
                             event.stopPropagation()
                             void handleCopyPrompt(
@@ -626,22 +597,6 @@ export function CanvasPromptLibraryView() {
                         >
                           复制
                         </button>
-                      </div>
-                      <p>{readPromptLibraryText(asset) || '暂无提示词文案'}</p>
-                      <div className="canvas-prompt-library-card-meta">
-                        <Tag>{category ?? '未分类'}</Tag>
-                        <span>使用 {count} 次</span>
-                      </div>
-                      <div className="canvas-prompt-library-card-actions">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            void handleInsertAsset(asset)
-                          }}
-                        >
-                          插入画布
-                        </button>
                         <button
                           type="button"
                           onClick={(event) => {
@@ -651,6 +606,24 @@ export function CanvasPromptLibraryView() {
                         >
                           编辑
                         </button>
+                        <span onClick={(event) => event.stopPropagation()}>
+                          <Popconfirm
+                            title="确定删除这条提示词吗？"
+                            description="删除后无法恢复。"
+                            okText="删除"
+                            cancelText="取消"
+                            okType="danger"
+                            onConfirm={() => void handleDeletePrompt(asset)}
+                          >
+                            <button
+                              type="button"
+                              className="canvas-prompt-library-delete"
+                              aria-label={`删除${asset.title ?? '提示词'}`}
+                            >
+                              删除
+                            </button>
+                          </Popconfirm>
+                        </span>
                       </div>
                     </div>
                   </article>
@@ -668,7 +641,7 @@ export function CanvasPromptLibraryView() {
         </div>
       ) : null}
 
-      {editor && snapshot && (
+      {editor && (
         <PromptLibraryEditorModal
           editor={editor}
           categories={categories}
@@ -746,10 +719,6 @@ function SystemPromptCard({
           </button>
         </div>
         <p>{entry.text}</p>
-        <div className="canvas-prompt-library-card-meta">
-          <Tag>{entry.group}</Tag>
-          <span>系统内置</span>
-        </div>
         <div className="canvas-prompt-library-card-actions">
           <button type="button" onClick={onCopy}>
             复制提示词
@@ -776,7 +745,7 @@ function PromptLibraryEditorModal({
   editor: PromptEditorState
   categories: string[]
   coverUrl: string | null
-  snapshot: CanvasSnapshot
+  snapshot: CanvasSnapshot | null
   saving: boolean
   onChange: (next: PromptEditorState) => void
   onClose: () => void
@@ -842,7 +811,7 @@ function PromptLibraryEditorModal({
                 autoFocus
                 value={editor.title}
                 onChange={(event) => onChange({ ...editor, title: event.target.value })}
-                placeholder="提示词名称"
+                placeholder="不填写时默认为 -"
               />
             </label>
             <div className="canvas-prompt-editor-label canvas-prompt-category-label">
@@ -874,7 +843,7 @@ function PromptLibraryEditorModal({
             )}
             <div className="canvas-prompt-editor-label canvas-prompt-text-label">
               <span>提示词</span>
-              <button type="button" onClick={onPickText}>
+              <button type="button" onClick={onPickText} disabled={!snapshot}>
                 从画布选择文本
               </button>
             </div>
@@ -886,7 +855,7 @@ function PromptLibraryEditorModal({
             />
             <div className="canvas-prompt-editor-source">
               {editor.text
-                ? `来源：${snapshot.nodes.some((node) => nodeText(node, snapshot) === editor.text) ? '画布节点' : '手写'}`
+                ? `来源：${snapshot && snapshot.nodes.some((node) => nodeText(node, snapshot) === editor.text) ? '画布节点' : '手写'}`
                 : '支持手写或从画布选择文本节点'}
             </div>
             <div className="canvas-prompt-editor-label">

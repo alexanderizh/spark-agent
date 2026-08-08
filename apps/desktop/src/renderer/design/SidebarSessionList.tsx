@@ -1727,11 +1727,101 @@ export function SidebarProjectToolbar({
 /* ============================================================
    Main exported component
    ============================================================ */
+export function SidebarProjectsEmptyState({
+  isStartingSession,
+  onCreateProject,
+  onStartSession,
+}: {
+  isStartingSession: boolean
+  onCreateProject: () => void
+  onStartSession: () => void
+}) {
+  const { t } = useI18n()
+
+  return (
+    <div className="empty-compact sidebar-empty-state sidebar-empty-state--projects">
+      <div className="empty-state-mark" aria-hidden="true">
+        <span className="empty-state-mark__glow" />
+        <span className="empty-state-mark__icon">
+          <Icons.FolderOpen size={20} />
+        </span>
+      </div>
+      <div className="empty-title">{t('sidebar.empty.welcomeTitle')}</div>
+      <div className="empty-desc">{t('sidebar.empty.welcomeDesc')}</div>
+
+      <div className="empty-state-actions">
+        <button
+          type="button"
+          className="empty-action-card empty-action-card--primary"
+          onClick={onCreateProject}
+        >
+          <span className="empty-action-card__icon" aria-hidden="true">
+            <Icons.FolderPlus size={18} />
+          </span>
+          <span className="empty-action-card__copy">
+            <strong>{t('sidebar.empty.createProject')}</strong>
+            <small>{t('sidebar.empty.createProjectDesc')}</small>
+          </span>
+          <Icons.ArrowRight className="empty-action-card__arrow" size={15} aria-hidden="true" />
+        </button>
+
+        <button
+          type="button"
+          className="empty-action-card"
+          disabled={isStartingSession}
+          aria-busy={isStartingSession}
+          onClick={onStartSession}
+        >
+          <span className="empty-action-card__icon" aria-hidden="true">
+            {isStartingSession ? (
+              <Icons.Spinner size={18} className="animate-spin" />
+            ) : (
+              <Icons.MessageSquarePlus size={18} />
+            )}
+          </span>
+          <span className="empty-action-card__copy">
+            <strong>
+              {isStartingSession
+                ? t('sidebar.empty.startingSession')
+                : t('sidebar.empty.startSession')}
+            </strong>
+            <small>{t('sidebar.empty.startSessionDesc')}</small>
+          </span>
+          <Icons.ArrowRight className="empty-action-card__arrow" size={15} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="empty-drop-hint" role="note">
+        <span className="empty-drop-hint__icon" aria-hidden="true">
+          <Icons.Upload size={15} />
+        </span>
+        <span>
+          <strong>{t('sidebar.empty.dropFolder')}</strong>
+          <small>{t('sidebar.empty.dropFolderDesc')}</small>
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export function SidebarSessionList() {
   const { t } = useI18n()
   const ctx = useSessionSidebar()
   const { searchSessions } = ctx
+  const { handleNewSession } = ctx
   const { t: appState, setTweak, hasDialogOpen } = useApp()
+  const [isStartingEmptySession, setIsStartingEmptySession] = useState(false)
+
+  const handleStartEmptySession = useCallback(async () => {
+    if (isStartingEmptySession) return
+    setIsStartingEmptySession(true)
+    try {
+      const id = await handleNewSession(null)
+      if (id != null) setTweak('view', 'chat')
+    } finally {
+      setIsStartingEmptySession(false)
+    }
+  }, [handleNewSession, isStartingEmptySession, setTweak])
 
   // Sidebar global filter (status / project / lastActivity / groupBy)
   const [filter, setFilter] = useState<SidebarFilterState>(() => readSidebarFilter())
@@ -2227,21 +2317,11 @@ export function SidebarSessionList() {
           )}
 
           {ctx.workspaces.length === 0 && ctx.sessions.length === 0 ? (
-            <div className="empty-compact sidebar-empty-state sidebar-empty-state--projects">
-              <div className="empty-icon">
-                <Icons.Folder size={18} />
-              </div>
-              <div className="empty-desc empty-desc-actions">
-                <button
-                  type="button"
-                  className="empty-inline-action empty-inline-action-muted"
-                  onClick={() => ctx.setProjectDialog('create')}
-                >
-                  <Icons.FolderPlus size={12} />
-                  {t('sidebar.addProject')}
-                </button>
-              </div>
-            </div>
+            <SidebarProjectsEmptyState
+              isStartingSession={isStartingEmptySession}
+              onCreateProject={() => ctx.setProjectDialog('create')}
+              onStartSession={() => void handleStartEmptySession()}
+            />
           ) : displayGroups.length === 0 ? (
             <div className="empty-compact sidebar-empty-state sidebar-empty-state--filtered">
               <div className="empty-icon">

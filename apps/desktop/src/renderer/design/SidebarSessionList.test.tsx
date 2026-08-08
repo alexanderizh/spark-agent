@@ -9,6 +9,7 @@ import {
   applySessionFilters,
   FlatGroup,
   ProjectSessionGroup,
+  SidebarProjectsEmptyState,
   SidebarProjectToolbar,
 } from './SidebarSessionList'
 import { DEFAULT_SIDEBAR_FILTER } from './SidebarFilterMenu'
@@ -41,6 +42,15 @@ vi.mock('./i18n', () => ({
         'sidebar.projectsToolbar.expandAll': '展开所有项目',
         'sidebar.importHistory': '「从Claude、Codex」导入继续会话',
         'sidebar.addProject': '添加项目',
+        'sidebar.empty.welcomeTitle': '从这里开始',
+        'sidebar.empty.welcomeDesc': '选择一种方式，马上进入你的工作空间',
+        'sidebar.empty.createProject': '新建项目',
+        'sidebar.empty.createProjectDesc': '从本地文件夹开始',
+        'sidebar.empty.startSession': '直接开始会话',
+        'sidebar.empty.startingSession': '正在准备会话…',
+        'sidebar.empty.startSessionDesc': '使用临时会话，不绑定项目',
+        'sidebar.empty.dropFolder': '把文件夹拖到这里',
+        'sidebar.empty.dropFolderDesc': '自动添加为项目',
       })[key] ?? key,
   }),
 }))
@@ -460,5 +470,65 @@ describe('SidebarProjectToolbar', () => {
     act(() => importButton?.click())
 
     expect(onImportHistory).toHaveBeenCalledOnce()
+  })
+})
+
+describe('SidebarProjectsEmptyState', () => {
+  it('exposes project, temporary session, and folder drop entry points', () => {
+    const onCreateProject = vi.fn()
+    const onStartSession = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <SidebarProjectsEmptyState
+          isStartingSession={false}
+          onCreateProject={onCreateProject}
+          onStartSession={onStartSession}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('从这里开始')
+    expect(container.textContent).toContain('把文件夹拖到这里')
+    const actions = container.querySelectorAll<HTMLButtonElement>('.empty-action-card')
+    expect(actions).toHaveLength(2)
+
+    act(() => actions[0]?.click())
+    act(() => actions[1]?.click())
+
+    expect(onCreateProject).toHaveBeenCalledOnce()
+    expect(onStartSession).toHaveBeenCalledOnce()
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('shows a loading state while the temporary session is being created', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <SidebarProjectsEmptyState
+          isStartingSession
+          onCreateProject={() => undefined}
+          onStartSession={() => undefined}
+        />,
+      )
+    })
+
+    const sessionAction = container.querySelector<HTMLButtonElement>(
+      '.empty-action-card:nth-child(2)',
+    )
+    expect(sessionAction?.disabled).toBe(true)
+    expect(sessionAction?.getAttribute('aria-busy')).toBe('true')
+    expect(container.textContent).toContain('正在准备会话…')
+
+    act(() => root.unmount())
+    container.remove()
   })
 })

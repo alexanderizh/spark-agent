@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
+import { MarkdownCodeBlock } from '../../components/MarkdownCodeBlock'
 import { buildRenderHtmlSrcDoc, type HtmlOpenMode } from '../../services/render-html'
 import type { UIBlock } from '../../services/event-mapper'
 import './RenderHtmlBlock.less'
@@ -28,6 +30,14 @@ const DEFAULT_HTML_RENDER_CONTEXT: HtmlRenderContextValue = {
 }
 
 const HtmlRenderContext = createContext<HtmlRenderContextValue>(DEFAULT_HTML_RENDER_CONTEXT)
+
+export function HtmlCodePreview({ code }: { code: string }) {
+  return (
+    <div className="render-html-code-preview">
+      <MarkdownCodeBlock code={code} lang="html" syntaxHighlight />
+    </div>
+  )
+}
 
 export function HtmlRenderProvider({
   value,
@@ -136,24 +146,26 @@ export function RenderHtmlBlock({
               <option value="external">外部浏览器</option>
             </select>
           </label>
-          <button
-            type="button"
+          <Button
+            type="text"
+            size="small"
             className="render-html-action"
+            icon={<Icons.Code size={13} />}
             onClick={() => setSourceOpen((v) => !v)}
           >
-            <Icons.Code size={13} />
             {sourceOpen ? '预览' : '源码'}
-          </button>
+          </Button>
           {!isSidePanel && !isOpenElsewhere && block.status === 'rendered' && (
-            <button
-              type="button"
+            <Button
+              type="text"
+              size="small"
               className="render-html-action"
               aria-label="全屏查看 HTML"
+              icon={<Icons.Maximize size={13} />}
               onClick={() => setFullscreen(true)}
             >
-              <Icons.Maximize size={13} />
               全屏
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -175,12 +187,17 @@ export function RenderHtmlBlock({
         <div className="render-html-source-wrap">
           <div className="render-html-source-actions">
             <span>原始 HTML</span>
-            <button type="button" className="render-html-action" onClick={() => void copySource()}>
-              <Icons.Copy size={13} />
+            <Button
+              type="text"
+              size="small"
+              className="render-html-action"
+              icon={<Icons.Copy size={13} />}
+              onClick={() => void copySource()}
+            >
               {copied ? '已复制' : '复制'}
-            </button>
+            </Button>
           </div>
-          <pre className="render-html-source">{block.html}</pre>
+          <HtmlCodePreview code={block.html} />
         </div>
       ) : block.status === 'pending' ? (
         <div className="render-html-muted-state" role="status">
@@ -194,7 +211,7 @@ export function RenderHtmlBlock({
           <div>{block.error ?? frameError ?? '无法渲染该 HTML 内容'}</div>
           <details>
             <summary>查看原始 HTML</summary>
-            <pre className="render-html-source">{block.html}</pre>
+            <HtmlCodePreview code={block.html} />
           </details>
         </div>
       ) : (
@@ -250,7 +267,7 @@ export function RenderHtmlBlock({
             </div>
             <div className="render-html-fullscreen-body">
               {sourceOpen ? (
-                <pre className="render-html-source">{block.html}</pre>
+                <HtmlCodePreview code={block.html} />
               ) : block.status !== 'rendered' ? (
                 <div className="render-html-muted-state" role="status">
                   等待 HTML 安全校验…

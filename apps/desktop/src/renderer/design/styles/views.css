@@ -2345,6 +2345,7 @@ body.sidebar-resizing {
 /* --- Collapsible content wrapper --- */
 .collapsible-wrap {
   position: relative;
+  max-width: 100%;
 }
 .collapsible-content {
   overflow: hidden;
@@ -4207,11 +4208,192 @@ body.sidebar-resizing {
   padding: 6px;
   border-radius: var(--r-md);
   background: var(--panel);
-  box-shadow: var(--shadow-lg);
   font-weight: 400;
 }
 .composer-model-menu {
   width: min(220px, calc(100vw - 24px));
+  overflow: visible;
+}
+.composer-cli-model-group {
+  position: relative;
+}
+.composer-cli-model-parent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: var(--font-xs);
+  text-align: left;
+}
+.composer-cli-model-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0;
+}
+.composer-cli-model-group-title > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-cli-model-trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  border-radius: var(--r-sm);
+}
+.composer-cli-model-trigger .composer-model-item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.composer-cli-model-trigger-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  color: var(--text-faint);
+}
+.composer-cli-model-trigger:hover,
+.composer-cli-model-trigger:focus-within {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.composer-cli-model-submenu {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(200px, calc(100vw - 24px));
+  max-height: min(320px, calc(100vh - 24px));
+  overflow: hidden;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
+  border-radius: var(--r-md);
+  background: var(--panel);
+}
+.composer-cli-model-submenu-search {
+  display: flex;
+  align-items: center;
+  flex: 0 0 28px;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 4px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.composer-cli-model-submenu-search input {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
+.composer-cli-model-submenu-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+.composer-cli-model-submenu-empty {
+  padding: 8px 6px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.composer-cli-model-submenu-title {
+  padding: 5px 6px 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.composer-cli-model-submenu .composer-cli-host-option {
+  min-height: 28px;
+  padding: 5px 6px;
+  margin-bottom: 4px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.composer-cli-model-subgroup + .composer-cli-model-subgroup {
+  margin-top: 4px;
+}
+.composer-cli-model-subgroup .composer-model-group-title {
+  padding: 5px 6px 3px;
+  font-size: 11px;
+}
+.composer-cli-model-submenu .composer-model-item .composer-menu-item {
+  min-height: 28px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: 8px;
+  padding-right: 8px;
+  gap: 8px;
+  font-size: 12px;
+}
+.composer-cli-model-submenu .composer-model-pin {
+  width: 18px;
+  height: 18px;
+  margin-right: 3px;
+}
+
+/* CLI nested menus are also used by the canvas agent picker, which does not
+   load ChatView.less. Keep the row background and label layout available from
+   the shared stylesheet so both pickers render the same single hover layer. */
+.composer-model-menu .composer-model-item,
+.composer-cli-model-submenu .composer-model-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+}
+
+.composer-model-menu .composer-model-item .composer-menu-item,
+.composer-cli-model-submenu .composer-model-item .composer-menu-item {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 8px;
+}
+
+.composer-model-menu .composer-model-item .composer-menu-item,
+.composer-model-menu .composer-model-item .composer-menu-item:hover,
+.composer-model-menu .composer-model-item .composer-menu-item.active,
+.composer-cli-model-submenu .composer-model-item .composer-menu-item,
+.composer-cli-model-submenu .composer-model-item .composer-menu-item:hover,
+.composer-cli-model-submenu .composer-model-item .composer-menu-item.active {
+  background: transparent;
+}
+
+.composer-model-menu .composer-model-item:hover,
+.composer-model-menu .composer-model-item:focus-within,
+.composer-model-menu .composer-model-item.is-active,
+.composer-cli-model-submenu .composer-model-item:hover,
+.composer-cli-model-submenu .composer-model-item:focus-within,
+.composer-cli-model-submenu .composer-model-item.is-active {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.composer-cli-model-trigger .composer-model-item,
+.composer-cli-model-trigger .composer-model-item:hover,
+.composer-cli-model-trigger .composer-model-item:focus-within,
+.composer-cli-model-trigger .composer-model-item.is-active {
+  background: transparent;
+}
+
+.composer-model-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .composer-menu-item {
   display: flex;

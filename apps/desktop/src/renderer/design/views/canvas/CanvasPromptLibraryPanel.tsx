@@ -16,6 +16,7 @@ import {
   canvasPromptExampleUrl,
 } from '../../assets/remoteAssetUrls'
 import { RemoteAssetImage } from '../../components/RemoteAssetImage'
+import type { GlobalPromptLibraryItem } from './canvasPromptLibraryStore'
 import './canvas-prompt-library.less'
 
 const promptExample = (fileName: string): string => canvasPromptExampleUrl(fileName)
@@ -48,7 +49,7 @@ const GROUP_EXAMPLE_IMAGE_SRC: Record<string, string> = {
 
 export type CanvasPromptLibraryEntry = {
   id: string
-  source: 'project' | 'camera' | 'performance'
+  source: 'global' | 'project' | 'camera' | 'performance'
   group: string
   category?: string | undefined
   label: string
@@ -106,7 +107,9 @@ const GROUP_CATEGORY_ORDER = [
 ] as const
 
 function getEntryCategoryKey(entry: CanvasPromptLibraryEntry): PromptLibraryCategoryKey {
-  if (entry.source === 'project') return `project:${entry.category ?? '未分类'}`
+  if (entry.source === 'project' || entry.source === 'global') {
+    return `project:${entry.category ?? '未分类'}`
+  }
   return `group:${entry.group}`
 }
 
@@ -181,8 +184,26 @@ export function buildCanvasPromptLibraryEntries(assets: CanvasAsset[]): CanvasPr
   return [...projectEntries, ...cameraEntries, ...performanceEntries]
 }
 
+export function buildGlobalPromptLibraryEntries(
+  items: readonly GlobalPromptLibraryItem[],
+): CanvasPromptLibraryEntry[] {
+  return items
+    .filter((item) => item.text.trim())
+    .map((item): CanvasPromptLibraryEntry => ({
+      id: `global:${item.id}`,
+      source: 'global',
+      group: item.category || '未分类',
+      category: item.category || '未分类',
+      label: item.title || '-',
+      text: item.text,
+      coverUrl: item.coverUrl ?? undefined,
+      tags: item.tags,
+    }))
+}
+
 export function CanvasPromptLibraryPanel({
   assets,
+  globalEntries = [],
   title = '提示词库',
   subtitle = '项目库 + 电影镜头/风格/表演词',
   placeholder = '搜索提示词、镜头、动作、表情',
@@ -193,6 +214,7 @@ export function CanvasPromptLibraryPanel({
   showSystemPromptFilter = false,
 }: {
   assets: CanvasAsset[]
+  globalEntries?: CanvasPromptLibraryEntry[]
   title?: string
   subtitle?: string
   placeholder?: string
@@ -205,7 +227,10 @@ export function CanvasPromptLibraryPanel({
   const [query, setQuery] = useState('')
   const [hideSystemPrompts, setHideSystemPrompts] = useState(readHideSystemPrompts)
   const [activeCategory, setActiveCategory] = useState<PromptLibraryCategoryKey>('all')
-  const entries = useMemo(() => buildCanvasPromptLibraryEntries(assets), [assets])
+  const entries = useMemo(
+    () => [...globalEntries, ...buildCanvasPromptLibraryEntries(assets)],
+    [assets, globalEntries],
+  )
   const visibleEntries = useMemo(
     () => filterPromptLibraryEntries(entries, hideSystemPrompts),
     [entries, hideSystemPrompts],

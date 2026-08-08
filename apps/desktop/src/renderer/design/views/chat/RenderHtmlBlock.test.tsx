@@ -1,7 +1,7 @@
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { HtmlRenderProvider, RenderHtmlBlock } from './RenderHtmlBlock'
+import { HtmlCodePreview, HtmlRenderProvider, RenderHtmlBlock } from './RenderHtmlBlock'
 
 const block = {
   kind: 'html_block' as const,
@@ -33,6 +33,15 @@ describe('RenderHtmlBlock', () => {
     expect(markup).toContain('HTML 渲染失败')
     expect(markup).toContain('非法标签')
     expect(markup).not.toContain('<iframe')
+  })
+
+  it('uses the HTML code preview style for source content', () => {
+    const markup = renderToStaticMarkup(<HtmlCodePreview code={block.html} />)
+
+    expect(markup).toContain('render-html-code-preview')
+    expect(markup).toContain('md-code-block')
+    expect(markup).toContain('md-code-lang')
+    expect(markup).toContain('>html</span>')
   })
 
   it('does not mount an iframe before the tool result passes validation', () => {
