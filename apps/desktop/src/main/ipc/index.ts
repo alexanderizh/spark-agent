@@ -140,6 +140,7 @@ import {
   MediaRouterService,
   MediaModelCatalogService,
   MediaTaskRuntimeService,
+  buildVariables,
   CanvasTextProviderError,
   CanvasTextTimeoutError,
   generateCanvasText,
@@ -159,7 +160,11 @@ import * as keystore from '@spark/shared/keystore'
 import { ScheduledTaskService } from '@spark/agent-runtime'
 import type { TaskExecutorFn } from '@spark/agent-runtime'
 import { runSessionScheduledTaskTurn } from './scheduled-task-executor.js'
-import { compileMediaRequest } from '@spark/agent-runtime'
+import {
+  compileInvocationRequest,
+  compileMediaRequest,
+  legacyInvocationRequest,
+} from '@spark/agent-runtime'
 import type {
   CommandParseResponse,
   SessionAgentAdapter,
@@ -199,6 +204,8 @@ import type {
   VideoProcessRequest,
   VideoProcessResponse,
   VideoProcessProgress,
+  CanvasMediaPreviewTemplateInvocationResponse,
+  MediaCapabilityId,
 } from '@spark/protocol'
 import type {
   CanvasAssetDownloadBatchResultItem,
@@ -207,7 +214,12 @@ import type {
   SessionListResponse,
   SystemNotificationNavigateRequest,
 } from '@spark/protocol'
-import { MediaModelManifestSchema, isAutoRouterProvider } from '@spark/protocol'
+import {
+  MediaModelManifestSchema,
+  isAutoRouterProvider,
+  migrateMediaModelManifestToV2,
+  validateMediaModelManifestSemantics,
+} from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
 import type {
   SessionEventHandler,
@@ -223,10 +235,7 @@ import type {
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { isSafeFilePathAllowed, toSafeFileUrl } from '../services/SafeFileProtocol.js'
 import { isPathStrictlyInsideRoot } from '../services/CanvasProjectPath.js'
-import {
-  PASTED_IMAGE_MAX_EDGE,
-  resizePastedImageBuffer,
-} from '../services/PastedImageResizer.js'
+import { PASTED_IMAGE_MAX_EDGE, resizePastedImageBuffer } from '../services/PastedImageResizer.js'
 import { collectCanvasVideoWorkbenchPaths } from '../services/canvasVideoWorkbenchPaths.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
@@ -3625,6 +3634,133 @@ export function registerAllIpcHandlers(): void {
       droppedParams: result.droppedParams,
       warnings: result.warnings,
       validationIssues: result.validationIssues,
+    }
+  })
+
+  typedIpcHandle('canvas:media:preview-template-invocation', async (req) => {
+    const invalid = (
+      issues: Array<{ path: string; message: string }>,
+      warnings: string[] = [],
+    ): CanvasMediaPreviewTemplateInvocationResponse => ({
+      valid: false,
+      issues,
+      warnings,
+    })
+    try {
+      const manifest = migrateMediaModelManifestToV2(req.manifest)
+      const parsed = MediaModelManifestSchema.safeParse(manifest)
+      if (!parsed.success) {
+        return invalid(
+          parsed.error.issues.map((issue) => ({
+            path: issue.path.join('.') || 'manifest',
+            message: issue.message,
+          })),
+        )
+      }
+      const semanticIssues = validateMediaModelManifestSemantics(parsed.data)
+      if (semanticIssues.length > 0) {
+        return invalid(
+          semanticIssues.map((issue) => ({
+            path: issue.path?.join('.') || issue.code,
+            message: issue.message,
+          })),
+        )
+      }
+      const capability = parsed.data.capabilities.find((item) => item.id === req.capabilityId)
+      if (!capability) {
+        return invalid([{ path: 'capabilityId', message: `capability ${req.capabilityId} 不存在` }])
+      }
+      const modelId = req.modelId?.trim() || parsed.data.modelId
+      const compiled = compileMediaRequest({
+        manifest: parsed.data,
+        capability,
+        modelId,
+        input: {
+          ...(req.prompt !== undefined ? { prompt: req.prompt } : {}),
+          modelParams: req.modelParams,
+        },
+        mode: 'canvas',
+      })
+      const variables = buildVariables(
+        {
+          operation: 'text_to_image',
+          capability: req.capabilityId as MediaCapabilityId,
+          ...(req.prompt !== undefined ? { prompt: req.prompt } : {}),
+          modelParams: req.modelParams,
+          outputDir: '',
+        },
+        capability,
+        modelId,
+        compiled.providerParams,
+        compiled.canonicalParams,
+      )
+      const request =
+        parsed.data.invocation.request ??
+        legacyInvocationRequest({
+          endpoint: parsed.data.invocation.endpoint,
+          method: parsed.data.invocation.method,
+          headers: parsed.data.invocation.headers,
+          requestTemplate: parsed.data.invocation.requestTemplate,
+          contentType: parsed.data.invocation.contentType,
+        })
+      const compiledInvocation = await compileInvocationRequest(request, {
+        apiEndpoint: req.apiEndpoint ?? '',
+        apiKey: '[REDACTED]',
+        variables,
+        inputFiles: [],
+        defaultAuth:
+          request.auth?.kind === 'inherit'
+            ? { kind: 'bearer', credentialRef: 'apiKey' }
+            : request.auth,
+      })
+      const body =
+        compiledInvocation.body === undefined
+          ? undefined
+          : typeof compiledInvocation.body === 'string'
+            ? compiledInvocation.body
+            : `[binary body bytes=${compiledInvocation.body.byteLength}]`
+      const headers = Object.fromEntries(
+        Object.entries(compiledInvocation.headers).map(([key, value]) => [
+          key,
+          /authorization|api[-_]?key|cookie|signature/i.test(key) ? '[REDACTED]' : value,
+        ]),
+      )
+      const warnings = [
+        ...compiled.warnings.map((warning) => warning.message),
+        ...compiled.droppedParams.map((item) => `${item.name}: ${item.reason}`),
+      ]
+      const issues = compiled.validationIssues.map((issue) => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+      }))
+      const valid = compiled.validationIssues.every((issue) => issue.severity !== 'error')
+      log.info(
+        `[MEDIA_TEMPLATE_PREVIEW] manifest=${parsed.data.id} capability=${req.capabilityId} ` +
+          `method=${compiledInvocation.method} url=${compiledInvocation.url} valid=${valid}`,
+      )
+      return {
+        valid,
+        request: {
+          method: compiledInvocation.method,
+          url: compiledInvocation.url,
+          headers,
+          ...(body !== undefined ? { body } : {}),
+        },
+        ...(parsed.data.invocation.response.kind === 'task_poll' &&
+        parsed.data.invocation.response.poll
+          ? { poll: parsed.data.invocation.response.poll }
+          : {}),
+        warnings,
+        issues,
+      }
+    } catch (error) {
+      log.warn(
+        `[MEDIA_TEMPLATE_PREVIEW] failed manifest=${req.manifest.id} ` +
+          `error=${error instanceof Error ? error.message : String(error)}`,
+      )
+      return invalid([
+        { path: 'invocation', message: error instanceof Error ? error.message : String(error) },
+      ])
     }
   })
 
@@ -8544,32 +8680,26 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle(
     'canvas:task:audio-trim',
     async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {
-      return handleVideoProcess(
-        { ...req, kind: 'audio', operation: 'trim' },
-        (progress) => {
-          pushStreamEvent('stream:video:process-progress', {
-            requestId: req.requestId,
-            percent: progress.percent,
-            stage: `frame=${progress.frame} fps=${progress.fps}`,
-          })
-        },
-      )
+      return handleVideoProcess({ ...req, kind: 'audio', operation: 'trim' }, (progress) => {
+        pushStreamEvent('stream:video:process-progress', {
+          requestId: req.requestId,
+          percent: progress.percent,
+          stage: `frame=${progress.frame} fps=${progress.fps}`,
+        })
+      })
     },
   )
 
   typedIpcHandle(
     'canvas:task:audio-speed',
     async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {
-      return handleVideoProcess(
-        { ...req, kind: 'audio', operation: 'adjustSpeed' },
-        (progress) => {
-          pushStreamEvent('stream:video:process-progress', {
-            requestId: req.requestId,
-            percent: progress.percent,
-            stage: `frame=${progress.frame} fps=${progress.fps}`,
-          })
-        },
-      )
+      return handleVideoProcess({ ...req, kind: 'audio', operation: 'adjustSpeed' }, (progress) => {
+        pushStreamEvent('stream:video:process-progress', {
+          requestId: req.requestId,
+          percent: progress.percent,
+          stage: `frame=${progress.frame} fps=${progress.fps}`,
+        })
+      })
     },
   )
 

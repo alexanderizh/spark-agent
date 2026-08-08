@@ -68,6 +68,7 @@ import {
   DEFAULT_VIDEO_POLL_TIMEOUT_MS,
   isMediaProviderKind,
   createBasicCustomMediaManifest,
+  migrateMediaModelManifestToV2,
   ProviderMediaModelRefSchema,
   MediaModelManifestSchema,
   validateMediaModelManifestSemantics,
@@ -95,6 +96,8 @@ import type {
   ProviderModelType,
   CanvasMediaPruneModelParamsByInlineManifestRequest,
   CanvasMediaPruneModelParamsByInlineManifestResponse,
+  CanvasMediaPreviewTemplateInvocationRequest,
+  CanvasMediaPreviewTemplateInvocationResponse,
   ModelProfile,
   RoutingAdapter,
   RoutingCandidateRef,
@@ -585,6 +588,10 @@ function normalizeMediaModelRefs(refs: ProviderMediaModelRef[]): ProviderMediaMo
     const next: ProviderMediaModelRef = { manifestId, enabled: ref.enabled !== false }
     if (ref.modelId?.trim()) next.modelId = ref.modelId.trim()
     if (ref.defaults !== undefined) next.defaults = ref.defaults
+    if (ref.templateManifestId?.trim()) next.templateManifestId = ref.templateManifestId.trim()
+    if (ref.displayName?.trim()) next.displayName = ref.displayName.trim()
+    if (ref.adapterMode) next.adapterMode = ref.adapterMode
+    if (ref.capabilityOverrides !== undefined) next.capabilityOverrides = ref.capabilityOverrides
     if (ref.manifest !== undefined) next.manifest = ref.manifest
     result.push(next)
   }
@@ -2604,6 +2611,10 @@ export function ProviderEditPanel({
     useState<CanvasMediaPruneModelParamsByInlineManifestResponse | null>(null)
   const [dryRunError, setDryRunError] = useState('')
   const [dryRunLoading, setDryRunLoading] = useState(false)
+  const [invocationPreview, setInvocationPreview] =
+    useState<CanvasMediaPreviewTemplateInvocationResponse | null>(null)
+  const [invocationPreviewError, setInvocationPreviewError] = useState('')
+  const [invocationPreviewLoading, setInvocationPreviewLoading] = useState(false)
   // 自定义上下文窗口的"意图"状态：与 form.contextWindow 数值解耦，
   // 避免用户清空输入框时下拉跳回"默认"并卸载输入框。
   const [isCustomContextWindow, setIsCustomContextWindow] = useState(false)
@@ -2645,6 +2656,7 @@ export function ProviderEditPanel({
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: getProviderApiKey } = useIpcInvoke('provider:get-api-key')
   const { invoke: listMediaModels } = useIpcInvoke('canvas:media-models:list')
+  const { invoke: previewTemplateInvocation } = useIpcInvoke('canvas:media:preview-template-invocation')
   const { invoke: testConnection } = useIpcInvoke('provider:test-connection')
   const { invoke: fetchProviderModels } = useIpcInvoke('provider:fetch-models')
 
@@ -2920,6 +2932,13 @@ export function ProviderEditPanel({
     [form.modelType, form.provider],
   )
   const mediaCatalogForForm = useMemo(() => {
+    // 自定义媒体渠道不应混入应用内置目录；其模型来源只能是用户手填或渠道 /models。
+    if (
+      (form.modelType === 'image' || form.modelType === 'video') &&
+      form.mediaProvider === 'custom'
+    ) {
+      return []
+    }
     const byType = mediaCatalog.filter((model) => mediaModelMatchesType(model, form.modelType))
     const providerFiltered = byType.filter((model) => mediaModelMatchesProvider(model, form))
     if (form.modelType === 'image' || form.modelType === 'video') return providerFiltered
@@ -2975,6 +2994,9 @@ export function ProviderEditPanel({
   const templateConfigured = form.presetId !== 'custom'
   const effectiveMediaProvider = (form.mediaProvider ||
     mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
+  const isCustomMediaChannel =
+    (form.modelType === 'image' || form.modelType === 'video') &&
+    effectiveMediaProvider === 'custom'
   const showMediaDefaults = useMemo(() => {
     if (form.modelType === 'image') return true
     if (form.modelType === 'voice') return true
@@ -3060,11 +3082,10 @@ export function ProviderEditPanel({
   const addCustomMediaModel = (rawModelId: string) => {
     const modelId = rawModelId.trim()
     if (!modelId) return
-    const manifestId = `${CUSTOM_MODEL_REF_PREFIX}${modelId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`
     setForm((prev) => {
-      // 已存在（内置或自定义）同名引用则不重复添加
+      // 同一 Provider 内的渠道模型 ID 必须唯一；不同 Provider 可以使用同名模型。
       const exists = prev.mediaModelRefs.some(
-        (ref) => ref.manifestId === manifestId || ref.modelId?.trim() === modelId,
+        (ref) => ref.modelId?.trim() === modelId,
       )
       const existing = new Map(prev.mediaModelRefs.map((ref) => [ref.manifestId, ref]))
       if (!exists) {
@@ -3080,6 +3101,8 @@ export function ProviderEditPanel({
         ) {
           manifest = createBasicCustomMediaManifest({ modelId, modelType: prev.modelType, mode })
         }
+        const manifestId = manifest?.id
+          ?? `${CUSTOM_MODEL_REF_PREFIX}${modelId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`
         existing.set(manifestId, {
           manifestId,
           modelId,
@@ -3109,6 +3132,7 @@ export function ProviderEditPanel({
         ? createBasicCustomMediaManifest({
             modelId: ref.modelId ?? ref.manifestId.replace(/^custom:/, ''),
             modelType: form.modelType,
+            manifestId: ref.manifestId,
             mode:
               form.mediaApiType === 'async' ||
               (form.mediaApiType === 'auto' && form.modelType === 'video')
@@ -3116,8 +3140,53 @@ export function ProviderEditPanel({
                 : 'sync',
           })
         : null
-    const manifest = ref.manifest ?? fallback
+    const manifest = ref.manifest
+      ? migrateMediaModelManifestToV2(ref.manifest)
+      : fallback
+        ? migrateMediaModelManifestToV2(fallback)
+        : null
     if (!manifest) return
+    setEditingCustomManifestId(ref.manifestId)
+    setCustomManifestDraft(JSON.stringify(manifest, null, 2))
+    setCustomManifestError('')
+  }
+
+  const openNewCustomManifestEditor = () => {
+    if (form.modelType !== 'image' && form.modelType !== 'video') return
+    const modelId = form.defaultModel.trim() || `${form.modelType}-model`
+    const mode =
+      form.mediaApiType === 'async' ||
+      (form.mediaApiType === 'auto' && form.modelType === 'video')
+        ? 'async_polling'
+        : 'sync'
+    const manifest = migrateMediaModelManifestToV2(
+      createBasicCustomMediaManifest({ modelId, modelType: form.modelType, mode }),
+    )
+    const ref: ProviderMediaModelRef = {
+      manifestId: manifest.id,
+      modelId,
+      enabled: true,
+      manifest,
+    }
+    const existing = form.mediaModelRefs.find(
+      (item) => item.manifestId === ref.manifestId || item.modelId?.trim() === modelId,
+    )
+    if (existing) {
+      openCustomManifestEditor(existing)
+      return
+    }
+    setForm((prev) => ({
+      ...prev,
+      mediaProvider: 'custom',
+      presetId: 'custom',
+      mediaModelRefs: [...prev.mediaModelRefs, ref],
+      mediaCapabilities: uniqPreserveOrder([
+        ...prev.mediaCapabilities,
+        ...capabilitiesForModelType(prev.modelType),
+      ]) as MediaCapabilityId[],
+      defaultModel: prev.defaultModel.trim() || modelId,
+      modelIds: uniqPreserveOrder([modelId, ...prev.modelIds]),
+    }))
     setEditingCustomManifestId(ref.manifestId)
     setCustomManifestDraft(JSON.stringify(manifest, null, 2))
     setCustomManifestError('')
@@ -3126,7 +3195,9 @@ export function ProviderEditPanel({
   const saveCustomManifestDraft = () => {
     if (!editingCustomManifestId) return
     try {
-      const manifest = JSON.parse(customManifestDraft) as MediaModelManifest
+      const manifest = migrateMediaModelManifestToV2(
+        JSON.parse(customManifestDraft) as MediaModelManifest,
+      )
       // 双重校验：Zod schema + semantic 校验（id 唯一性 / capability 数量 / 跨字段引用等）。
       const schemaResult = MediaModelManifestSchema.safeParse(manifest)
       if (!schemaResult.success) {
@@ -3147,10 +3218,11 @@ export function ProviderEditPanel({
         return
       }
       const current = form.mediaModelRefs.find((ref) => ref.manifestId === editingCustomManifestId)
+      const nextManifestId = manifest.id.trim()
       const parsed = ProviderMediaModelRefSchema.safeParse({
         ...current,
-        manifestId: editingCustomManifestId,
-        modelId: current?.modelId ?? manifest.modelId,
+        manifestId: nextManifestId,
+        modelId: manifest.modelId,
         manifest,
       })
       if (!parsed.success) {
@@ -3161,11 +3233,24 @@ export function ProviderEditPanel({
         )
         return
       }
+      // 结构化适配器是实际调用契约的来源：保存 async_polling 模板时，
+      // 父表单必须同步切换到异步任务轮询，否则界面虽显示已配置，提交时仍会按同步协议运行。
+      const manifestApiType: MediaApiType =
+        manifest.invocation.mode === 'sync'
+          ? 'sync'
+          : manifest.invocation.mode === 'async_polling' ||
+              manifest.invocation.mode === 'async_callback' ||
+              manifest.invocation.mode === 'file_job'
+            ? 'async'
+            : 'auto'
       setForm((prev) => ({
         ...prev,
         mediaModelRefs: prev.mediaModelRefs.map((ref) =>
           ref.manifestId === editingCustomManifestId ? parsed.data : ref,
         ),
+        mediaApiType: manifestApiType,
+        defaultModel: prev.defaultModel.trim() || manifest.modelId,
+        modelIds: uniqPreserveOrder([manifest.modelId, ...prev.modelIds]),
       }))
       setEditingCustomManifestId(null)
       setCustomManifestDraft('')
@@ -3231,6 +3316,55 @@ export function ProviderEditPanel({
       setDryRunError(err instanceof Error ? err.message : 'dry-run 调用失败')
     } finally {
       setDryRunLoading(false)
+    }
+  }
+
+  const runInvocationPreview = async () => {
+    setInvocationPreviewError('')
+    setInvocationPreview(null)
+    let manifestObj: MediaModelManifest
+    try {
+      manifestObj = JSON.parse(customManifestDraft) as MediaModelManifest
+    } catch (err) {
+      setInvocationPreviewError(
+        err instanceof Error ? `manifest JSON 解析失败：${err.message}` : 'manifest JSON 解析失败',
+      )
+      return
+    }
+    const capabilityId = manifestObj.capabilities?.[0]?.id
+    if (!capabilityId) {
+      setInvocationPreviewError('manifest 第一个 capability 缺少 id')
+      return
+    }
+    let paramsObj: Record<string, unknown>
+    try {
+      paramsObj = dryRunInput.trim().length === 0 ? {} : JSON.parse(dryRunInput)
+    } catch (err) {
+      setInvocationPreviewError(
+        err instanceof Error
+          ? `modelParams JSON 解析失败：${err.message}`
+          : 'modelParams JSON 解析失败',
+      )
+      return
+    }
+    setInvocationPreviewLoading(true)
+    try {
+      const request: CanvasMediaPreviewTemplateInvocationRequest = {
+        manifest: manifestObj,
+        capabilityId,
+        modelId: manifestObj.modelId,
+        apiEndpoint: form.endpoint.trim() || undefined,
+        prompt: typeof paramsObj.prompt === 'string' ? paramsObj.prompt : undefined,
+        modelParams: paramsObj,
+      }
+      const result = (await previewTemplateInvocation(
+        request,
+      )) as CanvasMediaPreviewTemplateInvocationResponse
+      setInvocationPreview(result)
+    } catch (err) {
+      setInvocationPreviewError(err instanceof Error ? err.message : '请求预览失败')
+    } finally {
+      setInvocationPreviewLoading(false)
     }
   }
 
@@ -3568,9 +3702,11 @@ export function ProviderEditPanel({
   const isDedicatedMediaType = isMediaProviderModelType(form.modelType)
   const isChatModel = form.modelType === 'multimodal'
   const mediaPanelVisible = isDedicatedMediaType || (isChatModel && form.mediaGenerationEnabled)
-  // 自定义模型协议尚未完成验证，暂时不在任何多媒体配置中开放输入入口；
-  // 已保存的自定义引用仍继续展示，避免编辑旧配置时丢失信息。
-  const showCustomMediaModelInput = false
+  // 专职多媒体模型必须始终提供适配器入口：新建 Provider 没有已有引用时，
+  // 先从这里添加模型 ID，再进入「编辑协议」配置模板请求。
+  // 对话模型的附加生图能力仍沿用内置目录，避免改变原有配置流程。
+  const showCustomMediaModelInput =
+    form.modelType === 'image' || form.modelType === 'video'
 
   return (
     <Drawer
@@ -3618,6 +3754,7 @@ export function ProviderEditPanel({
                 onChange={(v) => {
                   const modelType = v as ProviderModelType
                   const isDedicatedMedia = isMediaProviderModelType(modelType)
+                  if (isDedicatedMedia) setAdvancedOpen(true)
                   setFetchedModels([])
                   setForm((prev) => {
                     const supportsMediaConfig =
@@ -3884,7 +4021,7 @@ export function ProviderEditPanel({
                     }}
                     placeholder="例：claude-sonnet-4-20250514"
                   />
-                  {isChatModel &&
+                  {(isChatModel || isCustomMediaChannel) &&
                     (fetchedModelIds.length > 0 ? (
                       <Dropdown
                         menu={{ items: [] }}
@@ -3965,13 +4102,13 @@ export function ProviderEditPanel({
                       </Button>
                     ))}
                 </div>
-                {isChatModel && (
+                {(isChatModel || isCustomMediaChannel) && (
                   <span className="pv_form_hint">
                     {fetchingModels
                       ? '正在获取模型列表…'
-                      : fetchedModelIds.length > 0
-                        ? `已获取 ${fetchedModelIds.length} 个模型；点击右侧箭头搜索、选择默认模型`
-                        : '支持直接输入模型 ID；点击右侧按钮获取供应商支持的模型列表'}
+                        : fetchedModelIds.length > 0
+                        ? `已从渠道 /models 获取 ${fetchedModelIds.length} 个模型；可在下方模型清单中添加`
+                        : '支持手动输入模型 ID，或点击右侧按钮调用渠道 /models'}
                   </span>
                 )}
               </div>
@@ -4035,6 +4172,25 @@ export function ProviderEditPanel({
                             }))
                           }
                         />
+                        {isCustomMediaChannel && (
+                          <div className="pv_custom_adapter_entry">
+                            <div>
+                              <strong>自定义渠道适配器</strong>
+                              <span>配置提交、鉴权、Body、上传、轮询、参数和错误契约</span>
+                            </div>
+                            <Button
+                              type="primary"
+                              icon={<Icons.Settings size={13} />}
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                openNewCustomManifestEditor()
+                              }}
+                            >
+                              配置自定义适配器
+                            </Button>
+                          </div>
+                        )}
 
                         <label className="pv_form_label">模型清单</label>
                         <div className="pv_media_model_refs">
@@ -4047,6 +4203,47 @@ export function ProviderEditPanel({
                             onToggleModel={toggleMediaModelRef}
                             onSetDefaultModel={setMediaDefaultModel}
                           />
+
+                          {isCustomMediaChannel && fetchedModels.length > 0 && (
+                            <div className="pv_media_manifest_list">
+                              <div className="pv_form_hint" style={{ marginBottom: 6 }}>
+                                渠道 /models 返回的模型（添加后可编辑协议）
+                              </div>
+                              {fetchedModels.map((model) => {
+                                const added = customModelRefs.some(
+                                  (ref) => ref.modelId?.trim() === model.id.trim(),
+                                )
+                                return (
+                                  <div
+                                    key={`fetched-${model.id}`}
+                                    className="pv_media_manifest_item pv_media_manifest_item_static"
+                                  >
+                                    <div className="pv_media_manifest_main">
+                                      <div className="pv_media_manifest_title">
+                                        <span>{model.id}</span>
+                                        <Tag size="middle" color="blue">
+                                          渠道返回
+                                        </Tag>
+                                      </div>
+                                      {model.ownedBy && (
+                                        <div className="pv_media_manifest_meta">
+                                          owned_by: {model.ownedBy}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <Button
+                                      size="middle"
+                                      type={added ? 'text' : 'primary'}
+                                      disabled={added}
+                                      onClick={() => addCustomMediaModel(model.id)}
+                                    >
+                                      {added ? '已添加' : '添加'}
+                                    </Button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
 
                           {/* ─── 自定义模型引用（不在内置目录里，可手动增删） ─── */}
                           {customModelRefs.length > 0 && (
@@ -4123,8 +4320,10 @@ export function ProviderEditPanel({
                         {showCustomMediaModelInput && (
                           <>
                             <label className="pv_form_label">
-                              添加自定义模型
-                              <span className="pv_form_sub">直接输入模型 ID 添加</span>
+                              自定义模型 / 适配器
+                              <span className="pv_form_sub">
+                                输入模型 ID 添加后，点击「编辑协议」配置请求模板
+                              </span>
                             </label>
                             <div className="pv_custom_model_add">
                               <Input
@@ -4651,17 +4850,23 @@ export function ProviderEditPanel({
       </Modal>
       <Modal
         open={editingCustomManifestId != null}
-        title="自定义模型调用协议"
+        title="自定义多媒体适配器编辑器"
         okText="检查并保存"
         cancelText="取消"
-        width={780}
+        width={1180}
+        centered
+        className="pv_custom_adapter_modal"
+        // The editor owns the scroll area; let the modal shell size itself to the viewport.
+        paddings={{ desktop: 0 }}
+        styles={{ body: { padding: 0, maxHeight: 'none', overflow: 'hidden' } }}
         onOk={saveCustomManifestDraft}
         onCancel={() => {
           setEditingCustomManifestId(null)
           setCustomManifestError('')
         }}
       >
-        {(() => {
+        <div className="pv_custom_adapter_modal_body">
+          {(() => {
           // 仅当 raw JSON 可解析为合法对象时，渲染结构化 Contract 编辑器；解析失败时
           // 仅显示 textarea，让用户先用 JSON 修复语法错误。
           let parsedManifest: MediaModelManifest | null = null
@@ -4689,13 +4894,18 @@ export function ProviderEditPanel({
             </details>
           ) : null
         })()}
-        <textarea
-          className="pv_manifest_editor"
-          value={customManifestDraft}
-          onChange={(event) => setCustomManifestDraft(event.target.value)}
-          spellCheck={false}
-          aria-label="自定义模型 Manifest JSON"
-        />
+        <details style={{ marginTop: 12 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+            高级 Manifest JSON（可导入 / 导出 / 手动修复）
+          </summary>
+          <textarea
+            className="pv_manifest_editor"
+            value={customManifestDraft}
+            onChange={(event) => setCustomManifestDraft(event.target.value)}
+            spellCheck={false}
+            aria-label="自定义模型 Manifest JSON"
+          />
+        </details>
         {customManifestError && (
           <Alert
             type="error"
@@ -4703,6 +4913,48 @@ export function ProviderEditPanel({
             description={<pre className="pv_manifest_error">{customManifestError}</pre>}
           />
         )}
+        <details style={{ marginTop: 12 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+            请求预览：只编译，不发起网络调用
+          </summary>
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>
+              使用上方 Dry-run 的示例参数，在主进程内编译最终 URL、鉴权和请求体。API Key 仅以占位符参与编译，不会显示真实密钥，也不会请求 Provider。
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={runInvocationPreview}
+                disabled={invocationPreviewLoading}
+                style={{ padding: '4px 12px', fontSize: 12 }}
+              >
+                {invocationPreviewLoading ? '编译中…' : '编译请求预览'}
+              </button>
+              {invocationPreviewError && (
+                <span style={{ color: '#cf1322', fontSize: 12 }}>{invocationPreviewError}</span>
+              )}
+            </div>
+            {invocationPreview && (
+              <div style={{ marginTop: 8 }}>
+                <Tag color={invocationPreview.valid ? 'green' : 'red'}>
+                  {invocationPreview.valid ? '请求结构有效' : '请求结构无效'}
+                </Tag>
+                <pre className="pv_manifest_error" style={{ maxHeight: 260, marginTop: 6 }}>
+                  {JSON.stringify(
+                    {
+                      request: invocationPreview.request,
+                      poll: invocationPreview.poll,
+                      warnings: invocationPreview.warnings,
+                      issues: invocationPreview.issues,
+                    },
+                    null,
+                    2,
+                  )}
+                </pre>
+              </div>
+            )}
+          </div>
+        </details>
         <details style={{ marginTop: 12 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
             Dry-run 预览：用当前 manifest 裁剪一段示例 modelParams（不需要先保存）
@@ -4791,7 +5043,8 @@ export function ProviderEditPanel({
               </div>
             )}
           </div>
-        </details>
+          </details>
+        </div>
       </Modal>
     </Drawer>
   )

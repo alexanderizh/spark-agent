@@ -4,15 +4,29 @@ export interface BasicCustomMediaManifestInput {
   modelId: string
   modelType: 'image' | 'video'
   mode: 'sync' | 'async_polling'
+  /** Persisted id for editing legacy manifests. Omit when creating a new manifest. */
+  manifestId?: string
+}
+
+export function createCustomMediaManifestId(
+  modelId: string,
+  instanceId = createManifestInstanceId(),
+): string {
+  const readableModelId = slugifyModelId(modelId.trim()) || 'model'
+  const safeInstanceId = instanceId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+  if (!safeInstanceId) throw new Error('Custom media manifest instance id cannot be empty')
+  return `custom:${readableModelId}:${safeInstanceId}`
 }
 
 export function createBasicCustomMediaManifest(
   input: BasicCustomMediaManifestInput,
 ): MediaModelManifest {
   const modelId = input.modelId.trim()
-  const id = `custom:${slugifyModelId(modelId)}`
-  const capability =
-    input.modelType === 'image' ? imageGenerateCapability() : videoGenerateCapability()
+  const id = input.manifestId?.trim() || createCustomMediaManifestId(modelId)
+  const capabilities = customCapabilitiesForType(input.modelType)
   const endpoint = input.modelType === 'image' ? '/images/generations' : '/videos/generations'
   const requestTemplate = { model: '{{modelId}}', prompt: '{{prompt}}' }
 
@@ -23,7 +37,7 @@ export function createBasicCustomMediaManifest(
       modelId,
       displayName: modelId,
       domains: [input.modelType],
-      capabilities: [capability],
+      capabilities,
       invocation: {
         mode: 'async_polling',
         endpoint,
@@ -34,9 +48,10 @@ export function createBasicCustomMediaManifest(
           kind: 'task_poll',
           taskIdPaths: ['task_id', 'id'],
           statusEndpoint: '/tasks/{{taskId}}',
-          resultPaths: input.modelType === 'video'
-            ? ['data.result.videos[].url[]', 'data[].url', 'output.url', 'url']
-            : ['data[].url', 'output.url', 'url'],
+          resultPaths:
+            input.modelType === 'video'
+              ? ['data.result.videos[].url[]', 'data[].url', 'output.url', 'url']
+              : ['data[].url', 'output.url', 'url'],
         },
         polling: {
           intervalMs: 5_000,
@@ -65,7 +80,7 @@ export function createBasicCustomMediaManifest(
     modelId,
     displayName: modelId,
     domains: [input.modelType],
-    capabilities: [capability],
+    capabilities,
     invocation: {
       mode: 'sync',
       endpoint,
@@ -80,6 +95,25 @@ export function createBasicCustomMediaManifest(
     },
     docs: { sourceUrls: [] },
   }
+}
+
+function createManifestInstanceId(): string {
+  const cryptoApi = globalThis.crypto
+  if (!cryptoApi?.randomUUID) {
+    throw new Error('Secure randomUUID support is required to create a custom media manifest')
+  }
+  return cryptoApi.randomUUID()
+}
+
+function customCapabilitiesForType(modelType: 'image' | 'video'): MediaModelCapabilityManifest[] {
+  if (modelType === 'image') return [imageGenerateCapability(), imageEditCapability()]
+  return [
+    videoGenerateCapability(),
+    videoImageToVideoCapability(),
+    videoReferenceToVideoCapability(),
+    videoEditCapability(),
+    videoExtendCapability(),
+  ]
 }
 
 function imageGenerateCapability(): MediaModelCapabilityManifest {
@@ -103,6 +137,16 @@ function imageGenerateCapability(): MediaModelCapabilityManifest {
   }
 }
 
+function imageEditCapability(): MediaModelCapabilityManifest {
+  return {
+    ...imageGenerateCapability(),
+    id: 'image.edit',
+    label: '图生图 / 图片编辑',
+    input: { required: ['prompt', 'image'], maxImages: 16 },
+    rolePolicy: { imageRoles: ['reference_image'], defaultRoleAssignment: 'all_reference' },
+  }
+}
+
 function videoGenerateCapability(): MediaModelCapabilityManifest {
   return {
     id: 'video.generate',
@@ -120,6 +164,49 @@ function videoGenerateCapability(): MediaModelCapabilityManifest {
         seed: { type: 'integer', title: '随机种子' },
       },
     },
+  }
+}
+
+function videoImageToVideoCapability(): MediaModelCapabilityManifest {
+  return {
+    ...videoGenerateCapability(),
+    id: 'video.image_to_video',
+    label: '图生视频',
+    input: { required: ['prompt', 'image'], maxImages: 2 },
+    rolePolicy: {
+      imageRoles: ['first_frame', 'last_frame'],
+      defaultRoleAssignment: 'first_then_last_then_reference',
+    },
+  }
+}
+
+function videoReferenceToVideoCapability(): MediaModelCapabilityManifest {
+  return {
+    ...videoGenerateCapability(),
+    id: 'video.reference_to_video',
+    label: '参考图生视频',
+    input: { required: ['prompt', 'image'], maxImages: 16 },
+    rolePolicy: { imageRoles: ['reference_image'], defaultRoleAssignment: 'all_reference' },
+  }
+}
+
+function videoEditCapability(): MediaModelCapabilityManifest {
+  return {
+    ...videoGenerateCapability(),
+    id: 'video.edit',
+    label: '视频编辑',
+    input: { required: ['prompt', 'video'] },
+    rolePolicy: { videoRoles: ['input_video'], defaultRoleAssignment: 'none' },
+  }
+}
+
+function videoExtendCapability(): MediaModelCapabilityManifest {
+  return {
+    ...videoGenerateCapability(),
+    id: 'video.extend',
+    label: '视频扩展',
+    input: { required: ['prompt', 'video'] },
+    rolePolicy: { videoRoles: ['input_video'], defaultRoleAssignment: 'none' },
   }
 }
 

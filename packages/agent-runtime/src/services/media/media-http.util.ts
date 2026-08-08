@@ -79,7 +79,7 @@ export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions
     if (opts.binary) {
       const buf = Buffer.from(await res.arrayBuffer())
       if (!res.ok) {
-        throw buildError(res.status, buf.toString('utf8'), null, opts)
+        throw buildError(res.status, buf.toString('utf8'), null, opts, res.headers)
       }
       return buf as unknown as T
     }
@@ -91,7 +91,7 @@ export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions
       body = text
     }
     if (!res.ok) {
-      throw buildError(res.status, text, body, opts)
+      throw buildError(res.status, text, body, opts, res.headers)
     }
     return body as T
   } catch (err) {
@@ -117,6 +117,7 @@ function buildError(
   rawText: string,
   body: unknown,
   opts: FetchJsonOptions,
+  headers?: Headers,
 ): MediaProviderError {
   // 优先用 provider 专属提取器解析错误消息文本；未命中则退回默认兜底。
   const extracted = opts.errorExtractor?.(status, body, rawText)
@@ -130,13 +131,20 @@ function buildError(
       contract: opts.errorContract,
     })
   }
+  const retryAfterMs = parseRetryAfter(headers?.get('retry-after'))
+  if (retryAfterMs != null) err.retryAfterMs = retryAfterMs
   return err
 }
 
 export interface PollOptions {
   fetchImpl?: typeof fetch | undefined
+  /** Default GET; V2 template polling can use POST/PUT/PATCH with a body. */
+  method?: string | undefined
+  body?: string | Buffer | Uint8Array | undefined
   intervalMs: number
   timeoutMs: number
+  /** Hard upper bound for poll responses; timeout remains the second bound. */
+  maxAttempts?: number | undefined
   /** 单次轮询 HTTP 请求超时；最终还会受任务剩余总时限约束。 */
   requestTimeoutMs?: number | undefined
   /** 检查响应：返回 'done' | 'pending' | 'failed' */
@@ -183,7 +191,11 @@ export async function pollTask(
   )
   // 允许调用方传小间隔（测试场景）；生产环境由 mediaDefaults.polling.intervalMs 控制（默认 5s）
   let interval = Math.max(1, opts.intervalMs)
-  const fetchOpts: FetchJsonOptions = { headers }
+  const fetchOpts: FetchJsonOptions = {
+    headers,
+    ...(opts.method ? { method: opts.method } : {}),
+    ...(opts.body !== undefined ? { body: opts.body } : {}),
+  }
   if (opts.fetchImpl !== undefined) fetchOpts.fetchImpl = opts.fetchImpl
   if (opts.errorExtractor !== undefined) fetchOpts.errorExtractor = opts.errorExtractor
   if (opts.errorContract !== undefined) fetchOpts.errorContract = opts.errorContract
@@ -199,10 +211,14 @@ export async function pollTask(
       // 确定性错误（4xx、task_failed）不重试；task_failed/task_timeout 不走此分支。
       if (retryCount < maxRetries && isRetryableMediaError(error) && Date.now() < deadline) {
         retryCount += 1
-        const backoff = Math.min(nextBackoffMs, MAX_RETRY_BACKOFF_MS)
+        const retryAfterMs = error instanceof MediaProviderError ? error.retryAfterMs : undefined
+        const backoff = Math.min(
+          retryAfterMs != null ? Math.max(retryAfterMs, nextBackoffMs) : nextBackoffMs,
+          MAX_RETRY_BACKOFF_MS,
+        )
         nextBackoffMs = Math.min(nextBackoffMs * 2, MAX_RETRY_BACKOFF_MS)
         pollLog.warn(
-          `event=request-failed-retryable url=${safeUrl} attempts=${attempts} retryCount=${retryCount}/${maxRetries} elapsedMs=${elapsedMs} backoffMs=${backoff} message=${messageOf(error)}${logContext}`,
+          `event=request-failed-retryable url=${safeUrl} attempts=${attempts} retryCount=${retryCount}/${maxRetries} elapsedMs=${elapsedMs} backoffMs=${backoff}${retryAfterMs != null ? ` retryAfterMs=${retryAfterMs}` : ''} message=${messageOf(error)}${logContext}`,
         )
         await new Promise((resolve) => setTimeout(resolve, pollSleepIntervalMs(deadline, backoff)))
         continue
@@ -231,6 +247,15 @@ export async function pollTask(
       throw new MediaProviderError(
         'task_failed',
         `Task failed: ${JSON.stringify(data).slice(0, 800)}`,
+      )
+    }
+    if (opts.maxAttempts != null && attempts >= opts.maxAttempts) {
+      pollLog.warn(
+        `event=finished state=max-attempts attempts=${attempts} elapsedMs=${Date.now() - startedAt} url=${safeUrl}${logContext}${responseSummary}`,
+      )
+      throw new MediaProviderError(
+        'task_timeout',
+        `Task exceeded maximum polling attempts (${opts.maxAttempts})`,
       )
     }
     pollLog.debug(
@@ -286,14 +311,23 @@ const TRANSIENT_NETWORK_ERROR_MARKERS = [
 ] as const
 
 /**
- * 判断 MediaProviderError 是否为可安全重试的瞬时错误：底层网络错误（statusCode 缺省）
- * 或 HTTP 5xx。4xx、task_failed、task_timeout 不在此列，确定性失败不应重试。
+ * 判断 MediaProviderError 是否为可安全重试的瞬时错误：底层网络错误（statusCode 缺省）、
+ * HTTP 5xx 或限流 429。其它 4xx、task_failed、task_timeout 不在此列。
  */
 export function isRetryableMediaError(error: unknown): boolean {
   if (!(error instanceof MediaProviderError)) return false
   if (error.code !== 'provider_http_error') return false
   if (error.statusCode === undefined) return true
-  return error.statusCode >= 500
+  return error.statusCode === 429 || error.statusCode >= 500
+}
+
+function parseRetryAfter(value: string | null | undefined): number | undefined {
+  if (!value) return undefined
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(Math.round(seconds * 1000), MAX_RETRY_BACKOFF_MS)
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return undefined
+  return Math.min(Math.max(0, timestamp - Date.now()), MAX_RETRY_BACKOFF_MS)
 }
 
 /**

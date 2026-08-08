@@ -15,7 +15,13 @@
  * 用 modelIds 去补内置模型——否则会把用户没勾选的内置模型混进画布列表。
  */
 
-import type { MediaDomain, MediaModelManifest, ProviderMediaModelRef } from '@spark/protocol'
+import type {
+  MediaDomain,
+  MediaModelCapabilityManifest,
+  MediaModelManifest,
+  MediaModelParamPolicy,
+  ProviderMediaModelRef,
+} from '@spark/protocol'
 import type { MediaModelCatalogService } from './media-model-catalog.service.js'
 
 /** 解析所需的 profile 字段子集（与 ProviderProfile 兼容）。 */
@@ -176,24 +182,33 @@ export function resolveProfileMediaModels(
           modelId: ref.modelId ?? templateManifest.modelId,
           adapterModelId: templateManifest.adapterModelId ?? templateManifest.modelId,
           displayName: ref.displayName ?? ref.modelId ?? templateManifest.displayName,
+          ...(ref.adapterMode ? { adapterMode: ref.adapterMode } : {}),
         }
       : null
-    const manifest =
+    const rawManifest =
       ref.manifest ??
       templateBackedManifest ??
       catalogManifest ??
       synthesizeMediaManifestForRef(profile, ref, catalog, filters)
-    if (!manifest || !capabilityMatches(manifest) || !providerKindMatches(manifest)) continue
-    if (seen.has(manifest.id)) continue
-    seen.add(manifest.id)
+    const manifest = rawManifest
+      ? ref.adapterMode && rawManifest.adapterMode !== ref.adapterMode
+        ? { ...rawManifest, adapterMode: ref.adapterMode }
+        : rawManifest
+      : null
+    const effectiveManifest = manifest
+      ? applyCapabilityOverrides(manifest, ref.capabilityOverrides)
+      : null
+    if (!effectiveManifest || !capabilityMatches(effectiveManifest) || !providerKindMatches(effectiveManifest)) continue
+    if (seen.has(effectiveManifest.id)) continue
+    seen.add(effectiveManifest.id)
     const synthesized =
       ref.manifest == null &&
       templateBackedManifest == null &&
       catalogManifest == null &&
-      manifest.id.startsWith(CUSTOM_MANIFEST_PREFIX)
+      effectiveManifest.id.startsWith(CUSTOM_MANIFEST_PREFIX)
     resolved.push({
-      manifest,
-      effectiveModelId: ref.modelId ?? manifest.modelId,
+      manifest: effectiveManifest,
+      effectiveModelId: ref.modelId ?? effectiveManifest.modelId,
       enabled: ref.enabled !== false,
       defaults: ref.defaults,
       synthesized,
@@ -228,4 +243,63 @@ export function resolveProfileMediaModels(
     }
   }
   return resolved
+}
+
+/**
+ * Native/template-backed refs may override capability parameter behavior without
+ * copying a complete manifest. Only capability-local presentation/default/alias/
+ * policy fields are accepted; transport, response and capability identity stay
+ * owned by the base manifest so a ref cannot silently change adapter routing.
+ */
+function applyCapabilityOverrides(
+  manifest: MediaModelManifest,
+  overrides: Record<string, unknown> | undefined,
+): MediaModelManifest {
+  if (!overrides || typeof overrides !== 'object') return manifest
+  const source = isRecord(overrides.capabilities) ? overrides.capabilities : overrides
+  let changed = false
+  const capabilities = manifest.capabilities.map((capability) => {
+    const raw = source[capability.id]
+    if (!isRecord(raw)) return capability
+    const next: MediaModelCapabilityManifest = { ...capability }
+    if (isRecord(raw.defaults)) {
+      next.defaults = { ...(capability.defaults ?? {}), ...raw.defaults }
+      changed = true
+    }
+    if (isRecord(raw.aliases)) {
+      const aliases = Object.fromEntries(
+        Object.entries(raw.aliases).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+      )
+      next.aliases = { ...(capability.aliases ?? {}), ...aliases }
+      changed = true
+    }
+    if (isRecord(raw.paramPolicy)) {
+      const { passthrough: rawPassthrough, ...rawPolicyFields } = raw.paramPolicy
+      const policy: MediaModelParamPolicy = {
+        ...(capability.paramPolicy ?? {}),
+        ...rawPolicyFields,
+      } as MediaModelParamPolicy
+      if (isRecord(rawPassthrough)) {
+        const enabled =
+          typeof rawPassthrough.enabled === 'boolean'
+            ? rawPassthrough.enabled
+            : capability.paramPolicy?.passthrough?.enabled
+        if (enabled !== undefined) {
+          policy.passthrough = {
+            ...(capability.paramPolicy?.passthrough ?? {}),
+            ...rawPassthrough,
+            enabled,
+          }
+        }
+      }
+      next.paramPolicy = policy
+      changed = true
+    }
+    return next
+  })
+  return changed ? { ...manifest, capabilities } : manifest
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

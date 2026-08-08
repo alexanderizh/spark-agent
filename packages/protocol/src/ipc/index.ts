@@ -27,7 +27,11 @@ import type {
   MediaRequestCall,
   MediaInputMetadata,
 } from '../media-config.js'
-import type { MediaModelManifest, ProviderMediaModelRef } from '../media-model-manifest.js'
+import type {
+  MediaInvocationRequest,
+  MediaModelManifest,
+  ProviderMediaModelRef,
+} from '../media-model-manifest.js'
 import type {
   MediaContractIssue,
   MediaContractWarning,
@@ -4972,6 +4976,34 @@ export interface CanvasMediaPruneModelParamsByInlineManifestResponse {
 }
 
 /**
+ * `canvas:media:preview-template-invocation` — Provider 编辑器的本地请求预览。
+ *
+ * 只编译请求，不发起网络调用；api key 在主进程中以固定占位符注入，renderer
+ * 永远不会拿到真实密钥。用于保存前检查 endpoint、鉴权、请求体类型和模板变量。
+ */
+export interface CanvasMediaPreviewTemplateInvocationRequest {
+  manifest: MediaModelManifest
+  capabilityId: string
+  modelId?: string | undefined
+  apiEndpoint?: string | undefined
+  prompt?: string | undefined
+  modelParams: Record<string, unknown>
+}
+
+export interface CanvasMediaPreviewTemplateInvocationResponse {
+  valid: boolean
+  request?: {
+    method: string
+    url: string
+    headers: Record<string, string>
+    body?: string | undefined
+  }
+  poll?: MediaInvocationRequest | undefined
+  warnings: string[]
+  issues: Array<{ path: string; message: string }>
+}
+
+/**
  * `canvas:task:create-media` — 通过平台 adapter 执行一次多媒体生成。
  *
  * 主进程解析可用 provider + API key（不外泄），调用 MediaRouterService，
@@ -5854,6 +5886,10 @@ export interface IpcChannelMap
     CanvasMediaPruneModelParamsByInlineManifestRequest,
     CanvasMediaPruneModelParamsByInlineManifestResponse,
   ]
+  'canvas:media:preview-template-invocation': [
+    CanvasMediaPreviewTemplateInvocationRequest,
+    CanvasMediaPreviewTemplateInvocationResponse,
+  ]
   'canvas:task:create-media': [CanvasMediaTaskCreateRequest, CanvasMediaTaskCreateResponse]
   'canvas:depth-model:status': [CanvasDepthModelStatusRequest, CanvasDepthModelStatusResponse]
   'canvas:depth-model:install': [CanvasDepthModelInstallRequest, CanvasDepthModelInstallResponse]
@@ -5865,10 +5901,7 @@ export interface IpcChannelMap
     CanvasDepthVideoTaskCancelRequest,
     CanvasDepthVideoTaskCancelResponse,
   ]
-  'canvas:task:extract-audio': [
-    CanvasAudioExtractTaskCreateRequest,
-    CanvasMediaTaskCreateResponse,
-  ]
+  'canvas:task:extract-audio': [CanvasAudioExtractTaskCreateRequest, CanvasMediaTaskCreateResponse]
   'canvas:task:cancel-extract-audio': [
     CanvasAudioExtractTaskCancelRequest,
     CanvasAudioExtractTaskCancelResponse,
@@ -5916,10 +5949,7 @@ export interface IpcChannelMap
     CanvasProjectCleanupOrphansRequest,
     CanvasProjectCleanupOrphansResponse,
   ]
-  'canvas:asset:cleanup-files': [
-    CanvasAssetCleanupFilesRequest,
-    CanvasAssetCleanupFilesResponse,
-  ]
+  'canvas:asset:cleanup-files': [CanvasAssetCleanupFilesRequest, CanvasAssetCleanupFilesResponse]
 
   // Remote Connections
   'remote:list': [RemoteListRequest, RemoteListResponse]

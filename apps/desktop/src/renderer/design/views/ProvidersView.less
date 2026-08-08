@@ -1563,6 +1563,32 @@
     min-width: 0;
   }
 }
+
+.pv_custom_adapter_modal {
+  width: min(1180px, calc(100vw - 32px)) !important;
+  max-width: calc(100vw - 32px);
+  padding-bottom: 0;
+
+  .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 32px);
+    overflow: hidden;
+  }
+
+  .ant-modal-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .ant-modal-footer {
+    flex: 0 0 auto;
+  }
+}
+
 .pv_manifest_editor {
   box-sizing: border-box;
   width: 100%;

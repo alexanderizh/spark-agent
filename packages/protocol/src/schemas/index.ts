@@ -1490,21 +1490,11 @@ export const IpcSchemaRegistry = {
       forceRemote: z.boolean().optional(),
     })
     .strict(),
-  'optional-capability:install': z
-    .object({ capabilityId: OptionalCapabilityIdSchema })
-    .strict(),
-  'optional-capability:update': z
-    .object({ capabilityId: OptionalCapabilityIdSchema })
-    .strict(),
-  'optional-capability:repair': z
-    .object({ capabilityId: OptionalCapabilityIdSchema })
-    .strict(),
-  'optional-capability:cancel': z
-    .object({ capabilityId: OptionalCapabilityIdSchema })
-    .strict(),
-  'optional-capability:uninstall': z
-    .object({ capabilityId: OptionalCapabilityIdSchema })
-    .strict(),
+  'optional-capability:install': z.object({ capabilityId: OptionalCapabilityIdSchema }).strict(),
+  'optional-capability:update': z.object({ capabilityId: OptionalCapabilityIdSchema }).strict(),
+  'optional-capability:repair': z.object({ capabilityId: OptionalCapabilityIdSchema }).strict(),
+  'optional-capability:cancel': z.object({ capabilityId: OptionalCapabilityIdSchema }).strict(),
+  'optional-capability:uninstall': z.object({ capabilityId: OptionalCapabilityIdSchema }).strict(),
   'optional-capability:set-auto-update': z
     .object({
       capabilityId: OptionalCapabilityIdSchema,

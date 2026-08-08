@@ -78,6 +78,15 @@ export {
   type CompilerInputFile,
 } from './services/media/media-request-compiler.js'
 export {
+  compileInvocationRequest,
+  executeMediaUploads,
+  legacyInvocationRequest,
+  type CompiledInvocationRequest,
+  type InvocationCompilerContext,
+  type MediaUploadExecutionContext,
+} from './services/media/media-invocation-compiler.js'
+export { buildVariables } from './services/media/adapters/template-media.adapter.js'
+export {
   validateMediaRequest,
   type ValidateMediaRequestInput,
 } from './services/media/media-request-validator.js'
