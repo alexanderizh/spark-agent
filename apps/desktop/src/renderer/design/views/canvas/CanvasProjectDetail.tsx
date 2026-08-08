@@ -27,6 +27,18 @@ const ASSET_PAGE_SIZE = 20
  */
 const MAX_ASSET_SELECTION = 20
 
+/**
+ * 取资源可作为项目封面的图片 URL。
+ *
+ * - 图片：优先 url（原图，与「上传封面」一致），fallback thumbnailUrl
+ * - 视频：只能用 thumbnailUrl（视频 url 不能被 <img> 加载，无法做封面）
+ * - 都没有：返回 null，调用方据此隐藏「设为封面」入口，避免点了存成坏封面
+ */
+export function getAssetCoverUrl(asset: CanvasAsset): string | null {
+  if (asset.type === 'video') return asset.thumbnailUrl ?? null
+  return asset.url ?? asset.thumbnailUrl ?? null
+}
+
 export type CanvasProjectDetailProps = {
   project: CanvasProject
   /** 正在独立窗口打开（异步等待中） */
@@ -40,6 +52,8 @@ export type CanvasProjectDetailProps = {
   onTogglePin: (projectId: string) => void
   /** 点击封面上传/更换封面图（file 已通过类型/大小校验） */
   onUploadCover?: (file: File) => void
+  /** 从资源瀑布流「设为封面」：用资源自身的 URL 作为项目封面 */
+  onSetCoverFromAsset?: (asset: CanvasAsset) => void
 }
 
 function formatDate(iso?: string | null): string {
@@ -133,6 +147,7 @@ export function CanvasProjectDetail({
   onOpenFolder,
   onTogglePin,
   onUploadCover,
+  onSetCoverFromAsset,
 }: CanvasProjectDetailProps) {
   const coverInputRef = useRef<HTMLInputElement | null>(null)
   const [coverPreviewOpen, setCoverPreviewOpen] = useState(false)
@@ -699,6 +714,8 @@ export function CanvasProjectDetail({
               {visibleAssets.map((asset) => {
                 const isSelected = selectedIds.has(asset.id)
                 const inSelectionMode = selectedIds.size > 0
+                const assetCoverUrl = getAssetCoverUrl(asset)
+                const isCurrentCover = Boolean(assetCoverUrl) && assetCoverUrl === project.coverUrl
                 return (
                   <Dropdown
                     key={asset.id}
@@ -710,6 +727,17 @@ export function CanvasProjectDetail({
                           label: '预览',
                           onClick: () => setPreviewAsset(asset),
                         },
+                        ...(onSetCoverFromAsset && assetCoverUrl
+                          ? [
+                              {
+                                key: 'set-cover',
+                                icon: <Icons.Image size={14} />,
+                                label: isCurrentCover ? '当前封面' : '设为封面',
+                                disabled: isCurrentCover,
+                                onClick: () => onSetCoverFromAsset(asset),
+                              },
+                            ]
+                          : []),
                         { type: 'divider' as const },
                         {
                           key: 'copy-image',

@@ -6,7 +6,8 @@ import { Input as LobeInput, TextArea as LobeTextArea } from '@lobehub/ui'
 import { canvasApi } from './canvas.api'
 import { useCanvasProjects } from './canvas.store'
 import { openCanvasProjectWindow } from './canvas-window-client'
-import { CanvasProjectDetail } from './CanvasProjectDetail'
+import { CanvasProjectDetail, getAssetCoverUrl } from './CanvasProjectDetail'
+import type { CanvasAsset } from './canvas.types'
 import { CanvasAcceptanceLauncher } from './acceptance/CanvasAcceptanceLauncher'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { useApp } from '../../AppContext'
@@ -320,6 +321,25 @@ export function CanvasProjectsView({
     }
   }
 
+  // 资源瀑布流「设为封面」：直接用资源自身的 URL 写入 cover_url，
+  // 无需重新上传文件（资源已在项目目录内，URL 可直接复用）。
+  const handleSetCoverFromAsset = async (asset: CanvasAsset) => {
+    if (!selectedProject) return
+    const coverUrl = getAssetCoverUrl(asset)
+    if (!coverUrl) {
+      message.warning('该资源暂无可用封面图')
+      return
+    }
+    try {
+      await canvasApi.updateProjectCover(selectedProject.id, coverUrl)
+      await refresh()
+      message.success('已设为项目封面')
+    } catch (err) {
+      console.warn('[canvas] set cover from asset failed', err)
+      message.error('设为封面失败')
+    }
+  }
+
   const handleExportProject = async (projectId: string) => {
     setExportingProjectId(projectId)
     try {
@@ -382,6 +402,7 @@ export function CanvasProjectsView({
             onOpenFolder={(projectId) => void handleOpenProjectFolder(projectId)}
             onTogglePin={(projectId) => void handleTogglePin(projectId)}
             onUploadCover={handleUploadCover}
+            onSetCoverFromAsset={handleSetCoverFromAsset}
           />
         ) : (
           <div className="canvas-projects-welcome">
