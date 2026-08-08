@@ -12,6 +12,7 @@ import { useApp } from './AppContext'
 import { useI18n } from './i18n'
 import type {
   SessionId,
+  CliSparkOverride,
   SessionListResponse,
   SessionSearchResult,
   SessionGetQueueResponse,
@@ -1038,6 +1039,19 @@ export function SessionSidebarProvider({
         const reasoningEffort =
           (options.reasoningEffort as SessionReasoningEffort) ?? prefs.reasoningEffort ?? 'medium'
         const debugMode = typeof options.debugMode === 'boolean' ? options.debugMode : undefined
+        const cliSparkOverride =
+          options.cliSparkOverride === null
+            ? null
+            : (() => {
+                const value = options.cliSparkOverride
+                if (value == null || typeof value !== 'object') return undefined
+                const candidate = value as Partial<CliSparkOverride>
+                const providerProfileId = nonEmptyString(candidate.providerProfileId)
+                const modelId = nonEmptyString(candidate.modelId)
+                return providerProfileId != null && modelId != null
+                  ? { providerProfileId, modelId }
+                  : undefined
+              })()
 
         // 如果该项目下有未使用的会话（没有消息、未归档），直接复用。
         // 复用前必须把 provider/model/agent 等运行时同步到该空会话，否则 UI label
@@ -1064,6 +1078,7 @@ export function SessionSidebarProvider({
               : {}),
             reasoningEffort,
             ...(debugMode !== undefined ? { debugMode } : {}),
+            ...(cliSparkOverride !== undefined ? { cliSparkOverride } : {}),
           })
           await persistTeamConfig({
             sessionId: unusedSession.id,
@@ -1102,6 +1117,7 @@ export function SessionSidebarProvider({
             : {}),
           reasoningEffort,
           ...(debugMode !== undefined ? { debugMode } : {}),
+          ...(cliSparkOverride !== undefined ? { cliSparkOverride } : {}),
           workspaceId: wsId,
         })
         if (res.session != null) upsertSessionInList(res.session)

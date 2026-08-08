@@ -369,9 +369,12 @@ function SideChatSessionDropdown({
   // 按标题做大小写不敏感的子串过滤；空查询直接返回全量，跳过额外开销。
   const trimmedQuery = query.trim().toLowerCase()
   // 过滤后置顶项排在前面：搜索时也保持置顶优先，避免用户翻找。
-  const visibleSessions = (trimmedQuery
-    ? sessions.filter((session) => (session.title || '未命名会话').toLowerCase().includes(trimmedQuery))
-    : sessions
+  const visibleSessions = (
+    trimmedQuery
+      ? sessions.filter((session) =>
+          (session.title || '未命名会话').toLowerCase().includes(trimmedQuery),
+        )
+      : sessions
   )
     .slice()
     .sort((a, b) => {
@@ -457,7 +460,9 @@ function SideChatSessionDropdown({
                       <span className="composer-menu-item-label">
                         <Icons.MessageSquare size={13} />
                         <span>{session.title || '未命名会话'}</span>
-                        {session.status === 'running' && <span className="composer-menu-item-tag">运行中</span>}
+                        {session.status === 'running' && (
+                          <span className="composer-menu-item-tag">运行中</span>
+                        )}
                         {disabled && <span className="composer-menu-item-tag muted">主区当前</span>}
                       </span>
                     </span>

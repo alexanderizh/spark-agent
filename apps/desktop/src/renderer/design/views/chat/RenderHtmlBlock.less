@@ -76,7 +76,6 @@
 }
 
 .render-html-mode-label select,
-.render-html-action,
 .render-html-icon-button,
 .render-html-muted-state button {
   border: 1px solid var(--render-html-border);
@@ -95,11 +94,18 @@
 
 .render-html-action {
   gap: 4px;
-  padding: 5px 7px;
   font-size: 11px;
+  color: var(--render-html-muted);
 }
 
-.render-html-action:hover,
+.render-html-action:hover {
+  color: var(--render-html-text);
+}
+
+.render-html-source-actions .render-html-action {
+  flex-shrink: 0;
+}
+
 .render-html-icon-button:hover,
 .render-html-muted-state button:hover {
   background: var(--hover, rgba(36, 32, 27, 0.045));
@@ -141,6 +147,22 @@
 .render-html-source-wrap {
   min-height: 120px;
   background: var(--render-html-bg-soft);
+}
+
+.render-html-code-preview {
+  max-height: 520px;
+  overflow: auto;
+  background: var(--render-html-bg-soft);
+}
+
+.render-html-code-preview .md-code-block {
+  margin: 0;
+  border-radius: 0;
+}
+
+.render-html-code-preview .md-code-copy,
+.render-html-code-preview .md-code-copy-float {
+  display: none;
 }
 
 .render-html-source-actions {

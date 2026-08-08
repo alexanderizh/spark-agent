@@ -5,19 +5,17 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg, #101216);
   color: var(--text-strong, #f5f7fb);
 }
 
 .canvas-prompt-library-page-header {
   display: flex;
-  min-height: 72px;
+  height: var(--window-titlebar-height);
   align-items: center;
   justify-content: space-between;
   gap: 18px;
   padding: 14px 28px;
   border-bottom: 1px solid var(--divider, rgba(255, 255, 255, 0.1));
-  background: color-mix(in srgb, var(--panel, #171a21) 88%, transparent);
 }
 
 .canvas-prompt-library-title-wrap,
@@ -160,18 +158,18 @@
 
 .canvas-prompt-library-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
 }
 
 .canvas-prompt-library-card {
   display: flex;
   min-width: 0;
-  min-height: 292px;
+  min-height: 262px;
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--divider, rgba(255, 255, 255, 0.1));
-  border-radius: 12px;
+  border-radius: var(--r-sm);
   background: var(--panel, #171a21);
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.08);
   cursor: pointer;
@@ -205,7 +203,7 @@
 .canvas-prompt-library-card-cover img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .canvas-prompt-library-card-cover::after {
@@ -245,7 +243,7 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  padding: 13px 14px 12px;
+  padding: 8px;
 }
 
 .canvas-prompt-library-card-title-row {
@@ -281,10 +279,18 @@
   color: color-mix(in srgb, var(--primary, #8b7cff) 70%, white);
 }
 
+.canvas-prompt-library-card-actions button.canvas-prompt-library-delete {
+  color: var(--danger, #ff7676);
+}
+
+.canvas-prompt-library-card-actions button.canvas-prompt-library-delete:hover {
+  color: color-mix(in srgb, var(--danger, #ff7676) 72%, white);
+}
+
 .canvas-prompt-library-card-body > p {
   display: -webkit-box;
   min-height: 46px;
-  margin: 10px 0 9px;
+  margin: 6px 0 4px;
   overflow: hidden;
   color: var(--text-muted, #9298a6);
   font-size: 11px;
@@ -297,6 +303,7 @@
   gap: 7px;
   color: var(--text-faint, #717887);
   font-size: 10px;
+  margin-bottom: 4px;
 }
 
 .canvas-prompt-library-card-meta .ant-tag {
@@ -310,8 +317,8 @@
 .canvas-prompt-library-card-actions {
   justify-content: flex-end;
   gap: 12px;
-  margin-top: auto;
-  padding-top: 13px;
+  margin-top: 0;
+  padding-top: 12px;
   border-top: 1px solid var(--divider, rgba(255, 255, 255, 0.1));
 }
 
