@@ -7,12 +7,16 @@
  * shape used by many media providers and aggregators.
  */
 
+import { randomUUID } from 'node:crypto'
 import type {
   MediaArtifactRetrieval,
   MediaCapabilityId,
   MediaModelCapabilityManifest,
   MediaModelManifest,
+  MediaInvocationRequest,
+  MediaTaskIdPlacement,
 } from '@spark/protocol'
+import { migrateMediaModelManifestToV2 } from '@spark/protocol'
 import { MediaProviderError } from '../media-adapter.types.js'
 import type {
   MediaArtifactType,
@@ -25,6 +29,12 @@ import { MediaArtifactService } from '../media-artifact.service.js'
 import { extractStatus, fetchJson, pollTask } from '../media-http.util.js'
 import { logMediaCall } from '../media-debug-log.js'
 import { compileMediaRequest } from '../media-request-compiler.js'
+import {
+  compileInvocationRequest,
+  executeMediaUploads,
+  legacyInvocationRequest,
+} from '../media-invocation-compiler.js'
+import { logMediaDiag } from '../media-debug-log.js'
 import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { filenameHelper, mimeFromFormat } from './openai-compatible-media.adapter.js'
 
@@ -39,18 +49,18 @@ export class TemplateMediaAdapter {
     input: MediaGenerateInput,
     ctx: MediaProviderContext,
   ): Promise<MediaGenerateOutput> {
-    const manifest = ctx.mediaManifest
+    const rawManifest = ctx.mediaManifest
     const capability = ctx.mediaManifestCapability
-    if (!manifest || !capability) {
+    if (!rawManifest || !capability) {
       throw new MediaProviderError('provider_not_configured', 'Manifest adapter requires mediaManifest context')
     }
+    // 只在执行边界做内存迁移，避免旧 Provider 列表/模型目录的展示数据被悄悄改形；
+    // 迁移结果不回写存储，旧 manifest 仍可由旧版本导入和读取。
+    const manifest = migrateMediaModelManifestToV2(rawManifest)
+    const traceId = randomUUID()
     if (!input.capability || !this.supports(manifest, input.capability)) {
       throw new MediaProviderError('capability_not_supported', `${manifest.id} does not support ${input.capability ?? '(unknown)'}`)
     }
-    if (manifest.invocation.contentType !== 'json') {
-      throw new MediaProviderError('capability_not_supported', `Manifest contentType ${manifest.invocation.contentType} is not supported yet`)
-    }
-
     const model = ctx.defaultModel || manifest.modelId
     const compiled = compileMediaRequest({
       manifest,
@@ -74,36 +84,70 @@ export class TemplateMediaAdapter {
     }
 
     const variables = buildVariables(input, capability, model, compiled.providerParams, compiled.canonicalParams)
-    const endpoint = renderTemplateString(manifest.invocation.endpoint, variables)
-    const url = resolveUrl(ctx.apiEndpoint, endpoint)
-    const headers = {
-      'content-type': 'application/json',
-      authorization: `Bearer ${ctx.apiKey}`,
-      ...(manifest.invocation.headers ? renderHeaders(manifest.invocation.headers, variables) : {}),
-    }
-
-    const requestBody = renderTemplate(manifest.invocation.requestTemplate, variables)
-    const body = mergeProviderParams(requestBody, variables.providerParams)
+    const uploads = await executeMediaUploads(manifest.invocation.uploads, input.inputFiles, {
+      apiEndpoint: ctx.apiEndpoint,
+      apiKey: ctx.apiKey,
+      fetchImpl: ctx.fetch,
+      variables,
+    })
+    const invocationVariables = { ...variables, uploads }
+    const legacy = manifest.invocation.request == null
+    const baseRequest = manifest.invocation.request ?? legacyInvocationRequest({
+      endpoint: manifest.invocation.endpoint,
+      method: manifest.invocation.method,
+      headers: manifest.invocation.headers,
+      requestTemplate: manifest.invocation.requestTemplate,
+      contentType: manifest.invocation.contentType,
+    })
+    const request =
+      baseRequest.body?.kind === 'json'
+        ? {
+            ...baseRequest,
+            body: {
+              kind: 'json' as const,
+              template: mergeProviderParams(baseRequest.body.template, variables.providerParams),
+            },
+          }
+        : baseRequest
+    const compiledInvocation = await compileInvocationRequest(request, {
+      apiEndpoint: ctx.apiEndpoint,
+      apiKey: ctx.apiKey,
+      variables: invocationVariables,
+      inputFiles: input.inputFiles,
+      defaultAuth: request.auth?.kind === 'inherit' ? { kind: 'bearer', credentialRef: 'apiKey' } : request.auth,
+      ...(legacy ? { allowReservedHeaders: true } : {}),
+    })
+    logMediaDiag('template-invocation-compiled', {
+      traceId,
+      provider: manifest.providerKind,
+      manifest: manifest.id,
+      capability: input.capability,
+      method: compiledInvocation.method,
+      url: compiledInvocation.url,
+      legacy,
+      bodyKind: request.body?.kind ?? 'none',
+    })
     logMediaCall({
       provider: manifest.providerKind,
       capability: input.capability,
       model,
-      method: manifest.invocation.method,
-      url,
-      body,
+      method: compiledInvocation.method,
+      url: compiledInvocation.url,
+      body: summarizeInvocationBody(compiledInvocation.body),
       extra: {
+        traceId,
         manifest: manifest.id,
         prompt: (input.prompt ?? '').slice(0, 120),
         mode: manifest.invocation.mode,
       },
     })
-    let raw = await fetchJson(url, {
-      method: manifest.invocation.method,
-      headers,
-      body: JSON.stringify(body),
+    let raw = await fetchJson(compiledInvocation.url, {
+      method: compiledInvocation.method,
+      headers: compiledInvocation.headers,
+      ...(compiledInvocation.body !== undefined ? { body: compiledInvocation.body } : {}),
       fetchImpl: ctx.fetch,
       timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
-      binary: manifest.invocation.response.kind === 'binary_response',
+      binary: compiledInvocation.binaryResponse || manifest.invocation.response.kind === 'binary_response',
       ...(manifest.error ? { errorContract: manifest.error } : {}),
     })
     let mode: 'sync' | 'async' = manifest.invocation.mode === 'async_polling' ? 'async' : 'sync'
@@ -119,11 +163,19 @@ export class TemplateMediaAdapter {
         requestId = taskId
         mode = 'async'
         ctx.onTaskSubmitted?.({ requestId: taskId, response: raw })
-        raw = await this.pollManifestTask(manifest, taskId, ctx, headers)
+        raw = await this.pollManifestTask(manifest, taskId, ctx, request, traceId)
       }
     }
 
     const assets = await this.materialize(manifest.invocation.response, raw, input, capability, ctx)
+    logMediaDiag('template-invocation-finished', {
+      traceId,
+      provider: manifest.providerKind,
+      manifest: manifest.id,
+      mode,
+      assets: assets.length,
+      requestId,
+    })
     return {
       provider: manifest.providerKind,
       model,
@@ -141,30 +193,60 @@ export class TemplateMediaAdapter {
     manifest: MediaModelManifest,
     taskId: string,
     ctx: MediaProviderContext,
-    headers: Record<string, string>,
+    submitRequest: MediaInvocationRequest,
+    traceId: string,
   ): Promise<unknown> {
     const response = manifest.invocation.response
     if (response.kind !== 'task_poll') return null
     const polling = manifest.invocation.polling
-    const pollUrl = resolveUrl(
-      ctx.apiEndpoint,
-      renderTemplateString(response.statusEndpoint, { taskId }),
-    )
-    return pollTask(pollUrl, headers, {
+    const pollRequest = buildPollRequest(response, taskId, submitRequest.auth)
+    const variables = { taskId, poll: { taskId } }
+    const compiledPoll = await compileInvocationRequest(pollRequest, {
+      apiEndpoint: ctx.apiEndpoint,
+      apiKey: ctx.apiKey,
+      variables,
+      inputFiles: [],
+      defaultAuth: submitRequest.auth ?? { kind: 'bearer', credentialRef: 'apiKey' },
+    })
+    const statusPaths = response.statusPaths ?? ['status']
+    const requestId = taskId.slice(0, 80)
+    logMediaDiag('template-poll-compiled', {
+      traceId,
+      provider: manifest.providerKind,
+      manifest: manifest.id,
+      method: compiledPoll.method,
+      url: compiledPoll.url,
+      requestId,
+      statusPaths,
+      bodyKind: pollRequest.body?.kind ?? 'none',
+    })
+    return pollTask(compiledPoll.url, compiledPoll.headers, {
       fetchImpl: ctx.fetch,
+      method: compiledPoll.method,
+      ...(compiledPoll.body !== undefined ? { body: compiledPoll.body } : {}),
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? polling?.intervalMs ?? 5_000,
+      ...(polling?.maxAttempts != null ? { maxAttempts: polling.maxAttempts } : {}),
+      ...(polling?.retry
+        ? {
+            maxRetries: polling.retry.maxAttempts,
+            retryBackoffMs: polling.retry.backoffMs,
+          }
+        : {}),
       ...mediaPollTimeoutOptions(
         ctx.mediaDefaults,
         polling?.timeoutMs ?? (manifest.domains.includes('video') ? 1_800_000 : 600_000),
       ),
       inspect: (data) => {
         if (firstStringAtPaths(data, response.resultPaths)) return 'done'
-        const rawStatus = extractStatus(data).toLowerCase()
+        const rawStatus = (firstStringAtPaths(data, statusPaths) || extractStatus(data)).trim().toLowerCase()
+        if (!rawStatus) return polling?.unknownStatus === 'running' ? 'pending' : 'failed'
         const mapped = polling?.statusMap[rawStatus]
         if (mapped === 'succeeded') return 'done'
         if (mapped === 'failed' || mapped === 'cancelled') return 'failed'
+        if (!mapped && polling?.unknownStatus !== 'running') return 'failed'
         return 'pending'
       },
+      logContext: `provider=${manifest.providerKind} manifest=${manifest.id} requestId=${requestId}`,
       ...(manifest.error ? { errorContract: manifest.error } : {}),
     })
   }
@@ -244,6 +326,57 @@ export class TemplateMediaAdapter {
       return this.artifact.writeTextAsset(value, input.outputDir, name)
     }))
   }
+}
+
+function buildPollRequest(
+  response: Extract<MediaArtifactRetrieval, { kind: 'task_poll' }>,
+  taskId: string,
+  submitAuth: MediaInvocationRequest['auth'],
+): MediaInvocationRequest {
+  const placement: MediaTaskIdPlacement = response.taskId ?? { location: 'path', name: 'taskId' }
+  const legacyEndpoint = response.statusEndpoint ?? ''
+  const base = response.poll ?? {
+    method: 'GET' as const,
+    endpoint: legacyEndpoint.replace(/{{\s*taskId\s*}}/g, '{taskId}'),
+    auth: { kind: 'inherit' as const },
+    body: { kind: 'none' as const },
+  }
+  const taskValue = '{{taskId}}'
+  const next: MediaInvocationRequest = {
+    ...base,
+    auth: base.auth ?? { kind: 'inherit' },
+  }
+  if (placement.location === 'path') {
+    const replacement = encodeURIComponent(taskId)
+    next.endpoint = next.endpoint.replace(/\{taskId\}|{{\s*taskId\s*}}/g, replacement)
+    if (next.endpoint === base.endpoint) {
+      throw new MediaProviderError('provider_http_error', 'poll taskId placement=path requires {taskId} in endpoint')
+    }
+  } else if (placement.location === 'query') {
+    next.query = { ...(next.query ?? {}), [placement.name]: taskValue }
+  } else if (placement.location === 'header') {
+    next.headers = { ...(next.headers ?? {}), [placement.name]: taskValue }
+  } else {
+    const body = next.body
+    if (!body || body.kind === 'none' || body.kind === 'binary') {
+      throw new MediaProviderError('provider_http_error', 'poll taskId placement=body requires a JSON or multipart body')
+    }
+    if (body.kind === 'json') {
+      const template = isPlainRecord(body.template)
+        ? { ...body.template, [placement.name]: taskValue }
+        : { [placement.name]: taskValue }
+      next.body = { kind: 'json', template }
+    } else {
+      next.body = {
+        ...body,
+        parts: [...body.parts, { name: placement.name, kind: 'text', value: taskValue }],
+      }
+    }
+  }
+  if (next.auth?.kind === 'inherit' && submitAuth?.kind === 'none') {
+    next.auth = { kind: 'none' }
+  }
+  return next
 }
 
 export function buildVariables(
@@ -335,16 +468,6 @@ export function buildVariables(
   }
 }
 
-function renderHeaders(headers: Record<string, unknown>, variables: Record<string, unknown>): Record<string, string> {
-  const rendered: Record<string, string> = {}
-  for (const [key, value] of Object.entries(headers)) {
-    const next = renderTemplate(value, variables)
-    if (next === undefined || next === null || next === '') continue
-    rendered[key] = typeof next === 'string' ? next : JSON.stringify(next)
-  }
-  return rendered
-}
-
 function mergeProviderParams(body: unknown, providerParams: unknown): unknown {
   if (!isPlainRecord(body) || !isPlainRecord(providerParams)) return body
   const next: Record<string, unknown> = { ...body }
@@ -352,45 +475,6 @@ function mergeProviderParams(body: unknown, providerParams: unknown): unknown {
     if (value !== undefined && value !== null && value !== '') next[key] = value
   }
   return next
-}
-
-function renderTemplate(value: unknown, variables: Record<string, unknown>): unknown {
-  if (typeof value === 'string') return renderTemplateStringOrValue(value, variables)
-  if (Array.isArray(value)) {
-    const rendered = value
-      .map((item) => renderTemplate(item, variables))
-      .filter((item) => item !== undefined)
-    return rendered.length > 0 ? rendered : undefined
-  }
-  if (isPlainRecord(value)) {
-    const rendered: Record<string, unknown> = {}
-    for (const [key, child] of Object.entries(value)) {
-      const next = renderTemplate(child, variables)
-      if (next !== undefined && next !== '') rendered[key] = next
-    }
-    return Object.keys(rendered).length > 0 ? rendered : undefined
-  }
-  return value
-}
-
-function renderTemplateStringOrValue(template: string, variables: Record<string, unknown>): unknown {
-  const exact = template.match(/^{{\s*([^}]+?)\s*}}$/)
-  if (exact) return getPath(variables, exact[1]?.trim() ?? '')
-  return renderTemplateString(template, variables)
-}
-
-function renderTemplateString(template: string, variables: Record<string, unknown>): string {
-  return template.replace(/{{\s*([^}]+?)\s*}}/g, (_match, key: string) => {
-    const value = getPath(variables, key.trim())
-    return value == null ? '' : String(value)
-  })
-}
-
-function resolveUrl(base: string, endpoint: string): string {
-  if (/^https?:\/\//i.test(endpoint)) return endpoint
-  const cleanBase = base.replace(/\/+$/, '')
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
-  return `${cleanBase}${cleanEndpoint}`
 }
 
 function primaryOutputKind(capability: MediaModelCapabilityManifest): MediaArtifactType {
@@ -428,11 +512,6 @@ function valuesAtPath(root: unknown, path: string): unknown[] {
   return current.filter((value) => value !== undefined && value !== null)
 }
 
-function getPath(root: unknown, path: string): unknown {
-  if (!path) return undefined
-  return path.split('.').reduce<unknown>((value, key) => getProperty(value, key), root)
-}
-
 function getProperty(value: unknown, key: string): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   return (value as Record<string, unknown>)[key]
@@ -460,4 +539,12 @@ function defaultMime(kind: 'audio' | 'video', input: MediaGenerateInput): string
   const format = typeof input.modelParams?.format === 'string' ? input.modelParams.format : ''
   if (kind === 'audio') return mimeFromFormat(format || 'mp3')
   return 'video/mp4'
+}
+
+function summarizeInvocationBody(body: string | Buffer | Uint8Array | undefined): unknown {
+  if (body == null) return undefined
+  if (Buffer.isBuffer(body) || body instanceof Uint8Array) {
+    return `[binary ${body.byteLength} bytes]`
+  }
+  return body
 }

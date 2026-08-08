@@ -509,7 +509,7 @@ describe('ProviderEditPanel progressive configuration', () => {
     }))
   })
 
-  it('hides custom model input until the media flow is supported', async () => {
+  it('exposes the custom adapter entry for dedicated media providers', async () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
@@ -525,8 +525,172 @@ describe('ProviderEditPanel progressive configuration', () => {
     )
     act(() => advancedToggle?.click())
 
-    expect(container.textContent).not.toContain('添加自定义模型')
-    expect(container.querySelector('input[placeholder*="nano-banana"]')).toBeNull()
+    expect(container.textContent).toContain('自定义模型 / 适配器')
+    expect(container.textContent).toContain('点击「编辑协议」配置请求模板')
+    expect(container.querySelector('input[placeholder*="输入模型 ID"]')).not.toBeNull()
+  })
+
+  it('keeps custom media catalogs empty and initializes candidates from /models', async () => {
+    const fetchModels = vi.fn(async () => ({
+      models: [{ id: 'toapis-image-model', ownedBy: 'toapis' }],
+    }))
+    mocks.invokers.set('provider:fetch-models', fetchModels)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<ProviderEditPanel visible onClose={() => undefined} />)
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const modelTypeSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="image"]'),
+    ) as HTMLSelectElement | undefined
+    expect(modelTypeSelect).toBeDefined()
+    act(() => {
+      if (!modelTypeSelect) return
+      modelTypeSelect.value = 'image'
+      modelTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const mediaProviderSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="custom"]') &&
+      select.querySelector('option[value="apimart"]') &&
+      select.querySelector('option[value="xai"]'),
+    ) as HTMLSelectElement | undefined
+    expect(mediaProviderSelect).toBeDefined()
+    act(() => {
+      if (!mediaProviderSelect) return
+      mediaProviderSelect.value = 'custom'
+      mediaProviderSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('暂无匹配的内置模型清单')
+    expect(container.textContent).toContain('配置自定义适配器')
+
+    const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
+    expect(apiKeyInput).not.toBeNull()
+    act(() => {
+      if (!apiKeyInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        apiKeyInput,
+        'sk-toapis-test',
+      )
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const fetchButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.trim() === '获取模型',
+    )
+    expect(fetchButton).toBeDefined()
+    await act(async () => {
+      fetchButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(fetchModels).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'openai',
+      apiKey: 'sk-toapis-test',
+    }))
+    expect(container.textContent).toContain('toapis-image-model')
+    expect(container.textContent).toContain('渠道 /models 返回的模型')
+  })
+
+  it('opens the full custom adapter editor without requiring an existing model ref', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<ProviderEditPanel visible onClose={() => undefined} />)
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const modelTypeSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="image"]'),
+    ) as HTMLSelectElement | undefined
+    expect(modelTypeSelect).toBeDefined()
+    act(() => {
+      if (!modelTypeSelect) return
+      modelTypeSelect.value = 'image'
+      modelTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const mediaProviderSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="custom"]') &&
+      select.querySelector('option[value="apimart"]') &&
+      select.querySelector('option[value="xai"]'),
+    ) as HTMLSelectElement | undefined
+    act(() => {
+      if (!mediaProviderSelect) return
+      mediaProviderSelect.value = 'custom'
+      mediaProviderSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const configureButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.trim() === '配置自定义适配器',
+    )
+    expect(configureButton).toBeDefined()
+    act(() => configureButton?.click())
+    expect(container.textContent).toContain('① 路由与模型')
+    expect(container.textContent).toContain('③ 鉴权与提交')
+    expect(container.textContent).toContain('⑥ 参数定义')
+    expect(container.textContent).toContain('配置自定义适配器')
+  })
+
+  it('syncs the parent call mode from an async custom adapter manifest', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<ProviderEditPanel visible onClose={() => undefined} />)
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const modelTypeSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="image"]'),
+    ) as HTMLSelectElement | undefined
+    act(() => {
+      if (!modelTypeSelect) return
+      modelTypeSelect.value = 'image'
+      modelTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const mediaProviderSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="custom"]') &&
+      select.querySelector('option[value="apimart"]') &&
+      select.querySelector('option[value="xai"]'),
+    ) as HTMLSelectElement | undefined
+    act(() => {
+      if (!mediaProviderSelect) return
+      mediaProviderSelect.value = 'custom'
+      mediaProviderSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const configureButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.trim() === '配置自定义适配器',
+    )
+    act(() => configureButton?.click())
+
+    const presetSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="toapis-image"]'),
+    ) as HTMLSelectElement | undefined
+    expect(presetSelect).toBeDefined()
+    act(() => {
+      if (!presetSelect) return
+      presetSelect.value = 'toapis-image'
+      presetSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('检查并保存'),
+    )
+    expect(saveButton).toBeDefined()
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(container.textContent).toContain('async · 任务轮询')
   })
 
   it('preserves Agnes media refs when saving a multimodal preset', async () => {

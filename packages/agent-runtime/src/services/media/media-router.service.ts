@@ -315,9 +315,10 @@ export class MediaRouterService {
     // intentionally handled by that provider's adapter (it is only a UI
     // compatibility contract, not a complete wire protocol).
     const isCustomManifest = manifestMatch?.manifest.providerKind === 'custom'
+    const isTemplateOverride = manifestMatch?.manifest.adapterMode === 'template'
     const shouldUseManifestAdapter = Boolean(
       manifestMatch &&
-      (isCustomManifest || !adapter || !adapter.supports(capability) || kind === 'custom'),
+      (isCustomManifest || isTemplateOverride || !adapter || !adapter.supports(capability) || kind === 'custom'),
     )
     // 包装 fetch，捕获发给 provider 的请求（method + url + body），用于任务详情展示。
     // 只取最后一个带 body 的 POST：adapter 内部对单次能力调用只发一个主请求；

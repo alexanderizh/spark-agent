@@ -9,6 +9,7 @@ import {
 import { MediaModelManifestSchema } from '../media-model-manifest.js'
 import type { MediaModelManifest } from '../media-model-manifest.js'
 import { validateMediaModelManifestSemantics } from '../media-model-manifest-validation.js'
+import { migrateMediaModelManifestToV2 } from '../media-model-manifest-migration.js'
 
 function manifest(overrides: Partial<MediaModelManifest> = {}): MediaModelManifest {
   return {
@@ -180,6 +181,165 @@ describe('MediaModelManifestSchema with Contract V2 fields', () => {
 })
 
 describe('validateMediaModelManifestSemantics — Contract V2', () => {
+  it('migrates the legacy flat invocation without deleting legacy fields', () => {
+    const migrated = migrateMediaModelManifestToV2(
+      manifest({
+        invocation: {
+          mode: 'async_polling',
+          endpoint: '/images',
+          method: 'POST',
+          contentType: 'json',
+          headers: { 'x-legacy': '1' },
+          requestTemplate: { model: '{{modelId}}' },
+          response: {
+            kind: 'task_poll',
+            taskIdPaths: ['id'],
+            statusEndpoint: '/tasks/{{taskId}}',
+            resultPaths: ['result.url'],
+          },
+          polling: {
+            intervalMs: 1000,
+            timeoutMs: 10000,
+            statusMap: { completed: 'succeeded', failed: 'failed' },
+          },
+        },
+      }),
+    )
+    expect(migrated.contractVersion).toBe(2)
+    expect(migrated.adapterMode).toBe('template')
+    expect(migrated.invocation.endpoint).toBe('/images')
+    expect(migrated.invocation.request?.body).toEqual({
+      kind: 'json',
+      template: { model: '{{modelId}}' },
+    })
+    expect(migrated.invocation.response).toMatchObject({
+      poll: { endpoint: '/tasks/{taskId}', method: 'GET' },
+      taskId: { location: 'path', name: 'taskId' },
+    })
+    expect(migrated.invocation.polling?.maxAttempts).toBe(10)
+    expect(validateMediaModelManifestSemantics(migrated)).toEqual([])
+  })
+
+  it('keeps legacy multipart and binary content types when creating the V2 request', () => {
+    const multipart = migrateMediaModelManifestToV2(
+      manifest({
+        invocation: {
+          mode: 'sync',
+          endpoint: '/upload',
+          method: 'POST',
+          contentType: 'multipart',
+          requestTemplate: { prompt: '{{prompt}}' },
+          response: { kind: 'url', jsonPaths: ['url'], download: false },
+        },
+      }),
+    )
+    expect(multipart.invocation.request?.body).toEqual({
+      kind: 'multipart',
+      parts: [{ name: 'prompt', kind: 'text', value: '{{prompt}}' }],
+    })
+
+    const binary = migrateMediaModelManifestToV2(
+      manifest({
+        invocation: {
+          mode: 'sync',
+          endpoint: '/upload',
+          method: 'POST',
+          contentType: 'binary',
+          requestTemplate: {},
+          response: { kind: 'binary_response' },
+        },
+      }),
+    )
+    expect(binary.invocation.request?.body).toEqual({ kind: 'binary', variable: '{{inputFiles}}' })
+  })
+
+  it('accepts a V2 task poll without the legacy statusEndpoint', () => {
+    const m = migrateMediaModelManifestToV2(
+      manifest({
+        contractVersion: 2,
+        adapterMode: 'template',
+        invocation: {
+          mode: 'async_polling',
+          endpoint: '/images',
+          method: 'POST',
+          contentType: 'json',
+          requestTemplate: { model: '{{modelId}}' },
+          response: {
+            kind: 'task_poll',
+            taskIdPaths: ['id'],
+            poll: {
+              method: 'GET',
+              endpoint: '/tasks/{taskId}',
+              auth: { kind: 'inherit' },
+            },
+            taskId: { location: 'path', name: 'taskId' },
+            statusPaths: ['status'],
+            resultPaths: ['result.url'],
+          },
+          polling: {
+            intervalMs: 1000,
+            timeoutMs: 10000,
+            maxAttempts: 10,
+            unknownStatus: 'fail',
+            statusMap: { completed: 'succeeded', failed: 'failed' },
+          },
+        },
+      }),
+    )
+    expect(MediaModelManifestSchema.safeParse(m).success).toBe(true)
+    expect(validateMediaModelManifestSemantics(m)).toEqual([])
+  })
+
+  it('accepts DELETE cleanup transport and rejects unsupported basic auth early', () => {
+    const m = migrateMediaModelManifestToV2(
+      manifest({
+        contractVersion: 2,
+        adapterMode: 'template',
+        invocation: {
+          mode: 'sync',
+          endpoint: '/images',
+          method: 'POST',
+          contentType: 'json',
+          requestTemplate: {},
+          request: {
+            method: 'POST',
+            endpoint: '/images',
+            auth: { kind: 'basic' },
+            body: { kind: 'json', template: {} },
+          },
+          uploads: [
+            {
+              name: 'referenceImages',
+              input: { variable: 'referenceImages', mode: 'each' },
+              request: {
+                method: 'POST',
+                endpoint: '/uploads',
+                body: {
+                  kind: 'multipart',
+                  parts: [{ name: 'file', kind: 'file', value: '{{upload.item}}' }],
+                },
+              },
+              result: { urlPaths: ['data.url'] },
+              cleanup: {
+                enabled: true,
+                request: {
+                  method: 'DELETE',
+                  endpoint: '/uploads/cleanup',
+                  body: { kind: 'none' },
+                },
+              },
+            },
+          ],
+          response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+        },
+      }),
+    )
+    expect(MediaModelManifestSchema.safeParse(m).success).toBe(true)
+    const issues = validateMediaModelManifestSemantics(m)
+    expect(issues.some((issue) => issue.code === 'invalid_auth')).toBe(true)
+    expect(issues.some((issue) => issue.path.join('.') === 'invocation.uploads.0.cleanup.request')).toBe(false)
+  })
+
   it('flags forbidden field that is not declared in schema or aliases', () => {
     const m = manifest({
       capabilities: [

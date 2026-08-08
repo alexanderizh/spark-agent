@@ -8,6 +8,9 @@ export interface MediaManifestValidationIssue {
     | 'invalid_default'
     | 'invalid_param_policy'
     | 'invalid_error_contract'
+    | 'invalid_transport'
+    | 'invalid_auth'
+    | 'invalid_upload'
   message: string
 }
 
@@ -47,6 +50,8 @@ const STANDARD_TEMPLATE_VARIABLES = new Set([
   'content',
   'params',
   'providerParams',
+  'uploads',
+  'upload',
 ])
 
 export function validateMediaModelManifestSemantics(
@@ -70,6 +75,21 @@ export function validateMediaModelManifestSemantics(
         message: 'async_polling 调用必须配置轮询间隔、超时和状态映射',
       })
     }
+    if (manifest.contractVersion === 2 && invocation.polling && invocation.polling.maxAttempts == null) {
+      issues.push({
+        path: ['invocation', 'polling', 'maxAttempts'],
+        code: 'invalid_transport',
+        message: 'async_polling 建议显式配置 maxAttempts，禁止无界轮询',
+      })
+    }
+  }
+
+  if (manifest.contractVersion === 2 && manifest.adapterMode == null) {
+    issues.push({
+      path: ['adapterMode'],
+      code: 'invalid_transport',
+      message: 'contractVersion=2 必须显式声明 adapterMode',
+    })
   }
 
   const allowedVariables = new Set(STANDARD_TEMPLATE_VARIABLES)
@@ -90,14 +110,64 @@ export function validateMediaModelManifestSemantics(
     allowedVariables,
     issues,
   )
+  if (invocation.request) {
+    validateInvocationRequest(invocation.request, ['invocation', 'request'], issues)
+  }
+  for (const [uploadIndex, upload] of (invocation.uploads ?? []).entries()) {
+    if (upload.input.variable.trim().length === 0) {
+      issues.push({
+        path: ['invocation', 'uploads', uploadIndex, 'input', 'variable'],
+        code: 'invalid_upload',
+        message: 'upload input variable 不能为空',
+      })
+    }
+    if (upload.constraints?.maxCount != null && upload.constraints.maxCount < 1) {
+      issues.push({
+        path: ['invocation', 'uploads', uploadIndex, 'constraints', 'maxCount'],
+        code: 'invalid_upload',
+        message: 'upload maxCount 必须大于 0',
+      })
+    }
+    validateInvocationRequest(upload.request, ['invocation', 'uploads', uploadIndex, 'request'], issues)
+    for (const path of upload.result.urlPaths) {
+      validateTemplateVariables(path, ['invocation', 'uploads', uploadIndex, 'result'], new Set(), issues)
+    }
+  }
 
   if (invocation.response.kind === 'task_poll') {
-    validateTemplateVariables(
-      invocation.response.statusEndpoint,
-      ['invocation', 'response', 'statusEndpoint'],
-      new Set(['taskId']),
-      issues,
-    )
+    if (invocation.response.statusEndpoint) {
+      validateTemplateVariables(
+        invocation.response.statusEndpoint,
+        ['invocation', 'response', 'statusEndpoint'],
+        new Set(['taskId']),
+        issues,
+      )
+    }
+    if (invocation.response.poll) {
+      validateInvocationRequest(
+        invocation.response.poll,
+        ['invocation', 'response', 'poll'],
+        issues,
+        new Set(['taskId', 'poll']),
+      )
+    }
+    if (!invocation.response.statusEndpoint && !invocation.response.poll) {
+      issues.push({
+        path: ['invocation', 'response'],
+        code: 'invalid_transport',
+        message: 'task_poll 必须配置 statusEndpoint 或 V2 poll transport',
+      })
+    }
+    if (manifest.contractVersion === 2 && invocation.polling) {
+      const mappedStates = new Set(Object.values(invocation.polling.statusMap))
+      if (!mappedStates.has('succeeded') || !mappedStates.has('failed')) {
+        issues.push({
+          path: ['invocation', 'polling', 'statusMap'],
+          code: 'invalid_transport',
+          message: 'statusMap 必须至少包含 succeeded 和 failed 终态映射',
+        })
+      }
+    }
   }
 
   manifest.capabilities.forEach((capability, capabilityIndex) => {
@@ -200,6 +270,39 @@ function validateErrorContract(
         })
       }
     }
+  }
+}
+
+function validateInvocationRequest(
+  request: NonNullable<MediaModelManifest['invocation']['request']>,
+  basePath: Array<string | number>,
+  issues: MediaManifestValidationIssue[],
+  allowedRoots = new Set(STANDARD_TEMPLATE_VARIABLES),
+): void {
+  if (request.method === 'GET' && request.body && request.body.kind !== 'none') {
+    issues.push({
+      path: [...basePath, 'body'],
+      code: 'invalid_transport',
+      message: `${request.method} 请求不能配置 body`,
+    })
+  }
+  validateTemplateVariables(request.endpoint, [...basePath, 'endpoint'], allowedRoots, issues)
+  validateTemplateVariables(request.query, [...basePath, 'query'], allowedRoots, issues)
+  validateTemplateVariables(request.headers, [...basePath, 'headers'], allowedRoots, issues)
+  validateTemplateVariables(request.body, [...basePath, 'body'], allowedRoots, issues)
+  if (request.auth?.kind === 'api_key_header' && /^(authorization|cookie|set-cookie)$/i.test(request.auth.name)) {
+    issues.push({
+      path: [...basePath, 'auth', 'name'],
+      code: 'invalid_auth',
+      message: `鉴权 Header ${request.auth.name} 不允许被自定义 API key 覆盖`,
+    })
+  }
+  if (request.auth?.kind === 'basic') {
+    issues.push({
+      path: [...basePath, 'auth'],
+      code: 'invalid_auth',
+      message: '当前 Provider 凭据模型不支持 basic auth，请使用 bearer、API key header/query 或无鉴权',
+    })
   }
 }
 

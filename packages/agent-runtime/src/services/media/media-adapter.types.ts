@@ -135,6 +135,8 @@ export type MediaErrorCode =
 export class MediaProviderError extends Error {
   readonly code: MediaErrorCode
   readonly statusCode?: number
+  /** Provider rate-limit hint, parsed from Retry-After when available. */
+  retryAfterMs?: number
   /** 失败请求的摘要（method + url + 已截断 body）：router 在抛错前挂上，便于任务详情排查。 */
   requestCall?: MediaRequestCall
   /**

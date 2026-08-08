@@ -87,10 +87,87 @@ export type MediaInvocationMode =
   | 'file_job'
 export type MediaRequestContentType = 'json' | 'multipart' | 'binary'
 
+/**
+ * Contract V2 transport primitives.
+ *
+ * All fields are optional on MediaModelManifest so existing manifests remain
+ * readable. New manifests may use these fields while the runtime keeps the
+ * legacy flat invocation fields as a compatibility fallback.
+ */
+export type MediaManifestAdapterMode = 'native' | 'template'
+export type MediaInvocationHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+export type MediaTaskIdLocation = 'path' | 'query' | 'header' | 'body'
+
+export type MediaInvocationAuth =
+  | { kind: 'none' }
+  | { kind: 'inherit' }
+  | { kind: 'bearer'; credentialRef?: string | undefined }
+  | { kind: 'api_key_header'; name: string; credentialRef?: string | undefined }
+  | { kind: 'api_key_query'; name: string; credentialRef?: string | undefined }
+  | { kind: 'basic'; credentialRef?: string | undefined }
+
+export type MediaInvocationBody =
+  | { kind: 'none' }
+  | { kind: 'json'; template: unknown }
+  | {
+      kind: 'multipart'
+      parts: Array<{
+        name: string
+        kind: 'text' | 'json' | 'file'
+        value: unknown
+        filename?: string | undefined
+        contentType?: string | undefined
+      }>
+    }
+  | { kind: 'binary'; variable: string }
+
+export interface MediaInvocationRequest {
+  method: MediaInvocationHttpMethod
+  endpoint: string
+  query?: Record<string, unknown> | undefined
+  headers?: Record<string, unknown> | undefined
+  auth?: MediaInvocationAuth | undefined
+  body?: MediaInvocationBody | undefined
+}
+
+export interface MediaTaskIdPlacement {
+  location: MediaTaskIdLocation
+  name: string
+}
+
+export interface MediaUploadSpec {
+  name: string
+  input: { variable: string; mode: 'each' | 'batch' }
+  constraints?: {
+    maxCount?: number | undefined
+    maxBytes?: number | undefined
+    allowedMimeTypes?: string[] | undefined
+  } | undefined
+  request: MediaInvocationRequest
+  result: {
+    urlPaths: string[]
+    multiple?: boolean | undefined
+  }
+  cleanup?: {
+    enabled: boolean
+    request: MediaInvocationRequest
+  } | undefined
+}
+
 export type MediaArtifactRetrieval =
   | { kind: 'inline_base64'; jsonPaths: string[] }
   | { kind: 'url'; jsonPaths: string[]; download: boolean }
-  | { kind: 'task_poll'; taskIdPaths: string[]; statusEndpoint: string; resultPaths: string[] }
+  | {
+      kind: 'task_poll'
+      taskIdPaths: string[]
+      /** Legacy flat polling endpoint; retained for old manifests. */
+      statusEndpoint?: string | undefined
+      /** V2 polling transport; when present it takes precedence over statusEndpoint. */
+      poll?: MediaInvocationRequest | undefined
+      taskId?: MediaTaskIdPlacement | undefined
+      statusPaths?: string[] | undefined
+      resultPaths: string[]
+    }
   | { kind: 'binary_response' }
 
 export interface MediaModelCapabilityManifest {
@@ -123,6 +200,10 @@ export interface MediaModelCapabilityManifest {
 
 export interface MediaModelManifest {
   id: string
+  /** Optional on read for legacy manifests; new saves must write 2. */
+  contractVersion?: 2 | undefined
+  /** Optional on read for legacy manifests; router infers old behavior when absent. */
+  adapterMode?: MediaManifestAdapterMode | undefined
   providerKind: string
   modelId: string
   /** Model id whose adapter-specific behavior this alias inherits. Requests still send modelId. */
@@ -138,12 +219,18 @@ export interface MediaModelManifest {
     contentType: MediaRequestContentType
     headers?: Record<string, unknown> | undefined
     requestTemplate: Record<string, unknown>
+    /** V2 normalized submit transport. Legacy flat fields remain supported. */
+    request?: MediaInvocationRequest | undefined
+    /** V2 pre-submit upload stages for local/provider-inaccessible files. */
+    uploads?: MediaUploadSpec[] | undefined
     response: MediaArtifactRetrieval
     polling?:
       | {
           intervalMs: number
           timeoutMs: number
           statusMap: Record<string, 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'>
+          maxAttempts?: number | undefined
+          unknownStatus?: 'fail' | 'running' | undefined
           retry?: { maxAttempts: number; backoffMs: number } | undefined
         }
       | undefined
@@ -186,14 +273,96 @@ export interface ProviderMediaModelRef {
   templateManifestId?: string | undefined
   /** Display name override for template-backed model aliases. */
   displayName?: string | undefined
+  /** Explicit routing mode for new refs; absent means legacy inference. */
+  adapterMode?: MediaManifestAdapterMode | undefined
+  /** Capability-only override for native template-backed refs. */
+  capabilityOverrides?: Record<string, unknown> | undefined
   /** Complete user-defined contract. Built-in references keep this omitted. */
   manifest?: MediaModelManifest | undefined
 }
 
 const JsonObjectSchema = z.record(z.unknown())
 
-export const MediaArtifactRetrievalSchema: z.ZodType<MediaArtifactRetrieval> = z.discriminatedUnion(
+export const MediaInvocationAuthSchema: z.ZodType<MediaInvocationAuth> = z.discriminatedUnion(
   'kind',
+  [
+    z.object({ kind: z.literal('none') }),
+    z.object({ kind: z.literal('inherit') }),
+    z.object({ kind: z.literal('bearer'), credentialRef: z.string().min(1).max(120).optional() }),
+    z.object({
+      kind: z.literal('api_key_header'),
+      name: z.string().min(1).max(120),
+      credentialRef: z.string().min(1).max(120).optional(),
+    }),
+    z.object({
+      kind: z.literal('api_key_query'),
+      name: z.string().min(1).max(120),
+      credentialRef: z.string().min(1).max(120).optional(),
+    }),
+    z.object({ kind: z.literal('basic'), credentialRef: z.string().min(1).max(120).optional() }),
+  ],
+)
+
+export const MediaInvocationBodySchema = z.discriminatedUnion(
+  'kind',
+  [
+    z.object({ kind: z.literal('none') }),
+    z.object({ kind: z.literal('json'), template: z.unknown() }),
+    z.object({
+      kind: z.literal('multipart'),
+      parts: z
+        .array(
+          z.object({
+            name: z.string().min(1).max(160),
+            kind: z.enum(['text', 'json', 'file']),
+            value: z.unknown(),
+            filename: z.string().min(1).max(240).optional(),
+            contentType: z.string().min(1).max(160).optional(),
+          }),
+        )
+        .min(1)
+        .max(100),
+    }),
+    z.object({ kind: z.literal('binary'), variable: z.string().min(1).max(200) }),
+  ],
+) as unknown as z.ZodType<MediaInvocationBody>
+
+export const MediaInvocationRequestSchema: z.ZodType<MediaInvocationRequest> = z.object({
+  method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
+  endpoint: z.string().min(1).max(800),
+  query: JsonObjectSchema.optional(),
+  headers: JsonObjectSchema.optional(),
+  auth: MediaInvocationAuthSchema.optional(),
+  body: MediaInvocationBodySchema.optional(),
+})
+
+export const MediaUploadSpecSchema: z.ZodType<MediaUploadSpec> = z.object({
+  name: z.string().min(1).max(120),
+  input: z.object({
+    variable: z.string().min(1).max(120),
+    mode: z.enum(['each', 'batch']),
+  }),
+  constraints: z
+    .object({
+      maxCount: z.number().int().min(1).max(64).optional(),
+      maxBytes: z.number().int().min(1).max(2_000_000_000).optional(),
+      allowedMimeTypes: z.array(z.string().min(1).max(120)).max(100).optional(),
+    })
+    .optional(),
+  request: MediaInvocationRequestSchema,
+  result: z.object({
+    urlPaths: z.array(z.string().min(1).max(200)).min(1).max(20),
+    multiple: z.boolean().optional(),
+  }),
+  cleanup: z
+    .object({
+      enabled: z.boolean(),
+      request: MediaInvocationRequestSchema,
+    })
+    .optional(),
+})
+
+export const MediaArtifactRetrievalSchema = z.union(
   [
     z.object({
       kind: z.literal('inline_base64'),
@@ -204,17 +373,35 @@ export const MediaArtifactRetrievalSchema: z.ZodType<MediaArtifactRetrieval> = z
       jsonPaths: z.array(z.string().min(1)).min(1),
       download: z.boolean(),
     }),
-    z.object({
-      kind: z.literal('task_poll'),
-      taskIdPaths: z.array(z.string().min(1)).min(1),
-      statusEndpoint: z.string().min(1),
-      resultPaths: z.array(z.string().min(1)).min(1),
-    }),
+    z
+      .object({
+        kind: z.literal('task_poll'),
+        taskIdPaths: z.array(z.string().min(1)).min(1),
+        statusEndpoint: z.string().min(1).optional(),
+        poll: MediaInvocationRequestSchema.optional(),
+        taskId: z
+          .object({
+            location: z.enum(['path', 'query', 'header', 'body']),
+            name: z.string().min(1).max(160),
+          })
+          .optional(),
+        statusPaths: z.array(z.string().min(1)).min(1).max(20).optional(),
+        resultPaths: z.array(z.string().min(1)).min(1),
+      })
+      .superRefine((value, ctx) => {
+        if (!value.statusEndpoint && !value.poll) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['statusEndpoint'],
+            message: 'task_poll 必须配置 statusEndpoint（旧格式）或 poll（V2 格式）',
+          })
+        }
+      }),
     z.object({
       kind: z.literal('binary_response'),
     }),
   ],
-)
+) as unknown as z.ZodType<MediaArtifactRetrieval>
 
 export const MediaModelCapabilityManifestSchema: z.ZodType<MediaModelCapabilityManifest> = z.object(
   {
@@ -246,6 +433,8 @@ export const MediaModelCapabilityManifestSchema: z.ZodType<MediaModelCapabilityM
 
 export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object({
   id: z.string().min(1).max(160),
+  contractVersion: z.literal(2).optional(),
+  adapterMode: z.enum(['native', 'template']).optional(),
   providerKind: z.string().min(1).max(120),
   modelId: z.string().min(1).max(200),
   adapterModelId: z.string().min(1).max(200).optional(),
@@ -263,6 +452,8 @@ export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object(
     contentType: z.enum(['json', 'multipart', 'binary']),
     headers: JsonObjectSchema.optional(),
     requestTemplate: JsonObjectSchema,
+    request: MediaInvocationRequestSchema.optional(),
+    uploads: z.array(MediaUploadSpecSchema).max(20).optional(),
     response: MediaArtifactRetrievalSchema,
     polling: z
       .object({
@@ -270,6 +461,8 @@ export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object(
         // 上限对齐火山方舟异步视频任务默认 48h（与 ProviderMediaDefaultsSchema 一致）。
         timeoutMs: z.number().int().min(1_000).max(172_800_000),
         statusMap: z.record(z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled'])),
+        maxAttempts: z.number().int().min(1).max(10_000).optional(),
+        unknownStatus: z.enum(['fail', 'running']).optional(),
         retry: z
           .object({
             maxAttempts: z.number().int().min(0).max(20),
@@ -309,6 +502,8 @@ export const ProviderMediaModelRefSchema: z.ZodType<ProviderMediaModelRef> = z
     defaults: JsonObjectSchema.optional(),
     templateManifestId: z.string().min(1).max(160).optional(),
     displayName: z.string().min(1).max(200).optional(),
+    adapterMode: z.enum(['native', 'template']).optional(),
+    capabilityOverrides: JsonObjectSchema.optional(),
     manifest: MediaModelManifestSchema.optional(),
   })
   .superRefine((ref, ctx) => {

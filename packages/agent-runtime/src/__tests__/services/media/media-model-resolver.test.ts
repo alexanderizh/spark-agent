@@ -160,6 +160,37 @@ describe('resolveProfileMediaModels', () => {
     expect(models[0]?.synthesized).toBe(false)
   })
 
+  it('在解析层应用 capability override，但不改变基础 transport manifest', () => {
+    const catalog = newCatalog()
+    const source = catalog.describe('apimart:gpt-image-2')
+    expect(source).toBeTruthy()
+    if (!source) throw new Error('missing APIMart image template')
+
+    const models = resolveProfileMediaModels(
+      {
+        mediaModelRefs: [
+          {
+            manifestId: source.id,
+            modelId: source.modelId,
+            capabilityOverrides: {
+              'image.generate': {
+                defaults: { n: 2 },
+                aliases: { outputFormat: 'format' },
+              },
+            },
+          },
+        ],
+      },
+      catalog,
+    )
+
+    const resolved = models[0]?.manifest
+    const capability = resolved?.capabilities.find((item) => item.id === 'image.generate')
+    expect(capability?.defaults).toMatchObject({ n: 2 })
+    expect(capability?.aliases).toMatchObject({ outputFormat: 'format' })
+    expect(resolved?.invocation.endpoint).toBe(source.invocation.endpoint)
+  })
+
   it('完全没有 mediaModelRefs 时，按 modelIds 回退（兼容旧数据）', () => {
     const catalog = newCatalog()
     const models = resolveProfileMediaModels(

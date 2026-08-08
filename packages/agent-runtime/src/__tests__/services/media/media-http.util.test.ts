@@ -214,6 +214,36 @@ describe('pollTask transient-error retry', () => {
       'event=request-failed-retryable',
     )
   })
+
+  it('retries HTTP 429 and respects a bounded Retry-After hint', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let calls = 0
+    const fetchImpl = vi.fn(
+      async () => {
+        calls += 1
+        if (calls === 1) {
+          return new Response('Too Many Requests', {
+            status: 429,
+            headers: { 'retry-after': '0' },
+          })
+        }
+        return new Response(JSON.stringify({ status: 'completed' }), { status: 200 })
+      },
+    ) as unknown as typeof fetch
+
+    await expect(
+      pollTask('https://api.apimart.ai/v1/tasks/task_x', {}, {
+        fetchImpl,
+        intervalMs: 1,
+        timeoutMs: 5_000,
+        retryBackoffMs: 1,
+        inspect: (d) => (statusOf(d) === 'completed' ? 'done' : 'pending'),
+      }),
+    ).resolves.toMatchObject({ status: 'completed' })
+
+    expect(calls).toBe(2)
+    expect(warn.mock.calls.map((c) => String(c[0])).join('\n')).toContain('retryAfterMs=0')
+  })
 })
 
 describe('network-error classification & messaging', () => {
@@ -222,6 +252,9 @@ describe('network-error classification & messaging', () => {
       true,
     )
     expect(isRetryableMediaError(new MediaProviderError('provider_http_error', 'HTTP 502', 502))).toBe(
+      true,
+    )
+    expect(isRetryableMediaError(new MediaProviderError('provider_http_error', 'HTTP 429', 429))).toBe(
       true,
     )
     expect(isRetryableMediaError(new MediaProviderError('provider_http_error', 'HTTP 404', 404))).toBe(
