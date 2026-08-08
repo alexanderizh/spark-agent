@@ -16,7 +16,11 @@ import {
   apimartVideoCapabilityDefaults,
   apimartVideoInputContracts,
 } from './apimart-video-input-contracts.js'
-import { MediaInputRolePolicySchema, type MediaInputRolePolicy } from './media-config.js'
+import {
+  DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+  MediaInputRolePolicySchema,
+  type MediaInputRolePolicy,
+} from './media-config.js'
 import { XAI_TTS_PARAM_SCHEMA, XAI_VIDEO_15_MANIFESTS } from './xai-media-model-manifests.js'
 import { VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS } from './volcengine-ark-media-model-manifests.js'
 import { BAILIAN_MEDIA_MODEL_MANIFESTS } from './bailian-media-model-manifests.js'
@@ -2290,7 +2294,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/videos/{{taskId}}',
         resultPaths: ['remixed_from_video_id'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
     },
     docs: {
       sourceUrls: ['https://agnes-ai.com/zh-Hans/docs/overview'],
@@ -2392,7 +2396,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/tasks/{{taskId}}',
         resultPaths: ['data.result.videos[].url[]', 'video_url', 'data[].url', 'output.url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
     },
     docs: { sourceUrls: ['https://docs.apimart.ai/cn'] },
     safety: { allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
@@ -2705,7 +2709,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/tasks/{{taskId}}',
         resultPaths: ['data.result.videos[].url[]', 'video_url', 'data[].url', 'output.url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
     },
     docs: { sourceUrls: ['https://docs.apimart.ai/cn'] },
     safety: { allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
@@ -2863,7 +2867,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/videos/{{taskId}}',
         resultPaths: ['video.url', 'video_url', 'data[].url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
     },
     docs: { sourceUrls: ['https://docs.x.ai/developers/model-capabilities/imagine'] },
     safety: { maxPromptLength: 8000, allowLocalFiles: true },
@@ -3135,7 +3139,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           statusEndpoint: '/v1/videos/text2video/{{taskId}}',
           resultPaths: ['video_url', 'output.video_url', 'data.video_url', 'data.url'],
         },
-        polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+        polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
       },
       docs: { sourceUrls: ['https://klingapi.com/zh/docs/text-to-video'] },
       safety: { maxPromptLength: 2500, allowLocalFiles: true },
@@ -3428,7 +3432,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/v1/query/video_generation?task_id={{taskId}}',
         resultPaths: ['file_id', 'data.file_id'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -3481,7 +3485,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/v1/query/video_generation?task_id={{taskId}}',
         resultPaths: ['file_id', 'data.file_id'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -3523,7 +3527,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/v1/query/video_template_generation?task_id={{taskId}}',
         resultPaths: ['video_url', 'data.video_url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -3608,7 +3612,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/v2/query/video_generation/{{taskId}}',
         resultPaths: ['task.content.url', 'content.url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
+      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
     },
     docs: {
       sourceUrls: [

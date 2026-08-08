@@ -23,6 +23,7 @@
  * 参数校验、错误归一与 catalog 检索。
  */
 
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '@spark/protocol'
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import { MediaProviderError } from '../media-adapter.types.js'
@@ -47,7 +48,10 @@ import {
   compileTencentProviderParams,
 } from '../tencent-tokenhub-media-request.js'
 import { filenameHelper } from './openai-compatible-media.adapter.js'
-import { configuredMediaInterfaceTimeoutMs, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
+import {
+  configuredMediaInterfaceTimeoutMs,
+  resolveMediaInterfaceTimeoutMs,
+} from '../media-timeout.js'
 
 const log = createLogger('media:tencent-tokenhub')
 
@@ -146,7 +150,8 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
           img,
           input.outputDir,
           filenameHelper(input, 'hyimage', i, images.length),
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -204,7 +209,8 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
               img,
               input.outputDir,
               filenameHelper(input, 'hyimage', i, images.length),
-              ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+              ctx.fetch,
+              configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
             ),
           ),
         )
@@ -244,7 +250,8 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
           img,
           input.outputDir,
           filenameHelper(input, 'hyimage', i, images.length),
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -320,7 +327,7 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
         extractDone: (data) => extractMediaUrls(data, { kind: 'video' }).length > 0,
         capability,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 30 * 60 * 1_000),
+        timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
       })
       videoUrls = extractMediaUrls(raw, { kind: 'video' })
     }
@@ -340,7 +347,8 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
           u,
           input.outputDir,
           filenameHelper(input, videoPrefix(capability), i, videoUrls.length),
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -410,9 +418,7 @@ async function pollTencentTask(input: {
     log.debug(
       `event=pending attempts=${attempts} capability=${input.capability} requestId=${input.taskId} status=${status || '(unknown)'} nextIntervalMs=${interval}`,
     )
-    await new Promise((r) =>
-      setTimeout(r, Math.max(0, Math.min(interval, deadline - Date.now()))),
-    )
+    await new Promise((r) => setTimeout(r, Math.max(0, Math.min(interval, deadline - Date.now()))))
     interval = Math.min(Math.max(interval * 1.3, interval), 15_000)
   }
   throw new MediaProviderError('task_timeout', `TokenHub task timed out after ${input.timeoutMs}ms`)

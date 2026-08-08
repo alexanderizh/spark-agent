@@ -53,10 +53,7 @@ import {
   shouldGroupCanvasImages,
   textFormatFromFileName,
 } from './canvasFileDrop'
-import {
-  replaceCanvasVideoNode,
-  replaceCanvasAudioNode,
-} from './canvasMediaNodeReplacement'
+import { replaceCanvasVideoNode, replaceCanvasAudioNode } from './canvasMediaNodeReplacement'
 import { extractDocumentText } from './canvasDocumentParse'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
@@ -266,7 +263,13 @@ import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace } from './canvas.store'
-import { canvasApi, isCanvasDirty, readAudioLocalFilePath, revertProject, saveCanvas } from './canvas.api'
+import {
+  canvasApi,
+  isCanvasDirty,
+  readAudioLocalFilePath,
+  revertProject,
+  saveCanvas,
+} from './canvas.api'
 import { buildTaskInputFiles, type CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
 import { pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
 import { executionOperationForCanvasMediaCapability } from './canvasMediaInputMode'
@@ -613,6 +616,7 @@ export function CanvasWorkspaceView({
     deleteShotSegment,
     createOperationNode,
     retryOperationNode,
+    repollMediaTask,
     runOperationNode,
   } = useCanvasWorkspace(projectId)
   const promptLibraryCategories = useMemo(
@@ -7830,6 +7834,17 @@ export function CanvasWorkspaceView({
                       restoreCanvasViewport(viewportBeforeRetry)
                     }
                   }}
+                  onRepoll={
+                    opTask
+                      ? async () => {
+                          try {
+                            await repollMediaTask(opTask.id)
+                          } catch (error) {
+                            message.error(error instanceof Error ? error.message : '重新轮询失败')
+                          }
+                        }
+                      : undefined
+                  }
                   onCancelTask={async (taskId) => {
                     await cancelTask(taskId)
                   }}
@@ -8566,6 +8581,11 @@ export function CanvasWorkspaceView({
           onClearTasks={(scope) => void clearTasks(scope)}
           onDeleteTasks={(taskIds) => void deleteTasks(taskIds)}
           onRetryTask={(task, runtimeSource) => void handleRetryTask(task, runtimeSource)}
+          onRepollTask={(taskId) =>
+            repollMediaTask(taskId).catch((error) => {
+              message.error(error instanceof Error ? error.message : '重新轮询失败')
+            })
+          }
           onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
           onInsertAsset={(assetId) => void handleInsertAsset(assetId)}
           onInsertSubview={(ownerAsset, sourceImageAsset, subview) =>

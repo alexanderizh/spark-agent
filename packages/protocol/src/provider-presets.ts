@@ -1,8 +1,9 @@
-import type {
-  MediaProviderKind,
-  MediaApiType,
-  MediaCapabilityId,
-  ProviderMediaDefaults,
+import {
+  DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+  type MediaProviderKind,
+  type MediaApiType,
+  type MediaCapabilityId,
+  type ProviderMediaDefaults,
 } from './media-config.js'
 import type { ProviderMediaModelRef } from './media-model-manifest.js'
 
@@ -462,7 +463,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ].map((modelId) => ({ manifestId: `openai-images:${modelId}`, modelId, enabled: true })),
     mediaDefaults: {
       video: { durationSeconds: 4 },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 10000 },
     },
     sourceUrls: [
@@ -1335,7 +1336,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaDefaults: {
       image: { size: '1024x1024', responseFormat: 'url' },
       video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 5000 },
     },
     sourceUrls: ['https://agnes-ai.com/zh-Hans/docs/overview'],
@@ -1510,7 +1511,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, quality: 'hd' },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 6000 },
     },
     sourceUrls: ['https://docs.apimart.ai/cn/api-reference/videos/veo3/generation'],
@@ -1535,7 +1536,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, quality: 'hd' },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 6000 },
     },
     sourceUrls: ['https://docs.apimart.ai/cn/api-reference/videos/sora-2/generation'],
@@ -1655,7 +1656,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 6000 },
     },
     sourceUrls: ['https://docs.apimart.ai/cn/api-reference/videos'],
@@ -1738,7 +1739,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 5000 },
     },
     sourceUrls: [
@@ -1838,7 +1839,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { resolution: '1080P', durationSeconds: 5 },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 15000 },
     },
     sourceUrls: [
@@ -1888,7 +1889,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { resolution: '1080P', durationSeconds: 5, watermark: false },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 15000 },
     },
     sourceUrls: [
@@ -1917,7 +1918,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'],
   },
 
-  /* ─── 火山方舟视频（Seedance 2.0 / 2.0 Fast / 2.0 Mini / 1.5 Pro / 1.0 Pro / 1.0 Pro Fast）─── */
+  /* ─── 火山方舟视频（Seedance 2.5 / 2.0 / 2.0 Fast / 2.0 Mini / 1.5 Pro / 1.0 Pro / 1.0 Pro Fast）─── */
   {
     id: 'volcengine-seedance-video',
     vendorId: 'volcengine',
@@ -1926,9 +1927,10 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     // endpoint 必须含 /api/v3，VolcengineArkMediaAdapter 在其后拼接
     // /contents/generations/tasks。原 /api 会导致 /api/contents/... 缺版本号。
     apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
-    // 默认 2.0：最新、能力最全（含视频编辑/延长/多模态参考/联网搜索）。
-    defaultModel: 'doubao-seedance-2-0-260128',
+    // 默认 2.5：最新模型；若账号尚未开通，用户可切回 2.0/2.0 Fast/Mini。
+    defaultModel: 'doubao-seedance-2-5-260628',
     modelIds: [
+      'doubao-seedance-2-5-260628',
       'doubao-seedance-2-0-260128',
       'doubao-seedance-2-0-fast-260128',
       'doubao-seedance-2-0-mini-260615',
@@ -1947,6 +1949,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'video.extend',
     ],
     mediaModelRefs: [
+      {
+        manifestId: 'volcengine:doubao-seedance-2-5-260628',
+        modelId: 'doubao-seedance-2-5-260628',
+        enabled: true,
+      },
       {
         manifestId: 'volcengine:doubao-seedance-2-0-260128',
         modelId: 'doubao-seedance-2-0-260128',
@@ -1980,10 +1987,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p' },
-      timeoutMs: 172_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 8000 },
     },
     sourceUrls: [
+      'https://www.volcengine.com/docs/82379/2607688',
       'https://www.volcengine.com/docs/82379/2291680',
       'https://www.volcengine.com/docs/82379/1520757',
       'https://seed.bytedance.com/zh/seedance2_0',
@@ -2163,7 +2171,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     })),
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 10000 },
     },
     sourceUrls: ['https://ai.google.dev/gemini-api/docs/veo'],
@@ -2189,7 +2197,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 10000 },
     },
     sourceUrls: ['https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash'],
@@ -2221,7 +2229,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 5000 },
     },
     sourceUrls: [
@@ -2303,7 +2311,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 5 },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 5000 },
     },
     sourceUrls: ['https://klingapi.com/zh/docs/text-to-video'],
@@ -2357,7 +2365,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { durationSeconds: 6, resolution: '768P' },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 5000 },
     },
     sourceUrls: [
@@ -2382,7 +2390,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaModelRefs: [{ manifestId: 'minimax:v2-h3', modelId: 'MiniMax-H3', enabled: true }],
     mediaDefaults: {
       video: { durationSeconds: 5 },
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 5000 },
     },
     sourceUrls: [
@@ -2404,9 +2412,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaProvider: 'minimax-hailuo',
     mediaApiType: 'async',
     mediaCapabilities: ['video.generate'],
-    mediaModelRefs: [{ manifestId: 'minimax:hailuo-template', modelId: 'video-agent', enabled: true }],
+    mediaModelRefs: [
+      { manifestId: 'minimax:hailuo-template', modelId: 'video-agent', enabled: true },
+    ],
     mediaDefaults: {
-      timeoutMs: 1_800_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 5000 },
     },
     sourceUrls: [
@@ -2533,7 +2543,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { durationSeconds: 5, resolution: '720p' },
-      timeoutMs: 1800000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 5000 },
     },
     sourceUrls: [

@@ -50,6 +50,7 @@ import {
 } from './official-media-mcp-helpers.mjs'
 
 const env = process.env
+const DEFAULT_VIDEO_POLL_TIMEOUT_MS = 48 * 60 * 60 * 1_000
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`)
@@ -71,17 +72,22 @@ const MODEL_SELECTOR_DESCRIPTION =
 const TOOLS = [
   {
     name: 'list_models',
-    description: 'List configured media models and capabilities available to this Spark media MCP server.',
+    description:
+      'List configured media models and capabilities available to this Spark media MCP server.',
     inputSchema: {
       type: 'object',
       properties: {
-        capability: { type: 'string', description: 'Optional capability filter, e.g. image.generate or video.image_to_video.' },
+        capability: {
+          type: 'string',
+          description: 'Optional capability filter, e.g. image.generate or video.image_to_video.',
+        },
       },
     },
   },
   {
     name: 'describe_model',
-    description: 'Describe one configured media model, including capability parameter schemas and invocation metadata.',
+    description:
+      'Describe one configured media model, including capability parameter schemas and invocation metadata.',
     inputSchema: {
       type: 'object',
       required: ['model'],
@@ -100,22 +106,55 @@ const TOOLS = [
       properties: {
         prompt: { type: 'string', description: 'Detailed image prompt.' },
         model: { type: 'string', description: MODEL_SELECTOR_DESCRIPTION },
-        size: { type: 'string', description: `Size, pixel dimensions, or aspect ratio (e.g. 1024x1024, 16:9, portrait). ${DESCRIBE_MODEL_HINT}` },
-        resolution: { type: 'string', description: `Provider-specific image resolution. ${DESCRIBE_MODEL_HINT}` },
-        imageSize: { type: 'string', description: `Provider-specific image size tier such as 1K, 2K, or 4K. ${DESCRIBE_MODEL_HINT}` },
-        aspectRatio: { type: 'string', description: `Provider-specific image aspect ratio. ${DESCRIBE_MODEL_HINT}` },
-        n: { type: 'integer', minimum: 1, maximum: 10, description: 'Number of images. Provider/model limits come from describe_model.' },
+        size: {
+          type: 'string',
+          description: `Size, pixel dimensions, or aspect ratio (e.g. 1024x1024, 16:9, portrait). ${DESCRIBE_MODEL_HINT}`,
+        },
+        resolution: {
+          type: 'string',
+          description: `Provider-specific image resolution. ${DESCRIBE_MODEL_HINT}`,
+        },
+        imageSize: {
+          type: 'string',
+          description: `Provider-specific image size tier such as 1K, 2K, or 4K. ${DESCRIBE_MODEL_HINT}`,
+        },
+        aspectRatio: {
+          type: 'string',
+          description: `Provider-specific image aspect ratio. ${DESCRIBE_MODEL_HINT}`,
+        },
+        n: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 10,
+          description: 'Number of images. Provider/model limits come from describe_model.',
+        },
         negative_prompt: { type: 'string' },
         seed: { type: 'integer' },
-        output_format: { type: 'string', description: `Provider-specific output format or response container. ${DESCRIBE_MODEL_HINT}` },
+        output_format: {
+          type: 'string',
+          description: `Provider-specific output format or response container. ${DESCRIBE_MODEL_HINT}`,
+        },
         quality: { type: 'string', description: DESCRIBE_MODEL_HINT },
         background: { type: 'string', description: DESCRIBE_MODEL_HINT },
         moderation: { type: 'string', description: DESCRIBE_MODEL_HINT },
-        outputCompression: { type: 'integer', minimum: 0, maximum: 100, description: DESCRIBE_MODEL_HINT },
+        outputCompression: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 100,
+          description: DESCRIBE_MODEL_HINT,
+        },
         delivery: { type: 'string', description: DESCRIBE_MODEL_HINT },
-        numberOfImages: { type: 'integer', minimum: 1, maximum: 4, description: DESCRIBE_MODEL_HINT },
+        numberOfImages: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 4,
+          description: DESCRIBE_MODEL_HINT,
+        },
         personGeneration: { type: 'string', description: DESCRIBE_MODEL_HINT },
-        user: { type: 'string', description: 'Optional end-user identifier supported by OpenAI image models.' },
+        user: {
+          type: 'string',
+          description: 'Optional end-user identifier supported by OpenAI image models.',
+        },
         inputImages: {
           type: 'array',
           items: { type: 'string' },
@@ -128,7 +167,8 @@ const TOOLS = [
   },
   {
     name: 'edit_image',
-    description: 'Edit one or more input images with a prompt (image edit / multi-reference compose).',
+    description:
+      'Edit one or more input images with a prompt (image edit / multi-reference compose).',
     inputSchema: {
       type: 'object',
       required: ['prompt'],
@@ -136,7 +176,11 @@ const TOOLS = [
         prompt: { type: 'string', description: 'Edit instruction.' },
         imageUrls: { type: 'array', items: { type: 'string' } },
         imageFiles: { type: 'array', items: { type: 'string' }, description: 'Local file paths.' },
-        imageFileIds: { type: 'array', items: { type: 'string' }, description: 'xAI Files API file ids.' },
+        imageFileIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'xAI Files API file ids.',
+        },
         model: { type: 'string', description: MODEL_SELECTOR_DESCRIPTION },
         mask: { type: 'string' },
         size: { type: 'string' },
@@ -153,7 +197,10 @@ const TOOLS = [
         outputCompression: { type: 'integer', minimum: 0, maximum: 100 },
         inputFidelity: { type: 'string' },
         delivery: { type: 'string' },
-        user: { type: 'string', description: 'Optional end-user identifier supported by OpenAI image models.' },
+        user: {
+          type: 'string',
+          description: 'Optional end-user identifier supported by OpenAI image models.',
+        },
         filename: { type: 'string' },
         extraJson: { type: 'object', additionalProperties: true },
       },
@@ -171,13 +218,18 @@ const TOOLS = [
         voice: { type: 'string', description: 'Voice id (provider-specific).' },
         language: { type: 'string', description: 'BCP-47 language or auto (provider-specific).' },
         format: { type: 'string', description: 'mp3, wav, opus, aac, flac, pcm.' },
-        output_format: { type: 'string', enum: ['url', 'hex'], description: 'Provider-specific output container, e.g. MiniMax url/hex.' },
+        output_format: {
+          type: 'string',
+          enum: ['url', 'hex'],
+          description: 'Provider-specific output container, e.g. MiniMax url/hex.',
+        },
         speed: { type: 'number' },
         language_boost: { type: 'string' },
         inputImages: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Optional reference image urls, data urls, or local paths for music generation.',
+          description:
+            'Optional reference image urls, data urls, or local paths for music generation.',
         },
         filename: { type: 'string' },
         extraJson: { type: 'object', additionalProperties: true },
@@ -201,7 +253,8 @@ const TOOLS = [
   },
   {
     name: 'generate_video',
-    description: 'Generate or edit a video from a prompt, first/last frames, reference images, or an input video.',
+    description:
+      'Generate or edit a video from a prompt, first/last frames, reference images, or an input video.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -213,14 +266,21 @@ const TOOLS = [
           description: 'Optional reference image urls / data urls for image-to-video.',
         },
         firstFrame: { type: 'string', description: 'Optional first-frame image url / data url.' },
-        firstFrameFileId: { type: 'string', description: 'Optional xAI Files API id for the first frame.' },
+        firstFrameFileId: {
+          type: 'string',
+          description: 'Optional xAI Files API id for the first frame.',
+        },
         lastFrame: { type: 'string', description: 'Optional last-frame image url / data url.' },
         referenceImages: {
           type: 'array',
           items: { type: 'string' },
           description: 'Optional reference image urls / data urls for video edit.',
         },
-        referenceImageFileIds: { type: 'array', items: { type: 'string' }, description: 'xAI Files API ids for reference images.' },
+        referenceImageFileIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'xAI Files API ids for reference images.',
+        },
         inputVideos: {
           type: 'array',
           items: { type: 'string' },
@@ -229,22 +289,54 @@ const TOOLS = [
         referenceVideos: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Optional reference video URLs. Provider/model limits come from describe_model.',
+          description:
+            'Optional reference video URLs. Provider/model limits come from describe_model.',
         },
         referenceAudios: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Optional reference audio URLs / data URLs. Provider/model limits come from describe_model.',
+          description:
+            'Optional reference audio URLs / data URLs. Provider/model limits come from describe_model.',
         },
-        videoUrl: { type: 'string', description: 'Optional remote input video url for video edit.' },
-        videoFile: { type: 'string', description: 'Optional local input video file path for video edit.' },
-        videoFileId: { type: 'string', description: 'Optional xAI Files API id for video edit or extension.' },
-        capability: { type: 'string', description: `Capability id such as video.generate, video.image_to_video, video.edit, or video.extend. ${DESCRIBE_MODEL_HINT}` },
-        videoMode: { type: 'string', description: 'Loose routing hint: generate, image_to_video, reference_to_video, edit, or extend.' },
-        aspectRatio: { type: 'string', description: `Provider-specific video aspect ratio. ${DESCRIBE_MODEL_HINT}` },
-        durationSeconds: { type: 'integer', minimum: -1, maximum: 120, description: `Duration in seconds; some models use -1 for automatic duration. ${DESCRIBE_MODEL_HINT}` },
-        resolution: { type: 'string', description: `Provider-specific video resolution. ${DESCRIBE_MODEL_HINT}` },
-        mode: { type: 'string', description: `Provider-specific generation mode. ${DESCRIBE_MODEL_HINT}` },
+        videoUrl: {
+          type: 'string',
+          description: 'Optional remote input video url for video edit.',
+        },
+        videoFile: {
+          type: 'string',
+          description: 'Optional local input video file path for video edit.',
+        },
+        videoFileId: {
+          type: 'string',
+          description: 'Optional xAI Files API id for video edit or extension.',
+        },
+        capability: {
+          type: 'string',
+          description: `Capability id such as video.generate, video.image_to_video, video.edit, or video.extend. ${DESCRIBE_MODEL_HINT}`,
+        },
+        videoMode: {
+          type: 'string',
+          description:
+            'Loose routing hint: generate, image_to_video, reference_to_video, edit, or extend.',
+        },
+        aspectRatio: {
+          type: 'string',
+          description: `Provider-specific video aspect ratio. ${DESCRIBE_MODEL_HINT}`,
+        },
+        durationSeconds: {
+          type: 'integer',
+          minimum: -1,
+          maximum: 120,
+          description: `Duration in seconds; some models use -1 for automatic duration. ${DESCRIBE_MODEL_HINT}`,
+        },
+        resolution: {
+          type: 'string',
+          description: `Provider-specific video resolution. ${DESCRIBE_MODEL_HINT}`,
+        },
+        mode: {
+          type: 'string',
+          description: `Provider-specific generation mode. ${DESCRIBE_MODEL_HINT}`,
+        },
         editStrength: { type: 'number', minimum: 0, maximum: 1 },
         negative_prompt: { type: 'string' },
         seed: { type: 'integer' },
@@ -315,7 +407,11 @@ const TOOLS = [
       type: 'object',
       properties: {
         after: { type: 'string' },
-        pageNo: { type: 'integer', minimum: 1, description: 'Bailian Files page number; defaults to 1.' },
+        pageNo: {
+          type: 'integer',
+          minimum: 1,
+          description: 'Bailian Files page number; defaults to 1.',
+        },
         limit: { type: 'integer', minimum: 1, maximum: 100, default: 100 },
         purpose: { type: 'string', enum: ['user_data', 'file-extract', 'batch', 'fine-tune'] },
         order: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
@@ -334,14 +430,18 @@ const TOOLS = [
   },
   {
     name: 'list_tasks',
-    description: 'List provider asynchronous tasks. Bailian supports the documented 24-hour task query window.',
+    description:
+      'List provider asynchronous tasks. Bailian supports the documented 24-hour task query window.',
     inputSchema: {
       type: 'object',
       properties: {
         startTime: { type: 'string', description: 'Bailian task start time as YYYYMMDDhhmmss.' },
         endTime: { type: 'string', description: 'Bailian task end time as YYYYMMDDhhmmss.' },
         modelName: { type: 'string' },
-        status: { type: 'string', enum: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED', 'UNKNOWN'] },
+        status: {
+          type: 'string',
+          enum: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED', 'UNKNOWN'],
+        },
         pageNo: { type: 'integer', minimum: 1 },
         limit: { type: 'integer', minimum: 1, maximum: 100 },
       },
@@ -349,23 +449,31 @@ const TOOLS = [
   },
   {
     name: 'get_task',
-    description: 'Inspect a media task created by this Spark media MCP process, or a Bailian provider task by task id.',
+    description:
+      'Inspect a media task created by this Spark media MCP process, or a Bailian provider task by task id.',
     inputSchema: {
       type: 'object',
       required: ['taskId'],
       properties: {
-        taskId: { type: 'string', description: 'Task id returned by a generate/edit/transcribe tool.' },
+        taskId: {
+          type: 'string',
+          description: 'Task id returned by a generate/edit/transcribe tool.',
+        },
       },
     },
   },
   {
     name: 'cancel_task',
-    description: 'Cancel a pending/running media task. Bailian permits remote cancellation only while the task is PENDING.',
+    description:
+      'Cancel a pending/running media task. Bailian permits remote cancellation only while the task is PENDING.',
     inputSchema: {
       type: 'object',
       required: ['taskId'],
       properties: {
-        taskId: { type: 'string', description: 'Task id returned by a generate/edit/transcribe tool.' },
+        taskId: {
+          type: 'string',
+          description: 'Task id returned by a generate/edit/transcribe tool.',
+        },
       },
     },
   },
@@ -389,7 +497,12 @@ function createTaskRecord(toolName, args, config) {
     status: 'running',
     provider: config.provider,
     model: config.model,
-    prompt: typeof args.prompt === 'string' ? args.prompt : typeof args.text === 'string' ? args.text : undefined,
+    prompt:
+      typeof args.prompt === 'string'
+        ? args.prompt
+        : typeof args.text === 'string'
+          ? args.text
+          : undefined,
     createdAt: now,
     updatedAt: now,
   }
@@ -517,9 +630,7 @@ async function handleUploadFile(config, args) {
       throw new Error('Volcengine video preprocessing only supports MP4, AVI, or MOV files')
     }
     const maxBytes =
-      tos && VOLCENGINE_VIDEO_EXTENSIONS.has(extension)
-        ? 2 * 1024 * 1024 * 1024
-        : 512 * 1024 * 1024
+      tos && VOLCENGINE_VIDEO_EXTENSIONS.has(extension) ? 2 * 1024 * 1024 * 1024 : 512 * 1024 * 1024
     if (info.size > maxBytes) {
       throw new Error(
         `Volcengine Files local file exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`,
@@ -617,24 +728,32 @@ function assertBailianFilesConfig(config) {
 async function handleBailianUploadFile(config, args) {
   const baseUrl = assertBailianFilesConfig(config)
   const filePath = typeof args.filePath === 'string' ? args.filePath.trim() : ''
-  if (!filePath || args.url) throw new Error('Bailian Files requires filePath and does not support URL/TOS imports')
+  if (!filePath || args.url)
+    throw new Error('Bailian Files requires filePath and does not support URL/TOS imports')
   const purpose = String(args.purpose || '').trim()
   if (!['file-extract', 'batch', 'fine-tune'].includes(purpose)) {
     throw new Error('Bailian Files purpose must be file-extract, batch, or fine-tune')
   }
   const info = await stat(filePath)
   if (!info.isFile()) throw new Error(`Bailian Files path is not a file: ${filePath}`)
-  const maxBytes = purpose === 'file-extract'
-    ? 150 * 1024 * 1024
-    : purpose === 'batch'
-      ? 500 * 1024 * 1024
-      : 1024 * 1024 * 1024
+  const maxBytes =
+    purpose === 'file-extract'
+      ? 150 * 1024 * 1024
+      : purpose === 'batch'
+        ? 500 * 1024 * 1024
+        : 1024 * 1024 * 1024
   if (info.size > maxBytes) {
-    throw new Error(`Bailian Files ${purpose} local file exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`)
+    throw new Error(
+      `Bailian Files ${purpose} local file exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`,
+    )
   }
   const form = new globalThis.FormData()
   const buffer = await readFile(filePath)
-  form.append('files', new globalThis.Blob([buffer], { type: mimeFromFilename(filePath) }), path.basename(filePath))
+  form.append(
+    'files',
+    new globalThis.Blob([buffer], { type: mimeFromFilename(filePath) }),
+    path.basename(filePath),
+  )
   form.append('purpose', purpose)
   if (typeof args.description === 'string' && args.description.trim()) {
     form.append('descriptions', args.description.trim())
@@ -648,7 +767,9 @@ async function handleBailianUploadFile(config, args) {
   const file = response?.data?.uploaded_files?.[0]
   if (!file?.file_id) {
     const detail = [failed?.code, failed?.message].filter(Boolean).join(': ')
-    throw new Error(`Bailian Files upload did not return an uploaded file${detail ? `: ${detail}` : ''}${requestIdSuffix(response)}`)
+    throw new Error(
+      `Bailian Files upload did not return an uploaded file${detail ? `: ${detail}` : ''}${requestIdSuffix(response)}`,
+    )
   }
   return { success: true, provider: config.provider, file, requestId: response?.request_id || null }
 }
@@ -662,14 +783,22 @@ async function handleBailianGetFile(config, args) {
     { headers: { authorization: `Bearer ${config.apiKey}` } },
     interfaceTimeoutMs(config, 30_000),
   )
-  if (!response?.data?.file_id) throw new Error(`Bailian Files response missing file_id${requestIdSuffix(response)}`)
-  return { success: true, provider: config.provider, file: response.data, requestId: response.request_id || null }
+  if (!response?.data?.file_id)
+    throw new Error(`Bailian Files response missing file_id${requestIdSuffix(response)}`)
+  return {
+    success: true,
+    provider: config.provider,
+    file: response.data,
+    requestId: response.request_id || null,
+  }
 }
 
 async function handleBailianListFiles(config, args) {
   const baseUrl = assertBailianFilesConfig(config)
   if (args.after || args.scopeId || args.purpose || args.order) {
-    throw new Error('Bailian Files list supports only pageNo and limit; purpose/order/after/scopeId are not documented for this API')
+    throw new Error(
+      'Bailian Files list supports only pageNo and limit; purpose/order/after/scopeId are not documented for this API',
+    )
   }
   const pageNo = Math.max(1, Math.floor(Number(args.pageNo) || 1))
   const pageSize = Math.max(1, Math.min(100, Math.floor(Number(args.limit) || 20)))
@@ -678,7 +807,12 @@ async function handleBailianListFiles(config, args) {
     { headers: { authorization: `Bearer ${config.apiKey}` } },
     interfaceTimeoutMs(config, 30_000),
   )
-  return { success: true, provider: config.provider, ...(response?.data || {}), requestId: response?.request_id || null }
+  return {
+    success: true,
+    provider: config.provider,
+    ...(response?.data || {}),
+    requestId: response?.request_id || null,
+  }
 }
 
 async function handleBailianDeleteFile(config, args) {
@@ -690,7 +824,13 @@ async function handleBailianDeleteFile(config, args) {
     { method: 'DELETE', headers: { authorization: `Bearer ${config.apiKey}` } },
     interfaceTimeoutMs(config, 30_000),
   )
-  return { success: true, provider: config.provider, deleted: true, id: fileId, requestId: response?.request_id || null }
+  return {
+    success: true,
+    provider: config.provider,
+    deleted: true,
+    id: fileId,
+    requestId: response?.request_id || null,
+  }
 }
 
 async function handleBailianGetTask(config, taskId) {
@@ -700,7 +840,12 @@ async function handleBailianGetTask(config, taskId) {
     { headers: { authorization: `Bearer ${config.apiKey}` } },
     interfaceTimeoutMs(config, 30_000),
   )
-  return { success: true, provider: config.provider, task: response?.output || response, requestId: response?.request_id || null }
+  return {
+    success: true,
+    provider: config.provider,
+    task: response?.output || response,
+    requestId: response?.request_id || null,
+  }
 }
 
 async function handleBailianListTasks(config, args) {
@@ -723,8 +868,10 @@ async function handleBailianListTasks(config, args) {
   }
   const pageNo = args.pageNo == null ? undefined : Number(args.pageNo)
   const pageSize = args.limit == null ? undefined : Number(args.limit)
-  if (pageNo != null && (!Number.isInteger(pageNo) || pageNo < 1)) throw new Error('Bailian pageNo must be a positive integer')
-  if (pageSize != null && (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100)) throw new Error('Bailian limit must be an integer between 1 and 100')
+  if (pageNo != null && (!Number.isInteger(pageNo) || pageNo < 1))
+    throw new Error('Bailian pageNo must be a positive integer')
+  if (pageSize != null && (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100))
+    throw new Error('Bailian limit must be an integer between 1 and 100')
   if (pageNo != null) query.set('page_no', String(pageNo))
   if (pageSize != null) query.set('page_size', String(pageSize))
   const response = await fetchJson(
@@ -742,7 +889,13 @@ async function handleBailianCancelTask(config, taskId) {
     { method: 'POST', headers: { authorization: `Bearer ${config.apiKey}` } },
     interfaceTimeoutMs(config, 30_000),
   )
-  return { success: true, provider: config.provider, cancelled: true, taskId, requestId: response?.request_id || null }
+  return {
+    success: true,
+    provider: config.provider,
+    cancelled: true,
+    taskId,
+    requestId: response?.request_id || null,
+  }
 }
 
 function appendVolcengineVideoPreprocess(form, raw) {
@@ -928,39 +1081,55 @@ function requestIdSuffix(body) {
   return body?.request_id ? ` (RequestId: ${body.request_id})` : ''
 }
 
-
 function configFromEnv() {
   const runtimeConfig = loadRuntimeConfigFile()
   let mediaDefaults
   let manifests
   try {
-    mediaDefaults = runtimeConfig?.mediaDefaults ??
+    mediaDefaults =
+      runtimeConfig?.mediaDefaults ??
       (env.SPARK_MEDIA_DEFAULTS_JSON ? JSON.parse(env.SPARK_MEDIA_DEFAULTS_JSON) : {})
   } catch {
     mediaDefaults = {}
   }
   try {
-    const parsed = runtimeConfig?.manifests ??
+    const parsed =
+      runtimeConfig?.manifests ??
       (env.SPARK_MEDIA_MANIFESTS_JSON ? JSON.parse(env.SPARK_MEDIA_MANIFESTS_JSON) : [])
     manifests = Array.isArray(parsed) ? parsed.filter(isManifestLike) : []
   } catch {
     manifests = []
   }
-  const provider = String(runtimeConfig?.provider || env.SPARK_MEDIA_PROVIDER || 'openai-compatible').trim().toLowerCase()
-  const configuredBaseUrl = String(runtimeConfig?.baseUrl || env.SPARK_MEDIA_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')
-  const outputDir = String(runtimeConfig?.outputDir || env.SPARK_MEDIA_OUTPUT_DIR || path.join(process.cwd(), '.spark-artifacts', 'media'))
-  const legacy = normalizeProviderConfig({
-    apiKey: runtimeConfig?.apiKey ||
-      (runtimeConfig?.apiKeyEnv ? env[runtimeConfig.apiKeyEnv] : '') ||
-      env.SPARK_MEDIA_API_KEY || '',
-    provider,
-    model: runtimeConfig?.model || env.SPARK_MEDIA_MODEL || '',
-    mode: runtimeConfig?.mode || env.SPARK_MEDIA_API_TYPE || 'auto',
-    baseUrl: configuredBaseUrl,
+  const provider = String(
+    runtimeConfig?.provider || env.SPARK_MEDIA_PROVIDER || 'openai-compatible',
+  )
+    .trim()
+    .toLowerCase()
+  const configuredBaseUrl = String(
+    runtimeConfig?.baseUrl || env.SPARK_MEDIA_BASE_URL || 'https://api.openai.com/v1',
+  ).replace(/\/+$/, '')
+  const outputDir = String(
+    runtimeConfig?.outputDir ||
+      env.SPARK_MEDIA_OUTPUT_DIR ||
+      path.join(process.cwd(), '.spark-artifacts', 'media'),
+  )
+  const legacy = normalizeProviderConfig(
+    {
+      apiKey:
+        runtimeConfig?.apiKey ||
+        (runtimeConfig?.apiKeyEnv ? env[runtimeConfig.apiKeyEnv] : '') ||
+        env.SPARK_MEDIA_API_KEY ||
+        '',
+      provider,
+      model: runtimeConfig?.model || env.SPARK_MEDIA_MODEL || '',
+      mode: runtimeConfig?.mode || env.SPARK_MEDIA_API_TYPE || 'auto',
+      baseUrl: configuredBaseUrl,
+      outputDir,
+      mediaDefaults,
+      manifests,
+    },
     outputDir,
-    mediaDefaults,
-    manifests,
-  }, outputDir)
+  )
   const providers = Array.isArray(runtimeConfig?.providers)
     ? normalizeProviderConfigs(runtimeConfig.providers, outputDir)
     : parseProviderConfigs(env.SPARK_MEDIA_PROVIDERS_JSON, outputDir)
@@ -988,12 +1157,16 @@ function parseProviderConfigs(raw, outputDir) {
 
 function normalizeProviderConfigs(value, outputDir) {
   return Array.isArray(value)
-    ? value.filter((item) => item && typeof item === 'object').map((item) => normalizeProviderConfig(item, outputDir))
+    ? value
+        .filter((item) => item && typeof item === 'object')
+        .map((item) => normalizeProviderConfig(item, outputDir))
     : []
 }
 
 function normalizeProviderConfig(value, outputDir) {
-  const provider = String(value.provider || 'openai-compatible').trim().toLowerCase()
+  const provider = String(value.provider || 'openai-compatible')
+    .trim()
+    .toLowerCase()
   const configuredBaseUrl = String(value.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')
   const adapterFromManifest = value.adapterFromManifest === true
   return {
@@ -1003,11 +1176,13 @@ function normalizeProviderConfig(value, outputDir) {
     provider,
     model: String(value.model || ''),
     mode: String(value.mode || 'auto'),
-    baseUrl: provider === 'bailian' && !adapterFromManifest
-      ? bailianMediaBaseUrl(configuredBaseUrl)
-      : configuredBaseUrl,
+    baseUrl:
+      provider === 'bailian' && !adapterFromManifest
+        ? bailianMediaBaseUrl(configuredBaseUrl)
+        : configuredBaseUrl,
     outputDir,
-    mediaDefaults: value.mediaDefaults && typeof value.mediaDefaults === 'object' ? value.mediaDefaults : {},
+    mediaDefaults:
+      value.mediaDefaults && typeof value.mediaDefaults === 'object' ? value.mediaDefaults : {},
     manifests: Array.isArray(value.manifests) ? value.manifests.filter(isManifestLike) : [],
     adapterFromManifest,
   }
@@ -1029,17 +1204,30 @@ function bailianMediaBaseUrl(value) {
 }
 
 function isManifestLike(value) {
-  return value && typeof value === 'object' &&
+  return (
+    value &&
+    typeof value === 'object' &&
     typeof value.id === 'string' &&
     typeof value.modelId === 'string' &&
     Array.isArray(value.capabilities)
+  )
 }
 
 function fallbackManifest(config) {
   if (!config.model) return null
   const capabilities = []
-  if (config.provider.includes('xai') || config.provider.includes('apimart') || config.provider.includes('openai')) {
-    capabilities.push({ id: 'image.generate', label: '文生图', paramSchema: {}, input: { required: ['prompt'] }, output: { types: ['image'] } })
+  if (
+    config.provider.includes('xai') ||
+    config.provider.includes('apimart') ||
+    config.provider.includes('openai')
+  ) {
+    capabilities.push({
+      id: 'image.generate',
+      label: '文生图',
+      paramSchema: {},
+      input: { required: ['prompt'] },
+      output: { types: ['image'] },
+    })
   }
   return {
     id: `${config.provider}:${config.model}`,
@@ -1048,7 +1236,14 @@ function fallbackManifest(config) {
     displayName: config.model,
     domains: ['image', 'video', 'audio'],
     capabilities,
-    invocation: { mode: config.mode === 'async' ? 'async_polling' : 'sync', endpoint: config.baseUrl, method: 'POST', contentType: 'json', requestTemplate: {}, response: { kind: 'url', jsonPaths: ['data[].url'], download: true } },
+    invocation: {
+      mode: config.mode === 'async' ? 'async_polling' : 'sync',
+      endpoint: config.baseUrl,
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: {},
+      response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+    },
     docs: { sourceUrls: [] },
   }
 }
@@ -1064,9 +1259,10 @@ function manifestAdapterModelId(manifest) {
 function handleListModels(config, args) {
   const capability = typeof args.capability === 'string' ? args.capability : ''
   const models = config.providers.flatMap((providerConfig) => {
-    const manifests = providerConfig.manifests.length > 0
-      ? providerConfig.manifests
-      : [fallbackManifest(providerConfig)].filter(Boolean)
+    const manifests =
+      providerConfig.manifests.length > 0
+        ? providerConfig.manifests
+        : [fallbackManifest(providerConfig)].filter(Boolean)
     return manifests
       .filter((manifest) => !capability || manifestCapabilities(manifest).includes(capability))
       .map((manifest) => ({
@@ -1114,20 +1310,24 @@ function handleDescribeModel(config, args) {
 }
 
 function configuredModelMatches(config, key) {
-  const manifests = config.manifests.length > 0
-    ? config.manifests
-    : [fallbackManifest(config)].filter(Boolean)
+  const manifests =
+    config.manifests.length > 0 ? config.manifests : [fallbackManifest(config)].filter(Boolean)
   return manifests
-    .filter((manifest) =>
-      manifest.id === key ||
-      manifest.modelId === key ||
-      manifest.displayName === key ||
-      (config.id && (`${config.id}/${manifest.id}` === key || `${config.id}/${manifest.modelId}` === key)))
+    .filter(
+      (manifest) =>
+        manifest.id === key ||
+        manifest.modelId === key ||
+        manifest.displayName === key ||
+        (config.id &&
+          (`${config.id}/${manifest.id}` === key || `${config.id}/${manifest.modelId}` === key)),
+    )
     .map((manifest) => ({ config, manifest }))
 }
 
 function resolveConfiguredModel(config, key) {
-  const matches = config.providers.flatMap((providerConfig) => configuredModelMatches(providerConfig, key))
+  const matches = config.providers.flatMap((providerConfig) =>
+    configuredModelMatches(providerConfig, key),
+  )
   if (matches.length === 0) throw new Error(`Unknown media model: ${key}`)
   if (matches.length > 1) {
     const choices = matches.map((match) => `${match.config.id}/${match.manifest.id}`).join(', ')
@@ -1152,22 +1352,27 @@ function configForTool(config, toolName, args) {
   const candidates = TOOL_CAPABILITY_CANDIDATES[toolName]?.(args) || []
   for (const capabilityId of candidates) {
     for (const providerConfig of config.providers) {
-      const manifests = providerConfig.manifests.length > 0
-        ? providerConfig.manifests
-        : [fallbackManifest(providerConfig)].filter(Boolean)
-      const defaultManifest = manifests.find((manifest) =>
-        (manifest.modelId === providerConfig.model || manifest.id === providerConfig.model) &&
-        manifestCapabilities(manifest).includes(capabilityId))
+      const manifests =
+        providerConfig.manifests.length > 0
+          ? providerConfig.manifests
+          : [fallbackManifest(providerConfig)].filter(Boolean)
+      const defaultManifest = manifests.find(
+        (manifest) =>
+          (manifest.modelId === providerConfig.model || manifest.id === providerConfig.model) &&
+          manifestCapabilities(manifest).includes(capabilityId),
+      )
       if (defaultManifest) return configWithSelectedManifest(providerConfig, defaultManifest)
     }
   }
   for (const capabilityId of candidates) {
     for (const providerConfig of config.providers) {
-      const manifests = providerConfig.manifests.length > 0
-        ? providerConfig.manifests
-        : [fallbackManifest(providerConfig)].filter(Boolean)
+      const manifests =
+        providerConfig.manifests.length > 0
+          ? providerConfig.manifests
+          : [fallbackManifest(providerConfig)].filter(Boolean)
       const capableManifest = manifests.find((manifest) =>
-        manifestCapabilities(manifest).includes(capabilityId))
+        manifestCapabilities(manifest).includes(capabilityId),
+      )
       if (capableManifest) {
         return configWithSelectedManifest(providerConfig, capableManifest)
       }
@@ -1192,8 +1397,10 @@ function validInterfaceTimeoutMs(value) {
 }
 
 function configuredInterfaceTimeoutMs(config) {
-  return validInterfaceTimeoutMs(config.mediaDefaults?.timeoutMs)
-    ?? validInterfaceTimeoutMs(config.mediaDefaults?.polling?.timeoutMs)
+  return (
+    validInterfaceTimeoutMs(config.mediaDefaults?.timeoutMs) ??
+    validInterfaceTimeoutMs(config.mediaDefaults?.polling?.timeoutMs)
+  )
 }
 
 function interfaceTimeoutMs(config, fallbackMs) {
@@ -1224,13 +1431,18 @@ async function fetchJson(url, init, timeoutMs, binary = false) {
     }
     const text = await res.text()
     let body = null
-    try { body = text ? JSON.parse(text) : null } catch { body = text }
+    try {
+      body = text ? JSON.parse(text) : null
+    } catch {
+      body = text
+    }
     if (!res.ok) {
-      const providerDetail = body && typeof body === 'object'
-        ? [body.code, body.message, body.request_id ? `RequestId: ${body.request_id}` : '']
-          .filter(Boolean)
-          .join(': ')
-        : ''
+      const providerDetail =
+        body && typeof body === 'object'
+          ? [body.code, body.message, body.request_id ? `RequestId: ${body.request_id}` : '']
+              .filter(Boolean)
+              .join(': ')
+          : ''
       throw new Error(`HTTP ${res.status}: ${providerDetail || String(text).slice(0, 800)}`)
     }
     return body
@@ -1267,9 +1479,7 @@ async function pollTask(config, url, inspect, fallbackTimeoutMs = 600_000) {
     const state = inspect(data)
     if (state === 'done') return data
     if (state === 'failed') throw new Error(`Task failed: ${JSON.stringify(data).slice(0, 800)}`)
-    await new Promise((r) =>
-      setTimeout(r, Math.max(0, Math.min(interval, deadline - Date.now()))),
-    )
+    await new Promise((r) => setTimeout(r, Math.max(0, Math.min(interval, deadline - Date.now()))))
     interval = Math.min(interval * 1.3, Math.max(interval, 15_000))
   }
   throw new Error('Task timed out')
@@ -1285,7 +1495,9 @@ function authHeaders(config) {
 function stringHeaders(value) {
   if (!isPlainRecord(value)) return {}
   return Object.fromEntries(
-    Object.entries(value).filter(([, headerValue]) => typeof headerValue === 'string' && headerValue.length > 0),
+    Object.entries(value).filter(
+      ([, headerValue]) => typeof headerValue === 'string' && headerValue.length > 0,
+    ),
   )
 }
 
@@ -1295,15 +1507,25 @@ function collectInputFileKinds(args) {
   if (!args || typeof args !== 'object') return []
   const files = []
   const hasImageInput =
-    Array.isArray(args.imageUrls) || Array.isArray(args.imageFiles) || Array.isArray(args.inputImages) || Array.isArray(args.referenceImages)
+    Array.isArray(args.imageUrls) ||
+    Array.isArray(args.imageFiles) ||
+    Array.isArray(args.inputImages) ||
+    Array.isArray(args.referenceImages)
   if (hasImageInput) files.push({ type: 'image' })
   if (args.firstFrame) files.push({ type: 'image', role: 'first_frame' })
   if (args.lastFrame) files.push({ type: 'image', role: 'last_frame' })
-  const hasVideoInput = args.videoUrl || args.videoFile ||
+  const hasVideoInput =
+    args.videoUrl ||
+    args.videoFile ||
     (Array.isArray(args.inputVideos) && args.inputVideos.length > 0) ||
     (Array.isArray(args.referenceVideos) && args.referenceVideos.length > 0)
   if (hasVideoInput) files.push({ type: 'video' })
-  if (args.audioUrl || args.audioFile || (Array.isArray(args.referenceAudios) && args.referenceAudios.length > 0)) files.push({ type: 'audio' })
+  if (
+    args.audioUrl ||
+    args.audioFile ||
+    (Array.isArray(args.referenceAudios) && args.referenceAudios.length > 0)
+  )
+    files.push({ type: 'audio' })
   if (args.mask) files.push({ type: 'mask' })
   if (typeof args.text === 'string' && args.text.trim()) files.push({ type: 'text' })
   return files
@@ -1317,7 +1539,11 @@ function parseHttpError(err) {
   const statusCode = Number.parseInt(match[1], 10)
   const rawText = match[2] ?? ''
   let body
-  try { body = rawText ? JSON.parse(rawText) : null } catch { body = rawText }
+  try {
+    body = rawText ? JSON.parse(rawText) : null
+  } catch {
+    body = rawText
+  }
   return { statusCode, rawText, body }
 }
 
@@ -1373,7 +1599,9 @@ function pickStringPath(value, paths) {
 
 function readPath(value, path) {
   if (value == null) return undefined
-  const parts = String(path).split(/[.[\]]+/).filter(Boolean)
+  const parts = String(path)
+    .split(/[.[\]]+/)
+    .filter(Boolean)
   let cursor = value
   for (const part of parts) {
     if (cursor == null) return undefined
@@ -1400,14 +1628,19 @@ function summarizeParamPolicy(capability) {
     }
   }
   if (Array.isArray(policy.forbidden) && policy.forbidden.length > 0) {
-    summary.forbidden = policy.forbidden.map((entry) => ({ name: entry.name, reason: entry.reason }))
+    summary.forbidden = policy.forbidden.map((entry) => ({
+      name: entry.name,
+      reason: entry.reason,
+    }))
   }
   if (Array.isArray(policy.transforms) && policy.transforms.length > 0) {
     summary.transforms = policy.transforms.map((rule) => {
       if (rule.kind === 'rename') return { kind: 'rename', from: rule.from, to: rule.to }
       if (rule.kind === 'map_value') return { kind: 'map_value', field: rule.field }
-      if (rule.kind === 'ratio_size_to_aspect') return { kind: 'ratio_size_to_aspect', from: rule.from, to: rule.to }
-      if (rule.kind === 'drop_when_input_kind') return { kind: 'drop_when_input_kind', field: rule.field, inputKinds: rule.inputKinds }
+      if (rule.kind === 'ratio_size_to_aspect')
+        return { kind: 'ratio_size_to_aspect', from: rule.from, to: rule.to }
+      if (rule.kind === 'drop_when_input_kind')
+        return { kind: 'drop_when_input_kind', field: rule.field, inputKinds: rule.inputKinds }
       return { kind: rule.kind }
     })
   }
@@ -1426,7 +1659,8 @@ function inferRolePolicyMjs(capability) {
   }
   const req = Array.isArray(capability?.input?.required) ? capability.input.required : []
   const hasImage = req.includes('image') || req.includes('images')
-  const maxImages = typeof capability?.input?.maxImages === 'number' ? capability.input.maxImages : 0
+  const maxImages =
+    typeof capability?.input?.maxImages === 'number' ? capability.input.maxImages : 0
   switch (capability?.id) {
     case 'video.image_to_video':
       return {
@@ -1473,11 +1707,16 @@ function summarizeErrorContract(manifest) {
   const contract = manifest?.error
   if (!contract) return undefined
   const summary = {}
-  if (Array.isArray(contract.codePaths) && contract.codePaths.length > 0) summary.codePaths = contract.codePaths
-  if (Array.isArray(contract.messagePaths) && contract.messagePaths.length > 0) summary.messagePaths = contract.messagePaths
-  if (Array.isArray(contract.paramNamePaths) && contract.paramNamePaths.length > 0) summary.paramNamePaths = contract.paramNamePaths
-  if (contract.mappings && typeof contract.mappings === 'object') summary.mappings = contract.mappings
-  if (Array.isArray(contract.retryableCodes) && contract.retryableCodes.length > 0) summary.retryableCodes = contract.retryableCodes
+  if (Array.isArray(contract.codePaths) && contract.codePaths.length > 0)
+    summary.codePaths = contract.codePaths
+  if (Array.isArray(contract.messagePaths) && contract.messagePaths.length > 0)
+    summary.messagePaths = contract.messagePaths
+  if (Array.isArray(contract.paramNamePaths) && contract.paramNamePaths.length > 0)
+    summary.paramNamePaths = contract.paramNamePaths
+  if (contract.mappings && typeof contract.mappings === 'object')
+    summary.mappings = contract.mappings
+  if (Array.isArray(contract.retryableCodes) && contract.retryableCodes.length > 0)
+    summary.retryableCodes = contract.retryableCodes
   return Object.keys(summary).length > 0 ? summary : undefined
 }
 
@@ -1496,15 +1735,18 @@ function extFromMime(mime = 'image/png') {
 async function materializeImage(config, image, filename, index, total) {
   const dir = path.join(config.outputDir, 'images')
   await mkdir(dir, { recursive: true })
-  const buffer = image.kind === 'url'
-    ? await fetchJson(
-      image.value,
-      { headers: artifactDownloadHeaders(config, image.value) },
-      interfaceTimeoutMs(config, 60_000),
-      true,
-    )
-    : Buffer.from(image.value, 'base64')
-  const parsed = path.parse(filename || `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`)
+  const buffer =
+    image.kind === 'url'
+      ? await fetchJson(
+          image.value,
+          { headers: artifactDownloadHeaders(config, image.value) },
+          interfaceTimeoutMs(config, 60_000),
+          true,
+        )
+      : Buffer.from(image.value, 'base64')
+  const parsed = path.parse(
+    filename || `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  )
   const suffix = total > 1 ? `_${String(index + 1).padStart(3, '0')}` : ''
   const name = `${parsed.name}${suffix}${parsed.ext || extFromMime(image.mimeType)}`
   const file = path.join(dir, name)
@@ -1521,7 +1763,9 @@ async function downloadMedia(config, url, kind, filename) {
     interfaceTimeoutMs(config, 60_000),
     true,
   )
-  const parsed = path.parse(filename || `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`)
+  const parsed = path.parse(
+    filename || `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  )
   const name = `${parsed.name}${parsed.ext || (kind === 'audio' ? '.mp3' : '.mp4')}`
   const file = path.join(dir, name)
   await writeFile(file, buffer)
@@ -1531,7 +1775,9 @@ async function downloadMedia(config, url, kind, filename) {
 async function writeBinaryAsset(config, buffer, kind, filename, extension) {
   const dir = path.join(config.outputDir, kind === 'audio' ? 'audio' : 'videos')
   await mkdir(dir, { recursive: true })
-  const parsed = path.parse(filename || `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`)
+  const parsed = path.parse(
+    filename || `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  )
   const file = path.join(dir, `${parsed.name}${parsed.ext || `.${extension}`}`)
   await writeFile(file, buffer)
   return file
@@ -1549,24 +1795,34 @@ async function writeTextAsset(config, text, filename) {
 // ── manifest-driven executor ──────────────────────────────────────────────
 
 const TOOL_CAPABILITY_CANDIDATES = {
-  generate_image: (args) => Array.isArray(args.inputImages) && args.inputImages.length > 0
-    ? ['image.image_to_image', 'image.edit', 'image.generate']
-    : ['image.generate'],
+  generate_image: (args) =>
+    Array.isArray(args.inputImages) && args.inputImages.length > 0
+      ? ['image.image_to_image', 'image.edit', 'image.generate']
+      : ['image.generate'],
   edit_image: () => ['image.edit', 'image.compose', 'image.image_to_image'],
   generate_audio: () => ['audio.music', 'audio.speech'],
   transcribe_audio: () => ['audio.transcription'],
   generate_video: (args) => {
     if (args.capability === 'video.extend' || args.videoMode === 'extend') return ['video.extend']
     if (args.capability === 'video.edit' || args.videoMode === 'edit') return ['video.edit']
-    if (args.capability === 'video.reference_to_video' || args.videoMode === 'reference_to_video') return ['video.reference_to_video', 'video.image_to_video', 'video.generate']
-    if (args.capability === 'video.image_to_video' || args.videoMode === 'image_to_video') return ['video.image_to_video', 'video.generate']
-    if (args.capability === 'video.generate' || args.videoMode === 'generate') return ['video.generate']
-    const hasInputVideo = Boolean(args.videoUrl || args.videoFile) ||
-      (Array.isArray(args.inputVideos) && args.inputVideos.some((item) => typeof item === 'string' && item.length > 0))
-    const hasInputImage = Boolean(args.firstFrame || args.lastFrame) ||
-      (Array.isArray(args.inputImages) && args.inputImages.some((item) => typeof item === 'string' && item.length > 0)) ||
-      (Array.isArray(args.referenceImages) && args.referenceImages.some((item) => typeof item === 'string' && item.length > 0))
-    if (hasInputVideo) return ['video.edit', 'video.extend', 'video.image_to_video', 'video.generate']
+    if (args.capability === 'video.reference_to_video' || args.videoMode === 'reference_to_video')
+      return ['video.reference_to_video', 'video.image_to_video', 'video.generate']
+    if (args.capability === 'video.image_to_video' || args.videoMode === 'image_to_video')
+      return ['video.image_to_video', 'video.generate']
+    if (args.capability === 'video.generate' || args.videoMode === 'generate')
+      return ['video.generate']
+    const hasInputVideo =
+      Boolean(args.videoUrl || args.videoFile) ||
+      (Array.isArray(args.inputVideos) &&
+        args.inputVideos.some((item) => typeof item === 'string' && item.length > 0))
+    const hasInputImage =
+      Boolean(args.firstFrame || args.lastFrame) ||
+      (Array.isArray(args.inputImages) &&
+        args.inputImages.some((item) => typeof item === 'string' && item.length > 0)) ||
+      (Array.isArray(args.referenceImages) &&
+        args.referenceImages.some((item) => typeof item === 'string' && item.length > 0))
+    if (hasInputVideo)
+      return ['video.edit', 'video.extend', 'video.image_to_video', 'video.generate']
     if (hasInputImage) return ['video.image_to_video', 'video.edit', 'video.generate']
     return ['video.generate']
   },
@@ -1578,11 +1834,16 @@ function resolveManifestForTool(config, toolName, args) {
   if (candidates.length === 0) return null
   const requestedModel = typeof args.model === 'string' ? args.model.trim() : ''
   const manifests = requestedModel
-    ? config.manifests.filter((manifest) =>
-      manifest.id === requestedModel ||
-      manifest.modelId === requestedModel ||
-      manifest.displayName === requestedModel)
-    : config.manifests.filter((manifest) => !config.model || manifest.modelId === config.model || manifest.id === config.model)
+    ? config.manifests.filter(
+        (manifest) =>
+          manifest.id === requestedModel ||
+          manifest.modelId === requestedModel ||
+          manifest.displayName === requestedModel,
+      )
+    : config.manifests.filter(
+        (manifest) =>
+          !config.model || manifest.modelId === config.model || manifest.id === config.model,
+      )
   const pool = manifests.length > 0 ? manifests : config.manifests
   for (const capabilityId of candidates) {
     for (const manifest of pool) {
@@ -1654,7 +1915,13 @@ async function normalizeBailianMcpInputs(args, capabilityId) {
   if (typeof args.lastFrame === 'string' && args.lastFrame.trim()) {
     next.lastFrame = await bailianMcpImageReference(args.lastFrame)
   }
-  for (const key of ['videoUrl', 'videoFile', 'inputVideos', 'referenceVideos', 'referenceAudios']) {
+  for (const key of [
+    'videoUrl',
+    'videoFile',
+    'inputVideos',
+    'referenceVideos',
+    'referenceAudios',
+  ]) {
     const values = Array.isArray(args[key]) ? args[key] : [args[key]]
     const present = values.filter((value) => typeof value === 'string' && value.trim())
     for (const value of present) {
@@ -1691,16 +1958,23 @@ async function bailianMcpImageReference(value) {
   if (/^(?:https?:|oss:|data:image\/)/i.test(reference)) return reference
   const buffer = await readFile(reference)
   const mimeType = mimeFromFilename(reference)
-  if (!mimeType.startsWith('image/')) throw new Error(`Bailian image input is not a supported image: ${reference}`)
+  if (!mimeType.startsWith('image/'))
+    throw new Error(`Bailian image input is not a supported image: ${reference}`)
   return `data:${mimeType};base64,${buffer.toString('base64')}`
 }
 
 function buildBailianMcpMedia(args, capabilityId) {
   const inputImages = Array.isArray(args.inputImages) ? args.inputImages.filter(Boolean) : []
-  const referenceImages = Array.isArray(args.referenceImages) ? args.referenceImages.filter(Boolean) : []
+  const referenceImages = Array.isArray(args.referenceImages)
+    ? args.referenceImages.filter(Boolean)
+    : []
   const inputVideos = Array.isArray(args.inputVideos) ? args.inputVideos.filter(Boolean) : []
-  const referenceVideos = Array.isArray(args.referenceVideos) ? args.referenceVideos.filter(Boolean) : []
-  const referenceAudios = Array.isArray(args.referenceAudios) ? args.referenceAudios.filter(Boolean) : []
+  const referenceVideos = Array.isArray(args.referenceVideos)
+    ? args.referenceVideos.filter(Boolean)
+    : []
+  const referenceAudios = Array.isArray(args.referenceAudios)
+    ? args.referenceAudios.filter(Boolean)
+    : []
   const hasExplicitFirstFrame = Boolean(args.firstFrame)
   const firstFrame = args.firstFrame || inputImages[0] || ''
   const lastFrame = args.lastFrame || ''
@@ -1712,7 +1986,9 @@ function buildBailianMcpMedia(args, capabilityId) {
     }
     if (inputVideos.length > 0) {
       if (firstFrame || referenceAudios.length > 0) {
-        throw new Error('Bailian video extension accepts only first_clip, optionally followed by last_frame')
+        throw new Error(
+          'Bailian video extension accepts only first_clip, optionally followed by last_frame',
+        )
       }
       return [
         { type: 'first_clip', url: inputVideos[0] },
@@ -1737,7 +2013,8 @@ function buildBailianMcpMedia(args, capabilityId) {
     if (!firstFrame && references.length + referenceVideos.length === 0) {
       throw new Error('Bailian reference-to-video requires at least one image or video reference')
     }
-    if (referenceAudios.length > 1) throw new Error('Bailian reference-to-video accepts at most one reference voice')
+    if (referenceAudios.length > 1)
+      throw new Error('Bailian reference-to-video accepts at most one reference voice')
     return [
       ...(firstFrame ? [{ type: 'first_frame', url: firstFrame }] : []),
       ...references.map((url) => ({ type: 'reference_image', url })),
@@ -1748,8 +2025,10 @@ function buildBailianMcpMedia(args, capabilityId) {
   if (capabilityId === 'video.edit') {
     const video = args.videoUrl || inputVideos[0] || ''
     const images = [...inputImages, ...referenceImages]
-    if (!video || inputVideos.length > 1) throw new Error('Bailian video edit requires exactly one input video')
-    if (images.length > 4) throw new Error('Bailian video edit accepts at most four reference images')
+    if (!video || inputVideos.length > 1)
+      throw new Error('Bailian video edit requires exactly one input video')
+    if (images.length > 4)
+      throw new Error('Bailian video edit accepts at most four reference images')
     return [
       { type: 'video', url: video },
       ...images.map((url) => ({ type: 'reference_image', url })),
@@ -1761,12 +2040,13 @@ function buildBailianMcpMedia(args, capabilityId) {
 function buildManifestVariables(toolName, args, manifest, capability, modelId, prePrunedParams) {
   // prePrunedParams：当调用方（handleManifestTool）已通过 Contract V2 prune 后，
   // 直接使用裁剪后的 canonical 参数；否则回退到原 argsToModelParams 收集行为。
-  const params = prePrunedParams !== undefined
-    ? { ...(capability.defaults || {}), ...prePrunedParams }
-    : {
-        ...(capability.defaults || {}),
-        ...argsToModelParams(toolName, args),
-      }
+  const params =
+    prePrunedParams !== undefined
+      ? { ...(capability.defaults || {}), ...prePrunedParams }
+      : {
+          ...(capability.defaults || {}),
+          ...argsToModelParams(toolName, args),
+        }
   // xAI Images API 不支持 size（HTTP 400: Argument not supported: size）。
   // 用户/LLM 可能经 size 传比例（如 16:9）或分辨率（如 1024x1024）：
   //   - 比例型 → 归一化到 aspect_ratio（xAI 官方字段），并移除 size
@@ -1782,35 +2062,58 @@ function buildManifestVariables(toolName, args, manifest, capability, modelId, p
     const providerKey = capability.aliases?.[key] || key
     providerParams[providerKey] = value
   }
-  const inputImages = Array.isArray(args.inputImages) ? args.inputImages.filter((item) => typeof item === 'string') : []
-  const referenceImages = Array.isArray(args.referenceImages) ? args.referenceImages.filter((item) => typeof item === 'string') : []
-  const imageUrls = Array.isArray(args.imageUrls) ? args.imageUrls.filter((item) => typeof item === 'string') : []
-  const imageFiles = Array.isArray(args.imageFiles) ? args.imageFiles.filter((item) => typeof item === 'string') : []
+  const inputImages = Array.isArray(args.inputImages)
+    ? args.inputImages.filter((item) => typeof item === 'string')
+    : []
+  const referenceImages = Array.isArray(args.referenceImages)
+    ? args.referenceImages.filter((item) => typeof item === 'string')
+    : []
+  const imageUrls = Array.isArray(args.imageUrls)
+    ? args.imageUrls.filter((item) => typeof item === 'string')
+    : []
+  const imageFiles = Array.isArray(args.imageFiles)
+    ? args.imageFiles.filter((item) => typeof item === 'string')
+    : []
   const firstFrame = typeof args.firstFrame === 'string' ? args.firstFrame : ''
   const lastFrame = typeof args.lastFrame === 'string' ? args.lastFrame : ''
-  const images = [firstFrame, ...inputImages, ...imageUrls, ...imageFiles, lastFrame, ...referenceImages].filter(Boolean)
-  const inputVideos = Array.isArray(args.inputVideos) ? args.inputVideos.filter((item) => typeof item === 'string') : []
-  const video = typeof args.videoUrl === 'string' && args.videoUrl
-    ? args.videoUrl
-    : typeof args.videoFile === 'string' && args.videoFile
-      ? args.videoFile
-      : inputVideos[0] || ''
-  const audio = typeof args.audioUrl === 'string' && args.audioUrl ? args.audioUrl : typeof args.audioFile === 'string' ? args.audioFile : ''
+  const images = [
+    firstFrame,
+    ...inputImages,
+    ...imageUrls,
+    ...imageFiles,
+    lastFrame,
+    ...referenceImages,
+  ].filter(Boolean)
+  const inputVideos = Array.isArray(args.inputVideos)
+    ? args.inputVideos.filter((item) => typeof item === 'string')
+    : []
+  const video =
+    typeof args.videoUrl === 'string' && args.videoUrl
+      ? args.videoUrl
+      : typeof args.videoFile === 'string' && args.videoFile
+        ? args.videoFile
+        : inputVideos[0] || ''
+  const audio =
+    typeof args.audioUrl === 'string' && args.audioUrl
+      ? args.audioUrl
+      : typeof args.audioFile === 'string'
+        ? args.audioFile
+        : ''
   const prompt = typeof args.prompt === 'string' ? args.prompt : ''
   const negativePrompt = typeof args.negative_prompt === 'string' ? args.negative_prompt : ''
   const text = typeof args.text === 'string' ? args.text : prompt
-  const media = manifest.providerKind === 'bailian'
-    ? buildBailianMcpMedia(args, capability.id)
-    : undefined
-  const content = manifest.providerKind === 'bailian' && capability.id.startsWith('image.')
-    ? [...images.map((imageUrl) => ({ image: imageUrl })), { text: prompt }]
-    : manifest.providerKind === 'google-generative-ai'
-      ? [
-          { type: 'text', text },
-          ...images.map((imageValue) => googleMcpImagePart(imageValue)),
-          ...(video ? [googleMcpVideoPart(video)] : []),
-        ]
-      : undefined
+  const media =
+    manifest.providerKind === 'bailian' ? buildBailianMcpMedia(args, capability.id) : undefined
+  const content =
+    manifest.providerKind === 'bailian' && capability.id.startsWith('image.')
+      ? [...images.map((imageUrl) => ({ image: imageUrl })), { text: prompt }]
+      : manifest.providerKind === 'google-generative-ai'
+        ? [
+            { type: 'text', text },
+            ...images.map((imageValue) => googleMcpImagePart(imageValue)),
+            ...(video ? [googleMcpVideoPart(video)] : []),
+          ]
+        : undefined
   if (manifest.providerKind === 'bailian') {
     delete providerParams.negativePrompt
     delete providerParams.negative_prompt
@@ -1842,20 +2145,23 @@ async function handleManifestTool(config, toolName, args, match) {
   if (!config.apiKey) throw new Error('No media API key configured')
   const { manifest, capability } = match
   const requestedModel = typeof args.model === 'string' ? args.model.trim() : ''
-  const modelId = requestedModel && requestedModel !== manifest.id
-    ? requestedModel
-    : manifest.modelId || config.model
+  const modelId =
+    requestedModel && requestedModel !== manifest.id
+      ? requestedModel
+      : manifest.modelId || config.model
   if (!modelId) throw new Error('No media model configured')
   if (manifest.invocation?.contentType !== 'json') return null
 
   // Contract V2 preflight：在 canonical 空间裁剪，确保 prune.prunedParams 与
   // capability.paramSchema（canonical 命名）对齐；buildManifestVariables 再通过
   // capability.aliases 把 canonical → provider-native 字段。
-  const resolvedArgs = manifest.providerKind === 'bailian'
-    ? await normalizeBailianMcpInputs(args, capability.id)
-    : manifest.providerKind === 'google-generative-ai' || manifest.providerKind === 'openai-images'
-      ? await normalizeGoogleMcpInputs(args)
-      : args
+  const resolvedArgs =
+    manifest.providerKind === 'bailian'
+      ? await normalizeBailianMcpInputs(args, capability.id)
+      : manifest.providerKind === 'google-generative-ai' ||
+          manifest.providerKind === 'openai-images'
+        ? await normalizeGoogleMcpInputs(args)
+        : args
   const collectedParams = argsToModelParams(toolName, resolvedArgs)
   const prune = pruneModelParamsByManifest({
     manifest,
@@ -1876,7 +2182,8 @@ async function handleManifestTool(config, toolName, args, match) {
     prune.prunedParams,
   )
 
-  const endpoint = managedNewApiImageEndpoint(config, capability.id) ??
+  const endpoint =
+    managedNewApiImageEndpoint(config, capability.id) ??
     renderTemplateString(manifest.invocation.endpoint || '', variables)
   const url = resolveManifestUrl(config.baseUrl, endpoint)
   const invocationHeaders = renderTemplate(manifest.invocation.headers || {}, variables)
@@ -1887,8 +2194,17 @@ async function handleManifestTool(config, toolName, args, match) {
     renderTemplate(manifest.invocation.requestTemplate || {}, variables),
     variables.providerParams,
   )
-  const requestBody = normalizeProviderManifestRequest(manifest, capability, genericRequestBody, variables)
-  const responseSpec = manifest.invocation.response || { kind: 'url', jsonPaths: ['data[].url'], download: true }
+  const requestBody = normalizeProviderManifestRequest(
+    manifest,
+    capability,
+    genericRequestBody,
+    variables,
+  )
+  const responseSpec = manifest.invocation.response || {
+    kind: 'url',
+    jsonPaths: ['data[].url'],
+    download: true,
+  }
   let requestHeaders = {
     ...authHeaders(config),
     ...stringHeaders(invocationHeaders),
@@ -1956,7 +2272,11 @@ async function handleManifestTool(config, toolName, args, match) {
     }
   }
 
-  if (manifest.providerKind === 'openai-images' && manifestAdapterModelId(manifest).startsWith('sora-') && requestId) {
+  if (
+    manifest.providerKind === 'openai-images' &&
+    manifestAdapterModelId(manifest).startsWith('sora-') &&
+    requestId
+  ) {
     const content = await fetchJson(
       `${String(config.baseUrl || '').replace(/\/+$/, '')}/videos/${encodeURIComponent(requestId)}/content`,
       { headers: authHeaders(config) },
@@ -1977,7 +2297,10 @@ async function handleManifestTool(config, toolName, args, match) {
       ...(prune.validationIssues.length > 0 ? { validationIssues: prune.validationIssues } : {}),
     }
   }
-  if (manifest.providerKind === 'google-generative-ai' && manifestAdapterModelId(manifest).startsWith('gemini-omni-')) {
+  if (
+    manifest.providerKind === 'google-generative-ai' &&
+    manifestAdapterModelId(manifest).startsWith('gemini-omni-')
+  ) {
     await waitForGoogleManifestFiles(config, responseSpec, raw)
   }
   const materialized = await materializeManifestResult(config, responseSpec, raw, capability, args)
@@ -1995,7 +2318,15 @@ async function handleManifestTool(config, toolName, args, match) {
   }
 }
 
-async function handleOpenAiManifestImageEdit(config, args, manifest, capability, variables, prune, url) {
+async function handleOpenAiManifestImageEdit(
+  config,
+  args,
+  manifest,
+  capability,
+  variables,
+  prune,
+  url,
+) {
   const images = Array.isArray(variables.images) ? variables.images : []
   if (images.length === 0) throw new Error('OpenAI image edit requires at least one input image')
   const uploads = []
@@ -2017,18 +2348,25 @@ async function handleOpenAiManifestImageEdit(config, args, manifest, capability,
   )
   let raw
   try {
-    raw = await fetchJson(url, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': form.contentType },
-      body: form.body,
-    }, interfaceTimeoutMs(config, 180_000))
+    raw = await fetchJson(
+      url,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': form.contentType },
+        body: form.body,
+      },
+      interfaceTimeoutMs(config, 180_000),
+    )
   } catch (err) {
     const normalized = normalizeMcpMediaError(manifest, err)
     const wrapped = new Error(normalized.message)
     wrapped.normalized = normalized
     throw wrapped
   }
-  const responseSpec = manifest.invocation.response || { kind: 'inline_base64', jsonPaths: ['data[].b64_json'] }
+  const responseSpec = manifest.invocation.response || {
+    kind: 'inline_base64',
+    jsonPaths: ['data[].b64_json'],
+  }
   const materialized = await materializeManifestResult(config, responseSpec, raw, capability, args)
   return {
     success: true,
@@ -2045,18 +2383,23 @@ async function handleOpenAiManifestImageEdit(config, args, manifest, capability,
 
 async function pollManifestTask(config, manifest, responseSpec, taskId) {
   const polling = manifest.invocation?.polling || {}
-  const pollingBaseUrl = manifest.providerKind === 'bailian'
-    ? config.baseUrl.replace(/\/services\/aigc$/, '')
-    : config.baseUrl
+  const pollingBaseUrl =
+    manifest.providerKind === 'bailian'
+      ? config.baseUrl.replace(/\/services\/aigc$/, '')
+      : config.baseUrl
   const pollUrl = resolveManifestUrl(
     pollingBaseUrl,
     renderTemplateString(responseSpec.statusEndpoint || '', { taskId }),
   )
-  const defaultTimeoutMs = Array.isArray(manifest.domains) && manifest.domains.includes('video')
-    ? 1_800_000
-    : 600_000
+  const defaultTimeoutMs =
+    Array.isArray(manifest.domains) && manifest.domains.includes('video')
+      ? DEFAULT_VIDEO_POLL_TIMEOUT_MS
+      : 600_000
   const deadline = Date.now() + interfaceTimeoutMs(config, polling.timeoutMs || defaultTimeoutMs)
-  let interval = Math.max(1, config.mediaDefaults?.polling?.intervalMs || polling.intervalMs || 5000)
+  let interval = Math.max(
+    1,
+    config.mediaDefaults?.polling?.intervalMs || polling.intervalMs || 5000,
+  )
   while (Date.now() < deadline) {
     const data = await fetchJson(
       pollUrl,
@@ -2067,8 +2410,10 @@ async function pollManifestTask(config, manifest, responseSpec, taskId) {
     const status = String(extractStatus(data) || '').toLowerCase()
     const mapped = polling.statusMap?.[status]
     if (mapped === 'succeeded') return data
-    if (mapped === 'failed' || mapped === 'cancelled') throw new Error(`Task failed: ${JSON.stringify(data).slice(0, 800)}`)
-    if (FAILED_STATUSES.includes(status)) throw new Error(`Task failed: ${JSON.stringify(data).slice(0, 800)}`)
+    if (mapped === 'failed' || mapped === 'cancelled')
+      throw new Error(`Task failed: ${JSON.stringify(data).slice(0, 800)}`)
+    if (FAILED_STATUSES.includes(status))
+      throw new Error(`Task failed: ${JSON.stringify(data).slice(0, 800)}`)
     await new Promise((resolve) =>
       setTimeout(resolve, Math.max(0, Math.min(interval, deadline - Date.now()))),
     )
@@ -2091,11 +2436,16 @@ async function materializeManifestResult(config, responseSpec, raw, capability, 
       return { files: [await materializeImage(config, image, filename, 0, 1)] }
     }
     const dataUrl = `data:${defaultMime(outputKind, args)};base64,${raw.toString('base64')}`
-    return { files: [await downloadMedia(config, dataUrl, outputKind === 'audio' ? 'audio' : 'video', filename)] }
+    return {
+      files: [
+        await downloadMedia(config, dataUrl, outputKind === 'audio' ? 'audio' : 'video', filename),
+      ],
+    }
   }
-  const paths = responseSpec.kind === 'task_poll'
-    ? responseSpec.resultPaths || []
-    : responseSpec.jsonPaths || []
+  const paths =
+    responseSpec.kind === 'task_poll'
+      ? responseSpec.resultPaths || []
+      : responseSpec.jsonPaths || []
   const values = stringsAtPaths(raw, paths)
   if (values.length === 0) throw new Error('No media artifacts in manifest response')
   const files = []
@@ -2108,11 +2458,19 @@ async function materializeManifestResult(config, responseSpec, raw, capability, 
     } else if (outputKind === 'image') {
       const image = isHttpUrl(value)
         ? { kind: 'url', value }
-        : { kind: 'base64', value: normalizeBase64(value), mimeType: mimeFromDataUrl(value) || 'image/png' }
+        : {
+            kind: 'base64',
+            value: normalizeBase64(value),
+            mimeType: mimeFromDataUrl(value) || 'image/png',
+          }
       files.push(await materializeImage(config, image, filename, i, values.length))
     } else {
-      const source = isHttpUrl(value) ? value : `data:${defaultMime(outputKind, args)};base64,${normalizeBase64(value)}`
-      files.push(await downloadMedia(config, source, outputKind === 'audio' ? 'audio' : 'video', filename))
+      const source = isHttpUrl(value)
+        ? value
+        : `data:${defaultMime(outputKind, args)};base64,${normalizeBase64(value)}`
+      files.push(
+        await downloadMedia(config, source, outputKind === 'audio' ? 'audio' : 'video', filename),
+      )
     }
   }
   return { files, ...(text ? { text } : {}) }
@@ -2120,7 +2478,8 @@ async function materializeManifestResult(config, responseSpec, raw, capability, 
 
 function renderTemplate(value, variables) {
   if (typeof value === 'string') return renderTemplateStringOrValue(value, variables)
-  if (Array.isArray(value)) return value.map((item) => renderTemplate(item, variables)).filter((item) => item !== undefined)
+  if (Array.isArray(value))
+    return value.map((item) => renderTemplate(item, variables)).filter((item) => item !== undefined)
   if (isPlainRecord(value)) {
     const rendered = {}
     for (const [key, child] of Object.entries(value)) {
@@ -2207,13 +2566,14 @@ function normalizeProviderManifestRequest(manifest, capability, body, variables)
     }
   }
   if (manifestAdapterModelId(manifest).startsWith('gemini-omni-')) {
-    const task = capability.id === 'video.edit'
-      ? 'edit'
-      : capability.id === 'video.reference_to_video'
-        ? 'reference_to_video'
-        : capability.id === 'video.image_to_video'
-          ? 'image_to_video'
-          : 'text_to_video'
+    const task =
+      capability.id === 'video.edit'
+        ? 'edit'
+        : capability.id === 'video.reference_to_video'
+          ? 'reference_to_video'
+          : capability.id === 'video.image_to_video'
+            ? 'image_to_video'
+            : 'text_to_video'
     return {
       model: manifest.modelId,
       input: variables.content,
@@ -2242,7 +2602,12 @@ function normalizeProviderManifestRequest(manifest, capability, body, variables)
         type: 'image',
         aspect_ratio: params.aspect_ratio,
         image_size: params.image_size,
-        mime_type: params.mime_type === 'jpeg' ? 'image/jpeg' : params.mime_type === 'png' ? 'image/png' : undefined,
+        mime_type:
+          params.mime_type === 'jpeg'
+            ? 'image/jpeg'
+            : params.mime_type === 'png'
+              ? 'image/png'
+              : undefined,
         delivery: params.delivery,
       }),
       ...(tools.length > 0 ? { tools } : {}),
@@ -2279,12 +2644,17 @@ async function waitForGoogleManifestFiles(config, responseSpec, raw) {
   const fileNames = [...new Set(urls.map(googleFileNameFromUri).filter(Boolean))]
   for (const fileName of fileNames) {
     const statusUrl = `${String(config.baseUrl || '').replace(/\/+$/, '')}/files/${encodeURIComponent(fileName)}`
-    await pollTask(config, statusUrl, (payload) => {
-      const state = firstStringAtPaths(payload, ['state', 'file.state']).toUpperCase()
-      if (state === 'ACTIVE') return 'done'
-      if (state === 'FAILED') return 'failed'
-      return 'pending'
-    }, 1_800_000)
+    await pollTask(
+      config,
+      statusUrl,
+      (payload) => {
+        const state = firstStringAtPaths(payload, ['state', 'file.state']).toUpperCase()
+        if (state === 'ACTIVE') return 'done'
+        if (state === 'FAILED') return 'failed'
+        return 'pending'
+      },
+      1_800_000,
+    )
   }
 }
 
@@ -2317,7 +2687,9 @@ function firstStringAtPaths(data, paths) {
 }
 
 function valuesAtPath(root, path) {
-  const parts = String(path || '').split('.').filter(Boolean)
+  const parts = String(path || '')
+    .split('.')
+    .filter(Boolean)
   let current = [root]
   for (const part of parts) {
     const isArray = part.endsWith('[]')
@@ -2337,7 +2709,10 @@ function valuesAtPath(root, path) {
 }
 
 function getPath(root, path) {
-  return String(path || '').split('.').filter(Boolean).reduce((value, key) => getProperty(value, key), root)
+  return String(path || '')
+    .split('.')
+    .filter(Boolean)
+    .reduce((value, key) => getProperty(value, key), root)
 }
 
 function getProperty(value, key) {
@@ -2393,9 +2768,11 @@ function xaiImageParams(args) {
   const params = {}
   // xAI 不支持 size（HTTP 400: Argument not supported: size）。若调用方用 size 传了比例，
   // 归一化到 aspect_ratio；分辨率型 size 对 xAI 无意义，直接丢弃。绝不输出 size。
-  const sizeLikeRatio = typeof args.size === 'string' && RATIO_RE.test(args.size.trim()) ? args.size.trim() : ''
+  const sizeLikeRatio =
+    typeof args.size === 'string' && RATIO_RE.test(args.size.trim()) ? args.size.trim() : ''
   if (sizeLikeRatio && args.aspectRatio == null) params.aspect_ratio = sizeLikeRatio
-  if (args.aspectRatio || source.aspect_ratio) params.aspect_ratio = args.aspectRatio || source.aspect_ratio
+  if (args.aspectRatio || source.aspect_ratio)
+    params.aspect_ratio = args.aspectRatio || source.aspect_ratio
   if (args.resolution || source.resolution) params.resolution = args.resolution || source.resolution
   if (args.n != null || source.n != null) params.n = args.n ?? source.n
   if (args.output_format && ['url', 'b64_json'].includes(String(args.output_format))) {
@@ -2408,7 +2785,8 @@ function xaiImageParams(args) {
 }
 
 function xaiStorageOptions(args, extension) {
-  const configured = typeof args.filename === 'string' && args.filename.trim() ? args.filename.trim() : ''
+  const configured =
+    typeof args.filename === 'string' && args.filename.trim() ? args.filename.trim() : ''
   return { filename: configured || `spark-${Date.now()}.${extension}`, public_url: true }
 }
 
@@ -2418,7 +2796,11 @@ function xaiFileOutputStrings(value, key) {
     if (Array.isArray(node)) return node.forEach(visit)
     if (!node || typeof node !== 'object') return
     if (typeof node[key] === 'string' && node[key]) found.push(node[key])
-    if (node.file_output && typeof node.file_output === 'object' && typeof node.file_output[key] === 'string') {
+    if (
+      node.file_output &&
+      typeof node.file_output === 'object' &&
+      typeof node.file_output[key] === 'string'
+    ) {
       found.push(node.file_output[key])
     }
     Object.values(node).forEach(visit)
@@ -2459,9 +2841,15 @@ async function xaiInputReference(config, value, kind, explicitFileId = '') {
   try {
     const form = new globalThis.FormData()
     form.append('file', new globalThis.Blob([buffer], { type: mimeType }), filename)
-    const uploaded = await fetchJson(`${config.baseUrl}/files`, {
-      method: 'POST', headers: { authorization: `Bearer ${config.apiKey}` }, body: form,
-    }, interfaceTimeoutMs(config, 120_000))
+    const uploaded = await fetchJson(
+      `${config.baseUrl}/files`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${config.apiKey}` },
+        body: form,
+      },
+      interfaceTimeoutMs(config, 120_000),
+    )
     if (!uploaded?.id) throw new Error('xAI Files response missing id')
     return { file_id: uploaded.id }
   } catch (error) {
@@ -2480,7 +2868,8 @@ async function handleGenerateImage(config, args) {
   const prompt = String(args.prompt || '').trim()
   if (!prompt) throw new Error('prompt is required')
   const manifestMatch = resolveManifestForTool(config, 'generate_image', args)
-  if (manifestMatch && config.provider !== 'xai') return handleManifestTool(config, 'generate_image', args, manifestMatch)
+  if (manifestMatch && config.provider !== 'xai')
+    return handleManifestTool(config, 'generate_image', args, manifestMatch)
   if (config.provider === 'xai' && Array.isArray(args.inputImages) && args.inputImages.length > 0) {
     return handleEditImage(config, { ...args, imageUrls: args.inputImages })
   }
@@ -2493,35 +2882,48 @@ async function handleGenerateImage(config, args) {
     n,
     // xAI Images API 不支持 size（会 HTTP 400）。xAI 走 xaiImageParams，size 在其中
     // 归一化为 aspect_ratio（若为比例型）或丢弃；其它 provider 原样透传 size。
-    ...(config.provider === 'xai' ? {
-      ...xaiImageParams(args),
-      storage_options: xaiStorageOptions(args, 'png'),
-    } : {
-      ...(args.size ? { size: args.size } : {}),
-      ...(args.resolution ? { resolution: args.resolution } : {}),
-      ...(args.aspectRatio ? { aspect_ratio: args.aspectRatio } : {}),
-      ...(args.extraJson || {}),
-    }),
+    ...(config.provider === 'xai'
+      ? {
+          ...xaiImageParams(args),
+          storage_options: xaiStorageOptions(args, 'png'),
+        }
+      : {
+          ...(args.size ? { size: args.size } : {}),
+          ...(args.resolution ? { resolution: args.resolution } : {}),
+          ...(args.aspectRatio ? { aspect_ratio: args.aspectRatio } : {}),
+          ...(args.extraJson || {}),
+        }),
   }
   const url = `${config.baseUrl}/images/generations`
-  const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 60_000))
+  const data = await fetchJson(
+    url,
+    { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
+    interfaceTimeoutMs(config, 60_000),
+  )
   let images = config.provider === 'xai' ? xaiImageResults(data) : extractImages(data)
   let mode = 'sync'
   if (images.length === 0 && (config.mode === 'async' || config.mode === 'auto')) {
     const taskId = extractTaskId(data)
     if (taskId) {
       mode = 'async'
-      const polled = await pollTask(config, `${config.baseUrl}/tasks/${encodeURIComponent(taskId)}`, (d) => {
-        if (extractImages(d).length) return 'done'
-        return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
-      })
+      const polled = await pollTask(
+        config,
+        `${config.baseUrl}/tasks/${encodeURIComponent(taskId)}`,
+        (d) => {
+          if (extractImages(d).length) return 'done'
+          return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
+        },
+      )
       images = extractImages(polled)
     }
   }
-  if (images.length === 0) throw new Error(`No images in response: ${JSON.stringify(data).slice(0, 800)}`)
+  if (images.length === 0)
+    throw new Error(`No images in response: ${JSON.stringify(data).slice(0, 800)}`)
   const files = []
   for (let i = 0; i < Math.min(images.length, n); i++) {
-    files.push(await materializeImage(config, images[i], args.filename || '', i, Math.min(images.length, n)))
+    files.push(
+      await materializeImage(config, images[i], args.filename || '', i, Math.min(images.length, n)),
+    )
   }
   return { success: true, provider: `${config.provider}/${config.model}`, mode, files }
 }
@@ -2530,7 +2932,8 @@ async function handleEditImage(config, args) {
   if (!config.apiKey) throw new Error('No media API key configured')
   const prompt = String(args.prompt || '').trim()
   const manifestMatch = resolveManifestForTool(config, 'edit_image', args)
-  if (manifestMatch && config.provider !== 'xai') return handleManifestTool(config, 'edit_image', args, manifestMatch)
+  if (manifestMatch && config.provider !== 'xai')
+    return handleManifestTool(config, 'edit_image', args, manifestMatch)
   const imageUrls = Array.isArray(args.imageUrls) ? args.imageUrls : []
   const imageFiles = Array.isArray(args.imageFiles) ? args.imageFiles : []
   const imageFileIds = Array.isArray(args.imageFileIds) ? args.imageFileIds : []
@@ -2539,10 +2942,12 @@ async function handleEditImage(config, args) {
   // 或 images（多图 ≤3：[{url, type}, ...]）传入。manifest 模板无法表达多端点 + 多图对象数组，
   // 故 xAI 走此 hardcode 分支优先于 manifest。见 https://docs.x.ai/developers/model-capabilities/images/editing。
   if (config.provider === 'xai') {
-    if (refs.length + imageFileIds.length === 0) throw new Error('xAI image edit requires input image(s)')
-    if (refs.length + imageFileIds.length > 3) throw new Error('xAI image edit supports at most 3 images')
+    if (refs.length + imageFileIds.length === 0)
+      throw new Error('xAI image edit requires input image(s)')
+    if (refs.length + imageFileIds.length > 3)
+      throw new Error('xAI image edit supports at most 3 images')
     const imageObjects = [
-      ...await Promise.all(refs.map((ref) => xaiInputReference(config, ref, 'image'))),
+      ...(await Promise.all(refs.map((ref) => xaiInputReference(config, ref, 'image')))),
       ...imageFileIds.map((fileId) => ({ file_id: fileId })),
     ]
     const body = {
@@ -2552,9 +2957,14 @@ async function handleEditImage(config, args) {
       ...xaiImageParams(args),
       storage_options: xaiStorageOptions(args, 'png'),
     }
-    const data = await fetchJson(`${config.baseUrl}/images/edits`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 120_000))
+    const data = await fetchJson(
+      `${config.baseUrl}/images/edits`,
+      { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
+      interfaceTimeoutMs(config, 120_000),
+    )
     const images = xaiImageResults(data)
-    if (images.length === 0) throw new Error(`No images in xAI edit response: ${JSON.stringify(data).slice(0, 800)}`)
+    if (images.length === 0)
+      throw new Error(`No images in xAI edit response: ${JSON.stringify(data).slice(0, 800)}`)
     const files = []
     for (let i = 0; i < images.length; i++) {
       files.push(await materializeImage(config, images[i], args.filename || '', i, images.length))
@@ -2571,9 +2981,14 @@ async function handleEditImage(config, args) {
     ...(args.extraJson || {}),
   }
   const url = `${config.baseUrl}/images/edits`
-  const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 60_000))
+  const data = await fetchJson(
+    url,
+    { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
+    interfaceTimeoutMs(config, 60_000),
+  )
   const images = extractImages(data)
-  if (images.length === 0) throw new Error(`No images in edit response: ${JSON.stringify(data).slice(0, 800)}`)
+  if (images.length === 0)
+    throw new Error(`No images in edit response: ${JSON.stringify(data).slice(0, 800)}`)
   const files = []
   for (let i = 0; i < images.length; i++) {
     files.push(await materializeImage(config, images[i], args.filename || '', i, images.length))
@@ -2597,11 +3012,23 @@ async function handleGenerateAudio(config, args) {
       output_format: { codec },
       ...(args.speed != null ? { speed: args.speed } : {}),
     }
-    const audio = await fetchJson(`${config.baseUrl}/tts`, {
-      method: 'POST', headers: authHeaders(config), body: JSON.stringify(body),
-    }, interfaceTimeoutMs(config, 60_000), true)
+    const audio = await fetchJson(
+      `${config.baseUrl}/tts`,
+      {
+        method: 'POST',
+        headers: authHeaders(config),
+        body: JSON.stringify(body),
+      },
+      interfaceTimeoutMs(config, 60_000),
+      true,
+    )
     const file = await writeBinaryAsset(config, audio, 'audio', args.filename || '', codec)
-    return { success: true, provider: `${config.provider}/${config.model}`, mode: 'sync', files: [file] }
+    return {
+      success: true,
+      provider: `${config.provider}/${config.model}`,
+      mode: 'sync',
+      files: [file],
+    }
   }
   const audioDefaults = config.mediaDefaults?.audio || {}
   const format = args.format || audioDefaults.format || 'mp3'
@@ -2614,9 +3041,24 @@ async function handleGenerateAudio(config, args) {
     ...(args.extraJson || {}),
   }
   const url = `${config.baseUrl}/audio/speech`
-  const buffer = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 60_000), true)
-  const file = await downloadMedia(config, `data:audio/${format};base64,${buffer.toString('base64')}`, 'audio', args.filename || '')
-  return { success: true, provider: `${config.provider}/${config.model}`, mode: 'sync', files: [file] }
+  const buffer = await fetchJson(
+    url,
+    { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
+    interfaceTimeoutMs(config, 60_000),
+    true,
+  )
+  const file = await downloadMedia(
+    config,
+    `data:audio/${format};base64,${buffer.toString('base64')}`,
+    'audio',
+    args.filename || '',
+  )
+  return {
+    success: true,
+    provider: `${config.provider}/${config.model}`,
+    mode: 'sync',
+    files: [file],
+  }
 }
 
 async function handleTranscribeAudio(config, args) {
@@ -2627,25 +3069,44 @@ async function handleTranscribeAudio(config, args) {
   const url = `${config.baseUrl}/audio/transcriptions`
   let data
   if (args.audioUrl) {
-    data = await fetchJson(url, {
-      method: 'POST',
-      headers: authHeaders(config),
-      body: JSON.stringify({ model: config.model, url: args.audioUrl, ...(args.language ? { language: args.language } : {}), ...(args.extraJson || {}) }),
-    }, interfaceTimeoutMs(config, 120_000))
+    data = await fetchJson(
+      url,
+      {
+        method: 'POST',
+        headers: authHeaders(config),
+        body: JSON.stringify({
+          model: config.model,
+          url: args.audioUrl,
+          ...(args.language ? { language: args.language } : {}),
+          ...(args.extraJson || {}),
+        }),
+      },
+      interfaceTimeoutMs(config, 120_000),
+    )
   } else if (args.audioFile) {
     const { readFile } = await import('node:fs/promises')
     const buffer = await readFile(args.audioFile)
-    data = await fetchJson(url, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${config.apiKey}` },
-      body: buffer,
-    }, interfaceTimeoutMs(config, 120_000))
+    data = await fetchJson(
+      url,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${config.apiKey}` },
+        body: buffer,
+      },
+      interfaceTimeoutMs(config, 120_000),
+    )
   } else {
     throw new Error('audioFile or audioUrl is required')
   }
   const text = extractText(data)
   const file = await writeTextAsset(config, text, args.filename || '')
-  return { success: true, provider: `${config.provider}/${config.model}`, mode: 'sync', files: [file], text }
+  return {
+    success: true,
+    provider: `${config.provider}/${config.model}`,
+    mode: 'sync',
+    files: [file],
+    text,
+  }
 }
 
 async function handleVolcengineVideoManifestTool(config, args, match) {
@@ -2867,7 +3328,6 @@ async function volcengineInputReference(value, kind) {
   return `data:${mime};base64,${buffer.toString('base64')}`
 }
 
-
 async function handleGenerateVideo(config, args) {
   if (!config.apiKey) throw new Error('No media API key configured')
   const prompt = String(args.prompt || '').trim()
@@ -2875,38 +3335,60 @@ async function handleGenerateVideo(config, args) {
   if (manifestMatch && config.provider === 'volcengine-ark') {
     return handleVolcengineVideoManifestTool(config, args, manifestMatch)
   }
-  if (!prompt && !(config.provider === 'bailian' && manifestMatch?.capability.id === 'video.edit')) {
+  if (
+    !prompt &&
+    !(config.provider === 'bailian' && manifestMatch?.capability.id === 'video.edit')
+  ) {
     throw new Error('prompt is required')
   }
   const videoDefaults = config.mediaDefaults?.video || {}
   const inputImages = Array.isArray(args.inputImages) ? args.inputImages : []
-  const firstFrame = typeof args.firstFrame === 'string' && args.firstFrame
-    ? args.firstFrame
-    : inputImages[0]
+  const firstFrame =
+    typeof args.firstFrame === 'string' && args.firstFrame ? args.firstFrame : inputImages[0]
   const lastFrame = typeof args.lastFrame === 'string' ? args.lastFrame : ''
-  const referenceImages = Array.isArray(args.referenceImages) ? args.referenceImages.filter((item) => typeof item === 'string' && item.length > 0) : []
-  const inputVideos = Array.isArray(args.inputVideos) ? args.inputVideos.filter((item) => typeof item === 'string' && item.length > 0) : []
-  const video = typeof args.videoUrl === 'string' && args.videoUrl
-    ? args.videoUrl
-    : typeof args.videoFile === 'string' && args.videoFile
-      ? args.videoFile
-      : inputVideos[0] || ''
+  const referenceImages = Array.isArray(args.referenceImages)
+    ? args.referenceImages.filter((item) => typeof item === 'string' && item.length > 0)
+    : []
+  const inputVideos = Array.isArray(args.inputVideos)
+    ? args.inputVideos.filter((item) => typeof item === 'string' && item.length > 0)
+    : []
+  const video =
+    typeof args.videoUrl === 'string' && args.videoUrl
+      ? args.videoUrl
+      : typeof args.videoFile === 'string' && args.videoFile
+        ? args.videoFile
+        : inputVideos[0] || ''
   // xAI 视频有三个真实端点：/videos/generations、/videos/edits、/videos/extensions。
   // manifest 模板无法表达“有 video 时根据模式切端点”，所以 xAI 视频统一走 native 分支。
   if (config.provider === 'xai') {
     if (!config.model) throw new Error('No media model configured')
-    const wantsExtend = args.capability === 'video.extend' || args.videoMode === 'extend' || args.extraJson?.mode === 'extend-video'
-    const wantsEdit = args.capability === 'video.edit' || args.videoMode === 'edit' || args.extraJson?.mode === 'edit-video'
-    const wantsReference = args.capability === 'video.reference_to_video' || args.videoMode === 'reference_to_video' || args.extraJson?.mode === 'reference-to-video'
-    const wantsImageToVideo = args.capability === 'video.image_to_video' || args.videoMode === 'image_to_video' || Boolean(firstFrame || args.firstFrameFileId)
+    const wantsExtend =
+      args.capability === 'video.extend' ||
+      args.videoMode === 'extend' ||
+      args.extraJson?.mode === 'extend-video'
+    const wantsEdit =
+      args.capability === 'video.edit' ||
+      args.videoMode === 'edit' ||
+      args.extraJson?.mode === 'edit-video'
+    const wantsReference =
+      args.capability === 'video.reference_to_video' ||
+      args.videoMode === 'reference_to_video' ||
+      args.extraJson?.mode === 'reference-to-video'
+    const wantsImageToVideo =
+      args.capability === 'video.image_to_video' ||
+      args.videoMode === 'image_to_video' ||
+      Boolean(firstFrame || args.firstFrameFileId)
     const isVideo15 = String(config.model).startsWith('grok-imagine-video-1.5')
     if (lastFrame) throw new Error('xAI video generation does not support a last frame')
-    if (isVideo15 && !wantsImageToVideo) throw new Error(`${config.model} only supports image-to-video`)
-    if (isVideo15 && wantsReference) throw new Error(`${config.model} does not support reference-to-video`)
+    if (isVideo15 && !wantsImageToVideo)
+      throw new Error(`${config.model} only supports image-to-video`)
+    if (isVideo15 && wantsReference)
+      throw new Error(`${config.model} does not support reference-to-video`)
     const referenceFileIds = Array.isArray(args.referenceImageFileIds)
       ? args.referenceImageFileIds.filter((item) => typeof item === 'string' && item)
       : []
-    if (referenceImages.length + referenceFileIds.length > 7) throw new Error('xAI reference-to-video supports at most 7 images')
+    if (referenceImages.length + referenceFileIds.length > 7)
+      throw new Error('xAI reference-to-video supports at most 7 images')
     let endpoint = '/videos/generations'
     const body = { model: config.model, prompt }
     const explicitVideoFileId = typeof args.videoFileId === 'string' ? args.videoFileId : ''
@@ -2924,70 +3406,116 @@ async function handleGenerateVideo(config, args) {
       const firstImage = firstFrame || inputImages[0] || ''
       if (wantsReference && referenceImages.length + referenceFileIds.length > 0) {
         body.reference_images = [
-          ...await Promise.all(referenceImages.map((reference) => xaiInputReference(config, reference, 'image'))),
+          ...(await Promise.all(
+            referenceImages.map((reference) => xaiInputReference(config, reference, 'image')),
+          )),
           ...referenceFileIds.map((fileId) => ({ file_id: fileId })),
         ]
       } else if (firstImage) {
-        body.image = await xaiInputReference(config, firstImage, 'image', args.firstFrameFileId || '')
+        body.image = await xaiInputReference(
+          config,
+          firstImage,
+          'image',
+          args.firstFrameFileId || '',
+        )
       } else if (args.firstFrameFileId) {
         body.image = { file_id: args.firstFrameFileId }
       } else if (referenceImages.length > 0) {
-        body.reference_images = await Promise.all(referenceImages.map((reference) => xaiInputReference(config, reference, 'image')))
+        body.reference_images = await Promise.all(
+          referenceImages.map((reference) => xaiInputReference(config, reference, 'image')),
+        )
       }
-      if (args.aspectRatio || videoDefaults.aspectRatio) body.aspect_ratio = args.aspectRatio || videoDefaults.aspectRatio
-      if (args.durationSeconds || videoDefaults.durationSeconds) body.duration = args.durationSeconds || videoDefaults.durationSeconds
+      if (args.aspectRatio || videoDefaults.aspectRatio)
+        body.aspect_ratio = args.aspectRatio || videoDefaults.aspectRatio
+      if (args.durationSeconds || videoDefaults.durationSeconds)
+        body.duration = args.durationSeconds || videoDefaults.durationSeconds
       if (args.resolution) body.resolution = args.resolution
     }
     body.storage_options = xaiStorageOptions(args, 'mp4')
-    if (wantsEdit && !video && !explicitVideoFileId) throw new Error('xAI video edit requires videoUrl/videoFile/videoFileId/inputVideos')
-    if (wantsExtend && !video && !explicitVideoFileId) throw new Error('xAI video extend requires videoUrl/videoFile/videoFileId/inputVideos')
-    const data = await fetchJson(`${config.baseUrl}${endpoint}`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 60_000))
+    if (wantsEdit && !video && !explicitVideoFileId)
+      throw new Error('xAI video edit requires videoUrl/videoFile/videoFileId/inputVideos')
+    if (wantsExtend && !video && !explicitVideoFileId)
+      throw new Error('xAI video extend requires videoUrl/videoFile/videoFileId/inputVideos')
+    const data = await fetchJson(
+      `${config.baseUrl}${endpoint}`,
+      { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
+      interfaceTimeoutMs(config, 60_000),
+    )
     let videoUrls = xaiPublicUrls(data)
     let requestId = null
     if (videoUrls.length === 0) {
       const taskId = extractTaskId(data)
       if (!taskId) throw new Error(`No video url or task id: ${JSON.stringify(data).slice(0, 800)}`)
       requestId = taskId
-      const polled = await pollTask(config, `${config.baseUrl}/videos/${encodeURIComponent(taskId)}`, (d) => {
-        if (xaiPublicUrls(d).length || xaiFileOutputStrings(d, 'public_url_error').length) return 'done'
-        return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
-      }, 1_800_000)
+      const polled = await pollTask(
+        config,
+        `${config.baseUrl}/videos/${encodeURIComponent(taskId)}`,
+        (d) => {
+          if (xaiPublicUrls(d).length || xaiFileOutputStrings(d, 'public_url_error').length)
+            return 'done'
+          return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
+        },
+        DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+      )
       videoUrls = xaiPublicUrls(polled)
       if (videoUrls.length === 0) {
         const publicUrlError = xaiFileOutputStrings(polled, 'public_url_error')[0]
-        throw new Error(`xAI video generated but official CDN persistence failed${publicUrlError ? `: ${publicUrlError}` : ''}`)
+        throw new Error(
+          `xAI video generated but official CDN persistence failed${publicUrlError ? `: ${publicUrlError}` : ''}`,
+        )
       }
     }
     const files = []
     for (let i = 0; i < videoUrls.length; i++) {
       files.push(await downloadMedia(config, videoUrls[i], 'video', args.filename || ''))
     }
-    return { success: true, provider: `${config.provider}/${config.model}`, mode: 'async', files, requestId }
+    return {
+      success: true,
+      provider: `${config.provider}/${config.model}`,
+      mode: 'async',
+      files,
+      requestId,
+    }
   }
   if (manifestMatch) return handleManifestTool(config, 'generate_video', args, manifestMatch)
   if (!config.model) throw new Error('No media model configured')
   const body = {
     model: config.model,
     prompt,
-    ...(args.aspectRatio || videoDefaults.aspectRatio ? { aspect_ratio: args.aspectRatio || videoDefaults.aspectRatio } : {}),
-    ...(args.durationSeconds || videoDefaults.durationSeconds ? { duration: args.durationSeconds || videoDefaults.durationSeconds } : {}),
+    ...(args.aspectRatio || videoDefaults.aspectRatio
+      ? { aspect_ratio: args.aspectRatio || videoDefaults.aspectRatio }
+      : {}),
+    ...(args.durationSeconds || videoDefaults.durationSeconds
+      ? { duration: args.durationSeconds || videoDefaults.durationSeconds }
+      : {}),
     ...(firstFrame ? { image: firstFrame, first_frame_image: firstFrame } : {}),
     ...(lastFrame ? { last_frame_image: lastFrame } : {}),
-    ...(referenceImages.length > 0 ? { reference_images: referenceImages.map((url) => ({ url })) } : {}),
+    ...(referenceImages.length > 0
+      ? { reference_images: referenceImages.map((url) => ({ url })) }
+      : {}),
     ...(video ? { video, video_url: video } : {}),
     ...(args.editStrength != null ? { edit_strength: args.editStrength } : {}),
     ...(args.extraJson || {}),
   }
   const url = `${config.baseUrl}/videos/generations`
-  const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 60_000))
+  const data = await fetchJson(
+    url,
+    { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
+    interfaceTimeoutMs(config, 60_000),
+  )
   let videoUrls = extractMediaUrls(data, { kind: 'video' })
   if (videoUrls.length === 0) {
     const taskId = extractTaskId(data)
     if (!taskId) throw new Error(`No video url or task id: ${JSON.stringify(data).slice(0, 800)}`)
-    const polled = await pollTask(config, `${config.baseUrl}${videoTaskPath(config, taskId)}`, (d) => {
-      if (extractMediaUrls(d, { kind: 'video' }).length) return 'done'
-      return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
-    }, 1_800_000)
+    const polled = await pollTask(
+      config,
+      `${config.baseUrl}${videoTaskPath(config, taskId)}`,
+      (d) => {
+        if (extractMediaUrls(d, { kind: 'video' }).length) return 'done'
+        return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
+      },
+      DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+    )
     videoUrls = extractMediaUrls(polled)
   }
   const files = []
@@ -3017,7 +3545,9 @@ async function handle(request) {
       const name = request.params?.name
       const args = request.params?.arguments || {}
       const config = configFromEnv()
-      const toolConfig = TOOL_CAPABILITY_CANDIDATES[name] ? configForTool(config, name, args) : config
+      const toolConfig = TOOL_CAPABILITY_CANDIDATES[name]
+        ? configForTool(config, name, args)
+        : config
       const toolArgs = TOOL_CAPABILITY_CANDIDATES[name]
         ? { ...args, model: toolConfig.model }
         : args
@@ -3030,40 +3560,99 @@ async function handle(request) {
       let data
       let task = null
       switch (name) {
-        case 'list_models': data = handleListModels(config, args); break
-        case 'describe_model': data = handleDescribeModel(config, args); break
-        case 'upload_file': data = await handleUploadFile(config, args); break
-        case 'get_file': data = await handleGetFile(config, args); break
-        case 'list_files': data = await handleListFiles(config, args); break
-        case 'delete_file': data = await handleDeleteFile(config, args); break
-        case 'list_tasks': data = await handleListTasks(config, args); break
-        case 'get_task': data = await handleGetTask(config, args); break
-        case 'cancel_task': data = await handleCancelTask(config, args); break
+        case 'list_models':
+          data = handleListModels(config, args)
+          break
+        case 'describe_model':
+          data = handleDescribeModel(config, args)
+          break
+        case 'upload_file':
+          data = await handleUploadFile(config, args)
+          break
+        case 'get_file':
+          data = await handleGetFile(config, args)
+          break
+        case 'list_files':
+          data = await handleListFiles(config, args)
+          break
+        case 'delete_file':
+          data = await handleDeleteFile(config, args)
+          break
+        case 'list_tasks':
+          data = await handleListTasks(config, args)
+          break
+        case 'get_task':
+          data = await handleGetTask(config, args)
+          break
+        case 'cancel_task':
+          data = await handleCancelTask(config, args)
+          break
         case 'generate_image':
           task = createTaskRecord(name, toolArgs, toolConfig)
-          try { data = await handleGenerateImage(toolConfig, toolArgs); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          try {
+            data = await handleGenerateImage(toolConfig, toolArgs)
+            data.taskId = task.taskId
+            data.task = completeTaskRecord(task, data)
+          } catch (err) {
+            failTaskRecord(task, err)
+            throw err
+          }
           break
         case 'edit_image':
           task = createTaskRecord(name, toolArgs, toolConfig)
-          try { data = await handleEditImage(toolConfig, toolArgs); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          try {
+            data = await handleEditImage(toolConfig, toolArgs)
+            data.taskId = task.taskId
+            data.task = completeTaskRecord(task, data)
+          } catch (err) {
+            failTaskRecord(task, err)
+            throw err
+          }
           break
         case 'generate_audio':
           task = createTaskRecord(name, toolArgs, toolConfig)
-          try { data = await handleGenerateAudio(toolConfig, toolArgs); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          try {
+            data = await handleGenerateAudio(toolConfig, toolArgs)
+            data.taskId = task.taskId
+            data.task = completeTaskRecord(task, data)
+          } catch (err) {
+            failTaskRecord(task, err)
+            throw err
+          }
           break
         case 'transcribe_audio':
           task = createTaskRecord(name, toolArgs, toolConfig)
-          try { data = await handleTranscribeAudio(toolConfig, toolArgs); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          try {
+            data = await handleTranscribeAudio(toolConfig, toolArgs)
+            data.taskId = task.taskId
+            data.task = completeTaskRecord(task, data)
+          } catch (err) {
+            failTaskRecord(task, err)
+            throw err
+          }
           break
         case 'generate_video':
           task = createTaskRecord(name, toolArgs, toolConfig)
-          try { data = await handleGenerateVideo(toolConfig, toolArgs); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          try {
+            data = await handleGenerateVideo(toolConfig, toolArgs)
+            data.taskId = task.taskId
+            data.task = completeTaskRecord(task, data)
+          } catch (err) {
+            failTaskRecord(task, err)
+            throw err
+          }
           break
-        default: throw new Error(`Unknown tool: ${name}`)
+        default:
+          throw new Error(`Unknown tool: ${name}`)
       }
       const files = Array.isArray(data.files) ? data.files : []
       result(id, {
-        content: [{ type: 'text', text: `${name} succeeded${files.length > 0 ? `: ${files.join(', ')}` : ''}` }],
+        content: [
+          {
+            type: 'text',
+            text: `${name} succeeded${files.length > 0 ? `: ${files.join(', ')}` : ''}`,
+          },
+        ],
         structuredContent: data,
       })
       return

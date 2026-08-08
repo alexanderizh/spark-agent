@@ -38,6 +38,7 @@ describe('VolcengineArkFilesClient', () => {
             created_at: 1_700_000_000,
             expire_at: 1_700_604_800,
             mime_type: 'video/mp4',
+            download_url: 'https://signed.example.com/clip.mp4?signature=abc',
             status: 'processing',
             tos: { bucket: 'media', object_key: 'arkfiles/clip.mp4' },
           },
@@ -70,10 +71,36 @@ describe('VolcengineArkFilesClient', () => {
           mimeType: 'video/mp4',
           createdAt: 1_700_000_000,
           expiresAt: 1_700_604_800,
+          downloadUrl: 'https://signed.example.com/clip.mp4?signature=abc',
           tos: { bucket: 'media', objectKey: 'arkfiles/clip.mp4' },
         },
       ],
     })
+  })
+
+  it('resolves an active file_id to the official signed download URL', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        object: 'file',
+        id: 'file-active',
+        filename: 'frame.png',
+        bytes: 42,
+        mime_type: 'image/png',
+        status: 'active',
+        download_url: 'https://signed.example.com/frame.png?signature=abc',
+      }),
+    )
+    const client = new VolcengineArkFilesClient({ apiKey: 'test', fetch: fetchMock })
+
+    await expect(client.resolveDownloadUrl('file-active')).resolves.toBe(
+      'https://signed.example.com/frame.png?signature=abc',
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://ark.cn-beijing.volces.com/api/v3/files/file-active',
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: 'Bearer test' }),
+      }),
+    )
   })
 
   it('treats HTTP 200 with empty body as an empty file list (no null deref)', async () => {

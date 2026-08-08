@@ -25,7 +25,7 @@
  * 状态枚举：v1/模板首字母大写（Success/Fail）；V2 全小写（succeeded/failed/expired）。各自独立 inspect。
  */
 
-import { normalizeMinimaxBaseUrl } from '@spark/protocol'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS, normalizeMinimaxBaseUrl } from '@spark/protocol'
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
@@ -228,7 +228,7 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
     const queryResp = await pollTask(pollUrl, authHeaders(ctx), {
       fetchImpl: ctx.fetch,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-      ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+      ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
       inspect: (data) => {
         assertMinimaxBaseResp(data)
         const status = minimaxStatus(data)
@@ -324,7 +324,7 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
     const queryResp = await pollTask(pollUrl, authHeaders(ctx), {
       fetchImpl: ctx.fetch,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-      ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+      ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
       inspect: (data) => {
         assertMinimaxBaseResp(data)
         const status = minimaxStatus(data)
@@ -408,7 +408,7 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
     const queryResp = await pollTask(pollUrl, authHeaders(ctx), {
       fetchImpl: ctx.fetch,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-      ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+      ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
       errorExtractor: minimaxV2ErrorExtractor,
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       inspect: (data) => {

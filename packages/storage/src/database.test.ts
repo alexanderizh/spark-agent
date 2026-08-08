@@ -586,7 +586,7 @@ describe('SparkDatabase', () => {
           )
           .get(id) as { timeout: number }
       ).timeout
-    expect(providerTimeout('video-short')).toBe(1_800_000)
+    expect(providerTimeout('video-short')).toBe(172_800_000)
     expect(providerTimeout('video-long')).toBe(172_800_000)
     expect(providerTimeout('image-short')).toBe(600_000)
     expect(providerTimeout('image-explicit')).toBe(300_000)
@@ -599,7 +599,7 @@ describe('SparkDatabase', () => {
     `,
       )
       .get() as { timeout: number }
-    expect(manifest.timeout).toBe(1_800_000)
+    expect(manifest.timeout).toBe(172_800_000)
     const imageManifest = db.raw
       .prepare(
         `
@@ -647,7 +647,9 @@ describe('SparkDatabase', () => {
     const timeout = (id: string, path: string): number | null =>
       (
         db.raw
-          .prepare(`SELECT json_extract(config_json, ?) AS timeout FROM provider_profiles WHERE id = ?`)
+          .prepare(
+            `SELECT json_extract(config_json, ?) AS timeout FROM provider_profiles WHERE id = ?`,
+          )
           .get(path, id) as { timeout: number | null }
       ).timeout
     expect(timeout('legacy-timeout', '$.mediaDefaults.timeoutMs')).toBe(600_000)

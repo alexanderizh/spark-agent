@@ -546,7 +546,13 @@ export function useCanvasWorkspace(projectId: string) {
 
   /** 创建空视频/音频节点（工厂菜单直接落位、后续上传填充；不建 asset）。 */
   const createEmptyMediaNode = useCallback(
-    async (input: { kind: 'video' | 'audio'; x: number; y: number; width?: number; height?: number }) => {
+    async (input: {
+      kind: 'video' | 'audio'
+      x: number
+      y: number
+      width?: number
+      height?: number
+    }) => {
       const current = snapshot
       if (!current) return
       const node = await canvasApi.createEmptyMediaNode({
@@ -966,9 +972,7 @@ export function useCanvasWorkspace(projectId: string) {
 
   const deleteFilmAsset = useCallback(
     async (assetId: string, options?: { hardDelete?: boolean }) => {
-      await applyCanvasMutationSnapshot(
-        canvasApi.deleteFilmAsset(projectId, assetId, options),
-      )
+      await applyCanvasMutationSnapshot(canvasApi.deleteFilmAsset(projectId, assetId, options))
     },
     [applyCanvasMutationSnapshot, projectId],
   )
@@ -1080,6 +1084,12 @@ export function useCanvasWorkspace(projectId: string) {
       },
     ) => {
       await applyTaskSnapshot(canvasApi.retryOperationNode(projectId, nodeId, options))
+    },
+    [applyTaskSnapshot, projectId],
+  )
+  const repollMediaTask = useCallback(
+    async (taskId: string) => {
+      await applyTaskSnapshot(canvasApi.repollMediaTask(projectId, taskId))
     },
     [applyTaskSnapshot, projectId],
   )
@@ -1276,6 +1286,7 @@ export function useCanvasWorkspace(projectId: string) {
     // 操作节点
     createOperationNode,
     retryOperationNode,
+    repollMediaTask,
     runOperationNode,
   }
 }

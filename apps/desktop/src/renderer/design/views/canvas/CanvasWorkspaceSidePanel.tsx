@@ -51,6 +51,7 @@ type CanvasWorkspaceSidePanelProps = {
   onClearTasks: (scope: any) => void
   onDeleteTasks: (taskIds: string[]) => void
   onRetryTask: (task: any, runtimeSource: CanvasTaskRetryRuntimeSource) => void
+  onRepollTask?: ((taskId: string) => void | Promise<void>) | undefined
   onSelectNode: (nodeId: string) => void
   onInsertAsset: (assetId: string) => void
   onInsertSubview: (ownerAsset: any, sourceImageAsset: any, subview: any) => void
@@ -94,6 +95,7 @@ export function CanvasWorkspaceSidePanel({
   onClearTasks,
   onDeleteTasks,
   onRetryTask,
+  onRepollTask,
   onSelectNode,
   onInsertAsset,
   onInsertSubview,
@@ -186,6 +188,7 @@ export function CanvasWorkspaceSidePanel({
                 onClearTasks={onClearTasks}
                 onDeleteTasks={onDeleteTasks}
                 onRetryTask={onRetryTask}
+                onRepollTask={onRepollTask}
                 onSelectNode={onSelectNode}
               />
             </div>

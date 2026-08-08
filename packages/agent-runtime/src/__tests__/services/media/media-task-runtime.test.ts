@@ -58,6 +58,44 @@ describe('MediaTaskRuntimeService', () => {
     expect(service.materialize(record.id)).toBeNull()
   })
 
+  it('persists provider kind, task id, ownership and recovery protocol before polling fails', async () => {
+    const service = new MediaTaskRuntimeService(createRepo(), {
+      async invoke(_input, options) {
+        options.onTaskSubmitted?.({
+          requestId: 'ark-task-1',
+          response: { id: 'ark-task-1', status: 'queued' },
+        })
+        throw new MediaProviderError('task_timeout', 'poll interrupted')
+      },
+    })
+
+    const record = await service.submit(
+      { operation: 'text_to_video', prompt: 'hello', outputDir: '/tmp/media' },
+      {
+        providers: [
+          {
+            id: 'provider-ark',
+            name: 'Ark',
+            defaultModel: 'seedance',
+            mediaProvider: 'volcengine-ark',
+            apiKey: 'secret',
+          },
+        ],
+        providerProfileId: 'provider-ark',
+        projectId: 'project-1',
+        clientTaskId: 'canvas-task-1',
+      },
+    )
+
+    expect(record.status).toBe('failed')
+    expect(record.providerKind).toBe('volcengine-ark')
+    expect(record.providerTaskId).toBe('ark-task-1')
+    expect(record.projectId).toBe('project-1')
+    expect(record.clientTaskId).toBe('canvas-task-1')
+    expect(record.polling?.strategy).toBe('volcengine-ark')
+    expect(record.submitResponse).toEqual({ id: 'ark-task-1', status: 'queued' })
+  })
+
   it('forwards the fallback uploader to the media router', async () => {
     const fallbackUploader = {
       canHandle: () => true,
@@ -161,6 +199,40 @@ describe('MediaTaskRuntimeService', () => {
     expect(cancelled?.completedAt).toBeTruthy()
   })
 
+  it('supports durable lookup and state transitions for a resumed provider task', () => {
+    const repo = createRepo()
+    const row = repo.create({
+      id: 'media-task-resume',
+      providerProfileId: 'provider-1',
+      requestId: 'provider-task-1',
+      operation: 'text_to_video',
+      status: 'failed',
+      outputDir: '/tmp/media',
+      errorCode: 'task_timeout',
+      errorMessage: 'poll timed out',
+    })
+    const service = new MediaTaskRuntimeService(repo, {
+      async invoke() {
+        throw new Error('not used')
+      },
+    })
+
+    expect(service.inquireByRequestId('provider-1', 'provider-task-1')?.id).toBe(row.id)
+    expect(service.beginRecovery(row.id, 'provider-task-1')?.record.status).toBe('running')
+    const recovered = service.markRecovered(row.id, {
+      provider: 'volcengine-ark',
+      model: 'seedance',
+      assets: [{ type: 'video', filePath: '/tmp/recovered.mp4' }],
+      rawResponse: { status: 'succeeded' },
+    })
+
+    expect(recovered).toMatchObject({
+      status: 'succeeded',
+      error: null,
+      assets: [{ filePath: '/tmp/recovered.mp4' }],
+    })
+  })
+
   it('keeps background tasks cancelled when provider completes later', async () => {
     const repo = createRepo()
     let finishProvider!: () => void
@@ -229,6 +301,11 @@ function createRepo(): MediaGenerationTaskRepository {
         model_params_json: params.modelParamsJson ?? '{}',
         output_dir: params.outputDir,
         request_id: params.requestId ?? null,
+        provider_task_id: params.providerTaskId ?? params.requestId ?? null,
+        project_id: params.projectId ?? null,
+        client_task_id: params.clientTaskId ?? null,
+        polling_json: params.pollingJson ?? null,
+        submit_response_json: params.submitResponseJson ?? null,
         assets_json: params.assetsJson ?? '[]',
         raw_response_json: params.rawResponseJson ?? null,
         error_code: params.errorCode ?? null,
@@ -244,23 +321,122 @@ function createRepo(): MediaGenerationTaskRepository {
     getById(id: string): MediaGenerationTaskRow | null {
       return rows.get(id) ?? null
     },
+    getByRequestId(providerProfileId: string, requestId: string): MediaGenerationTaskRow | null {
+      return (
+        [...rows.values()].find(
+          (row) => row.provider_profile_id === providerProfileId && row.request_id === requestId,
+        ) ?? null
+      )
+    },
+    getByProviderTaskId(
+      providerProfileId: string,
+      providerTaskId: string,
+    ): MediaGenerationTaskRow | null {
+      return (
+        [...rows.values()].find(
+          (row) =>
+            row.provider_profile_id === providerProfileId &&
+            (row.provider_task_id === providerTaskId || row.request_id === providerTaskId),
+        ) ?? null
+      )
+    },
+    beginRecovery(
+      id: string,
+      providerTaskId?: string | null,
+    ): { row: MediaGenerationTaskRow | null; started: boolean } {
+      const existing = rows.get(id)
+      if (!existing) return { row: null, started: false }
+      if (existing.status !== 'failed') return { row: existing, started: false }
+      if (existing.assets_json !== '[]') return { row: existing, started: false }
+      if (
+        providerTaskId &&
+        existing.provider_task_id !== providerTaskId &&
+        existing.request_id !== providerTaskId
+      ) {
+        return { row: existing, started: false }
+      }
+      const row = {
+        ...existing,
+        status: 'running' as const,
+        error_code: null,
+        error_message: null,
+        completed_at: null,
+        updated_at: now(),
+      }
+      rows.set(id, row)
+      return { row, started: true }
+    },
+    completeRecovery(id: string, providerTaskId: string, params: UpdateMediaGenerationTaskParams) {
+      const existing = rows.get(id)
+      if (
+        !existing ||
+        existing.status !== 'running' ||
+        (existing.provider_task_id !== providerTaskId && existing.request_id !== providerTaskId)
+      ) {
+        return { row: existing ?? null, completed: false }
+      }
+      const row = this.update(id, {
+        ...params,
+        status: 'succeeded',
+        mode: 'async',
+        errorCode: null,
+        errorMessage: null,
+        completedAt: now(),
+      })!
+      return { row, completed: true }
+    },
+    failRecovery(id: string, providerTaskId: string, error: { code: string; message: string }) {
+      const existing = rows.get(id)
+      if (
+        !existing ||
+        existing.status !== 'running' ||
+        (existing.provider_task_id !== providerTaskId && existing.request_id !== providerTaskId)
+      ) {
+        return { row: existing ?? null, failed: false }
+      }
+      const row = this.update(id, {
+        status: 'failed',
+        errorCode: error.code,
+        errorMessage: error.message,
+        completedAt: now(),
+      })!
+      return { row, failed: true }
+    },
     update(id: string, params: UpdateMediaGenerationTaskParams): MediaGenerationTaskRow | null {
       const existing = rows.get(id)
       if (!existing) return null
       const row: MediaGenerationTaskRow = {
         ...existing,
-        provider_profile_id: params.providerProfileId !== undefined ? params.providerProfileId : existing.provider_profile_id,
-        provider_kind: params.providerKind !== undefined ? params.providerKind : existing.provider_kind,
+        provider_profile_id:
+          params.providerProfileId !== undefined
+            ? params.providerProfileId
+            : existing.provider_profile_id,
+        provider_kind:
+          params.providerKind !== undefined ? params.providerKind : existing.provider_kind,
         manifest_id: params.manifestId !== undefined ? params.manifestId : existing.manifest_id,
         model_id: params.modelId !== undefined ? params.modelId : existing.model_id,
         capability: params.capability !== undefined ? params.capability : existing.capability,
         status: params.status ?? existing.status,
         mode: params.mode !== undefined ? params.mode : existing.mode,
         request_id: params.requestId !== undefined ? params.requestId : existing.request_id,
+        provider_task_id:
+          params.providerTaskId !== undefined ? params.providerTaskId : existing.provider_task_id,
+        project_id: params.projectId !== undefined ? params.projectId : existing.project_id,
+        client_task_id:
+          params.clientTaskId !== undefined ? params.clientTaskId : existing.client_task_id,
+        polling_json: params.pollingJson !== undefined ? params.pollingJson : existing.polling_json,
+        submit_response_json:
+          params.submitResponseJson !== undefined
+            ? params.submitResponseJson
+            : existing.submit_response_json,
         assets_json: params.assetsJson ?? existing.assets_json,
-        raw_response_json: params.rawResponseJson !== undefined ? params.rawResponseJson : existing.raw_response_json,
+        raw_response_json:
+          params.rawResponseJson !== undefined
+            ? params.rawResponseJson
+            : existing.raw_response_json,
         error_code: params.errorCode !== undefined ? params.errorCode : existing.error_code,
-        error_message: params.errorMessage !== undefined ? params.errorMessage : existing.error_message,
+        error_message:
+          params.errorMessage !== undefined ? params.errorMessage : existing.error_message,
         submitted_at: params.submittedAt !== undefined ? params.submittedAt : existing.submitted_at,
         completed_at: params.completedAt !== undefined ? params.completedAt : existing.completed_at,
         updated_at: now(),
@@ -270,7 +446,13 @@ function createRepo(): MediaGenerationTaskRepository {
     },
     cancel(id: string): MediaGenerationTaskRow | null {
       const row = rows.get(id)
-      if (!row || row.status === 'succeeded' || row.status === 'failed' || row.status === 'cancelled') return row ?? null
+      if (
+        !row ||
+        row.status === 'succeeded' ||
+        row.status === 'failed' ||
+        row.status === 'cancelled'
+      )
+        return row ?? null
       return this.update(id, { status: 'cancelled', completedAt: now() })
     },
   }

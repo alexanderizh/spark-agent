@@ -1,6 +1,6 @@
 # 画布节点任务可观测性与异步视频修复
 
-> 状态: 已落地 | 最后核对: 2026-07-23
+> 状态: 已落地 | 最后核对: 2026-08-09
 
 ## 背景
 
@@ -18,7 +18,8 @@ xAI 另有一处终态解析错误：官方成功契约是 `status=done` 且产�
 
 - APIMart 的图片和视频异步任务统一轮询 `/v1/tasks/{task_id}`。
 - 成功响应从 `data.result.videos[].url[]` 提取视频地址；公共媒体 URL 提取器同时兼容字符串和字符串数组，下载到画布项目资产目录后再把任务置为成功。
-- 视频任务的 Provider 表单、内置预设、manifest、adapter 和 MCP 兜底统一至少为 30 分钟。数据库 migration 055 会把历史视频 Provider/manifest 中缺失或小于 30 分钟的超时抬到 30 分钟，同时保留火山方舟等已有更长超时。
+- 视频任务的 Provider 表单、内置预设、manifest、adapter 和 MCP 兜底统一默认为 48 小时。数据库 migration 067 会把仍使用旧 30 分钟默认值的历史视频 Provider/manifest 更新为 48 小时，同时保留用户显式设置的其他超时。
+- 画布前台等待媒体任务的默认上限也跟随统一视频轮询上限为 48 小时；显式传入的短超时仍仅用于测试或调用方主动收紧等待窗口。
 - adapter 回归测试使用 APIMart 官方统一任务响应结构和真实的 `url: string[]` 形状，防止轮询路径或数组解析回退。
 
 ### xAI 视频任务
@@ -99,6 +100,20 @@ Provider 可能在本地轮询超时后才完成生成。用户从 Provider 文�
 - 火山的任务创建、轮询和产物下载分段耗时。
 
 日志不得写入 API Key、Authorization、base64 原文或 URL 查询参数。超长 prompt 只保留 800 字符预览并记录原字符数；错误消息最多保留 500 个字符，避免第三方响应刷满日志文件。
+
+### 异步任务恢复轮询
+
+恢复轮询沿用同一条任务关联链，但明确区分 `runtimeTaskId`、`providerTaskId` 和画布侧 `projectId + clientTaskId`。恢复请求只查询已有 Provider Task ID，不重新调用创建接口。
+
+Runtime 会保存无凭据的查询协议快照和脱敏提交响应。Manifest 渠道按保存的 HTTP 方法、Task ID 位置、状态映射、结果路径和 artifact 请求恢复；火山方舟、百炼、MiniMax、Sora、Google Veo/Omni、腾讯 TokenHub 等专用协议使用各自的查询客户端。恢复阶段重新读取当前 API Key，不把凭据写入任务记录。
+
+恢复日志至少包含：
+
+- `event=poll-resume-requested`：恢复入口、Runtime Task ID、Provider Task ID、Provider Profile、画布归属校验结果；
+- `event=poll-resumed`：恢复策略、查询方法、attempt、间隔和超时；
+- `event=poll-resume-failed`：结构化错误码、终态来源（Provider/网络/下载/取消）和是否仍允许再次恢复。
+
+取消、跨任务归属不一致、Provider Task ID 不一致和已有产物都在主进程拒绝；每次查询前后再检查任务状态。成功/失败写回使用 `running + providerTaskId` 条件更新，晚到回调不能覆盖取消、重新提交或已有产物。日志不得记录 API Key、Authorization、签名 URL、完整提交响应或完整视频地址。
 
 ### 设置页查询
 

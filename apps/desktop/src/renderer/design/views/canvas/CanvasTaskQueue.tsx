@@ -21,6 +21,7 @@ export function CanvasTaskQueue({
   onClearTasks,
   onDeleteTasks,
   onRetryTask,
+  onRepollTask,
   onSelectNode,
 }: {
   boardId: string
@@ -31,6 +32,7 @@ export function CanvasTaskQueue({
   onClearTasks: (scope: ClearTaskScope) => void | Promise<void>
   onDeleteTasks: (taskIds: string[]) => void | Promise<void>
   onRetryTask: (task: CanvasTask, runtimeSource: CanvasTaskRetryRuntimeSource) => void
+  onRepollTask?: ((taskId: string) => void | Promise<void>) | undefined
   onSelectNode: (nodeId: string) => void
 }) {
   const [filter, setFilter] = useState<TaskFilter>('all')
@@ -307,6 +309,7 @@ export function CanvasTaskQueue({
         onClose={() => setDetailTaskId(null)}
         onCancelTask={onCancelTask}
         onRetryTask={onRetryTask}
+        onRepollTask={onRepollTask}
         onSelectNode={onSelectNode}
       />
     </section>
@@ -427,6 +430,7 @@ function TaskDetailModal({
   onClose,
   onCancelTask,
   onRetryTask,
+  onRepollTask,
   onSelectNode,
 }: {
   task: CanvasTask | null
@@ -435,9 +439,22 @@ function TaskDetailModal({
   onClose: () => void
   onCancelTask: (taskId: string) => void
   onRetryTask: (task: CanvasTask, runtimeSource: CanvasTaskRetryRuntimeSource) => void
+  onRepollTask?: ((taskId: string) => void | Promise<void>) | undefined
   onSelectNode: (nodeId: string) => void
 }) {
+  const [repolling, setRepolling] = useState(false)
+
   if (!task) return null
+
+  const handleRepoll = async () => {
+    if (!onRepollTask || repolling) return
+    setRepolling(true)
+    try {
+      await onRepollTask(task.id)
+    } finally {
+      setRepolling(false)
+    }
+  }
 
   const inputNodes = nodes.filter((node) => task.inputNodeIds.includes(node.id))
   const outputNodes = nodes.filter((node) => task.outputNodeIds.includes(node.id))
@@ -511,6 +528,16 @@ function TaskDetailModal({
           <Button size="middle" disabled={!canCancel} onClick={() => onCancelTask(task.id)}>
             中断取消
           </Button>
+          {canRepollTask(task) && onRepollTask && (
+            <Button
+              size="middle"
+              loading={repolling}
+              disabled={repolling}
+              onClick={() => void handleRepoll()}
+            >
+              重新轮询
+            </Button>
+          )}
           {taskNode && (
             <Button size="middle" onClick={() => onRetryTask(task, 'current-node')}>
               使用当前节点模型重试
@@ -527,7 +554,8 @@ function TaskDetailModal({
           className="canvas-task-detail-desc"
           items={[
             { label: 'Task ID', children: task.id },
-            { label: 'Request', children: task.requestId ?? '-' },
+            { label: 'Provider Task ID', children: task.providerTaskId ?? task.requestId ?? '-' },
+            { label: 'Runtime Task ID', children: task.runtimeTaskId ?? '-' },
             { label: 'Provider', children: task.provider ?? '-' },
             { label: 'Provider Profile', children: task.providerProfileId ?? '-' },
             { label: 'Manifest', children: task.manifestId ?? '-' },
@@ -787,6 +815,14 @@ function TaskStatusTag({ status }: { status: CanvasTaskStatus }) {
 
 function isTaskActive(task: CanvasTask): boolean {
   return task.status === 'pending' || task.status === 'running'
+}
+
+function canRepollTask(task: CanvasTask): boolean {
+  return (
+    task.status === 'failed' &&
+    task.pollingAvailable === true &&
+    Boolean(task.providerTaskId ?? task.requestId)
+  )
 }
 
 function statusColor(status: CanvasTaskStatus): string {

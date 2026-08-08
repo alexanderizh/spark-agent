@@ -49,6 +49,7 @@ type RawVolcengineFile = {
   created_at?: number
   expire_at?: number
   mime_type?: string
+  download_url?: string
   status?: string
   error?: { code?: string; message?: string }
   preprocess_configs?: Record<string, unknown> | null
@@ -128,6 +129,33 @@ export class VolcengineArkFilesClient {
       throw new MediaProviderError('provider_http_error', `火山方舟文件 ${id} 不存在或响应为空`)
     }
     return normalizeVolcengineFile(raw)
+  }
+
+  /**
+   * 将 Files file_id 解析为官方返回的预签名下载 URL。
+   *
+   * file_id 不能直接放进 Seedance/Seedream 的 content；生成接口要求 URL、data URL
+   * 或 asset://。Files API 的文件对象在 active 后会返回 download_url，因此这里先
+   * 查询/等待文件就绪，再把官方 URL 交给生成接口，避免伪造不被协议接受的字段。
+   */
+  async resolveDownloadUrl(fileId: string): Promise<string> {
+    let file = await this.get(fileId)
+    if (file.status === 'processing') file = await this.waitUntilActive(file.id)
+    if (file.status === 'failed') {
+      const detail = [file.error?.code, file.error?.message].filter(Boolean).join(' ')
+      throw new MediaProviderError(
+        'provider_http_error',
+        `火山方舟文件 ${file.id} 预处理失败${detail ? `：${detail}` : ''}`,
+      )
+    }
+    const downloadUrl = file.downloadUrl?.trim()
+    if (!downloadUrl || !/^https?:\/\//i.test(downloadUrl)) {
+      throw new MediaProviderError(
+        'provider_http_error',
+        `火山方舟文件 ${file.id} 已可用，但官方响应缺少有效 download_url`,
+      )
+    }
+    return downloadUrl
   }
 
   async delete(fileId: string): Promise<{ deleted: boolean; id: string }> {
@@ -314,6 +342,9 @@ function normalizeVolcengineFile(raw: RawVolcengineFile): ProviderFileObject {
             ...(raw.tos.object_key ? { objectKey: raw.tos.object_key } : {}),
           },
         }
+      : {}),
+    ...(typeof raw.download_url === 'string' && raw.download_url
+      ? { downloadUrl: raw.download_url }
       : {}),
     ...(raw.preprocess_configs !== undefined ? { preprocessConfigs: raw.preprocess_configs } : {}),
   }

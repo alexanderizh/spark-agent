@@ -3,6 +3,7 @@ import type {
   MediaManifestOutputKind,
   MediaModelManifest,
 } from './media-model-manifest.js'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from './media-config.js'
 import { googleOmniVideoSchema } from './media-model-shared-manifest-parts.js'
 
 export const OMNI_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
@@ -62,7 +63,7 @@ export const OMNI_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       },
       polling: {
         intervalMs: 10000,
-        timeoutMs: 1800000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
         statusMap: { pending: 'queued', running: 'running', done: 'succeeded', failed: 'failed' },
       },
     },

@@ -1,4 +1,5 @@
 import type { MediaModelManifest } from './media-model-manifest.js'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from './media-config.js'
 
 const xaiVideo15Schema = {
   type: 'object',
@@ -77,7 +78,7 @@ export const XAI_VIDEO_15_MANIFESTS: readonly MediaModelManifest[] = XAI_VIDEO_1
       },
       polling: {
         intervalMs: 5000,
-        timeoutMs: 1800000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
         statusMap: xaiVideoStatusMap,
       },
     },

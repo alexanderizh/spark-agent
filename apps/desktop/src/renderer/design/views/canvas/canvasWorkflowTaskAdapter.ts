@@ -1,3 +1,4 @@
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '@spark/protocol'
 import type { CanvasSnapshot, CanvasTask } from './canvas.types'
 
 export interface WaitForCanvasWorkflowTaskOptions {
@@ -34,7 +35,8 @@ export async function waitForCanvasWorkflowTask(
 ): Promise<CanvasTask> {
   const startedAt = Date.now()
   const pollIntervalMs = options.pollIntervalMs ?? 750
-  const timeoutMs = options.timeoutMs ?? 30 * 60 * 1_000
+  // 媒体任务可能在 Provider 侧长时间排队；默认等待上限与统一视频轮询上限一致。
+  const timeoutMs = options.timeoutMs ?? DEFAULT_VIDEO_POLL_TIMEOUT_MS
 
   for (;;) {
     if (options.signal?.aborted) throw abortError()
@@ -46,7 +48,8 @@ export async function waitForCanvasWorkflowTask(
       throw new Error(task.errorMsg || task.errorDetail || '画布任务执行失败')
     }
     if (task.status === 'cancelled') throw abortError()
-    if (Date.now() - startedAt >= timeoutMs) throw new Error('画布任务等待超时，可稍后从运行记录恢复')
+    if (Date.now() - startedAt >= timeoutMs)
+      throw new Error('画布任务等待超时，可稍后从运行记录恢复')
     await wait(pollIntervalMs, options.signal)
   }
 }

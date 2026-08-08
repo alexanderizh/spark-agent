@@ -8,6 +8,12 @@ import {
   validationIssue,
   type MediaValidationContext,
 } from './media-validator.types.js'
+import {
+  isSeedance20Model,
+  isSeedance25Model,
+  isSeedance2xModel,
+  seedanceReferenceLimits,
+} from '../volcengine-ark-seedance.js'
 
 export function validateVolcengineArkMediaRequest(
   context: MediaValidationContext,
@@ -43,7 +49,10 @@ function validateSeedanceRequest(context: MediaValidationContext): MediaContract
   const audios = inputFilesOfKind(context, 'audio')
   const firstFrames = images.filter((file) => file.role === 'first_frame')
   const lastFrames = images.filter((file) => file.role === 'last_frame')
-  const isSeedance2 = context.modelId.startsWith('doubao-seedance-2-0-')
+  const isSeedance2 = isSeedance20Model(context.modelId)
+  const isSeedance25 = isSeedance25Model(context.modelId)
+  const isSeedance2x = isSeedance2xModel(context.modelId)
+  const referenceLimits = seedanceReferenceLimits(context.modelId)
   const isSeedance1x = context.modelId.startsWith('doubao-seedance-1-')
   // Seedance 1.x 不支持平台 reference_image；画布通用的 reference 图片会在
   // adapter 边界按顺序归一化成首帧/尾帧，因此这里也按帧输入校验。
@@ -95,7 +104,7 @@ function validateSeedanceRequest(context: MediaValidationContext): MediaContract
       ]),
     )
   }
-  if (!isSeedance2 && hasReferenceMode) {
+  if (!isSeedance2x && hasReferenceMode) {
     issues.push(
       validationIssue('forbidden_param', `${context.modelId} 不支持多模态参考图、视频或音频`, [
         'inputFiles',
@@ -122,8 +131,8 @@ function validateSeedanceRequest(context: MediaValidationContext): MediaContract
   }
   const duration = numericParam(params, 'durationSeconds', 'duration')
   if (duration != null) {
-    const valid = isSeedance2
-      ? duration === -1 || (duration >= 4 && duration <= 15)
+    const valid = isSeedance2x
+      ? duration === -1 || (duration >= 4 && duration <= (isSeedance25 ? 30 : 15))
       : isSeedance15
         ? duration === -1 || (duration >= 4 && duration <= 12)
         : duration >= 2 && duration <= 12
@@ -188,7 +197,7 @@ function validateSeedanceRequest(context: MediaValidationContext): MediaContract
       ]),
     )
   }
-  if (!isSeedance2 && images.length > 0 && booleanParam(params, 'cameraFixed', 'camera_fixed')) {
+  if (!isSeedance2x && images.length > 0 && booleanParam(params, 'cameraFixed', 'camera_fixed')) {
     issues.push(
       validationIssue('conflicting_params', 'Seedance 1.x 参考图场景不支持 camera_fixed', [
         'modelParams',
@@ -196,7 +205,7 @@ function validateSeedanceRequest(context: MediaValidationContext): MediaContract
       ]),
     )
   }
-  if (!isSeedance2 && images.length > 0 && stringParam(params, 'resolution') === '1080p') {
+  if (!isSeedance2x && images.length > 0 && stringParam(params, 'resolution') === '1080p') {
     issues.push(
       validationIssue('conflicting_params', 'Seedance 1.x 参考图场景不支持 1080p', [
         'modelParams',
@@ -209,15 +218,57 @@ function validateSeedanceRequest(context: MediaValidationContext): MediaContract
     (sum, file) => sum + (file.dataUrl ? (file.sizeBytes ?? 0) : 0),
     0,
   )
-  if (knownRequestBytes > 64 * 1024 * 1024) {
+  const knownRequestBytesLimit = isSeedance25 ? 200 * 1024 * 1024 : 64 * 1024 * 1024
+  if (knownRequestBytes > knownRequestBytesLimit) {
     issues.push(
-      validationIssue('out_of_range', 'Seedance 请求体中的已知素材总大小不能超过 64 MB', [
-        'inputFiles',
+      validationIssue(
+        'out_of_range',
+        `Seedance 请求体中的已知素材总大小不能超过 ${isSeedance25 ? 200 : 64} MB`,
+        ['inputFiles'],
+      ),
+    )
+  }
+
+  if (referenceLimits) {
+    const totalReferences = images.length + videos.length + audios.length
+    const exceededKinds = [
+      images.length > referenceLimits.maxImages
+        ? `图片 ${images.length}/${referenceLimits.maxImages}`
+        : undefined,
+      videos.length > referenceLimits.maxVideos
+        ? `视频 ${videos.length}/${referenceLimits.maxVideos}`
+        : undefined,
+      audios.length > referenceLimits.maxAudios
+        ? `音频 ${audios.length}/${referenceLimits.maxAudios}`
+        : undefined,
+    ].filter((value): value is string => value !== undefined)
+    if (exceededKinds.length > 0 || totalReferences > referenceLimits.maxTotal) {
+      issues.push(
+        validationIssue(
+          'out_of_range',
+          `${context.modelId} 最多支持 ${referenceLimits.maxImages} 张图片、${referenceLimits.maxVideos} 段视频和 ${referenceLimits.maxAudios} 段音频，且总数最多 ${referenceLimits.maxTotal} 个；当前超限：${[
+            ...exceededKinds,
+            ...(totalReferences > referenceLimits.maxTotal
+              ? [`总数 ${totalReferences}/${referenceLimits.maxTotal}`]
+              : []),
+          ].join('，')}`,
+          ['inputFiles'],
+        ),
+      )
+    }
+  }
+
+  const outputFormat = stringParam(params, 'outputFormat', 'output_format')
+  if (isSeedance25 && outputFormat && !['mp4', 'mov'].includes(outputFormat)) {
+    issues.push(
+      validationIssue('invalid_enum', 'Seedance 2.5 输出格式只能是 mp4 或 mov', [
+        'modelParams',
+        'outputFormat',
       ]),
     )
   }
 
-  validateSeedanceMediaMetadata(issues, images, videos, audios)
+  validateSeedanceMediaMetadata(issues, images, videos, audios, referenceLimits)
   return issues
 }
 
@@ -226,6 +277,7 @@ function validateSeedanceMediaMetadata(
   images: NonNullable<MediaValidationContext['input']['inputFiles']>,
   videos: NonNullable<MediaValidationContext['input']['inputFiles']>,
   audios: NonNullable<MediaValidationContext['input']['inputFiles']>,
+  referenceLimits: ReturnType<typeof seedanceReferenceLimits>,
 ): void {
   for (const [index, file] of images.entries()) {
     if (file.sizeBytes != null && file.sizeBytes > 30 * 1024 * 1024) {
@@ -252,21 +304,29 @@ function validateSeedanceMediaMetadata(
     }
     if (file.durationMs != null) {
       totalVideoMs += file.durationMs
-      if (file.durationMs < 2000 || file.durationMs > 15000) {
+      const maxDurationMs = referenceLimits ? referenceLimits.maxDurationMs : 15_000
+      if (file.durationMs < 2000 || (maxDurationMs != null && file.durationMs > maxDurationMs)) {
         issues.push(
-          validationIssue('out_of_range', 'Seedance 单段参考视频时长必须为 2–15 秒', [
-            'inputFiles',
-            index,
-            'durationMs',
-          ]),
+          validationIssue(
+            'out_of_range',
+            maxDurationMs == null
+              ? 'Seedance 单段参考视频时长不能短于 2 秒'
+              : `Seedance 单段参考视频时长必须为 2–${maxDurationMs / 1000} 秒`,
+            ['inputFiles', index, 'durationMs'],
+          ),
         )
       }
     }
     validateDimensions(issues, file, index, 300, 6000, 0.4, 2.5, 'Seedance 视频')
   }
-  if (totalVideoMs > 15000) {
+  const maxDurationMs = referenceLimits ? referenceLimits.maxDurationMs : 15_000
+  if (maxDurationMs != null && totalVideoMs > maxDurationMs) {
     issues.push(
-      validationIssue('out_of_range', 'Seedance 参考视频总时长不能超过 15 秒', ['inputFiles']),
+      validationIssue(
+        'out_of_range',
+        `Seedance 参考视频总时长不能超过 ${maxDurationMs / 1000} 秒`,
+        ['inputFiles'],
+      ),
     )
   }
   let totalAudioMs = 0
@@ -282,20 +342,26 @@ function validateSeedanceMediaMetadata(
     }
     if (file.durationMs != null) {
       totalAudioMs += file.durationMs
-      if (file.durationMs < 2000 || file.durationMs > 15000) {
+      if (file.durationMs < 2000 || (maxDurationMs != null && file.durationMs > maxDurationMs)) {
         issues.push(
-          validationIssue('out_of_range', 'Seedance 单段参考音频时长必须为 2–15 秒', [
-            'inputFiles',
-            index,
-            'durationMs',
-          ]),
+          validationIssue(
+            'out_of_range',
+            maxDurationMs == null
+              ? 'Seedance 单段参考音频时长不能短于 2 秒'
+              : `Seedance 单段参考音频时长必须为 2–${maxDurationMs / 1000} 秒`,
+            ['inputFiles', index, 'durationMs'],
+          ),
         )
       }
     }
   }
-  if (totalAudioMs > 15000) {
+  if (maxDurationMs != null && totalAudioMs > maxDurationMs) {
     issues.push(
-      validationIssue('out_of_range', 'Seedance 参考音频总时长不能超过 15 秒', ['inputFiles']),
+      validationIssue(
+        'out_of_range',
+        `Seedance 参考音频总时长不能超过 ${maxDurationMs / 1000} 秒`,
+        ['inputFiles'],
+      ),
     )
   }
 }

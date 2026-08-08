@@ -6,6 +6,7 @@
  * models/{model}:predictLongRunning and operation polling.
  */
 
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '@spark/protocol'
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
 import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
 import type {
@@ -331,7 +332,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
         {
           fetchImpl: ctx.fetch,
           intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-          ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+          ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
           inspect: (payload) => {
             if (googleInlineVideos(payload).length > 0 || googleVideoUrls(payload).length > 0)
               return 'done'
@@ -438,7 +439,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
     const raw = await pollTask(pollUrl, googleHeaders(ctx), {
       fetchImpl: ctx.fetch,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 10_000,
-      ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+      ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
       inspect: (payload) => {
         if (googleVideoUrls(payload).length > 0 || googleInlineVideos(payload).length > 0) {
           return 'done'
@@ -829,7 +830,7 @@ async function waitForGoogleFilesActive(
       pollTask(`${baseEndpoint(ctx)}/files/${encodeURIComponent(fileName)}`, googleHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
         inspect: (payload) => {
           const state = firstStringByKey(payload, 'state').toUpperCase()
           if (state === 'ACTIVE') return 'done'

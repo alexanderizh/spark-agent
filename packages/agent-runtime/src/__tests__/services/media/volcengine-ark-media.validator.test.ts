@@ -47,6 +47,97 @@ function validate(input: {
 }
 
 describe('Volcengine Ark media request validation', () => {
+  it('accepts Seedance 2.5 audio-only references, 30 seconds, and MOV output', () => {
+    const result = validate({
+      modelId: 'doubao-seedance-2-5-260628',
+      capability: 'video.reference_to_video',
+      prompt: '根据音频节奏生成一段视频',
+      inputFiles: [
+        { type: 'audio', role: 'reference', url: 'https://cdn/ref.mp3', durationMs: 30_000 },
+      ],
+      modelParams: { durationSeconds: 30, outputFormat: 'mov' },
+    })
+    expect(result.blockingIssues).toEqual([])
+  })
+
+  it('accepts the Seedance 2.5 30/10/10 reference distribution and rejects a 51st item', () => {
+    const accepted = validate({
+      modelId: 'doubao-seedance-2-5-260628',
+      capability: 'video.reference_to_video',
+      prompt: '组合所有参考素材',
+      inputFiles: [
+        ...Array.from({ length: 30 }, (_, index) => ({
+          type: 'image' as const,
+          role: 'reference' as const,
+          url: `https://cdn/image-${index}.png`,
+        })),
+        ...Array.from({ length: 10 }, (_, index) => ({
+          type: 'video' as const,
+          role: 'reference' as const,
+          url: `https://cdn/video-${index}.mp4`,
+        })),
+        ...Array.from({ length: 10 }, (_, index) => ({
+          type: 'audio' as const,
+          role: 'reference' as const,
+          url: `https://cdn/audio-${index}.mp3`,
+        })),
+      ],
+    })
+    expect(accepted.blockingIssues).toEqual([])
+
+    const rejected = validate({
+      modelId: 'doubao-seedance-2-5-260628',
+      capability: 'video.reference_to_video',
+      prompt: '组合所有参考素材',
+      inputFiles: [
+        ...Array.from({ length: 30 }, (_, index) => ({
+          type: 'image' as const,
+          role: 'reference' as const,
+          url: `https://cdn/image-${index}.png`,
+        })),
+        ...Array.from({ length: 10 }, (_, index) => ({
+          type: 'video' as const,
+          role: 'reference' as const,
+          url: `https://cdn/video-${index}.mp4`,
+        })),
+        ...Array.from({ length: 11 }, (_, index) => ({
+          type: 'audio' as const,
+          role: 'reference' as const,
+          url: `https://cdn/audio-${index}.mp3`,
+        })),
+      ],
+    })
+    expect(rejected.blockingIssues.some((issue) => issue.message.includes('总数 51/50'))).toBe(true)
+  })
+
+  it('rejects a Seedance 2.5 per-kind reference overflow even below the total limit', () => {
+    const result = validate({
+      modelId: 'doubao-seedance-2-5-260628',
+      capability: 'video.reference_to_video',
+      prompt: '组合参考素材',
+      inputFiles: Array.from({ length: 31 }, (_, index) => ({
+        type: 'image' as const,
+        role: 'reference' as const,
+        url: `https://cdn/image-${index}.png`,
+      })),
+    })
+    expect(result.blockingIssues.some((issue) => issue.message.includes('图片 31/30'))).toBe(true)
+  })
+
+  it('keeps Seedance 2.0 audio-only and 30-second requests rejected', () => {
+    const result = validate({
+      modelId: 'doubao-seedance-2-0-260128',
+      capability: 'video.reference_to_video',
+      prompt: '音频参考',
+      inputFiles: [{ type: 'audio', role: 'reference', url: 'https://cdn/ref.mp3' }],
+      modelParams: { durationSeconds: 30 },
+    })
+    expect(result.blockingIssues.some((issue) => issue.message.includes('不能只传音频'))).toBe(true)
+    expect(result.blockingIssues.some((issue) => issue.message.includes('不支持时长 30'))).toBe(
+      true,
+    )
+  })
+
   it('accepts Seedance 2.0 pure text with web search', () => {
     const result = validate({
       modelId: 'doubao-seedance-2-0-260128',

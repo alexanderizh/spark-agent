@@ -489,8 +489,7 @@ function operationPickerPopoverClassName(popoverClassName?: string): string {
 }
 
 /** 全屏窗口模式下，左侧红绿灯会被标题区域遮挡。仅 macOS + 全屏状态下需要给头部留出安全区。 */
-const isCanvasPanelHostDarwin =
-  typeof window !== 'undefined' && window.spark?.platform === 'darwin'
+const isCanvasPanelHostDarwin = typeof window !== 'undefined' && window.spark?.platform === 'darwin'
 
 export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   node,
@@ -500,6 +499,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   onClose,
   onRun,
   onRetry,
+  onRepoll,
   onSaveDraft,
   onRequestCanvasNodePick,
   onUploadLocalFile,
@@ -515,6 +515,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   onClose: () => void
   onRun: (params: OperationRunParams) => Promise<void> | void
   onRetry: () => void
+  onRepoll?: (() => void | Promise<void>) | undefined
   onSaveDraft: (params: OperationDraftParams) => Promise<void> | void
   onRequestCanvasNodePick?: (onPick: (node: CanvasNode) => void) => void
   onUploadLocalFile?: (file: File) => Promise<CanvasNode | null | undefined>
@@ -828,6 +829,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [submitting, setSubmitting] = useState(false)
   const [draftRevision, setDraftRevision] = useState(0)
   const [cancelling, setCancelling] = useState(false)
+  const [repolling, setRepolling] = useState(false)
   const [messageDraft, setMessageDraft] = useState(node.data.message ?? '')
   const [pendingDedicatedMediaNode, setPendingDedicatedMediaNode] = useState<CanvasNode | null>(
     null,
@@ -843,6 +845,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     configurationTouchedRef.current = true
     markDraftDirty()
   }, [markDraftDirty])
+  const handleRepoll = useCallback(async () => {
+    if (!onRepoll || repolling) return
+    setRepolling(true)
+    try {
+      await onRepoll()
+    } finally {
+      setRepolling(false)
+    }
+  }, [onRepoll, repolling])
   useEffect(() => {
     if (operation !== 'video_depth_map') return
     const configuredValue = node.data.modelParams?.preserveAudio ?? task?.modelParams?.preserveAudio
@@ -2531,6 +2542,19 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 }}
               />
             </Tooltip>
+            {task && onRepoll && canRepollCanvasTask(task) && (
+              <Tooltip title="重新轮询">
+                <Button
+                  size="small"
+                  type="text"
+                  aria-label="重新轮询"
+                  icon={<Icons.RotateCcw size={14} />}
+                  loading={repolling}
+                  disabled={repolling}
+                  onClick={() => void handleRepoll()}
+                />
+              </Tooltip>
+            )}
             <Tooltip title={saveDraftTooltip}>
               <Button
                 size="small"
@@ -3033,6 +3057,19 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             }}
           />
         </Tooltip>
+        {task && onRepoll && canRepollCanvasTask(task) && (
+          <Tooltip title="重新轮询">
+            <Button
+              size="middle"
+              type="text"
+              aria-label="重新轮询"
+              icon={<Icons.RotateCcw size={14} />}
+              loading={repolling}
+              disabled={repolling}
+              onClick={() => void handleRepoll()}
+            />
+          </Tooltip>
+        )}
         <div className="canvas-operation-panel-footer-spacer" />
         <Tooltip title={saveDraftTooltip}>
           <Button
@@ -3087,6 +3124,14 @@ function isSupportedMediaInputNode(node: CanvasNode, inputTypes: readonly string
   if (node.type === 'video') return inputTypes.includes('video')
   if (node.type === 'audio') return inputTypes.includes('audio')
   return false
+}
+
+function canRepollCanvasTask(task: CanvasTask): boolean {
+  return (
+    task.status === 'failed' &&
+    task.pollingAvailable === true &&
+    Boolean(task.providerTaskId ?? task.requestId)
+  )
 }
 
 function isTextProviderProfile(provider: ProviderProfile): boolean {

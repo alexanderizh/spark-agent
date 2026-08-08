@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { MediaInputFile, MediaProviderContext } from './media-adapter.types.js'
 import { MediaProviderError } from './media-adapter.types.js'
+import { VolcengineArkFilesClient } from './volcengine-ark-files.client.js'
 
 type VolcengineInputKind = 'image' | 'video' | 'audio'
 
@@ -10,11 +11,28 @@ export async function resolveVolcengineMediaReference(
   kind: VolcengineInputKind,
   context: MediaProviderContext,
 ): Promise<string> {
-  if (file.fileId?.trim()) {
-    throw new MediaProviderError(
-      'invalid_input',
-      '火山方舟 Files file_id 仅用于 Chat/Responses，不能传给 Seedance/Seedream 生成接口',
-    )
+  // Ark Files API 的 file_id 不能直接放进 Seedance/Seedream content；先通过官方
+  // Files 对象取得预签名 download_url，再把 URL 交给生成接口。这样不会把 file_id
+  // 或本地路径传给模型端。
+  const fileId = file.fileId?.trim()
+  if (fileId) {
+    try {
+      return await new VolcengineArkFilesClient({
+        apiKey: context.apiKey,
+        apiEndpoint: context.apiEndpoint,
+        ...(context.fetch ? { fetch: context.fetch } : {}),
+      }).resolveDownloadUrl(fileId)
+    } catch (error) {
+      // 节点可能同时保留了用户显式提供的 URL/本地源；Files 解析失败时允许走
+      // 已有安全回退，避免一次过期/删除的远端 file_id 让任务完全无法提交。
+      if (!file.url?.trim() && !file.dataUrl?.trim() && !file.path?.trim()) {
+        throw new MediaProviderError(
+          error instanceof MediaProviderError ? error.code : 'provider_http_error',
+          `火山方舟 Files file_id ${fileId} 无法转换为官方下载 URL：${errorMessage(error)}`,
+          error instanceof MediaProviderError ? error.statusCode : undefined,
+        )
+      }
+    }
   }
 
   const direct = directReference(file, kind)
@@ -29,6 +47,9 @@ export async function resolveVolcengineMediaReference(
   }
 
   let buffer: Buffer
+  const officialFileUrl = await tryUploadToVolcengineFiles(localPath, context)
+  if (officialFileUrl) return officialFileUrl
+
   try {
     buffer = await readFile(localPath)
   } catch (error) {
@@ -62,6 +83,29 @@ export async function resolveVolcengineMediaReference(
       'auth_required',
       `火山方舟本地参考视频公开上传失败，请登录 Spark 或改用 HTTPS/asset:// 素材：${errorMessage(error)}`,
     )
+  }
+}
+
+async function tryUploadToVolcengineFiles(
+  filePath: string,
+  context: MediaProviderContext,
+): Promise<string | undefined> {
+  try {
+    const uploaded = await new VolcengineArkFilesClient({
+      apiKey: context.apiKey,
+      apiEndpoint: context.apiEndpoint,
+      ...(context.fetch ? { fetch: context.fetch } : {}),
+    }).upload({
+      filePath,
+      purpose: 'user_data',
+      waitUntilActive: true,
+    })
+    const downloadUrl = uploaded.downloadUrl?.trim()
+    return downloadUrl && /^https?:\/\//i.test(downloadUrl) ? downloadUrl : undefined
+  } catch {
+    // Files 是火山官方首选通道，但本地任务仍保留可控回退：图片/音频可内联，
+    // 视频交给已配置的 HTTPS 上传器。回退层同样禁止把本地路径放进请求体。
+    return undefined
   }
 }
 

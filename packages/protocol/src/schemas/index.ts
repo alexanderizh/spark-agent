@@ -1252,6 +1252,13 @@ export const IpcSchemaRegistry = {
     outputDir: z.string().max(2000).optional(),
     ...CanvasPromptTaskFieldsSchema,
   }),
+  'canvas:task:repoll-media': z.object({
+    projectId: z.string().min(1).max(200),
+    clientTaskId: z.string().min(1).max(200),
+    runtimeTaskId: z.string().min(1).max(200).optional(),
+    providerProfileId: z.string().min(1).max(200),
+    providerTaskId: z.string().min(1).max(300),
+  }),
   'canvas:depth-model:status': z.object({}),
   'canvas:depth-model:install': z.object({}),
   'canvas:task:create-depth-video': z.object({
