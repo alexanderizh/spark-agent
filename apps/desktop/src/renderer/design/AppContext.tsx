@@ -40,6 +40,7 @@ export type ViewId =
   | 'canvas'
   | 'canvas-workflows'
   | 'canvas-prompts'
+  | 'canvas-video-tasks'
   | 'scheduled-tasks'
   | 'skills'
   | 'skill-store'

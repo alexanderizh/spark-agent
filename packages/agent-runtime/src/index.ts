@@ -31,6 +31,23 @@ export {
   VolcengineArkFilesClient,
   resolveVolcengineArkFilesBaseUrl,
 } from './services/media/volcengine-ark-files.client.js'
+export {
+  VOLCENGINE_ARK_VIDEO_TASKS_DEFAULT_BASE_URL,
+  VolcengineArkVideoTaskClient,
+  resolveVolcengineArkVideoTasksBaseUrl,
+} from './services/media/video-channel-task-client.js'
+export type { VideoChannelTaskProvider } from './services/media/video-channel-task-client.js'
+export {
+  BAILIAN_VIDEO_TASKS_DEFAULT_BASE_URL,
+  BailianVideoTaskClient,
+  resolveBailianVideoTasksBaseUrl,
+} from './services/media/bailian-video-task-client.js'
+export {
+  MINIMAX_VIDEO_TASKS_DEFAULT_BASE_URL,
+  MinimaxVideoTaskClient,
+  minimaxVideoTaskErrorExtractor,
+  resolveMinimaxVideoTasksBaseUrl,
+} from './services/media/minimax-video-task-client.js'
 export type {
   MediaUploader,
   MediaUploadInput,

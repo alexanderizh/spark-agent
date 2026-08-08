@@ -243,6 +243,7 @@ import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.j
 import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
 import { registerProviderFilesIpc } from './registerProviderFilesIpc.js'
+import { registerVideoChannelTaskIpc } from './registerVideoChannelTaskIpc.js'
 import { registerFontAssetIpc } from './registerFontAssetIpc.js'
 import { registerVoiceIpc } from './registerVoiceIpc.js'
 import { registerCanvasWorkflowIpc } from './registerCanvasWorkflowIpc.js'
@@ -8825,6 +8826,12 @@ export function registerAllIpcHandlers(): void {
   registerTerminalIpc()
 
   registerProviderFilesIpc({
+    getProfile: async (id) =>
+      (await getProviderService().listProviders()).find((profile) => profile.id === id),
+    getApiKey: async (id) => getProviderService().getProviderApiKey(id),
+  })
+
+  registerVideoChannelTaskIpc({
     getProfile: async (id) =>
       (await getProviderService().listProviders()).find((profile) => profile.id === id),
     getApiKey: async (id) => getProviderService().getProviderApiKey(id),

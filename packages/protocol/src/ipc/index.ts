@@ -63,6 +63,7 @@ import type {
   GitHubConnectorConnection,
 } from '../connectors.js'
 import type { ProviderFilesIpcChannelMap } from '../provider-files.js'
+import type { VideoChannelTasksIpcChannelMap } from '../video-channel-tasks.js'
 import type { SidebarOrderIpcChannelMap } from '../sidebar-order.js'
 import type { AppUnreadBadgeIpcChannelMap } from '../app-unread-badge.js'
 import type {
@@ -5485,6 +5486,7 @@ export interface CanvasAssetCleanupFilesResponse {
 export interface IpcChannelMap
   extends
     ProviderFilesIpcChannelMap,
+    VideoChannelTasksIpcChannelMap,
     ComputerUseIpcChannelMap,
     ApplicationSnapshotIpcChannelMap,
     AppUnreadBadgeIpcChannelMap,

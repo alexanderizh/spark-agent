@@ -84,6 +84,9 @@ const CanvasWorkflowLibraryView = React.lazy(async () => ({
 const CanvasPromptLibraryView = React.lazy(async () => ({
   default: (await import('./design/views/canvas/CanvasPromptLibraryView')).CanvasPromptLibraryView,
 }))
+const CanvasVideoTasksView = React.lazy(async () => ({
+  default: (await import('./design/views/canvas/CanvasVideoTasksView')).CanvasVideoTasksView,
+}))
 const ScheduledTasksView = React.lazy(async () => ({
   default: (await import('./design/views/ScheduledTasksView')).ScheduledTasksView,
 }))
@@ -186,6 +189,7 @@ const SYSTEM_NOTIFICATION_VIEW_TARGETS = new Set<ViewId>([
   'canvas',
   'canvas-workflows',
   'canvas-prompts',
+  'canvas-video-tasks',
   'scheduled-tasks',
   'skills',
   'skill-store',
@@ -305,6 +309,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const handleOpenCanvasPromptLibrary = useCallback(() => {
     setTweak('workspaceMode', 'canvas')
     setTweak('view', 'canvas-prompts')
+  }, [setTweak])
+
+  const handleOpenCanvasVideoTasks = useCallback(() => {
+    setTweak('workspaceMode', 'canvas')
+    setTweak('view', 'canvas-video-tasks')
   }, [setTweak])
 
   const { toast } = useToast()
@@ -697,6 +706,16 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                 <Icons.Book size={16} />
               </span>
               <span className="nav-label">{tr('nav.canvas.promptLibrary')}</span>
+            </button>
+            <button
+              className={`nav-item${t.view === 'canvas-video-tasks' ? ' active' : ''}`}
+              onClick={handleOpenCanvasVideoTasks}
+              title={tr('nav.canvas.videoTasks')}
+            >
+              <span className="nav-icon">
+                <Icons.History size={16} />
+              </span>
+              <span className="nav-label">{tr('nav.canvas.videoTasks')}</span>
             </button>
           </>
         ) : (
@@ -1723,6 +1742,8 @@ function Shell() {
         return <CanvasWorkflowLibraryView />
       case 'canvas-prompts':
         return <CanvasPromptLibraryView />
+      case 'canvas-video-tasks':
+        return <CanvasVideoTasksView />
       case 'scheduled-tasks':
         return <ScheduledTasksView />
       case 'skills':
@@ -1772,7 +1793,10 @@ function Shell() {
   // 侧栏折叠展开按钮、macOS 红绿灯空间预留），不使用公用 MacWindowDragHeader
   // 与 shell-titlebar。Windows 仍保留 win-titlebar（窗口控制按钮必须存在）。
   const canvasOwnHeader =
-    t.view === 'canvas' || t.view === 'canvas-workflows' || t.view === 'canvas-prompts'
+    t.view === 'canvas' ||
+    t.view === 'canvas-workflows' ||
+    t.view === 'canvas-prompts' ||
+    t.view === 'canvas-video-tasks'
   // Keep the shared drag strip, but allow full-bleed views to extend their
   // surface into it. This preserves the native-window hit area while avoiding
   // a disconnected default-colour band above settings and the auth gate.
