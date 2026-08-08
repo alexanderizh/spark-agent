@@ -26,6 +26,29 @@ export function getProviderAdapterKind(provider: ProviderProfile): SessionAgentA
   return provider.provider === 'anthropic' ? 'claude-sdk' : 'codex'
 }
 
+export function getCliSparkOverrideProviders(
+  providers: ProviderProfile[],
+  cliProvider: ProviderProfile | null | undefined,
+): ProviderProfile[] {
+  if (cliProvider == null || !isBuiltInLocalCliProvider(cliProvider)) return []
+  const adapter = getProviderAdapterKind(cliProvider)
+  return providers.filter(
+    (provider) =>
+      !isBuiltInLocalCliProvider(provider) &&
+      !isAutoRouterProvider(provider) &&
+      isProviderCompatibleWithAdapter(provider, adapter) &&
+      (provider.modelIds.length > 0 || provider.defaultModel.trim().length > 0),
+  )
+}
+
+export function isCliSparkConversationProvider(provider: ProviderProfile): boolean {
+  return (
+    provider.modelType !== 'image' &&
+    provider.modelType !== 'voice' &&
+    provider.modelType !== 'video'
+  )
+}
+
 export function getPreferredProviderForAdapter(
   providers: ProviderProfile[],
   preferredProviderId: string | undefined,
@@ -39,9 +62,7 @@ export function getPreferredProviderForAdapter(
     concreteCompatible.find((provider) => provider.id === preferredProviderId) ??
     concreteCompatible.find((provider) => provider.isDefault) ??
     concreteCompatible.find((provider) =>
-      adapter === 'codex'
-        ? isLocalCodexCliProvider(provider)
-        : isLocalClaudeCliProvider(provider),
+      adapter === 'codex' ? isLocalCodexCliProvider(provider) : isLocalClaudeCliProvider(provider),
     ) ??
     concreteCompatible[0] ??
     compatible.find((provider) => provider.id === preferredProviderId) ??

@@ -46,6 +46,7 @@ export { APP_IDENTITY_SYSTEM_PROMPT } from './core-agent-behavior-prompt.js'
 import { MEMORY_PROVENANCE_SYSTEM_PROMPT } from './memory-provenance-prompt.js'
 import type {
   AgentEvent,
+  CliSparkOverride,
   SessionCancelQueuedTurnResponse,
   SessionSendQueuedTurnNowResponse,
   SessionCreateResponse,
@@ -440,6 +441,7 @@ type SendTurnParams = {
   permissionMode?: SessionPermissionMode
   chatMode?: 'agent' | 'ask' | 'edit' | 'review'
   reasoningEffort?: SparkReasoningEffort
+  cliSparkOverride?: CliSparkOverride | null
   skillId?: string
   skillParams?: Record<string, unknown>
   attachments?: SessionAttachment[]
@@ -1274,6 +1276,7 @@ export class SessionService {
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
     reasoningEffort?: SparkReasoningEffort
     debugMode?: boolean
+    cliSparkOverride?: CliSparkOverride | null
     title?: string
     workspaceId?: string
   }): Promise<SessionCreateResponse> {
@@ -1301,6 +1304,11 @@ export class SessionService {
     })
     if (params.debugMode !== undefined) {
       sessionRepo.patchMetadata(row.id, { debugMode: params.debugMode })
+    }
+    if (params.cliSparkOverride !== undefined) {
+      sessionRepo.patchMetadata(row.id, {
+        cliSparkOverride: normalizeCliSparkOverride(params.cliSparkOverride),
+      })
     }
     const { session } = await this.updateSession({ sessionId: row.id })
     return { sessionId: row.id as SessionId, createdAt: row.created_at, session }
@@ -1866,6 +1874,11 @@ export class SessionService {
     if (params.teamConfig != null) {
       new SessionRepository(this.db).patchMetadata(sessionId, { team: params.teamConfig })
     }
+    if (params.cliSparkOverride !== undefined) {
+      new SessionRepository(this.db).patchMetadata(sessionId, {
+        cliSparkOverride: normalizeCliSparkOverride(params.cliSparkOverride),
+      })
+    }
     // 用户提交新 turn = 已对计划做出响应（批准/继续提问/拒绝后再次发送）。
     // 解除 plan 审批闸门，让被阻塞的队列后续可以恢复自动起跑。
     this.pendingPlanApprovals.delete(sessionId)
@@ -2258,13 +2271,48 @@ export class SessionService {
         throw new Error(`Provider ${provider.id} has no default model configured`)
       }
     }
-    if (!isLocalCli && provider.keystore_ref == null) {
-      throw new Error(`Provider ${provider.id} has no keystore ref`)
-    }
-
-    const apiKey = isLocalCli ? '' : await resolveProviderApiKey(provider)
-    if (!isLocalCli && apiKey.length === 0) {
-      throw new Error(`API key not found for provider ${provider.id}`)
+    const cliProvider = provider
+    const activeCliSparkOverride = isLocalCli
+      ? getCliSparkOverrideFromMetadata(session.metadata_json)
+      : null
+    let apiKey = ''
+    if (activeCliSparkOverride != null) {
+      const overrideProvider = loadProvider(activeCliSparkOverride.providerProfileId)
+      const overrideConfig = JSON.parse(overrideProvider.config_json) as typeof config
+      if (
+        isBuiltInLocalCliProvider(overrideProvider) ||
+        getAutoRouterAdapterForProviderId(overrideProvider.id) != null ||
+        !isCliSparkOverrideCompatible(cliProvider, overrideProvider, overrideConfig)
+      ) {
+        throw new Error(
+          `Provider ${overrideProvider.id} is not compatible with local CLI ${cliProvider.id}`,
+        )
+      }
+      const validModels = getProviderModelIds(overrideProvider.config_json)
+      if (!validModels.includes(activeCliSparkOverride.modelId)) {
+        throw new Error(
+          `Model ${activeCliSparkOverride.modelId} is not configured for provider ${overrideProvider.id}`,
+        )
+      }
+      if (overrideProvider.keystore_ref == null) {
+        throw new Error(`Provider ${overrideProvider.id} has no keystore ref`)
+      }
+      apiKey = await resolveProviderApiKey(overrideProvider)
+      if (apiKey.length === 0) {
+        throw new Error(`API key not found for provider ${overrideProvider.id}`)
+      }
+      provider = overrideProvider
+      config = overrideConfig
+      model = activeCliSparkOverride.modelId
+      effectiveRuntimeProviderProfileId = overrideProvider.id
+    } else if (!isLocalCli) {
+      if (provider.keystore_ref == null) {
+        throw new Error(`Provider ${provider.id} has no keystore ref`)
+      }
+      apiKey = await resolveProviderApiKey(provider)
+      if (apiKey.length === 0) {
+        throw new Error(`API key not found for provider ${provider.id}`)
+      }
     }
 
     // 记忆抽取 settings 未配时回退：本 turn 该会话 / @mention agent 实际生效的对话模型。
@@ -2283,19 +2331,23 @@ export class SessionService {
     )
     const adapterKind =
       agentAdapter === 'claude-sdk' || agentAdapter === 'claude' ? 'claude-sdk' : 'codex'
+    const resumeProviderProfileId =
+      activeCliSparkOverride != null
+        ? `${cliProvider.id}::${effectiveRuntimeProviderProfileId}`
+        : effectiveRuntimeProviderProfileId
     // 非 mention turn 保持现有 hash（向后兼容续会话）；
     // mention turn 把被 @ 的 agent.id 加入 hash，避免与 Host SDK session 冲突且让重复 @ 同一 member 可续会话。
     const stableSdkSessionId = isMentionTurn
       ? this.resumeGate.makeRuntimeSessionId(
           sessionId,
-          effectiveRuntimeProviderProfileId,
+          resumeProviderProfileId,
           model,
           agentAdapter,
           `mention:${agent.id}`,
         )
       : this.resumeGate.makeRuntimeSessionId(
           sessionId,
-          effectiveRuntimeProviderProfileId,
+          resumeProviderProfileId,
           model,
           agentAdapter,
         )
@@ -2316,7 +2368,7 @@ export class SessionService {
       ? stableSdkSessionId
       : this.resumeGate.makeRuntimeSessionId(
           sessionId,
-          effectiveRuntimeProviderProfileId,
+          resumeProviderProfileId,
           model,
           agentAdapter,
           isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
@@ -2998,7 +3050,7 @@ export class SessionService {
       const sdkConfig: SDKExecutorConfig = {
         apiKey,
         ...(automation.unattended ? { unattended: true } : {}),
-        ...(isLocalCli ? { useLocalConfig: true } : {}),
+        ...(isLocalCli && activeCliSparkOverride == null ? { useLocalConfig: true } : {}),
         model,
         workspaceRootPath,
         permissionMode,
@@ -3142,7 +3194,7 @@ export class SessionService {
       permissionMode,
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
       ...(config.codexApiKind != null ? { codexApiKind: config.codexApiKind } : {}),
-      ...(!isLocalCli && provider.provider_type !== 'anthropic'
+      ...(activeCliSparkOverride != null || (!isLocalCli && provider.provider_type !== 'anthropic')
         ? {
             codexCliProvider: buildCodexCliModelProviderConfig({
               providerProfileId: effectiveRuntimeProviderProfileId,
@@ -6563,10 +6615,42 @@ export class SessionService {
       ).trim()
       if (!model) throw new Error('Member has no resolvable model')
     }
-    if (!isLocalCli && provider.keystore_ref == null)
-      throw new Error('Member provider has no keystore ref')
-    const apiKey = isLocalCli ? '' : await resolveProviderApiKey(provider)
-    if (!isLocalCli && apiKey.length === 0) throw new Error('Member provider API key not found')
+    const cliProvider = provider
+    const activeCliSparkOverride = isLocalCli
+      ? getCliSparkOverrideFromMetadata(session.metadata_json)
+      : null
+    let appliedCliSparkOverride: CliSparkOverride | null = null
+    let apiKey = ''
+    if (activeCliSparkOverride != null) {
+      const overrideProvider = loadProvider(activeCliSparkOverride.providerProfileId)
+      const overrideConfig = JSON.parse(overrideProvider.config_json) as typeof providerConfig
+      const incompatible =
+        isBuiltInLocalCliProvider(overrideProvider) ||
+        getAutoRouterAdapterForProviderId(overrideProvider.id) != null ||
+        !isCliSparkOverrideCompatible(cliProvider, overrideProvider, overrideConfig)
+      if (!incompatible) {
+        const validModels = getProviderModelIds(overrideProvider.config_json)
+        if (!validModels.includes(activeCliSparkOverride.modelId)) {
+          throw new Error(
+            `Member model ${activeCliSparkOverride.modelId} is not configured for provider ${overrideProvider.id}`,
+          )
+        }
+        if (overrideProvider.keystore_ref == null)
+          throw new Error(`Member provider ${overrideProvider.id} has no keystore ref`)
+        apiKey = await resolveProviderApiKey(overrideProvider)
+        if (apiKey.length === 0)
+          throw new Error(`Member provider API key not found for ${overrideProvider.id}`)
+        provider = overrideProvider
+        providerConfig = overrideConfig
+        model = activeCliSparkOverride.modelId
+        providerProfileId = overrideProvider.id
+        appliedCliSparkOverride = activeCliSparkOverride
+      }
+    } else if (!isLocalCli) {
+      if (provider.keystore_ref == null) throw new Error('Member provider has no keystore ref')
+      apiKey = await resolveProviderApiKey(provider)
+      if (apiKey.length === 0) throw new Error('Member provider API key not found')
+    }
     // 成员 adapter：member 显式配置优先，否则回落会话级（与 Host mention 分支同款取数）。
     const memberAdapter = getAgentAdapterFromSession(
       member.agentAdapter ?? session.agent_adapter,
@@ -6578,6 +6662,7 @@ export class SessionService {
     const memberProfile = resolveCodexMemberExecutionProfile({
       memberAdapter,
       isLocalCli,
+      cliSparkOverride: appliedCliSparkOverride != null,
       providerType: provider.provider_type,
       providerProfileId,
       providerName: provider.name,
@@ -6693,7 +6778,9 @@ export class SessionService {
     const memberSdkSessionId = canContinueDiscussionSession
       ? this.resumeGate.makeRuntimeSessionId(
           sessionId,
-          providerProfileId,
+          appliedCliSparkOverride != null
+            ? `${cliProvider.id}::${providerProfileId}`
+            : providerProfileId,
           model,
           memberAdapter,
           buildMemberContinuityKey(buildTeamContinuityScope(discussionId), member.id),
@@ -8427,6 +8514,7 @@ export class SessionService {
         ? { importedFrom: getImportedFromMetadata(row.metadata_json)! }
         : {}),
       debugMode: getDebugModeFromMetadata(row.metadata_json),
+      cliSparkOverride: getCliSparkOverrideFromMetadata(row.metadata_json),
     }))
     return { sessions, total }
   }
@@ -8507,6 +8595,7 @@ export class SessionService {
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
     reasoningEffort?: SparkReasoningEffort
     debugMode?: boolean
+    cliSparkOverride?: CliSparkOverride | null
   }): Promise<{ session: SessionListResponse['sessions'][number] }> {
     const sessionRepo = new SessionRepository(this.db)
 
@@ -8516,6 +8605,12 @@ export class SessionService {
     if (params.debugMode !== undefined) {
       sessionRepo.patchMetadata(params.sessionId, { debugMode: params.debugMode })
       this.mcpVersion += 1
+    }
+
+    if (params.cliSparkOverride !== undefined) {
+      sessionRepo.patchMetadata(params.sessionId, {
+        cliSparkOverride: normalizeCliSparkOverride(params.cliSparkOverride),
+      })
     }
 
     if (params.title !== undefined) {
@@ -8599,6 +8694,7 @@ export class SessionService {
         logicalMessageCount: row.logical_message_count,
         messageCount: row.logical_message_count,
         debugMode: getDebugModeFromMetadata(row.metadata_json),
+        cliSparkOverride: getCliSparkOverrideFromMetadata(row.metadata_json),
       },
     }
   }
@@ -9968,6 +10064,39 @@ function getDebugModeFromMetadata(metadataJson: string | null | undefined): bool
   }
 }
 
+function getCliSparkOverrideFromMetadata(
+  metadataJson: string | null | undefined,
+): CliSparkOverride | null {
+  if (metadataJson == null || metadataJson === '') return null
+  try {
+    const meta = JSON.parse(metadataJson) as {
+      cliSparkOverride?: { providerProfileId?: unknown; modelId?: unknown } | null
+    }
+    const override = meta.cliSparkOverride
+    if (override == null || typeof override !== 'object') return null
+    const providerProfileId =
+      typeof override.providerProfileId === 'string' ? override.providerProfileId.trim() : ''
+    const modelId = typeof override.modelId === 'string' ? override.modelId.trim() : ''
+    if (providerProfileId.length === 0 || modelId.length === 0) return null
+    return { providerProfileId, modelId }
+  } catch {
+    return null
+  }
+}
+
+function normalizeCliSparkOverride(
+  value: CliSparkOverride | null | undefined,
+): CliSparkOverride | null {
+  if (value == null) return null
+  const providerProfileId =
+    typeof value.providerProfileId === 'string' ? value.providerProfileId.trim() : ''
+  const modelId = typeof value.modelId === 'string' ? value.modelId.trim() : ''
+  if (providerProfileId.length === 0 || modelId.length === 0) {
+    throw new Error('cliSparkOverride requires providerProfileId and modelId')
+  }
+  return { providerProfileId, modelId }
+}
+
 function getAutomationMetadata(metadataJson: string | null | undefined): {
   unattended: boolean
   source: string | null
@@ -10026,6 +10155,22 @@ function getProviderModelIds(configJson: string | null | undefined): string[] {
   } catch {
     return []
   }
+}
+
+function isCliSparkOverrideCompatible(
+  cliProvider: Pick<ProviderProfileRow, 'id'>,
+  overrideProvider: Pick<ProviderProfileRow, 'provider_type'>,
+  overrideConfig: { codexApiKind?: 'chat' | 'responses' },
+): boolean {
+  if (isLocalCodexCliProvider(cliProvider)) {
+    return (
+      overrideProvider.provider_type !== 'anthropic' &&
+      (overrideConfig.codexApiKind == null ||
+        overrideConfig.codexApiKind === 'chat' ||
+        overrideConfig.codexApiKind === 'responses')
+    )
+  }
+  return overrideProvider.provider_type === 'anthropic'
 }
 
 function getLocalCliDefaultModel(provider: { id: string }): string {
@@ -10119,6 +10264,7 @@ function buildCodexCliModelProviderConfig(params: {
 export function resolveCodexMemberExecutionProfile(args: {
   memberAdapter: AgentAdapterKind
   isLocalCli: boolean
+  cliSparkOverride?: boolean
   providerType: string
   providerProfileId: string
   providerName: string
@@ -10146,11 +10292,14 @@ export function resolveCodexMemberExecutionProfile(args: {
     codexApiKind?: 'chat' | 'responses'
     codexCliProvider?: SDKExecutorConfig['codexCliProvider']
   } = {
-    ...(args.isLocalCli ? { useLocalConfig: true as const } : {}),
+    ...(args.isLocalCli && (args.cliSparkOverride !== true || isCodexMember)
+      ? { useLocalConfig: true as const }
+      : {}),
     ...(isCodexMember
       ? {
           ...(args.codexApiKind != null ? { codexApiKind: args.codexApiKind } : {}),
-          ...(!args.isLocalCli && args.providerType !== 'anthropic'
+          ...((!args.isLocalCli || args.cliSparkOverride === true) &&
+          args.providerType !== 'anthropic'
             ? {
                 codexCliProvider: buildCodexCliModelProviderConfig({
                   providerProfileId: args.providerProfileId,

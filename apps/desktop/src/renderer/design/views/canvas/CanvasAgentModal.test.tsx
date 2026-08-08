@@ -59,10 +59,6 @@ vi.mock('../../components/ChatPanel', () => ({
   ChatPanel: () => null,
 }))
 
-vi.mock('../../components/SkillsPickerModal', () => ({
-  SkillsPickerModal: () => null,
-}))
-
 const mounted: Array<{ root: Root; container: HTMLDivElement }> = []
 
 afterEach(() => {

@@ -20,21 +20,22 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { Dropdown, Modal } from 'antd'
-import type {
-  AgentEvent,
-  ManagedAgent,
-  ProviderProfile,
-  SessionAgentAdapter,
-  SessionAttachment,
-  SessionListResponse,
-  SessionPermissionMode,
+import {
+  isBuiltInLocalCliProvider,
+  type CliSparkOverride,
+  type AgentEvent,
+  type ManagedAgent,
+  type ProviderProfile,
+  type SessionAgentAdapter,
+  type SessionAttachment,
+  type SessionListResponse,
+  type SessionPermissionMode,
 } from '@spark/protocol'
 import { Button, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { AvatarImage } from '../../components/AvatarImage'
 import { ProviderLogo } from '../../components/ProviderLogo'
 import { ChatPanel, type ChatPanelNodeReference } from '../../components/ChatPanel'
-import { SkillsPickerModal, type SkillItemForPicker } from '../../components/SkillsPickerModal'
 import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../../avatar'
 import { useProviderConfigVersion } from '../../hooks/useProviderConfigVersion'
 import { useCanvasToolHost } from './canvas-tool-host'
@@ -42,10 +43,17 @@ import { isRunningAgentStatus } from '../chat-session-status'
 import './CanvasAgentPicker.less'
 import type { CanvasToolHostOptions } from './canvas-tool-host'
 import {
+  getCliSparkOverrideProviders,
   getProviderAdapterKind,
   getPreferredProviderForAdapter,
+  isCliSparkConversationProvider,
   isProviderCompatibleWithAdapter,
 } from '../../utils/provider-adapter'
+import {
+  readCliSparkOverrideCache,
+  rememberCliSparkOverride,
+} from '../../utils/cli-spark-override-cache'
+import { usePinnedModels } from '../chat/pinned-models'
 import type { CanvasNode, CanvasSnapshot } from './canvas.types'
 import { buildSelectedNodesContext } from './canvasAgentContextBuilder'
 import { resolveCanvasAgentContextNodes } from './canvasAgentMessageContext'
@@ -57,6 +65,9 @@ import {
   resolveCanvasAgentProviderModel,
   type CanvasAgentModelGroup,
 } from './canvas-agent-model-options'
+import { CliProviderModelMenu, type CliSparkProviderGroup } from '../chat/CliProviderModelMenu'
+import { ModelPickerMenuItem } from '../chat/ModelPickerMenuItem'
+import { usePinnedCanvasItems } from './pinned-canvas-items'
 
 interface Props {
   open: boolean
@@ -84,9 +95,13 @@ interface Props {
   externalSubmitRequest?: { id: number; text: string } | null
 }
 
-type CanvasAgentComposerMenu = 'session' | 'agent' | 'model'
+type CanvasAgentComposerMenu = 'session' | 'agent' | 'model' | 'skills'
 type CanvasAgentResizeHandle = 'top' | 'left' | 'right' | 'top-left' | 'top-right'
-type SkillSummary = SkillItemForPicker
+type SkillSummary = {
+  id: string
+  name: string
+  enabled?: boolean
+}
 type CanvasAgentSessionSummary = SessionListResponse['sessions'][number]
 type CanvasAgentProjectCache = {
   sessionId?: string | undefined
@@ -96,6 +111,10 @@ type CanvasAgentProjectCache = {
   draftProviderId?: string
   draftModelId?: string
   selectedExtraSkillIds?: string[]
+  /** Distinguishes an intentional selection from the initial draft snapshot. */
+  agentSelectionTouched?: boolean
+  modelSelectionTouched?: boolean
+  skillSelectionTouched?: boolean
   panelWidth?: number
   panelHeight?: number
 }
@@ -151,6 +170,15 @@ function readCanvasAgentPrefs(): Omit<CanvasAgentProjectCache, 'sessionId' | 'fi
               (skillId): skillId is string => typeof skillId === 'string' && skillId.length > 0,
             ),
           }
+        : {}),
+      ...(typeof parsed.agentSelectionTouched === 'boolean'
+        ? { agentSelectionTouched: parsed.agentSelectionTouched }
+        : {}),
+      ...(typeof parsed.modelSelectionTouched === 'boolean'
+        ? { modelSelectionTouched: parsed.modelSelectionTouched }
+        : {}),
+      ...(typeof parsed.skillSelectionTouched === 'boolean'
+        ? { skillSelectionTouched: parsed.skillSelectionTouched }
         : {}),
       ...(typeof parsed.panelWidth === 'number' && Number.isFinite(parsed.panelWidth)
         ? { panelWidth: clampPanelWidth(parsed.panelWidth) }
@@ -365,6 +393,9 @@ export function CanvasAgentModal({
   externalSubmitRequest,
 }: Props) {
   const providerConfigVersion = useProviderConfigVersion()
+  const pinnedAgents = usePinnedCanvasItems('agents')
+  const pinnedModels = usePinnedModels()
+  const pinnedSkills = usePinnedCanvasItems('skills')
   const projectId = snapshot.project.id
   const [fullscreen, setFullscreen] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -378,9 +409,8 @@ export function CanvasAgentModal({
   const [draftAdapter, setDraftAdapter] = useState<SessionAgentAdapter>('claude-sdk')
   const [draftProviderId, setDraftProviderId] = useState<string>('')
   const [draftModelId, setDraftModelId] = useState<string>('')
+  const [cliSparkOverride, setCliSparkOverride] = useState<CliSparkOverride | null>(null)
   const [selectedExtraSkillIds, setSelectedExtraSkillIds] = useState<string[]>([])
-  const [skillPickerDraft, setSkillPickerDraft] = useState<string[]>([])
-  const [skillPickerOpen, setSkillPickerOpen] = useState(false)
   const [loadingConfig, setLoadingConfig] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -400,6 +430,11 @@ export function CanvasAgentModal({
   const firstTurnRef = useRef(true)
   const manualSessionChoiceRef = useRef(false)
   const appliedRuntimeSessionRef = useRef<string | null>(null)
+  const cliSparkCacheHydratedKeyRef = useRef<string | null>(null)
+  const agentSelectionTouchedRef = useRef(false)
+  const modelSelectionTouchedRef = useRef(false)
+  const skillSelectionTouchedRef = useRef(false)
+  const skillConfigHydratedSessionRef = useRef<string | null>(null)
   const sessionCacheRef = useRef<Map<string, CanvasAgentProjectCache>>(new Map())
   const [draftInput, setDraftInput] = useState(() => readCanvasAgentDraft(projectId))
   // 渲染期同步最新值，供防抖/卸载 flush 取值，避免 closure 陷阱
@@ -425,6 +460,19 @@ export function CanvasAgentModal({
     if (hit) return hit
     return getPreferredProviderForAdapter(providers, undefined, adapter)
   }, [providers, draftProviderId, adapter])
+  const cliSparkProvidersByPrimaryId = useMemo(() => {
+    const result = new Map<string, ProviderProfile[]>()
+    for (const cliProvider of providers) {
+      if (!isBuiltInLocalCliProvider(cliProvider)) continue
+      result.set(
+        cliProvider.id,
+        getCliSparkOverrideProviders(providers, cliProvider).filter(isCliSparkConversationProvider),
+      )
+    }
+    return result
+  }, [providers])
+  const cliSparkProviders =
+    selectedProvider != null ? (cliSparkProvidersByPrimaryId.get(selectedProvider.id) ?? []) : []
   const modelOptions = useMemo(
     () => getCanvasAgentProviderModels(selectedProvider),
     [selectedProvider],
@@ -433,6 +481,43 @@ export function CanvasAgentModal({
     if (modelOptions.includes(draftModelId)) return draftModelId
     return selectedProvider?.defaultModel ?? modelOptions[0] ?? ''
   }, [draftModelId, modelOptions, selectedProvider])
+
+  useEffect(() => {
+    const activeSession =
+      sessionId == null ? undefined : projectSessions.find((session) => session.id === sessionId)
+    const hydrationKey = `${sessionId ?? '__new-canvas-session__'}:${selectedProvider?.id ?? ''}`
+    if (activeSession?.cliSparkOverride != null) {
+      setCliSparkOverride(activeSession.cliSparkOverride)
+      if (selectedProvider != null && isBuiltInLocalCliProvider(selectedProvider)) {
+        rememberCliSparkOverride(selectedProvider.id, activeSession.cliSparkOverride)
+      }
+      cliSparkCacheHydratedKeyRef.current = hydrationKey
+      return
+    }
+    if (selectedProvider == null || cliSparkCacheHydratedKeyRef.current === hydrationKey) return
+
+    if (isBuiltInLocalCliProvider(selectedProvider)) {
+      const cached = readCliSparkOverrideCache()[selectedProvider.id]
+      const cachedProvider =
+        cached != null
+          ? cliSparkProviders.find((provider) => provider.id === cached.providerProfileId)
+          : undefined
+      const cachedModelId =
+        cached != null &&
+        cachedProvider != null &&
+        getCanvasAgentProviderModels(cachedProvider).includes(cached.modelId)
+          ? cached.modelId
+          : ''
+      setCliSparkOverride(
+        cachedProvider != null && cachedModelId.length > 0
+          ? { providerProfileId: cachedProvider.id, modelId: cachedModelId }
+          : null,
+      )
+    } else {
+      setCliSparkOverride(null)
+    }
+    cliSparkCacheHydratedKeyRef.current = hydrationKey
+  }, [cliSparkProviders, projectSessions, selectedProvider, sessionId])
   const effectiveSkillIds = useMemo(
     () =>
       Array.from(
@@ -488,8 +573,12 @@ export function CanvasAgentModal({
   const applySessionRuntimeDraft = useCallback(
     (session: CanvasAgentSessionSummary) => {
       setDraftAgentId(session.agentId || DEFAULT_CANVAS_AGENT_ID)
+      agentSelectionTouchedRef.current = true
       const nextAdapter = normalizeCanvasAdapter(session.agentAdapter)
       setDraftAdapter(nextAdapter)
+      modelSelectionTouchedRef.current = true
+      setCliSparkOverride(session.cliSparkOverride ?? null)
+      cliSparkCacheHydratedKeyRef.current = null
       const sessionProvider = providers.find(
         (provider) => provider.id === session.providerProfileId,
       )
@@ -551,12 +640,18 @@ export function CanvasAgentModal({
     const prefs = readCanvasAgentPrefs()
     manualSessionChoiceRef.current = false
     appliedRuntimeSessionRef.current = null
+    agentSelectionTouchedRef.current = false
+    modelSelectionTouchedRef.current = false
+    skillSelectionTouchedRef.current = false
+    skillConfigHydratedSessionRef.current = null
     setSessionId(cached?.sessionId ?? null)
     setProjectSessions([])
     setDraftAgentId(prefs.draftAgentId ?? cached?.draftAgentId ?? DEFAULT_CANVAS_AGENT_ID)
     setDraftAdapter(normalizeCanvasAdapter(prefs.draftAdapter ?? cached?.draftAdapter))
     setDraftProviderId(prefs.draftProviderId ?? cached?.draftProviderId ?? '')
     setDraftModelId(prefs.draftModelId ?? cached?.draftModelId ?? '')
+    setCliSparkOverride(null)
+    cliSparkCacheHydratedKeyRef.current = null
     setSelectedExtraSkillIds(prefs.selectedExtraSkillIds ?? cached?.selectedExtraSkillIds ?? [])
     setDraftInput(readCanvasAgentDraft(projectId))
     setRunning(false)
@@ -685,8 +780,6 @@ export function CanvasAgentModal({
     if (open) return
     setFullscreen(false)
     setOpenMenu(null)
-    setSkillPickerOpen(false)
-    setSkillPickerDraft([])
     setResizing(false)
     setError(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -763,7 +856,47 @@ export function CanvasAgentModal({
   }, [open, refreshProjectSessions])
 
   useEffect(() => {
-    if (sessionId == null) return
+    if (sessionId == null || loadingConfig) return
+    if (skillConfigHydratedSessionRef.current === sessionId) return
+    let cancelled = false
+    void window.spark
+      .invoke('skill-config:get', { sessionId })
+      .then((config) => {
+        if (cancelled) return
+        // 用户可能在 session 配置读取完成前就做了选择；此时保留用户刚做的
+        // 显式选择，不让异步 hydrate 把它覆盖掉。
+        if (skillSelectionTouchedRef.current) {
+          skillConfigHydratedSessionRef.current = sessionId
+          return
+        }
+        const sessionSkillIds = Array.isArray(config.sessionSkillIds) ? config.sessionSkillIds : []
+        const availableIds = new Set(availableSkills.map((skill) => skill.id))
+        const sessionExtraSkillIds = sessionSkillIds.filter(
+          (skillId) => skillId !== REQUIRED_CANVAS_SKILL_ID && availableIds.has(skillId),
+        )
+        const fallbackPinnedSkillId = pinnedSkills.pinned.find((skillId) =>
+          availableIds.has(skillId),
+        )
+        skillSelectionTouchedRef.current = sessionSkillIds.length > 0
+        setSelectedExtraSkillIds(
+          sessionSkillIds.length > 0
+            ? sessionExtraSkillIds
+            : fallbackPinnedSkillId != null
+              ? [fallbackPinnedSkillId]
+              : [],
+        )
+        skillConfigHydratedSessionRef.current = sessionId
+      })
+      .catch(() => {
+        if (!cancelled) skillConfigHydratedSessionRef.current = sessionId
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [availableSkills, loadingConfig, pinnedSkills.pinned, sessionId])
+
+  useEffect(() => {
+    if (sessionId == null || skillConfigHydratedSessionRef.current !== sessionId) return
     void syncSessionSkills(sessionId, effectiveSkillIds).catch(() => {})
   }, [effectiveSkillIds, sessionId, syncSessionSkills])
 
@@ -807,6 +940,9 @@ export function CanvasAgentModal({
       draftProviderId,
       draftModelId,
       selectedExtraSkillIds,
+      agentSelectionTouched: agentSelectionTouchedRef.current,
+      modelSelectionTouched: modelSelectionTouchedRef.current,
+      skillSelectionTouched: skillSelectionTouchedRef.current,
     })
     writeCanvasAgentPrefs({
       draftAgentId,
@@ -832,6 +968,8 @@ export function CanvasAgentModal({
       manualSessionChoiceRef.current = true
       setOpenMenu(null)
       setError(null)
+      skillSelectionTouchedRef.current = false
+      skillConfigHydratedSessionRef.current = null
       if (nextSessionId == null) {
         setSessionId(null)
         setRunning(false)
@@ -878,6 +1016,7 @@ export function CanvasAgentModal({
     (agentId: string) => {
       const next = agents.find((agent) => agent.id === agentId)
       if (next == null) return
+      agentSelectionTouchedRef.current = true
       setDraftAgentId(agentId)
       const nextAdapter = normalizeCanvasAdapter(next.agentAdapter)
       setDraftAdapter(nextAdapter)
@@ -886,6 +1025,12 @@ export function CanvasAgentModal({
       )
       const preferred = getPreferredProviderForAdapter(compatible, draftProviderId, nextAdapter)
       const modelId = preferred ? resolveProviderModel(preferred, draftModelId) : ''
+      const keepCliSparkOverride =
+        preferred != null &&
+        selectedProvider?.id === preferred.id &&
+        isBuiltInLocalCliProvider(preferred)
+      const clearCliSparkOverride = cliSparkOverride != null && !keepCliSparkOverride
+      if (clearCliSparkOverride) setCliSparkOverride(null)
       if (preferred) {
         setDraftProviderId(preferred.id)
         setDraftModelId(modelId)
@@ -900,21 +1045,28 @@ export function CanvasAgentModal({
             agentId,
             agentAdapter: nextAdapter,
             permissionMode: getCanvasPermissionMode(nextAdapter),
-            ...(preferred
-              ? {
-                  providerProfileId: preferred.id,
-                  modelId,
-                }
-              : {}),
+            ...(preferred ? { providerProfileId: preferred.id, modelId } : {}),
+            ...(clearCliSparkOverride ? { cliSparkOverride: null } : {}),
           })
           .catch(() => {})
       }
     },
-    [agents, draftModelId, draftProviderId, providers, sessionId],
+    [
+      agents,
+      cliSparkOverride,
+      draftModelId,
+      draftProviderId,
+      providers,
+      selectedProvider,
+      sessionId,
+    ],
   )
 
   const handleChangeProviderModel = useCallback(
     (providerId: string, modelId: string) => {
+      const provider = providers.find((item) => item.id === providerId)
+      if (provider == null) return
+      modelSelectionTouchedRef.current = true
       const selection = resolveCanvasAgentModelSelection({
         providers,
         providerId,
@@ -923,6 +1075,11 @@ export function CanvasAgentModal({
       })
       const nextAdapter = normalizeCanvasAdapter(selection.adapter)
       const nextModelId = selection.modelId
+      const isLocalCli = isBuiltInLocalCliProvider(provider)
+      const isHostCliModel =
+        isLocalCli && nextModelId === resolveProviderModel(provider, provider.modelIds[0])
+      const clearCliSparkOverride = cliSparkOverride != null && (!isLocalCli || isHostCliModel)
+      if (clearCliSparkOverride) setCliSparkOverride(null)
       setDraftAdapter(nextAdapter)
       setDraftProviderId(selection.providerId)
       setDraftModelId(nextModelId)
@@ -934,18 +1091,165 @@ export function CanvasAgentModal({
             modelId: nextModelId,
             agentAdapter: nextAdapter,
             permissionMode: getCanvasPermissionMode(nextAdapter),
+            ...(clearCliSparkOverride ? { cliSparkOverride: null } : {}),
           })
           .catch(() => {})
       }
     },
-    [adapter, providers, sessionId],
+    [adapter, cliSparkOverride, providers, sessionId],
   )
 
-  const openSkillsPicker = useCallback(() => {
-    setOpenMenu(null)
-    setSkillPickerDraft(selectedExtraSkillIds)
-    setSkillPickerOpen(true)
-  }, [selectedExtraSkillIds])
+  const handleChangeCliSparkModel = useCallback(
+    (cliProviderId: string, providerId: string, modelId: string) => {
+      const cliProvider = providers.find((provider) => provider.id === cliProviderId)
+      const provider = cliSparkProvidersByPrimaryId
+        .get(cliProviderId)
+        ?.find((item) => item.id === providerId)
+      if (cliProvider == null || !isBuiltInLocalCliProvider(cliProvider) || provider == null) return
+
+      modelSelectionTouchedRef.current = true
+      const nextModelId = resolveCanvasAgentProviderModel(provider, modelId)
+      const nextOverride: CliSparkOverride = {
+        providerProfileId: provider.id,
+        modelId: nextModelId,
+      }
+      const nextAdapter = normalizeCanvasAdapter(getProviderAdapterKind(cliProvider))
+      const hostModelId = resolveProviderModel(cliProvider, undefined)
+      setDraftAdapter(nextAdapter)
+      setDraftProviderId(cliProvider.id)
+      setDraftModelId(hostModelId)
+      setCliSparkOverride(nextOverride)
+      rememberCliSparkOverride(cliProvider.id, nextOverride)
+      if (sessionId != null) {
+        void window.spark
+          .invoke('session:update', {
+            sessionId: sessionId as never,
+            providerProfileId: cliProvider.id,
+            modelId: hostModelId,
+            agentAdapter: nextAdapter,
+            permissionMode: getCanvasPermissionMode(nextAdapter),
+            cliSparkOverride: nextOverride,
+          })
+          .catch(() => {})
+      }
+    },
+    [cliSparkProvidersByPrimaryId, providers, sessionId],
+  )
+
+  const handleClearCliSparkOverride = useCallback(() => {
+    if (cliSparkOverride == null) return
+    setCliSparkOverride(null)
+    if (sessionId != null) {
+      void window.spark
+        .invoke('session:update', {
+          sessionId: sessionId as never,
+          cliSparkOverride: null,
+        })
+        .catch(() => {})
+    }
+  }, [cliSparkOverride, sessionId])
+
+  const handleChangeSkills = useCallback((skillIds: string[]) => {
+    skillSelectionTouchedRef.current = true
+    setSelectedExtraSkillIds(skillIds)
+  }, [])
+
+  useEffect(() => {
+    if (!open || loadingConfig || sessionId != null || agents.length === 0) return
+    if (agentSelectionTouchedRef.current) return
+    const prefs = readCanvasAgentPrefs()
+    const cached = sessionCacheRef.current.get(projectId)
+    const hasExplicitAgentSelection =
+      prefs.agentSelectionTouched === true ||
+      (prefs.agentSelectionTouched == null && prefs.draftAgentId != null) ||
+      cached?.agentSelectionTouched === true ||
+      (cached?.agentSelectionTouched == null && cached?.draftAgentId != null)
+    if (hasExplicitAgentSelection) return
+    const pinnedAgentId = pinnedAgents.pinned.find((id) => agents.some((agent) => agent.id === id))
+    if (pinnedAgentId == null || pinnedAgentId === draftAgentId) return
+    handleChangeAgent(pinnedAgentId)
+  }, [
+    agents,
+    draftAgentId,
+    handleChangeAgent,
+    loadingConfig,
+    open,
+    pinnedAgents.pinned,
+    projectId,
+    sessionId,
+  ])
+
+  useEffect(() => {
+    if (!open || loadingConfig || sessionId != null || providers.length === 0) return
+    if (modelSelectionTouchedRef.current) return
+    const prefs = readCanvasAgentPrefs()
+    const cached = sessionCacheRef.current.get(projectId)
+    const hasExplicitModelSelection =
+      prefs.modelSelectionTouched === true ||
+      (prefs.modelSelectionTouched == null && (prefs.draftProviderId?.length ?? 0) > 0) ||
+      cached?.modelSelectionTouched === true ||
+      (cached?.modelSelectionTouched == null && (cached?.draftProviderId?.length ?? 0) > 0)
+    if (hasExplicitModelSelection) return
+    const pinnedSelection = pinnedModels.pinned
+      .map((ref) => {
+        const provider = providers.find((item) => item.id === ref.providerId)
+        return provider != null ? { provider, modelId: ref.modelId } : null
+      })
+      .find(
+        (entry) =>
+          entry != null &&
+          isProviderCompatibleWithAdapter(entry.provider, adapter) &&
+          getCanvasAgentProviderModels(entry.provider).includes(entry.modelId),
+      )
+    if (pinnedSelection == null) return
+    if (
+      pinnedSelection.provider.id === selectedProvider?.id &&
+      pinnedSelection.modelId === effectiveModelId
+    ) {
+      return
+    }
+    handleChangeProviderModel(pinnedSelection.provider.id, pinnedSelection.modelId)
+  }, [
+    adapter,
+    effectiveModelId,
+    handleChangeProviderModel,
+    loadingConfig,
+    open,
+    pinnedModels.pinned,
+    projectId,
+    providers,
+    selectedProvider,
+    sessionId,
+  ])
+
+  useEffect(() => {
+    if (!open || loadingConfig || sessionId != null || selectableSkills.length === 0) return
+    if (skillSelectionTouchedRef.current) return
+    const prefs = readCanvasAgentPrefs()
+    const cached = sessionCacheRef.current.get(projectId)
+    const hasExplicitSkillSelection =
+      prefs.skillSelectionTouched === true ||
+      (prefs.skillSelectionTouched == null && prefs.selectedExtraSkillIds !== undefined) ||
+      cached?.skillSelectionTouched === true ||
+      (cached?.skillSelectionTouched == null && cached?.selectedExtraSkillIds !== undefined)
+    if (hasExplicitSkillSelection) {
+      return
+    }
+    const pinnedSkillId = pinnedSkills.pinned.find((id) =>
+      selectableSkills.some((skill) => skill.id === id),
+    )
+    if (pinnedSkillId == null || selectedExtraSkillIds.includes(pinnedSkillId)) return
+    handleChangeSkills([pinnedSkillId])
+  }, [
+    handleChangeSkills,
+    loadingConfig,
+    open,
+    pinnedSkills.pinned,
+    projectId,
+    selectableSkills,
+    selectedExtraSkillIds,
+    sessionId,
+  ])
 
   const handleResizeStart = useCallback(
     (handle: CanvasAgentResizeHandle) => (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1017,6 +1321,7 @@ export function CanvasAgentModal({
             permissionMode: forcedPermissionMode,
             chatMode: 'agent',
             title: `画布助手 · ${snapshot.project.title}`,
+            ...(cliSparkOverride != null ? { cliSparkOverride } : {}),
           })
           sid = sessionRes.sessionId
           if (sessionRes.session != null) {
@@ -1062,7 +1367,9 @@ export function CanvasAgentModal({
           agentId: draftAgentId,
           agentAdapter: adapter,
           permissionMode: forcedPermissionMode,
+          skillIds: effectiveSkillIds,
           skillId: REQUIRED_CANVAS_SKILL_ID,
+          ...(cliSparkOverride != null ? { cliSparkOverride } : {}),
         })
         if (checkpointId != null) {
           setTurnCheckpoints((current) => ({
@@ -1087,6 +1394,7 @@ export function CanvasAgentModal({
     },
     [
       adapter,
+      cliSparkOverride,
       draftAgentId,
       effectiveModelId,
       effectiveSkillIds,
@@ -1168,6 +1476,8 @@ export function CanvasAgentModal({
         open={openMenu === 'agent'}
         onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'agent' : null)}
         onChange={handleChangeAgent}
+        pinnedIds={pinnedAgents.pinned}
+        onTogglePinned={pinnedAgents.togglePinned}
       />
       <ProviderModelPickerInline
         providers={providers}
@@ -1177,12 +1487,22 @@ export function CanvasAgentModal({
         open={openMenu === 'model'}
         onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'model' : null)}
         onChange={handleChangeProviderModel}
+        pinnedModelRefs={pinnedModels.pinned}
+        onTogglePinnedModel={pinnedModels.togglePinned}
+        cliSparkOverride={cliSparkOverride}
+        onCliSparkModelChange={handleChangeCliSparkModel}
+        onCliSparkClear={handleClearCliSparkOverride}
       />
       <SkillPickerInline
-        count={effectiveSkillIds.length}
+        skills={selectableSkills}
+        selectedIds={selectedExtraSkillIds}
         extraCount={selectedExtraSkillIds.length}
         disabled={running || creating}
-        onClick={openSkillsPicker}
+        pinnedIds={pinnedSkills.pinned}
+        onTogglePinned={pinnedSkills.togglePinned}
+        open={openMenu === 'skills'}
+        onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'skills' : null)}
+        onChange={handleChangeSkills}
       />
     </>
   )
@@ -1325,21 +1645,6 @@ export function CanvasAgentModal({
           toolCallDisplay="summary"
         />
       </div>
-
-      <SkillsPickerModal
-        visible={skillPickerOpen}
-        skills={selectableSkills}
-        selectedIds={skillPickerDraft}
-        onChange={(ids) => setSkillPickerDraft(ids)}
-        onConfirm={() => {
-          setSelectedExtraSkillIds(skillPickerDraft)
-          setSkillPickerOpen(false)
-        }}
-        onClose={() => {
-          setSkillPickerDraft(selectedExtraSkillIds)
-          setSkillPickerOpen(false)
-        }}
-      />
     </section>
   )
 }
@@ -1573,6 +1878,8 @@ export function AgentPickerInline({
   openOnHover = false,
   onOpenChange,
   onChange,
+  pinnedIds,
+  onTogglePinned,
 }: {
   agents: ManagedAgent[]
   selectedId: string
@@ -1582,10 +1889,12 @@ export function AgentPickerInline({
   openOnHover?: boolean
   onOpenChange: (open: boolean) => void
   onChange: (agentId: string) => void
+  pinnedIds?: readonly string[]
+  onTogglePinned?: (agentId: string) => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const selected = agents.find((agent) => agent.id === selectedId)
-  const placement = useComposerDropdownPlacement(rootRef, open, 320, 280)
+  const placement = useComposerDropdownPlacement(rootRef, open, 320, 248)
   const menuHeight = Math.min(360, 52 + agents.length * 44)
   const triggerIcon =
     selected && hasCustomAvatar(selected.metadata) ? (
@@ -1601,6 +1910,55 @@ export function AgentPickerInline({
     ) : (
       <Icons.Bot size={11} />
     )
+  const pinnedAgents = (pinnedIds ?? [])
+    .map((id) => agents.find((agent) => agent.id === id))
+    .filter((agent): agent is ManagedAgent => agent != null)
+  const renderAgentOption = (agent: ManagedAgent, keyPrefix = '') => {
+    const agentHasAvatar = hasCustomAvatar(agent.metadata)
+    return (
+      <div key={`${keyPrefix}${agent.id}`} className="canvas-agent-picker-item">
+        <button
+          type="button"
+          className={`composer-menu-item ${agent.id === selectedId ? 'active' : ''}`}
+          onClick={() => {
+            onOpenChange(false)
+            onChange(agent.id)
+          }}
+        >
+          <span className="composer-menu-item-copy">
+            <span className="composer-menu-item-label">
+              {agentHasAvatar ? (
+                <AvatarImage
+                  className="composer-menu-avatar"
+                  src={resolveAvatarSrc(getAgentAvatarConfig(agent.metadata, agent.id, agent.name))}
+                  seed={agent.id}
+                  name={agent.name}
+                  alt={`${agent.name} 头像`}
+                />
+              ) : agent.builtIn ? (
+                <Icons.Code size={13} />
+              ) : (
+                <Icons.Bot size={13} />
+              )}
+              <span>{agent.name}</span>
+              {agent.builtIn && <span className="composer-menu-item-tag">内置</span>}
+            </span>
+            {agent.description && (
+              <span className="composer-menu-item-desc">{agent.description}</span>
+            )}
+          </span>
+          {agent.id === selectedId && <Icons.Check size={14} className="composer-menu-check" />}
+        </button>
+        {onTogglePinned != null && (
+          <PickerPinButton
+            label={agent.name}
+            pinned={(pinnedIds ?? []).includes(agent.id)}
+            onToggle={() => onTogglePinned(agent.id)}
+          />
+        )}
+      </div>
+    )
+  }
   return (
     <Dropdown
       menu={{ items: [] }}
@@ -1618,48 +1976,15 @@ export function AgentPickerInline({
       popupRender={() => (
         <div className="composer-menu composer-agent-menu">
           <div className="composer-menu-group-title">选择 Agent</div>
-          {agents.map((agent) => {
-            const agentHasAvatar = hasCustomAvatar(agent.metadata)
-            return (
-              <button
-                key={agent.id}
-                type="button"
-                className={`composer-menu-item ${agent.id === selectedId ? 'active' : ''}`}
-                onClick={() => {
-                  onOpenChange(false)
-                  onChange(agent.id)
-                }}
-              >
-                <span className="composer-menu-item-copy">
-                  <span className="composer-menu-item-label">
-                    {agentHasAvatar ? (
-                      <AvatarImage
-                        className="composer-menu-avatar"
-                        src={resolveAvatarSrc(
-                          getAgentAvatarConfig(agent.metadata, agent.id, agent.name),
-                        )}
-                        seed={agent.id}
-                        name={agent.name}
-                        alt={`${agent.name} 头像`}
-                      />
-                    ) : agent.builtIn ? (
-                      <Icons.Code size={13} />
-                    ) : (
-                      <Icons.Bot size={13} />
-                    )}
-                    <span>{agent.name}</span>
-                    {agent.builtIn && <span className="composer-menu-item-tag">内置</span>}
-                  </span>
-                  {agent.description && (
-                    <span className="composer-menu-item-desc">{agent.description}</span>
-                  )}
-                </span>
-                {agent.id === selectedId && (
-                  <Icons.Check size={14} className="composer-menu-check" />
-                )}
-              </button>
-            )
-          })}
+          {pinnedAgents.length > 0 && (
+            <>
+              <div className="composer-menu-group-title canvas-picker-pinned-title">
+                <Icons.PinFill size={12} /> 常用
+              </div>
+              {pinnedAgents.map((agent) => renderAgentOption(agent, 'pinned:'))}
+            </>
+          )}
+          {agents.map((agent) => renderAgentOption(agent))}
         </div>
       )}
     >
@@ -1695,6 +2020,11 @@ export function ProviderModelPickerInline({
   openOnHover = false,
   onOpenChange,
   onChange,
+  pinnedModelRefs,
+  onTogglePinnedModel,
+  cliSparkOverride = null,
+  onCliSparkModelChange,
+  onCliSparkClear,
 }: {
   providers: ProviderProfile[]
   selectedProviderId: string
@@ -1704,6 +2034,11 @@ export function ProviderModelPickerInline({
   openOnHover?: boolean
   onOpenChange: (open: boolean) => void
   onChange: (providerId: string, modelId: string) => void
+  pinnedModelRefs?: ReadonlyArray<{ providerId: string; modelId: string }>
+  onTogglePinnedModel?: (providerId: string, modelId: string) => void
+  cliSparkOverride?: CliSparkOverride | null
+  onCliSparkModelChange?: (cliProviderId: string, providerId: string, modelId: string) => void
+  onCliSparkClear?: () => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [search, setSearch] = useState('')
@@ -1720,12 +2055,65 @@ export function ProviderModelPickerInline({
     () => buildCanvasAgentModelOptions(conversationalProviders),
     [conversationalProviders],
   )
+  const cliSparkProviderGroupsByPrimaryId = useMemo(() => {
+    const result = new Map<string, CliSparkProviderGroup[]>()
+    for (const primaryProvider of conversationalProviders) {
+      if (!isBuiltInLocalCliProvider(primaryProvider)) continue
+      const groups = getCliSparkOverrideProviders(providers, primaryProvider)
+        .filter(isCliSparkConversationProvider)
+        .map((provider) => ({
+          provider,
+          models: getCanvasAgentProviderModels(provider),
+        }))
+        .filter((group) => group.models.length > 0)
+      result.set(primaryProvider.id, groups)
+    }
+    return result
+  }, [conversationalProviders, providers])
+  const selectedCliSparkProvider =
+    selectedProvider != null &&
+    isBuiltInLocalCliProvider(selectedProvider) &&
+    cliSparkOverride != null
+      ? cliSparkProviderGroupsByPrimaryId
+          .get(selectedProvider.id)
+          ?.find((group) => group.provider.id === cliSparkOverride.providerProfileId)?.provider
+      : undefined
+  const selectedCliSparkModelLabel =
+    selectedCliSparkProvider != null && cliSparkOverride != null
+      ? cliSparkOverride.modelId
+      : undefined
+  const triggerLabel =
+    selectedCliSparkModelLabel != null ? `${label} · ${selectedCliSparkModelLabel}` : label
+  const pinningEnabled = pinnedModelRefs != null && onTogglePinnedModel != null
+  const pinnedModelEntries = useMemo(
+    () =>
+      (pinnedModelRefs ?? [])
+        .map((ref) => {
+          const provider = conversationalProviders.find((item) => item.id === ref.providerId)
+          return provider != null && getCanvasAgentProviderModels(provider).includes(ref.modelId)
+            ? { provider, modelId: ref.modelId }
+            : null
+        })
+        .filter((entry): entry is { provider: ProviderProfile; modelId: string } => entry != null),
+    [conversationalProviders, pinnedModelRefs],
+  )
+  const isPinnedModel = (providerId: string, modelId: string) =>
+    pinnedModelRefs?.some((ref) => ref.providerId === providerId && ref.modelId === modelId) ===
+    true
   // 模糊搜索：命中供应商名则保留其全部模型，否则只保留模型 id/label 命中的
   const normalizedSearch = search.trim().toLowerCase()
   const filteredModelGroups = useMemo(() => {
     if (normalizedSearch === '') return modelGroups
     const next: CanvasAgentModelGroup[] = []
     for (const group of modelGroups) {
+      const cliSparkGroups = cliSparkProviderGroupsByPrimaryId.get(group.provider.id)
+      const cliSparkMatches =
+        cliSparkGroups != null &&
+        cliSparkGroups.some(
+          ({ provider, models }) =>
+            provider.name.toLowerCase().includes(normalizedSearch) ||
+            models.some((modelId) => modelId.toLowerCase().includes(normalizedSearch)),
+        )
       if (group.provider.name.toLowerCase().includes(normalizedSearch)) {
         next.push(group)
         continue
@@ -1735,10 +2123,12 @@ export function ProviderModelPickerInline({
           item.modelId.toLowerCase().includes(normalizedSearch) ||
           item.label.toLowerCase().includes(normalizedSearch),
       )
-      if (matchedModels.length > 0) next.push({ ...group, models: matchedModels })
+      if (matchedModels.length > 0 || cliSparkMatches) {
+        next.push({ ...group, models: matchedModels.length > 0 ? matchedModels : group.models })
+      }
     }
     return next
-  }, [modelGroups, normalizedSearch])
+  }, [cliSparkProviderGroupsByPrimaryId, modelGroups, normalizedSearch])
   const menuHeight = Math.min(
     420,
     // 顶部留白 24 + 搜索框(36 高 + 4 margin)；模型组标题 36 + 每个模型 34
@@ -1760,7 +2150,7 @@ export function ProviderModelPickerInline({
         if (!nextOpen) setSearch('')
       }}
       popupRender={() => (
-        <div className="composer-dropdown-menu composer-model-menu">
+        <div className="composer-dropdown-menu composer-model-menu canvas-agent-model-menu">
           {conversationalProviders.length > 0 && (
             <div className="composer-model-search">
               <Icons.Search size={13} />
@@ -1779,8 +2169,88 @@ export function ProviderModelPickerInline({
             {conversationalProviders.length > 0 && filteredModelGroups.length === 0 && (
               <div className="composer-menu-empty">没有匹配结果</div>
             )}
+            {pinningEnabled && pinnedModelEntries.length > 0 && (
+              <div className="composer-model-group pinned-composer-model-group">
+                <div className="composer-model-group-title canvas-picker-pinned-title">
+                  <Icons.PinFill size={12} /> 常用
+                </div>
+                {pinnedModelEntries.map(({ provider, modelId }) => (
+                  <ModelPickerMenuItem
+                    key={`pinned:${provider.id}:${modelId}`}
+                    label={modelId}
+                    active={provider.id === selectedProviderId && modelId === selectedModelId}
+                    pinned
+                    showPin
+                    leading={
+                      resolveProviderVendor(provider) ? (
+                        <ProviderLogo
+                          vendor={resolveProviderVendor(provider)!}
+                          icon={provider.providerIcon}
+                          size={14}
+                          shape="rounded"
+                        />
+                      ) : undefined
+                    }
+                    onSelect={() => {
+                      onOpenChange(false)
+                      setSearch('')
+                      onChange(provider.id, modelId)
+                    }}
+                    onTogglePin={() => onTogglePinnedModel?.(provider.id, modelId)}
+                  />
+                ))}
+              </div>
+            )}
             {filteredModelGroups.map(({ provider, models }) => {
               const groupVendor = resolveProviderVendor(provider)
+              const cliSparkGroups = cliSparkProviderGroupsByPrimaryId.get(provider.id)
+              if (
+                onCliSparkModelChange != null &&
+                isBuiltInLocalCliProvider(provider) &&
+                cliSparkGroups != null &&
+                cliSparkGroups.length > 0
+              ) {
+                const primaryModelId =
+                  getCanvasAgentProviderModels(provider)[0] ?? models[0]?.modelId ?? ''
+                const primaryModelLabel =
+                  provider.id === selectedProviderId && selectedCliSparkModelLabel != null
+                    ? `${primaryModelId} · ${selectedCliSparkModelLabel}`
+                    : primaryModelId
+                return (
+                  <CliProviderModelMenu
+                    key={provider.id}
+                    primaryProvider={provider}
+                    primaryModelId={primaryModelId}
+                    primaryModelLabel={primaryModelLabel}
+                    primarySelected={provider.id === selectedProviderId}
+                    sparkOverride={provider.id === selectedProviderId ? cliSparkOverride : null}
+                    providerGroups={cliSparkGroups}
+                    disabled={disabled === true}
+                    isPinned={isPinnedModel}
+                    togglePinned={(providerId, modelId) =>
+                      onTogglePinnedModel?.(providerId, modelId)
+                    }
+                    resolveVendor={resolveProviderVendor}
+                    getModelLabel={(_provider, modelId) => modelId}
+                    showPinActions={pinningEnabled}
+                    onSelectPrimaryModel={() => {
+                      onOpenChange(false)
+                      setSearch('')
+                      onChange(provider.id, primaryModelId)
+                    }}
+                    onSelectSparkModel={(sparkProviderId, modelId) => {
+                      onOpenChange(false)
+                      setSearch('')
+                      onCliSparkModelChange(provider.id, sparkProviderId, modelId)
+                    }}
+                    onClearSparkOverride={() => {
+                      onOpenChange(false)
+                      setSearch('')
+                      onCliSparkClear?.()
+                    }}
+                  />
+                )
+              }
               return (
                 <div key={provider.id} className="composer-model-group">
                   <div className="composer-model-group-title">
@@ -1799,19 +2269,19 @@ export function ProviderModelPickerInline({
                   {models.map(({ modelId, label: modelLabel }) => {
                     const active = provider.id === selectedProviderId && modelId === selectedModelId
                     return (
-                      <button
+                      <ModelPickerMenuItem
                         key={`${provider.id}:${modelId}`}
-                        type="button"
-                        className={`composer-menu-item ${active ? 'active' : ''}`}
-                        onClick={() => {
+                        label={modelLabel}
+                        active={active}
+                        pinned={isPinnedModel(provider.id, modelId)}
+                        showPin={pinningEnabled}
+                        onSelect={() => {
                           onOpenChange(false)
                           setSearch('')
                           onChange(provider.id, modelId)
                         }}
-                      >
-                        <span>{modelLabel}</span>
-                        {active && <Icons.Check size={14} className="composer-menu-check" />}
-                      </button>
+                        onTogglePin={() => onTogglePinnedModel?.(provider.id, modelId)}
+                      ></ModelPickerMenuItem>
                     )
                   })}
                 </div>
@@ -1847,7 +2317,7 @@ export function ProviderModelPickerInline({
             if (openOnHover) onOpenChange(true)
           }}
         >
-          <span>{label}</span>
+          <span>{triggerLabel}</span>
           <Icons.ChevronDown size={12} />
         </button>
       </div>
@@ -1855,34 +2325,175 @@ export function ProviderModelPickerInline({
   )
 }
 
-function SkillPickerInline({
-  count,
-  extraCount,
-  disabled,
-  onClick,
+function PickerPinButton({
+  label,
+  pinned,
+  onToggle,
 }: {
-  count: number
-  extraCount: number
-  disabled?: boolean
-  onClick: () => void
+  label: string
+  pinned: boolean
+  onToggle: () => void
 }) {
   return (
-    <div
-      className={`composer-select composer-skill-picker${disabled ? ' is-disabled' : ''}`}
-      title={disabled ? '会话运行中不可切换' : '附加 Skills'}
+    <button
+      type="button"
+      className={`composer-model-pin${pinned ? ' is-pinned' : ''}`}
+      title={pinned ? '取消置顶' : '置顶'}
+      aria-label={pinned ? `取消置顶 ${label}` : `置顶 ${label}`}
+      aria-pressed={pinned}
+      onMouseDown={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onToggle()
+      }}
     >
-      <span className="composer-select-icon">
-        <Icons.Skills size={13} />
-      </span>
-      <button
-        type="button"
-        className="composer-select-trigger"
-        disabled={disabled}
-        onClick={onClick}
+      {pinned ? <Icons.PinFill size={12} /> : <Icons.Pin size={12} />}
+    </button>
+  )
+}
+
+function SkillPickerInline({
+  skills,
+  selectedIds,
+  extraCount,
+  disabled,
+  pinnedIds,
+  onTogglePinned,
+  open,
+  onOpenChange,
+  onChange,
+}: {
+  skills: SkillSummary[]
+  selectedIds: string[]
+  extraCount: number
+  disabled?: boolean
+  pinnedIds?: readonly string[]
+  onTogglePinned?: (skillId: string) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onChange: (ids: string[]) => void
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const [search, setSearch] = useState('')
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+  const normalizedSearch = search.trim().toLowerCase()
+  const filteredSkills = useMemo(
+    () =>
+      skills.filter(
+        (skill) =>
+          normalizedSearch.length === 0 ||
+          skill.name.toLowerCase().includes(normalizedSearch) ||
+          skill.id.toLowerCase().includes(normalizedSearch),
+      ),
+    [normalizedSearch, skills],
+  )
+  const menuHeight = Math.min(340, 52 + Math.max(filteredSkills.length, 1) * 34)
+  const placement = useComposerDropdownPlacement(rootRef, open, menuHeight, 240)
+  const pinnedSkills = (pinnedIds ?? [])
+    .map((id) => filteredSkills.find((skill) => skill.id === id))
+    .filter((skill): skill is SkillSummary => skill != null)
+
+  const toggleSkill = (skillId: string) => {
+    onChange(
+      selectedSet.has(skillId)
+        ? selectedIds.filter((id) => id !== skillId)
+        : [...selectedIds, skillId],
+    )
+  }
+  const renderSkillOption = (skill: SkillSummary, keyPrefix = '') => {
+    const selected = selectedSet.has(skill.id)
+    return (
+      <div key={`${keyPrefix}${skill.id}`} className="canvas-agent-skill-option-row">
+        <button
+          type="button"
+          className={`composer-menu-item canvas-agent-skill-option${selected ? ' active' : ''}`}
+          aria-pressed={selected}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={() => toggleSkill(skill.id)}
+        >
+          <span className="canvas-agent-skill-option-name">{skill.name}</span>
+          {skill.enabled === false && (
+            <span className="canvas-agent-skill-option-status">未启用</span>
+          )}
+          {selected && <Icons.Check size={14} />}
+        </button>
+        {onTogglePinned != null && (
+          <PickerPinButton
+            label={skill.name}
+            pinned={(pinnedIds ?? []).includes(skill.id)}
+            onToggle={() => onTogglePinned(skill.id)}
+          />
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      trigger={['click']}
+      placement={placement}
+      disabled={disabled === true}
+      onOpenChange={(nextOpen) => {
+        if (disabled) {
+          onOpenChange(false)
+          return
+        }
+        onOpenChange(nextOpen)
+        if (!nextOpen) setSearch('')
+      }}
+      popupRender={() => (
+        <div
+          className="composer-dropdown-menu canvas-agent-skill-menu"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="canvas-agent-skill-search">
+            <Icons.Search size={12} />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="搜索 Skills"
+              aria-label="搜索 Skills"
+              autoFocus
+            />
+          </div>
+          <div className="canvas-agent-skill-list">
+            {skills.length === 0 && <div className="canvas-agent-skill-empty">暂无可用 Skills</div>}
+            {skills.length > 0 && filteredSkills.length === 0 && (
+              <div className="canvas-agent-skill-empty">没有匹配结果</div>
+            )}
+            {onTogglePinned != null && pinnedSkills.length > 0 && (
+              <div className="composer-model-group pinned-composer-model-group">
+                <div className="composer-model-group-title canvas-picker-pinned-title">
+                  <Icons.PinFill size={12} /> 常用
+                </div>
+                {pinnedSkills.map((skill) => renderSkillOption(skill, 'pinned:'))}
+              </div>
+            )}
+            {filteredSkills.map((skill) => renderSkillOption(skill))}
+          </div>
+        </div>
+      )}
+    >
+      <div
+        ref={rootRef}
+        className={`composer-select composer-skill-picker${disabled ? ' is-disabled' : ''}`}
+        title={disabled ? '会话运行中不可切换' : '选择附加 Skills'}
       >
-        <span>{extraCount > 0 ? `Skills ${count}` : 'Skills'}</span>
-        <Icons.ChevronDown size={12} />
-      </button>
-    </div>
+        <span className="composer-select-icon">
+          <Icons.Skills size={13} />
+        </span>
+        <button type="button" className="composer-select-trigger" disabled={disabled}>
+          <span>{extraCount > 0 ? `Skills ${extraCount}` : 'Skills'}</span>
+          <Icons.ChevronDown size={12} />
+        </button>
+      </div>
+    </Dropdown>
   )
 }

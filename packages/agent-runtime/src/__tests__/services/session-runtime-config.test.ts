@@ -1269,6 +1269,35 @@ describe('SessionService runtime provider/model resolution', () => {
     )
   })
 
+  it('round-trips and clears the session-scoped local CLI Spark override', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const cliSparkOverride = {
+      providerProfileId: 'anthropic-provider',
+      modelId: 'claude-sonnet-4-5',
+    }
+    const created = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      cliSparkOverride,
+      title: 'CLI override metadata session',
+    })
+
+    expect(created.session.cliSparkOverride).toEqual(cliSparkOverride)
+    expect(JSON.parse(mockState.sessions.get(created.sessionId)!.metadata_json)).toMatchObject({
+      cliSparkOverride,
+    })
+
+    const cleared = await service.updateSession({
+      sessionId: created.sessionId,
+      cliSparkOverride: null,
+    })
+    expect(cleared.session.cliSparkOverride).toBeNull()
+    expect(JSON.parse(mockState.sessions.get(created.sessionId)!.metadata_json)).toMatchObject({
+      cliSparkOverride: null,
+    })
+  })
+
   it('persists a terminal error when a provider credential cannot be resolved before start', async () => {
     vi.mocked(keystore.getSecret).mockResolvedValueOnce(null)
     const service = new SessionService({} as never, (event) => events.push(event))

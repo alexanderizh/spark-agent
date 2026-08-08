@@ -37,6 +37,8 @@ import { resolveComposerRunningAgentIds } from '../../services/composer-working-
 import {
   getPreferredProviderForAdapter,
   getProviderAdapterKind,
+  getCliSparkOverrideProviders,
+  isCliSparkConversationProvider,
   isClaudeAdapter,
   isProviderCompatibleWithAdapter,
 } from '../../utils/provider-adapter'
@@ -55,6 +57,7 @@ import {
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_PROVIDER_ID,
   VENDOR_CATALOG,
+  type CliSparkOverride,
   isAutoRouterProvider,
   isBuiltInLocalCliProvider,
   isClaudeAutoRouterProvider,
@@ -86,6 +89,7 @@ import {
   type ComposerDraftMap,
 } from './composer-drafts'
 import { ComposerBranchSelect } from './BranchPicker'
+import { CliProviderModelMenu, type CliSparkProviderGroup } from './CliProviderModelMenu'
 import { ReasoningMaxParticles } from './ReasoningMaxParticles'
 import { ModelPickerMenuItem } from './ModelPickerMenuItem'
 import { resolvePinnedModelEntries, usePinnedModels } from './pinned-models'
@@ -132,6 +136,10 @@ import {
   type OptimisticUserSendLifecycle,
 } from './optimistic-user-messages'
 import { createSubmitGate } from './submit-gate'
+import {
+  readCliSparkOverrideCache,
+  rememberCliSparkOverride,
+} from '../../utils/cli-spark-override-cache'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -162,6 +170,7 @@ const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 // 用户置顶的斜杠命令：复用通用 settings IPC 持久化（与 custom-commands 同一套机制）
 const PINNED_COMMANDS_CATEGORY = 'slash-commands'
 const PINNED_COMMANDS_KEY = 'pinned'
+
 // 常用命令名单：在「/ 弹窗」中默认靠前展示（自定义命令 layer==='custom' 也归入此区）
 const COMMON_COMMAND_NAMES = new Set(['goal', 'review', 'clear'])
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
@@ -463,6 +472,7 @@ function ContextMeterWithPopup({
   adapter,
   effectivePermissionMode,
   effectiveDebugMode,
+  cliSparkOverride,
   onSent,
   toast,
 }: {
@@ -482,6 +492,7 @@ function ContextMeterWithPopup({
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
     debugMode?: boolean
+    cliSparkOverride?: CliSparkOverride | null
     activate?: boolean
   }) => Promise<SessionId | null>
   selectedProvider: ProviderProfile | undefined
@@ -489,6 +500,7 @@ function ContextMeterWithPopup({
   adapter: AgentAdapter
   effectivePermissionMode: PermissionModeChoice
   effectiveDebugMode: boolean
+  cliSparkOverride: CliSparkOverride | null
   onSent: (sessionId: SessionId) => void
   toast: ReturnType<typeof useToast>['toast']
 }) {
@@ -519,6 +531,7 @@ function ContextMeterWithPopup({
           agentAdapter: adapter,
           permissionMode: effectivePermissionMode,
           debugMode: effectiveDebugMode,
+          ...(cliSparkOverride != null ? { cliSparkOverride } : {}),
         })
         if (sid == null) {
           toast.error('创建会话失败。')
@@ -547,6 +560,7 @@ function ContextMeterWithPopup({
     adapter,
     effectivePermissionMode,
     effectiveDebugMode,
+    cliSparkOverride,
     onCreateSession,
     onSent,
     toast,
@@ -774,6 +788,7 @@ export function ComposerV2({
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
     debugMode?: boolean
+    cliSparkOverride?: CliSparkOverride | null
     activate?: boolean
     createWorktree?: boolean
     worktreeBranch?: string
@@ -791,6 +806,7 @@ export function ComposerV2({
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
     debugMode?: boolean
+    cliSparkOverride?: CliSparkOverride | null
   }) => Promise<void>
   onCommandComplete: (session: SessionSummary) => void
   onSwitchBranch: (branch: string) => Promise<void>
@@ -889,6 +905,10 @@ export function ComposerV2({
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(
     initialPrefs.reasoningEffort ?? 'max',
   )
+  const [cliSparkOverride, setCliSparkOverride] = useState<CliSparkOverride | null>(
+    () => session?.cliSparkOverride ?? null,
+  )
+  const cliSparkCacheHydratedSessionRef = useRef<string | null>(null)
   // 调试模式开关（per-session）。刻意不从全局 composer-prefs 继承——它是逐会话 opt-in 的
   // 能力开关，不该被「上次用过」粘到每个新会话上。
   const [draftDebugMode, setDraftDebugMode] = useState<boolean>(false)
@@ -1016,6 +1036,62 @@ export function ComposerV2({
   )
   const selectedProviderAdapter =
     selectedProvider != null ? getProviderAdapterKind(selectedProvider) : adapter
+  const cliSparkProvidersByPrimaryId = useMemo(() => {
+    const result = new Map<string, ProviderProfile[]>()
+    for (const cliProvider of providers) {
+      if (!isBuiltInLocalCliProvider(cliProvider)) continue
+      result.set(
+        cliProvider.id,
+        getCliSparkOverrideProviders(providers, cliProvider).filter(
+          isCliSparkConversationProvider,
+        ),
+      )
+    }
+    return result
+  }, [providers])
+  const cliSparkProviders =
+    selectedProvider != null ? (cliSparkProvidersByPrimaryId.get(selectedProvider.id) ?? []) : []
+  const cliSparkProvider =
+    cliSparkOverride != null
+      ? cliSparkProviders.find((provider) => provider.id === cliSparkOverride.providerProfileId)
+      : undefined
+  useEffect(() => {
+    const hydrationKey = `${session?.id ?? '__new-composer-session__'}:${selectedProvider?.id ?? ''}`
+    if (session?.cliSparkOverride != null) {
+      setCliSparkOverride(session.cliSparkOverride)
+      if (selectedProvider != null && isBuiltInLocalCliProvider(selectedProvider)) {
+        rememberCliSparkOverride(selectedProvider.id, session.cliSparkOverride)
+      }
+      cliSparkCacheHydratedSessionRef.current = hydrationKey
+      return
+    }
+    if (cliSparkCacheHydratedSessionRef.current === hydrationKey || selectedProvider == null) return
+
+    if (isBuiltInLocalCliProvider(selectedProvider)) {
+      const cached = readCliSparkOverrideCache()[selectedProvider.id]
+      const cachedProvider =
+        cached != null
+          ? cliSparkProviders.find((provider) => provider.id === cached.providerProfileId)
+          : undefined
+      const cachedModelId =
+        cached != null && cachedProvider != null
+          ? resolveAvailableProviderModel(cached.modelId, cachedProvider)
+          : ''
+      setCliSparkOverride(
+        cachedProvider != null && cachedModelId.length > 0
+          ? { providerProfileId: cachedProvider.id, modelId: cachedModelId }
+          : null,
+      )
+    } else {
+      setCliSparkOverride(null)
+    }
+    cliSparkCacheHydratedSessionRef.current = hydrationKey
+  }, [
+    cliSparkProviders,
+    selectedProvider,
+    session?.cliSparkOverride,
+    session?.id,
+  ])
   const contextWindow = resolveProviderContextWindow(
     selectedProvider?.supportsMillionContext === true,
     selectedProvider?.contextWindow,
@@ -1225,6 +1301,25 @@ export function ComposerV2({
   }, [onUpdateSession, session])
 
   useEffect(() => {
+    if (cliSparkOverride == null) return
+    const localCliSelected = selectedProvider != null && isBuiltInLocalCliProvider(selectedProvider)
+    const staleOverride = localCliSelected
+      ? cliSparkProviders.length > 0 && cliSparkProvider == null
+      : true
+    if (!staleOverride) return
+    setCliSparkOverride(null)
+    void persistRuntimePatch({ cliSparkOverride: null }).catch((err) => {
+      console.warn('[ComposerV2] failed to clear stale CLI Spark override', err)
+    })
+  }, [
+    cliSparkOverride,
+    cliSparkProvider,
+    cliSparkProviders.length,
+    persistRuntimePatch,
+    selectedProvider,
+  ])
+
+  useEffect(() => {
     if (session == null || session.status === 'running' || selectedProvider == null) return
 
     const nextAdapter = getProviderAdapterKind(selectedProvider)
@@ -1282,6 +1377,7 @@ export function ComposerV2({
       permissionMode: effectivePermissionMode,
       chatMode: effectiveMode,
       reasoningEffort: effectiveReasoning,
+      ...(cliSparkOverride != null ? { cliSparkOverride } : {}),
     }),
     [
       effectiveAgentId,
@@ -1291,6 +1387,7 @@ export function ComposerV2({
       effectiveReasoning,
       selectedProviderAdapter,
       selectedProvider?.id,
+      cliSparkOverride,
     ],
   )
 
@@ -1562,6 +1659,7 @@ export function ComposerV2({
               agentAdapter: selectedProviderAdapter,
               permissionMode: effectivePermissionMode,
               debugMode: effectiveDebugMode,
+              ...(cliSparkOverride != null ? { cliSparkOverride } : {}),
               ...(teamConfig.enabled ? { teamConfig } : {}),
               ...(createWorktree
                 ? {
@@ -1665,6 +1763,7 @@ export function ComposerV2({
             chatMode: effectiveMode,
             reasoningEffort: effectiveReasoning,
             debugMode: effectiveDebugMode,
+            ...(cliSparkOverride != null ? { cliSparkOverride } : {}),
             ...(teamConfig.enabled ? { teamConfig } : {}),
             ...(createWorktree
               ? {
@@ -2763,6 +2862,10 @@ export function ComposerV2({
   const handleProviderChange = async (providerId: string) => {
     const provider = providers.find((item) => item.id === providerId)
     if (provider == null) return
+    const keepCliSparkOverride =
+      selectedProvider?.id === provider.id && isBuiltInLocalCliProvider(provider)
+    const clearCliSparkOverride = cliSparkOverride != null && !keepCliSparkOverride
+    if (clearCliSparkOverride) setCliSparkOverride(null)
     const nextAdapter = getProviderAdapterKind(provider)
     const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
     setDraftAdapter(nextAdapter)
@@ -2783,17 +2886,28 @@ export function ComposerV2({
         modelId: nextModel || null,
         agentAdapter: nextAdapter,
         permissionMode: nextPermissionMode,
+        ...(clearCliSparkOverride ? { cliSparkOverride: null } : {}),
       })
       const afterMessageId = messages.at(-1)?.id
       if (afterMessageId != null && previousModel.length > 0 && previousModel !== nextModel) {
         onModelSwitch?.({ fromModel: previousModel, toModel: nextModel, afterMessageId })
       }
+    } else if (clearCliSparkOverride) {
+      await persistRuntimePatch({ cliSparkOverride: null })
     }
   }
 
   const handleProviderModelChange = async (providerId: string, modelId: string) => {
     const provider = providers.find((item) => item.id === providerId)
     if (provider == null) return
+    const keepCliSparkOverride =
+      selectedProvider?.id === provider.id && isBuiltInLocalCliProvider(provider)
+    const isHostCliModel =
+      isBuiltInLocalCliProvider(provider) &&
+      modelId === getProviderDefaultModel(provider, provider.modelIds[0])
+    const clearCliSparkOverride =
+      cliSparkOverride != null && (!keepCliSparkOverride || isHostCliModel)
+    if (clearCliSparkOverride) setCliSparkOverride(null)
     const nextAdapter = getProviderAdapterKind(provider)
     const nextPermissionMode =
       adapter === nextAdapter
@@ -2821,12 +2935,47 @@ export function ComposerV2({
         modelId: nextModel || null,
         agentAdapter: nextAdapter,
         permissionMode: nextPermissionMode,
+        ...(clearCliSparkOverride ? { cliSparkOverride: null } : {}),
       })
       const afterMessageId = messages.at(-1)?.id
       if (afterMessageId != null && previousModel.length > 0 && previousModel !== nextModel) {
         onModelSwitch?.({ fromModel: previousModel, toModel: nextModel, afterMessageId })
       }
+    } else if (clearCliSparkOverride) {
+      await persistRuntimePatch({ cliSparkOverride: null })
     }
+  }
+
+  const handleCliSparkModelChange = async (
+    cliProviderId: string,
+    providerId: string,
+    modelId: string,
+  ) => {
+    const cliProvider = providers.find((item) => item.id === cliProviderId)
+    const provider = cliSparkProvidersByPrimaryId
+      .get(cliProviderId)
+      ?.find((item) => item.id === providerId)
+    if (cliProvider == null || !isBuiltInLocalCliProvider(cliProvider) || provider == null) return
+    if (selectedProvider?.id !== cliProvider.id) {
+      await handleProviderModelChange(
+        cliProvider.id,
+        getProviderDefaultModel(cliProvider, cliProvider.modelIds[0]),
+      )
+    }
+    const nextModel =
+      resolveAvailableProviderModel(modelId, provider) ||
+      getProviderDefaultModel(provider, provider.modelIds[0]) ||
+      modelId
+    const nextOverride: CliSparkOverride = { providerProfileId: provider.id, modelId: nextModel }
+    rememberCliSparkOverride(cliProvider.id, nextOverride)
+    setCliSparkOverride(nextOverride)
+    await persistRuntimePatch({ cliSparkOverride: nextOverride })
+  }
+
+  const handleCliSparkClear = async () => {
+    if (cliSparkOverride == null) return
+    setCliSparkOverride(null)
+    await persistRuntimePatch({ cliSparkOverride: null })
   }
 
   const handleAdapterChange = async (nextAdapter: AgentAdapter) => {
@@ -2838,6 +2987,10 @@ export function ComposerV2({
       (provider) => getProviderAdapterKind(provider) === nextAdapter,
     )
     if (nextProvider != null) {
+      const clearCliSparkOverride =
+        cliSparkOverride != null &&
+        (selectedProvider?.id !== nextProvider.id || !isBuiltInLocalCliProvider(nextProvider))
+      if (clearCliSparkOverride) setCliSparkOverride(null)
       const nextModel = getProviderDefaultModel(nextProvider, nextProvider.modelIds[0])
       setSelectedProviderId(nextProvider.id)
       setDraftModelId(nextModel)
@@ -2853,13 +3006,20 @@ export function ComposerV2({
           modelId: nextModel || null,
           agentAdapter: nextAdapter,
           permissionMode: nextPermissionMode,
+          ...(clearCliSparkOverride ? { cliSparkOverride: null } : {}),
         })
       }
       return
     }
+    if (cliSparkOverride != null) setCliSparkOverride(null)
     writeComposerPrefs({ adapter: nextAdapter, permissionMode: nextPermissionMode })
     if (session != null)
-      await persistRuntimePatch({ agentAdapter: nextAdapter, permissionMode: nextPermissionMode })
+      await persistRuntimePatch({
+        agentAdapter: nextAdapter,
+        permissionMode: nextPermissionMode,
+        ...(cliSparkOverride != null ? { cliSparkOverride: null } : {}),
+      })
+    else if (cliSparkOverride != null) await persistRuntimePatch({ cliSparkOverride: null })
   }
 
   // 把会话运行时（适配器/供应商/模型/权限/推理强度）同步到指定 agent 的配置。
@@ -3417,6 +3577,10 @@ export function ComposerV2({
                   selectedProviderId={selectedProvider?.id ?? ''}
                   selectedModelId={effectiveModelId}
                   disabled={isBusy || providers.length === 0}
+                  cliSparkProvidersByPrimaryId={cliSparkProvidersByPrimaryId}
+                  cliSparkOverride={cliSparkOverride}
+                  onCliSparkModelChange={handleCliSparkModelChange}
+                  onCliSparkClear={handleCliSparkClear}
                   onChange={handleProviderModelChange}
                 />
               )}
@@ -3612,6 +3776,7 @@ export function ComposerV2({
               adapter={adapter}
               effectivePermissionMode={effectivePermissionMode}
               effectiveDebugMode={effectiveDebugMode}
+              cliSparkOverride={cliSparkOverride}
               onSent={onSent}
               toast={toast}
             />
@@ -4556,6 +4721,10 @@ function ProviderModelPicker({
   selectedProviderId,
   selectedModelId,
   disabled,
+  cliSparkProvidersByPrimaryId,
+  cliSparkOverride,
+  onCliSparkModelChange,
+  onCliSparkClear,
   onChange,
 }: {
   icon: ReactNode
@@ -4563,6 +4732,14 @@ function ProviderModelPicker({
   selectedProviderId: string
   selectedModelId: string
   disabled?: boolean
+  cliSparkProvidersByPrimaryId?: ReadonlyMap<string, ProviderProfile[]>
+  cliSparkOverride?: CliSparkOverride | null
+  onCliSparkModelChange?: (
+    cliProviderId: string,
+    providerId: string,
+    modelId: string,
+  ) => void | Promise<void>
+  onCliSparkClear?: () => void | Promise<void>
   onChange: (providerId: string, modelId: string) => void | Promise<void>
 }) {
   const [open, setOpen] = useState(false)
@@ -4619,6 +4796,42 @@ function ProviderModelPicker({
   )
   // 模糊搜索：命中供应商名/厂商名则保留其全部模型，否则只保留模型名命中的
   const normalizedSearch = search.trim().toLowerCase()
+  const cliSparkProviderGroupsByPrimaryId = useMemo(() => {
+    const result = new Map<string, CliSparkProviderGroup[]>()
+    for (const [primaryId, sparkProviders] of cliSparkProvidersByPrimaryId ?? []) {
+      const groups = prioritizeManagedProviderGroups(
+        sparkProviders
+          .filter(
+            isCliSparkConversationProvider,
+          )
+          .map((provider) => {
+            const configuredModels = provider.modelIds.length
+              ? provider.modelIds
+              : provider.defaultModel
+                ? [provider.defaultModel]
+                : []
+            if (normalizedSearch === '') return { provider, models: configuredModels }
+            const vendorName = resolveProviderVendor(provider)?.name ?? ''
+            const providerMatches =
+              provider.name.toLowerCase().includes(normalizedSearch) ||
+              vendorName.toLowerCase().includes(normalizedSearch)
+            const models = providerMatches
+              ? configuredModels
+              : configuredModels.filter(
+                  (modelId) =>
+                    modelId.toLowerCase().includes(normalizedSearch) ||
+                    getPickerModelDisplayLabel(provider, modelId, modelNameById)
+                      .toLowerCase()
+                      .includes(normalizedSearch),
+                )
+            return { provider, models }
+          })
+          .filter((group) => group.models.length > 0),
+      )
+      result.set(primaryId, groups)
+    }
+    return result
+  }, [cliSparkProvidersByPrimaryId, modelNameById, normalizedSearch])
   const filteredProviderGroups = prioritizeManagedProviderGroups(
     conversationalProviders
       .map((provider) => {
@@ -4651,7 +4864,16 @@ function ProviderModelPicker({
                   .toLowerCase()
                   .includes(normalizedSearch),
             )
-        return { provider, models: matchedModels }
+        const hasSparkMatch =
+          isBuiltInLocalCliProvider(provider) &&
+          (cliSparkProviderGroupsByPrimaryId.get(provider.id)?.length ?? 0) > 0
+        return {
+          provider,
+          models:
+            matchedModels.length > 0 || !hasSparkMatch
+              ? matchedModels
+              : [configuredModels[0] ?? getProviderDefaultModel(provider)],
+        }
       })
       .filter((group) => group.models.length > 0),
   )
@@ -4670,7 +4892,27 @@ function ProviderModelPicker({
     selectedProviderById ??
     conversationalProviders[0]
   const resolvedSelectedProviderId = selectedProvider?.id ?? selectedProviderId
-  const label = getPickerModelDisplayLabel(selectedProvider, selectedModelId, modelNameById)
+  const selectedCliSparkProvider =
+    selectedProvider != null &&
+    isBuiltInLocalCliProvider(selectedProvider) &&
+    cliSparkOverride != null
+      ? cliSparkProvidersByPrimaryId
+          ?.get(selectedProvider.id)
+          ?.find((provider) => provider.id === cliSparkOverride.providerProfileId)
+      : undefined
+  const selectedCliSparkModelLabel =
+    selectedCliSparkProvider != null && cliSparkOverride != null
+      ? getPickerModelDisplayLabel(
+          selectedCliSparkProvider,
+          cliSparkOverride.modelId,
+          modelNameById,
+        )
+      : undefined
+  const primaryLabel = getPickerModelDisplayLabel(selectedProvider, selectedModelId, modelNameById)
+  const label =
+    selectedCliSparkModelLabel != null
+      ? `${primaryLabel} · ${selectedCliSparkModelLabel}`
+      : primaryLabel
   const selectedVendor = resolveProviderVendor(selectedProvider)
 
   useLayoutEffect(() => {
@@ -4717,7 +4959,11 @@ function ProviderModelPicker({
         if (!nextOpen) setSearch('')
       }}
       popupRender={() => (
-        <div className="composer-dropdown-menu composer-model-menu">
+        <div
+          className={`composer-dropdown-menu composer-model-menu${
+            placement === 'topRight' ? ' is-right' : ''
+          }`}
+        >
           {conversationalProviders.length > 0 && (
             <div className="composer-model-search">
               <Icons.Search size={13} />
@@ -4777,6 +5023,61 @@ function ProviderModelPicker({
               </div>
             )}
             {filteredProviderGroups.map(({ provider, models }) => {
+              const cliSparkGroups = cliSparkProviderGroupsByPrimaryId.get(provider.id)
+              if (
+                isBuiltInLocalCliProvider(provider) &&
+                cliSparkGroups != null &&
+                cliSparkGroups.length > 0
+              ) {
+                const primaryModelId = models[0] ?? getProviderDefaultModel(provider)
+                const sparkProvider =
+                  provider.id === resolvedSelectedProviderId && cliSparkOverride != null
+                    ? cliSparkProvidersByPrimaryId
+                        ?.get(provider.id)
+                        ?.find((item) => item.id === cliSparkOverride.providerProfileId)
+                    : undefined
+                const sparkModelLabel =
+                  sparkProvider != null && cliSparkOverride != null
+                    ? getPickerModelDisplayLabel(sparkProvider, cliSparkOverride.modelId, modelNameById)
+                    : undefined
+                return (
+                  <CliProviderModelMenu
+                    key={provider.id}
+                    primaryProvider={provider}
+                    primaryModelId={primaryModelId}
+                    primaryModelLabel={
+                      sparkModelLabel != null
+                        ? `${getPickerModelDisplayLabel(provider, primaryModelId, modelNameById)} · ${sparkModelLabel}`
+                        : getPickerModelDisplayLabel(provider, primaryModelId, modelNameById)
+                    }
+                    primarySelected={provider.id === resolvedSelectedProviderId}
+                    sparkOverride={cliSparkOverride ?? null}
+                    providerGroups={cliSparkGroups}
+                    disabled={disabled === true}
+                    isPinned={isPinned}
+                    togglePinned={togglePinned}
+                    resolveVendor={resolveProviderVendor}
+                    getModelLabel={(sparkProvider, modelId) =>
+                      getPickerModelDisplayLabel(sparkProvider, modelId, modelNameById)
+                    }
+                    onSelectPrimaryModel={() => {
+                      setOpen(false)
+                      setSearch('')
+                      void onChange(provider.id, primaryModelId)
+                    }}
+                    onSelectSparkModel={(sparkProviderId, modelId) => {
+                      setOpen(false)
+                      setSearch('')
+                      void onCliSparkModelChange?.(provider.id, sparkProviderId, modelId)
+                    }}
+                    onClearSparkOverride={() => {
+                      setOpen(false)
+                      setSearch('')
+                      void onCliSparkClear?.()
+                    }}
+                  />
+                )
+              }
               const vendor = resolveProviderVendor(provider)
               return (
                 <div key={provider.id} className="composer-model-group">
@@ -4820,7 +5121,7 @@ function ProviderModelPicker({
       <div
         ref={rootRef}
         className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`}
-        title={disabled ? '会话运行中不可切换' : '供应商模型'}
+        title={disabled ? '会话运行中不可切换' : label}
       >
         <span className="composer-select-icon">
           {selectedVendor ? (
