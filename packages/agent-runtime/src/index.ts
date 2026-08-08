@@ -31,12 +31,27 @@ export {
   VolcengineArkFilesClient,
   resolveVolcengineArkFilesBaseUrl,
 } from './services/media/volcengine-ark-files.client.js'
-export type { MediaUploader, MediaUploadInput, MediaUploadResult } from './services/media/media-uploader.js'
+export type {
+  MediaUploader,
+  MediaUploadInput,
+  MediaUploadResult,
+} from './services/media/media-uploader.js'
 export { MediaModelCatalogService } from './services/media/media-model-catalog.service.js'
 export type {
   MediaModelCatalogItem,
   MediaProviderModelItem,
 } from './services/media/media-model-catalog.service.js'
+export {
+  CustomMediaProviderConfiguratorService,
+  type CustomMediaProviderConfigureResult,
+  type CustomMediaProviderDiagnosticInput,
+  type CustomMediaProviderDiagnosticResult,
+  type CustomMediaProviderDiscoverModelsInput,
+  type CustomMediaProviderDraftInput,
+  type CustomMediaProviderModelInput,
+  type CustomMediaProviderStore,
+  type CustomMediaProviderValidationResult,
+} from './services/media/custom-media-provider-configurator.service.js'
 export {
   resolveProfileMediaModels,
   synthesizeMediaManifestForRef,
@@ -103,7 +118,11 @@ export {
 export { ApimartMediaAdapter } from './services/media/adapters/apimart-media.adapter.js'
 export { XaiMediaAdapter } from './services/media/adapters/xai-media.adapter.js'
 export { ModelService } from './services/model.service.js'
-export { McpService, MANAGED_MCP_SCOPE, PLAYWRIGHT_MCP_NAME } from './services/mcp-server.service.js'
+export {
+  McpService,
+  MANAGED_MCP_SCOPE,
+  PLAYWRIGHT_MCP_NAME,
+} from './services/mcp-server.service.js'
 export { SkillService } from './services/skill.service.js'
 export { RulesService } from './services/rules.service.js'
 export { RuleCompositionEngine } from './services/rule-composition.engine.js'
@@ -147,7 +166,11 @@ export { PlatformBridgeService } from './services/platform-bridge.service.js'
 export { GitHubConnectorService } from './services/github-connector.service.js'
 export type { PlatformBridgeDeps } from './services/platform-bridge.service.js'
 export { DebugLogServer, getDebugLogServer } from './services/debug-log-server.service.js'
-export type { DebugEntry, DebugLogLevel, DebugHypothesis } from './services/debug-log-server.service.js'
+export type {
+  DebugEntry,
+  DebugLogLevel,
+  DebugHypothesis,
+} from './services/debug-log-server.service.js'
 export type {
   ApprovalHandler,
   SessionEventHandler,
@@ -160,17 +183,17 @@ export type {
   BrowserAutomationMcpProvider,
   ComputerUseMcpProvider,
 } from './services/session.service.js'
-export {
-  createCanvasMcpServer,
-  canvasAllowedToolNames,
-} from './services/canvas-mcp-server.js'
+export { createCanvasMcpServer, canvasAllowedToolNames } from './services/canvas-mcp-server.js'
 export type {
   CanvasToolSchema,
   CanvasToolCallBridge,
   CreateCanvasMcpServerOptions,
 } from './services/canvas-mcp-server.js'
 export { TeamDispatchService } from './services/team-dispatch.service.js'
-export type { TeamDispatchRunContext, TeamMemberExecutionResult } from './services/team-dispatch.service.js'
+export type {
+  TeamDispatchRunContext,
+  TeamMemberExecutionResult,
+} from './services/team-dispatch.service.js'
 export { WorkspaceService, detectProjectKind } from './services/workspace.service.js'
 export type { UpdateWorkspaceParams } from './services/workspace.service.js'
 export { GitWorktreeService } from './services/git-worktree.service.js'

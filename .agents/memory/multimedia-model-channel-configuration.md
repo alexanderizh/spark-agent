@@ -213,3 +213,12 @@ paramPolicy: {
 - 轮询成功后仍需单独下载产物的渠道使用可选 `task_poll.artifact`：请求可引用 `{{taskId}}` 和 `{{poll.xxx}}`，响应可配置 URL、Base64 或二进制。OpenAI 视频必须在任务完成后请求 `/videos/{{taskId}}/content`，不能把轮询 JSON 当作视频产物。
 - Contract V2 的 `invocation.request` 是实际编译入口，但编辑器修改请求时必须同步更新 legacy 的 endpoint/method/contentType/requestTemplate 镜像，避免旧读取链路和调试信息出现不一致。
 - JSON 表单编辑器必须保留尚未完成或暂时非法的本地草稿并显示错误，不能因父级受控回显把输入恢复为旧值。
+
+## 十一、Agent 对话配置自定义渠道
+
+- Agent 配置应用未内置的媒体渠道时，必须使用 `providers_media_guide`、`providers_media_validate`、`providers_media_configure`、`providers_media_discover_models` 和 `providers_media_diagnose`，不能用通用 Provider CRUD 直接拼 `config`。
+- 固定流程是：收集渠道/模型/能力/鉴权/官方文档 → 使用 `spark_search` 读取真实文档 → 生成完整 Contract V2 → 只读校验和脱敏请求预览 → 保存 → 分阶段诊断。
+- 同一模型名可存在于多个自定义 Provider；跨渠道身份由 Provider Profile ID 与 `custom:<model-slug>:<随机实例后缀>` Manifest ID 共同确定。更新历史确定性 ID 时只警告，避免破坏旧配置。
+- API Key 只在最终保存、模型发现或真实诊断时传入 ProviderService，进入系统 Keychain；工具返回、请求预览、异常和日志都不能包含明文。
+- `providers_media_diagnose.execute` 复用画布的 MediaRouterService，因此可验证实际适配器、参数编译、请求、轮询和产物解析。真实调用可能计费，必须先取得用户明确同意并设置 `confirmExecute=true`。
+- Agent 只能把官方文档明确声明的参数、枚举、状态映射和结果路径写入 Manifest。文档 URL 写入 `docs.sourceUrls`，便于后续协议漂移复核。

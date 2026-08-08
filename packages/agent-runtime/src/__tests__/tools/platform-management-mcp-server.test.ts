@@ -38,18 +38,25 @@ describe('spark_platform MCP server', () => {
     expect([...allowedNames].sort()).toEqual(
       toolNames.map((name) => `mcp__spark_platform__${name}`).sort(),
     )
-    expect(toolNames).toEqual(expect.arrayContaining([
-      'skills_load',
-      'skills_search_github',
-      'skills_install_github',
-      'artifacts_list',
-      'artifacts_resolve',
-      'teams_list',
-      'teams_get',
-      'teams_create',
-      'teams_update',
-      'teams_delete',
-    ]))
+    expect(toolNames).toEqual(
+      expect.arrayContaining([
+        'skills_load',
+        'skills_search_github',
+        'skills_install_github',
+        'artifacts_list',
+        'artifacts_resolve',
+        'teams_list',
+        'teams_get',
+        'teams_create',
+        'teams_update',
+        'teams_delete',
+        'providers_media_guide',
+        'providers_media_validate',
+        'providers_media_configure',
+        'providers_media_discover_models',
+        'providers_media_diagnose',
+      ]),
+    )
     expect(toolNames).toEqual(
       expect.arrayContaining([
         'session_schedule_list',
@@ -59,34 +66,50 @@ describe('spark_platform MCP server', () => {
         'session_schedule_delete',
       ]),
     )
+    const tools = res.result.tools as Array<{
+      name: string
+      inputSchema: { properties?: Record<string, unknown> }
+    }>
+    expect(
+      tools.find((tool) => tool.name === 'providers_media_validate')?.inputSchema.properties,
+    ).not.toHaveProperty('apiKey')
+    expect(
+      tools.find((tool) => tool.name === 'providers_media_configure')?.inputSchema.properties,
+    ).toHaveProperty('apiKey')
   })
 
   it('responds to optional MCP resource and prompt list methods without hanging', async () => {
     child = start()
 
-    await expect(callMcp(child, {
-      jsonrpc: '2.0',
-      id: 10,
-      method: 'resources/list',
-    })).resolves.toEqual({
+    await expect(
+      callMcp(child, {
+        jsonrpc: '2.0',
+        id: 10,
+        method: 'resources/list',
+      }),
+    ).resolves.toEqual({
       jsonrpc: '2.0',
       id: 10,
       result: { resources: [] },
     })
-    await expect(callMcp(child, {
-      jsonrpc: '2.0',
-      id: 11,
-      method: 'resources/templates/list',
-    })).resolves.toEqual({
+    await expect(
+      callMcp(child, {
+        jsonrpc: '2.0',
+        id: 11,
+        method: 'resources/templates/list',
+      }),
+    ).resolves.toEqual({
       jsonrpc: '2.0',
       id: 11,
       result: { resourceTemplates: [] },
     })
-    await expect(callMcp(child, {
-      jsonrpc: '2.0',
-      id: 12,
-      method: 'prompts/list',
-    })).resolves.toEqual({
+    await expect(
+      callMcp(child, {
+        jsonrpc: '2.0',
+        id: 12,
+        method: 'prompts/list',
+      }),
+    ).resolves.toEqual({
       jsonrpc: '2.0',
       id: 12,
       result: { prompts: [] },
@@ -101,17 +124,19 @@ describe('spark_platform MCP server', () => {
       req.on('end', () => {
         lastRpc = JSON.parse(Buffer.concat(chunks).toString('utf8'))
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            team: {
-              id: 'team-1',
-              name: '研发协作团队',
-              hostAgentId: 'platform-manager-agent',
-              memberAgentIds: ['fullstack-coding-agent'],
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              team: {
+                id: 'team-1',
+                name: '研发协作团队',
+                hostAgentId: 'platform-manager-agent',
+                memberAgentIds: ['fullstack-coding-agent'],
+              },
             },
-          },
-        }))
+          }),
+        )
       })
     })
     const port = await new Promise<number>((resolve) => {
@@ -156,16 +181,18 @@ describe('spark_platform MCP server', () => {
       req.on('end', () => {
         lastRpc = JSON.parse(Buffer.concat(chunks).toString('utf8'))
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            artifact: {
-              id: 'runtime.python-3.11.9.win32-x64',
-              type: 'runtime',
-              url: 'https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/runtimes/python/python-3.11.9-amd64.exe',
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              artifact: {
+                id: 'runtime.python-3.11.9.win32-x64',
+                type: 'runtime',
+                url: 'https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/runtimes/python/python-3.11.9-amd64.exe',
+              },
             },
-          },
-        }))
+          }),
+        )
       })
     })
     const port = await new Promise<number>((resolve) => {
@@ -196,6 +223,60 @@ describe('spark_platform MCP server', () => {
         artifactId: 'runtime.python-3.11.9.win32-x64',
       },
     })
+  })
+
+  it('routes custom media provider configuration to the production bridge method', async () => {
+    let lastRpc: { method?: string; params?: unknown } | null = null
+    bridge = createServer((req, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+      req.on('end', () => {
+        lastRpc = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: { created: true, provider: { id: 'provider-custom', hasApiKey: true } },
+          }),
+        )
+      })
+    })
+    const port = await new Promise<number>((resolve) => {
+      bridge?.listen(0, '127.0.0.1', () => {
+        const address = bridge?.address()
+        if (!address || typeof address === 'string') throw new Error('Failed to bind bridge')
+        resolve(address.port)
+      })
+    })
+
+    child = start({ SPARK_PLATFORM_BRIDGE_PORT: String(port) })
+    const res = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 30,
+      method: 'tools/call',
+      params: {
+        name: 'providers_media_configure',
+        arguments: {
+          name: '自定义图片渠道',
+          apiEndpoint: 'https://media.example/v1',
+          defaultModel: 'image-model',
+          models: [{ modelId: 'image-model', manifest: { id: 'manifest-placeholder' } }],
+          apiKey: 'secret-forwarded-only-to-bridge',
+        },
+      },
+    })
+
+    expect(res.error).toBeUndefined()
+    expect(lastRpc).toMatchObject({
+      method: 'providers.media_configure',
+      params: {
+        name: '自定义图片渠道',
+        apiEndpoint: 'https://media.example/v1',
+        defaultModel: 'image-model',
+        apiKey: 'secret-forwarded-only-to-bridge',
+      },
+    })
+    expect(JSON.stringify(res)).not.toContain('secret-forwarded-only-to-bridge')
   })
 
   it('routes schedule calls with the trusted current session id', async () => {
