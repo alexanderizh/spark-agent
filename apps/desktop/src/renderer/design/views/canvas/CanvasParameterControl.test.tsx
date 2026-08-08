@@ -217,6 +217,37 @@ describe('CanvasParameterControl', () => {
     expect(numeric.container.querySelector('input')?.type).toBe('number')
   })
 
+  it('shows common ratio presets and a shape preview for custom ratio fields', async () => {
+    const { container } = await renderControl(
+      field('aspectRatio', ['16:9'], 'string', { allowCustom: true }),
+      '5:7',
+    )
+
+    expect(container.querySelectorAll('.canvas-aspect-ratio-option')).toHaveLength(11)
+    expect(
+      container.querySelector('[data-param-value="1:2"] [data-aspect-width="16"]'),
+    ).not.toBeNull()
+    expect(container.querySelector('input')).not.toBeNull()
+    expect(
+      container.querySelector(
+        '[data-aspect-custom-preview="true"][data-aspect-width="23"][data-aspect-height="32"]',
+      ),
+    ).not.toBeNull()
+  })
+
+  it('separates mixed custom sizes into resolution buttons and shaped dimensions', async () => {
+    const { container } = await renderControl(
+      field('size', ['1K', '1024x1024', '1536x1024'], 'string', { allowCustom: true }),
+      '1024x1024',
+    )
+
+    expect(container.querySelector('[data-param-value="1K"]')).not.toBeNull()
+    expect(
+      container.querySelector('[data-param-value="1536x1024"] [data-aspect-width="32"]'),
+    ).not.toBeNull()
+    expect(container.querySelector('input')).not.toBeNull()
+  })
+
   it('renders enumLabels as option labels for opaque enum values', async () => {
     // MiniMax 视频 Agent 的 templateId 是不透明数字 id，manifest 通过
     // x-template-labels 注入中文名；下拉应显示中文名而非裸 id。

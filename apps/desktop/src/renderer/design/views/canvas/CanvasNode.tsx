@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type Ref,
   type ReactNode,
 } from 'react'
 import {
@@ -59,8 +60,16 @@ import {
 } from './CanvasOperationOutputPreview'
 import type { CanvasAudioPreviewActions } from './CanvasOperationOutputPreview'
 import { CanvasOperationOutputThumbnailSwitcher } from './CanvasOperationOutputThumbnailSwitcher'
-import { CanvasAudioNodePresentation } from './audioNode/CanvasAudioNodePresentation'
+import {
+  CanvasAudioNodePresentation,
+  type CanvasAudioNodePresentationHandle,
+} from './audioNode/CanvasAudioNodePresentation'
 import { CanvasShotScriptTable } from './CanvasShotScriptTable'
+import {
+  CanvasNodeSelectionToolbar,
+  type CanvasNodeToolbarAction,
+  type CanvasNodeToolbarEntry,
+} from './CanvasNodeSelectionToolbar'
 import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
 import { buildCanvasOperationMediaThumbnailItems } from './canvasOperationOutputThumbnails'
 import { canvasNodeInlinePrimaryAction } from './canvasNodeInlinePrimaryAction'
@@ -80,6 +89,14 @@ function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.Reac
 }
 
 const ALL_PIPELINE_ACTIONS = getAllPipelineActions()
+
+function openAudioTrim(ref: { current: CanvasAudioNodePresentationHandle | null }) {
+  ref.current?.openTrim()
+}
+
+function openAudioSpeed(ref: { current: CanvasAudioNodePresentationHandle | null }) {
+  ref.current?.openSpeed()
+}
 
 /** 3D 导演台节点卡片：角色/道具计数 + 最近一次截图缩略图（若有）。 */
 function Stage3DMini({ data }: { data: SparkCanvasNode['data'] }) {
@@ -200,6 +217,7 @@ function OperationOutputDeck({
   onVideoEdit,
   selected,
   audioActions,
+  audioPresentationRef,
 }: {
   runs: CanvasOperationRunView[]
   mode: CanvasOperationOutputMode
@@ -219,6 +237,7 @@ function OperationOutputDeck({
   onVideoEdit?: () => void
   selected: boolean
   audioActions?: CanvasAudioPreviewActions
+  audioPresentationRef?: Ref<CanvasAudioNodePresentationHandle>
 }) {
   const activeRun = runs[runIndex]
   const outputs = activeRun?.outputs ?? []
@@ -244,6 +263,7 @@ function OperationOutputDeck({
                 isolateWheel={isolateWheel}
                 selected={selected}
                 {...(audioActions ? { audioActions } : {})}
+                {...(audioPresentationRef ? { audioPresentationRef } : {})}
                 onVideoMetadata={(dimensions) => onVideoMetadata?.(activeOutput, dimensions)}
                 {...(onVideoEdit ? { onVideoEdit } : {})}
               />
@@ -295,6 +315,8 @@ function OperationOutputDeck({
 
 export type CanvasFlowNodeData = {
   canvasNode: SparkCanvasNode
+  /** 当前画布选区节点数；多选时隐藏节点自身的顶部工具栏。 */
+  selectedNodeCount?: number
   /** 节点自身或最近一次任务产物关联的影视资产类型，用于放宽同类型流水线入口。 */
   assetKinds?: CanvasPipelineAssetKind[]
   assetSubviewCount?: number
@@ -545,6 +567,7 @@ export const CanvasNode = memo(function CanvasNode({
     inlinePanelExtraHeight,
     inlineToolbar,
     collapsedGroupPresentation,
+    selectedNodeCount = 1,
   } = data as CanvasFlowNodeData
   const locked = Boolean(node.locked)
   const connectionTargetsNode = connection != null
@@ -644,6 +667,7 @@ export const CanvasNode = memo(function CanvasNode({
   const [resizeHovered, setResizeHovered] = useState(false)
   const [resizing, setResizing] = useState(false)
   const videoUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const audioPresentationRef = useRef<CanvasAudioNodePresentationHandle>(null)
   // 未锁定节点在选中或悬浮时挂载缩放控件，无需先点击，同时避免所有节点常驻控件。
   const showResizer =
     !locked && !collapsedGroupPresentation && (selected || resizeHovered || resizing)
@@ -698,6 +722,16 @@ export const CanvasNode = memo(function CanvasNode({
     return readRenderableShotScriptRows(node.data.text)
   }, [node.type, node.data.text])
   const renderShotTable = shotScriptRows.length > 0
+  const audioToolbarNodeId =
+    node.type === 'audio' && node.data.url
+      ? node.id
+      : isTask &&
+          operationOutputState.mode !== 'collection' &&
+          operationOutputState.mode !== 'bundle' &&
+          activeOperationOutput?.type === 'audio' &&
+          activeOperationOutput.nodeId
+        ? activeOperationOutput.nodeId
+        : null
   const runStyleExtraction = () => {
     const target = contentNode ?? node
     const isTextLike = target.type === 'text' || target.type === 'prompt'
@@ -784,6 +818,147 @@ export const CanvasNode = memo(function CanvasNode({
       runStyleExtraction,
     ],
   )
+  const selectionToolbarEntries = useMemo<CanvasNodeToolbarEntry[]>(() => {
+    // 单节点顶部工具栏只放已确认的快捷操作。上下文管理类入口（视频编辑、影视创作、
+    // 资源库、类型切换、编组管理等）继续留在右键菜单，不能因为右键菜单中存在就自动迁移。
+    const entries: CanvasNodeToolbarEntry[] = []
+    const addAction = (action: CanvasNodeToolbarAction) => entries.push(action)
+
+    if (isTask && actions.runOperationNode) {
+      addAction({
+        key: 'run-operation',
+        label: '提交运行',
+        icon: <Icons.Play size={15} />,
+        disabled: node.data.status === 'running',
+        onClick: () => actions.runOperationNode?.(node.id),
+      })
+    }
+    if (isPanorama360) {
+      addAction({
+        key: 'preview-panorama',
+        label: '全景预览',
+        icon: <Icons.Globe size={15} />,
+        onClick: () => actions.previewPanorama(node.id),
+      })
+    }
+    if (canExpandOperationOutputs) {
+      addAction({
+        key: 'expand-operation-outputs',
+        label: '展开产物',
+        icon: <Icons.Layers size={15} />,
+        onClick: () => actions.expandOperationOutputs?.(node.id),
+      })
+    }
+    addAction({
+      key: 'duplicate',
+      label: '复制节点',
+      icon: <Icons.Copy size={15} />,
+      onClick: () => actions.duplicateNode(node.id),
+    })
+
+    const mediaChildren: CanvasNodeToolbarAction[] = []
+    if (isImageContent) {
+      mediaChildren.push({
+        key: 'replace-image',
+        label: '替换图片',
+        icon: <Icons.Refresh size={15} />,
+        onClick: () => actions.replaceImage?.(node.id),
+      })
+    }
+    if (isImageContent && hasOperationOutput) {
+      if (canExtractCharacterSubview) {
+        mediaChildren.push({
+          key: 'extract-character-subview',
+          label: '提取子视图',
+          icon: <Icons.Crop size={15} />,
+          onClick: () => actions.extractCharacterSubview?.(node.id),
+        })
+      }
+      mediaChildren.push(
+        {
+          key: 'split-grid-image',
+          label: '宫格切分',
+          icon: <Icons.Grid size={15} />,
+          onClick: () => actions.splitGridImage?.(node.id),
+        },
+        {
+          key: 'annotate-image',
+          label: '图片标注',
+          icon: <Icons.Edit size={15} />,
+          onClick: () => actions.annotateImage?.(node.id),
+        },
+      )
+    }
+    if (storyboardSplitSource && actions.splitStoryboard) {
+      mediaChildren.push({
+        key: 'split-storyboard-by-shot',
+        label: '按镜拆分',
+        icon: <Icons.Scissors size={15} />,
+        onClick: () => actions.splitStoryboard?.(storyboardSplitSource.id),
+      })
+    }
+    if (
+      (isImageContent || contentNode?.type === 'video' || contentNode?.type === 'audio') &&
+      hasOperationOutput &&
+      !audioToolbarNodeId
+    ) {
+      mediaChildren.push({
+        key: 'download-media',
+        label: '下载到本地',
+        icon: <Icons.Download size={15} />,
+        onClick: () => actions.downloadMedia(node.id),
+      })
+    }
+    if (mediaChildren.length > 0) {
+      entries.push({
+        key: 'media-actions',
+        label: '素材操作',
+        icon: <Icons.Image size={15} />,
+        children: mediaChildren,
+      })
+    }
+    if (audioToolbarNodeId) {
+      addAction({
+        key: 'audio-trim',
+        label: '音频截取',
+        icon: <Icons.Scissors size={15} />,
+        onClick: () => openAudioTrim(audioPresentationRef),
+      })
+      addAction({
+        key: 'audio-speed',
+        label: '音频变速',
+        icon: <Icons.Sliders size={15} />,
+        onClick: () => openAudioSpeed(audioPresentationRef),
+      })
+      addAction({
+        key: 'audio-download',
+        label: '下载音频到本地',
+        icon: <Icons.Download size={15} />,
+        onClick: () => actions.downloadMedia(audioToolbarNodeId),
+      })
+    }
+    entries.push({ key: 'delete-divider', type: 'divider' })
+    addAction({
+      key: 'delete-node',
+      label: '删除节点',
+      icon: <Icons.Trash size={15} />,
+      danger: true,
+      onClick: () => actions.deleteNode(node.id),
+    })
+    return entries
+  }, [
+    actions,
+    canExpandOperationOutputs,
+    canExtractCharacterSubview,
+    audioToolbarNodeId,
+    contentNode,
+    hasOperationOutput,
+    isImageContent,
+    isPanorama360,
+    isTask,
+    node,
+    storyboardSplitSource,
+  ])
   const [contextMenuBoundary, setContextMenuBoundary] = useState<{
     maxHeight: number
     maxWidth: number
@@ -797,35 +972,8 @@ export const CanvasNode = memo(function CanvasNode({
         maxWidth: Math.max(0, Math.min(320, contextMenuBoundary.maxWidth)),
       },
       items: [
-        ...(isTask && actions.runOperationNode
-          ? [
-              {
-                key: 'run-operation',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Play size={14} /> 提交运行
-                  </span>
-                ),
-                disabled: node.data.status === 'running',
-                onClick: () => actions.runOperationNode?.(node.id),
-              },
-              { type: 'divider' as const },
-            ]
-          : []),
-        ...(isPanorama360
-          ? [
-              {
-                key: 'preview-panorama',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Globe size={14} /> 全景预览
-                  </span>
-                ),
-                onClick: () => actions.previewPanorama(node.id),
-              },
-              { type: 'divider' as const },
-            ]
-          : []),
+        // 单节点已迁移到顶部工具栏的运行、预览、展开、复制和素材操作不在这里重复显示。
+        // 视频编辑、影视创作、资源库、类型切换、编组管理和 Agent 引用仍保留在右键菜单。
         // 视频节点 / 视频工作台节点 / 产物为视频的操作节点：右键 → 视频编辑
         ...((node.type === 'video' || isVideoWorkbench || contentNode?.type === 'video') &&
         actions.editVideo
@@ -899,89 +1047,6 @@ export const CanvasNode = memo(function CanvasNode({
               { type: 'divider' as const },
             ]
           : []),
-        ...(canExpandOperationOutputs
-          ? [
-              {
-                key: 'expand-operation-outputs',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Layers size={14} /> 展开产物
-                  </span>
-                ),
-                onClick: () => actions.expandOperationOutputs?.(node.id),
-              },
-            ]
-          : []),
-        {
-          key: 'duplicate',
-          label: (
-            <span className="canvas-menu-item">
-              <Icons.Copy size={14} /> 复制节点
-            </span>
-          ),
-          onClick: () => actions.duplicateNode(node.id),
-        },
-        ...(isImageContent
-          ? [
-              {
-                key: 'replace-image',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Refresh size={14} /> 替换图片
-                  </span>
-                ),
-                onClick: () => actions.replaceImage?.(node.id),
-              },
-            ]
-          : []),
-        ...(isImageContent && hasOperationOutput
-          ? [
-              ...(canExtractCharacterSubview
-                ? [
-                    {
-                      key: 'extract-character-subview',
-                      label: (
-                        <span className="canvas-menu-item">
-                          <Icons.Crop size={14} /> 提取子视图
-                        </span>
-                      ),
-                      onClick: () => actions.extractCharacterSubview?.(node.id),
-                    },
-                  ]
-                : []),
-              {
-                key: 'split-grid-image',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Grid size={14} /> 宫格切分
-                  </span>
-                ),
-                onClick: () => actions.splitGridImage?.(node.id),
-              },
-              {
-                key: 'annotate-image',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Edit size={14} /> 图片标注
-                  </span>
-                ),
-                onClick: () => actions.annotateImage?.(node.id),
-              },
-            ]
-          : []),
-        ...(storyboardSplitSource && actions.splitStoryboard
-          ? [
-              {
-                key: 'split-storyboard-by-shot',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Scissors size={14} /> 按镜拆分
-                  </span>
-                ),
-                onClick: () => actions.splitStoryboard?.(storyboardSplitSource.id),
-              },
-            ]
-          : []),
         ...(canCreateOperationFromNode
           ? canvasVisibleBaseCreateOperations().map((item) => ({
               key: `op-${item.operation}`,
@@ -992,22 +1057,6 @@ export const CanvasNode = memo(function CanvasNode({
               ),
               onClick: () => actions.createOperationChild(node.id, item.operation),
             }))
-          : []),
-        ...((isImageContent ||
-          contentNode?.type === 'video' ||
-          contentNode?.type === 'audio') &&
-          hasOperationOutput
-          ? [
-              {
-                key: 'download-media',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Download size={14} /> 下载到本地…
-                  </span>
-                ),
-                onClick: () => actions.downloadMedia(node.id),
-              },
-            ]
           : []),
         {
           key: 'save-to-library',
@@ -1150,24 +1199,16 @@ export const CanvasNode = memo(function CanvasNode({
       contextualAiActions,
       isGroup,
       isGroupedChild,
-      isPanorama360,
       isVideoWorkbench,
       locked,
-      canExtractCharacterSubview,
-      canExpandOperationOutputs,
       canCreateOperationFromNode,
       collapsedGroupPresentation,
       contentNode,
       contextMenuBoundary.maxHeight,
       contextMenuBoundary.maxWidth,
-      hasOperationOutput,
-      isImageContent,
-      isTask,
       node.id,
-      node.data.status,
       node.type,
       pipelineActions,
-      storyboardSplitSource,
       subtypeSwitch,
     ],
   )
@@ -1384,6 +1425,9 @@ export const CanvasNode = memo(function CanvasNode({
             />
           ) : null}
           {!collapsedGroupPresentation ? nodeMetaBar : null}
+          {selected && selectedNodeCount < 2 ? (
+            <CanvasNodeSelectionToolbar entries={selectionToolbarEntries} />
+          ) : null}
           {/* 悬浮、选中或正在拉伸时显示缩放控件。 */}
           <NodeResizer
             color="var(--primary)"
@@ -1488,16 +1532,15 @@ export const CanvasNode = memo(function CanvasNode({
                   ) : node.type === 'audio' ? (
                     node.data.url ? (
                       <CanvasAudioNodePresentation
+                        ref={audioPresentationRef}
                         src={normalizedAudioSrc}
                         fileName={node.data.message ?? node.title ?? '音频'}
                         durationSec={node.data.audioDurationSec ?? 0}
                         cachedPeaks={node.data.audioWaveformPeaks}
                         selected={Boolean(selected)}
                         actions={{
-                          onTrimApply: (start, end) =>
-                            actions.audioTrim?.(node.id, start, end),
-                          onSpeedApply: (factor) =>
-                            actions.audioSpeed?.(node.id, factor),
+                          onTrimApply: (start, end) => actions.audioTrim?.(node.id, start, end),
+                          onSpeedApply: (factor) => actions.audioSpeed?.(node.id, factor),
                           onDownload: () => actions.downloadMedia(node.id),
                           onPeaks: (peaks) =>
                             actions.updateNodeData?.(node.id, {
@@ -1618,6 +1661,7 @@ export const CanvasNode = memo(function CanvasNode({
                         }}
                         onVideoEdit={() => actions.editNode(node.id)}
                         selected={selected}
+                        audioPresentationRef={audioPresentationRef}
                         {...(activeOperationOutput?.type === 'audio' && activeOperationOutput.nodeId
                           ? {
                               audioActions: {

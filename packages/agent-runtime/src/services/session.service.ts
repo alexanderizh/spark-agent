@@ -1850,6 +1850,17 @@ export class SessionService {
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
+    // __SPARK_DEBUG_START__
+    log.info('[BUG-DEBUG] dispatchTurn received', {
+      sessionId,
+      turnId,
+      durable,
+      messageLength: message.length,
+      activeLoop: this.activeLoops.has(sessionId),
+      startingSession: this.startingSessions.has(sessionId),
+      queuedCount: this.pendingTurns.get(sessionId)?.length ?? 0,
+    })
+    // __SPARK_DEBUG_END__
     // 团队配置随 turn 提交时，写入 session.metadata.team（startTurn 以此为单一真相源，
     // 无需穿过排队路径）。
     if (params.teamConfig != null) {
@@ -1904,6 +1915,13 @@ export class SessionService {
         )
         new SessionRepository(this.db).updateStatus(sessionId, 'idle')
       } else {
+        // __SPARK_DEBUG_START__
+        log.info('[BUG-DEBUG] dispatchTurn queued behind active loop', {
+          sessionId,
+          turnId,
+          queuedCountBefore: this.pendingTurns.get(sessionId)?.length ?? 0,
+        })
+        // __SPARK_DEBUG_END__
         this.enqueueTurn(sessionId, pendingTurn)
         return { turnId, started: false }
       }
@@ -7172,6 +7190,17 @@ export class SessionService {
     event: AgentEvent,
     eventRepo: EventRepository,
   ): void {
+    // __SPARK_DEBUG_START__
+    if (event.type === 'user_message') {
+      log.info('[BUG-DEBUG] emitAndPersist user_message', {
+        sessionId,
+        turnId,
+        messageLength: event.content.length,
+        activeTurnId: this.runningTurnIds.get(sessionId) ?? null,
+        queuedCount: this.pendingTurns.get(sessionId)?.length ?? 0,
+      })
+    }
+    // __SPARK_DEBUG_END__
     // cancelTurn 先登记 turn，再取消 executor；这样同步/异步回调都不能在用户取消
     // 之后继续写入旧 turn。唯一允许穿过闸门的是我们自己补发的 cancelled 终态事件。
     if (
@@ -7419,6 +7448,14 @@ export class SessionService {
     const queue = this.pendingTurns.get(sessionId) ?? []
     queue.push(turn)
     this.pendingTurns.set(sessionId, queue)
+    // __SPARK_DEBUG_START__
+    log.info('[BUG-DEBUG] enqueueTurn', {
+      sessionId,
+      turnId: turn.turnId,
+      messageLength: turn.message.length,
+      queueLength: queue.length,
+    })
+    // __SPARK_DEBUG_END__
     this.emitQueueChanged(sessionId)
   }
 
@@ -7472,6 +7509,16 @@ export class SessionService {
       return
     }
     const queue = this.pendingTurns.get(sessionId)
+    // __SPARK_DEBUG_START__
+    if (queue != null && queue.length > 0) {
+      log.info('[BUG-DEBUG] startNextQueuedTurn checked', {
+        sessionId,
+        queueLength: queue.length,
+        activeLoop: this.activeLoops.has(sessionId),
+        startingSession: this.startingSessions.has(sessionId),
+      })
+    }
+    // __SPARK_DEBUG_END__
     const next = queue?.shift()
     if (queue == null || next == null) {
       this.pendingTurns.delete(sessionId)
@@ -7479,6 +7526,13 @@ export class SessionService {
       return
     }
     if (queue.length === 0) this.pendingTurns.delete(sessionId)
+    // __SPARK_DEBUG_START__
+    log.info('[BUG-DEBUG] startNextQueuedTurn starting', {
+      sessionId,
+      turnId: next.turnId,
+      remainingQueueLength: queue.length,
+    })
+    // __SPARK_DEBUG_END__
     const requestRepo = new TurnRequestRepository(this.db)
     const durableRequest = requestRepo.get(next.turnId)
     if (durableRequest != null && !requestRepo.markRunning(next.turnId)) {

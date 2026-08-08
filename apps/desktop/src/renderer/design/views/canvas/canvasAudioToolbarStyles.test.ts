@@ -32,18 +32,18 @@ describe('canvas audio toolbar overflow styles', () => {
     )
   })
 
-  it('anchors the toolbar ten pixels above the node with an opaque surface', () => {
+  it('uses the shared selection toolbar for audio actions', () => {
     const styles = readSource('./CanvasWorkspaceView.less')
     const presentation = readSource('./audioNode/CanvasAudioNodePresentation.tsx')
+    const node = readSource('./CanvasNode.tsx')
 
     expect(styles).toMatch(
       /\.canvas-node-toolbar-surface\s*\{[\s\S]*?border-radius:\s*999px\s*;[\s\S]*?background:\s*var\(--panel-elev/,
     )
-    expect(styles).toMatch(
-      /\.canvas-node-audio-chips\s*\{[\s\S]*?bottom:\s*calc\(100%\s*\+\s*10px\)\s*;/,
-    )
-    expect(presentation).toContain(
-      'canvas-node-toolbar-surface canvas-node-audio-chips nodrag nopan',
-    )
+    expect(styles).not.toContain('.canvas-node-audio-chips')
+    expect(presentation).not.toContain('canvas-node-audio-chips')
+    expect(node).toContain("key: 'audio-trim'")
+    expect(node).toContain("key: 'audio-speed'")
+    expect(node).toContain("key: 'audio-download'")
   })
 })

@@ -1,9 +1,12 @@
-import { useMemo } from 'react'
+import { useMemo, type Ref } from 'react'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { MarkdownText } from '../chat/ChatMarkdown'
 import { CanvasShotScriptTable } from './CanvasShotScriptTable'
-import { CanvasAudioNodePresentation } from './audioNode/CanvasAudioNodePresentation'
+import {
+  CanvasAudioNodePresentation,
+  type CanvasAudioNodePresentationHandle,
+} from './audioNode/CanvasAudioNodePresentation'
 import {
   isReadableCanvasOperationTextOutput,
   resolveCanvasTextOutputPresentation,
@@ -24,6 +27,7 @@ export function CanvasOperationOutputPreview({
   isolateWheel = true,
   selected = false,
   audioActions,
+  audioPresentationRef,
   onVideoMetadata,
   onVideoEdit,
 }: {
@@ -34,6 +38,7 @@ export function CanvasOperationOutputPreview({
   /** 操作节点被选中时，音频预览复用资源节点的操作工具栏。 */
   selected?: boolean
   audioActions?: CanvasAudioPreviewActions
+  audioPresentationRef?: Ref<CanvasAudioNodePresentationHandle>
   onVideoMetadata?: (dimensions: { width: number; height: number }) => void
   onVideoEdit?: () => void
 }) {
@@ -92,6 +97,7 @@ export function CanvasOperationOutputPreview({
     return (
       <div className={`canvas-operation-output-audio is-${variant}`}>
         <CanvasAudioNodePresentation
+          ref={audioPresentationRef}
           src={normalizedUrl}
           fileName={output.title}
           durationSec={0}

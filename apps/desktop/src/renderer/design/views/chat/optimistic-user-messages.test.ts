@@ -4,6 +4,7 @@ import {
   cancelOptimisticUserMessage,
   commitOptimisticUserMessage,
   createOptimisticUserMessage,
+  settleOptimisticImageSend,
   startOptimisticImageSend,
   mergeOptimisticUserMessages,
   pruneAcknowledgedOptimisticUserMessages,
@@ -216,6 +217,28 @@ describe('optimistic user messages', () => {
     lifecycle?.cancel()
     lifecycle?.cancel()
     expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(onCancel).toHaveBeenCalledWith('client-image')
+  })
+
+  it('removes the preview instead of committing it when the turn is queued', () => {
+    const onCommit = vi.fn()
+    const onCancel = vi.fn()
+    const lifecycle = startOptimisticImageSend(
+      {
+        sessionId: 'session-1',
+        content: '查看图片',
+        attachments: [
+          { id: 'image', type: 'image', path: '/tmp/image.png', name: 'image.png' },
+        ],
+      },
+      { onBegin: vi.fn(), onCommit, onCancel },
+      () => 'client-image',
+      () => '2026-08-02T10:00:00.000Z',
+    )
+
+    settleOptimisticImageSend(lifecycle, { turnId: 'turn-queued', started: false })
+
+    expect(onCommit).not.toHaveBeenCalled()
     expect(onCancel).toHaveBeenCalledWith('client-image')
   })
 })

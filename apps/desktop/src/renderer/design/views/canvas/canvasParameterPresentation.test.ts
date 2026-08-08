@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  aspectRatioOptions,
   aspectRatioShape,
   parameterSummaryValue,
   partitionParameterFields,
@@ -66,6 +67,21 @@ describe('canvasParameterPresentation', () => {
     expect(presentField(field('size', ['1024x1024', '1536x1024']))).toMatchObject({
       control: 'aspect-ratio',
     })
+  })
+
+  it('adds common ratio presets only when the model accepts custom ratios', () => {
+    expect(
+      aspectRatioOptions(field('aspectRatio', ['16:9'], 'string', { allowCustom: true })),
+    ).toEqual(['1:1', '1:2', '2:1', '3:4', '4:3', '9:16', '16:9', '1:3', '3:1', '9:21', '21:9'])
+    expect(aspectRatioOptions(field('aspectRatio', ['16:9']))).toEqual(['16:9'])
+  })
+
+  it('recognizes custom mixed size fields as visual size controls', () => {
+    expect(
+      presentField(
+        field('size', ['1K', '1024x1024', '1536x1024'], 'string', { allowCustom: true }),
+      ),
+    ).toMatchObject({ control: 'size', tier: 'common' })
   })
 
   it('normalizes visual ratio shapes and adaptive values', () => {

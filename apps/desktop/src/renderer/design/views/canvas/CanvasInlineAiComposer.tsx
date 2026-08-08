@@ -1466,6 +1466,7 @@ function parameterSummaryIcon(control: CanvasParameterControlKind) {
   switch (control) {
     case 'aspect-ratio':
       return <Icons.Image size={14} />
+    case 'size':
     case 'resolution':
       return <Icons.Maximize size={14} />
     case 'count':

@@ -19,6 +19,7 @@ export type SchemaField = {
 
 export type CanvasParameterControlKind =
   | 'aspect-ratio'
+  | 'size'
   | 'resolution'
   | 'count'
   | 'duration'
@@ -93,10 +94,36 @@ function isRatioValue(value: string): boolean {
   )
 }
 
+export const COMMON_ASPECT_RATIO_PRESETS = [
+  '1:1',
+  '1:2',
+  '2:1',
+  '3:4',
+  '4:3',
+  '9:16',
+  '16:9',
+  '1:3',
+  '3:1',
+  '9:21',
+  '21:9',
+] as const
+
+export function aspectRatioOptions(field: SchemaField): string[] {
+  const name = normalizeName(field.name)
+  const isRatioOnlySize =
+    name === 'size' && field.enumValues.length > 0 && field.enumValues.every(isRatioValue)
+  const options =
+    field.allowCustom && (ASPECT_ALIASES.has(name) || isRatioOnlySize)
+      ? [...COMMON_ASPECT_RATIO_PRESETS, ...field.enumValues]
+      : field.enumValues
+  return [...new Set(options)]
+}
+
 function fieldControl(field: SchemaField): CanvasParameterControlKind {
   const name = normalizeName(field.name)
   if (ASPECT_ALIASES.has(name)) return 'aspect-ratio'
   if (name === 'size') {
+    if (field.allowCustom && field.enumValues.some(isRatioValue)) return 'size'
     return field.enumValues.length > 0 && field.enumValues.every(isRatioValue)
       ? 'aspect-ratio'
       : 'resolution'
@@ -110,14 +137,12 @@ function fieldControl(field: SchemaField): CanvasParameterControlKind {
   return 'text'
 }
 
-function fieldTier(
-  field: SchemaField,
-  control: CanvasParameterControlKind,
-): CanvasParameterTier {
+function fieldTier(field: SchemaField, control: CanvasParameterControlKind): CanvasParameterTier {
   const name = normalizeName(field.name)
   if (FORCE_ADVANCED_ALIASES.has(name)) return 'advanced'
   if (
     control === 'aspect-ratio' ||
+    control === 'size' ||
     control === 'resolution' ||
     control === 'count' ||
     control === 'duration' ||
@@ -185,10 +210,11 @@ export function aspectRatioShape(value: string): {
     : { width: Math.max(6, Math.round(32 * ratio)), height: 32 }
 }
 
-export function parameterSummaryValue(
-  item: CanvasParameterPresentation,
-  value: string,
-): string {
+export function isAspectRatioValue(value: string): boolean {
+  return isRatioValue(value)
+}
+
+export function parameterSummaryValue(item: CanvasParameterPresentation, value: string): string {
   const trimmed = value.trim()
   if (!trimmed) return '默认'
   if (!item.unit || trimmed.toLowerCase().endsWith(item.unit.toLowerCase())) return trimmed
