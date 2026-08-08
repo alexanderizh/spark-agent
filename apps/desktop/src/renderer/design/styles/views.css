@@ -1346,6 +1346,51 @@ body.sidebar-resizing {
   color: var(--text);
 }
 
+.msg-user-delivery {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: min(86%, 520px);
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.msg-user-delivery-submitting {
+  color: var(--primary);
+}
+
+.msg-user-delivery-queued {
+  color: var(--text-muted);
+}
+
+.msg-user-delivery-failed {
+  color: var(--danger);
+}
+
+.msg-user-delivery-error {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-user-delivery-retry {
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.msg-user-delivery-retry:hover {
+  color: var(--text);
+}
+
 .msg-bubble-agent {
   background: transparent;
   border: 0;

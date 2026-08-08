@@ -126,10 +126,10 @@ import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
 import {
-  settleOptimisticImageSend,
-  startOptimisticImageSend,
-  type OptimisticImageSendCallbacks,
-  type OptimisticImageSendLifecycle,
+  settleOptimisticUserSend,
+  startOptimisticUserSend,
+  type OptimisticUserSendCallbacks,
+  type OptimisticUserSendLifecycle,
 } from './optimistic-user-messages'
 import { createSubmitGate } from './submit-gate'
 
@@ -734,7 +734,9 @@ export function ComposerV2({
   resendRequest = null,
   onResendConsumed,
   onDispatchStateChange,
-  optimisticImageSendCallbacks,
+  optimisticUserSendCallbacks,
+  onOptimisticQueueStateChange,
+  onOptimisticQueueTurnCancelled,
   onModelSwitch,
   paletteCommandRequest = null,
 }: {
@@ -797,7 +799,7 @@ export function ComposerV2({
   onFetchBranches?: () => Promise<void>
   onCreateBranch?: (branch: string) => Promise<void>
   onCancelSession: (sessionId: SessionId) => void | Promise<void>
-  onSent: (sessionId: SessionId) => void
+  onSent: (sessionId: SessionId, started?: boolean) => void
   // 项目选择器相关（仅在空会话下使用）
   showProjectPicker?: boolean
   preferSelectedWorkspace?: boolean
@@ -825,8 +827,11 @@ export function ComposerV2({
   // 暴露发送中状态给父组件。父组件用它在发送期间抑制 hero，
   // 覆盖 createSession→sendTurn→status=running 之间 hero 闪现的窗口。
   onDispatchStateChange?: (dispatching: boolean) => void
-  /** Renderer-only image bubble lifecycle; actual SDK attachments are prepared separately. */
-  optimisticImageSendCallbacks?: OptimisticImageSendCallbacks
+  /** Renderer-only user bubble lifecycle; actual SDK attachments are prepared separately. */
+  optimisticUserSendCallbacks?: OptimisticUserSendCallbacks
+  /** Synchronize optimistic bubbles with the authoritative queue snapshot. */
+  onOptimisticQueueStateChange?: (sessionId: SessionId, queuedTurnIds: readonly string[]) => void
+  onOptimisticQueueTurnCancelled?: (sessionId: SessionId, turnId: string) => void
   onModelSwitch?: (change: { fromModel: string; toModel: string; afterMessageId: string }) => void
   paletteCommandRequest?: { id: number; commandText: string } | null
 }) {
@@ -1307,8 +1312,12 @@ export function ComposerV2({
     (snapshot: SessionGetQueueResponse | null | undefined) => {
       if (snapshot == null || snapshot.sessionId !== session?.id) return
       setQueuedMessages(mapQueuedTurns(snapshot.queuedTurns))
+      onOptimisticQueueStateChange?.(
+        snapshot.sessionId,
+        snapshot.queuedTurns.map((turn) => turn.turnId),
+      )
     },
-    [session?.id],
+    [onOptimisticQueueStateChange, session?.id],
   )
 
   const refreshQueueState = useCallback(
@@ -1533,7 +1542,7 @@ export function ComposerV2({
           return
         }
         setSending(true)
-        let optimisticSend: OptimisticImageSendLifecycle | null = null
+        let optimisticSend: OptimisticUserSendLifecycle | null = null
         try {
           // 如果没有活跃 session，先创建一个（命令需要 session 上下文）。
           // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
@@ -1571,9 +1580,21 @@ export function ComposerV2({
           const res = await window.spark.invoke('command:execute', { sessionId, message: text })
           if (res.forwardToAgent) {
             // 转发给 Agent：作为普通消息发送
-            optimisticSend = startOptimisticImageSend(
-              { sessionId, content: text, attachments: turnAttachments },
-              optimisticImageSendCallbacks,
+            optimisticSend = startOptimisticUserSend(
+              {
+                sessionId,
+                content: text,
+                attachments: turnAttachments,
+                ...(replySnapshot?.agentId != null
+                  ? { mentionAgentId: replySnapshot.agentId }
+                  : teamConfig.enabled &&
+                      pendingMention != null &&
+                      text.includes(`@${pendingMention.name}`) &&
+                      pendingMention.agentId !== effectiveHostAgentId
+                    ? { mentionAgentId: pendingMention.agentId }
+                    : {}),
+              },
+              optimisticUserSendCallbacks,
             )
             const requestAttachments = await prepareRequestAttachments()
             setSending(false)
@@ -1594,26 +1615,26 @@ export function ComposerV2({
                 : {}),
               ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
             })
-            settleOptimisticImageSend(optimisticSend, sendRes)
+            settleOptimisticUserSend(optimisticSend, sendRes)
             if (!sendRes.started) {
               setQueueVisible(true)
             } else if (queuedMessages.length === 0) {
               setQueueVisible(false)
             }
+            onSent(sessionId, sendRes.started)
             await refreshQueueState(sessionId)
             clearDraftBuckets([draftBucketKey, sessionId, NEW_SESSION_DRAFT_BUCKET])
-            onSent(sessionId)
             return
           }
           // 命令结果已通过事件流注入到聊天中，无需 Toast
           if (res.session != null) onCommandComplete(res.session)
+          if (res.started === true) onSent(sessionId, true)
           await refreshQueueState(sessionId)
           if (res.started === true) {
             clearDraftBuckets([draftBucketKey, sessionId, NEW_SESSION_DRAFT_BUCKET])
-            onSent(sessionId)
           }
         } catch (err) {
-          optimisticSend?.cancel()
+          optimisticSend?.fail(err instanceof Error ? err.message : String(err))
           console.error('命令执行失败', err)
           toast.error(err instanceof Error ? err.message : '命令执行失败')
           setValue(text)
@@ -1626,7 +1647,7 @@ export function ComposerV2({
 
       if (selectedProvider == null) return
       setSending(true)
-      let optimisticSend: OptimisticImageSendLifecycle | null = null
+      let optimisticSend: OptimisticUserSendLifecycle | null = null
       try {
         // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
         let targetSessionId =
@@ -1654,9 +1675,21 @@ export function ComposerV2({
           })
         }
         if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
-        optimisticSend = startOptimisticImageSend(
-          { sessionId: targetSessionId, content: text, attachments: turnAttachments },
-          optimisticImageSendCallbacks,
+        optimisticSend = startOptimisticUserSend(
+          {
+            sessionId: targetSessionId,
+            content: text,
+            attachments: turnAttachments,
+            ...(replySnapshot?.agentId != null
+              ? { mentionAgentId: replySnapshot.agentId }
+              : teamConfig.enabled &&
+                  pendingMention != null &&
+                  text.includes(`@${pendingMention.name}`) &&
+                  pendingMention.agentId !== effectiveHostAgentId
+                ? { mentionAgentId: pendingMention.agentId }
+                : {}),
+          },
+          optimisticUserSendCallbacks,
         )
         await flushPendingRuntimePatch()
         const requestAttachments = await prepareRequestAttachments()
@@ -1684,17 +1717,17 @@ export function ComposerV2({
           textLength: text.length,
         })
         // __SPARK_DEBUG_END__
-        settleOptimisticImageSend(optimisticSend, res)
+        settleOptimisticUserSend(optimisticSend, res)
         if (!res.started) {
           setQueueVisible(true)
         } else if (queuedMessages.length === 0) {
           setQueueVisible(false)
         }
+        onSent(targetSessionId, res.started)
         await refreshQueueState(targetSessionId)
         clearDraftBuckets([draftBucketKey, targetSessionId, NEW_SESSION_DRAFT_BUCKET])
-        onSent(targetSessionId)
       } catch (err) {
-        optimisticSend?.cancel()
+        optimisticSend?.fail(err instanceof Error ? err.message : String(err))
         console.error('发送失败', err)
         toast.error(err instanceof Error ? err.message : '发送消息失败')
         setValue(text)
@@ -1734,7 +1767,8 @@ export function ComposerV2({
       pendingMention,
       prepareSessionImages,
       activeQuickReplies,
-      optimisticImageSendCallbacks,
+      optimisticUserSendCallbacks,
+      onOptimisticQueueStateChange,
     ],
   )
 
@@ -2019,6 +2053,11 @@ export function ComposerV2({
     if (session?.id == null) return
     const res = await cancelQueuedTurn({ sessionId: session.id, turnId: message.turnId })
     setQueuedMessages(mapQueuedTurns(res.queuedTurns))
+    if (res.cancelled) onOptimisticQueueTurnCancelled?.(session.id, message.turnId)
+    onOptimisticQueueStateChange?.(
+      session.id,
+      res.queuedTurns.map((turn) => turn.turnId),
+    )
   }
 
   const handleEditQueuedMessage = async (message: QueuedMessage) => {
@@ -2027,6 +2066,11 @@ export function ComposerV2({
     if (message.attachments.length > 0) setAttachments(message.attachments)
     const res = await cancelQueuedTurn({ sessionId: session.id, turnId: message.turnId })
     setQueuedMessages(mapQueuedTurns(res.queuedTurns))
+    if (res.cancelled) onOptimisticQueueTurnCancelled?.(session.id, message.turnId)
+    onOptimisticQueueStateChange?.(
+      session.id,
+      res.queuedTurns.map((turn) => turn.turnId),
+    )
     queueMicrotask(() => {
       const el = textareaRef.current
       if (el == null) return
@@ -2040,8 +2084,12 @@ export function ComposerV2({
     if (session?.id == null) return
     const res = await sendQueuedTurnNow({ sessionId: session.id, turnId: message.turnId })
     setQueuedMessages(mapQueuedTurns(res.queuedTurns))
+    onOptimisticQueueStateChange?.(
+      session.id,
+      res.queuedTurns.map((turn) => turn.turnId),
+    )
     if (res.started) {
-      onSent(session.id)
+      onSent(session.id, true)
     }
   }
 

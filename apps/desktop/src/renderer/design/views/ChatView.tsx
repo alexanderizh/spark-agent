@@ -107,11 +107,15 @@ import {
 } from './chat/message-image-preview'
 import {
   cancelOptimisticUserMessage,
+  cancelOptimisticUserMessageByTurnId,
+  clearOptimisticUserMessagesForSession,
   commitOptimisticUserMessage,
   createOptimisticUserMessage,
+  failOptimisticUserMessage,
   mergeOptimisticUserMessages,
   pruneAcknowledgedOptimisticUserMessages,
-  type OptimisticImageSendCallbacks,
+  setOptimisticUserMessagesQueued,
+  type OptimisticUserSendCallbacks,
   type OptimisticUserMessage,
 } from './chat/optimistic-user-messages'
 
@@ -459,14 +463,14 @@ export function ChatView({
     },
     [],
   )
-  const optimisticImageSendCallbacks = useMemo<OptimisticImageSendCallbacks>(
+  const optimisticUserSendCallbacks = useMemo<OptimisticUserSendCallbacks>(
     () => ({
       onBegin: (draft) => {
         setOptimisticUserMessages((current) => [...current, createOptimisticUserMessage(draft)])
       },
-      onCommit: (clientId, turnId) => {
+      onCommit: (clientId, turnId, started) => {
         setOptimisticUserMessages((current) =>
-          commitOptimisticUserMessage(current, clientId, turnId),
+          commitOptimisticUserMessage(current, clientId, turnId, started),
         )
         for (const [sessionId, messages] of persistedMessagesBySessionRef.current) {
           if (messages.some((message) => message.role === 'user' && message.turnId === turnId)) {
@@ -475,12 +479,34 @@ export function ChatView({
           }
         }
       },
+      onFail: (clientId, error) => {
+        setOptimisticUserMessages((current) => failOptimisticUserMessage(current, clientId, error))
+      },
       onCancel: (clientId) => {
         setOptimisticUserMessages((current) => cancelOptimisticUserMessage(current, clientId))
       },
     }),
     [pruneOptimisticMessagesNextFrame],
   )
+
+  const handleOptimisticQueueState = useCallback(
+    (sessionId: string, queuedTurnIds: readonly string[]) => {
+      setOptimisticUserMessages((current) =>
+        setOptimisticUserMessagesQueued(current, sessionId, new Set(queuedTurnIds)),
+      )
+    },
+    [],
+  )
+  const handleOptimisticQueueTurnCancelled = useCallback((sessionId: string, turnId: string) => {
+    setOptimisticUserMessages((current) =>
+      cancelOptimisticUserMessageByTurnId(current, sessionId, turnId),
+    )
+  }, [])
+  const handleOptimisticSessionReset = useCallback((sessionId: string) => {
+    setOptimisticUserMessages((current) =>
+      clearOptimisticUserMessagesForSession(current, sessionId),
+    )
+  }, [])
 
   // ── 按会话隔离的侧面板 UI 状态 ──
   // 切换会话时把当前面板状态存到 prevId 槽位，加载 active 对应快照；
@@ -984,6 +1010,16 @@ export function ChatView({
   // idle（agent 自己切了分支）时 bump，让下方 listBranches effect 重新拉取最新分支。
   const [branchRefreshTick, setBranchRefreshTick] = useState(0)
   const [clearTrigger, setClearTrigger] = useState(0)
+  const lastClearedOptimisticTriggerRef = useRef(0)
+  const clearSessionIdRef = useRef<SessionId | null>(null)
+  useEffect(() => {
+    const sessionIdToClear = clearSessionIdRef.current
+    if (sessionIdToClear == null || clearTrigger === 0) return
+    if (lastClearedOptimisticTriggerRef.current === clearTrigger) return
+    lastClearedOptimisticTriggerRef.current = clearTrigger
+    clearSessionIdRef.current = null
+    handleOptimisticSessionReset(sessionIdToClear)
+  }, [clearTrigger, handleOptimisticSessionReset])
   // 每个会话独立的显式停止触发器：停止请求返回后立即收拢 ChatStream，
   // 不依赖终止事件必须先抵达 renderer 才能清理气泡中的 streaming 状态。
   const [sessionStopTriggers, setSessionStopTriggers] = useState<Record<string, number>>({})
@@ -1105,8 +1141,8 @@ export function ChatView({
   // 同时清空 resendRequest：发送意味着此前的"重发/预填"已完成其使命，必须清掉脏数据，
   // 防止 resendRequest 残留 + 后续 ComposerV2 重建导致旧 payload 被重新应用到别的会话。
   const handleUserSent = useCallback(
-    (sessionId: SessionId) => {
-      setSessionStatus(sessionId, 'running')
+    (sessionId: SessionId, started = true) => {
+      if (started) setSessionStatus(sessionId, 'running')
       sessionCtx.bumpSessionMessageCount(sessionId)
       setScrollToBottomTrigger((n) => n + 1)
       setResendRequest(null)
@@ -1123,7 +1159,9 @@ export function ChatView({
   const handleClearMessages = useCallback(async () => {
     if (!active) return
     try {
-      await clearEvents({ sessionId: active })
+      const sessionIdToClear = active
+      await clearEvents({ sessionId: sessionIdToClear })
+      clearSessionIdRef.current = sessionIdToClear
       setClearTrigger((prev) => prev + 1)
       sessionCtx.refreshData().catch(console.error)
     } catch (err) {
@@ -1950,8 +1988,8 @@ export function ChatView({
     [ensureSideChatSession],
   )
   const handleSideChatSent = useCallback(
-    (sessionId: SessionId) => {
-      setSessionStatus(sessionId, 'running')
+    (sessionId: SessionId, started = true) => {
+      if (started) setSessionStatus(sessionId, 'running')
       sessionCtx.bumpSessionMessageCount(sessionId)
       setSideChatScrollToBottomTrigger((n) => n + 1)
     },
@@ -2073,7 +2111,9 @@ export function ChatView({
         onOpenSkillStore={openSkillStore}
         replyTo={null}
         onDispatchStateChange={setComposerDispatching}
-        optimisticImageSendCallbacks={optimisticImageSendCallbacks}
+        optimisticUserSendCallbacks={optimisticUserSendCallbacks}
+        onOptimisticQueueStateChange={handleOptimisticQueueState}
+        onOptimisticQueueTurnCancelled={handleOptimisticQueueTurnCancelled}
         onModelSwitch={handleModelSwitch}
         paletteCommandRequest={paletteCommandRequest}
       />
@@ -2131,7 +2171,9 @@ export function ChatView({
         replyTo={showEmptyHero ? null : replyTo}
         onClearReply={() => setReplyTo(null)}
         onDispatchStateChange={setComposerDispatching}
-        optimisticImageSendCallbacks={optimisticImageSendCallbacks}
+        optimisticUserSendCallbacks={optimisticUserSendCallbacks}
+        onOptimisticQueueStateChange={handleOptimisticQueueState}
+        onOptimisticQueueTurnCancelled={handleOptimisticQueueTurnCancelled}
         onModelSwitch={handleModelSwitch}
         paletteCommandRequest={paletteCommandRequest}
       />
@@ -2335,6 +2377,7 @@ export function ChatView({
               onUsageChange={setContextInputTokens}
               onUsageDataChange={setSessionUsageData}
               onMessagesChange={handleActiveMessagesChange}
+              onOptimisticSessionReset={handleOptimisticSessionReset}
               onSessionStatusChange={handleActiveSessionStatusChange}
               persistedSessionStatus={activeSession?.status ?? null}
               onContextUsageChange={setContextUsage}
@@ -2572,6 +2615,7 @@ export function ChatView({
                     onUsageChange={setSideChatContextInputTokens}
                     onUsageDataChange={() => {}}
                     onMessagesChange={handleSideChatMessagesChange}
+                    onOptimisticSessionReset={handleOptimisticSessionReset}
                     onSessionStatusChange={(status) => setSessionStatus(sideChatSessionId, status)}
                     persistedSessionStatus={sideChatSession?.status ?? null}
                     onContextUsageChange={setSideChatContextUsage}
@@ -2632,7 +2676,9 @@ export function ChatView({
                     onOpenSkillStore={openSkillStore}
                     hideBranchSelect={hideComposerBranchSelect}
                     replyTo={null}
-                    optimisticImageSendCallbacks={optimisticImageSendCallbacks}
+                    optimisticUserSendCallbacks={optimisticUserSendCallbacks}
+                    onOptimisticQueueStateChange={handleOptimisticQueueState}
+                    onOptimisticQueueTurnCancelled={handleOptimisticQueueTurnCancelled}
                   />
                 </>
               ) : (
@@ -2680,6 +2726,7 @@ function ChatStream({
   onUsageChange,
   onUsageDataChange,
   onMessagesChange,
+  onOptimisticSessionReset,
   onSessionStatusChange,
   persistedSessionStatus,
   onContextUsageChange,
@@ -2712,6 +2759,7 @@ function ChatStream({
   onUsageChange: (tokens: number) => void
   onUsageDataChange: (data: SessionUsageData) => void
   onMessagesChange: (messages: UIMessage[]) => void
+  onOptimisticSessionReset?: (sessionId: SessionId) => void
   onSessionStatusChange: (status: SessionSummary['status']) => void
   /** 会话持久化摘要状态（来自 sessionCtx.sessions）。重放历史事件时用于抑制
    *  「瞬态状态 + 空会话」被误判为执行中（见 chat-session-status.getLatestAgentStatus）。 */
@@ -2860,6 +2908,7 @@ function ChatStream({
   const loadOlderRef = useRef<() => void>(() => {})
   const viewCallbacksRef = useRef({
     onMessagesChange,
+    onOptimisticSessionReset,
     onUsageChange,
     onUsageDataChange,
     onStatusChange,
@@ -2875,6 +2924,7 @@ function ChatStream({
   })
   viewCallbacksRef.current = {
     onMessagesChange,
+    onOptimisticSessionReset,
     onUsageChange,
     onUsageDataChange,
     onStatusChange,
@@ -2904,6 +2954,7 @@ function ChatStream({
       // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
       // 让随后的 user/assistant/completed 在干净的画布上重新渲染。
       if (event.type === 'session_history_reset') {
+        callbacks.onOptimisticSessionReset?.(sessionId)
         builderRef.current.processEvent(event) // 内部已调用 clearAll
         loadedEventsRef.current = [event]
         loadedEventIdsRef.current = new Set([event.id])
@@ -3600,12 +3651,18 @@ function ChatStream({
   const hasStreamingMsg = messages.some((m) => m.status === 'streaming')
   const hasPendingUserMessage =
     scrollToBottomTriggerRef.current !== acknowledgedScrollToBottomTriggerRef.current
+  const hasOptimisticTurnAwaitingExecution = displayMessages.some(
+    (message) =>
+      message.role === 'user' &&
+      (message.deliveryState === 'submitting' || message.deliveryState === 'accepted'),
+  )
   const showWaitingAgent =
     // `persistedSessionStatus` 在发送后会先被父组件乐观更新为 running，
-    // 但 user_message 事件可能还没回到这里；此时不能先渲染「执行任务中」占位。
-    // 用发送 trigger 与 user_message 的确认状态区分实时发送和切回运行中会话，
-    // 保留后者在首个 agent_status 尚未落库时的恢复能力。
-    (agentIsRunning || (persistedSessionStatus === 'running' && !hasPendingUserMessage)) &&
+    // 但 user_message 事件可能还没回到这里；乐观用户消息期间由本地 deliveryState
+    // 驱动占位，排队状态则明确隐藏占位，避免把“排队中”误报成“执行中”。
+    (hasOptimisticTurnAwaitingExecution ||
+      agentIsRunning ||
+      (persistedSessionStatus === 'running' && !hasPendingUserMessage)) &&
     !hasStreamingMsg
 
   // 团队模式 @ 指定成员时，该 turn 由被 @ 的成员直接执行（见后端 mention 路由）。
@@ -3889,6 +3946,8 @@ function ChatStream({
                           msg.mentionAgentId,
                       }
                     : {})}
+                  {...(msg.deliveryState != null ? { deliveryState: msg.deliveryState } : {})}
+                  {...(msg.deliveryError != null ? { deliveryError: msg.deliveryError } : {})}
                   {...(msg.eventIds.length > 0
                     ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
                     : {})}
@@ -5894,6 +5953,8 @@ const UserMsg = React.memo(
     timestamp,
     blocks,
     attachments = [],
+    deliveryState,
+    deliveryError,
     onDelete,
     mentionAgentName,
     onReply,
@@ -5907,6 +5968,8 @@ const UserMsg = React.memo(
     timestamp?: string | undefined
     blocks: UIBlock[]
     attachments?: MessageAttachment[]
+    deliveryState?: UIMessage['deliveryState']
+    deliveryError?: string
     onDelete?: () => void
     /** 团队模式：用户 @ 指定的 Agent 名称（已解析）；用于显示"→ 已直接由 @X 处理"提示 */
     mentionAgentName?: string | undefined
@@ -6028,9 +6091,33 @@ const UserMsg = React.memo(
             </div>
           </CollapsibleContent>
         </div>
+        {deliveryState != null && deliveryState !== 'accepted' && (
+          <div className={`msg-user-delivery msg-user-delivery-${deliveryState}`}>
+            <span>
+              {deliveryState === 'submitting'
+                ? '正在提交…'
+                : deliveryState === 'queued'
+                  ? '已加入队列'
+                  : deliveryState === 'failed'
+                    ? '发送失败'
+                    : '已取消'}
+            </span>
+            {deliveryError != null && deliveryError.length > 0 && (
+              <span className="msg-user-delivery-error" title={deliveryError}>
+                · {deliveryError}
+              </span>
+            )}
+            {deliveryState === 'failed' && onResend != null && (
+              <button type="button" className="msg-user-delivery-retry" onClick={onResend}>
+                重试
+              </button>
+            )}
+          </div>
+        )}
         {mentionAgentName != null && mentionAgentName.length > 0 && (
           <div className="msg-user-mention-hint">
-            → 已直接由 <strong>@{mentionAgentName}</strong> 处理
+            → {deliveryState != null && deliveryState !== 'accepted' ? '将由' : '已直接由'}{' '}
+            <strong>@{mentionAgentName}</strong> 处理
           </div>
         )}
         <MessageHoverBar
@@ -6058,6 +6145,8 @@ const UserMsg = React.memo(
       prev.blocks === next.blocks &&
       prev.attachments === next.attachments &&
       prev.mentionAgentName === next.mentionAgentName &&
+      prev.deliveryState === next.deliveryState &&
+      prev.deliveryError === next.deliveryError &&
       prev.timestamp === next.timestamp &&
       prev.selectionMode === next.selectionMode &&
       prev.selected === next.selected

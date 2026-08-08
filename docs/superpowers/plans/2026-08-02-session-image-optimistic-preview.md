@@ -1,12 +1,12 @@
-# 工作台会话图片即时预览 Implementation Plan
+# 工作台会话消息即时回显与图片预览 Implementation Plan
 
-> 状态: 已落地 | 最后核对: 2026-08-02
+> 状态: 已落地 | 最后核对: 2026-08-08
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 用户发送图片后立即在消息气泡显示原图缩略图，同时后台完成限时压缩，真实消息事件到达后无重复地接管显示。
+**Goal:** 用户发送普通消息或带附件的消息后立即显示用户气泡与执行状态；后台真实 `user_message` 事件到达后按 `turnId` 去重接管，排队消息显示队列状态，提交失败保留气泡并显示错误与重试入口。图片消息继续在后台压缩，且优先复用已生成的本地预览。
 
-**Architecture:** Composer 在压缩前发布 renderer-only 乐观用户消息，发送成功后用 `turnId` 标记，失败时撤销并恢复草稿。独立的乐观消息模块按 `sessionId` 隔离记录，ChatStream 将尚未被真实 `user_message` 确认的记录追加到显示列表；图片组件优先使用现成 `previewUrl`，因此不会再次等待预览 IPC。
+**Architecture:** Composer 在准备附件和发送请求前发布 renderer-only 乐观用户消息，先显示 `submitting`；发送接口返回后用 `turnId` 标记为 `accepted` 或 `queued`。提交异常转为 `failed`，不撤回消息，保留错误详情与现有重试/重发入口。独立的乐观消息模块按 `sessionId` 隔离记录，ChatStream 将尚未被真实 `user_message` 确认的记录追加到显示列表；真实事件按 `turnId` 到达后接管显示并清理乐观记录。队列快照同步所有状态，显式移除/编辑仅在后端确认取消后移除对应气泡；团队模式的 `mentionAgentId` 同步保留在乐观消息中。
 
 **Tech Stack:** React 19、TypeScript、Electron typed IPC、Vitest；不新增依赖。
 
@@ -14,14 +14,14 @@
 
 ## 文件结构
 
-- Create `apps/desktop/src/renderer/design/views/chat/optimistic-user-messages.ts`：乐观消息数据结构、创建、提交、撤销及与真实消息的纯函数对账。
-- Create `apps/desktop/src/renderer/design/views/chat/optimistic-user-messages.test.ts`：会话隔离、`turnId` 接管、顺序与撤销测试。
+- Create `apps/desktop/src/renderer/design/views/chat/optimistic-user-messages.ts`：乐观消息数据结构、发送生命周期、提交/排队/失败/取消状态及与真实消息的纯函数对账。
+- Create `apps/desktop/src/renderer/design/views/chat/optimistic-user-messages.test.ts`：普通文本即时显示、会话隔离、`turnId` 接管、队列同步、失败保留与显式取消测试。
 - Create `apps/desktop/src/renderer/design/views/chat/message-image-preview.ts`：选择即时预览 URL 并判断是否需要预览 IPC。
 - Create `apps/desktop/src/renderer/design/views/chat/message-image-preview.test.ts`：原图预览优先级和本地路径回退测试。
 - Modify `apps/desktop/src/renderer/design/views/chat/ChatComposerTypes.ts`：消息附件增加 renderer-only 的可选预览字段。
 - Modify `apps/desktop/src/renderer/design/services/event-mapper.ts`：UI 消息附件类型允许 renderer-only 预览字段。
-- Modify `apps/desktop/src/renderer/design/views/chat/ComposerV2.tsx`：在两条 Agent 提交路径调用乐观消息生命周期回调。
-- Modify `apps/desktop/src/renderer/design/views/ChatView.tsx`：持有共享乐观状态，接入主会话、侧聊和 ChatStream 显示对账。
+- Modify `apps/desktop/src/renderer/design/views/chat/ComposerV2.tsx`：在普通消息和转发命令的 Agent 提交路径调用乐观消息生命周期回调，并同步队列快照与显式取消。
+- Modify `apps/desktop/src/renderer/design/views/ChatView.tsx`：持有共享乐观状态，接入主会话、侧聊和 ChatStream 显示对账，同时渲染发送/排队/失败状态。
 - Modify `docs/superpowers/specs/2026-08-01-session-image-compression-design.md`：记录即时预览架构、失败回退和验收项。
 
 ### Task 1: 用纯函数定义乐观消息对账
@@ -135,3 +135,19 @@ Expected: 全部退出码 0。
 - [x] **Step 4: 更新文档与索引**
 
 把设计和计划状态改为 `已落地`、刷新日期，运行 `npx gitnexus analyze`；若工具不可用，记录降级并以 `rg` 调用点、测试和 `git diff` 完成范围核对。
+
+## 扩展：普通消息即时回显与队列状态
+
+### 状态语义
+
+- `submitting`：用户已按下发送，附件准备或 `session:submit-turn` 尚未返回；显示“正在提交…”和执行中占位。
+- `accepted`：后端已接单并返回 `turnId`；等待真实事件时继续显示执行中占位。
+- `queued`：后端返回 `started: false`，或权威队列快照确认该 `turnId` 在队列中；显示“已加入队列”，不把排队误报为当前执行。
+- `failed`：提交链路异常；保留用户气泡、错误详情和重试入口，不自动撤回。
+
+### 场景兼容性
+
+- 团队模式：乐观消息携带与实际请求一致的 `mentionAgentId`，等待占位显示被 @ 的成员，真实事件仍按 `turnId` 去重。
+- 多任务队列：队列快照只更新同会话中匹配的乐观消息；移除/编辑在后端确认 `cancelled` 后才移除气泡，立即执行会将队列状态转为执行状态。
+- 侧聊：与主会话共享生命周期，但按 `sessionId` 过滤，因此不会串消息或串队列状态。
+- Slash 命令：服务端直接处理的命令仍由已有事件流渲染，转发给 Agent 的命令复用普通消息生命周期。
