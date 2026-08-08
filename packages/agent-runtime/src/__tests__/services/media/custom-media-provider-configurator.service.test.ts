@@ -37,7 +37,7 @@ describe('CustomMediaProviderConfiguratorService', () => {
     expect(result.previews[0]?.headers.authorization).toBe('[REDACTED]')
   })
 
-  it('rejects deterministic manifest ids and duplicate model ids on create', async () => {
+  it('repairs deterministic manifest ids and still rejects duplicate model ids on create', async () => {
     const invalid = manifest('same-model')
     invalid.id = 'custom:same-model'
     const second = manifest('same-model')
@@ -53,8 +53,31 @@ describe('CustomMediaProviderConfiguratorService', () => {
 
     expect(result.valid).toBe(false)
     expect(result.issues.map((issue) => issue.code)).toEqual(
-      expect.arrayContaining(['manifest_id_not_channel_unique', 'duplicate_model_id']),
+      expect.arrayContaining(['manifest_id_managed', 'duplicate_model_id']),
     )
+    expect(result.resolvedModels[0]?.manifestId).toMatch(/^custom:same-model:[a-z0-9-]{8,}$/)
+  })
+
+  it('returns field-level schema issues when invocation is missing instead of a migration error', async () => {
+    const invalidManifest = { ...manifest('same-model') } as Partial<MediaModelManifest>
+    delete invalidManifest.invocation
+    const service = new CustomMediaProviderConfiguratorService(store())
+
+    const result = await service.validate({
+      ...draft(),
+      models: [{ modelId: 'same-model', manifest: invalidManifest }],
+    })
+
+    expect(result.valid).toBe(false)
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'manifest_schema_invalid',
+          path: 'models.0.manifest.invocation',
+        }),
+      ]),
+    )
+    expect(result.issues.map((issue) => issue.code)).not.toContain('manifest_migration_failed')
   })
 
   it('requires a provider name, official documentation and a matching enabled default model', async () => {
@@ -79,7 +102,7 @@ describe('CustomMediaProviderConfiguratorService', () => {
     )
   })
 
-  it('rejects a manifest id already owned by another provider', async () => {
+  it('repairs a manifest id already owned by another provider', async () => {
     const conflictingManifest = manifest('same-model')
     const service = new CustomMediaProviderConfiguratorService(
       store({
@@ -89,10 +112,10 @@ describe('CustomMediaProviderConfiguratorService', () => {
             mediaModelRefs: [
               {
                 manifestId: conflictingManifest.id,
-                modelId: 'other-model',
+                modelId: 'same-model',
                 enabled: true,
                 adapterMode: 'template',
-                manifest: { ...conflictingManifest, modelId: 'other-model' },
+                manifest: conflictingManifest,
               },
             ],
           }),
@@ -105,15 +128,117 @@ describe('CustomMediaProviderConfiguratorService', () => {
       models: [{ modelId: 'same-model', manifest: conflictingManifest }],
     })
 
-    expect(result.valid).toBe(false)
+    expect(result.valid).toBe(true)
     expect(result.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: 'manifest_id_conflicts_with_provider',
-          severity: 'error',
+          code: 'manifest_id_managed',
+          severity: 'warning',
         }),
       ]),
     )
+    expect(result.resolvedModels[0]?.manifestId).not.toBe(conflictingManifest.id)
+  })
+
+  it('preserves a legacy deterministic manifest id when updating an existing model', async () => {
+    const legacyManifest = manifest('same-model')
+    legacyManifest.id = 'custom:same-model'
+    const existing = profile({
+      mediaModelRefs: [
+        {
+          manifestId: legacyManifest.id,
+          modelId: legacyManifest.modelId,
+          enabled: true,
+          adapterMode: 'template',
+          manifest: legacyManifest,
+        },
+      ],
+    })
+    const updateProvider = vi.fn(async (params: Record<string, unknown>) =>
+      profile({
+        mediaModelRefs: params.mediaModelRefs as NonNullable<ProviderProfile['mediaModelRefs']>,
+      }),
+    )
+    const service = new CustomMediaProviderConfiguratorService(
+      store({
+        listProviders: vi.fn(async () => [existing]),
+        updateProvider,
+      }),
+    )
+
+    const result = await service.configure({
+      ...draft(),
+      providerId: existing.id,
+      models: [{ modelId: 'same-model', manifest: legacyManifest }],
+    })
+
+    expect(result.validation.valid).toBe(true)
+    expect(result.validation.resolvedModels).toEqual([
+      {
+        modelId: 'same-model',
+        manifestId: 'custom:same-model',
+        manifestIdAction: 'preserved_existing',
+      },
+    ])
+    expect(result.validation.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'manifest_id_preserved', severity: 'warning' }),
+      ]),
+    )
+    expect(updateProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediaModelRefs: [expect.objectContaining({ manifestId: 'custom:same-model' })],
+      }),
+    )
+  })
+
+  it('generates the same manifest id for validation and configuration when id is omitted', async () => {
+    const managedManifest = { ...manifest('same-model') } as Partial<MediaModelManifest>
+    delete managedManifest.id
+    const input = {
+      ...draft(),
+      models: [{ modelId: 'same-model', manifest: managedManifest }],
+    }
+    const createProvider = vi.fn(async (params: Record<string, unknown>) =>
+      profile({
+        mediaModelRefs: params.mediaModelRefs as NonNullable<ProviderProfile['mediaModelRefs']>,
+      }),
+    )
+    const service = new CustomMediaProviderConfiguratorService(store({ createProvider }))
+
+    const validation = await service.validate(input)
+    const configured = await service.configure(input)
+    const refs = createProvider.mock.calls[0]?.[0]
+      .mediaModelRefs as ProviderProfile['mediaModelRefs']
+
+    expect(validation.valid).toBe(true)
+    expect(validation.resolvedModels[0]?.manifestIdAction).toBe('generated')
+    expect(validation.resolvedModels[0]?.manifestId).toBe(configured.provider.manifestIds[0])
+    expect(refs?.[0]?.manifestId).toBe(validation.resolvedModels[0]?.manifestId)
+  })
+
+  it('generates different manifest ids for the same model in different custom channels', async () => {
+    const service = new CustomMediaProviderConfiguratorService(store())
+    const firstManifest = { ...manifest('same-model') } as Partial<MediaModelManifest>
+    const secondManifest = { ...manifest('same-model') } as Partial<MediaModelManifest>
+    delete firstManifest.id
+    delete secondManifest.id
+
+    const first = await service.validate({
+      ...draft(),
+      name: '渠道 A',
+      models: [{ modelId: 'same-model', manifest: firstManifest }],
+    })
+    const second = await service.validate({
+      ...draft(),
+      name: '渠道 B',
+      apiEndpoint: 'https://another-channel.example/v1',
+      models: [{ modelId: 'same-model', manifest: secondManifest }],
+    })
+
+    expect(first.valid).toBe(true)
+    expect(second.valid).toBe(true)
+    expect(first.resolvedModels[0]?.manifestId).not.toBe(second.resolvedModels[0]?.manifestId)
   })
 
   it('creates through ProviderService-compatible persistence with media fields and Keychain input', async () => {

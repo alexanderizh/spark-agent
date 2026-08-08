@@ -7,6 +7,7 @@
  * paths used by the Provider UI and canvas runtime.
  */
 
+import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -89,6 +90,11 @@ export interface CustomMediaProviderValidationResult {
   valid: boolean
   issues: CustomMediaConfigIssue[]
   previews: CustomMediaRequestPreview[]
+  resolvedModels: Array<{
+    modelId: string
+    manifestId: string
+    manifestIdAction: 'kept' | 'generated' | 'repaired' | 'preserved_existing'
+  }>
   summary: {
     modelCount: number
     capabilityCount: number
@@ -166,6 +172,14 @@ interface DraftAnalysis {
   sourceUrls: string[]
   issues: CustomMediaConfigIssue[]
   previews: CustomMediaRequestPreview[]
+  resolvedModels: CustomMediaProviderValidationResult['resolvedModels']
+}
+
+interface ManifestIdResolution {
+  manifestId: string
+  action: CustomMediaProviderValidationResult['resolvedModels'][number]['manifestIdAction']
+  previousManifestId?: string
+  reason?: 'missing' | 'invalid_format' | 'manifest_conflict' | 'current_model_changed'
 }
 
 interface MediaRouterLike {
@@ -211,7 +225,7 @@ export class CustomMediaProviderConfiguratorService {
       supportedCapabilities: MEDIA_CAPABILITY_IDS,
       baseTemplates: ['custom', 'openai-compatible', 'async-json', 'toapis-image'],
       invariants: [
-        'manifest.id 必须包含随机实例后缀；不同渠道可以使用相同 modelId，但不能复用 manifest.id。',
+        '不同渠道可以使用相同 modelId；manifest.id 是内部身份，由 validate/configure 自动生成、修复或保留，不要手工拼接渠道名。',
         'manifest.providerKind 应为 custom，adapterMode 应为 template。',
         'API Key 只传给 configure/diagnose，工具不会在返回值或日志中回显明文。',
         '文档没有声明的参数、枚举、轮询状态和结果路径不得臆造。',
@@ -224,7 +238,6 @@ export class CustomMediaProviderConfiguratorService {
     input: CustomMediaProviderDraftInput,
   ): Promise<CustomMediaProviderValidationResult> {
     const analysis = await this.analyze(input)
-    await this.validateManifestIdOwnership(input, analysis)
     return validationResult(analysis)
   }
 
@@ -232,7 +245,6 @@ export class CustomMediaProviderConfiguratorService {
     input: CustomMediaProviderDraftInput,
   ): Promise<CustomMediaProviderConfigureResult> {
     const analysis = await this.analyze(input)
-    await this.validateManifestIdOwnership(input, analysis)
     const validation = validationResult(analysis)
     const errors = analysis.issues.filter((issue) => issue.severity === 'error')
     if (errors.length > 0) {
@@ -295,6 +307,7 @@ export class CustomMediaProviderConfiguratorService {
     log.info(
       `custom media provider configured action=${created ? 'create' : 'update'} ` +
         `providerId=${profile.id} models=${modelIds.length} capabilities=${analysis.capabilities.length} ` +
+        `manifestIdAdjustments=${analysis.resolvedModels.filter((model) => model.manifestIdAction !== 'kept').length} ` +
         `hasApiKey=${Boolean(profile.keystoreRef)}`,
     )
     return {
@@ -433,7 +446,15 @@ export class CustomMediaProviderConfiguratorService {
   private async analyze(input: CustomMediaProviderDraftInput): Promise<DraftAnalysis> {
     const issues: CustomMediaConfigIssue[] = []
     const previews: CustomMediaRequestPreview[] = []
+    const resolvedModels: CustomMediaProviderValidationResult['resolvedModels'] = []
     const endpoint = validateBaseEndpoint(input.apiEndpoint, issues)
+    const providerProfiles = await this.providers.listProviders({ includeDisabled: true })
+    const currentProviderId = input.providerId?.trim()
+    const currentProvider = currentProviderId
+      ? (providerProfiles.find((provider) => provider.id === currentProviderId) ?? null)
+      : null
+    const manifestOwners = collectManifestOwners(providerProfiles)
+    const occupiedManifestIds = new Set(manifestOwners.keys())
     if (!input.providerId?.trim() && !input.name?.trim()) {
       issues.push(
         issue('error', 'provider_name_required', 'name', '新建 Provider 时渠道名称不能为空。'),
@@ -477,9 +498,41 @@ export class CustomMediaProviderConfiguratorService {
         )
         continue
       }
+      const manifestIdResolution = resolveManagedManifestId({
+        input,
+        endpoint,
+        modelId,
+        rawManifest: model.manifest,
+        currentProvider,
+        manifestOwners,
+        occupiedManifestIds,
+        seenManifestIds,
+      })
+      const manifestDraft = {
+        ...model.manifest,
+        id: manifestIdResolution.manifestId,
+      }
+      resolvedModels.push({
+        modelId,
+        manifestId: manifestIdResolution.manifestId,
+        manifestIdAction: manifestIdResolution.action,
+      })
+      if (manifestIdResolution.action !== 'kept') {
+        issues.push(
+          issue(
+            'warning',
+            manifestIdResolution.action === 'preserved_existing'
+              ? 'manifest_id_preserved'
+              : 'manifest_id_managed',
+            `${modelPath}.manifest.id`,
+            manifestIdResolutionMessage(manifestIdResolution),
+            modelId,
+          ),
+        )
+      }
       let migrated: unknown
       try {
-        migrated = migrateMediaModelManifestToV2(model.manifest as unknown as MediaModelManifest)
+        migrated = migrateMediaModelManifestToV2(manifestDraft as unknown as MediaModelManifest)
       } catch (error) {
         issues.push(
           issue(
@@ -542,13 +595,16 @@ export class CustomMediaProviderConfiguratorService {
           ),
         )
       }
-      if (!UNIQUE_CUSTOM_MANIFEST_ID.test(manifest.id)) {
+      if (
+        !UNIQUE_CUSTOM_MANIFEST_ID.test(manifest.id) &&
+        manifestIdResolution.action !== 'preserved_existing'
+      ) {
         issues.push(
           issue(
-            input.providerId ? 'warning' : 'error',
+            'error',
             'manifest_id_not_channel_unique',
             `${modelPath}.manifest.id`,
-            '新建自定义模型必须使用 custom:<model-slug>:<随机实例后缀>，避免不同渠道同名模型冲突。',
+            '自定义模型必须使用由配置工具管理的渠道唯一 Manifest ID。',
             modelId,
           ),
         )
@@ -660,36 +716,7 @@ export class CustomMediaProviderConfiguratorService {
       sourceUrls: unique(models.flatMap((model) => model.manifest.docs.sourceUrls)),
       issues,
       previews,
-    }
-  }
-
-  private async validateManifestIdOwnership(
-    input: CustomMediaProviderDraftInput,
-    analysis: DraftAnalysis,
-  ): Promise<void> {
-    if (analysis.models.length === 0) return
-    const currentProviderId = input.providerId?.trim()
-    const owners = new Map<string, string>()
-    for (const provider of await this.providers.listProviders({ includeDisabled: true })) {
-      if (provider.id === currentProviderId) continue
-      for (const ref of provider.mediaModelRefs ?? []) {
-        owners.set(ref.manifestId, provider.id)
-      }
-    }
-    for (const model of analysis.models) {
-      const ownerId = owners.get(model.manifest.id)
-      if (!ownerId) continue
-      const legacyUpdate =
-        Boolean(currentProviderId) && !UNIQUE_CUSTOM_MANIFEST_ID.test(model.manifest.id)
-      analysis.issues.push(
-        issue(
-          legacyUpdate ? 'warning' : 'error',
-          'manifest_id_conflicts_with_provider',
-          `models.${model.index}.manifest.id`,
-          `manifest.id 已被 Provider ${ownerId} 使用；请生成新的渠道实例 ID。`,
-          model.input.modelId.trim(),
-        ),
-      )
+      resolvedModels,
     }
   }
 
@@ -1116,6 +1143,7 @@ function validationResult(analysis: DraftAnalysis): CustomMediaProviderValidatio
     valid: !analysis.issues.some((issue) => issue.severity === 'error'),
     issues: analysis.issues,
     previews: analysis.previews,
+    resolvedModels: analysis.resolvedModels,
     summary: {
       modelCount: analysis.models.length,
       capabilityCount: analysis.capabilities.length,
@@ -1288,6 +1316,135 @@ function isSupportedCapability(value: string): value is MediaCapabilityId {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+interface ManifestOwner {
+  providerId: string
+  modelId: string
+}
+
+function collectManifestOwners(providers: ProviderProfile[]): Map<string, ManifestOwner[]> {
+  const owners = new Map<string, ManifestOwner[]>()
+  for (const provider of providers) {
+    for (const ref of provider.mediaModelRefs ?? []) {
+      const manifestId = ref.manifestId.trim()
+      if (!manifestId) continue
+      const entries = owners.get(manifestId) ?? []
+      entries.push({
+        providerId: provider.id,
+        modelId: (ref.modelId ?? ref.manifest?.modelId ?? '').trim(),
+      })
+      owners.set(manifestId, entries)
+    }
+  }
+  return owners
+}
+
+function resolveManagedManifestId(input: {
+  input: CustomMediaProviderDraftInput
+  endpoint: string
+  modelId: string
+  rawManifest: Record<string, unknown>
+  currentProvider: ProviderProfile | null
+  manifestOwners: Map<string, ManifestOwner[]>
+  occupiedManifestIds: Set<string>
+  seenManifestIds: Set<string>
+}): ManifestIdResolution {
+  const rawManifestId = typeof input.rawManifest.id === 'string' ? input.rawManifest.id.trim() : ''
+  const existingRef = input.currentProvider?.mediaModelRefs?.find(
+    (ref) => (ref.modelId ?? ref.manifest?.modelId ?? '').trim() === input.modelId,
+  )
+
+  if (existingRef) {
+    const existingManifestId = existingRef.manifestId.trim()
+    if (
+      rawManifestId === existingManifestId &&
+      UNIQUE_CUSTOM_MANIFEST_ID.test(existingManifestId)
+    ) {
+      return { manifestId: existingManifestId, action: 'kept' }
+    }
+    return {
+      manifestId: existingManifestId,
+      action: 'preserved_existing',
+      ...(rawManifestId ? { previousManifestId: rawManifestId } : {}),
+      reason:
+        rawManifestId && rawManifestId !== existingManifestId
+          ? 'current_model_changed'
+          : rawManifestId
+            ? 'invalid_format'
+            : 'missing',
+    }
+  }
+
+  const ownerConflict = (input.manifestOwners.get(rawManifestId) ?? []).some(
+    (owner) =>
+      owner.providerId !== input.input.providerId?.trim() || owner.modelId !== input.modelId,
+  )
+  if (
+    rawManifestId &&
+    UNIQUE_CUSTOM_MANIFEST_ID.test(rawManifestId) &&
+    !ownerConflict &&
+    !input.seenManifestIds.has(rawManifestId)
+  ) {
+    input.occupiedManifestIds.add(rawManifestId)
+    return { manifestId: rawManifestId, action: 'kept' }
+  }
+
+  const reason: ManifestIdResolution['reason'] = !rawManifestId
+    ? 'missing'
+    : ownerConflict
+      ? 'manifest_conflict'
+      : 'invalid_format'
+  const manifestId = createChannelScopedManifestId({
+    draft: input.input,
+    endpoint: input.endpoint,
+    modelId: input.modelId,
+    occupiedManifestIds: input.occupiedManifestIds,
+    seenManifestIds: input.seenManifestIds,
+  })
+  input.occupiedManifestIds.add(manifestId)
+  return {
+    manifestId,
+    action: rawManifestId ? 'repaired' : 'generated',
+    ...(rawManifestId ? { previousManifestId: rawManifestId } : {}),
+    reason,
+  }
+}
+
+function createChannelScopedManifestId(input: {
+  draft: CustomMediaProviderDraftInput
+  endpoint: string
+  modelId: string
+  occupiedManifestIds: Set<string>
+  seenManifestIds: Set<string>
+}): string {
+  const channelIdentity =
+    input.draft.providerId?.trim() ||
+    `${input.draft.name?.trim().toLowerCase() || 'unnamed-provider'}\n${input.endpoint}`
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const suffix = createHash('sha256')
+      .update(`${channelIdentity}\n${input.modelId}\n${attempt}`)
+      .digest('hex')
+      .slice(0, 16)
+    const candidate = createCustomMediaManifestId(input.modelId, suffix)
+    if (!input.occupiedManifestIds.has(candidate) && !input.seenManifestIds.has(candidate)) {
+      return candidate
+    }
+  }
+  throw new Error('Unable to allocate a channel-unique custom media manifest ID')
+}
+
+function manifestIdResolutionMessage(resolution: ManifestIdResolution): string {
+  if (resolution.action === 'preserved_existing') {
+    return `工具已保留当前模型的 Manifest ID ${resolution.manifestId}，避免更新时断开已有模型引用；无需手工修改内部 ID。`
+  }
+  if (resolution.reason === 'manifest_conflict') {
+    return `输入的 Manifest ID 已属于其他 Provider 或模型，工具已自动替换为渠道唯一 ID ${resolution.manifestId}。`
+  }
+  if (resolution.reason === 'invalid_format') {
+    return `输入的 Manifest ID 格式不安全，工具已自动替换为渠道唯一 ID ${resolution.manifestId}；无需拼接渠道名或随机后缀。`
+  }
+  return `工具已自动生成渠道唯一 Manifest ID ${resolution.manifestId}；后续保存会使用同一渠道身份规则，无需手工填写。`
 }
 
 function isLocalOrPrivateHost(hostname: string): boolean {

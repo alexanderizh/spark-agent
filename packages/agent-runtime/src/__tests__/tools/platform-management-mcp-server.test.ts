@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -68,14 +68,15 @@ describe('spark_platform MCP server', () => {
     )
     const tools = res.result.tools as Array<{
       name: string
+      description: string
       inputSchema: { properties?: Record<string, unknown> }
     }>
-    expect(
-      tools.find((tool) => tool.name === 'providers_media_validate')?.inputSchema.properties,
-    ).not.toHaveProperty('apiKey')
-    expect(
-      tools.find((tool) => tool.name === 'providers_media_configure')?.inputSchema.properties,
-    ).toHaveProperty('apiKey')
+    const validateTool = tools.find((tool) => tool.name === 'providers_media_validate')
+    const configureTool = tools.find((tool) => tool.name === 'providers_media_configure')
+    expect(validateTool?.inputSchema.properties).not.toHaveProperty('apiKey')
+    expect(configureTool?.inputSchema.properties).toHaveProperty('apiKey')
+    expect(validateTool?.description).toContain('resolvedModels')
+    expect(configureTool?.description).toContain('自动生成、修复或保留渠道唯一 Manifest ID')
   })
 
   it('responds to optional MCP resource and prompt list methods without hanging', async () => {
