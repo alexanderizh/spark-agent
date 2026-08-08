@@ -14418,21 +14418,6 @@ body.canvas-agent-panel-resizing {
   background: color-mix(in srgb, var(--primary) 28%, transparent);
 }
 
-.canvas-node-audio-chips {
-  position: absolute;
-  right: auto;
-  top: auto;
-  bottom: calc(100% + 10px);
-  left: 50%;
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  max-width: calc(100% - 16px);
-  transform: translateX(-50%);
-  white-space: nowrap;
-  pointer-events: auto;
-}
-
 /* ── 截取 in-node 面板 ──────────────────────────────────────── */
 .canvas-node-audio-overlay-backdrop {
   position: absolute;
@@ -14727,10 +14712,6 @@ body.canvas-agent-panel-resizing {
 @media (max-width: 380px) {
   .canvas-node-audio-shell {
     padding-inline: 10px;
-  }
-
-  .canvas-node-audio-chips {
-    max-width: calc(100vw - 32px);
   }
 
   .canvas-node-audio-trim-row {

@@ -36,6 +36,7 @@ export function flowNodeContentEqual(
   const nextHeight = typeof next.height === 'number' ? next.height : 0
   if (prevWidth !== nextWidth || prevHeight !== nextHeight) return false
   if (prev.data.actions !== next.data.actions) return false
+  if (prev.data.selectedNodeCount !== next.data.selectedNodeCount) return false
   if (prev.data.lineage !== next.data.lineage) return false
   if (prev.data.operationRunsFingerprint !== next.data.operationRunsFingerprint) return false
   if (prev.data.isGeneratedOutput !== next.data.isGeneratedOutput) return false
@@ -47,9 +48,7 @@ export function flowNodeContentEqual(
   if (prev.data.inlinePanelExtraWidth !== next.data.inlinePanelExtraWidth) return false
   if (prev.data.collapsedGroupPresentation !== next.data.collapsedGroupPresentation) return false
   if (prev.data.canvasNode === next.data.canvasNode) return true
-  return (
-    canvasNodeFingerprint(prev.data.canvasNode) === canvasNodeFingerprint(next.data.canvasNode)
-  )
+  return canvasNodeFingerprint(prev.data.canvasNode) === canvasNodeFingerprint(next.data.canvasNode)
 }
 
 export function mergeFlowNodes(
@@ -84,6 +83,7 @@ export function canvasFlowNodeDataEqual(
   next: CanvasFlowNodeData,
 ): boolean {
   if (prev.actions !== next.actions) return false
+  if (prev.selectedNodeCount !== next.selectedNodeCount) return false
   if (prev.lineage !== next.lineage) return false
   if (prev.operationRunsFingerprint !== next.operationRunsFingerprint) return false
   if (prev.isGeneratedOutput !== next.isGeneratedOutput) return false

@@ -462,6 +462,7 @@ function toFlowNode(
   actions: CanvasNodeActions,
   lineage: CanvasLineageSummary,
   selected: boolean,
+  selectedNodeCount: number,
   inlineExtension: CanvasNodeInlineExtension | null,
   assetSubviewCount = 0,
   operationRuns: CanvasOperationRunView[] = [],
@@ -481,6 +482,7 @@ function toFlowNode(
   const data: CanvasFlowNodeData = {
     actions,
     canvasNode: node,
+    selectedNodeCount,
     ...(assetKinds.length > 0 ? { assetKinds } : {}),
     ...(assetSubviewCount > 0 ? { assetSubviewCount } : {}),
     ...(operationRuns.length > 0
@@ -993,6 +995,7 @@ function CanvasStageInner({
           nodeActions,
           lineageSummaries.get(node.id),
           false,
+          selectedNodeIds.length,
           nodeInlineExtension?.nodeId === node.id ? nodeInlineExtension : null,
           node.assetId ? (assetSubviewCountById.get(node.assetId) ?? 0) : 0,
           operationRunsByNodeId.get(node.id) ?? [],
@@ -1013,6 +1016,7 @@ function CanvasStageInner({
       nodeActions,
       nodeInlineExtension,
       operationRunsByNodeId,
+      selectedNodeIds.length,
     ],
   )
   const boardId = snapshot.board.id
@@ -1048,15 +1052,19 @@ function CanvasStageInner({
     if (internalNodes.length < 2) return null
     const bounds = instance.getNodesBounds(internalNodes)
     if (!bounds || (bounds.width === 0 && bounds.height === 0)) return null
+    const stageRect = stageRef.current?.getBoundingClientRect()
+    if (!stageRect) return null
     const centerX = bounds.x + bounds.width / 2
-    const topScreen = instance.flowToScreenPosition({ x: centerX, y: bounds.y })
-    const bottomScreen = instance.flowToScreenPosition({
-      x: centerX,
-      y: bounds.y + bounds.height,
-    })
-    // 工具栏实测高度约 36px（上下 padding 4 + 按钮 28）；与选区保持 16px 视觉间隙。
+    const toStagePosition = (point: { x: number; y: number }) => {
+      const screen = instance.flowToScreenPosition(point)
+      return { x: screen.x - stageRect.left, y: screen.y - stageRect.top }
+    }
+    const topScreen = toStagePosition({ x: centerX, y: bounds.y })
+    const bottomScreen = toStagePosition({ x: centerX, y: bounds.y + bounds.height })
+    // flowToScreenPosition 返回窗口坐标，而工具栏 anchor 是画布容器内的绝对定位元素，
+    // 先转换到 stage 局部坐标；再留出明确间距，避免工具栏压住选区顶部。
     const TOOLBAR_HEIGHT = 38
-    const GAP = 16
+    const GAP = 24
     const EDGE = 8
     const stageHeight = stageRef.current?.clientHeight ?? 0
     // 优先浮在选区正上方；当上方空间不足以容纳工具栏 + 间隙时翻转到选区下方，
@@ -2597,13 +2605,33 @@ function CanvasStageInner({
             <CanvasMultiSelectToolbar
               selectedCount={selectedNodeIds.length}
               canCreateGroup={selectedContext.canCreateGroup}
+              canMergeSelectionToImage={selectedContext.canMergeSelectionToImage}
+              canBatchConfigureTasks={selectedContext.canBatchConfigureTasks}
+              canBatchSubmitTasks={selectedContext.canBatchSubmitTasks}
+              batchTaskConfigureDisabledReason={selectedContext.batchTaskConfigureDisabledReason}
+              batchTaskSubmitDisabledReason={selectedContext.batchTaskSubmitDisabledReason}
               arranging={arranging ?? false}
+              {...(onExtractSelectionToWorkflow ? { onExtractSelectionToWorkflow } : {})}
+              {...(onConfigureSelectedTasks
+                ? {
+                    onConfigureSelectedTasks: () =>
+                      onConfigureSelectedTasks(selectedContext.batchTaskNodeIds),
+                  }
+                : {})}
+              {...(onSubmitSelectedTasks
+                ? {
+                    onSubmitSelectedTasks: () =>
+                      onSubmitSelectedTasks(selectedContext.batchTaskNodeIds),
+                  }
+                : {})}
+              {...(onAddNodesToAgent ? { onAddNodesToAgent } : {})}
               onCreateGroup={() => onCreateGroupFromSelection()}
+              onMergeSelectionToImage={onMergeSelectionToImage}
               onAlign={(mode) => onAlignSelected?.(mode)}
               onArrangeGrid={(columns) => onArrangeGridSelection?.(columns)}
               popoverSide={multiSelectToolbarGeometry.placeAbove ? 'bottom' : 'top'}
-              onDuplicate={() => onDuplicateSelectedNodes?.()}
-              onDelete={() => onDeleteSelectedNodes?.()}
+              {...(onDuplicateSelectedNodes ? { onDuplicate: onDuplicateSelectedNodes } : {})}
+              {...(onDeleteSelectedNodes ? { onDelete: onDeleteSelectedNodes } : {})}
             />
           </div>
         )}
@@ -2828,6 +2856,8 @@ function CanvasStageInner({
                 )}
               </>
             )}
+            {selectedNodeIds.length < 2 && (
+              <>
             <div className="canvas-pane-context-section-title">任务节点</div>
             {onCreatePipelineAtPosition && (
               <CanvasPaneContextSubmenu
@@ -2902,6 +2932,8 @@ function CanvasStageInner({
                 })}
               </>
             }
+              </>
+            )}
             <div className="canvas-pane-context-divider" />
             <div className="canvas-pane-context-section-title">画布</div>
             <button type="button" role="menuitem" onClick={handleResetZoom}>

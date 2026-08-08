@@ -1,5 +1,10 @@
 import { AutoComplete, Input, Select, Slider } from 'antd'
-import { aspectRatioShape, type CanvasParameterPresentation } from './canvasParameterPresentation'
+import {
+  aspectRatioOptions,
+  aspectRatioShape,
+  isAspectRatioValue,
+  type CanvasParameterPresentation,
+} from './canvasParameterPresentation'
 import './CanvasParameterControl.less'
 
 export type CanvasParameterControlProps = {
@@ -24,10 +29,15 @@ function enumOptionLabel(field: CanvasParameterPresentation['field'], option: st
   return labels && labels[option] ? labels[option] : option
 }
 
-function CompactOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
+function OptionRail({
+  presentation,
+  options,
+  value,
+  onChange,
+}: CanvasParameterControlProps & { options: string[] }) {
   return (
     <div className="canvas-parameter-option-rail" role="group" aria-label={presentation.label}>
-      {presentation.field.enumValues.map((option) => (
+      {options.map((option) => (
         <button
           key={option}
           type="button"
@@ -43,52 +53,144 @@ function CompactOptions({ presentation, value, onChange }: CanvasParameterContro
   )
 }
 
-function AspectRatioOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
+function CompactOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
+  return (
+    <OptionRail
+      presentation={presentation}
+      options={presentation.field.enumValues}
+      value={value}
+      onChange={onChange}
+    />
+  )
+}
+
+function AspectRatioGrid({
+  presentation,
+  options,
+  value,
+  onChange,
+}: CanvasParameterControlProps & { options: string[] }) {
+  return (
+    <div className="canvas-aspect-ratio-grid" role="group" aria-label={presentation.label}>
+      {options.map((option) => {
+        const shape = aspectRatioShape(option)
+        return (
+          <button
+            key={option}
+            type="button"
+            className={`canvas-aspect-ratio-option${option === value ? ' is-selected' : ''}`}
+            data-param-value={option}
+            aria-pressed={option === value}
+            onClick={() => onChange(option)}
+          >
+            <span className="canvas-aspect-ratio-frame-wrap">
+              <span
+                className={`canvas-aspect-ratio-frame${shape.adaptive ? ' is-adaptive' : ''}`}
+                data-aspect-width={shape.width}
+                data-aspect-height={shape.height}
+                style={{ width: shape.width, height: shape.height }}
+              />
+            </span>
+            <span>{option}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function CustomAspectRatioInput({
+  presentation,
+  options,
+  value,
+  onChange,
+}: CanvasParameterControlProps & { options: string[] }) {
+  if (!presentation.field.allowCustom) return null
+  const normalizedValue = value.trim()
+  const preview =
+    normalizedValue && !options.includes(normalizedValue) && isAspectRatioValue(normalizedValue)
+      ? aspectRatioShape(normalizedValue)
+      : null
   return (
     <>
-      <div className="canvas-aspect-ratio-grid" role="group" aria-label={presentation.label}>
-        {presentation.field.enumValues.map((option) => {
-          const shape = aspectRatioShape(option)
-          return (
-            <button
-              key={option}
-              type="button"
-              className={`canvas-aspect-ratio-option${option === value ? ' is-selected' : ''}`}
-              data-param-value={option}
-              aria-pressed={option === value}
-              onClick={() => onChange(option)}
-            >
-              <span className="canvas-aspect-ratio-frame-wrap">
-                <span
-                  className={`canvas-aspect-ratio-frame${shape.adaptive ? ' is-adaptive' : ''}`}
-                  data-aspect-width={shape.width}
-                  data-aspect-height={shape.height}
-                  style={{ width: shape.width, height: shape.height }}
-                />
-              </span>
-              <span>{option}</span>
-            </button>
-          )
-        })}
-      </div>
-      {presentation.field.allowCustom && (
-        <AutoComplete
-          className="canvas-parameter-custom-value"
-          value={value || undefined}
-          options={presentation.field.enumValues.map((option) => ({
-            value: option,
-            label: option,
-          }))}
-          placeholder={presentation.field.placeholder ?? '输入自定义比例或尺寸'}
-          allowClear
-          onChange={(next) => onChange(next == null ? '' : String(next))}
-          filterOption={(input, option) =>
-            String(option?.value ?? '')
-              .toLowerCase()
-              .includes(input.toLowerCase())
-          }
+      <AutoComplete
+        className="canvas-parameter-custom-value"
+        value={value || undefined}
+        options={options.map((option) => ({ value: option, label: option }))}
+        placeholder={presentation.field.placeholder ?? '输入自定义比例或尺寸'}
+        allowClear
+        onChange={(next) => onChange(next == null ? '' : String(next))}
+        filterOption={(input, option) =>
+          String(option?.value ?? '')
+            .toLowerCase()
+            .includes(input.toLowerCase())
+        }
+      />
+      {preview && (
+        <div className="canvas-parameter-custom-ratio-preview" aria-label={`预览比例 ${value}`}>
+          <span
+            className={`canvas-aspect-ratio-frame${preview.adaptive ? ' is-adaptive' : ''}`}
+            data-aspect-custom-preview="true"
+            data-aspect-width={preview.width}
+            data-aspect-height={preview.height}
+            style={{ width: preview.width, height: preview.height }}
+          />
+          <span>{value}</span>
+        </div>
+      )}
+    </>
+  )
+}
+
+function AspectRatioOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
+  const options = aspectRatioOptions(presentation.field)
+  return (
+    <>
+      <AspectRatioGrid
+        presentation={presentation}
+        options={options}
+        value={value}
+        onChange={onChange}
+      />
+      <CustomAspectRatioInput
+        presentation={presentation}
+        options={options}
+        value={value}
+        onChange={onChange}
+      />
+    </>
+  )
+}
+
+function SizeOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
+  const visualOptions = aspectRatioOptions(presentation.field).filter(isAspectRatioValue)
+  const resolutionOptions = presentation.field.enumValues.filter(
+    (option) => !isAspectRatioValue(option),
+  )
+  return (
+    <>
+      {resolutionOptions.length > 0 && (
+        <OptionRail
+          presentation={presentation}
+          options={resolutionOptions}
+          value={value}
+          onChange={onChange}
         />
       )}
+      {visualOptions.length > 0 && (
+        <AspectRatioGrid
+          presentation={presentation}
+          options={visualOptions}
+          value={value}
+          onChange={onChange}
+        />
+      )}
+      <CustomAspectRatioInput
+        presentation={presentation}
+        options={presentation.field.enumValues}
+        value={value}
+        onChange={onChange}
+      />
     </>
   )
 }
@@ -153,6 +255,15 @@ export function CanvasParameterControl({
   if (control === 'aspect-ratio') {
     controlNode = (
       <AspectRatioOptions
+        presentation={presentation}
+        value={value}
+        onChange={onChange}
+        compact={compact}
+      />
+    )
+  } else if (control === 'size') {
+    controlNode = (
+      <SizeOptions
         presentation={presentation}
         value={value}
         onChange={onChange}

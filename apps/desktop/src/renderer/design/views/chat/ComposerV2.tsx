@@ -126,10 +126,12 @@ import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
 import {
+  settleOptimisticImageSend,
   startOptimisticImageSend,
   type OptimisticImageSendCallbacks,
   type OptimisticImageSendLifecycle,
 } from './optimistic-user-messages'
+import { createSubmitGate } from './submit-gate'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -916,6 +918,7 @@ export function ComposerV2({
   // ── Escape double-press interrupt ──
   const escapeTimestampRef = useRef(0)
   const voiceInputActiveRef = useRef(false)
+  const submitGateRef = useRef(createSubmitGate())
   const [escapeConfirm, setEscapeConfirm] = useState(false)
   const { invoke: sendTurn } = useIpcInvoke('session:submit-turn')
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
@@ -1591,7 +1594,7 @@ export function ComposerV2({
                 : {}),
               ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
             })
-            optimisticSend?.commit(sendRes.turnId)
+            settleOptimisticImageSend(optimisticSend, sendRes)
             if (!sendRes.started) {
               setQueueVisible(true)
             } else if (queuedMessages.length === 0) {
@@ -1673,7 +1676,15 @@ export function ComposerV2({
             : {}),
           ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
         })
-        optimisticSend?.commit(res.turnId)
+        // __SPARK_DEBUG_START__
+        console.warn('[BUG-DEBUG] ComposerV2.submit-turn resolved', {
+          sessionId: targetSessionId,
+          turnId: res.turnId,
+          started: res.started,
+          textLength: text.length,
+        })
+        // __SPARK_DEBUG_END__
+        settleOptimisticImageSend(optimisticSend, res)
         if (!res.started) {
           setQueueVisible(true)
         } else if (queuedMessages.length === 0) {
@@ -1927,7 +1938,17 @@ export function ComposerV2({
   )
 
   const handleSend = async () => {
+    // __SPARK_DEBUG_START__
+    console.warn('[BUG-DEBUG] ComposerV2.handleSend invoked', {
+      canSubmit,
+      sending,
+      isWorking,
+      valueLength: value.length,
+      attachmentCount: attachments.length,
+    })
+    // __SPARK_DEBUG_END__
     if (!canSubmit || voiceInputActiveRef.current) return
+    if (!submitGateRef.current.tryEnter()) return
     setTextEditMenu(null)
     const rawText = value.trim() || '请查看附件。'
     const turnAttachments = attachments
@@ -1951,7 +1972,11 @@ export function ComposerV2({
     // 发送后清除 pending mention（避免下一条消息误带）；dispatchMessage 内已通过 text 计算用过
     setPendingMention(null)
     if (replySnapshot != null) onClearReply?.()
-    await dispatchMessage(text, turnAttachments, replySnapshot)
+    try {
+      await dispatchMessage(text, turnAttachments, replySnapshot)
+    } finally {
+      submitGateRef.current.leave()
+    }
   }
 
   const handlePrimaryAction = async () => {

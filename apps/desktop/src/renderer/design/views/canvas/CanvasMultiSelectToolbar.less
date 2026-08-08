@@ -1,5 +1,27 @@
-.canvas-multi-select-toolbar {
+.canvas-node-toolbar-surface.canvas-multi-select-toolbar {
   max-width: min(100%, 760px);
+  min-height: 36px;
+  padding: 3px;
+  border-radius: 9px;
+}
+
+.canvas-multi-select-toolbar-btn.ant-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--canvas-cinema-text, #cccccc);
+}
+
+.canvas-multi-select-toolbar-btn.ant-btn:hover,
+.canvas-multi-select-toolbar-btn.ant-btn:focus-visible {
+  background: var(--canvas-cinema-accent-soft, rgba(145, 137, 255, 0.18));
+  color: var(--canvas-cinema-accent-bright, #9189ff);
+}
+
+.canvas-multi-select-toolbar-btn.canvas-node-toolbar-button-danger {
+  color: var(--danger, #f87171);
 }
 
 .canvas-multi-select-align-panel {

@@ -29,6 +29,15 @@ export interface OptimisticImageSendLifecycle {
   cancel: () => void
 }
 
+export function settleOptimisticImageSend(
+  lifecycle: OptimisticImageSendLifecycle | null,
+  result: { turnId: string; started: boolean },
+): void {
+  if (lifecycle == null) return
+  if (result.started) lifecycle.commit(result.turnId)
+  else lifecycle.cancel()
+}
+
 export function startOptimisticImageSend(
   input: Omit<OptimisticUserMessageDraft, 'clientId' | 'createdAt'>,
   callbacks: OptimisticImageSendCallbacks | undefined,

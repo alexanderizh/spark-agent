@@ -75,13 +75,12 @@ describe('CanvasOperationOutputPreview', () => {
       updatedAt: at,
     }
 
-    const html = renderToStaticMarkup(
-      <CanvasOperationOutputPreview output={output} selected />,
-    )
+    const html = renderToStaticMarkup(<CanvasOperationOutputPreview output={output} selected />)
 
     expect(html).toContain('canvas-operation-output-audio')
     expect(html).toContain('canvas-node-audio-shell')
     expect(html).toContain('aria-label="播放"')
-    expect(html).toContain('aria-label="音频节点工具栏"')
+    // 音频操作已由外层 CanvasNode 的统一选中工具栏承载，预览内部不再渲染第二排工具栏。
+    expect(html).not.toContain('aria-label="音频节点工具栏"')
   })
 })
