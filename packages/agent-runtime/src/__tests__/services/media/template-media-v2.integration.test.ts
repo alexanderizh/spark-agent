@@ -13,7 +13,7 @@ const PNG_PIXEL =
 
 function makeManifest(response: MediaModelManifest['invocation']['response']): MediaModelManifest {
   return {
-    id: 'custom:v2-image',
+    id: 'custom:v2-image:channel-instance',
     providerKind: 'custom',
     modelId: 'v2-image',
     displayName: 'V2 image template',
@@ -210,7 +210,7 @@ describe('TemplateMediaAdapter V2 integration', () => {
         response: { kind: 'binary_response' },
       },
     })
-    manifest.id = 'custom:v2-video'
+    manifest.id = 'custom:v2-video:channel-instance'
     manifest.modelId = 'v2-video'
     manifest.displayName = 'V2 video template'
     manifest.domains = ['video']

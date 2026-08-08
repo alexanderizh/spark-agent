@@ -216,9 +216,10 @@ paramPolicy: {
 
 ## 十一、Agent 对话配置自定义渠道
 
-- Agent 配置应用未内置的媒体渠道时，必须使用 `providers_media_guide`、`providers_media_validate`、`providers_media_configure`、`providers_media_discover_models` 和 `providers_media_diagnose`，不能用通用 Provider CRUD 直接拼 `config`。
+- Agent 配置应用未内置的媒体渠道时，优先使用 `providers_media_guide`、`providers_media_validate`、`providers_media_configure`、`providers_media_discover_models` 和 `providers_media_diagnose`。
 - 固定流程是：收集渠道/模型/能力/鉴权/官方文档 → 使用 `spark_search` 读取真实文档 → 生成完整 Contract V2 → 只读校验和脱敏请求预览 → 保存 → 分阶段诊断。
-- 同一模型名可存在于多个自定义 Provider；跨渠道身份由 Provider Profile ID 与 `custom:<model-slug>:<随机实例后缀>` Manifest ID 共同确定。更新历史确定性 ID 时只警告，避免破坏旧配置。
+- 同一模型名可存在于多个自定义 Provider；跨渠道身份由 Provider Profile ID 与渠道唯一 Manifest ID 共同确定。Agent 不负责拼接 ID：可省略 `manifest.id`，由 validate/configure 按渠道身份稳定生成、修复冲突或保留历史 ID，并通过 `resolvedModels` 回传。
+- Manifest 迁移运行在结构校验之前，必须能容忍缺失 `invocation`、`response` 等畸形草稿并交给 Schema 返回字段级错误，不能泄漏 `Cannot read properties of undefined` 一类实现异常。
 - API Key 只在最终保存、模型发现或真实诊断时传入 ProviderService，进入系统 Keychain；工具返回、请求预览、异常和日志都不能包含明文。
 - `providers_media_diagnose.execute` 复用画布的 MediaRouterService，因此可验证实际适配器、参数编译、请求、轮询和产物解析。真实调用可能计费，必须先取得用户明确同意并设置 `confirmExecute=true`。
 - Agent 只能把官方文档明确声明的参数、枚举、状态映射和结果路径写入 Manifest。文档 URL 写入 `docs.sourceUrls`，便于后续协议漂移复核。

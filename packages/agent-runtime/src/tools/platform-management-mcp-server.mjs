@@ -166,7 +166,8 @@ const CUSTOM_MEDIA_MODEL_SCHEMA = {
     },
     manifest: {
       type: 'object',
-      description: '完整 MediaModelManifest Contract V2。必须来自真实渠道文档，不得臆造。',
+      description:
+        '完整 MediaModelManifest Contract V2。必须来自真实渠道文档，不得臆造；manifest.id 是内部身份，可省略，validate/configure 会按渠道自动生成、修复或保留。',
       additionalProperties: true,
     },
   },
@@ -519,7 +520,7 @@ function toolDefinitions() {
     {
       name: 'providers_media_validate',
       description:
-        '只读校验自定义多媒体 Provider 草稿：检查 Contract V2、能力、参数、请求/轮询/产物合同、跨渠道唯一 Manifest ID、文档证据和 URL 安全，并返回已脱敏的真实请求预览。不会保存配置，也不会发送付费请求。',
+        '只读校验自定义多媒体 Provider 草稿：检查 Contract V2、能力、参数、请求/轮询/产物合同、文档证据和 URL 安全，自动解析渠道唯一 Manifest ID，并返回字段级问题、resolvedModels 与已脱敏的真实请求预览。不会保存配置，也不会发送付费请求；不要手工拼接 Manifest ID。',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -530,7 +531,7 @@ function toolDefinitions() {
     {
       name: 'providers_media_configure',
       description:
-        '创建或更新自定义多媒体 Provider。内部先执行严格校验，通过后才使用正式 ProviderService 保存；API Key 进入系统 Keychain，返回值永不包含明文。调用前应已抓取官方文档并通过 providers_media_validate。',
+        '创建或更新自定义多媒体 Provider。内部先执行严格校验并自动生成、修复或保留渠道唯一 Manifest ID，通过后才使用正式 ProviderService 保存；API Key 进入系统 Keychain，返回值永不包含明文。调用前应已抓取官方文档并通过 providers_media_validate。',
       inputSchema: {
         type: 'object',
         additionalProperties: false,

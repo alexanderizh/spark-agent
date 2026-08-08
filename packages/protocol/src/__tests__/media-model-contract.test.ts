@@ -253,6 +253,36 @@ describe('MediaModelManifestSchema with Contract V2 fields', () => {
 })
 
 describe('validateMediaModelManifestSemantics — Contract V2', () => {
+  it('leaves malformed drafts for schema validation instead of throwing during migration', () => {
+    const withoutInvocation = {
+      ...manifest(),
+      invocation: undefined,
+    } as unknown as MediaModelManifest
+
+    expect(() => migrateMediaModelManifestToV2(withoutInvocation)).not.toThrow()
+    const missingInvocation = MediaModelManifestSchema.safeParse(
+      migrateMediaModelManifestToV2(withoutInvocation),
+    )
+    expect(missingInvocation.success).toBe(false)
+    if (!missingInvocation.success) {
+      expect(missingInvocation.error.issues.map((issue) => issue.path.join('.'))).toContain(
+        'invocation',
+      )
+    }
+
+    const withoutResponse = manifest({
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images',
+        method: 'POST',
+        contentType: 'multipart',
+        requestTemplate: undefined,
+        response: undefined,
+      } as unknown as MediaModelManifest['invocation'],
+    })
+    expect(() => migrateMediaModelManifestToV2(withoutResponse)).not.toThrow()
+  })
+
   it('migrates the legacy flat invocation without deleting legacy fields', () => {
     const migrated = migrateMediaModelManifestToV2(
       manifest({

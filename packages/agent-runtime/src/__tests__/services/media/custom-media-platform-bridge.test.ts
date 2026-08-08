@@ -49,6 +49,40 @@ describe('custom media Platform bridge', () => {
 
     expect(validation.ok).toBe(true)
     expect(validation.data).toMatchObject({ valid: true })
+
+    const malformedValidation = await callRpc(port, 'providers.media_validate', {
+      name: 'Bridge 媒体渠道',
+      apiEndpoint: 'https://media.example/v1',
+      defaultModel: 'bridge-image-model',
+      models: [
+        {
+          modelId: 'bridge-image-model',
+          manifest: {
+            ...manifest,
+            id: 'custom:bridge-image-model:toapis:manual-suffix',
+            invocation: undefined,
+          },
+        },
+      ],
+    })
+
+    expect(malformedValidation.ok).toBe(true)
+    expect(malformedValidation.data).toMatchObject({
+      valid: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'manifest_schema_invalid',
+          path: 'models.0.manifest.invocation',
+        }),
+      ]),
+      resolvedModels: [
+        expect.objectContaining({
+          modelId: 'bridge-image-model',
+          manifestIdAction: 'repaired',
+        }),
+      ],
+    })
+    expect(JSON.stringify(malformedValidation.data)).not.toContain('manifest_migration_failed')
   })
 })
 

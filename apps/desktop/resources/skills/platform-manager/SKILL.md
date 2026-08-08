@@ -229,7 +229,7 @@ Agent 可通过这些工具查看和修改当前会话的运行时参数，实�
    - 当会话已经附着到画布弹窗时，画布编辑工具属于 `mcp__spark_canvas__*`（例如读取项目摘要、创建节点、运行操作、插入生成图片/文本）；需要真实改画布时，转用画布专属工具或让用户在画布 UI 操作。
    - 配置应用未内置的媒体渠道时，先向用户收集渠道名称、API Base URL、模型 ID 或 `/models` 地址、需要的能力、鉴权方式和官方文档 URL。资料不足就继续提问，不要猜。
    - 调用 `providers_media_guide` 后，使用 `mcp__spark_search__web_search` / `mcp__spark_search__fetch_url` 读取渠道官方文档和模型文档。只有文档明确声明的请求字段、枚举、轮询状态、结果路径才能写进 Manifest，并把来源记录到 `docs.sourceUrls`。
-   - 每个模型使用一个完整 Contract V2 Manifest。不同自定义渠道可以复用同一个 `modelId`，但 Manifest ID 必须是 `custom:<model-slug>:<随机实例后缀>`，不得用 `custom:<modelId>` 造成跨渠道冲突。
+   - 每个模型使用一个完整 Contract V2 Manifest。不同自定义渠道可以复用同一个 `modelId`；Manifest ID 是内部身份，拿不准时省略 `manifest.id`，由 `providers_media_validate` / `providers_media_configure` 自动生成、修复或保留，并从 `resolvedModels` 读取最终 ID。不要手工拼接渠道名，也不要把它简化成 `custom:<modelId>`。
    - 固定顺序：`providers_media_validate` → 修复全部 error → `providers_media_configure` → `providers_media_diagnose`。渠道提供 `/models` 时可先用 `providers_media_discover_models` 初始化清单。
    - `providers_media_diagnose.execute` 会发送可能计费的真实生成请求。必须先说明模型、能力和测试参数，取得用户明确同意后才能设置 `confirmExecute=true`。
    - 诊断 401 时核对 Key、Authorization 合同和 Base URL；404 时核对 `/v1` 与路径重复拼接；400 时按官方文档核对参数类型/枚举/Content-Type；异步失败时核对 taskId、轮询请求、状态映射和最终产物请求。
