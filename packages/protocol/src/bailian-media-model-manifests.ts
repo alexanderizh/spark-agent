@@ -5,6 +5,7 @@ import type {
   MediaManifestOutputKind,
   MediaModelManifest,
 } from './media-model-manifest.js'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from './media-config.js'
 import {
   audioSpeechSchema,
   bailianImageSchema,
@@ -674,7 +675,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: ['https://help.aliyun.com/zh/model-studio/image-to-video-general-api-reference'],
@@ -750,7 +751,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/text-to-video-guide'] },
     safety: {
@@ -823,7 +824,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: ['https://help.aliyun.com/zh/model-studio/text-to-video-api-reference'],
@@ -921,7 +922,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: ['https://help.aliyun.com/zh/model-studio/wan-reference-to-video-api-reference'],
@@ -1016,7 +1017,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: ['https://help.aliyun.com/zh/model-studio/wan-video-editing-api-reference'],
@@ -1079,7 +1080,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -1135,7 +1136,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -1194,7 +1195,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -1253,7 +1254,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -1313,7 +1314,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -1373,7 +1374,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -1433,7 +1434,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           'url',
         ],
       },
-      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+      polling: { intervalMs: 15000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: bailianVideoStatusMap },
     },
     docs: {
       sourceUrls: ['https://help.aliyun.com/zh/model-studio/happyhorse-video-edit-api-reference'],

@@ -36,7 +36,7 @@ type UploadSource = 'local' | 'url'
 export function CanvasProviderFilesTab({
   onAddToCanvas,
 }: {
-  /** 把该 provider 文件作为节点加入画布（命中 adapter fileId 短路）。 */
+  /** 把该 provider 文件作为节点加入画布；运行时会按渠道协议解析 file_id。 */
   onAddToCanvas?: (file: ProviderFileObject, providerProfileId: string) => void
 }) {
   const { invoke: listProviders, loading: providersLoading } = useIpcInvoke('provider:list')
@@ -56,6 +56,8 @@ export function CanvasProviderFilesTab({
   const [order, setOrder] = useState<'asc' | 'desc'>('desc')
   const [errorMessage, setErrorMessage] = useState('')
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [detailsFile, setDetailsFile] = useState<ProviderFileObject | null>(null)
+  const [previewFile, setPreviewFile] = useState<ProviderFileObject | null>(null)
   const pollingRef = useRef(false)
   const loadSequenceRef = useRef(0)
   const providerProfileIdRef = useRef(providerProfileId)
@@ -220,6 +222,25 @@ export function CanvasProviderFilesTab({
     }
   }
 
+  const openPreview = async (file: ProviderFileObject) => {
+    const requestedProviderProfileId = providerProfileId
+    try {
+      const target = file.downloadUrl
+        ? file
+        : (await getFile({ providerProfileId: requestedProviderProfileId, fileId: file.id })).file
+      if (providerProfileIdRef.current !== requestedProviderProfileId) return
+      if (!target.downloadUrl) {
+        setErrorMessage('火山方舟 Files 未返回可预览的官方 download_url，请先刷新文件状态。')
+        return
+      }
+      setFiles((current) => mergeFiles(current, [target]))
+      setPreviewFile(target)
+    } catch (error) {
+      if (providerProfileIdRef.current !== requestedProviderProfileId) return
+      setErrorMessage(filesErrorMessage(error))
+    }
+  }
+
   const deleteFiles = async (targets: ProviderFileObject[]) => {
     const requestedProviderProfileId = providerProfileId
     const limited = targets.slice(0, MAX_BATCH_DELETE)
@@ -290,7 +311,7 @@ export function CanvasProviderFilesTab({
               ? '百炼 DashScope Files 仅用于文件解析、Batch 和模型微调；官方未声明 file_id 可直接传给万相图片或视频生成，因此画布不会自动引用它。该 API 仅在北京 Region 开放。'
               : providerKind === 'minimax-hailuo'
                 ? 'MiniMax Files 以 mm_file://{file_id} 供 H3 视频生成引用（首帧 / 参考图 / 参考视频 / 参考音频）。purpose 固定为 video_generation_input，文件保留 7 天；file_id 按 int64 字符串透传。'
-                : 'Files API 用于 Chat / Responses 的图片、视频、音频和 PDF 输入；文件必须为 active 才能引用。远端文件属于所选 Provider 项目，不随当前画布复制或导出；Seedance 视频生成不使用 file_id。'
+                : 'Files API 文件必须为 active 才能引用。火山方舟生成任务会先将 file_id 解析为官方 download_url，再提交给 Seedance；远端文件属于所选 Provider 项目，不随当前画布复制或导出。'
         }
       />
       {errorMessage && (
@@ -462,6 +483,11 @@ export function CanvasProviderFilesTab({
                         加入视频生成
                       </Button>
                     )}
+                  {providerKind === 'volcengine-ark' && file.status === 'active' && (
+                    <Button size="small" onClick={() => void openPreview(file)}>
+                      预览
+                    </Button>
+                  )}
                   {providerKind !== 'xai' && (
                     <Button
                       size="small"
@@ -471,6 +497,9 @@ export function CanvasProviderFilesTab({
                       查询
                     </Button>
                   )}
+                  <Button size="small" onClick={() => setDetailsFile(file)}>
+                    查看详情
+                  </Button>
                   <Button
                     size="small"
                     danger
@@ -510,6 +539,41 @@ export function CanvasProviderFilesTab({
           </div>
         </div>
       )}
+
+      <Modal
+        open={detailsFile !== null}
+        title={detailsFile ? `文件详情 · ${detailsFile.filename}` : '文件详情'}
+        footer={null}
+        onCancel={() => setDetailsFile(null)}
+        destroyOnClose
+        zIndex={1500}
+      >
+        {detailsFile && (
+          <pre
+            style={{
+              maxHeight: 420,
+              overflow: 'auto',
+              margin: 0,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {JSON.stringify(detailsFile, null, 2)}
+          </pre>
+        )}
+      </Modal>
+
+      <Modal
+        open={previewFile !== null}
+        title={previewFile ? `预览 · ${previewFile.filename}` : '预览'}
+        footer={null}
+        onCancel={() => setPreviewFile(null)}
+        destroyOnClose
+        width={860}
+        zIndex={1500}
+      >
+        {previewFile?.downloadUrl && <ProviderFilePreview file={previewFile} />}
+      </Modal>
 
       {providerKind === 'xai' ? null : providerKind === 'bailian' ? (
         <BailianFileUploadModal
@@ -1098,6 +1162,37 @@ function FileStatusTag({ status }: { status?: ProviderFileObject['status'] }) {
   if (status === 'processing') return <Tag color="blue">processing · 处理中</Tag>
   if (status === 'failed') return <Tag color="red">failed · 失败</Tag>
   return <Tag>状态未知</Tag>
+}
+
+function ProviderFilePreview({ file }: { file: ProviderFileObject }) {
+  const url = file.downloadUrl
+  if (!url) return <Empty description="官方没有返回可预览地址" />
+  const mimeType = file.mimeType?.toLowerCase() ?? ''
+  if (mimeType.startsWith('image/')) {
+    return (
+      <img
+        src={url}
+        alt={file.filename}
+        style={{ display: 'block', maxWidth: '100%', margin: '0 auto' }}
+      />
+    )
+  }
+  if (mimeType.startsWith('video/')) {
+    return <video src={url} controls style={{ display: 'block', width: '100%', maxHeight: 560 }} />
+  }
+  if (mimeType.startsWith('audio/')) {
+    return <audio src={url} controls style={{ width: '100%' }} />
+  }
+  if (mimeType === 'application/pdf') {
+    return (
+      <iframe src={url} title={file.filename} style={{ width: '100%', height: 560, border: 0 }} />
+    )
+  }
+  return (
+    <a href={url} target="_blank" rel="noreferrer">
+      打开官方下载地址
+    </a>
+  )
 }
 
 function mergeFiles(

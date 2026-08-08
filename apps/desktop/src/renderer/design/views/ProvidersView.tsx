@@ -1280,14 +1280,14 @@ function ProvidersView() {
         <div className="pv_header">
           <div className="pv_header_left">
             <h2>Providers</h2>
-            <Tag size="middle" color="gray">
+            <Tag size="small" color="gray">
               {uiProfiles.length}
             </Tag>
           </div>
           <div className="pv_header_right">
             <span className="flex-1" />
             <Button
-              size="middle"
+              size="small"
               shape="circle"
               type="text"
               icon={<Icons.Refresh />}
@@ -1297,7 +1297,7 @@ function ProvidersView() {
             />
             <Button
               ref={importButtonRef as any}
-              size="middle"
+              size="small"
               type="text"
               icon={<Icons.Upload />}
               onClick={() => void handleImportFromFile()}
@@ -1317,7 +1317,7 @@ function ProvidersView() {
               从剪贴板
             </Button> */}
             <Button
-              size="middle"
+              size="small"
               type="text"
               icon={<Icons.Download />}
               onClick={handleExportVisibleScope}
@@ -1338,7 +1338,7 @@ function ProvidersView() {
             </Button> */}
             {!multiSelect && (
               <Button
-                size="middle"
+                size="small"
                 type="text"
                 icon={<Icons.CheckSquare />}
                 onClick={enterMultiSelect}
@@ -1349,7 +1349,7 @@ function ProvidersView() {
               </Button>
             )}
             <Button
-              size="middle"
+              size="small"
               type={showPresetCatalog ? 'primary' : 'default'}
               icon={<Icons.Plus />}
               onClick={() => {
@@ -1361,7 +1361,7 @@ function ProvidersView() {
             </Button>
             {AUTO_ROUTER_UI_VISIBLE && (
               <Button
-                size="middle"
+                size="small"
                 type={showRouteModels ? 'primary' : 'default'}
                 icon={<Icons.Shuffle />}
                 onClick={() => setShowRouteModels(true)}
@@ -1371,7 +1371,7 @@ function ProvidersView() {
               </Button>
             )}
             <Button
-              size="middle"
+              size="small"
               type="primary"
               icon={<Icons.Plus />}
               onClick={() => {
@@ -4229,7 +4229,7 @@ export function ProviderEditPanel({
                                     <div className="pv_media_manifest_main">
                                       <div className="pv_media_manifest_title">
                                         <span>{model.id}</span>
-                                        <Tag size="middle" color="blue">
+                                        <Tag size="small" color="blue">
                                           渠道返回
                                         </Tag>
                                       </div>
@@ -4264,15 +4264,15 @@ export function ProviderEditPanel({
                                   <div className="pv_media_manifest_main">
                                     <div className="pv_media_manifest_title">
                                       <span>{ref.modelId}</span>
-                                      <Tag size="middle" color="purple">
+                                      <Tag size="small" color="purple">
                                         自定义
                                       </Tag>
                                       {ref.manifest && (
-                                        <Tag size="middle" color="green">
+                                        <Tag size="small" color="green">
                                           协议已配置
                                         </Tag>
                                       )}
-                                      <Tag size="middle" color="gray">
+                                      <Tag size="small" color="gray">
                                         {form.mediaProvider || form.imageProvider}
                                       </Tag>
                                     </div>
@@ -4285,7 +4285,7 @@ export function ProviderEditPanel({
                                   <div className="pv_media_manifest_actions">
                                     {(form.modelType === 'image' || form.modelType === 'video') && (
                                       <Button
-                                        size="middle"
+                                        size="small"
                                         type="text"
                                         icon={<Icons.Settings size={12} />}
                                         onClick={() => openCustomManifestEditor(ref)}
@@ -4294,12 +4294,12 @@ export function ProviderEditPanel({
                                       </Button>
                                     )}
                                     {form.defaultModel.trim() === ref.modelId?.trim() ? (
-                                      <Tag size="middle" color="green">
+                                      <Tag size="small" color="green">
                                         默认
                                       </Tag>
                                     ) : (
                                       <Button
-                                        size="middle"
+                                        size="small"
                                         type="text"
                                         icon={<Icons.Star size={12} />}
                                         onClick={() => setMediaDefaultModel(ref.modelId ?? '')}
@@ -4310,7 +4310,7 @@ export function ProviderEditPanel({
                                       </Button>
                                     )}
                                     <Button
-                                      size="middle"
+                                      size="small"
                                       type="text"
                                       danger
                                       icon={<Icons.X />}

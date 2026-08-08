@@ -52,4 +52,15 @@ describe('isVolcengineArkFilesProfile', () => {
       }),
     ).toBe(false)
   })
+
+  it('recognizes legacy Volcano image/video profiles by their model metadata', () => {
+    expect(
+      providerFilesApiKindForProfile({
+        provider: 'openai',
+        apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+        modelType: 'video',
+        defaultModel: 'doubao-seedance-2-5-260628',
+      }),
+    ).toBe('volcengine-ark')
+  })
 })

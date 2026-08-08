@@ -1,3 +1,4 @@
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '@spark/protocol'
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
 import { MediaProviderError } from '../media-adapter.types.js'
 import type {
@@ -225,7 +226,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
         inspect: (payload) => {
           const urls = extractAgnesVideoUrls(payload)
           if (urls.length > 0) return 'done'

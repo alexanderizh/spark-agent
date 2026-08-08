@@ -24,6 +24,10 @@ import type {
 import type { MediaUploader } from './media-uploader.js'
 import { MediaRouterService } from './media-router.service.js'
 import type { InvokeOptions, MediaProviderProfile } from './media-router.service.js'
+import {
+  buildMediaTaskPollingDescriptor,
+  type MediaTaskPollingDescriptor,
+} from './media-task-polling.types.js'
 
 const log = createLogger('canvas:media-task-runtime')
 
@@ -43,6 +47,10 @@ export interface MediaTaskRecord {
   modelParams: Record<string, unknown>
   outputDir: string
   requestId: string | null
+  providerTaskId: string | null
+  projectId: string | null
+  clientTaskId: string | null
+  polling: MediaTaskPollingDescriptor | null
   assets: MediaGeneratedAsset[]
   /** 轮询任务提交接口的响应摘要（包含渠道任务 ID）。 */
   submitResponse: unknown
@@ -66,10 +74,16 @@ export interface MediaTaskSubmitOptions {
   fetch?: typeof fetch
   skipValidation?: boolean
   fallbackUploader?: MediaUploader
+  /** Renderer-owned canvas task identity; persisted for main-process authorization. */
+  projectId?: string | null
+  clientTaskId?: string | null
 }
 
 export interface MediaTaskRouterLike {
-  invoke(input: MediaGenerateInput, options: InvokeOptions): Promise<{
+  invoke(
+    input: MediaGenerateInput,
+    options: InvokeOptions,
+  ): Promise<{
     output: MediaGenerateOutput
     providerProfileId: string
   }>
@@ -78,6 +92,8 @@ export interface MediaTaskRouterLike {
 export type MediaTaskUpdateHandler = (record: MediaTaskRecord) => void | Promise<void>
 
 export class MediaTaskRuntimeService {
+  private readonly recoveryTaskIds = new Set<string>()
+
   constructor(
     private readonly repo: MediaGenerationTaskRepository,
     private readonly router: MediaTaskRouterLike = new MediaRouterService(),
@@ -85,7 +101,10 @@ export class MediaTaskRuntimeService {
     this.repo.ensureSchema()
   }
 
-  async submit(input: MediaGenerateInput, options: MediaTaskSubmitOptions): Promise<MediaTaskRecord> {
+  async submit(
+    input: MediaGenerateInput,
+    options: MediaTaskSubmitOptions,
+  ): Promise<MediaTaskRecord> {
     const row = this.createRunningTask(input, options)
     log.info(
       `media task submitted (sync): id=${row.id} op=${row.operation} provider=${row.provider_profile_id ?? '(none)'} model=${row.model_id ?? '(auto)'}`,
@@ -121,11 +140,26 @@ export class MediaTaskRuntimeService {
     return started
   }
 
-  private createRunningTask(input: MediaGenerateInput, options: MediaTaskSubmitOptions): MediaGenerationTaskRow {
+  private createRunningTask(
+    input: MediaGenerateInput,
+    options: MediaTaskSubmitOptions,
+  ): MediaGenerationTaskRow {
     const submittedAt = new Date().toISOString()
+    const polling = buildMediaTaskPollingDescriptor({
+      providers: options.providers,
+      ...(options.providerProfileId !== undefined
+        ? { providerProfileId: options.providerProfileId }
+        : {}),
+      ...(options.manifestId !== undefined ? { manifestId: options.manifestId } : {}),
+      ...(options.modelId !== undefined ? { modelId: options.modelId } : {}),
+      ...(options.capability !== undefined ? { capability: options.capability } : {}),
+      input,
+    })
     return this.repo.create({
       providerProfileId: options.providerProfileId ?? null,
-      manifestId: options.manifestId ?? null,
+      providerKind: polling?.providerKind ?? null,
+      manifestId: options.manifestId ?? polling?.manifestId ?? null,
+      modelId: options.modelId ?? polling?.modelId ?? null,
       operation: input.operation,
       capability: options.capability ?? input.capability ?? null,
       status: 'running',
@@ -134,6 +168,10 @@ export class MediaTaskRuntimeService {
       inputFilesJson: JSON.stringify(input.inputFiles ?? []),
       modelParamsJson: JSON.stringify(input.modelParams ?? {}),
       outputDir: input.outputDir,
+      providerTaskId: null,
+      projectId: options.projectId ?? null,
+      clientTaskId: options.clientTaskId ?? null,
+      pollingJson: polling ? JSON.stringify(polling) : null,
       submittedAt,
     })
   }
@@ -148,7 +186,9 @@ export class MediaTaskRuntimeService {
     try {
       const invokeOptions: InvokeOptions = {
         providers: options.providers,
-        ...(options.providerProfileId !== undefined ? { providerProfileId: options.providerProfileId } : {}),
+        ...(options.providerProfileId !== undefined
+          ? { providerProfileId: options.providerProfileId }
+          : {}),
         ...(options.modelId !== undefined ? { modelId: options.modelId } : {}),
         ...(options.manifestId !== undefined ? { manifestId: options.manifestId } : {}),
         ...(options.capability !== undefined ? { capability: options.capability } : {}),
@@ -163,6 +203,8 @@ export class MediaTaskRuntimeService {
           const submitted = this.repo.update(row.id, {
             mode: 'async',
             requestId: nextSubmission.requestId,
+            providerTaskId: nextSubmission.requestId,
+            submitResponseJson: JSON.stringify(nextSubmission.response),
           })
           const record = rowToRecord(submitted ?? this.repo.getById(row.id) ?? row)
           record.submitResponse = nextSubmission.response
@@ -179,15 +221,22 @@ export class MediaTaskRuntimeService {
         log.info(`media task cancelled during execute: id=${row.id} op=${row.operation}`)
         return rowToRecord(latest)
       }
+      if (this.recoveryTaskIds.has(row.id)) {
+        log.info(`media task result ignored during recovery: id=${row.id} op=${row.operation}`)
+        return latest ? rowToRecord(latest) : rowToRecord(row)
+      }
       const completed = this.repo.update(row.id, {
         providerProfileId,
         providerKind: output.provider,
         modelId: output.model,
         status: 'succeeded',
         mode: output.mode,
-        requestId: output.requestId ?? null,
+        ...(output.requestId !== undefined
+          ? { requestId: output.requestId, providerTaskId: output.requestId }
+          : {}),
         assetsJson: JSON.stringify(output.assets),
-        rawResponseJson: output.rawResponse === undefined ? null : JSON.stringify(output.rawResponse),
+        rawResponseJson:
+          output.rawResponse === undefined ? null : JSON.stringify(output.rawResponse),
         completedAt: new Date().toISOString(),
       })
       const record = rowToRecord(completed ?? this.repo.getById(row.id) ?? row)
@@ -205,6 +254,10 @@ export class MediaTaskRuntimeService {
         log.info(`media task cancelled during execute (err path): id=${row.id} op=${row.operation}`)
         return rowToRecord(latest)
       }
+      if (this.recoveryTaskIds.has(row.id)) {
+        log.info(`media task error ignored during recovery: id=${row.id} op=${row.operation}`)
+        return latest ? rowToRecord(latest) : rowToRecord(row)
+      }
       const code = err instanceof MediaProviderError ? err.code : 'provider_http_error'
       const message = err instanceof Error ? err.message : String(err)
       const failed = this.repo.update(row.id, {
@@ -215,7 +268,7 @@ export class MediaTaskRuntimeService {
       })
       const record = rowToRecord(failed ?? this.repo.getById(row.id) ?? row)
       // 失败任务也带上请求摘要（router 已挂到 error 上），方便在详情里排查 422/参数错误。
-      record.requestCall = err instanceof MediaProviderError ? err.requestCall ?? null : null
+      record.requestCall = err instanceof MediaProviderError ? (err.requestCall ?? null) : null
       record.submitResponse = submitResponse
       log.warn(
         `media task failed: id=${record.id} op=${record.operation} code=${code} msg=${message}`,
@@ -233,13 +286,62 @@ export class MediaTaskRuntimeService {
     return rowToRecord(row)
   }
 
+  inquireByRequestId(providerProfileId: string, requestId: string): MediaTaskRecord | null {
+    const row = this.repo.getByProviderTaskId(providerProfileId, requestId)
+    return row ? rowToRecord(row) : null
+  }
+
+  markRecovered(
+    taskId: string,
+    output: Pick<MediaGenerateOutput, 'provider' | 'model' | 'assets' | 'rawResponse'>,
+  ): MediaTaskRecord | null {
+    const current = this.repo.getById(taskId)
+    if (!current) return null
+    const providerTaskId = current.provider_task_id ?? current.request_id
+    if (!providerTaskId) return rowToRecord(current)
+    const result = this.repo.completeRecovery(taskId, providerTaskId, {
+      providerKind: output.provider,
+      modelId: output.model,
+      assetsJson: JSON.stringify(output.assets),
+      rawResponseJson: output.rawResponse === undefined ? null : JSON.stringify(output.rawResponse),
+    })
+    this.recoveryTaskIds.delete(taskId)
+    const row = result.row
+    return row ? rowToRecord(row) : null
+  }
+
+  beginRecovery(
+    taskId: string,
+    providerTaskId?: string | null,
+  ): { record: MediaTaskRecord; started: boolean } | null {
+    const result = this.repo.beginRecovery(taskId, providerTaskId)
+    if (result.started) this.recoveryTaskIds.add(taskId)
+    return result.row ? { record: rowToRecord(result.row), started: result.started } : null
+  }
+
+  markRecoveryFailed(
+    taskId: string,
+    error: { code: string; message: string },
+  ): MediaTaskRecord | null {
+    const current = this.repo.getById(taskId)
+    if (!current) return null
+    const providerTaskId = current.provider_task_id ?? current.request_id
+    if (!providerTaskId) return rowToRecord(current)
+    const result = this.repo.failRecovery(taskId, providerTaskId, error)
+    this.recoveryTaskIds.delete(taskId)
+    const row = result.row
+    return row ? rowToRecord(row) : null
+  }
+
   cancel(taskId: string): MediaTaskRecord | null {
     const row = this.repo.cancel(taskId)
     if (!row) {
       log.warn(`media task cancel miss: id=${taskId}`)
       return null
     }
-    const wasAlreadyTerminal = row.status === 'cancelled' || row.status === 'failed' || row.status === 'succeeded'
+    this.recoveryTaskIds.delete(taskId)
+    const wasAlreadyTerminal =
+      row.status === 'cancelled' || row.status === 'failed' || row.status === 'succeeded'
     log.info(
       `media task cancel: id=${row.id} status=${row.status}${wasAlreadyTerminal ? ' (already terminal)' : ''}`,
     )
@@ -249,15 +351,11 @@ export class MediaTaskRuntimeService {
   materialize(taskId: string): MediaGeneratedAsset[] | null {
     const row = this.repo.getById(taskId)
     if (!row || row.status !== 'succeeded') {
-      log.warn(
-        `media task materialize miss: id=${taskId} status=${row?.status ?? 'not_found'}`,
-      )
+      log.warn(`media task materialize miss: id=${taskId} status=${row?.status ?? 'not_found'}`)
       return null
     }
     const assets = parseJson(row.assets_json, []) as MediaGeneratedAsset[]
-    log.info(
-      `media task materialize: id=${taskId} assets=${assets.length}`,
-    )
+    log.info(`media task materialize: id=${taskId} assets=${assets.length}`)
     return assets
   }
 }
@@ -279,14 +377,22 @@ function rowToRecord(row: MediaGenerationTaskRow): MediaTaskRecord {
     modelParams: parseJson(row.model_params_json, {}),
     outputDir: row.output_dir,
     requestId: row.request_id,
+    providerTaskId: row.provider_task_id ?? row.request_id,
+    projectId: row.project_id,
+    clientTaskId: row.client_task_id,
+    polling: parseJson(row.polling_json, null),
     assets: parseJson(row.assets_json, []),
-    submitResponse: null,
+    submitResponse: parseJson(row.submit_response_json, null),
     rawResponse: parseJson(row.raw_response_json, null),
     // requestCall 不落 DB，仅由 execute() 从内存 output 挂载；rowToRecord 给 null 兜底。
     requestCall: null,
-    error: row.error_code || row.error_message
-      ? { code: row.error_code ?? 'unknown', message: row.error_message ?? 'Unknown media task error' }
-      : null,
+    error:
+      row.error_code || row.error_message
+        ? {
+            code: row.error_code ?? 'unknown',
+            message: row.error_message ?? 'Unknown media task error',
+          }
+        : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     submittedAt: row.submitted_at,

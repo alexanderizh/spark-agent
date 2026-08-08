@@ -1,3 +1,4 @@
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '@spark/protocol'
 import type {
   MediaManifestBaseTemplate,
   MediaModelCapabilityManifest,
@@ -339,8 +340,7 @@ function openAiVideoBase(manifest: MediaModelManifest): MediaModelManifest {
       },
       polling: {
         intervalMs: 10_000,
-        timeoutMs: 1_800_000,
-        maxAttempts: 180,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
         unknownStatus: 'fail',
         statusMap: {
           queued: 'queued',

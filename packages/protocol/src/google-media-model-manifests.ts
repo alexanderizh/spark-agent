@@ -4,6 +4,7 @@ import type {
   MediaModelCapabilityManifest,
   MediaModelManifest,
 } from './media-model-manifest.js'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from './media-config.js'
 import { googleGenerativeAiErrorContract } from './media-model-shared-manifest-parts.js'
 
 const LAST_CHECKED_AT = '2026-07-22'
@@ -364,7 +365,7 @@ const veoManifests = veoModels.map(
       },
       polling: {
         intervalMs: 10000,
-        timeoutMs: 1800000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
         statusMap: { pending: 'queued', running: 'running', done: 'succeeded', failed: 'failed' },
       },
     },
@@ -468,7 +469,7 @@ const omniManifest: MediaModelManifest = {
     },
     polling: {
       intervalMs: 5000,
-      timeoutMs: 1800000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       statusMap: {
         in_progress: 'running',
         completed: 'succeeded',

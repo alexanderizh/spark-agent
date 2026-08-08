@@ -3026,9 +3026,7 @@ export const canvasApi = {
     options?: { hardDelete?: boolean },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
-    const target = db.assets.find(
-      (item) => item.id === assetId && item.projectId === projectId,
-    )
+    const target = db.assets.find((item) => item.id === assetId && item.projectId === projectId)
     db.assets = db.assets.filter((item) => !(item.id === assetId && item.projectId === projectId))
     updateProjectCounts(db, projectId)
     writeDb(db)
@@ -3617,8 +3615,7 @@ export const canvasApi = {
       0,
       ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
     )
-    const defaultSize =
-      input.kind === 'video' ? VIDEO_NODE_DEFAULT_SIZE : AUDIO_NODE_DEFAULT_SIZE
+    const defaultSize = input.kind === 'video' ? VIDEO_NODE_DEFAULT_SIZE : AUDIO_NODE_DEFAULT_SIZE
     const size = {
       width: input.width ?? defaultSize.width,
       height: input.height ?? defaultSize.height,
@@ -5224,10 +5221,9 @@ export const canvasApi = {
     const useCurrentRuntime = options?.runtimeSource !== 'original-task'
     // B8: retry 同样走 capability → operation 反向映射，让统一图片节点（容器 operation + capabilityId）
     // 重试时按冻结的参考图数量还原出 image_edit / image_compose / text_to_image，而不是直接复用容器 operation。
-    const retryImageInputCount =
-      (oldTask.inputBindings ?? []).filter(
-        (binding) => binding.enabled && binding.kind === 'image',
-      ).length
+    const retryImageInputCount = (oldTask.inputBindings ?? []).filter(
+      (binding) => binding.enabled && binding.kind === 'image',
+    ).length
     const retryOperation = executionOperationForCanvasMediaCapability(
       oldTask.capabilityId,
       oldTask.operation,
@@ -5409,10 +5405,9 @@ export const canvasApi = {
     const nodeOperation = (node.data.operation ?? node.type) as CanvasOperationType
     // B2: 标准 UI 路径下 params.inputFiles 为 undefined，参考图数量只能从 inputBindings 统计。
     // image.edit capability 按参考图数量反推 image_edit(单图) / image_compose(多图)。
-    const imageInputCount =
-      (params.inputBindings ?? []).filter(
-        (binding) => binding.enabled && binding.kind === 'image',
-      ).length
+    const imageInputCount = (params.inputBindings ?? []).filter(
+      (binding) => binding.enabled && binding.kind === 'image',
+    ).length
     const operation = executionOperationForCanvasMediaCapability(
       params.capabilityId,
       nodeOperation,
@@ -5549,19 +5544,20 @@ export const canvasApi = {
 
     // runtime 取消尽力而为：无论返回什么状态、是否抛错，本地都继续走强制标记 cancelled，
     // 否则 runtime 返回 failed/succeeded 时提前 return 会让本地 task 永远停在 running。
-    if (task.requestId) {
+    const runtimeTaskId = task.runtimeTaskId ?? task.requestId
+    if (runtimeTaskId) {
       try {
         if (task.operation === 'video_depth_map') {
           await window.spark.invoke('canvas:task:cancel-depth-video', {
-            runtimeTaskId: task.requestId,
+            runtimeTaskId,
           })
         } else if (task.operation === 'extract_audio') {
           await window.spark.invoke('canvas:task:cancel-extract-audio', {
-            runtimeTaskId: task.requestId,
+            runtimeTaskId,
           })
         } else {
           await window.spark.invoke('canvas:task:cancel-media', {
-            runtimeTaskId: task.requestId,
+            runtimeTaskId,
           })
         }
       } catch {
@@ -5685,7 +5681,9 @@ export const canvasApi = {
       ? db.nodes.find((item) => item.id === task.operationNodeId && item.projectId === projectId)
       : null
     if (task) {
-      task.requestId = response.runtimeTaskId ?? response.requestId ?? null
+      task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+      task.providerTaskId = response.requestId ?? task.providerTaskId ?? null
+      task.requestId = response.requestId ?? response.runtimeTaskId ?? null
       task.progress = response.progress ?? task.progress
       task.inputFileDiagnostics = summarizeCanvasTaskInputFiles(request.inputFiles ?? [])
       task.updatedAt = now()
@@ -5772,7 +5770,9 @@ export const canvasApi = {
       ? db.nodes.find((item) => item.id === task.operationNodeId && item.projectId === projectId)
       : null
     if (task) {
-      task.requestId = response.runtimeTaskId ?? response.requestId ?? null
+      task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+      task.providerTaskId = response.requestId ?? task.providerTaskId ?? null
+      task.requestId = response.requestId ?? response.runtimeTaskId ?? null
       task.progress = response.progress ?? task.progress
       task.inputFileDiagnostics = summarizeCanvasTaskInputFiles(request.inputFiles ?? [])
       task.updatedAt = now()
@@ -6021,6 +6021,33 @@ export const canvasApi = {
         error: { code: 'ipc_error', message: err instanceof Error ? err.message : String(err) },
       }
     }
+    if (response.status === 'running') {
+      return this.markMediaTaskSubmitted(projectId, taskId, response)
+    }
+    return this.applyMediaTaskResult(projectId, taskId, response)
+  },
+
+  /**
+   * 继续查询已经提交到支持渠道的 Provider 任务，不重新创建 Provider 任务。
+   * 主进程按持久化的 Provider 轮询协议恢复，不重新创建 Provider 任务。
+   */
+  async repollMediaTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    if (!task) throw new Error('未找到画布任务')
+    if (task.status !== 'failed') throw new Error('只有轮询失败的任务可以重新轮询')
+    const providerProfileId = task.providerProfileId?.trim()
+    const providerTaskId = (task.providerTaskId ?? task.requestId)?.trim()
+    if (!providerProfileId || !providerTaskId) {
+      throw new Error('该任务没有可恢复的 Provider Task ID')
+    }
+    const response = await window.spark.invoke('canvas:task:repoll-media', {
+      projectId,
+      clientTaskId: taskId,
+      ...(task.runtimeTaskId ? { runtimeTaskId: task.runtimeTaskId } : {}),
+      providerProfileId,
+      providerTaskId,
+    })
     if (response.status === 'running') {
       return this.markMediaTaskSubmitted(projectId, taskId, response)
     }
@@ -6472,7 +6499,7 @@ export const canvasApi = {
   async markMediaTaskSubmitted(
     projectId: string,
     taskId: string,
-    response: CanvasMediaTaskCreateResponse,
+    response: CanvasMediaTaskCreateResponse & { repoll?: boolean },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
@@ -6481,14 +6508,26 @@ export const canvasApi = {
     const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task || !taskNode) return this.openSnapshot(projectId)
     if (task.status === 'cancelled') return this.openSnapshot(projectId, task.boardId)
-    if (task.status === 'completed' || task.status === 'failed') {
+    if (task.status === 'completed' || (task.status === 'failed' && response.repoll !== true)) {
       return this.openSnapshot(projectId, task.boardId)
     }
     task.status = 'running'
     task.progress = Math.max(task.progress, response.progress ?? 35)
+    task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+    task.providerTaskId =
+      response.providerTaskId ?? response.requestId ?? task.providerTaskId ?? null
     task.requestId = response.requestId ?? task.requestId ?? response.runtimeTaskId ?? null
+    if (response.repoll === true) {
+      task.errorMsg = null
+      task.errorDetail = null
+      task.completedAt = null
+    }
     task.providerProfileId = response.providerProfileId || task.providerProfileId || null
     task.provider = response.provider || task.provider || null
+    if (response.pollingAvailable !== undefined) task.pollingAvailable = response.pollingAvailable
+    if (response.pollingUnavailableReason !== undefined) {
+      task.pollingUnavailableReason = response.pollingUnavailableReason
+    }
     task.modelId = response.model || task.modelId || null
     task.requestCall = response.requestCall ?? task.requestCall ?? null
     if (response.submitResponse !== undefined) task.submitResponse = response.submitResponse
@@ -6500,7 +6539,9 @@ export const canvasApi = {
         at,
         kind: 'submitted',
         label: response.message ?? 'Provider 已接受后台任务',
-        ...(task.requestId ? { detail: `Request ${task.requestId}` } : {}),
+        ...(task.providerTaskId || task.requestId
+          ? { detail: `Provider Task ${task.providerTaskId ?? task.requestId}` }
+          : {}),
       })
     }
     if (patchTaskNode) {
@@ -6538,7 +6579,8 @@ export const canvasApi = {
       return this.openSnapshot(projectId, task.boardId)
     }
 
-    const responseRequestId = response.requestId ?? response.runtimeTaskId ?? null
+    const responseProviderTaskId = response.providerTaskId ?? response.requestId ?? null
+    const responseRequestId = responseProviderTaskId ?? response.runtimeTaskId ?? null
     if (
       !response.error &&
       response.status === 'succeeded' &&
@@ -6559,7 +6601,16 @@ export const canvasApi = {
         response.error?.code,
         response.error?.message ?? (isCancelled ? '任务已取消' : 'Provider task failed'),
       )
-      task.requestId = responseRequestId
+      task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+      task.providerTaskId = responseProviderTaskId ?? task.providerTaskId ?? null
+      task.requestId = responseProviderTaskId ?? task.requestId ?? response.runtimeTaskId ?? null
+      if (response.providerProfileId) task.providerProfileId = response.providerProfileId
+      if (response.provider) task.provider = response.provider
+      if (response.model) task.modelId = response.model
+      if (response.pollingAvailable !== undefined) task.pollingAvailable = response.pollingAvailable
+      if (response.pollingUnavailableReason !== undefined) {
+        task.pollingUnavailableReason = response.pollingUnavailableReason
+      }
       task.requestCall = response.requestCall ?? task.requestCall ?? null
       if (response.submitResponse !== undefined) task.submitResponse = response.submitResponse
       if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
@@ -6594,7 +6645,13 @@ export const canvasApi = {
     if (response.providerProfileId) task.providerProfileId = response.providerProfileId
     if (response.model) task.modelId = response.model
     task.provider = response.provider || null
-    task.requestId = responseRequestId
+    if (response.pollingAvailable !== undefined) task.pollingAvailable = response.pollingAvailable
+    if (response.pollingUnavailableReason !== undefined) {
+      task.pollingUnavailableReason = response.pollingUnavailableReason
+    }
+    task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+    task.providerTaskId = responseProviderTaskId ?? task.providerTaskId ?? null
+    task.requestId = responseProviderTaskId ?? task.requestId ?? response.runtimeTaskId ?? null
     task.rawResponse = response.rawResponse
     if (response.submitResponse !== undefined) task.submitResponse = response.submitResponse
     task.requestCall = response.requestCall ?? task.requestCall ?? null

@@ -123,13 +123,13 @@ export function ProviderMediaModelCatalog({
                 <div className="pv_media_manifest_main">
                   <div className="pv_media_manifest_title">
                     <span>{model.displayName}</span>
-                    <Tag size="middle" color="gray">{model.providerKind}</Tag>
-                    <Tag size="middle" color="blue">{model.invocationMode}</Tag>
+                    <Tag size="small" color="gray">{model.providerKind}</Tag>
+                    <Tag size="small" color="blue">{model.invocationMode}</Tag>
                   </div>
                   <div className="pv_media_manifest_meta">{model.effectiveModelId}</div>
                   <div className="pv_media_manifest_caps">
                     {model.capabilities.slice(0, 4).map((capability) => (
-                      <Tag key={capability.id} size="middle" color="gray">
+                      <Tag key={capability.id} size="small" color="gray">
                         {capability.label}
                       </Tag>
                     ))}
@@ -138,10 +138,10 @@ export function ProviderMediaModelCatalog({
                 {selected && (
                   <div className="pv_media_manifest_actions">
                     {isDefault ? (
-                      <Tag size="middle" color="green">默认</Tag>
+                      <Tag size="small" color="green">默认</Tag>
                     ) : (
                       <Button
-                        size="middle"
+                        size="small"
                         type="text"
                         icon={<Icons.Star size={12} />}
                         onClick={(event) => {

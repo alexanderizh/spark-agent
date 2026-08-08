@@ -1,6 +1,11 @@
 import { z } from 'zod'
 
-export const ProviderFilesApiKindSchema = z.enum(['xai', 'volcengine-ark', 'bailian', 'minimax-hailuo'])
+export const ProviderFilesApiKindSchema = z.enum([
+  'xai',
+  'volcengine-ark',
+  'bailian',
+  'minimax-hailuo',
+])
 export type ProviderFilesApiKind = z.infer<typeof ProviderFilesApiKindSchema>
 
 export const BailianFilePurposeSchema = z.enum(['fine-tune', 'file-extract', 'batch'])
@@ -36,6 +41,8 @@ export interface ProviderFileObject {
   error?: { code?: string; message?: string }
   scope?: { type?: string; id?: string }
   tos?: { bucket?: string; objectKey?: string }
+  /** 火山方舟 Files 返回的预签名下载地址；用于预览或转成 Seedance 可接受的 URL。 */
+  downloadUrl?: string
   preprocessConfigs?: Record<string, unknown> | null
 }
 

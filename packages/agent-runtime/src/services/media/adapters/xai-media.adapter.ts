@@ -19,6 +19,7 @@
  */
 
 import { OpenAiCompatibleMediaAdapter } from './openai-compatible-media.adapter.js'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
 import type {
@@ -209,7 +210,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const raw = await pollTask(`${baseEndpoint(ctx)}/videos/${encodeURIComponent(taskId)}`, authHeaders(ctx), {
       fetchImpl: ctx.fetch,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-      ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+      ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
       inspect: (response) => {
         const status = extractStatus(response)
         if (extractXaiVideoUrls(response).length > 0 || status === 'done') return 'done'
@@ -449,7 +450,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
         inspect: (d) => {
           const urls = extractXaiVideoUrls(d)
           const s = extractStatus(d)

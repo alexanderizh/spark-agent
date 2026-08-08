@@ -4,6 +4,7 @@ import type {
   MediaManifestOutputKind,
   MediaModelManifest,
 } from './media-model-manifest.js'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from './media-config.js'
 import type { MediaErrorContract } from './media-model-contract.js'
 
 const LAST_CHECKED_AT = '2026-07-22'
@@ -307,7 +308,7 @@ const soraManifests = soraModels.map(
       },
       polling: {
         intervalMs: 10000,
-        timeoutMs: 1800000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
         statusMap: {
           queued: 'queued',
           in_progress: 'running',

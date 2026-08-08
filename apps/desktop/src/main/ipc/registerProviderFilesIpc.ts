@@ -64,12 +64,29 @@ export function toMinimaxProviderFile(file: MinimaxFileObject): ProviderFileObje
 }
 
 export function resolveProviderFilesApiKind(
-  profile: Pick<ProviderProfile, 'apiEndpoint' | 'mediaProvider'>,
+  profile: Partial<
+    Pick<
+      ProviderProfile,
+      'apiEndpoint' | 'mediaProvider' | 'provider' | 'modelType' | 'defaultModel'
+    >
+  >,
 ): ProviderFilesApiKind | null {
   if (profile.mediaProvider === 'xai') return 'xai'
   if (profile.mediaProvider === 'volcengine-ark') return 'volcengine-ark'
   if (profile.mediaProvider === 'bailian') return 'bailian'
   if (profile.mediaProvider === 'minimax-hailuo') return 'minimax-hailuo'
+  // 兼容早期已保存的火山图片/视频 Provider：这些配置可能没有落盘 mediaProvider，
+  // 但同时具备火山端点、对应模型类型和 Seedance/Seedream 模型 ID。仅在三项均命中时
+  // 回退识别，避免再次按 hostname 把火山聊天 Provider 误纳入 Files 下拉。
+  if (
+    (profile.provider === 'volcengine' ||
+      profile.apiEndpoint?.toLowerCase().includes('ark.cn-beijing.volces.com') === true) &&
+    typeof profile.defaultModel === 'string' &&
+    ((profile.modelType === 'video' && /^doubao-seedance-/i.test(profile.defaultModel)) ||
+      (profile.modelType === 'image' && /^doubao-seedream-/i.test(profile.defaultModel)))
+  ) {
+    return 'volcengine-ark'
+  }
   // 不再凭 apiEndpoint 域名推断渠道：火山方舟等域名聊天与多媒体共用端点，
   // 仅凭 hostname 会把纯聊天渠道（如「火山 claude」）误判为多媒体渠道。
   return null

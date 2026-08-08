@@ -155,6 +155,17 @@ function seedRunningVideoTask(): void {
   __resetCanvasHotCache()
 }
 
+function seedFailedVideoTaskWithoutOutput(): void {
+  seedRunningVideoTask()
+  const db = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}') as CanvasDb
+  db.nodes[0]!.data.status = 'failed'
+  db.tasks[0]!.status = 'failed'
+  db.tasks[0]!.errorMsg = 'task_timeout'
+  db.tasks[0]!.errorDetail = 'Task timed out'
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+  __resetCanvasHotCache()
+}
+
 describe('canvas media output integrity', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -216,7 +227,9 @@ describe('canvas media output integrity', () => {
       providerProfileId: 'provider-1',
       provider: 'apimart',
       model: 'doubao-seedance-2-0-mini',
-      assets: [{ type: 'video', url: 'https://cdn.example.com/portrait.mp4', mimeType: 'video/mp4' }],
+      assets: [
+        { type: 'video', url: 'https://cdn.example.com/portrait.mp4', mimeType: 'video/mp4' },
+      ],
     })
 
     expect(readVideoDimensionsMock).toHaveBeenCalledWith('https://cdn.example.com/portrait.mp4')
@@ -244,5 +257,29 @@ describe('canvas media output integrity', () => {
 
     expect(snapshot.assets[0]).not.toHaveProperty('width')
     expect(snapshot.assets[0]).not.toHaveProperty('height')
+  })
+
+  it('persists an unavailable recovery result and hides repoll afterward', async () => {
+    seedFailedVideoTaskWithoutOutput()
+
+    const snapshot = await canvasApi.applyMediaTaskResult('project-1', 'task-1', {
+      status: 'failed',
+      mode: 'async',
+      runtimeTaskId: 'runtime-1',
+      providerTaskId: 'provider-task-1',
+      providerProfileId: 'provider-1',
+      provider: 'custom',
+      model: 'custom-video',
+      assets: [],
+      pollingAvailable: false,
+      pollingUnavailableReason: '该历史任务没有可恢复协议',
+      error: { code: 'poll_resume_unavailable', message: '该历史任务没有可恢复协议' },
+    })
+
+    expect(snapshot.tasks[0]).toMatchObject({
+      status: 'failed',
+      pollingAvailable: false,
+      pollingUnavailableReason: '该历史任务没有可恢复协议',
+    })
   })
 })

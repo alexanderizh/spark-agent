@@ -1,4 +1,5 @@
 import type { MediaModelCapabilityManifest, MediaModelManifest } from './media-model-manifest.js'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from './media-config.js'
 
 export interface BasicCustomMediaManifestInput {
   modelId: string
@@ -56,7 +57,7 @@ export function createBasicCustomMediaManifest(
         },
         polling: {
           intervalMs: 5_000,
-          timeoutMs: input.modelType === 'video' ? 1_800_000 : 600_000,
+          timeoutMs: input.modelType === 'video' ? DEFAULT_VIDEO_POLL_TIMEOUT_MS : 600_000,
           statusMap: {
             queued: 'queued',
             pending: 'queued',

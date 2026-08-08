@@ -53,6 +53,25 @@ describe('resolveProviderFilesApiKind', () => {
     ).toBeNull()
   })
 
+  it('recovers legacy Volcano image/video profiles without a persisted mediaProvider', () => {
+    expect(
+      resolveProviderFilesApiKind({
+        provider: 'openai',
+        apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+        modelType: 'video',
+        defaultModel: 'doubao-seedance-2-5-260628',
+      }),
+    ).toBe('volcengine-ark')
+    expect(
+      resolveProviderFilesApiKind({
+        provider: 'openai',
+        apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+        modelType: 'image',
+        defaultModel: 'doubao-seedream-5-0-pro-260628',
+      }),
+    ).toBe('volcengine-ark')
+  })
+
   it('maps MiniMax files to active canvas-ready media with MIME inferred from the filename', () => {
     expect(
       toMinimaxProviderFile({

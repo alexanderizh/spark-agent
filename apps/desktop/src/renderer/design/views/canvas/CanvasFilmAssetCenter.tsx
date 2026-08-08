@@ -179,7 +179,8 @@ export type FilmCenterHandlers = {
   onInsertAssetToCanvas: (assetId: string) => void
   /**
    * 把「素材中心 → Files」里的 provider 文件（如 MiniMax）作为节点加入画布。
-   * 节点持有 fileId（无本地 url），提交任务时命中 adapter 上传短路（mm_file://{id}）。
+   * 节点持有渠道 fileId（无本地 url）；提交任务时由对应 adapter 按官方协议解析，
+   * 例如 MiniMax 使用 mm_file://{id}，火山方舟先解析 Files download_url。
    */
   onInsertProviderFileToCanvas?: (input: {
     providerProfileId: string

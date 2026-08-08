@@ -21,6 +21,7 @@
  */
 
 import type { MediaErrorContract, MediaModelParamPolicy } from './media-model-contract.js'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from './media-config.js'
 import type {
   MediaInvocationMode,
   MediaManifestInputKind,
@@ -144,7 +145,7 @@ function tencentVideoInvocation(): MediaModelManifest['invocation'] {
     },
     polling: {
       intervalMs: 5_000,
-      timeoutMs: 30 * 60 * 1_000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       statusMap: {
         queued: 'queued',
         pending: 'queued',

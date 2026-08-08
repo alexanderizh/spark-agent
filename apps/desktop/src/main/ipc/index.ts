@@ -244,6 +244,7 @@ import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
 import { registerProviderFilesIpc } from './registerProviderFilesIpc.js'
 import { registerVideoChannelTaskIpc } from './registerVideoChannelTaskIpc.js'
+import { registerCanvasMediaRepollIpc } from './registerCanvasMediaRepollIpc.js'
 import { registerFontAssetIpc } from './registerFontAssetIpc.js'
 import { registerVoiceIpc } from './registerVoiceIpc.js'
 import { registerCanvasWorkflowIpc } from './registerCanvasWorkflowIpc.js'
@@ -1118,6 +1119,11 @@ async function canvasResponseFromMediaTaskRecord(
     mode: record.mode ?? 'sync',
     assets,
     ...(record.requestId != null ? { requestId: record.requestId } : {}),
+    ...(record.providerTaskId != null ? { providerTaskId: record.providerTaskId } : {}),
+    pollingAvailable: record.polling != null,
+    ...(record.polling == null && record.mode === 'async'
+      ? { pollingUnavailableReason: '该历史任务没有保存可恢复的渠道轮询协议' }
+      : {}),
     ...(record.submitResponse != null ? { submitResponse: record.submitResponse } : {}),
     ...(record.rawResponse != null ? { rawResponse: record.rawResponse } : {}),
     ...(record.requestCall != null ? { requestCall: record.requestCall } : {}),
@@ -3862,6 +3868,8 @@ export function registerAllIpcHandlers(): void {
         ...(req.manifestId != null ? { manifestId: req.manifestId } : {}),
         ...(req.modelId != null ? { modelId: req.modelId } : {}),
         ...(req.capabilityId != null ? { capability: req.capabilityId } : {}),
+        ...(req.projectId !== undefined ? { projectId: req.projectId } : {}),
+        ...(req.clientTaskId !== undefined ? { clientTaskId: req.clientTaskId } : {}),
         // Canvas performs structural checks and advisory manifest validation in
         // the renderer. Do not run a second, stricter manifest pass after the
         // final prompt has been expanded with system/context text.
@@ -8835,6 +8843,13 @@ export function registerAllIpcHandlers(): void {
     getProfile: async (id) =>
       (await getProviderService().listProviders()).find((profile) => profile.id === id),
     getApiKey: async (id) => getProviderService().getProviderApiKey(id),
+  })
+
+  registerCanvasMediaRepollIpc({
+    getProfile: async (id) =>
+      (await getProviderService().listProviders()).find((profile) => profile.id === id),
+    getApiKey: async (id) => getProviderService().getProviderApiKey(id),
+    getRuntime: getMediaTaskRuntimeService,
   })
 
   // ─── Provider 编辑辅助通道（如 reveal-key）注册入口 ─────────────────────

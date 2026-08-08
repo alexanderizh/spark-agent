@@ -476,6 +476,13 @@ export type CanvasTask = {
   provider?: string | null
   /** 异步任务的 request/task id（用于血缘追溯） */
   requestId?: string | null
+  /** 本地媒体 runtime 任务 ID；与 Provider 的 request/task ID 分开保存。 */
+  runtimeTaskId?: string | null
+  /** Provider 返回、用于后续查询的渠道任务 ID。 */
+  providerTaskId?: string | null
+  /** Whether the main process has a durable protocol-specific resume contract. */
+  pollingAvailable?: boolean
+  pollingUnavailableReason?: string | null
   /** provider 原始响应摘要（不含敏感信息） */
   rawResponse?: unknown
   /** Agent/model 原始文本；即使业务解析失败也必须保留。 */

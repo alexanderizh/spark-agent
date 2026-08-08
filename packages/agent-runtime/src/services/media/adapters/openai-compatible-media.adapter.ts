@@ -11,7 +11,7 @@
 
 import { readFile } from 'node:fs/promises'
 import { basename, isAbsolute } from 'node:path'
-import { capabilityForOperation } from '@spark/protocol'
+import { capabilityForOperation, DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '@spark/protocol'
 import type {
   MediaCapabilityId,
   MediaModelCapabilityManifest,
@@ -36,7 +36,11 @@ import {
   pollTask,
 } from '../media-http.util.js'
 import { logMediaCall, logMediaDiag, logMediaResult } from '../media-debug-log.js'
-import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
+import {
+  configuredMediaInterfaceTimeoutMs,
+  mediaPollTimeoutOptions,
+  resolveMediaInterfaceTimeoutMs,
+} from '../media-timeout.js'
 import { apimartNativeModelId, buildApimartVideoInputFields } from './apimart-video-input.js'
 
 export interface OpenAiCompatibleAdapterOptions {
@@ -245,7 +249,8 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
           image,
           input.outputDir,
           filename(input, 'img', i, images.length),
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -356,7 +361,8 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
           image,
           input.outputDir,
           filename(input, 'edit', i, images.length),
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -763,7 +769,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
         logContext: `provider=${this.id} capability=${capability} requestId=${taskId}`,
         inspect: (d) => {
           const urls = extractMediaUrls(d, { kind: 'video' })
@@ -801,7 +807,8 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
           u,
           input.outputDir,
           filename(input, 'video', i, videoUrls.length),
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -911,10 +918,7 @@ async function resolveMediaInputRefForUpload(
   }
   const publicUrl = uploaded.publicUrl ?? uploaded.url
   if (!publicUrl || !/^https?:\/\//i.test(publicUrl)) {
-    throw new MediaProviderError(
-      'provider_http_error',
-      `${kind} 上传成功但返回了无效的访问 URL`,
-    )
+    throw new MediaProviderError('provider_http_error', `${kind} 上传成功但返回了无效的访问 URL`)
   }
   logMediaDiag('media-input-upload-finished', {
     provider: ctx.mediaProvider,

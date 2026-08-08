@@ -5065,6 +5065,8 @@ export interface CanvasMediaTaskCreateResponse {
   model: string
   mode: 'sync' | 'async'
   requestId?: string
+  /** Provider-owned task identifier. Kept separate from the local runtime ID. */
+  providerTaskId?: string
   assets: CanvasMediaTaskAsset[]
   /** 轮询任务提交接口的响应摘要；在 provider 返回任务 ID 后立即回写。 */
   submitResponse?: unknown
@@ -5076,6 +5078,29 @@ export interface CanvasMediaTaskCreateResponse {
   progress?: number
   stage?: string
   message?: string
+  /** Whether the persisted task has a protocol-specific resume path. */
+  pollingAvailable?: boolean
+  pollingUnavailableReason?: string
+}
+
+export interface CanvasMediaTaskRepollRequest {
+  /** Renderer-local canvas project id, used only for async stream routing. */
+  projectId: string
+  /** Renderer-local canvas task id, used only for async stream routing. */
+  clientTaskId: string
+  /** Persisted media runtime task id; required for durable recovery when available. */
+  runtimeTaskId?: string
+  /** Provider profile captured by the original task. */
+  providerProfileId: string
+  /** Provider task id captured from the original submit response. */
+  providerTaskId: string
+}
+
+export interface CanvasMediaTaskRepollResponse extends CanvasMediaTaskCreateResponse {
+  /** Whether the request entered a provider status query rather than a new submit. */
+  repoll: true
+  /** Human-readable reason when the existing task cannot be resumed. */
+  repollUnavailableReason?: string
 }
 
 export interface CanvasDepthModelStatusRequest {}
@@ -5893,6 +5918,7 @@ export interface IpcChannelMap
     CanvasMediaPreviewTemplateInvocationResponse,
   ]
   'canvas:task:create-media': [CanvasMediaTaskCreateRequest, CanvasMediaTaskCreateResponse]
+  'canvas:task:repoll-media': [CanvasMediaTaskRepollRequest, CanvasMediaTaskRepollResponse]
   'canvas:depth-model:status': [CanvasDepthModelStatusRequest, CanvasDepthModelStatusResponse]
   'canvas:depth-model:install': [CanvasDepthModelInstallRequest, CanvasDepthModelInstallResponse]
   'canvas:task:create-depth-video': [

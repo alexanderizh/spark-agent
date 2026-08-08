@@ -97,6 +97,16 @@ export type {
 } from './services/media/media-adapter.types.js'
 export { MediaArtifactService } from './services/media/media-artifact.service.js'
 export { MediaTaskRuntimeService } from './services/media/media-task-runtime.service.js'
+export { recoverMediaTask } from './services/media/media-task-recovery.service.js'
+export type {
+  MediaTaskRecoveryInput,
+  MediaTaskRecoveryResult,
+  MediaTaskRecoveryStatus,
+} from './services/media/media-task-recovery.service.js'
+export type {
+  MediaTaskPollingDescriptor,
+  MediaTaskPollingStrategy,
+} from './services/media/media-task-polling.types.js'
 export type {
   MediaTaskRecord,
   MediaTaskRouterLike,

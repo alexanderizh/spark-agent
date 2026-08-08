@@ -3,13 +3,14 @@
  *
  * 覆盖两类模型：
  *
- * 1. 视频生成 —— Doubao Seedance 2.0 / 2.0 Fast / 2.0 Mini
+ * 1. 视频生成 —— Doubao Seedance 2.5 / 2.0 / 2.0 Fast / 2.0 Mini
  *    见 model-api-doc/seedance2.0.md：
  *      - 文生视频 / 图生视频（首帧/首尾帧）/ 多模态参考 / 视频编辑 / 视频延长
  *      - POST {base}/contents/generations/tasks，请求体为 model + content[] + 顶层参数
  *      - content[] 元素：{type:'text'} / {type:'image_url',image_url,role} /
  *        {type:'video_url',video_url,role} / {type:'audio_url',audio_url,role}
  *        role ∈ first_frame | last_frame | reference_image | reference_video | reference_audio
+ *      - 2.5 额外支持 4–30 秒、50 个总参考素材和 output_format=mp4|mov；2.0 保持原限制。
  *      - 响应：异步任务，取 id 轮询 GET {base}/contents/generations/tasks/{id}
  *        → content.video_url（成功）/ error（失败）
  *
@@ -33,6 +34,7 @@
  * 的 endpoint 路径（/contents/generations/tasks、/images/generations）在此拼接。
  */
 
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '@spark/protocol'
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
@@ -55,7 +57,17 @@ import {
 } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
 import { resolveVolcengineMediaReference } from '../volcengine-ark-media-input.js'
-import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
+import {
+  isSeedance20Model,
+  isSeedance25Model,
+  isSeedance2xModel,
+  seedanceReferenceLimits,
+} from '../volcengine-ark-seedance.js'
+import {
+  configuredMediaInterfaceTimeoutMs,
+  mediaPollTimeoutOptions,
+  resolveMediaInterfaceTimeoutMs,
+} from '../media-timeout.js'
 import { clampInt, filenameHelper } from './openai-compatible-media.adapter.js'
 
 const log = createLogger('media:volcengine-ark')
@@ -202,7 +214,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 172_800_000),
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
         errorExtractor: volcengineErrorExtractor,
         inspect: (data) => {
           const urls = extractMediaUrls(data, { kind: 'video' })
@@ -236,7 +248,8 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
           u,
           input.outputDir,
           filenameHelper(input, videoPrefix(capability), i, videoUrls.length),
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -319,7 +332,8 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
           image,
           input.outputDir,
           filenameHelper(input, 'seedream', index, images.length),
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -341,9 +355,11 @@ function assertSeedanceInputMode(
   const firstFrames = images.filter((file) => file.role === 'first_frame')
   const lastFrames = images.filter((file) => file.role === 'last_frame')
   const adapterModelId = mediaAdapterModelId(ctx)
-  const isSeedance2 = adapterModelId.startsWith('doubao-seedance-2-0-')
+  const isSeedance2 = isSeedance20Model(adapterModelId)
+  const isSeedance2x = isSeedance2xModel(adapterModelId)
+  const referenceLimits = seedanceReferenceLimits(adapterModelId)
   // 1.x 系列（1.0 / 1.5）只支持 t2v + i2v，不支持参考图生视频（r2v）。
-  // 正向精确匹配第 1 代，避免未来引入 2.x/2.5 时被 `!isSeedance2` 反向误判。
+  // 正向精确匹配第 1 代，避免未来引入 2.x/2.5 时被旧版反向条件误判。
   const isSeedance1x = adapterModelId.startsWith('doubao-seedance-1-')
   // 画布的通用输入绑定会把普通图片持久化为 reference。对只支持首/尾帧的
   // Seedance 1.x，这个角色只是画布语义，不能原样映射成火山 reference_image。
@@ -364,7 +380,7 @@ function assertSeedanceInputMode(
       'Seedance 1.0 Pro Fast 只支持单张首帧，不支持首尾帧',
     )
   }
-  if (!isSeedance2 && (videos.length > 0 || audios.length > 0 || explicitReferences.length > 0)) {
+  if (!isSeedance2x && (videos.length > 0 || audios.length > 0 || explicitReferences.length > 0)) {
     throw new MediaProviderError(
       'invalid_input',
       `${ctx.defaultModel} 不支持多模态参考图、参考视频或参考音频`,
@@ -412,10 +428,16 @@ function assertSeedanceInputMode(
       'Seedance 多模态参考不能只传音频，至少需要 1 张图片或 1 段视频',
     )
   }
-  if (images.length > 9 || videos.length > 3 || audios.length > 3) {
+  if (
+    referenceLimits &&
+    (images.length > referenceLimits.maxImages ||
+      videos.length > referenceLimits.maxVideos ||
+      audios.length > referenceLimits.maxAudios ||
+      images.length + videos.length + audios.length > referenceLimits.maxTotal)
+  ) {
     throw new MediaProviderError(
       'invalid_input',
-      'Seedance 2.0 最多支持 9 张参考图、3 段参考视频和 3 段参考音频',
+      `${adapterModelId} 最多支持 ${referenceLimits.maxImages} 张参考图、${referenceLimits.maxVideos} 段参考视频和 ${referenceLimits.maxAudios} 段参考音频，且参考素材总数不能超过 ${referenceLimits.maxTotal} 个`,
     )
   }
 
@@ -604,15 +626,28 @@ function buildSeedanceParams(
   const ratio = normalizeSeedanceRatio(ratioRaw)
   if (ratio) params.ratio = ratio
 
-  // duration 范围：Seedance 2.0 系列 [4,15]；1.x 系列 [2,12]。
-  // manifest 已通过 schema enum/minimum 在 UI 层把 1.x 限到 [2,12]，adapter 层
-  // 这里取并集 [2,15] 兜底，避免误把合法的 1.x 短时长（如 3s）钳到 4s。
+  // duration 范围：Seedance 2.5 [4,30]，2.0 [4,15]，1.x [2,12]。
+  // 这里仍做 adapter 边界钳制，避免 MCP/旧画布快照绕过 schema 后发送平台必拒的值。
   const duration = numberVal(normalized.duration) ?? numberVal(normalized.durationSeconds)
-  if (duration != null)
-    params.duration = duration === -1 ? -1 : clampInt(duration, undefined, 5, 2, 15)
+  if (duration != null) {
+    const adapterModelId = mediaAdapterModelId(ctx)
+    const durationMin = isSeedance2xModel(adapterModelId) ? 4 : 2
+    const durationMax = isSeedance25Model(adapterModelId)
+      ? 30
+      : isSeedance20Model(adapterModelId)
+        ? 15
+        : 12
+    params.duration =
+      duration === -1 ? -1 : clampInt(duration, undefined, 5, durationMin, durationMax)
+  }
 
   const resolution = stringVal(normalized.resolution) ?? videoDefaults?.resolution
   if (resolution) params.resolution = resolution
+
+  if (manifestSupportsParam(ctx, 'outputFormat')) {
+    const outputFormat = stringVal(normalized.output_format) ?? stringVal(normalized.outputFormat)
+    if (outputFormat) params.output_format = outputFormat
+  }
 
   const seed = numberVal(normalized.seed)
   if (seed != null && manifestSupportsParam(ctx, 'seed')) params.seed = seed
@@ -851,16 +886,14 @@ function appendRequestId(body: unknown): string {
 }
 
 function describeVolcenginePollResponse(value: unknown): Record<string, unknown> {
-  const root = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-  const error = root.error && typeof root.error === 'object'
-    ? root.error as Record<string, unknown>
-    : {}
+  const root = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const error =
+    root.error && typeof root.error === 'object' ? (root.error as Record<string, unknown>) : {}
   return {
     status: extractStatus(value) || 'unknown',
     videoUrls: extractMediaUrls(value, { kind: 'video' }).length,
     errorCode: stringVal(error.code) ?? stringVal(error.Code),
-    requestId:
-      stringVal(root.RequestId) ?? stringVal(root.requestId) ?? stringVal(root.request_id),
+    requestId: stringVal(root.RequestId) ?? stringVal(root.requestId) ?? stringVal(root.request_id),
   }
 }
 

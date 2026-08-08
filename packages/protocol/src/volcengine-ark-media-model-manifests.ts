@@ -2,7 +2,7 @@
  * 火山方舟图片/视频模型清单。
  *
  * 这里仅保存火山模型差异；画布继续消费通用 manifest/rolePolicy，不能感知 provider。
- * 参数与枚举核对自 2026-07-16 抓取的官方文档 1330310、1520757、1541523、2582774。
+ * 参数与枚举核对自 2026-08-08 给定的官方文档 1520757、2607688、1541523、2582774。
  */
 
 import type { MediaErrorContract, MediaModelParamPolicy } from './media-model-contract.js'
@@ -12,10 +12,12 @@ import type {
   MediaModelCapabilityManifest,
   MediaModelManifest,
 } from './media-model-manifest.js'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from './media-config.js'
 import type { MediaInputRolePolicy } from './media-config.js'
 
 const DOC_ROOT = 'https://console.volcengine.com/ark/region:cn-beijing/docs/82379'
 const VIDEO_API_DOC = `${DOC_ROOT}/1520757?lang=zh`
+const SEEDANCE_25_DOC = `${DOC_ROOT}/2607688?lang=zh`
 const VIDEO_TUTORIAL_DOC = `${DOC_ROOT}/2291680?lang=zh`
 const IMAGE_API_DOC = `${DOC_ROOT}/1541523?lang=zh`
 const IMAGE_TUTORIAL_DOC = `${DOC_ROOT}/1824121?lang=zh`
@@ -98,41 +100,59 @@ const seedanceFirstLastFrameRolePolicy: MediaInputRolePolicy = {
   defaultRoleAssignment: 'first_then_last_then_reference',
 }
 
-const seedance2BaseProperties = {
-  aspectRatio: {
-    type: 'string',
-    title: '视频比例',
-    enum: ['智能比例', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
-    default: '智能比例',
-  },
-  durationSeconds: {
-    type: 'integer',
-    title: '时长（秒）',
-    enum: [-1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-    default: 5,
-    description: '-1 表示由模型自选；其他合法值为 4–15。',
-  },
-  generateAudio: { type: 'boolean', title: '生成同步音频', default: true },
-  watermark: { type: 'boolean', title: '水印', default: false },
-  returnLastFrame: { type: 'boolean', title: '返回尾帧图', default: false },
-  executionExpiresAfter: {
-    type: 'integer',
-    title: '任务过期时间（秒）',
-    minimum: 3600,
-    maximum: 259200,
-    default: 172800,
-  },
-  priority: { type: 'integer', title: '队列优先级', minimum: 0, maximum: 9, default: 0 },
-  safetyIdentifier: { type: 'string', title: '安全标识', maxLength: 64 },
-  callbackUrl: { type: 'string', title: '回调地址', format: 'uri' },
+function seedance2BaseProperties(durationMax: 15 | 30, outputFormats?: readonly string[]) {
+  const durationValues = Array.from({ length: durationMax - 3 }, (_, index) => index + 4)
+  return {
+    aspectRatio: {
+      type: 'string',
+      title: '视频比例',
+      enum: ['智能比例', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      default: '智能比例',
+    },
+    durationSeconds: {
+      type: 'integer',
+      title: '时长（秒）',
+      enum: [-1, ...durationValues],
+      default: 5,
+      description: `-1 表示由模型自选；其他合法值为 4–${durationMax}。`,
+    },
+    generateAudio: { type: 'boolean', title: '生成同步音频', default: true },
+    watermark: { type: 'boolean', title: '水印', default: false },
+    returnLastFrame: { type: 'boolean', title: '返回尾帧图', default: false },
+    executionExpiresAfter: {
+      type: 'integer',
+      title: '任务过期时间（秒）',
+      minimum: 3600,
+      maximum: 259200,
+      default: 172800,
+    },
+    priority: { type: 'integer', title: '队列优先级', minimum: 0, maximum: 9, default: 0 },
+    safetyIdentifier: { type: 'string', title: '安全标识', maxLength: 64 },
+    callbackUrl: { type: 'string', title: '回调地址', format: 'uri' },
+    ...(outputFormats
+      ? {
+          outputFormat: {
+            type: 'string',
+            title: '输出视频格式',
+            enum: [...outputFormats],
+            default: outputFormats[0],
+          },
+        }
+      : {}),
+  }
 }
 
-function seedance2Schema(resolutions: readonly string[], includeSearch: boolean) {
+function seedance2Schema(
+  resolutions: readonly string[],
+  includeSearch: boolean,
+  durationMax: 15 | 30 = 15,
+  outputFormats?: readonly string[],
+) {
   return {
     type: 'object',
     additionalProperties: false,
     properties: {
-      ...seedance2BaseProperties,
+      ...seedance2BaseProperties(durationMax, outputFormats),
       ...(includeSearch
         ? {
             searchEnabled: {
@@ -160,6 +180,7 @@ const seedance2Aliases = {
   executionExpiresAfter: 'execution_expires_after',
   safetyIdentifier: 'safety_identifier',
   callbackUrl: 'callback_url',
+  outputFormat: 'output_format',
 }
 
 function seedance2Capability(input: {
@@ -168,6 +189,10 @@ function seedance2Capability(input: {
   required: MediaManifestInputKind[]
   schema: Record<string, unknown>
   rolePolicy: MediaInputRolePolicy
+  maxImages: number
+  maxVideos: number
+  maxAudios: number
+  outputMimeTypes: readonly string[]
 }): MediaModelCapabilityManifest {
   const aliases = {
     ...seedance2Aliases,
@@ -178,13 +203,13 @@ function seedance2Capability(input: {
     label: input.label,
     input: {
       required: input.required,
-      maxImages: 9,
-      maxVideos: 3,
-      maxAudios: 3,
+      maxImages: input.maxImages,
+      maxVideos: input.maxVideos,
+      maxAudios: input.maxAudios,
       acceptedMimeTypes: SEEDANCE_REFERENCE_MIME,
     },
     rolePolicy: input.rolePolicy,
-    output: { types: ['video'], mimeTypes: ['video/mp4'] },
+    output: { types: ['video'], mimeTypes: [...input.outputMimeTypes] },
     paramSchema: input.schema,
     // defaults 只保留通用字段（画幅/时长/分辨率/联网搜索）。generateAudio/watermark/returnLastFrame/
     // executionExpiresAfter/priority 均有 provider 默认值（官方文档明确），不自动注入；用户需要时在
@@ -204,9 +229,28 @@ function seedance2Manifest(input: {
   modelId: string
   displayName: string
   resolutions: readonly string[]
+  durationMax?: 15 | 30
+  outputFormats?: readonly string[]
+  maxImages?: number
+  maxVideos?: number
+  maxAudios?: number
+  outputMimeTypes?: readonly string[]
+  docs?: readonly string[]
 }): MediaModelManifest {
-  const textSchema = seedance2Schema(input.resolutions, true)
-  const mediaSchema = seedance2Schema(input.resolutions, false)
+  const durationMax = input.durationMax ?? 15
+  const outputFormats = input.outputFormats
+  const maxImages = input.maxImages ?? 9
+  const maxVideos = input.maxVideos ?? 3
+  const maxAudios = input.maxAudios ?? 3
+  const outputMimeTypes = input.outputMimeTypes ?? ['video/mp4']
+  const textSchema = seedance2Schema(input.resolutions, true, durationMax, outputFormats)
+  const mediaSchema = seedance2Schema(input.resolutions, false, durationMax, outputFormats)
+  const capabilityInput = {
+    maxImages,
+    maxVideos,
+    maxAudios,
+    outputMimeTypes,
+  }
   return {
     id: `volcengine:${input.modelId}`,
     providerKind: 'volcengine-ark',
@@ -220,6 +264,7 @@ function seedance2Manifest(input: {
         required: [],
         schema: textSchema,
         rolePolicy: seedanceReferenceRolePolicy,
+        ...capabilityInput,
       }),
       seedance2Capability({
         id: 'video.image_to_video',
@@ -227,6 +272,7 @@ function seedance2Manifest(input: {
         required: ['image'],
         schema: mediaSchema,
         rolePolicy: seedanceFrameAndReferenceRolePolicy,
+        ...capabilityInput,
       }),
       seedance2Capability({
         id: 'video.reference_to_video',
@@ -234,6 +280,7 @@ function seedance2Manifest(input: {
         required: [],
         schema: mediaSchema,
         rolePolicy: seedanceReferenceRolePolicy,
+        ...capabilityInput,
       }),
       seedance2Capability({
         id: 'video.edit',
@@ -241,6 +288,7 @@ function seedance2Manifest(input: {
         required: ['video'],
         schema: mediaSchema,
         rolePolicy: seedanceReferenceRolePolicy,
+        ...capabilityInput,
       }),
       seedance2Capability({
         id: 'video.extend',
@@ -248,10 +296,14 @@ function seedance2Manifest(input: {
         required: ['video'],
         schema: mediaSchema,
         rolePolicy: seedanceReferenceRolePolicy,
+        ...capabilityInput,
       }),
     ],
     invocation: seedanceInvocation(),
-    docs: { sourceUrls: [VIDEO_API_DOC, VIDEO_TUTORIAL_DOC], lastCheckedAt: '2026-07-16' },
+    docs: {
+      sourceUrls: [...(input.docs ?? [VIDEO_API_DOC]), VIDEO_TUTORIAL_DOC],
+      lastCheckedAt: '2026-08-08',
+    },
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 200 * 1024 * 1024 },
     error: volcengineArkErrorContract,
   }
@@ -487,7 +539,7 @@ function seedanceInvocation(): MediaModelManifest['invocation'] {
     },
     polling: {
       intervalMs: 5000,
-      timeoutMs: 172800000,
+      timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       statusMap: {
         queued: 'queued',
         running: 'running',
@@ -718,6 +770,18 @@ function seedreamManifest(input: {
 }
 
 export const VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
+  seedance2Manifest({
+    modelId: 'doubao-seedance-2-5-260628',
+    displayName: 'Doubao Seedance 2.5',
+    resolutions: ['480p', '720p'],
+    durationMax: 30,
+    outputFormats: ['mp4', 'mov'],
+    maxImages: 30,
+    maxVideos: 10,
+    maxAudios: 10,
+    outputMimeTypes: ['video/mp4', 'video/quicktime'],
+    docs: [SEEDANCE_25_DOC],
+  }),
   seedance2Manifest({
     modelId: 'doubao-seedance-2-0-260128',
     displayName: 'Doubao Seedance 2.0',

@@ -16,7 +16,7 @@ import type {
   MediaInvocationRequest,
   MediaTaskIdPlacement,
 } from '@spark/protocol'
-import { migrateMediaModelManifestToV2 } from '@spark/protocol'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS, migrateMediaModelManifestToV2 } from '@spark/protocol'
 import { MediaProviderError } from '../media-adapter.types.js'
 import type {
   MediaArtifactType,
@@ -303,7 +303,8 @@ export class TemplateMediaAdapter {
         : {}),
       ...mediaPollTimeoutOptions(
         ctx.mediaDefaults,
-        polling?.timeoutMs ?? (manifest.domains.includes('video') ? 1_800_000 : 600_000),
+        polling?.timeoutMs ??
+          (manifest.domains.includes('video') ? DEFAULT_VIDEO_POLL_TIMEOUT_MS : 600_000),
       ),
       inspect: (data) => {
         if (firstStringAtPaths(data, response.resultPaths)) return 'done'

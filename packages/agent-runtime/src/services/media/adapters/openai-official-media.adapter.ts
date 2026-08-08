@@ -1,3 +1,4 @@
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '@spark/protocol'
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
 import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
 import type {
@@ -10,7 +11,11 @@ import type {
 import { MediaArtifactService } from '../media-artifact.service.js'
 import { extractImages, fetchJson, pollTask } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
-import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
+import {
+  configuredMediaInterfaceTimeoutMs,
+  mediaPollTimeoutOptions,
+  resolveMediaInterfaceTimeoutMs,
+} from '../media-timeout.js'
 import { filenameHelper } from './openai-compatible-media.adapter.js'
 
 const CAPABILITIES: readonly MediaCapabilityId[] = [
@@ -154,7 +159,8 @@ export class OpenAiOfficialMediaAdapter implements MediaProviderAdapter {
           image,
           input.outputDir,
           filenameHelper(input, suffix, index, images.length),
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -244,7 +250,7 @@ export class OpenAiOfficialMediaAdapter implements MediaProviderAdapter {
       {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 10_000,
-        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
         inspect: (payload) => {
           const status = stringAt(payload, 'status').toLowerCase()
           if (status === 'completed') return 'done'
