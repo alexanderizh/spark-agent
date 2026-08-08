@@ -130,6 +130,13 @@ import {
   type UnifiedSidePanelKind,
 } from './chat/ChatSidePanels'
 import {
+  HtmlRenderProvider,
+  RenderHtmlBlock,
+  type HtmlActiveRemotePresentation,
+  type HtmlRenderContextValue,
+} from './chat/RenderHtmlBlock'
+import type { HtmlOpenMode } from '../services/render-html'
+import {
   clamp,
   formatRelativeTime,
   formatTokenCount,
@@ -421,6 +428,9 @@ export function ChatView({
   const [activeUnifiedSideTab, setActiveUnifiedSideTab] = useState<UnifiedSidePanelKind | null>(
     null,
   )
+  const [activeHtmlPanelBlockId, setActiveHtmlPanelBlockId] = useState<string | null>(null)
+  const [activeHtmlRemotePresentation, setActiveHtmlRemotePresentation] =
+    useState<HtmlActiveRemotePresentation | null>(null)
   // 统一面板是否展开（独立于 tabs 数组：tabs 记录"已打开过哪些 tab"，unifiedPanelOpen 只控制容器显隐）
   // 入口按钮只 toggle 此状态；首次打开 tabs 为空 → 显示空状态，用户在 tabbar 内再选要打开哪个 tab
   const [unifiedPanelOpen, setUnifiedPanelOpen] = useState(false)
@@ -522,6 +532,7 @@ export function ChatView({
     showInspector: boolean
     filePreview: { filePath: string; fileType: PreviewFileType } | null
     sideChatSessionId: SessionId | null
+    activeHtmlPanelBlockId: string | null
   }
   const emptyPanelSnapshot: PanelSnapshot = {
     unifiedSideTabs: [],
@@ -534,6 +545,7 @@ export function ChatView({
     showInspector: false,
     filePreview: null,
     sideChatSessionId: null,
+    activeHtmlPanelBlockId: null,
   }
   // 各 session 的面板快照（仅内存）
   const panelStateBySessionRef = useRef<Map<string, PanelSnapshot>>(new Map())
@@ -542,21 +554,30 @@ export function ChatView({
   // 始终镜像当前面板状态；render 写、effect 读，保证 effect 拿到切换前的真实值
   const latestPanelStateRef = useRef<PanelSnapshot>(emptyPanelSnapshot)
 
-  const openUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
-    // 互斥：会话检查器 / 配置面板 / 统一面板 / 文件预览 同一时刻只显示一个
-    setShowInspector(false)
-    setShowConfigPanel(false)
-    setFilePreview(null)
-    setUnifiedPanelOpen(true)
-    setUnifiedSideTabs((tabs) => (tabs.includes(kind) ? tabs : [...tabs, kind]))
-    setActiveUnifiedSideTab(kind)
-    if (kind === 'terminal') setShowTerminalPanel(true)
-    if (kind === 'review') setShowGitReviewPanel(true)
-    if (kind === 'side-chat') {
-      setShowSideChatPanel(true)
-      void ensureSideChatSessionRef.current()
-    }
+  const clearHtmlPresentation = useCallback(() => {
+    setActiveHtmlPanelBlockId(null)
+    setActiveHtmlRemotePresentation(null)
   }, [])
+
+  const openUnifiedSidePanel = useCallback(
+    (kind: UnifiedSidePanelKind) => {
+      // 互斥：会话检查器 / 配置面板 / 统一面板 / 文件预览 同一时刻只显示一个
+      setShowInspector(false)
+      setShowConfigPanel(false)
+      setFilePreview(null)
+      setUnifiedPanelOpen(true)
+      if (kind !== 'html') clearHtmlPresentation()
+      setUnifiedSideTabs((tabs) => (tabs.includes(kind) ? tabs : [...tabs, kind]))
+      setActiveUnifiedSideTab(kind)
+      if (kind === 'terminal') setShowTerminalPanel(true)
+      if (kind === 'review') setShowGitReviewPanel(true)
+      if (kind === 'side-chat') {
+        setShowSideChatPanel(true)
+        void ensureSideChatSessionRef.current()
+      }
+    },
+    [clearHtmlPresentation],
+  )
 
   const closeUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
     setUnifiedSideTabs((tabs) => {
@@ -569,6 +590,7 @@ export function ChatView({
     if (kind === 'terminal') setShowTerminalPanel(false)
     if (kind === 'review') setShowGitReviewPanel(false)
     if (kind === 'side-chat') setShowSideChatPanel(false)
+    if (kind === 'html') setActiveHtmlPanelBlockId(null)
   }, [])
 
   // 头部「配置面板」按钮：打开独立的 ChatConfigPanel 侧栏（不再嵌入统一面板容器）。
@@ -579,14 +601,16 @@ export function ChatView({
       if (next) {
         setShowInspector(false)
         setUnifiedPanelOpen(false)
+        clearHtmlPresentation()
         setFilePreview(null)
       }
       return next
     })
-  }, [])
+  }, [clearHtmlPresentation])
 
   // 头部「统一侧边面板」按钮：toggle 整个统一面板（terminal/side-chat/review/plan 容器）。
   const toggleUnifiedPanel = useCallback(() => {
+    if (unifiedPanelOpen) clearHtmlPresentation()
     setUnifiedPanelOpen((prev) => {
       const next = !prev
       if (next) {
@@ -596,7 +620,7 @@ export function ChatView({
       }
       return next
     })
-  }, [])
+  }, [clearHtmlPresentation, unifiedPanelOpen])
 
   // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，入口在会话检查器内。
   const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
@@ -875,6 +899,8 @@ export function ChatView({
       setActiveUnifiedSideTab(null)
       setFilePreview(null)
       setSideChatSessionId(null)
+      setActiveHtmlPanelBlockId(null)
+      setActiveHtmlRemotePresentation(null)
       return
     }
     const snap = panelStateBySessionRef.current.get(active)
@@ -890,6 +916,8 @@ export function ChatView({
       setActiveUnifiedSideTab(null)
       setFilePreview(null)
       setSideChatSessionId(null)
+      setActiveHtmlPanelBlockId(null)
+      setActiveHtmlRemotePresentation(null)
       return
     }
     // 恢复该会话上次的展开状态
@@ -903,6 +931,8 @@ export function ChatView({
     setActiveUnifiedSideTab(snap.activeUnifiedSideTab)
     setFilePreview(snap.filePreview)
     setSideChatSessionId(snap.sideChatSessionId)
+    setActiveHtmlPanelBlockId(snap.activeHtmlPanelBlockId)
+    setActiveHtmlRemotePresentation(null)
     // side-chat 运行时 state 清空，交给 SessionStream（key 随 sideChatSessionId 变化）重新订阅填充
     setSideChatMessages([])
     setSideChatContextInputTokens(0)
@@ -929,6 +959,52 @@ export function ChatView({
   const chatLayoutRef = useRef<HTMLDivElement | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
+  const activeHtmlPanelBlock = useMemo(() => {
+    if (activeHtmlPanelBlockId == null) return null
+    for (const message of activeMessages) {
+      const block = message.blocks.find(
+        (candidate): candidate is Extract<UIBlock, { kind: 'html_block' }> =>
+          candidate.kind === 'html_block' && candidate.toolCallId === activeHtmlPanelBlockId,
+      )
+      if (block != null) return block
+    }
+    return null
+  }, [activeHtmlPanelBlockId, activeMessages])
+  const handleHtmlOpenMode = useCallback(
+    (block: Extract<UIBlock, { kind: 'html_block' }>, mode: HtmlOpenMode) => {
+      if (mode === 'side-panel') {
+        setActiveHtmlRemotePresentation(null)
+        setActiveHtmlPanelBlockId(block.toolCallId)
+        openUnifiedSidePanel('html')
+      } else if (mode === 'inline') {
+        setActiveHtmlRemotePresentation(null)
+        if (activeHtmlPanelBlockId === block.toolCallId) closeUnifiedSidePanel('html')
+      } else {
+        setActiveHtmlRemotePresentation({ blockId: block.toolCallId, mode })
+        if (activeHtmlPanelBlockId === block.toolCallId) {
+          closeUnifiedSidePanel('html')
+          if (activeUnifiedSideTab === 'html' && unifiedSideTabs.length <= 1) {
+            setUnifiedPanelOpen(false)
+          }
+        }
+      }
+    },
+    [
+      activeHtmlPanelBlockId,
+      activeUnifiedSideTab,
+      closeUnifiedSidePanel,
+      openUnifiedSidePanel,
+      unifiedSideTabs.length,
+    ],
+  )
+  const htmlRenderContext = useMemo<HtmlRenderContextValue>(
+    () => ({
+      activeSidePanelBlockId: activeHtmlPanelBlockId,
+      activeRemotePresentation: activeHtmlRemotePresentation,
+      onOpenMode: handleHtmlOpenMode,
+    }),
+    [activeHtmlPanelBlockId, activeHtmlRemotePresentation, handleHtmlOpenMode],
+  )
   const handleActiveMessagesChange = useCallback(
     (messages: UIMessage[]) => {
       setActiveMessages(messages)
@@ -1074,6 +1150,7 @@ export function ChatView({
     showInspector,
     filePreview,
     sideChatSessionId,
+    activeHtmlPanelBlockId,
   }
 
   // ── IPC hooks (only those NOT duplicated in context) ──
@@ -1179,24 +1256,29 @@ export function ChatView({
     [active, controlGoal],
   )
 
-  const handleFilePreview = useCallback((filePath: string, fileType: PreviewFileType) => {
-    setShowInspector(false)
-    setShowConfigPanel(false)
-    setShowGitReviewPanel(false)
-    setShowSideChatPanel(false)
-    setShowTerminalPanel(false)
-    setUnifiedPanelOpen(false)
-    setShowCheckpointTimeline(false)
-    setFilePreview({ filePath, fileType })
-  }, [])
+  const handleFilePreview = useCallback(
+    (filePath: string, fileType: PreviewFileType) => {
+      setShowInspector(false)
+      setShowConfigPanel(false)
+      setShowGitReviewPanel(false)
+      setShowSideChatPanel(false)
+      setShowTerminalPanel(false)
+      setUnifiedPanelOpen(false)
+      clearHtmlPresentation()
+      setShowCheckpointTimeline(false)
+      setFilePreview({ filePath, fileType })
+    },
+    [clearHtmlPresentation],
+  )
 
   // 打开会话检查器：与配置面板、统一面板、文件预览互斥（同一时刻只显示一个）
   const openInspector = useCallback(() => {
     setShowInspector(true)
     setShowConfigPanel(false)
     setUnifiedPanelOpen(false)
+    clearHtmlPresentation()
     setFilePreview(null)
-  }, [])
+  }, [clearHtmlPresentation])
 
   const pickProjectFolder = useCallback(async () => {
     try {
@@ -2239,6 +2321,7 @@ export function ChatView({
                   setShowInspector(!showInspector)
                   if (!showInspector) {
                     setUnifiedPanelOpen(false)
+                    clearHtmlPresentation()
                     setShowConfigPanel(false)
                     setFilePreview(null)
                   }
@@ -2334,6 +2417,7 @@ export function ChatView({
                   setShowInspector(v)
                   if (v) {
                     setUnifiedPanelOpen(false)
+                    clearHtmlPresentation()
                     setShowConfigPanel(false)
                     setFilePreview(null)
                   }
@@ -2367,42 +2451,46 @@ export function ChatView({
                 {...(onExpandSidebar ? { onExpandSidebar } : {})}
               />
             )}
-            <ChatStream
-              key="chat-stream"
-              sessionId={active}
-              optimisticMessages={optimisticUserMessages}
-              workspaceId={activeSessionWorkspaceId}
-              workspaceRootPath={activeSessionWorkspace?.rootPath ?? null}
-              onStatusChange={setAgentStatus}
-              onUsageChange={setContextInputTokens}
-              onUsageDataChange={setSessionUsageData}
-              onMessagesChange={handleActiveMessagesChange}
-              onOptimisticSessionReset={handleOptimisticSessionReset}
-              onSessionStatusChange={handleActiveSessionStatusChange}
-              persistedSessionStatus={activeSession?.status ?? null}
-              onContextUsageChange={setContextUsage}
-              onContextLedgerChange={setContextLedger}
-              onProjectContextChange={setProjectContext}
-              onPlanProposed={(plan) => {
-                setProposedPlan(plan == null || active == null ? null : { sessionId: active, plan })
-                if (plan != null) openUnifiedSidePanel('plan')
-              }}
-              onGoalChange={setActiveSessionGoal}
-              onOrchestrationChange={setActiveSessionOrchestration}
-              onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
-              clearTrigger={clearTrigger}
-              stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
-              scrollToBottomTrigger={scrollToBottomTrigger}
-              teamConfig={teamConfig}
-              onFilePreview={handleFilePreview}
-              onReplyTo={handleReplyTo}
-              onReplyToMember={handleReplyToMember}
-              onResendMessage={handleResendMessage}
-              onLoadingChange={setActiveSessionLoading}
-              emptyStateVariant="loading"
-              modelSwitchMarkers={modelSwitchMarkers}
-              showTurnNavigator
-            />
+            <HtmlRenderProvider value={htmlRenderContext}>
+              <ChatStream
+                key="chat-stream"
+                sessionId={active}
+                optimisticMessages={optimisticUserMessages}
+                workspaceId={activeSessionWorkspaceId}
+                workspaceRootPath={activeSessionWorkspace?.rootPath ?? null}
+                onStatusChange={setAgentStatus}
+                onUsageChange={setContextInputTokens}
+                onUsageDataChange={setSessionUsageData}
+                onMessagesChange={handleActiveMessagesChange}
+                onOptimisticSessionReset={handleOptimisticSessionReset}
+                onSessionStatusChange={handleActiveSessionStatusChange}
+                persistedSessionStatus={activeSession?.status ?? null}
+                onContextUsageChange={setContextUsage}
+                onContextLedgerChange={setContextLedger}
+                onProjectContextChange={setProjectContext}
+                onPlanProposed={(plan) => {
+                  setProposedPlan(
+                    plan == null || active == null ? null : { sessionId: active, plan },
+                  )
+                  if (plan != null) openUnifiedSidePanel('plan')
+                }}
+                onGoalChange={setActiveSessionGoal}
+                onOrchestrationChange={setActiveSessionOrchestration}
+                onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
+                clearTrigger={clearTrigger}
+                stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
+                scrollToBottomTrigger={scrollToBottomTrigger}
+                teamConfig={teamConfig}
+                onFilePreview={handleFilePreview}
+                onReplyTo={handleReplyTo}
+                onReplyToMember={handleReplyToMember}
+                onResendMessage={handleResendMessage}
+                onLoadingChange={setActiveSessionLoading}
+                emptyStateVariant="loading"
+                modelSwitchMarkers={modelSwitchMarkers}
+                showTurnNavigator
+              />
+            </HtmlRenderProvider>
             {userQuestion != null && (
               <UserQuestionDock
                 key={`${userQuestion.sessionId}:${userQuestion.questionId}`}
@@ -2558,6 +2646,10 @@ export function ChatView({
               onRefresh={refreshGitStatus}
               onClose={() => closeUnifiedSidePanel('review')}
             />
+          ) : activeUnifiedSideTab === 'html' && activeHtmlPanelBlock != null ? (
+            <HtmlRenderProvider value={htmlRenderContext}>
+              <RenderHtmlBlock block={activeHtmlPanelBlock} variant="side-panel" />
+            </HtmlRenderProvider>
           ) : activeUnifiedSideTab === 'plan' ? (
             <PlanSidePanel
               session={activeSession}
@@ -2605,32 +2697,36 @@ export function ChatView({
               sideChatSession != null &&
               sideChatMatchesActiveWorkspace ? (
                 <>
-                  <ChatStream
-                    key={`side-chat-stream-${sideChatSessionId}`}
-                    sessionId={sideChatSessionId}
-                    optimisticMessages={optimisticUserMessages}
-                    workspaceId={sideChatWorkspace?.id ?? null}
-                    workspaceRootPath={sideChatWorkspace?.rootPath ?? null}
-                    onStatusChange={setSideChatAgentStatus}
-                    onUsageChange={setSideChatContextInputTokens}
-                    onUsageDataChange={() => {}}
-                    onMessagesChange={handleSideChatMessagesChange}
-                    onOptimisticSessionReset={handleOptimisticSessionReset}
-                    onSessionStatusChange={(status) => setSessionStatus(sideChatSessionId, status)}
-                    persistedSessionStatus={sideChatSession?.status ?? null}
-                    onContextUsageChange={setSideChatContextUsage}
-                    onContextLedgerChange={setSideChatContextLedger}
-                    onProjectContextChange={() => {}}
-                    onPlanProposed={() => {}}
-                    onTurnPromptSnapshotsChange={() => {}}
-                    stopTrigger={sessionStopTriggers[sideChatSessionId] ?? 0}
-                    scrollToBottomTrigger={sideChatScrollToBottomTrigger}
-                    teamConfig={teamConfig}
-                    onFilePreview={handleFilePreview}
-                    onLoadingChange={() => {}}
-                    onReplyTo={handleReplyTo}
-                    onReplyToMember={handleReplyToMember}
-                  />
+                  <HtmlRenderProvider value={htmlRenderContext}>
+                    <ChatStream
+                      key={`side-chat-stream-${sideChatSessionId}`}
+                      sessionId={sideChatSessionId}
+                      optimisticMessages={optimisticUserMessages}
+                      workspaceId={sideChatWorkspace?.id ?? null}
+                      workspaceRootPath={sideChatWorkspace?.rootPath ?? null}
+                      onStatusChange={setSideChatAgentStatus}
+                      onUsageChange={setSideChatContextInputTokens}
+                      onUsageDataChange={() => {}}
+                      onMessagesChange={handleSideChatMessagesChange}
+                      onOptimisticSessionReset={handleOptimisticSessionReset}
+                      onSessionStatusChange={(status) =>
+                        setSessionStatus(sideChatSessionId, status)
+                      }
+                      persistedSessionStatus={sideChatSession?.status ?? null}
+                      onContextUsageChange={setSideChatContextUsage}
+                      onContextLedgerChange={setSideChatContextLedger}
+                      onProjectContextChange={() => {}}
+                      onPlanProposed={() => {}}
+                      onTurnPromptSnapshotsChange={() => {}}
+                      stopTrigger={sessionStopTriggers[sideChatSessionId] ?? 0}
+                      scrollToBottomTrigger={sideChatScrollToBottomTrigger}
+                      teamConfig={teamConfig}
+                      onFilePreview={handleFilePreview}
+                      onLoadingChange={() => {}}
+                      onReplyTo={handleReplyTo}
+                      onReplyToMember={handleReplyToMember}
+                    />
+                  </HtmlRenderProvider>
                   <ComposerV2
                     session={sideChatSession}
                     workspace={sideChatWorkspace}
@@ -4476,7 +4572,9 @@ function renderBlocks(
                     key={getDocumentOutputKey(file.path)}
                     filePath={file.path}
                     {...(file.title != null ? { label: file.title } : {})}
-                    {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+                    {...(options.onFilePreview != null
+                      ? { onFilePreview: options.onFilePreview }
+                      : {})}
                   />
                 ))}
               </div>
@@ -4506,6 +4604,12 @@ function renderBlocks(
         // 快捷回复只在 Composer 上方渲染，时间线中不重复展示工具卡。
         return null
       }
+      case 'html_block':
+        return (
+          <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
+            <RenderHtmlBlock block={block} />
+          </div>
+        )
       case 'context_ledger': {
         // Context Ledger 不在消息流中渲染 — 上下文信息已在底部 ComposerV2 的 ContextMeterWithPopup 中显示
         return null
@@ -6876,7 +6980,11 @@ const AgentMsg = React.memo(function AgentMsg({
                   onFilePreview,
                   autoCollapseTools: !(isStreaming || suppressAutoCollapse),
                 }
-              : { sessionId, workspaceRootPath, autoCollapseTools: !(isStreaming || suppressAutoCollapse) },
+              : {
+                  sessionId,
+                  workspaceRootPath,
+                  autoCollapseTools: !(isStreaming || suppressAutoCollapse),
+                },
           )}
         </div>
       )

@@ -56,14 +56,18 @@ describe('quick-replies MCP server', () => {
 
   it('exposes one optional quick-reply tool with a four-item limit', async () => {
     const response = await rpc.call('tools/list')
-    expect(response.tools).toMatchObject([
-      {
-        name: 'suggest_replies',
-        inputSchema: {
-          properties: { replies: { minItems: 1, maxItems: 4 } },
-        },
-      },
-    ])
+    expect(response.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'suggest_replies',
+          inputSchema: expect.objectContaining({
+            properties: expect.objectContaining({
+              replies: expect.objectContaining({ minItems: 1, maxItems: 4 }),
+            }),
+          }),
+        }),
+      ]),
+    )
   })
 
   it('trims, deduplicates, limits, and length-bounds replies', async () => {
@@ -78,5 +82,50 @@ describe('quick-replies MCP server', () => {
     const payload = JSON.parse(response.content[0].text)
 
     expect(payload.replies).toEqual(['确认无误', longReply.slice(0, 40), '需要调整', '先暂停'])
+  })
+
+  it('exposes a sandboxed HTML fragment renderer with bounded input', async () => {
+    const response = await rpc.call('tools/list')
+
+    expect(response.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'render_html',
+          inputSchema: expect.objectContaining({
+            required: ['html'],
+            properties: expect.objectContaining({
+              html: expect.objectContaining({ maxLength: 200_000 }),
+            }),
+          }),
+        }),
+      ]),
+    )
+  })
+
+  it('returns structured HTML metadata and warnings without accepting unsafe tags', async () => {
+    const accepted = await rpc.call('tools/call', {
+      name: 'render_html',
+      arguments: {
+        html: '<section style="color: red">安全片段</section>',
+        title: '示例',
+        height: 240,
+      },
+    })
+    expect(JSON.parse(accepted.content[0].text)).toMatchObject({
+      accepted: true,
+      title: '示例',
+      height: 240,
+      html: '<section style="color: red">安全片段</section>',
+      warnings: [],
+    })
+
+    const unsafe = await rpc.call('tools/call', {
+      name: 'render_html',
+      arguments: { html: '<iframe src="https://example.com"></iframe>' },
+    })
+    expect(JSON.parse(unsafe.content[0].text)).toMatchObject({
+      accepted: false,
+      reason: expect.stringContaining('iframe'),
+    })
   })
 })

@@ -57,6 +57,7 @@ import {
 } from './user-question-recovery.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
+import { openHtmlInExternalBrowser, openHtmlViewerWindow } from '../services/HtmlViewerService.js'
 import {
   isSessionServiceShutdownStarted,
   registerSessionServiceForShutdown,
@@ -8579,6 +8580,10 @@ export function registerAllIpcHandlers(): void {
     )
     return { success: true }
   })
+
+  typedIpcHandle('html:open-window', async (req) => openHtmlViewerWindow(req))
+
+  typedIpcHandle('html:open-external', async (req) => openHtmlInExternalBrowser(req))
 
   // ─── Window Control Handlers ─────────────────────────────────────────────
 

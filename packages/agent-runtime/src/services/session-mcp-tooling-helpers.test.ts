@@ -11,6 +11,7 @@ import {
   resolveMediaGenerationMcpServerPath,
   resolveRuntimeToolPath,
   QUICK_REPLIES_SYSTEM_PROMPT,
+  RENDER_HTML_SYSTEM_PROMPT,
   WEB_SEARCH_SYSTEM_PROMPT,
 } from './session-mcp-tooling-helpers.js'
 import { SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT } from './session-schedule-agent-tools.js'
@@ -130,6 +131,18 @@ describe('QUICK_REPLIES_SYSTEM_PROMPT', () => {
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('mutually exclusive')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('AskUserQuestion')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('request_user_input')
+  })
+})
+
+describe('RENDER_HTML_SYSTEM_PROMPT', () => {
+  it('teaches the agent when and how to render bounded sandboxed HTML', () => {
+    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('mcp__spark_ui__render_html')
+    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('ordinary text')
+    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('200,000')
+    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('inline CSS/JS')
+    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('data:')
+    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('iframe')
+    expect(RENDER_HTML_SYSTEM_PROMPT.length).toBeLessThan(1800)
   })
 })
 
