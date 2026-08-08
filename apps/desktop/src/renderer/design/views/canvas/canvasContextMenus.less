@@ -104,3 +104,188 @@
     height: 0 !important;
   }
 }
+
+// 右键菜单视觉基线：节点菜单、空白画布菜单和边菜单共享同一炭灰表面；
+// 二级菜单单独使用更紧凑的尺寸，避免层级展开后比一级菜单更抢视觉。
+.canvas-pane-context-menu,
+.canvas-context-menu,
+.canvas-edge-context-menu,
+.canvas-node-context-menu.ant-dropdown-menu,
+.ant-dropdown-menu-submenu-popup .canvas-node-context-menu.ant-dropdown-menu,
+.canvas-node-context-submenu-popup .ant-dropdown-menu {
+  border: 1px solid
+    var(--canvas-cinema-border-strong, var(--border-strong, rgba(255, 255, 255, 0.14))) !important;
+  border-radius: var(--canvas-cinema-radius-lg, var(--r-lg, 14px)) !important;
+  background: var(--canvas-cinema-surface-4, var(--panel-elev, #343434)) !important;
+  color: var(--canvas-cinema-text, var(--text, #cccccc));
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42) !important;
+}
+
+.canvas-pane-context-menu,
+.canvas-context-menu,
+.canvas-edge-context-menu,
+.canvas-node-context-menu.ant-dropdown-menu,
+.ant-dropdown-menu-submenu-popup .canvas-node-context-menu.ant-dropdown-menu {
+  min-width: min(196px, calc(100dvw - 32px));
+  max-width: min(240px, calc(100dvw - 32px));
+  padding: 8px;
+}
+
+.canvas-pane-context-menu button,
+.canvas-context-menu-item,
+.canvas-edge-context-menu button,
+.canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-item,
+.canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-submenu-title,
+.ant-dropdown-menu-submenu-popup .canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-item,
+.ant-dropdown-menu-submenu-popup
+  .canvas-node-context-menu.ant-dropdown-menu
+  .ant-dropdown-menu-submenu-title {
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: var(--canvas-cinema-radius-sm, var(--r-sm, 8px));
+  color: var(--canvas-cinema-text, var(--text, #cccccc));
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.canvas-pane-context-menu button,
+.canvas-context-menu-item,
+.canvas-edge-context-menu button,
+.canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-item,
+.canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-submenu-title {
+  gap: 10px;
+}
+
+.canvas-pane-context-menu button > svg,
+.canvas-context-menu-item > .canvas-context-menu-icon,
+.canvas-edge-context-menu button > svg,
+.canvas-node-context-menu.ant-dropdown-menu .canvas-menu-item > svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.canvas-pane-context-menu button:hover,
+.canvas-context-menu-item:hover:not(:disabled),
+.canvas-edge-context-menu button:hover,
+.canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-item:hover,
+.canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-submenu-title:hover {
+  background: var(--canvas-cinema-surface-3, var(--hover, rgba(255, 255, 255, 0.08)));
+}
+
+.canvas-pane-context-divider,
+.canvas-context-menu-divider,
+.canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--canvas-cinema-border, var(--divider, rgba(255, 255, 255, 0.08)));
+}
+
+.canvas-pane-context-section-title {
+  margin: 8px 8px 4px;
+  color: var(--canvas-cinema-text-strong, var(--text-strong, #f1f1f1));
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.canvas-pane-context-submenu-panel,
+.canvas-context-submenu-panel,
+.canvas-node-context-submenu-popup .ant-dropdown-menu {
+  min-width: min(160px, calc(100dvw - 40px));
+  max-width: min(192px, calc(100dvw - 40px));
+  padding: 6px;
+  border-radius: var(--canvas-cinema-radius-md, var(--r-md, 11px)) !important;
+}
+
+.canvas-pane-context-submenu-panel button,
+.canvas-context-submenu-panel .canvas-context-menu-item,
+.canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-item,
+.canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-submenu-title {
+  box-sizing: border-box;
+  height: 34px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: var(--canvas-cinema-radius-xs, var(--r-xs, 6px));
+  color: var(--canvas-cinema-text, var(--text, #cccccc));
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.canvas-pane-context-submenu-panel button,
+.canvas-context-submenu-panel .canvas-context-menu-item,
+.canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-item,
+.canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-submenu-title {
+  gap: 8px;
+}
+
+.canvas-pane-context-submenu-panel button > svg,
+.canvas-context-submenu-panel .canvas-context-menu-icon,
+.canvas-node-context-submenu-popup .canvas-menu-item > svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+.canvas-pane-context-submenu-panel button > svg,
+.canvas-pane-context-submenu-panel button > .canvas-pane-context-op-icon {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvas-pane-context-submenu-panel button > svg {
+  width: 14px;
+  height: 14px;
+}
+
+.canvas-pane-context-submenu-panel button > span:last-child,
+.canvas-context-submenu-panel .canvas-context-menu-item > span:last-child,
+.canvas-node-context-submenu-popup .canvas-menu-item > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-pane-context-submenu-panel button:hover,
+.canvas-context-submenu-panel .canvas-context-menu-item:hover:not(:disabled),
+.canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-item:hover,
+.canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-submenu-title:hover {
+  background: var(--canvas-cinema-surface-3, var(--hover, rgba(255, 255, 255, 0.08)));
+}
+
+.canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-item-group-title {
+  padding: 8px 8px 4px;
+  color: var(--canvas-cinema-text-muted, var(--text-muted, #8a8a8a));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.canvas-pane-context-submenu-panel .canvas-pane-context-section-title,
+.canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-item-group-title {
+  box-sizing: border-box;
+  height: 20px;
+  min-height: 20px;
+  margin: 8px 8px 4px;
+  padding: 0;
+  color: var(--canvas-cinema-text-strong, var(--text-strong, #f1f1f1));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 20px;
+}
+
+.canvas-pane-context-submenu-panel .canvas-pane-context-group + .canvas-pane-context-group {
+  margin-top: 4px;
+}
+
+.canvas-node-context-submenu-popup .ant-dropdown-menu .canvas-menu-item,
+.canvas-node-context-menu.ant-dropdown-menu .canvas-menu-item {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  white-space: nowrap;
+}

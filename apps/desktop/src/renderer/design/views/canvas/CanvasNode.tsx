@@ -969,7 +969,7 @@ export const CanvasNode = memo(function CanvasNode({
       className: 'canvas-node-context-menu',
       style: {
         maxHeight: Math.max(0, Math.min(520, contextMenuBoundary.maxHeight)),
-        maxWidth: Math.max(0, Math.min(320, contextMenuBoundary.maxWidth)),
+        maxWidth: Math.max(0, Math.min(240, contextMenuBoundary.maxWidth)),
       },
       items: [
         // 单节点已迁移到顶部工具栏的运行、预览、展开、复制和素材操作不在这里重复显示。
