@@ -33,6 +33,7 @@ export function createBasicCustomMediaManifest(
   if (input.mode === 'async_polling') {
     return {
       id,
+      baseTemplate: 'custom',
       providerKind: 'custom',
       modelId,
       displayName: modelId,
@@ -76,6 +77,7 @@ export function createBasicCustomMediaManifest(
 
   return {
     id,
+    baseTemplate: 'custom',
     providerKind: 'custom',
     modelId,
     displayName: modelId,

@@ -42,7 +42,10 @@ import {
 } from './media-model-shared-manifest-parts.js'
 
 // 视频 Agent 模板清单供 adapter / validator 复用（避免在多包间重复硬编码 11 个 id）。
-export { MINIMAX_VIDEO_TEMPLATE_IDS, MINIMAX_VIDEO_TEMPLATE_LABELS } from './media-model-shared-manifest-parts.js'
+export {
+  MINIMAX_VIDEO_TEMPLATE_IDS,
+  MINIMAX_VIDEO_TEMPLATE_LABELS,
+} from './media-model-shared-manifest-parts.js'
 
 export type MediaDomain =
   | 'image'
@@ -138,25 +141,38 @@ export interface MediaTaskIdPlacement {
 export interface MediaUploadSpec {
   name: string
   input: { variable: string; mode: 'each' | 'batch' }
-  constraints?: {
-    maxCount?: number | undefined
-    maxBytes?: number | undefined
-    allowedMimeTypes?: string[] | undefined
-  } | undefined
+  constraints?:
+    | {
+        maxCount?: number | undefined
+        maxBytes?: number | undefined
+        allowedMimeTypes?: string[] | undefined
+      }
+    | undefined
   request: MediaInvocationRequest
   result: {
     urlPaths: string[]
     multiple?: boolean | undefined
   }
-  cleanup?: {
-    enabled: boolean
-    request: MediaInvocationRequest
-  } | undefined
+  cleanup?:
+    | {
+        enabled: boolean
+        request: MediaInvocationRequest
+      }
+    | undefined
+}
+
+export type MediaDirectArtifactRetrieval =
+  | { kind: 'inline_base64'; jsonPaths: string[] }
+  | { kind: 'url'; jsonPaths: string[]; download: boolean }
+  | { kind: 'binary_response' }
+
+export interface MediaArtifactRequest {
+  request: MediaInvocationRequest
+  response: MediaDirectArtifactRetrieval
 }
 
 export type MediaArtifactRetrieval =
-  | { kind: 'inline_base64'; jsonPaths: string[] }
-  | { kind: 'url'; jsonPaths: string[]; download: boolean }
+  | MediaDirectArtifactRetrieval
   | {
       kind: 'task_poll'
       taskIdPaths: string[]
@@ -167,8 +183,9 @@ export type MediaArtifactRetrieval =
       taskId?: MediaTaskIdPlacement | undefined
       statusPaths?: string[] | undefined
       resultPaths: string[]
+      /** Optional final request for providers that expose artifacts outside the task JSON. */
+      artifact?: MediaArtifactRequest | undefined
     }
-  | { kind: 'binary_response' }
 
 export interface MediaModelCapabilityManifest {
   id: MediaManifestCapabilityId
@@ -198,12 +215,25 @@ export interface MediaModelCapabilityManifest {
   paramPolicy?: MediaModelParamPolicy | undefined
 }
 
+/**
+ * Persisted provenance for manifests created from the visual adapter editor.
+ * Runtime routing deliberately ignores this field; it exists so the editor can
+ * explain, preserve and re-apply the selected protocol baseline.
+ */
+export type MediaManifestBaseTemplate =
+  | 'custom'
+  | 'openai-compatible'
+  | 'async-json'
+  | 'toapis-image'
+
 export interface MediaModelManifest {
   id: string
   /** Optional on read for legacy manifests; new saves must write 2. */
   contractVersion?: 2 | undefined
   /** Optional on read for legacy manifests; router infers old behavior when absent. */
   adapterMode?: MediaManifestAdapterMode | undefined
+  /** Visual-editor protocol baseline. Optional for all legacy and built-in manifests. */
+  baseTemplate?: MediaManifestBaseTemplate | undefined
   providerKind: string
   modelId: string
   /** Model id whose adapter-specific behavior this alias inherits. Requests still send modelId. */
@@ -215,7 +245,7 @@ export interface MediaModelManifest {
   invocation: {
     mode: MediaInvocationMode
     endpoint: string
-    method: 'GET' | 'POST'
+    method: MediaInvocationHttpMethod
     contentType: MediaRequestContentType
     headers?: Record<string, unknown> | undefined
     requestTemplate: Record<string, unknown>
@@ -303,29 +333,26 @@ export const MediaInvocationAuthSchema: z.ZodType<MediaInvocationAuth> = z.discr
   ],
 )
 
-export const MediaInvocationBodySchema = z.discriminatedUnion(
-  'kind',
-  [
-    z.object({ kind: z.literal('none') }),
-    z.object({ kind: z.literal('json'), template: z.unknown() }),
-    z.object({
-      kind: z.literal('multipart'),
-      parts: z
-        .array(
-          z.object({
-            name: z.string().min(1).max(160),
-            kind: z.enum(['text', 'json', 'file']),
-            value: z.unknown(),
-            filename: z.string().min(1).max(240).optional(),
-            contentType: z.string().min(1).max(160).optional(),
-          }),
-        )
-        .min(1)
-        .max(100),
-    }),
-    z.object({ kind: z.literal('binary'), variable: z.string().min(1).max(200) }),
-  ],
-) as unknown as z.ZodType<MediaInvocationBody>
+export const MediaInvocationBodySchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('none') }),
+  z.object({ kind: z.literal('json'), template: z.unknown() }),
+  z.object({
+    kind: z.literal('multipart'),
+    parts: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(160),
+          kind: z.enum(['text', 'json', 'file']),
+          value: z.unknown(),
+          filename: z.string().min(1).max(240).optional(),
+          contentType: z.string().min(1).max(160).optional(),
+        }),
+      )
+      .min(1)
+      .max(100),
+  }),
+  z.object({ kind: z.literal('binary'), variable: z.string().min(1).max(200) }),
+]) as unknown as z.ZodType<MediaInvocationBody>
 
 export const MediaInvocationRequestSchema: z.ZodType<MediaInvocationRequest> = z.object({
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
@@ -362,46 +389,54 @@ export const MediaUploadSpecSchema: z.ZodType<MediaUploadSpec> = z.object({
     .optional(),
 })
 
-export const MediaArtifactRetrievalSchema = z.union(
-  [
-    z.object({
-      kind: z.literal('inline_base64'),
-      jsonPaths: z.array(z.string().min(1)).min(1),
+const MediaDirectArtifactRetrievalSchema: z.ZodType<MediaDirectArtifactRetrieval> = z.union([
+  z.object({
+    kind: z.literal('inline_base64'),
+    jsonPaths: z.array(z.string().min(1)).min(1),
+  }),
+  z.object({
+    kind: z.literal('url'),
+    jsonPaths: z.array(z.string().min(1)).min(1),
+    download: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal('binary_response'),
+  }),
+])
+
+export const MediaArtifactRetrievalSchema = z.union([
+  MediaDirectArtifactRetrievalSchema,
+  z
+    .object({
+      kind: z.literal('task_poll'),
+      taskIdPaths: z.array(z.string().min(1)).min(1),
+      statusEndpoint: z.string().min(1).optional(),
+      poll: MediaInvocationRequestSchema.optional(),
+      taskId: z
+        .object({
+          location: z.enum(['path', 'query', 'header', 'body']),
+          name: z.string().min(1).max(160),
+        })
+        .optional(),
+      statusPaths: z.array(z.string().min(1)).min(1).max(20).optional(),
+      resultPaths: z.array(z.string().min(1)).min(1),
+      artifact: z
+        .object({
+          request: MediaInvocationRequestSchema,
+          response: MediaDirectArtifactRetrievalSchema,
+        })
+        .optional(),
+    })
+    .superRefine((value, ctx) => {
+      if (!value.statusEndpoint && !value.poll) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['statusEndpoint'],
+          message: 'task_poll 必须配置 statusEndpoint（旧格式）或 poll（V2 格式）',
+        })
+      }
     }),
-    z.object({
-      kind: z.literal('url'),
-      jsonPaths: z.array(z.string().min(1)).min(1),
-      download: z.boolean(),
-    }),
-    z
-      .object({
-        kind: z.literal('task_poll'),
-        taskIdPaths: z.array(z.string().min(1)).min(1),
-        statusEndpoint: z.string().min(1).optional(),
-        poll: MediaInvocationRequestSchema.optional(),
-        taskId: z
-          .object({
-            location: z.enum(['path', 'query', 'header', 'body']),
-            name: z.string().min(1).max(160),
-          })
-          .optional(),
-        statusPaths: z.array(z.string().min(1)).min(1).max(20).optional(),
-        resultPaths: z.array(z.string().min(1)).min(1),
-      })
-      .superRefine((value, ctx) => {
-        if (!value.statusEndpoint && !value.poll) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['statusEndpoint'],
-            message: 'task_poll 必须配置 statusEndpoint（旧格式）或 poll（V2 格式）',
-          })
-        }
-      }),
-    z.object({
-      kind: z.literal('binary_response'),
-    }),
-  ],
-) as unknown as z.ZodType<MediaArtifactRetrieval>
+]) as unknown as z.ZodType<MediaArtifactRetrieval>
 
 export const MediaModelCapabilityManifestSchema: z.ZodType<MediaModelCapabilityManifest> = z.object(
   {
@@ -435,6 +470,7 @@ export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object(
   id: z.string().min(1).max(160),
   contractVersion: z.literal(2).optional(),
   adapterMode: z.enum(['native', 'template']).optional(),
+  baseTemplate: z.enum(['custom', 'openai-compatible', 'async-json', 'toapis-image']).optional(),
   providerKind: z.string().min(1).max(120),
   modelId: z.string().min(1).max(200),
   adapterModelId: z.string().min(1).max(200).optional(),
@@ -448,7 +484,7 @@ export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object(
   invocation: z.object({
     mode: z.enum(['sync', 'async_polling', 'async_callback', 'stream', 'file_job']),
     endpoint: z.string().min(1).max(500),
-    method: z.enum(['GET', 'POST']),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
     contentType: z.enum(['json', 'multipart', 'binary']),
     headers: JsonObjectSchema.optional(),
     requestTemplate: JsonObjectSchema,

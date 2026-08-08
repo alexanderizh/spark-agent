@@ -31,13 +31,22 @@ vi.mock('@lobehub/ui', async () => {
       {children}
     </button>
   )
-  const Drawer = ({ children, footer }: { children: React.ReactNode; footer?: React.ReactNode }) => (
+  const Drawer = ({
+    children,
+    footer,
+  }: {
+    children: React.ReactNode
+    footer?: React.ReactNode
+  }) => (
     <div>
       {children}
       {footer}
     </div>
   )
-  const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />
+  const Input = ({
+    allowClear: _allowClear,
+    ...props
+  }: React.InputHTMLAttributes<HTMLInputElement> & { allowClear?: boolean }) => <input {...props} />
   const InputPassword = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     <input type="password" {...props} />
   )
@@ -131,8 +140,16 @@ vi.mock('../components/ProviderLogo', () => ({
     { value: 'avatar', label: '头像' },
     { value: 'mono', label: '线性' },
   ],
-  ProviderLogo: ({ icon, vendor }: { icon?: { id: string; style?: string } | null; vendor?: { id?: string } | null }) => (
-    <span data-testid="provider-logo">{icon ? `${icon.id}:${icon.style ?? 'avatar'}` : vendor?.id}</span>
+  ProviderLogo: ({
+    icon,
+    vendor,
+  }: {
+    icon?: { id: string; style?: string } | null
+    vendor?: { id?: string } | null
+  }) => (
+    <span data-testid="provider-logo">
+      {icon ? `${icon.id}:${icon.style ?? 'avatar'}` : vendor?.id}
+    </span>
   ),
   getProviderIconForVendor: (vendorId?: string | null) => {
     if (vendorId === 'deepseek-api') return { id: 'deepseek', style: 'avatar' }
@@ -197,7 +214,10 @@ describe('ProviderEditPanel progressive configuration', () => {
       createdAt: '',
       updatedAt: '',
     }
-    mocks.invokers.set('provider:list', vi.fn(async () => ({ profiles: [profile] })))
+    mocks.invokers.set(
+      'provider:list',
+      vi.fn(async () => ({ profiles: [profile] })),
+    )
     const getApiKey = vi.fn(async () => ({ apiKey: 'sk-saved-plaintext' }))
     mocks.invokers.set('provider:get-api-key', getApiKey)
     const updateProvider = vi.fn(async (_request: Record<string, unknown>) => ({ profile }))
@@ -206,11 +226,7 @@ describe('ProviderEditPanel progressive configuration', () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
-        <ProviderEditPanel
-          visible
-          profileId="provider-key-echo"
-          onClose={() => undefined}
-        />,
+        <ProviderEditPanel visible profileId="provider-key-echo" onClose={() => undefined} />,
       )
     })
     await act(async () => {
@@ -246,9 +262,11 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     expect(updateProvider).toHaveBeenCalledTimes(2)
-    expect(updateProvider.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
-      apiKey: 'sk-user-updated',
-    }))
+    expect(updateProvider.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        apiKey: 'sk-user-updated',
+      }),
+    )
   })
 
   it('persists the API protocol format switch when saving an edited provider', async () => {
@@ -266,8 +284,14 @@ describe('ProviderEditPanel progressive configuration', () => {
       createdAt: '',
       updatedAt: '',
     }
-    mocks.invokers.set('provider:list', vi.fn(async () => ({ profiles: [profile] })))
-    mocks.invokers.set('provider:get-api-key', vi.fn(async () => ({ apiKey: 'sk-ant-saved' })))
+    mocks.invokers.set(
+      'provider:list',
+      vi.fn(async () => ({ profiles: [profile] })),
+    )
+    mocks.invokers.set(
+      'provider:get-api-key',
+      vi.fn(async () => ({ apiKey: 'sk-ant-saved' })),
+    )
     const updateProvider = vi.fn(async (_request: Record<string, unknown>) => ({ profile }))
     mocks.invokers.set('provider:update', updateProvider)
 
@@ -313,7 +337,11 @@ describe('ProviderEditPanel progressive configuration', () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
-        <ProviderEditPanel visible initialPresetId="anthropic-official" onClose={() => undefined} />,
+        <ProviderEditPanel
+          visible
+          initialPresetId="anthropic-official"
+          onClose={() => undefined}
+        />,
       )
     })
     await act(async () => {
@@ -377,16 +405,22 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const createProvider = mocks.invokers.get('provider:create')
-    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
-      providerIcon: { id: 'deepseek', style: 'mono' },
-    }))
+    expect(createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerIcon: { id: 'deepseek', style: 'mono' },
+      }),
+    )
   })
 
   it('replaces a manually selected icon when the provider template changes', async () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
-        <ProviderEditPanel visible initialPresetId="anthropic-official" onClose={() => undefined} />,
+        <ProviderEditPanel
+          visible
+          initialPresetId="anthropic-official"
+          onClose={() => undefined}
+        />,
       )
     })
     await act(async () => {
@@ -405,8 +439,8 @@ describe('ProviderEditPanel progressive configuration', () => {
       styleSelect.value = 'mono'
       styleSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const openAiButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.trim() === 'OpenAI',
+    const openAiButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'OpenAI',
     )
     act(() => openAiButton?.click())
     expect(container.textContent).toContain('openai:mono')
@@ -471,7 +505,11 @@ describe('ProviderEditPanel progressive configuration', () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
-        <ProviderEditPanel visible initialPresetId="volcengine-seedream-image" onClose={() => undefined} />,
+        <ProviderEditPanel
+          visible
+          initialPresetId="volcengine-seedream-image"
+          onClose={() => undefined}
+        />,
       )
     })
     await act(async () => {
@@ -500,13 +538,15 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const createProvider = mocks.invokers.get('provider:create')
-    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
-      modelType: 'image',
-      imageProvider: 'seeddance',
-      imageApiType: 'sync',
-      mediaProvider: 'volcengine-ark',
-      mediaApiType: 'sync',
-    }))
+    expect(createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelType: 'image',
+        imageProvider: 'seeddance',
+        imageApiType: 'sync',
+        mediaProvider: 'volcengine-ark',
+        mediaApiType: 'sync',
+      }),
+    )
   })
 
   it('exposes the custom adapter entry for dedicated media providers', async () => {
@@ -554,12 +594,15 @@ describe('ProviderEditPanel progressive configuration', () => {
       modelTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const mediaProviderSelect = Array.from(container.querySelectorAll('select')).find((select) =>
-      select.querySelector('option[value="custom"]') &&
-      select.querySelector('option[value="apimart"]') &&
-      select.querySelector('option[value="xai"]'),
+    const mediaProviderSelect = Array.from(container.querySelectorAll('select')).find(
+      (select) =>
+        select.querySelector('option[value="custom"]') &&
+        select.querySelector('option[value="apimart"]') &&
+        select.querySelector('option[value="xai"]'),
     ) as HTMLSelectElement | undefined
     expect(mediaProviderSelect).toBeDefined()
+    expect(mediaProviderSelect?.value).toBe('custom')
+    expect(container.textContent).toContain('暂无匹配的内置模型清单')
     act(() => {
       if (!mediaProviderSelect) return
       mediaProviderSelect.value = 'custom'
@@ -580,8 +623,8 @@ describe('ProviderEditPanel progressive configuration', () => {
       apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
     })
 
-    const fetchButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.trim() === '获取模型',
+    const fetchButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '获取模型',
     )
     expect(fetchButton).toBeDefined()
     await act(async () => {
@@ -589,10 +632,12 @@ describe('ProviderEditPanel progressive configuration', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 10))
     })
 
-    expect(fetchModels).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'openai',
-      apiKey: 'sk-toapis-test',
-    }))
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'openai',
+        apiKey: 'sk-toapis-test',
+      }),
+    )
     expect(container.textContent).toContain('toapis-image-model')
     expect(container.textContent).toContain('渠道 /models 返回的模型')
   })
@@ -615,10 +660,11 @@ describe('ProviderEditPanel progressive configuration', () => {
       modelTypeSelect.value = 'image'
       modelTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const mediaProviderSelect = Array.from(container.querySelectorAll('select')).find((select) =>
-      select.querySelector('option[value="custom"]') &&
-      select.querySelector('option[value="apimart"]') &&
-      select.querySelector('option[value="xai"]'),
+    const mediaProviderSelect = Array.from(container.querySelectorAll('select')).find(
+      (select) =>
+        select.querySelector('option[value="custom"]') &&
+        select.querySelector('option[value="apimart"]') &&
+        select.querySelector('option[value="xai"]'),
     ) as HTMLSelectElement | undefined
     act(() => {
       if (!mediaProviderSelect) return
@@ -626,8 +672,8 @@ describe('ProviderEditPanel progressive configuration', () => {
       mediaProviderSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const configureButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.trim() === '配置自定义适配器',
+    const configureButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '配置自定义适配器',
     )
     expect(configureButton).toBeDefined()
     act(() => configureButton?.click())
@@ -655,10 +701,11 @@ describe('ProviderEditPanel progressive configuration', () => {
       modelTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const mediaProviderSelect = Array.from(container.querySelectorAll('select')).find((select) =>
-      select.querySelector('option[value="custom"]') &&
-      select.querySelector('option[value="apimart"]') &&
-      select.querySelector('option[value="xai"]'),
+    const mediaProviderSelect = Array.from(container.querySelectorAll('select')).find(
+      (select) =>
+        select.querySelector('option[value="custom"]') &&
+        select.querySelector('option[value="apimart"]') &&
+        select.querySelector('option[value="xai"]'),
     ) as HTMLSelectElement | undefined
     act(() => {
       if (!mediaProviderSelect) return
@@ -666,8 +713,8 @@ describe('ProviderEditPanel progressive configuration', () => {
       mediaProviderSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const configureButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.trim() === '配置自定义适配器',
+    const configureButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '配置自定义适配器',
     )
     act(() => configureButton?.click())
 
@@ -691,6 +738,16 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     expect(container.textContent).toContain('async · 任务轮询')
+
+    const editProtocolButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('编辑协议'),
+    )
+    expect(editProtocolButton).toBeDefined()
+    act(() => editProtocolButton?.click())
+    const echoedPresetSelect = Array.from(container.querySelectorAll('select')).find((select) =>
+      select.querySelector('option[value="toapis-image"]'),
+    ) as HTMLSelectElement | undefined
+    expect(echoedPresetSelect?.value).toBe('toapis-image')
   })
 
   it('preserves Agnes media refs when saving a multimodal preset', async () => {
@@ -704,9 +761,7 @@ describe('ProviderEditPanel progressive configuration', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 10))
     })
 
-    const apiKeyInput = container.querySelector(
-      'input[type="password"]',
-    ) as HTMLInputElement | null
+    const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
     expect(apiKeyInput).not.toBeNull()
     act(() => {
       if (!apiKeyInput) return
@@ -726,36 +781,43 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const createProvider = mocks.invokers.get('provider:create')
-    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
-      modelType: 'multimodal',
-      defaultModel: 'agnes-2.0-flash',
-      mediaProvider: 'agnes',
-      mediaCapabilities: expect.arrayContaining([
-        'image.generate',
-        'image.edit',
-        'video.generate',
-      ]),
-      mediaModelRefs: expect.arrayContaining([
-        expect.objectContaining({ manifestId: 'agnes:agnes-image-2.0-flash' }),
-        expect.objectContaining({ manifestId: 'agnes:agnes-video-v2.0' }),
-      ]),
-    }))
+    expect(createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelType: 'multimodal',
+        defaultModel: 'agnes-2.0-flash',
+        mediaProvider: 'agnes',
+        mediaCapabilities: expect.arrayContaining([
+          'image.generate',
+          'image.edit',
+          'video.generate',
+        ]),
+        mediaModelRefs: expect.arrayContaining([
+          expect.objectContaining({ manifestId: 'agnes:agnes-image-2.0-flash' }),
+          expect.objectContaining({ manifestId: 'agnes:agnes-video-v2.0' }),
+        ]),
+      }),
+    )
   })
 
   it('defaults Coding Plan OpenAI presets to Responses', async () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
-        <ProviderEditPanel visible initialPresetId="zhipu-glm-coding-plan-openai" onClose={() => undefined} />,
+        <ProviderEditPanel
+          visible
+          initialPresetId="zhipu-glm-coding-plan-openai"
+          onClose={() => undefined}
+        />,
       )
     })
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 10))
     })
 
-    const apiKindSelect = Array.from(container.querySelectorAll('select')).find((select) =>
-      select.querySelector('option[value="responses"]') != null
-        && select.querySelector('option[value="chat"]') != null,
+    const apiKindSelect = Array.from(container.querySelectorAll('select')).find(
+      (select) =>
+        select.querySelector('option[value="responses"]') != null &&
+        select.querySelector('option[value="chat"]') != null,
     ) as HTMLSelectElement | undefined
 
     expect(apiKindSelect).toBeDefined()
@@ -766,7 +828,11 @@ describe('ProviderEditPanel progressive configuration', () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
-        <ProviderEditPanel visible initialPresetId="volcengine-ark-openai" onClose={() => undefined} />,
+        <ProviderEditPanel
+          visible
+          initialPresetId="volcengine-ark-openai"
+          onClose={() => undefined}
+        />,
       )
     })
     await act(async () => {
@@ -775,31 +841,40 @@ describe('ProviderEditPanel progressive configuration', () => {
 
     expect(container.textContent).not.toContain('请求端点：')
     expect(container.querySelectorAll('.pv_endpoint_inline_hint')).toHaveLength(1)
-    expect(container.querySelector('.pv_endpoint_inline_hint')?.textContent).toContain('实际请求地址：')
+    expect(container.querySelector('.pv_endpoint_inline_hint')?.textContent).toContain(
+      '实际请求地址：',
+    )
   })
 
   it('keeps unknown OpenAI-compatible endpoints on Chat Completions by default', () => {
     expect(resolveCodexApiKind('openai', 'https://api.compat.example/v1')).toBe('chat')
-    expect(resolveCodexApiKind('openai', 'https://open.bigmodel.cn/api/coding/paas/v4')).toBe('responses')
+    expect(resolveCodexApiKind('openai', 'https://open.bigmodel.cn/api/coding/paas/v4')).toBe(
+      'responses',
+    )
   })
 
   it('switches preset endpoint when protocol format changes', async () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
-        <ProviderEditPanel visible initialPresetId="volcengine-ark-anthropic" onClose={() => undefined} />,
+        <ProviderEditPanel
+          visible
+          initialPresetId="volcengine-ark-anthropic"
+          onClose={() => undefined}
+        />,
       )
     })
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 10))
     })
 
-    const providerSelect = Array.from(container.querySelectorAll('select')).find((select) =>
-      select.querySelector('option[value="anthropic"]') != null
-        && select.querySelector('option[value="openai"]') != null,
+    const providerSelect = Array.from(container.querySelectorAll('select')).find(
+      (select) =>
+        select.querySelector('option[value="anthropic"]') != null &&
+        select.querySelector('option[value="openai"]') != null,
     ) as HTMLSelectElement | undefined
-    const endpointInputBefore = Array.from(container.querySelectorAll('input')).find((input) =>
-      input.value === 'https://ark.cn-beijing.volces.com/api/coding',
+    const endpointInputBefore = Array.from(container.querySelectorAll('input')).find(
+      (input) => input.value === 'https://ark.cn-beijing.volces.com/api/coding',
     ) as HTMLInputElement | undefined
 
     expect(providerSelect).toBeDefined()
@@ -812,19 +887,15 @@ describe('ProviderEditPanel progressive configuration', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 10))
     })
 
-    const endpointInputAfter = Array.from(container.querySelectorAll('input')).find((input) =>
-      input.value === 'https://ark.cn-beijing.volces.com/api/coding/v3',
+    const endpointInputAfter = Array.from(container.querySelectorAll('input')).find(
+      (input) => input.value === 'https://ark.cn-beijing.volces.com/api/coding/v3',
     ) as HTMLInputElement | undefined
     expect(endpointInputAfter).toBeDefined()
   })
 
   it('does not make every fetched model globally available by default', async () => {
     const fetchModels = vi.fn(async () => ({
-      models: [
-        { id: 'model-a' },
-        { id: 'model-b' },
-        { id: 'model-c' },
-      ],
+      models: [{ id: 'model-a' }, { id: 'model-b' }, { id: 'model-c' }],
     }))
     mocks.invokers.set('provider:fetch-models', fetchModels)
 
@@ -877,25 +948,28 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const createProvider = mocks.invokers.get('provider:create')
-    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
-      defaultModel: 'model-a',
-      modelIds: ['model-a'],
-    }))
+    expect(createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultModel: 'model-a',
+        modelIds: ['model-a'],
+      }),
+    )
   })
 
   it('auto fetches Volcengine OpenAI models after API key entry and selects the first model', async () => {
     const fetchModels = vi.fn(async () => ({
-      models: [
-        { id: 'auto-first' },
-        { id: 'auto-second' },
-      ],
+      models: [{ id: 'auto-first' }, { id: 'auto-second' }],
     }))
     mocks.invokers.set('provider:fetch-models', fetchModels)
 
     await act(async () => {
       root = createRoot(container)
       root.render(
-        <ProviderEditPanel visible initialPresetId="volcengine-ark-openai" onClose={() => undefined} />,
+        <ProviderEditPanel
+          visible
+          initialPresetId="volcengine-ark-openai"
+          onClose={() => undefined}
+        />,
       )
     })
     await act(async () => {
@@ -917,11 +991,13 @@ describe('ProviderEditPanel progressive configuration', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 900))
     })
 
-    expect(fetchModels).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'openai',
-      apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding/v3',
-      apiKey: 'sk-volcengine-auto',
-    }))
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'openai',
+        apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+        apiKey: 'sk-volcengine-auto',
+      }),
+    )
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === '保存',
@@ -932,27 +1008,30 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const createProvider = mocks.invokers.get('provider:create')
-    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'openai',
-      codexApiKind: 'responses',
-      defaultModel: 'auto-first',
-      modelIds: ['auto-first'],
-    }))
+    expect(createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'openai',
+        codexApiKind: 'responses',
+        defaultModel: 'auto-first',
+        modelIds: ['auto-first'],
+      }),
+    )
   })
 
   it('auto fetches any chat provider models once API key is ready', async () => {
     const fetchModels = vi.fn(async () => ({
-      models: [
-        { id: 'claude-auto-first' },
-        { id: 'claude-auto-second' },
-      ],
+      models: [{ id: 'claude-auto-first' }, { id: 'claude-auto-second' }],
     }))
     mocks.invokers.set('provider:fetch-models', fetchModels)
 
     await act(async () => {
       root = createRoot(container)
       root.render(
-        <ProviderEditPanel visible initialPresetId="anthropic-official" onClose={() => undefined} />,
+        <ProviderEditPanel
+          visible
+          initialPresetId="anthropic-official"
+          onClose={() => undefined}
+        />,
       )
     })
     await act(async () => {
@@ -974,11 +1053,13 @@ describe('ProviderEditPanel progressive configuration', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 900))
     })
 
-    expect(fetchModels).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'anthropic',
-      apiEndpoint: 'https://api.anthropic.com',
-      apiKey: 'sk-ant-auto-fetch',
-    }))
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'anthropic',
+        apiEndpoint: 'https://api.anthropic.com',
+        apiKey: 'sk-ant-auto-fetch',
+      }),
+    )
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === '保存',
@@ -989,20 +1070,18 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const createProvider = mocks.invokers.get('provider:create')
-    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'anthropic',
-      defaultModel: 'claude-auto-first',
-      modelIds: ['claude-auto-first'],
-    }))
+    expect(createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'anthropic',
+        defaultModel: 'claude-auto-first',
+        modelIds: ['claude-auto-first'],
+      }),
+    )
   })
 
   it('supports selecting a fetched default model and only saving explicitly enabled models', async () => {
     const fetchModels = vi.fn(async () => ({
-      models: [
-        { id: 'model-a' },
-        { id: 'model-b' },
-        { id: 'model-c' },
-      ],
+      models: [{ id: 'model-a' }, { id: 'model-b' }, { id: 'model-c' }],
     }))
     mocks.invokers.set('provider:fetch-models', fetchModels)
 
@@ -1085,18 +1164,17 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const createProvider = mocks.invokers.get('provider:create')
-    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
-      defaultModel: 'model-b',
-      modelIds: ['model-b', 'model-c'],
-    }))
+    expect(createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultModel: 'model-b',
+        modelIds: ['model-b', 'model-c'],
+      }),
+    )
   })
 
   it('preserves the typed default model when models are fetched manually', async () => {
     const fetchModels = vi.fn(async () => ({
-      models: [
-        { id: 'model-a' },
-        { id: 'model-b' },
-      ],
+      models: [{ id: 'model-a' }, { id: 'model-b' }],
     }))
     mocks.invokers.set('provider:fetch-models', fetchModels)
 
@@ -1109,12 +1187,12 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const inputs = Array.from(container.querySelectorAll('input'))
-    const nameInput = inputs.find((input) =>
-      input.placeholder === '例：Anthropic · Claude',
-    ) as HTMLInputElement | undefined
-    const modelInput = inputs.find((input) =>
-      input.placeholder.includes('claude-sonnet'),
-    ) as HTMLInputElement | undefined
+    const nameInput = inputs.find((input) => input.placeholder === '例：Anthropic · Claude') as
+      | HTMLInputElement
+      | undefined
+    const modelInput = inputs.find((input) => input.placeholder.includes('claude-sonnet')) as
+      | HTMLInputElement
+      | undefined
     const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
     expect(nameInput).toBeDefined()
     expect(modelInput).toBeDefined()
@@ -1161,17 +1239,19 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const createProvider = mocks.invokers.get('provider:create')
-    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
-      defaultModel: 'model-b',
-      modelIds: ['model-b'],
-    }))
+    expect(createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultModel: 'model-b',
+        modelIds: ['model-b'],
+      }),
+    )
   })
 })
 
 describe('resolveProviderCardKind', () => {
   // resolveProviderCardKind 只读取 id 与 modelType，构造最小 profile 即可
   const profile = (id: string, modelType?: string) =>
-    ({ id, modelType } as unknown as Parameters<typeof resolveProviderCardKind>[0])
+    ({ id, modelType }) as unknown as Parameters<typeof resolveProviderCardKind>[0]
 
   it('claude-auto-router → router（最高优先级，忽略 modelType）', () => {
     expect(resolveProviderCardKind(profile('claude-auto-router', 'image'))).toBe('router')
@@ -1235,7 +1315,7 @@ describe('canHealthCheckProviderCardKind', () => {
 
 describe('sortProviderProfilesForCards', () => {
   const profile = (id: string, name: string, managed = false) =>
-    ({ id, name, managed } as unknown as Parameters<typeof sortProviderProfilesForCards>[0][number])
+    ({ id, name, managed }) as unknown as Parameters<typeof sortProviderProfilesForCards>[0][number]
 
   it('keeps the Spark managed card first in default and name sorting', () => {
     const custom = profile('custom', 'A Provider')
@@ -1261,7 +1341,11 @@ describe('getMediaRequestPreviewUrl', () => {
   const BASE = 'https://dashscope.aliyuncs.com/api/v1/services/aigc'
   type MediaProvider = Parameters<typeof getMediaRequestPreviewUrl>[2]
   const preview = (modelType: 'image' | 'video', mediaProvider: MediaProvider) =>
-    getMediaRequestPreviewUrl(BASE, { modelType, defaultModel: '', mediaCapabilities: [] }, mediaProvider)
+    getMediaRequestPreviewUrl(
+      BASE,
+      { modelType, defaultModel: '', mediaCapabilities: [] },
+      mediaProvider,
+    )
 
   it('百炼图片预览走 DashScope 原生 multimodal-generation/generation（qwen / wan 共用）', () => {
     expect(preview('image', 'bailian')).toBe(`${BASE}/multimodal-generation/generation`)

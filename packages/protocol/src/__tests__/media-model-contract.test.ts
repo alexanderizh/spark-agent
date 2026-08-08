@@ -78,6 +78,78 @@ describe('MediaModelParamPolicySchema', () => {
   })
 })
 
+describe('MediaModelManifestSchema editor compatibility', () => {
+  it('persists a visual-editor base template while keeping legacy manifests optional', () => {
+    expect(
+      MediaModelManifestSchema.parse(manifest({ baseTemplate: 'openai-compatible' })).baseTemplate,
+    ).toBe('openai-compatible')
+    expect(MediaModelManifestSchema.parse(manifest()).baseTemplate).toBeUndefined()
+  })
+
+  it('accepts all V2 HTTP methods in both normalized and legacy mirror fields', () => {
+    const parsed = MediaModelManifestSchema.parse(
+      manifest({
+        invocation: {
+          ...manifest().invocation,
+          method: 'PATCH',
+          request: {
+            method: 'PATCH',
+            endpoint: '/images',
+            auth: { kind: 'bearer', credentialRef: 'apiKey' },
+            body: { kind: 'json', template: { model: '{{modelId}}' } },
+          },
+        },
+      }),
+    )
+    expect(parsed.invocation.method).toBe('PATCH')
+    expect(parsed.invocation.request?.method).toBe('PATCH')
+  })
+
+  it('accepts an optional post-poll artifact request without affecting old task contracts', () => {
+    const parsed = MediaModelManifestSchema.parse(
+      manifest({
+        contractVersion: 2,
+        adapterMode: 'template',
+        invocation: {
+          ...manifest().invocation,
+          mode: 'async_polling',
+          response: {
+            kind: 'task_poll',
+            taskIdPaths: ['id'],
+            resultPaths: ['content_url'],
+            poll: {
+              method: 'GET',
+              endpoint: '/videos/{{taskId}}',
+              auth: { kind: 'inherit' },
+              body: { kind: 'none' },
+            },
+            artifact: {
+              request: {
+                method: 'GET',
+                endpoint: '/videos/{{taskId}}/content',
+                auth: { kind: 'inherit' },
+                body: { kind: 'none' },
+              },
+              response: { kind: 'binary_response' },
+            },
+          },
+          polling: {
+            intervalMs: 1000,
+            timeoutMs: 10000,
+            maxAttempts: 10,
+            statusMap: { completed: 'succeeded', failed: 'failed' },
+          },
+        },
+      }),
+    )
+    expect(parsed.invocation.response).toMatchObject({
+      kind: 'task_poll',
+      artifact: { response: { kind: 'binary_response' } },
+    })
+    expect(validateMediaModelManifestSemantics(parsed)).toEqual([])
+  })
+})
+
 describe('MediaErrorContractSchema', () => {
   it('accepts a volcengine-style contract', () => {
     const parsed = MediaErrorContractSchema.parse({
@@ -337,7 +409,9 @@ describe('validateMediaModelManifestSemantics — Contract V2', () => {
     expect(MediaModelManifestSchema.safeParse(m).success).toBe(true)
     const issues = validateMediaModelManifestSemantics(m)
     expect(issues.some((issue) => issue.code === 'invalid_auth')).toBe(true)
-    expect(issues.some((issue) => issue.path.join('.') === 'invocation.uploads.0.cleanup.request')).toBe(false)
+    expect(
+      issues.some((issue) => issue.path.join('.') === 'invocation.uploads.0.cleanup.request'),
+    ).toBe(false)
   })
 
   it('flags forbidden field that is not declared in schema or aliases', () => {
@@ -357,9 +431,7 @@ describe('validateMediaModelManifestSemantics — Contract V2', () => {
     })
     const issues = validateMediaModelManifestSemantics(m)
     expect(
-      issues.some(
-        (i) => i.code === 'invalid_param_policy' && i.message.includes('mystery'),
-      ),
+      issues.some((i) => i.code === 'invalid_param_policy' && i.message.includes('mystery')),
     ).toBe(true)
   })
 
@@ -380,9 +452,7 @@ describe('validateMediaModelManifestSemantics — Contract V2', () => {
     })
     const issues = validateMediaModelManifestSemantics(m)
     expect(
-      issues.some(
-        (i) => i.code === 'invalid_param_policy' && i.message.includes('style'),
-      ),
+      issues.some((i) => i.code === 'invalid_param_policy' && i.message.includes('style')),
     ).toBe(true)
   })
 
@@ -415,9 +485,7 @@ describe('validateMediaModelManifestSemantics — Contract V2', () => {
     })
     const issues = validateMediaModelManifestSemantics(m)
     expect(
-      issues.some(
-        (i) => i.code === 'invalid_error_contract' && i.message.includes('codePaths'),
-      ),
+      issues.some((i) => i.code === 'invalid_error_contract' && i.message.includes('codePaths')),
     ).toBe(true)
   })
 

@@ -204,3 +204,12 @@ paramPolicy: {
 - 文本 Anthropic SDK 使用平台根地址，多媒体适配器使用平台 `/v1` 地址，因此受管配置需要分别保存 `apiEndpoint` 与 `mediaApiEndpoint`。
 - 平台受管图片模型只复用目标适配器的参数、校验和响应处理，不继承供应商官方请求路径；统一通过 NewAPI 的 `/images/generations` 与 `/images/edits` 入口调用。该路径覆盖必须以 `managedType=newapi` 为边界，普通自定义 Provider 保持原生路径。
 - `spark_media` 路由对受管平台渠道写入 `adapterFromManifest=true`，并把首个有效平台媒体模型设为媒体默认；普通渠道不得因此改写原有默认模型。
+
+## 十、自定义适配器协议基底
+
+- `MediaModelManifest.baseTemplate` 只记录编辑器使用的协议基底（完全自定义、OpenAI 兼容、通用异步或渠道预置），运行时仍以完整 Manifest 为准；该字段必须保持可选，保证历史配置无需迁移即可继续运行。
+- 协议基底不是一次性示例。用户选择后要写回 Manifest 并稳定回显；再次编辑请求路径、参数或响应映射时，不能根据内容猜测并覆盖已保存的选择。
+- OpenAI 兼容基底按媒体域生成完整合同：图片生成使用 `/images/generations` JSON 请求，图片编辑使用 `/images/edits` multipart 请求，视频使用 `/videos` 异步轮询，语音合成使用 `/audio/speech` 二进制响应。接口路径相对 Provider 的 `/v1` base URL 配置。
+- 轮询成功后仍需单独下载产物的渠道使用可选 `task_poll.artifact`：请求可引用 `{{taskId}}` 和 `{{poll.xxx}}`，响应可配置 URL、Base64 或二进制。OpenAI 视频必须在任务完成后请求 `/videos/{{taskId}}/content`，不能把轮询 JSON 当作视频产物。
+- Contract V2 的 `invocation.request` 是实际编译入口，但编辑器修改请求时必须同步更新 legacy 的 endpoint/method/contentType/requestTemplate 镜像，避免旧读取链路和调试信息出现不一致。
+- JSON 表单编辑器必须保留尚未完成或暂时非法的本地草稿并显示错误，不能因父级受控回显把输入恢复为旧值。

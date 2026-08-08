@@ -34,12 +34,20 @@
 但当前实现还不是“完全自主定义协议”：
 
 1. `invocation` 主要是单次请求模板，尚未抽象成通用请求步骤或状态机。
-2. `TemplateMediaAdapter` 对请求内容类型存在 JSON 限制，multipart、form 和复杂文件上传仍需专用代码。
-3. 轮询默认假设 GET + URL，不能完整表达 POST 轮询、Query 轮询、Body 轮询或多阶段任务流程。
+2. `TemplateMediaAdapter` 已支持 JSON、multipart、binary 和前置上传，但通用多步分支流程仍需后续 Connector Runtime。
+3. 轮询已可分别配置 method、URL、Query、Header 和 Body，但 webhook/callback 和多阶段任务状态机尚未完整落地。
 4. 模板变量、映射和转换能力仍主要由运行时代码预置，用户无法完全控制所有画布输入到供应商字段的映射。
 5. 错误契约主要是路径读取和 code 映射，还需要支持 HTTP 状态、Body 条件、字符串匹配和多级错误结构。
-6. 当前配置 UI 更像 JSON 高级编辑器，不足以支撑复杂协议的可视化配置、调试和测试。
+6. 当前配置 UI 已覆盖能力、参数、鉴权、请求、响应、轮询和错误契约；复杂嵌套 Body 仍保留高级 JSON 入口。
 7. “临时配置测试后内置”的导出物、测试样例和源代码落地流程尚未正式建立。
+
+### 2.1 2026-08-08 编辑器基底模板落地状态
+
+- Manifest 新增可选 `baseTemplate`，记录完全自定义、OpenAI 兼容、通用异步 JSON 或 ToApis 基底；旧 Manifest 缺失该字段时仍可正常读取。
+- 基底选择与 inline Manifest 一起保存并回显，不再是选择后立即清空的一次性动作。
+- OpenAI 基底按当前媒体类型生成完整可编辑合同：图片生成使用 JSON、图片编辑使用 multipart、视频支持文生视频与参考图 multipart，并在异步轮询成功后通过独立产物请求下载二进制内容；语音使用二进制响应。
+- `task_poll.artifact` 可选定义任务完成后的产物请求及其响应类型，覆盖 OpenAI `/videos/{id}/content` 这类“提交 → 轮询 → 下载”三阶段协议；旧 task_poll 不配置该字段时行为不变。
+- 可视化修改 `request` 时同步回写旧 invocation 镜像字段，保证 V2 运行时、raw JSON 和旧读取路径一致。
 
 ## 3. 核心决策
 
@@ -116,14 +124,14 @@ flowchart TD
 
 运行时职责必须清晰分层：
 
-| 层级 | 职责 | 不负责的内容 |
-|---|---|---|
-| Provider Profile | 地址、凭据、全局超时、连接级默认值 | 模型具体参数和响应结构 |
-| Connector Manifest | 模型能力、输入映射、请求流程、响应流程、错误契约 | 保存明文密钥、执行任意代码 |
-| Workflow Engine | 解释声明式请求步骤、状态机和映射表达式 | 硬编码某个厂商模型 |
-| Specialized Adapter | 处理 DSL 无法表达的特殊协议 | 替代所有普通连接器 |
-| Canvas/MCP | 提供统一用户输入和能力调用 | 拼接 Provider 原生请求 |
-| Workbench | 编辑、验证、调试、测试、导入导出 | 直接绕过运行时发请求 |
+| 层级                | 职责                                             | 不负责的内容               |
+| ------------------- | ------------------------------------------------ | -------------------------- |
+| Provider Profile    | 地址、凭据、全局超时、连接级默认值               | 模型具体参数和响应结构     |
+| Connector Manifest  | 模型能力、输入映射、请求流程、响应流程、错误契约 | 保存明文密钥、执行任意代码 |
+| Workflow Engine     | 解释声明式请求步骤、状态机和映射表达式           | 硬编码某个厂商模型         |
+| Specialized Adapter | 处理 DSL 无法表达的特殊协议                      | 替代所有普通连接器         |
+| Canvas/MCP          | 提供统一用户输入和能力调用                       | 拼接 Provider 原生请求     |
+| Workbench           | 编辑、验证、调试、测试、导入导出                 | 直接绕过运行时发请求       |
 
 ## 5. 协议设计
 
@@ -1242,22 +1250,22 @@ connector.execution = "adapter:volcengine-ark"
 
 以下结论来自对协议、运行时、桌面 IPC、MCP 子进程、Provider 持久化和现有测试的直接阅读；GitNexus 索引已刷新后用于符号上下文导航，遇到 FTS 查询退化时以源码检索和测试证据为准。
 
-| 代码区域 | 当前事实 | 对计划的约束 |
-|---|---|---|
-| [`media-model-manifest.ts`](/Users/zhangyang/spark_ai_project/Spark-Agent/packages/protocol/src/media-model-manifest.ts) | Manifest 已描述能力、参数、请求模板、响应、轮询和错误，但仍是有限模板模型 | 新协议不能破坏旧 Manifest；应增加独立连接器定义和兼容投影 |
-| [`media-model-contract.ts`](/Users/zhangyang/spark_ai_project/Spark-Agent/packages/protocol/src/media-model-contract.ts) | 已有参数策略、别名、转换、冲突和错误契约 | 连接器协议应复用已有语义，避免出现两套参数校验规则 |
-| [`template-media.adapter.ts`](/Users/zhangyang/spark_ai_project/Spark-Agent/packages/agent-runtime/src/services/media/adapters/template-media.adapter.ts) | 当前明确拒绝非 JSON content type；轮询能力有限 | 不能把现有 Template Adapter 宣称为完整通用运行时，需新增声明式执行器并保留旧适配器 |
-| [`media-http.util.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/media/media-http.util.ts) | 已支持部分 JSON/Binary 响应和错误契约，但轮询请求假设仍较强 | 轮询 method、query、body、header、状态机必须由新引擎实现，旧路径不改行为 |
-| [`media-router.service.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/media/media-router.service.ts) | adapter map 按封闭 ProviderKind 选择；manifest adapter 有显式分支 | 不能仅新增任意 `providerKind` 就期待 Router 自动执行；需引入显式 `execution` 决策 |
-| [`media-model-resolver.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/media/media-model-resolver.ts) | 已处理内联 Manifest、catalog 和旧 `modelIds` 回退 | 连接器解析应是可选分支；解析失败要保留其他模型，不得让整个 Provider 失效 |
-| [`index.ts`](/Users/zhangyang/spark_ai_project/apps/desktop/src/main/ipc/index.ts) | Canvas 通过 profile、catalog、manifest 生成模型摘要；创建任务会捕获失败 | 新字段要完整穿过 IPC；校验提示继续保持 advisory，执行失败转换成结构化失败响应 |
-| [`media-config.ts`](/Users/zhangyang/spark_ai_project/packages/protocol/src/media-config.ts) | `MediaCapabilityId` 和 `CanvasOperationType` 是封闭集合 | 新连接器必须显式绑定已有 capability/operation；新增能力另立后续协议，不首期放开任意字符串运行 |
-| [`media-task-runtime.service.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/media/media-task-runtime.service.ts) | 任务创建后再调用 Router，失败被转成任务记录；当前不保存连接器快照 | 首期必须增加可空快照字段和迁移，旧任务不受影响，新任务重试不读取最新配置 |
-| [`media-generation-task.repository.ts`](/Users/zhangyang/spark_ai_project/packages/storage/src/repositories/media-generation-task.repository.ts) | 表结构没有 connector version/hash/snapshot | 使用新增 nullable migration，禁止重建或覆盖旧任务数据 |
-| [`provider.service.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/provider.service.ts) | normalize/create/update/export 只保留已知媒体字段，未知字段会被丢弃 | 所有 normalize、update、export/import 分支必须显式保留 connector 字段 |
-| [`ProvidersView.tsx`](/Users/zhangyang/spark_ai_project/apps/desktop/src/renderer/design/views/ProvidersView.tsx) | 现有表单有自定义 Manifest 编辑器，但只归一化部分 `mediaModelRefs` 字段 | Workbench 应独立建设；旧表单最小接入引用选择，不扩大为复杂协议编辑器 |
-| [`media-mcp-runtime-config.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/media/media-mcp-runtime-config.ts) | MCP 运行配置由 Provider route 生成，子进程通过临时 JSON 文件读取 | connector 必须进入 runtime file；旧 legacy config 和旧 manifests 继续可读 |
-| [`media-generation-mcp-server.mjs`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/tools/media-generation-mcp-server.mjs) | 工具 schema 静态，manifest 执行仅覆盖 JSON；非 JSON manifest 可能返回 `null` 后落入原生分支 | 必须修复静默回退；首期保留静态工具和 `extraJson` 兼容入口，新增连接器参数描述 |
+| 代码区域                                                                                                                                                  | 当前事实                                                                                    | 对计划的约束                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [`media-model-manifest.ts`](/Users/zhangyang/spark_ai_project/Spark-Agent/packages/protocol/src/media-model-manifest.ts)                                  | Manifest 已描述能力、参数、请求模板、响应、轮询和错误，但仍是有限模板模型                   | 新协议不能破坏旧 Manifest；应增加独立连接器定义和兼容投影                                     |
+| [`media-model-contract.ts`](/Users/zhangyang/spark_ai_project/Spark-Agent/packages/protocol/src/media-model-contract.ts)                                  | 已有参数策略、别名、转换、冲突和错误契约                                                    | 连接器协议应复用已有语义，避免出现两套参数校验规则                                            |
+| [`template-media.adapter.ts`](/Users/zhangyang/spark_ai_project/Spark-Agent/packages/agent-runtime/src/services/media/adapters/template-media.adapter.ts) | 当前明确拒绝非 JSON content type；轮询能力有限                                              | 不能把现有 Template Adapter 宣称为完整通用运行时，需新增声明式执行器并保留旧适配器            |
+| [`media-http.util.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/media/media-http.util.ts)                                    | 已支持部分 JSON/Binary 响应和错误契约，但轮询请求假设仍较强                                 | 轮询 method、query、body、header、状态机必须由新引擎实现，旧路径不改行为                      |
+| [`media-router.service.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/media/media-router.service.ts)                          | adapter map 按封闭 ProviderKind 选择；manifest adapter 有显式分支                           | 不能仅新增任意 `providerKind` 就期待 Router 自动执行；需引入显式 `execution` 决策             |
+| [`media-model-resolver.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/media/media-model-resolver.ts)                          | 已处理内联 Manifest、catalog 和旧 `modelIds` 回退                                           | 连接器解析应是可选分支；解析失败要保留其他模型，不得让整个 Provider 失效                      |
+| [`index.ts`](/Users/zhangyang/spark_ai_project/apps/desktop/src/main/ipc/index.ts)                                                                        | Canvas 通过 profile、catalog、manifest 生成模型摘要；创建任务会捕获失败                     | 新字段要完整穿过 IPC；校验提示继续保持 advisory，执行失败转换成结构化失败响应                 |
+| [`media-config.ts`](/Users/zhangyang/spark_ai_project/packages/protocol/src/media-config.ts)                                                              | `MediaCapabilityId` 和 `CanvasOperationType` 是封闭集合                                     | 新连接器必须显式绑定已有 capability/operation；新增能力另立后续协议，不首期放开任意字符串运行 |
+| [`media-task-runtime.service.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/media/media-task-runtime.service.ts)              | 任务创建后再调用 Router，失败被转成任务记录；当前不保存连接器快照                           | 首期必须增加可空快照字段和迁移，旧任务不受影响，新任务重试不读取最新配置                      |
+| [`media-generation-task.repository.ts`](/Users/zhangyang/spark_ai_project/packages/storage/src/repositories/media-generation-task.repository.ts)          | 表结构没有 connector version/hash/snapshot                                                  | 使用新增 nullable migration，禁止重建或覆盖旧任务数据                                         |
+| [`provider.service.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/provider.service.ts)                                        | normalize/create/update/export 只保留已知媒体字段，未知字段会被丢弃                         | 所有 normalize、update、export/import 分支必须显式保留 connector 字段                         |
+| [`ProvidersView.tsx`](/Users/zhangyang/spark_ai_project/apps/desktop/src/renderer/design/views/ProvidersView.tsx)                                         | 现有表单有自定义 Manifest 编辑器，但只归一化部分 `mediaModelRefs` 字段                      | Workbench 应独立建设；旧表单最小接入引用选择，不扩大为复杂协议编辑器                          |
+| [`media-mcp-runtime-config.ts`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/services/media/media-mcp-runtime-config.ts)                  | MCP 运行配置由 Provider route 生成，子进程通过临时 JSON 文件读取                            | connector 必须进入 runtime file；旧 legacy config 和旧 manifests 继续可读                     |
+| [`media-generation-mcp-server.mjs`](/Users/zhangyang/spark_ai_project/packages/agent-runtime/src/tools/media-generation-mcp-server.mjs)                   | 工具 schema 静态，manifest 执行仅覆盖 JSON；非 JSON manifest 可能返回 `null` 后落入原生分支 | 必须修复静默回退；首期保留静态工具和 `extraJson` 兼容入口，新增连接器参数描述                 |
 
 ### 17.3 修订后的接入模型
 
@@ -1287,7 +1295,7 @@ interface ProviderMediaModelRef {
   manifestId: string
   modelId: string
   enabled: boolean
-  manifest?: MediaModelManifest       // 旧路径，保持原语义
+  manifest?: MediaModelManifest // 旧路径，保持原语义
   connector?: MediaConnectorDefinition // 新路径，可选
 }
 
@@ -1368,15 +1376,15 @@ type ConnectorResolutionResult =
 
 Connector Runtime 错误应分层：
 
-| 错误类别 | 影响范围 | 用户看到的行为 |
-|---|---|---|
-| `connector_schema_invalid` | 当前连接器 | Workbench/模型项标红，其他模型正常 |
-| `connector_binding_missing` | 当前入口 | 可在 Workbench 测试，Canvas/MCP 显示未绑定 |
-| `connector_execution_not_supported` | 当前连接器/功能 | 返回明确缺少 feature，不调用错误 adapter |
-| `connector_endpoint_invalid` | 当前连接器 | Test/Run 失败并给出 URL 校验原因，不影响应用启动 |
-| `connector_transport_error` | 当前任务 | 按现有任务失败结构记录，保留 requestId/脱敏摘要 |
-| `connector_provider_error` | 当前任务 | 归一为 `MediaProviderError`，保留 provider code/message |
-| `connector_runtime_internal_error` | 当前任务 | 记录详细诊断，向 Canvas/MCP 返回稳定错误，不抛穿 renderer |
+| 错误类别                            | 影响范围        | 用户看到的行为                                            |
+| ----------------------------------- | --------------- | --------------------------------------------------------- |
+| `connector_schema_invalid`          | 当前连接器      | Workbench/模型项标红，其他模型正常                        |
+| `connector_binding_missing`         | 当前入口        | 可在 Workbench 测试，Canvas/MCP 显示未绑定                |
+| `connector_execution_not_supported` | 当前连接器/功能 | 返回明确缺少 feature，不调用错误 adapter                  |
+| `connector_endpoint_invalid`        | 当前连接器      | Test/Run 失败并给出 URL 校验原因，不影响应用启动          |
+| `connector_transport_error`         | 当前任务        | 按现有任务失败结构记录，保留 requestId/脱敏摘要           |
+| `connector_provider_error`          | 当前任务        | 归一为 `MediaProviderError`，保留 provider code/message   |
+| `connector_runtime_internal_error`  | 当前任务        | 记录详细诊断，向 Canvas/MCP 返回稳定错误，不抛穿 renderer |
 
 禁止以下行为：
 
@@ -1505,18 +1513,18 @@ packages/media-connector-core/
 
 首期建议按 feature gate 划分：
 
-| Feature | 首期是否可执行 | 说明 |
-|---|---:|---|
-| JSON GET/POST、Query、Header、嵌套 Body | 是 | 作为最小可用闭环 |
-| 参数类型/枚举/默认值/别名/条件/冲突 | 是 | 复用现有 contract 语义 |
-| 同步 URL、Data URL、Base64、文本、Binary 产物 | 是 | 统一物化和大小限制 |
-| GET/POST 轮询、Query/Header/Body、状态映射 | 是 | 新状态机负责，旧 adapter 不改 |
-| Provider 错误 code/message/requestId/param/retryable | 是 | 统一归一为 MediaProviderError |
-| form-urlencoded | 是 | 独立编码器和 fixture |
-| multipart 文件 part | 分阶段 | 先支持本地文件/URL/Base64 三类稳定 part |
-| 多步骤 upload -> submit -> poll | 分阶段 | 协议先定义，运行时按 feature gate 开放 |
-| 自定义签名、OAuth token exchange | 否 | 进入白名单 auth provider |
-| Webhook callback、WebSocket、任意脚本 | 否 | 不作为首期阻断项或隐式 fallback |
+| Feature                                              | 首期是否可执行 | 说明                                    |
+| ---------------------------------------------------- | -------------: | --------------------------------------- |
+| JSON GET/POST、Query、Header、嵌套 Body              |             是 | 作为最小可用闭环                        |
+| 参数类型/枚举/默认值/别名/条件/冲突                  |             是 | 复用现有 contract 语义                  |
+| 同步 URL、Data URL、Base64、文本、Binary 产物        |             是 | 统一物化和大小限制                      |
+| GET/POST 轮询、Query/Header/Body、状态映射           |             是 | 新状态机负责，旧 adapter 不改           |
+| Provider 错误 code/message/requestId/param/retryable |             是 | 统一归一为 MediaProviderError           |
+| form-urlencoded                                      |             是 | 独立编码器和 fixture                    |
+| multipart 文件 part                                  |         分阶段 | 先支持本地文件/URL/Base64 三类稳定 part |
+| 多步骤 upload -> submit -> poll                      |         分阶段 | 协议先定义，运行时按 feature gate 开放  |
+| 自定义签名、OAuth token exchange                     |             否 | 进入白名单 auth provider                |
+| Webhook callback、WebSocket、任意脚本                |             否 | 不作为首期阻断项或隐式 fallback         |
 
 对于尚未支持的配置：
 
@@ -1591,20 +1599,20 @@ packages/media-connector-core/
 
 ### 17.10 复核后的验收矩阵
 
-| 场景 | 预期结果 | 不能发生的结果 |
-|---|---|---|
-| 升级后读取旧 Provider | 与升级前模型、参数、adapter 选择一致 | 旧字段丢失、Provider 列表为空 |
-| 保存旧 Provider | config round-trip 不变 | 旧 `mediaModelRefs` 被重建后丢字段 |
-| 一个 connector JSON 非法 | 该模型显示 invalid | 整个 Provider 或应用启动失败 |
-| connector endpoint 不可达 | 当前任务失败并有诊断 | 自动切到另一个模型或原生 adapter |
-| connector content type 暂不支持 | 返回 unsupported feature | MCP `null` 后继续原生请求 |
-| 新 connector 无 Canvas binding | Workbench 可测试，Canvas 不可运行并说明原因 | 被错误映射到相近操作 |
-| 新 connector 有现有 binding | Canvas 参数、请求、产物与 Workbench fixture 一致 | 画布使用另一套参数/响应逻辑 |
-| MCP 子进程读取新 runtime file | 与 TS runtime 结果一致 | 子进程退出、工具消失、参数语义漂移 |
-| connector 被编辑后重试旧任务 | 使用旧 snapshot | 旧任务悄悄使用新 URL/Body |
-| migration 在旧数据库运行 | 新列为空，旧功能正常 | 启动阻断或旧任务不可读 |
-| Provider export | 连接器 bundle 无密钥；Provider backup 明确标注其现有密钥语义 | 把含 API key 的备份包误当成安全分享包 |
-| Live Test provider 返回业务错误 | 归一并显示 provider code/message | 原始敏感响应完整写入日志 |
+| 场景                            | 预期结果                                                     | 不能发生的结果                        |
+| ------------------------------- | ------------------------------------------------------------ | ------------------------------------- |
+| 升级后读取旧 Provider           | 与升级前模型、参数、adapter 选择一致                         | 旧字段丢失、Provider 列表为空         |
+| 保存旧 Provider                 | config round-trip 不变                                       | 旧 `mediaModelRefs` 被重建后丢字段    |
+| 一个 connector JSON 非法        | 该模型显示 invalid                                           | 整个 Provider 或应用启动失败          |
+| connector endpoint 不可达       | 当前任务失败并有诊断                                         | 自动切到另一个模型或原生 adapter      |
+| connector content type 暂不支持 | 返回 unsupported feature                                     | MCP `null` 后继续原生请求             |
+| 新 connector 无 Canvas binding  | Workbench 可测试，Canvas 不可运行并说明原因                  | 被错误映射到相近操作                  |
+| 新 connector 有现有 binding     | Canvas 参数、请求、产物与 Workbench fixture 一致             | 画布使用另一套参数/响应逻辑           |
+| MCP 子进程读取新 runtime file   | 与 TS runtime 结果一致                                       | 子进程退出、工具消失、参数语义漂移    |
+| connector 被编辑后重试旧任务    | 使用旧 snapshot                                              | 旧任务悄悄使用新 URL/Body             |
+| migration 在旧数据库运行        | 新列为空，旧功能正常                                         | 启动阻断或旧任务不可读                |
+| Provider export                 | 连接器 bundle 无密钥；Provider backup 明确标注其现有密钥语义 | 把含 API key 的备份包误当成安全分享包 |
+| Live Test provider 返回业务错误 | 归一并显示 provider code/message                             | 原始敏感响应完整写入日志              |
 
 ### 17.11 实施前必须确认的设计取舍
 

@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { MediaModelManifest } from '@spark/protocol'
-import { MediaRouterService, type MediaProviderProfile } from '../../../services/media/media-router.service.js'
+import type { MediaCapabilityId, MediaModelManifest } from '@spark/protocol'
+import {
+  MediaRouterService,
+  type MediaProviderProfile,
+} from '../../../services/media/media-router.service.js'
 
 const PNG_PIXEL =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
@@ -78,7 +81,9 @@ function makeProvider(manifest: MediaModelManifest): MediaProviderProfile {
     defaultModel: manifest.modelId,
     apiEndpoint: 'https://provider.example/v1',
     mediaProvider: 'custom',
-    mediaCapabilities: ['image.generate'],
+    mediaCapabilities: manifest.capabilities.map(
+      (capability) => capability.id,
+    ) as MediaCapabilityId[],
     mediaModelManifests: [manifest],
     apiKey: 'secret-token',
     mediaDefaults: { polling: { intervalMs: 1 } },
@@ -111,7 +116,11 @@ describe('TemplateMediaAdapter V2 integration', () => {
       expect(String(input)).toBe('https://provider.example/v1/images')
       expect(init?.method).toBe('POST')
       expect((init?.headers as Record<string, string>).authorization).toBe('Bearer secret-token')
-      expect(JSON.parse(String(init?.body))).toEqual({ model: 'v2-image', prompt: 'a red fox', n: 2 })
+      expect(JSON.parse(String(init?.body))).toEqual({
+        model: 'v2-image',
+        prompt: 'a red fox',
+        n: 2,
+      })
       return new Response(JSON.stringify({ data: [{ b64_json: PNG_PIXEL }] }), { status: 200 })
     })
 
@@ -174,5 +183,88 @@ describe('TemplateMediaAdapter V2 integration', () => {
     expect(result.output.requestId).toBe('task/1')
     expect(result.output.assets).toHaveLength(1)
     expect(pollCount).toBe(2)
+  })
+
+  it('downloads a binary artifact through a post-poll request', async () => {
+    const outputDir = mkdtempSync(path.join(os.tmpdir(), 'spark-template-v2-artifact-'))
+    tempDirs.push(outputDir)
+    const manifest = makeManifest({
+      kind: 'task_poll',
+      taskIdPaths: ['id'],
+      statusPaths: ['status'],
+      resultPaths: ['content_url'],
+      poll: {
+        method: 'GET',
+        endpoint: '/videos/{taskId}',
+        auth: { kind: 'inherit' },
+        body: { kind: 'none' },
+      },
+      taskId: { location: 'path', name: 'taskId' },
+      artifact: {
+        request: {
+          method: 'GET',
+          endpoint: '/videos/{{taskId}}/content',
+          auth: { kind: 'inherit' },
+          body: { kind: 'none' },
+        },
+        response: { kind: 'binary_response' },
+      },
+    })
+    manifest.id = 'custom:v2-video'
+    manifest.modelId = 'v2-video'
+    manifest.displayName = 'V2 video template'
+    manifest.domains = ['video']
+    manifest.capabilities = [
+      {
+        id: 'video.generate',
+        label: 'Generate video',
+        input: { required: ['prompt'] },
+        output: { types: ['video'], mimeTypes: ['video/mp4'] },
+        paramSchema: { type: 'object', additionalProperties: false, properties: {} },
+      },
+    ]
+
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/images')) {
+        return new Response(JSON.stringify({ id: 'video/123' }), { status: 200 })
+      }
+      if (url.endsWith('/videos/video%2F123')) {
+        expect((init?.headers as Record<string, string>).authorization).toBe('Bearer secret-token')
+        return new Response(JSON.stringify({ id: 'video/123', status: 'succeeded' }), {
+          status: 200,
+        })
+      }
+      expect(url).toBe('https://provider.example/v1/videos/video%2F123/content')
+      expect((init?.headers as Record<string, string>).authorization).toBe('Bearer secret-token')
+      return new Response(new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]), {
+        status: 200,
+        headers: { 'content-type': 'video/mp4' },
+      })
+    })
+
+    const result = await new MediaRouterService().invoke(
+      {
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        prompt: 'a red fox running',
+        modelParams: {},
+        outputDir,
+      },
+      {
+        providers: [makeProvider(manifest)],
+        providerProfileId: 'custom-v2-provider',
+        fetch: fetchMock as unknown as typeof fetch,
+      },
+    )
+
+    expect(result.output.mode).toBe('async')
+    expect(result.output.requestId).toBe('video/123')
+    expect(result.output.assets).toHaveLength(1)
+    const downloadedAsset = result.output.assets[0]
+    expect(downloadedAsset?.filePath).toBeDefined()
+    if (!downloadedAsset?.filePath) throw new Error('expected a downloaded artifact file')
+    expect(readFileSync(downloadedAsset.filePath).length).toBe(8)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })
