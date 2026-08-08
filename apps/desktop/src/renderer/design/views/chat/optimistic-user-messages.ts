@@ -8,6 +8,7 @@ export interface OptimisticUserMessageDraft {
   attachments: ComposerAttachment[]
   createdAt: string
   mentionAgentId?: string
+  hiddenUntilStarted?: boolean
 }
 
 export interface OptimisticUserMessage {
@@ -15,6 +16,7 @@ export interface OptimisticUserMessage {
   sessionId: string
   turnId?: string
   createdAt: string
+  hiddenUntilStarted?: boolean
   message: UIMessage
 }
 
@@ -129,6 +131,7 @@ export function createOptimisticUserMessage(
     clientId: draft.clientId,
     sessionId: draft.sessionId,
     createdAt: draft.createdAt,
+    ...(draft.hiddenUntilStarted === true ? { hiddenUntilStarted: true } : {}),
     message: {
       id: `optimistic-${draft.clientId}`,
       role: 'user',
@@ -161,16 +164,21 @@ export function commitOptimisticUserMessage(
   turnId: string,
   started = true,
 ): OptimisticUserMessage[] {
+  if (!started) {
+    return messages.filter((item) => item.clientId !== clientId)
+  }
+
   return messages.map((item) => {
     if (item.clientId !== clientId) return item
+    const { hiddenUntilStarted: _hiddenUntilStarted, ...visibleItem } = item
     const { deliveryError: _deliveryError, ...messageWithoutError } = item.message
     return {
-      ...item,
+      ...visibleItem,
       turnId,
       message: {
         ...messageWithoutError,
         turnId,
-        deliveryState: started ? 'accepted' : 'queued',
+        deliveryState: 'accepted',
       },
     }
   })
@@ -181,40 +189,29 @@ export function failOptimisticUserMessage(
   clientId: string,
   error: string,
 ): OptimisticUserMessage[] {
-  return messages.map((item) =>
-    item.clientId === clientId
-      ? {
-          ...item,
-          message: {
-            ...item.message,
-            deliveryState: 'failed',
-            deliveryError: error,
-          },
-        }
-      : item,
-  )
+  return messages.map((item) => {
+    if (item.clientId !== clientId) return item
+    const { hiddenUntilStarted: _hiddenUntilStarted, ...visibleItem } = item
+    return {
+      ...visibleItem,
+      message: {
+        ...item.message,
+        deliveryState: 'failed',
+        deliveryError: error,
+      },
+    }
+  })
 }
 
-export function setOptimisticUserMessagesQueued(
+export function removeQueuedOptimisticUserMessages(
   messages: OptimisticUserMessage[],
   sessionId: string,
   queuedTurnIds: ReadonlySet<string>,
 ): OptimisticUserMessage[] {
-  return messages.map((item) => {
-    if (item.sessionId !== sessionId || item.turnId == null) {
-      return item
-    }
-    if (item.message.deliveryState === 'failed') return item
-    if (!queuedTurnIds.has(item.turnId) && item.message.deliveryState !== 'queued') return item
-    const { deliveryError: _deliveryError, ...messageWithoutError } = item.message
-    return {
-      ...item,
-      message: {
-        ...messageWithoutError,
-        deliveryState: queuedTurnIds.has(item.turnId) ? 'queued' : 'accepted',
-      },
-    }
-  })
+  return messages.filter(
+    (item) =>
+      item.sessionId !== sessionId || item.turnId == null || !queuedTurnIds.has(item.turnId),
+  )
 }
 
 export function cancelOptimisticUserMessageByTurnId(
@@ -282,6 +279,8 @@ export function mergeOptimisticUserMessages(
     .filter(
       (item) =>
         item.sessionId === sessionId &&
+        item.hiddenUntilStarted !== true &&
+        item.message.deliveryState !== 'queued' &&
         (item.turnId == null || !persistedUserTurnIds.has(item.turnId)),
     )
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))

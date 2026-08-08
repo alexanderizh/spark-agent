@@ -4,9 +4,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 用户发送普通消息或带附件的消息后立即显示用户气泡与执行状态；后台真实 `user_message` 事件到达后按 `turnId` 去重接管，排队消息显示队列状态，提交失败保留气泡并显示错误与重试入口。图片消息继续在后台压缩，且优先复用已生成的本地预览。
+**Goal:** 用户发送普通消息或带附件的消息后立即显示用户气泡与执行状态；后台真实 `user_message` 事件到达后按 `turnId` 去重接管，排队消息只显示在队列面板而不进入聊天流，提交失败保留气泡并显示错误与重试入口。图片消息继续在后台压缩，且优先复用已生成的本地预览。
 
-**Architecture:** Composer 在准备附件和发送请求前发布 renderer-only 乐观用户消息，先显示 `submitting`；发送接口返回后用 `turnId` 标记为 `accepted` 或 `queued`。提交异常转为 `failed`，不撤回消息，保留错误详情与现有重试/重发入口。独立的乐观消息模块按 `sessionId` 隔离记录，ChatStream 将尚未被真实 `user_message` 确认的记录追加到显示列表；真实事件按 `turnId` 到达后接管显示并清理乐观记录。队列快照同步所有状态，显式移除/编辑仅在后端确认取消后移除对应气泡；团队模式的 `mentionAgentId` 同步保留在乐观消息中。
+**Architecture:** Composer 在准备附件和发送请求前发布 renderer-only 乐观用户消息；空闲会话先显示 `submitting`，已在执行的会话则把该记录隐藏到后端返回。发送接口返回 `started: true` 后解除隐藏并用 `turnId` 标记为 `accepted`，返回 `started: false` 则直接移除并只保留队列面板记录。提交异常转为可见的 `failed`，不撤回消息，保留错误详情与现有重试/重发入口。独立的乐观消息模块按 `sessionId` 隔离记录，ChatStream 将尚未被真实 `user_message` 确认的可见记录追加到显示列表；真实事件按 `turnId` 到达后接管显示并清理乐观记录。权威队列快照会兜底移除误留在聊天流中的排队 turn；团队模式的 `mentionAgentId` 同步保留在乐观消息中。
 
 **Tech Stack:** React 19、TypeScript、Electron typed IPC、Vitest；不新增依赖。
 
@@ -140,14 +140,14 @@ Expected: 全部退出码 0。
 
 ### 状态语义
 
-- `submitting`：用户已按下发送，附件准备或 `session:submit-turn` 尚未返回；显示“正在提交…”和执行中占位。
+- `submitting`：用户已按下发送，附件准备或 `session:submit-turn` 尚未返回；空闲会话显示“正在提交…”和执行中占位，已在执行的会话暂不进入聊天流。
 - `accepted`：后端已接单并返回 `turnId`；等待真实事件时继续显示执行中占位。
-- `queued`：后端返回 `started: false`，或权威队列快照确认该 `turnId` 在队列中；显示“已加入队列”，不把排队误报为当前执行。
+- 后端返回 `started: false`，或权威队列快照确认该 `turnId` 在队列中：移除聊天流中的乐观气泡，只在 Composer 队列面板显示。
 - `failed`：提交链路异常；保留用户气泡、错误详情和重试入口，不自动撤回。
 
 ### 场景兼容性
 
 - 团队模式：乐观消息携带与实际请求一致的 `mentionAgentId`，等待占位显示被 @ 的成员，真实事件仍按 `turnId` 去重。
-- 多任务队列：队列快照只更新同会话中匹配的乐观消息；移除/编辑在后端确认 `cancelled` 后才移除气泡，立即执行会将队列状态转为执行状态。
+- 多任务队列：队列快照会移除同会话中匹配的乐观气泡；排队内容只存在于队列面板，立即执行后再由真实 `user_message` 事件进入聊天流。
 - 侧聊：与主会话共享生命周期，但按 `sessionId` 过滤，因此不会串消息或串队列状态。
 - Slash 命令：服务端直接处理的命令仍由已有事件流渲染，转发给 Agent 的命令复用普通消息生命周期。

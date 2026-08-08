@@ -114,7 +114,7 @@ import {
   failOptimisticUserMessage,
   mergeOptimisticUserMessages,
   pruneAcknowledgedOptimisticUserMessages,
-  setOptimisticUserMessagesQueued,
+  removeQueuedOptimisticUserMessages,
   type OptimisticUserSendCallbacks,
   type OptimisticUserMessage,
 } from './chat/optimistic-user-messages'
@@ -492,7 +492,7 @@ export function ChatView({
   const handleOptimisticQueueState = useCallback(
     (sessionId: string, queuedTurnIds: readonly string[]) => {
       setOptimisticUserMessages((current) =>
-        setOptimisticUserMessagesQueued(current, sessionId, new Set(queuedTurnIds)),
+        removeQueuedOptimisticUserMessages(current, sessionId, new Set(queuedTurnIds)),
       )
     },
     [],
