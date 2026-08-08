@@ -45,7 +45,13 @@ import {
 } from '@spark/protocol'
 import { ProviderProfileRepository } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
-import { createLogger, describeNetworkError, fetchJson, HttpError } from '@spark/shared'
+import {
+  createLogger,
+  describeNetworkError,
+  fetchJson,
+  HttpError,
+  sanitizeRequestUrl,
+} from '@spark/shared'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 
 const log = createLogger('provider.service')
@@ -1047,10 +1053,15 @@ export class ProviderService {
       } catch (err) {
         const isHttp = err instanceof HttpError
         const status = isHttp ? err.statusCode ?? 'network' : 'network'
-        const body = truncateResponseBody(isHttp ? err.message.replace(/^HTTP \d+:\s*/, '') : String(err))
+        const body = truncateResponseBody(
+          redactProviderSecret(
+            isHttp ? err.message.replace(/^HTTP \d+:\s*/, '') : String(err),
+            apiKey,
+          ),
+        )
         log.warn(
           `fetchModels endpoint failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-          + `url=${url}, status=${status}, body="${body}"`,
+          + `url=${sanitizeRequestUrl(url)}, status=${status}, body="${body}"`,
         )
         if (isHttp && (err.statusCode === 404 || err.statusCode === 405)) {
           lastNotFound = `HTTP ${status}: ${body}`
@@ -1065,6 +1076,7 @@ export class ProviderService {
     )
     throw new Error(`All model endpoints failed: ${lastNotFound ?? 'no candidates'}`)
   }
+
 
   async ensureManagedNewApiProvider(params: {
     ownerUserId: string
@@ -1826,6 +1838,10 @@ function truncateResponseBody(body: string): string {
   return body.length > MODELS_ERROR_BODY_MAX_CHARS
     ? `${body.slice(0, MODELS_ERROR_BODY_MAX_CHARS)}...`
     : body
+}
+
+function redactProviderSecret(value: string, secret: string): string {
+  return secret.length >= 4 ? value.split(secret).join('[REDACTED]') : value
 }
 
 function endsWithVersionSegment(value: string): boolean {

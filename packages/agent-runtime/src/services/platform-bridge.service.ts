@@ -35,18 +35,26 @@ import type { UpdateAgentParams, CreateProviderParams } from '@spark/storage'
 import type { SettingsRepository } from '@spark/storage'
 import type { TeamDefinitionRepository } from '@spark/storage'
 import type { GitHubConnectorService } from './github-connector.service.js'
+import { ProviderService } from './provider.service.js'
+import {
+  CustomMediaProviderConfiguratorService,
+  type CustomMediaProviderDiagnosticInput,
+  type CustomMediaProviderDiscoverModelsInput,
+  type CustomMediaProviderDraftInput,
+} from './media/custom-media-provider-configurator.service.js'
 import type {
   SessionScheduleAgentTools,
   SessionScheduleCreateInput,
   SessionScheduleUpdateInput,
 } from './session-schedule-agent-tools.js'
-import { normalizeSparkReasoningEffort, type SparkReasoningEffort } from '../sdk/reasoning-effort.js'
+import {
+  normalizeSparkReasoningEffort,
+  type SparkReasoningEffort,
+} from '../sdk/reasoning-effort.js'
 
 const log = createLogger('platform-bridge')
 
-function normalizePlatformReasoningEffort(
-  value: unknown,
-): SparkReasoningEffort | undefined {
+function normalizePlatformReasoningEffort(value: unknown): SparkReasoningEffort | undefined {
   if (value == null) return undefined
   return normalizeSparkReasoningEffort(value)
 }
@@ -270,113 +278,204 @@ export class PlatformBridgeService {
     const d = this.deps!
     switch (method) {
       // ── Skills ──
-      case 'skills.list': return this.skillList(d, params)
-      case 'skills.load': return this.skillLoad(d, params)
-      case 'skills.search': return this.skillSearch(d, params)
-      case 'skills.search_github': return this.skillSearchGithub(d, params)
-      case 'skills.install': return this.skillInstall(d, params)
-      case 'skills.install_github': return this.skillInstallGithub(d, params)
-      case 'skills.uninstall': return this.skillUninstall(d, params)
-      case 'skills.toggle': return this.skillToggle(d, params)
+      case 'skills.list':
+        return this.skillList(d, params)
+      case 'skills.load':
+        return this.skillLoad(d, params)
+      case 'skills.search':
+        return this.skillSearch(d, params)
+      case 'skills.search_github':
+        return this.skillSearchGithub(d, params)
+      case 'skills.install':
+        return this.skillInstall(d, params)
+      case 'skills.install_github':
+        return this.skillInstallGithub(d, params)
+      case 'skills.uninstall':
+        return this.skillUninstall(d, params)
+      case 'skills.toggle':
+        return this.skillToggle(d, params)
 
       // ── MCP ──
-      case 'mcp.list': return this.mcpList(d, params)
-      case 'mcp.create': return this.mcpCreate(d, params)
-      case 'mcp.update': return this.mcpUpdate(d, params)
-      case 'mcp.delete': return this.mcpDelete(d, params)
-      case 'mcp.status': return await this.mcpStatus(d, params)
+      case 'mcp.list':
+        return this.mcpList(d, params)
+      case 'mcp.create':
+        return this.mcpCreate(d, params)
+      case 'mcp.update':
+        return this.mcpUpdate(d, params)
+      case 'mcp.delete':
+        return this.mcpDelete(d, params)
+      case 'mcp.status':
+        return await this.mcpStatus(d, params)
 
       // ── Providers ──
-      case 'providers.list': return this.providerList(d, params)
-      case 'providers.get': return this.providerGet(d, params)
-      case 'providers.create': return this.providerCreate(d, params)
-      case 'providers.update': return this.providerUpdate(d, params)
-      case 'providers.delete': return this.providerDelete(d, params)
-      case 'providers.health_check': return this.providerHealthCheck(d, params)
-      case 'providers.set_default': return this.providerSetDefault(d, params)
-      case 'providers.set_default_model': return this.providerSetDefaultModel(d, params)
+      case 'providers.list':
+        return this.providerList(d, params)
+      case 'providers.get':
+        return this.providerGet(d, params)
+      case 'providers.create':
+        return this.providerCreate(d, params)
+      case 'providers.update':
+        return this.providerUpdate(d, params)
+      case 'providers.delete':
+        return this.providerDelete(d, params)
+      case 'providers.health_check':
+        return this.providerHealthCheck(d, params)
+      case 'providers.set_default':
+        return this.providerSetDefault(d, params)
+      case 'providers.set_default_model':
+        return this.providerSetDefaultModel(d, params)
+      case 'providers.media_guide':
+        return this.providerMediaGuide(d, params)
+      case 'providers.media_validate':
+        return await this.providerMediaValidate(d, params)
+      case 'providers.media_configure':
+        return await this.providerMediaConfigure(d, params)
+      case 'providers.media_discover_models':
+        return await this.providerMediaDiscoverModels(d, params)
+      case 'providers.media_diagnose':
+        return await this.providerMediaDiagnose(d, params)
 
       // ── Workflows ──
-      case 'workflows.list': return this.workflowList(d, params)
-      case 'workflows.get': return this.workflowGet(d, params)
-      case 'workflows.create': return this.workflowCreate(d, params)
-      case 'workflows.update': return this.workflowUpdate(d, params)
-      case 'workflows.delete': return this.workflowDelete(d, params)
+      case 'workflows.list':
+        return this.workflowList(d, params)
+      case 'workflows.get':
+        return this.workflowGet(d, params)
+      case 'workflows.create':
+        return this.workflowCreate(d, params)
+      case 'workflows.update':
+        return this.workflowUpdate(d, params)
+      case 'workflows.delete':
+        return this.workflowDelete(d, params)
 
       // ── Agents ──
-      case 'agents.list': return this.agentList(d, params)
-      case 'agents.get': return this.agentGet(d, params)
-      case 'agents.create': return this.agentCreate(d, params)
-      case 'agents.update': return this.agentUpdate(d, params)
-      case 'agents.delete': return this.agentDelete(d, params)
+      case 'agents.list':
+        return this.agentList(d, params)
+      case 'agents.get':
+        return this.agentGet(d, params)
+      case 'agents.create':
+        return this.agentCreate(d, params)
+      case 'agents.update':
+        return this.agentUpdate(d, params)
+      case 'agents.delete':
+        return this.agentDelete(d, params)
 
       // ── Teams ──
-      case 'teams.list': return this.teamList(d, params)
-      case 'teams.get': return this.teamGet(d, params)
-      case 'teams.create': return this.teamCreate(d, params)
-      case 'teams.update': return this.teamUpdate(d, params)
-      case 'teams.delete': return this.teamDelete(d, params)
+      case 'teams.list':
+        return this.teamList(d, params)
+      case 'teams.get':
+        return this.teamGet(d, params)
+      case 'teams.create':
+        return this.teamCreate(d, params)
+      case 'teams.update':
+        return this.teamUpdate(d, params)
+      case 'teams.delete':
+        return this.teamDelete(d, params)
 
       // ── Spark install artifacts ──
-      case 'artifacts.list': return this.artifactList(params)
-      case 'artifacts.resolve': return this.artifactResolve(params)
+      case 'artifacts.list':
+        return this.artifactList(params)
+      case 'artifacts.resolve':
+        return this.artifactResolve(params)
 
       // ── Settings ──
-      case 'settings.get': return this.settingsGet(d, params)
-      case 'settings.set': return this.settingsSet(d, params)
-      case 'settings.get_category': return this.settingsGetCategory(d, params)
-      case 'settings.get_all': return this.settingsGetAll(d, params)
+      case 'settings.get':
+        return this.settingsGet(d, params)
+      case 'settings.set':
+        return this.settingsSet(d, params)
+      case 'settings.get_category':
+        return this.settingsGetCategory(d, params)
+      case 'settings.get_all':
+        return this.settingsGetAll(d, params)
 
       // ── Sessions ──
-      case 'sessions.get': return this.sessionGet(d, params)
-      case 'sessions.switch_model': return this.sessionSwitchModel(d, params)
-      case 'sessions.switch_provider': return this.sessionSwitchProvider(d, params)
-      case 'sessions.switch_mode': return this.sessionSwitchMode(d, params)
-      case 'sessions.switch_permission': return this.sessionSwitchPermission(d, params)
-      case 'sessions.switch_reasoning_effort': return this.sessionSwitchReasoningEffort(d, params)
+      case 'sessions.get':
+        return this.sessionGet(d, params)
+      case 'sessions.switch_model':
+        return this.sessionSwitchModel(d, params)
+      case 'sessions.switch_provider':
+        return this.sessionSwitchProvider(d, params)
+      case 'sessions.switch_mode':
+        return this.sessionSwitchMode(d, params)
+      case 'sessions.switch_permission':
+        return this.sessionSwitchPermission(d, params)
+      case 'sessions.switch_reasoning_effort':
+        return this.sessionSwitchReasoningEffort(d, params)
 
       // ── Current-session scheduled tasks ──
-      case 'session_schedule.list': return this.sessionScheduleList(d, params)
-      case 'session_schedule.get': return this.sessionScheduleGet(d, params)
-      case 'session_schedule.create': return this.sessionScheduleCreate(d, params)
-      case 'session_schedule.update': return this.sessionScheduleUpdate(d, params)
-      case 'session_schedule.delete': return this.sessionScheduleDelete(d, params)
+      case 'session_schedule.list':
+        return this.sessionScheduleList(d, params)
+      case 'session_schedule.get':
+        return this.sessionScheduleGet(d, params)
+      case 'session_schedule.create':
+        return this.sessionScheduleCreate(d, params)
+      case 'session_schedule.update':
+        return this.sessionScheduleUpdate(d, params)
+      case 'session_schedule.delete':
+        return this.sessionScheduleDelete(d, params)
 
       // ── Memory（codex CLI / claude CLI 的 stdio spark_memory 子进程走这条路径）──
-      case 'memory.search': return this.memorySearch(d, params)
-      case 'memory.recall': return this.memoryRecall(d, params)
+      case 'memory.search':
+        return this.memorySearch(d, params)
+      case 'memory.recall':
+        return this.memoryRecall(d, params)
 
       // ── Canvas（codex CLI / claude CLI 的 stdio spark_canvas 子进程走这条路径）──
-      case 'canvas.call_tool': return this.canvasCallTool(d, params)
+      case 'canvas.call_tool':
+        return this.canvasCallTool(d, params)
 
       // ── GitHub Connector ──
-      case 'github.status': return this.githubStatus(d)
-      case 'github.list_repositories': return this.githubListRepositories(d, params)
-      case 'github.get_repository': return this.githubGetRepository(d, params)
-      case 'github.read_repository_file': return this.githubReadRepositoryFile(d, params)
-      case 'github.create_branch': return this.githubCreateBranch(d, params)
-      case 'github.upsert_repository_file': return this.githubUpsertRepositoryFile(d, params)
-      case 'github.list_issues': return this.githubListIssues(d, params)
-      case 'github.get_issue': return this.githubGetIssue(d, params)
-      case 'github.create_issue': return this.githubCreateIssue(d, params)
-      case 'github.update_issue': return this.githubUpdateIssue(d, params)
-      case 'github.comment_issue': return this.githubCommentIssue(d, params)
-      case 'github.list_pull_requests': return this.githubListPullRequests(d, params)
-      case 'github.get_pull_request': return this.githubGetPullRequest(d, params)
-      case 'github.create_pull_request': return this.githubCreatePullRequest(d, params)
-      case 'github.comment_pull_request': return this.githubCommentPullRequest(d, params)
+      case 'github.status':
+        return this.githubStatus(d)
+      case 'github.list_repositories':
+        return this.githubListRepositories(d, params)
+      case 'github.get_repository':
+        return this.githubGetRepository(d, params)
+      case 'github.read_repository_file':
+        return this.githubReadRepositoryFile(d, params)
+      case 'github.create_branch':
+        return this.githubCreateBranch(d, params)
+      case 'github.upsert_repository_file':
+        return this.githubUpsertRepositoryFile(d, params)
+      case 'github.list_issues':
+        return this.githubListIssues(d, params)
+      case 'github.get_issue':
+        return this.githubGetIssue(d, params)
+      case 'github.create_issue':
+        return this.githubCreateIssue(d, params)
+      case 'github.update_issue':
+        return this.githubUpdateIssue(d, params)
+      case 'github.comment_issue':
+        return this.githubCommentIssue(d, params)
+      case 'github.list_pull_requests':
+        return this.githubListPullRequests(d, params)
+      case 'github.get_pull_request':
+        return this.githubGetPullRequest(d, params)
+      case 'github.create_pull_request':
+        return this.githubCreatePullRequest(d, params)
+      case 'github.comment_pull_request':
+        return this.githubCommentPullRequest(d, params)
 
       // ── Board Tasks ──
-      case 'board.list': return this.boardList(params)
-      case 'board.get': return this.boardGet(params)
-      case 'board.create': return this.boardCreate(params)
-      case 'board.update': return this.boardUpdate(params)
-      case 'board.delete': return this.boardDelete(params)
-      case 'board.batch_create': return this.boardBatchCreate(params)
-      case 'board.batch_update': return this.boardBatchUpdate(params)
-      case 'board.batch_delete': return this.boardBatchDelete(params)
-      case 'board.restore': return this.boardRestore(params)
-      case 'board.permanent_delete': return this.boardPermanentDelete(params)
+      case 'board.list':
+        return this.boardList(params)
+      case 'board.get':
+        return this.boardGet(params)
+      case 'board.create':
+        return this.boardCreate(params)
+      case 'board.update':
+        return this.boardUpdate(params)
+      case 'board.delete':
+        return this.boardDelete(params)
+      case 'board.batch_create':
+        return this.boardBatchCreate(params)
+      case 'board.batch_update':
+        return this.boardBatchUpdate(params)
+      case 'board.batch_delete':
+        return this.boardBatchDelete(params)
+      case 'board.restore':
+        return this.boardRestore(params)
+      case 'board.permanent_delete':
+        return this.boardPermanentDelete(params)
 
       default:
         throw new Error(`Unknown method: ${method}`)
@@ -501,8 +600,10 @@ export class PlatformBridgeService {
     const repo = String(params.repo ?? '').trim()
     if (!repo) throw new Error('skills.install_github requires repo "owner/name"')
     const installParams: { repo: string; ref?: string; path?: string } = { repo }
-    if (params.ref != null && String(params.ref).trim()) installParams.ref = String(params.ref).trim()
-    if (params.path != null && String(params.path).trim()) installParams.path = String(params.path).trim()
+    if (params.ref != null && String(params.ref).trim())
+      installParams.ref = String(params.ref).trim()
+    if (params.path != null && String(params.path).trim())
+      installParams.path = String(params.path).trim()
     const skill = await d.skillRegistryService.installFromGithub(installParams)
     d.onConfigChanged?.('skill', 'create', skill?.id)
     return { skill }
@@ -542,9 +643,10 @@ export class PlatformBridgeService {
   private mcpCreate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const name = String(params.name ?? '')
     const scope = String(params.scope ?? 'user')
-    const configJson = typeof params.configJson === 'string'
-      ? params.configJson
-      : JSON.stringify(params.configJson ?? {})
+    const configJson =
+      typeof params.configJson === 'string'
+        ? params.configJson
+        : JSON.stringify(params.configJson ?? {})
     const enabled = params.enabled !== false
     // 经 McpService 而非直连 repo：统一做配置校验（缺 url/command、字段矛盾会抛错，
     // 避免把无效配置静默存下后对 agent 报“成功”），并自动尝试建立连接。
@@ -566,9 +668,10 @@ export class PlatformBridgeService {
     const fields: Partial<{ name: string; configJson: string; enabled: boolean }> = {}
     if (params.name != null) fields.name = String(params.name)
     if (params.configJson != null) {
-      fields.configJson = typeof params.configJson === 'string'
-        ? params.configJson
-        : JSON.stringify(params.configJson)
+      fields.configJson =
+        typeof params.configJson === 'string'
+          ? params.configJson
+          : JSON.stringify(params.configJson)
     }
     if (params.enabled != null) fields.enabled = Boolean(params.enabled)
     const item = d.mcpService.updateServer(id, fields)
@@ -609,7 +712,8 @@ export class PlatformBridgeService {
         continue
       }
       const status = d.mcpService.getServerStatus(s.id)
-      statuses[s.id] = status.error != null ? 'error' : status.connected ? 'connected' : 'disconnected'
+      statuses[s.id] =
+        status.error != null ? 'error' : status.connected ? 'connected' : 'disconnected'
     }
     return { statuses }
   }
@@ -664,7 +768,12 @@ export class PlatformBridgeService {
 
   private providerUpdate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = String(params.id ?? '')
-    const fields: Partial<{ name: string; config: Record<string, unknown>; enabled: boolean; keystoreRef: string }> = {}
+    const fields: Partial<{
+      name: string
+      config: Record<string, unknown>
+      enabled: boolean
+      keystoreRef: string
+    }> = {}
     if (params.name != null) fields.name = String(params.name)
     if (params.config != null) fields.config = params.config as Record<string, unknown>
     if (params.enabled != null) fields.enabled = Boolean(params.enabled)
@@ -748,6 +857,53 @@ export class PlatformBridgeService {
     d.providerRepo.update(id, { config })
     d.onConfigChanged?.('provider', 'update', id)
     return { success: true, providerId: id, defaultModel: model }
+  }
+
+  private providerMediaGuide(
+    d: PlatformBridgeDeps,
+    params: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return this.customMediaProviderConfigurator(d).createGuide({
+      ...(typeof params.modelId === 'string' ? { modelId: params.modelId } : {}),
+      ...(params.domain === 'image' || params.domain === 'video' || params.domain === 'audio'
+        ? { domain: params.domain }
+        : {}),
+      ...(params.mode === 'sync' || params.mode === 'async_polling' ? { mode: params.mode } : {}),
+    })
+  }
+
+  private providerMediaValidate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return this.customMediaProviderConfigurator(d).validate(
+      params as unknown as CustomMediaProviderDraftInput,
+    )
+  }
+
+  private async providerMediaConfigure(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const result = await this.customMediaProviderConfigurator(d).configure(
+      params as unknown as CustomMediaProviderDraftInput,
+    )
+    d.onConfigChanged?.('provider', result.created ? 'create' : 'update', result.provider.id)
+    return result
+  }
+
+  private providerMediaDiscoverModels(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return this.customMediaProviderConfigurator(d).discoverModels(
+      params as unknown as CustomMediaProviderDiscoverModelsInput,
+    )
+  }
+
+  private providerMediaDiagnose(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return this.customMediaProviderConfigurator(d).diagnose(
+      params as unknown as CustomMediaProviderDiagnosticInput,
+    )
+  }
+
+  private customMediaProviderConfigurator(
+    d: PlatformBridgeDeps,
+  ): CustomMediaProviderConfiguratorService {
+    // Construct lazily per call so bridge startup remains unchanged: a failure in
+    // the optional media tool cannot prevent ordinary Agent turns from starting.
+    return new CustomMediaProviderConfiguratorService(new ProviderService(d.providerRepo))
   }
 
   // ── Workflow handlers ──
@@ -909,13 +1065,10 @@ export class PlatformBridgeService {
     const teams = d.teamRepo.list({ includeDisabled: true })
     for (const team of teams) {
       const memberIndex = team.memberAgentIds.indexOf(agentId)
-      const nextMembers = memberIndex >= 0
-        ? team.memberAgentIds.filter((m) => m !== agentId)
-        : team.memberAgentIds
+      const nextMembers =
+        memberIndex >= 0 ? team.memberAgentIds.filter((m) => m !== agentId) : team.memberAgentIds
       const hostWasDeleted = team.hostAgentId === agentId
-      const nextHost = hostWasDeleted
-        ? (nextMembers[0] ?? '')
-        : team.hostAgentId
+      const nextHost = hostWasDeleted ? (nextMembers[0] ?? '') : team.hostAgentId
       const membersChanged = memberIndex >= 0 && nextMembers.length !== team.memberAgentIds.length
       const hostChanged = hostWasDeleted && nextHost !== team.hostAgentId
       if (!membersChanged && !hostChanged) continue
@@ -947,7 +1100,9 @@ export class PlatformBridgeService {
     if (!hostAgentId) throw new Error('Missing parameter: hostAgentId')
 
     const memberAgentIds = Array.isArray(params.memberAgentIds)
-      ? params.memberAgentIds.filter((id): id is string => typeof id === 'string' && id !== hostAgentId)
+      ? params.memberAgentIds.filter(
+          (id): id is string => typeof id === 'string' && id !== hostAgentId,
+        )
       : []
 
     const maxDepth = normalizeTeamMaxDepth(params.maxDepth)
@@ -1151,11 +1306,17 @@ export class PlatformBridgeService {
     const permissionMode = String(params.permissionMode ?? '')
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!permissionMode) throw new Error('Missing parameter: permissionMode')
-    const result = await d.sessionService.updateSession({ sessionId, permissionMode: permissionMode as any })
+    const result = await d.sessionService.updateSession({
+      sessionId,
+      permissionMode: permissionMode as any,
+    })
     return { session: result.session }
   }
 
-  private async sessionSwitchReasoningEffort(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+  private async sessionSwitchReasoningEffort(
+    d: PlatformBridgeDeps,
+    params: Record<string, unknown>,
+  ) {
     const sessionId = String(params.sessionId ?? '')
     const reasoningEffort = normalizePlatformReasoningEffort(params.reasoningEffort)
     if (!sessionId) throw new Error('Missing parameter: sessionId')
@@ -1216,8 +1377,12 @@ export class PlatformBridgeService {
     const query = typeof params.query === 'string' ? params.query : ''
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!query) throw new Error('Missing parameter: query')
-    const type = typeof params.type === 'string' ? (params.type as 'user' | 'feedback' | 'project' | 'reference') : undefined
-    const limit = typeof params.limit === 'number' && params.limit > 0 ? Math.min(params.limit, 20) : 8
+    const type =
+      typeof params.type === 'string'
+        ? (params.type as 'user' | 'feedback' | 'project' | 'reference')
+        : undefined
+    const limit =
+      typeof params.limit === 'number' && params.limit > 0 ? Math.min(params.limit, 20) : 8
     return d.sessionService.bridgeMemorySearch({
       sessionId,
       ...(agentId.length > 0 ? { agentId } : {}),
@@ -1453,7 +1618,9 @@ export class PlatformBridgeService {
     try {
       if (!existsSync(this.boardFilePath)) return []
       return JSON.parse(readFileSync(this.boardFilePath, 'utf-8'))
-    } catch { return [] }
+    } catch {
+      return []
+    }
   }
 
   private writeBoardTasks(tasks: any[]): void {
@@ -1467,14 +1634,28 @@ export class PlatformBridgeService {
     const attachmentsRaw = raw.attachmentsJson ?? raw.attachments ?? '[]'
     let attachments: any[]
     try {
-      attachments = typeof attachmentsRaw === 'string' ? JSON.parse(attachmentsRaw) : (Array.isArray(attachmentsRaw) ? attachmentsRaw : [])
-    } catch { attachments = [] }
+      attachments =
+        typeof attachmentsRaw === 'string'
+          ? JSON.parse(attachmentsRaw)
+          : Array.isArray(attachmentsRaw)
+            ? attachmentsRaw
+            : []
+    } catch {
+      attachments = []
+    }
 
     const commentsRaw = raw.commentsJson ?? raw.comments ?? '[]'
     let comments: any[]
     try {
-      comments = typeof commentsRaw === 'string' ? JSON.parse(commentsRaw) : (Array.isArray(commentsRaw) ? commentsRaw : [])
-    } catch { comments = [] }
+      comments =
+        typeof commentsRaw === 'string'
+          ? JSON.parse(commentsRaw)
+          : Array.isArray(commentsRaw)
+            ? commentsRaw
+            : []
+    } catch {
+      comments = []
+    }
 
     return {
       ...raw,
@@ -1500,8 +1681,8 @@ export class PlatformBridgeService {
     }
     if (params.query) {
       const q = String(params.query).toLowerCase()
-      tasks = tasks.filter((t: any) =>
-        t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q)
+      tasks = tasks.filter(
+        (t: any) => t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q),
       )
     }
     return { tasks: tasks.map((t: any) => this.normalizeBoardTask(t)), total: tasks.length }
@@ -1549,12 +1730,25 @@ export class PlatformBridgeService {
     if (idx === -1) throw new Error(`Task not found: ${params.id}`)
     const now = new Date().toISOString()
     const updated = { ...tasks[idx], updatedAt: now }
-    for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate', 'project', 'processingAgent', 'acceptanceCriteria', 'testAgent']) {
+    for (const key of [
+      'title',
+      'description',
+      'status',
+      'priority',
+      'assignee',
+      'dueDate',
+      'project',
+      'processingAgent',
+      'acceptanceCriteria',
+      'testAgent',
+    ]) {
       if (params[key] !== undefined) updated[key] = String(params[key])
     }
     if (params.tags !== undefined) updated.tags = Array.isArray(params.tags) ? params.tags : []
     if (params.attachments !== undefined) {
-      updated.attachmentsJson = JSON.stringify(Array.isArray(params.attachments) ? params.attachments : [])
+      updated.attachmentsJson = JSON.stringify(
+        Array.isArray(params.attachments) ? params.attachments : [],
+      )
     }
     tasks[idx] = updated
     this.writeBoardTasks(tasks)
@@ -1565,7 +1759,11 @@ export class PlatformBridgeService {
     const tasks = this.readBoardTasks()
     const idx = tasks.findIndex((t: any) => t.id === params.id)
     if (idx === -1) throw new Error(`Task not found: ${params.id}`)
-    tasks[idx] = { ...tasks[idx], deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+    tasks[idx] = {
+      ...tasks[idx],
+      deletedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
     this.writeBoardTasks(tasks)
     return { success: true }
   }
@@ -1610,7 +1808,18 @@ export class PlatformBridgeService {
       if (idx === -1) continue
       const now = new Date().toISOString()
       const task = { ...tasks[idx], updatedAt: now }
-      for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate', 'project', 'processingAgent', 'acceptanceCriteria', 'testAgent']) {
+      for (const key of [
+        'title',
+        'description',
+        'status',
+        'priority',
+        'assignee',
+        'dueDate',
+        'project',
+        'processingAgent',
+        'acceptanceCriteria',
+        'testAgent',
+      ]) {
         if (upd[key] !== undefined) task[key] = String(upd[key])
       }
       if (upd.tags !== undefined) task.tags = Array.isArray(upd.tags) ? upd.tags : []
@@ -1691,14 +1900,12 @@ interface ArtifactFilter {
   query?: string
 }
 
-function artifactMatches(
-  artifact: SparkInstallArtifact,
-  filter: ArtifactFilter,
-): boolean {
+function artifactMatches(artifact: SparkInstallArtifact, filter: ArtifactFilter): boolean {
   const artifactPlatform = artifact.platform ?? 'any'
   const artifactArch = artifact.arch ?? 'any'
   if (filter.type && artifact.type !== filter.type) return false
-  if (filter.platform && artifactPlatform !== 'any' && artifactPlatform !== filter.platform) return false
+  if (filter.platform && artifactPlatform !== 'any' && artifactPlatform !== filter.platform)
+    return false
   if (filter.arch && artifactArch !== 'any' && artifactArch !== filter.arch) return false
   if (filter.query) {
     const haystack = [
@@ -1707,7 +1914,9 @@ function artifactMatches(
       artifact.version,
       artifact.notes ?? '',
       ...(artifact.dependencies ?? []),
-    ].join(' ').toLowerCase()
+    ]
+      .join(' ')
+      .toLowerCase()
     if (!haystack.includes(filter.query)) return false
   }
   return true

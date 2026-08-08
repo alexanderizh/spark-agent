@@ -1196,6 +1196,32 @@ describe('ProviderService', () => {
     )
   })
 
+  it('fetchModels redacts credentials echoed by a failing channel', async () => {
+    const secret = 'sk-sensitive-channel-key'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: async () => `invalid token: ${secret}`,
+      }),
+    )
+
+    let message = ''
+    try {
+      await service.fetchModels({
+        provider: 'openai',
+        apiEndpoint: 'https://media.example/v1',
+        apiKey: secret,
+      })
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+
+    expect(message).toContain('[REDACTED]')
+    expect(message).not.toContain(secret)
+  })
+
   describe('isLocalCliAvailable platform behavior', () => {
     const realPlatform = process.platform
 
