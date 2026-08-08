@@ -2,9 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 import type { UIMessage } from '../../services/event-mapper'
 import {
   cancelOptimisticUserMessage,
+  cancelOptimisticUserMessageByTurnId,
+  clearOptimisticUserMessagesForSession,
   commitOptimisticUserMessage,
   createOptimisticUserMessage,
+  failOptimisticUserMessage,
+  settleOptimisticUserSend,
   settleOptimisticImageSend,
+  setOptimisticUserMessagesQueued,
+  startOptimisticUserSend,
   startOptimisticImageSend,
   mergeOptimisticUserMessages,
   pruneAcknowledgedOptimisticUserMessages,
@@ -72,6 +78,98 @@ describe('optimistic user messages', () => {
 
     expect(committed[0]?.turnId).toBe('turn-1')
     expect(committed[0]?.message.turnId).toBe('turn-1')
+    expect(committed[0]?.message.deliveryState).toBe('accepted')
+  })
+
+  it('shows ordinary text immediately and preserves team mention metadata', () => {
+    const onBegin = vi.fn()
+    const onCommit = vi.fn()
+    const onFail = vi.fn()
+    const onCancel = vi.fn()
+    const lifecycle = startOptimisticUserSend(
+      {
+        sessionId: 'session-1',
+        content: '@worker 请处理这个问题',
+        attachments: [],
+        mentionAgentId: 'worker',
+      },
+      { onBegin, onCommit, onFail, onCancel },
+      () => 'client-text',
+      () => '2026-08-02T10:00:00.000Z',
+    )
+
+    expect(onBegin).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: 'client-text', mentionAgentId: 'worker' }),
+    )
+    const draft = onBegin.mock.calls[0]?.[0]
+    expect(draft == null ? undefined : createOptimisticUserMessage(draft).message).toMatchObject({
+      deliveryState: 'submitting',
+      mentionAgentId: 'worker',
+    })
+
+    settleOptimisticUserSend(lifecycle, { turnId: 'turn-text', started: false })
+    expect(onCommit).toHaveBeenCalledWith('client-text', 'turn-text', false)
+    expect(onFail).not.toHaveBeenCalled()
+  })
+
+  it('keeps a failed optimistic message for retry instead of removing it', () => {
+    const optimistic = createOptimisticUserMessage({
+      clientId: 'client-failed',
+      sessionId: 'session-1',
+      content: '发送失败也要保留',
+      createdAt: '2026-08-02T10:00:00.000Z',
+      attachments: [],
+    })
+
+    const failed = failOptimisticUserMessage([optimistic], 'client-failed', '连接已断开')
+    expect(failed).toHaveLength(1)
+    expect(failed[0]?.message.deliveryState).toBe('failed')
+    expect(failed[0]?.message.deliveryError).toBe('连接已断开')
+  })
+
+  it('updates queued state from the authoritative queue and removes explicit cancellations', () => {
+    const committed = commitOptimisticUserMessage(
+      [
+        createOptimisticUserMessage({
+          clientId: 'client-queue',
+          sessionId: 'session-1',
+          content: '排队消息',
+          createdAt: '2026-08-02T10:00:00.000Z',
+          attachments: [],
+        }),
+      ],
+      'client-queue',
+      'turn-queue',
+      false,
+    )
+    expect(committed[0]?.message.deliveryState).toBe('queued')
+    const accepted = setOptimisticUserMessagesQueued(committed, 'session-1', new Set())
+    expect(accepted[0]?.message.deliveryState).toBe('accepted')
+    expect(cancelOptimisticUserMessageByTurnId(accepted, 'session-1', 'turn-queue')).toEqual([])
+  })
+
+  it('clears renderer-only messages only for the reset session', () => {
+    const resetSessionMessage = createOptimisticUserMessage({
+      clientId: 'client-reset',
+      sessionId: 'session-reset',
+      content: '清空后不应保留',
+      createdAt: '2026-08-02T10:00:00.000Z',
+      attachments: [],
+    })
+    const otherSessionMessage = createOptimisticUserMessage({
+      clientId: 'client-other',
+      sessionId: 'session-other',
+      content: '其他会话继续保留',
+      createdAt: '2026-08-02T10:00:01.000Z',
+      attachments: [],
+    })
+
+    expect(
+      clearOptimisticUserMessagesForSession(
+        [resetSessionMessage, otherSessionMessage],
+        'session-reset',
+      ),
+    ).toEqual([otherSessionMessage])
   })
 
   it('lets the real user message replace a committed optimistic message without duplication', () => {
@@ -181,9 +279,7 @@ describe('optimistic user messages', () => {
       {
         sessionId: 'session-1',
         content: '查看图片',
-        attachments: [
-          { id: 'image', type: 'image', path: '/tmp/image.png', name: 'image.png' },
-        ],
+        attachments: [{ id: 'image', type: 'image', path: '/tmp/image.png', name: 'image.png' }],
       },
       callbacks,
       () => 'client-image',
@@ -205,9 +301,7 @@ describe('optimistic user messages', () => {
       {
         sessionId: 'session-1',
         content: '查看图片',
-        attachments: [
-          { id: 'image', type: 'image', path: '/tmp/image.png', name: 'image.png' },
-        ],
+        attachments: [{ id: 'image', type: 'image', path: '/tmp/image.png', name: 'image.png' }],
       },
       { onBegin: vi.fn(), onCommit: vi.fn(), onCancel },
       () => 'client-image',
@@ -227,9 +321,7 @@ describe('optimistic user messages', () => {
       {
         sessionId: 'session-1',
         content: '查看图片',
-        attachments: [
-          { id: 'image', type: 'image', path: '/tmp/image.png', name: 'image.png' },
-        ],
+        attachments: [{ id: 'image', type: 'image', path: '/tmp/image.png', name: 'image.png' }],
       },
       { onBegin: vi.fn(), onCommit, onCancel },
       () => 'client-image',

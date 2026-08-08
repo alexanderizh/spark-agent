@@ -17,6 +17,9 @@ import {
 } from './turn-file-summary'
 import { isQuickReplySuggestionsTool, parseQuickReplies } from './quick-reply-suggestions'
 
+/** Renderer-only delivery state for a user message submitted optimistically. */
+export type UserMessageDeliveryState = 'submitting' | 'queued' | 'accepted' | 'failed' | 'cancelled'
+
 export interface UIMessage {
   id: string
   turnId?: string
@@ -46,6 +49,12 @@ export interface UIMessage {
   /** Assistant Agent snapshot captured when this message was created. */
   agentId?: string
   agentName?: string
+  /** Renderer-only state; persisted user_message events do not set this field. */
+  deliveryState?: UserMessageDeliveryState
+  /** Renderer-only error detail for a failed optimistic submission. */
+  deliveryError?: string
+  /** Renderer-only client id used to reconcile an optimistic message. */
+  clientId?: string
 }
 
 export interface FileChangeSummary {
