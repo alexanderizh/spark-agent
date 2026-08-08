@@ -22,6 +22,7 @@ import {
   CODEX_AUTO_ROUTER_PROVIDER_ID,
 } from '../auto-router-provider.js'
 import { ProviderFilesIpcSchemaRegistry } from '../provider-files.js'
+import { VideoChannelTasksIpcSchemaRegistry } from '../video-channel-tasks.js'
 import { SidebarOrderIpcSchemaRegistry } from '../sidebar-order.js'
 import { AppUnreadBadgeIpcSchemaRegistry } from '../app-unread-badge.js'
 import { CanvasWorkflowIpcSchemaRegistry } from '../canvas-workflow.js'
@@ -877,6 +878,7 @@ export const IpcSchemaRegistry = {
   'provider:create': ProviderCreateRequestSchema,
   'provider:get-api-key': ProviderGetApiKeyRequestSchema,
   ...ProviderFilesIpcSchemaRegistry,
+  ...VideoChannelTasksIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,
