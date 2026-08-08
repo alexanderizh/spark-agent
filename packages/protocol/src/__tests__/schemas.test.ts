@@ -854,4 +854,17 @@ describe('IPC schemas', () => {
     expect(updateRequest.enabled).toBe(true)
     expect(updateRequest.selectedRepos?.[0]).toBe('owner/repo')
   })
+
+  it('bounds HTML viewer payloads and accepts explicit themes', () => {
+    expect(
+      IpcSchemaRegistry['html:open-window'].parse({
+        html: '<main>safe</main>',
+        title: '预览',
+        theme: 'dark',
+      }),
+    ).toEqual({ html: '<main>safe</main>', title: '预览', theme: 'dark' })
+    expect(() =>
+      IpcSchemaRegistry['html:open-external'].parse({ html: 'x'.repeat(200_001) }),
+    ).toThrow()
+  })
 })

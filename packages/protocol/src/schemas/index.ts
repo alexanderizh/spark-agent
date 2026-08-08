@@ -1658,6 +1658,17 @@ export const IpcSchemaRegistry = {
     id: z.number().int().positive(),
   }),
 
+  'html:open-window': z.object({
+    html: z.string().min(1).max(200_000),
+    title: z.string().max(60).optional(),
+    theme: z.enum(['light', 'dark']).optional(),
+  }),
+  'html:open-external': z.object({
+    html: z.string().min(1).max(200_000),
+    title: z.string().max(60).optional(),
+    theme: z.enum(['light', 'dark']).optional(),
+  }),
+
   // Canvas Agent Bridge
   'canvas:host-attach': z.object({
     sessionId: z.string().min(1).max(200),

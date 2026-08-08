@@ -499,6 +499,8 @@ export const PRESENT_FILES_TOOL_NAMES = [
 
 export const QUICK_REPLIES_TOOL_NAMES = ['mcp__spark_ui__suggest_replies']
 
+export const RENDER_HTML_TOOL_NAMES = ['mcp__spark_ui__render_html']
+
 export const VALIDATION_SUGGESTION_TOOL_NAMES = ['mcp__spark_verify__suggest_validation']
 
 export const VALIDATION_SUGGESTION_TOOL_DESCRIPTION = [
@@ -535,6 +537,15 @@ export const QUICK_REPLIES_SYSTEM_PROMPT = [
   'The quick-reply tool and structured question tools are mutually exclusive: if you call AskUserQuestion or request_user_input in a turn, do not call suggest_replies, and vice versa.',
   'Never use quick replies to request filesystem, command, network, account, payment, deletion, or other security-sensitive approval; use the native permission or structured question flow instead.',
   'The tool is non-blocking. After calling it, write the matching question or invitation in your final response and end the turn so the user can answer.',
+].join('\n')
+
+export const RENDER_HTML_SYSTEM_PROMPT = [
+  '## HTML Fragment Rendering',
+  'You may call `mcp__spark_ui__render_html` for diagrams, visual comparisons, compact interactive demos, or layouts that Markdown cannot express.',
+  'Do not use it for ordinary text, code blocks, or files that should be delivered with `mcp__spark_files__present_files`.',
+  'Keep HTML at or below 200,000 characters. Use inline CSS/JS; use only data: or blob: media.',
+  'Never use external URLs, fetch, CDN assets, iframe, form, popup, window.parent, or top navigation. The host provides a sandbox and CSP, but the prompt is not the security boundary.',
+  'Prefer flat, readable layouts. Support both themes with `@media (prefers-color-scheme: dark)` or `html[data-spark-theme="dark"]` selectors.',
 ].join('\n')
 
 /**

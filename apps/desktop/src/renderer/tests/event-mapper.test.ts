@@ -1069,6 +1069,63 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('maps spark_ui render_html to an ordered HTML block', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'html-1',
+      toolName: 'mcp__spark_ui__render_html',
+      toolInput: {
+        html: '<main>内容</main>',
+        title: 'HTML 示例',
+        height: 280,
+      },
+      source: 'mcp',
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      {
+        kind: 'html_block',
+        toolCallId: 'html-1',
+        html: '<main>内容</main>',
+        title: 'HTML 示例',
+        height: 280,
+        status: 'pending',
+        error: undefined,
+        warnings: [],
+      },
+    ])
+
+    builder.processEvent({
+      ...baseEvent('tool_result'),
+      id: 'html-result-1',
+      type: 'tool_result',
+      toolCallId: 'html-1',
+      toolName: 'mcp__spark_ui__render_html',
+      status: 'success',
+      output: {
+        accepted: true,
+        html: '<main>内容</main>',
+        title: 'HTML 示例',
+        height: 280,
+        warnings: ['外链被 CSP 拦截'],
+      },
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toContainEqual({
+      kind: 'html_block',
+      toolCallId: 'html-1',
+      html: '<main>内容</main>',
+      title: 'HTML 示例',
+      height: 280,
+      status: 'rendered',
+      error: undefined,
+      warnings: ['外链被 CSP 拦截'],
+    })
+  })
+
   it('keeps a failed AskUserQuestion unresolved and exposes its transport error', () => {
     const builder = new MessageBuilder()
     builder.processEvent({

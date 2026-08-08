@@ -16,6 +16,7 @@ import {
   type TurnFileSummaryGeneratedGroup,
 } from './turn-file-summary'
 import { isQuickReplySuggestionsTool, parseQuickReplies } from './quick-reply-suggestions'
+import { isRenderHtmlTool, parseRenderHtmlInput, parseRenderHtmlResult } from './render-html'
 
 /** Renderer-only delivery state for a user message submitted optimistically. */
 export type UserMessageDeliveryState = 'submitting' | 'queued' | 'accepted' | 'failed' | 'cancelled'
@@ -133,6 +134,16 @@ export type UIBlock =
       commands: Array<{ id: string; label: string; command: string; reason: string }>
     }
   | { kind: 'quick_replies'; toolCallId: string; replies: string[] }
+  | {
+      kind: 'html_block'
+      toolCallId: string
+      html: string
+      title: string
+      height: number
+      status: 'pending' | 'rendered' | 'error'
+      error: string | undefined
+      warnings: string[]
+    }
   | {
       kind: 'terminal'
       toolCallId: string
@@ -602,6 +613,20 @@ export class MessageBuilder {
               replies,
             })
           }
+        } else if (isRenderHtmlTool(event.toolName)) {
+          const input = parseRenderHtmlInput(event.toolInput)
+          if (input != null) {
+            msg.blocks.push({
+              kind: 'html_block',
+              toolCallId: event.toolCallId,
+              html: input.html,
+              title: input.title,
+              height: input.height,
+              status: 'pending',
+              error: undefined,
+              warnings: [],
+            })
+          }
         } else {
           msg.blocks.push({
             kind: 'tool_call',
@@ -645,6 +670,28 @@ export class MessageBuilder {
             } else {
               questionBlock.answered = false
               questionBlock.error = event.error ?? '提问工具未能完成'
+            }
+          }
+          const htmlBlock = msg.blocks.find(
+            (b) => b.kind === 'html_block' && b.toolCallId === event.toolCallId,
+          ) as Extract<UIBlock, { kind: 'html_block' }> | undefined
+          if (htmlBlock) {
+            if (event.status === 'success') {
+              const result = parseRenderHtmlResult(event.output)
+              if (result?.accepted === true) {
+                htmlBlock.status = 'rendered'
+                htmlBlock.error = undefined
+                if (result.html != null) htmlBlock.html = result.html
+                if (result.title != null) htmlBlock.title = result.title
+                if (result.height != null) htmlBlock.height = result.height
+                htmlBlock.warnings = result.warnings ?? []
+              } else {
+                htmlBlock.status = 'error'
+                htmlBlock.error = result?.reason ?? 'HTML 渲染工具未返回有效内容'
+              }
+            } else {
+              htmlBlock.status = 'error'
+              htmlBlock.error = event.error ?? 'HTML 渲染工具执行失败'
             }
           }
           // Update tool_call block

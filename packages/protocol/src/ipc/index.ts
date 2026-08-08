@@ -3964,6 +3964,16 @@ export interface BrowserOpenExternalResponse {
   success: boolean
 }
 
+export interface HtmlViewerOpenRequest {
+  html: string
+  title?: string
+  theme?: 'light' | 'dark'
+}
+
+export interface HtmlViewerOpenResponse {
+  success: boolean
+}
+
 // ─── Window Control Channels ───────────────────────────────────────────────────
 
 export interface WindowMinimizeRequest {}
@@ -5950,6 +5960,8 @@ export interface IpcChannelMap
 
   // Browser helpers
   'browser:open-external': [BrowserOpenExternalRequest, BrowserOpenExternalResponse]
+  'html:open-window': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
+  'html:open-external': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
 
   // Window Controls (renderer → main process)
   'window:minimize': [WindowMinimizeRequest, WindowMinimizeResponse]
