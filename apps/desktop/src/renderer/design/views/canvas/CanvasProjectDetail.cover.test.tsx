@@ -5,10 +5,10 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CanvasProject } from './canvas.types'
+import type { CanvasAsset, CanvasProject } from './canvas.types'
 
 const mocks = vi.hoisted(() => ({
-  openSnapshot: vi.fn(async () => ({ assets: [] })),
+  openSnapshot: vi.fn(async () => ({ assets: [] as CanvasAsset[] })),
 }))
 
 vi.mock('@lobehub/ui', () => ({
@@ -26,7 +26,35 @@ vi.mock('@lobehub/ui', () => ({
       {children}
     </button>
   ),
-  Dropdown: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Dropdown: ({
+    children,
+    menu,
+  }: {
+    children: React.ReactNode
+    menu?: { items: Array<Record<string, unknown>> }
+  }) => (
+    <>
+      {children}
+      {menu?.items?.map((item, i) =>
+        item.type === 'divider' ? (
+          <hr key={`divider-${i}`} />
+        ) : (
+          <button
+            key={(item.key as string | undefined) ?? `item-${i}`}
+            type="button"
+            data-menu-key={item.key as string | undefined}
+            disabled={Boolean(item.disabled)}
+            onClick={() => {
+              const onClick = item.onClick as (() => void) | undefined
+              onClick?.()
+            }}
+          >
+            {item.label as React.ReactNode}
+          </button>
+        ),
+      )}
+    </>
+  ),
   Tag: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
@@ -52,6 +80,13 @@ vi.mock('antd', () => ({
         </button>
       </div>
     ) : null,
+  Checkbox: ({
+    checked,
+    disabled,
+  }: {
+    checked?: boolean
+    disabled?: boolean
+  }) => <input type="checkbox" checked={checked} disabled={disabled} readOnly />,
   Spin: () => <span>loading</span>,
   message: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }))
@@ -78,7 +113,11 @@ const baseProject: CanvasProject = {
 let container: HTMLDivElement
 let root: Root
 
-const renderDetail = async (project: CanvasProject, onUploadCover = vi.fn()) => {
+const renderDetail = async (
+  project: CanvasProject,
+  onUploadCover = vi.fn(),
+  onSetCoverFromAsset = vi.fn(),
+) => {
   await act(async () => {
     root.render(
       <CanvasProjectDetail
@@ -92,6 +131,7 @@ const renderDetail = async (project: CanvasProject, onUploadCover = vi.fn()) => 
         onOpenFolder={vi.fn()}
         onTogglePin={vi.fn()}
         onUploadCover={onUploadCover}
+        onSetCoverFromAsset={onSetCoverFromAsset}
       />,
     )
   })
@@ -166,6 +206,76 @@ describe('CanvasProjectDetail project cover', () => {
     expect(cover?.querySelector('[aria-label="更多项目操作"]')).toBeNull()
     expect(headerActions?.querySelector('[aria-label="置顶"]')).not.toBeNull()
     expect(headerActions?.querySelector('[aria-label="更多项目操作"]')).not.toBeNull()
+  })
+
+  it('renders "设为封面" for image assets and triggers the callback on click', async () => {
+    mocks.openSnapshot.mockResolvedValueOnce({
+      assets: [
+        {
+          id: 'a1',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'upload',
+          url: 'safe-file://project/assets/a1.png',
+          thumbnailUrl: 'safe-file://project/assets/a1-thumb.png',
+          metadata: {},
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T00:00:00.000Z',
+        },
+      ],
+    })
+    const onSetCoverFromAsset = vi.fn()
+    await renderDetail(baseProject, vi.fn(), onSetCoverFromAsset)
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-menu-key="set-cover"]')?.click()
+    })
+    expect(onSetCoverFromAsset).toHaveBeenCalledOnce()
+    expect(onSetCoverFromAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'a1', type: 'image' }),
+    )
+  })
+
+  it('marks "设为封面" as the current cover and disables it', async () => {
+    mocks.openSnapshot.mockResolvedValueOnce({
+      assets: [
+        {
+          id: 'a1',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'upload',
+          url: 'safe-file://project/cover.png',
+          metadata: {},
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T00:00:00.000Z',
+        },
+      ],
+    })
+    await renderDetail(baseProject)
+    const item = container.querySelector<HTMLButtonElement>('[data-menu-key="set-cover"]')
+    expect(item?.disabled).toBe(true)
+    expect(item?.textContent).toBe('当前封面')
+  })
+
+  it('hides "设为封面" when the asset has no usable cover url', async () => {
+    mocks.openSnapshot.mockResolvedValueOnce({
+      assets: [
+        {
+          id: 'v1',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'video',
+          source: 'upload',
+          url: 'safe-file://project/assets/v1.mp4',
+          metadata: {},
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T00:00:00.000Z',
+        },
+      ],
+    })
+    await renderDetail(baseProject)
+    expect(container.querySelector('[data-menu-key="set-cover"]')).toBeNull()
   })
 })
 
