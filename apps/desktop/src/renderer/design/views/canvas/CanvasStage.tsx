@@ -94,6 +94,7 @@ import {
   shouldOpenCanvasSelectionContextMenu,
   summarizeCanvasSelectionContext,
 } from './canvasContextMenuModel'
+import { resolveCanvasPaneContextMenuBoundary } from './canvasPaneContextMenuBoundary'
 import {
   buildPendingConnectionInput,
   type PendingCanvasConnection,
@@ -188,6 +189,7 @@ type CanvasPaneContextSubmenuProps = {
   label: string
   openLeft: boolean
   openUp: boolean
+  stageElement: HTMLElement | null
   children: ReactNode
 }
 
@@ -196,6 +198,7 @@ function CanvasPaneContextSubmenu({
   label,
   openLeft,
   openUp,
+  stageElement,
   children,
 }: CanvasPaneContextSubmenuProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -234,7 +237,7 @@ function CanvasPaneContextSubmenu({
     if (!open) return undefined
     const trigger = triggerRef.current
     const panel = panelRef.current
-    const stage = trigger?.closest<HTMLElement>('.canvas-stage')
+    const stage = resolveCanvasPaneContextMenuBoundary(stageElement, trigger)
     if (!trigger || !panel || !stage) return undefined
 
     const updatePosition = () => {
@@ -274,7 +277,7 @@ function CanvasPaneContextSubmenu({
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition, true)
     }
-  }, [open, openLeft, openUp])
+  }, [open, openLeft, openUp, stageElement])
 
   return (
     <div
@@ -311,7 +314,7 @@ function CanvasPaneContextSubmenu({
               left: position?.left ?? 0,
               top: position?.top ?? 0,
               maxHeight: position?.maxHeight,
-              maxWidth: 180,
+              maxWidth: 192,
               visibility: position ? 'visible' : 'hidden',
             }}
             onMouseEnter={cancelClose}
@@ -1116,6 +1119,7 @@ function CanvasStageInner({
   const prevSelectedIdSetRef = useRef(selectedNodeIdSet)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
+  const [stageElement, setStageElement] = useState<HTMLDivElement | null>(null)
   const [stageAreaElement, setStageAreaElement] = useState<HTMLElement | null>(null)
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([])
   const [minimapOpen, setMinimapOpen] = useState(true)
@@ -1138,6 +1142,7 @@ function CanvasStageInner({
   )
   const handleStageRef = useCallback((element: HTMLDivElement | null) => {
     stageRef.current = element
+    setStageElement((current) => current === element ? current : element)
     const nextStageAreaElement = element?.parentElement ?? null
     setStageAreaElement((current) =>
       current === nextStageAreaElement ? current : nextStageAreaElement,
@@ -2865,6 +2870,7 @@ function CanvasStageInner({
                 label={CANVAS_FUNCTIONAL_MENU_LABEL}
                 openLeft={paneContextMenu.openSubmenusLeft}
                 openUp={paneContextMenu.openSubmenusUp}
+                stageElement={stageElement}
               >
                 <CanvasPaneResourceNodeActions
                   onAddImage={handleAddImageFromPane}

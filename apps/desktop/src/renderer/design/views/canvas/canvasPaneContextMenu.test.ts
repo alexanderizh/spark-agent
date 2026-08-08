@@ -53,6 +53,26 @@ describe('canvas pane context menu', () => {
     )
   })
 
+  it('uses one charcoal menu surface with a compact second-level density', () => {
+    expect(contextMenuStyles).toMatch(
+      /\.canvas-pane-context-menu,[\s\S]*?\.canvas-node-context-submenu-popup \.ant-dropdown-menu\s*\{[\s\S]*?background: var\(--canvas-cinema-surface-4/,
+    )
+    expect(contextMenuStyles).toMatch(
+      /\.canvas-pane-context-menu button,[\s\S]*?\.canvas-node-context-menu\.ant-dropdown-menu \.ant-dropdown-menu-item[\s\S]*?min-height: 38px[\s\S]*?font-size: 14px/,
+    )
+    expect(contextMenuStyles).toMatch(
+      /\.canvas-pane-context-submenu-panel button,[\s\S]*?\.canvas-node-context-submenu-popup \.ant-dropdown-menu \.ant-dropdown-menu-item[\s\S]*?height: 34px[\s\S]*?font-size: 13px/,
+    )
+    expect(contextMenuStyles).toContain(
+      '.canvas-pane-context-submenu-panel .canvas-pane-context-section-title',
+    )
+    expect(contextMenuStyles).toContain(
+      '.canvas-pane-context-submenu-panel button > .canvas-pane-context-op-icon',
+    )
+    expect(contextMenuStyles).toContain('max-width: min(192px, calc(100dvw - 40px));')
+    expect(contextMenuStyles).toContain('max-width: min(240px, calc(100dvw - 32px));')
+  })
+
   it('keeps functional resource actions separate from flat base task entries', () => {
     const taskMenuSource = stageSource.slice(
       stageSource.indexOf('<div className="canvas-pane-context-section-title">任务节点</div>'),
