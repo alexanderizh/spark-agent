@@ -90,12 +90,12 @@ Composer 只替换本次发送所用的图片附件路径；非图片附件保�
 
 图片预览的乐观链路同时覆盖普通文本、文件/目录附件和转发给 Agent 的命令。Composer 在目标 `sessionId` 确定后、附件准备和 `session:submit-turn` 前创建 renderer-only 用户消息，状态依次为：
 
-- `submitting`：请求尚未返回，消息区立即显示用户气泡和执行中占位；
+- `submitting`：请求尚未返回；空闲会话立即显示用户气泡和执行中占位，已在执行的会话先隐藏该记录，避免排队消息闪入聊天流；
 - `accepted`：接口返回 `turnId` 且开始执行，继续等待真实事件；
-- `queued`：接口返回 `started: false`，或队列快照确认该 turn 仍在队列；只显示“已加入队列”，不把排队误报为执行中；
+- 接口返回 `started: false`，或队列快照确认该 turn 仍在队列：从聊天流移除乐观气泡，只在 Composer 队列面板显示；
 - `failed`：提交链路异常，保留气泡和错误，不自动撤回。
 
-真实 `user_message` 事件按 `turnId` 接管显示并去重。状态按 `sessionId` 隔离，团队模式保留 `mentionAgentId`，侧聊复用同一生命周期而不会串消息；队列移除/编辑只有在后端确认取消后才移除对应乐观气泡。
+真实 `user_message` 事件按 `turnId` 接管显示并去重。状态按 `sessionId` 隔离，团队模式保留 `mentionAgentId`，侧聊复用同一生命周期而不会串消息；排队 turn 不进入聊天消息流，队列面板继续提供移除、编辑和立即执行操作。
 
 ## 压缩策略
 

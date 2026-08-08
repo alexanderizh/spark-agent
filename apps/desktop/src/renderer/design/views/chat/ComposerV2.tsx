@@ -1585,6 +1585,7 @@ export function ComposerV2({
                 sessionId,
                 content: text,
                 attachments: turnAttachments,
+                hiddenUntilStarted: isWorking,
                 ...(replySnapshot?.agentId != null
                   ? { mentionAgentId: replySnapshot.agentId }
                   : teamConfig.enabled &&
@@ -1680,6 +1681,7 @@ export function ComposerV2({
             sessionId: targetSessionId,
             content: text,
             attachments: turnAttachments,
+            hiddenUntilStarted: isWorking,
             ...(replySnapshot?.agentId != null
               ? { mentionAgentId: replySnapshot.agentId }
               : teamConfig.enabled &&
@@ -1767,6 +1769,7 @@ export function ComposerV2({
       pendingMention,
       prepareSessionImages,
       activeQuickReplies,
+      isWorking,
       optimisticUserSendCallbacks,
       onOptimisticQueueStateChange,
     ],

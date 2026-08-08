@@ -7,9 +7,9 @@ import {
   commitOptimisticUserMessage,
   createOptimisticUserMessage,
   failOptimisticUserMessage,
+  removeQueuedOptimisticUserMessages,
   settleOptimisticUserSend,
   settleOptimisticImageSend,
-  setOptimisticUserMessagesQueued,
   startOptimisticUserSend,
   startOptimisticImageSend,
   mergeOptimisticUserMessages,
@@ -127,25 +127,78 @@ describe('optimistic user messages', () => {
     expect(failed[0]?.message.deliveryError).toBe('连接已断开')
   })
 
-  it('updates queued state from the authoritative queue and removes explicit cancellations', () => {
-    const committed = commitOptimisticUserMessage(
-      [
-        createOptimisticUserMessage({
-          clientId: 'client-queue',
-          sessionId: 'session-1',
-          content: '排队消息',
-          createdAt: '2026-08-02T10:00:00.000Z',
-          attachments: [],
-        }),
-      ],
-      'client-queue',
-      'turn-queue',
-      false,
+  it('keeps queued turns out of the chat stream and removes explicit cancellations', () => {
+    const optimistic = createOptimisticUserMessage({
+      clientId: 'client-queue',
+      sessionId: 'session-1',
+      content: '排队消息',
+      createdAt: '2026-08-02T10:00:00.000Z',
+      attachments: [],
+    })
+
+    expect(commitOptimisticUserMessage([optimistic], 'client-queue', 'turn-queue', false)).toEqual(
+      [],
     )
-    expect(committed[0]?.message.deliveryState).toBe('queued')
-    const accepted = setOptimisticUserMessagesQueued(committed, 'session-1', new Set())
+
+    const accepted = commitOptimisticUserMessage([optimistic], 'client-queue', 'turn-queue')
     expect(accepted[0]?.message.deliveryState).toBe('accepted')
+    expect(
+      removeQueuedOptimisticUserMessages(accepted, 'session-1', new Set(['turn-queue'])),
+    ).toEqual([])
+    const queuedState = {
+      ...accepted[0]!,
+      message: { ...accepted[0]!.message, deliveryState: 'queued' as const },
+    }
+    expect(mergeOptimisticUserMessages([], [queuedState], 'session-1')).toEqual([])
     expect(cancelOptimisticUserMessageByTurnId(accepted, 'session-1', 'turn-queue')).toEqual([])
+  })
+
+  it('removes the submitting bubble when the backend queues the turn', () => {
+    let messages: ReturnType<typeof createOptimisticUserMessage>[] = []
+    const lifecycle = startOptimisticUserSend(
+      {
+        sessionId: 'session-1',
+        content: '不要显示在聊天流里的排队消息',
+        attachments: [],
+        hiddenUntilStarted: true,
+      },
+      {
+        onBegin: (draft) => {
+          messages = [...messages, createOptimisticUserMessage(draft)]
+        },
+        onCommit: (clientId, turnId, started) => {
+          messages = commitOptimisticUserMessage(messages, clientId, turnId, started)
+        },
+        onFail: vi.fn(),
+        onCancel: vi.fn(),
+      },
+      () => 'client-queued',
+      () => '2026-08-02T10:00:00.000Z',
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(mergeOptimisticUserMessages([], messages, 'session-1')).toEqual([])
+    settleOptimisticUserSend(lifecycle, { turnId: 'turn-queued', started: false })
+    expect(messages).toEqual([])
+  })
+
+  it('reveals a busy-session message only after execution starts or submission fails', () => {
+    const hidden = createOptimisticUserMessage({
+      clientId: 'client-hidden',
+      sessionId: 'session-1',
+      content: '等待后端确认',
+      createdAt: '2026-08-02T10:00:00.000Z',
+      attachments: [],
+      hiddenUntilStarted: true,
+    })
+
+    const accepted = commitOptimisticUserMessage([hidden], 'client-hidden', 'turn-started', true)
+    expect(accepted[0]?.hiddenUntilStarted).toBeUndefined()
+    expect(mergeOptimisticUserMessages([], accepted, 'session-1')).toHaveLength(1)
+
+    const failed = failOptimisticUserMessage([hidden], 'client-hidden', '连接已断开')
+    expect(failed[0]?.hiddenUntilStarted).toBeUndefined()
+    expect(mergeOptimisticUserMessages([], failed, 'session-1')[0]?.deliveryState).toBe('failed')
   })
 
   it('clears renderer-only messages only for the reset session', () => {
