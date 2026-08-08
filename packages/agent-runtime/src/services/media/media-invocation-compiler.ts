@@ -157,9 +157,19 @@ export async function compileInvocationRequest(
   const endpoint = renderString(request.endpoint, context.variables)
   let url = appendQuery(resolveUrl(context.apiEndpoint, endpoint), request.query, context.variables)
   assertHttpUrl(url)
-  const headers = renderHeaders(request.headers, context.variables, context.allowReservedHeaders === true)
+  const headers = renderHeaders(
+    request.headers,
+    context.variables,
+    context.allowReservedHeaders === true,
+  )
   const auth = request.auth?.kind === 'inherit' ? context.defaultAuth : request.auth
-  url = applyAuth(headers, url, auth ?? context.defaultAuth, context.apiKey, context.allowReservedHeaders === true)
+  url = applyAuth(
+    headers,
+    url,
+    auth ?? context.defaultAuth,
+    context.apiKey,
+    context.allowReservedHeaders === true,
+  )
 
   const body = await compileBody(request.body, context)
   if (method === 'GET' && body.body !== undefined) {
@@ -179,7 +189,7 @@ export async function compileInvocationRequest(
 
 export function legacyInvocationRequest(input: {
   endpoint: string
-  method: 'GET' | 'POST'
+  method: MediaInvocationRequest['method']
   headers?: Record<string, unknown> | undefined
   requestTemplate: Record<string, unknown>
   contentType: 'json' | 'multipart' | 'binary'
@@ -217,7 +227,8 @@ function applyAuth(
   const kind = auth?.kind ?? 'none'
   if (kind === 'none' || kind === 'inherit') return url
   if (kind === 'bearer') {
-    if (!allowReservedHeaders || !hasHeader(headers, 'authorization')) headers.authorization = `Bearer ${apiKey}`
+    if (!allowReservedHeaders || !hasHeader(headers, 'authorization'))
+      headers.authorization = `Bearer ${apiKey}`
     return url
   }
   if (auth?.kind === 'api_key_header') {
@@ -254,7 +265,11 @@ function renderHeaders(
 async function compileBody(
   body: MediaInvocationBody | undefined,
   context: InvocationCompilerContext,
-): Promise<{ body?: string | Buffer | Uint8Array; contentType?: string; binaryResponse?: boolean }> {
+): Promise<{
+  body?: string | Buffer | Uint8Array
+  contentType?: string
+  binaryResponse?: boolean
+}> {
   if (!body || body.kind === 'none') return {}
   if (body.kind === 'json') {
     const rendered = renderValue(body.template, context.variables)
@@ -279,15 +294,23 @@ async function compileBody(
         const buffer = await valueToBuffer(fileValue, context.inputFiles)
         const filename = part.filename ?? fileNameForValue(fileValue, context.inputFiles)
         chunks.push(Buffer.from(`--${boundary}\r\n`))
-        chunks.push(Buffer.from(`Content-Disposition: form-data; name="${escapeHeader(part.name)}"; filename="${escapeHeader(filename)}"\r\n`))
-        chunks.push(Buffer.from(`Content-Type: ${part.contentType ?? 'application/octet-stream'}\r\n\r\n`))
+        chunks.push(
+          Buffer.from(
+            `Content-Disposition: form-data; name="${escapeHeader(part.name)}"; filename="${escapeHeader(filename)}"\r\n`,
+          ),
+        )
+        chunks.push(
+          Buffer.from(`Content-Type: ${part.contentType ?? 'application/octet-stream'}\r\n\r\n`),
+        )
         chunks.push(buffer)
         chunks.push(Buffer.from('\r\n'))
       }
       continue
     }
     chunks.push(Buffer.from(`--${boundary}\r\n`))
-    chunks.push(Buffer.from(`Content-Disposition: form-data; name="${escapeHeader(part.name)}"\r\n`))
+    chunks.push(
+      Buffer.from(`Content-Disposition: form-data; name="${escapeHeader(part.name)}"\r\n`),
+    )
     if (part.contentType) chunks.push(Buffer.from(`Content-Type: ${part.contentType}\r\n`))
     chunks.push(Buffer.from('\r\n'))
     const text = part.kind === 'json' ? JSON.stringify(rendered) : String(rendered)
@@ -305,7 +328,9 @@ function renderValue(value: unknown, variables: Record<string, unknown>): unknow
     return renderString(value, variables)
   }
   if (Array.isArray(value)) {
-    const rendered = value.map((item) => renderValue(item, variables)).filter((item) => item !== undefined)
+    const rendered = value
+      .map((item) => renderValue(item, variables))
+      .filter((item) => item !== undefined)
     return rendered.length > 0 ? rendered : undefined
   }
   if (value && typeof value === 'object') {
@@ -327,10 +352,13 @@ function renderString(value: string, variables: Record<string, unknown>): string
 }
 
 function resolveVariable(pathName: string, variables: Record<string, unknown>): unknown {
-  return pathName.split('.').filter(Boolean).reduce<unknown>((current, key) => {
-    if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined
-    return (current as Record<string, unknown>)[key]
-  }, variables)
+  return pathName
+    .split('.')
+    .filter(Boolean)
+    .reduce<unknown>((current, key) => {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined
+      return (current as Record<string, unknown>)[key]
+    }, variables)
 }
 
 function appendQuery(
@@ -345,7 +373,10 @@ function appendQuery(
     if (Array.isArray(rendered)) {
       for (const item of rendered) parsed.searchParams.append(key, String(item))
     } else {
-      parsed.searchParams.set(key, typeof rendered === 'object' ? JSON.stringify(rendered) : String(rendered))
+      parsed.searchParams.set(
+        key,
+        typeof rendered === 'object' ? JSON.stringify(rendered) : String(rendered),
+      )
     }
   }
   return parsed.toString()
@@ -371,7 +402,10 @@ function assertHttpUrl(url: string): void {
   }
 }
 
-async function valueToBuffer(value: unknown, inputFiles: MediaInputFile[] | undefined): Promise<Buffer> {
+async function valueToBuffer(
+  value: unknown,
+  inputFiles: MediaInputFile[] | undefined,
+): Promise<Buffer> {
   if (Buffer.isBuffer(value)) return value
   if (value instanceof Uint8Array) return Buffer.from(value)
   if (typeof value === 'string') {
@@ -393,7 +427,8 @@ function selectUploadFiles(variable: string, inputFiles: MediaInputFile[]): Medi
   if (variable === 'mask') return inputFiles.filter((file) => file.role === 'mask')
   if (variable === 'video') return inputFiles.filter((file) => file.type === 'video')
   if (variable === 'audio') return inputFiles.filter((file) => file.type === 'audio')
-  if (variable === 'image' || variable === 'images') return inputFiles.filter((file) => file.type === 'image')
+  if (variable === 'image' || variable === 'images')
+    return inputFiles.filter((file) => file.type === 'image')
   if (variable === 'referenceImages' || variable === 'referenceImageUrls') {
     const refs = inputFiles.filter((file) => file.role === 'reference')
     return refs.length > 0 ? refs : inputFiles.filter((file) => file.type === 'image')
@@ -404,7 +439,10 @@ function selectUploadFiles(variable: string, inputFiles: MediaInputFile[]): Medi
 function validateUploadFiles(spec: MediaUploadSpec, files: MediaInputFile[]): void {
   const maxCount = spec.constraints?.maxCount
   if (maxCount != null && files.length > maxCount) {
-    throw new MediaProviderError('invalid_input', `Upload ${spec.name} accepts at most ${maxCount} files`)
+    throw new MediaProviderError(
+      'invalid_input',
+      `Upload ${spec.name} accepts at most ${maxCount} files`,
+    )
   }
   const allowed = spec.constraints?.allowedMimeTypes
   if (allowed && allowed.length > 0) {
@@ -434,14 +472,21 @@ function extractStringPaths(value: unknown, paths: string[]): string[] {
     }
     return current
   })
-  return Array.from(new Set(values.filter((item): item is string => typeof item === 'string' && item.length > 0)))
+  return Array.from(
+    new Set(values.filter((item): item is string => typeof item === 'string' && item.length > 0)),
+  )
 }
 
-function findInputFile(value: unknown, inputFiles: MediaInputFile[] | undefined): MediaInputFile | undefined {
+function findInputFile(
+  value: unknown,
+  inputFiles: MediaInputFile[] | undefined,
+): MediaInputFile | undefined {
   if (!inputFiles || inputFiles.length === 0) return undefined
   if (Array.isArray(value)) return inputFiles[0]
   if (typeof value !== 'string') return inputFiles[0]
-  return inputFiles.find((file) => file.path === value || file.url === value || file.dataUrl === value)
+  return inputFiles.find(
+    (file) => file.path === value || file.url === value || file.dataUrl === value,
+  )
 }
 
 function fileNameForValue(value: unknown, inputFiles: MediaInputFile[] | undefined): string {

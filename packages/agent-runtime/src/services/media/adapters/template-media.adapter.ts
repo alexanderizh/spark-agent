@@ -35,7 +35,11 @@ import {
   legacyInvocationRequest,
 } from '../media-invocation-compiler.js'
 import { logMediaDiag } from '../media-debug-log.js'
-import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
+import {
+  configuredMediaInterfaceTimeoutMs,
+  mediaPollTimeoutOptions,
+  resolveMediaInterfaceTimeoutMs,
+} from '../media-timeout.js'
 import { filenameHelper, mimeFromFormat } from './openai-compatible-media.adapter.js'
 
 export class TemplateMediaAdapter {
@@ -45,21 +49,24 @@ export class TemplateMediaAdapter {
     return manifest.capabilities.some((item) => item.id === capability)
   }
 
-  async invoke(
-    input: MediaGenerateInput,
-    ctx: MediaProviderContext,
-  ): Promise<MediaGenerateOutput> {
+  async invoke(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
     const rawManifest = ctx.mediaManifest
     const capability = ctx.mediaManifestCapability
     if (!rawManifest || !capability) {
-      throw new MediaProviderError('provider_not_configured', 'Manifest adapter requires mediaManifest context')
+      throw new MediaProviderError(
+        'provider_not_configured',
+        'Manifest adapter requires mediaManifest context',
+      )
     }
     // 只在执行边界做内存迁移，避免旧 Provider 列表/模型目录的展示数据被悄悄改形；
     // 迁移结果不回写存储，旧 manifest 仍可由旧版本导入和读取。
     const manifest = migrateMediaModelManifestToV2(rawManifest)
     const traceId = randomUUID()
     if (!input.capability || !this.supports(manifest, input.capability)) {
-      throw new MediaProviderError('capability_not_supported', `${manifest.id} does not support ${input.capability ?? '(unknown)'}`)
+      throw new MediaProviderError(
+        'capability_not_supported',
+        `${manifest.id} does not support ${input.capability ?? '(unknown)'}`,
+      )
     }
     const model = ctx.defaultModel || manifest.modelId
     const compiled = compileMediaRequest({
@@ -83,7 +90,13 @@ export class TemplateMediaAdapter {
       throw new MediaProviderError('invalid_input', blockingIssue.message)
     }
 
-    const variables = buildVariables(input, capability, model, compiled.providerParams, compiled.canonicalParams)
+    const variables = buildVariables(
+      input,
+      capability,
+      model,
+      compiled.providerParams,
+      compiled.canonicalParams,
+    )
     const uploads = await executeMediaUploads(manifest.invocation.uploads, input.inputFiles, {
       apiEndpoint: ctx.apiEndpoint,
       apiKey: ctx.apiKey,
@@ -92,13 +105,15 @@ export class TemplateMediaAdapter {
     })
     const invocationVariables = { ...variables, uploads }
     const legacy = manifest.invocation.request == null
-    const baseRequest = manifest.invocation.request ?? legacyInvocationRequest({
-      endpoint: manifest.invocation.endpoint,
-      method: manifest.invocation.method,
-      headers: manifest.invocation.headers,
-      requestTemplate: manifest.invocation.requestTemplate,
-      contentType: manifest.invocation.contentType,
-    })
+    const baseRequest =
+      manifest.invocation.request ??
+      legacyInvocationRequest({
+        endpoint: manifest.invocation.endpoint,
+        method: manifest.invocation.method,
+        headers: manifest.invocation.headers,
+        requestTemplate: manifest.invocation.requestTemplate,
+        contentType: manifest.invocation.contentType,
+      })
     const request =
       baseRequest.body?.kind === 'json'
         ? {
@@ -114,7 +129,10 @@ export class TemplateMediaAdapter {
       apiKey: ctx.apiKey,
       variables: invocationVariables,
       inputFiles: input.inputFiles,
-      defaultAuth: request.auth?.kind === 'inherit' ? { kind: 'bearer', credentialRef: 'apiKey' } : request.auth,
+      defaultAuth:
+        request.auth?.kind === 'inherit'
+          ? { kind: 'bearer', credentialRef: 'apiKey' }
+          : request.auth,
       ...(legacy ? { allowReservedHeaders: true } : {}),
     })
     logMediaDiag('template-invocation-compiled', {
@@ -147,27 +165,76 @@ export class TemplateMediaAdapter {
       ...(compiledInvocation.body !== undefined ? { body: compiledInvocation.body } : {}),
       fetchImpl: ctx.fetch,
       timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
-      binary: compiledInvocation.binaryResponse || manifest.invocation.response.kind === 'binary_response',
+      binary:
+        compiledInvocation.binaryResponse ||
+        manifest.invocation.response.kind === 'binary_response',
       ...(manifest.error ? { errorContract: manifest.error } : {}),
     })
     let mode: 'sync' | 'async' = manifest.invocation.mode === 'async_polling' ? 'async' : 'sync'
     let requestId: string | undefined
+    let retrieval: MediaArtifactRetrieval = manifest.invocation.response
 
     if (manifest.invocation.response.kind === 'task_poll') {
       const immediateResult = firstStringAtPaths(raw, manifest.invocation.response.resultPaths)
       if (!immediateResult) {
         const taskId = firstStringAtPaths(raw, manifest.invocation.response.taskIdPaths)
         if (!taskId) {
-          throw new MediaProviderError('provider_http_error', `No task id in response: ${JSON.stringify(raw).slice(0, 800)}`)
+          throw new MediaProviderError(
+            'provider_http_error',
+            `No task id in response: ${JSON.stringify(raw).slice(0, 800)}`,
+          )
         }
         requestId = taskId
         mode = 'async'
         ctx.onTaskSubmitted?.({ requestId: taskId, response: raw })
         raw = await this.pollManifestTask(manifest, taskId, ctx, request, traceId)
       }
+      const artifact = manifest.invocation.response.artifact
+      if (artifact && requestId) {
+        const artifactRequest = {
+          ...artifact.request,
+          endpoint: artifact.request.endpoint.replace(
+            /\{\{\s*taskId\s*\}\}|\{taskId\}/g,
+            encodeURIComponent(requestId),
+          ),
+        }
+        const compiledArtifact = await compileInvocationRequest(artifactRequest, {
+          apiEndpoint: ctx.apiEndpoint,
+          apiKey: ctx.apiKey,
+          variables: { taskId: requestId, poll: raw },
+          inputFiles: [],
+          defaultAuth: request.auth ?? { kind: 'bearer', credentialRef: 'apiKey' },
+        })
+        logMediaDiag('template-artifact-request-compiled', {
+          traceId,
+          provider: manifest.providerKind,
+          manifest: manifest.id,
+          method: compiledArtifact.method,
+          url: compiledArtifact.url,
+          requestId: requestId.slice(0, 80),
+          responseKind: artifact.response.kind,
+        })
+        raw = await fetchJson(compiledArtifact.url, {
+          method: compiledArtifact.method,
+          headers: compiledArtifact.headers,
+          ...(compiledArtifact.body !== undefined ? { body: compiledArtifact.body } : {}),
+          fetchImpl: ctx.fetch,
+          timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 300_000),
+          binary: artifact.response.kind === 'binary_response',
+          ...(manifest.error ? { errorContract: manifest.error } : {}),
+        })
+        retrieval = artifact.response
+        logMediaDiag('template-artifact-request-finished', {
+          traceId,
+          provider: manifest.providerKind,
+          manifest: manifest.id,
+          requestId: requestId.slice(0, 80),
+          responseKind: artifact.response.kind,
+        })
+      }
     }
 
-    const assets = await this.materialize(manifest.invocation.response, raw, input, capability, ctx)
+    const assets = await this.materialize(retrieval, raw, input, capability, ctx)
     logMediaDiag('template-invocation-finished', {
       traceId,
       provider: manifest.providerKind,
@@ -185,7 +252,9 @@ export class TemplateMediaAdapter {
       rawResponse: raw,
       ...(compiled.droppedParams.length > 0 ? { droppedParams: compiled.droppedParams } : {}),
       ...(compiled.warnings.length > 0 ? { contractWarnings: compiled.warnings } : {}),
-      ...(compiled.validationIssues.length > 0 ? { contractIssues: compiled.validationIssues } : {}),
+      ...(compiled.validationIssues.length > 0
+        ? { contractIssues: compiled.validationIssues }
+        : {}),
     }
   }
 
@@ -238,7 +307,9 @@ export class TemplateMediaAdapter {
       ),
       inspect: (data) => {
         if (firstStringAtPaths(data, response.resultPaths)) return 'done'
-        const rawStatus = (firstStringAtPaths(data, statusPaths) || extractStatus(data)).trim().toLowerCase()
+        const rawStatus = (firstStringAtPaths(data, statusPaths) || extractStatus(data))
+          .trim()
+          .toLowerCase()
         if (!rawStatus) return polling?.unknownStatus === 'running' ? 'pending' : 'failed'
         const mapped = polling?.statusMap[rawStatus]
         if (mapped === 'succeeded') return 'done'
@@ -261,13 +332,33 @@ export class TemplateMediaAdapter {
     const outputKind = primaryOutputKind(capability)
     if (retrieval.kind === 'binary_response') {
       const buffer = Buffer.isBuffer(data) ? data : null
-      if (!buffer) throw new MediaProviderError('provider_http_error', 'binary_response did not return binary data')
+      if (!buffer)
+        throw new MediaProviderError(
+          'provider_http_error',
+          'binary_response did not return binary data',
+        )
       const name = filenameHelper(input, outputKind, 0, 1)
       if (outputKind === 'audio' || outputKind === 'video') {
-        return [await this.artifact.writeBinaryAsset(outputKind, buffer, input.outputDir, name, defaultMime(outputKind, input))]
+        return [
+          await this.artifact.writeBinaryAsset(
+            outputKind,
+            buffer,
+            input.outputDir,
+            name,
+            defaultMime(outputKind, input),
+          ),
+        ]
       }
       if (outputKind === 'image') {
-        return [await this.artifact.writeImage({ kind: 'base64', value: buffer.toString('base64'), mimeType: 'image/png' }, input.outputDir, name, ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults))]
+        return [
+          await this.artifact.writeImage(
+            { kind: 'base64', value: buffer.toString('base64'), mimeType: 'image/png' },
+            input.outputDir,
+            name,
+            ctx.fetch,
+            configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ),
+        ]
       }
       return [await this.artifact.writeTextAsset(buffer.toString('utf8'), input.outputDir, name)]
     }
@@ -277,7 +368,9 @@ export class TemplateMediaAdapter {
     }
     if (retrieval.kind === 'url') {
       const values = stringsAtPaths(data, retrieval.jsonPaths)
-      return this.materializeStrings(values, outputKind, input, ctx, { download: retrieval.download })
+      return this.materializeStrings(values, outputKind, input, ctx, {
+        download: retrieval.download,
+      })
     }
     if (retrieval.kind === 'task_poll') {
       const values = stringsAtPaths(data, retrieval.resultPaths)
@@ -296,35 +389,63 @@ export class TemplateMediaAdapter {
     if (values.length === 0) {
       throw new MediaProviderError('provider_http_error', 'No media artifacts in manifest response')
     }
-    return Promise.all(values.map(async (value, index) => {
-      const name = filenameHelper(input, outputKind, index, values.length)
-      if (outputKind === 'text') {
-        return this.artifact.writeTextAsset(value, input.outputDir, name)
-      }
-      if (isHttpUrl(value)) {
+    return Promise.all(
+      values.map(async (value, index) => {
+        const name = filenameHelper(input, outputKind, index, values.length)
+        if (outputKind === 'text') {
+          return this.artifact.writeTextAsset(value, input.outputDir, name)
+        }
+        if (isHttpUrl(value)) {
+          if (outputKind === 'image') {
+            if (options.download === false)
+              return { type: 'image', url: value, raw: { url: value } }
+            return this.artifact.writeImage(
+              { kind: 'url', value },
+              input.outputDir,
+              name,
+              ctx.fetch,
+              configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+            )
+          }
+          if (outputKind === 'audio' || outputKind === 'video') {
+            if (options.download === false)
+              return { type: outputKind, url: value, raw: { url: value } }
+            return this.artifact.downloadMediaAsset(
+              outputKind,
+              value,
+              input.outputDir,
+              name,
+              ctx.fetch,
+              configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+            )
+          }
+        }
         if (outputKind === 'image') {
-          if (options.download === false) return { type: 'image', url: value, raw: { url: value } }
-          return this.artifact.writeImage({ kind: 'url', value }, input.outputDir, name, ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults))
+          return this.artifact.writeImage(
+            {
+              kind: 'base64',
+              value: normalizeBase64(value),
+              mimeType: mimeFromDataUrl(value) ?? 'image/png',
+            },
+            input.outputDir,
+            name,
+            ctx.fetch,
+            configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          )
         }
         if (outputKind === 'audio' || outputKind === 'video') {
-          if (options.download === false) return { type: outputKind, url: value, raw: { url: value } }
-          return this.artifact.downloadMediaAsset(outputKind, value, input.outputDir, name, ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults))
+          const buffer = Buffer.from(normalizeBase64(value), 'base64')
+          return this.artifact.writeBinaryAsset(
+            outputKind,
+            buffer,
+            input.outputDir,
+            name,
+            mimeFromDataUrl(value) ?? defaultMime(outputKind, input),
+          )
         }
-      }
-      if (outputKind === 'image') {
-        return this.artifact.writeImage(
-          { kind: 'base64', value: normalizeBase64(value), mimeType: mimeFromDataUrl(value) ?? 'image/png' },
-          input.outputDir,
-          name,
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
-        )
-      }
-      if (outputKind === 'audio' || outputKind === 'video') {
-        const buffer = Buffer.from(normalizeBase64(value), 'base64')
-        return this.artifact.writeBinaryAsset(outputKind, buffer, input.outputDir, name, mimeFromDataUrl(value) ?? defaultMime(outputKind, input))
-      }
-      return this.artifact.writeTextAsset(value, input.outputDir, name)
-    }))
+        return this.artifact.writeTextAsset(value, input.outputDir, name)
+      }),
+    )
   }
 }
 
@@ -350,7 +471,10 @@ function buildPollRequest(
     const replacement = encodeURIComponent(taskId)
     next.endpoint = next.endpoint.replace(/\{taskId\}|{{\s*taskId\s*}}/g, replacement)
     if (next.endpoint === base.endpoint) {
-      throw new MediaProviderError('provider_http_error', 'poll taskId placement=path requires {taskId} in endpoint')
+      throw new MediaProviderError(
+        'provider_http_error',
+        'poll taskId placement=path requires {taskId} in endpoint',
+      )
     }
   } else if (placement.location === 'query') {
     next.query = { ...(next.query ?? {}), [placement.name]: taskValue }
@@ -359,7 +483,10 @@ function buildPollRequest(
   } else {
     const body = next.body
     if (!body || body.kind === 'none' || body.kind === 'binary') {
-      throw new MediaProviderError('provider_http_error', 'poll taskId placement=body requires a JSON or multipart body')
+      throw new MediaProviderError(
+        'provider_http_error',
+        'poll taskId placement=body requires a JSON or multipart body',
+      )
     }
     if (body.kind === 'json') {
       const template = isPlainRecord(body.template)
@@ -387,15 +514,22 @@ export function buildVariables(
   canonicalParams: Record<string, unknown> = providerParams,
 ): Record<string, unknown> {
   const inputFiles = input.inputFiles ?? []
-  const resolveRef = (file: typeof inputFiles[number] | undefined): string => {
+  const resolveRef = (file: (typeof inputFiles)[number] | undefined): string => {
     if (!file) return ''
     if (file.url && /^https?:\/\//i.test(file.url)) return file.url
     if (file.dataUrl) return file.dataUrl
     if (file.url && !file.url.startsWith('safe-file://')) return file.url
     return file.path ?? ''
   }
-  const imageFiles = inputFiles.filter((file) => file.type === 'image' || file.type === 'file')
-  const videoFiles = inputFiles.filter((file) => file.type === 'video' || (file.type === 'file' && file.role === 'input'))
+  const maskFile = inputFiles.find(
+    (file) => (file.type === 'image' || file.type === 'file') && file.role === 'mask',
+  )
+  const imageFiles = inputFiles.filter(
+    (file) => (file.type === 'image' || file.type === 'file') && file.role !== 'mask',
+  )
+  const videoFiles = inputFiles.filter(
+    (file) => file.type === 'video' || (file.type === 'file' && file.role === 'input'),
+  )
   const imageRefs = imageFiles.map(resolveRef).filter((value) => value.length > 0)
   const videoRefs = videoFiles.map(resolveRef).filter((value) => value.length > 0)
   const firstFrame = imageFiles.find((file) => file.role === 'first_frame')
@@ -416,7 +550,8 @@ export function buildVariables(
   const audioRefs = audioFiles.map(resolveRef).filter((value) => value.length > 0)
   const bailianMedia: Array<{ type: string; url: string }> = []
   if (videoRefs[0]) bailianMedia.push({ type: 'video', url: videoRefs[0] })
-  if (resolveRef(firstFrame)) bailianMedia.push({ type: 'first_frame', url: resolveRef(firstFrame) })
+  if (resolveRef(firstFrame))
+    bailianMedia.push({ type: 'first_frame', url: resolveRef(firstFrame) })
   if (resolveRef(lastFrame)) bailianMedia.push({ type: 'last_frame', url: resolveRef(lastFrame) })
   for (const ref of referenceFiles.map(resolveRef).filter(Boolean)) {
     bailianMedia.push({ type: 'reference_image', url: ref })
@@ -437,6 +572,7 @@ export function buildVariables(
     inputImages: imageRefs,
     inputImageUrls: imageRefs,
     imageUrls: imageRefs,
+    mask: resolveRef(maskFile),
     firstFrame:
       resolveRef(firstFrame) ||
       (capability.id === 'video.image_to_video' ? (imageRefs[0] ?? '') : ''),
@@ -485,7 +621,11 @@ function primaryOutputKind(capability: MediaModelCapabilityManifest): MediaArtif
 
 function stringsAtPaths(data: unknown, paths: string[]): string[] {
   const values = paths.flatMap((path) => valuesAtPath(data, path))
-  return Array.from(new Set(values.filter((value): value is string => typeof value === 'string' && value.length > 0)))
+  return Array.from(
+    new Set(
+      values.filter((value): value is string => typeof value === 'string' && value.length > 0),
+    ),
+  )
 }
 
 function firstStringAtPaths(data: unknown, paths: string[]): string {

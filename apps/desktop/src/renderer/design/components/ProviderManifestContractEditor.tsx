@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import './ProviderManifestContractEditor.less'
 import { ProviderManifestParameterEditor } from './ProviderManifestParameterEditor'
+import {
+  ADAPTER_BASE_TEMPLATE_OPTIONS,
+  applyAdapterBaseTemplate,
+  resolveAdapterBaseTemplate,
+} from './providerManifestBaseTemplates'
 import { Checkbox, Input, Select, Tag } from '@lobehub/ui'
 import type {
   MediaArtifactRetrieval,
+  MediaDirectArtifactRetrieval,
   MediaInvocationBody,
   MediaErrorContract,
   MediaInvocationAuth,
@@ -131,6 +137,10 @@ function EditorOverview({ manifest, onChange }: ProviderManifestContractEditorPr
       adapterMode: patch.adapterMode ?? manifest.adapterMode ?? 'template',
     })
   const domain = manifest.domains?.[0] ?? 'image'
+  const baseTemplate = resolveAdapterBaseTemplate(manifest)
+  const applyBaseTemplate = (
+    template: Parameters<typeof applyAdapterBaseTemplate>[1] = baseTemplate,
+  ): void => onChange(applyAdapterBaseTemplate(manifest, template))
   const capabilityId = manifest.capabilities[0]?.id ?? `${domain}.generate`
   const setDomain = (next: string) => {
     const nextDomain = next as MediaModelManifest['domains'][number]
@@ -146,7 +156,21 @@ function EditorOverview({ manifest, onChange }: ProviderManifestContractEditorPr
             index === 0 ? { ...cap, id: cap.id === capabilityId ? nextCapabilityId : cap.id } : cap,
           )
         : []
-    update({ domains: [nextDomain], capabilities: nextCapabilities })
+    const nextManifest = {
+      ...manifest,
+      domains: [nextDomain],
+      capabilities: nextCapabilities,
+      contractVersion: 2 as const,
+    }
+    if (manifest.baseTemplate) {
+      const compatibleTemplate =
+        manifest.baseTemplate === 'toapis-image' && nextDomain !== 'image'
+          ? 'custom'
+          : manifest.baseTemplate
+      onChange(applyAdapterBaseTemplate({ ...nextManifest, capabilities: [] }, compatibleTemplate))
+      return
+    }
+    onChange(nextManifest)
   }
   return (
     <section className="pv_adapter_section pv_adapter_overview">
@@ -154,12 +178,17 @@ function EditorOverview({ manifest, onChange }: ProviderManifestContractEditorPr
         <div>
           <strong>① 路由与模型</strong>
           <div className="pv_adapter_hint">
-            完全自定义适配器：从零配置应用未内置的渠道协议；所有字段都会保存到当前 Provider 的
-            mediaModelRefs。
+            选择协议基底会初始化能力、参数、鉴权、请求、响应和错误契约；生成后所有表单项仍可修改。
           </div>
         </div>
         <div className="pv_adapter_tags">
-          <Tag color="blue">场景 A · 完全自定义</Tag>
+          <Tag color="blue">
+            {baseTemplate === 'openai-compatible'
+              ? 'OpenAI 协议基底'
+              : baseTemplate === 'custom'
+                ? '完全自定义'
+                : '预置协议基底'}
+          </Tag>
           <Tag color={manifest.adapterMode === 'native' ? 'default' : 'green'}>
             {manifest.adapterMode === 'native'
               ? '原生适配器（native）'
@@ -168,21 +197,86 @@ function EditorOverview({ manifest, onChange }: ProviderManifestContractEditorPr
         </div>
       </div>
       <div className="pv_adapter_preset_row">
-        <span>预置模板</span>
-        <select
-          defaultValue=""
-          onChange={(event) => {
-            if (event.target.value) onChange(applyAdapterPreset(manifest, event.target.value))
-            event.currentTarget.value = ''
-          }}
-        >
-          <option value="">选择模板填充完整配置…</option>
-          <option value="toapis-image">ToApis 图片全能力异步轮询（含上传）</option>
-          <option value="openai-sync">OpenAI 兼容：同步返回 URL</option>
-          <option value="async-json">异步 JSON 任务：GET 轮询</option>
-          <option value="blank">空白模板</option>
-        </select>
-        <span className="pv_adapter_hint">模板只填充协议字段，不会覆盖 Provider API Key。</span>
+        <span>适配器协议基底</span>
+        <Select
+          value={baseTemplate}
+          options={ADAPTER_BASE_TEMPLATE_OPTIONS}
+          onChange={(value) =>
+            applyBaseTemplate(value as Parameters<typeof applyAdapterBaseTemplate>[1])
+          }
+        />
+        <button type="button" className="pv_adapter_chip" onClick={() => applyBaseTemplate()}>
+          重新套用当前基底
+        </button>
+        {baseTemplate === 'openai-compatible' && domain === 'image' && (
+          <>
+            <span>OpenAI 图片接口</span>
+            <Select
+              value={
+                manifest.capabilities[0]?.id === 'image.edit' ? 'image.edit' : 'image.generate'
+              }
+              options={[
+                { label: '文生图（/images/generations）', value: 'image.generate' },
+                { label: '图生图 / 图片编辑（/images/edits）', value: 'image.edit' },
+              ]}
+              onChange={(value) => {
+                const capabilityId = String(value)
+                const capability = createEditorCapability(capabilityId)
+                onChange(
+                  applyAdapterBaseTemplate(
+                    {
+                      ...manifest,
+                      capabilities: [
+                        {
+                          ...capability,
+                          label: capabilityDisplayName(capabilityId),
+                        },
+                      ],
+                    },
+                    'openai-compatible',
+                  ),
+                )
+              }}
+            />
+          </>
+        )}
+        {baseTemplate === 'openai-compatible' && domain === 'video' && (
+          <>
+            <span>OpenAI 视频接口</span>
+            <Select
+              value={
+                manifest.capabilities[0]?.id === 'video.image_to_video'
+                  ? 'video.image_to_video'
+                  : 'video.generate'
+              }
+              options={[
+                { label: '文生视频', value: 'video.generate' },
+                { label: '参考图生视频（文件上传）', value: 'video.image_to_video' },
+              ]}
+              onChange={(value) => {
+                const capabilityId = String(value)
+                const capability = createEditorCapability(capabilityId)
+                onChange(
+                  applyAdapterBaseTemplate(
+                    {
+                      ...manifest,
+                      capabilities: [
+                        {
+                          ...capability,
+                          label: capabilityDisplayName(capabilityId),
+                        },
+                      ],
+                    },
+                    'openai-compatible',
+                  ),
+                )
+              }}
+            />
+          </>
+        )}
+        <span className="pv_adapter_hint">
+          选择后会替换当前协议字段并立即回显；保留模型 ID、显示名称和 Provider API Key。
+        </span>
       </div>
       <div className="pv_adapter_grid pv_adapter_grid_2">
         <Field label="模型 ID" required hint="渠道真实模型 ID（modelId）">
@@ -516,11 +610,12 @@ function InvocationEditor({ manifest, onChange }: ProviderManifestContractEditor
   const request = toEditableRequest(manifest)
   const response = manifest.invocation.response
   const updateManifest = (nextRequest: MediaInvocationRequest): void => {
+    const legacyFields = legacyInvocationFields(nextRequest, manifest.invocation.contentType)
     onChange({
       ...manifest,
       contractVersion: 2,
       adapterMode: manifest.adapterMode ?? 'template',
-      invocation: { ...manifest.invocation, request: nextRequest },
+      invocation: { ...manifest.invocation, ...legacyFields, request: nextRequest },
     })
   }
   return (
@@ -733,12 +828,60 @@ function toEditableRequest(manifest: MediaModelManifest): MediaInvocationRequest
   }
 }
 
+function legacyInvocationFields(
+  request: MediaInvocationRequest,
+  fallbackContentType: MediaModelManifest['invocation']['contentType'],
+): Pick<
+  MediaModelManifest['invocation'],
+  'endpoint' | 'method' | 'headers' | 'contentType' | 'requestTemplate'
+> {
+  const body = request.body
+  if (body?.kind === 'json') {
+    return {
+      endpoint: request.endpoint,
+      method: request.method,
+      headers: request.headers,
+      contentType: 'json',
+      requestTemplate: isRecord(body.template) ? body.template : { value: body.template },
+    }
+  }
+  if (body?.kind === 'multipart') {
+    return {
+      endpoint: request.endpoint,
+      method: request.method,
+      headers: request.headers,
+      contentType: 'multipart',
+      requestTemplate: Object.fromEntries(body.parts.map((part) => [part.name, part.value])),
+    }
+  }
+  if (body?.kind === 'binary') {
+    return {
+      endpoint: request.endpoint,
+      method: request.method,
+      headers: request.headers,
+      contentType: 'binary',
+      requestTemplate: { input: body.variable },
+    }
+  }
+  return {
+    endpoint: request.endpoint,
+    method: request.method,
+    headers: request.headers,
+    contentType: fallbackContentType,
+    requestTemplate: {},
+  }
+}
+
 function RequestBodyEditor({
   request,
   onChange,
+  title = '③ 鉴权与提交',
+  description = '请求方法、端点、请求头和请求体均可配置',
 }: {
   request: MediaInvocationRequest
   onChange: (next: MediaInvocationRequest) => void
+  title?: string
+  description?: string
 }) {
   const body = request.body ?? { kind: 'none' as const }
   const bodyKind = body.kind
@@ -756,12 +899,11 @@ function RequestBodyEditor({
     else if (kind === 'binary') onChange({ ...request, body: { kind, variable: '{{inputFiles}}' } })
     else onChange({ ...request, body: { kind: 'none' } })
   }
-  const jsonValue = body.kind === 'json' ? JSON.stringify(body.template, null, 2) : ''
   return (
     <section className="pv_adapter_subsection">
       <div className="pv_adapter_subhead">
-        <strong>③ 鉴权与提交</strong>
-        <span>请求方法、端点、请求头和请求体均可配置</span>
+        <strong>{title}</strong>
+        <span>{description}</span>
       </div>
       <div className="pv_adapter_grid pv_adapter_grid_2">
         <Field label="查询参数" hint="JSON；支持 {{modelId}} 等变量（query）">
@@ -802,47 +944,34 @@ function RequestBodyEditor({
         </div>
       </Field>
       {body.kind === 'json' && (
-        <label className="pv_adapter_field pv_adapter_field_full">
-          <span className="pv_adapter_field_label">
-            JSON 请求体模板
-            <small>
-              支持 {'{{modelId}}'}、{'{{prompt}}'}、{'{{params.xxx}}'}、{'{{uploads.name.urls}}'}
-            </small>
-          </span>
-          <textarea
-            className="pv_adapter_json"
+        <Field
+          label="JSON 请求体模板"
+          hint="支持 {{modelId}}、{{prompt}}、{{params.xxx}}、{{uploads.name.urls}}"
+        >
+          <JsonInput
             rows={12}
-            value={jsonValue}
-            onChange={(e) => {
-              const parsed = parseJson(e.target.value)
-              if (parsed !== undefined)
-                onChange({ ...request, body: { kind: 'json', template: parsed } })
-            }}
+            value={body.template}
+            onChange={(template) => onChange({ ...request, body: { kind: 'json', template } })}
           />
-        </label>
+        </Field>
       )}
       {body.kind === 'multipart' && (
-        <label className="pv_adapter_field pv_adapter_field_full">
-          <span className="pv_adapter_field_label">
-            表单字段配置（multipart）<small>kind 可填 text / json / file</small>
-          </span>
-          <textarea
-            className="pv_adapter_json"
+        <Field label="表单字段配置（multipart）" hint="kind 可填 text / json / file">
+          <JsonInput
             rows={8}
-            value={JSON.stringify(body.parts, null, 2)}
-            onChange={(e) => {
-              const parsed = parseJson(e.target.value)
-              if (Array.isArray(parsed))
+            value={body.parts}
+            onChange={(parts) => {
+              if (Array.isArray(parts))
                 onChange({
                   ...request,
                   body: {
                     kind: 'multipart',
-                    parts: parsed as Extract<MediaInvocationBody, { kind: 'multipart' }>['parts'],
+                    parts: parts as Extract<MediaInvocationBody, { kind: 'multipart' }>['parts'],
                   },
                 })
             }}
           />
-        </label>
+        </Field>
       )}
       {body.kind === 'binary' && (
         <Field label="二进制输入变量" hint="协议字段：binary variable">
@@ -867,26 +996,22 @@ function UploadEditor({ manifest, onChange }: ProviderManifestContractEditorProp
         <strong>④ 文件与上传</strong>
         <span>本地文件先上传，再把返回地址注入主请求</span>
       </div>
-      <label className="pv_adapter_field pv_adapter_field_full">
-        <span className="pv_adapter_field_label">
-          文件上传配置
-          <small>JSON；每个上传定义名称、输入、请求、结果路径、限制和清理策略（uploads）</small>
-        </span>
-        <textarea
-          className="pv_adapter_json"
+      <Field label="文件上传配置" hint="每个上传定义名称、输入、请求、结果路径、限制和清理策略">
+        <JsonInput
           rows={Math.max(6, uploads.length ? 12 : 6)}
-          value={JSON.stringify(uploads, null, 2)}
-          placeholder='例如 [{"name":"referenceImages","input":{"variable":"referenceImages","mode":"each"}}]'
-          onChange={(e) => {
-            const parsed = parseJson(e.target.value)
-            if (Array.isArray(parsed))
+          value={uploads}
+          onChange={(nextUploads) => {
+            if (Array.isArray(nextUploads))
               onChange({
                 ...manifest,
-                invocation: { ...manifest.invocation, uploads: parsed as typeof uploads },
+                invocation: {
+                  ...manifest.invocation,
+                  uploads: nextUploads.length ? (nextUploads as typeof uploads) : undefined,
+                },
               })
           }}
         />
-      </label>
+      </Field>
       <div className="pv_adapter_hint">
         上传失败不会发送主请求；上传鉴权独立配置，inherit 只继承 credential profile，不复制已渲染
         Header。
@@ -898,21 +1023,29 @@ function UploadEditor({ manifest, onChange }: ProviderManifestContractEditorProp
 function AuthEditor({
   auth,
   onChange,
+  allowInherit = false,
 }: {
   auth: MediaInvocationAuth | undefined
   onChange: (auth: MediaInvocationAuth) => void
+  allowInherit?: boolean
 }) {
-  const effectiveAuth = auth ?? { kind: 'bearer' as const, credentialRef: 'apiKey' }
-  const authOptions = [
+  const effectiveAuth =
+    auth ??
+    (allowInherit
+      ? ({ kind: 'inherit' } as const)
+      : ({ kind: 'bearer', credentialRef: 'apiKey' } as const))
+  const authOptions: Array<readonly [MediaInvocationAuth['kind'], string]> = [
+    ...(allowInherit ? ([['inherit', '继承提交请求的鉴权方式']] as const) : []),
     ['bearer', 'Bearer 令牌 · 使用 Provider API Key'],
     ['api_key_header', 'API Key · 请求头'],
     ['api_key_query', 'API Key · 查询参数'],
     ['none', '无鉴权'],
-  ] as const
+  ]
   const changeKind = (kind: MediaInvocationAuth['kind']): void => {
     if (kind === 'api_key_header') onChange({ kind, name: 'X-API-Key', credentialRef: 'apiKey' })
     else if (kind === 'api_key_query') onChange({ kind, name: 'api_key', credentialRef: 'apiKey' })
     else if (kind === 'bearer') onChange({ kind, credentialRef: 'apiKey' })
+    else if (kind === 'inherit') onChange({ kind })
     else onChange({ kind })
   }
   return (
@@ -961,6 +1094,57 @@ function PollEditor({
     onChange({ ...response, taskId: { ...taskId, ...next } }, polling)
   }
   const effectivePolling = polling ?? { intervalMs: 5000, timeoutMs: 600_000, statusMap: {} }
+  const artifact = response.artifact
+  const updateArtifactRequest = (next: MediaInvocationRequest): void => {
+    if (!artifact) return
+    onChange({ ...response, artifact: { ...artifact, request: next } }, polling)
+  }
+  const setArtifactEnabled = (enabled: boolean): void => {
+    if (!enabled) {
+      const { artifact: _artifact, ...nextResponse } = response
+      onChange(nextResponse, polling)
+      return
+    }
+    onChange(
+      {
+        ...response,
+        artifact: {
+          request: {
+            method: 'GET',
+            endpoint: '/tasks/{{taskId}}/content',
+            auth: { kind: 'inherit' },
+            body: { kind: 'none' },
+          },
+          response: { kind: 'binary_response' },
+        },
+      },
+      polling,
+    )
+  }
+  const setArtifactResponseKind = (
+    kind: NonNullable<typeof response.artifact>['response']['kind'],
+  ): void => {
+    if (!artifact) return
+    let nextResponse: MediaDirectArtifactRetrieval
+    if (kind === 'binary_response') nextResponse = { kind }
+    else if (kind === 'inline_base64')
+      nextResponse = { kind, jsonPaths: ['data[].b64_json', 'data.base64'] }
+    else nextResponse = { kind: 'url', jsonPaths: ['data.url', 'url'], download: true }
+    onChange({ ...response, artifact: { ...artifact, response: nextResponse } }, polling)
+  }
+  const updateArtifactResponsePaths = (jsonPaths: string[]): void => {
+    if (!artifact || artifact.response.kind === 'binary_response') return
+    onChange(
+      {
+        ...response,
+        artifact: {
+          ...artifact,
+          response: { ...artifact.response, jsonPaths },
+        },
+      },
+      polling,
+    )
+  }
   return (
     <div style={{ borderTop: '1px dashed var(--lobe-outline)', paddingTop: 8, marginTop: 4 }}>
       <strong style={{ fontSize: 12 }}>异步轮询</strong>
@@ -990,16 +1174,24 @@ function PollEditor({
           marginTop: 6,
         }}
       >
-        <label>
-          <span className="pv_form_label">轮询端点</span>
+        <Field label="轮询端点" required>
           <Input
             value={poll.endpoint}
             placeholder="如 /v1/tasks/{taskId}"
             onChange={(event) => updatePoll({ endpoint: event.target.value })}
           />
-        </label>
-        <label>
-          <span className="pv_form_label">任务 ID 放置位置</span>
+        </Field>
+        <Field label="轮询请求方法" required>
+          <Select
+            value={poll.method}
+            options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((value) => ({
+              label: value,
+              value,
+            }))}
+            onChange={(value) => updatePoll({ method: value as MediaInvocationRequest['method'] })}
+          />
+        </Field>
+        <Field label="任务 ID 放置位置" required>
           <Select
             value={taskId.location}
             options={[
@@ -1012,28 +1204,22 @@ function PollEditor({
               updateTaskId({ location: value as MediaTaskIdPlacement['location'] })
             }
           />
-        </label>
+        </Field>
+        <Field label="任务 ID 参数名" required hint="路径模式通常填写 taskId">
+          <Input
+            value={taskId.name}
+            placeholder="taskId"
+            onChange={(event) => updateTaskId({ name: event.target.value })}
+          />
+        </Field>
       </div>
-      <Input
-        style={{ marginTop: 6 }}
-        value={taskId.name}
-        placeholder="taskId"
-        onChange={(event) => updateTaskId({ name: event.target.value })}
+      <AuthEditor auth={poll.auth} allowInherit onChange={(auth) => updatePoll({ auth })} />
+      <RequestBodyEditor
+        request={poll}
+        title="轮询请求参数"
+        description="轮询可独立配置查询参数、请求头和请求体"
+        onChange={(nextPoll) => onChange({ ...response, poll: nextPoll }, polling)}
       />
-      <div className="pv_adapter_grid pv_adapter_grid_2" style={{ marginTop: 6 }}>
-        <Field label="轮询查询参数" hint="JSON（poll.query）">
-          <JsonInput
-            value={poll.query ?? {}}
-            onChange={(query) => updatePoll({ query: isRecord(query) ? query : undefined })}
-          />
-        </Field>
-        <Field label="轮询请求头" hint="JSON（poll.headers）">
-          <JsonInput
-            value={poll.headers ?? {}}
-            onChange={(headers) => updatePoll({ headers: isRecord(headers) ? headers : undefined })}
-          />
-        </Field>
-      </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 6 }}>
         <Input
           type="number"
@@ -1101,6 +1287,79 @@ function PollEditor({
           }
         />
       </Field>
+      <label className="pv_adapter_checkbox">
+        <Checkbox checked={Boolean(artifact)} onChange={setArtifactEnabled} />
+        任务完成后再请求一次产物（适用于 OpenAI 视频等二阶段下载接口）
+      </label>
+      {artifact && (
+        <section className="pv_adapter_subsection" style={{ marginTop: 8 }}>
+          <div className="pv_adapter_subhead">
+            <strong>完成后产物请求</strong>
+            <span>
+              可使用 {'{{taskId}}'} 和 {'{{poll.xxx}}'} 变量
+            </span>
+          </div>
+          <div className="pv_adapter_grid pv_adapter_grid_2">
+            <Field label="产物端点" required hint="例如 /videos/{{taskId}}/content">
+              <Input
+                value={artifact.request.endpoint}
+                onChange={(event) =>
+                  updateArtifactRequest({ ...artifact.request, endpoint: event.target.value })
+                }
+              />
+            </Field>
+            <Field label="产物请求方法" required>
+              <Select
+                value={artifact.request.method}
+                options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((value) => ({
+                  label: value,
+                  value,
+                }))}
+                onChange={(value) =>
+                  updateArtifactRequest({
+                    ...artifact.request,
+                    method: value as MediaInvocationRequest['method'],
+                  })
+                }
+              />
+            </Field>
+          </div>
+          <AuthEditor
+            auth={artifact.request.auth}
+            allowInherit
+            onChange={(auth) => updateArtifactRequest({ ...artifact.request, auth })}
+          />
+          <RequestBodyEditor
+            request={artifact.request}
+            title="产物请求参数"
+            description="配置查询参数、请求头和请求体；API Key 仍引用 Provider 凭据"
+            onChange={updateArtifactRequest}
+          />
+          <Field label="产物响应类型" required>
+            <Select
+              value={artifact.response.kind}
+              options={[
+                { label: '二进制文件', value: 'binary_response' },
+                { label: '产物地址', value: 'url' },
+                { label: 'Base64 数据', value: 'inline_base64' },
+              ]}
+              onChange={(value) =>
+                setArtifactResponseKind(
+                  value as NonNullable<typeof response.artifact>['response']['kind'],
+                )
+              }
+            />
+          </Field>
+          {artifact.response.kind !== 'binary_response' && (
+            <Field label="产物提取路径" required hint="多个 JSON 路径用逗号分隔">
+              <Input
+                value={artifact.response.jsonPaths.join(', ')}
+                onChange={(event) => updateArtifactResponsePaths(splitList(event.target.value))}
+              />
+            </Field>
+          )}
+        </section>
+      )}
       <div style={{ display: 'flex', gap: 8, fontSize: 12, opacity: 0.65, marginTop: 4 }}>
         <span>间隔（ms）</span>
         <span>最大轮询次数</span>
@@ -1481,16 +1740,23 @@ function JsonInput({
   onChange: (next: unknown) => void
   rows?: number
 }) {
-  const [text, setText] = useState(() => JSON.stringify(value, null, 2))
+  const serializedValue = useMemo(() => JSON.stringify(value, null, 2), [value])
+  const [text, setText] = useState(() => serializedValue)
   const [error, setError] = useState('')
+  const previousSerializedValue = useRef(serializedValue)
+  const emittedSerializedValue = useRef<string | null>(null)
   useEffect(() => {
-    const next = JSON.stringify(value, null, 2)
-    if (next !== text && !error) {
-      // 结构化字段更新时同步外部 JSON；用户处于非法 JSON 编辑态时保留本地草稿。
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setText(next)
+    if (serializedValue === previousSerializedValue.current) return
+    previousSerializedValue.current = serializedValue
+    if (serializedValue === emittedSerializedValue.current) {
+      emittedSerializedValue.current = null
+      return
     }
-  }, [error, text, value])
+    if (error) return
+    // 只同步来自其它结构化控件或 raw JSON 的外部更新；不格式化用户刚输入的合法草稿。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setText(serializedValue)
+  }, [error, serializedValue])
   return (
     <>
       <textarea
@@ -1505,6 +1771,7 @@ function JsonInput({
             setError('JSON 必须是对象或数组')
           else {
             setError('')
+            emittedSerializedValue.current = JSON.stringify(parsed, null, 2)
             onChange(parsed as Record<string, unknown>)
           }
         }}
@@ -1536,292 +1803,4 @@ function numberOrUndefined(value: string): number | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
-}
-
-function applyAdapterPreset(manifest: MediaModelManifest, preset: string): MediaModelManifest {
-  const capability = manifest.capabilities[0]
-  if (preset === 'blank') {
-    return {
-      ...manifest,
-      contractVersion: 2,
-      adapterMode: 'template',
-      invocation: {
-        ...manifest.invocation,
-        mode: 'sync',
-        endpoint: '/v1/generate',
-        method: 'POST',
-        contentType: 'json',
-        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
-        request: {
-          method: 'POST',
-          endpoint: '/v1/generate',
-          auth: { kind: 'bearer', credentialRef: 'apiKey' },
-          body: { kind: 'json', template: { model: '{{modelId}}', prompt: '{{prompt}}' } },
-        },
-        response: { kind: 'url', jsonPaths: ['data[].url', 'output.url', 'url'], download: true },
-        polling: undefined,
-      },
-    }
-  }
-  if (preset === 'openai-sync') {
-    return {
-      ...manifest,
-      contractVersion: 2,
-      adapterMode: 'template',
-      invocation: {
-        ...manifest.invocation,
-        mode: 'sync',
-        endpoint: '/v1/images/generations',
-        method: 'POST',
-        contentType: 'json',
-        requestTemplate: {
-          model: '{{modelId}}',
-          prompt: '{{prompt}}',
-          size: '{{params.size}}',
-          n: '{{params.n}}',
-        },
-        request: {
-          method: 'POST',
-          endpoint: '/v1/images/generations',
-          auth: { kind: 'bearer', credentialRef: 'apiKey' },
-          body: {
-            kind: 'json',
-            template: {
-              model: '{{modelId}}',
-              prompt: '{{prompt}}',
-              size: '{{params.size}}',
-              n: '{{params.n}}',
-            },
-          },
-        },
-        response: { kind: 'url', jsonPaths: ['data[].url', 'url'], download: true },
-        polling: undefined,
-      },
-    }
-  }
-  if (preset === 'toapis-image') {
-    const imageParamSchema = {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        size: {
-          type: 'string',
-          title: '宽高比',
-          enum: [
-            '1:1',
-            '16:9',
-            '9:16',
-            '2:1',
-            '1:2',
-            '21:9',
-            '9:21',
-            '3:2',
-            '2:3',
-            '4:3',
-            '3:4',
-            '5:4',
-            '4:5',
-          ],
-          default: '1:1',
-        },
-        resolution: { type: 'string', enum: ['1k', '2k', '4k'], default: '1k' },
-        quality: { type: 'string', enum: ['low', 'medium', 'high'], default: 'high' },
-        n: { type: 'integer', minimum: 1, maximum: 10, default: 1 },
-        outputFormat: { type: 'string', enum: ['png', 'jpeg'], default: 'png' },
-        outputCompression: { type: 'integer', minimum: 0, maximum: 100, default: 100 },
-        maskUrl: { type: 'string' },
-      },
-    }
-    const imageDefaults = { size: '1:1', resolution: '1k', quality: 'high', n: 1 }
-    const imageCapability = (
-      id: 'image.generate' | 'image.edit',
-      label: string,
-    ): MediaModelCapabilityManifest => ({
-      id,
-      label,
-      input: {
-        required: id === 'image.edit' ? ['prompt', 'image'] : ['prompt'],
-        maxImages: 16,
-        acceptedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
-      },
-      rolePolicy:
-        id === 'image.edit'
-          ? { imageRoles: ['reference_image'], defaultRoleAssignment: 'all_reference' }
-          : undefined,
-      output: { types: ['image'], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-      paramSchema: imageParamSchema,
-      defaults: imageDefaults,
-      aliases: {
-        aspectRatio: 'size',
-        outputFormat: 'output_format',
-        outputCompression: 'output_compression',
-        maskUrl: 'mask_url',
-      },
-      paramPolicy: { strict: true, passthrough: { enabled: false } },
-    })
-    return {
-      ...manifest,
-      contractVersion: 2,
-      adapterMode: 'template',
-      providerKind: 'custom',
-      domains: ['image'],
-      capabilities: [
-        imageCapability('image.generate', '文生图'),
-        imageCapability('image.edit', '图生图 / 图片编辑'),
-      ],
-      invocation: {
-        mode: 'async_polling',
-        endpoint: '/v1/images/generations',
-        method: 'POST',
-        contentType: 'json',
-        requestTemplate: {
-          model: '{{modelId}}',
-          prompt: '{{prompt}}',
-          size: '{{params.size}}',
-          resolution: '{{params.resolution}}',
-          quality: '{{params.quality}}',
-          n: '{{params.n}}',
-          image_urls: '{{uploads.referenceImages.urls}}',
-          mask_url: '{{params.maskUrl}}',
-          output_format: '{{params.outputFormat}}',
-          output_compression: '{{params.outputCompression}}',
-        },
-        request: {
-          method: 'POST',
-          endpoint: '/v1/images/generations',
-          auth: { kind: 'bearer', credentialRef: 'apiKey' },
-          body: {
-            kind: 'json',
-            template: {
-              model: '{{modelId}}',
-              prompt: '{{prompt}}',
-              size: '{{params.size}}',
-              resolution: '{{params.resolution}}',
-              quality: '{{params.quality}}',
-              n: '{{params.n}}',
-              image_urls: '{{uploads.referenceImages.urls}}',
-              mask_url: '{{params.maskUrl}}',
-              output_format: '{{params.outputFormat}}',
-              output_compression: '{{params.outputCompression}}',
-            },
-          },
-        },
-        uploads: [
-          {
-            name: 'referenceImages',
-            input: { variable: 'referenceImages', mode: 'each' },
-            constraints: {
-              maxCount: 16,
-              maxBytes: 10 * 1024 * 1024,
-              allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
-            },
-            request: {
-              method: 'POST',
-              endpoint: '/v1/uploads/images',
-              auth: { kind: 'bearer', credentialRef: 'apiKey' },
-              body: {
-                kind: 'multipart',
-                parts: [{ name: 'file', kind: 'file', value: '{{upload.item}}' }],
-              },
-            },
-            result: { urlPaths: ['data.url'], multiple: true },
-          },
-        ],
-        response: {
-          kind: 'task_poll',
-          taskIdPaths: ['id'],
-          taskId: { location: 'path', name: 'taskId' },
-          poll: {
-            method: 'GET',
-            endpoint: '/v1/images/generations/{taskId}',
-            auth: { kind: 'bearer', credentialRef: 'apiKey' },
-          },
-          resultPaths: ['result.data[].url', 'url'],
-        },
-        polling: {
-          intervalMs: 5000,
-          timeoutMs: 120000,
-          maxAttempts: 24,
-          unknownStatus: 'fail',
-          statusMap: {
-            queued: 'queued',
-            in_progress: 'running',
-            completed: 'succeeded',
-            failed: 'failed',
-          },
-        },
-      },
-      error: { codePaths: ['error.code'], messagePaths: ['error.message'] },
-      docs: {
-        sourceUrls: [
-          'https://docs.toapis.com/docs/en/api-reference/images/gpt-image-2/generation',
-          'https://docs.toapis.com/docs/en/api-reference/tasks/image-status',
-          'https://docs.toapis.com/docs/en/api-reference/uploads/images',
-        ],
-        lastCheckedAt: '2026-08-08',
-      },
-    }
-  }
-  const baseRequest: MediaInvocationRequest = {
-    method: 'POST',
-    endpoint: preset === 'toapis-image' ? '/v1/images/generations' : '/v1/generate',
-    auth: { kind: 'bearer', credentialRef: 'apiKey' },
-    body: {
-      kind: 'json',
-      template: {
-        model: '{{modelId}}',
-        prompt: '{{prompt}}',
-        size: '{{params.size}}',
-        n: '{{params.n}}',
-      },
-    },
-  }
-  const taskResponse: Extract<MediaArtifactRetrieval, { kind: 'task_poll' }> = {
-    kind: 'task_poll',
-    taskIdPaths: ['id', 'task_id', 'data.id'],
-    taskId: { location: 'path', name: 'taskId' },
-    poll: {
-      method: 'GET',
-      endpoint:
-        preset === 'toapis-image' ? '/v1/images/generations/{taskId}' : '/v1/tasks/{taskId}',
-      auth: { kind: 'inherit' },
-      body: { kind: 'none' },
-    },
-    resultPaths: ['result.data[].url', 'data[].url', 'output.url', 'url'],
-  }
-  return {
-    ...manifest,
-    contractVersion: 2,
-    adapterMode: 'template',
-    invocation: {
-      ...manifest.invocation,
-      mode: 'async_polling',
-      endpoint: baseRequest.endpoint,
-      method: 'POST',
-      contentType: 'json',
-      requestTemplate:
-        baseRequest.body?.kind === 'json'
-          ? (baseRequest.body.template as Record<string, unknown>)
-          : {},
-      request: baseRequest,
-      response: taskResponse,
-      polling: {
-        intervalMs: 5000,
-        timeoutMs: 120000,
-        maxAttempts: 24,
-        unknownStatus: 'fail',
-        statusMap: {
-          queued: 'queued',
-          pending: 'queued',
-          in_progress: 'running',
-          running: 'running',
-          completed: 'succeeded',
-          succeeded: 'succeeded',
-          failed: 'failed',
-          error: 'failed',
-        },
-      },
-    },
-    ...(capability ? { capabilities: [capability] } : {}),
-  }
 }

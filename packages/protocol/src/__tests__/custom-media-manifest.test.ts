@@ -14,6 +14,7 @@ describe('createBasicCustomMediaManifest', () => {
     })
 
     expect(manifest.id).toMatch(/^custom:studio-image-v1:[a-f0-9-]{36}$/)
+    expect(manifest.baseTemplate).toBe('custom')
     expect(manifest.invocation.endpoint).toBe('/images/generations')
     expect(manifest.capabilities[0]?.paramSchema).toMatchObject({
       properties: { size: { type: 'string' }, n: { type: 'integer' } },

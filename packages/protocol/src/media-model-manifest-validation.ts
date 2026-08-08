@@ -26,6 +26,7 @@ const STANDARD_TEMPLATE_VARIABLES = new Set([
   'inputImages',
   'inputImageUrls',
   'imageUrls',
+  'mask',
   'firstFrame',
   'firstFrameImage',
   'lastFrame',
@@ -75,7 +76,11 @@ export function validateMediaModelManifestSemantics(
         message: 'async_polling 调用必须配置轮询间隔、超时和状态映射',
       })
     }
-    if (manifest.contractVersion === 2 && invocation.polling && invocation.polling.maxAttempts == null) {
+    if (
+      manifest.contractVersion === 2 &&
+      invocation.polling &&
+      invocation.polling.maxAttempts == null
+    ) {
       issues.push({
         path: ['invocation', 'polling', 'maxAttempts'],
         code: 'invalid_transport',
@@ -128,9 +133,18 @@ export function validateMediaModelManifestSemantics(
         message: 'upload maxCount 必须大于 0',
       })
     }
-    validateInvocationRequest(upload.request, ['invocation', 'uploads', uploadIndex, 'request'], issues)
+    validateInvocationRequest(
+      upload.request,
+      ['invocation', 'uploads', uploadIndex, 'request'],
+      issues,
+    )
     for (const path of upload.result.urlPaths) {
-      validateTemplateVariables(path, ['invocation', 'uploads', uploadIndex, 'result'], new Set(), issues)
+      validateTemplateVariables(
+        path,
+        ['invocation', 'uploads', uploadIndex, 'result'],
+        new Set(),
+        issues,
+      )
     }
   }
 
@@ -147,6 +161,14 @@ export function validateMediaModelManifestSemantics(
       validateInvocationRequest(
         invocation.response.poll,
         ['invocation', 'response', 'poll'],
+        issues,
+        new Set(['taskId', 'poll']),
+      )
+    }
+    if (invocation.response.artifact) {
+      validateInvocationRequest(
+        invocation.response.artifact.request,
+        ['invocation', 'response', 'artifact', 'request'],
         issues,
         new Set(['taskId', 'poll']),
       )
@@ -290,7 +312,10 @@ function validateInvocationRequest(
   validateTemplateVariables(request.query, [...basePath, 'query'], allowedRoots, issues)
   validateTemplateVariables(request.headers, [...basePath, 'headers'], allowedRoots, issues)
   validateTemplateVariables(request.body, [...basePath, 'body'], allowedRoots, issues)
-  if (request.auth?.kind === 'api_key_header' && /^(authorization|cookie|set-cookie)$/i.test(request.auth.name)) {
+  if (
+    request.auth?.kind === 'api_key_header' &&
+    /^(authorization|cookie|set-cookie)$/i.test(request.auth.name)
+  ) {
     issues.push({
       path: [...basePath, 'auth', 'name'],
       code: 'invalid_auth',
@@ -301,7 +326,8 @@ function validateInvocationRequest(
     issues.push({
       path: [...basePath, 'auth'],
       code: 'invalid_auth',
-      message: '当前 Provider 凭据模型不支持 basic auth，请使用 bearer、API key header/query 或无鉴权',
+      message:
+        '当前 Provider 凭据模型不支持 basic auth，请使用 bearer、API key header/query 或无鉴权',
     })
   }
 }

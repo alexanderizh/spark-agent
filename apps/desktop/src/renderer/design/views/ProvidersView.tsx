@@ -46,10 +46,7 @@ import { useDebouncedCallback } from '../hooks/useDebounce'
 import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import { usePlatformModelCatalogRefresh } from './platform-model/usePlatformModelCatalogRefresh'
-import {
-  AUTO_ROUTER_UI_VISIBLE,
-  filterProvidersForVisibleUi,
-} from '../utils/auto-router-ui'
+import { AUTO_ROUTER_UI_VISIBLE, filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import {
   PROVIDER_PRESETS,
   getProviderPresetById,
@@ -2656,7 +2653,9 @@ export function ProviderEditPanel({
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: getProviderApiKey } = useIpcInvoke('provider:get-api-key')
   const { invoke: listMediaModels } = useIpcInvoke('canvas:media-models:list')
-  const { invoke: previewTemplateInvocation } = useIpcInvoke('canvas:media:preview-template-invocation')
+  const { invoke: previewTemplateInvocation } = useIpcInvoke(
+    'canvas:media:preview-template-invocation',
+  )
   const { invoke: testConnection } = useIpcInvoke('provider:test-connection')
   const { invoke: fetchProviderModels } = useIpcInvoke('provider:fetch-models')
 
@@ -3084,9 +3083,7 @@ export function ProviderEditPanel({
     if (!modelId) return
     setForm((prev) => {
       // 同一 Provider 内的渠道模型 ID 必须唯一；不同 Provider 可以使用同名模型。
-      const exists = prev.mediaModelRefs.some(
-        (ref) => ref.modelId?.trim() === modelId,
-      )
+      const exists = prev.mediaModelRefs.some((ref) => ref.modelId?.trim() === modelId)
       const existing = new Map(prev.mediaModelRefs.map((ref) => [ref.manifestId, ref]))
       if (!exists) {
         const mode =
@@ -3101,8 +3098,9 @@ export function ProviderEditPanel({
         ) {
           manifest = createBasicCustomMediaManifest({ modelId, modelType: prev.modelType, mode })
         }
-        const manifestId = manifest?.id
-          ?? `${CUSTOM_MODEL_REF_PREFIX}${modelId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`
+        const manifestId =
+          manifest?.id ??
+          `${CUSTOM_MODEL_REF_PREFIX}${modelId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`
         existing.set(manifestId, {
           manifestId,
           modelId,
@@ -3155,8 +3153,7 @@ export function ProviderEditPanel({
     if (form.modelType !== 'image' && form.modelType !== 'video') return
     const modelId = form.defaultModel.trim() || `${form.modelType}-model`
     const mode =
-      form.mediaApiType === 'async' ||
-      (form.mediaApiType === 'auto' && form.modelType === 'video')
+      form.mediaApiType === 'async' || (form.mediaApiType === 'auto' && form.modelType === 'video')
         ? 'async_polling'
         : 'sync'
     const manifest = migrateMediaModelManifestToV2(
@@ -3705,8 +3702,7 @@ export function ProviderEditPanel({
   // 专职多媒体模型必须始终提供适配器入口：新建 Provider 没有已有引用时，
   // 先从这里添加模型 ID，再进入「编辑协议」配置模板请求。
   // 对话模型的附加生图能力仍沿用内置目录，避免改变原有配置流程。
-  const showCustomMediaModelInput =
-    form.modelType === 'image' || form.modelType === 'video'
+  const showCustomMediaModelInput = form.modelType === 'image' || form.modelType === 'video'
 
   return (
     <Drawer
@@ -3760,27 +3756,39 @@ export function ProviderEditPanel({
                     const supportsMediaConfig =
                       isDedicatedMedia ||
                       (modelType === 'multimodal' && prev.mediaGenerationEnabled)
+                    // “自定义添加”首次切换到图片/视频时必须从空白渠道开始，不能悄悄
+                    // 回落到 APIMart 并混入内置目录。模板入口和编辑已有 Provider
+                    // 仍保留原来的平台推导逻辑，避免破坏既有配置。
+                    const startsBlankCustomMedia =
+                      !profileId &&
+                      !initialPresetId &&
+                      prev.presetId === 'custom' &&
+                      (modelType === 'image' || modelType === 'video')
                     const imageProvider =
-                      modelType === 'image' &&
-                      !SUPPORTED_IMAGE_PROVIDERS.includes(prev.imageProvider)
-                        ? 'apimart'
-                        : modelType === 'image'
-                          ? prev.imageProvider
-                          : 'openai'
-                    const mediaProvider = isDedicatedMedia
-                      ? (() => {
-                          const candidate =
-                            prev.mediaProvider || mediaProviderFromImageKind(imageProvider)
-                          return (modelType === 'image' || modelType === 'video') &&
-                            !SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS.includes(candidate)
-                            ? modelType === 'image'
-                              ? mediaProviderFromImageKind(imageProvider)
-                              : 'apimart'
-                            : candidate
-                        })()
-                      : supportsMediaConfig
-                        ? prev.mediaProvider
-                        : ''
+                      startsBlankCustomMedia && modelType === 'image'
+                        ? 'custom'
+                        : modelType === 'image' &&
+                            !SUPPORTED_IMAGE_PROVIDERS.includes(prev.imageProvider)
+                          ? 'apimart'
+                          : modelType === 'image'
+                            ? prev.imageProvider
+                            : 'openai'
+                    const mediaProvider = startsBlankCustomMedia
+                      ? 'custom'
+                      : isDedicatedMedia
+                        ? (() => {
+                            const candidate =
+                              prev.mediaProvider || mediaProviderFromImageKind(imageProvider)
+                            return (modelType === 'image' || modelType === 'video') &&
+                              !SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS.includes(candidate)
+                              ? modelType === 'image'
+                                ? mediaProviderFromImageKind(imageProvider)
+                                : 'apimart'
+                              : candidate
+                          })()
+                        : supportsMediaConfig
+                          ? prev.mediaProvider
+                          : ''
                     return {
                       ...prev,
                       modelType,
@@ -4106,7 +4114,7 @@ export function ProviderEditPanel({
                   <span className="pv_form_hint">
                     {fetchingModels
                       ? '正在获取模型列表…'
-                        : fetchedModelIds.length > 0
+                      : fetchedModelIds.length > 0
                         ? `已从渠道 /models 获取 ${fetchedModelIds.length} 个模型；可在下方模型清单中添加`
                         : '支持手动输入模型 ID，或点击右侧按钮调用渠道 /models'}
                   </span>
@@ -4867,182 +4875,185 @@ export function ProviderEditPanel({
       >
         <div className="pv_custom_adapter_modal_body">
           {(() => {
-          // 仅当 raw JSON 可解析为合法对象时，渲染结构化 Contract 编辑器；解析失败时
-          // 仅显示 textarea，让用户先用 JSON 修复语法错误。
-          let parsedManifest: MediaModelManifest | null = null
-          if (customManifestDraft.trim().length > 0) {
-            try {
-              const obj = JSON.parse(customManifestDraft)
-              if (obj && typeof obj === 'object' && Array.isArray(obj.capabilities)) {
-                parsedManifest = obj as MediaModelManifest
+            // 仅当 raw JSON 可解析为合法对象时，渲染结构化 Contract 编辑器；解析失败时
+            // 仅显示 textarea，让用户先用 JSON 修复语法错误。
+            let parsedManifest: MediaModelManifest | null = null
+            if (customManifestDraft.trim().length > 0) {
+              try {
+                const obj = JSON.parse(customManifestDraft)
+                if (obj && typeof obj === 'object' && Array.isArray(obj.capabilities)) {
+                  parsedManifest = obj as MediaModelManifest
+                }
+              } catch {
+                parsedManifest = null
               }
-            } catch {
-              parsedManifest = null
             }
-          }
-          return parsedManifest ? (
-            <details open style={{ marginBottom: 12 }}>
-              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-                Contract V2 结构化编辑（修改会同步回 JSON）
-              </summary>
-              <div style={{ marginTop: 8 }}>
-                <ProviderManifestContractEditor
-                  manifest={parsedManifest}
-                  onChange={applyManifestFromContractEditor}
-                />
+            return parsedManifest ? (
+              <details open style={{ marginBottom: 12 }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+                  Contract V2 结构化编辑（修改会同步回 JSON）
+                </summary>
+                <div style={{ marginTop: 8 }}>
+                  <ProviderManifestContractEditor
+                    manifest={parsedManifest}
+                    onChange={applyManifestFromContractEditor}
+                  />
+                </div>
+              </details>
+            ) : null
+          })()}
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+              高级 Manifest JSON（可导入 / 导出 / 手动修复）
+            </summary>
+            <textarea
+              className="pv_manifest_editor"
+              value={customManifestDraft}
+              onChange={(event) => setCustomManifestDraft(event.target.value)}
+              spellCheck={false}
+              aria-label="自定义模型 Manifest JSON"
+            />
+          </details>
+          {customManifestError && (
+            <Alert
+              type="error"
+              message="协议校验失败"
+              description={<pre className="pv_manifest_error">{customManifestError}</pre>}
+            />
+          )}
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+              请求预览：只编译，不发起网络调用
+            </summary>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>
+                使用上方 Dry-run 的示例参数，在主进程内编译最终 URL、鉴权和请求体。API Key
+                仅以占位符参与编译，不会显示真实密钥，也不会请求 Provider。
               </div>
-            </details>
-          ) : null
-        })()}
-        <details style={{ marginTop: 12 }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-            高级 Manifest JSON（可导入 / 导出 / 手动修复）
-          </summary>
-          <textarea
-            className="pv_manifest_editor"
-            value={customManifestDraft}
-            onChange={(event) => setCustomManifestDraft(event.target.value)}
-            spellCheck={false}
-            aria-label="自定义模型 Manifest JSON"
-          />
-        </details>
-        {customManifestError && (
-          <Alert
-            type="error"
-            message="协议校验失败"
-            description={<pre className="pv_manifest_error">{customManifestError}</pre>}
-          />
-        )}
-        <details style={{ marginTop: 12 }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-            请求预览：只编译，不发起网络调用
-          </summary>
-          <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>
-              使用上方 Dry-run 的示例参数，在主进程内编译最终 URL、鉴权和请求体。API Key 仅以占位符参与编译，不会显示真实密钥，也不会请求 Provider。
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={runInvocationPreview}
-                disabled={invocationPreviewLoading}
-                style={{ padding: '4px 12px', fontSize: 12 }}
-              >
-                {invocationPreviewLoading ? '编译中…' : '编译请求预览'}
-              </button>
-              {invocationPreviewError && (
-                <span style={{ color: '#cf1322', fontSize: 12 }}>{invocationPreviewError}</span>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={runInvocationPreview}
+                  disabled={invocationPreviewLoading}
+                  style={{ padding: '4px 12px', fontSize: 12 }}
+                >
+                  {invocationPreviewLoading ? '编译中…' : '编译请求预览'}
+                </button>
+                {invocationPreviewError && (
+                  <span style={{ color: '#cf1322', fontSize: 12 }}>{invocationPreviewError}</span>
+                )}
+              </div>
+              {invocationPreview && (
+                <div style={{ marginTop: 8 }}>
+                  <Tag color={invocationPreview.valid ? 'green' : 'red'}>
+                    {invocationPreview.valid ? '请求结构有效' : '请求结构无效'}
+                  </Tag>
+                  <pre className="pv_manifest_error" style={{ maxHeight: 260, marginTop: 6 }}>
+                    {JSON.stringify(
+                      {
+                        request: invocationPreview.request,
+                        poll: invocationPreview.poll,
+                        warnings: invocationPreview.warnings,
+                        issues: invocationPreview.issues,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </div>
               )}
             </div>
-            {invocationPreview && (
-              <div style={{ marginTop: 8 }}>
-                <Tag color={invocationPreview.valid ? 'green' : 'red'}>
-                  {invocationPreview.valid ? '请求结构有效' : '请求结构无效'}
-                </Tag>
-                <pre className="pv_manifest_error" style={{ maxHeight: 260, marginTop: 6 }}>
-                  {JSON.stringify(
-                    {
-                      request: invocationPreview.request,
-                      poll: invocationPreview.poll,
-                      warnings: invocationPreview.warnings,
-                      issues: invocationPreview.issues,
-                    },
-                    null,
-                    2,
-                  )}
-                </pre>
-              </div>
-            )}
-          </div>
-        </details>
-        <details style={{ marginTop: 12 }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-            Dry-run 预览：用当前 manifest 裁剪一段示例 modelParams（不需要先保存）
-          </summary>
-          <div style={{ marginTop: 8 }}>
-            <div style={{ marginBottom: 4, fontSize: 12, opacity: 0.75 }}>
-              对 manifest 的第一个 capability（id:{' '}
-              <code>
-                {(() => {
-                  try {
-                    const m = JSON.parse(customManifestDraft) as MediaModelManifest
-                    return m?.capabilities?.[0]?.id ?? '(未解析)'
-                  } catch {
-                    return '(manifest JSON 无效)'
-                  }
-                })()}
-              </code>
-              ）执行裁剪；可观察 strict / passthrough / forbidden 的实际效果。
-            </div>
-            <textarea
-              value={dryRunInput}
-              onChange={(event) => setDryRunInput(event.target.value)}
-              rows={6}
-              placeholder='例如 {"prompt": "...", "size": "1024x1024", "watermark": true}'
-              spellCheck={false}
-              style={{ width: '100%', fontFamily: 'inherit', fontSize: 12 }}
-            />
-            <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={runDryRunPreview}
-                disabled={dryRunLoading}
-                style={{ padding: '4px 12px', fontSize: 12 }}
-              >
-                {dryRunLoading ? '运行中…' : '运行裁剪'}
-              </button>
-              {dryRunError && <span style={{ color: '#cf1322', fontSize: 12 }}>{dryRunError}</span>}
-            </div>
-            {dryRunResult && (
-              <div style={{ marginTop: 8 }}>
-                {dryRunResult.fallbackReason && (
-                  <Alert
-                    type="warning"
-                    message="跳过裁剪（fallback）"
-                    description={
-                      <pre className="pv_manifest_error">{dryRunResult.fallbackReason}</pre>
+          </details>
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+              Dry-run 预览：用当前 manifest 裁剪一段示例 modelParams（不需要先保存）
+            </summary>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ marginBottom: 4, fontSize: 12, opacity: 0.75 }}>
+                对 manifest 的第一个 capability（id:{' '}
+                <code>
+                  {(() => {
+                    try {
+                      const m = JSON.parse(customManifestDraft) as MediaModelManifest
+                      return m?.capabilities?.[0]?.id ?? '(未解析)'
+                    } catch {
+                      return '(manifest JSON 无效)'
                     }
-                  />
-                )}
-                <div style={{ marginBottom: 4, marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-                  裁剪后 modelParams（实际下发给 provider 的内容）
-                </div>
-                <pre className="pv_manifest_error" style={{ maxHeight: 220 }}>
-                  {JSON.stringify(dryRunResult.prunedModelParams, null, 2)}
-                </pre>
-                {dryRunResult.droppedParams.length > 0 && (
-                  <>
-                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-                      被丢弃的参数（droppedParams）
-                    </div>
-                    <pre className="pv_manifest_error" style={{ maxHeight: 180 }}>
-                      {JSON.stringify(dryRunResult.droppedParams, null, 2)}
-                    </pre>
-                  </>
-                )}
-                {dryRunResult.warnings.length > 0 && (
-                  <>
-                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-                      警告（warnings）
-                    </div>
-                    <pre className="pv_manifest_error" style={{ maxHeight: 160 }}>
-                      {JSON.stringify(dryRunResult.warnings, null, 2)}
-                    </pre>
-                  </>
-                )}
-                {dryRunResult.validationIssues.length > 0 && (
-                  <>
-                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-                      校验问题（validationIssues，包含 forbidden_param / type_mismatch 等）
-                    </div>
-                    <pre className="pv_manifest_error" style={{ maxHeight: 180 }}>
-                      {JSON.stringify(dryRunResult.validationIssues, null, 2)}
-                    </pre>
-                  </>
+                  })()}
+                </code>
+                ）执行裁剪；可观察 strict / passthrough / forbidden 的实际效果。
+              </div>
+              <textarea
+                value={dryRunInput}
+                onChange={(event) => setDryRunInput(event.target.value)}
+                rows={6}
+                placeholder='例如 {"prompt": "...", "size": "1024x1024", "watermark": true}'
+                spellCheck={false}
+                style={{ width: '100%', fontFamily: 'inherit', fontSize: 12 }}
+              />
+              <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={runDryRunPreview}
+                  disabled={dryRunLoading}
+                  style={{ padding: '4px 12px', fontSize: 12 }}
+                >
+                  {dryRunLoading ? '运行中…' : '运行裁剪'}
+                </button>
+                {dryRunError && (
+                  <span style={{ color: '#cf1322', fontSize: 12 }}>{dryRunError}</span>
                 )}
               </div>
-            )}
-          </div>
+              {dryRunResult && (
+                <div style={{ marginTop: 8 }}>
+                  {dryRunResult.fallbackReason && (
+                    <Alert
+                      type="warning"
+                      message="跳过裁剪（fallback）"
+                      description={
+                        <pre className="pv_manifest_error">{dryRunResult.fallbackReason}</pre>
+                      }
+                    />
+                  )}
+                  <div style={{ marginBottom: 4, marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                    裁剪后 modelParams（实际下发给 provider 的内容）
+                  </div>
+                  <pre className="pv_manifest_error" style={{ maxHeight: 220 }}>
+                    {JSON.stringify(dryRunResult.prunedModelParams, null, 2)}
+                  </pre>
+                  {dryRunResult.droppedParams.length > 0 && (
+                    <>
+                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                        被丢弃的参数（droppedParams）
+                      </div>
+                      <pre className="pv_manifest_error" style={{ maxHeight: 180 }}>
+                        {JSON.stringify(dryRunResult.droppedParams, null, 2)}
+                      </pre>
+                    </>
+                  )}
+                  {dryRunResult.warnings.length > 0 && (
+                    <>
+                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                        警告（warnings）
+                      </div>
+                      <pre className="pv_manifest_error" style={{ maxHeight: 160 }}>
+                        {JSON.stringify(dryRunResult.warnings, null, 2)}
+                      </pre>
+                    </>
+                  )}
+                  {dryRunResult.validationIssues.length > 0 && (
+                    <>
+                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                        校验问题（validationIssues，包含 forbidden_param / type_mismatch 等）
+                      </div>
+                      <pre className="pv_manifest_error" style={{ maxHeight: 180 }}>
+                        {JSON.stringify(dryRunResult.validationIssues, null, 2)}
+                      </pre>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </details>
         </div>
       </Modal>

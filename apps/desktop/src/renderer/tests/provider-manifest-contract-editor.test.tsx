@@ -60,7 +60,7 @@ vi.mock('@lobehub/ui', () => ({
 }))
 
 import { ProviderManifestContractEditor } from '../design/components/ProviderManifestContractEditor'
-
+import { applyAdapterBaseTemplate } from '../design/components/providerManifestBaseTemplates'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 class ResizeObserverMock {
@@ -220,6 +220,328 @@ describe('ProviderManifestContractEditor', () => {
     expect(changes.at(-1)?.capabilities[0]?.paramSchema).toMatchObject({
       properties: { param1: { type: 'string', title: '新参数' } },
     })
+  })
+
+  it('persists and echoes the selected adapter base template', () => {
+    const manifest = buildManifest()
+    const changes: MediaModelManifest[] = []
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <ProviderManifestContractEditor
+          manifest={manifest}
+          onChange={(next) => changes.push(next)}
+        />,
+      )
+    })
+
+    const baseTemplateSelect = container.querySelector<HTMLSelectElement>(
+      'select option[value="openai-compatible"]',
+    )?.parentElement as HTMLSelectElement | null
+    expect(baseTemplateSelect).not.toBeNull()
+    act(() => {
+      baseTemplateSelect!.value = 'openai-compatible'
+      baseTemplateSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const next = changes.at(-1)!
+    expect(next.baseTemplate).toBe('openai-compatible')
+    expect(next.adapterMode).toBe('template')
+    expect(next.capabilities.map((item) => item.id)).toEqual(['image.generate'])
+    expect(next.capabilities[0]?.paramSchema).toMatchObject({
+      properties: {
+        size: { enum: ['auto', '1024x1024', '1536x1024', '1024x1536'] },
+        outputFormat: { enum: ['png', 'jpeg', 'webp'] },
+      },
+    })
+    expect(next.invocation.request).toMatchObject({
+      method: 'POST',
+      endpoint: '/images/generations',
+      auth: { kind: 'bearer', credentialRef: 'apiKey' },
+      body: { kind: 'json' },
+    })
+    expect(next.invocation.response).toMatchObject({
+      kind: 'inline_base64',
+      jsonPaths: ['data[].b64_json', 'data[].url', 'output[].b64_json', 'output[].url'],
+    })
+    expect(next.error?.messagePaths).toEqual(['error.message'])
+
+    act(() => {
+      root?.render(
+        <ProviderManifestContractEditor
+          manifest={next}
+          onChange={(updated) => changes.push(updated)}
+        />,
+      )
+    })
+    const echoedSelect = container.querySelector<HTMLSelectElement>(
+      'select option[value="openai-compatible"]',
+    )?.parentElement as HTMLSelectElement | null
+    expect(echoedSelect?.value).toBe('openai-compatible')
+    expect(container.textContent).toContain('OpenAI 协议基底')
+
+    const domainSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find(
+      (select) =>
+        select.querySelector('option[value="image"]') &&
+        select.querySelector('option[value="video"]') &&
+        select.querySelector('option[value="audio"]'),
+    )
+    act(() => {
+      domainSelect!.value = 'video'
+      domainSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const videoBase = changes.at(-1)!
+    expect(videoBase.baseTemplate).toBe('openai-compatible')
+    expect(videoBase.domains).toEqual(['video'])
+    expect(videoBase.capabilities.map((item) => item.id)).toEqual(['video.generate'])
+    expect(videoBase.invocation.request?.endpoint).toBe('/videos')
+    expect(videoBase.invocation.response.kind).toBe('task_poll')
+    expect(
+      videoBase.invocation.response.kind === 'task_poll'
+        ? videoBase.invocation.response.artifact
+        : undefined,
+    ).toMatchObject({
+      request: { endpoint: '/videos/{{taskId}}/content' },
+      response: { kind: 'binary_response' },
+    })
+  })
+
+  it('can reapply and persist an inferred legacy base template', () => {
+    const manifest = buildManifest()
+    const changes: MediaModelManifest[] = []
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <ProviderManifestContractEditor
+          manifest={manifest}
+          onChange={(next) => changes.push(next)}
+        />,
+      )
+    })
+
+    const reapply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '重新套用当前基底',
+    )
+    expect(reapply).toBeDefined()
+    act(() => reapply?.click())
+
+    expect(changes.at(-1)?.baseTemplate).toBe('openai-compatible')
+    expect(changes.at(-1)?.invocation.request?.endpoint).toBe('/images/generations')
+  })
+
+  it('builds an OpenAI multipart edit base when image editing is the primary capability', () => {
+    const manifest = buildManifest({
+      capabilities: [
+        {
+          ...buildManifest().capabilities[0]!,
+          id: 'image.edit',
+          label: '图片编辑',
+          input: { required: ['prompt', 'image'] },
+        },
+      ],
+    })
+    const changes: MediaModelManifest[] = []
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <ProviderManifestContractEditor
+          manifest={manifest}
+          onChange={(next) => changes.push(next)}
+        />,
+      )
+    })
+    const select = container.querySelector<HTMLSelectElement>(
+      'select option[value="openai-compatible"]',
+    )?.parentElement as HTMLSelectElement | null
+    act(() => {
+      select!.value = 'openai-compatible'
+      select!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const next = changes.at(-1)!
+    expect(next.capabilities.map((item) => item.id)).toEqual(['image.edit'])
+    expect(next.invocation.endpoint).toBe('/images/edits')
+    expect(next.invocation.contentType).toBe('multipart')
+    expect(next.invocation.request?.body).toMatchObject({
+      kind: 'multipart',
+      parts: expect.arrayContaining([{ name: 'image[]', kind: 'file', value: '{{images}}' }]),
+    })
+  })
+
+  it('switches the visible OpenAI image interface between generation and editing', () => {
+    const changes: MediaModelManifest[] = []
+    const manifest = buildManifest({ baseTemplate: 'openai-compatible' })
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <ProviderManifestContractEditor
+          manifest={manifest}
+          onChange={(next) => changes.push(next)}
+        />,
+      )
+    })
+
+    const imageModeSelect = container.querySelector<HTMLSelectElement>(
+      'select option[value="image.edit"]',
+    )?.parentElement as HTMLSelectElement | null
+    expect(imageModeSelect).not.toBeNull()
+    expect(imageModeSelect?.value).toBe('image.generate')
+    act(() => {
+      imageModeSelect!.value = 'image.edit'
+      imageModeSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const next = changes.at(-1)
+    expect(next?.baseTemplate).toBe('openai-compatible')
+    expect(next?.capabilities.map((item) => item.id)).toEqual(['image.edit'])
+    expect(next?.invocation.request).toMatchObject({
+      endpoint: '/images/edits',
+      body: { kind: 'multipart' },
+    })
+  })
+
+  it('switches the visible OpenAI video interface to reference-image multipart', () => {
+    const changes: MediaModelManifest[] = []
+    const manifest = buildManifest({
+      baseTemplate: 'openai-compatible',
+      domains: ['video'],
+      capabilities: [
+        {
+          ...buildManifest().capabilities[0]!,
+          id: 'video.generate',
+          label: '文生视频',
+          output: { types: ['video'] },
+        },
+      ],
+    })
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <ProviderManifestContractEditor
+          manifest={manifest}
+          onChange={(next) => changes.push(next)}
+        />,
+      )
+    })
+
+    const videoModeSelect = container.querySelector<HTMLSelectElement>(
+      'select option[value="video.image_to_video"]',
+    )?.parentElement as HTMLSelectElement | null
+    expect(videoModeSelect).not.toBeNull()
+    act(() => {
+      videoModeSelect!.value = 'video.image_to_video'
+      videoModeSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const next = changes.at(-1)
+    expect(next?.capabilities.map((item) => item.id)).toEqual(['video.image_to_video'])
+    expect(next?.invocation.request?.body).toMatchObject({
+      kind: 'multipart',
+      parts: expect.arrayContaining([
+        expect.objectContaining({ name: 'input_reference', kind: 'file' }),
+      ]),
+    })
+  })
+
+  it('echoes and edits the post-poll artifact request through the visual form', () => {
+    const changes: MediaModelManifest[] = []
+    const seed = buildManifest({ domains: ['video'] })
+    const manifest = applyAdapterBaseTemplate(seed, 'openai-compatible')
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <ProviderManifestContractEditor
+          manifest={manifest}
+          onChange={(next) => changes.push(next)}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('任务完成后再请求一次产物')
+    expect(container.textContent).toContain('轮询请求方法')
+    expect(container.textContent).toContain('轮询请求参数')
+    const pollMethodLabel = Array.from(container.querySelectorAll<HTMLLabelElement>('label')).find(
+      (label) => label.textContent?.includes('轮询请求方法'),
+    )
+    const pollMethod = pollMethodLabel?.querySelector<HTMLSelectElement>('select')
+    expect(pollMethod?.value).toBe('GET')
+    act(() => {
+      if (!pollMethod) return
+      pollMethod.value = 'POST'
+      pollMethod.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const pollChange = changes.at(-1)?.invocation.response
+    expect(pollChange?.kind === 'task_poll' ? pollChange.poll?.method : undefined).toBe('POST')
+
+    const artifactEndpoint = Array.from(container.querySelectorAll<HTMLInputElement>('input')).find(
+      (input) => input.value === '/videos/{{taskId}}/content',
+    )
+    expect(artifactEndpoint).toBeDefined()
+    act(() => setInputValue(artifactEndpoint!, '/videos/{{taskId}}/download'))
+
+    const response = changes.at(-1)?.invocation.response
+    expect(response?.kind === 'task_poll' ? response.artifact?.request.endpoint : undefined).toBe(
+      '/videos/{{taskId}}/download',
+    )
+  })
+
+  it('keeps V2 and legacy invocation fields synchronized from visual form changes', () => {
+    const manifest = buildManifest()
+    const changes: MediaModelManifest[] = []
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <ProviderManifestContractEditor
+          manifest={manifest}
+          onChange={(next) => changes.push(next)}
+        />,
+      )
+    })
+    const endpointInput = Array.from(container.querySelectorAll<HTMLInputElement>('input')).find(
+      (input) => input.value === '/images/generations',
+    )
+    expect(endpointInput).toBeDefined()
+    act(() => setInputValue(endpointInput!, '/custom/images'))
+
+    expect(changes.at(-1)?.invocation.endpoint).toBe('/custom/images')
+    expect(changes.at(-1)?.invocation.request?.endpoint).toBe('/custom/images')
+  })
+
+  it('retains invalid JSON drafts and shows an inline error instead of snapping back', () => {
+    const manifest = buildManifest()
+    act(() => {
+      root = createRoot(container)
+      root.render(<ProviderManifestContractEditor manifest={manifest} onChange={() => undefined} />)
+    })
+    const requestBody = Array.from(
+      container.querySelectorAll<HTMLTextAreaElement>('textarea'),
+    ).find((area) => area.value.includes('"model"') && area.value.includes('{{modelId}}'))
+    expect(requestBody).toBeDefined()
+    act(() => setAreaValue(requestBody!, '{"model":'))
+
+    expect(requestBody?.value).toBe('{"model":')
+    expect(container.textContent).toContain('JSON 必须是对象或数组')
+  })
+
+  it('keeps a valid JSON draft stable when the parent echoes the parsed value', () => {
+    const manifest = buildManifest()
+    function StatefulEditor() {
+      const [value, setValue] = React.useState(manifest)
+      return <ProviderManifestContractEditor manifest={value} onChange={setValue} />
+    }
+    act(() => {
+      root = createRoot(container)
+      root.render(<StatefulEditor />)
+    })
+    const requestBody = Array.from(
+      container.querySelectorAll<HTMLTextAreaElement>('textarea'),
+    ).find((area) => area.value.includes('"model"') && area.value.includes('{{modelId}}'))
+    expect(requestBody).toBeDefined()
+    const compactDraft = '{"model":"{{modelId}}","prompt":"{{prompt}}"}'
+    act(() => setAreaValue(requestBody!, compactDraft))
+
+    expect(requestBody?.value).toBe(compactDraft)
+    expect(container.textContent).not.toContain('JSON 必须是对象或数组')
   })
 
   it('renames parameter references together to avoid a partially valid contract', () => {
