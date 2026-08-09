@@ -181,6 +181,12 @@ export function LobeThemeProvider({
             colorPrimary: primary,
             colorPrimaryHover: primary,
           },
+          // Switch 的 checked 轨道同样不能使用 darkAlgorithm 派生出的近白色。
+          // 否则 ON/OFF 文案仍是浅色前景，暗色主题下会变成白底浅字，几乎不可读。
+          Switch: {
+            colorPrimary: primary,
+            colorPrimaryHover: primary,
+          },
         },
       }}
     >

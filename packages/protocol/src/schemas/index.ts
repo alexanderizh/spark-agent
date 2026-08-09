@@ -32,6 +32,8 @@ import {
   ComputerUseIdentifierSchema,
   ComputerUseIpcSchemaRegistry,
 } from '../computer-use/index.js'
+import { PluginIpcSchemaRegistry } from '../plugin.js'
+import { PluginRuntimeIpcSchemaRegistry } from '../plugin-runtime.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -879,6 +881,8 @@ export const IpcSchemaRegistry = {
   'provider:get-api-key': ProviderGetApiKeyRequestSchema,
   ...ProviderFilesIpcSchemaRegistry,
   ...VideoChannelTasksIpcSchemaRegistry,
+  ...PluginIpcSchemaRegistry,
+  ...PluginRuntimeIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,
@@ -895,6 +899,11 @@ export const IpcSchemaRegistry = {
   'github-connector:connect': GitHubConnectorConnectRequestSchema,
   'github-connector:update': GitHubConnectorUpdateRequestSchema,
   'github-connector:disconnect': z.object({}),
+  'plugin-runtime:github:verify': GitHubConnectorVerifyRequestSchema,
+  'plugin-runtime:github:get': z.object({}),
+  'plugin-runtime:github:connect': GitHubConnectorConnectRequestSchema,
+  'plugin-runtime:github:update': GitHubConnectorUpdateRequestSchema,
+  'plugin-runtime:github:disconnect': z.object({}),
   // Provider 导入/导出 schema
   'provider:export': z.object({ ids: z.array(z.string().min(1).max(200)).max(500) }),
   'provider:import': z.object({

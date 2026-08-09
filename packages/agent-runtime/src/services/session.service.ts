@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { homedir } from 'node:os'
 import { stat } from 'node:fs/promises'
 import {
   EventRepository,
@@ -89,6 +90,13 @@ import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-conti
 import { buildWorkflowBindingAuthorityPrompt } from './workflow-system-prompt.js'
 import { buildContextLedger } from './context-ledger.js'
 import { createCanvasMcpUnavailableEvents } from './canvas-mcp-startup-events.js'
+import type { PluginManager } from './plugins/plugin-manager.service.js'
+import {
+  PluginRuntimeMcpBridge,
+  type PluginRuntimeMcpHandle,
+} from './plugin-runtime/plugin-runtime-mcp-bridge.js'
+import { RuntimeBroker } from './plugin-runtime/runtime-broker.js'
+import { registerBuiltinRuntimeAdapters } from './plugin-runtime/builtin-runtimes.js'
 
 /** Read the runtime-log toggle from the telemetry settings object shared with the renderer. */
 export function readRuntimeLogEnabled(settings: Pick<SettingsRepository, 'get'>): boolean {
@@ -771,6 +779,7 @@ export class SessionService {
   private readonly teamMcpToolNames = new WeakMap<object, ReadonlySet<string>>()
   /** FR-0b 修复（审查 B-1）：turnId → 该 turn 创建的 codex HTTP 桥接 handle；turn 结束统一 close 防 leak。 */
   private readonly teamMcpHandlesByTurn = new Map<string, Set<TeamMcpBridgeHandle>>()
+  private readonly pluginRuntimeMcpHandlesByTurn = new Map<string, Set<PluginRuntimeMcpHandle>>()
   /** sessionId:turnId → Host 与所有成员共享的文件变更路径键，避免同轮重复归因。 */
   private readonly fileChangeKeysByTurn = new Map<string, Set<string>>()
   /** checkpoint git 服务（lazy；基于 git 仓库做还原点，尊重 .gitignore，还原非破坏性）。 */
@@ -778,6 +787,10 @@ export class SessionService {
   /** 每会话保留的最近 checkpoint 数。 */
   private static readonly MAX_CHECKPOINTS_PER_SESSION = 20
   private readonly platformBridge: PlatformBridgeService
+  private pluginManager: PluginManager | null = null
+  private pluginManagerInitialization: Promise<void> | null = null
+  private pluginRuntimeBroker: RuntimeBroker | null = null
+  private pluginRuntimeMcpBridge: PluginRuntimeMcpBridge | null = null
   /**
    * 跨 turn 复用的记忆检索栈（lazy 单例）。
    * 缓存 EmbeddingService 的 unavailableUntil 负缓存 + MemorySearchRepository 的
@@ -902,6 +915,12 @@ export class SessionService {
     this.computerUseMcpProvider = provider
   }
 
+  /** Plugin lifecycle is the authority for built-in runtimes exposed to Agent tools. */
+  setPluginManager(manager: PluginManager | null): void {
+    this.pluginManager = manager
+    this.pluginManagerInitialization = null
+  }
+
   private revokeComputerUseSession(sessionId: string): void {
     try {
       this.computerUseMcpProvider?.revokeSession?.(sessionId)
@@ -978,8 +997,7 @@ export class SessionService {
       ...candidates
         .filter((provider) => provider.id !== selected.id && isComputerVisionCandidate(provider))
         .sort(
-          (left, right) =>
-            computerVisionCandidateScore(right) - computerVisionCandidateScore(left),
+          (left, right) => computerVisionCandidateScore(right) - computerVisionCandidateScore(left),
         ),
     ]
     let lastError: unknown
@@ -2532,6 +2550,7 @@ export class SessionService {
         ? await this.resolveImageGenerationContext(workspaceRootPath)
         : null
     const platformMcpServer = await this.resolvePlatformManagementMcpServer(sessionId)
+    const pluginRuntimeMcp = await this.resolvePluginRuntimeMcpServer(turnId)
     const webSearchMcpServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
     const presentFilesMcpServer = resolvePresentFilesMcpServer(workspaceRootPath)
     const quickRepliesMcpServer = resolveQuickRepliesMcpServer(workspaceRootPath)
@@ -3083,6 +3102,12 @@ export class SessionService {
           : {}),
         ...(teamMcpServer != null ? { teamMcpServer } : {}),
         ...(platformMcpServer != null ? { platformManagementMcpServer: platformMcpServer } : {}),
+        ...(pluginRuntimeMcp != null
+          ? {
+              pluginRuntimeMcpServer: pluginRuntimeMcp.server,
+              pluginRuntimeToolNames: pluginRuntimeMcp.toolNames,
+            }
+          : {}),
         ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
         ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
         ...(quickRepliesMcpServer != null ? { quickRepliesMcpServer } : {}),
@@ -3224,6 +3249,12 @@ export class SessionService {
       // tryStartCodexCliTurn 挂载。漏掉此字段会导致 roster prompt 声称有工具而实际没有。
       ...(teamMcpServer != null ? { teamMcpServer } : {}),
       ...(platformMcpServer != null ? { platformManagementMcpServer: platformMcpServer } : {}),
+      ...(pluginRuntimeMcp != null
+        ? {
+            pluginRuntimeMcpServer: pluginRuntimeMcp.server,
+            pluginRuntimeToolNames: pluginRuntimeMcp.toolNames,
+          }
+        : {}),
       ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
       ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
       ...(quickRepliesMcpServer != null ? { quickRepliesMcpServer } : {}),
@@ -3449,6 +3480,9 @@ export class SessionService {
     // Platform management MCP server — auto-registered for all sessions
     if (config.platformManagementMcpServer != null) {
       mcpServers.spark_platform = config.platformManagementMcpServer
+    }
+    if (config.pluginRuntimeMcpServer != null) {
+      mcpServers.spark_plugins = config.pluginRuntimeMcpServer
     }
 
     // Built-in web search MCP server — auto-registered for all sessions
@@ -3788,6 +3822,9 @@ export class SessionService {
     if (config.platformManagementMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PLATFORM_TOOL_NAMES)
     }
+    if (config.pluginRuntimeToolNames != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, config.pluginRuntimeToolNames)
+    }
     if (config.webSearchMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, SEARCH_TOOL_NAMES)
     }
@@ -4006,6 +4043,9 @@ export class SessionService {
     }
     if (config.platformManagementMcpServer != null) {
       mcpServers.spark_platform = config.platformManagementMcpServer
+    }
+    if (config.pluginRuntimeMcpServer != null) {
+      mcpServers.spark_plugins = config.pluginRuntimeMcpServer
     }
     // FR-0b：codex Host 的 spark_team 是 http 桥接型 server（url+headers），
     // filterCliCompatibleMcpServers 对 url 型放行，CodexCli/CodexSdk 均可消费。
@@ -4797,6 +4837,42 @@ export class SessionService {
   }
 
   /**
+   * Build a per-turn, bearer-protected MCP snapshot for connected plugin runtimes.
+   * The HTTP bridge is shared, while the token/session handle is revoked at turn end.
+   */
+  private async resolvePluginRuntimeMcpServer(
+    turnId: string,
+  ): Promise<{ server: SDKMcpServerConfig; toolNames: string[] } | null> {
+    if (this.pluginManager != null) {
+      this.pluginManagerInitialization ??= this.pluginManager.initialize()
+      await this.pluginManagerInitialization
+    }
+    if (this.pluginRuntimeMcpBridge == null) {
+      this.pluginRuntimeBroker = new RuntimeBroker({
+        db: this.db,
+        isPluginEnabled: (_pluginId, runtimeId) =>
+          this.pluginManager?.isRuntimeEnabled(runtimeId) ?? true,
+      })
+      registerBuiltinRuntimeAdapters(this.pluginRuntimeBroker)
+      this.pluginRuntimeMcpBridge = new PluginRuntimeMcpBridge(this.pluginRuntimeBroker)
+    }
+    try {
+      const handle = await this.pluginRuntimeMcpBridge.serve()
+      if (handle == null) return null
+      const handles =
+        this.pluginRuntimeMcpHandlesByTurn.get(turnId) ?? new Set<PluginRuntimeMcpHandle>()
+      handles.add(handle)
+      this.pluginRuntimeMcpHandlesByTurn.set(turnId, handles)
+      return { server: handle.config, toolNames: handle.toolNames }
+    } catch (error) {
+      log.warn(
+        `Plugin runtime MCP setup failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      return null
+    }
+  }
+
+  /**
    * Ensure the Platform Bridge HTTP server is running.
    * The bridge is long-lived (shared across all sessions) and lazily started.
    */
@@ -4809,11 +4885,19 @@ export class SessionService {
     const { SkillLoader } = await import('../skills/skill-loader.js')
     const { SkillRegistryService } = await import('./skill-registry/index.js')
     const { GitHubConnectorService } = await import('./github-connector.service.js')
+    const { PluginManager } = await import('./plugins/plugin-manager.service.js')
     const { SkillRepository, SettingsRepository, TeamDefinitionRepository } =
       await import('@spark/storage')
 
     const skillRepo = new SkillRepository(this.db)
     const settingsRepo = new SettingsRepository(this.db)
+    const pluginManager =
+      this.pluginManager ??
+      new PluginManager({
+        db: this.db,
+        pluginRoot: path.join(this.userSkillsDir ?? homedir(), '.spark-agent', 'plugins'),
+      })
+    await pluginManager.initialize()
     const skillLoader = new SkillLoader(skillRepo)
     const skillRegistryService = new SkillRegistryService(this.db, this.userSkillsDir ?? undefined)
 
@@ -4835,6 +4919,7 @@ export class SessionService {
       agentRepo: new AgentRepository(this.db),
       teamRepo: new TeamDefinitionRepository(this.db),
       settingsRepo,
+      pluginManager,
       sessionScheduleTools: new SessionScheduleAgentTools(
         new ScheduledTaskService(
           new ScheduledTaskRepository(this.db),
@@ -4844,6 +4929,7 @@ export class SessionService {
       ),
       githubConnectorService: new GitHubConnectorService(
         new ConnectorConnectionRepository(this.db),
+        () => pluginManager.isRuntimeEnabled('github'),
       ),
       sessionService: this,
       onConfigChanged: ((scope, action, id) => {
@@ -7437,6 +7523,7 @@ export class SessionService {
         this.closeTeamMcpHandlesForTurn(turnId)
       }
       await getTeamMcpHttpBridge().dispose()
+      await this.pluginRuntimeMcpBridge?.dispose()
     })()
     return this.disposePromise
   }
@@ -7444,11 +7531,24 @@ export class SessionService {
   /** FR-0b 修复（审查 B-1）：关闭某 turn 期间创建的所有 codex HTTP 桥接 handle（防 leak）。 */
   private closeTeamMcpHandlesForTurn(turnId: string): void {
     const handles = this.teamMcpHandlesByTurn.get(turnId)
+    if (handles != null) {
+      this.teamMcpHandlesByTurn.delete(turnId)
+      for (const handle of handles) {
+        void handle.close().catch((err: unknown) => {
+          log.warn('team MCP bridge handle close failed during turn cleanup', err)
+        })
+      }
+    }
+    this.closePluginRuntimeMcpHandlesForTurn(turnId)
+  }
+
+  private closePluginRuntimeMcpHandlesForTurn(turnId: string): void {
+    const handles = this.pluginRuntimeMcpHandlesByTurn.get(turnId)
     if (handles == null) return
-    this.teamMcpHandlesByTurn.delete(turnId)
+    this.pluginRuntimeMcpHandlesByTurn.delete(turnId)
     for (const handle of handles) {
       void handle.close().catch((err: unknown) => {
-        log.warn('team MCP bridge handle close failed during turn cleanup', err)
+        log.warn('plugin runtime MCP bridge handle close failed during turn cleanup', err)
       })
     }
   }
@@ -9674,7 +9774,7 @@ function buildHostRosterPrompt(
     '- You orchestrate, members execute. Decide WHAT needs doing and WHO does it, then dispatch. When a capable member exists AND delegating has a real gain (expertise, parallelism, or context isolation), do not do the hands-on work yourself — that is what delegation is for.',
     "- Delegate on gain, not on default. Before dispatching, ask: does this subtask benefit from its own agent — e.g. it needs a member's unique expertise, it can run in parallel with other work, or its raw output would bloat the main context? If yes, dispatch; if not (a quick answer you can give in one step), answer directly. Do not dispatch merely because a member exists.",
     '- If the user explicitly asks to involve a specific member (or use a subagent), comply and dispatch even if you could handle it inline.',
-    "- Before each dispatch, state briefly why this subtask is worth a dedicated agent — e.g. time savings from parallelism, or isolating a large context from the main conversation.",
+    '- Before each dispatch, state briefly why this subtask is worth a dedicated agent — e.g. time savings from parallelism, or isolating a large context from the main conversation.',
     "- Talk with your team. Give each dispatch a clear instruction and the minimum context it needs (paste code/snippets into `attachments`, don't rely on shared memory). After replies come back, react, ask follow-ups, or chain to another member — treat it like a working conversation, not one-shot calls.",
     '- Cross-team @ is supported. The user may @-mention any member directly; you may also have members collaborate with each other within the depth limit below.',
     ...(teamConfig.enablePeerMessaging === true
@@ -9703,7 +9803,7 @@ function buildHostRosterPrompt(
     '',
     'Guardrails:',
     `- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`,
-    "- A quick question you can answer directly in one step does NOT need a dispatch round — handle it inline unless the user explicitly asked for a specific member.",
+    '- A quick question you can answer directly in one step does NOT need a dispatch round — handle it inline unless the user explicitly asked for a specific member.',
     '- Drive the session in EXPLICIT rounds (not open-ended looping): gather input from the right members this round, then call team_round_advance to close it; repeat until the objective is met, then call team_conclude. If a round is going in circles, summarize for the user instead of dispatching again.',
     '- KEEP THE SESSION ALIVE after dispatching members or subagents — do not end the conversation early to wait for their results; ending the session shuts down the in-flight subagents along with it. If you must end the turn while background work is still pending, set a session-level scheduled wake-up (session schedule, interval or one-shot) BEFORE ending the turn, so the session is woken later to collect the results.',
     '- Do NOT repeat, paraphrase, or list out member replies — they stream directly to the user in the chat UI. Stay silent and end the turn unless the user explicitly asked you to synthesize across members, you must ask a follow-up question, or a dispatch failed and you need to report what is missing.',

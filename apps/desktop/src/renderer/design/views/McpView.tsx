@@ -29,6 +29,7 @@ import { useRefreshable } from '../hooks/useRefreshable'
 import { useApp } from '../AppContext'
 import './McpView.less'
 import { McpFilterPopover, SCOPES, type StatusFilter } from './McpFilterPopover'
+import { PluginMarketplaceView } from './PluginMarketplaceView'
 type McpOAuthStatus = 'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'
 type McpTransport = 'stdio' | 'http' | 'sse'
 
@@ -41,7 +42,14 @@ type ParsedConfig = {
   url?: string
   headers?: Record<string, string>
   env?: Record<string, string>
-  auth?: { type?: 'none' | 'oauth2'; scope?: string; dcr?: boolean; clientId?: string; clientSecret?: string; hasClientSecret?: boolean }
+  auth?: {
+    type?: 'none' | 'oauth2'
+    scope?: string
+    dcr?: boolean
+    clientId?: string
+    clientSecret?: string
+    hasClientSecret?: boolean
+  }
   tools?: string[]
   description?: string
 }
@@ -126,8 +134,15 @@ function serializeConfig(draft: DraftBase): string {
       type: 'oauth2',
       scope: draft.authScope.trim(),
       dcr: draft.authDcr,
-      ...(!draft.authDcr ? { clientId: draft.authClientId.trim(), hasClientSecret: draft.authClientSecret.trim().length > 0 } : {}),
-      ...(!draft.authDcr && draft.authClientSecret.trim().length > 0 ? { clientSecret: draft.authClientSecret.trim() } : {}),
+      ...(!draft.authDcr
+        ? {
+            clientId: draft.authClientId.trim(),
+            hasClientSecret: draft.authClientSecret.trim().length > 0,
+          }
+        : {}),
+      ...(!draft.authDcr && draft.authClientSecret.trim().length > 0
+        ? { clientSecret: draft.authClientSecret.trim() }
+        : {}),
     }
   }
   const env: Record<string, string> = {}
@@ -147,7 +162,11 @@ function normalizeTransport(config: ParsedConfig): McpTransport {
   const explicit = config.transport ?? config.type
   if (explicit === 'http' || explicit === 'sse' || explicit === 'stdio') {
     // 声明 stdio 但没有 command 却带 url —— 按 http 处理（修历史写反的记录）
-    if (explicit === 'stdio' && (config.command ?? '').trim().length === 0 && (config.url ?? '').trim().length > 0) {
+    if (
+      explicit === 'stdio' &&
+      (config.command ?? '').trim().length === 0 &&
+      (config.url ?? '').trim().length > 0
+    ) {
       return 'http'
     }
     return explicit
@@ -156,14 +175,25 @@ function normalizeTransport(config: ParsedConfig): McpTransport {
   return 'stdio'
 }
 
-function deriveServer(item: McpServerItem, authStatus: McpOAuthStatus = 'unconfigured'): ServerDerived {
+function deriveServer(
+  item: McpServerItem,
+  authStatus: McpOAuthStatus = 'unconfigured',
+): ServerDerived {
   const config = parseConfig(item.configJson)
   const transport = normalizeTransport(config)
   const endpoint = transport === 'stdio' ? (config.command ?? '') : (config.url ?? '')
   const valid = endpoint.trim().length > 0
   const authEnabled = config.auth?.type === 'oauth2'
   const needsAuth = authEnabled && authStatus !== 'authorized'
-  const status: ServerDerived['status'] = !item.enabled ? 'off' : !valid ? 'warn' : authStatus === 'failed' ? 'err' : needsAuth ? 'warn' : 'ok'
+  const status: ServerDerived['status'] = !item.enabled
+    ? 'off'
+    : !valid
+      ? 'warn'
+      : authStatus === 'failed'
+        ? 'err'
+        : needsAuth
+          ? 'warn'
+          : 'ok'
   const desc =
     config.description?.trim() && config.description.trim().length > 0
       ? config.description.trim()
@@ -216,11 +246,11 @@ function draftFromItem(item: McpServerItem | null): DraftBase {
   }
 }
 
-type McpTab = 'mcp' | 'connectors'
+type McpTab = 'mcp' | 'plugins'
 
-export function McpView() {
+export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
   const { requestConfirm } = useApp()
-  const [activeTab, setActiveTab] = useState<McpTab>('mcp')
+  const [activeTab, setActiveTab] = useState<McpTab>(initialTab)
   const [servers, setServers] = useState<McpServerItem[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -246,16 +276,18 @@ export function McpView() {
       .then(async (res) => {
         const nextServers = res.servers ?? []
         setServers(nextServers)
-        const entries = await Promise.all(nextServers.map(async (server) => {
-          const config = parseConfig(server.configJson)
-          if (config.auth?.type !== 'oauth2') return [server.id, 'unconfigured'] as const
-          try {
-            const auth = await getAuthStatus({ serverId: server.id })
-            return [server.id, auth.status] as const
-          } catch {
-            return [server.id, 'failed'] as const
-          }
-        }))
+        const entries = await Promise.all(
+          nextServers.map(async (server) => {
+            const config = parseConfig(server.configJson)
+            if (config.auth?.type !== 'oauth2') return [server.id, 'unconfigured'] as const
+            try {
+              const auth = await getAuthStatus({ serverId: server.id })
+              return [server.id, auth.status] as const
+            } catch {
+              return [server.id, 'failed'] as const
+            }
+          }),
+        )
         setAuthStatuses(Object.fromEntries(entries))
       })
       .catch((err) => {
@@ -271,7 +303,10 @@ export function McpView() {
     return () => window.clearTimeout(id)
   }, [refresh])
 
-  const derived = useMemo(() => servers.map((server) => deriveServer(server, authStatuses[server.id] ?? 'unconfigured')), [servers, authStatuses])
+  const derived = useMemo(
+    () => servers.map((server) => deriveServer(server, authStatuses[server.id] ?? 'unconfigured')),
+    [servers, authStatuses],
+  )
 
   const statusCounts = useMemo(() => {
     return {
@@ -335,7 +370,12 @@ export function McpView() {
         return 'URL 格式不正确'
       }
     }
-    if (value.transport !== 'stdio' && value.authType === 'oauth2' && !value.authDcr && value.authClientId.trim().length === 0) {
+    if (
+      value.transport !== 'stdio' &&
+      value.authType === 'oauth2' &&
+      !value.authDcr &&
+      value.authClientId.trim().length === 0
+    ) {
       return '关闭动态注册时需要填写 Client ID'
     }
     return null
@@ -413,31 +453,36 @@ export function McpView() {
     [requestConfirm, deleteMcp, refresh],
   )
 
+  const handleAuthorize = useCallback(
+    async (item: McpServerItem) => {
+      setAuthorizingId(item.id)
+      setAuthStatuses((prev) => ({ ...prev, [item.id]: 'authorizing' }))
+      try {
+        await authorizeMcp({ serverId: item.id })
+        message.success('MCP 授权已完成')
+        refresh()
+      } catch (err) {
+        setAuthStatuses((prev) => ({ ...prev, [item.id]: 'failed' }))
+        message.error(err instanceof Error ? err.message : 'MCP 授权失败')
+      } finally {
+        setAuthorizingId(null)
+      }
+    },
+    [authorizeMcp, refresh],
+  )
 
-  const handleAuthorize = useCallback(async (item: McpServerItem) => {
-    setAuthorizingId(item.id)
-    setAuthStatuses((prev) => ({ ...prev, [item.id]: 'authorizing' }))
-    try {
-      await authorizeMcp({ serverId: item.id })
-      message.success('MCP 授权已完成')
-      refresh()
-    } catch (err) {
-      setAuthStatuses((prev) => ({ ...prev, [item.id]: 'failed' }))
-      message.error(err instanceof Error ? err.message : 'MCP 授权失败')
-    } finally {
-      setAuthorizingId(null)
-    }
-  }, [authorizeMcp, refresh])
-
-  const handleDeauthorize = useCallback(async (item: McpServerItem) => {
-    try {
-      await deauthorizeMcp({ serverId: item.id })
-      message.success('已断开授权')
-      refresh()
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : '断开授权失败')
-    }
-  }, [deauthorizeMcp, refresh])
+  const handleDeauthorize = useCallback(
+    async (item: McpServerItem) => {
+      try {
+        await deauthorizeMcp({ serverId: item.id })
+        message.success('已断开授权')
+        refresh()
+      } catch (err) {
+        message.error(err instanceof Error ? err.message : '断开授权失败')
+      }
+    },
+    [deauthorizeMcp, refresh],
+  )
 
   return (
     <>
@@ -445,12 +490,14 @@ export function McpView() {
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div className="mv_header">
           <div className="mv_header_left">
-            <h2>连接器与 MCP</h2>
-            <Tag color="blue">{activeTab === 'mcp' ? derived.length : 1}</Tag>
+            <h2>扩展中心</h2>
+            <Tag color={activeTab === 'mcp' ? 'blue' : 'purple'}>
+              {activeTab === 'mcp' ? derived.length : '连接器'}
+            </Tag>
             <span className="mv_header_subtitle">
               {activeTab === 'mcp'
                 ? `· ${totalTools} 个工具 · 配置保存在本地`
-                : '· 统一连接器协议 · GitHub 已就绪'}
+                : '· 账号、权限与运行时统一管理'}
             </span>
           </div>
           {activeTab === 'mcp' && (
@@ -468,7 +515,7 @@ export function McpView() {
               />
               <div className="mv_search_wrap">
                 <LobeInput
-                  size="middle"
+                  size="small"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="搜索服务器名称、传输、端点..."
@@ -477,21 +524,26 @@ export function McpView() {
               </div>
               <Tooltip title="刷新 (Ctrl+R)">
                 <Button
-                  size="middle"
+                  size="small"
                   shape="circle"
                   type="text"
                   icon={<Icons.Refresh size={12} />}
                   onClick={refresh}
                 />
               </Tooltip>
-              <Button type="primary" size="middle" icon={<Icons.Plus size={12} />} onClick={openCreate}>
+              <Button
+                type="primary"
+                size="small"
+                icon={<Icons.Plus size={12} />}
+                onClick={openCreate}
+              >
                 添加 MCP
               </Button>
             </div>
           )}
         </div>
 
-        <div className="mv_tabs" role="tablist" aria-label="连接器与 MCP">
+        <div className="mv_tabs" role="tablist" aria-label="扩展中心">
           <button
             type="button"
             role="tab"
@@ -504,16 +556,16 @@ export function McpView() {
           <button
             type="button"
             role="tab"
-            aria-selected={activeTab === 'connectors'}
-            className={`mv_tab ${activeTab === 'connectors' ? 'mv_tab_active' : ''}`}
-            onClick={() => setActiveTab('connectors')}
+            aria-selected={activeTab === 'plugins'}
+            className={`mv_tab ${activeTab === 'plugins' ? 'mv_tab_active' : ''}`}
+            onClick={() => setActiveTab('plugins')}
           >
             连接器
           </button>
         </div>
 
-        {activeTab === 'connectors' ? (
-          <ConnectorsPanel />
+        {activeTab === 'plugins' ? (
+          <PluginMarketplaceView embedded />
         ) : (
           <>
             {/* ── 卡片网格 ─────────────────────────────────────────────── */}
@@ -658,15 +710,16 @@ function McpCard({
           </span>
         )}
         <div className="mv_toolbar_spacer" />
-        {server.authEnabled && (
-          server.authStatus === 'authorized' ? (
-            <Button type="text" size="small" onClick={onDeauthorize}>断开授权</Button>
+        {server.authEnabled &&
+          (server.authStatus === 'authorized' ? (
+            <Button type="text" size="small" onClick={onDeauthorize}>
+              断开授权
+            </Button>
           ) : (
             <Button type="primary" size="small" loading={authorizing} onClick={onAuthorize}>
               {server.authStatus === 'failed' ? '重新授权' : '连接授权'}
             </Button>
-          )
-        )}
+          ))}
         <Tooltip title="编辑">
           <Button type="text" size="small" icon={<Icons.Edit />} onClick={onEdit} />
         </Tooltip>
@@ -924,7 +977,12 @@ function McpForm({
               <div className="mv_form_field">
                 <div className="mv_segmented">
                   {(['none', 'oauth2'] as const).map((authType) => (
-                    <button key={authType} type="button" className={`mv_segmented_item ${draft.authType === authType ? 'mv_segmented_active' : ''}`} onClick={() => update('authType', authType)}>
+                    <button
+                      key={authType}
+                      type="button"
+                      className={`mv_segmented_item ${draft.authType === authType ? 'mv_segmented_active' : ''}`}
+                      onClick={() => update('authType', authType)}
+                    >
                       {authType === 'none' ? '无' : 'OAuth 2.0'}
                     </button>
                   ))}
@@ -933,15 +991,41 @@ function McpForm({
               {draft.authType === 'oauth2' && (
                 <>
                   <label className="mv_form_label">Scope</label>
-                  <div className="mv_form_field"><LobeInput value={draft.authScope} onChange={(event) => update('authScope', event.target.value)} placeholder="可选 OAuth scope" /></div>
+                  <div className="mv_form_field">
+                    <LobeInput
+                      value={draft.authScope}
+                      onChange={(event) => update('authScope', event.target.value)}
+                      placeholder="可选 OAuth scope"
+                    />
+                  </div>
                   <label className="mv_form_label">动态注册</label>
-                  <div className="mv_form_field mv_form_field_inline"><Switch checked={draft.authDcr} onChange={(checked) => update('authDcr', checked)} checkedChildren="ON" unCheckedChildren="OFF" /></div>
+                  <div className="mv_form_field mv_form_field_inline">
+                    <Switch
+                      checked={draft.authDcr}
+                      onChange={(checked) => update('authDcr', checked)}
+                      checkedChildren="ON"
+                      unCheckedChildren="OFF"
+                    />
+                  </div>
                   {!draft.authDcr && (
                     <>
                       <label className="mv_form_label">Client ID</label>
-                      <div className="mv_form_field"><LobeInput value={draft.authClientId} onChange={(event) => update('authClientId', event.target.value)} placeholder="静态 client_id" /></div>
+                      <div className="mv_form_field">
+                        <LobeInput
+                          value={draft.authClientId}
+                          onChange={(event) => update('authClientId', event.target.value)}
+                          placeholder="静态 client_id"
+                        />
+                      </div>
                       <label className="mv_form_label">Client Secret</label>
-                      <div className="mv_form_field"><LobeInput type="password" value={draft.authClientSecret} onChange={(event) => update('authClientSecret', event.target.value)} placeholder="可选，保存到安全存储迁移前暂存配置" /></div>
+                      <div className="mv_form_field">
+                        <LobeInput
+                          type="password"
+                          value={draft.authClientSecret}
+                          onChange={(event) => update('authClientSecret', event.target.value)}
+                          placeholder="可选，保存到安全存储迁移前暂存配置"
+                        />
+                      </div>
                     </>
                   )}
                 </>
@@ -1057,7 +1141,9 @@ function createDefaultGitHubConnectorState(): ConnectorLocalState {
   }
 }
 
-function readGitHubConnectorState(connection: GitHubConnectorConnection | null): ConnectorLocalState {
+function readGitHubConnectorState(
+  connection: GitHubConnectorConnection | null,
+): ConnectorLocalState {
   if (connection == null) return createDefaultGitHubConnectorState()
   return {
     status: connection.status,
@@ -1136,7 +1222,9 @@ function getConnectorStatusMeta(
   hasConnection: boolean,
 ): { color: string; label: string } {
   if (!hasConnection) {
-    return state.lastError != null ? { color: 'red', label: '需处理' } : { color: 'orange', label: '待认证' }
+    return state.lastError != null
+      ? { color: 'red', label: '需处理' }
+      : { color: 'orange', label: '待认证' }
   }
   if (!state.enabled || state.status === 'disabled') return { color: 'default', label: '已禁用' }
   if (state.status === 'connected') return { color: 'green', label: '已连接' }
@@ -1146,7 +1234,9 @@ function getConnectorStatusMeta(
 }
 
 function ConnectorsPanel() {
-  const [persistedConnection, setPersistedConnection] = useState<GitHubConnectorConnection | null>(null)
+  const [persistedConnection, setPersistedConnection] = useState<GitHubConnectorConnection | null>(
+    null,
+  )
   const [state, setState] = useState<ConnectorLocalState>(createDefaultGitHubConnectorState)
   const [patToken, setPatToken] = useState('')
   const [checking, setChecking] = useState(false)
@@ -1347,12 +1437,12 @@ function ConnectorsPanel() {
           </div>
         )}
         {state.grantedScopes.length > 0 && (
-          <div className="mv_connector_error">
-            授权范围：{state.grantedScopes.join(', ')}
-          </div>
+          <div className="mv_connector_error">授权范围：{state.grantedScopes.join(', ')}</div>
         )}
         {state.lastError != null && <div className="mv_connector_error">{state.lastError}</div>}
-        {bootstrapping && <div className="mv_connector_error">正在读取已保存的 GitHub 连接状态…</div>}
+        {bootstrapping && (
+          <div className="mv_connector_error">正在读取已保存的 GitHub 连接状态…</div>
+        )}
 
         <div className="mv_auth_strategy_grid">
           {manifest.auth.map((auth) => {

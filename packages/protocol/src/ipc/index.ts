@@ -66,6 +66,8 @@ import type { ProviderFilesIpcChannelMap } from '../provider-files.js'
 import type { VideoChannelTasksIpcChannelMap } from '../video-channel-tasks.js'
 import type { SidebarOrderIpcChannelMap } from '../sidebar-order.js'
 import type { AppUnreadBadgeIpcChannelMap } from '../app-unread-badge.js'
+import type { PluginIpcChannelMap } from '../plugin.js'
+import type { PluginRuntimeIpcChannelMap } from '../plugin-runtime.js'
 import type {
   ApplicationSnapshotIpcChannelMap,
   ComputerUseIpcChannelMap,
@@ -5515,7 +5517,9 @@ export interface IpcChannelMap
     ComputerUseIpcChannelMap,
     ApplicationSnapshotIpcChannelMap,
     AppUnreadBadgeIpcChannelMap,
-    SidebarOrderIpcChannelMap {
+    SidebarOrderIpcChannelMap,
+    PluginIpcChannelMap,
+    PluginRuntimeIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
@@ -5635,6 +5639,14 @@ export interface IpcChannelMap
   'github-connector:connect': [GitHubConnectorConnectRequest, GitHubConnectorConnectResponse]
   'github-connector:update': [GitHubConnectorUpdateRequest, GitHubConnectorUpdateResponse]
   'github-connector:disconnect': [
+    GitHubConnectorDisconnectRequest,
+    GitHubConnectorDisconnectResponse,
+  ]
+  'plugin-runtime:github:verify': [GitHubConnectorVerifyRequest, GitHubConnectorVerifyResponse]
+  'plugin-runtime:github:get': [GitHubConnectorGetRequest, GitHubConnectorGetResponse]
+  'plugin-runtime:github:connect': [GitHubConnectorConnectRequest, GitHubConnectorConnectResponse]
+  'plugin-runtime:github:update': [GitHubConnectorUpdateRequest, GitHubConnectorUpdateResponse]
+  'plugin-runtime:github:disconnect': [
     GitHubConnectorDisconnectRequest,
     GitHubConnectorDisconnectResponse,
   ]
@@ -6223,10 +6235,19 @@ export interface IpcStreamChannelMap {
       | 'team'
       | 'skill'
       | 'mcp'
+      | 'plugin'
       | 'rule'
       | 'prompt'
       | 'scheduled-task'
-    action: 'create' | 'update' | 'delete' | 'import'
+    action:
+      | 'create'
+      | 'update'
+      | 'delete'
+      | 'import'
+      | 'install'
+      | 'uninstall'
+      | 'toggle'
+      | 'permission'
     id?: string
   }
   /** Canvas media task status update. Pushed at task start/completion, not on every UI frame. */

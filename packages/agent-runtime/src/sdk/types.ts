@@ -737,6 +737,10 @@ export interface SDKExecutorConfig {
   teamMcpServer?: SDKMcpServerConfig | undefined
   /** Platform management MCP server (auto-injected for all sessions) */
   platformManagementMcpServer?: SDKMcpServerConfig | undefined
+  /** Dynamic built-in connector tools exposed by the plugin runtime broker. */
+  pluginRuntimeMcpServer?: SDKMcpServerConfig | undefined
+  /** Exact MCP tool names published by the current plugin runtime snapshot. */
+  pluginRuntimeToolNames?: string[] | undefined
   /** Built-in web search MCP server (spark_search) — auto-injected for all sessions */
   webSearchMcpServer?: SDKMcpServerConfig | undefined
   /** Built-in user-facing file presentation MCP server (spark_files). */

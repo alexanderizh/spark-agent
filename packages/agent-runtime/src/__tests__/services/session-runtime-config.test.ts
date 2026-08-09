@@ -207,7 +207,7 @@ const mockState = vi.hoisted(() => ({
       updated_at: string
     }
   >(),
-  settings: new Map<string, string>(),
+  settings: new Map<string, unknown>(),
   usageRecords: [] as Array<{
     sessionId: string
     providerId: string
@@ -734,9 +734,17 @@ vi.mock('@spark/storage', () => {
     findByScope(scope: string): unknown[] {
       return mockState.mcpServers.filter((server) => server.scope === scope)
     }
+
+    get(): null {
+      return null
+    }
+
+    create(): void {}
+    update(): void {}
+    deleteById(): void {}
   }
   class SettingsRepository {
-    get(scope?: string, key?: string): string | null {
+    get(scope?: string, key?: string): unknown | null {
       return mockState.settings.get(`${scope ?? ''}:${key ?? ''}`) ?? null
     }
   }
@@ -747,6 +755,9 @@ vi.mock('@spark/storage', () => {
     get(): null {
       return null
     }
+    create(): void {}
+    update(): void {}
+    deleteById(): void {}
   }
   class SkillRegistryRepository {
     ensureDefaults(): void {}
@@ -883,7 +894,95 @@ vi.mock('@spark/storage', () => {
       return []
     }
   }
+  class PluginRepository {
+    list(): [] {
+      return []
+    }
+
+    get(): null {
+      return null
+    }
+
+    upsert(input: {
+      id: string
+      version: string
+      displayName: string
+      description: string
+      authorName: string
+      manifestJson: string
+      installPath: string
+      source: string
+      enabled: boolean
+      state: string
+      trust: string
+      integritySha256: string
+    }) {
+      return {
+        id: input.id,
+        version: input.version,
+        display_name: input.displayName,
+        description: input.description,
+        author_name: input.authorName,
+        manifest_json: input.manifestJson,
+        install_path: input.installPath,
+        source: input.source,
+        enabled: input.enabled ? 1 : 0,
+        state: input.state,
+        trust: input.trust,
+        integrity_sha256: input.integritySha256,
+        installed_at: '2026-05-28T00:00:00.000Z',
+        updated_at: '2026-05-28T00:00:00.000Z',
+      }
+    }
+
+    listPermissions(): [] {
+      return []
+    }
+
+    setPermission(): void {}
+    replaceResources(): void {}
+    listResources(): [] {
+      return []
+    }
+    update(): void {}
+    deletePlugin(): boolean {
+      return true
+    }
+    listRegistries(): [] {
+      return []
+    }
+  }
   class ConnectorConnectionRepository {}
+  class ConnectorAccountRepository {
+    list(): [] {
+      return []
+    }
+
+    getDefault(): null {
+      return null
+    }
+
+    get(): null {
+      return null
+    }
+
+    getByExternalId(): null {
+      return null
+    }
+
+    upsert(): never {
+      throw new Error('ConnectorAccountRepository is not used by this mocked session')
+    }
+
+    setDefault(): void {}
+    update(): null {
+      return null
+    }
+    delete(): void {}
+  }
+  class PluginRuntimeAuditRepository {
+    record(): void {}
+  }
   class ScheduledTaskRepository {}
   class TaskExecutionRepository {}
   class TurnRequestRepository {
@@ -965,7 +1064,10 @@ vi.mock('@spark/storage', () => {
     MemorySearchRepository,
     MemoryEntityRepository,
     ModelProfileRepository,
+    PluginRepository,
     ConnectorConnectionRepository,
+    ConnectorAccountRepository,
+    PluginRuntimeAuditRepository,
     ScheduledTaskRepository,
     TaskExecutionRepository,
     TurnRequestRepository,
@@ -2668,6 +2770,7 @@ describe('SessionService runtime provider/model resolution', () => {
 
   it('passes selected attachments into the Claude SDK turn config', async () => {
     const attachmentPath = fileURLToPath(new URL('../../../package.json', import.meta.url))
+    mockState.settings.set('telemetry:data', { runtimeLogEnabled: true })
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
       providerProfileId: 'tencent-provider',

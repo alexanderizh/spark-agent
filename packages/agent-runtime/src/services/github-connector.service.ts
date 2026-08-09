@@ -147,7 +147,9 @@ function parseGrantedScopes(header: string | null): string[] {
 
 function buildAccount(user: GitHubUserResponse): NonNullable<GitHubConnectorConnection['account']> {
   const login =
-    typeof user.login === 'string' && user.login.trim().length > 0 ? user.login.trim() : 'github-user'
+    typeof user.login === 'string' && user.login.trim().length > 0
+      ? user.login.trim()
+      : 'github-user'
   return {
     id: typeof user.id === 'string' || typeof user.id === 'number' ? String(user.id) : login,
     login,
@@ -189,17 +191,17 @@ function extractGitHubErrorMessage(responseText: string): string | null {
 }
 
 export class GitHubConnectorService {
-  constructor(private readonly repo: ConnectorConnectionRepository) {}
+  constructor(
+    private readonly repo: ConnectorConnectionRepository,
+    private readonly runtimeGuard: () => boolean = () => true,
+  ) {}
 
   getConnection(): GitHubConnectorConnection | null {
     const row = this.repo.getByProvider(GITHUB_PROVIDER)
     return row != null ? this.rowToConnection(row) : null
   }
 
-  async verifyConnection(params: {
-    token: string
-    apiBaseUrl?: string
-  }): Promise<{
+  async verifyConnection(params: { token: string; apiBaseUrl?: string }): Promise<{
     account: NonNullable<GitHubConnectorConnection['account']>
     grantedScopes: string[]
   }> {
@@ -322,12 +324,14 @@ export class GitHubConnectorService {
     connection: GitHubConnectorConnection | null
     selectedRepos: string[]
     mcpToolsEnabled: boolean
+    runtimeEnabled: boolean
   } {
     const connection = this.getConnection()
     return {
       connection,
       selectedRepos: connection?.config.selectedRepos ?? [],
       mcpToolsEnabled: connection?.config.enabledCapabilities.includes('mcp_tools') === true,
+      runtimeEnabled: this.runtimeGuard(),
     }
   }
 
@@ -336,11 +340,7 @@ export class GitHubConnectorService {
     if (ctx.config.selectedRepos.length > 0) {
       const repos = await Promise.all(
         ctx.config.selectedRepos.map((fullName) =>
-          this.requestJson<unknown>(
-            ctx,
-            'GET',
-            `repos/${fullName}`,
-          ),
+          this.requestJson<unknown>(ctx, 'GET', `repos/${fullName}`),
         ),
       )
       return this.filterRepos(repos, params.query)
@@ -355,22 +355,32 @@ export class GitHubConnectorService {
   }
 
   async getRepository(owner: string, repo: string): Promise<unknown> {
-    const ctx = await this.getRuntimeContext(['repositories', 'mcp_tools'], { repo: `${owner}/${repo}` })
+    const ctx = await this.getRuntimeContext(['repositories', 'mcp_tools'], {
+      repo: `${owner}/${repo}`,
+    })
     return await this.requestJson(ctx, 'GET', `repos/${owner}/${repo}`)
   }
 
-  async readRepositoryFile(owner: string, repo: string, filePath: string, ref?: string): Promise<unknown> {
-    const ctx = await this.getRuntimeContext(['repositories', 'mcp_tools'], { repo: `${owner}/${repo}` })
+  async readRepositoryFile(
+    owner: string,
+    repo: string,
+    filePath: string,
+    ref?: string,
+  ): Promise<unknown> {
+    const ctx = await this.getRuntimeContext(['repositories', 'mcp_tools'], {
+      repo: `${owner}/${repo}`,
+    })
     const encodedPath = filePath
       .split('/')
       .map((part) => encodeURIComponent(part))
       .join('/')
-    const suffix = ref != null && ref.trim().length > 0 ? `?ref=${encodeURIComponent(ref.trim())}` : ''
-    const result = (await this.requestJson<Record<string, unknown>>(
+    const suffix =
+      ref != null && ref.trim().length > 0 ? `?ref=${encodeURIComponent(ref.trim())}` : ''
+    const result = await this.requestJson<Record<string, unknown>>(
       ctx,
       'GET',
       `repos/${owner}/${repo}/contents/${encodedPath}${suffix}`,
-    ))
+    )
     const content = typeof result.content === 'string' ? result.content.replace(/\n/g, '') : ''
     return {
       ...result,
@@ -397,36 +407,31 @@ export class GitHubConnectorService {
 
     let sourceSha = params.sourceSha?.trim() || ''
     if (sourceSha.length === 0) {
-      const repoInfo = (await this.requestJson<Record<string, unknown>>(
+      const repoInfo = await this.requestJson<Record<string, unknown>>(
         ctx,
         'GET',
         `repos/${params.owner}/${params.repo}`,
-      ))
+      )
       const sourceBranch =
         params.sourceBranch?.trim() ||
         (typeof repoInfo.default_branch === 'string' && repoInfo.default_branch.trim().length > 0
           ? repoInfo.default_branch
           : 'main')
-      const refInfo = (await this.requestJson<{ object?: { sha?: string } }>(
+      const refInfo = await this.requestJson<{ object?: { sha?: string } }>(
         ctx,
         'GET',
         `repos/${params.owner}/${params.repo}/git/ref/heads/${encodeURIComponent(sourceBranch)}`,
-      ))
+      )
       sourceSha = refInfo.object?.sha?.trim() ?? ''
     }
     if (sourceSha.length === 0) {
       throw new SparkError('VALIDATION_FAILED', '无法解析源分支的 commit SHA')
     }
 
-    return await this.requestJson(
-      ctx,
-      'POST',
-      `repos/${params.owner}/${params.repo}/git/refs`,
-      {
-        ref: `refs/heads/${branch}`,
-        sha: sourceSha,
-      },
-    )
+    return await this.requestJson(ctx, 'POST', `repos/${params.owner}/${params.repo}/git/refs`, {
+      ref: `refs/heads/${branch}`,
+      sha: sourceSha,
+    })
   }
 
   async upsertRepositoryFile(params: {
@@ -474,8 +479,10 @@ export class GitHubConnectorService {
     })
     const search = new URLSearchParams()
     if (params.state != null) search.set('state', params.state)
-    if (params.assignee != null && params.assignee.trim().length > 0) search.set('assignee', params.assignee.trim())
-    if (params.labels != null && params.labels.length > 0) search.set('labels', params.labels.join(','))
+    if (params.assignee != null && params.assignee.trim().length > 0)
+      search.set('assignee', params.assignee.trim())
+    if (params.labels != null && params.labels.length > 0)
+      search.set('labels', params.labels.join(','))
     search.set('page', String(params.page ?? 1))
     search.set('per_page', String(params.perPage ?? 50))
     const issues = await this.requestJson<Array<Record<string, unknown>>>(
@@ -503,17 +510,12 @@ export class GitHubConnectorService {
       repo: `${params.owner}/${params.repo}`,
       write: true,
     })
-    return await this.requestJson(
-      ctx,
-      'POST',
-      `repos/${params.owner}/${params.repo}/issues`,
-      {
-        title: params.title,
-        ...(params.body != null ? { body: params.body } : {}),
-        ...(params.labels != null ? { labels: params.labels } : {}),
-        ...(params.assignees != null ? { assignees: params.assignees } : {}),
-      },
-    )
+    return await this.requestJson(ctx, 'POST', `repos/${params.owner}/${params.repo}/issues`, {
+      title: params.title,
+      ...(params.body != null ? { body: params.body } : {}),
+      ...(params.labels != null ? { labels: params.labels } : {}),
+      ...(params.assignees != null ? { assignees: params.assignees } : {}),
+    })
   }
 
   async updateIssue(params: {
@@ -597,18 +599,13 @@ export class GitHubConnectorService {
       repo: `${params.owner}/${params.repo}`,
       write: true,
     })
-    return await this.requestJson(
-      ctx,
-      'POST',
-      `repos/${params.owner}/${params.repo}/pulls`,
-      {
-        title: params.title,
-        head: params.head,
-        base: params.base,
-        ...(params.body != null ? { body: params.body } : {}),
-        ...(params.draft !== undefined ? { draft: params.draft } : {}),
-      },
-    )
+    return await this.requestJson(ctx, 'POST', `repos/${params.owner}/${params.repo}/pulls`, {
+      title: params.title,
+      head: params.head,
+      base: params.base,
+      ...(params.body != null ? { body: params.body } : {}),
+      ...(params.draft !== undefined ? { draft: params.draft } : {}),
+    })
   }
 
   async commentOnPullRequest(params: {
@@ -644,7 +641,9 @@ export class GitHubConnectorService {
     created_at: string
     updated_at: string
   }): GitHubConnectorConnection {
-    const config = normalizeConfig(parseJsonObject<Partial<GitHubConnectorConfig>>(row.config_json, {}))
+    const config = normalizeConfig(
+      parseJsonObject<Partial<GitHubConnectorConfig>>(row.config_json, {}),
+    )
     const account = parseJsonObject<Record<string, unknown> | null>(row.account_json, null)
     const connection: GitHubConnectorConnection = {
       id: row.id,
@@ -674,6 +673,12 @@ export class GitHubConnectorService {
     requiredCapabilities: ConnectorCapabilityKind[],
     options?: { repo?: string; write?: boolean },
   ): Promise<GitHubConnectorRuntimeContext> {
+    if (!this.runtimeGuard()) {
+      throw new SparkError(
+        'PERMISSION_DENIED',
+        'GitHub 连接器未启用，Agent 暂时不能使用 GitHub 工具',
+      )
+    }
     const row = this.repo.getByProvider(GITHUB_PROVIDER)
     if (row == null) {
       throw new SparkError('NOT_FOUND', 'GitHub 连接尚未建立')
@@ -704,10 +709,7 @@ export class GitHubConnectorService {
 
     for (const capability of requiredCapabilities) {
       if (!config.enabledCapabilities.includes(capability)) {
-        throw new SparkError(
-          'PERMISSION_DENIED',
-          `GitHub 连接未启用能力：${capability}`,
-        )
+        throw new SparkError('PERMISSION_DENIED', `GitHub 连接未启用能力：${capability}`)
       }
     }
     if (options?.write === true && !config.allowWrites) {
@@ -739,13 +741,7 @@ export class GitHubConnectorService {
     path: string,
     body?: unknown,
   ): Promise<T> {
-    const response = await this.githubRequest(
-      method,
-      ctx.config.apiBaseUrl,
-      path,
-      ctx.token,
-      body,
-    )
+    const response = await this.githubRequest(method, ctx.config.apiBaseUrl, path, ctx.token, body)
     const json = (await response.json()) as T
     this.markConnectionHealthy(ctx.connection.id)
     return json
@@ -813,12 +809,14 @@ export class GitHubConnectorService {
     if (trimmed.length === 0) return repos
     return repos.filter((repo) => {
       if (repo == null || typeof repo !== 'object') return false
-      const name = typeof (repo as { full_name?: unknown }).full_name === 'string'
-        ? (repo as { full_name: string }).full_name.toLowerCase()
-        : ''
-      const description = typeof (repo as { description?: unknown }).description === 'string'
-        ? (repo as { description: string }).description.toLowerCase()
-        : ''
+      const name =
+        typeof (repo as { full_name?: unknown }).full_name === 'string'
+          ? (repo as { full_name: string }).full_name.toLowerCase()
+          : ''
+      const description =
+        typeof (repo as { description?: unknown }).description === 'string'
+          ? (repo as { description: string }).description.toLowerCase()
+          : ''
       return name.includes(trimmed) || description.includes(trimmed)
     })
   }

@@ -194,6 +194,7 @@ const SYSTEM_NOTIFICATION_VIEW_TARGETS = new Set<ViewId>([
   'skills',
   'skill-store',
   'mcp',
+  'plugins',
   'providers',
   'settings',
   'lobe-preview',
@@ -252,7 +253,7 @@ const NAV_ITEMS: Array<{
   { id: 'agents', labelKey: 'nav.agents', icon: Icons.Assistant },
   { id: 'providers', labelKey: 'nav.providers', icon: Icons.Server },
   { id: 'skill-store', labelKey: 'nav.skills', icon: Icons.Skills },
-  { id: 'mcp', labelKey: 'nav.mcp', icon: Icons.MCP },
+  { id: 'mcp', labelKey: 'nav.extensions', icon: Icons.MCP },
   { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
   { id: 'workflows', labelKey: 'nav.workflows', icon: Icons.Workflow },
   { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
@@ -1754,6 +1755,8 @@ function Shell() {
         return <ProvidersView />
       case 'mcp':
         return <McpView />
+      case 'plugins':
+        return <McpView initialTab="plugins" />
       case 'memory':
         // 记忆面板作为设置页二级菜单；保持 view 路由以便命令面板（⌘/Ctrl+F）可直达
         return <SettingsView initialSection="memory" />

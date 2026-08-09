@@ -254,6 +254,7 @@ import { registerOptionalCapabilityIpc } from './registerOptionalCapabilityIpc.j
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
 import { registerSidebarOrderIpc } from './registerSidebarOrderIpc.js'
+import { getPluginManager, registerPluginIpc } from './registerPluginIpc.js'
 import { registerFilePreviewIpc } from './registerFilePreviewIpc.js'
 import { registerSessionImageOptimizerIpc } from './registerSessionImageOptimizerIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
@@ -295,6 +296,7 @@ import { resolveStandaloneNodeRuntimePath } from '../services/StandaloneNodeRunt
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
 import type { RemoteInboundMessage } from '../services/RemoteConnectionService.js'
 import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
+import { registerPluginRuntimeIpc } from '../services/PluginRuntime/registerPluginRuntimeIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { getWindowForIpcSender } from './window-controls.js'
@@ -2261,6 +2263,11 @@ function getSessionService(): SessionService {
       getMcpService(),
       getMcpOAuthService(),
     )
+    const pluginManager = getPluginManager()
+    void pluginManager.initialize().catch((error) => {
+      log.warn(`Failed to initialize built-in plugins: ${String(error)}`)
+    })
+    _sessionService.setPluginManager(pluginManager)
     registerSessionServiceForShutdown(_sessionService)
     // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())
@@ -8859,11 +8866,13 @@ export function registerAllIpcHandlers(): void {
 
   // ─── GitHub Connector 持久化与验证通道 ─────────────────────────────────
   registerGitHubConnectorIpc()
+  registerPluginRuntimeIpc()
 
   // ─── Governed Computer Use and encrypted application snapshots ───────────
   registerComputerUseIpc()
   registerApplicationSnapshotIpc()
   registerSidebarOrderIpc()
+  registerPluginIpc()
 
   log.info('All IPC handlers registered')
 }

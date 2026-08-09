@@ -151,6 +151,17 @@ export {
   PLAYWRIGHT_MCP_NAME,
 } from './services/mcp-server.service.js'
 export { SkillService } from './services/skill.service.js'
+export {
+  PluginManager,
+  PluginPermissionError,
+  type PluginManagerOptions,
+} from './services/plugins/plugin-manager.service.js'
+export { BUILTIN_PLUGIN_MANIFESTS } from './services/plugins/builtin-plugins.js'
+export {
+  inspectPluginDirectory,
+  installPluginArchive,
+  installPluginDirectoryAtomic,
+} from './services/plugins/plugin-package.js'
 export { RulesService } from './services/rules.service.js'
 export { RuleCompositionEngine } from './services/rule-composition.engine.js'
 export type {
@@ -191,6 +202,20 @@ export type {
 export { SessionService } from './services/session.service.js'
 export { PlatformBridgeService } from './services/platform-bridge.service.js'
 export { GitHubConnectorService } from './services/github-connector.service.js'
+export { RuntimeBroker } from './services/plugin-runtime/runtime-broker.js'
+export { RuntimeRegistry } from './services/plugin-runtime/runtime-registry.js'
+export { RuntimePolicy } from './services/plugin-runtime/runtime-policy.js'
+export { RuntimeTokenService } from './services/plugin-runtime/token-service.js'
+export { OAuthBroker } from './services/plugin-runtime/oauth-broker.js'
+export { PluginRuntimeMcpBridge } from './services/plugin-runtime/plugin-runtime-mcp-bridge.js'
+export { registerBuiltinRuntimeAdapters } from './services/plugin-runtime/builtin-runtimes.js'
+export { RuntimeError } from './services/plugin-runtime/runtime-errors.js'
+export type {
+  ConnectorRuntimeAdapter,
+  RuntimeContext,
+  RuntimeConnectContext,
+  RuntimeConnectResult,
+} from './services/plugin-runtime/runtime-types.js'
 export type { PlatformBridgeDeps } from './services/platform-bridge.service.js'
 export { DebugLogServer, getDebugLogServer } from './services/debug-log-server.service.js'
 export type {
