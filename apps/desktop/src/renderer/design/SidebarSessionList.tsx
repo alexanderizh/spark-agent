@@ -68,7 +68,7 @@ import {
   resolveSidebarActiveWorkspaceId,
   resolveSpecialSidebarGroupWorkspaceId,
 } from './sidebar-session-routing'
-import { moveItem, sortByManualOrder } from './sidebar-manual-order'
+import { moveItem, sortByManualOrderWithinPinnedSections } from './sidebar-manual-order'
 import { composeProjectGroupSessions } from './sidebar-session-sort'
 import { filterCanvasSessions, isCanvasWorkspace } from './workspace-visibility'
 import { SidebarProjectDropZone } from './components/SidebarProjectDropZone'
@@ -2021,10 +2021,11 @@ export function SidebarSessionList() {
       list.push({ id: 'project:ungrouped', label: 'sidebar.ungroupedChats', sessions: ungrouped })
     }
     const reorderableProjects = list.filter((group) => group.id !== 'project:ungrouped')
-    const orderedProjects = sortByManualOrder(
+    const orderedProjects = sortByManualOrderWithinPinnedSections(
       reorderableProjects,
       ctx.sidebarOrder.projectIds,
       (group) => group.workspace?.id ?? noProjectWorkspace?.id ?? group.id,
+      (group) => group.workspace?.pinnedAt != null,
     )
     return [...orderedProjects, ...list.filter((group) => group.id === 'project:ungrouped')]
   }, [

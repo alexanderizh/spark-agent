@@ -21,6 +21,21 @@ export function sortByManualOrder<T>(
     .map(({ item }) => item)
 }
 
+/**
+ * Applies one manual order while keeping pinned items in their own leading
+ * section. The persisted project order is shared by both sections, so the
+ * manual ranks must be applied before the stable pinned/unpinned partition.
+ */
+export function sortByManualOrderWithinPinnedSections<T>(
+  items: readonly T[],
+  manualIds: readonly string[] | undefined,
+  getId: (item: T) => string,
+  isPinned: (item: T) => boolean,
+): T[] {
+  const manuallyOrdered = sortByManualOrder(items, manualIds, getId)
+  return [...manuallyOrdered.filter(isPinned), ...manuallyOrdered.filter((item) => !isPinned(item))]
+}
+
 export function moveItem<T>(items: readonly T[], fromIndex: number, toIndex: number): T[] {
   if (
     fromIndex < 0 ||
