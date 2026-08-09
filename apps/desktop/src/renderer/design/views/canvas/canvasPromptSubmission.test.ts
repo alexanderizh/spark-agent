@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { CanvasPromptDocument } from '@spark/protocol'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot } from './canvas.types'
 import { buildCanvasPromptDocumentForInputs, buildCanvasPromptSubmission } from './canvasPromptSubmission'
+import { encodeToSafeFileUrl } from './canvas-safe-file'
 
 function imageNode(): CanvasNode {
   return {
@@ -30,6 +31,45 @@ const snapshot = (): CanvasSnapshot => ({
 })
 
 describe('canvasPromptSubmission', () => {
+  it('does not upload local media when a caller requests cloud_url transport', async () => {
+    const invoke = vi.fn()
+    vi.stubGlobal('window', { spark: { invoke } })
+    const videoNode = {
+      ...imageNode(),
+      id: 'local-video',
+      type: 'video' as const,
+      title: '本地视频',
+      assetId: null,
+      data: { url: encodeToSafeFileUrl('/Users/test/input.mp4'), mimeType: 'video/mp4' },
+    }
+    const document = buildCanvasPromptDocumentForInputs({
+      prompt: '',
+      nodes: [videoNode],
+      assets: [],
+    })
+
+    try {
+      const result = await buildCanvasPromptSubmission({
+        document,
+        snapshot: { ...snapshot(), nodes: [videoNode], assets: [] },
+        operation: 'video_depth_map',
+        inputNodeIds: ['local-video'],
+        inputTransport: 'cloud_url',
+      })
+
+      expect(result.inputFiles).toEqual([
+        expect.objectContaining({
+          type: 'video',
+          url: encodeToSafeFileUrl('/Users/test/input.mp4'),
+          mimeType: 'video/mp4',
+        }),
+      ])
+      expect(invoke).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('preserves video reference semantics when applying generic reference roles', async () => {
     const videoNode = {
       ...imageNode(),

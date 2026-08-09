@@ -142,6 +142,7 @@ describe('registerCanvasDepthTaskIpc', () => {
     })
     expect(runner.run).toHaveBeenCalledWith(
       expect.objectContaining({
+        inputPath: '/canvas/input.mp4',
         preserveAudio: true,
         modelDir: '/managed/model',
         runtimeEntryPath:
