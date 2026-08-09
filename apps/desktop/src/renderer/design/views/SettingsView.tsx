@@ -532,9 +532,14 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
             type="button"
             className="settings-nav-return"
             onClick={() => {
-              // workspace 已废弃，返回当前标准主会话页面。
-              setTweak('chatMode', 'vibe')
-              setTweak('view', 'chat')
+              // 返回当前工作区模式的主视图：画布模式回画布，工作台模式回会话。
+              // 否则从画布进设置再返回会被无条件拉回 chat，造成跳页 bug。
+              if (t.workspaceMode === 'canvas') {
+                setTweak('view', 'canvas')
+              } else {
+                setTweak('chatMode', 'vibe')
+                setTweak('view', 'chat')
+              }
             }}
           >
             <Icons.ArrowLeft size={16} />

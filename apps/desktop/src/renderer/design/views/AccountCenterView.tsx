@@ -53,7 +53,7 @@ export function AccountCenterView(): React.ReactElement {
 
 function AccountCenter(): React.ReactElement {
   const auth = useAuth()
-  const { setTweak, requestConfirm } = useApp()
+  const { t, setTweak, requestConfirm } = useApp()
   const { toast } = useToast()
 
   const [bindStatus, setBindStatus] = useState<BindStatus | null>(null)
@@ -80,7 +80,12 @@ function AccountCenter(): React.ReactElement {
   }, [])
 
   const handleBack = (): void => {
-    setTweak('view', 'chat')
+    // 返回当前工作区模式的主视图：画布模式回画布，工作台模式回会话。
+    if (t.workspaceMode === 'canvas') {
+      setTweak('view', 'canvas')
+    } else {
+      setTweak('view', 'chat')
+    }
   }
 
   // ─── 昵称 ────────────────────────────────────────────────────────────────────
