@@ -221,6 +221,131 @@ describe('ProjectSessionGroup pagination', () => {
     expect(document.querySelector('.action-menu')).toBeNull()
   })
 
+  it('copies the project path from the project actions menu', async () => {
+    const workspace: WorkspaceInfo = {
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      id: 'workspace-1',
+      name: 'Spark-Agent',
+      pinnedAt: null,
+      rootPath: '/tmp/spark-agent',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      worktreeMeta: null,
+    }
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+
+    act(() => {
+      root.render(
+        <ProjectSessionGroup
+          group={{ workspace, sessions: [] }}
+          activeSessionId={null}
+          activeWorkspaceId={workspace.id}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={{}}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          onSelectWorkspace={async () => undefined}
+          onSelectSession={() => undefined}
+          onNewSession={() => undefined}
+          onRenameProject={() => undefined}
+          onToggleProjectPinned={() => undefined}
+          onArchiveProject={() => undefined}
+          onDeleteProject={() => undefined}
+          onOpenProjectFolder={() => undefined}
+          onRenameSession={() => undefined}
+          onCommitSessionTitle={async () => undefined}
+          onToggleSessionPinned={() => undefined}
+          onArchiveSession={() => undefined}
+          onDeleteSession={() => undefined}
+        />,
+      )
+    })
+
+    const projectMenuButton = container.querySelector<HTMLButtonElement>(
+      '.proj-head .item-menu-btn',
+    )
+    if (projectMenuButton == null) throw new Error('Missing project actions button')
+    await act(async () => projectMenuButton.click())
+
+    const copyPathButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.action-menu-item'),
+    ).find((button) => button.textContent?.includes('复制路径'))
+    if (copyPathButton == null) throw new Error('Missing copy path menu item')
+    await act(async () => {
+      copyPathButton.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(writeText).toHaveBeenCalledWith(workspace.rootPath)
+  })
+
+  it('opens project actions from the project row context menu', async () => {
+    const workspace: WorkspaceInfo = {
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      id: 'workspace-1',
+      name: 'Spark-Agent',
+      pinnedAt: null,
+      rootPath: '/tmp/spark-agent',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      worktreeMeta: null,
+    }
+
+    act(() => {
+      root.render(
+        <ProjectSessionGroup
+          group={{ workspace, sessions: [] }}
+          activeSessionId={null}
+          activeWorkspaceId={workspace.id}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={{}}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          onSelectWorkspace={async () => undefined}
+          onSelectSession={() => undefined}
+          onNewSession={() => undefined}
+          onRenameProject={() => undefined}
+          onToggleProjectPinned={() => undefined}
+          onArchiveProject={() => undefined}
+          onDeleteProject={() => undefined}
+          onOpenProjectFolder={() => undefined}
+          onRenameSession={() => undefined}
+          onCommitSessionTitle={async () => undefined}
+          onToggleSessionPinned={() => undefined}
+          onArchiveSession={() => undefined}
+          onDeleteSession={() => undefined}
+        />,
+      )
+    })
+
+    const projectHead = container.querySelector<HTMLElement>('.proj-head')
+    if (projectHead == null) throw new Error('Missing project row')
+
+    const contextMenuEvent = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 120,
+      clientY: 240,
+    })
+    await act(async () => {
+      projectHead.dispatchEvent(contextMenuEvent)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(contextMenuEvent.defaultPrevented).toBe(true)
+    expect(
+      Array.from(document.querySelectorAll<HTMLButtonElement>('.action-menu-item')).some((button) =>
+        button.textContent?.includes('复制路径'),
+      ),
+    ).toBe(true)
+  })
+
   it('opens session schedules from the session actions menu', async () => {
     const sessions = createSessions(1)
     const onSelectSession = vi.fn()

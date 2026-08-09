@@ -11,6 +11,7 @@
 
 import type { MediaErrorContract } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
+import { Agent } from 'undici'
 import { MediaProviderError } from './media-adapter.types.js'
 import { normalizeMediaError } from './media-error-normalizer.js'
 
@@ -59,6 +60,12 @@ export interface FetchJsonOptions {
   errorContract?: MediaErrorContract | undefined
 }
 
+const mediaHttpAgent = new Agent()
+
+type MediaHttpDispatcher = {
+  dispatch: Agent['dispatch']
+}
+
 /** JSON fetch + 统一错误码包装 */
 export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions = {}): Promise<T> {
   const fetchImpl = opts.fetchImpl ?? fetch
@@ -70,7 +77,13 @@ export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions
     controller.abort()
   }, timeoutMs)
   try {
-    const init: RequestInit = { method: opts.method ?? 'GET', signal: controller.signal }
+    const init: RequestInit = {
+      method: opts.method ?? 'GET',
+      signal: controller.signal,
+      // Node's global fetch and the direct undici package expose equivalent
+      // dispatcher contracts through different versioned type declarations.
+      dispatcher: mediaHttpDispatcher(timeoutMs) as unknown as NonNullable<RequestInit['dispatcher']>,
+    }
     if (opts.headers !== undefined) init.headers = opts.headers
     if (opts.body !== undefined) {
       init.body = typeof opts.body === 'string' ? opts.body : new Uint8Array(opts.body)
@@ -109,6 +122,20 @@ export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions
     )
   } finally {
     clearTimeout(timer)
+  }
+}
+
+/**
+ * Node fetch 的 Undici 默认 headers/body 超时都是 300s。
+ * 按请求配置复用 Agent，让底层传输超时与上层模型调用超时保持一致。
+ */
+function mediaHttpDispatcher(timeoutMs: number): MediaHttpDispatcher {
+  return {
+    dispatch: (options, handler) =>
+      mediaHttpAgent.dispatch(
+        { ...options, headersTimeout: timeoutMs, bodyTimeout: timeoutMs },
+        handler,
+      ),
   }
 }
 

@@ -72,6 +72,7 @@ import { moveItem, sortByManualOrderWithinPinnedSections } from './sidebar-manua
 import { composeProjectGroupSessions } from './sidebar-session-sort'
 import { filterCanvasSessions, isCanvasWorkspace } from './workspace-visibility'
 import { SidebarProjectDropZone } from './components/SidebarProjectDropZone'
+import { useOptionalToast } from './components/Toast'
 
 const projectSortableId = (projectId: string): string => `project:${projectId}`
 const sessionSortableId = (projectId: string, sessionId: string): string =>
@@ -1087,9 +1088,54 @@ export function ProjectSessionGroup({
   onSessionRevealed?: (() => void) | undefined
 }) {
   const { t } = useI18n()
+  const optionalToast = useOptionalToast()
   const [menuOpen, setMenuOpen] = useState(false)
   const [visibleSessionCount, setVisibleSessionCount] = useState(PROJECT_SESSION_INITIAL_VISIBLE)
   const isActiveProject = activeWorkspaceId === group.workspace.id
+
+  const handleCopyProjectPath = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(group.workspace.rootPath)
+      optionalToast?.toast.success('已复制路径')
+    } catch (err) {
+      optionalToast?.toast.error(err instanceof Error ? err.message : '复制失败')
+    }
+  }, [group.workspace.rootPath, optionalToast])
+
+  const projectMenuItems = [
+    {
+      icon: group.workspace.pinnedAt == null ? <Pin size={14} /> : <PinOff size={14} />,
+      label:
+        group.workspace.pinnedAt == null ? t('sidebar.project.pin') : t('sidebar.project.unpin'),
+      onClick: () => onToggleProjectPinned(group.workspace),
+    },
+    {
+      icon: <Icons.Folder size={14} />,
+      label: t('sidebar.project.openFolder'),
+      onClick: () => onOpenProjectFolder(group.workspace),
+    },
+    {
+      icon: <Icons.Copy size={14} />,
+      label: '复制路径',
+      onClick: () => void handleCopyProjectPath(),
+    },
+    {
+      icon: <Icons.Edit size={14} />,
+      label: t('sidebar.project.rename'),
+      onClick: () => onRenameProject(group.workspace),
+    },
+    {
+      icon: <Archive size={14} />,
+      label: t('sidebar.project.archive'),
+      onClick: () => onArchiveProject(group.workspace),
+    },
+    {
+      icon: <Icons.Trash size={14} />,
+      label: t('sidebar.project.delete'),
+      danger: true,
+      onClick: () => onDeleteProject(group.workspace),
+    },
+  ]
 
   const sessions = group.sessions
   // 置顶会话始终展示、不占用折叠阈值名额；阈值只作用于非置顶会话。
@@ -1114,134 +1160,113 @@ export function ProjectSessionGroup({
 
   return (
     <div className={`proj-group ${isActiveProject ? 'active-project' : ''}`}>
-      <div
-        className="proj-head"
-        {...projectDragActivatorProps}
-        onClick={() => {
-          onOpenChange(!open)
-          void onSelectWorkspace(group.workspace)
-        }}
+      <Dropdown
+        menu={{ items: [] }}
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        trigger={['contextMenu']}
+        placement="bottomLeft"
+        popupRender={() => (
+          <ActionMenu onAction={() => setMenuOpen(false)} items={projectMenuItems} />
+        )}
       >
-        <Tooltip
-          title={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
-          mouseEnterDelay={0.05}
+        <div
+          className="proj-head"
+          {...projectDragActivatorProps}
+          onClick={() => {
+            onOpenChange(!open)
+            void onSelectWorkspace(group.workspace)
+          }}
         >
-          <span
-            className="proj-toggle"
-            onClick={(e) => {
-              e.stopPropagation()
-              onOpenChange(!open)
-            }}
-            role="button"
-            aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+          <Tooltip
+            title={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+            mouseEnterDelay={0.05}
           >
-            {open ? (
-              <Icons.FolderOpen className="chev" size={15} />
-            ) : (
-              <Icons.FolderClosed className="chev" size={15} />
-            )}
-          </span>
-        </Tooltip>
-        <span className="proj-name">{group.workspace.name}</span>
-        <Tooltip
-          title={
-            group.workspace.pinnedAt != null ? t('sidebar.project.unpin') : t('sidebar.project.pin')
-          }
-          mouseEnterDelay={0.05}
-        >
-          <button
-            className={`proj-pin-btn${group.workspace.pinnedAt != null ? ' is-pinned' : ''}`}
-            aria-label={
+            <span
+              className="proj-toggle"
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenChange(!open)
+              }}
+              role="button"
+              aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+            >
+              {open ? (
+                <Icons.FolderOpen className="chev" size={15} />
+              ) : (
+                <Icons.FolderClosed className="chev" size={15} />
+              )}
+            </span>
+          </Tooltip>
+          <span className="proj-name">{group.workspace.name}</span>
+          <Tooltip
+            title={
               group.workspace.pinnedAt != null
                 ? t('sidebar.project.unpin')
                 : t('sidebar.project.pin')
             }
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleProjectPinned(group.workspace)
-            }}
+            mouseEnterDelay={0.05}
           >
-            {group.workspace.pinnedAt != null ? (
-              <Pin size={11} fill="currentColor" />
-            ) : (
-              <PinOff size={11} />
-            )}
-          </button>
-        </Tooltip>
-        <span className="proj-count">{group.sessions.length}</span>
-        <Tooltip title={t('sidebar.project.newSession')} mouseEnterDelay={0.05}>
-          <button
-            className="icon-btn proj-add-session-btn"
-            aria-label={t('sidebar.project.newSession')}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation()
-              onNewSession(group.workspace.id)
-            }}
-          >
-            <Icons.Plus size={15} />
-          </button>
-        </Tooltip>
-        <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
-          <Dropdown
-            menu={{ items: [] }}
-            open={menuOpen}
-            onOpenChange={setMenuOpen}
-            trigger={['click']}
-            placement="topRight"
-            align={{ overflow: { shiftX: true, adjustY: true } }}
-            popupRender={() => (
-              <ActionMenu
-                onAction={() => setMenuOpen(false)}
-                items={[
-                  {
-                    icon:
-                      group.workspace.pinnedAt == null ? <Pin size={14} /> : <PinOff size={14} />,
-                    label:
-                      group.workspace.pinnedAt == null
-                        ? t('sidebar.project.pin')
-                        : t('sidebar.project.unpin'),
-                    onClick: () => onToggleProjectPinned(group.workspace),
-                  },
-                  {
-                    icon: <Icons.Folder size={14} />,
-                    label: t('sidebar.project.openFolder'),
-                    onClick: () => onOpenProjectFolder(group.workspace),
-                  },
-                  {
-                    icon: <Icons.Edit size={14} />,
-                    label: t('sidebar.project.rename'),
-                    onClick: () => onRenameProject(group.workspace),
-                  },
-                  {
-                    icon: <Archive size={14} />,
-                    label: t('sidebar.project.archive'),
-                    onClick: () => onArchiveProject(group.workspace),
-                  },
-                  {
-                    icon: <Icons.Trash size={14} />,
-                    label: t('sidebar.project.delete'),
-                    danger: true,
-                    onClick: () => onDeleteProject(group.workspace),
-                  },
-                ]}
-              />
-            )}
-          >
-            <Tooltip title={t('sidebar.project.actions')} mouseEnterDelay={0.05}>
-              <button
-                className="icon-btn item-menu-btn"
-                aria-label={t('sidebar.project.actions')}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Icons.More size={15} />
-              </button>
-            </Tooltip>
-          </Dropdown>
+            <button
+              className={`proj-pin-btn${group.workspace.pinnedAt != null ? ' is-pinned' : ''}`}
+              aria-label={
+                group.workspace.pinnedAt != null
+                  ? t('sidebar.project.unpin')
+                  : t('sidebar.project.pin')
+              }
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleProjectPinned(group.workspace)
+              }}
+            >
+              {group.workspace.pinnedAt != null ? (
+                <Pin size={11} fill="currentColor" />
+              ) : (
+                <PinOff size={11} />
+              )}
+            </button>
+          </Tooltip>
+          <span className="proj-count">{group.sessions.length}</span>
+          <Tooltip title={t('sidebar.project.newSession')} mouseEnterDelay={0.05}>
+            <button
+              className="icon-btn proj-add-session-btn"
+              aria-label={t('sidebar.project.newSession')}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                onNewSession(group.workspace.id)
+              }}
+            >
+              <Icons.Plus size={15} />
+            </button>
+          </Tooltip>
+          <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
+            <Dropdown
+              menu={{ items: [] }}
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+              trigger={['click']}
+              placement="topRight"
+              align={{ overflow: { shiftX: true, adjustY: true } }}
+              popupRender={() => (
+                <ActionMenu onAction={() => setMenuOpen(false)} items={projectMenuItems} />
+              )}
+            >
+              <Tooltip title={t('sidebar.project.actions')} mouseEnterDelay={0.05}>
+                <button
+                  className="icon-btn item-menu-btn"
+                  aria-label={t('sidebar.project.actions')}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Icons.More size={15} />
+                </button>
+              </Tooltip>
+            </Dropdown>
+          </div>
         </div>
-      </div>
+      </Dropdown>
       {open && (
         <div className="proj-sessions">
           {sessions.length === 0 ? (
