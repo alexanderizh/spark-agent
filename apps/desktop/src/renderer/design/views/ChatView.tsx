@@ -54,6 +54,10 @@ import {
 import { buildAgentCommitMessage, buildDefaultCommitMessage } from './chat/ChatGitUtils'
 import { GitBranchDialog, GitCommitDialog, GitCreateBranchDialog } from './chat/ChatGitDialogs'
 import { GitEnvPanel } from './chat/ChatGitEnv'
+import {
+  getRightGutterWidth,
+  shouldAutoCollapseGitEnvPanel,
+} from './chat/git-env-panel-layout'
 import { FileChipIcon } from './chat/ChatFileIcon'
 import { GitReviewPanel } from './chat/ChatGitReview'
 import { useLiveWorkspaceGitStatus } from './chat/useLiveWorkspaceGitStatus'
@@ -441,7 +445,9 @@ export function ChatView({
   // 自动展开 git+任务悬浮面板用：用户手动 toggle/关闭过后，本会话不再自动展开。
   const gitPanelUserInteractedRef = useRef(false)
   const showGitEnvPanelRef = useRef(false)
-  const gitEnvPanelCompactRef = useRef(false)
+  const gitEnvPanelSpaceConstrainedRef = useRef(false)
+  // 记录面板是否因空间不足被自动收起；只允许同一轮「变窄→变宽」自动恢复。
+  const gitEnvPanelViewportCollapsedRef = useRef(false)
   // 自动展开触发检测的上一轮基线；切会话/切仓库时一并重置（见对应 effect）。
   // 首次采样只记录基线、不触发，避免切到已有变更的老会话时误弹出面板。
   const autoOpenSampledRef = useRef(false)
@@ -1416,30 +1422,80 @@ export function ChatView({
   // 右上角环境面板（git / 进程 / 目标）只要三者其一有内容即可展示，不再强依赖 git 仓库。
   const hasEnvPanelContent = isGitRepo || activeSessionTasks.length > 0 || activeSessionGoal != null
 
+  const readGitEnvPanelRightGutter = useCallback((): number | null => {
+    const chatArea = chatAreaRef.current
+    if (chatArea == null) return null
+    const contentElements = Array.from(
+      chatArea.querySelectorAll<HTMLElement>('.chat-stream-inner, .composer-inner'),
+    )
+    if (contentElements.length === 0) return null
+    const chatMainRight = chatArea.getBoundingClientRect().right
+    return Math.min(
+      ...contentElements.map((element) =>
+        getRightGutterWidth(chatMainRight, element.getBoundingClientRect().right),
+      ),
+    )
+  }, [])
+
   useEffect(() => {
     showGitEnvPanelRef.current = showGitEnvPanel
   }, [showGitEnvPanel])
 
   useEffect(() => {
     const syncGitEnvPanelForViewport = (): void => {
-      const compact = window.innerWidth <= 1080
-      if (compact && !gitEnvPanelCompactRef.current && showGitEnvPanelRef.current) {
-        gitPanelUserInteractedRef.current = true
+      const rightGutter = readGitEnvPanelRightGutter()
+      if (rightGutter == null) return
+      const spaceConstrained = shouldAutoCollapseGitEnvPanel(rightGutter)
+      const wasSpaceConstrained = gitEnvPanelSpaceConstrainedRef.current
+
+      if (spaceConstrained && showGitEnvPanelRef.current) {
+        gitEnvPanelViewportCollapsedRef.current = true
         showGitEnvPanelRef.current = false
         setShowGitEnvPanel(false)
       }
-      gitEnvPanelCompactRef.current = compact
+
+      if (
+        !spaceConstrained &&
+        wasSpaceConstrained &&
+        gitEnvPanelViewportCollapsedRef.current &&
+        !showGitEnvPanelRef.current
+      ) {
+        gitEnvPanelViewportCollapsedRef.current = false
+        showGitEnvPanelRef.current = true
+        setShowGitEnvPanel(true)
+      }
+
+      gitEnvPanelSpaceConstrainedRef.current = spaceConstrained
     }
     syncGitEnvPanelForViewport()
     window.addEventListener('resize', syncGitEnvPanelForViewport)
-    return () => window.removeEventListener('resize', syncGitEnvPanelForViewport)
-  }, [])
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncGitEnvPanelForViewport)
+    if (resizeObserver != null) {
+      const chatArea = chatAreaRef.current
+      if (chatArea != null) {
+        resizeObserver.observe(chatArea)
+        chatArea
+          .querySelectorAll<HTMLElement>('.chat-stream-inner, .composer-inner')
+          .forEach((element) => resizeObserver.observe(element))
+      }
+    }
+    return () => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', syncGitEnvPanelForViewport)
+    }
+  }, [readGitEnvPanelRightGutter, showGitEnvPanel])
 
   useEffect(() => {
     // 新会话默认收起右上角 git 悬浮面板，需要时由用户手动展开。
     setShowGitEnvPanel(false)
+    showGitEnvPanelRef.current = false
     // 重置自动展开跟踪：新会话/新仓库内，用户尚未手动操作，采样基线也一并清空。
     gitPanelUserInteractedRef.current = false
+    gitEnvPanelSpaceConstrainedRef.current = shouldAutoCollapseGitEnvPanel(
+      readGitEnvPanelRightGutter(),
+    )
+    gitEnvPanelViewportCollapsedRef.current = false
     autoOpenSampledRef.current = false
     prevAutoOpenTasksLenRef.current = 0
     prevAutoOpenGitChangedFilesRef.current = 0
@@ -1449,7 +1505,7 @@ export function ChatView({
     // 依赖里同时放 `active`，让「同仓库内从有内容的会话切到空会话」也能命中重置，
     // 否则仅 workspace 不变时面板状态会一直保留在旧会话上。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gitWorkspaceId, active])
+  }, [gitWorkspaceId, active, readGitEnvPanelRightGutter])
 
   useEffect(() => {
     if (isGitRepo) return
@@ -1504,8 +1560,11 @@ export function ChatView({
     prevAutoOpenGitChangedFilesRef.current = currChangedFiles
     prevAutoOpenGoalPresentRef.current = currGoalPresent
 
-    if (shouldOpen && window.innerWidth <= 1080) {
-      gitPanelUserInteractedRef.current = true
+    if (
+      shouldOpen &&
+      shouldAutoCollapseGitEnvPanel(readGitEnvPanelRightGutter())
+    ) {
+      gitEnvPanelViewportCollapsedRef.current = true
       return
     }
 
@@ -1519,6 +1578,7 @@ export function ChatView({
     gitStatus,
     activeSessionGoal,
     showGitEnvPanel,
+    readGitEnvPanelRightGutter,
   ])
 
   const handleOpenGitReview = useCallback(() => {
@@ -2295,6 +2355,7 @@ export function ChatView({
                 onClick={() => {
                   // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
                   gitPanelUserInteractedRef.current = true
+                  gitEnvPanelViewportCollapsedRef.current = false
                   setShowGitEnvPanel((prev) => {
                     const next = !prev
                     if (next) void refreshGitStatus()
@@ -2409,6 +2470,7 @@ export function ChatView({
                 onToggleGitEnvPanel={() => {
                   // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
                   gitPanelUserInteractedRef.current = true
+                  gitEnvPanelViewportCollapsedRef.current = false
                   setShowGitEnvPanel((prev) => {
                     const next = !prev
                     if (next) void refreshGitStatus()
@@ -2522,6 +2584,7 @@ export function ChatView({
             onClose={() => {
               // 用户手动关闭面板，本会话内不再自动展开。
               gitPanelUserInteractedRef.current = true
+              gitEnvPanelViewportCollapsedRef.current = false
               setShowGitEnvPanel(false)
             }}
             onOpenCreateBranch={() => setGitCreateBranchOpen(true)}
