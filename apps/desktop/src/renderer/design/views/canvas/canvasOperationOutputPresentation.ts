@@ -1,4 +1,5 @@
 import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
+import { parseCanvasJson } from './canvasJsonRepair'
 import type { ParsedShotRow } from './canvasShotTableParse'
 import type { CanvasAssetType } from './canvas.types'
 
@@ -34,15 +35,9 @@ export function resolveCanvasTextOutputPresentation(text: string): CanvasTextOut
   if (storyboardRows.length > 0) return { kind: 'storyboard', rows: storyboardRows }
 
   const jsonSource = stripJsonFence(displayText)
-  if (jsonSource.startsWith('{') || jsonSource.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(jsonSource) as unknown
-      if (parsed != null && typeof parsed === 'object') {
-        return { kind: 'json', text: JSON.stringify(parsed, null, 2) }
-      }
-    } catch {
-      // 非完整 JSON 时继续按普通文本展示。
-    }
+  const parsed = parseCanvasJson(jsonSource)
+  if (parsed != null && typeof parsed === 'object') {
+    return { kind: 'json', text: JSON.stringify(parsed, null, 2) }
   }
 
   return { kind: 'text', text: displayText }

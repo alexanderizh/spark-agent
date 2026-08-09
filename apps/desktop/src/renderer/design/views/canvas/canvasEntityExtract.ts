@@ -7,6 +7,7 @@
  */
 
 import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
+import { parseCanvasJsonCandidates } from './canvasJsonRepair'
 
 export type ExtractEntityKind = 'character' | 'scene' | 'prop' | 'effect'
 
@@ -415,64 +416,8 @@ export function buildEntityDescription(name: string, fields: Record<string, stri
   return parts.length > 0 ? `${name}（${parts.join('；')}）` : name
 }
 
-function collectBalancedJsonCandidates(text: string): string[] {
-  const candidates: string[] = []
-  let start = -1
-  let stack: string[] = []
-  let inString = false
-  let escaped = false
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index]!
-    if (start < 0) {
-      if (char === '{' || char === '[') {
-        start = index
-        stack = [char === '{' ? '}' : ']']
-      }
-      continue
-    }
-    if (inString) {
-      if (escaped) escaped = false
-      else if (char === '\\') escaped = true
-      else if (char === '"') inString = false
-      continue
-    }
-    if (char === '"') {
-      inString = true
-      continue
-    }
-    if (char === '{' || char === '[') {
-      stack.push(char === '{' ? '}' : ']')
-      continue
-    }
-    if (char !== stack.at(-1)) continue
-    stack.pop()
-    if (stack.length === 0) {
-      candidates.push(text.slice(start, index + 1))
-      start = -1
-    }
-  }
-  return candidates
-}
-
 function tryParseJsonValues(text: string): unknown[] {
-  const trimmed = text.trim()
-  const candidates = [trimmed]
-  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
-    if (match[1]) candidates.push(match[1].trim())
-  }
-  candidates.push(...collectBalancedJsonCandidates(trimmed))
-  const parsedValues: unknown[] = []
-  const seen = new Set<string>()
-  for (const candidate of candidates) {
-    if (!candidate || seen.has(candidate)) continue
-    seen.add(candidate)
-    try {
-      parsedValues.push(JSON.parse(candidate))
-    } catch {
-      // try next candidate
-    }
-  }
-  return parsedValues
+  return parseCanvasJsonCandidates(text)
 }
 
 function stringField(value: unknown): string {

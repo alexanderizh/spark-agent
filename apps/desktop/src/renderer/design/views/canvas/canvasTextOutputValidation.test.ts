@@ -64,6 +64,22 @@ describe('canvas semantic text output validation', () => {
     if (result.ok) expect(result.text).toContain('场1 内景 茶馆 日')
   })
 
+  it('accepts the pipe-delimited scene heading used by chapter conversion', () => {
+    const result = validateCanvasSemanticTextOutput(
+      'screenplay',
+      '第1场｜内景｜二年级教室｜傍晚\n\n动作：苏晴走进教室。',
+    )
+
+    expect(result).toMatchObject({ ok: true })
+  })
+
+  it('does not require optional screenplay sections before creating a usable draft', () => {
+    expect(validateCanvasSemanticTextOutput('screenplay', '【第2场｜外景｜操场｜清晨】')).toEqual({
+      ok: true,
+      text: '【第2场｜外景｜操场｜清晨】',
+    })
+  })
+
   it('normalizes valid storyboard JSON to the existing markdown presentation', () => {
     const result = validateCanvasSemanticTextOutput(
       'shot',
@@ -81,6 +97,17 @@ describe('canvas semantic text output validation', () => {
       expect(result.text).toContain('雨夜进入茶馆')
       expect(result.text).toContain('文字水印')
     }
+  })
+
+  it('repairs minor JSON syntax flaws before validating storyboard output', () => {
+    const result = validateCanvasSemanticTextOutput(
+      'shot',
+      `模型输出：
+{shots:[{index:1,title:'雨夜进入茶馆',durationSec:1,description:“林岚推门进入茶馆。” ,}],summary:{shotCount:1,totalDurationSec:1,},}`,
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    if (result.ok) expect(result.storyboardRows?.[0]).toMatchObject({ title: '雨夜进入茶馆' })
   })
 
   it('repairs missing actionBeats from duration and shot description', () => {
@@ -111,13 +138,17 @@ describe('canvas semantic text output validation', () => {
     expect(result).toMatchObject({ ok: true })
     if (result.ok) {
       expect(result.storyboardRows?.[0]).toMatchObject({
+        index: 1,
         title: '雨夜进入茶馆',
         durationSec: 1,
+        shotSize: '',
+        dialogue: '',
+        negativePrompt: '',
       })
     }
   })
 
-  it('rejects storyboard rows that cannot be parsed into editable shots', () => {
+  it('keeps storyboard rows with entirely missing fields as blank editable shots', () => {
     const result = validateCanvasSemanticTextOutput(
       'shot',
       JSON.stringify({
@@ -126,10 +157,16 @@ describe('canvas semantic text output validation', () => {
       }),
     )
 
-    expect(result).toMatchObject({
-      ok: false,
-      message: expect.stringContaining('只有 1 个可解析'),
-    })
+    expect(result).toMatchObject({ ok: true })
+    if (result.ok) {
+      expect(result.storyboardRows).toHaveLength(2)
+      expect(result.storyboardRows?.[1]).toMatchObject({
+        index: 2,
+        title: '镜2',
+        description: '',
+        shotPrompt: '',
+      })
+    }
   })
 
   it('rejects empty or unparseable storyboard results', () => {
@@ -187,15 +224,29 @@ describe('canvas semantic text output validation', () => {
     })
   })
 
-  it('rejects storyboard results with inconsistent summary counts', () => {
+  it('does not reject editable shots when the optional summary is stale', () => {
     const mismatchedSummary = JSON.stringify({
       shots: [cinematicShot()],
       summary: { shotCount: 2, totalDurationSec: 1 },
     })
-    expect(validateCanvasSemanticTextOutput('shot', mismatchedSummary)).toMatchObject({
-      ok: false,
-      message: expect.stringContaining('疑似输出截断'),
-    })
+    expect(validateCanvasSemanticTextOutput('shot', mismatchedSummary)).toMatchObject({ ok: true })
+  })
+
+  it('accepts common segments and groups envelopes and fills their missing fields', () => {
+    const result = validateCanvasSemanticTextOutput(
+      'shot',
+      JSON.stringify({ groups: [{ name: '第一场', segments: [{ title: '建立镜头' }] }] }),
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    if (result.ok) {
+      expect(result.storyboardRows?.[0]).toMatchObject({
+        title: '建立镜头',
+        groupName: '第一场',
+        description: '',
+        transition: '',
+      })
+    }
   })
 
   it('validates every structured entity output role', () => {
@@ -211,6 +262,15 @@ describe('canvas semantic text output validation', () => {
         ),
       ).toMatchObject({ ok: true })
     }
+  })
+
+  it('repairs minor JSON syntax flaws before validating entity output', () => {
+    expect(
+      validateCanvasSemanticTextOutput(
+        'character',
+        "{entities:[{name:'林岚',description:“清瘦的夜行者”,},],}",
+      ),
+    ).toMatchObject({ ok: true })
   })
 
   it('leaves non-semantic text roles unchanged', () => {

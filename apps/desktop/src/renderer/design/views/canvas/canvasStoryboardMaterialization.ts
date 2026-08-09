@@ -20,6 +20,10 @@ export type MaterializeStoryboardRowsResult = {
   createdGroups: ShotGroup[]
 }
 
+function textValue(value: string | undefined): string {
+  return value?.trim() ?? ''
+}
+
 function normalizedName(value: string | null | undefined): string {
   return (value ?? '').trim().toLocaleLowerCase()
 }
@@ -48,34 +52,35 @@ export function storyboardRowToSegmentDraft(
   row: ParsedShotRow,
 ): Partial<ShotSegment> & { title: string } {
   return {
-    title: row.title?.trim() || `镜${row.index ?? 1}`,
-    ...(row.description ? { description: row.description } : {}),
-    ...(row.dialogue ? { dialogue: row.dialogue } : {}),
-    ...(row.narration ? { narration: row.narration } : {}),
-    ...(row.shotPrompt ? { shotPrompt: row.shotPrompt } : {}),
+    title: textValue(row.title) || `镜${row.index ?? 1}`,
+    description: textValue(row.description),
+    dialogue: textValue(row.dialogue),
+    narration: textValue(row.narration),
+    shotPrompt: textValue(row.shotPrompt),
     ...(row.durationSec != null ? { durationSec: row.durationSec } : {}),
-    ...(row.shotSize ? { shotSize: row.shotSize } : {}),
-    ...(row.angle ? { angle: row.angle } : {}),
-    ...(row.movement ? { movement: row.movement } : {}),
-    ...(row.sceneLayout ? { sceneLayout: row.sceneLayout } : {}),
-    ...(row.composition ? { composition: row.composition } : {}),
-    ...(row.blocking ? { blocking: row.blocking } : {}),
-    ...(row.lighting ? { lighting: row.lighting } : {}),
-    ...(row.focalLength ? { focalLength: row.focalLength } : {}),
-    ...(row.aperture ? { aperture: row.aperture } : {}),
-    ...(row.iso ? { iso: row.iso } : {}),
-    ...(row.colorTone ? { colorTone: row.colorTone } : {}),
-    ...(row.mood ? { mood: row.mood } : {}),
-    ...(row.performance ? { microExpression: row.performance } : {}),
-    ...(row.costume ? { costume: row.costume } : {}),
-    ...(row.characterReferences ? { characterReferences: row.characterReferences } : {}),
-    ...(row.actionBeats ? { actionBeats: row.actionBeats } : {}),
-    ...(row.soundEffects ? { soundEffects: row.soundEffects } : {}),
-    ...(row.transition ? { transition: row.transition } : {}),
-    ...(row.firstFrame ? { firstFrame: row.firstFrame } : {}),
-    ...(row.lastFrame ? { lastFrame: row.lastFrame } : {}),
-    ...(row.continuity ? { continuity: row.continuity } : {}),
-    ...(row.negativePrompt ? { negativePrompt: row.negativePrompt } : {}),
+    shotSize: textValue(row.shotSize),
+    angle: textValue(row.angle),
+    movement: textValue(row.movement),
+    sceneLayout: textValue(row.sceneLayout),
+    composition: textValue(row.composition),
+    blocking: textValue(row.blocking),
+    lighting: textValue(row.lighting),
+    cameraParams: textValue(row.cameraParams),
+    focalLength: textValue(row.focalLength),
+    aperture: textValue(row.aperture),
+    iso: textValue(row.iso),
+    colorTone: textValue(row.colorTone),
+    mood: textValue(row.mood),
+    microExpression: textValue(row.performance),
+    costume: textValue(row.costume),
+    characterReferences: textValue(row.characterReferences),
+    actionBeats: textValue(row.actionBeats),
+    soundEffects: textValue(row.soundEffects),
+    transition: textValue(row.transition),
+    firstFrame: textValue(row.firstFrame),
+    lastFrame: textValue(row.lastFrame),
+    continuity: textValue(row.continuity),
+    negativePrompt: textValue(row.negativePrompt),
   }
 }
 

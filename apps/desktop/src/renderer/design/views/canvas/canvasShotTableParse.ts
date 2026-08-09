@@ -7,6 +7,8 @@
  * 供面板把每行 createShotSegment 落库。纯逻辑、无 DOM/IPC，便于单测。
  */
 
+import { parseCanvasJson } from './canvasJsonRepair'
+
 /** 解析出的一行分镜（字段全部可选，便于容错） */
 export type ParsedShotRow = {
   /** 镜号（解析失败时由调用方按顺序兜底） */
@@ -217,37 +219,7 @@ function cleanCell(cell: string | undefined): string {
 }
 
 function tryParseJsonObject(text: string): unknown | null {
-  const trimmed = text.trim()
-  const candidates = [trimmed]
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fenced?.[1]) candidates.push(fenced[1].trim())
-  // 没有闭合 ``` 时（agent 常见：代码块未闭合），按 ```json 之后到结尾兜底提取
-  const openFenced = trimmed.match(/```(?:json)?\s*([\s\S]+)/i)
-  if (openFenced?.[1] && openFenced[1] !== fenced?.[1]) {
-    candidates.push(openFenced[1].trim())
-  }
-  const firstBrace = trimmed.indexOf('{')
-  const lastBrace = trimmed.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace)
-    candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as unknown
-      // Some adapters serialize the model's JSON one extra time. Accept that shape
-      // without making the task detail depend on provider-specific escaping.
-      if (typeof parsed === 'string') {
-        try {
-          return JSON.parse(parsed)
-        } catch {
-          return parsed
-        }
-      }
-      return parsed
-    } catch {
-      // try next candidate
-    }
-  }
-  return null
+  return parseCanvasJson(text)
 }
 
 /**
@@ -260,7 +232,7 @@ function tryParseJsonObject(text: string): unknown | null {
  */
 function recoverShotObjects(text: string): Record<string, unknown>[] {
   // 定位数组开始：找 "shots"/"segments" 后第一个 '['（用 exec 以拿到可靠的 index）
-  const keyRe = /"(?:shots|segments)"\s*:\s*\[/
+  const keyRe = /["'“]?(?:shots|segments)["'”]?\s*[：:]\s*\[/i
   let arrayStart = -1
   const keyMatch = keyRe.exec(text)
   if (keyMatch) arrayStart = text.lastIndexOf('[', keyMatch.index + keyMatch[0].length - 1)
@@ -312,7 +284,7 @@ function recoverShotObjects(text: string): Record<string, unknown>[] {
     if (end < 0) break // 不完整，停止
     const slice = text.slice(i, end + 1)
     try {
-      const obj = JSON.parse(slice) as unknown
+      const obj = parseCanvasJson(slice)
       if (obj && typeof obj === 'object') objects.push(obj as Record<string, unknown>)
     } catch {
       // 该对象损坏则跳过，继续尝试下一个
@@ -375,7 +347,11 @@ function hasShotRowContent(row: ParsedShotRow): boolean {
 }
 
 /** 把单个分镜项（shot / segment）对象映射为 ParsedShotRow。字段全部可选，便于容错。 */
-function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): ParsedShotRow | null {
+function mapShotItem(
+  item: Record<string, unknown>,
+  fallbackIndex: number,
+  allowEmptyRows = false,
+): ParsedShotRow | null {
   const index =
     typeof item.index === 'number'
       ? Math.floor(item.index)
@@ -476,10 +452,10 @@ function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): Pars
     ...(shotPrompt ? { shotPrompt } : {}),
     ...(negativePrompt ? { negativePrompt } : {}),
   }
-  return hasShotRowContent(row) ? row : null
+  return hasShotRowContent(row) || allowEmptyRows ? row : null
 }
 
-function parseJsonShotRows(text: string): ParsedShotRow[] {
+function parseJsonShotRows(text: string, allowEmptyRows = false): ParsedShotRow[] {
   const parsed = tryParseJsonObject(text)
   if (!parsed || typeof parsed !== 'object') return []
   const root = (Array.isArray(parsed) ? { shots: parsed } : parsed) as Record<string, unknown>
@@ -514,7 +490,7 @@ function parseJsonShotRows(text: string): ParsedShotRow[] {
   const rows: ParsedShotRow[] = []
   for (const raw of candidates) {
     if (!raw || typeof raw !== 'object') continue
-    const row = mapShotItem(raw as Record<string, unknown>, rows.length + 1)
+    const row = mapShotItem(raw as Record<string, unknown>, rows.length + 1, allowEmptyRows)
     if (row) rows.push(row)
   }
   return rows
@@ -531,13 +507,18 @@ export type ParseShotTableOptions = {
    * 截断的 JSON 前缀误判为完整分镜。
    */
   allowPartialJsonRecovery?: boolean
+  /**
+   * 任务结果容错：shots/segments 数组中的对象即使只有部分字段，也保留为可编辑的空白镜头。
+   * 默认关闭，避免普通文本导入把空占位行误当成有效分镜。
+   */
+  allowEmptyRows?: boolean
 }
 
 export function parseShotTable(
   markdown: string,
   options: ParseShotTableOptions = {},
 ): ParsedShotRow[] {
-  const jsonRows = parseJsonShotRows(markdown)
+  const jsonRows = parseJsonShotRows(markdown, options.allowEmptyRows === true)
   if (jsonRows.length > 0) return jsonRows
 
   // 容错兜底：JSON 整体 parse 失败（截断/未闭合/字符串内未转义引号）时，
@@ -550,7 +531,7 @@ export function parseShotTable(
     if (recovered.length >= 2) {
       const rows: ParsedShotRow[] = []
       for (const obj of recovered) {
-        const row = mapShotItem(obj, rows.length + 1)
+        const row = mapShotItem(obj, rows.length + 1, options.allowEmptyRows === true)
         if (row) rows.push(row)
       }
       if (rows.length > 0) return rows

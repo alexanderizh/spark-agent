@@ -94,6 +94,24 @@ describe('storyboard materialization', () => {
     expect((result.metadata.film as { shotGroups: unknown[] }).shotGroups).toHaveLength(1)
   })
 
+  it('persists omitted editable fields as empty strings', () => {
+    const result = materializeStoryboardRows({
+      metadata: {},
+      defaultGroupName: '第一场',
+      assets: [],
+      rows: [{ title: '空白镜头' }],
+    })
+
+    expect(result.createdGroups[0]?.segments[0]).toMatchObject({
+      title: '空白镜头',
+      description: '',
+      dialogue: '',
+      cameraParams: '',
+      shotPrompt: '',
+      negativePrompt: '',
+    })
+  })
+
   it('appends to existing shot groups without mutating the input metadata', () => {
     const existing = {
       film: {
