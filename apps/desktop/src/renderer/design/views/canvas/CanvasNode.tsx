@@ -730,8 +730,14 @@ export const CanvasNode = memo(function CanvasNode({
           operationOutputState.mode !== 'bundle' &&
           activeOperationOutput?.type === 'audio' &&
           activeOperationOutput.nodeId
-        ? activeOperationOutput.nodeId
-        : null
+          ? activeOperationOutput.nodeId
+          : null
+  const videoToolbarSourceNodeId =
+    contentNode?.type === 'video' && contentNode.data.url
+      ? isTask
+        ? (operationOutputState.primaryOutput?.nodeId ?? null)
+        : node.id
+      : null
   const runStyleExtraction = () => {
     const target = contentNode ?? node
     const isTextLike = target.type === 'text' || target.type === 'prompt'
@@ -819,8 +825,8 @@ export const CanvasNode = memo(function CanvasNode({
     ],
   )
   const selectionToolbarEntries = useMemo<CanvasNodeToolbarEntry[]>(() => {
-    // 单节点顶部工具栏只放已确认的快捷操作。上下文管理类入口（视频编辑、影视创作、
-    // 资源库、类型切换、编组管理等）继续留在右键菜单，不能因为右键菜单中存在就自动迁移。
+    // 单节点顶部工具栏放已确认的快捷操作；视频编辑同时保留右键入口，其他上下文管理类入口
+    // （影视创作、资源库、类型切换、编组管理等）继续留在右键菜单，不能因为右键菜单中存在就自动迁移。
     const entries: CanvasNodeToolbarEntry[] = []
     const addAction = (action: CanvasNodeToolbarAction) => entries.push(action)
 
@@ -847,6 +853,22 @@ export const CanvasNode = memo(function CanvasNode({
         label: '展开产物',
         icon: <Icons.Layers size={15} />,
         onClick: () => actions.expandOperationOutputs?.(node.id),
+      })
+    }
+    if (videoToolbarSourceNodeId) {
+      if (actions.editVideo) {
+        addAction({
+          key: 'edit-video',
+          label: '视频编辑',
+          icon: <Icons.Video size={15} />,
+          onClick: () => actions.editVideo?.(node.id),
+        })
+      }
+      addAction({
+        key: 'extract-audio',
+        label: '分离音频',
+        icon: <Icons.AudioLines size={15} />,
+        onClick: () => actions.createOperationChild(videoToolbarSourceNodeId, 'extract_audio'),
       })
     }
     addAction({
@@ -950,6 +972,7 @@ export const CanvasNode = memo(function CanvasNode({
     actions,
     canExpandOperationOutputs,
     canExtractCharacterSubview,
+    videoToolbarSourceNodeId,
     audioToolbarNodeId,
     contentNode,
     hasOperationOutput,
