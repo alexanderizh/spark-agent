@@ -69,7 +69,20 @@ function openAiImageSchema(modelId: string, editing: boolean): Record<string, un
         ? {
             type: 'string',
             title: '尺寸',
-            examples: ['auto', '1024x1024', '1536x1024', '1024x1536', '2048x1024'],
+            // GPT Image 2 接受满足官方约束的任意尺寸；这些是官方列出的常用尺寸，
+            // 同时作为画布任务面板中的快捷选择。
+            examples: [
+              'auto',
+              '1024x1024',
+              '1536x1024',
+              '1024x1536',
+              '2048x2048',
+              '2048x1152',
+              '3840x2160',
+              '2160x3840',
+            ],
+            'x-allow-custom': true,
+            pattern: '^(?:auto|\\d+\\s*[xX]\\s*\\d+)$',
             default: 'auto',
           }
         : {

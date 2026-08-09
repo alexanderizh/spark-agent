@@ -593,11 +593,17 @@ const SIZE_4K = [
   '6240x2656',
 ]
 
-function sizeProperty(tiers: readonly string[], values: readonly string[], pixelRange: string) {
+function sizeProperty(
+  tiers: readonly string[],
+  values: readonly string[],
+  pixelRange: string,
+  examples: readonly string[],
+) {
   return {
     type: 'string',
     title: '尺寸',
     enum: [...tiers, ...values],
+    examples: [...examples],
     default: '2K',
     description: `分辨率档位或宽x高；直接尺寸总像素范围 ${pixelRange}，宽高比 [1/16,16]。`,
     'x-allow-custom': true,
@@ -612,16 +618,30 @@ function seedreamSchema(variant: SeedreamVariant): Record<string, unknown> {
   const lite = variant === 'lite'
   const four = variant === '4.0'
   const size = pro
-    ? sizeProperty(['1K', '2K'], [...SIZE_1K, ...SIZE_2K], '[921600,4624220]')
+    ? sizeProperty(['1K', '2K'], [...SIZE_1K, ...SIZE_2K], '[921600,4624220]', [
+        '2560x1440',
+        '1440x2560',
+        '2048x1536',
+      ])
     : lite
-      ? sizeProperty(['2K', '3K', '4K'], [...SIZE_2K, ...SIZE_3K, ...SIZE_4K], '[3686400,16777216]')
+      ? sizeProperty(
+          ['2K', '3K', '4K'],
+          [...SIZE_2K, ...SIZE_3K, ...SIZE_4K],
+          '[3686400,16777216]',
+          ['2560x1440', '1440x2560', '2560x1600'],
+        )
       : four
         ? sizeProperty(
             ['1K', '2K', '4K'],
             [...SIZE_1K, ...SIZE_2K, ...SIZE_4K],
             '[921600,16777216]',
+            ['1920x1080', '1080x1920', '2048x1536'],
           )
-        : sizeProperty(['2K', '4K'], [...SIZE_2K, ...SIZE_4K], '[3686400,16777216]')
+        : sizeProperty(['2K', '4K'], [...SIZE_2K, ...SIZE_4K], '[3686400,16777216]', [
+            '2560x1440',
+            '1440x2560',
+            '2560x1600',
+          ])
   return {
     type: 'object',
     additionalProperties: false,

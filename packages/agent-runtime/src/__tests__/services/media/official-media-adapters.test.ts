@@ -93,6 +93,84 @@ describe('OpenAI official media adapter', () => {
     expect(existsSync(output.assets[0]?.filePath ?? '')).toBe(true)
   })
 
+  it('normalizes a documented custom GPT Image 2 size', async () => {
+    let body: Record<string, unknown> = {}
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return jsonResponse({ data: [{ b64_json: PNG_PIXEL }] })
+    }
+
+    await adapter.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        prompt: 'a wide observatory',
+        outputDir,
+        modelParams: { size: '2048 x 1152' },
+      },
+      context('openai-images', 'gpt-image-2', fetchImpl),
+    )
+
+    expect(body.size).toBe('2048x1152')
+  })
+
+  it('rejects a GPT Image 2 size outside the documented constraints', async () => {
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error('fetch should not be called')
+    }
+
+    await expect(
+      adapter.invoke(
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          prompt: 'an invalid canvas',
+          outputDir,
+          modelParams: { size: '1000x1000' },
+        },
+        context('openai-images', 'gpt-image-2', fetchImpl),
+      ),
+    ).rejects.toThrow('GPT Image 2')
+  })
+
+  it('rejects a GPT Image 2 size whose edge exceeds 3840 pixels', async () => {
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error('fetch should not be called')
+    }
+
+    await expect(
+      adapter.invoke(
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          prompt: 'an oversized canvas',
+          outputDir,
+          modelParams: { size: '4096x1536' },
+        },
+        context('openai-images', 'gpt-image-2', fetchImpl),
+      ),
+    ).rejects.toThrow('GPT Image 2')
+  })
+
+  it('applies the same custom-size validation to versioned GPT Image 2 models', async () => {
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error('fetch should not be called')
+    }
+
+    await expect(
+      adapter.invoke(
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          prompt: 'an invalid versioned canvas',
+          outputDir,
+          modelParams: { size: '1000x1000' },
+        },
+        context('openai-images', 'gpt-image-2-2026-04-21', fetchImpl),
+      ),
+    ).rejects.toThrow('GPT Image 2')
+  })
+
   it('sends image edits as multipart with repeated image fields', async () => {
     let contentType = ''
     let multipart = ''

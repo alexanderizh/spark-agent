@@ -3,8 +3,10 @@ import {
   aspectRatioOptions,
   aspectRatioShape,
   isAspectRatioValue,
+  parameterOptionValues,
   type CanvasParameterPresentation,
 } from './canvasParameterPresentation'
+import { readCanvasParameterHistory } from './canvasParameterHistory'
 import './CanvasParameterControl.less'
 
 export type CanvasParameterControlProps = {
@@ -12,6 +14,7 @@ export type CanvasParameterControlProps = {
   value: string
   onChange: (value: string) => void
   compact?: boolean
+  customValueHistoryKey?: string | undefined
 }
 
 function optionLabel(value: string, unit?: string): string {
@@ -46,7 +49,7 @@ function OptionRail({
           aria-pressed={option === value}
           onClick={() => onChange(option)}
         >
-          {optionLabel(option, presentation.unit)}
+          {optionLabel(enumOptionLabel(presentation.field, option), presentation.unit)}
         </button>
       ))}
     </div>
@@ -57,7 +60,7 @@ function CompactOptions({ presentation, value, onChange }: CanvasParameterContro
   return (
     <OptionRail
       presentation={presentation}
-      options={presentation.field.enumValues}
+      options={parameterOptionValues(presentation.field)}
       value={value}
       onChange={onChange}
     />
@@ -91,7 +94,7 @@ function AspectRatioGrid({
                 style={{ width: shape.width, height: shape.height }}
               />
             </span>
-            <span>{option}</span>
+            <span>{enumOptionLabel(presentation.field, option)}</span>
           </button>
         )
       })}
@@ -104,11 +107,16 @@ function CustomAspectRatioInput({
   options,
   value,
   onChange,
+  customValueHistoryKey,
 }: CanvasParameterControlProps & { options: string[] }) {
   if (!presentation.field.allowCustom) return null
+  const history = readCanvasParameterHistory(customValueHistoryKey, presentation.field.name)
+  const inputOptions = [...new Set([...options, ...history])]
   const normalizedValue = value.trim()
   const preview =
-    normalizedValue && !options.includes(normalizedValue) && isAspectRatioValue(normalizedValue)
+    normalizedValue &&
+    !inputOptions.includes(normalizedValue) &&
+    isAspectRatioValue(normalizedValue)
       ? aspectRatioShape(normalizedValue)
       : null
   return (
@@ -116,7 +124,7 @@ function CustomAspectRatioInput({
       <AutoComplete
         className="canvas-parameter-custom-value"
         value={value || undefined}
-        options={options.map((option) => ({ value: option, label: option }))}
+        options={inputOptions.map((option) => ({ value: option, label: option }))}
         placeholder={presentation.field.placeholder ?? '输入自定义比例或尺寸'}
         allowClear
         onChange={(next) => onChange(next == null ? '' : String(next))}
@@ -142,7 +150,12 @@ function CustomAspectRatioInput({
   )
 }
 
-function AspectRatioOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
+function AspectRatioOptions({
+  presentation,
+  value,
+  onChange,
+  customValueHistoryKey,
+}: CanvasParameterControlProps) {
   const options = aspectRatioOptions(presentation.field)
   return (
     <>
@@ -157,14 +170,20 @@ function AspectRatioOptions({ presentation, value, onChange }: CanvasParameterCo
         options={options}
         value={value}
         onChange={onChange}
+        customValueHistoryKey={customValueHistoryKey}
       />
     </>
   )
 }
 
-function SizeOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
+function SizeOptions({
+  presentation,
+  value,
+  onChange,
+  customValueHistoryKey,
+}: CanvasParameterControlProps) {
   const visualOptions = aspectRatioOptions(presentation.field).filter(isAspectRatioValue)
-  const resolutionOptions = presentation.field.enumValues.filter(
+  const resolutionOptions = parameterOptionValues(presentation.field).filter(
     (option) => !isAspectRatioValue(option),
   )
   return (
@@ -187,9 +206,10 @@ function SizeOptions({ presentation, value, onChange }: CanvasParameterControlPr
       )}
       <CustomAspectRatioInput
         presentation={presentation}
-        options={presentation.field.enumValues}
+        options={parameterOptionValues(presentation.field)}
         value={value}
         onChange={onChange}
+        customValueHistoryKey={customValueHistoryKey}
       />
     </>
   )
@@ -248,6 +268,7 @@ export function CanvasParameterControl({
   value,
   onChange,
   compact = false,
+  customValueHistoryKey,
 }: CanvasParameterControlProps) {
   const { field, control } = presentation
   let controlNode
@@ -259,6 +280,7 @@ export function CanvasParameterControl({
         value={value}
         onChange={onChange}
         compact={compact}
+        customValueHistoryKey={customValueHistoryKey}
       />
     )
   } else if (control === 'size') {
@@ -268,11 +290,12 @@ export function CanvasParameterControl({
         value={value}
         onChange={onChange}
         compact={compact}
+        customValueHistoryKey={customValueHistoryKey}
       />
     )
   } else if (
     (control === 'resolution' || control === 'count' || control === 'duration') &&
-    field.enumValues.length > 0
+    parameterOptionValues(field).length > 0
   ) {
     controlNode = (
       <CompactOptions
@@ -284,7 +307,7 @@ export function CanvasParameterControl({
     )
   } else if (
     control === 'duration' &&
-    field.enumValues.length === 0 &&
+    parameterOptionValues(field).length === 0 &&
     Number.isFinite(field.minimum) &&
     Number.isFinite(field.maximum) &&
     field.maximum! > field.minimum!
@@ -293,10 +316,16 @@ export function CanvasParameterControl({
   } else if (control === 'boolean') {
     controlNode = <BooleanOptions presentation={presentation} value={value} onChange={onChange} />
   } else if (control === 'autocomplete') {
+    const options = [
+      ...new Set([
+        ...field.enumValues,
+        ...readCanvasParameterHistory(customValueHistoryKey, field.name),
+      ]),
+    ]
     controlNode = (
       <AutoComplete
         value={value || undefined}
-        options={field.enumValues.map((option) => ({
+        options={options.map((option) => ({
           value: option,
           label: enumOptionLabel(field, option),
         }))}

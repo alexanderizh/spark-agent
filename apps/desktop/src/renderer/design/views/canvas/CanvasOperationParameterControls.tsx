@@ -28,16 +28,14 @@ export type CanvasOperationParameterControlsProps = {
   emptyModelLabel?: string
   fields: SchemaField[]
   values: Record<string, string>
+  customValueHistoryKey?: string | undefined
   advancedContent?: ReactNode
   modelMeta?: ReactNode
   onModelChange: (value: string) => void
   onParameterChange: (name: string, value: string) => void
 }
 
-function parameterPreviewValue(
-  presentation: CanvasParameterPresentation,
-  value: string,
-): string {
+function parameterPreviewValue(presentation: CanvasParameterPresentation, value: string): string {
   if (presentation.control === 'boolean') {
     if (value === 'true') return `${presentation.label}开启`
     if (value === 'false') return `${presentation.label}关闭`
@@ -57,6 +55,7 @@ export function CanvasOperationParameterControls({
   emptyModelLabel,
   fields,
   values,
+  customValueHistoryKey,
   advancedContent,
   modelMeta,
   onModelChange,
@@ -108,6 +107,7 @@ export function CanvasOperationParameterControls({
                     key={presentation.field.name}
                     presentation={presentation}
                     value={values[presentation.field.name] ?? ''}
+                    customValueHistoryKey={customValueHistoryKey}
                     onChange={(next) => onParameterChange(presentation.field.name, next)}
                   />
                 ))}
@@ -162,6 +162,7 @@ export function CanvasOperationParameterControls({
                       key={presentation.field.name}
                       presentation={presentation}
                       value={values[presentation.field.name] ?? ''}
+                      customValueHistoryKey={customValueHistoryKey}
                       onChange={(next) => onParameterChange(presentation.field.name, next)}
                     />
                   ))}
@@ -207,6 +208,7 @@ export function CanvasOperationParameterControls({
               key={presentation.field.name}
               presentation={presentation}
               value={values[presentation.field.name] ?? ''}
+              customValueHistoryKey={customValueHistoryKey}
               onChange={(next) => onParameterChange(presentation.field.name, next)}
             />
           ))}
@@ -235,6 +237,7 @@ export function CanvasOperationParameterControls({
                     key={presentation.field.name}
                     presentation={presentation}
                     value={values[presentation.field.name] ?? ''}
+                    customValueHistoryKey={customValueHistoryKey}
                     onChange={(next) => onParameterChange(presentation.field.name, next)}
                   />
                 ))}

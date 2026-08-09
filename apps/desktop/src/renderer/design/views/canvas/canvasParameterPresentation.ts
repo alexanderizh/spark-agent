@@ -11,6 +11,7 @@ export type SchemaField = {
   enumLabels?: Record<string, string>
   minimum?: number
   maximum?: number
+  multipleOf?: number
   allowCustom?: boolean
   pattern?: string
   description?: string
@@ -89,42 +90,29 @@ function isRatioValue(value: string): boolean {
   const trimmed = value.trim().toLowerCase()
   return (
     /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(trimmed) ||
-    /^\d+(?:\.\d+)?[x×]\d+(?:\.\d+)?$/.test(trimmed) ||
+    /^\d+(?:\.\d+)?[x×*]\d+(?:\.\d+)?$/.test(trimmed) ||
     ['auto', 'adaptive', '智能比例', '自适应'].includes(trimmed)
   )
 }
 
-export const COMMON_ASPECT_RATIO_PRESETS = [
-  '1:1',
-  '1:2',
-  '2:1',
-  '3:4',
-  '4:3',
-  '9:16',
-  '16:9',
-  '1:3',
-  '3:1',
-  '9:21',
-  '21:9',
-] as const
+export function parameterOptionValues(field: SchemaField): string[] {
+  return [...new Set(field.enumValues)]
+}
 
 export function aspectRatioOptions(field: SchemaField): string[] {
-  const name = normalizeName(field.name)
-  const isRatioOnlySize =
-    name === 'size' && field.enumValues.length > 0 && field.enumValues.every(isRatioValue)
-  const options =
-    field.allowCustom && (ASPECT_ALIASES.has(name) || isRatioOnlySize)
-      ? [...COMMON_ASPECT_RATIO_PRESETS, ...field.enumValues]
-      : field.enumValues
-  return [...new Set(options)]
+  const optionValues = parameterOptionValues(field)
+  // 自定义输入不代表 provider 接受一组通用比例。快捷选项只能来自当前
+  // manifest 的 enum/examples；模型需要任意比例时，用户仍可在输入框中手输。
+  return [...new Set(optionValues)]
 }
 
 function fieldControl(field: SchemaField): CanvasParameterControlKind {
   const name = normalizeName(field.name)
+  const optionValues = parameterOptionValues(field)
   if (ASPECT_ALIASES.has(name)) return 'aspect-ratio'
   if (name === 'size') {
-    if (field.allowCustom && field.enumValues.some(isRatioValue)) return 'size'
-    return field.enumValues.length > 0 && field.enumValues.every(isRatioValue)
+    if (field.allowCustom && optionValues.length > 0) return 'size'
+    return optionValues.length > 0 && optionValues.every(isRatioValue)
       ? 'aspect-ratio'
       : 'resolution'
   }
@@ -132,7 +120,7 @@ function fieldControl(field: SchemaField): CanvasParameterControlKind {
   if (COUNT_ALIASES.has(name)) return 'count'
   if (DURATION_ALIASES.has(name)) return 'duration'
   if (field.type === 'boolean') return 'boolean'
-  if (field.enumValues.length > 0) return field.allowCustom ? 'autocomplete' : 'enum'
+  if (optionValues.length > 0) return field.allowCustom ? 'autocomplete' : 'enum'
   if (field.type === 'integer' || field.type === 'number') return 'number'
   return 'text'
 }
@@ -140,6 +128,7 @@ function fieldControl(field: SchemaField): CanvasParameterControlKind {
 function fieldTier(field: SchemaField, control: CanvasParameterControlKind): CanvasParameterTier {
   const name = normalizeName(field.name)
   if (FORCE_ADVANCED_ALIASES.has(name)) return 'advanced'
+  if (field.allowCustom && (name === 'width' || name === 'height')) return 'common'
   if (
     control === 'aspect-ratio' ||
     control === 'size' ||
@@ -197,7 +186,7 @@ export function aspectRatioShape(value: string): {
   if (['auto', 'adaptive', '智能比例', '自适应'].includes(normalized)) {
     return { width: 24, height: 18, adaptive: true }
   }
-  const match = normalized.match(/^(\d+(?:\.\d+)?)(?::|x|×)(\d+(?:\.\d+)?)$/)
+  const match = normalized.match(/^(\d+(?:\.\d+)?)(?::|x|×|\*)(\d+(?:\.\d+)?)$/)
   if (!match) return { width: 24, height: 18 }
   const width = Number(match[1])
   const height = Number(match[2])

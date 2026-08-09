@@ -56,6 +56,10 @@ import { buildReferenceImageInputRoles } from './canvasTaskInputFiles'
 import { mediaModelKey } from './canvasModelPickerModel'
 import { CanvasModelPicker } from './CanvasModelPicker'
 import { CanvasParameterControl } from './CanvasParameterControl'
+import {
+  canvasParameterHistoryScope,
+  recordCanvasCustomParameterHistory,
+} from './canvasParameterHistory'
 import { CanvasComposerToolbar } from './CanvasComposerToolbar'
 import {
   parameterSummaryValue,
@@ -524,11 +528,22 @@ export function CanvasInlineAiComposer({
     () => partitionParameterFields(parameterFields),
     [parameterFields],
   )
+  const parameterHistoryKey = useMemo(
+    () =>
+      selectedModelKey
+        ? canvasParameterHistoryScope({
+            operation,
+            modelKey: selectedModelKey,
+            capabilityId: selectedCapabilityId ?? selectedCapability?.id,
+          })
+        : undefined,
+    [operation, selectedCapability?.id, selectedCapabilityId, selectedModelKey],
+  )
 
   useEffect(() => {
     const defaults = selectedCapability?.defaults ?? {}
     // operation 级默认（如全景图 2:1 / 2k），优先级低于 capability.defaults
-    const opDefaults = operationDefaultModelParams(operation)
+    const opDefaults = operationDefaultModelParams(operation, selectedModel)
     // 节点持久化的默认参数（如角色身份板默认 16:9），优先级低于用户草稿、高于 capability/op 默认
     const nodeDefaults = nodeDefaultModelParams(selectedNodes, parameterFields)
     // 参数草稿优先级：node draft（按选中节点）> 旧 entry（operation::model）> 节点持久化默认 > capability defaults > operation defaults > ''
@@ -559,7 +574,15 @@ export function CanvasInlineAiComposer({
       setCustomParams(legacy?.customParams ?? [])
       if (legacy?.inputTransport) setInputTransport(legacy.inputTransport)
     }
-  }, [cacheKey, nodeCacheKey, operation, parameterFields, selectedCapability, selectedNodes])
+  }, [
+    cacheKey,
+    nodeCacheKey,
+    operation,
+    parameterFields,
+    selectedCapability,
+    selectedModel,
+    selectedNodes,
+  ])
 
   useEffect(() => {
     if (supportedMediaModels.length === 0) {
@@ -936,22 +959,6 @@ export function CanvasInlineAiComposer({
           message: w.message,
         }))
       }
-      // 任务创建：保留跨节点模型偏好，清除本节点集合的草稿缓存
-      if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
-      writeCanvasLastUsedPresetTarget(resolveCanvasPresetTarget({ operation }), {
-        ...(prompt.trim() ? { prompt } : {}),
-        negativePrompt,
-        ...(selectedModel?.providerProfileId
-          ? { providerProfileId: selectedModel.providerProfileId }
-          : {}),
-        ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
-        ...(selectedModel?.effectiveModelId ? { modelId: selectedModel.effectiveModelId } : {}),
-        ...(selectedAgentId ? { agentId: selectedAgentId } : {}),
-        // 新节点没在 InlineAiComposer 里选 skills，但 preset 里可能已经预设了；
-        // 这里把 preset 默认值一起写进 lastUsed，避免后续新建节点拿不到 skill 覆盖。
-        ...(resolvedPresetSkillIds.length > 0 ? { skillIds: resolvedPresetSkillIds } : {}),
-        ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
-      })
       try {
         await onCreateTask(payload)
       } catch (error) {
@@ -965,6 +972,22 @@ export function CanvasInlineAiComposer({
         if (decision.skipFutureValidation) writeSkipCanvasParameterValidation(true)
         await onCreateTask({ ...payload, skipParameterValidation: true })
       }
+      // 只有任务真正创建成功后才记录上次使用值和自定义尺寸，避免一次失败的
+      // provider 参数污染下一次任务。模型标识与参数一起保存，后续不会跨模型回填。
+      if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
+      writeCanvasLastUsedPresetTarget(resolveCanvasPresetTarget({ operation }), {
+        ...(prompt.trim() ? { prompt } : {}),
+        negativePrompt,
+        ...(selectedModel?.providerProfileId
+          ? { providerProfileId: selectedModel.providerProfileId }
+          : {}),
+        ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
+        ...(selectedModel?.effectiveModelId ? { modelId: selectedModel.effectiveModelId } : {}),
+        ...(selectedAgentId ? { agentId: selectedAgentId } : {}),
+        ...(resolvedPresetSkillIds.length > 0 ? { skillIds: resolvedPresetSkillIds } : {}),
+        ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
+      })
+      recordCanvasCustomParameterHistory(parameterHistoryKey, parameterFields, modelParams)
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
@@ -1269,6 +1292,7 @@ export function CanvasInlineAiComposer({
                   key={presentation.field.name}
                   presentation={presentation}
                   value={modelParamDraft[presentation.field.name] ?? ''}
+                  customValueHistoryKey={parameterHistoryKey}
                   onChange={(value) =>
                     setModelParamDraft((prev) =>
                       updateModelParamDraftValue(prev, presentation.field.name, value),
@@ -1341,6 +1365,7 @@ export function CanvasInlineAiComposer({
                       key={presentation.field.name}
                       presentation={presentation}
                       value={modelParamDraft[presentation.field.name] ?? ''}
+                      customValueHistoryKey={parameterHistoryKey}
                       onChange={(value) =>
                         setModelParamDraft((prev) =>
                           updateModelParamDraftValue(prev, presentation.field.name, value),
@@ -1693,16 +1718,31 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
             .map((value) => String(value))
         : []
       const examples = Array.isArray(spec.examples)
-        ? spec.examples.filter((value): value is string => typeof value === 'string')
+        ? spec.examples
+            .filter(
+              (value) =>
+                typeof value === 'string' ||
+                typeof value === 'number' ||
+                typeof value === 'boolean',
+            )
+            .map((value) => String(value))
         : []
       // manifest paramSchema 可标记 `x-allow-custom: true` 让前端用 AutoComplete 渲染
       //（既保留下拉推荐值，又允许用户在范围内输入自定义值，如 Seedream size）。
       const allowCustom = spec['x-allow-custom'] === true || spec.allowCustom === true
+      // `enum` 是 provider 的有限约束，不能被 examples 扩大。只有 manifest 显式声明
+      // `x-allow-custom: true` 时，才把已由 provider 契约提供的 examples 作为快捷值展示；
+      // 通用 schema 的 examples 不足以证明它们适用于当前模型，因此不自动展示。
+      const optionValues = allowCustom ? [...new Set([...enumValues, ...examples])] : enumValues
       const pattern = typeof spec.pattern === 'string' ? spec.pattern : undefined
       const minimum =
         typeof spec.minimum === 'number' && Number.isFinite(spec.minimum) ? spec.minimum : undefined
       const maximum =
         typeof spec.maximum === 'number' && Number.isFinite(spec.maximum) ? spec.maximum : undefined
+      const multipleOf =
+        typeof spec.multipleOf === 'number' && Number.isFinite(spec.multipleOf)
+          ? spec.multipleOf
+          : undefined
       // manifest paramSchema 可标记 `x-template-labels: { id: 名称 }` 让前端下拉显示
       // 人类可读名（如 MiniMax 视频 Agent 模板的数字 id → 中文名）。仅保留 string 值。
       const rawLabels = spec['x-template-labels']
@@ -1718,10 +1758,12 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
         name,
         title: typeof spec.title === 'string' ? spec.title : name,
         type,
-        enumValues,
+        // 画布控件使用这组值渲染候选项；运行时仍以 manifest 的 enum/pattern 校验为准。
+        enumValues: optionValues,
         ...(enumLabels ? { enumLabels } : {}),
         ...(minimum !== undefined ? { minimum } : {}),
         ...(maximum !== undefined ? { maximum } : {}),
+        ...(multipleOf !== undefined ? { multipleOf } : {}),
         ...(allowCustom ? { allowCustom: true } : {}),
         ...(pattern ? { pattern } : {}),
         ...(typeof spec.description === 'string' ? { description: spec.description } : {}),
@@ -1737,11 +1779,23 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
  */
 export function operationDefaultModelParams(
   operation: CanvasOperationType,
+  model?: Pick<CanvasMediaModelSummary, 'providerProfileId' | 'manifestId' | 'effectiveModelId'>,
 ): Record<string, string> {
+  const targetId = resolveCanvasPresetTarget({ operation })
+  const resolved = readCanvasResolvedPresetTarget(targetId, {
+    modelIdentity: model
+      ? {
+          providerProfileId: model.providerProfileId,
+          manifestId: model.manifestId,
+          modelId: model.effectiveModelId,
+        }
+      : null,
+  })
   return Object.fromEntries(
-    Object.entries(
-      readCanvasResolvedPresetTarget(resolveCanvasPresetTarget({ operation })).modelParams,
-    ).map(([name, value]) => [name, typeof value === 'string' ? value : String(value)]),
+    Object.entries(resolved.modelParams).map(([name, value]) => [
+      name,
+      typeof value === 'string' ? value : String(value),
+    ]),
   )
 }
 

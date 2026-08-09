@@ -67,7 +67,11 @@ const VIDEO_CAPABILITIES: readonly MediaCapabilityId[] = [
 /** V2(H3) content[] 元素（简化类型，仅描述发送形态）。 */
 type MinimaxV2ContentItem =
   | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string }; role: 'first_frame' | 'last_frame' | 'reference_image' }
+  | {
+      type: 'image_url'
+      image_url: { url: string }
+      role: 'first_frame' | 'last_frame' | 'reference_image'
+    }
   | { type: 'video_url'; video_url: { url: string }; role: 'reference_video' }
   | { type: 'audio_url'; audio_url: { url: string }; role: 'reference_audio' }
 
@@ -97,10 +101,16 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
     if (!ctx.apiKey) throw new MediaProviderError('api_key_missing', 'Missing MiniMax API key')
     const capability = input.capability
     if (!capability) {
-      throw new MediaProviderError('capability_not_supported', 'No capability resolved for minimax-hailuo invoke')
+      throw new MediaProviderError(
+        'capability_not_supported',
+        'No capability resolved for minimax-hailuo invoke',
+      )
     }
     if (!this.supports(capability)) {
-      throw new MediaProviderError('capability_not_supported', `minimax-hailuo does not support ${capability}`)
+      throw new MediaProviderError(
+        'capability_not_supported',
+        `minimax-hailuo does not support ${capability}`,
+      )
     }
     if (capability.startsWith('image.')) return this.generateImage(input, ctx)
     return this.generateVideo(input, ctx)
@@ -108,7 +118,10 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
 
   // ─── 图像路径（image-01 / image-01-live，/v1/image_generation，同步）──────────
 
-  private async generateImage(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+  private async generateImage(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
     const capability = input.capability as MediaCapabilityId
     const prompt = (input.prompt ?? '').trim()
     if (!prompt) {
@@ -125,14 +138,27 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
       const refFiles = (input.inputFiles ?? []).filter(isImageInput)
       const refFile = refFiles[0]
       if (!refFile) {
-        throw new MediaProviderError('invalid_input', 'MiniMax 图生图需要一张主体参考图（role=reference）')
+        throw new MediaProviderError(
+          'invalid_input',
+          'MiniMax 图生图需要一张主体参考图（role=reference）',
+        )
       }
-      const ref = await resolveMinimaxHailuoMediaReference(refFile, 'image', ctx, { allowMmFile: false })
+      const ref = await resolveMinimaxHailuoMediaReference(refFile, 'image', ctx, {
+        allowMmFile: false,
+      })
       body.subject_reference = [{ type: 'character', image_file: ref }]
     }
 
     const url = `${base}/v1/image_generation`
-    logMediaCall({ provider: this.id, capability, model, method: 'POST', url, body, extra: { prompt: prompt.slice(0, 120) } })
+    logMediaCall({
+      provider: this.id,
+      capability,
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: { prompt: prompt.slice(0, 120) },
+    })
 
     const resp = await fetchJson(url, {
       method: 'POST',
@@ -167,7 +193,10 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
 
   // ─── 视频路径：按 modelId 分流到 v1 / 模板 / V2(H3) ─────────────────────────
 
-  private async generateVideo(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+  private async generateVideo(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
     const modelId = mediaAdapterModelId(ctx)
     if (modelId === 'video-agent') return this.generateTemplateVideo(input, ctx)
     if (modelId === 'MiniMax-H3') return this.generateV2Video(input, ctx)
@@ -176,7 +205,10 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
 
   // ─── v1 视频（Hailuo-2.3 / -Fast）───────────────────────────────────────────
 
-  private async generateV1Video(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+  private async generateV1Video(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
     const capability = input.capability as MediaCapabilityId
     const prompt = (input.prompt ?? '').trim()
     const model = ctx.defaultModel
@@ -188,7 +220,10 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
     if (capability === 'video.image_to_video') {
       const frameFile = (input.inputFiles ?? []).filter(isImageInput)[0]
       if (!frameFile) {
-        throw new MediaProviderError('invalid_input', 'MiniMax v1 图生视频需要一张首帧图（role=first_frame）')
+        throw new MediaProviderError(
+          'invalid_input',
+          'MiniMax v1 图生视频需要一张首帧图（role=first_frame）',
+        )
       }
       body.first_frame_image = await resolveMinimaxHailuoMediaReference(frameFile, 'image', ctx, {
         allowMmFile: false,
@@ -242,7 +277,10 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
 
     // v1 产物：query 返回 file_id(string) → retrieve 拿 download_url(1h) → 下载。
     const fileId = readPath(queryResp, 'file_id') ?? readPath(queryResp, 'data', 'file_id')
-    const directUrl = typeof fileId === 'string' && fileId ? await this.resolveV1DownloadUrl(fileId, ctx) : undefined
+    const directUrl =
+      typeof fileId === 'string' && fileId
+        ? await this.resolveV1DownloadUrl(fileId, ctx)
+        : undefined
     if (!directUrl) {
       throw new MediaProviderError(
         'provider_http_error',
@@ -258,11 +296,21 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
       configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
     )
     logMediaResult({ provider: this.id, capability, ok: true, assetCount: 1, requestId: taskId })
-    return { provider: this.id, model, mode: 'async', requestId: taskId, assets: [asset], rawResponse: queryResp }
+    return {
+      provider: this.id,
+      model,
+      mode: 'async',
+      requestId: taskId,
+      assets: [asset],
+      rawResponse: queryResp,
+    }
   }
 
   /** v1 视频：file_id → GET /v1/files/retrieve 拿 download_url（1h 有效）。 */
-  private async resolveV1DownloadUrl(fileId: string, ctx: MediaProviderContext): Promise<string | undefined> {
+  private async resolveV1DownloadUrl(
+    fileId: string,
+    ctx: MediaProviderContext,
+  ): Promise<string | undefined> {
     const file = await new MinimaxHailuoFilesClient({
       apiKey: ctx.apiKey,
       apiEndpoint: ctx.apiEndpoint,
@@ -280,7 +328,8 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
     const capability = input.capability as MediaCapabilityId
     const model = ctx.defaultModel
     const base = baseEndpoint(ctx)
-    const templateId = stringVal(input.modelParams?.templateId) ?? stringVal(input.modelParams?.template_id)
+    const templateId =
+      stringVal(input.modelParams?.templateId) ?? stringVal(input.modelParams?.template_id)
     if (!templateId) {
       throw new MediaProviderError('invalid_input', 'MiniMax 视频 Agent 需要选择 template_id')
     }
@@ -297,11 +346,20 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
     }
     const prompt = (input.prompt ?? '').trim()
     if (prompt) body.text_inputs = [{ value: prompt }]
-    const callbackUrl = stringVal(input.modelParams?.callbackUrl) ?? stringVal(input.modelParams?.callback_url)
+    const callbackUrl =
+      stringVal(input.modelParams?.callbackUrl) ?? stringVal(input.modelParams?.callback_url)
     if (callbackUrl) body.callback_url = callbackUrl
 
     const url = `${base}/v1/video_template_generation`
-    logMediaCall({ provider: this.id, capability, model, method: 'POST', url, body, extra: { templateId } })
+    logMediaCall({
+      provider: this.id,
+      capability,
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: { templateId },
+    })
 
     const createResp = await fetchJson(url, {
       method: 'POST',
@@ -352,12 +410,22 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
       configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
     )
     logMediaResult({ provider: this.id, capability, ok: true, assetCount: 1, requestId: taskId })
-    return { provider: this.id, model, mode: 'async', requestId: taskId, assets: [asset], rawResponse: queryResp }
+    return {
+      provider: this.id,
+      model,
+      mode: 'async',
+      requestId: taskId,
+      assets: [asset],
+      rawResponse: queryResp,
+    }
   }
 
   // ─── V2 视频（MiniMax-H3，content[] 多模态数组）─────────────────────────────
 
-  private async generateV2Video(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+  private async generateV2Video(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
     const capability = input.capability as MediaCapabilityId
     const prompt = (input.prompt ?? '').trim()
     const model = ctx.defaultModel
@@ -365,7 +433,10 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
 
     const content = await buildMinimaxV2Content(input, ctx, capability, prompt)
     if (content.length === 0 || !content.some((item) => item.type === 'text')) {
-      throw new MediaProviderError('invalid_input', 'MiniMax H3 每次请求必须包含至少一个非空 text 项')
+      throw new MediaProviderError(
+        'invalid_input',
+        'MiniMax H3 每次请求必须包含至少一个非空 text 项',
+      )
     }
     const params = buildMinimaxV2VideoParams(input, ctx, capability)
     const body: Record<string, unknown> = { model, content, ...params }
@@ -422,7 +493,8 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
       describeResponse: describeMinimaxV2PollResponse,
     })
 
-    const videoUrl = readPath(queryResp, 'task', 'content', 'url') ?? readPath(queryResp, 'content', 'url')
+    const videoUrl =
+      readPath(queryResp, 'task', 'content', 'url') ?? readPath(queryResp, 'content', 'url')
     if (typeof videoUrl !== 'string' || !videoUrl) {
       throw new MediaProviderError(
         'provider_http_error',
@@ -438,14 +510,24 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
       configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
     )
     logMediaResult({ provider: this.id, capability, ok: true, assetCount: 1, requestId: taskId })
-    return { provider: this.id, model, mode: 'async', requestId: taskId, assets: [asset], rawResponse: queryResp }
+    return {
+      provider: this.id,
+      model,
+      mode: 'async',
+      requestId: taskId,
+      assets: [asset],
+      rawResponse: queryResp,
+    }
   }
 }
 
 // ─── 请求体构造 ──────────────────────────────────────────────────────────────
 
 /** 图像请求参数：从 modelParams + manifest aliases 归一，image-01-live 组装嵌套 style。 */
-function buildMinimaxImageParams(input: MediaGenerateInput, ctx: MediaProviderContext): Record<string, unknown> {
+function buildMinimaxImageParams(
+  input: MediaGenerateInput,
+  ctx: MediaProviderContext,
+): Record<string, unknown> {
   const raw = removeBlankParams(input.modelParams)
   const aliases = ctx.mediaManifestCapability?.aliases
   const normalized: Record<string, unknown> = {}
@@ -454,15 +536,32 @@ function buildMinimaxImageParams(input: MediaGenerateInput, ctx: MediaProviderCo
   }
   const params: Record<string, unknown> = {}
   const aspectRatio = stringVal(normalized.aspect_ratio) ?? stringVal(normalized.aspectRatio)
-  if (aspectRatio) params.aspect_ratio = aspectRatio
+  const model = mediaAdapterModelId(ctx)
+  if (aspectRatio) {
+    params.aspect_ratio = normalizeMinimaxImageAspectRatio(aspectRatio, model, ctx)
+  }
   // width/height 仅 image-01 生效；与 aspect_ratio 同时设置时官方优先 aspect_ratio，故仅未设比例时透传。
   if (!aspectRatio) {
     const width = numberVal(normalized.width)
     const height = numberVal(normalized.height)
-    if (width != null) params.width = width
-    if (height != null) params.height = height
+    if (width != null || height != null) {
+      if (model !== 'image-01') {
+        throw new MediaProviderError('invalid_input', 'MiniMax 仅 image-01 支持自定义宽高')
+      }
+      if (width == null || height == null) {
+        throw new MediaProviderError(
+          'invalid_input',
+          'MiniMax 自定义宽高必须同时填写 width 和 height',
+        )
+      }
+      validateMinimaxImageDimension(width, 'width')
+      validateMinimaxImageDimension(height, 'height')
+      params.width = width
+      params.height = height
+    }
   }
-  const responseFormat = stringVal(normalized.response_format) ?? stringVal(normalized.responseFormat)
+  const responseFormat =
+    stringVal(normalized.response_format) ?? stringVal(normalized.responseFormat)
   if (responseFormat) params.response_format = responseFormat
   const seed = numberVal(normalized.seed)
   if (seed != null) params.seed = seed
@@ -484,8 +583,59 @@ function buildMinimaxImageParams(input: MediaGenerateInput, ctx: MediaProviderCo
   return params
 }
 
+const MINIMAX_IMAGE_ASPECT_RATIOS = [
+  '1:1',
+  '16:9',
+  '4:3',
+  '3:2',
+  '2:3',
+  '3:4',
+  '9:16',
+  '21:9',
+] as const
+
+function normalizeMinimaxImageAspectRatio(
+  value: string,
+  model: string,
+  ctx: MediaProviderContext,
+): string {
+  const manifestValues = manifestStringEnumValues(ctx, 'aspectRatio')
+  const allowed: readonly string[] =
+    manifestValues ??
+    (model === 'image-01-live'
+      ? MINIMAX_IMAGE_ASPECT_RATIOS.filter((ratio) => ratio !== '21:9')
+      : MINIMAX_IMAGE_ASPECT_RATIOS)
+  if (!allowed.includes(value)) {
+    throw new MediaProviderError('invalid_input', `MiniMax ${model} 不支持画幅 ${value}`)
+  }
+  return value
+}
+
+function validateMinimaxImageDimension(value: number, name: 'width' | 'height'): void {
+  if (!Number.isInteger(value) || value < 512 || value > 2048 || value % 8 !== 0) {
+    throw new MediaProviderError('invalid_input', `MiniMax ${name} 必须是 512–2048 且为 8 的倍数`)
+  }
+}
+
+function manifestStringEnumValues(
+  ctx: MediaProviderContext,
+  paramName: string,
+): string[] | undefined {
+  const schema = ctx.mediaManifestCapability?.paramSchema
+  if (!schema || typeof schema !== 'object') return undefined
+  const properties = (schema as { properties?: Record<string, unknown> }).properties
+  const property = properties?.[paramName]
+  if (!property || typeof property !== 'object') return undefined
+  const values = (property as { enum?: unknown[] }).enum
+  if (!Array.isArray(values)) return undefined
+  return values.filter((item): item is string => typeof item === 'string')
+}
+
 /** v1 视频请求参数（Hailuo-2.3 / -Fast）。 */
-function buildMinimaxV1VideoParams(input: MediaGenerateInput, ctx: MediaProviderContext): Record<string, unknown> {
+function buildMinimaxV1VideoParams(
+  input: MediaGenerateInput,
+  ctx: MediaProviderContext,
+): Record<string, unknown> {
   const raw = removeBlankParams(input.modelParams)
   const aliases = ctx.mediaManifestCapability?.aliases
   const normalized: Record<string, unknown> = {}
@@ -496,7 +646,10 @@ function buildMinimaxV1VideoParams(input: MediaGenerateInput, ctx: MediaProvider
   const duration = numberVal(normalized.duration) ?? numberVal(normalized.durationSeconds)
   if (duration != null) {
     if (duration !== 6 && duration !== 10) {
-      throw new MediaProviderError('invalid_input', 'MiniMax Hailuo-2.3/-Fast duration 仅支持 6 或 10 秒')
+      throw new MediaProviderError(
+        'invalid_input',
+        'MiniMax Hailuo-2.3/-Fast duration 仅支持 6 或 10 秒',
+      )
     }
     params.duration = duration
   }
@@ -584,11 +737,15 @@ async function buildMinimaxV2Content(
     const first = explicitFirst ?? images[0]
     const last = explicitLast ?? (images.length > 1 && images[1] !== first ? images[1] : undefined)
     if (first) {
-      const ref = await resolveMinimaxHailuoMediaReference(first, 'image', ctx, { allowMmFile: true })
+      const ref = await resolveMinimaxHailuoMediaReference(first, 'image', ctx, {
+        allowMmFile: true,
+      })
       content.push({ type: 'image_url', image_url: { url: ref }, role: 'first_frame' })
     }
     if (last) {
-      const ref = await resolveMinimaxHailuoMediaReference(last, 'image', ctx, { allowMmFile: true })
+      const ref = await resolveMinimaxHailuoMediaReference(last, 'image', ctx, {
+        allowMmFile: true,
+      })
       content.push({ type: 'image_url', image_url: { url: ref }, role: 'last_frame' })
     }
     return content
@@ -627,9 +784,10 @@ const minimaxV2ErrorExtractor: ErrorExtractor = (status, body) => {
   const type = typeof errFields.type === 'string' ? errFields.type : ''
   const message = typeof errFields.message === 'string' ? errFields.message : ''
   if (!type && !message) return undefined
-  const reqId = typeof (body as Record<string, unknown>).request_id === 'string'
-    ? ((body as Record<string, unknown>).request_id as string)
-    : ''
+  const reqId =
+    typeof (body as Record<string, unknown>).request_id === 'string'
+      ? ((body as Record<string, unknown>).request_id as string)
+      : ''
   const head = type ? `MiniMax V2 ${type}` : `MiniMax V2 HTTP ${status}`
   const tail = reqId ? ` (request_id: ${reqId})` : ''
   return message ? `${head}: ${message}${tail}` : `${head}${tail}`
@@ -682,11 +840,15 @@ function isImageInput(file: MediaInputFile): boolean {
 }
 
 function isVideoInput(file: MediaInputFile): boolean {
-  return file.type === 'video' || (file.type === 'file' && file.mimeType?.startsWith('video/') === true)
+  return (
+    file.type === 'video' || (file.type === 'file' && file.mimeType?.startsWith('video/') === true)
+  )
 }
 
 function isAudioInput(file: MediaInputFile): boolean {
-  return file.type === 'audio' || (file.type === 'file' && file.mimeType?.startsWith('audio/') === true)
+  return (
+    file.type === 'audio' || (file.type === 'file' && file.mimeType?.startsWith('audio/') === true)
+  )
 }
 
 /** 判断当前 capability 的 paramSchema 是否声明了某字段（image-01-live 画风守卫）。 */

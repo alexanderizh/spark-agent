@@ -122,9 +122,9 @@ describe('MinimaxHailuoMediaAdapter', () => {
   })
 
   it('本轮开发的 6 个 manifest 已注册且 router 已挂 minimax-hailuo adapter', () => {
-    const ids = BUILTIN_MEDIA_MODEL_MANIFESTS.filter((m) => m.providerKind === 'minimax-hailuo').map(
-      (m) => m.id,
-    )
+    const ids = BUILTIN_MEDIA_MODEL_MANIFESTS.filter(
+      (m) => m.providerKind === 'minimax-hailuo',
+    ).map((m) => m.id)
     expect(ids).toEqual(
       expect.arrayContaining([
         'minimax:image-01',
@@ -172,7 +172,62 @@ describe('MinimaxHailuoMediaAdapter', () => {
     expect(out.assets).toHaveLength(1)
     expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
     const post = fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/image_generation'))?.[1]
-    expect(JSON.parse(post?.body as string)).toMatchObject({ model: 'image-01', prompt: '雨中竹林' })
+    expect(JSON.parse(post?.body as string)).toMatchObject({
+      model: 'image-01',
+      prompt: '雨中竹林',
+    })
+  })
+
+  it('image-01 支持 8 的倍数自定义宽高，并在请求前拒绝非法尺寸', async () => {
+    const manifest = findManifest('minimax:image-01')
+    const cap = manifest.capabilities.find((c) => c.id === 'image.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/image_generation')) {
+        return jsonRes({
+          data: { image_urls: ['https://cdn/custom.png'] },
+          base_resp: { status_code: 0 },
+        })
+      }
+      if (url === 'https://cdn/custom.png') return binaryRes(FAKE_PNG)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({ outputDir: tmpDir, modelParams: { width: 1536, height: 1024 } }),
+      makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+    )
+    const body = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/image_generation'))?.[1]?.body as string,
+    )
+    expect(body).toMatchObject({ width: 1536, height: 1024 })
+
+    await expect(
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({ outputDir: tmpDir, modelParams: { width: 1537, height: 1024 } }),
+        makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+      ),
+    ).rejects.toThrow('8 的倍数')
+  })
+
+  it('image-01-live 不接受 image-01 专属的 21:9 与自定义宽高', async () => {
+    const manifest = findManifest('minimax:image-01-live')
+    const cap = manifest.capabilities.find((c) => c.id === 'image.generate')!
+    const fetchImpl = mockFetch(async () => {
+      throw new Error('provider must not be called')
+    })
+    const invoke = (modelParams: Record<string, unknown>) =>
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({ outputDir: tmpDir, modelParams }),
+        makeContext({
+          defaultModel: 'image-01-live',
+          fetch: fetchImpl,
+          mediaManifest: manifest,
+          mediaManifestCapability: cap,
+        }),
+      )
+    await expect(invoke({ aspectRatio: '21:9' })).rejects.toThrow('不支持画幅')
+    await expect(invoke({ width: 1024, height: 1024 })).rejects.toThrow('仅 image-01 支持')
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('image-01-live 把 style_type/style_weight 组装成嵌套 style，且仅该模型生效', async () => {
@@ -180,7 +235,10 @@ describe('MinimaxHailuoMediaAdapter', () => {
     const cap = manifest.capabilities.find((c) => c.id === 'image.generate')!
     const fetchImpl = mockFetch(async (url) => {
       if (url.endsWith('/v1/image_generation')) {
-        return jsonRes({ data: { image_urls: ['https://cdn/live.png'] }, base_resp: { status_code: 0 } })
+        return jsonRes({
+          data: { image_urls: ['https://cdn/live.png'] },
+          base_resp: { status_code: 0 },
+        })
       }
       if (url === 'https://cdn/live.png') return binaryRes(FAKE_PNG)
       throw new Error(`unexpected fetch ${url}`)
@@ -203,7 +261,10 @@ describe('MinimaxHailuoMediaAdapter', () => {
     const cap = manifest.capabilities.find((c) => c.id === 'image.edit')!
     const fetchImpl = mockFetch(async (url) => {
       if (url.endsWith('/v1/image_generation')) {
-        return jsonRes({ data: { image_urls: ['https://cdn/o.png'] }, base_resp: { status_code: 0 } })
+        return jsonRes({
+          data: { image_urls: ['https://cdn/o.png'] },
+          base_resp: { status_code: 0 },
+        })
       }
       if (url === 'https://cdn/o.png') return binaryRes(FAKE_PNG)
       throw new Error(`unexpected fetch ${url}`)
@@ -230,7 +291,11 @@ describe('MinimaxHailuoMediaAdapter', () => {
     const manifest = findManifest('minimax:hailuo-2.3')
     const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
     const fetchImpl = mockFetch(async (url) => {
-      if (url.endsWith('/v1/video_generation') && !url.includes('query') && !url.includes('template')) {
+      if (
+        url.endsWith('/v1/video_generation') &&
+        !url.includes('query') &&
+        !url.includes('template')
+      ) {
         return jsonRes({ task_id: 't-1', base_resp: { status_code: 0, status_msg: 'success' } })
       }
       if (url.includes('/v1/query/video_generation')) {
@@ -274,11 +339,14 @@ describe('MinimaxHailuoMediaAdapter', () => {
     expect(out.assets).toHaveLength(1)
     expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
     const createBody = JSON.parse(
-      fetchImpl.mock.calls.find(
-        ([u]) => u === `${ENDPOINT}/v1/video_generation`,
-      )?.[1]?.body as string,
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v1/video_generation`)?.[1]
+        ?.body as string,
     )
-    expect(createBody).toMatchObject({ model: 'MiniMax-Hailuo-2.3', duration: 6, resolution: '1080P' })
+    expect(createBody).toMatchObject({
+      model: 'MiniMax-Hailuo-2.3',
+      duration: 6,
+      resolution: '1080P',
+    })
   })
 
   it('v1 错误归一: HTTP 200 + base_resp.status_code=1026 → normalized.content_policy_blocked', async () => {
@@ -333,7 +401,8 @@ describe('MinimaxHailuoMediaAdapter', () => {
     expect(out.mode).toBe('async')
     expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
     const body = JSON.parse(
-      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]
+        ?.body as string,
     )
     expect(body).toMatchObject({
       model: 'MiniMax-H3',
@@ -350,7 +419,9 @@ describe('MinimaxHailuoMediaAdapter', () => {
     const fetchImpl = mockFetch(async (url) => {
       if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-768' })
       if (url.includes('/v2/query/video_generation/')) {
-        return jsonRes({ task: { status: 'succeeded', content: { url: 'https://cdn/h3-768.mp4' } } })
+        return jsonRes({
+          task: { status: 'succeeded', content: { url: 'https://cdn/h3-768.mp4' } },
+        })
       }
       if (url === 'https://cdn/h3-768.mp4') return binaryRes(FAKE_MP4)
       throw new Error(`unexpected fetch ${url}`)
@@ -373,7 +444,8 @@ describe('MinimaxHailuoMediaAdapter', () => {
       }),
     )
     const body = JSON.parse(
-      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]
+        ?.body as string,
     )
     expect(body.resolution).toBe('768P')
     expect(body.duration).toBe(8)
@@ -408,7 +480,8 @@ describe('MinimaxHailuoMediaAdapter', () => {
       }),
     )
     const body = JSON.parse(
-      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]
+        ?.body as string,
     )
     // validator 会拦 '4K'，但 adapter 兜底保证即使绕过校验也只发合法枚举。
     expect(body.resolution).toBe('2K')
@@ -420,7 +493,9 @@ describe('MinimaxHailuoMediaAdapter', () => {
     const fetchImpl = mockFetch(async (url) => {
       if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-base-v2' })
       if (url === `${ENDPOINT}/v2/query/video_generation/h3-base-v2`) {
-        return jsonRes({ task: { status: 'succeeded', content: { url: 'https://cdn/h3-base-v2.mp4' } } })
+        return jsonRes({
+          task: { status: 'succeeded', content: { url: 'https://cdn/h3-base-v2.mp4' } },
+        })
       }
       if (url === 'https://cdn/h3-base-v2.mp4') return binaryRes(FAKE_MP4)
       throw new Error(`unexpected fetch ${url}`)
@@ -445,8 +520,12 @@ describe('MinimaxHailuoMediaAdapter', () => {
       }),
     )
 
-    expect(fetchImpl.mock.calls.some(([url]) => url === `${ENDPOINT}/v2/v2/video_generation`)).toBe(false)
-    expect(fetchImpl.mock.calls.some(([url]) => url === `${ENDPOINT}/v2/video_generation`)).toBe(true)
+    expect(fetchImpl.mock.calls.some(([url]) => url === `${ENDPOINT}/v2/v2/video_generation`)).toBe(
+      false,
+    )
+    expect(fetchImpl.mock.calls.some(([url]) => url === `${ENDPOINT}/v2/video_generation`)).toBe(
+      true,
+    )
   })
 
   it('V2 H3 i2v: content[] 含 first_frame image_url，本地 file 不走 mm_file 时用 URL', async () => {
@@ -478,7 +557,8 @@ describe('MinimaxHailuoMediaAdapter', () => {
       }),
     )
     const body = JSON.parse(
-      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]
+        ?.body as string,
     )
     expect(body.content).toEqual([
       { type: 'text', text: '镜头推进' },
@@ -525,7 +605,8 @@ describe('MinimaxHailuoMediaAdapter', () => {
       }),
     )
     const body = JSON.parse(
-      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]
+        ?.body as string,
     )
     // 用户选的 3:4 必须生效，不能被默认 adaptive 覆盖
     expect(body.ratio).toBe('3:4')
@@ -540,7 +621,11 @@ describe('MinimaxHailuoMediaAdapter', () => {
       jsonRes(
         {
           type: 'error',
-          error: { type: 'unprocessable_entity_error', message: 'sensitive content (1026)', http_code: '422' },
+          error: {
+            type: 'unprocessable_entity_error',
+            message: 'sensitive content (1026)',
+            http_code: '422',
+          },
           request_id: 'req-h3',
         },
         422,
@@ -831,7 +916,8 @@ describe('MinimaxHailuoMediaAdapter', () => {
     const uploadCall = fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v1/files/upload`)
     expect(uploadCall).toBeTruthy()
     const createBody = JSON.parse(
-      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]
+        ?.body as string,
     )
     // file_id(int64) 经 files client 字符串透传后拼成 mm_file://，避免 JS number 精度丢失
     expect(createBody.content).toEqual([
@@ -910,7 +996,8 @@ describe('MinimaxHailuoMediaAdapter', () => {
       targetProvider: 'minimax-hailuo',
     })
     const createBody = JSON.parse(
-      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]
+        ?.body as string,
     )
     expect(createBody.content).toEqual([
       { type: 'text', text: '参照视频动起来' },
@@ -972,11 +1059,15 @@ describe('MinimaxHailuoMediaAdapter', () => {
 
     // 图片 >30MB
     expect(
-      mkIssues([{ type: 'image', url: 'https://cdn/a.png', role: 'reference', sizeBytes: 31 * 1024 * 1024 }]),
+      mkIssues([
+        { type: 'image', url: 'https://cdn/a.png', role: 'reference', sizeBytes: 31 * 1024 * 1024 },
+      ]),
     ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'out_of_range' })]))
     // 视频 >50MB
     expect(
-      mkIssues([{ type: 'video', url: 'https://cdn/a.mp4', role: 'reference', sizeBytes: 51 * 1024 * 1024 }]),
+      mkIssues([
+        { type: 'video', url: 'https://cdn/a.mp4', role: 'reference', sizeBytes: 51 * 1024 * 1024 },
+      ]),
     ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'out_of_range' })]))
     // 音频 >15MB（需配一张合法参考图，否则先触发 r2v"仅音频"missing_required）
     expect(

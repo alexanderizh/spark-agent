@@ -751,7 +751,7 @@ async function buildSeedreamParams(
     stringVal(raw.resolution) ??
     imageDefaults?.size ??
     imageDefaults?.resolution
-  if (size) params.size = size
+  if (size) params.size = normalizeSeedreamSize(size, ctx)
 
   // output_format / response_format 是 Seedream 5.0 新增字段，4.0/4.5 都不支持，
   // 传了平台会 400。schema 已按版本裁剪，adapter 在此按 schema 网关过滤：
@@ -826,6 +826,75 @@ async function buildSeedreamParams(
   }
 
   return params
+}
+
+/**
+ * Seedream 的尺寸不是任意像素网格：不同版本的自定义尺寸有不同像素区间，
+ * 统一的 1/16–16 宽高比边界仍适用于全系列。枚举档位/官方尺寸由 manifest
+ * 直接放行；只有用户输入的 widthxheight 才走这里的数值校验。
+ */
+function normalizeSeedreamSize(value: string, ctx: MediaProviderContext): string {
+  const trimmed = value.trim()
+  const enumValues = manifestStringEnumValues(ctx, 'size')
+  if (enumValues) {
+    if (enumValues.includes(trimmed)) return trimmed
+  } else if (!isKnownSeedreamModel(mediaAdapterModelId(ctx))) {
+    // 自定义火山模型没有内置尺寸契约时，保持历史透传行为；内置模型绝不走此分支。
+    return trimmed
+  }
+
+  const match = trimmed.match(/^(\d+)\s*[xX]\s*(\d+)$/)
+  if (!match) {
+    throw new MediaProviderError(
+      'invalid_input',
+      'Seedream 尺寸必须是当前模型支持的档位或 widthxheight',
+    )
+  }
+  const width = Number(match[1])
+  const height = Number(match[2])
+  const bounds = seedreamPixelBounds(mediaAdapterModelId(ctx))
+  const pixels = width * height
+  const ratio = Math.max(width / height, height / width)
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width <= 0 ||
+    height <= 0 ||
+    pixels < bounds.minPixels ||
+    pixels > bounds.maxPixels ||
+    ratio > 16
+  ) {
+    throw new MediaProviderError(
+      'invalid_input',
+      `Seedream 自定义尺寸不受支持：像素范围 ${bounds.minPixels}–${bounds.maxPixels}，宽高比需在 1:16–16:1 内`,
+    )
+  }
+  return `${width}x${height}`
+}
+
+function isKnownSeedreamModel(modelId: string): boolean {
+  return modelId.includes('seedream')
+}
+
+function seedreamPixelBounds(modelId: string): { minPixels: number; maxPixels: number } {
+  if (modelId.includes('5-0-pro')) return { minPixels: 921_600, maxPixels: 4_624_220 }
+  if (modelId.includes('5-0-lite')) return { minPixels: 3_686_400, maxPixels: 16_777_216 }
+  if (modelId.includes('4-5')) return { minPixels: 3_686_400, maxPixels: 16_777_216 }
+  return { minPixels: 921_600, maxPixels: 16_777_216 }
+}
+
+function manifestStringEnumValues(
+  ctx: MediaProviderContext,
+  paramName: string,
+): string[] | undefined {
+  const schema = ctx.mediaManifestCapability?.paramSchema
+  if (!schema || typeof schema !== 'object') return undefined
+  const properties = (schema as { properties?: Record<string, unknown> }).properties
+  const property = properties?.[paramName]
+  if (!property || typeof property !== 'object') return undefined
+  const values = (property as { enum?: unknown[] }).enum
+  if (!Array.isArray(values)) return undefined
+  return values.filter((item): item is string => typeof item === 'string')
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────

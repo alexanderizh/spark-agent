@@ -948,9 +948,7 @@ describe('MediaRouterService', () => {
         capability: 'video.reference_to_video',
         outputDir: tmpDir,
         prompt: '',
-        inputFiles: [
-          { type: 'file', role: 'reference', mimeType: 'video/mp4', url: safeFileUrl },
-        ],
+        inputFiles: [{ type: 'file', role: 'reference', mimeType: 'video/mp4', url: safeFileUrl }],
       },
       {
         providers: [
@@ -965,7 +963,10 @@ describe('MediaRouterService', () => {
           canHandle: (provider) => provider === 'apimart',
           upload: async (input) => {
             uploads.push({ filePath: input.filePath, filename: input.filename })
-            return { provider: 'apimart', publicUrl: 'https://minio.yiqibyte.com/spark-desktop/safe-motion.mp4' }
+            return {
+              provider: 'apimart',
+              publicUrl: 'https://minio.yiqibyte.com/spark-desktop/safe-motion.mp4',
+            }
           },
         },
       },
@@ -1332,10 +1333,7 @@ describe('MediaRouterService', () => {
     )
 
     expect(captured.body.video_url).toBe('https://cdn/source.mp4')
-    expect(captured.body.image_urls).toEqual([
-      'https://cdn/style-a.png',
-      'https://cdn/style-b.png',
-    ])
+    expect(captured.body.image_urls).toEqual(['https://cdn/style-a.png', 'https://cdn/style-b.png'])
   })
 
   it('task failure raises task_failed error', async () => {
@@ -1757,7 +1755,9 @@ describe('MediaRouterService', () => {
         respond: (init) => {
           const body = JSON.parse(String(init?.body ?? '{}')) as { image_urls?: string[] }
           expect(body.image_urls).toHaveLength(1)
-          expect(body.image_urls?.[0]).toBe('https://minio.yiqibyte.com/spark-desktop/apimart/reference.png')
+          expect(body.image_urls?.[0]).toBe(
+            'https://minio.yiqibyte.com/spark-desktop/apimart/reference.png',
+          )
           return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
         },
       },
@@ -1790,7 +1790,9 @@ describe('MediaRouterService', () => {
         },
       },
     )
-    expect(uploads).toEqual([{ targetProvider: 'apimart', size: 3 * 1024 * 1024 + 1, mimeType: 'image/png' }])
+    expect(uploads).toEqual([
+      { targetProvider: 'apimart', size: 3 * 1024 * 1024 + 1, mimeType: 'image/png' },
+    ])
   })
 
   it('APIMart image.edit reports auth_required when an oversized image cannot be uploaded', async () => {
@@ -3898,7 +3900,7 @@ describe('VolcengineArkMediaAdapter', () => {
   it('Seedream 5.0 lite: forwards 自定义 size 像素值（方式2，x-allow-custom）', async () => {
     // 文档：方式2 允许总像素在 [3686400, 16777216]、宽高比 [1/16, 16] 内任意「宽x高」。
     // manifest enum 录入推荐值 + x-allow-custom，前端 AutoComplete 支持自定义输入；
-    // adapter 直接透传 size 字符串，不做范围校验（由平台裁决）。
+    // adapter 在请求前按 Seedream Lite 官方像素区间和宽高比校验。
     const seedreamLiteManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (entry) => entry.id === 'volcengine:doubao-seedream-5-0-lite-260128',
     )!
@@ -3948,8 +3950,41 @@ describe('VolcengineArkMediaAdapter', () => {
       },
     )
 
-    // 自定义 size 原样透传（不在 enum 内也允许，由平台校验范围）
+    // 自定义 size 通过本地 provider 约束校验后透传。
     expect(postedBody.size).toBe('3750x1250')
+  })
+
+  it('Seedream Lite rejects a custom size outside the documented pixel range before fetch', async () => {
+    const seedreamLiteManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-lite-260128',
+    )!
+    const fetchMock = makeFetch([])
+    await expect(
+      router.invoke(
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          outputDir: tmpDir,
+          prompt: '不应发出请求',
+          modelParams: { size: '1000x1000' },
+        },
+        {
+          providers: [
+            makeProvider({
+              id: 'volc-lite-invalid',
+              name: '火山 Seedream Lite',
+              defaultModel: 'doubao-seedream-5-0-lite-260128',
+              apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+              mediaProvider: 'volcengine-ark',
+              mediaApiType: 'sync',
+              mediaCapabilities: ['image.generate', 'image.edit'],
+              mediaModelManifests: [seedreamLiteManifest],
+            }),
+          ],
+          fetch: fetchMock,
+        },
+      ),
+    ).rejects.toThrow('像素范围')
   })
 
   it('Google Gemini image adapter calls Interactions API with x-goog-api-key', async () => {
@@ -4499,9 +4534,7 @@ describe('BailianMediaAdapter', () => {
           body: {
             request_id: 'signed-image-request',
             output: {
-              choices: [
-                { message: { content: [{ type: 'image', image: signedUrl }] } },
-              ],
+              choices: [{ message: { content: [{ type: 'image', image: signedUrl }] } }],
             },
           },
         }),
@@ -4562,7 +4595,13 @@ describe('BailianMediaAdapter', () => {
           body: {
             request_id: 'compatible-workspace-image-request',
             output: {
-              choices: [{ message: { content: [{ type: 'image', image: `data:image/png;base64,${PNG_PIXEL}` }] } }],
+              choices: [
+                {
+                  message: {
+                    content: [{ type: 'image', image: `data:image/png;base64,${PNG_PIXEL}` }],
+                  },
+                },
+              ],
             },
           },
         }),
@@ -4702,7 +4741,11 @@ describe('BailianMediaAdapter', () => {
           status: 200,
           body: {
             request_id: 'poll-request',
-            output: { task_id: 'bailian-task-1', task_status: 'SUCCEEDED', video_url: 'https://cdn/edit.mp4' },
+            output: {
+              task_id: 'bailian-task-1',
+              task_status: 'SUCCEEDED',
+              video_url: 'https://cdn/edit.mp4',
+            },
           },
         }),
       },

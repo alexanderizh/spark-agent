@@ -566,7 +566,18 @@ export function readCanvasPresetTargetOverrides(): CanvasPresetStore {
   return readPresetStore()
 }
 
-export type CanvasPresetResolutionContext = CanvasTaskDefaultContext
+export type CanvasPresetResolutionContext = CanvasTaskDefaultContext & {
+  /**
+   * When supplied, last-used model parameters are reused only for this exact
+   * provider/model identity. This prevents a custom size from leaking to a
+   * different model with a narrower contract.
+   */
+  modelIdentity?: {
+    providerProfileId?: string | undefined
+    manifestId?: string | undefined
+    modelId?: string | undefined
+  } | null
+}
 
 export function readCanvasInheritedPresetTarget(
   targetId: CanvasPresetTargetId,
@@ -719,6 +730,9 @@ export function readCanvasResolvedPresetTarget(
 ): CanvasOperationPreset {
   const targetPreset = readCanvasPresetTarget(targetId, context)
   const lastUsed = readLastUsedStore()[targetId] ?? {}
+  const hasModelIdentityContext = Object.prototype.hasOwnProperty.call(context, 'modelIdentity')
+  const reuseLastUsedModelParams =
+    !hasModelIdentityContext || lastUsedModelMatchesContext(lastUsed, context.modelIdentity)
   const resolved = {
     // 用户在任务面板中输入的内容不能反向覆盖功能节点的内置指令。
     // 历史版本曾把 prompt 写进 last-used，这里固定以显式 preset 为准，
@@ -740,11 +754,26 @@ export function readCanvasResolvedPresetTarget(
     skillIds: [...(lastUsed.skillIds ?? targetPreset.skillIds)],
     modelParams: {
       ...targetPreset.modelParams,
-      ...(lastUsed.modelParams ?? {}),
+      ...(reuseLastUsedModelParams ? (lastUsed.modelParams ?? {}) : {}),
     },
   }
   resolved.modelParams = enforceCanvasPresetTargetModelParams(targetId, resolved.modelParams)
   return resolved
+}
+
+function lastUsedModelMatchesContext(
+  lastUsed: StoredCanvasOperationPreset,
+  modelIdentity: CanvasPresetResolutionContext['modelIdentity'],
+): boolean {
+  if (!modelIdentity) return false
+  const keys: Array<'providerProfileId' | 'manifestId' | 'modelId'> = [
+    'providerProfileId',
+    'manifestId',
+    'modelId',
+  ]
+  const storedKeys = keys.filter((key) => typeof lastUsed[key] === 'string' && lastUsed[key])
+  if (storedKeys.length === 0) return false
+  return storedKeys.every((key) => lastUsed[key] === modelIdentity[key])
 }
 
 export function hasCanvasPresetTargetOverride(targetId: CanvasPresetTargetId): boolean {

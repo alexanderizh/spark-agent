@@ -217,16 +217,14 @@ describe('CanvasParameterControl', () => {
     expect(numeric.container.querySelector('input')?.type).toBe('number')
   })
 
-  it('shows common ratio presets and a shape preview for custom ratio fields', async () => {
+  it('keeps only declared ratio options and previews a custom ratio', async () => {
     const { container } = await renderControl(
       field('aspectRatio', ['16:9'], 'string', { allowCustom: true }),
       '5:7',
     )
 
-    expect(container.querySelectorAll('.canvas-aspect-ratio-option')).toHaveLength(11)
-    expect(
-      container.querySelector('[data-param-value="1:2"] [data-aspect-width="16"]'),
-    ).not.toBeNull()
+    expect(container.querySelectorAll('.canvas-aspect-ratio-option')).toHaveLength(1)
+    expect(container.querySelector('[data-param-value="16:9"]')).not.toBeNull()
     expect(container.querySelector('input')).not.toBeNull()
     expect(
       container.querySelector(
@@ -245,6 +243,40 @@ describe('CanvasParameterControl', () => {
     expect(
       container.querySelector('[data-param-value="1536x1024"] [data-aspect-width="32"]'),
     ).not.toBeNull()
+    expect(container.querySelector('input')).not.toBeNull()
+  })
+
+  it('renders OpenAI-style example sizes as choices and keeps custom input available', async () => {
+    const { container, onChange } = await renderControl(
+      field('size', ['auto', '1024x1024', '1536x1024', '1024x1536'], 'string', {
+        allowCustom: true,
+        pattern: '^(?:auto|\\d+\\s*[xX]\\s*\\d+)$',
+      }),
+      'auto',
+    )
+
+    expect(container.querySelector('[data-param-value="1536x1024"]')).not.toBeNull()
+    expect(container.querySelector('input')).not.toBeNull()
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-param-value="1024x1536"]')!.click(),
+    )
+    expect(onChange).toHaveBeenCalledWith('1024x1536')
+  })
+
+  it('renders Bailian custom pixel sizes alongside resolution presets', async () => {
+    const { container } = await renderControl(
+      field('size', ['1K', '2K', '2048*2048', '2048*1152'], 'string', {
+        allowCustom: true,
+        pattern: '^\\d+\\s*\\*\\s*\\d+$',
+        enumLabels: { '2048*1152': '16:9' },
+      }),
+      '2K',
+    )
+
+    expect(container.querySelector('[data-param-value="2K"]')).not.toBeNull()
+    const landscape = container.querySelector<HTMLButtonElement>('[data-param-value="2048*1152"]')
+    expect(landscape).not.toBeNull()
+    expect(landscape?.textContent).toContain('16:9')
     expect(container.querySelector('input')).not.toBeNull()
   })
 
