@@ -1,9 +1,9 @@
-.canvas-projects-view.canvas-uiux-v4-projects {
-  --canvas-v4-radius-sm: 6px;
-  --canvas-v4-radius-md: 9px;
-  --canvas-v4-border: color-mix(in srgb, var(--border-strong) 76%, transparent);
-  --canvas-v4-surface: color-mix(in srgb, var(--panel) 96%, var(--bg));
-  --canvas-v4-surface-muted: color-mix(in srgb, var(--bg-sunken) 82%, var(--panel));
+.canvas-projects-view {
+  --canvas-ui-radius-sm: 6px;
+  --canvas-ui-radius-md: 9px;
+  --canvas-ui-border: color-mix(in srgb, var(--border-strong) 76%, transparent);
+  --canvas-ui-surface: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  --canvas-ui-surface-muted: color-mix(in srgb, var(--bg-sunken) 82%, var(--panel));
 
   background: var(--bg-soft);
 
@@ -44,7 +44,7 @@
 
     .ant-btn {
       min-height: 34px;
-      border-radius: var(--canvas-v4-radius-sm);
+      border-radius: var(--canvas-ui-radius-sm);
       box-shadow: none;
     }
   }
@@ -54,7 +54,7 @@
     padding: 9px 28px;
     border-top: 1px solid var(--divider);
     border-bottom: 1px solid var(--divider);
-    background: var(--canvas-v4-surface);
+    background: var(--canvas-ui-surface);
   }
 
   .canvas-projects-search {
@@ -62,8 +62,8 @@
 
     input,
     [class*='input'] {
-      border-color: var(--canvas-v4-border);
-      background: var(--canvas-v4-surface-muted);
+      border-color: var(--canvas-ui-border);
+      background: var(--canvas-ui-surface-muted);
       box-shadow: none;
     }
   }
@@ -80,9 +80,9 @@
 
   .canvas-project-card {
     overflow: hidden;
-    border: 1px solid var(--canvas-v4-border);
-    border-radius: var(--canvas-v4-radius-md);
-    background: var(--canvas-v4-surface);
+    border: 1px solid var(--canvas-ui-border);
+    border-radius: var(--canvas-ui-radius-md);
+    background: var(--canvas-ui-surface);
     box-shadow: none;
     transition:
       border-color 150ms ease-out,
@@ -100,7 +100,7 @@
   .canvas-project-cover-placeholder {
     height: 188px;
     border-radius: 0;
-    background: var(--canvas-v4-surface-muted);
+    background: var(--canvas-ui-surface-muted);
   }
 
   .canvas-project-cover-image {
@@ -167,11 +167,11 @@
 
   .canvas-project-card-menu,
   .canvas-project-pin-button {
-    border-radius: var(--canvas-v4-radius-sm);
+    border-radius: var(--canvas-ui-radius-sm);
   }
 
   :where(.ant-btn, button, input, textarea, .ant-input, .ant-modal-content) {
-    border-radius: var(--canvas-v4-radius-sm);
+    border-radius: var(--canvas-ui-radius-sm);
   }
 
   // ── 详情模式 main：滚动容器，留更多内边距 ──────────────────────────────
@@ -193,10 +193,10 @@
   .canvas-detail-cover {
     position: relative;
     height: 240px;
-    border-radius: var(--canvas-v4-radius-md);
+    border-radius: var(--canvas-ui-radius-md);
     overflow: hidden;
     background: #111216;
-    border: 1px solid var(--canvas-v4-border);
+    border: 1px solid var(--canvas-ui-border);
   }
   .canvas-detail-cover-preview-trigger {
     position: absolute;
@@ -258,7 +258,7 @@
     min-height: 32px;
     padding: 0 10px;
     border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: var(--canvas-v4-radius-sm);
+    border-radius: var(--canvas-ui-radius-sm);
     background: rgba(18, 18, 22, 0.78);
     color: #fff;
     font-size: 12px;
@@ -299,7 +299,7 @@
     align-items: center;
     justify-content: center;
     border: none;
-    border-radius: var(--canvas-v4-radius-sm);
+    border-radius: var(--canvas-ui-radius-sm);
     background: color-mix(in srgb, var(--panel) 80%, transparent);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -397,9 +397,9 @@
     align-items: center;
     gap: 4px;
     padding: 14px;
-    border-radius: var(--canvas-v4-radius-md);
-    background: var(--canvas-v4-surface);
-    border: 1px solid var(--canvas-v4-border);
+    border-radius: var(--canvas-ui-radius-md);
+    background: var(--canvas-ui-surface);
+    border: 1px solid var(--canvas-ui-border);
   }
   .canvas-detail-stat-icon {
     color: var(--primary);
@@ -445,14 +445,14 @@
     display: flex;
     gap: 2px;
     padding: 2px;
-    background: var(--canvas-v4-surface-muted);
-    border-radius: var(--canvas-v4-radius-sm);
+    background: var(--canvas-ui-surface-muted);
+    border-radius: var(--canvas-ui-radius-sm);
   }
   .canvas-detail-asset-filter {
     padding: 4px 12px;
     border: none;
     background: transparent;
-    border-radius: calc(var(--canvas-v4-radius-sm) - 2px);
+    border-radius: calc(var(--canvas-ui-radius-sm) - 2px);
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 500;
@@ -475,9 +475,9 @@
     padding: 32px 12px;
     color: var(--text-faint);
     font-size: 12px;
-    border-radius: var(--canvas-v4-radius-md);
-    background: var(--canvas-v4-surface-muted);
-    border: 1px dashed var(--canvas-v4-border);
+    border-radius: var(--canvas-ui-radius-md);
+    background: var(--canvas-ui-surface-muted);
+    border: 1px dashed var(--canvas-ui-border);
   }
   // 瀑布流：CSS columns，列宽 140px 自动算列数，图片按原始比例展示不裁剪。
   // 顺序列优先（从上到下、再左到右），如需行优先 masonry 需要 JS 计算。
@@ -493,9 +493,9 @@
     justify-content: space-between;
     gap: 12px;
     padding: 9px 14px;
-    border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--canvas-v4-border));
-    border-radius: var(--canvas-v4-radius-sm);
-    background: color-mix(in srgb, var(--primary) 7%, var(--canvas-v4-surface));
+    border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--canvas-ui-border));
+    border-radius: var(--canvas-ui-radius-sm);
+    background: color-mix(in srgb, var(--primary) 7%, var(--canvas-ui-surface));
   }
   .canvas-detail-asset-batchbar-count {
     color: var(--text);
@@ -518,15 +518,15 @@
     margin: 4px auto 0;
     padding: 9px 22px;
     width: fit-content;
-    border-radius: var(--canvas-v4-radius-sm);
-    background: var(--canvas-v4-surface);
+    border-radius: var(--canvas-ui-radius-sm);
+    background: var(--canvas-ui-surface);
     color: var(--text-muted);
     font-size: 12px;
     cursor: pointer;
     transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
     &:hover {
       color: var(--text);
-      background: var(--canvas-v4-surface-muted);
+      background: var(--canvas-ui-surface-muted);
     }
   }
   .canvas-detail-asset-tile {
@@ -535,8 +535,8 @@
     break-inside: avoid;
     margin: 0 0 12px;
     min-height: 80px; // 兜底：图片未加载/加载失败时保证最小高度，防止瀑布流塌缩
-    border-radius: var(--canvas-v4-radius-sm);
-    background: var(--canvas-v4-surface-muted);
+    border-radius: var(--canvas-ui-radius-sm);
+    background: var(--canvas-ui-surface-muted);
     overflow: hidden;
     cursor: zoom-in; // 点击预览的视觉提示
     border: 2px solid transparent;
@@ -606,9 +606,9 @@
     flex-direction: column;
     gap: 6px;
     padding: 14px 16px;
-    border-radius: var(--canvas-v4-radius-md);
-    background: var(--canvas-v4-surface-muted);
-    border: 1px solid var(--canvas-v4-border);
+    border-radius: var(--canvas-ui-radius-md);
+    background: var(--canvas-ui-surface-muted);
+    border: 1px solid var(--canvas-ui-border);
   }
   .canvas-detail-time-row {
     display: flex;
@@ -677,9 +677,9 @@
     flex-direction: column;
     gap: 6px;
     padding: 8px;
-    border: 1px solid var(--canvas-v4-border);
-    border-radius: var(--canvas-v4-radius-sm);
-    background: var(--canvas-v4-surface);
+    border: 1px solid var(--canvas-ui-border);
+    border-radius: var(--canvas-ui-radius-sm);
+    background: var(--canvas-ui-surface);
     cursor: pointer;
     transition: border-color 0.12s ease;
     &:hover {
@@ -694,7 +694,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--canvas-v4-surface-muted);
+      background: var(--canvas-ui-surface-muted);
       color: var(--text-faint);
     }
   }

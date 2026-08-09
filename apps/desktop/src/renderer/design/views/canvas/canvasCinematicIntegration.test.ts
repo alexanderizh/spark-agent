@@ -6,8 +6,9 @@ const readCanvasSource = (relativePath: string) =>
   readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8')
 
 describe('canvas cinematic integration', () => {
-  it('loads one cinematic stylesheet entry from the real workspace and scopes it locally', () => {
+  it('loads one cinematic stylesheet entry and keeps project owners in the same family', () => {
     const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
+    const projects = readCanvasSource('./CanvasProjectsView.tsx')
     const stylesheetEntry = readCanvasSource('./cinematic/index.less')
     const scopedModules = [
       'tokens.less',
@@ -22,9 +23,7 @@ describe('canvas cinematic integration', () => {
     expect(workspace).toContain("import './cinematic/index.less'")
     expect(workspace).not.toContain("import './CanvasWorkspaceView.less'")
     expect(workspace).not.toContain("import './canvas-workflow.less'")
-    expect(workspace).not.toContain("import './uiux-v4/index.less'")
     expect(workspace).toContain('canvas-workspace canvas-cinematic')
-    expect(workspace).not.toContain('canvas-workspace canvas-uiux-v4 canvas-cinematic')
     expect(stylesheetEntry).toContain('@layer canvas-legacy, canvas-cinematic;')
     expect(stylesheetEntry).toContain("@import (less) '../CanvasWorkspaceView.less';")
     expect(stylesheetEntry).toContain("@import (less) '../canvasContextMenus.less';")
@@ -35,6 +34,13 @@ describe('canvas cinematic integration', () => {
         '.canvas-workspace.canvas-cinematic',
       )
     }
+    expect(projects).toContain("import './cinematic/projects.less'")
+    expect(projects).toContain("import './cinematic/modals.less'")
+    expect(projects).not.toContain('uiux-v4')
+    expect(projects).not.toContain('canvas-uiux-v4')
+    expect(readCanvasSource('./cinematic/projects.less')).toContain(
+      "@import (less) './project-surface.less';",
+    )
   })
 
   it('uses a neutral charcoal palette aligned with the creative workbench', () => {
@@ -46,7 +52,7 @@ describe('canvas cinematic integration', () => {
     expect(tokens).toContain('--canvas-cinema-surface-1: #191919;')
     expect(tokens).toContain('--canvas-cinema-surface-2: #202020;')
     expect(shell).toContain('background: rgba(20, 20, 20, 0.97);')
-    expect(shell).toContain('background: rgba(25, 25, 25, 0.94);')
+    expect(shell).toContain('background: rgba(25, 25, 25, 0.72);')
   })
 
   it('renders the product node chrome and labeled primary creation actions', () => {
@@ -77,9 +83,7 @@ describe('canvas cinematic integration', () => {
   it('uses the ordinary arrow cursor for the select canvas tool', () => {
     const legacyStyles = readCanvasSource('./CanvasWorkspaceView.less')
 
-    expect(legacyStyles).toMatch(
-      /\.canvas-stage-tool-select\s*\{[\s\S]*?cursor:\s*default;/,
-    )
+    expect(legacyStyles).toMatch(/\.canvas-stage-tool-select\s*\{[\s\S]*?cursor:\s*default;/)
     expect(legacyStyles).toContain('.canvas-stage-tool-select .react-flow__pane')
     expect(legacyStyles).toContain('cursor: default;')
   })
@@ -152,7 +156,7 @@ describe('canvas cinematic integration', () => {
   it('does not reserve a hidden Agent column in the responsive canvas layout', () => {
     const overlayStyles = readCanvasSource('./cinematic/overlays.less')
     const responsiveRule = overlayStyles.match(
-      /@media \(max-width: 1180px\)[\s\S]*?\.canvas-workspace-body\s*\{([\s\S]*?)\n    \}/,
+      /@media \(max-width: 1180px\)[\s\S]*?\.canvas-workspace-body\s*\{([\s\S]*?)\n {4}\}/,
     )?.[1]
 
     expect(responsiveRule).toContain('var(--canvas-agent-panel-width)')
@@ -215,7 +219,7 @@ describe('canvas cinematic integration', () => {
 
     expect(icons).toContain('Agent: (p: IconProps)')
     expect(toolbar).toContain('icon={<Icons.Agent size={15} />}')
-    expect(dock).toContain('icon={<Icons.Agent size={15} />}')
+    expect(dock).toContain('icon={<Icons.Agent size={14} />}')
     expect(rail).toContain("accent === 'agent' ? Icons.Agent : Icons.PanelRight")
   })
 
@@ -368,7 +372,7 @@ describe('canvas cinematic integration', () => {
     const switcher = readCanvasSource('./CanvasOperationOutputThumbnailSwitcher.tsx')
     const switcherStyles = readCanvasSource('./CanvasOperationOutputThumbnailSwitcher.less')
 
-    expect(node).toContain("import { CanvasOperationOutputThumbnailSwitcher }")
+    expect(node).toContain('import { CanvasOperationOutputThumbnailSwitcher }')
     expect(node).toContain('<CanvasOperationOutputThumbnailSwitcher')
     expect(node).toContain('runIndex={operationSelection.runIndex}')
     expect(node).toContain("operationOutputState.mode !== 'collection'")

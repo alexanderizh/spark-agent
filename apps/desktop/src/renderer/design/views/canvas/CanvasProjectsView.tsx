@@ -12,15 +12,12 @@ import { CanvasAcceptanceLauncher } from './acceptance/CanvasAcceptanceLauncher'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { useApp } from '../../AppContext'
 import { useCanvasProjectSelection } from './CanvasProjectSelectionContext'
-import './CanvasProjectsView.less'
-
 // 记录已被本组件处理过的「新建项目」信号值（来自侧栏 L1「新建项目」按钮）。
 // 用 module-level 而非 ref，确保 unmount→remount（切走再切回 canvas view）
 // 时不会重复响应同一个已处理过的信号——用户切走再回来不应自动弹窗。
 let handledCanvasCreateSignal = 0
-import './uiux-v4/projects.less'
-import './uiux-v4/modals.less'
-import './canvas-workflow.less'
+import './cinematic/projects.less'
+import './cinematic/modals.less'
 
 export function CanvasProjectsView({
   onWorkspaceActiveChange,
@@ -353,7 +350,7 @@ export function CanvasProjectsView({
   }
 
   return (
-    <div className="canvas-projects-view canvas-uiux-v4-projects">
+    <div className="canvas-projects-view">
       <header
         className="canvas-projects-header canvas-view-titlebar"
         onDoubleClick={() => {

@@ -1,6 +1,6 @@
 # 无限画布 UI 与 CSS 架构治理专项计划
 
-> 状态: 实施中 | 最后核对: 2026-08-01
+> 状态: 实施中 | 最后核对: 2026-08-09
 
 ## 1. 结论与目标
 
@@ -41,13 +41,31 @@
 
 尚未完成：把 `CanvasWorkspaceView.tsx` Controller 拆到 3,000 行以下、迁移全部专用工作台和将画布历史样式总量降低 40%。这些继续按 Phase 2–5 推进。
 
+### 1.2 样式双轨合并（2026-08-09）
+
+已完成 `cinematic` 与 `uiux-v4` 的入口治理：
+
+- `CanvasWorkspaceView` 继续只加载 `cinematic/index.less`；工作区根节点不再保留任何 `canvas-uiux-v4` 变体类。
+- `uiux-v4/theme.less`、`nodes.less`、`panels.less`、`stage.less`、`workbenches.less` 与 `form-controls.less` 的根选择器都依赖不存在的 `.canvas-uiux-v4`，确认不进入生产工作区后删除，不再让 Agent 误以为它们会覆盖当前画布。
+- 迁移前项目列表页是唯一仍实际加载 V4 目录样式的分支：原 `CanvasProjectsView.less`、项目视觉覆盖和 Portal Modal 样式已迁入 `cinematic/`，由 `cinematic/projects.less` 与 `cinematic/modals.less` 两个 canonical 入口负责。
+- `canvas-uiux-v4-projects` 版本类已移除，项目页改用 `.canvas-projects-view`；迁移后的自定义变量也去掉 `v4` 命名，避免后续新增第三套版本覆盖层。
+- 样式集成测试、音频节点和 Handle 样式测试已改为只验证当前实际生效的 Cinematic owner；测试不再读取已删除的 V4 文件。
+
+因此当前有效关系是：
+
+```text
+CanvasWorkspaceView  ──> cinematic/index.less ──> workspace owners + legacy layer
+CanvasProjectsView   ──> cinematic/projects.less ──> project base + visual refinement
+                    └─> cinematic/modals.less   ──> canvas portal modal surfaces
+```
+
 ## 2. 调研范围与证据
 
 本计划基于：
 
 - 用户提供的 6 张 Seko 首页、创作输入、Agent 对话和无限画布截图。
 - Seko [产品说明](https://seko.sensetime.com/about)与商汤对无限画布的[公开介绍](https://www.sensetime.com/kr/news-detail/51170723?categoryId=51172&gioIndex=1)。
-- 当前仓库中的画布源码、样式入口、E2E 截图和现有 `uiux-v4` 规则。
+- 当前仓库中的画布源码、样式入口、E2E 截图和迁移前的 `uiux-v4` 规则。
 
 邀请页面本身受访问策略限制，无法完整抓取交互 DOM。因此竞品结论以截图和公开产品资料为依据，不推断未被观察到的实现细节。
 
@@ -108,13 +126,13 @@ Spark 已经具备画布 Agent、工具调用、节点引用和任务能力，�
 4. `board.css`
 5. `global-overrides.css`
 
-进入画布后，又由组件异步加载 `CanvasWorkspaceView.less`、`canvas-workflow.less`、`uiux-v4/index.less` 和多个功能 Less。`canvas-workflow.less` 目前被三个组件重复导入，`@xyflow/react/dist/style.css` 也存在多个入口。Vite 可能去重资源，但代码分包、懒加载和进入路由的先后顺序仍会改变样式注入时机。
+进入画布后，工作区由 `cinematic/index.less` 唯一装配历史结构层、工作区外壳、节点、面板和浮层 owner；项目列表页单独加载 `cinematic/projects.less` 与 `cinematic/modals.less`。`canvas-workflow.less` 仍由工作流库页面单独加载，`@xyflow/react/dist/style.css` 也存在多个入口。Vite 可能去重资源，但代码分包、懒加载和进入路由的先后顺序仍会改变样式注入时机。
 
 因此，“哪个规则最后赢”依赖运行路径，而不是显式架构。
 
 ### 4.2 V4 是覆盖层，不是替换层
 
-当前 `.canvas-workspace.canvas-uiux-v4` 在旧 `CanvasWorkspaceView.less` 之上继续覆盖按钮、Ant 表单、节点、面板和工作台。旧规则仍然存在，新规则必须不断提高作用域或追加 `!important`。
+历史上的 `.canvas-workspace.canvas-uiux-v4` 曾在旧 `CanvasWorkspaceView.less` 之上覆盖按钮、Ant 表单、节点、面板和工作台；该根类与对应覆盖层现已移除。仍需继续清理 legacy 文件中的历史段落，避免未来重新形成补丁层。
 
 只要继续沿用该方式，V5、V6 都会变成新的补丁层，无法真正结束污染。
 
@@ -416,7 +434,7 @@ canvas/nodes/
 - 将已迁移组件改为 CSS Modules。
 - 为旧 UI 添加明确的 legacy root，禁止旧选择器命中新 UI。
 
-退出条件：新 UI 不再依赖 `uiux-v4` 的覆盖顺序；主要外壳文件低于 3,000 行。
+退出条件：新 UI 不再依赖版本化覆盖层的覆盖顺序；主要外壳文件低于 3,000 行。
 
 ### Phase 3：节点、连线与画布交互（5–7 人日）
 
@@ -440,7 +458,7 @@ canvas/nodes/
 
 ### Phase 5：删除旧层与发布验收（3–5 人日）
 
-- 删除已被替代的 `CanvasWorkspaceView.less` 段落和 `uiux-v4` 覆盖，不保留双轨规则。
+- 删除已被替代的 `CanvasWorkspaceView.less` 段落和历史覆盖，不保留双轨规则。
 - 将 `canvas-ui-next` 设为默认，保留一个版本周期的回退开关。
 - 跑视觉、交互、无障碍、性能、类型检查、单测和 Electron E2E。
 - 更新官网无限画布截图与用户引导，避免营销素材继续展示旧 UI。
