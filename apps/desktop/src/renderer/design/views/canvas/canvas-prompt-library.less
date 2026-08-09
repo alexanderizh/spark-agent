@@ -244,14 +244,38 @@
   );
 }
 
-.canvas-prompt-library-card-cover img {
+.canvas-prompt-library-card-cover-image,
+.canvas-prompt-library-card-cover .remote-asset-image img {
+  position: relative;
+  z-index: 1;
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
+.canvas-prompt-library-card-cover-ambient {
+  position: absolute;
+  z-index: 0;
+  inset: -24px;
+  width: calc(100% + 28px);
+  height: calc(100% + 28px);
+  object-fit: cover;
+  filter: blur(22px) brightness(0.52) saturate(0.82);
+  transform: scale(1.08);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.canvas-prompt-library-card-cover > .canvas-prompt-library-card-cover-remote {
+  position: absolute !important;
+  z-index: 1;
+  inset: 0;
+}
+
 .canvas-prompt-library-card-cover::after {
   position: absolute;
+  z-index: 2;
   inset: auto 0 0;
   height: 46%;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.62));
@@ -260,22 +284,46 @@
 }
 
 .canvas-prompt-library-card-cover-fallback {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  isolation: isolate;
+  background: #111827;
+}
+
+.canvas-prompt-library-card-cover-fallback-image {
+  position: absolute;
+  z-index: 0;
+  inset: -24px;
+  width: calc(100% + 28px);
+  height: calc(100% + 28px);
+  object-fit: cover;
+  filter: blur(12px) brightness(0.72) saturate(0.78);
+  transform: scale(1.08);
+  opacity: 0.88;
+  pointer-events: none;
+}
+
+.canvas-prompt-library-card-cover-fallback-content {
+  position: relative;
+  z-index: 3;
   display: flex;
   height: 100%;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: color-mix(in srgb, var(--primary, #8b7cff) 78%, white);
+  color: rgba(226, 230, 238, 0.74);
 }
 
 .canvas-prompt-library-card-cover-fallback span {
   font-size: 12px;
   font-weight: 650;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.32);
 }
 
 .canvas-prompt-library-card-source {
   position: absolute;
-  z-index: 1;
+  z-index: 3;
   right: 10px;
   bottom: 9px;
   color: rgba(255, 255, 255, 0.76);
@@ -366,7 +414,7 @@
   border-top: 1px solid var(--divider, rgba(255, 255, 255, 0.1));
 }
 
-.canvas-prompt-library-card-actions button:last-child {
+.canvas-prompt-library-card-actions button:last-child:not(.canvas-prompt-library-delete) {
   color: var(--text-muted, #9298a6);
 }
 

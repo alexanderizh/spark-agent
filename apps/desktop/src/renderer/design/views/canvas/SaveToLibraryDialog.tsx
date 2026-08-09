@@ -13,7 +13,7 @@ import type { FilmReference, FilmReferenceKind } from './canvasFilmTypes'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot } from './canvas.types'
 import { readLastPromptCategory, saveLastPromptCategory } from './canvasPromptLibraryCategories'
 import { encodeToSafeFileUrl, readFileAsDataUrl } from './canvas-safe-file'
-import { isPromptCoverNode } from './canvasPromptLibraryCover'
+import { isPromptCoverAsset, isPromptCoverNode } from './canvasPromptLibraryCover'
 import { isPromptTextNode, readPromptLibraryText } from './canvasPromptLibraryData'
 
 /**
@@ -124,7 +124,8 @@ export function SaveToLibraryDialog({
     )
     setNewCategoryOpen(false)
     setNewCategory('')
-    const defaultCover = node && isPromptCoverNode(node, outputAsset) ? outputAsset : null
+    // 图片任务节点本身不是 `image` 类型，但它的主产物仍然可以作为提示词封面。
+    const defaultCover = isPromptCoverAsset(outputAsset) ? outputAsset : null
     setCoverAssetId(defaultCover?.id ?? null)
     setCoverUrl(assetPreviewUrl(defaultCover))
     setCoverMimeType(null)
@@ -309,7 +310,7 @@ export function SaveToLibraryDialog({
                   setCategory(categories[0] ?? '')
                 }
                 if (nextKind === 'prompt_library' && !coverAssetId && !coverFile) {
-                  const defaultCover = isPromptCoverNode(node, outputAsset) ? outputAsset : null
+                  const defaultCover = isPromptCoverAsset(outputAsset) ? outputAsset : null
                   setCoverAssetId(defaultCover?.id ?? null)
                   setCoverUrl(assetPreviewUrl(defaultCover))
                   setCoverMimeType(null)

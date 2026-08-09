@@ -43,4 +43,19 @@ describe('canvas prompt library layout', () => {
       /\.canvas-prompt-library-panel\.canvas-node-edit-prompt-library-compact \.canvas-prompt-library-entry:hover\s*\{[\s\S]*?transform:\s*none\s*;/,
     )
   })
+
+  it('uses a blurred ambient layer behind prompt library card covers', () => {
+    expect(stylesheet).toMatch(
+      /\.canvas-prompt-library-card-cover-ambient\s*\{[\s\S]*?filter:\s*blur\(22px\) brightness\(0\.52\) saturate\(0\.82\)\s*;/,
+    )
+    expect(stylesheet).toMatch(
+      /\.canvas-prompt-library-card-cover-image[\s\S]*?object-fit:\s*contain\s*;/,
+    )
+  })
+
+  it('gives cards without a cover a soft image placeholder', () => {
+    expect(stylesheet).toMatch(
+      /\.canvas-prompt-library-card-cover-fallback-image\s*\{[\s\S]*?filter:\s*blur\(12px\) brightness\(0\.72\) saturate\(0\.78\)\s*;/,
+    )
+  })
 })
