@@ -422,6 +422,41 @@ describe('BailianMediaAdapter — Qwen-Image 2.0', () => {
     ).rejects.toThrow(/像素星号格式/)
   })
 
+  it('rejects Qwen custom sizes outside the documented pixel range', async () => {
+    const fetchMock = makeFetch([
+      {
+        match: '/multimodal-generation/generation',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: qwenResponse(`data:image/png;base64,${PNG_PIXEL}`),
+        }),
+      },
+    ])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:qwen-image-2.0-pro',
+    )!
+
+    await expect(
+      new MediaRouterService().invoke(
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          prompt: 'x',
+          outputDir: tmpDir,
+          modelParams: { size: '4096*4096' },
+        },
+        {
+          providers: [
+            makeProvider({ defaultModel: manifest.modelId, mediaModelManifests: [manifest] }),
+          ],
+          modelId: manifest.modelId,
+          fetch: fetchMock,
+        },
+      ),
+    ).rejects.toThrow(/总像素/)
+  })
+
   it('merges input.negativePrompt into parameters.negative_prompt', async () => {
     let submitted: Record<string, unknown> | undefined
     const fetchMock = makeFetch([

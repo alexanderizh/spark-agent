@@ -84,6 +84,10 @@ import {
 } from './CanvasInlineAiComposer'
 import { mediaModelKey } from './canvasModelPickerModel'
 import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
+import {
+  canvasParameterHistoryScope,
+  recordCanvasCustomParameterHistory,
+} from './canvasParameterHistory'
 import { CanvasOperationMediaInput } from './CanvasOperationMediaInput'
 import { CanvasDepthModelNotice } from './CanvasDepthModelNotice'
 import {
@@ -1228,6 +1232,30 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     effectiveMediaInputMode,
     mediaInputModeOptions,
   )
+  const modelScopedOperationPreset = useMemo(
+    () =>
+      readCanvasResolvedPresetTarget(presetTargetId, {
+        modelIdentity: selectedModel
+          ? {
+              providerProfileId: selectedModel.providerProfileId,
+              manifestId: selectedModel.manifestId,
+              modelId: selectedModel.effectiveModelId,
+            }
+          : null,
+      }),
+    [presetTargetId, selectedModel],
+  )
+  const parameterHistoryKey = useMemo(
+    () =>
+      selectedModelKey
+        ? canvasParameterHistoryScope({
+            operation,
+            modelKey: selectedModelKey,
+            capabilityId: selectedCapabilityId ?? selectedCapability?.id,
+          })
+        : undefined,
+    [operation, selectedCapability?.id, selectedCapabilityId, selectedModelKey],
+  )
   const selectedMediaInputIssue = selectedMediaInputModeOption
     ? canvasMediaInputModeIssue(selectedMediaInputModeOption, inputBindings)
     : undefined
@@ -1371,7 +1399,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   useEffect(() => {
     const defaults = selectedCapability?.defaults ?? {}
     const existing = node.data.modelParams ?? task?.modelParams ?? {}
-    const seeded = { ...operationPreset.modelParams, ...existing }
+    const seeded = { ...modelScopedOperationPreset.modelParams, ...existing }
     const next: Record<string, string> = {}
     const fieldNames = new Set(allParameterFields.map((field) => field.name))
     for (const field of parameterFields) {
@@ -1380,7 +1408,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           operation,
           field,
           fieldName: field.name,
-          presetParams: operationPreset.modelParams,
+          presetParams: modelScopedOperationPreset.modelParams,
           existingParams: existing,
           defaultParams: defaults,
         }) ?? ''
@@ -1416,7 +1444,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   }, [
     node.data.modelParams,
     allParameterFields,
-    operationPreset.modelParams,
+    modelScopedOperationPreset.modelParams,
     operation,
     parameterFields,
     selectedCapability,
@@ -1773,6 +1801,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         if (decision.skipFutureValidation) writeSkipCanvasParameterValidation(true)
         await onRun({ ...runParams, skipParameterValidation: true })
       }
+      recordCanvasCustomParameterHistory(parameterHistoryKey, parameterFields, nextModelParams)
     } catch (error) {
       console.error('[CanvasOperationPanel] Failed to run operation node:', error)
       if (error instanceof CanvasTaskValidationError) {
@@ -1798,6 +1827,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     resolveShotScriptConfig,
     saveDraftNow,
     selectedModel,
+    parameterFields,
+    parameterHistoryKey,
     selectedCapabilityId,
     selectedMediaInputModeOption,
     selectedMediaInputIssue,
@@ -2452,6 +2483,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 disabled={running}
                 fields={parameterFields}
                 values={modelParamDraft}
+                customValueHistoryKey={parameterHistoryKey}
                 advancedContent={advancedParameterContent}
                 onModelChange={handleSelectedModelChange}
                 onParameterChange={handleModelParamDraftChange}
@@ -2790,6 +2822,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               disabled={running}
               fields={parameterFields}
               values={modelParamDraft}
+              customValueHistoryKey={parameterHistoryKey}
               advancedContent={advancedParameterContent}
               modelMeta={
                 <>

@@ -279,6 +279,34 @@ describe('canvasOperationPresets', () => {
     })
   })
 
+  it('does not reuse last-used model params across model identities', () => {
+    writeCanvasLastUsedPresetTarget('text_to_image', {
+      providerProfileId: 'provider-1',
+      manifestId: 'manifest-1',
+      modelId: 'gpt-image-2',
+      modelParams: { size: '3840x2160' },
+    })
+
+    expect(
+      readCanvasResolvedPresetTarget('text_to_image', {
+        modelIdentity: {
+          providerProfileId: 'provider-2',
+          manifestId: 'manifest-2',
+          modelId: 'image-01',
+        },
+      }).modelParams,
+    ).toEqual({})
+    expect(
+      readCanvasResolvedPresetTarget('text_to_image', {
+        modelIdentity: {
+          providerProfileId: 'provider-1',
+          manifestId: 'manifest-1',
+          modelId: 'gpt-image-2',
+        },
+      }).modelParams,
+    ).toEqual({ size: '3840x2160' })
+  })
+
   it('keeps the configured system prompt while reusing runtime selections', () => {
     writeCanvasPresetTarget('chapter.to_screenplay', {
       prompt: '预设版转剧本',

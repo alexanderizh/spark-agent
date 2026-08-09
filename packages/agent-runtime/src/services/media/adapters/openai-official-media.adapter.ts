@@ -314,8 +314,11 @@ function openAiImageParams(
 ): Record<string, unknown> {
   const source = input.modelParams ?? {}
   const defaults = ctx.mediaDefaults?.image
+  const model = mediaAdapterModelId(ctx)
+  const rawSize = source.size ?? defaults?.size
+  const size = isGptImage2Model(model) ? normalizeGptImage2Size(rawSize) : rawSize
   const values: Record<string, unknown> = {
-    size: source.size ?? defaults?.size,
+    size,
     quality: source.quality ?? defaults?.quality,
     background: source.background,
     moderation: source.moderation,
@@ -328,6 +331,47 @@ function openAiImageParams(
       : {}),
   }
   return compact(values)
+}
+
+function isGptImage2Model(model: string): boolean {
+  return model === 'gpt-image-2' || model.startsWith('gpt-image-2-')
+}
+
+/**
+ * GPT Image 2 accepts custom sizes, but only within the documented pixel grid
+ * and aspect/pixel bounds. Validate here so the canvas cannot submit a value
+ * that the provider will reject later.
+ */
+function normalizeGptImage2Size(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  if (value === 'auto') return 'auto'
+  if (typeof value !== 'string') {
+    throw new MediaProviderError('invalid_input', 'GPT Image 2 size 必须是 auto 或 widthxheight')
+  }
+  const match = value.trim().match(/^(\d+)\s*[xX]\s*(\d+)$/)
+  const width = match ? Number(match[1]) : NaN
+  const height = match ? Number(match[2]) : NaN
+  const pixels = width * height
+  const ratio = Math.max(width / height, height / width)
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width <= 0 ||
+    height <= 0 ||
+    width > 3840 ||
+    height > 3840 ||
+    width % 16 !== 0 ||
+    height % 16 !== 0 ||
+    ratio > 3 ||
+    pixels < 655_360 ||
+    pixels > 8_294_400
+  ) {
+    throw new MediaProviderError(
+      'invalid_input',
+      'GPT Image 2 自定义尺寸必须满足：宽高为 16 的倍数，最长边不超过 3840，宽高比不超过 3:1，总像素在 655360-8294400 之间',
+    )
+  }
+  return `${width}x${height}`
 }
 
 function openAiVideoParams(input: MediaGenerateInput): Record<string, unknown> {

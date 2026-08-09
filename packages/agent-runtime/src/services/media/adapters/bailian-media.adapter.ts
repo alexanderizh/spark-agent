@@ -522,15 +522,21 @@ function qwenImageParameters(
 ): Record<string, unknown> {
   const normalized = normalizeBailianImageParams(params)
   const size = normalized.size
-  if (
-    !skipParameterValidation &&
-    size !== undefined &&
-    (typeof size !== 'string' || !/^\d+\*\d+$/.test(size))
-  ) {
+  const customSize = typeof size === 'string' ? normalizeQwenCustomImageSize(size) : undefined
+  if (!skipParameterValidation && size !== undefined && (typeof size !== 'string' || !customSize)) {
     throw new MediaProviderError(
       'invalid_input',
       'Qwen-Image 2.0 size 必须为像素星号格式（如 2048*2048）',
     )
+  }
+  if (!skipParameterValidation && customSize) {
+    const pixels = customSize.width * customSize.height
+    if (pixels < 512 * 512 || pixels > 2048 * 2048) {
+      throw new MediaProviderError(
+        'invalid_input',
+        'Qwen-Image 2.0 自定义尺寸总像素必须在 512*512 至 2048*2048 之间',
+      )
+    }
   }
   const n = normalized.n
   if (
@@ -553,6 +559,19 @@ function qwenImageParameters(
   return result
 }
 
+function normalizeQwenCustomImageSize(
+  value: string,
+): { width: number; height: number } | undefined {
+  const match = value.match(/^(\d+)\*(\d+)$/)
+  if (!match) return undefined
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
+    return undefined
+  }
+  return { width, height }
+}
+
 function mergeNegativePrompt(
   params: Record<string, unknown> | undefined,
   negativePrompt: string | undefined,
@@ -570,14 +589,31 @@ function imageParameters(
 ): Record<string, unknown> {
   const normalized = normalizeBailianImageParams(params)
   const size = normalized.size
-  if (
-    !skipParameterValidation &&
-    size !== undefined &&
-    (typeof size !== 'string' || !['1K', '2K', '4K'].includes(size))
-  ) {
-    throw new MediaProviderError('invalid_input', '万相 2.7 图像 size 仅支持 1K、2K、4K')
-  }
   const enableSequential = normalized.enable_sequential === true
+  const normalizedCustomSize =
+    typeof size === 'string' ? normalizeWanCustomImageSize(size) : undefined
+  if (!skipParameterValidation && size !== undefined) {
+    if (typeof size !== 'string' || (!['1K', '2K', '4K'].includes(size) && !normalizedCustomSize)) {
+      throw new MediaProviderError(
+        'invalid_input',
+        '万相 2.7 图像 size 仅支持 1K、2K、4K 或 width*height 自定义尺寸',
+      )
+    }
+    if (normalizedCustomSize) {
+      const { width, height } = normalizedCustomSize
+      const pixels = width * height
+      const minPixels = 768 * 768
+      const maxPixels =
+        model === 'wan2.7-image' || imageCount > 0 || enableSequential ? 2048 * 2048 : 4096 * 4096
+      const ratio = Math.max(width / height, height / width)
+      if (pixels < minPixels || pixels > maxPixels || ratio > 8) {
+        throw new MediaProviderError(
+          'invalid_input',
+          `万相 2.7 自定义尺寸像素范围为 ${minPixels}-${maxPixels}，宽高比不能超过 8:1`,
+        )
+      }
+    }
+  }
   if (
     !skipParameterValidation &&
     size === '4K' &&
@@ -606,8 +642,23 @@ function imageParameters(
   return pick(
     normalized,
     ['n', 'watermark', 'thinking_mode', 'enable_sequential', 'bbox_list', 'color_palette', 'seed'],
-    { size: size ?? '2K' },
+    {
+      size: normalizedCustomSize
+        ? `${normalizedCustomSize.width}*${normalizedCustomSize.height}`
+        : (size ?? '2K'),
+    },
   )
+}
+
+function normalizeWanCustomImageSize(value: string): { width: number; height: number } | undefined {
+  const match = value.trim().match(/^(\d+)\s*\*\s*(\d+)$/)
+  if (!match) return undefined
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
+    return undefined
+  }
+  return { width, height }
 }
 
 function videoParameters(

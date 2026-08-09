@@ -409,6 +409,69 @@ describe('IPC schemas', () => {
     })
   })
 
+  it('exposes image size examples and custom-size contracts for OpenAI and Bailian', () => {
+    const openAi = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (manifest) => manifest.id === 'openai-images:gpt-image-2',
+    )!
+    const wan = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (manifest) => manifest.id === 'bailian:wan2.7-image',
+    )!
+    const qwen = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (manifest) => manifest.id === 'bailian:qwen-image-2.0',
+    )!
+    const property = (manifest: typeof openAi, capabilityId: string, name: string) =>
+      (
+        manifest.capabilities.find((item) => item.id === capabilityId)!.paramSchema
+          .properties as Record<string, Record<string, unknown>>
+      )[name]
+
+    expect(property(openAi, 'image.generate', 'size')).toMatchObject({
+      examples: [
+        'auto',
+        '1024x1024',
+        '1536x1024',
+        '1024x1536',
+        '2048x2048',
+        '2048x1152',
+        '3840x2160',
+        '2160x3840',
+      ],
+      'x-allow-custom': true,
+    })
+    expect(property(wan, 'image.generate', 'size')).toMatchObject({
+      examples: ['2048*2048', '2048*1536', '1536*2048', '2048*1152', '1152*2048'],
+      'x-allow-custom': true,
+    })
+    expect(property(qwen, 'image.generate', 'size')).toMatchObject({
+      enum: ['2048*2048', '2688*1536', '1536*2688', '2368*1728', '1728*2368'],
+      'x-allow-custom': true,
+    })
+  })
+
+  it('keeps Volcengine and MiniMax image examples scoped to model contracts', () => {
+    const property = (manifestId: string, capabilityId: string, name: string) => {
+      const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === manifestId)!
+      const capability = manifest.capabilities.find((entry) => entry.id === capabilityId)!
+      return (capability.paramSchema.properties as Record<string, Record<string, unknown>>)[name]
+    }
+
+    expect(property('volcengine:doubao-seedream-5-0-pro-260628', 'image.generate', 'size')).toMatchObject({
+      examples: ['2560x1440', '1440x2560', '2048x1536'],
+      'x-allow-custom': true,
+    })
+    expect(property('minimax:image-01', 'image.generate', 'width')).toMatchObject({
+      minimum: 512,
+      maximum: 2048,
+      multipleOf: 8,
+      examples: [1024, 1280, 1536, 2048],
+      'x-allow-custom': true,
+    })
+    expect(property('minimax:image-01-live', 'image.generate', 'width')).toBeUndefined()
+    expect(property('minimax:image-01-live', 'image.generate', 'aspectRatio')).toMatchObject({
+      enum: ['1:1', '16:9', '4:3', '3:2', '2:3', '3:4', '9:16'],
+    })
+  })
+
   it('Seedance 2.0 image_to_video exposes reference-image input roles', () => {
     const seedance2Ids = [
       'volcengine:doubao-seedance-2-0-260128',

@@ -263,6 +263,48 @@ describe('CanvasInlineAiComposer node default model params', () => {
     })
   })
 
+  it('promotes schema examples to selectable canvas options', () => {
+    expect(
+      schemaFields({
+        properties: {
+          size: {
+            type: 'string',
+            examples: ['auto', '1024x1024', '1536x1024'],
+            'x-allow-custom': true,
+          },
+        },
+      })[0],
+    ).toMatchObject({
+      enumValues: ['auto', '1024x1024', '1536x1024'],
+      allowCustom: true,
+      placeholder: 'auto',
+    })
+  })
+
+  it('does not expand a finite enum with examples unless custom values are allowed', () => {
+    expect(
+      schemaFields({
+        properties: {
+          quality: {
+            type: 'string',
+            enum: ['auto', 'low'],
+            examples: ['high'],
+          },
+        },
+      })[0],
+    ).toMatchObject({ enumValues: ['auto', 'low'] })
+  })
+
+  it('does not treat unscoped schema examples as model-supported options', () => {
+    expect(
+      schemaFields({
+        properties: {
+          size: { type: 'string', examples: ['1024x1024', '16:9'] },
+        },
+      })[0],
+    ).toMatchObject({ enumValues: [] })
+  })
+
   it('preserves JSON Schema numeric bounds for range-based controls', () => {
     expect(
       schemaFields({

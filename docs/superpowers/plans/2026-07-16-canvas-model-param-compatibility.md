@@ -1,12 +1,12 @@
 # 画布模型切换参数兼容性实施计划
 
-> 状态: 已落地 | 最后核对: 2026-07-16
+> 状态: 已落地 | 最后核对: 2026-08-10
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 模型切换或历史节点回显时，保留新模型兼容的参数值，并把不兼容值回退到新模型默认值。
 
-**Architecture:** 使用 JSON Schema 提供的枚举、自定义值标记和正则格式约束进行通用兼容性判断。纯函数集中在参数草稿状态模块，创建器、任务面板和预设面板共享该逻辑；Seedream 的尺寸格式由 manifest 声明，不在 UI 中写死模型名称。
+**Architecture:** 使用 JSON Schema 提供的枚举、自定义值标记、数值边界、步进和正则格式约束进行通用兼容性判断。纯函数集中在参数草稿状态模块，创建器、任务面板和预设面板共享该逻辑；Seedream、MiniMax、百炼等 provider 的尺寸格式由各自 manifest 和 adapter 声明，不在 UI 中写死模型名称。允许自定义的参数值按 operation、模型和 capability 隔离缓存，作为下次输入的候选项。
 
 **Tech Stack:** TypeScript、React、JSON Schema、Vitest、pnpm workspace
 
@@ -310,10 +310,17 @@ Expected: 无空白错误，变更只包含参数兼容性、Seedream schema、�
 把设计文档和实施计划的状态更新为：
 
 ```markdown
-> 状态: 已落地 | 最后核对: 2026-07-16
+> 状态: 已落地 | 最后核对: 2026-08-10
 ```
 
-- [x] **Step 4: 提交实现**
+- [x] **Step 4: 补充模型专属快捷值与历史自定义值**
+
+OpenAI GPT Image 2、百炼 Wan/Qwen、火山 Seedream 和 MiniMax 图像模型的快捷值必须来自
+对应 provider 的已核对契约。MiniMax `image-01` 的自定义宽高按 512–2048 且 8 的倍数校验，
+`image-01-live` 不暴露自定义宽高；火山 Seedream 按版本校验像素区间与 1:16–16:1 宽高比。
+历史自定义值只在相同模型身份下回填，且重新按当前字段约束过滤。
+
+- [x] **Step 5: 提交实现**
 
 ```powershell
 git add -- apps/desktop/src/renderer/design/views/canvas/canvasModelParamDraftState.ts apps/desktop/src/renderer/design/views/canvas/canvasModelParamDraftState.test.ts apps/desktop/src/renderer/design/views/canvas/canvasParameterPresentation.ts apps/desktop/src/renderer/design/views/canvas/CanvasInlineAiComposer.tsx apps/desktop/src/renderer/design/views/canvas/CanvasInlineAiComposer.test.ts apps/desktop/src/renderer/design/views/canvas/CanvasOperationPanel.tsx apps/desktop/src/renderer/design/views/canvas/CanvasOperationPresetModal.tsx packages/protocol/src/media-model-manifest.ts packages/protocol/src/__tests__/schemas.test.ts docs/superpowers/specs/2026-07-16-canvas-model-param-compatibility.md docs/superpowers/plans/2026-07-16-canvas-model-param-compatibility.md
