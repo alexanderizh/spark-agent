@@ -647,8 +647,8 @@ export function CanvasWorkspaceView({
   // 「新建空画布强制展开 Agent 面板」只判定一次：snapshot 首次加载完成且节点为空时强制展开。
   // ref 守卫避免后续把节点删空时反复弹开；非空画布尊重用户上次的展开/折叠偏好（useState 已初始化）。
   const forceExpandAgentOnEmptyCheckedRef = useRef(false)
-  // 进入画布默认为平移模式：避免误触发框选/拖拽节点，更符合「先浏览」的直觉。
-  const [activeTool, setActiveTool] = useState<CanvasTool>('pan')
+  // 进入画布默认为选择模式：开箱即用即可点选/框选节点，无需先切工具；按住 Space / Tab 可临时切到平移。
+  const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
     null,
   )
@@ -787,7 +787,7 @@ export function CanvasWorkspaceView({
   /** 非空时表示下一次 audioFileInput 选择是「填充该空音频节点」而非其他用途 */
   const pendingAudioNodeIdRef = useRef<string | null>(null)
   const audioFileInputRef = useRef<HTMLInputElement>(null)
-  const activeToolRef = useRef<CanvasTool>('pan')
+  const activeToolRef = useRef<CanvasTool>('select')
   const { registerNavGuard, requestConfirm, t, setTweak, setHasUnsavedChanges } = useApp()
   const handleCreatePromptCategory = useCallback(
     async (name: string): Promise<string | null> => {
