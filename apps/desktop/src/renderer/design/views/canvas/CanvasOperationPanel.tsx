@@ -26,6 +26,7 @@ import { getCanvasCapability, isOperationNode, nodeOperation } from './canvas.ca
 import {
   mergeCanvasOperationPresetNegativePrompt,
   mergeCanvasPresetTargetModelParams,
+  readCanvasImagePromptReverseRequirement,
   readCanvasResolvedPresetTarget,
   resolveCanvasPresetTarget,
   writeCanvasLastUsedPresetTarget,
@@ -529,6 +530,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
   const panelMode = resolveCanvasOperationPanelMode(operation)
+  const isImagePromptReverse = operation === 'image_prompt_reverse'
+  const promptEditorLabel = isImagePromptReverse ? '反推要求' : '提示词'
+  const promptEditorPlaceholder = isImagePromptReverse
+    ? '例如：只反推图中场景；只描述人物外观；重点说明人物正在做什么...'
+    : `输入${operationText}的提示词...`
   const dedicatedMediaKind = panelMode.dedicatedMediaKind
   const [depthModelState, setDepthModelState] = useState<CanvasDepthModelState>('unknown')
   const [depthModelError, setDepthModelError] = useState('')
@@ -690,11 +696,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   )
   const initialPrompt = useMemo(() => {
     const nodePrompt = node.data.prompt
+    const editablePrompt = isImagePromptReverse
+      ? readCanvasImagePromptReverseRequirement(nodePrompt ?? task?.prompt)
+      : nodePrompt
     return resolveOperationPanelEditablePrompt({
-      ...(typeof nodePrompt === 'string' ? { nodePrompt } : {}),
+      ...(typeof editablePrompt === 'string' ? { nodePrompt: editablePrompt } : {}),
       ...(hideFunctionalPrompt ? { hideFunctionalPrompt: true } : {}),
     })
-  }, [hideFunctionalPrompt, node.data.prompt])
+  }, [hideFunctionalPrompt, isImagePromptReverse, node.data.prompt, task?.prompt])
   const initialPromptDocument = useMemo(() => {
     const visibleDocument = buildOperationPanelEditablePromptDocument({
       ...(node.data.promptDocument
@@ -2307,7 +2316,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               </div>
             )}
           </div>
-        ) : panelMode.showPromptEditor ? (
+        ) : null}
+        {panelMode.showPromptEditor ? (
           <div className="canvas-operation-composer-main">
             <div className="canvas-operation-prompt-count-wrap">
               <CanvasPromptMentionTextArea
@@ -2315,7 +2325,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 rows={6}
                 value={prompt}
                 document={promptDocument}
-                placeholder={`输入${operationText}的提示词...`}
+                placeholder={promptEditorPlaceholder}
                 mentionNodes={promptCandidateNodes}
                 presentationNodeBySourceId={mediaPresentationNodeBySourceId}
                 connectionNodes={promptConnectionNodes}
@@ -2922,14 +2932,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         {/* Prompt 编辑 */}
         {panelMode.showPromptEditor && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-prompt">
-            <div className="canvas-operation-panel-section-label">提示词</div>
+            <div className="canvas-operation-panel-section-label">{promptEditorLabel}</div>
             <div className="canvas-operation-prompt-count-wrap">
               <CanvasPromptMentionTextArea
                 className="canvas-operation-panel-prompt-input"
                 rows={4}
                 value={prompt}
                 document={promptDocument}
-                placeholder={`输入${operationText}的提示词...`}
+                placeholder={promptEditorPlaceholder}
                 mentionNodes={promptCandidateNodes}
                 presentationNodeBySourceId={promptPresentationNodeBySourceId}
                 connectionNodes={promptConnectionNodes}

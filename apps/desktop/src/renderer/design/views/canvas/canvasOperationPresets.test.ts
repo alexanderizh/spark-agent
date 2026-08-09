@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   buildCanvasOperationPrompt,
+  buildCanvasImagePromptReversePrompt,
   formatCanvasOperationPresetModelParams,
   mergeCanvasOperationPresetModelParams,
   mergeCanvasPresetTargetModelParams,
@@ -15,6 +16,7 @@ import {
   readCanvasInheritedPresetTarget,
   readCanvasOperationPreset,
   readCanvasOperationPresetPromptPrefix,
+  readCanvasImagePromptReverseRequirement,
   readCanvasOperationPresetOverrides,
   readCanvasPresetTarget,
   readCanvasResolvedPresetTarget,
@@ -56,6 +58,23 @@ describe('canvasOperationPresets', () => {
     expect(prompt).toContain('只输出一段中文完整提示词')
     expect(prompt).toContain('主体、环境、构图、镜头、光影、色彩、材质与风格')
     expect(prompt).not.toContain('入参/场景要求：')
+  })
+
+  it('includes an exact image reverse requirement and unwraps it for editing', () => {
+    const prompt = buildCanvasImagePromptReversePrompt('只反推图中人物正在做什么')
+    expect(prompt).toContain('反推要求：\n只反推图中人物正在做什么')
+    expect(readCanvasImagePromptReverseRequirement(prompt)).toBe('只反推图中人物正在做什么')
+    expect(readCanvasImagePromptReverseRequirement('')).toBe('')
+    expect(
+      readCanvasImagePromptReverseRequirement(
+        [
+          '请分析输入图片，并反推出可直接用于文生图或图生视频的一段中文完整提示词。',
+          '提示词必须覆盖主体、环境、构图、镜头、光影、色彩、材质与风格。',
+          '只输出一段中文完整提示词，不输出分析过程、标题、Markdown、代码块或额外解释。',
+          '无法从画面可靠判断的细节不要虚构为事实。',
+        ].join('\n'),
+      ),
+    ).toBe('')
   })
 
   it('exposes readonly system prompt prefixes and builds final prompts from them', () => {

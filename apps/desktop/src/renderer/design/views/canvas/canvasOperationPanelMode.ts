@@ -22,7 +22,7 @@ export function resolveCanvasOperationPanelMode(
     return {
       executionKind,
       runtimeKind: 'vision_model',
-      showPromptEditor: false,
+      showPromptEditor: true,
       dedicatedMediaKind: 'image',
       showCustomParams: false,
       showLocalDepthNotice: false,
