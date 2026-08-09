@@ -74,13 +74,11 @@ export function arrangeCanvasNodes(
   const anchorTop = Math.min(...ordered.map((node) => node.y - (node.headerHeight ?? 0)))
   const links = normalizeLayoutLinks(ordered, options.links ?? [])
   const gridColumns =
-    typeof options.columns === 'number' &&
-    Number.isFinite(options.columns) &&
-    options.columns >= 1
+    typeof options.columns === 'number' && Number.isFinite(options.columns) && options.columns >= 1
       ? Math.max(1, Math.floor(options.columns))
       : undefined
   const positions =
-    links.length > 0
+    links.length > 0 && options.mode !== 'grid'
       ? buildHierarchicalPositions(
           ordered,
           links,
@@ -142,10 +140,7 @@ function buildPositions(
     const column = index % columnCount
     const row = Math.floor(index / columnCount)
     columnWidths[column] = Math.max(columnWidths[column] ?? 0, node.width)
-    rowHeights[row] = Math.max(
-      rowHeights[row] ?? 0,
-      node.height + (node.headerHeight ?? 0),
-    )
+    rowHeights[row] = Math.max(rowHeights[row] ?? 0, node.height + (node.headerHeight ?? 0))
   })
 
   const columnOffsets = cumulativeOffsets(columnWidths, gap, anchorLeft)
@@ -187,7 +182,8 @@ function buildHierarchicalPositions(
   gridColumns?: number,
 ): CanvasAutoLayoutPosition[] {
   const roots = buildLayoutForest(nodes, links, mode)
-  if (roots.length === 0) return buildPositions(nodes, mode, gap, anchorLeft, anchorTop, gridColumns)
+  if (roots.length === 0)
+    return buildPositions(nodes, mode, gap, anchorLeft, anchorTop, gridColumns)
 
   if (mode === 'horizontal') {
     return arrangeHorizontalForest(roots, gap, anchorLeft, anchorTop)
@@ -533,6 +529,11 @@ function compareNodes(
 ): number {
   if (mode === 'horizontal') {
     return left.x - right.x || left.y - right.y || left.id.localeCompare(right.id)
+  }
+  if (mode === 'grid') {
+    const leftTop = left.y - (left.headerHeight ?? 0)
+    const rightTop = right.y - (right.headerHeight ?? 0)
+    return leftTop - rightTop || left.x - right.x || left.id.localeCompare(right.id)
   }
   return left.y - right.y || left.x - right.x || left.id.localeCompare(right.id)
 }

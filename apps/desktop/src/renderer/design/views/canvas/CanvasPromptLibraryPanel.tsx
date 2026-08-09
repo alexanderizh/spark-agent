@@ -188,17 +188,20 @@ export function buildGlobalPromptLibraryEntries(
   items: readonly GlobalPromptLibraryItem[],
 ): CanvasPromptLibraryEntry[] {
   return items
+    .filter((item) => !item.id.startsWith('legacy:'))
     .filter((item) => item.text.trim())
-    .map((item): CanvasPromptLibraryEntry => ({
-      id: `global:${item.id}`,
-      source: 'global',
-      group: item.category || '未分类',
-      category: item.category || '未分类',
-      label: item.title || '-',
-      text: item.text,
-      coverUrl: item.coverUrl ?? undefined,
-      tags: item.tags,
-    }))
+    .map(
+      (item): CanvasPromptLibraryEntry => ({
+        id: `global:${item.id}`,
+        source: 'global',
+        group: item.category || '未分类',
+        category: item.category || '未分类',
+        label: item.title || '-',
+        text: item.text,
+        coverUrl: item.coverUrl ?? undefined,
+        tags: item.tags,
+      }),
+    )
 }
 
 export function CanvasPromptLibraryPanel({

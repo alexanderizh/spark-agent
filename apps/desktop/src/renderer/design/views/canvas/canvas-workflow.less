@@ -51,15 +51,6 @@
   color: var(--text);
 }
 
-.canvas-workflow-library-toolbar {
-  display: flex;
-  min-height: 48px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0px 12px;
-}
-
 .canvas-workflow-search {
   display: flex;
   width: min(460px, 48vw);
@@ -670,7 +661,7 @@
 }
 
 @media (max-width: 680px) {
-  .canvas-workflow-library-toolbar {
+  .canvas-workflow-page-header {
     min-height: auto;
     flex-wrap: wrap;
     gap: 8px;
@@ -679,7 +670,7 @@
 
   .canvas-workflow-search {
     width: 100%;
-    flex-basis: 100%;
+    flex: 1 1 100%;
   }
 
   .canvas-workflow-library-layout {
@@ -1869,8 +1860,8 @@
   gap: 12px;
   min-height: var(--window-titlebar-height);
   padding: 8px 28px;
-  // border-bottom: 1px solid var(--divider);
-  // background: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  border-bottom: 1px solid var(--divider);
+  background: var(--bg-soft);
   flex-shrink: 0;
 
   h2 {
@@ -1881,18 +1872,86 @@
     letter-spacing: -0.01em;
   }
 }
+
+.canvas-workflow-page-title {
+  display: flex;
+  min-width: max-content;
+  align-items: baseline;
+  gap: 8px;
+
+  > span {
+    color: var(--text-faint);
+    font-size: 10px;
+    font-weight: 620;
+  }
+}
+
+.canvas-workflow-page-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.canvas-workflow-page-action-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.canvas-workflow-page-header .canvas-workflow-search {
+  width: min(360px, 28vw);
+  height: 28px;
+}
+
+.canvas-workflow-page-header .ant-btn {
+  min-height: 28px;
+}
+
+@media (max-width: 920px) {
+  .canvas-workflow-page-title > span {
+    display: none;
+  }
+
+  .canvas-workflow-page-header .canvas-workflow-search {
+    width: min(280px, 30vw);
+  }
+}
+
+@media (max-width: 680px) {
+  .canvas-workflow-page-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+
+  .canvas-workflow-page-header .canvas-workflow-search {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+
+  .canvas-workflow-page-action-buttons {
+    margin-left: auto;
+  }
+}
+
 .canvas-workflow-back-btn {
   display: flex;
   align-items: center;
   gap: 3px;
-  padding: 4px 8px 4px 4px;
+  padding: 3px 7px 3px 3px;
   border: none;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   border-radius: var(--r-sm, 4px);
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 
   &:hover {
     background: var(--hover);

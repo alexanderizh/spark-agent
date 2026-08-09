@@ -42,11 +42,8 @@ describe('canvasPipeline', () => {
       expect(actions[0]!.produces).toBe('design_card')
     })
 
-    it('分镜可出关键帧 + 视频', () => {
-      expect(getPipelineActions('shot').map((a) => a.id)).toEqual([
-        'shot.to_keyframes',
-        'shot.to_video',
-      ])
+    it('分镜可提取关键帧，视频需从关键帧节点生成', () => {
+      expect(getPipelineActions('shot').map((a) => a.id)).toEqual(['shot.to_keyframes'])
     })
 
     it('无角色或未知角色返回空', () => {
@@ -58,7 +55,7 @@ describe('canvasPipeline', () => {
       const actions = getAllPipelineActions()
       expect(actions.map((action) => action.id)).toContain('chapter.to_screenplay')
       expect(actions.map((action) => action.id)).toContain('character.three_view')
-      expect(actions.map((action) => action.id)).toContain('shot.to_video')
+      expect(actions.map((action) => action.id)).not.toContain('shot.to_video')
       expect(new Set(actions.map((action) => action.id)).size).toBe(actions.length)
     })
 

@@ -302,7 +302,7 @@ export function CanvasFilmAssetCenter({
             {activeTab === 'shots' ? (
               <ShotGroupTab snapshot={snapshot} handlers={handlers} />
             ) : activeTab === 'prompt_library' ? (
-              <CanvasFilmPromptLibraryTab handlers={handlers} />
+              <CanvasFilmPromptLibraryTab snapshot={snapshot} handlers={handlers} />
             ) : activeTab === 'files' ? (
               <CanvasProviderFilesTab
                 {...(handlers.onInsertProviderFileToCanvas

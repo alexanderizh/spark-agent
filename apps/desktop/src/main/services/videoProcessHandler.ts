@@ -180,7 +180,7 @@ async function dispatch(
   assertNumRange(params.factor, 0.0625, 64, 'factor') // 1/16 ~ 64x
   assertNumRange(params.threshold, 0.01, 0.99, 'threshold')
   assertNumRange(params.maxFrames, 1, 200, 'maxFrames')
-  assertNumRange(params.intervalSec, 0.1, 3600, 'intervalSec')
+  assertNumRange(params.intervalSec, 0.2, 3600, 'intervalSec')
   assertNumRange(params.crf, 0, 51, 'crf')
   assertNumRange(params.fps, 1, 120, 'fps')
   assertNumRange(params.x, 0, 16384, 'crop x')

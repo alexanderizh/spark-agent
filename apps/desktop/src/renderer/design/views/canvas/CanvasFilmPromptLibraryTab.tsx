@@ -6,14 +6,14 @@ import {
   type CanvasPromptLibraryEntry,
 } from './CanvasPromptLibraryPanel'
 import type { FilmCenterHandlers } from './CanvasFilmAssetCenter'
-import {
-  readGlobalPromptLibrary,
-  type GlobalPromptLibraryState,
-} from './canvasPromptLibraryStore'
+import type { CanvasSnapshot } from './canvas.types'
+import { readGlobalPromptLibrary, type GlobalPromptLibraryState } from './canvasPromptLibraryStore'
 
 export function CanvasFilmPromptLibraryTab({
+  snapshot,
   handlers,
 }: {
+  snapshot: CanvasSnapshot
   handlers: FilmCenterHandlers
 }) {
   const [library, setLibrary] = useState<GlobalPromptLibraryState | null>(null)
@@ -56,12 +56,12 @@ export function CanvasFilmPromptLibraryTab({
   }
 
   return (
-      <CanvasPromptLibraryPanel
-        assets={[]}
-        globalEntries={library ? buildGlobalPromptLibraryEntries(library.items) : []}
-        className="canvas-film-prompt-library"
-        title="提示词库"
-        subtitle="通用提示词 + 内置电影镜头/风格/表演词"
+    <CanvasPromptLibraryPanel
+      assets={snapshot.assets}
+      globalEntries={library ? buildGlobalPromptLibraryEntries(library.items) : []}
+      className="canvas-film-prompt-library"
+      title="提示词库"
+      subtitle="全局 + 项目提示词 + 内置电影镜头/风格/表演词"
       showSystemPromptFilter
       onApply={handleApply}
       getApplyLabel={(entry) =>
@@ -70,8 +70,8 @@ export function CanvasFilmPromptLibraryTab({
           : entry.source === 'global'
             ? '复制提示词'
             : entry.source === 'project'
-            ? '插入画布'
-            : '加入项目库'
+              ? '插入画布'
+              : '加入项目库'
       }
     />
   )

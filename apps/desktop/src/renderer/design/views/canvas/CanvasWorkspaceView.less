@@ -6739,7 +6739,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border-strong) 58%, transparent);
   border-radius: 11px;
-  background:var(--panel-elev)
+  background: var(--panel-elev);
 }
 
 .canvas-media-input-configurator-head {
@@ -11898,7 +11898,8 @@ body.canvas-agent-panel-resizing {
       // 抬高层级，避免选中态边框被相邻按钮遮住
       z-index: 2;
     }
-    .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) + .ant-radio-button-wrapper {
+    .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)
+      + .ant-radio-button-wrapper {
       border-inline-start-color: var(--primary, #6366f1);
     }
   }
@@ -11968,42 +11969,52 @@ body.canvas-agent-panel-resizing {
   font-size: 11px;
 }
 .canvas-film-save-cover-grid {
-  display: grid;
+  display: block;
   max-height: 390px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  column-count: 3;
+  column-gap: 10px;
+  column-fill: auto;
   overflow: auto;
 }
 .canvas-film-save-cover-card {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-  padding: 7px;
-  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
-  border-radius: var(--r-lg);
-  background: var(--canvas-film-card-strong);
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--text);
   cursor: pointer;
   text-align: left;
+  break-inside: avoid;
+  overflow: hidden;
 }
 .canvas-film-save-cover-card:hover {
-  border-color: var(--primary, #6366f1);
+  outline: 1px solid var(--primary, #6366f1);
+  outline-offset: 0;
 }
 .canvas-film-save-cover-card > img,
 .canvas-film-save-cover-card > .canvas-asset-thumb-fallback {
   display: block;
   width: 100%;
-  height: 92px;
+  height: auto;
   border-radius: var(--r-md);
   background: var(--bg-sunken);
   object-fit: cover;
 }
 .canvas-film-save-cover-card > span {
+  display: block;
+  margin-top: 4px;
   overflow: hidden;
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.canvas-film-save-cover-grid > .ant-empty {
+  column-span: all;
+  text-align: center;
+  padding: 32px 0;
 }
 .canvas-film-save-field > span {
   font-size: 12px;
@@ -13012,12 +13023,18 @@ body.canvas-agent-panel-resizing {
   padding: 7px 9px;
   border: 0;
   border-radius: var(--r-sm);
-  color: var(--danger);
   background: transparent;
   cursor: pointer;
 }
 
-.canvas-edge-context-menu button:hover {
+// 危险色只绑到显式标记：节点/工作流/画布删除项统一用 canvas-menu-item-danger，
+// 不要在外层 button 选择器上"一刀切"染红，否则将来给 edge 菜单加普通项会被误染。
+.canvas-edge-context-menu button.canvas-menu-item-danger {
+  color: var(--danger);
+}
+
+.canvas-edge-context-menu button.canvas-menu-item-danger:hover,
+.canvas-edge-context-menu button.canvas-menu-item-danger:focus-visible {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 

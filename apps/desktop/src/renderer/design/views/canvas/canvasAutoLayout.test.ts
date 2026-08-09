@@ -48,6 +48,30 @@ describe('arrangeCanvasNodes', () => {
     ])
   })
 
+  it('keeps grid order based on visible top-left positions even when nodes are connected', () => {
+    const result = arrangeCanvasNodes(
+      [
+        { id: 'lower', x: 0, y: 200, width: 100, height: 50 },
+        { id: 'upper-right', x: 300, y: 130, width: 100, height: 50 },
+        { id: 'upper-left', x: 100, y: 100, width: 100, height: 50, headerHeight: 20 },
+        { id: 'linked-root', x: 500, y: 300, width: 100, height: 50 },
+      ],
+      {
+        mode: 'grid',
+        spacing: 'small',
+        columns: 2,
+        links: [{ sourceId: 'linked-root', targetId: 'upper-left' }],
+      },
+    )
+
+    expect(result).toEqual([
+      { id: 'upper-left', x: 0, y: 100 },
+      { id: 'upper-right', x: 132, y: 80 },
+      { id: 'lower', x: 0, y: 182 },
+      { id: 'linked-root', x: 132, y: 182 },
+    ])
+  })
+
   it('honors a custom column count for grid layout', () => {
     const result = arrangeCanvasNodes(nodes, { mode: 'grid', spacing: 'large', columns: 3 })
 

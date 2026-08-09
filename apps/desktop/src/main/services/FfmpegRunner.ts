@@ -445,6 +445,8 @@ export async function probeVideo(input: string): Promise<VideoProbeInfo> {
 
 export type KeyframeStrategy = 'scene' | 'iframe' | 'uniform'
 
+export const MIN_UNIFORM_INTERVAL_SEC = 0.2
+
 export interface ExtractKeyframesOpts {
   /** 提取策略 */
   strategy: KeyframeStrategy
@@ -545,7 +547,10 @@ export async function extractKeyframes(
   const firstPass = await runKeyframePass(input, {
     strategy: opts.strategy,
     threshold: opts.threshold ?? 0.3,
-    intervalSec: opts.intervalSec ?? Math.max(1, Math.floor(duration / 10)),
+    intervalSec: Math.max(
+      MIN_UNIFORM_INTERVAL_SEC,
+      opts.intervalSec ?? Math.max(1, Math.floor(duration / 10)),
+    ),
     pattern,
     format,
     quality,
@@ -564,7 +569,7 @@ export async function extractKeyframes(
         /* ignore */
       }
     }
-    const intervalSec = duration / maxFrames
+    const intervalSec = Math.max(MIN_UNIFORM_INTERVAL_SEC, duration / maxFrames)
     const secondPass = await runKeyframePass(input, {
       strategy: 'uniform',
       threshold: opts.threshold ?? 0.3,

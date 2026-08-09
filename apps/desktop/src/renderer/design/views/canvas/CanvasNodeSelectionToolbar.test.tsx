@@ -68,6 +68,43 @@ describe('CanvasNodeSelectionToolbar', () => {
     expect(container.querySelector('[aria-label="功能操作"]')).toBeNull()
   })
 
+  it('renders expanded groups as direct toolbar actions', async () => {
+    const onReplace = vi.fn()
+    const onAnnotate = vi.fn()
+    const container = await renderToolbar([
+      {
+        key: 'media-actions',
+        label: '素材操作',
+        icon: <span>image</span>,
+        expanded: true,
+        children: [
+          {
+            key: 'replace-image',
+            label: '替换图片',
+            icon: <span>replace</span>,
+            onClick: onReplace,
+          },
+          {
+            key: 'annotate-image',
+            label: '图片标注',
+            icon: <span>annotate</span>,
+            onClick: onAnnotate,
+          },
+        ],
+      },
+    ])
+
+    expect(container.querySelector('[aria-label="素材操作"]')).toBeNull()
+    expect(container.querySelector('[aria-label="替换图片"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="图片标注"]')).not.toBeNull()
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="图片标注"]')?.click(),
+    )
+    expect(onReplace).not.toHaveBeenCalled()
+    expect(onAnnotate).toHaveBeenCalledOnce()
+  })
+
   it('renders a separated danger action at the end of the toolbar', async () => {
     const onDelete = vi.fn()
     const container = await renderToolbar([
@@ -87,5 +124,39 @@ describe('CanvasNodeSelectionToolbar', () => {
     expect(button?.className).toContain('is-danger')
     await act(async () => button?.click())
     expect(onDelete).toHaveBeenCalledOnce()
+  })
+
+  it('disabled action carries the custom tooltip and skips onClick', async () => {
+    const onClick = vi.fn()
+    const container = await renderToolbar([
+      {
+        key: 'copy-content',
+        label: '复制内容',
+        icon: <span>clipboard</span>,
+        tooltip: '任务尚未产出可复制内容',
+        disabled: true,
+        onClick,
+      },
+    ])
+
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="复制内容"]')
+    expect(button).not.toBeNull()
+    expect(button?.disabled).toBe(true)
+    expect(container.querySelector('[title="任务尚未产出可复制内容"]')).not.toBeNull()
+
+    await act(async () => button?.click())
+    expect(onClick).not.toHaveBeenCalled()
+  })
+
+  it('falls back to label as tooltip when tooltip is not provided', async () => {
+    const onClick = vi.fn()
+    const container = await renderToolbar([
+      { key: 'copy-content', label: '复制内容', icon: <span>clipboard</span>, onClick },
+    ])
+
+    expect(container.querySelector('[title="复制内容"]')).not.toBeNull()
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="复制内容"]')
+    await act(async () => button?.click())
+    expect(onClick).toHaveBeenCalledOnce()
   })
 })

@@ -14,7 +14,7 @@ import { buildCanvasWorkflowExport, parseCanvasWorkflowImport } from './canvasWo
 import { useApp } from '../../AppContext'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import './canvas-workflow.less'
-import { Button } from  '@lobehub/ui'
+import { Button } from '@lobehub/ui'
 
 type ScopeFilter = 'all' | CanvasWorkflowScope | 'archived'
 const WORKFLOW_PAGE_SIZE = 30
@@ -328,7 +328,14 @@ export function CanvasWorkflowLibraryView({
     <section className="canvas-workflow-library" aria-label="画布工作流">
       <header
         className="canvas-workflow-page-header canvas-view-titlebar"
-        onDoubleClick={() => {
+        onDoubleClick={(event) => {
+          const target = event.target
+          if (
+            target instanceof Element &&
+            target.closest('button, input, textarea, select, a, [role="button"]')
+          ) {
+            return
+          }
           window.spark?.invoke('window:maximize', {}).catch(() => {})
         }}
       >
@@ -342,48 +349,46 @@ export function CanvasWorkflowLibraryView({
           <Icons.ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} />
           <span>返回项目</span>
         </button>
-        <h2>画布工作流</h2>
-      </header>
-      <div className="canvas-workflow-library-toolbar">
-        <label className="canvas-workflow-search">
-          <Icons.Search size={15} aria-hidden="true" />
-          <input
-            aria-label="搜索画布工作流"
-            value={query}
-            placeholder="搜索名称、用途或标签"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
-        <input
-          ref={importInputRef}
-          type="file"
-          accept="application/json,.json"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) void importWorkflow(file)
-          }}
-        />
-        <div>
-          <Button
-            aria-label="导入画布工作流"
-            size='middle'
-            style={{marginRight: 12}}
-            disabled={actionBusy}
-            onClick={() => importInputRef.current?.click()}
-          >
-            <Icons.Upload size={15} /> 导入
-          </Button>
-          <Button
-            size='middle'
-            aria-label="新建画布工作流"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Icons.Plus size={15} />
-            新建工作流
-          </Button>
+        <div className="canvas-workflow-page-title">
+          <span>工作台</span>
+          <h2>画布工作流</h2>
         </div>
-      </div>
+        <div className="canvas-workflow-page-actions">
+          <label className="canvas-workflow-search">
+            <Icons.Search size={15} aria-hidden="true" />
+            <input
+              aria-label="搜索画布工作流"
+              value={query}
+              placeholder="搜索名称、用途或标签"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) void importWorkflow(file)
+            }}
+          />
+          <div className="canvas-workflow-page-action-buttons">
+            <Button
+              aria-label="导入画布工作流"
+              size="small"
+              disabled={actionBusy}
+              onClick={() => importInputRef.current?.click()}
+            >
+              <Icons.Upload size={15} /> 导入
+            </Button>
+            <Button size="small" aria-label="新建画布工作流" onClick={() => setCreateOpen(true)}>
+              <Icons.Plus size={15} />
+              新建工作流
+            </Button>
+          </div>
+        </div>
+      </header>
 
       {error && (
         <div className="canvas-workflow-alert" role="alert">

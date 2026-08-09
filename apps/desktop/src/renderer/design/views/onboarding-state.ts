@@ -17,6 +17,11 @@ function readLocalOnboarding(): OnboardingStateRecord {
 }
 
 export function writeOnboardingState(state: OnboardingStateRecord): void {
+  // Keep a synchronous fallback while the authoritative main-process write is
+  // in flight. Without this, the startup read can resolve after the user
+  // clicks "稍后再说" and briefly force the onboarding view back on screen.
+  window.localStorage.setItem(ONBOARDING_COMPLETED_KEY, String(state.completed))
+  window.localStorage.setItem(ONBOARDING_DISMISSED_KEY, String(state.dismissed))
   window.spark
     ?.invoke('settings:set', {
       category: ONBOARDING_SETTINGS_CATEGORY,

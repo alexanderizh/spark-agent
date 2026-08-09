@@ -31,12 +31,15 @@
   max-width: min(280px, calc(100% - 16px));
 }
 
-.canvas-pane-context-menu button.canvas-menu-item-danger {
+.canvas-pane-context-menu button.canvas-menu-item-danger,
+.canvas-edge-context-menu button.canvas-menu-item-danger {
   color: var(--danger);
 }
 
 .canvas-pane-context-menu button.canvas-menu-item-danger:hover,
-.canvas-pane-context-menu button.canvas-menu-item-danger:focus-visible {
+.canvas-pane-context-menu button.canvas-menu-item-danger:focus-visible,
+.canvas-edge-context-menu button.canvas-menu-item-danger:hover,
+.canvas-edge-context-menu button.canvas-menu-item-danger:focus-visible {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
 }
@@ -136,7 +139,9 @@
 .canvas-edge-context-menu button,
 .canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-item,
 .canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-submenu-title,
-.ant-dropdown-menu-submenu-popup .canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-item,
+.ant-dropdown-menu-submenu-popup
+  .canvas-node-context-menu.ant-dropdown-menu
+  .ant-dropdown-menu-item,
 .ant-dropdown-menu-submenu-popup
   .canvas-node-context-menu.ant-dropdown-menu
   .ant-dropdown-menu-submenu-title {

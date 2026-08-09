@@ -1,6 +1,12 @@
+import { useEffect, useState } from 'react'
 import { Modal } from 'antd'
-import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
+import {
+  buildGlobalPromptLibraryEntries,
+  CanvasPromptLibraryPanel,
+  type CanvasPromptLibraryEntry,
+} from './CanvasPromptLibraryPanel'
 import { resolvePromptQuickUseAction } from './canvasPromptLibraryQuickUse'
+import { readGlobalPromptLibrary, type GlobalPromptLibraryState } from './canvasPromptLibraryStore'
 import type { CanvasAsset } from './canvas.types'
 import './canvas-prompt-library.less'
 
@@ -17,6 +23,19 @@ export function CanvasPromptLibraryQuickUseModal({
   onClose: () => void
   onApply: (entry: CanvasPromptLibraryEntry) => Promise<boolean>
 }) {
+  const [library, setLibrary] = useState<GlobalPromptLibraryState | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void readGlobalPromptLibrary().then((next) => {
+      if (!cancelled) setLibrary(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
   const action = resolvePromptQuickUseAction(selectedNodeCount)
   const selectionHint =
     action === 'apply-to-selection'
@@ -44,8 +63,9 @@ export function CanvasPromptLibraryQuickUseModal({
     >
       <CanvasPromptLibraryPanel
         assets={assets}
+        globalEntries={library ? buildGlobalPromptLibraryEntries(library.items) : []}
         title="提示词库"
-        subtitle="搜索后直接应用或复制"
+        subtitle="全局 + 项目提示词 + 内置电影镜头/风格/表演词"
         placeholder="搜索提示词、镜头、动作…"
         className="canvas-prompt-quick-use-panel"
         showSystemPromptFilter
