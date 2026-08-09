@@ -152,12 +152,50 @@ type CanvasOperationPresetStore = Partial<Record<CanvasOperationType, StoredCanv
 type CanvasPresetStore = Partial<Record<CanvasPresetTargetId, StoredCanvasOperationPreset>>
 type CanvasLastUsedStore = Partial<Record<CanvasPresetTargetId, StoredCanvasOperationPreset>>
 
-export const IMAGE_PROMPT_REVERSE_PROMPT = [
+const LEGACY_IMAGE_PROMPT_REVERSE_PROMPT = [
   '请分析输入图片，并反推出可直接用于文生图或图生视频的一段中文完整提示词。',
   '提示词必须覆盖主体、环境、构图、镜头、光影、色彩、材质与风格。',
   '只输出一段中文完整提示词，不输出分析过程、标题、Markdown、代码块或额外解释。',
   '无法从画面可靠判断的细节不要虚构为事实。',
 ].join('\n')
+
+export const IMAGE_PROMPT_REVERSE_PROMPT = [
+  '请分析输入图片，并反推出可直接用于文生图或图生视频的一段中文完整提示词。',
+  '未提供反推要求时，提示词覆盖主体、环境、构图、镜头、光影、色彩、材质与风格。',
+  '如果用户提供了反推要求，请严格以该要求为重点，只反推用户指定的内容；未指定的内容不要展开。',
+  '只输出一段中文完整提示词，不输出分析过程、标题、Markdown、代码块或额外解释。',
+  '无法从画面可靠判断的细节不要虚构为事实。',
+].join('\n')
+
+const IMAGE_PROMPT_REVERSE_REQUIREMENT_MARKER = '反推要求：'
+
+/**
+ * 从图片反推节点的可编辑文本中读取用户要求。
+ * 兼容旧节点里已经保存的固定反推指令，避免它重新显示在编辑框中。
+ */
+export function readCanvasImagePromptReverseRequirement(prompt: string | null | undefined): string {
+  const value = prompt?.trim() ?? ''
+  if (
+    !value ||
+    value === IMAGE_PROMPT_REVERSE_PROMPT ||
+    value === LEGACY_IMAGE_PROMPT_REVERSE_PROMPT
+  ) {
+    return ''
+  }
+  if (!value.startsWith(IMAGE_PROMPT_REVERSE_PROMPT)) return value
+  const suffix = value.slice(IMAGE_PROMPT_REVERSE_PROMPT.length).trim()
+  if (!suffix.startsWith(IMAGE_PROMPT_REVERSE_REQUIREMENT_MARKER)) return ''
+  return suffix.slice(IMAGE_PROMPT_REVERSE_REQUIREMENT_MARKER.length).trim()
+}
+
+/** 将用户的精确反推要求附加到图片反推执行指令中。 */
+export function buildCanvasImagePromptReversePrompt(
+  requirement: string | null | undefined,
+): string {
+  const userRequirement = readCanvasImagePromptReverseRequirement(requirement)
+  if (!userRequirement) return IMAGE_PROMPT_REVERSE_PROMPT
+  return `${IMAGE_PROMPT_REVERSE_PROMPT}\n${IMAGE_PROMPT_REVERSE_REQUIREMENT_MARKER}\n${userRequirement}`
+}
 
 const BUILTIN_PROMPTS: Partial<Record<CanvasOperationType, string>> = {
   text_to_image: '请基于输入内容生成一张高质量图片。',
@@ -477,7 +515,7 @@ export function buildCanvasOperationPrompt(
   operation: CanvasOperationType,
   prompt: string | undefined,
 ): string | undefined {
-  if (operation === 'image_prompt_reverse') return IMAGE_PROMPT_REVERSE_PROMPT
+  if (operation === 'image_prompt_reverse') return buildCanvasImagePromptReversePrompt(prompt)
   const prefix = readCanvasOperationPresetPromptPrefix(operation).trim()
   const body = unwrapCanvasOperationPromptBody(prefix, prompt)
   if (!prefix) return body || undefined

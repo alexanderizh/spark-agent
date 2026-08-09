@@ -9,7 +9,7 @@ describe('resolveCanvasOperationPanelMode', () => {
     expect(resolveCanvasOperationPanelMode('image_prompt_reverse')).toEqual({
       executionKind: 'text',
       runtimeKind: 'vision_model',
-      showPromptEditor: false,
+      showPromptEditor: true,
       dedicatedMediaKind: 'image',
       showCustomParams: false,
       showLocalDepthNotice: false,

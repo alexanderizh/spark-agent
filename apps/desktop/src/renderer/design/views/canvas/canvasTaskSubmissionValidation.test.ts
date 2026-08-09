@@ -324,6 +324,33 @@ describe('canvasTaskSubmissionValidation', () => {
     })
   })
 
+  it('keeps the user-specified image reverse requirement in the direct request', () => {
+    expect(
+      validateCanvasTextTaskSubmission({
+        operation: 'image_prompt_reverse',
+        prompt: '只反推图中场景',
+        inputFiles: [{ type: 'image', dataUrl: 'data:image/png;base64,AAAA' }],
+      }),
+    ).toMatchObject({
+      prompt: expect.stringContaining('反推要求：\n只反推图中场景'),
+    })
+  })
+
+  it('keeps the requirement separate when the canvas supplies a system instruction', () => {
+    expect(
+      validateCanvasTextTaskSubmission({
+        operation: 'image_prompt_reverse',
+        prompt: '只描述人物外观',
+        systemPrompt: '图片反推固定指令',
+        promptDocument: {
+          version: 2,
+          blocks: [{ kind: 'text', id: 'requirement', text: '只描述人物外观' }],
+        },
+        inputFiles: [{ type: 'image', dataUrl: 'data:image/png;base64,AAAA' }],
+      }),
+    ).toMatchObject({ prompt: '只描述人物外观' })
+  })
+
   it('accepts compiled text from a prompt document', () => {
     expect(() =>
       validateCanvasTextTaskSubmission({

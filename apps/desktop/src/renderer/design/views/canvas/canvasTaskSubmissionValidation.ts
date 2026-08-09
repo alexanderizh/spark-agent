@@ -2,7 +2,7 @@ import { composeCanvasMediaProviderPrompt, type MediaContractIssue } from '@spar
 import type { CanvasMediaTaskInputFile } from '@spark/protocol'
 import type { CanvasOperationType, CreateCanvasTaskRequest } from './canvas.types'
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
-import { IMAGE_PROMPT_REVERSE_PROMPT } from './canvasOperationPresets'
+import { buildCanvasImagePromptReversePrompt } from './canvasOperationPresets'
 import { decodeCanvasSafeFileUrl } from './canvas-safe-file'
 
 type CanvasTaskSubmissionRequest = Omit<CreateCanvasTaskRequest, 'boardId'> & {
@@ -86,9 +86,7 @@ export function validateCanvasTextTaskSubmission(
   const isImagePromptReverse = request.operation === 'image_prompt_reverse'
   const files = request.inputFiles ?? []
   const imageCount = files.filter((file) => matchesMediaKind(file, 'image')).length
-  const prompt = isImagePromptReverse
-    ? IMAGE_PROMPT_REVERSE_PROMPT
-    : (request.compiledUserText ?? request.prompt ?? '').trim()
+  const prompt = (request.compiledUserText ?? request.prompt ?? '').trim()
 
   if (isImagePromptReverse && imageCount === 0) {
     issues.push(issue('missing_required', '请连接一张输入图片', ['inputFiles']))
@@ -124,7 +122,15 @@ export function validateCanvasTextTaskSubmission(
   )
 
   if (issues.length > 0) throw new CanvasTaskValidationError(issues)
-  return isImagePromptReverse ? { ...request, prompt: IMAGE_PROMPT_REVERSE_PROMPT } : request
+  if (!isImagePromptReverse) return request
+
+  // 画布标准执行链路会把固定指令放在 systemPrompt，用户输入留在 prompt 中。
+  // 没有独立 systemPrompt / promptDocument 的直接调用则保留完整指令，兼容旧 API。
+  const hasSeparateInstruction = Boolean(request.systemPrompt?.trim() && request.promptDocument)
+  return {
+    ...request,
+    prompt: hasSeparateInstruction ? prompt : buildCanvasImagePromptReversePrompt(prompt),
+  }
 }
 
 export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmissionRequest>(
@@ -168,11 +174,11 @@ export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmission
     (inputFile?.url && /^https?:\/\//i.test(inputFile.url) ? inputFile.url : null)
   if (videoCount === 1 && files.length === 1 && !localPath) {
     issues.push(
-      issue(
-        'missing_required',
-        `${taskTitle}需要可读取的本地视频路径或可访问的视频 URL`,
-        ['inputFiles', 0, 'path'],
-      ),
+      issue('missing_required', `${taskTitle}需要可读取的本地视频路径或可访问的视频 URL`, [
+        'inputFiles',
+        0,
+        'path',
+      ]),
     )
   }
   if (issues.length > 0) throw new CanvasTaskValidationError(issues)

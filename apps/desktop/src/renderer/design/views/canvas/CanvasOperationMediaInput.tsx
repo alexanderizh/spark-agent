@@ -68,7 +68,7 @@ export function CanvasOperationMediaInput({
               <span>
                 {isVideo
                   ? '本地生成黑白深度视频转换结果，无需填写提示词'
-                  : '反推指令已内置，无需填写提示词'}
+                  : '可填写具体反推要求，例如场景、人物或动作'}
               </span>
             </div>
           </>
