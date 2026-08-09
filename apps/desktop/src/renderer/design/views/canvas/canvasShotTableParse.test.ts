@@ -210,6 +210,21 @@ describe('canvasShotTableParse', () => {
     })
   })
 
+  it('修复轻微 JSON 瑕疵后解析分镜对象', () => {
+    const rows = parseShotTable(
+      "模型输出：{shots:[{index:1,title:'推门入画',description:“雨夜进门”,}],}",
+    )
+
+    expect(rows).toMatchObject([{ index: 1, title: '推门入画', description: '雨夜进门' }])
+  })
+
+  it('任务结果模式下保留字段全缺失的空白镜头', () => {
+    const text = JSON.stringify({ shots: [{}] })
+
+    expect(parseShotTable(text)).toEqual([])
+    expect(parseShotTable(text, { allowEmptyRows: true })).toMatchObject([{ title: '镜1' }])
+  })
+
   it('Markdown 增强表解析完整制作字段', () => {
     const rows = parseShotTable(
       `| 镜号 | 时长 | 场次 | 场景名 | 焦距 | 光圈 | ISO | 光照 | 色调 | 氛围 | 调度 | 表演 | 服装 | 画面 | 生成提示词 | 反向提示词 |\n` +

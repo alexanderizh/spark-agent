@@ -40,6 +40,17 @@ describe('canvas operation output presentation', () => {
     })
   })
 
+  it('formats repaired JSON output instead of falling back to raw text', () => {
+    const result = resolveCanvasTextOutputPresentation(
+      "模型输出：{name:'魏德',age:68,notes:'尾逗号也可修复',}",
+    )
+
+    expect(result).toEqual({
+      kind: 'json',
+      text: '{\n  "name": "魏德",\n  "age": 68,\n  "notes": "尾逗号也可修复"\n}',
+    })
+  })
+
   it('keeps regular prose as text', () => {
     expect(resolveCanvasTextOutputPresentation('一段普通剧本文本')).toEqual({
       kind: 'text',

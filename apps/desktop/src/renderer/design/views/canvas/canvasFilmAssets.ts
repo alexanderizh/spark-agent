@@ -138,6 +138,8 @@ export type ShotSegment = {
   lighting?: string
   /** 镜头焦距/焦段 */
   focalLength?: string
+  /** 快门、对焦、镜片质感等合并镜头参数 */
+  cameraParams?: string
   /** 光圈与景深说明 */
   aperture?: string
   /** 感光度与颗粒说明 */

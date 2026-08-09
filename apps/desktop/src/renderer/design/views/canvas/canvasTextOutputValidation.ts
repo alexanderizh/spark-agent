@@ -1,4 +1,5 @@
 import type { CanvasPipelineRole, ShotScriptConfig } from './canvas.types'
+import { parseCanvasJsonCandidates } from './canvasJsonRepair'
 import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { formatStoryboardRowsAsMarkdown } from './canvasTextInputPresentation'
 import {
@@ -19,13 +20,17 @@ export type CanvasSemanticTextValidationOptions = {
   shotScriptConfig?: ShotScriptConfig | null
 }
 
+/**
+ * 场次标题是恢复剧本节点的最低必要信息。模型可能输出「第1场｜内景｜…」、
+ * 「场1 内景 …」、带 Markdown 标题/方括号的版本，或传统 INT./EXT. 标记；
+ * 不要求同一行必须同时出现地点、时间、出场人物和对白，缺失内容留给用户编辑。
+ */
 const SCREENPLAY_SCENE_HEADING =
-  /^(?:#{1,6}\s*)?(?:【\s*)?(?:场\s*(?:\d+|[一二三四五六七八九十百]+)|(?:INT|EXT)\.)[^\n]*(?:内景|外景|INT\.|EXT\.)/im
+  /^(?:\s*#{1,6}\s*)?(?:【\s*)?(?:(?:第\s*)?(?:\d+|[一二三四五六七八九十百千万]+)\s*场|场\s*(?:\d+|[一二三四五六七八九十百千万]+)|(?:第\s*)?(?:\d+|[一二三四五六七八九十百千万]+)(?=\s*(?:内景|外景|室内|室外|[｜|]))|(?:INT|EXT)\.?)(?=\s|[｜|:：】]|$)/im
 
 export function isValidScreenplayText(text: string): boolean {
   const value = text.trim()
-  if (!value || !SCREENPLAY_SCENE_HEADING.test(value)) return false
-  return /(?:：|:)/.test(value) || /出场人物/.test(value)
+  return Boolean(value && SCREENPLAY_SCENE_HEADING.test(value))
 }
 
 export function validateCanvasSemanticTextOutput(
@@ -40,7 +45,7 @@ export function validateCanvasSemanticTextOutput(
       return {
         ok: false,
         code: 'invalid_screenplay_output',
-        message: '剧本结果缺少可识别的场次标题或角色对白，未加载为剧本节点。',
+        message: '剧本结果缺少可识别的场次标题；已保留模型原文，可作为普通文本继续编辑。',
       }
     }
     return { ok: true, text: value }
@@ -56,10 +61,13 @@ export function validateCanvasSemanticTextOutput(
         message,
       }
     }
-    const storyboardRows = normalizeRecoverableStoryboardRows(
-      parseShotTable(JSON.stringify(envelope.root), {
-        allowPartialJsonRecovery: false,
-      }),
+    const storyboardRows = normalizeStoryboardRows(
+      normalizeRecoverableStoryboardRows(
+        parseShotTable(JSON.stringify(envelope.root), {
+          allowPartialJsonRecovery: false,
+          allowEmptyRows: true,
+        }),
+      ),
     )
     const validationError = validateStoryboardContract({
       envelope,
@@ -100,6 +108,58 @@ function normalizeRecoverableStoryboardRows(rows: ParsedShotRow[]): ParsedShotRo
   })
 }
 
+const STORYBOARD_TEXT_FIELDS = [
+  'shotSize',
+  'angle',
+  'movement',
+  'sceneLayout',
+  'composition',
+  'blocking',
+  'lighting',
+  'cameraParams',
+  'focalLength',
+  'aperture',
+  'iso',
+  'colorTone',
+  'mood',
+  'performance',
+  'costume',
+  'groupName',
+  'sceneName',
+  'description',
+  'dialogue',
+  'narration',
+  'characterReferences',
+  'actionBeats',
+  'soundEffects',
+  'transition',
+  'firstFrame',
+  'lastFrame',
+  'continuity',
+  'shotPrompt',
+  'negativePrompt',
+] as const
+
+/**
+ * 把模型省略的可编辑文本字段统一成空字符串，并为缺失镜号补顺序值。
+ * 这样下游表格、资产编辑器和后续 Agent 输入看到的是稳定字段，而不是一组
+ * 因 Provider/模型不同而变化的 undefined。
+ */
+function normalizeStoryboardRows(rows: ParsedShotRow[]): ParsedShotRow[] {
+  return rows.map((row, index) => {
+    const normalized: ParsedShotRow = {
+      ...row,
+      index: row.index ?? index + 1,
+      title: row.title?.trim() || `镜${row.index ?? index + 1}`,
+    }
+    for (const field of STORYBOARD_TEXT_FIELDS) {
+      const value = normalized[field] as string | undefined
+      normalized[field] = value?.trim() ?? ''
+    }
+    return normalized
+  })
+}
+
 function buildFallbackActionBeats(row: ParsedShotRow): string {
   const durationSec = row.durationSec
   if (durationSec == null || !Number.isFinite(durationSec) || durationSec <= 0) return ''
@@ -127,29 +187,60 @@ type StoryboardEnvelope = {
 }
 
 function parseCompleteStoryboardEnvelope(text: string): StoryboardEnvelope | null {
-  const candidates = [text.trim()]
-  const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i)
-  if (fenced?.[1]) candidates.push(fenced[1].trim())
-  for (const candidate of candidates) {
-    try {
-      let parsed = JSON.parse(candidate) as unknown
-      if (typeof parsed === 'string') parsed = JSON.parse(parsed) as unknown
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
-      const root = parsed as Record<string, unknown>
-      if (!Array.isArray(root.shots)) continue
-      if (root.summary && (typeof root.summary !== 'object' || Array.isArray(root.summary))) continue
-      const shots = root.shots.filter(
-        (shot): shot is Record<string, unknown> =>
-          shot != null && typeof shot === 'object' && !Array.isArray(shot),
-      )
-      if (shots.length !== root.shots.length) continue
-      return {
-        root,
-        shots,
-        ...(root.summary ? { summary: root.summary as Record<string, unknown> } : {}),
-      }
-    } catch {
-      // Try a fully closed fenced or double-serialized candidate next.
+  for (const parsed of parseCanvasJsonCandidates(text)) {
+    if (!parsed || typeof parsed !== 'object') continue
+    const sourceRoot = (Array.isArray(parsed) ? { shots: parsed } : parsed) as Record<
+      string,
+      unknown
+    >
+    const summary = sourceRoot.summary
+    if (summary && (typeof summary !== 'object' || Array.isArray(summary))) continue
+
+    const rawShots: unknown[] = Array.isArray(sourceRoot.shots)
+      ? sourceRoot.shots
+      : Array.isArray(sourceRoot.segments)
+        ? sourceRoot.segments
+        : Array.isArray(sourceRoot.groups)
+          ? sourceRoot.groups.flatMap((group) => {
+              if (!group || typeof group !== 'object' || Array.isArray(group)) return []
+              const groupRecord = group as Record<string, unknown>
+              const groupName =
+                typeof groupRecord.name === 'string'
+                  ? groupRecord.name.trim()
+                  : typeof groupRecord.groupName === 'string'
+                    ? groupRecord.groupName.trim()
+                    : ''
+              const segments = Array.isArray(groupRecord.segments)
+                ? groupRecord.segments
+                : Array.isArray(groupRecord.shots)
+                  ? groupRecord.shots
+                  : []
+              return segments.map((shot) => {
+                if (!shot || typeof shot !== 'object' || Array.isArray(shot) || !groupName) {
+                  return shot
+                }
+                const shotRecord = shot as Record<string, unknown>
+                return shotRecord.groupName || shotRecord['分组']
+                  ? shotRecord
+                  : { ...shotRecord, groupName }
+              })
+            })
+          : []
+    if (rawShots.length === 0 && !Array.isArray(sourceRoot.shots)) continue
+
+    const shots = rawShots.filter(
+      (shot): shot is Record<string, unknown> =>
+        shot != null && typeof shot === 'object' && !Array.isArray(shot),
+    )
+    if (shots.length !== rawShots.length) continue
+    const root: Record<string, unknown> = {
+      shots,
+      ...(summary ? { summary } : {}),
+    }
+    return {
+      root,
+      shots,
+      ...(summary ? { summary: summary as Record<string, unknown> } : {}),
     }
   }
   return null
@@ -159,32 +250,12 @@ function validateStoryboardContract(input: {
   envelope: StoryboardEnvelope
   rows: ParsedShotRow[]
 }): string | null {
-  const { shots, summary } = input.envelope
+  const { shots } = input.envelope
   if (shots.length === 0) {
     return '分镜结果包含 shots，但镜头数组为空，未加载为分镜节点。请检查模型输出或任务输入。'
   }
   if (input.rows.length !== shots.length) {
-    return `分镜结果包含 ${shots.length} 个镜头对象，但只有 ${input.rows.length} 个可解析，可能存在空对象或字段损坏，未加载为分镜节点。`
-  }
-  let totalDurationSec = 0
-  for (const row of input.rows) {
-    if (row.durationSec != null) {
-      totalDurationSec += row.durationSec
-    }
-  }
-  if (!summary) return null
-  const shotCount = summary.shotCount
-  if (typeof shotCount === 'number' && Number.isInteger(shotCount) && shotCount !== shots.length) {
-    return `分镜 summary.shotCount=${shotCount}，但 shots 实际包含 ${shots.length} 镜，疑似输出截断或汇总错误。`
-  }
-  const summaryDuration = summary.totalDurationSec
-  if (
-    typeof summaryDuration === 'number' &&
-    Number.isFinite(summaryDuration) &&
-    totalDurationSec > 0 &&
-    Math.abs(summaryDuration - totalDurationSec) > 0.001
-  ) {
-    return `分镜 summary.totalDurationSec=${summaryDuration}，但逐镜合计为 ${totalDurationSec}，疑似输出截断或汇总错误。`
+    return `分镜结果包含 ${shots.length} 个镜头对象，但只有 ${input.rows.length} 个可解析。`
   }
   return null
 }
@@ -202,26 +273,12 @@ function pipelineRoleToEntityKind(role: CanvasPipelineRole | undefined): Extract
 type JsonShape = { keys: string[]; shotsLength?: number } | null
 
 function inspectJsonShape(text: string): JsonShape {
-  const candidates = [text.trim()]
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fenced?.[1]) candidates.push(fenced[1].trim())
-  const firstBrace = text.indexOf('{')
-  const lastBrace = text.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    candidates.push(text.slice(firstBrace, lastBrace + 1))
-  }
-  for (const candidate of candidates) {
-    try {
-      let parsed = JSON.parse(candidate) as unknown
-      if (typeof parsed === 'string') parsed = JSON.parse(parsed) as unknown
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
-      const record = parsed as Record<string, unknown>
-      return {
-        keys: Object.keys(record),
-        ...(Array.isArray(record.shots) ? { shotsLength: record.shots.length } : {}),
-      }
-    } catch {
-      // Try the next candidate.
+  for (const parsed of parseCanvasJsonCandidates(text)) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+    const record = parsed as Record<string, unknown>
+    return {
+      keys: Object.keys(record),
+      ...(Array.isArray(record.shots) ? { shotsLength: record.shots.length } : {}),
     }
   }
   return null

@@ -1,6 +1,6 @@
 # Canvas Agent Specialized Node Tools Implementation Plan
 
-> 状态: 已落地 | 最后核对: 2026-07-18
+> 状态: 已落地 | 最后核对: 2026-08-10
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -17,6 +17,7 @@
 ### Task 1: 完整分镜字段模型与持久化
 
 **Files:**
+
 - Modify: `apps/desktop/src/renderer/design/views/canvas/canvasFilmAssets.ts`
 - Modify: `apps/desktop/src/renderer/design/views/canvas/canvas.api.ts`
 - Modify: `apps/desktop/src/renderer/design/views/canvas/canvas.store.ts`
@@ -74,6 +75,7 @@ Expected: PASS。
 ### Task 2: 专用流水线动作契约
 
 **Files:**
+
 - Create: `apps/desktop/src/renderer/design/views/canvas/canvasPipelineActionContracts.ts`
 - Create: `apps/desktop/src/renderer/design/views/canvas/canvasPipelineActionContracts.test.ts`
 
@@ -126,6 +128,7 @@ Expected: PASS。
 ### Task 3: 剧本与分镜输出校验和物化
 
 **Files:**
+
 - Create: `apps/desktop/src/renderer/design/views/canvas/canvasTextOutputValidation.ts`
 - Create: `apps/desktop/src/renderer/design/views/canvas/canvasTextOutputValidation.test.ts`
 - Create: `apps/desktop/src/renderer/design/views/canvas/canvasStoryboardMaterialization.ts`
@@ -137,8 +140,12 @@ Expected: PASS。
 
 ```ts
 expect(validateCanvasSemanticTextOutput('screenplay', '随便写点内容').ok).toBe(false)
-expect(validateCanvasSemanticTextOutput('screenplay', '# 场1 内景 茶馆 日\n\n林岚：你好').ok).toBe(true)
-expect(validateCanvasSemanticTextOutput('shot', JSON.stringify({ shots: [validShot] }))).toMatchObject({
+expect(validateCanvasSemanticTextOutput('screenplay', '# 场1 内景 茶馆 日\n\n林岚：你好').ok).toBe(
+  true,
+)
+expect(
+  validateCanvasSemanticTextOutput('shot', JSON.stringify({ shots: [validShot] })),
+).toMatchObject({
   ok: true,
 })
 expect(validateCanvasSemanticTextOutput('shot', '{"shots":[]}').ok).toBe(false)
@@ -164,7 +171,7 @@ type CanvasSemanticTextValidation =
 
 - [x] **Step 4: 接入文本任务完成路径**
 
-在创建语义产物节点前调用校验器。校验失败时把 task 标记为 failed、保留 `rawResponse`，不创建带 screenplay/shot 角色的节点；分镜校验成功时使用程序生成的 Markdown 文本并更新 `project.metadata.film.shotGroups`。
+在创建语义产物节点前调用校验器。剧本兼容现有“第N场｜内/外景｜地点｜时间”等场次标题；分镜缺失的可编辑字段补空字符串，summary 不作为阻断条件。JSON 解析前先做低风险修复，容忍代码围栏、前后说明、尾逗号、注释、智能/单引号、未加引号字段名和字符串裸换行；被截断且无法安全修复的 JSON 不强行补齐。无法恢复专用语义时把 task 标记为 failed、保留 `rawResponse` 和 `modelOutputText`；只要模型返回了文本，就创建不带 screenplay/shot 角色的普通文本回显节点。可恢复的分镜结果继续使用程序生成的 Markdown 文本并更新 `project.metadata.film.shotGroups`。
 
 - [x] **Step 5: 运行校验、物化和文本任务回归测试**
 
@@ -175,6 +182,7 @@ Expected: PASS。
 ### Task 4: 专用节点 MCP 工具
 
 **Files:**
+
 - Create: `apps/desktop/src/renderer/design/views/canvas/canvasSpecializedNodeSchemas.ts`
 - Create: `apps/desktop/src/renderer/design/views/canvas/canvasSpecializedNodeTools.ts`
 - Create: `apps/desktop/src/renderer/design/views/canvas/canvasSpecializedNodeTools.test.ts`
@@ -185,21 +193,23 @@ Expected: PASS。
 要求存在：
 
 ```ts
-expect(toolNames).toEqual(expect.arrayContaining([
-  'canvas_create_chapter_node',
-  'canvas_create_screenplay_node',
-  'canvas_create_character_node',
-  'canvas_create_scene_node',
-  'canvas_create_prop_node',
-  'canvas_create_effect_node',
-  'canvas_create_storyboard_node',
-  'canvas_create_shot_node',
-  'canvas_insert_design_card_node',
-  'canvas_insert_keyframe_node',
-  'canvas_insert_clip_node',
-  'canvas_insert_panorama_node',
-  'canvas_create_pipeline_operation_node',
-]))
+expect(toolNames).toEqual(
+  expect.arrayContaining([
+    'canvas_create_chapter_node',
+    'canvas_create_screenplay_node',
+    'canvas_create_character_node',
+    'canvas_create_scene_node',
+    'canvas_create_prop_node',
+    'canvas_create_effect_node',
+    'canvas_create_storyboard_node',
+    'canvas_create_shot_node',
+    'canvas_insert_design_card_node',
+    'canvas_insert_keyframe_node',
+    'canvas_insert_clip_node',
+    'canvas_insert_panorama_node',
+    'canvas_create_pipeline_operation_node',
+  ]),
+)
 ```
 
 行为测试使用内存 fake workspace，断言剧本工具创建/复用 script 资产、插入节点并写 screenplay role；分镜工具先校验全部 shots，再创建 groups、segments 和 Markdown 节点。
@@ -234,6 +244,7 @@ Expected: PASS。
 ### Task 5: Agent 指引和文档同步
 
 **Files:**
+
 - Modify: `apps/desktop/resources/skills/canvas-studio/SKILL.md`
 - Modify: `docs/superpowers/specs/2026-07-18-canvas-agent-specialized-node-tools-design.md`
 - Modify: `docs/superpowers/plans/2026-07-18-canvas-agent-specialized-node-tools.md`
@@ -255,6 +266,7 @@ Expected: 所有关键工具均被说明，无旧的双 JSON+Markdown 输出要�
 ### Task 6: 完整验证、审查和提交
 
 **Files:**
+
 - Verify all files changed by Tasks 1-5
 
 - [x] **Step 1: 运行完整定向测试**

@@ -140,7 +140,7 @@ describe('semantic canvas text task output', () => {
     Object.assign(window, { spark: { invoke: vi.fn().mockResolvedValue({}) } })
   })
 
-  it('rejects invalid specialized output without creating a typed result node', async () => {
+  it('keeps invalid specialized output as an editable plain-text result node', async () => {
     seedSemanticTask('screenplay')
 
     const snapshot = await canvasApi.applyTextTaskResult('project-1', 'task-1', {
@@ -153,10 +153,42 @@ describe('semantic canvas text task output', () => {
       status: 'failed',
       errorMsg: 'invalid_screenplay_output',
     })
-    expect(snapshot.tasks[0]?.outputNodeIds).toEqual([])
+    expect(snapshot.tasks[0]?.outputNodeIds).toHaveLength(1)
     expect(snapshot.tasks[0]?.modelOutputText).toBe('这是一个自由格式故事梗概。')
     expect(snapshot.tasks[0]?.completedAt).toBeTruthy()
     expect(snapshot.nodes.some((node) => node.data.pipelineRole === 'screenplay')).toBe(false)
+    const fallbackNode = snapshot.nodes.find((node) =>
+      snapshot.tasks[0]?.outputNodeIds.includes(node.id),
+    )
+    expect(fallbackNode).toMatchObject({
+      type: 'text',
+      taskId: 'task-1',
+      data: {
+        text: '这是一个自由格式故事梗概。',
+        origin: 'task_output',
+      },
+    })
+    expect(
+      snapshot.assets.find((asset) => asset.id === fallbackNode?.assetId)?.metadata,
+    ).toMatchObject({
+      validationCode: 'invalid_screenplay_output',
+    })
+  })
+
+  it('completes the chapter-to-screenplay format used by the canvas prompt', async () => {
+    seedSemanticTask('screenplay')
+
+    const snapshot = await canvasApi.applyTextTaskResult('project-1', 'task-1', {
+      ...responseBase,
+      text: '第1场｜内景｜二年级教室｜傍晚\n\n动作：苏晴走进教室。',
+    })
+
+    expect(snapshot.tasks[0]?.status).toBe('completed')
+    expect(snapshot.nodes.find((node) => node.data.pipelineRole === 'screenplay')).toMatchObject({
+      data: {
+        text: '第1场｜内景｜二年级教室｜傍晚\n\n动作：苏晴走进教室。',
+      },
+    })
   })
 
   it('keeps model output separate when runtime diagnostics already exist', async () => {
@@ -173,6 +205,36 @@ describe('semantic canvas text task output', () => {
       status: 'failed',
       modelOutputText: modelText,
       rawResponse: { executionPath: 'session-runtime', adapter: 'codex' },
+    })
+    expect(snapshot.tasks[0]?.outputNodeIds).toHaveLength(1)
+    expect(
+      snapshot.nodes.find((node) => snapshot.tasks[0]?.outputNodeIds.includes(node.id)),
+    ).toMatchObject({
+      type: 'text',
+      data: { text: modelText, origin: 'task_output' },
+    })
+  })
+
+  it('keeps partial text even when the provider marks the request failed', async () => {
+    seedSemanticTask('screenplay')
+
+    const snapshot = await canvasApi.applyTextTaskResult('project-1', 'task-1', {
+      ...responseBase,
+      status: 'failed',
+      text: '模型已返回的部分剧本内容',
+      error: { code: 'provider_task_failed', message: 'provider failed after response' },
+    })
+
+    expect(snapshot.tasks[0]).toMatchObject({
+      status: 'failed',
+      outputNodeIds: [expect.any(String)],
+      modelOutputText: '模型已返回的部分剧本内容',
+    })
+    expect(
+      snapshot.nodes.find((node) => snapshot.tasks[0]?.outputNodeIds.includes(node.id)),
+    ).toMatchObject({
+      type: 'text',
+      data: { text: '模型已返回的部分剧本内容', origin: 'task_output' },
     })
   })
 

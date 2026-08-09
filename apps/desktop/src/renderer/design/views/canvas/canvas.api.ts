@@ -72,6 +72,7 @@ import {
 import { isShotScriptText } from './canvasShotTableParse'
 import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import { materializeStoryboardRows } from './canvasStoryboardMaterialization'
+import { materializeCanvasTextTaskFallbackOutput } from './canvasTextTaskFallbackOutput'
 import { validateCanvasSemanticTextOutput } from './canvasTextOutputValidation'
 import { placeAutoNodeToRight } from './canvasAutoPlacement'
 import { planGroupLayout } from './canvasGroupLayout'
@@ -6336,7 +6337,7 @@ export const canvasApi = {
       return this.openSnapshot(projectId, task.boardId)
     }
 
-    if (response.status === 'failed' || response.error || !response.text) {
+    if (response.status === 'failed' || response.error || !response.text.trim()) {
       const at = now()
       task.status = 'failed'
       task.progress = 100
@@ -6352,6 +6353,20 @@ export const canvasApi = {
       if (response.text.trim()) {
         task.modelOutputText = response.text
         appendCanvasTaskModelOutputEvent(task, at, response.text)
+        materializeCanvasTextTaskFallbackOutput({
+          db,
+          projectId,
+          userId: USER_ID,
+          task,
+          taskNode,
+          response,
+          text: response.text,
+          errorCode: task.errorMsg,
+          errorMessage: task.errorDetail ?? '文本生成失败',
+          at,
+          uid,
+          createNode: createNodeBase,
+        })
       }
       if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
       task.updatedAt = at
@@ -6394,6 +6409,20 @@ export const canvasApi = {
       task.modelOutputText = response.text
       appendCanvasTaskModelOutputEvent(task, at, response.text)
       if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
+      materializeCanvasTextTaskFallbackOutput({
+        db,
+        projectId,
+        userId: USER_ID,
+        task,
+        taskNode,
+        response,
+        text: response.text,
+        errorCode: semanticValidation.code,
+        errorMessage: semanticValidation.message,
+        at,
+        uid,
+        createNode: createNodeBase,
+      })
       task.updatedAt = at
       task.completedAt = at
       appendCanvasTaskRuntimeEvent(task, {
