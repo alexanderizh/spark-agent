@@ -89,6 +89,7 @@ const {
   createWindowsNativeHostManifest,
   createLocalWindowsNativeHostManifest,
   normalizePublisherThumbprint,
+  resolveWindowsNativeHostBuildAttempts,
   resolveWindowsNativeHostTrustMode,
   signWindowsNativeHost,
   inspectWindowsAuthenticode,
@@ -103,6 +104,7 @@ const {
     architecture: 'arm64' | 'x64'
   }) => Record<string, unknown>
   normalizePublisherThumbprint: (value: string) => string
+  resolveWindowsNativeHostBuildAttempts: (environment?: NodeJS.ProcessEnv) => number
   resolveWindowsNativeHostTrustMode: (environment: NodeJS.ProcessEnv) => 'signed' | 'local'
   signWindowsNativeHost: (
     packager: { signIf?: (path: string) => Promise<boolean> },
@@ -677,6 +679,23 @@ TeamIdentifier=ABCDE12345
       signWindowsNativeHost({ signIf }, 'C:\\SparkComputerHost.exe'),
     ).resolves.toBeUndefined()
     expect(signIf).toHaveBeenCalledWith('C:\\SparkComputerHost.exe')
+  })
+
+  it('retries Windows Native Host cargo builds in CI but keeps local builds single-shot', () => {
+    expect(resolveWindowsNativeHostBuildAttempts({ CI: 'true' })).toBe(2)
+    expect(resolveWindowsNativeHostBuildAttempts({ CI: 'false' })).toBe(1)
+    expect(
+      resolveWindowsNativeHostBuildAttempts({
+        CI: 'true',
+        SPARK_WINDOWS_NATIVE_HOST_BUILD_ATTEMPTS: '3',
+      }),
+    ).toBe(3)
+    expect(
+      resolveWindowsNativeHostBuildAttempts({
+        CI: 'true',
+        SPARK_WINDOWS_NATIVE_HOST_BUILD_ATTEMPTS: '99',
+      }),
+    ).toBe(3)
   })
 
   it('fails closed when electron-builder skips Windows Native Host signing', async () => {

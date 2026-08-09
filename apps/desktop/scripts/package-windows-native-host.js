@@ -13,6 +13,15 @@ const {
 const EXECUTABLE_NAME = 'SparkComputerHost.exe'
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024
 
+function resolveWindowsNativeHostBuildAttempts(environment = process.env) {
+  const configured = Number.parseInt(
+    environment.SPARK_WINDOWS_NATIVE_HOST_BUILD_ATTEMPTS ?? '',
+    10,
+  )
+  if (Number.isInteger(configured) && configured > 0) return Math.min(configured, 3)
+  return environment.CI === 'true' ? 2 : 1
+}
+
 function normalizePublisherThumbprint(value) {
   const normalized = String(value).replace(/[\s:]/g, '').toLowerCase()
   if (!/^[a-f0-9]{64}$/.test(normalized)) {
@@ -73,26 +82,33 @@ async function packageWindowsNativeHost(context) {
 
   const packageRoot = path.resolve(__dirname, '../native/windows/spark-computer-host')
   const rustTarget = architecture === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'
-  await runCommand(
-    'cargo',
-    [
-      'build',
-      '--locked',
-      '--release',
-      '--target',
-      rustTarget,
-      ...(localTrust ? ['--features', 'local-trust'] : []),
-    ],
-    {
-      cwd: packageRoot,
-      env: {
-        ...process.env,
-        ...(publisherThumbprint == null
-          ? {}
-          : { SPARK_WINDOWS_PUBLISHER_THUMBPRINT: publisherThumbprint }),
-      },
-    },
-  )
+  const cargoArgs = [
+    'build',
+    '--locked',
+    '--release',
+    '--target',
+    rustTarget,
+    ...(localTrust ? ['--features', 'local-trust'] : []),
+  ]
+  const cargoEnvironment = {
+    ...process.env,
+    CARGO_NET_RETRY: process.env.CARGO_NET_RETRY ?? '5',
+    ...(publisherThumbprint == null
+      ? {}
+      : { SPARK_WINDOWS_PUBLISHER_THUMBPRINT: publisherThumbprint }),
+  }
+  const buildAttempts = resolveWindowsNativeHostBuildAttempts(process.env)
+  for (let attempt = 1; attempt <= buildAttempts; attempt += 1) {
+    try {
+      await runCommand('cargo', cargoArgs, { cwd: packageRoot, env: cargoEnvironment })
+      break
+    } catch (error) {
+      if (attempt >= buildAttempts) throw error
+      console.warn(
+        `[after-pack] Windows Native Host cargo build failed on attempt ${attempt}/${buildAttempts}; retrying with Cargo's partial build cache`,
+      )
+    }
+  }
   const sourceExecutable = path.join(packageRoot, 'target', rustTarget, 'release', EXECUTABLE_NAME)
   const destinationDirectory = path.join(
     context.appOutDir,
@@ -286,9 +302,13 @@ function runCommand(command, args, options = {}) {
         stderr: Buffer.concat(stderr).toString('utf8'),
       }
       if (result.code !== 0) {
+        const output = [result.stderr, result.stdout]
+          .filter((value) => value.trim())
+          .join('\n')
+          .trim()
         reject(
           new Error(
-            `${command} failed with exit ${result.code}: ${result.stderr.trim().slice(0, 2_000)}`,
+            `${command} failed with exit ${result.code}: ${output.slice(-2_000)}`,
           ),
         )
       } else {
@@ -304,6 +324,7 @@ module.exports = {
   inspectWindowsAuthenticode,
   normalizePublisherThumbprint,
   packageWindowsNativeHost,
+  resolveWindowsNativeHostBuildAttempts,
   resolveWindowsNativeHostTrustMode,
   signWindowsNativeHost,
 }
