@@ -5,10 +5,11 @@ import { Icons } from '../../Icons'
 import { useApp } from '../../AppContext'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { RemoteAssetImage } from '../../components/RemoteAssetImage'
+import promptLibraryPlaceholderCover from '../../../assets/canvas-prompt-library-placeholder-cover.png'
 import { useCanvasProjects } from './canvas.store'
 import { canvasApi } from './canvas.api'
 import { readFileAsDataUrl } from './canvas-safe-file'
-import type { CanvasAsset, CanvasNode, CanvasSnapshot } from './canvas.types'
+import type { CanvasAsset, CanvasSnapshot } from './canvas.types'
 import { filmUid, readAssetKind } from './canvasFilmAssets'
 import {
   getPromptCategory,
@@ -19,11 +20,7 @@ import {
   saveHideSystemPrompts,
   saveLastPromptCategory,
 } from './canvasPromptLibraryCategories'
-import {
-  isPromptTextNode,
-  readPromptLibraryCover,
-  readPromptLibraryText,
-} from './canvasPromptLibraryData'
+import { readPromptLibraryCover, readPromptLibraryText } from './canvasPromptLibraryData'
 import {
   buildCanvasPromptLibraryEntries,
   filterPromptLibraryEntries,
@@ -67,19 +64,6 @@ const EMPTY_EDITOR: PromptEditorState = {
   coverMimeType: null,
   coverFile: null,
   coverPreviewUrl: null,
-}
-
-function nodeText(node: CanvasNode, snapshot: CanvasSnapshot): string {
-  if (!isPromptTextNode(node)) return ''
-  const text = node.data?.text
-  if (typeof text === 'string' && text.trim()) return text.trim()
-  const prompt = node.data?.prompt
-  if (typeof prompt === 'string' && prompt.trim()) return prompt.trim()
-  if (node.assetId) {
-    const asset = snapshot.assets.find((item) => item.id === node.assetId)
-    if (asset) return readPromptLibraryText(asset)
-  }
-  return ''
 }
 
 function defaultCategory(categories: string[]): string {
@@ -133,7 +117,6 @@ export function CanvasPromptLibraryView() {
   const [hideSystemPrompts, setHideSystemPrompts] = useState(readHideSystemPrompts)
   const [editor, setEditor] = useState<PromptEditorState | null>(null)
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false)
-  const [textPickerOpen, setTextPickerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [categorySaving, setCategorySaving] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -190,7 +173,6 @@ export function CanvasPromptLibraryView() {
         URL.revokeObjectURL(current.coverPreviewUrl)
       return null
     })
-    setTextPickerOpen(false)
     setCategoryManagerOpen(false)
     setActiveCategory('all')
     setQuery('')
@@ -288,13 +270,13 @@ export function CanvasPromptLibraryView() {
         return
       event.preventDefault()
       event.stopPropagation()
-      if (!editor && !categoryManagerOpen && !textPickerOpen && snapshot) {
+      if (!editor && !categoryManagerOpen && snapshot) {
         openCreatePrompt()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [categoryManagerOpen, editor, openCreatePrompt, snapshot, textPickerOpen])
+  }, [categoryManagerOpen, editor, openCreatePrompt, snapshot])
 
   const openEditPrompt = (
     asset: CanvasAsset,
@@ -546,6 +528,16 @@ export function CanvasPromptLibraryView() {
         </div>
         <div className="canvas-prompt-library-header-actions">
           <span className="canvas-prompt-library-shortcut">⌘/Ctrl + E 新建</span>
+          <Button
+            size="small"
+            type="text"
+            loading={loading}
+            onClick={() => void reload()}
+            icon={<Icons.Refresh size={15} />}
+            aria-label="刷新提示词库"
+          >
+            刷新
+          </Button>
           <Button size="small" type="text" onClick={openCreatePrompt} disabled={!library}>
             <Icons.Plus size={15} /> 新建提示词
           </Button>
@@ -646,7 +638,6 @@ export function CanvasPromptLibraryView() {
             <div className="canvas-prompt-library-card-grid">
               {filteredGlobalAssets.map((asset) => {
                 const coverUrl = readPromptLibraryCover(asset, snapshot?.assets ?? []).url
-                const category = getPromptCategory(asset)
                 return (
                   <article
                     key={`global:${asset.id}`}
@@ -663,12 +654,9 @@ export function CanvasPromptLibraryView() {
                   >
                     <div className="canvas-prompt-library-card-cover">
                       {coverUrl ? (
-                        <img src={coverUrl} alt="" />
+                        <PromptLibraryCoverImage src={coverUrl} />
                       ) : (
-                        <div className="canvas-prompt-library-card-cover-fallback">
-                          <Icons.Edit size={14} />
-                          <span>{category ?? '未分类'}</span>
-                        </div>
+                        <PromptLibraryCoverPlaceholder />
                       )}
                       <span className="canvas-prompt-library-card-source">全局</span>
                     </div>
@@ -727,7 +715,6 @@ export function CanvasPromptLibraryView() {
               {filteredProjectEntries.map((entry) => {
                 const { asset, projectName, projectAssets } = entry
                 const coverUrl = readPromptLibraryCover(asset, projectAssets).url
-                const category = getPromptCategory(asset)
                 return (
                   <article
                     key={`project:${asset.projectId}:${asset.id}`}
@@ -744,12 +731,9 @@ export function CanvasPromptLibraryView() {
                   >
                     <div className="canvas-prompt-library-card-cover">
                       {coverUrl ? (
-                        <img src={coverUrl} alt="" />
+                        <PromptLibraryCoverImage src={coverUrl} />
                       ) : (
-                        <div className="canvas-prompt-library-card-cover-fallback">
-                          <Icons.Edit size={14} />
-                          <span>{category ?? '未分类'}</span>
-                        </div>
+                        <PromptLibraryCoverPlaceholder />
                       )}
                       <span className="canvas-prompt-library-card-source">画布·{projectName}</span>
                     </div>
@@ -822,12 +806,10 @@ export function CanvasPromptLibraryView() {
           editor={editor}
           categories={categories}
           coverUrl={currentCoverUrl}
-          snapshot={snapshot}
           saving={saving}
           onChange={setEditor}
           onClose={closeEditor}
           onSave={() => void handleSavePrompt()}
-          onPickText={() => setTextPickerOpen(true)}
           onUploadCover={() => fileInputRef.current?.click()}
           onCreateCategory={createCategory}
         />
@@ -842,17 +824,6 @@ export function CanvasPromptLibraryView() {
           event.currentTarget.value = ''
         }}
       />
-      {snapshot && (
-        <TextNodePickerModal
-          open={textPickerOpen}
-          snapshot={snapshot}
-          onClose={() => setTextPickerOpen(false)}
-          onPick={(text) => {
-            setEditor((current) => (current ? { ...current, text } : current))
-            setTextPickerOpen(false)
-          }}
-        />
-      )}
       <PromptCategoryManagerModal
         open={categoryManagerOpen}
         categories={categories}
@@ -878,12 +849,9 @@ function SystemPromptCard({
     <article className="canvas-prompt-library-card canvas-prompt-library-system-card">
       <div className="canvas-prompt-library-card-cover">
         {entry.exampleImageSrc ? (
-          <RemoteAssetImage src={entry.exampleImageSrc} alt="" />
+          <PromptLibraryCoverImage src={entry.exampleImageSrc} remote />
         ) : (
-          <div className="canvas-prompt-library-card-cover-fallback">
-            <Icons.Book size={20} />
-            <span>{entry.group}</span>
-          </div>
+          <PromptLibraryCoverPlaceholder />
         )}
         <span className="canvas-prompt-library-card-source">系统提示词</span>
       </div>
@@ -905,28 +873,69 @@ function SystemPromptCard({
   )
 }
 
+function PromptLibraryCoverImage({ src, remote = false }: { src: string; remote?: boolean }) {
+  return (
+    <>
+      <img
+        className="canvas-prompt-library-card-cover-ambient"
+        src={src}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
+      {remote ? (
+        <RemoteAssetImage
+          className="canvas-prompt-library-card-cover-remote"
+          src={src}
+          alt=""
+        />
+      ) : (
+        <img
+          className="canvas-prompt-library-card-cover-image"
+          src={src}
+          alt=""
+          draggable={false}
+        />
+      )}
+    </>
+  )
+}
+
+function PromptLibraryCoverPlaceholder() {
+  return (
+    <div className="canvas-prompt-library-card-cover-fallback">
+      <img
+        className="canvas-prompt-library-card-cover-fallback-image"
+        src={promptLibraryPlaceholderCover}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
+      <div className="canvas-prompt-library-card-cover-fallback-content">
+        <span>无封面</span>
+      </div>
+    </div>
+  )
+}
+
 function PromptLibraryEditorModal({
   editor,
   categories,
   coverUrl,
-  snapshot,
   saving,
   onChange,
   onClose,
   onSave,
-  onPickText,
   onUploadCover,
   onCreateCategory,
 }: {
   editor: PromptEditorState
   categories: string[]
   coverUrl: string | null
-  snapshot: CanvasSnapshot | null
   saving: boolean
   onChange: (next: PromptEditorState) => void
   onClose: () => void
   onSave: () => void
-  onPickText: () => void
   onUploadCover: () => void
   onCreateCategory: (name: string) => Promise<string | null>
 }) {
@@ -1019,9 +1028,6 @@ function PromptLibraryEditorModal({
             )}
             <div className="canvas-prompt-editor-label canvas-prompt-text-label">
               <span>提示词</span>
-              <button type="button" onClick={onPickText} disabled={!snapshot}>
-                从画布选择文本
-              </button>
             </div>
             <Input.TextArea
               value={editor.text}
@@ -1030,9 +1036,7 @@ function PromptLibraryEditorModal({
               placeholder="输入提示词文案"
             />
             <div className="canvas-prompt-editor-source">
-              {editor.text
-                ? `来源：${snapshot && snapshot.nodes.some((node) => nodeText(node, snapshot) === editor.text) ? '画布节点' : '手写'}`
-                : '支持手写或从画布选择文本节点'}
+              {editor.text ? '来源：手写' : '支持手写提示词文案'}
             </div>
             <div className="canvas-prompt-editor-label">
               <span>标签</span>
@@ -1055,39 +1059,6 @@ function PromptLibraryEditorModal({
         <div className="canvas-prompt-editor-hint">
           保存后可从画布使用，也可以继续编辑封面、文案和分类。
         </div>
-      </div>
-    </Modal>
-  )
-}
-
-function TextNodePickerModal({
-  open,
-  snapshot,
-  onClose,
-  onPick,
-}: {
-  open: boolean
-  snapshot: CanvasSnapshot
-  onClose: () => void
-  onPick: (text: string) => void
-}) {
-  const nodes = snapshot.nodes
-    .filter(isPromptTextNode)
-    .map((node) => ({ node, text: nodeText(node, snapshot) }))
-    .filter((item) => item.text)
-  return (
-    <Modal open={open} title="从画布选择提示词" onCancel={onClose} footer={null} width={620}>
-      <div className="canvas-prompt-text-source-list">
-        {nodes.length === 0 ? (
-          <Empty description="画布上还没有文本节点" />
-        ) : (
-          nodes.map(({ node, text }) => (
-            <button key={node.id} type="button" onClick={() => onPick(text)}>
-              <span>{node.title ?? node.type}</span>
-              <small>{text}</small>
-            </button>
-          ))
-        )}
       </div>
     </Modal>
   )
