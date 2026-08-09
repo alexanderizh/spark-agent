@@ -479,11 +479,6 @@ summary:focus {
 .sidebar-style-floating .floating-sidebar {
   background: var(--panel-elev);
   transition: background-color 0.2s ease;
-  /* border-color: color-mix(in srgb, var(--border-strong) 38%, transparent); */
-  /* box-shadow:
-    0 18px 48px rgba(30, 27, 48, 0.13),
-    0 3px 12px rgba(30, 27, 48, 0.07),
-    inset 0 1px 0 color-mix(in srgb, #fff 58%, transparent); */
 }
 
 html[data-backdrop-blur='1'] .sidebar-style-floating .floating-sidebar {
@@ -504,10 +499,6 @@ html[data-theme='dark'][data-backdrop-blur='1']
   .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 84%, transparent);
   border-color: rgba(255, 255, 255, 0.09);
-  box-shadow:
-    0 20px 52px rgba(0, 0, 0, 0.34),
-    0 3px 12px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.055);
 }
 
 /* 内容区聚焦时（根 .app 挂 .content-focused，仅 floating + 侧栏可见 + 焦点落在

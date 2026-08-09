@@ -1125,7 +1125,7 @@ function WorkflowViewInner() {
           ) : (
             <>
               <Button
-                size="middle"
+                size="small"
                 type="text"
                 onClick={showWorkflowList}
                 title="返回列表"
@@ -1135,7 +1135,7 @@ function WorkflowViewInner() {
               </Button>
               <LobeInput
                 className="wf-title-input"
-                size="middle"
+                size="small"
                 value={draft.name}
                 onChange={(event) => patchDraftMeta({ name: event.target.value })}
                 placeholder="工作流名称"

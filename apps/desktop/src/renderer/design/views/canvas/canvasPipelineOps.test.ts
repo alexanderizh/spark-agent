@@ -164,7 +164,9 @@ describe('canvasPipelineOps', () => {
   })
 
   it('getOp 命中与未命中', () => {
-    expect(getOp('shot.to_video')?.produces).toBe('clip')
+    expect(getOpsForRole('shot').map((op) => op.id)).toEqual(['shot.to_keyframes'])
+    expect(getOp('shot.to_video')).toBeUndefined()
+    expect(getOp('keyframe.to_video')?.produces).toBe('clip')
     expect(getOp('nope')).toBeUndefined()
   })
 })

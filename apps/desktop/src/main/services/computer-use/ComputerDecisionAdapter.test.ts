@@ -23,6 +23,8 @@ const OBSERVATION = {
   sensitiveRegions: [],
 } satisfies ComputerObservation
 
+type TestGenerate = (params: GenerateCanvasTextParams) => Promise<{ text: string }>
+
 describe('GenericComputerDecisionAdapter', () => {
   it('combines the screenshot with accessibility state on the first decision', async () => {
     const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
@@ -283,7 +285,7 @@ describe('GenericComputerDecisionAdapter', () => {
   })
 
   it('includes bounded recent action history so the model does not redo completed work', async () => {
-    const generate = vi.fn(async () => ({
+    const generate = vi.fn<TestGenerate>(async () => ({
       text: JSON.stringify({
         type: 'action',
         intent: 'Continue with the next field',
@@ -324,7 +326,7 @@ describe('GenericComputerDecisionAdapter', () => {
   })
 
   it('prioritizes actionable elements and bounds large desktop prompts', async () => {
-    const generate = vi.fn(async () => ({
+    const generate = vi.fn<TestGenerate>(async () => ({
       text: JSON.stringify({
         type: 'action',
         intent: 'Use the prioritized control',

@@ -7,7 +7,9 @@ export function selectKeyframesForImport(
   frames: WorkbenchKeyframe[],
   selectedIndexes: ReadonlySet<number>,
 ): WorkbenchKeyframe[] {
-  return frames.filter((frame) => selectedIndexes.has(frame.index) && !frame.canvasNodeId)
+  return frames
+    .filter((frame) => selectedIndexes.has(frame.index) && !frame.canvasNodeId)
+    .sort((left, right) => left.timestampSec - right.timestampSec || left.index - right.index)
 }
 
 export function selectKeyframesForRemoval(

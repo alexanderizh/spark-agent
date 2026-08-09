@@ -4029,8 +4029,6 @@ export function CanvasWorkspaceView({
               await patchNodes([imageNode.id], {
                 title: getKeyframeImportTitle(start + j),
               })
-              if (source)
-                await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
               createdIds.push(imageNode.id)
             }
           }
@@ -4038,7 +4036,42 @@ export function CanvasWorkspaceView({
       } finally {
         message.destroy(loadingKey)
       }
-      if (createdIds.length > 0) setSelectedNodeIds(createdIds)
+      let selectedNodeIds = createdIds
+      if (createdIds.length > 1) {
+        const nextSnapshot = await createGroupNode(createdIds)
+        const createdIdSet = new Set(createdIds)
+        const groupNode = nextSnapshot?.nodes.find((candidate) => {
+          if (candidate.type !== 'group') return false
+          const childIds = nextSnapshot.nodes
+            .filter((child) => child.parentNodeId === candidate.id)
+            .map((child) => child.id)
+          return (
+            createdIds.every((id) => childIds.includes(id)) &&
+            childIds.every((id) => createdIdSet.has(id))
+          )
+        })
+        if (groupNode) {
+          await patchNodes([groupNode.id], {
+            title: source?.title ? `${source.title} · 关键帧` : `关键帧组 · ${frames.length}帧`,
+          })
+          if (source) {
+            await connectNodes({ sourceNodeId: source.id, targetNodeId: groupNode.id })
+          }
+          selectedNodeIds = [groupNode.id]
+        } else if (source) {
+          await Promise.all(
+            createdIds.map((targetNodeId) =>
+              connectNodes({ sourceNodeId: source.id, targetNodeId }),
+            ),
+          )
+        }
+      } else if (createdIds.length === 1 && source) {
+        const [createdNodeId] = createdIds
+        if (createdNodeId) {
+          await connectNodes({ sourceNodeId: source.id, targetNodeId: createdNodeId })
+        }
+      }
+      if (selectedNodeIds.length > 0) setSelectedNodeIds(selectedNodeIds)
       message.success(`已导入 ${createdIds.length} 个关键帧到画布`)
       return frames.map((frame, index) => ({
         ...frame,
@@ -4047,7 +4080,7 @@ export function CanvasWorkspaceView({
         ...(createdIdsByOrder[index] ? { canvasNodeId: createdIdsByOrder[index] } : {}),
       }))
     },
-    [connectNodes, createImageNode, patchNodes, projectId, snapshot],
+    [connectNodes, createGroupNode, createImageNode, patchNodes, projectId, snapshot],
   )
 
   const handleAnnotateImageComplete = useCallback(

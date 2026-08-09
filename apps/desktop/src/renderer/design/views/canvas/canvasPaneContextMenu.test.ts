@@ -42,7 +42,7 @@ describe('canvas pane context menu', () => {
       /className="canvas-menu-item-danger"[\s\S]*?onDeleteSelectedNodes\(\)/,
     )
     expect(contextMenuStyles).toMatch(
-      /\.canvas-pane-context-menu button\.canvas-menu-item-danger\s*{[\s\S]*?color:\s*var\(--danger\)/,
+      /\.canvas-pane-context-menu button\.canvas-menu-item-danger[\s\S]*?{\s*color:\s*var\(--danger\)/,
     )
   })
 

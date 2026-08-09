@@ -45,11 +45,12 @@ import {
   type CanvasAutoLayoutNode,
   type CanvasAutoLayoutSpacing,
 } from './canvasAutoLayout'
-import { alignCanvasNodes, type CanvasAlignmentMode, type CanvasAlignmentNode } from './canvasAlignment'
 import {
-  absoluteToRelativeFor,
-  resolveFlowNodeAbsoluteOrigin,
-} from './canvasFlowNodeCoordinates'
+  alignCanvasNodes,
+  type CanvasAlignmentMode,
+  type CanvasAlignmentNode,
+} from './canvasAlignment'
+import { absoluteToRelativeFor, resolveFlowNodeAbsoluteOrigin } from './canvasFlowNodeCoordinates'
 import { CanvasMultiSelectToolbar } from './CanvasMultiSelectToolbar'
 import { shouldDelegateNodeDoubleClickToCollapsedGroup } from './canvasStageDoubleClick'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
@@ -352,51 +353,31 @@ function CanvasPaneResourceNodeActions({
   return (
     <>
       {onAddText && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={onAddText}
-        >
+        <button type="button" role="menuitem" onClick={onAddText}>
           <Icons.File size={14} />
           <span>添加文本</span>
         </button>
       )}
       {onAddImage && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={onAddImage}
-        >
+        <button type="button" role="menuitem" onClick={onAddImage}>
           <Icons.Image size={14} />
           <span>图片节点</span>
         </button>
       )}
       {onAddDirectorStage3D && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={onAddDirectorStage3D}
-        >
+        <button type="button" role="menuitem" onClick={onAddDirectorStage3D}>
           <Icons.Box size={14} />
           <span>新建 3D 导演台</span>
         </button>
       )}
       {onAddVideoWorkbench && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={onAddVideoWorkbench}
-        >
+        <button type="button" role="menuitem" onClick={onAddVideoWorkbench}>
           <Icons.Video size={14} />
           <span>新建视频工作台</span>
         </button>
       )}
       {onInsertAsset && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={onInsertAsset}
-        >
+        <button type="button" role="menuitem" onClick={onInsertAsset}>
           <Icons.Folder size={14} />
           <span>从资产选择</span>
         </button>
@@ -478,9 +459,9 @@ function toFlowNode(
   const cardChromeExtraHeight = collapsedGroupPresentation ? 0 : canvasNodeChromeExtraHeight(node)
   const presentationSize =
     collapsedGroupPresentation?.size ??
-    (resolveCanvasImageNodePresentationSize(node, imageSourceDimensions) ??
-      resolveCanvasVideoNodePresentationSize(node, imageSourceDimensions) ??
-      operationNodePresentationSize(node, operationRuns))
+    resolveCanvasImageNodePresentationSize(node, imageSourceDimensions) ??
+    resolveCanvasVideoNodePresentationSize(node, imageSourceDimensions) ??
+    operationNodePresentationSize(node, operationRuns)
   const baseRenderedHeight = presentationSize.height + cardChromeExtraHeight
   const data: CanvasFlowNodeData = {
     actions,
@@ -871,29 +852,29 @@ function CanvasStageInner({
         // 让折叠预览能把图片产物任务节点也识别为预览候选。
         { outputMediaKindByNodeId: buildOutputMediaKindMap(snapshot.nodes, snapshot.edges) },
       ),
-    [operationProjection.visibleEdges, operationProjection.visibleNodes, snapshot.nodes, snapshot.edges],
-  )
-  const selectedNodeIdSet = useMemo(
-    () => {
-      const visibleNodeIds = new Set(
-        groupCollapseProjection.visibleNodes.map((node) => node.id),
-      )
-      return new Set(
-        selectedNodeIds.map((nodeId) =>
-          resolveCanvasSelectionNodeId(
-            nodeId,
-            visibleNodeIds,
-            operationProjection.producerByOutputNodeId,
-          ),
-        ),
-      )
-    },
     [
-      groupCollapseProjection.visibleNodes,
-      operationProjection.producerByOutputNodeId,
-      selectedNodeIds,
+      operationProjection.visibleEdges,
+      operationProjection.visibleNodes,
+      snapshot.nodes,
+      snapshot.edges,
     ],
   )
+  const selectedNodeIdSet = useMemo(() => {
+    const visibleNodeIds = new Set(groupCollapseProjection.visibleNodes.map((node) => node.id))
+    return new Set(
+      selectedNodeIds.map((nodeId) =>
+        resolveCanvasSelectionNodeId(
+          nodeId,
+          visibleNodeIds,
+          operationProjection.producerByOutputNodeId,
+        ),
+      ),
+    )
+  }, [
+    groupCollapseProjection.visibleNodes,
+    operationProjection.producerByOutputNodeId,
+    selectedNodeIds,
+  ])
   const snapshotNodeById = useMemo(
     () => new Map(snapshot.nodes.map((node) => [node.id, node] as const)),
     [snapshot.nodes],
@@ -1142,7 +1123,7 @@ function CanvasStageInner({
   )
   const handleStageRef = useCallback((element: HTMLDivElement | null) => {
     stageRef.current = element
-    setStageElement((current) => current === element ? current : element)
+    setStageElement((current) => (current === element ? current : element))
     const nextStageAreaElement = element?.parentElement ?? null
     setStageAreaElement((current) =>
       current === nextStageAreaElement ? current : nextStageAreaElement,
@@ -2584,6 +2565,7 @@ function CanvasStageInner({
             <button
               type="button"
               role="menuitem"
+              className="canvas-menu-item-danger"
               onClick={() => {
                 onDeleteEdges([edgeContextMenu.edgeId])
                 setSelectedEdgeIds((previous) => (previous.length === 0 ? previous : []))
@@ -2642,313 +2624,319 @@ function CanvasStageInner({
         )}
         {paneContextMenu &&
           createPortal(
-          <div
-            ref={paneContextMenuRef}
-            className={`canvas-pane-context-menu${
-              paneContextMenu.openSubmenusLeft ? ' canvas-pane-context-menu-submenus-left' : ''
-            }${paneContextMenu.openSubmenusUp ? ' canvas-pane-context-menu-submenus-up' : ''}`}
-            style={{
-              left: paneContextMenu.left,
-              top: paneContextMenu.top,
-              maxHeight: paneContextMenu.maxHeight,
-            }}
-            role="menu"
-            onContextMenu={(event) => event.preventDefault()}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            {selectedNodeIds.length > 0 && (
-              <>
-                <div className="canvas-pane-context-section-title">选中节点</div>
-                {selectedNodeIds.length > 1 && onExtractSelectionToWorkflow && (
-                  <>
+            <div
+              ref={paneContextMenuRef}
+              className={`canvas-pane-context-menu${
+                paneContextMenu.openSubmenusLeft ? ' canvas-pane-context-menu-submenus-left' : ''
+              }${paneContextMenu.openSubmenusUp ? ' canvas-pane-context-menu-submenus-up' : ''}`}
+              style={{
+                left: paneContextMenu.left,
+                top: paneContextMenu.top,
+                maxHeight: paneContextMenu.maxHeight,
+              }}
+              role="menu"
+              onContextMenu={(event) => event.preventDefault()}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              {selectedNodeIds.length > 0 && (
+                <>
+                  <div className="canvas-pane-context-section-title">选中节点</div>
+                  {selectedNodeIds.length > 1 && onExtractSelectionToWorkflow && (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          closePaneContextMenu()
+                          onExtractSelectionToWorkflow()
+                        }}
+                      >
+                        <Icons.Workflow size={14} />
+                        <span>提取为画布工作流（{selectedNodeIds.length}）</span>
+                      </button>
+                      <div className="canvas-pane-context-divider" />
+                    </>
+                  )}
+                  {(onConfigureSelectedTasks || onSubmitSelectedTasks) && (
+                    <>
+                      {onConfigureSelectedTasks && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={!selectedContext.canBatchConfigureTasks}
+                          title={selectedContext.batchTaskConfigureDisabledReason ?? undefined}
+                          onClick={() => {
+                            closePaneContextMenu()
+                            onConfigureSelectedTasks(selectedContext.batchTaskNodeIds)
+                          }}
+                        >
+                          <Icons.Sliders size={14} />
+                          <span>批量配置参数…</span>
+                        </button>
+                      )}
+                      {onSubmitSelectedTasks && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={!selectedContext.canBatchSubmitTasks}
+                          title={selectedContext.batchTaskSubmitDisabledReason ?? undefined}
+                          onClick={() => {
+                            closePaneContextMenu()
+                            onSubmitSelectedTasks(selectedContext.batchTaskNodeIds)
+                          }}
+                        >
+                          <Icons.Play size={14} />
+                          <span>批量提交运行</span>
+                        </button>
+                      )}
+                      <div className="canvas-pane-context-divider" />
+                    </>
+                  )}
+                  {onAddNodesToAgent && (
                     <button
                       type="button"
                       role="menuitem"
                       onClick={() => {
                         closePaneContextMenu()
-                        onExtractSelectionToWorkflow()
+                        onAddNodesToAgent()
                       }}
                     >
-                      <Icons.Workflow size={14} />
-                      <span>提取为画布工作流（{selectedNodeIds.length}）</span>
+                      <Icons.MessageSquarePlus size={14} />
+                      <span>
+                        添加到 Agent 对话
+                        {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
+                      </span>
                     </button>
-                    <div className="canvas-pane-context-divider" />
-                  </>
-                )}
-                {(onConfigureSelectedTasks || onSubmitSelectedTasks) && (
-                  <>
-                    {onConfigureSelectedTasks && (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        disabled={!selectedContext.canBatchConfigureTasks}
-                        title={selectedContext.batchTaskConfigureDisabledReason ?? undefined}
-                        onClick={() => {
-                          closePaneContextMenu()
-                          onConfigureSelectedTasks(selectedContext.batchTaskNodeIds)
-                        }}
-                      >
-                        <Icons.Sliders size={14} />
-                        <span>批量配置参数…</span>
-                      </button>
-                    )}
-                    {onSubmitSelectedTasks && (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        disabled={!selectedContext.canBatchSubmitTasks}
-                        title={selectedContext.batchTaskSubmitDisabledReason ?? undefined}
-                        onClick={() => {
-                          closePaneContextMenu()
-                          onSubmitSelectedTasks(selectedContext.batchTaskNodeIds)
-                        }}
-                      >
-                        <Icons.Play size={14} />
-                        <span>批量提交运行</span>
-                      </button>
-                    )}
-                    <div className="canvas-pane-context-divider" />
-                  </>
-                )}
-                {onAddNodesToAgent && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      closePaneContextMenu()
-                      onAddNodesToAgent()
-                    }}
-                  >
-                    <Icons.MessageSquarePlus size={14} />
-                    <span>
-                      添加到 Agent 对话
-                      {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
-                    </span>
-                  </button>
-                )}
-                {onDuplicateSelectedNodes && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      closePaneContextMenu()
-                      onDuplicateSelectedNodes()
-                    }}
-                  >
-                    <Icons.Copy size={14} />
-                    <span>
-                      复制选中节点
-                      {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
-                    </span>
-                  </button>
-                )}
-                {selectedContext.canCreateGroup && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      closePaneContextMenu()
-                      onCreateGroupFromSelection()
-                    }}
-                  >
-                    <Icons.Layers size={14} />
-                    <span>创建组</span>
-                  </button>
-                )}
-                {selectedContext.canMergeSelectionToImage && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      closePaneContextMenu()
-                      onMergeSelectionToImage()
-                    }}
-                  >
-                    <Icons.Image size={14} />
-                    <span>合并为组合图</span>
-                  </button>
-                )}
-                {selectedContext.canAddToGroup && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      closePaneContextMenu()
-                      const groupId = selectedContext.selectedGroupIds[0]
-                      if (groupId) onAddSelectionToGroup(groupId)
-                    }}
-                  >
-                    <Icons.Plus size={14} />
-                    <span>加入选中的组</span>
-                  </button>
-                )}
-                {selectedContext.canRemoveFromGroup && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      closePaneContextMenu()
-                      selectedContext.groupedNodeIds.forEach((nodeId) =>
-                        onRemoveNodeFromGroup(nodeId),
-                      )
-                    }}
-                  >
-                    <Icons.ArrowUp size={14} />
-                    <span>移出组</span>
-                  </button>
-                )}
-                {selectedContext.canDissolveGroup && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      closePaneContextMenu()
-                      const groupId = selectedContext.selectedGroupIds[0]
-                      if (groupId) onDissolveGroup(groupId)
-                    }}
-                  >
-                    <Icons.FolderOpen size={14} />
-                    <span>解散组</span>
-                  </button>
-                )}
-                {(onDeleteSelectedNodes ||
-                  (selectedNodeIds.length === 1 &&
-                    (onToggleLockSelectedNodes || onBringSelectedNodesToFront))) && (
-                  <div className="canvas-pane-context-divider" />
-                )}
-                {selectedNodeIds.length === 1 && onToggleLockSelectedNodes && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      closePaneContextMenu()
-                      onToggleLockSelectedNodes()
-                    }}
-                  >
-                    <Icons.Lock size={14} />
-                    <span>锁定 / 解锁</span>
-                  </button>
-                )}
-                {selectedNodeIds.length === 1 && onBringSelectedNodesToFront && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      closePaneContextMenu()
-                      onBringSelectedNodesToFront()
-                    }}
-                  >
-                    <Icons.Layers size={14} />
-                    <span>置于顶层</span>
-                  </button>
-                )}
-                {onDeleteSelectedNodes && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="canvas-menu-item-danger"
-                    onClick={() => {
-                      closePaneContextMenu()
-                      onDeleteSelectedNodes()
-                    }}
-                  >
-                    <Icons.Trash size={14} />
-                    <span>
-                      删除选中节点
-                      {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
-                    </span>
-                  </button>
-                )}
-              </>
-            )}
-            {selectedNodeIds.length < 2 && (
-              <>
-            <div className="canvas-pane-context-section-title">任务节点</div>
-            {onCreatePipelineAtPosition && (
-              <CanvasPaneContextSubmenu
-                icon={<Icons.Workflow size={14} />}
-                label={CANVAS_FUNCTIONAL_MENU_LABEL}
-                openLeft={paneContextMenu.openSubmenusLeft}
-                openUp={paneContextMenu.openSubmenusUp}
-                stageElement={stageElement}
-              >
-                <CanvasPaneResourceNodeActions
-                  onAddImage={handleAddImageFromPane}
-                  onAddDirectorStage3D={
-                    onAddDirectorStage3DAtPosition ? handleAddDirectorStage3DFromPane : undefined
-                  }
-                  onAddVideoWorkbench={
-                    onAddVideoWorkbenchAtPosition ? handleAddVideoWorkbenchFromPane : undefined
-                  }
-                  onInsertAsset={onInsertAssetFromPane ? handleInsertAssetFromPane : undefined}
-                />
-                <div className="canvas-pane-context-divider" />
-                {panePipelineOperationGroups.map((group) => (
-                  <div key={group.id} className="canvas-pane-context-group">
-                    <div className="canvas-pane-context-section-title">{group.label}</div>
-                    {group.actions.map((op) => (
-                      <button
-                        type="button"
-                        key={op.id}
-                        role="menuitem"
-                        onClick={() => handleCreatePipelineFromPane(op.id)}
-                      >
-                        <Icons.Workflow size={14} />
-                        <span>{op.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                ))}
-                <div className="canvas-pane-context-section-title">通用视觉工具</div>
-                {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => {
-                  const visual = getOperationVisual(item.operation)
-                  return (
-                    <button
-                      type="button"
-                      key={item.operation}
-                      role="menuitem"
-                      className={`canvas-pane-context-op ${visual.colorClass}`}
-                      onClick={() => handleCreateOperationFromPane(item.operation)}
-                    >
-                      <span className="canvas-pane-context-op-icon">{visual.icon}</span>
-                      <span>{item.label}</span>
-                    </button>
-                  )
-                })}
-              </CanvasPaneContextSubmenu>
-            )}
-            {onCreateOperationAtPosition &&
-              <>
-                <CanvasPaneResourceNodeActions onAddText={handleAddTextFromPane} />
-                <div className="canvas-pane-context-divider" />
-                {canvasVisibleBaseCreateOperations().map((item) => {
-                  const visual = getOperationVisual(item.operation)
-                  return (
+                  )}
+                  {onDuplicateSelectedNodes && (
                     <button
                       type="button"
                       role="menuitem"
-                      key={item.operation}
-                      className={`canvas-pane-context-op ${visual.colorClass}`}
-                      onClick={() => handleCreateOperationFromPane(item.operation)}
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onDuplicateSelectedNodes()
+                      }}
                     >
-                      <span className="canvas-pane-context-op-icon">{visual.icon}</span>
-                      <span>{item.label}</span>
+                      <Icons.Copy size={14} />
+                      <span>
+                        复制选中节点
+                        {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
+                      </span>
                     </button>
-                  )
-                })}
-              </>
-            }
-              </>
-            )}
-            <div className="canvas-pane-context-divider" />
-            <div className="canvas-pane-context-section-title">画布</div>
-            <button type="button" role="menuitem" onClick={handleResetZoom}>
-              <Icons.RotateCcw size={14} />
-              <span>复原缩放比例</span>
-            </button>
-          </div>,
-          stageAreaElement ?? document.body,
-        )}
+                  )}
+                  {selectedContext.canCreateGroup && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onCreateGroupFromSelection()
+                      }}
+                    >
+                      <Icons.Layers size={14} />
+                      <span>创建组</span>
+                    </button>
+                  )}
+                  {selectedContext.canMergeSelectionToImage && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onMergeSelectionToImage()
+                      }}
+                    >
+                      <Icons.Image size={14} />
+                      <span>合并为组合图</span>
+                    </button>
+                  )}
+                  {selectedContext.canAddToGroup && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        const groupId = selectedContext.selectedGroupIds[0]
+                        if (groupId) onAddSelectionToGroup(groupId)
+                      }}
+                    >
+                      <Icons.Plus size={14} />
+                      <span>加入选中的组</span>
+                    </button>
+                  )}
+                  {selectedContext.canRemoveFromGroup && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        selectedContext.groupedNodeIds.forEach((nodeId) =>
+                          onRemoveNodeFromGroup(nodeId),
+                        )
+                      }}
+                    >
+                      <Icons.ArrowUp size={14} />
+                      <span>移出组</span>
+                    </button>
+                  )}
+                  {selectedContext.canDissolveGroup && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        const groupId = selectedContext.selectedGroupIds[0]
+                        if (groupId) onDissolveGroup(groupId)
+                      }}
+                    >
+                      <Icons.FolderOpen size={14} />
+                      <span>解散组</span>
+                    </button>
+                  )}
+                  {(onDeleteSelectedNodes ||
+                    (selectedNodeIds.length === 1 &&
+                      (onToggleLockSelectedNodes || onBringSelectedNodesToFront))) && (
+                    <div className="canvas-pane-context-divider" />
+                  )}
+                  {selectedNodeIds.length === 1 && onToggleLockSelectedNodes && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onToggleLockSelectedNodes()
+                      }}
+                    >
+                      <Icons.Lock size={14} />
+                      <span>锁定 / 解锁</span>
+                    </button>
+                  )}
+                  {selectedNodeIds.length === 1 && onBringSelectedNodesToFront && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onBringSelectedNodesToFront()
+                      }}
+                    >
+                      <Icons.Layers size={14} />
+                      <span>置于顶层</span>
+                    </button>
+                  )}
+                  {onDeleteSelectedNodes && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="canvas-menu-item-danger"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onDeleteSelectedNodes()
+                      }}
+                    >
+                      <Icons.Trash size={14} />
+                      <span>
+                        删除选中节点
+                        {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
+                      </span>
+                    </button>
+                  )}
+                </>
+              )}
+              {selectedNodeIds.length < 2 && (
+                <>
+                  <div className="canvas-pane-context-section-title">任务节点</div>
+                  {onCreatePipelineAtPosition && (
+                    <CanvasPaneContextSubmenu
+                      icon={<Icons.Workflow size={14} />}
+                      label={CANVAS_FUNCTIONAL_MENU_LABEL}
+                      openLeft={paneContextMenu.openSubmenusLeft}
+                      openUp={paneContextMenu.openSubmenusUp}
+                      stageElement={stageElement}
+                    >
+                      <CanvasPaneResourceNodeActions
+                        onAddImage={handleAddImageFromPane}
+                        onAddDirectorStage3D={
+                          onAddDirectorStage3DAtPosition
+                            ? handleAddDirectorStage3DFromPane
+                            : undefined
+                        }
+                        onAddVideoWorkbench={
+                          onAddVideoWorkbenchAtPosition
+                            ? handleAddVideoWorkbenchFromPane
+                            : undefined
+                        }
+                        onInsertAsset={
+                          onInsertAssetFromPane ? handleInsertAssetFromPane : undefined
+                        }
+                      />
+                      <div className="canvas-pane-context-divider" />
+                      {panePipelineOperationGroups.map((group) => (
+                        <div key={group.id} className="canvas-pane-context-group">
+                          <div className="canvas-pane-context-section-title">{group.label}</div>
+                          {group.actions.map((op) => (
+                            <button
+                              type="button"
+                              key={op.id}
+                              role="menuitem"
+                              onClick={() => handleCreatePipelineFromPane(op.id)}
+                            >
+                              <Icons.Workflow size={14} />
+                              <span>{op.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                      <div className="canvas-pane-context-section-title">通用视觉工具</div>
+                      {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => {
+                        const visual = getOperationVisual(item.operation)
+                        return (
+                          <button
+                            type="button"
+                            key={item.operation}
+                            role="menuitem"
+                            className={`canvas-pane-context-op ${visual.colorClass}`}
+                            onClick={() => handleCreateOperationFromPane(item.operation)}
+                          >
+                            <span className="canvas-pane-context-op-icon">{visual.icon}</span>
+                            <span>{item.label}</span>
+                          </button>
+                        )
+                      })}
+                    </CanvasPaneContextSubmenu>
+                  )}
+                  {onCreateOperationAtPosition && (
+                    <>
+                      <CanvasPaneResourceNodeActions onAddText={handleAddTextFromPane} />
+                      <div className="canvas-pane-context-divider" />
+                      {canvasVisibleBaseCreateOperations().map((item) => {
+                        const visual = getOperationVisual(item.operation)
+                        return (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            key={item.operation}
+                            className={`canvas-pane-context-op ${visual.colorClass}`}
+                            onClick={() => handleCreateOperationFromPane(item.operation)}
+                          >
+                            <span className="canvas-pane-context-op-icon">{visual.icon}</span>
+                            <span>{item.label}</span>
+                          </button>
+                        )
+                      })}
+                    </>
+                  )}
+                </>
+              )}
+              <div className="canvas-pane-context-divider" />
+              <div className="canvas-pane-context-section-title">画布</div>
+              <button type="button" role="menuitem" onClick={handleResetZoom}>
+                <Icons.RotateCcw size={14} />
+                <span>复原缩放比例</span>
+              </button>
+            </div>,
+            stageAreaElement ?? document.body,
+          )}
       </div>
     </>
   )

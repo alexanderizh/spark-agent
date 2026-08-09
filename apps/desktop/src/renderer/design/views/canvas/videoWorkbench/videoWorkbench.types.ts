@@ -8,6 +8,9 @@
 /** 关键帧提取策略 */
 export type KeyframeStrategy = 'scene' | 'iframe' | 'uniform'
 
+/** 均匀采样允许的最小时间间隔（秒）。 */
+export const MIN_UNIFORM_INTERVAL_SEC = 0.2
+
 /** 觢频探测结果（镜像主进程 VideoProbeInfo 的可序列化形式） */
 export interface VideoProbeInfo {
   durationSec: number
@@ -221,10 +224,12 @@ export function readVideoWorkbenchData(
         typeof (raw.extractConfig as { threshold?: number })?.threshold === 'number'
           ? (raw.extractConfig as { threshold: number }).threshold
           : defaults.extractConfig.threshold,
-      intervalSec:
-        typeof (raw.extractConfig as { intervalSec?: number })?.intervalSec === 'number'
-          ? (raw.extractConfig as { intervalSec: number }).intervalSec
-          : defaults.extractConfig.intervalSec,
+      intervalSec: Number.isFinite((raw.extractConfig as { intervalSec?: number })?.intervalSec)
+        ? Math.max(
+            MIN_UNIFORM_INTERVAL_SEC,
+            (raw.extractConfig as { intervalSec: number }).intervalSec,
+          )
+        : defaults.extractConfig.intervalSec,
       maxFrames:
         typeof (raw.extractConfig as { maxFrames?: number })?.maxFrames === 'number'
           ? (raw.extractConfig as { maxFrames: number }).maxFrames

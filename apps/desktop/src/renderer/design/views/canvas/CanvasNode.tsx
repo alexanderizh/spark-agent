@@ -18,11 +18,12 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import { Dropdown } from '@lobehub/ui'
-import { Progress } from 'antd'
+import { Progress, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { MarkdownText } from '../chat/ChatMarkdown'
 import { canvasFlowNodeDataEqual } from './canvasStageNodeSync'
+import { canCopyNodeContent, copyNodeContentToClipboard } from './canvasClipboard'
 import {
   calculateCanvasContextMenuAnchorSpace,
   CANVAS_CONTEXT_MENU_STAGE_INSETS,
@@ -730,8 +731,8 @@ export const CanvasNode = memo(function CanvasNode({
           operationOutputState.mode !== 'bundle' &&
           activeOperationOutput?.type === 'audio' &&
           activeOperationOutput.nodeId
-          ? activeOperationOutput.nodeId
-          : null
+        ? activeOperationOutput.nodeId
+        : null
   const videoToolbarSourceNodeId =
     contentNode?.type === 'video' && contentNode.data.url
       ? isTask
@@ -877,6 +878,21 @@ export const CanvasNode = memo(function CanvasNode({
       icon: <Icons.Copy size={15} />,
       onClick: () => actions.duplicateNode(node.id),
     })
+    // 不支持的节点（视频/音频/工作流/分组等）以及暂无产物/内容的资源/任务节点：
+    // 不放进工具栏，避免出现按不动的灰按钮。不在 disabled + tooltip 上做文章。
+    if (canCopyNodeContent(node, activeOperationOutput).kind !== 'none') {
+      addAction({
+        key: 'copy-content',
+        label: '复制内容',
+        icon: <Icons.Clipboard size={15} />,
+        onClick: () => {
+          copyNodeContentToClipboard(node, activeOperationOutput).catch((error) => {
+            console.warn('[CanvasNode] 复制内容失败', error)
+            message.error(error instanceof Error ? error.message : '复制内容失败')
+          })
+        },
+      })
+    }
 
     const mediaChildren: CanvasNodeToolbarAction[] = []
     if (isImageContent) {
@@ -936,6 +952,7 @@ export const CanvasNode = memo(function CanvasNode({
         key: 'media-actions',
         label: '素材操作',
         icon: <Icons.Image size={15} />,
+        expanded: true,
         children: mediaChildren,
       })
     }
@@ -996,6 +1013,7 @@ export const CanvasNode = memo(function CanvasNode({
       },
       items: [
         // 单节点已迁移到顶部工具栏的运行、预览、展开、复制和素材操作不在这里重复显示。
+        // 图片标注保留在右键菜单，方便图片资源和图片任务从上下文菜单直接进入。
         // 视频编辑、影视创作、资源库、类型切换、编组管理和 Agent 引用仍保留在右键菜单。
         // 视频节点 / 视频工作台节点 / 产物为视频的操作节点：右键 → 视频编辑
         ...((node.type === 'video' || isVideoWorkbench || contentNode?.type === 'video') &&
@@ -1080,6 +1098,19 @@ export const CanvasNode = memo(function CanvasNode({
               ),
               onClick: () => actions.createOperationChild(node.id, item.operation),
             }))
+          : []),
+        ...(isImageContent && actions.annotateImage
+          ? [
+              {
+                key: 'annotate-image',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Edit size={14} /> 图片标注
+                  </span>
+                ),
+                onClick: () => actions.annotateImage?.(node.id),
+              },
+            ]
           : []),
         {
           key: 'save-to-library',

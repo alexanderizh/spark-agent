@@ -176,15 +176,6 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     baseOperation: 'text_to_image',
   },
   {
-    id: 'shot.to_video',
-    label: '生成视频',
-    icon: 'Play',
-    kind: 'video',
-    produces: 'clip',
-    appliesTo: ['shot'],
-    baseOperation: 'image_to_video',
-  },
-  {
     id: 'keyframe.to_video',
     label: '出视频(首尾帧)',
     icon: 'Play',

@@ -104,13 +104,13 @@ export function SaveToLibraryDialog({
   const [submitting, setSubmitting] = useState(false)
   const coverFileInputRef = useRef<HTMLInputElement | null>(null)
   const outputAsset = useMemo(() => resolveNodeOutputAsset(node, snapshot), [node, snapshot])
-  const imageCoverNodes = useMemo(
-    () =>
-      snapshot.nodes.filter((candidate) => {
-        return isPromptCoverNode(candidate, resolveNodeOutputAsset(candidate, snapshot))
-      }),
-    [snapshot],
-  )
+  const imageCoverNodes = useMemo(() => {
+    const filtered = snapshot.nodes.filter((candidate) => {
+      return isPromptCoverNode(candidate, resolveNodeOutputAsset(candidate, snapshot))
+    })
+    // 从画布选择封面：按更新时间从新到旧排序，缺 updatedAt 的兜底为 0
+    return filtered.slice().sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+  }, [snapshot])
 
   // 节点变化时重置表单
   useEffect(() => {
@@ -202,7 +202,8 @@ export function SaveToLibraryDialog({
   }
 
   const handleSubmit = async () => {
-    if (!name.trim()) {
+    // 快捷提示词新建模式下允许名称为空（默认 "-"）；保存到资源库时名称仍必填
+    if (!promptOnly && !name.trim()) {
       message.warning('请输入资源名称')
       return
     }
@@ -246,7 +247,7 @@ export function SaveToLibraryDialog({
           : undefined
       await onSubmit({
         kind,
-        name: name.trim(),
+        name: name.trim() || (promptOnly ? '-' : ''),
         ...(description.trim() ? { text: description.trim() } : {}),
         ...(prefilledRefs.length > 0 ? { references: prefilledRefs } : {}),
         ...(kind === 'prompt_library'
@@ -333,6 +334,7 @@ export function SaveToLibraryDialog({
             value={name}
             placeholder={`${FILM_ASSET_KIND_LABELS[kind]}名称`}
             onChange={(e) => setName(e.target.value)}
+            onPressEnter={() => void handleSubmit()}
             autoFocus
           />
         </label>

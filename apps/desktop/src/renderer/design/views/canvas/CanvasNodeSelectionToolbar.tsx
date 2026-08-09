@@ -10,6 +10,8 @@ export type CanvasNodeToolbarAction = {
   onClick: () => void
   disabled?: boolean
   danger?: boolean
+  /** 自定义 tooltip 文案；缺省时回退 label。 */
+  tooltip?: string
 }
 
 export type CanvasNodeToolbarEntry =
@@ -23,6 +25,7 @@ export type CanvasNodeToolbarEntry =
       label: string
       icon: ReactNode
       children: CanvasNodeToolbarAction[]
+      expanded?: boolean
     }
 
 function isGroupEntry(
@@ -37,7 +40,7 @@ function isDividerEntry(entry: CanvasNodeToolbarEntry): entry is { key: string; 
 
 function renderAction(action: CanvasNodeToolbarAction, compact = false) {
   return (
-    <Tooltip key={action.key} title={action.label}>
+    <Tooltip key={action.key} title={action.tooltip ?? action.label}>
       <Button
         size="small"
         type="text"
@@ -56,7 +59,10 @@ function renderAction(action: CanvasNodeToolbarAction, compact = false) {
 }
 
 export function CanvasNodeSelectionToolbar({ entries }: { entries: CanvasNodeToolbarEntry[] }) {
-  const visibleEntries = entries.filter(
+  const expandedEntries = entries.flatMap((entry) =>
+    isGroupEntry(entry) && entry.expanded ? entry.children : [entry],
+  )
+  const visibleEntries = expandedEntries.filter(
     (entry) => isDividerEntry(entry) || !isGroupEntry(entry) || entry.children.length > 0,
   )
   if (visibleEntries.length === 0) return null

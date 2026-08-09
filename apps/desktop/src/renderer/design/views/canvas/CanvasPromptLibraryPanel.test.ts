@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CanvasAsset } from './canvas.types'
 import {
+  buildGlobalPromptLibraryEntries,
   buildCanvasPromptLibraryEntries,
   filterPromptLibraryEntries,
   isSystemPromptLibraryEntry,
@@ -22,6 +23,37 @@ function asset(overrides: Partial<CanvasAsset>): CanvasAsset {
 }
 
 describe('canvas prompt library panel data', () => {
+  it('does not duplicate legacy project prompts in the global library', () => {
+    expect(
+      buildGlobalPromptLibraryEntries([
+        {
+          id: 'legacy:project-prompt-1',
+          title: '旧项目提示词',
+          text: 'legacy prompt',
+          category: '',
+          tags: [],
+          coverUrl: null,
+          coverMimeType: null,
+          usageCount: 0,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: 'global-prompt-1',
+          title: '全局提示词',
+          text: 'global prompt',
+          category: '',
+          tags: [],
+          coverUrl: null,
+          coverMimeType: null,
+          usageCount: 0,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ]).map((entry) => entry.id),
+    ).toEqual(['global:global-prompt-1'])
+  })
+
   it('keeps project categories, fallback prompt text, and image covers', () => {
     const image = asset({
       id: 'cover-1',

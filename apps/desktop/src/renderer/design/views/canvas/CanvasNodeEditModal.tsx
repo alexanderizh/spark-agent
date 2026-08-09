@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Tag, Tooltip } from '@lobehub/ui'
 import { Input, Modal, Popover, Tabs, message } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
-import { CanvasPromptLibraryPanel } from './CanvasPromptLibraryPanel'
+import {
+  buildGlobalPromptLibraryEntries,
+  CanvasPromptLibraryPanel,
+} from './CanvasPromptLibraryPanel'
+import { readGlobalPromptLibrary, type GlobalPromptLibraryState } from './canvasPromptLibraryStore'
 import { CanvasShotScriptEditor } from './CanvasShotScriptEditor'
 import { readAssetKind } from './canvasFilmAssets'
 import { isRenderableShotScriptText } from './canvasShotScriptPresentation'
@@ -44,6 +48,22 @@ export function CanvasNodeEditModal({
   onSave: (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => Promise<void>
 }) {
   const [saving, setSaving] = useState(false)
+  const [globalLibrary, setGlobalLibrary] = useState<GlobalPromptLibraryState | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void readGlobalPromptLibrary().then((next) => {
+      if (!cancelled) setGlobalLibrary(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const globalPromptEntries = useMemo(
+    () => (globalLibrary ? buildGlobalPromptLibraryEntries(globalLibrary.items) : []),
+    [globalLibrary],
+  )
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -342,6 +362,7 @@ export function CanvasNodeEditModal({
                   <div className="canvas-node-text-composer-library-popover">
                     <CanvasPromptLibraryPanel
                       assets={assets}
+                      globalEntries={globalPromptEntries}
                       className="canvas-node-edit-prompt-library canvas-node-edit-prompt-library-compact"
                       limit={24}
                       onApply={(entry) => insertPromptText(entry.text)}
@@ -403,6 +424,7 @@ export function CanvasNodeEditModal({
     <Tabs
       className="canvas-node-media-edit-tabs"
       activeKey={mediaEditTab}
+      size="small"
       onChange={(key) => setMediaEditTab(key as MediaEditTab)}
       items={[
         {
@@ -434,10 +456,7 @@ export function CanvasNodeEditModal({
           key: 'preview',
           label: '预览',
           children: (
-            <CanvasNodeMediaPreview
-              type={node.type === 'image' ? 'image' : 'video'}
-              url={url}
-            />
+            <CanvasNodeMediaPreview type={node.type === 'image' ? 'image' : 'video'} url={url} />
           ),
         },
       ]}
@@ -481,6 +500,7 @@ export function CanvasNodeEditModal({
           </div>
           <CanvasPromptLibraryPanel
             assets={assets}
+            globalEntries={globalPromptEntries}
             className="canvas-node-edit-prompt-library"
             onApply={(entry) => insertPromptText(entry.text)}
           />
@@ -510,6 +530,7 @@ export function CanvasNodeEditModal({
           </label>
           <CanvasPromptLibraryPanel
             assets={assets}
+            globalEntries={globalPromptEntries}
             className="canvas-node-edit-prompt-library canvas-node-edit-prompt-library-compact"
             limit={24}
             onApply={(entry) => setPrompt((current) => appendPromptFragment(current, entry.text))}

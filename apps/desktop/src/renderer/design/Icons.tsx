@@ -719,6 +719,13 @@ export const Icons = {
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </IconBase>
   ),
+  /** 复制到剪贴板 — 单层矩形 + 顶部小条（与双层 Copy 视觉区分） */
+  Clipboard: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    </IconBase>
+  ),
   /** 多选浮动工具栏：编组 */
   Group: (p: IconProps) => (
     <IconBase {...p}>
@@ -1041,16 +1048,8 @@ export const Icons = {
   // ─── Editor/IDE Brand Icons ─────────────────────────────────────────────
   VSCode: (p: IconProps) => (
     <IconBase {...p}>
-      <path
-        d="M16.5 2.5L21 7v10l-4.5 4.5-7-3.5v-8l7-3.5z"
-        fill="#0098FF"
-        stroke="none"
-      />
-      <path
-        d="M3 18l4.5 3.5 7-3.5v-8l-7-3.5L3 10v8z"
-        fill="#0078D4"
-        stroke="none"
-      />
+      <path d="M16.5 2.5L21 7v10l-4.5 4.5-7-3.5v-8l7-3.5z" fill="#0098FF" stroke="none" />
+      <path d="M3 18l4.5 3.5 7-3.5v-8l-7-3.5L3 10v8z" fill="#0078D4" stroke="none" />
       <path d="M7.5 6.5l7 3.5v8l-7-3.5v-8z" fill="#50E6FF" stroke="none" />
     </IconBase>
   ),
@@ -1068,32 +1067,20 @@ export const Icons = {
 
   Zed: (p: IconProps) => (
     <IconBase {...p}>
-      <path
-        d="M4 4h16v16H4V4zm2 2v12h12V6H6zm2 2l8 4-8 4V8z"
-        fill="#F5A623"
-        stroke="none"
-      />
+      <path d="M4 4h16v16H4V4zm2 2v12h12V6H6zm2 2l8 4-8 4V8z" fill="#F5A623" stroke="none" />
     </IconBase>
   ),
 
   WebStorm: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="3" y="3" width="18" height="18" rx="2" fill="#000" stroke="none" />
-      <path
-        d="M7 7h4v2H9v6h2v2H7V7zm6 0h4v2h-2v6h2v2h-4V7z"
-        fill="#fff"
-        stroke="none"
-      />
+      <path d="M7 7h4v2H9v6h2v2H7V7zm6 0h4v2h-2v6h2v2h-4V7z" fill="#fff" stroke="none" />
     </IconBase>
   ),
 
   Sublime: (p: IconProps) => (
     <IconBase {...p}>
-      <path
-        d="M4 6l16-2v14l-16 2V6z"
-        fill="#FF9800"
-        stroke="none"
-      />
+      <path d="M4 6l16-2v14l-16 2V6z" fill="#FF9800" stroke="none" />
       <path d="M6 8l12-1.5v9L6 17V8z" fill="#fff" stroke="none" opacity="0.9" />
     </IconBase>
   ),
@@ -1110,11 +1097,7 @@ export const Icons = {
 
   Neovim: (p: IconProps) => (
     <IconBase {...p}>
-      <path
-        d="M4 4l6 8v8l-6-4V4zm16 0v12l-6 4v-8l6-8z"
-        fill="#57A143"
-        stroke="none"
-      />
+      <path d="M4 4l6 8v8l-6-4V4zm16 0v12l-6 4v-8l6-8z" fill="#57A143" stroke="none" />
       <path d="M10 12l6-8v12l-6 4V12z" fill="#3C8A2E" stroke="none" />
     </IconBase>
   ),
@@ -1135,11 +1118,7 @@ export const Icons = {
   Trae: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="3" y="3" width="18" height="18" rx="3" fill="#4A90D9" stroke="none" />
-      <path
-        d="M8 8h8l-4 8-4-8zm4 3l2-4h-4l2 4z"
-        fill="#fff"
-        stroke="none"
-      />
+      <path d="M8 8h8l-4 8-4-8zm4 3l2-4h-4l2 4z" fill="#fff" stroke="none" />
     </IconBase>
   ),
 
@@ -1159,22 +1138,14 @@ export const Icons = {
   Kiro: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="3" y="3" width="18" height="18" rx="2" fill="#FF9900" stroke="none" />
-      <path
-        d="M7 7h3l5 5-5 5H7l5-5-5-5zm7 0h3v10h-3V7z"
-        fill="#fff"
-        stroke="none"
-      />
+      <path d="M7 7h3l5 5-5 5H7l5-5-5-5zm7 0h3v10h-3V7z" fill="#fff" stroke="none" />
     </IconBase>
   ),
 
   Qoder: (p: IconProps) => (
     <IconBase {...p}>
       <circle cx="12" cy="12" r="9" fill="#10B981" stroke="none" />
-      <path
-        d="M8 12l3-4v8l-3-4zm8 0l-3-4v8l3-4z"
-        fill="#fff"
-        stroke="none"
-      />
+      <path d="M8 12l3-4v8l-3-4zm8 0l-3-4v8l3-4z" fill="#fff" stroke="none" />
     </IconBase>
   ),
 

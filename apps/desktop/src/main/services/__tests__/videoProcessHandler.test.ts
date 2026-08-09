@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   adjustSpeed: vi.fn(),
   adjustAudioSpeed: vi.fn(),
   extractAudio: vi.fn(),
+  extractKeyframes: vi.fn(),
   probeVideo: vi.fn(),
 }))
 
@@ -44,7 +45,7 @@ vi.mock('../FfmpegRunner.js', () => ({
     mkdirSync(dirname(outputPath), { recursive: true })
   },
   probeVideo: mocks.probeVideo,
-  extractKeyframes: vi.fn(),
+  extractKeyframes: mocks.extractKeyframes,
   extractFramesAtTimes: vi.fn(),
   generateThumbnail: vi.fn(),
   trimVideo: mocks.trimVideo,
@@ -82,6 +83,7 @@ afterEach(() => {
   mocks.adjustSpeed.mockReset()
   mocks.adjustAudioSpeed.mockReset()
   mocks.extractAudio.mockReset()
+  mocks.extractKeyframes.mockReset()
   mocks.probeVideo.mockReset()
 })
 
@@ -90,6 +92,33 @@ afterAll(() => {
 })
 
 describe('handleVideoProcess', () => {
+  it('enforces a 0.2 second minimum for uniform keyframe sampling', async () => {
+    const input = join(mocks.paths.userData, 'source.mp4')
+
+    const rejected = await handleVideoProcess({
+      operation: 'extractKeyframes',
+      input,
+      params: { strategy: 'uniform', intervalSec: 0.1 },
+      requestId: 'uniform-too-fast',
+    })
+
+    expect(rejected.success).toBe(false)
+    expect(rejected.error).toContain('参数 intervalSec 超出允许范围 [0.2, 3600]: 0.1')
+    expect(mocks.extractKeyframes).not.toHaveBeenCalled()
+
+    mocks.extractKeyframes.mockResolvedValue({ frames: [], effectiveStrategy: 'uniform' })
+    const accepted = await handleVideoProcess({
+      operation: 'extractKeyframes',
+      input,
+      params: { strategy: 'uniform', intervalSec: 0.2 },
+      requestId: 'uniform-minimum',
+    })
+
+    expect(accepted.success).toBe(true)
+    expect(mocks.extractKeyframes).toHaveBeenCalledOnce()
+    expect(mocks.extractKeyframes.mock.calls[0]?.[1]).toMatchObject({ intervalSec: 0.2 })
+  })
+
   it('creates the artifact parent and accepts Windows path casing differences', async () => {
     mocks.transcodeVideo.mockImplementation(async (_input: string, outputPath: string) => {
       expect(existsSync(dirname(outputPath))).toBe(true)

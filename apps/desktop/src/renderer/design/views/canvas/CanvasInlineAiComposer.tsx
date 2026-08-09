@@ -358,8 +358,7 @@ export function CanvasInlineAiComposer({
   // capability 池逻辑。isUnifiedMediaOperation 控制是否走统一媒体路径；isUnifiedImageOperation
   // 仅用于区分模式选择器的文案 / 选项（图片 2 模式 vs 视频 6 模式）。
   const isUnifiedImageOperation = operation === 'text_to_image'
-  const isUnifiedMediaOperation =
-    operation === 'text_to_video' || operation === 'text_to_image'
+  const isUnifiedMediaOperation = operation === 'text_to_video' || operation === 'text_to_image'
   const mediaCapabilityIds = useMemo(
     () =>
       isUnifiedMediaOperation
@@ -409,8 +408,7 @@ export function CanvasInlineAiComposer({
     [selectedNodes],
   )
   const unifiedMediaModeOptions = useMemo(
-    () =>
-      isUnifiedMediaOperation ? canvasMediaInputModeOptions(operation, selectedModel) : [],
+    () => (isUnifiedMediaOperation ? canvasMediaInputModeOptions(operation, selectedModel) : []),
     [isUnifiedMediaOperation, operation, selectedModel],
   )
   const effectiveMediaInputMode = useMemo(
@@ -860,23 +858,22 @@ export function CanvasInlineAiComposer({
       const inputRoles = isUnifiedMediaOperation
         ? canvasInputRolesFromBindings(unifiedExecutionBindings)
         : supportsVideoFrameRoles
-        ? buildVideoFrameInputRoles(
-            videoFrameNodeIds,
-            firstFrameNodeId,
-            lastFrameNodeId,
-            referenceFrameNodeIds,
-          )
-        : selectedCapabilityRolePolicy.imageRoles?.includes('reference_image')
-          ? buildReferenceImageInputRoles(selectedImageNodes.map((node) => node.id))
-          : undefined
+          ? buildVideoFrameInputRoles(
+              videoFrameNodeIds,
+              firstFrameNodeId,
+              lastFrameNodeId,
+              referenceFrameNodeIds,
+            )
+          : selectedCapabilityRolePolicy.imageRoles?.includes('reference_image')
+            ? buildReferenceImageInputRoles(selectedImageNodes.map((node) => node.id))
+            : undefined
       const inputNodeIds = isUnifiedMediaOperation
         ? Array.from(
             new Set([
               ...unifiedExecutionBindings.map((binding) => binding.sourceNodeId),
               ...selectedNodes
                 .filter(
-                  (node) =>
-                    node.type !== 'image' && node.type !== 'video' && node.type !== 'audio',
+                  (node) => node.type !== 'image' && node.type !== 'video' && node.type !== 'audio',
                 )
                 .map((node) => node.id),
             ]),
@@ -1100,26 +1097,28 @@ export function CanvasInlineAiComposer({
             </div>
           </div>
         )}
-        {isUnifiedMediaOperation && unifiedMediaModeOptions.length > 0 && effectiveMediaInputMode && (
-          <div className="canvas-form-row">
-            <label>{isUnifiedImageOperation ? '图片模式' : '视频模式'}</label>
-            <LobeSelect
-              value={effectiveMediaInputMode}
-              onChange={(value) => setMediaInputMode(value as CanvasMediaInputMode)}
-              options={(isUnifiedImageOperation
-                ? UNIFIED_IMAGE_MODE_CHOICES
-                : UNIFIED_VIDEO_MODE_CHOICES
-              ).map((choice) => ({
-                ...choice,
-                disabled: !unifiedMediaModeOptions.some((option) => option.mode === choice.value),
-              }))}
-            />
-            <div className="canvas-model-hint">
-              {selectedMediaInputIssue ??
-                `已选择 ${selectedMediaBindings.length} 项画布素材，提交时按 ${selectedCapabilityId ?? '当前能力'} 分配角色。`}
+        {isUnifiedMediaOperation &&
+          unifiedMediaModeOptions.length > 0 &&
+          effectiveMediaInputMode && (
+            <div className="canvas-form-row">
+              <label>{isUnifiedImageOperation ? '图片模式' : '视频模式'}</label>
+              <LobeSelect
+                value={effectiveMediaInputMode}
+                onChange={(value) => setMediaInputMode(value as CanvasMediaInputMode)}
+                options={(isUnifiedImageOperation
+                  ? UNIFIED_IMAGE_MODE_CHOICES
+                  : UNIFIED_VIDEO_MODE_CHOICES
+                ).map((choice) => ({
+                  ...choice,
+                  disabled: !unifiedMediaModeOptions.some((option) => option.mode === choice.value),
+                }))}
+              />
+              <div className="canvas-model-hint">
+                {selectedMediaInputIssue ??
+                  `已选择 ${selectedMediaBindings.length} 项画布素材，提交时按 ${selectedCapabilityId ?? '当前能力'} 分配角色。`}
+              </div>
             </div>
-          </div>
-        )}
+          )}
         {supportsVideoFrameRoles && (
           <div className="canvas-form-row">
             <div className="canvas-form-label-row">
@@ -1806,17 +1805,8 @@ export function resolveInitialModelParamDraftValue({
   const presetValue = readCompatibleModelParamDraftValue(presetParams, fieldName, field)
   const existingValue = readCompatibleModelParamDraftValue(existingParams, fieldName, field)
   const defaultValue = readCompatibleModelParamDraftValue(defaultParams, fieldName, field)
-  if (
-    operation === 'panorama_360' &&
-    (isAspectRatioParam(fieldName) || fieldName === 'size')
-  ) {
-    return (
-      compatiblePanoramaFieldValue ??
-      presetValue ??
-      existingValue ??
-      defaultValue ??
-      ''
-    )
+  if (operation === 'panorama_360' && (isAspectRatioParam(fieldName) || fieldName === 'size')) {
+    return compatiblePanoramaFieldValue ?? presetValue ?? existingValue ?? defaultValue ?? ''
   }
   return existingValue ?? compatiblePanoramaFieldValue ?? presetValue ?? defaultValue ?? ''
 }
@@ -1877,8 +1867,7 @@ function derivePanoramaFieldValue(
   field: Pick<SchemaField, 'name' | 'enumValues'>,
   presetParams: Record<string, unknown>,
 ): string | undefined {
-  const presetAspect =
-    readModelParamDraftValue(presetParams, 'aspectRatio')
+  const presetAspect = readModelParamDraftValue(presetParams, 'aspectRatio')
   if (!presetAspect) return undefined
   if (isAspectRatioParam(field.name)) return presetAspect
   if (field.name !== 'size') return undefined
@@ -2221,16 +2210,12 @@ function imageDimensionFieldPolicy(fields: SchemaField[]): {
   accepted: Set<string>
 } {
   const accepted = new Set(
-    fields
-      .map((field) => field.name)
-      .filter((name) => name === 'size' || isAspectRatioParam(name)),
+    fields.map((field) => field.name).filter((name) => name === 'size' || isAspectRatioParam(name)),
   )
   return {
     accepted,
     allows: (name) =>
-      accepted.size === 0 ||
-      (name !== 'size' && !isAspectRatioParam(name)) ||
-      accepted.has(name),
+      accepted.size === 0 || (name !== 'size' && !isAspectRatioParam(name)) || accepted.has(name),
   }
 }
 

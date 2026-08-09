@@ -11,6 +11,7 @@ import { Button, Checkbox, Segmented, Slider, Tooltip } from 'antd'
 import { Icons } from '../../../Icons'
 import {
   formatTimestamp,
+  MIN_UNIFORM_INTERVAL_SEC,
   type KeyframeStrategy,
   type KeyframeExtractConfig,
   type VideoWorkbenchData,
@@ -126,9 +127,9 @@ export function VideoWorkbenchFramePanel({
           <div className="vwb-param">
             <label>采样间隔（秒）</label>
             <Slider
-              min={0.5}
+              min={MIN_UNIFORM_INTERVAL_SEC}
               max={60}
-              step={0.5}
+              step={0.1}
               value={cfg.intervalSec}
               onChange={(v) => onConfigChange({ ...cfg, intervalSec: v })}
               tooltip={{ formatter: (v) => `${v}秒一帧` }}

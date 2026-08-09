@@ -361,7 +361,7 @@
     gap: 9px;
     padding: 12px;
     background: var(--canvas-cinema-surface-2);
-    .canvas-node-task-msg{
+    .canvas-node-task-msg {
       text-align: center;
     }
   }
@@ -414,6 +414,11 @@
     transform: translate(50%, -50%) scale(var(--canvas-node-handle-scale));
   }
 
+  .canvas-node-selected .canvas-node-handle,
+  .canvas-node:hover .canvas-node-handle {
+    width: 18px;
+    height: 18px;
+  }
   .canvas-node:hover .canvas-node-handle,
   .canvas-node-selected .canvas-node-handle,
   .canvas-node-handle:hover,
