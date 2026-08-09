@@ -1986,12 +1986,11 @@ export function SidebarSessionList() {
     searchVisible,
   ])
 
-  const hideEmptyProjectGroups =
-    filter.status !== DEFAULT_SIDEBAR_FILTER.status ||
-    filter.projectId !== DEFAULT_SIDEBAR_FILTER.projectId ||
-    filter.lastActivity !== DEFAULT_SIDEBAR_FILTER.lastActivity ||
-    filter.scheduledTasks !== DEFAULT_SIDEBAR_FILTER.scheduledTasks ||
-    (searchVisible && searchQuery.trim().length > 0)
+  // 状态 / 最近活动 / 计划任务 / 项目 这些筛选项只用于「筛选会话」，
+  // 项目分组头必须始终保留 —— 否则一旦某项目下没有命中筛选的会话，
+  // 整个项目就会从侧栏消失，用户无法再点选切换项目。
+  // 仅在「搜索会话」时隐藏没有匹配会话的空项目分组（搜索是针对会话的模糊匹配）。
+  const hideEmptyProjectGroups = searchVisible && searchQuery.trim().length > 0
 
   // Build display groups based on groupBy mode
   const displayGroups = useMemo<DisplayGroup[]>(() => {
