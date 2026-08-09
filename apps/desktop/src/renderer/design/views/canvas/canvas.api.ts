@@ -76,6 +76,7 @@ import { validateCanvasSemanticTextOutput } from './canvasTextOutputValidation'
 import { placeAutoNodeToRight } from './canvasAutoPlacement'
 import { planGroupLayout } from './canvasGroupLayout'
 import {
+  getCanvasBatchLayoutSize,
   resolveCollisionFreeBatchPositions,
   resolveCollisionFreeNodePosition,
 } from './canvasCollisionPlacement'
@@ -2715,6 +2716,7 @@ export const canvasApi = {
     assetId: string
     x: number
     y: number
+    preservePreferredPosition?: boolean
   }): Promise<CanvasNode | null> {
     const db = readDb()
     const asset = db.assets.find(
@@ -2749,6 +2751,7 @@ export const canvasApi = {
       size,
       nodes: db.nodes,
       boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
     })
     const data: CanvasNode['data'] =
       nodeType === 'text' || nodeType === 'prompt'
@@ -3387,6 +3390,7 @@ export const canvasApi = {
     kind?: 'text' | 'prompt'
     /** 渲染格式；不传时 prompt→'prompt'，其余→'plain'。拖入 .md 文件时可显式传 'markdown' */
     format?: 'plain' | 'markdown' | 'prompt'
+    preservePreferredPosition?: boolean
   }): Promise<CanvasNode> {
     const db = readDb()
     const maxZ = Math.max(
@@ -3401,6 +3405,7 @@ export const canvasApi = {
       size,
       nodes: db.nodes,
       boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
     })
     const node = createNodeBase({
       nodes: db.nodes,
@@ -3481,6 +3486,7 @@ export const canvasApi = {
     height?: number
     imageWidth?: number
     imageHeight?: number
+    preservePreferredPosition?: boolean
   }): Promise<CanvasNode> {
     const fileUrl = encodeToSafeFileUrl(input.filePath)
     const imageDimensions =
@@ -3508,6 +3514,7 @@ export const canvasApi = {
       size,
       nodes: db.nodes,
       boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
     })
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
@@ -3560,6 +3567,7 @@ export const canvasApi = {
     y: number
     width?: number
     height?: number
+    preservePreferredPosition?: boolean
   }): Promise<CanvasNode> {
     const db = readDb()
     const maxZ = Math.max(
@@ -3575,6 +3583,7 @@ export const canvasApi = {
       size,
       nodes: db.nodes,
       boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
     })
     const node = createNodeBase({
       nodes: db.nodes,
@@ -3609,6 +3618,7 @@ export const canvasApi = {
     y: number
     width?: number
     height?: number
+    preservePreferredPosition?: boolean
   }): Promise<CanvasNode> {
     const db = readDb()
     const maxZ = Math.max(
@@ -3625,6 +3635,7 @@ export const canvasApi = {
       size,
       nodes: db.nodes,
       boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
     })
     const node = createNodeBase({
       nodes: db.nodes,
@@ -3667,6 +3678,7 @@ export const canvasApi = {
     mediaWidth?: number
     mediaHeight?: number
     durationMs?: number
+    preservePreferredPosition?: boolean
   }): Promise<CanvasNode> {
     const db = readDb()
     const maxZ = Math.max(
@@ -3685,6 +3697,7 @@ export const canvasApi = {
       size,
       nodes: db.nodes,
       boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
     })
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
@@ -4603,14 +4616,21 @@ export const canvasApi = {
       request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
       request.operation === 'extract_audio',
     )
+    const autoPlacementSource = db.nodes.find(
+      (node) =>
+        request.inputNodeIds?.includes(node.id) &&
+        node.projectId === projectId &&
+        node.boardId === board.id &&
+        !node.hidden,
+    )
     const { x, y } = resolveCollisionFreeNodePosition({
-      preferred: {
-        x: request.outputPlacement?.x ?? 360,
-        y: request.outputPlacement?.y ?? 320,
-      },
+      preferred: autoPlacementSource
+        ? placeAutoNodeToRight(autoPlacementSource, taskNodeSize)
+        : { x: request.outputPlacement?.x ?? 360, y: request.outputPlacement?.y ?? 320 },
       size: taskNodeSize,
       nodes: db.nodes,
       boardId: board.id,
+      ...(autoPlacementSource ? { preservePreferredPosition: true } : {}),
     })
     const taskNodeData: CanvasNode['data'] = {
       operation: request.operation,
@@ -4716,14 +4736,21 @@ export const canvasApi = {
     const taskId = uid('canvas_task')
     const operation = request.operation ?? 'text_generate'
     const taskNodeSize = pickOperationNodeInitialSize(false, operation === 'extract_audio')
+    const autoPlacementSource = db.nodes.find(
+      (node) =>
+        request.inputNodeIds?.includes(node.id) &&
+        node.projectId === projectId &&
+        node.boardId === board.id &&
+        !node.hidden,
+    )
     const { x, y } = resolveCollisionFreeNodePosition({
-      preferred: {
-        x: request.outputPlacement?.x ?? 360,
-        y: request.outputPlacement?.y ?? 320,
-      },
+      preferred: autoPlacementSource
+        ? placeAutoNodeToRight(autoPlacementSource, taskNodeSize)
+        : { x: request.outputPlacement?.x ?? 360, y: request.outputPlacement?.y ?? 320 },
       size: taskNodeSize,
       nodes: db.nodes,
       boardId: board.id,
+      ...(autoPlacementSource ? { preservePreferredPosition: true } : {}),
     })
     const progress = request.progress ?? 8
     const messageText = request.message ?? '本地画布工作流执行中'
@@ -4978,6 +5005,9 @@ export const canvasApi = {
     outputTitle?: CreateCanvasTaskRequest['outputTitle']
     /** 分镜任务节点的时长配置（每镜最长时间），写入 node.data 供配置面板回显 */
     shotScriptConfig?: ShotScriptConfig
+    preservePreferredPosition?: boolean
+    /** 节点内自动创建的后续操作：按第一个输入节点后方中轴线对齐。 */
+    autoPlaceAfterInputs?: boolean
   }): Promise<CanvasSnapshot> {
     let db = readDb()
     const at = now()
@@ -5098,11 +5128,18 @@ export const canvasApi = {
         (input.operation === 'text_generate' && taskPipelineRole === 'shot'),
       input.operation === 'extract_audio',
     )
+    const autoPlacementSource = input.autoPlaceAfterInputs ? inputNodes[0] : undefined
+    const preferredPosition = autoPlacementSource
+      ? placeAutoNodeToRight(autoPlacementSource, operationNodeSize)
+      : { x: input.x, y: input.y }
     const position = resolveCollisionFreeNodePosition({
-      preferred: { x: input.x, y: input.y },
+      preferred: preferredPosition,
       size: operationNodeSize,
       nodes: db.nodes,
       boardId: input.boardId,
+      ...(input.preservePreferredPosition || autoPlacementSource
+        ? { preservePreferredPosition: true }
+        : {}),
     })
     const node = createNodeBase({
       nodes: db.nodes,
@@ -5836,14 +5873,21 @@ export const canvasApi = {
       request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
       request.operation === 'extract_audio',
     )
+    const autoPlacementSource = db.nodes.find(
+      (node) =>
+        request.inputNodeIds?.includes(node.id) &&
+        node.projectId === projectId &&
+        node.boardId === board.id &&
+        !node.hidden,
+    )
     const { x, y } = resolveCollisionFreeNodePosition({
-      preferred: {
-        x: request.outputPlacement?.x ?? 360,
-        y: request.outputPlacement?.y ?? 320,
-      },
+      preferred: autoPlacementSource
+        ? placeAutoNodeToRight(autoPlacementSource, taskNodeSize)
+        : { x: request.outputPlacement?.x ?? 360, y: request.outputPlacement?.y ?? 320 },
       size: taskNodeSize,
       nodes: db.nodes,
       boardId: board.id,
+      ...(autoPlacementSource ? { preservePreferredPosition: true } : {}),
     })
 
     // optimistic task node
@@ -6090,14 +6134,21 @@ export const canvasApi = {
       request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
       request.operation === 'extract_audio',
     )
+    const autoPlacementSource = db.nodes.find(
+      (node) =>
+        request.inputNodeIds?.includes(node.id) &&
+        node.projectId === projectId &&
+        node.boardId === board.id &&
+        !node.hidden,
+    )
     const { x, y } = resolveCollisionFreeNodePosition({
-      preferred: {
-        x: request.outputPlacement?.x ?? 360,
-        y: request.outputPlacement?.y ?? 320,
-      },
+      preferred: autoPlacementSource
+        ? placeAutoNodeToRight(autoPlacementSource, taskNodeSize)
+        : { x: request.outputPlacement?.x ?? 360, y: request.outputPlacement?.y ?? 320 },
       size: taskNodeSize,
       nodes: db.nodes,
       boardId: board.id,
+      ...(autoPlacementSource ? { preservePreferredPosition: true } : {}),
     })
 
     const taskNodeData: CanvasNode['data'] = {
@@ -6411,13 +6462,16 @@ export const canvasApi = {
       taskNode.height = Math.max(taskNode.height, completedSize.height)
       taskNode.updatedAt = at
     }
-    const preferredResultNodePlacement = placeAutoNodeToRight({
-      x: taskNode.x,
-      y: taskNode.y,
-      width: taskNode.width,
-      height: taskNode.height,
-    })
     const resultNodeSize = pickTextNodeSize(outputText)
+    const preferredResultNodePlacement = placeAutoNodeToRight(
+      {
+        x: taskNode.x,
+        y: taskNode.y,
+        width: taskNode.width,
+        height: taskNode.height,
+      },
+      resultNodeSize,
+    )
     const materializedShotGroup =
       materializedShotGroups.length === 1 ? materializedShotGroups[0] : undefined
     const materializedShotSegment =
@@ -6427,6 +6481,7 @@ export const canvasApi = {
       size: resultNodeSize,
       nodes: db.nodes,
       boardId: task.boardId,
+      preservePreferredPosition: true,
     })
     const resultNode = createNodeBase({
       nodes: db.nodes,
@@ -6828,16 +6883,21 @@ export const canvasApi = {
       }
     }
 
+    const outputSizes = preparedOutputs.map((item) => item.resultNodeSize)
     const outputPlacements = resolveCollisionFreeBatchPositions({
-      preferred: placeAutoNodeToRight({
-        x: taskNode.x,
-        y: taskNode.y,
-        width: taskNode.width,
-        height: taskNode.height,
-      }),
-      sizes: preparedOutputs.map((item) => item.resultNodeSize),
+      preferred: placeAutoNodeToRight(
+        {
+          x: taskNode.x,
+          y: taskNode.y,
+          width: taskNode.width,
+          height: taskNode.height,
+        },
+        getCanvasBatchLayoutSize(outputSizes),
+      ),
+      sizes: outputSizes,
       nodes: db.nodes,
       boardId: task.boardId,
+      preservePreferredPosition: true,
     })
 
     for (const [index, output] of preparedOutputs.entries()) {

@@ -26,6 +26,32 @@ function topLevelObstacleRects(
     .map((node) => ({ x: node.x, y: node.y, width: node.width, height: node.height }))
 }
 
+export function getCanvasBatchLayoutSize(
+  sizes: readonly CanvasPlacementSize[],
+  maxColumns = CANVAS_BATCH_MAX_COLUMNS,
+): CanvasPlacementSize {
+  if (sizes.length === 0) return { width: 0, height: 0 }
+  const columns = Math.max(1, Math.min(maxColumns, sizes.length))
+  const columnWidths = Array.from({ length: columns }, (_, column) =>
+    Math.max(
+      0,
+      ...sizes.filter((_, index) => index % columns === column).map((size) => size.width),
+    ),
+  )
+  const rowCount = Math.ceil(sizes.length / columns)
+  const rowHeights = Array.from({ length: rowCount }, (_, row) =>
+    Math.max(0, ...sizes.slice(row * columns, (row + 1) * columns).map((size) => size.height)),
+  )
+  return {
+    width:
+      columnWidths.reduce((total, width) => total + width, 0) +
+      (columns - 1) * CANVAS_BATCH_ITEM_GAP,
+    height:
+      rowHeights.reduce((total, height) => total + height, 0) +
+      (rowCount - 1) * CANVAS_BATCH_ITEM_GAP,
+  }
+}
+
 /**
  * 统一解析手动、菜单、资产、任务等入口的新节点落点。
  * 调用方传入用户期望位置；仅当该位置与现有顶层节点/组框冲突时才向外搜索。
@@ -36,7 +62,11 @@ export function resolveCollisionFreeNodePosition(input: {
   nodes: readonly CanvasNode[]
   boardId: string
   extraObstacles?: readonly CanvasPlacementRect[]
+  /** 牵线创建时保留用户释放鼠标的精确落点，即使该位置与已有节点重叠。 */
+  preservePreferredPosition?: boolean
 }): CanvasPlacementPoint {
+  if (input.preservePreferredPosition) return input.preferred
+
   const placed = findCollisionFreeCanvasPlacement({
     preferred: input.preferred,
     items: [{ x: 0, y: 0, ...input.size }],
@@ -58,6 +88,8 @@ export function resolveCollisionFreeBatchPositions(input: {
   nodes: readonly CanvasNode[]
   boardId: string
   maxColumns?: number
+  /** 自动下游批次按预先计算的规整布局落位，不再被已有节点逐个挪开。 */
+  preservePreferredPosition?: boolean
 }): CanvasPlacementPoint[] {
   if (input.sizes.length === 0) return []
   const columns = Math.max(
@@ -94,7 +126,9 @@ export function resolveCollisionFreeBatchPositions(input: {
   const placed = findCollisionFreeCanvasPlacement({
     preferred: input.preferred,
     items: localItems,
-    obstacles: topLevelObstacleRects(input.nodes, input.boardId),
+    obstacles: input.preservePreferredPosition
+      ? []
+      : topLevelObstacleRects(input.nodes, input.boardId),
   })
   return (placed?.items ?? localItems).map(({ x, y }) => ({ x, y }))
 }

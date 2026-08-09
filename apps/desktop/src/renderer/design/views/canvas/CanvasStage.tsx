@@ -749,7 +749,7 @@ function CanvasStageInner({
   onCreateOperationAtPosition?: (
     operation: CanvasOperationType,
     position: CanvasStagePoint,
-    options?: { openPanel?: boolean },
+    options?: { openPanel?: boolean; preservePreferredPosition?: boolean },
   ) => MaybePromise<CanvasStageCreateResult>
   /** 空白右键：创建流水线编排节点（提取角色/场景、转剧本、生成分镜脚本等） */
   onCreatePipelineAtPosition?: (
@@ -1965,6 +1965,7 @@ function CanvasStageInner({
       const created = await onCreateOperationAtPosition?.(operation, position, {
         // 连线创建完成后还会异步写入边和选中态；此时自动开面板会被后续状态同步关掉。
         openPanel: pendingConnection == null,
+        ...(pendingConnection ? { preservePreferredPosition: true } : {}),
       })
       await connectPendingConnectionToNode(created, pendingConnection)
     },

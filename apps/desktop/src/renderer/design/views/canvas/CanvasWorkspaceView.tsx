@@ -352,6 +352,7 @@ type InsertPreparedImagesResult = {
 }
 type InsertPreparedImagesOptions = {
   grouped?: boolean
+  preservePreferredPosition?: boolean
 }
 type CharacterSubviewEditorContext = {
   node: CanvasNode
@@ -768,6 +769,8 @@ export function CanvasWorkspaceView({
   const pendingImageConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const pendingAssetConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const pendingAssetPositionRef = useRef<CanvasPoint | null>(null)
+  // 牵线打开流水线菜单时，强制后续任务节点保留鼠标释放位置。
+  const pipelineActionPositionRef = useRef<CanvasPoint | null>(null)
   // 鼠标在画布坐标系下的最近位置；粘贴等无坐标事件用它就近落点，鼠标不在画布上时为 null。
   const pointerFlowPositionRef = useRef<CanvasPoint | null>(null)
   const compositingImageLockRef = useRef(new Set<string>())
@@ -2900,7 +2903,7 @@ export function CanvasWorkspaceView({
   // ─── 节点创建动作（useCallback，必须在 early return 之前）────────────────
   // 这些被 handleAddNodeItem / Stage / BottomDock 等多处引用，统一在 hooks 区定义。
   const addText = useCallback(
-    async (preferredPosition?: CanvasPoint) => {
+    async (preferredPosition?: CanvasPoint, pendingConnection?: PendingCanvasConnection | null) => {
       const position = preferredPosition
         ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
         : positionNodeInViewport(canvasViewportRef.current, TEXT_NODE_DEFAULT_SIZE, {
@@ -2911,6 +2914,7 @@ export function CanvasWorkspaceView({
         text: '双击打开右侧编辑器，输入文案、剧情段落或生成提示词。',
         x: position.x,
         y: position.y,
+        ...(pendingConnection ? { preservePreferredPosition: true } : {}),
       })
     },
     [createTextNode],
@@ -2918,7 +2922,7 @@ export function CanvasWorkspaceView({
 
   /** 工厂菜单「图片」直接落空节点（后续点占位按钮/双击再上传填充）。不建 asset。 */
   const addEmptyImage = useCallback(
-    async (preferredPosition?: CanvasPoint) => {
+    async (preferredPosition?: CanvasPoint, pendingConnection?: PendingCanvasConnection | null) => {
       const position = preferredPosition
         ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
         : positionNodeInViewport(canvasViewportRef.current, IMAGE_NODE_DEFAULT_SIZE, {
@@ -2928,6 +2932,7 @@ export function CanvasWorkspaceView({
       const node = await createEmptyImageNode({
         x: position.x,
         y: position.y,
+        ...(pendingConnection ? { preservePreferredPosition: true } : {}),
       })
       if (node) {
         setSelectedNodeIds([node.id])
@@ -2939,7 +2944,7 @@ export function CanvasWorkspaceView({
 
   /** 工厂菜单「视频」直接落空节点（节点自带「上传视频」占位按钮，后续再上传填充）。不建 asset。 */
   const addEmptyVideo = useCallback(
-    async (preferredPosition?: CanvasPoint) => {
+    async (preferredPosition?: CanvasPoint, pendingConnection?: PendingCanvasConnection | null) => {
       const position = preferredPosition
         ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
         : positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
@@ -2950,6 +2955,7 @@ export function CanvasWorkspaceView({
         kind: 'video',
         x: position.x,
         y: position.y,
+        ...(pendingConnection ? { preservePreferredPosition: true } : {}),
       })
       if (node) {
         setSelectedNodeIds([node.id])
@@ -2961,7 +2967,7 @@ export function CanvasWorkspaceView({
 
   /** 工厂菜单「音频」直接落空节点，并立即触发文件选择填充（音频空节点无占位上传按钮）。 */
   const addEmptyAudio = useCallback(
-    async (preferredPosition?: CanvasPoint) => {
+    async (preferredPosition?: CanvasPoint, pendingConnection?: PendingCanvasConnection | null) => {
       const position = preferredPosition
         ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
         : positionNodeInViewport(canvasViewportRef.current, AUDIO_NODE_DEFAULT_SIZE, {
@@ -2972,6 +2978,7 @@ export function CanvasWorkspaceView({
         kind: 'audio',
         x: position.x,
         y: position.y,
+        ...(pendingConnection ? { preservePreferredPosition: true } : {}),
       })
       if (node) {
         setSelectedNodeIds([node.id])
@@ -3017,7 +3024,7 @@ export function CanvasWorkspaceView({
   )
 
   const addDirectorStage3D = useCallback(
-    async (preferredPosition?: CanvasPoint) => {
+    async (preferredPosition?: CanvasPoint, pendingConnection?: PendingCanvasConnection | null) => {
       const position = preferredPosition
         ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
         : positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
@@ -3028,6 +3035,7 @@ export function CanvasWorkspaceView({
         text: '3D 导演台：双击打开三维编排空间。',
         x: position.x,
         y: position.y,
+        ...(pendingConnection ? { preservePreferredPosition: true } : {}),
       })
       if (!node) return
       await patchNodes([node.id], {
@@ -3050,7 +3058,7 @@ export function CanvasWorkspaceView({
   )
 
   const addVideoWorkbench = useCallback(
-    async (preferredPosition?: CanvasPoint) => {
+    async (preferredPosition?: CanvasPoint, pendingConnection?: PendingCanvasConnection | null) => {
       const position = preferredPosition
         ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
         : positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
@@ -3070,6 +3078,7 @@ export function CanvasWorkspaceView({
           : '视频工作台：双击打开。请拖入视频或关联视频节点。',
         x: position.x,
         y: position.y,
+        ...(pendingConnection ? { preservePreferredPosition: true } : {}),
       })
       if (!node) return
       await patchNodes([node.id], {
@@ -3130,6 +3139,7 @@ export function CanvasWorkspaceView({
         boardId: snapshot.board.id,
         x: position.x,
         y: position.y,
+        ...(pendingConnection ? { preservePreferredPosition: true } : {}),
       })
       const role = asset ? filmKindToPipelineRole(readAssetKind(asset)) : undefined
       if (node && role) {
@@ -4136,12 +4146,15 @@ export function CanvasWorkspaceView({
       })
       const nodeSize = fitImageNodeSize(input.width, input.height)
       const source = input.sourceNode
-      const placement = placeAutoNodeToRight({
-        x: source.x,
-        y: source.y,
-        width: source.width,
-        height: source.height,
-      })
+      const placement = placeAutoNodeToRight(
+        {
+          x: source.x,
+          y: source.y,
+          width: source.width,
+          height: source.height,
+        },
+        nodeSize,
+      )
       const imageNode = await createImageNode({
         file,
         filePath: savedImage.filePath,
@@ -4151,6 +4164,7 @@ export function CanvasWorkspaceView({
         height: nodeSize.height,
         imageWidth: input.width,
         imageHeight: input.height,
+        preservePreferredPosition: true,
       })
       if (imageNode) {
         await patchNodes([imageNode.id], {
@@ -4235,12 +4249,30 @@ export function CanvasWorkspaceView({
         })
       }
 
-      const preferredPosition = placeAutoNodeToRight({
-        x: input.sourceNode.x,
-        y: input.sourceNode.y,
-        width: input.sourceNode.width,
-        height: input.sourceNode.height,
-      })
+      const imageBatchSize = shouldGroup
+        ? (() => {
+            const gridMetrics = getImageGridMetrics(preparedImages)
+            return {
+              width: Math.max(360, gridMetrics.width + GROUP_IMAGE_PADDING_X * 2),
+              height: Math.max(
+                220,
+                GROUP_IMAGE_HEADER_HEIGHT + gridMetrics.height + GROUP_IMAGE_PADDING_BOTTOM,
+              ),
+            }
+          })()
+        : (preparedImages[0] ?? {
+            width: IMAGE_NODE_DEFAULT_SIZE.width,
+            height: IMAGE_NODE_DEFAULT_SIZE.height,
+          })
+      const preferredPosition = placeAutoNodeToRight(
+        {
+          x: input.sourceNode.x,
+          y: input.sourceNode.y,
+          width: input.sourceNode.width,
+          height: input.sourceNode.height,
+        },
+        imageBatchSize,
+      )
 
       // 把新切分节点接到来源节点的下游：删除 source→child，改为 newPrimary→child，
       // 让切分产物插入到来源节点与其后续子节点之间（放在原节点后面、连线到后续子节点）。
@@ -4271,6 +4303,7 @@ export function CanvasWorkspaceView({
           height: image.height,
           imageWidth: image.imageWidth,
           imageHeight: image.imageHeight,
+          preservePreferredPosition: true,
         })
         if (imageNode) {
           await patchNodes([imageNode.id], {
@@ -4300,6 +4333,7 @@ export function CanvasWorkspaceView({
           height: image.height,
           imageWidth: image.imageWidth,
           imageHeight: image.imageHeight,
+          preservePreferredPosition: true,
         })
         if (imageNode) {
           createdNodeIds.push(imageNode.id)
@@ -4656,7 +4690,9 @@ export function CanvasWorkspaceView({
           prepareCanvasImageUpload(file, { grouped: imageFiles.length > 1 }),
         ),
       )
-      const result = await insertPreparedImages(preparedImages, preferredPosition)
+      const result = await insertPreparedImages(preparedImages, preferredPosition, {
+        preservePreferredPosition: pendingConnection != null,
+      })
       const targetNodeId = result.groupNodeId ?? result.createdNodeIds[0]
       if (result.selectedNodeIds.length > 0) setSelectedNodeIds(result.selectedNodeIds)
       if (pendingConnection && targetNodeId) {
@@ -5124,7 +5160,9 @@ export function CanvasWorkspaceView({
     const snapshot = snapshotRef.current
     if (!snapshot) return null
     const size = params.size ?? OPERATION_NODE_DEFAULT_SIZE
-    const placement = positionNodeInViewport(canvasViewportRef.current, size, { x: 260, y: 200 })
+    const placement =
+      pipelineActionPositionRef.current ??
+      positionNodeInViewport(canvasViewportRef.current, size, { x: 260, y: 200 })
     const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
     const inputBindings = params.inputRoles
       ? buildCanvasInputBindingsForRoles(snapshot.nodes, params.inputRoles)
@@ -5143,6 +5181,7 @@ export function CanvasWorkspaceView({
       ...(params.taskPipelineRole ? { taskPipelineRole: params.taskPipelineRole } : {}),
       ...(params.outputPipelineRole ? { outputPipelineRole: params.outputPipelineRole } : {}),
       ...(params.outputTitle ? { outputTitle: params.outputTitle } : {}),
+      ...(pipelineActionPositionRef.current ? { preservePreferredPosition: true } : {}),
     })
     const created = findLatestCreatedOperationNode(
       next?.nodes ?? [],
@@ -5524,7 +5563,10 @@ export function CanvasWorkspaceView({
   }) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
-    const placement = position ?? placeNodeRightOfNodes([sourceNode], { x: 360, y: 0 })
+    const requestedPosition = position ?? pipelineActionPositionRef.current
+    const placement =
+      requestedPosition ??
+      placeNodeRightOfNodes([sourceNode], { x: 360, y: 0 }, 96, OPERATION_NODE_DEFAULT_SIZE)
     const runtime = resolveRuntimeFromNode(sourceNode)
     const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
     const next = await createOperationNode({
@@ -5541,6 +5583,8 @@ export function CanvasWorkspaceView({
       ...(outputPipelineRole ? { outputPipelineRole } : {}),
       ...(outputTitle ? { outputTitle } : {}),
       ...(shotScriptConfig ? { shotScriptConfig } : {}),
+      preservePreferredPosition: true,
+      ...(requestedPosition == null ? { autoPlaceAfterInputs: true } : {}),
       ...runtime,
     })
     const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
@@ -5834,6 +5878,8 @@ export function CanvasWorkspaceView({
           inputNodeIds: [parentId],
           x: parent.x + parent.width + 60,
           y: parent.y,
+          autoPlaceAfterInputs: true,
+          preservePreferredPosition: true,
           ...(options?.title ? { title: options.title } : {}),
           ...(options?.prompt ? { systemPrompt: options.prompt } : {}),
           ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
@@ -5954,6 +6000,8 @@ export function CanvasWorkspaceView({
           inputNodeIds: [node.id],
           x: node.x + node.width + 60,
           y: node.y,
+          autoPlaceAfterInputs: true,
+          preservePreferredPosition: true,
           ...(options?.title ? { title: options.title } : {}),
           ...(options?.prompt ? { systemPrompt: options.prompt } : {}),
           ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
@@ -6284,6 +6332,7 @@ export function CanvasWorkspaceView({
           height: image.height,
           imageWidth: image.imageWidth,
           imageHeight: image.imageHeight,
+          ...(options?.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
         })
         return {
           createdNodeCount: node ? 1 : 0,
@@ -6340,6 +6389,7 @@ export function CanvasWorkspaceView({
           height: image.height,
           imageWidth: image.imageWidth,
           imageHeight: image.imageHeight,
+          ...(options?.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
         })
         if (node) {
           createdNodeIds.push(node.id)
@@ -6755,7 +6805,7 @@ export function CanvasWorkspaceView({
   const handleCreateOperationAtPosition = async (
     operation: CanvasOperationType,
     position: CanvasPoint,
-    options?: { openPanel?: boolean },
+    options?: { openPanel?: boolean; preservePreferredPosition?: boolean },
   ) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
@@ -6767,6 +6817,7 @@ export function CanvasWorkspaceView({
       inputNodeIds: [],
       x: Math.round(position.x),
       y: Math.round(position.y),
+      ...(options?.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
       message: '请在操作面板填写 Prompt / 连接输入节点后点击开始任务',
     })
     const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
@@ -6798,7 +6849,12 @@ export function CanvasWorkspaceView({
     // 牵线菜单已经明确提供了上游节点，复用节点右键的完整编排处理器，
     // 不再走“空白处创建流水线”分支（后者只支持文本/抽取且不依赖选中态）。
     if (options?.sourceNodeId) {
-      await handleNodePipelineAction(options.sourceNodeId, actionId)
+      pipelineActionPositionRef.current = { x: Math.round(position.x), y: Math.round(position.y) }
+      try {
+        await handleNodePipelineAction(options.sourceNodeId, actionId)
+      } finally {
+        pipelineActionPositionRef.current = null
+      }
       return
     }
     const op = CANVAS_PIPELINE_OPS.find((item) => item.id === actionId)
@@ -7020,6 +7076,7 @@ export function CanvasWorkspaceView({
                 boardId: snapshot.board.id,
                 x: placement.x,
                 y: placement.y,
+                preservePreferredPosition: true,
               })
               if (placed) {
                 if (parentGroup) {
