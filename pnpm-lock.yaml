@@ -388,6 +388,9 @@ importers:
       openai:
         specifier: ^6.39.0
         version: 6.39.0(ws@8.21.0)(zod@3.25.76)
+      undici:
+        specifier: ^7.28.0
+        version: 7.28.0
       zod:
         specifier: ^3.23.0
         version: 3.25.76

@@ -1,4 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
+
+const agentDispatch = vi.hoisted(() => vi.fn(() => true))
+const agentConstructor = vi.hoisted(() =>
+  vi.fn().mockImplementation(() => ({ dispatch: agentDispatch })),
+)
+
+vi.mock('undici', () => ({ Agent: agentConstructor }))
+
 import {
   describeNetworkError,
   fetchJson,
@@ -8,6 +16,34 @@ import {
   pollTask,
 } from '../../../services/media/media-http.util.js'
 import { MediaProviderError } from '../../../services/media/media-adapter.types.js'
+
+type UndiciRequestInit = RequestInit & {
+  dispatcher?: { dispatch: (options: Record<string, unknown>, handler: unknown) => boolean }
+}
+
+describe('fetchJson transport timeout', () => {
+  it('passes the configured timeout to Undici headers and body timers', async () => {
+    const timeoutMs = 6_000_000
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const dispatcher = (init as UndiciRequestInit | undefined)?.dispatcher
+      const handler = {}
+      dispatcher?.dispatch({ origin: 'https://example.com', path: '/', method: 'POST' }, handler)
+      expect(agentDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ headersTimeout: timeoutMs, bodyTimeout: timeoutMs }),
+        handler,
+      )
+      return new Response('{}', { status: 200 })
+    }) as unknown as typeof fetch
+
+    await fetchJson('https://example.com/v1/images/edits', {
+      method: 'POST',
+      fetchImpl,
+      timeoutMs,
+    })
+
+    expect(agentConstructor).toHaveBeenCalledWith()
+  })
+})
 
 describe('pollTask diagnostics', () => {
   it('caps each polling request by the remaining operation deadline', () => {
