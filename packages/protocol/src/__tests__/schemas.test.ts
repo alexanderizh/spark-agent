@@ -27,17 +27,23 @@ describe('ProviderMediaDefaultsSchema', () => {
 })
 
 describe('IPC schemas', () => {
-  it('accepts only the supported optional capability ids', () => {
+  it('accepts all selectable capability ids in their product order', () => {
+    const ids = [
+      'codex-runtime',
+      'office-viewer',
+      'local-depth',
+      'ffmpeg',
+      'chromium',
+      'voice-pack',
+    ] as const
+
     expect(
-      IpcSchemaRegistry['optional-capability:install'].parse({
-        capabilityId: 'office-viewer',
-      }),
-    ).toEqual({ capabilityId: 'office-viewer' })
-    expect(
-      IpcSchemaRegistry['optional-capability:install'].parse({
-        capabilityId: 'local-depth',
-      }),
-    ).toEqual({ capabilityId: 'local-depth' })
+      ids.map(
+        (capabilityId) =>
+          IpcSchemaRegistry['optional-capability:install'].parse({ capabilityId }).capabilityId,
+      ),
+    ).toEqual(ids)
+
     expect(() =>
       IpcSchemaRegistry['optional-capability:install'].parse({
         capabilityId: 'computer-use',

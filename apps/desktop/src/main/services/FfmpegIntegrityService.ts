@@ -20,6 +20,13 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { app } from 'electron'
 import { createLogger } from '@spark/shared'
+import {
+  fetchSparkInstallManifest,
+  resolveArtifactUrl,
+  resolveArtifactUrlString,
+  type SparkInstallArtifact,
+} from '../../../../../packages/agent-runtime/src/services/skill-registry/artifact-manifest.js'
+import { installBinaryArchive } from '../../../../../packages/agent-runtime/src/services/skill-registry/tarball-installer.js'
 
 const log = createLogger('ffmpeg-integrity')
 const execFileAsync = promisify(execFile)
@@ -42,6 +49,25 @@ export interface FfmpegIntegrityState {
   /** ffprobe 可执行文件绝对路径 */
   ffprobePath: string | null
   lastError: string | null
+}
+
+export function selectFfmpegArtifact(
+  artifacts: SparkInstallArtifact[],
+  platform = process.platform,
+  arch = process.arch,
+): SparkInstallArtifact | undefined {
+  return artifacts
+    .filter(
+      (artifact) =>
+        artifact.type === 'binary' &&
+        artifact.id.startsWith('binary.ffmpeg') &&
+        (artifact.platform == null || artifact.platform === platform) &&
+        (artifact.arch == null || artifact.arch === arch) &&
+        /^[0-9a-f]{64}$/i.test(artifact.sha256 ?? '') &&
+        Number.isSafeInteger(artifact.size) &&
+        (artifact.size ?? 0) > 0,
+    )
+    .sort((left, right) => compareVersionTuples(parseVersionTuple(right.version), parseVersionTuple(left.version)))[0]
 }
 
 let cachedState: FfmpegIntegrityState | null = null
@@ -412,6 +438,52 @@ export async function installFfmpeg(
   onLog(`[ffmpeg] 安装成功，版本 ${nextState.ffmpegVersion}`)
   cachedState = { ...nextState, lastError: null }
   return { success: true }
+}
+
+/**
+ * 供统一按需能力中心使用：直接从 Spark manifest 安装当前平台的 FFmpeg。
+ * 保留 installFfmpeg 的二次探测、chmod 和旧版本清理逻辑。
+ */
+export async function installFfmpegFromSparkManifest(
+  onProgress?: (downloaded: number, total: number) => void,
+): Promise<{ success: boolean; message?: string }> {
+  const manifest = await fetchSparkInstallManifest()
+  const artifact = selectFfmpegArtifact(manifest.artifacts)
+  if (!artifact) {
+    return {
+      success: false,
+      message: `当前平台 (${PLATFORM_ARCH}) 暂无可用的 FFmpeg 安装包`,
+    }
+  }
+
+  return installFfmpeg(
+    async (_artifactId, reportProgress) => {
+      const rawName = artifact.name
+        .replace(/[<>:"/\\|?*\p{Cc}]/gu, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[()]/g, '')
+      const safeName = rawName || artifact.id.replace(/[^a-zA-Z0-9._-]/g, '-')
+      const destDir = join(app.getPath('userData'), 'bin', safeName)
+      const fallbackUrls = artifact.fallbackUrls?.map((url) =>
+        resolveArtifactUrlString(manifest, url),
+      )
+      const result = await installBinaryArchive({
+        url: resolveArtifactUrl(manifest, artifact),
+        ...(fallbackUrls?.length ? { fallbackUrls } : {}),
+        ...(artifact.sha256 ? { sha256: artifact.sha256 } : {}),
+        ...(artifact.archive?.format ? { format: artifact.archive.format } : {}),
+        ...(artifact.archive?.contentRoot ? { contentRoot: artifact.archive.contentRoot } : {}),
+        destDir,
+        onProgress: (downloaded, total) => {
+          reportProgress(downloaded, total)
+          onProgress?.(downloaded, total)
+        },
+      })
+      return { destPath: result.destPath, entries: result.entries }
+    },
+    { artifactId: artifact.id, ...(onProgress ? { onProgress } : {}) },
+  )
 }
 
 /** 重置缓存。安装失败后强制下次重新检测。 */

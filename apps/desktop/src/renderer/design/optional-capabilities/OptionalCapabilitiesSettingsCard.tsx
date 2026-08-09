@@ -46,7 +46,7 @@ export function OptionalCapabilitiesSettingsCard() {
       <div className="voice-integrity-header">
         <div className="voice-integrity-heading">
           <h3>可选功能组件</h3>
-          <p>Office 预览与本地深度处理资源按需安装，不占用基础安装包空间。</p>
+          <p>Codex、Office、视频处理、浏览器和语音资源按需安装，不占用基础安装包空间。</p>
         </div>
         <Button loading={actions.loading} onClick={() => void refresh()}>
           检查更新
@@ -94,7 +94,7 @@ export function OptionalCapabilitiesSettingsCard() {
                 >
                   {primaryLabel(item)}
                 </Button>
-                {item.installedVersion && (
+                {item.installedVersion && item.supportsUninstall !== false && (
                   <Button danger onClick={() => void uninstall(item)}>卸载</Button>
                 )}
               </div>

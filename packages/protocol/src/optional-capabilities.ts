@@ -1,4 +1,10 @@
-export type OptionalCapabilityId = 'office-viewer' | 'local-depth'
+export type OptionalCapabilityId =
+  | 'codex-runtime'
+  | 'office-viewer'
+  | 'local-depth'
+  | 'ffmpeg'
+  | 'chromium'
+  | 'voice-pack'
 
 export type OptionalCapabilityPhase =
   | 'checking'
@@ -34,6 +40,10 @@ export interface OptionalCapabilityItem {
   downloadSize: number
   installedSize: number | null
   autoUpdate: boolean
+  /** Whether the manager can abort an active install for this capability. */
+  cancellable?: boolean
+  /** Whether the capability has a safe in-app uninstall operation. */
+  supportsUninstall?: boolean
   error?: string
   errorCode?: OptionalCapabilityErrorCode
   retryable?: boolean

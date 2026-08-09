@@ -12,7 +12,7 @@ import './optional-capabilities.less'
 const PROMPT_PREFERENCE_KEY = 'spark-optional-capability-prompt'
 
 export function OptionalCapabilityCenter() {
-  const { setTweak } = useApp()
+  const { setTweak, t } = useApp()
   const { snapshot, progress, install, cancel } = useOptionalCapabilities()
   const [promptDismissed, setPromptDismissed] = useState(false)
   const [selected, setSelected] = useState<OptionalCapabilityId[]>([])
@@ -89,17 +89,26 @@ export function OptionalCapabilityCenter() {
     setTweak('settingsSection', 'integrity')
   }
 
+  const openIntegrityFromPrompt = () => {
+    dismissPrompt()
+    openIntegrity()
+  }
+
+  if (t?.view === 'onboarding') return null
+
   return (
     <>
       <Modal
         open={promptOpen && installable.length > 0}
         title="可选功能资源"
+        destroyOnHidden
+        className="optional-capability-modal"
         onCancel={dismissPrompt}
         footer={[
           <Button key="later" onClick={dismissPrompt}>
             稍后
           </Button>,
-          <Button key="settings" onClick={openIntegrity}>
+          <Button key="settings" onClick={openIntegrityFromPrompt}>
             前往完整性
           </Button>,
           <Button
@@ -169,7 +178,9 @@ export function OptionalCapabilityCenter() {
                   : item.message}
                 {item.queuePosition > 0 ? ` · 队列 ${item.queuePosition}` : ''}
               </div>
-              {(item.phase === 'queued' || item.phase === 'downloading') && (
+              {(item.phase === 'queued' || item.phase === 'downloading') &&
+                snapshot?.capabilities.find((capability) => capability.id === item.capabilityId)
+                  ?.cancellable !== false && (
                 <Button
                   type="link"
                   danger

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   install: vi.fn(async () => undefined),
   cancel: vi.fn(async () => undefined),
   setTweak: vi.fn(),
+  view: 'chat' as string,
   progress: {} as Record<string, unknown>,
   snapshot: {
     capabilities: [
@@ -37,7 +38,9 @@ vi.mock('./useOptionalCapabilities', () => ({
   }),
 }))
 
-vi.mock('../AppContext', () => ({ useApp: () => ({ setTweak: mocks.setTweak }) }))
+vi.mock('../AppContext', () => ({
+  useApp: () => ({ setTweak: mocks.setTweak, t: { view: mocks.view } }),
+}))
 
 import { OptionalCapabilityCenter } from './OptionalCapabilityCenter'
 
@@ -48,6 +51,7 @@ describe('OptionalCapabilityCenter', () => {
   beforeEach(() => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     window.localStorage.clear()
+    mocks.view = 'chat'
     mocks.progress = {}
     mocks.cancel.mockClear()
     const getComputedStyle = window.getComputedStyle.bind(window)
@@ -74,6 +78,13 @@ describe('OptionalCapabilityCenter', () => {
     expect(installButton?.hasAttribute('disabled')).toBe(true)
   })
 
+  it('does not render the startup resource prompt during onboarding', async () => {
+    mocks.view = 'onboarding'
+    await act(async () => root.render(<OptionalCapabilityCenter />))
+
+    expect(document.body.textContent).not.toContain('可选功能资源')
+  })
+
   it('lets the user cancel an active optional capability download', async () => {
     mocks.progress = {
       'office-viewer': {
@@ -97,6 +108,23 @@ describe('OptionalCapabilityCenter', () => {
     expect(cancelButton).toBeTruthy()
     await act(async () => cancelButton?.click())
     expect(mocks.cancel).toHaveBeenCalledWith('office-viewer')
+  })
+
+  it('closes the startup prompt before navigating to integrity settings', async () => {
+    await act(async () => root.render(<OptionalCapabilityCenter />))
+
+    const settingsButton = [...document.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('前往完整性'),
+    )
+    expect(settingsButton).toBeTruthy()
+
+    await act(async () => settingsButton?.click())
+
+    expect(mocks.setTweak).toHaveBeenCalledWith('view', 'settings')
+    expect(mocks.setTweak).toHaveBeenCalledWith('settingsSection', 'integrity')
+    expect(JSON.parse(window.localStorage.getItem('spark-optional-capability-prompt') ?? '{}')).toMatchObject({
+      dismissedAt: expect.any(Number),
+    })
   })
 
   it('persists the choice to disable future startup reminders', async () => {

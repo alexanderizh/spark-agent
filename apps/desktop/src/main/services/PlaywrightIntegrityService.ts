@@ -25,6 +25,7 @@ import {
   resolveBrowserStrategy,
   resetBundledBrowsersPathCache,
 } from './PlaywrightEnvironment.js'
+import { resolveStandaloneNodeRuntimePath } from './StandaloneNodeRuntime.js'
 
 const log = createLogger('playwright-integrity')
 
@@ -42,6 +43,47 @@ export interface PlaywrightIntegrityState {
 }
 
 let cachedState: PlaywrightIntegrityState | null = null
+
+export interface BrowserInstallDirectoryOptions {
+  packaged: boolean
+  userDataPath: string
+  targetDir: string
+}
+
+export function getBrowserInstallDirectory(options: BrowserInstallDirectoryOptions): string {
+  return options.packaged ? join(options.userDataPath, 'browsers') : join(options.targetDir, 'browsers')
+}
+
+export interface BrowserInstallCommandOptions {
+  packaged: boolean
+  platform: NodeJS.Platform
+  standaloneNodePath?: string | null
+  packagedCliPath?: string | null
+}
+
+export interface BrowserInstallCommand {
+  command: string
+  args: string[]
+  shell: boolean
+}
+
+export function getBrowserInstallCommand(
+  options: BrowserInstallCommandOptions,
+): BrowserInstallCommand | null {
+  if (options.packaged) {
+    if (!options.standaloneNodePath || !options.packagedCliPath) return null
+    return {
+      command: options.standaloneNodePath,
+      args: [options.packagedCliPath, 'install', 'chromium'],
+      shell: false,
+    }
+  }
+  return {
+    command: options.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    args: ['exec', 'playwright', 'install', 'chromium'],
+    shell: options.platform === 'win32',
+  }
+}
 
 // ─── Path Resolution ────────────────────────────────────────────────────────
 
@@ -228,12 +270,13 @@ function runCmd(
   cwd: string,
   onLog: (line: string) => void,
   extraEnv?: Record<string, string>,
+  shell = true,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     log.info(`Run: ${command} ${args.join(' ')} (cwd=${cwd})`)
     const child = spawn(command, args, {
       cwd,
-      shell: true,
+      shell,
       timeout: 300_000, // 5 minutes max (browser download can be slow)
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
@@ -309,33 +352,56 @@ export async function installBrowser(
 ): Promise<PlaywrightInstallResponse> {
   onLog('[playwright] Downloading chromium browser (~150MB) ...')
 
-  const targetDir = findDesktopDir()
-  if (targetDir == null) {
+  const targetDir = app.isPackaged ? null : findDesktopDir()
+  if (!app.isPackaged && targetDir == null) {
     return {
       success: false,
       message: '无法定位 desktop 应用目录，请在开发模式下运行',
     }
   }
 
-  // Ensure the bundled browsers directory exists. In packaged apps this must
-  // match PlaywrightEnvironment's runtime lookup path.
-  const browsersDir = app.isPackaged
-    ? join(process.resourcesPath, 'browsers')
-    : join(targetDir, 'browsers')
+  const browsersDir = getBrowserInstallDirectory({
+    packaged: app.isPackaged,
+    userDataPath: app.getPath('userData'),
+    targetDir: targetDir ?? app.getPath('userData'),
+  })
   mkdirSync(browsersDir, { recursive: true })
 
-  // Set PLAYWRIGHT_BROWSERS_PATH so chromium downloads to the bundled directory
+  let standaloneNodePath: string | null = null
+  if (app.isPackaged) {
+    try {
+      standaloneNodePath = resolveStandaloneNodeRuntimePath()
+    } catch (error) {
+      return {
+        success: false,
+        message: `无法启动内置 Node 运行时下载 Chromium：${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+  }
+  const command = getBrowserInstallCommand({
+    packaged: app.isPackaged,
+    platform: process.platform,
+    standaloneNodePath,
+    packagedCliPath: app.isPackaged
+      ? join(process.resourcesPath, 'playwright-mcp', 'node_modules', 'playwright', 'cli.js')
+      : null,
+  })
+  if (command == null) {
+    return { success: false, message: '无法定位内置 Playwright 下载程序，请升级或重新安装 Spark Agent' }
+  }
+
+  // Set PLAYWRIGHT_BROWSERS_PATH so chromium downloads to the writable managed directory.
   const installEnv: Record<string, string> = {
     PLAYWRIGHT_BROWSERS_PATH: browsersDir,
   }
 
-  const cmd = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
   const result = await runCmd(
-    cmd,
-    ['exec', 'playwright', 'install', 'chromium'],
-    targetDir,
+    command.command,
+    command.args,
+    targetDir ?? app.getPath('userData'),
     onLog,
     installEnv,
+    command.shell,
   )
 
   if (result.code !== 0) {

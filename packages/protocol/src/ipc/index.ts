@@ -5842,7 +5842,7 @@ export interface IpcChannelMap
   'sdk:integrity-check': [SdkIntegrityCheckRequest, SdkIntegrityCheckResponse]
   'sdk:integrity-install': [SdkIntegrityInstallRequest, SdkIntegrityInstallResponse]
 
-  // Optional capability packages (Office Viewer and local depth only)
+  // Optional capability packages selected from the startup resource center.
   'optional-capability:list': [OptionalCapabilityListRequest, OptionalCapabilityListResponse]
   'optional-capability:check': [OptionalCapabilityCheckRequest, OptionalCapabilityCheckResponse]
   'optional-capability:install': [
@@ -6303,9 +6303,9 @@ export interface IpcStreamChannelMap {
   'stream:sdk:integrity': SdkIntegrityCheckResponse
   /** SDK / managed runtime 安装进度 */
   'stream:sdk:install-progress': SdkIntegrityInstallProgress
-  /** Optional Office/depth capability state snapshot. */
+  /** Optional capability state snapshot used by the startup resource center. */
   'stream:optional-capability:snapshot': OptionalCapabilitySnapshot
-  /** Optional Office/depth capability install progress. */
+  /** Optional capability install progress used by the startup resource center. */
   'stream:optional-capability:progress': OptionalCapabilityProgress
   /** Shell 环境状态（PATH 修复 + 运行时工具检测结果）*/
   'stream:env:status': ShellEnvironmentStatus

@@ -2009,7 +2009,7 @@ function Shell() {
           )}
         </Modal>
 
-        <OptionalCapabilityCenter />
+        {t.view !== 'onboarding' && <OptionalCapabilityCenter />}
         <ToastContainer />
       </div>
     </ErrorBoundary>

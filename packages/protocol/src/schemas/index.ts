@@ -83,7 +83,14 @@ export const SessionPermissionModeSchema = z.enum([
 ])
 export const RemoteChannelTypeSchema = z.enum(['telegram', 'feishu', 'qq', 'wechat-claw'])
 export const RemotePairingModeSchema = z.enum(['code', 'qr'])
-export const OptionalCapabilityIdSchema = z.enum(['office-viewer', 'local-depth'])
+export const OptionalCapabilityIdSchema = z.enum([
+  'codex-runtime',
+  'office-viewer',
+  'local-depth',
+  'ffmpeg',
+  'chromium',
+  'voice-pack',
+])
 
 const RemoteCredentialsSchema = z.object({
   botToken: z.string().max(400).optional(),
