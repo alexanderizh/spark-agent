@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { CanvasMediaModelSummary } from '@spark/protocol'
 
 vi.mock('@lobehub/ui', () => ({
   Button: 'button',
@@ -15,8 +16,10 @@ import {
   canRunUnifiedVideoFromMedia,
   isModelParamCoveredByFields,
   mergeSchemaFields,
+  modelSuggestedFields,
   nodeDefaultModelParams,
   normalizeModelParamsForSubmit,
+  operationSuggestedFields,
   readModelParamDraftValue,
   resolveInitialModelParamDraftValue,
   schemaFields,
@@ -34,6 +37,25 @@ const field = (name: string): SchemaField => ({
 })
 
 describe('CanvasInlineAiComposer image dimension params', () => {
+  it('uses the full 4–15 second range for MiniMax-H3 fallback fields', () => {
+    const fields = modelSuggestedFields({
+      manifestId: 'minimax:v2-h3',
+      modelId: 'MiniMax-H3',
+      effectiveModelId: 'MiniMax-H3',
+      displayName: 'MiniMax H3（V2）',
+      capabilities: [
+        { id: 'video.generate', label: '文生视频', input: {}, output: {}, paramSchema: {} },
+      ],
+    } as CanvasMediaModelSummary)
+
+    expect(fields.find((item) => item.name === 'durationSeconds')).toMatchObject({
+      type: 'integer',
+      enumValues: [],
+      minimum: 4,
+      maximum: 15,
+    })
+  })
+
   it('collapses legacy video and image operations into unified generation capabilities', () => {
     expect(
       unifiedCanvasComposerCapabilities([
@@ -97,6 +119,30 @@ describe('CanvasInlineAiComposer image dimension params', () => {
     const fields = mergeSchemaFields([], [field('size'), field('aspect_ratio'), field('quality')])
 
     expect(fields.map((item) => item.name)).toEqual(['size', 'aspect_ratio', 'quality'])
+  })
+
+  it('keeps model duration bounds instead of legacy operation duration enums', () => {
+    const h3 = {
+      manifestId: 'minimax:v2-h3',
+      modelId: 'MiniMax-H3',
+      effectiveModelId: 'MiniMax-H3',
+      displayName: 'MiniMax H3（V2）',
+      capabilities: [
+        { id: 'video.generate', label: '文生视频', input: {}, output: {}, paramSchema: {} },
+      ],
+    } as CanvasMediaModelSummary
+
+    const fields = mergeSchemaFields(
+      [],
+      operationSuggestedFields('text_to_video'),
+      modelSuggestedFields(h3),
+    )
+
+    expect(fields.find((item) => item.name === 'durationSeconds')).toMatchObject({
+      enumValues: [],
+      minimum: 4,
+      maximum: 15,
+    })
   })
 
   it('clears the alternate image dimension draft when selecting size or aspect ratio', () => {
