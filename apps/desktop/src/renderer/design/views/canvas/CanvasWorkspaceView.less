@@ -11884,19 +11884,21 @@ body.canvas-agent-panel-resizing {
   flex-direction: column;
   gap: 14px;
 
-  // antd dark algorithm 会把 solid Radio 选中态背景浅化，配默认浅色文字会糊成一团；
-  // 这里强制主色实底 + 白字，绕开浅化，保证选中态对比度。
+  // antd v6 dark algorithm 会把 solid Radio 选中态背景浅化（甚至在 Modal
+  // 内部用 inverse 配色变成白底），配默认浅色文字会糊成一团；同时 cssinjs
+  // 在 React 渲染后才注入 <style>，仅靠特异性比拼不稳，必须用 !important
+  // 强制主色实底 + 白字，绕开浅化，保证选中态对比度。
   .ant-radio-group-solid {
-    .ant-radio-button-wrapper-checked,
-    .ant-radio-button-wrapper-checked:hover,
-    .ant-radio-button-wrapper-checked:focus {
-      background: var(--primary, #6366f1);
-      color: #ffffff;
-      border-color: var(--primary, #6366f1);
+    .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled),
+    .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):hover,
+    .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):focus {
+      background: var(--primary, #6366f1) !important;
+      color: #ffffff !important;
+      border-color: var(--primary, #6366f1) !important;
       // 抬高层级，避免选中态边框被相邻按钮遮住
       z-index: 2;
     }
-    .ant-radio-button-wrapper-checked + .ant-radio-button-wrapper {
+    .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) + .ant-radio-button-wrapper {
       border-inline-start-color: var(--primary, #6366f1);
     }
   }
