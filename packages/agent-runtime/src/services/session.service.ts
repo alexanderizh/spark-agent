@@ -141,6 +141,8 @@ import {
   QUICK_REPLIES_SYSTEM_PROMPT,
   RENDER_HTML_TOOL_NAMES,
   RENDER_HTML_SYSTEM_PROMPT,
+  RENDER_DIAGRAM_TOOL_NAMES,
+  RENDER_DIAGRAM_SYSTEM_PROMPT,
   WEB_SEARCH_SYSTEM_PROMPT,
   SPARK_WEB_TOOL_SYSTEM_PROMPT,
   VALIDATION_SUGGESTION_TOOL_NAMES,
@@ -2858,6 +2860,7 @@ export class SessionService {
       presentFilesMcpServer != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
       quickRepliesMcpServer != null ? QUICK_REPLIES_SYSTEM_PROMPT : undefined,
       quickRepliesMcpServer != null ? RENDER_HTML_SYSTEM_PROMPT : undefined,
+      quickRepliesMcpServer != null ? RENDER_DIAGRAM_SYSTEM_PROMPT : undefined,
       browserAutomationMcpServer != null ? BROWSER_AUTOMATION_SYSTEM_PROMPT : undefined,
       computerUseMcp?.systemPrompt,
       debugMcpServer != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
@@ -3834,6 +3837,7 @@ export class SessionService {
     if (config.quickRepliesMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, QUICK_REPLIES_TOOL_NAMES)
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, RENDER_HTML_TOOL_NAMES)
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, RENDER_DIAGRAM_TOOL_NAMES)
     }
     if (config.browserAutomationMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, BROWSER_TOOL_NAMES)

@@ -3971,6 +3971,19 @@ export interface BrowserOpenExternalResponse {
   success: boolean
 }
 
+export interface BrowserLinkMetadata {
+  title: string
+  faviconUrl?: string
+}
+
+export interface BrowserGetLinkMetadataRequest {
+  url: string
+}
+
+export interface BrowserGetLinkMetadataResponse {
+  metadata: BrowserLinkMetadata | null
+}
+
 export interface HtmlViewerOpenRequest {
   html: string
   title?: string
@@ -6030,6 +6043,10 @@ export interface IpcChannelMap
 
   // Browser helpers
   'browser:open-external': [BrowserOpenExternalRequest, BrowserOpenExternalResponse]
+  'browser:get-link-metadata': [
+    BrowserGetLinkMetadataRequest,
+    BrowserGetLinkMetadataResponse,
+  ]
   'html:open-window': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
   'html:open-external': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
 

@@ -1126,6 +1126,67 @@ describe('MessageBuilder', () => {
     })
   })
 
+  it('maps spark_ui render_diagram to a diagram block and updates on result', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'diagram-1',
+      toolName: 'mcp__spark_ui__render_diagram',
+      toolInput: {
+        type: 'markmap',
+        source: '# 主题\n## 分支',
+        title: '大纲',
+        height: 360,
+      },
+      source: 'mcp',
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      {
+        kind: 'diagram_block',
+        toolCallId: 'diagram-1',
+        diagramType: 'markmap',
+        source: '# 主题\n## 分支',
+        title: '大纲',
+        height: 360,
+        status: 'pending',
+        error: undefined,
+        warnings: [],
+      },
+    ])
+
+    builder.processEvent({
+      ...baseEvent('tool_result'),
+      id: 'diagram-result-1',
+      type: 'tool_result',
+      toolCallId: 'diagram-1',
+      toolName: 'mcp__spark_ui__render_diagram',
+      status: 'success',
+      output: {
+        accepted: true,
+        type: 'markmap',
+        source: '# 主题\n## 分支',
+        title: '大纲',
+        height: 360,
+        warnings: [],
+      },
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toContainEqual({
+      kind: 'diagram_block',
+      toolCallId: 'diagram-1',
+      diagramType: 'markmap',
+      source: '# 主题\n## 分支',
+      title: '大纲',
+      height: 360,
+      status: 'rendered',
+      error: undefined,
+      warnings: [],
+    })
+  })
+
   it('keeps a failed AskUserQuestion unresolved and exposes its transport error', () => {
     const builder = new MessageBuilder()
     builder.processEvent({

@@ -12,8 +12,9 @@
  * extractFilePaths / extractUrlsAndEmails，供 ChatView 使用。
  */
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import type { BrowserLinkMetadata } from '@spark/protocol'
 import { Dropdown } from '@lobehub/ui'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
@@ -148,12 +149,134 @@ export function ClickableFilePath({ path, label, onPreview }: Props): ReactNode 
   )
 }
 
+type UrlContextMenuPosition = {
+  x: number
+  y: number
+}
+
+function LinkContextMenu({
+  url,
+  text,
+  x,
+  y,
+  onClose,
+}: {
+  url: string
+  text: string
+  x: number
+  y: number
+  onClose: () => void
+}): ReactNode {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const { invoke: openExternal } = useIpcInvoke('browser:open-external')
+  const { toast } = useToast()
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (ref.current != null && !ref.current.contains(event.target as Node)) onClose()
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [onClose])
+
+  const copy = useCallback(
+    async (value: string, message: string) => {
+      try {
+        await navigator.clipboard.writeText(value)
+        toast.success(message)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '复制失败')
+      } finally {
+        onClose()
+      }
+    },
+    [onClose, toast],
+  )
+
+  return (
+    <div
+      ref={ref}
+      className="action-menu context-action-menu clickable-url-context-menu"
+      style={{ position: 'fixed', left: x, top: y, zIndex: 10000 }}
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="action-menu-item"
+        onClick={() => {
+          onClose()
+          void openExternal({ url }).catch((error: unknown) => {
+            toast.error(error instanceof Error ? error.message : '打开链接失败')
+          })
+        }}
+      >
+        <Icons.ExternalLink size={14} />
+        <span>在浏览器中打开</span>
+      </button>
+      <button type="button" className="action-menu-item" onClick={() => void copy(url, '已复制链接')}>
+        <Icons.Copy size={14} />
+        <span>复制链接</span>
+      </button>
+      <button
+        type="button"
+        className="action-menu-item"
+        onClick={() => void copy(text, '已复制链接文本')}
+      >
+        <Icons.Link size={14} />
+        <span>复制链接文本</span>
+      </button>
+    </div>
+  )
+}
+
+function getUrlDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '')
+  } catch {
+    return url
+  }
+}
+
+function LinkPreviewIcon({
+  metadata,
+  failed,
+  onError,
+}: {
+  metadata: BrowserLinkMetadata
+  failed: boolean
+  onError: () => void
+}): ReactNode {
+  if (metadata.faviconUrl != null && !failed) {
+    return (
+      <img
+        className="clickable-url-card-icon"
+        src={metadata.faviconUrl}
+        alt=""
+        loading="lazy"
+        onError={onError}
+      />
+    )
+  }
+  return (
+    <span className="clickable-url-card-icon clickable-url-card-icon-fallback" aria-hidden="true">
+      <Icons.Globe size={16} />
+    </span>
+  )
+}
+
 /**
- * ClickableUrl — 渲染可点击的 URL / mailto 链接
+ * ClickableUrl — 渲染裸 URL / mailto 链接。
  *
- * 普通 https?:// 与 www. 走 <a target="_blank">，由 Electron main 进程
- * 的 setWindowOpenHandler 接管 → shell.openExternal 调起系统默认浏览器。
- * mailto: 走默认邮件客户端。
+ * http(s) 链接会在后台尝试加载页面标题和 favicon；元数据不可用时保留原始链接。
+ * 右键菜单沿用内容区的 action-menu 样式，提供打开、复制链接和复制链接文本。
  */
 export function ClickableUrl({ url, label }: { url: string; label?: string }): ReactNode {
   // 规范化：www.foo.com → https://www.foo.com
@@ -165,10 +288,85 @@ export function ClickableUrl({ url, label }: { url: string; label?: string }): R
     return url
   }, [url])
 
+  const { invoke: getLinkMetadata } = useIpcInvoke('browser:get-link-metadata')
+  const [metadataState, setMetadataState] = useState<{
+    url: string
+    metadata: BrowserLinkMetadata | null
+  } | null>(null)
+  const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<UrlContextMenuPosition | null>(null)
+  const isHttpUrl = href.startsWith('http://') || href.startsWith('https://')
+  const metadata = !isHttpUrl
+    ? null
+    : metadataState?.url === href
+      ? metadataState.metadata
+      : undefined
+  const faviconFailed = metadata?.faviconUrl != null && failedFaviconUrl === metadata.faviconUrl
+
+  useEffect(() => {
+    if (!isHttpUrl) return
+
+    let cancelled = false
+    void getLinkMetadata({ url: href })
+      .then((response) => {
+        if (!cancelled) setMetadataState({ url: href, metadata: response.metadata })
+      })
+      .catch(() => {
+        if (!cancelled) setMetadataState({ url: href, metadata: null })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [getLinkMetadata, href, isHttpUrl])
+
+  const handleContextMenu = useCallback((event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setContextMenu({ x: event.clientX, y: event.clientY })
+  }, [])
+
+  const displayText = label ?? url
+  const hasPreview = metadata != null
+
   return (
-    <a className="clickable-url" href={href} target="_blank" rel="noreferrer" title={href}>
-      {label ?? url}
-    </a>
+    <>
+      <a
+        className={`clickable-url${hasPreview ? ' clickable-url-card' : ''}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        title={hasPreview ? metadata.title : href}
+        aria-label={hasPreview ? `${metadata.title} — ${href}` : href}
+        onContextMenu={handleContextMenu}
+      >
+        {hasPreview ? (
+          <>
+            <LinkPreviewIcon
+              metadata={metadata}
+              failed={faviconFailed}
+              onError={() => setFailedFaviconUrl(metadata.faviconUrl ?? null)}
+            />
+            <span className="clickable-url-card-body">
+              <span className="clickable-url-card-title">{metadata.title}</span>
+              <span className="clickable-url-card-domain">{getUrlDomain(href)}</span>
+              <span className="clickable-url-card-url">{displayText}</span>
+            </span>
+          </>
+        ) : (
+          displayText
+        )}
+      </a>
+      {contextMenu != null && (
+        <LinkContextMenu
+          url={href}
+          text={displayText}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+    </>
   )
 }
 

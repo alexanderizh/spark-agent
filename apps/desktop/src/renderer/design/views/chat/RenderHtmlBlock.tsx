@@ -4,6 +4,7 @@ import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import { MarkdownCodeBlock } from '../../components/MarkdownCodeBlock'
+import { BlockTrafficHeader } from '../../components/BlockTrafficHeader'
 import { buildRenderHtmlSrcDoc, type HtmlOpenMode } from '../../services/render-html'
 import type { UIBlock } from '../../services/event-mapper'
 import './RenderHtmlBlock.less'
@@ -122,53 +123,48 @@ export function RenderHtmlBlock({
     : (remoteOpenMode ?? (isOpenInSidePanel ? 'side-panel' : 'inline'))
   const content = (
     <>
-      <div className="render-html-toolbar">
-        <div className="render-html-heading">
-          <span className="render-html-mark" aria-hidden="true">
-            &lt;/&gt;
-          </span>
-          <span className="render-html-title" title={block.title}>
-            {block.title}
-          </span>
-          {block.status === 'pending' && <span className="render-html-status">准备渲染</span>}
-        </div>
-        <div className="render-html-actions">
-          <label className="render-html-mode-label">
-            <span>打开方式</span>
-            <select
-              aria-label="HTML 打开方式"
-              value={selectValue}
-              onChange={(event) => void openMode(event.target.value as HtmlOpenMode)}
-            >
-              <option value="inline">内容区</option>
-              <option value="side-panel">侧面板</option>
-              <option value="window">独立窗口</option>
-              <option value="external">外部浏览器</option>
-            </select>
-          </label>
-          <Button
-            type="text"
-            size="small"
-            className="render-html-action"
-            icon={<Icons.Code size={13} />}
-            onClick={() => setSourceOpen((v) => !v)}
-          >
-            {sourceOpen ? '预览' : '源码'}
-          </Button>
-          {!isSidePanel && !isOpenElsewhere && block.status === 'rendered' && (
+      <BlockTrafficHeader
+        title={block.title}
+        status={block.status === 'pending' ? '准备渲染' : undefined}
+        actions={
+          <>
+            <label className="render-html-mode-label">
+              <span>打开方式</span>
+              <select
+                aria-label="HTML 打开方式"
+                value={selectValue}
+                onChange={(event) => void openMode(event.target.value as HtmlOpenMode)}
+              >
+                <option value="inline">内容区</option>
+                <option value="side-panel">侧面板</option>
+                <option value="window">独立窗口</option>
+                <option value="external">外部浏览器</option>
+              </select>
+            </label>
             <Button
               type="text"
               size="small"
               className="render-html-action"
-              aria-label="全屏查看 HTML"
-              icon={<Icons.Maximize size={13} />}
-              onClick={() => setFullscreen(true)}
+              icon={<Icons.Code size={13} />}
+              onClick={() => setSourceOpen((v) => !v)}
             >
-              全屏
+              {sourceOpen ? '预览' : '源码'}
             </Button>
-          )}
-        </div>
-      </div>
+            {!isSidePanel && !isOpenElsewhere && block.status === 'rendered' && (
+              <Button
+                type="text"
+                size="small"
+                className="render-html-action"
+                aria-label="全屏查看 HTML"
+                icon={<Icons.Maximize size={13} />}
+                onClick={() => setFullscreen(true)}
+              >
+                全屏
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {isOpenElsewhere ? (
         <div className="render-html-muted-state" role="status">

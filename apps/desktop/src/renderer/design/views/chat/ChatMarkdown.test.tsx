@@ -32,8 +32,8 @@ vi.mock('../../components/MarkdownImage', () => ({
 
 vi.mock('../../components/ClickableFilePath', () => ({
   ClickableFilePath: ({ path }: { path: string }) => <span>{path}</span>,
-  ClickableUrl: ({ href, children }: { href: string; children: React.ReactNode }) => (
-    <a href={href}>{children}</a>
+  ClickableUrl: ({ url, label }: { url: string; label?: string }) => (
+    <a href={url}>{label ?? url}</a>
   ),
   extractFilePaths: () => [],
   extractUrlsAndEmails: () => [],

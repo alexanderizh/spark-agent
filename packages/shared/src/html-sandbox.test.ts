@@ -7,11 +7,15 @@ import {
 } from './html-sandbox'
 
 describe('HTML sandbox helpers', () => {
-  it('wraps fragments with a restrictive CSP and theme marker', () => {
+  it('wraps fragments with a network-enabled sandbox CSP and theme marker', () => {
     const document = buildSandboxedHtml('<main>safe</main>', 'dark')
 
     expect(document).toContain('Content-Security-Policy')
-    expect(document).toContain("connect-src 'none'")
+    expect(document).toContain("script-src 'unsafe-inline' https: http:")
+    expect(document).toContain("style-src 'unsafe-inline' https: http:")
+    expect(document).toContain('connect-src https: http: ws: wss:')
+    expect(document).not.toContain("connect-src 'none'")
+    expect(document).toContain("frame-src 'none'")
     expect(document).toContain('data-spark-theme="dark"')
     expect(document).not.toContain('allow-same-origin')
   })
@@ -37,6 +41,7 @@ describe('HTML sandbox helpers', () => {
 
     expect(document).toContain('sandbox="allow-scripts"')
     expect(document).not.toContain('sandbox="allow-scripts allow-same-origin"')
+    expect(document).toContain('connect-src https: http: ws: wss:')
     expect(document).toContain('srcdoc=')
   })
 
@@ -44,7 +49,7 @@ describe('HTML sandbox helpers', () => {
     expect(validateHtmlViewerPayload({ html: '<iframe></iframe>' })).toMatchObject({ ok: false })
     expect(validateHtmlViewerPayload({ html: 'x'.repeat(200_001) }).ok).toBe(false)
     expect(findHtmlExternalResourceWarning('<img src="https://example.com/a.png">')).toContain(
-      '外部资源',
+      '允许网络加载',
     )
     expect(validateHtmlViewerPayload({ html: '<main>safe</main>' })).toMatchObject({
       ok: true,

@@ -91,10 +91,14 @@ describe('quick-replies MCP server', () => {
       expect.arrayContaining([
         expect.objectContaining({
           name: 'render_html',
+          description: expect.stringContaining('HTTP(S)'),
           inputSchema: expect.objectContaining({
             required: ['html'],
             properties: expect.objectContaining({
-              html: expect.objectContaining({ maxLength: 200_000 }),
+              html: expect.objectContaining({
+                maxLength: 200_000,
+                description: expect.stringContaining('HTTP(S)'),
+              }),
             }),
           }),
         }),
@@ -119,9 +123,87 @@ describe('quick-replies MCP server', () => {
       warnings: [],
     })
 
+    const remote = await rpc.call('tools/call', {
+      name: 'render_html',
+      arguments: {
+        html: '<script src="https://cdn.example.com/chart.js"></script>',
+      },
+    })
+    expect(JSON.parse(remote.content[0].text)).toMatchObject({
+      accepted: true,
+      warnings: [expect.stringContaining('允许网络加载')],
+    })
+
     const unsafe = await rpc.call('tools/call', {
       name: 'render_html',
       arguments: { html: '<iframe src="https://example.com"></iframe>' },
+    })
+    expect(JSON.parse(unsafe.content[0].text)).toMatchObject({
+      accepted: false,
+      reason: expect.stringContaining('iframe'),
+    })
+  })
+
+  it('exposes a diagram renderer for markmap and mermaid with bounded source', async () => {
+    const response = await rpc.call('tools/list')
+
+    expect(response.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'render_diagram',
+          inputSchema: expect.objectContaining({
+            required: ['type', 'source'],
+            properties: expect.objectContaining({
+              type: expect.objectContaining({ enum: ['markmap', 'mermaid', 'mindmap'] }),
+              source: expect.objectContaining({ maxLength: 50_000 }),
+            }),
+          }),
+        }),
+      ]),
+    )
+  })
+
+  it('normalizes diagram payload, accepts mindmap alias, and rejects bad type or unsafe tags', async () => {
+    const accepted = await rpc.call('tools/call', {
+      name: 'render_diagram',
+      arguments: {
+        type: 'mindmap',
+        source: '# 主题\n## 分支',
+        title: '大纲',
+        height: 360,
+      },
+    })
+    expect(JSON.parse(accepted.content[0].text)).toMatchObject({
+      accepted: true,
+      type: 'markmap',
+      title: '大纲',
+      height: 360,
+      source: '# 主题\n## 分支',
+      warnings: [],
+    })
+
+    const mermaidOk = await rpc.call('tools/call', {
+      name: 'render_diagram',
+      arguments: { type: 'mermaid', source: 'flowchart TD\n  A --> B' },
+    })
+    expect(JSON.parse(mermaidOk.content[0].text)).toMatchObject({
+      accepted: true,
+      type: 'mermaid',
+      title: '图表',
+    })
+
+    const badType = await rpc.call('tools/call', {
+      name: 'render_diagram',
+      arguments: { type: 'graphviz', source: 'digraph {}' },
+    })
+    expect(JSON.parse(badType.content[0].text)).toMatchObject({
+      accepted: false,
+      reason: expect.stringContaining('type'),
+    })
+
+    const unsafe = await rpc.call('tools/call', {
+      name: 'render_diagram',
+      arguments: { type: 'mermaid', source: 'flowchart TD\n<iframe></iframe>' },
     })
     expect(JSON.parse(unsafe.content[0].text)).toMatchObject({
       accepted: false,

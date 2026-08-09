@@ -2123,6 +2123,64 @@ body.sidebar-resizing {
 .md-code-streaming-badge {
   color: var(--text-faint);
 }
+
+/*
+ * 富内容板块统一标题栏（HTML 板块 / 图表板块）。
+ * 复用上面 md-code-traffic / md-code-dot 的红绿灯视觉，与代码块 header 一致。
+ * 背景、分割线刻意沿用 .md-code-header 的配方，保证三者观感统一。
+ */
+.block-traffic-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--bg-sunken), var(--text) 5%);
+  border-bottom: 1px solid var(--md-divider);
+}
+.block-traffic-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.block-traffic-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.block-traffic-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border, #e8e5df);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.block-traffic-status {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.block-traffic-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+@media (max-width: 680px) {
+  .block-traffic-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .block-traffic-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
 .md-table-wrap {
   overflow: auto;
   margin: 10px 0;

@@ -37,6 +37,82 @@
   }
 }
 
+.clickable-url-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  width: min(100%, 420px);
+  padding: 7px 10px;
+  margin: 4px 0;
+  border: 1px solid color-mix(in srgb, var(--color-primary-6) 18%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--color-primary-6) 6%, var(--panel));
+  vertical-align: middle;
+  color: var(--text);
+  text-align: left;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-primary-6) 6%, transparent);
+
+  &:hover,
+  &:visited:hover {
+    color: var(--text);
+    background: color-mix(in srgb, var(--color-primary-6) 10%, var(--panel));
+    border-color: color-mix(in srgb, var(--color-primary-6) 32%, var(--border));
+    box-shadow: 0 5px 16px color-mix(in srgb, var(--color-primary-6) 10%, transparent);
+  }
+}
+
+.clickable-url-card-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 7px;
+  object-fit: contain;
+  background: var(--bg);
+}
+
+.clickable-url-card-icon-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary-6);
+  background: color-mix(in srgb, var(--color-primary-6) 12%, var(--panel));
+}
+
+.clickable-url-card-body {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  line-height: 1.25;
+}
+
+.clickable-url-card-title,
+.clickable-url-card-domain,
+.clickable-url-card-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clickable-url-card-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.clickable-url-card-domain {
+  color: var(--color-primary-6);
+  font-size: 11px;
+}
+
+.clickable-url-card-url {
+  max-width: 100%;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.clickable-url-context-menu {
+  min-width: 176px;
+}
+
 /* 右键菜单项内的图标 + 文字对齐 */
 .clickable-file-menu-item {
   display: inline-flex;

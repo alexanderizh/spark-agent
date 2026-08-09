@@ -1,0 +1,257 @@
+.render-diagram-block {
+  --render-diagram-bg: var(--panel, #fff);
+  --render-diagram-bg-soft: var(--bg-soft, #f7f6f2);
+  --render-diagram-border: var(--border, #e8e5df);
+  --render-diagram-divider: var(--divider, #efede8);
+  --render-diagram-text: var(--text, #20201d);
+  --render-diagram-muted: var(--text-muted, #6f6a61);
+  --render-diagram-danger: var(--danger, #ef4444);
+  --render-diagram-warning: var(--warning, #f59e0b);
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--render-diagram-border);
+  border-radius: 8px;
+  background: var(--render-diagram-bg);
+  color: var(--render-diagram-text);
+}
+
+.render-diagram-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--render-diagram-divider);
+}
+
+.render-diagram-heading,
+.render-diagram-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.render-diagram-mark {
+  color: var(--primary, #6366f1);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.render-diagram-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.render-diagram-type-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--render-diagram-border);
+  border-radius: 4px;
+  color: var(--render-diagram-muted);
+  font-size: 10px;
+}
+
+.render-diagram-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--render-diagram-muted);
+}
+
+.render-diagram-action:hover {
+  color: var(--render-diagram-text);
+}
+
+.render-diagram-frame-wrap {
+  position: relative;
+  min-height: 120px;
+  /* 自适应内容高度：不写死 height，由内部 svg 撑开；超长流程图超出 600 后滚动 */
+  max-height: 600px;
+  overflow: auto;
+  background: var(--render-diagram-bg-soft);
+}
+
+.render-diagram-canvas {
+  width: 100%;
+  min-height: 120px;
+  display: flex;
+  align-items: flex-start;
+  /* safe center：内容不溢出时居中（窄图好看）；溢出时退化为左对齐，
+     保证宽图的左半部分可被滚动到达，规避 flex justify-content:center 的左侧裁切坑。 */
+  justify-content: safe center;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+/* mermaid 输出的 svg 自带固定 px 宽高（按内容布局算出），保持其原始尺寸：
+   不压缩、不缩放。宽图溢出 canvas 时由 frame-wrap 横向滚动，高图溢出 600 时纵向滚动。
+   svg 落在宿主 host div 内（React 不管理的逃生舱节点），故选择器挂在 host 下。 */
+.render-diagram-mermaid-host {
+  flex-shrink: 0;
+}
+.render-diagram-mermaid-host > svg {
+  display: block;
+  max-width: none;
+  height: auto;
+}
+
+.render-diagram-canvas-markmap {
+  width: 100%;
+}
+
+/* markmap 的 svg 在 effect 里手动创建并 append 到 host。
+   高度由 effect 按 markmap.state.rect 内容包围盒算出后写入 style.height（钳制 200~600），
+   故这里不写死 height:100%，min-height 仅作渲染前的占位兜底。 */
+.render-diagram-markmap-host {
+  width: 100%;
+  min-height: 200px;
+}
+
+.render-diagram-markmap-svg {
+  width: 100%;
+  min-height: 200px;
+  display: block;
+}
+
+/* markmap 节点文字色随主题；dark 下默认白字 */
+.render-diagram-canvas-markmap[data-diagram-theme='dark'] foreignObject div {
+  color: #e4e4e7;
+}
+
+.render-diagram-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--render-diagram-muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.render-diagram-source-wrap {
+  min-height: 120px;
+  max-height: 520px;
+  overflow: auto;
+  background: var(--render-diagram-bg-soft);
+}
+
+.render-diagram-source-wrap .md-code-block {
+  margin: 0;
+  border-radius: 0;
+}
+
+.render-diagram-source-wrap .md-code-copy,
+.render-diagram-source-wrap .md-code-copy-float {
+  display: none;
+}
+
+.render-diagram-error,
+.render-diagram-muted {
+  display: grid;
+  gap: 8px;
+  min-height: 140px;
+  align-content: center;
+  padding: 20px;
+  color: var(--render-diagram-muted);
+  font-size: 12px;
+}
+
+.render-diagram-error-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--render-diagram-danger);
+  font-weight: 600;
+}
+
+.render-diagram-error details {
+  max-width: 100%;
+}
+
+.render-diagram-error-inline {
+  padding: 16px;
+  color: var(--render-diagram-danger);
+  font-size: 12px;
+}
+
+.render-diagram-warning {
+  padding: 7px 10px;
+  border-top: 1px solid var(--render-diagram-divider);
+  color: var(--render-diagram-warning);
+  font-size: 11px;
+}
+
+.render-diagram-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.46);
+}
+
+.render-diagram-fullscreen-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1200px, 100%);
+  height: min(820px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--render-diagram-border);
+  border-radius: 8px;
+  background: var(--render-diagram-bg);
+}
+
+.render-diagram-fullscreen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--render-diagram-divider);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.render-diagram-icon-button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--render-diagram-border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--render-diagram-text);
+  cursor: pointer;
+}
+
+.render-diagram-icon-button:hover {
+  background: var(--hover, rgba(36, 32, 27, 0.045));
+}
+
+.render-diagram-fullscreen-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--render-diagram-bg-soft);
+}
+
+@media (max-width: 680px) {
+  .render-diagram-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .render-diagram-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

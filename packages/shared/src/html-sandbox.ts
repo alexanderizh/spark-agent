@@ -4,6 +4,15 @@ export const MIN_HTML_RENDER_HEIGHT = 120
 export const MAX_HTML_RENDER_HEIGHT = 640
 export const DEFAULT_HTML_RENDER_HEIGHT = 320
 
+// Diagram (markmap / mermaid) 渲染负载约束 —— source 是 Markdown 大纲或 Mermaid DSL
+export const MAX_DIAGRAM_RENDER_LENGTH = 50_000
+export const MAX_DIAGRAM_RENDER_TITLE_LENGTH = 60
+export const MIN_DIAGRAM_RENDER_HEIGHT = 120
+export const MAX_DIAGRAM_RENDER_HEIGHT = 800
+export const DEFAULT_DIAGRAM_RENDER_HEIGHT = 400
+export const DIAGRAM_RENDER_TYPES = ['markmap', 'mermaid'] as const
+export type DiagramRenderType = (typeof DIAGRAM_RENDER_TYPES)[number]
+
 export type HtmlRenderTheme = 'light' | 'dark'
 
 export type HtmlViewerPayload = {
@@ -13,7 +22,7 @@ export type HtmlViewerPayload = {
 }
 
 const HTML_RENDER_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+  "default-src 'none'; script-src 'unsafe-inline' https: http:; style-src 'unsafe-inline' https: http:; img-src data: blob: https: http:; media-src data: blob: https: http:; font-src data: https: http:; connect-src https: http: ws: wss:; worker-src blob: https: http:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
 
 const FORBIDDEN_HTML_TAG_PATTERN = /<(iframe|form|object|embed|base)\b/i
 const EXTERNAL_RESOURCE_PATTERN = /(?:src|href)\s*=\s*["']\s*https?:\/\//i
@@ -76,7 +85,9 @@ export function validateHtmlViewerPayload(
 }
 
 export function findHtmlExternalResourceWarning(html: string): string | null {
-  return EXTERNAL_RESOURCE_PATTERN.test(html) ? '检测到外部资源引用，沙盒 CSP 将阻止网络加载' : null
+  return EXTERNAL_RESOURCE_PATTERN.test(html)
+    ? '检测到外部资源引用，沙盒 CSP 将允许网络加载；请确认来源可信'
+    : null
 }
 
 export function buildSandboxedHtml(html: string, theme: HtmlRenderTheme): string {

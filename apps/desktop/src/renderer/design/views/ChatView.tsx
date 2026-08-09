@@ -143,6 +143,7 @@ import {
   type HtmlActiveRemotePresentation,
   type HtmlRenderContextValue,
 } from './chat/RenderHtmlBlock'
+import { RenderDiagramBlock } from './chat/RenderDiagramBlock'
 import type { HtmlOpenMode } from '../services/render-html'
 import {
   clamp,
@@ -4691,6 +4692,12 @@ function renderBlocks(
         return (
           <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
             <RenderHtmlBlock block={block} />
+          </div>
+        )
+      case 'diagram_block':
+        return (
+          <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
+            <RenderDiagramBlock block={block} />
           </div>
         )
       case 'context_ledger': {

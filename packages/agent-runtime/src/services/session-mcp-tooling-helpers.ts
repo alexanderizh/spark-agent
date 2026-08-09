@@ -506,6 +506,8 @@ export const QUICK_REPLIES_TOOL_NAMES = ['mcp__spark_ui__suggest_replies']
 
 export const RENDER_HTML_TOOL_NAMES = ['mcp__spark_ui__render_html']
 
+export const RENDER_DIAGRAM_TOOL_NAMES = ['mcp__spark_ui__render_diagram']
+
 export const VALIDATION_SUGGESTION_TOOL_NAMES = ['mcp__spark_verify__suggest_validation']
 
 export const VALIDATION_SUGGESTION_TOOL_DESCRIPTION = [
@@ -548,9 +550,27 @@ export const RENDER_HTML_SYSTEM_PROMPT = [
   '## HTML Fragment Rendering',
   'You may call `mcp__spark_ui__render_html` for diagrams, visual comparisons, compact interactive demos, or layouts that Markdown cannot express.',
   'Do not use it for ordinary text, code blocks, or files that should be delivered with `mcp__spark_files__present_files`.',
-  'Keep HTML at or below 200,000 characters. Use inline CSS/JS; use only data: or blob: media.',
-  'Never use external URLs, fetch, CDN assets, iframe, form, popup, window.parent, or top navigation. The host provides a sandbox and CSP, but the prompt is not the security boundary.',
+  'For data visualizations, prefer `mcp__spark_ui__render_diagram` for supported standard charts; use `render_html` for custom dashboards or chart layouts that need arbitrary HTML/CSS.',
+  'The HTML fragment runs in a network-enabled sandbox: trusted HTTPS resources, external chart libraries such as ECharts, AntV, or D3, `fetch`, XHR, and WebSocket are supported. Prefer trusted HTTPS sources, keep dependencies minimal, and never embed secrets; use inline SVG/CSS/Canvas when no external dependency is needed.',
+  'Keep HTML at or below 200,000 characters. Use inline CSS/JS where practical; HTTPS/HTTP resources and data:/blob: media are allowed by the sandbox CSP.',
+  'Never use iframe, form, object, embed, base, popup, window.parent, or top navigation. The host provides a sandbox and CSP, but the prompt is not the security boundary.',
   'Prefer flat, readable layouts. Support both themes with `@media (prefers-color-scheme: dark)` or `html[data-spark-theme="dark"]` selectors.',
+].join('\n')
+
+export const RENDER_DIAGRAM_SYSTEM_PROMPT = [
+  '## Diagram Rendering (mind maps & charts)',
+  'You may call `mcp__spark_ui__render_diagram` to render a mind map or a structured chart inline in the conversation. The input is plain text (Markdown / DSL), rendered to SVG by the host — cheaper and more reliable than hand-written HTML/SVG.',
+  '- For MIND MAPS: pass `type="markmap"` (alias `mindmap` is also accepted); `source` is a Markdown heading outline such as:',
+  '  ```',
+  '  # Topic',
+  '  ## Branch A',
+  '  ### Leaf',
+  '  ## Branch B',
+  '  ```',
+  '- For FLOWCHART / SEQUENCE / ER / STATE / GANTT / CLASS / PIE / JOURNEY and other standard charts: pass `type="mermaid"`; `source` is Mermaid DSL with the diagram type declared on the first line (e.g. `flowchart TD`, `sequenceDiagram`, `erDiagram`, `stateDiagram-v2`).',
+  'Prefer `render_diagram` over `render_html` whenever a mind map or any standard chart type fits the need.',
+  'Do NOT use `render_diagram` for free-form layouts, posters, dashboards, or rich visual designs that need arbitrary HTML/CSS — use `render_html` for those. Do NOT use it for ordinary code blocks either.',
+  'Keep `source` concise; one diagram per call. An optional `title` (≤60 chars) and `height` (120–800, default 400) may be provided.',
 ].join('\n')
 
 /**
