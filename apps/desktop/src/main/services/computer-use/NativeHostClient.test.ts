@@ -142,6 +142,75 @@ describe('NativeHostClient', () => {
     await client.close()
   })
 
+  it('serializes binary observations before allowing the next request onto the pipe', async () => {
+    const process = new FakeNativeHostProcess()
+    const requests = observeRequests(process)
+    const connecting = NativeHostClient.connect({ artifact: ARTIFACT, spawnProcess: () => process })
+    await completeHandshake(process, requests)
+    const client = await connecting
+
+    const observing = client.observe({
+      snapshotId: 'snapshot-1',
+      appId: 'app-1',
+      windowId: 'window-1',
+      previousTreeVersion: null,
+      fullTree: true,
+    })
+    const ping = client.ping()
+    const observeRequest = requireRequest(await requests.next())
+    expect(observeRequest).toMatchObject({ type: 'observe' })
+
+    const payload = Buffer.from('observation-payload')
+    const digest = createHash('sha256').update(payload).digest('hex')
+    process.send(
+      {
+        protocolVersion: 1,
+        requestId: observeRequest.requestId,
+        type: 'observation',
+        observation: {
+          frameId: 'frame-1',
+          treeVersion: 'tree-1',
+          capturedAt: '2026-08-09T00:00:00.000Z',
+          display: { id: 'display-1', width: 640, height: 480, scaleFactor: 1 },
+          foreground: {
+            app: { id: 'app-1', name: 'App', processId: 1 },
+            window: {
+              id: 'window-1',
+              title: 'Window',
+              bounds: { x: 0, y: 0, width: 640, height: 480 },
+            },
+          },
+          screenshot: {
+            snapshotId: 'snapshot-1',
+            width: 640,
+            height: 480,
+          },
+          tree: { mode: 'full', text: 'ready', elementCount: 0 },
+          elements: [],
+          loading: false,
+          sensitiveRegions: [],
+        },
+        payload: {
+          kind: 'image_png',
+          byteLength: payload.length,
+          sha256: digest,
+        },
+      },
+      payload,
+    )
+
+    await expect(observing).resolves.toMatchObject({ bytes: payload })
+    const pingRequest = requireRequest(await requests.next())
+    expect(pingRequest).toMatchObject({ type: 'ping' })
+    process.send({
+      protocolVersion: 1,
+      requestId: pingRequest.requestId,
+      type: 'pong',
+    })
+    await expect(ping).resolves.toBeUndefined()
+    await client.close()
+  })
+
   it('returns the refreshed manifest after an explicit bounded permission request', async () => {
     const process = new FakeNativeHostProcess()
     const requests = observeRequests(process)
@@ -242,7 +311,6 @@ describe('NativeHostClient', () => {
       const second = client.ping()
       const firstRejection = expect(first).rejects.toMatchObject({ code: 'action_timeout' })
       const secondRejection = expect(second).rejects.toMatchObject({ code: 'action_timeout' })
-      await requests.next()
       await requests.next()
 
       await vi.advanceTimersByTimeAsync(101)

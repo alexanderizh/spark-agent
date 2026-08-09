@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type {
   ComputerSession,
   ComputerUseEvent,
@@ -15,15 +15,39 @@ import './ComputerActivityBlock.less'
 
 const PAGE_SIZE = 500
 
-export function ComputerActivityBlock({ sessionId }: { sessionId: SessionId }) {
-  return <ComputerActivitySession key={sessionId} sessionId={sessionId} />
+type ComputerActivityContextValue = {
+  events: ComputerUseEvent[]
+  sessions: ComputerSession[]
+  loadError: string | null
 }
 
-function ComputerActivitySession({ sessionId }: { sessionId: SessionId }) {
+const ComputerActivityContext = createContext<ComputerActivityContextValue | null>(null)
+
+export function ComputerActivityProvider({
+  sessionId,
+  children,
+}: {
+  sessionId: SessionId
+  children: ReactNode
+}) {
+  return (
+    <ComputerActivitySessionProvider key={sessionId} sessionId={sessionId}>
+      {children}
+    </ComputerActivitySessionProvider>
+  )
+}
+
+function ComputerActivitySessionProvider({
+  sessionId,
+  children,
+}: {
+  sessionId: SessionId
+  children: ReactNode
+}) {
   const [events, setEvents] = useState<ComputerUseEvent[]>([])
   const [sessions, setSessions] = useState<ComputerSession[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
-  const { lang, t } = useI18n()
+  const { t } = useI18n()
 
   useEffect(() => {
     let canceled = false
@@ -51,7 +75,23 @@ function ComputerActivitySession({ sessionId }: { sessionId: SessionId }) {
     }
   }, [sessionId, t])
 
-  const timelines = useMemo(() => groupComputerActivityEvents(events), [events])
+  const value = useMemo(() => ({ events, sessions, loadError }), [events, sessions, loadError])
+  return (
+    <ComputerActivityContext.Provider value={value}>{children}</ComputerActivityContext.Provider>
+  )
+}
+
+export function ComputerActivityBlock({ turnId }: { turnId?: string }) {
+  const activity = useContext(ComputerActivityContext)
+  const { lang, t } = useI18n()
+  const timelines = useMemo(
+    () =>
+      groupComputerActivityEvents(activity?.events ?? []).filter(
+        (timeline) => turnId == null || timeline.events.some((event) => event.turnId === turnId),
+      ),
+    [activity?.events, turnId],
+  )
+  const loadError = activity?.loadError ?? null
   if (timelines.length === 0 && loadError == null) return null
 
   return (
@@ -61,7 +101,9 @@ function ComputerActivitySession({ sessionId }: { sessionId: SessionId }) {
         <ComputerActivityCard
           key={timeline.computerSessionId}
           computerSessionId={timeline.computerSessionId}
-          session={sessions.find((item) => item.id === timeline.computerSessionId) ?? null}
+          session={
+            activity?.sessions.find((item) => item.id === timeline.computerSessionId) ?? null
+          }
           events={timeline.events}
           lang={lang}
           t={t}

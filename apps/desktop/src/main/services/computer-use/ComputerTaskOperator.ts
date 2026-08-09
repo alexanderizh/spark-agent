@@ -16,6 +16,8 @@ import type {
   ComputerActionFailureContext,
   ComputerDecision,
   ComputerInteractionStrategy,
+  ComputerRecentAction,
+  ComputerVerificationFailureContext,
   GenericComputerDecisionAdapter,
 } from './ComputerDecisionAdapter.js'
 import { ComputerVerificationEngine } from './ComputerVerificationEngine.js'
@@ -155,17 +157,32 @@ export class ComputerTaskOperator {
     let consecutiveNoops = 0
     let consecutiveTransientFailures = 0
     let successfulActions = 0
+    let attemptedActions = 0
+    let lastAutoVerifiedActionCount = 0
     let previousActionFailure: ComputerActionFailureContext | undefined
+    let previousVerificationFailure: ComputerVerificationFailureContext | undefined
+    const recentActions: ComputerRecentAction[] = []
     const failedStrategies = new Set<ComputerInteractionStrategy>()
     const abortSignal = this.getAbortSignal?.(input.session.id)
+    const startedAt = this.now()
     try {
       observation = await this.observeWithRecovery(
         input.session.id,
         shouldRequestFullDecisionTree(),
       )
-      for (let stepIndex = 0;; stepIndex += 1) {
+      for (let stepIndex = 0; ; stepIndex += 1) {
         if (abortSignal?.aborted) {
           return { status: 'failed', reason: 'session_canceled' }
+        }
+        this.assertRuntimeBudget(input.session, startedAt)
+        if (successfulActions > lastAutoVerifiedActionCount) {
+          lastAutoVerifiedActionCount = successfulActions
+          this.sessions.setPhase(input.session.id, 'verifying')
+          const verification = await this.verifyCurrentState(input.session, observation, false)
+          if (verification.passed) {
+            this.sessions.completeVerified(input.session.id)
+            return { status: 'completed' }
+          }
         }
         const decisionEvidence = await this.readDecisionEvidence(input.session.id, observation)
         observation = decisionEvidence.observation
@@ -181,6 +198,8 @@ export class ComputerTaskOperator {
             stepIndex,
             allowBatch: isActionBatchEnabled(),
             ...(previousActionFailure == null ? {} : { previousActionFailure }),
+            ...(previousVerificationFailure == null ? {} : { previousVerificationFailure }),
+            ...(recentActions.length === 0 ? {} : { recentActions: [...recentActions] }),
           })
           consecutiveTransientFailures = 0
         } catch (error) {
@@ -211,9 +230,18 @@ export class ComputerTaskOperator {
             )
             continue
           }
-          // 不再跑 verification engine 自动校验、不再因校验失败中断任务。模型声明完成即
-          // 视为本阶段结束；任务是否真正达成目标交由 agent 自行核验（看截图/应用状态），
-          // 不满意可再次 start_task 或用桌面状态工具继续操作。
+          this.assertRuntimeBudget(input.session, startedAt)
+          this.sessions.setPhase(input.session.id, 'verifying')
+          const verification = await this.verifyCurrentState(input.session, observation, true)
+          if (!verification.passed) {
+            previousVerificationFailure = verificationFailureContext(verification)
+            observation = await this.observeWithRecovery(
+              input.session.id,
+              shouldRequestFullDecisionTree(),
+            )
+            continue
+          }
+          previousVerificationFailure = undefined
           this.sessions.completeVerified(input.session.id)
           return { status: 'completed' }
         }
@@ -230,6 +258,9 @@ export class ComputerTaskOperator {
             if (abortSignal?.aborted) {
               return { status: 'failed', reason: 'session_canceled' }
             }
+            this.assertRuntimeBudget(input.session, startedAt)
+            this.assertActionBudget(input.session, attemptedActions)
+            attemptedActions += 1
             const stepDecision: ComputerDecision = {
               type: 'action',
               action,
@@ -247,11 +278,22 @@ export class ComputerTaskOperator {
               consecutiveTransientFailures = 0
               successfulActions += 1
               previousActionFailure = undefined
+              previousVerificationFailure = undefined
               failedStrategies.clear()
               observation = stepResult.observation
+              rememberRecentAction(recentActions, action, decision.intent, 'executed', observation)
             } catch (error) {
               if (!(error instanceof ComputerUseBrokerError)) throw error
-              if (error.code === 'session_canceled' || error.code === 'handoff_required') throw error
+              if (error.code === 'session_canceled' || error.code === 'handoff_required')
+                throw error
+              rememberRecentAction(
+                recentActions,
+                action,
+                decision.intent,
+                'failed',
+                observation,
+                error.code,
+              )
               if (error.code === 'action_noop') {
                 consecutiveNoops += 1
                 const exhaustedNoopWindow =
@@ -323,6 +365,9 @@ export class ComputerTaskOperator {
           continue
         }
 
+        this.assertRuntimeBudget(input.session, startedAt)
+        this.assertActionBudget(input.session, attemptedActions)
+        attemptedActions += 1
         const envelope = createEnvelope(input.session, observation, decision, this.createId())
         try {
           const result = await this.dispatchDirectly(envelope)
@@ -330,13 +375,29 @@ export class ComputerTaskOperator {
           consecutiveTransientFailures = 0
           successfulActions += 1
           previousActionFailure = undefined
+          previousVerificationFailure = undefined
           failedStrategies.clear()
           observation = result.observation
+          rememberRecentAction(
+            recentActions,
+            decision.action,
+            decision.intent,
+            'executed',
+            observation,
+          )
         } catch (error) {
           if (!(error instanceof ComputerUseBrokerError)) {
             throw error
           }
           if (error.code === 'session_canceled' || error.code === 'handoff_required') throw error
+          rememberRecentAction(
+            recentActions,
+            decision.action,
+            decision.intent,
+            'failed',
+            observation,
+            error.code,
+          )
           if (error.code === 'action_noop') {
             consecutiveNoops += 1
             const exhaustedNoopWindow =
@@ -383,7 +444,7 @@ export class ComputerTaskOperator {
           )
         }
       }
-      // for(;;) 只在 abortSignal / 模型声明完成 / 不可恢复决策错误时退出，不会自然结束。
+      // The loop is bounded by the session runtime and action budgets above.
     } catch (error) {
       if (error instanceof ComputerUseBrokerError && error.code === 'handoff_required') {
         this.sessions.setPhase(input.session.id, 'handoff_required')
@@ -415,6 +476,63 @@ export class ComputerTaskOperator {
         reason: error instanceof ComputerUseBrokerError ? error.code : 'operator_failed',
       }
     }
+  }
+
+  private assertRuntimeBudget(session: ComputerSession, startedAt: number): void {
+    if (this.now() - startedAt < session.taskContract.maxRuntimeMs) return
+    throw new ComputerUseBrokerError(
+      'task_runtime_exceeded',
+      'Computer task runtime budget was exceeded',
+      undefined,
+      {
+        diagnostic: {
+          diagnosticCode: 'computer_task_runtime_exceeded',
+          stage: 'verify_task',
+          repairAction: 'retry_with_a_smaller_task_or_increase_the_time_budget',
+        },
+      },
+    )
+  }
+
+  private assertActionBudget(session: ComputerSession, attemptedActions: number): void {
+    if (attemptedActions < session.taskContract.maxSteps) return
+    throw new ComputerUseBrokerError(
+      'task_step_limit_exceeded',
+      'Computer task action budget was exceeded',
+      undefined,
+      {
+        diagnostic: {
+          diagnosticCode: 'computer_task_step_limit_exceeded',
+          stage: 'verify_task',
+          repairAction: 'retry_with_a_smaller_task_or_increase_the_step_budget',
+        },
+      },
+    )
+  }
+
+  private async verifyCurrentState(
+    session: ComputerSession,
+    observation: ComputerObservation,
+    modelVisualApproval: boolean,
+  ): Promise<ReturnType<ComputerVerificationEngine['verify']>> {
+    let windows: NativeWindowDescriptor[] | undefined
+    if (this.windowInventory != null) {
+      try {
+        windows = await this.windowInventory.listWindows()
+      } catch (error) {
+        log.warn('Computer window inventory unavailable during verification', {
+          computerSessionId: session.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    return this.verification.verify(session.taskContract.successCriteria, observation, {
+      ...(windows == null ? {} : { windows }),
+      // The model only reaches this branch after visually inspecting the latest screenshot.
+      // The engine may use that approval for visual-only criteria when the native tree has no
+      // evidence, while accessibility and application-state assertions remain deterministic.
+      modelVisualApproval,
+    })
   }
 
   private async observeWithRecovery(
@@ -545,6 +663,20 @@ function actionFailureContext(
   }
 }
 
+function verificationFailureContext(
+  verification: ReturnType<ComputerVerificationEngine['verify']>,
+): ComputerVerificationFailureContext {
+  return {
+    failedCriteria: verification.results.reduce<string[]>((failed, result, index) => {
+      if (!result.passed) failed.push(`${index}:${result.reason}`)
+      return failed
+    }, []),
+    unsupportedCriteria: verification.results.filter(
+      (result) => result.reason === 'unsupported_evidence',
+    ).length,
+  }
+}
+
 function interactionStrategyFor(action: ComputerAction): ComputerInteractionStrategy {
   switch (action.type) {
     case 'invoke_element':
@@ -572,6 +704,42 @@ function interactionStrategyFor(action: ComputerAction): ComputerInteractionStra
 
 function recoveryDelay(attempt: number): number {
   return Math.min(2_000, 150 * 2 ** Math.max(0, attempt - 1))
+}
+
+const MAX_RECENT_ACTIONS = 12
+
+function rememberRecentAction(
+  history: ComputerRecentAction[],
+  action: ComputerAction,
+  intent: string,
+  outcome: ComputerRecentAction['outcome'],
+  observation: ComputerObservation,
+  errorCode?: string,
+): void {
+  history.push({
+    action: summarizeAction(action),
+    intent: intent.slice(0, 300),
+    outcome,
+    resultingAppId: observation.foreground.app.id,
+    resultingWindowId: observation.foreground.window.id,
+    ...(errorCode == null ? {} : { errorCode }),
+  })
+  if (history.length > MAX_RECENT_ACTIONS) history.splice(0, history.length - MAX_RECENT_ACTIONS)
+}
+
+function summarizeAction(action: ComputerAction): Readonly<Record<string, unknown>> {
+  switch (action.type) {
+    case 'type_text':
+      return { type: action.type, textLength: action.text.length }
+    case 'set_value':
+      return { type: action.type, elementId: action.elementId, valueLength: action.value.length }
+    case 'select_text':
+      return { type: action.type, elementId: action.elementId, textLength: action.text.length }
+    case 'app_command':
+      return { type: action.type, name: action.command.name }
+    default:
+      return action
+  }
 }
 
 function requiresObservableProgress(

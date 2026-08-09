@@ -30,7 +30,7 @@ const OBSERVATION: ComputerObservation = {
 const PNG_SHA256 = createHash('sha256').update('png').digest('hex')
 
 describe('ComputerObservationEvidenceStore', () => {
-  it('keeps execution-before raw pixels in bounded memory and persists only a sanitized thumbnail', async () => {
+  it('uses the sanitized thumbnail for decisions and durable evidence', async () => {
     const repository = { createWithBlobs: vi.fn(() => undefined as never) }
     const preview = Buffer.from('preview')
     const vault = {
@@ -86,9 +86,7 @@ describe('ComputerObservationEvidenceStore', () => {
       }),
       blobs: [expect.objectContaining({ kind: 'image' })],
     })
-    await expect(store.readLatestImage('computer-1', 'snapshot-1')).resolves.toEqual(
-      Buffer.from('png'),
-    )
+    await expect(store.readLatestImage('computer-1', 'snapshot-1')).resolves.toEqual(preview)
   })
 
   it('persists only a redacted thumbnail with TTL after execution', async () => {
@@ -209,7 +207,7 @@ describe('ComputerObservationEvidenceStore', () => {
     await expect(store.flushPendingWritesOrThrow('computer-1')).resolves.toBeUndefined()
   })
 
-  it('evicts old in-memory raw frames when the byte budget is reached', async () => {
+  it('evicts old in-memory decision frames when the byte budget is reached', async () => {
     const store = new ComputerObservationEvidenceStore({
       repository: { createWithBlobs: vi.fn(() => undefined as never) },
       vault: { writeManyRegistered: vi.fn() },
@@ -217,7 +215,7 @@ describe('ComputerObservationEvidenceStore', () => {
         bytes: Buffer.from('preview'),
         perceptualHash: 'a'.repeat(16),
       })),
-      maxCachedBytes: 3,
+      maxCachedBytes: 7,
     })
     await store.persist({
       computerSessionId: 'computer-1',
@@ -241,7 +239,7 @@ describe('ComputerObservationEvidenceStore', () => {
       code: 'stale_frame',
     })
     await expect(store.readLatestImage('computer-2', 'snapshot-2')).resolves.toEqual(
-      Buffer.from('png'),
+      Buffer.from('preview'),
     )
   })
 })

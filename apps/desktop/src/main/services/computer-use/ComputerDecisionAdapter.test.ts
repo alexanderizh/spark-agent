@@ -24,7 +24,7 @@ const OBSERVATION = {
 } satisfies ComputerObservation
 
 describe('GenericComputerDecisionAdapter', () => {
-  it('uses the accessibility tree before sending a screenshot to the current Agent model', async () => {
+  it('combines the screenshot with accessibility state on the first decision', async () => {
     const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
       text: JSON.stringify({
         type: 'action',
@@ -62,10 +62,12 @@ describe('GenericComputerDecisionAdapter', () => {
         prompt: expect.stringContaining('button "Save" id=button-1'),
       }),
     )
-    expect(generate.mock.calls[0]?.[0]).not.toHaveProperty('images')
+    expect(generate.mock.calls[0]?.[0]).toMatchObject({
+      images: [{ dataUrl: 'data:image/png;base64,cG5n', mimeType: 'image/png' }],
+    })
   })
 
-  it('escalates from accessibility state to the screenshot only when tree planning fails', async () => {
+  it('falls back from combined visual planning to accessibility-only planning', async () => {
     const generate = vi
       .fn()
       .mockResolvedValueOnce({ text: 'I cannot identify the target from the tree.' })
@@ -97,11 +99,11 @@ describe('GenericComputerDecisionAdapter', () => {
       }),
     ).resolves.toMatchObject({ type: 'action', action: { type: 'click' } })
 
-    expect(generate.mock.calls[0]?.[0]).not.toHaveProperty('images')
-    expect(generate.mock.calls[1]?.[0]).toMatchObject({
+    expect(generate.mock.calls[0]?.[0]).toMatchObject({
       model: 'glm-5.2',
       images: [{ dataUrl: 'data:image/png;base64,cG5n', mimeType: 'image/png' }],
     })
+    expect(generate.mock.calls[1]?.[0]).not.toHaveProperty('images')
   })
 
   it('accepts a safe bare action embedded in an Anthropic-compatible explanation', async () => {
@@ -239,6 +241,147 @@ describe('GenericComputerDecisionAdapter', () => {
         ),
       }),
     )
+  })
+
+  it('includes failed verification criteria when replanning after a false completion', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Use a different save path',
+        action: { type: 'keypress', keys: ['Meta', 'Shift', 'S'] },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Save in a different path',
+      successCriteria: [],
+      observation: OBSERVATION,
+      screenshot: Buffer.from('png'),
+      stepIndex: 1,
+      previousVerificationFailure: {
+        failedCriteria: ['0:assertion_failed'],
+        unsupportedCriteria: 0,
+      },
+    })
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining(
+          'Previous verification failure: {"failedCriteria":["0:assertion_failed"],"unsupportedCriteria":0}',
+        ),
+      }),
+    )
+  })
+
+  it('includes bounded recent action history so the model does not redo completed work', async () => {
+    const generate = vi.fn(async () => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Continue with the next field',
+        action: { type: 'keypress', keys: ['Tab'] },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Complete the form',
+      successCriteria: [],
+      observation: OBSERVATION,
+      screenshot: Buffer.from('png'),
+      stepIndex: 3,
+      recentActions: [
+        {
+          action: { type: 'type_text', textLength: 8 },
+          intent: 'Fill the name field',
+          outcome: 'executed',
+          resultingAppId: 'app-1',
+          resultingWindowId: 'window-1',
+        },
+      ],
+    })
+
+    expect(generate.mock.calls[0]?.[0].prompt).toContain(
+      'Recent action history, oldest to newest (do not redo completed work)',
+    )
+    expect(generate.mock.calls[0]?.[0].prompt).toContain('"textLength":8')
+  })
+
+  it('prioritizes actionable elements and bounds large desktop prompts', async () => {
+    const generate = vi.fn(async () => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Use the prioritized control',
+        action: { type: 'invoke_element', elementId: 'priority-control', action: 'invoke' },
+      }),
+    }))
+    const crowdedElements: ComputerObservation['elements'] = Array.from(
+      { length: 900 },
+      (_, index) => ({
+        id: `label-${index}`,
+        treeVersion: 'tree-crowded',
+        role: 'text',
+        name: `Label ${index} ${'x'.repeat(200)}`,
+        value: 'v'.repeat(2_000),
+        bounds: { x: 0, y: index, width: 100, height: 20 },
+        enabled: true,
+        focused: false,
+        actions: [],
+      }),
+    )
+    crowdedElements.push({
+      id: 'priority-control',
+      treeVersion: 'tree-crowded',
+      role: 'button',
+      name: 'Continue',
+      value: '',
+      bounds: { x: 20, y: 20, width: 120, height: 40 },
+      enabled: true,
+      focused: false,
+      actions: ['invoke'],
+    })
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Continue',
+      successCriteria: [],
+      observation: {
+        ...OBSERVATION,
+        treeVersion: 'tree-crowded',
+        tree: { mode: 'full', text: 'tree '.repeat(20_000), elementCount: crowdedElements.length },
+        elements: crowdedElements,
+      },
+      screenshot: Buffer.from('png'),
+      stepIndex: 0,
+    })
+
+    const prompt = generate.mock.calls[0]?.[0].prompt ?? ''
+    expect(prompt).toContain('priority-control')
+    expect(prompt.length).toBeLessThan(90_000)
   })
 
   it('continues with accessibility state when no screenshot is available', async () => {
@@ -409,6 +552,7 @@ describe('GenericComputerDecisionAdapter', () => {
     })
     // allowBatch must switch the system prompt to the batch variant.
     expect(generate.mock.calls[0]?.[0].system).toContain('"type":"actions"')
+    expect(generate.mock.calls[0]?.[0].system).toContain('click a field then type')
   })
 
   it('keeps the single-action system prompt when allowBatch is off', async () => {

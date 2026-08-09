@@ -28,7 +28,8 @@ const CAPABILITY_REFRESH_INTERVAL_MS = 1_000
 const ACTION_TIMEOUT_GRACE_MS = 5_000
 const MAX_REQUEST_TIMEOUT_MS = 180_000
 const INPUT_RELEASE_GRACE_MS = 300
-const MAX_PENDING_REQUESTS = 64
+const MAX_IN_FLIGHT_REQUESTS = 64
+const MAX_QUEUED_OPERATIONS = 64
 const MAX_STDERR_DIAGNOSTIC_BYTES = 2_000
 const log = createLogger('computer-use-native-host')
 
@@ -91,6 +92,14 @@ export class NativeHostClient {
   private readonly requestTimeoutMs: number
   private readonly decoder = new NativeHostFrameDecoder()
   private readonly pending = new Map<string, PendingRequest>()
+  /**
+   * The Native Host serves requests synchronously and observation/capture responses are
+   * followed immediately by a binary frame. Keep the whole client on one FIFO lane, just
+   * like the reference browser controller, so a health probe or a second observation can
+   * never be written between that JSON descriptor and its payload.
+   */
+  private operationTail: Promise<void> = Promise.resolve()
+  private queuedOperations = 0
   private capabilities: NativeHostCapabilityManifest | null = null
   private capabilitiesFetchedAt = 0
   private awaitingBinary: AwaitingBinary | null = null
@@ -168,34 +177,40 @@ export class NativeHostClient {
   }
 
   async getCapabilities(): Promise<NativeHostCapabilityManifest> {
-    this.assertConnected()
-    if (Date.now() - this.capabilitiesFetchedAt >= CAPABILITY_REFRESH_INTERVAL_MS) {
-      const result = await this.sendTypedRequest({ type: 'get_capabilities' }, 'capabilities')
-      this.assertHandshake(result.response.manifest)
-      this.capabilities = result.response.manifest
-      this.capabilitiesFetchedAt = Date.now()
-      this.maxMessageBytes = result.response.manifest.limits.maxMessageBytes
-    }
-    return this.capabilities as NativeHostCapabilityManifest
+    return this.runExclusive(async () => {
+      this.assertConnected()
+      if (Date.now() - this.capabilitiesFetchedAt >= CAPABILITY_REFRESH_INTERVAL_MS) {
+        const result = await this.sendTypedRequest({ type: 'get_capabilities' }, 'capabilities')
+        this.assertHandshake(result.response.manifest)
+        this.capabilities = result.response.manifest
+        this.capabilitiesFetchedAt = Date.now()
+        this.maxMessageBytes = result.response.manifest.limits.maxMessageBytes
+      }
+      return this.capabilities as NativeHostCapabilityManifest
+    })
   }
 
   async listWindows(signal?: AbortSignal): Promise<NativeWindowDescriptor[]> {
-    const result = await this.sendTypedRequest({ type: 'list_windows' }, 'windows', signal)
-    return result.response.windows
+    return this.runExclusive(async () => {
+      const result = await this.sendTypedRequest({ type: 'list_windows' }, 'windows', signal)
+      return result.response.windows
+    })
   }
 
   async requestPermissions(
     permissions: Array<'screen' | 'accessibility'>,
   ): Promise<NativeHostCapabilityManifest> {
-    const result = await this.sendTypedRequest(
-      { type: 'request_permissions', permissions },
-      'capabilities',
-    )
-    this.assertHandshake(result.response.manifest)
-    this.capabilities = result.response.manifest
-    this.capabilitiesFetchedAt = Date.now()
-    this.maxMessageBytes = result.response.manifest.limits.maxMessageBytes
-    return result.response.manifest
+    return this.runExclusive(async () => {
+      const result = await this.sendTypedRequest(
+        { type: 'request_permissions', permissions },
+        'capabilities',
+      )
+      this.assertHandshake(result.response.manifest)
+      this.capabilities = result.response.manifest
+      this.capabilitiesFetchedAt = Date.now()
+      this.maxMessageBytes = result.response.manifest.limits.maxMessageBytes
+      return result.response.manifest
+    })
   }
 
   async captureWindow(input: {
@@ -209,15 +224,17 @@ export class NativeHostClient {
     payload: NativeBinaryPayloadDescriptor
     bytes: Buffer
   }> {
-    const result = await this.sendTypedRequest(
-      { type: 'capture_window', snapshotId: input.snapshotId, windowId: input.windowId },
-      'capture_result',
-      input.signal,
-    )
-    if (result.response.snapshotId !== input.snapshotId || result.bytes == null) {
-      throw this.protocolFailure('Native Host capture response does not match its request')
-    }
-    return { ...result.response, bytes: result.bytes }
+    return this.runExclusive(async () => {
+      const result = await this.sendTypedRequest(
+        { type: 'capture_window', snapshotId: input.snapshotId, windowId: input.windowId },
+        'capture_result',
+        input.signal,
+      )
+      if (result.response.snapshotId !== input.snapshotId || result.bytes == null) {
+        throw this.protocolFailure('Native Host capture response does not match its request')
+      }
+      return { ...result.response, bytes: result.bytes }
+    })
   }
 
   async observe(input: {
@@ -229,46 +246,54 @@ export class NativeHostClient {
     persistentCapture?: boolean
     signal?: AbortSignal
   }): Promise<NativeHostBinaryResponse<Extract<NativeHostResponse, { type: 'observation' }>>> {
-    const result = await this.sendTypedRequest(
-      {
-        type: 'observe',
-        snapshotId: input.snapshotId,
-        appId: input.appId,
-        windowId: input.windowId,
-        previousTreeVersion: input.previousTreeVersion,
-        fullTree: input.fullTree,
-        ...(input.persistentCapture === true ? { persistentCapture: true } : {}),
-      },
-      'observation',
-      input.signal,
-    )
-    if (result.bytes == null)
-      throw this.protocolFailure('Native Host observation omitted its image')
-    return { response: result.response, bytes: result.bytes }
+    return this.runExclusive(async () => {
+      const result = await this.sendTypedRequest(
+        {
+          type: 'observe',
+          snapshotId: input.snapshotId,
+          appId: input.appId,
+          windowId: input.windowId,
+          previousTreeVersion: input.previousTreeVersion,
+          fullTree: input.fullTree,
+          ...(input.persistentCapture === true ? { persistentCapture: true } : {}),
+        },
+        'observation',
+        input.signal,
+      )
+      if (result.bytes == null)
+        throw this.protocolFailure('Native Host observation omitted its image')
+      return { response: result.response, bytes: result.bytes }
+    })
   }
 
   async executeAction(
     envelope: ComputerActionEnvelope,
     signal?: AbortSignal,
   ): Promise<Extract<NativeHostResponse, { type: 'action_result' }>> {
-    const result = await this.sendTypedRequest(
-      { type: 'execute_action', envelope },
-      'action_result',
-      signal,
-      actionRequestTimeoutMs(envelope, this.requestTimeoutMs),
-    )
-    if (result.response.actionId !== envelope.actionId) {
-      throw this.protocolFailure('Native Host action response does not match its request')
-    }
-    return result.response
+    return this.runExclusive(async () => {
+      const result = await this.sendTypedRequest(
+        { type: 'execute_action', envelope },
+        'action_result',
+        signal,
+        actionRequestTimeoutMs(envelope, this.requestTimeoutMs),
+      )
+      if (result.response.actionId !== envelope.actionId) {
+        throw this.protocolFailure('Native Host action response does not match its request')
+      }
+      return result.response
+    })
   }
 
   async cancelSession(computerSessionId: string): Promise<void> {
-    await this.sendTypedRequest({ type: 'cancel_session', computerSessionId }, 'ack')
+    await this.runExclusive(async () => {
+      await this.sendTypedRequest({ type: 'cancel_session', computerSessionId }, 'ack')
+    })
   }
 
   async ping(): Promise<void> {
-    await this.sendTypedRequest({ type: 'ping' }, 'pong')
+    await this.runExclusive(async () => {
+      await this.sendTypedRequest({ type: 'ping' }, 'pong')
+    })
   }
 
   async close(): Promise<void> {
@@ -304,6 +329,35 @@ export class NativeHostClient {
     }
   }
 
+  private runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.queuedOperations >= MAX_QUEUED_OPERATIONS) {
+      return Promise.reject(
+        new ComputerUseBrokerError(
+          'environment_unavailable',
+          'Native Host already has the maximum number of queued operations',
+          undefined,
+          {
+            retryable: true,
+            diagnostic: {
+              diagnosticCode: 'native_host_operation_capacity_reached',
+              stage: 'execute',
+              repairAction: 'Wait for the current Native Host operations to finish, then retry.',
+            },
+          },
+        ),
+      )
+    }
+    this.queuedOperations += 1
+    const run = this.operationTail.then(operation, operation)
+    this.operationTail = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run.finally(() => {
+      this.queuedOperations -= 1
+    })
+  }
+
   private sendRequest(
     request: NativeHostRequest,
     expectedType: NativeHostResponse['type'],
@@ -316,7 +370,7 @@ export class NativeHostClient {
         new ComputerUseBrokerError('session_canceled', 'Computer session is canceled'),
       )
     }
-    if (this.pending.size >= MAX_PENDING_REQUESTS) {
+    if (this.pending.size >= MAX_IN_FLIGHT_REQUESTS) {
       return Promise.reject(
         new ComputerUseBrokerError(
           'environment_unavailable',
@@ -404,7 +458,9 @@ export class NativeHostClient {
         this.terminate(
           new ComputerUseBrokerError(
             'native_host_incompatible',
-            stderr.length > 0 ? `Native Host process exited: ${stderr}` : 'Native Host process exited',
+            stderr.length > 0
+              ? `Native Host process exited: ${stderr}`
+              : 'Native Host process exited',
           ),
           'SIGKILL',
         )

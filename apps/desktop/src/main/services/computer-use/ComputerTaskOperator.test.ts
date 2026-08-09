@@ -90,6 +90,7 @@ describe('ComputerTaskOperator', () => {
       }),
     )
     expect(sessions.completeVerified).toHaveBeenCalledWith('computer-1')
+    expect(adapter.decide).toHaveBeenCalledTimes(1)
   })
 
   it('executes every action in a batch decision sequentially and then verifies', async () => {
@@ -152,7 +153,7 @@ describe('ComputerTaskOperator', () => {
       dispatch: vi
         .fn()
         // first batch step ok, second batch step noops → batch stops
-        .mockResolvedValueOnce({ observation: AFTER, noop: false })
+        .mockResolvedValueOnce({ observation: BEFORE, noop: false })
         .mockRejectedValueOnce(new ComputerUseBrokerError('action_noop', 'nothing changed'))
         // single retry after re-plan succeeds
         .mockResolvedValueOnce({ observation: AFTER, noop: false }),
@@ -221,9 +222,8 @@ describe('ComputerTaskOperator', () => {
     })
 
     // The stale frame was recovered locally: dispatch retried once with a refreshed envelope
-    // (observedFrameId advanced to the re-observed frame) and the model decided exactly twice
-    // (action + verification). Had recovery fallen back to the model loop, decide would have
-    // been called a third time and the decisions array would have shifted past its end.
+    // (observedFrameId advanced to the re-observed frame). Deterministic post-action verification
+    // then completes without another model round-trip.
     expect(broker.dispatch).toHaveBeenCalledTimes(2)
     expect(broker.dispatch).toHaveBeenNthCalledWith(
       2,
@@ -248,6 +248,7 @@ describe('ComputerTaskOperator', () => {
     const dispatch = vi.fn(async () => ({ observation: AFTER, noop: false }))
     const takeApprovedTicket = vi.fn()
     const sessions = sessionController()
+    const decide = vi.fn(async () => decisions.shift()!)
     const operator = new ComputerTaskOperator({
       sessions,
       broker: { observe: vi.fn(async () => BEFORE), dispatch },
@@ -262,7 +263,7 @@ describe('ComputerTaskOperator', () => {
     await expect(
       operator.run({
         session: SESSION,
-        adapter: { decide: vi.fn(async () => decisions.shift()!) },
+        adapter: { decide },
       }),
     ).resolves.toMatchObject({ status: 'completed' })
     expect(dispatch).toHaveBeenCalledTimes(1)
@@ -429,6 +430,7 @@ describe('ComputerTaskOperator', () => {
       )
       .mockResolvedValueOnce({ observation: AFTER, noop: false })
     const sessions = sessionController()
+    const decide = vi.fn(async () => decisions.shift()!)
     let actionIndex = 0
     const operator = new ComputerTaskOperator({
       sessions,
@@ -444,11 +446,23 @@ describe('ComputerTaskOperator', () => {
       operator.run({
         session: SESSION,
         lease: LEASE,
-        adapter: { decide: vi.fn(async () => decisions.shift()!) },
+        adapter: { decide },
       }),
     ).resolves.toMatchObject({ status: 'completed' })
     expect(observe).toHaveBeenCalledTimes(2)
     expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(decide).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        recentActions: [
+          expect.objectContaining({
+            action: expect.objectContaining({ type: 'invoke_element' }),
+            outcome: 'failed',
+            errorCode: 'action_noop',
+          }),
+        ],
+      }),
+    )
   })
 
   it('falls back to accessibility-only decisions when screenshot evidence is unavailable', async () => {
@@ -618,15 +632,100 @@ describe('ComputerTaskOperator', () => {
     expect(sessions.fail).not.toHaveBeenCalled()
   })
 
-  // maxRuntimeMs / maxSteps 硬上限已按产品设计移除：任务生命周期完全交由 agent
-  // 管理，仅在 agent stop / 用户 ESC / 模型声明完成 / 连续决策失败时退出。原
-  // "enforces maxRuntimeMs" 用例随上限一并移除。
+  it('enforces the task action budget before dispatching another action', async () => {
+    const sessions = sessionController()
+    const action = {
+      type: 'click' as const,
+      point: { x: 0.5, y: 0.5 },
+    }
+    const dispatch = vi.fn(async () => ({ observation: BEFORE, noop: false }))
+    const operator = new ComputerTaskOperator({
+      sessions,
+      broker: { observe: vi.fn(async () => BEFORE), dispatch },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      now: () => Date.parse(SESSION.createdAt),
+    })
 
-  // verification engine 已移除：任务完成与否交由 agent 自行判断，不再自动校验/持久化
-  // verification evidence。原 persists-evidence / window-inventory / record-persist 三个
-  // 用例随引擎一并移除。
+    const result = await operator.run({
+      session: {
+        ...SESSION,
+        taskContract: { ...SESSION.taskContract, maxSteps: 1 },
+      },
+      adapter: {
+        decide: vi.fn(async () => ({ type: 'action' as const, intent: 'click', action })),
+      },
+    })
 
-  it('completes immediately when the model declares ready (no automatic verification)', async () => {
+    expect(result).toEqual({ status: 'failed', reason: 'task_step_limit_exceeded' })
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(sessions.fail).toHaveBeenCalledWith(SESSION.id, 'task_step_limit_exceeded')
+  })
+
+  it('enforces the task runtime budget before requesting another model decision', async () => {
+    const sessions = sessionController()
+    const now = vi.fn().mockReturnValueOnce(0).mockReturnValue(1_000)
+    const decide = vi.fn(async () => ({
+      type: 'action' as const,
+      intent: 'click',
+      action: { type: 'click' as const, point: { x: 0.5, y: 0.5 } },
+    }))
+    const operator = new ComputerTaskOperator({
+      sessions,
+      broker: { observe: vi.fn(async () => BEFORE), dispatch: vi.fn() },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      now,
+    })
+
+    const result = await operator.run({
+      session: { ...SESSION, taskContract: { ...SESSION.taskContract, maxRuntimeMs: 1_000 } },
+      adapter: { decide },
+    })
+
+    expect(result).toEqual({ status: 'failed', reason: 'task_runtime_exceeded' })
+    expect(decide).not.toHaveBeenCalled()
+    expect(sessions.fail).toHaveBeenCalledWith(SESSION.id, 'task_runtime_exceeded')
+  })
+
+  it('feeds deterministic verification failures back into the next model decision', async () => {
+    const sessions = sessionController()
+    const decisions = [
+      { type: 'ready_for_verification' as const, reason: 'The status should be saved' },
+      {
+        type: 'action' as const,
+        intent: 'Save the document after verification failed',
+        action: { type: 'keypress' as const, keys: ['Meta', 'S'] },
+      },
+      { type: 'ready_for_verification' as const, reason: 'Saved status is now visible' },
+    ]
+    const decide = vi.fn(async () => decisions.shift()!)
+    const operator = new ComputerTaskOperator({
+      sessions,
+      broker: {
+        observe: vi.fn().mockResolvedValueOnce(BEFORE).mockResolvedValue(AFTER),
+        dispatch: vi.fn(async () => ({ observation: AFTER, noop: false })),
+      },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    await expect(operator.run({ session: SESSION, adapter: { decide } })).resolves.toMatchObject({
+      status: 'completed',
+    })
+    expect(decide).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        previousVerificationFailure: {
+          failedCriteria: ['0:assertion_failed'],
+          unsupportedCriteria: 0,
+        },
+      }),
+    )
+  })
+
+  it('completes after the deterministic verifier confirms the model declaration', async () => {
     const sessions = sessionController()
     const verifications = verificationStore()
     const operator = new ComputerTaskOperator({
@@ -661,8 +760,7 @@ describe('ComputerTaskOperator', () => {
         adapter: { decide: vi.fn(async () => decisions.shift()!) },
       }),
     ).resolves.toMatchObject({ status: 'completed' })
-    // 模型声明完成即完成：不再调用 verification engine、不再持久化校验记录、不再因校验
-    // 失败中断；completeVerified 仅用会话 id 调用，任务是否真达成交由 agent 自行核验。
+    // 动作后的确定性证据已满足条件，因此无需再等待模型声明完成。
     expect(verifications.create).not.toHaveBeenCalled()
     expect(sessions.completeVerified).toHaveBeenCalledWith(SESSION.id)
     expect(sessions.fail).not.toHaveBeenCalled()

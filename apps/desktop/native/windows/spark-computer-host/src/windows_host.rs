@@ -179,12 +179,12 @@ fn handle_request(
                         output,
                         &request_id,
                         "focus_mismatch",
-                        "The requested window is no longer the focused window",
+                        "The requested window identity changed",
                         true,
                     );
                 }
             };
-            match capture::capture_focused_window(&window_id, &target) {
+            match capture::capture_window(&window_id, &target, true) {
                 Ok(captured) => {
                     if captured.width == 0
                         || captured.height == 0
@@ -226,7 +226,7 @@ fn handle_request(
                     output,
                     &request_id,
                     "focus_mismatch",
-                    "The requested window is no longer the focused window",
+                    "The requested window identity changed",
                     true,
                 ),
                 Err(_) => write_platform_error(
@@ -368,20 +368,20 @@ fn observe(
             false,
         );
     };
-    let descriptor = match inventory::focused_window_descriptor(app_id, window_id) {
+    let descriptor = match inventory::window_descriptor(app_id, window_id) {
         Ok(descriptor) => descriptor,
         Err(_) => {
             return write_platform_error(
                 output,
                 request_id,
                 "focus_mismatch",
-                "The requested application window is not foreground",
+                "The requested application window is unavailable",
                 true,
             );
         }
     };
     let before = match input::target_window(window_id) {
-        Ok(target) if target.foreground && !target.secure_desktop => target,
+        Ok(target) if !target.secure_desktop => target,
         Ok(target) if target.secure_desktop => {
             return write_platform_error(
                 output,
@@ -396,16 +396,17 @@ fn observe(
                 output,
                 request_id,
                 "focus_mismatch",
-                "The requested application window is not foreground",
+                "The requested application window is unavailable",
                 true,
             );
         }
     };
-    let captured = match capture::capture_focused_window_with_session(
+    let captured = match capture::capture_window_with_session(
         &mut state.persistent_capture,
         window_id,
         &before,
         persistent_capture,
+        false,
     ) {
         Ok(captured) => captured,
         Err(capture::CaptureError::FocusMismatch | capture::CaptureError::WindowNotFound) => {
@@ -461,17 +462,17 @@ fn observe(
                 output,
                 request_id,
                 "focus_mismatch",
-                "The foreground application changed while observing",
+                "The target application window changed while observing",
                 true,
             );
         }
     };
-    if InputPolicy::validate(&InputAction::Move { x: 0, y: 0 }, &before, &after).is_err() {
+    if InputPolicy::validate_identity(&before, &after, false).is_err() {
         return write_platform_error(
             output,
             request_id,
             "focus_mismatch",
-            "The foreground application changed while observing",
+            "The target application window changed while observing",
             true,
         );
     }
@@ -603,11 +604,6 @@ fn execute_action(
             );
         }
     };
-    if let Err(error) =
-        InputPolicy::validate(&InputAction::Move { x: 0, y: 0 }, &expected, &current)
-    {
-        return write_input_policy_error(output, request_id, error);
-    }
     let session_id = envelope.computer_session_id.as_str();
     let Some(user_input) = state.user_input else {
         return write_platform_error(
@@ -641,6 +637,24 @@ fn execute_action(
                 );
             }
         }
+        if !current.foreground {
+            if let Err(error) = input::focus_window(&binding.window_id) {
+                return write_action_error(output, request_id, ActionExecutionError::Input(error));
+            }
+        }
+        let focused = match input::target_window(&binding.window_id) {
+            Ok(current) => current,
+            Err(error) => {
+                return write_action_error(output, request_id, ActionExecutionError::Input(error));
+            }
+        };
+        if let Err(error) =
+            InputPolicy::validate(&InputAction::Move { x: 0, y: 0 }, &expected, &focused)
+        {
+            return write_input_policy_error(output, request_id, error);
+        }
+    } else if let Err(error) = InputPolicy::validate_identity(&expected, &current, false) {
+        return write_input_policy_error(output, request_id, error);
     }
     if matches!(
         envelope.action,
@@ -689,21 +703,32 @@ fn execute_action(
     if let Err(error) = result {
         return write_action_error(output, request_id, error);
     }
-    let after = match input::target_window(&binding.window_id) {
-        Ok(after) => after,
-        Err(_) => {
+    if action_may_change_focused_window(&envelope.action) {
+        if user_input.takeover_detected(session_id) {
             return write_platform_error(
                 output,
                 request_id,
-                "focus_mismatch",
-                "The target window changed after the action",
-                true,
+                "handoff_required",
+                "The user took over the target window",
+                false,
             );
         }
-    };
-    if let Err(error) = InputPolicy::validate(&InputAction::Move { x: 0, y: 0 }, &expected, &after)
-    {
-        return write_input_policy_error(output, request_id, error);
+    } else {
+        let after = match input::target_window(&binding.window_id) {
+            Ok(after) => after,
+            Err(_) => {
+                return write_platform_error(
+                    output,
+                    request_id,
+                    "focus_mismatch",
+                    "The target window changed after the action",
+                    true,
+                );
+            }
+        };
+        if let Err(error) = InputPolicy::validate_identity(&expected, &after, false) {
+            return write_input_policy_error(output, request_id, error);
+        }
     }
     state.observation = None;
     write_value(
@@ -715,6 +740,15 @@ fn execute_action(
             "actionId": envelope.action_id,
             "status": "executed",
         }),
+    )
+}
+
+fn action_may_change_focused_window(action: &ComputerAction) -> bool {
+    matches!(
+        action,
+        ComputerAction::Click { .. }
+            | ComputerAction::InvokeElement { .. }
+            | ComputerAction::Keypress { .. }
     )
 }
 

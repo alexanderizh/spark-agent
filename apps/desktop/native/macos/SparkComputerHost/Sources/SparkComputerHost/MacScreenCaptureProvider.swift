@@ -177,7 +177,6 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     persistentCapture: Bool
   ) async throws -> NativeObservedWindow {
     observation = nil
-    let observationStartedAt = Date.timeIntervalSinceReferenceDate
     let before = try await focusedTarget(appID: appID, windowID: windowID)
     let captureBindingKey = [
       before.identity.appID,
@@ -220,7 +219,6 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       }.joined()
     observation = ObservationBinding(
       frameID: frameID, treeVersion: tree.treeVersion, target: before.identity,
-      capturedAt: observationStartedAt,
       screenshotDigest: SHA256.hash(data: captured.bytes).map { String(format: "%02x", $0) }
         .joined())
     return NativeObservedWindow(
@@ -264,23 +262,15 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       appID: envelope.targetAppID, windowID: envelope.targetWindowID)
     try NativeInputPolicy.validateApplicationIdentity(
       expected: binding.target, current: before.identity)
-    if !binding.target.focused && before.descriptor.focused {
-      throw NativeHostPlatformError.userTakeover
-    }
     userInput.bind(
       sessionID: envelope.computerSessionID, processID: before.processID,
-      bounds: before.identity.windowBounds,
-      observedAt: binding.capturedAt)
+      bounds: before.identity.windowBounds)
     if userInput.takeoverDetected(sessionID: envelope.computerSessionID) {
       throw NativeHostPlatformError.userTakeover
     }
     if envelope.executionLane == .foregroundInput {
       try await userInput.waitForUserInputIdle(sessionID: envelope.computerSessionID)
     }
-    let foregroundContext =
-      envelope.executionLane == .foregroundInput
-      ? ForegroundInteractionContext.capture() : nil
-    defer { foregroundContext?.restore() }
     if envelope.executionLane == .foregroundInput && !before.descriptor.focused {
       _ = try focusWindow(processID: before.processID)
       try await Task.sleep(for: .milliseconds(100))
@@ -364,10 +354,20 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     guard !canceledSessions.contains(envelope.computerSessionID) else {
       throw NativeHostPlatformError.sessionCanceled
     }
-    let after = try await focusedTarget(
-      appID: envelope.targetAppID, windowID: envelope.targetWindowID)
-    try NativeInputPolicy.validateApplicationIdentity(
-      expected: binding.target, current: after.identity)
+    if actionMayChangeFocusedWindow(envelope.action) {
+      // Clicks, semantic invokes, and keyboard shortcuts may intentionally open a new
+      // window or switch applications. The injected-event monitor still rejects a real
+      // user takeover; only the expected target identity check is relaxed after the action
+      // so the broker can re-observe the newly focused window.
+      guard !userInput.takeoverDetected(sessionID: envelope.computerSessionID) else {
+        throw NativeHostPlatformError.userTakeover
+      }
+    } else {
+      let after = try await focusedTarget(
+        appID: envelope.targetAppID, windowID: envelope.targetWindowID)
+      try NativeInputPolicy.validateApplicationIdentity(
+        expected: binding.target, current: after.identity)
+    }
     return status
   }
 
@@ -577,6 +577,15 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
   }
 }
 
+private func actionMayChangeFocusedWindow(_ action: NativeComputerAction) -> Bool {
+  switch action {
+  case .click, .invokeElement, .keypress:
+    return true
+  default:
+    return false
+  }
+}
+
 private final class MacPersistentWindowCapture: NSObject, SCStreamOutput, SCStreamDelegate,
   @unchecked Sendable
 {
@@ -685,7 +694,6 @@ private struct ObservationBinding {
   let frameID: String
   let treeVersion: String
   let target: NativeTargetIdentity
-  let capturedAt: TimeInterval
   let screenshotDigest: String
 }
 
@@ -699,32 +707,6 @@ private struct FocusedTarget {
 private struct CodeIdentity {
   let identifier: String?
   let teamIdentifier: String?
-}
-
-private struct ForegroundInteractionContext {
-  let processID: pid_t?
-  let pointer: CGPoint?
-
-  static func capture() -> ForegroundInteractionContext {
-    ForegroundInteractionContext(
-      processID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
-      pointer: CGEvent(source: nil)?.location
-    )
-  }
-
-  func restore() {
-    if let processID, let application = NSRunningApplication(processIdentifier: processID) {
-      _ = application.activate(options: [.activateAllWindows])
-    }
-    if let pointer,
-      let event = CGEvent(
-        mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: pointer,
-        mouseButton: .left)
-    {
-      event.setIntegerValueField(.eventSourceUserData, value: sparkComputerInjectedEventTag)
-      event.post(tap: .cghidEventTap)
-    }
-  }
 }
 
 private var hostArchitecture: String {

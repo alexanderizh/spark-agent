@@ -381,13 +381,23 @@ export class NativeHostComputerUseBackend
     return this.measure('action_ms', () =>
       this.runControlOperation('execution', input.envelope.action, async (connection) => {
         const actionResult = await connection.executeAction(input.envelope, input.signal)
+        // An unbound task is explicitly allowed to follow the foreground desktop. A click,
+        // semantic invoke, or keyboard shortcut can open a dialog, switch an application, or
+        // move focus to another window. Re-observe the newly focused target instead of forcing
+        // the post-action capture back onto the pre-action window. Explicitly bound sessions
+        // keep their single-window contract and therefore retain the old target.
+        const followsForeground =
+          !this.targetBindings.has(input.envelope.computerSessionId) &&
+          actionMayChangeFocusedWindow(input.envelope.action)
         const target = selectControllableWindow(
           await connection.listWindows(input.signal),
-          {
-            appId: input.observation.foreground.app.id,
-            windowId: input.observation.foreground.window.id,
-          },
-          this.targetBindings.has(input.envelope.computerSessionId),
+          followsForeground
+            ? undefined
+            : {
+                appId: input.observation.foreground.app.id,
+                windowId: input.observation.foreground.window.id,
+              },
+          !followsForeground && this.targetBindings.has(input.envelope.computerSessionId),
         )
         const observation = await this.captureObservation({
           connection,
@@ -682,9 +692,14 @@ function actionSupportedByManifest(
     action.type === 'invoke_element' ||
     action.type === 'set_value' ||
     action.type === 'select_text' ||
-    action.type === 'focus_window' ||
     action.type === 'wait_for' ||
     (action.type === 'scroll' && action.elementId != null)
+  if (action.type === 'focus_window') {
+    return (
+      (manifest.features.keyboard && manifest.backends.input !== 'unavailable') ||
+      (manifest.features.semanticActions && manifest.backends.accessibility !== 'unavailable')
+    )
+  }
   if (semanticAction) {
     return manifest.features.semanticActions && manifest.backends.accessibility !== 'unavailable'
   }
@@ -697,6 +712,17 @@ function actionSupportedByManifest(
     return manifest.features.absolutePointer && manifest.backends.input !== 'unavailable'
   }
   return manifest.features.keyboard && manifest.backends.input !== 'unavailable'
+}
+
+function actionMayChangeFocusedWindow(action: ComputerActionEnvelope['action']): boolean {
+  switch (action.type) {
+    case 'click':
+    case 'invoke_element':
+    case 'keypress':
+      return true
+    default:
+      return false
+  }
 }
 
 function shouldInvalidateConnection(error: ComputerUseBrokerError): boolean {

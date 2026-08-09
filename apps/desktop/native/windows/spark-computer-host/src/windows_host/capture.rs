@@ -13,7 +13,7 @@ use windows_capture::settings::{
 };
 use windows_capture::window::Window;
 
-use crate::input_policy::{InputAction, InputPolicy, TargetWindow};
+use crate::input_policy::{InputPolicy, TargetWindow};
 
 use super::input;
 
@@ -34,7 +34,7 @@ struct PersistentFrame {
 
 #[derive(Debug, Error)]
 pub enum CaptureError {
-    #[error("requested window is not focused")]
+    #[error("requested window identity no longer matches")]
     FocusMismatch,
     #[error("window was not found")]
     WindowNotFound,
@@ -112,9 +112,13 @@ pub struct PersistentCaptureSession {
 }
 
 impl PersistentCaptureSession {
-    fn start(window_id: &str, expected_target: &TargetWindow) -> Result<Self, CaptureError> {
+    fn start(
+        window_id: &str,
+        expected_target: &TargetWindow,
+        require_foreground: bool,
+    ) -> Result<Self, CaptureError> {
         let expected = parse_window_id(window_id)?;
-        validate_target(expected, expected_target, window_id)?;
+        validate_target(expected, expected_target, window_id, require_foreground)?;
         let window = find_window(expected)?;
         let (sender, receiver) = mpsc::sync_channel(2);
         let settings = Settings::new(
@@ -179,15 +183,16 @@ impl Drop for PersistentCaptureSession {
     }
 }
 
-pub fn capture_focused_window_with_session(
+pub fn capture_window_with_session(
     session: &mut Option<PersistentCaptureSession>,
     window_id: &str,
     expected_target: &TargetWindow,
     persistent: bool,
+    require_foreground: bool,
 ) -> Result<CapturedWindow, CaptureError> {
     if !persistent {
         *session = None;
-        return capture_focused_window(window_id, expected_target);
+        return capture_window(window_id, expected_target, require_foreground);
     }
     let expected = parse_window_id(window_id)?;
     if session
@@ -195,10 +200,13 @@ pub fn capture_focused_window_with_session(
         .is_none_or(|existing| !existing.matches(expected, expected_target))
     {
         *session = None;
-        *session = match PersistentCaptureSession::start(window_id, expected_target) {
-            Ok(started) => Some(started),
-            Err(_) => return capture_focused_window(window_id, expected_target),
-        };
+        *session =
+            match PersistentCaptureSession::start(window_id, expected_target, require_foreground) {
+                Ok(started) => Some(started),
+                Err(_) => {
+                    return capture_window(window_id, expected_target, require_foreground);
+                }
+            };
     }
     let result = session
         .as_ref()
@@ -208,22 +216,23 @@ pub fn capture_focused_window_with_session(
         Ok(captured) => captured,
         Err(_) => {
             *session = None;
-            return capture_focused_window(window_id, expected_target);
+            return capture_window(window_id, expected_target, require_foreground);
         }
     };
-    if let Err(error) = validate_target(expected, expected_target, window_id) {
+    if let Err(error) = validate_target(expected, expected_target, window_id, require_foreground) {
         *session = None;
         return Err(error);
     }
     Ok(captured)
 }
 
-pub fn capture_focused_window(
+pub fn capture_window(
     window_id: &str,
     expected_target: &TargetWindow,
+    require_foreground: bool,
 ) -> Result<CapturedWindow, CaptureError> {
     let expected = parse_window_id(window_id)?;
-    validate_target(expected, expected_target, window_id)?;
+    validate_target(expected, expected_target, window_id, require_foreground)?;
     let window = find_window(expected)?;
     let (sender, receiver) = mpsc::sync_channel(1);
     let settings = Settings::new(
@@ -243,7 +252,7 @@ pub fn capture_focused_window(
         .map_err(|_| CaptureError::Timeout)?
         .map_err(|_| CaptureError::CaptureFailed)?;
     let _ = control.stop();
-    validate_target(expected, expected_target, window_id)?;
+    validate_target(expected, expected_target, window_id, require_foreground)?;
     Ok(captured)
 }
 
@@ -310,19 +319,24 @@ fn find_window(expected: isize) -> Result<Window, CaptureError> {
 }
 
 fn validate_target(
-    expected: isize,
+    _expected: isize,
     expected_target: &TargetWindow,
     window_id: &str,
+    require_foreground: bool,
 ) -> Result<(), CaptureError> {
-    if foreground_window_id()? != expected || !target_identity_matches(expected_target, window_id) {
+    if !target_identity_matches(expected_target, window_id, require_foreground) {
         return Err(CaptureError::FocusMismatch);
     }
     Ok(())
 }
 
-fn target_identity_matches(expected: &TargetWindow, window_id: &str) -> bool {
+fn target_identity_matches(
+    expected: &TargetWindow,
+    window_id: &str,
+    require_foreground: bool,
+) -> bool {
     input::target_window(window_id).is_ok_and(|current| {
-        InputPolicy::validate(&InputAction::Move { x: 0, y: 0 }, expected, &current).is_ok()
+        InputPolicy::validate_identity(expected, &current, require_foreground).is_ok()
     })
 }
 
@@ -332,10 +346,4 @@ fn parse_window_id(value: &str) -> Result<isize, CaptureError> {
         .ok()
         .filter(|value| *value != 0)
         .ok_or(CaptureError::WindowNotFound)
-}
-
-fn foreground_window_id() -> Result<isize, CaptureError> {
-    Ok(Window::foreground()
-        .map_err(|_| CaptureError::FocusMismatch)?
-        .as_raw_hwnd() as isize)
 }

@@ -99,21 +99,30 @@ pub enum InputPolicyError {
 pub struct InputPolicy;
 
 impl InputPolicy {
-    pub fn validate(
-        action: &InputAction,
+    pub fn validate_identity(
         expected: &TargetWindow,
         current: &TargetWindow,
+        require_foreground: bool,
     ) -> Result<(), InputPolicyError> {
         if current.secure_desktop {
             return Err(InputPolicyError::SecureDesktop);
         }
-        if !current.foreground
+        if (require_foreground && !current.foreground)
             || expected.hwnd != current.hwnd
             || expected.process_id != current.process_id
             || expected.executable_identity != current.executable_identity
         {
             return Err(InputPolicyError::FocusMismatch);
         }
+        Ok(())
+    }
+
+    pub fn validate(
+        action: &InputAction,
+        expected: &TargetWindow,
+        current: &TargetWindow,
+    ) -> Result<(), InputPolicyError> {
+        Self::validate_identity(expected, current, true)?;
         match action {
             InputAction::Click { x, y }
             | InputAction::Move { x, y }
