@@ -17,6 +17,12 @@ import {
 } from './turn-file-summary'
 import { isQuickReplySuggestionsTool, parseQuickReplies } from './quick-reply-suggestions'
 import { isRenderHtmlTool, parseRenderHtmlInput, parseRenderHtmlResult } from './render-html'
+import {
+  isRenderDiagramTool,
+  parseRenderDiagramInput,
+  parseRenderDiagramResult,
+} from './render-diagram'
+import type { DiagramRenderType } from '@spark/shared'
 
 /** Renderer-only delivery state for a user message submitted optimistically. */
 export type UserMessageDeliveryState = 'submitting' | 'queued' | 'accepted' | 'failed' | 'cancelled'
@@ -138,6 +144,17 @@ export type UIBlock =
       kind: 'html_block'
       toolCallId: string
       html: string
+      title: string
+      height: number
+      status: 'pending' | 'rendered' | 'error'
+      error: string | undefined
+      warnings: string[]
+    }
+  | {
+      kind: 'diagram_block'
+      toolCallId: string
+      diagramType: DiagramRenderType
+      source: string
       title: string
       height: number
       status: 'pending' | 'rendered' | 'error'
@@ -627,6 +644,21 @@ export class MessageBuilder {
               warnings: [],
             })
           }
+        } else if (isRenderDiagramTool(event.toolName)) {
+          const input = parseRenderDiagramInput(event.toolInput)
+          if (input != null) {
+            msg.blocks.push({
+              kind: 'diagram_block',
+              toolCallId: event.toolCallId,
+              diagramType: input.diagramType,
+              source: input.source,
+              title: input.title,
+              height: input.height,
+              status: 'pending',
+              error: undefined,
+              warnings: [],
+            })
+          }
         } else {
           msg.blocks.push({
             kind: 'tool_call',
@@ -692,6 +724,29 @@ export class MessageBuilder {
             } else {
               htmlBlock.status = 'error'
               htmlBlock.error = event.error ?? 'HTML 渲染工具执行失败'
+            }
+          }
+          const diagramBlock = msg.blocks.find(
+            (b) => b.kind === 'diagram_block' && b.toolCallId === event.toolCallId,
+          ) as Extract<UIBlock, { kind: 'diagram_block' }> | undefined
+          if (diagramBlock) {
+            if (event.status === 'success') {
+              const result = parseRenderDiagramResult(event.output)
+              if (result?.accepted === true) {
+                diagramBlock.status = 'rendered'
+                diagramBlock.error = undefined
+                if (result.type != null) diagramBlock.diagramType = result.type
+                if (result.source != null) diagramBlock.source = result.source
+                if (result.title != null) diagramBlock.title = result.title
+                if (result.height != null) diagramBlock.height = result.height
+                diagramBlock.warnings = result.warnings ?? []
+              } else {
+                diagramBlock.status = 'error'
+                diagramBlock.error = result?.reason ?? '图表渲染工具未返回有效内容'
+              }
+            } else {
+              diagramBlock.status = 'error'
+              diagramBlock.error = event.error ?? '图表渲染工具执行失败'
             }
           }
           // Update tool_call block

@@ -387,15 +387,11 @@ function renderInlineMarkdown(
           )
         } else {
           nodes.push(
-            <a
+            <ClickableUrl
               key={key}
-              className="clickable-url"
-              href={href || '#'}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {link[2] ?? ''}
-            </a>,
+              url={href || '#'}
+              label={link[2] ?? ''}
+            />,
           )
         }
       }

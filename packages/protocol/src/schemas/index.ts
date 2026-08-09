@@ -1678,6 +1678,9 @@ export const IpcSchemaRegistry = {
     title: z.string().max(60).optional(),
     theme: z.enum(['light', 'dark']).optional(),
   }),
+  'browser:get-link-metadata': z.object({
+    url: z.string().url().max(4000),
+  }),
   'html:open-external': z.object({
     html: z.string().min(1).max(200_000),
     title: z.string().max(60).optional(),
