@@ -69,7 +69,12 @@ export function arrangeCanvasNodes(
   if (nodes.length === 0) return []
 
   const gap = canvasAutoLayoutGap(options.spacing)
-  const ordered = [...nodes].sort((left, right) => compareNodes(left, right, options.mode))
+  // 网格整理只负责规整几何位置，不应让连线拓扑或节点 id 改变用户原本的阅读顺序。
+  // 用输入顺序作为同一左上角位置的稳定兜底，避免同位置节点被 id 排序重新打乱。
+  const inputOrder = new Map(nodes.map((node, index) => [node.id, index]))
+  const ordered = [...nodes].sort((left, right) =>
+    compareNodes(left, right, options.mode, inputOrder),
+  )
   const anchorLeft = Math.min(...ordered.map((node) => node.x))
   const anchorTop = Math.min(...ordered.map((node) => node.y - (node.headerHeight ?? 0)))
   const links = normalizeLayoutLinks(ordered, options.links ?? [])
@@ -223,7 +228,7 @@ function buildLayoutForest(
   }
 
   for (const children of childrenById.values()) {
-    children.sort((left, right) => compareNodes(left, right, mode))
+    children.sort((left, right) => compareNodes(left, right, mode, order))
   }
 
   const roots = nodes.filter((node) => !incomingIds.has(node.id))
@@ -526,14 +531,16 @@ function compareNodes(
   left: CanvasAutoLayoutNode,
   right: CanvasAutoLayoutNode,
   mode: CanvasAutoLayoutMode,
+  inputOrder?: ReadonlyMap<string, number>,
 ): number {
+  const fallback = () => (inputOrder?.get(left.id) ?? 0) - (inputOrder?.get(right.id) ?? 0)
   if (mode === 'horizontal') {
-    return left.x - right.x || left.y - right.y || left.id.localeCompare(right.id)
+    return left.x - right.x || left.y - right.y || fallback()
   }
   if (mode === 'grid') {
     const leftTop = left.y - (left.headerHeight ?? 0)
     const rightTop = right.y - (right.headerHeight ?? 0)
-    return leftTop - rightTop || left.x - right.x || left.id.localeCompare(right.id)
+    return leftTop - rightTop || left.x - right.x || fallback()
   }
-  return left.y - right.y || left.x - right.x || left.id.localeCompare(right.id)
+  return left.y - right.y || left.x - right.x || fallback()
 }

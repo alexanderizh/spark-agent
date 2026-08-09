@@ -72,6 +72,19 @@ describe('arrangeCanvasNodes', () => {
     ])
   })
 
+  it('keeps the existing node order when grid positions are identical', () => {
+    const result = arrangeCanvasNodes(
+      [
+        { id: 'z-node', x: 100, y: 100, width: 100, height: 50 },
+        { id: 'a-node', x: 100, y: 100, width: 100, height: 50 },
+        { id: 'm-node', x: 300, y: 100, width: 100, height: 50 },
+      ],
+      { mode: 'grid', spacing: 'small', columns: 2 },
+    )
+
+    expect(result.map((position) => position.id)).toEqual(['z-node', 'a-node', 'm-node'])
+  })
+
   it('honors a custom column count for grid layout', () => {
     const result = arrangeCanvasNodes(nodes, { mode: 'grid', spacing: 'large', columns: 3 })
 
