@@ -17,6 +17,16 @@
   max-height: min(88vh, 920px);
 }
 
+// 底部编辑器本身已经通过 max-height 约束可用空间；内联工作台不能再用
+// 固定的最小高度把父级撑破，否则低视口下父级的 overflow:hidden 会裁掉任务面板底栏。
+.canvas-node-bottom-editor:not(.is-fullscreen)
+  .canvas-operation-workbench:has(.canvas-operation-panel.is-inline.is-composer),
+.canvas-node-bottom-editor:not(.is-fullscreen)
+  .canvas-operation-workbench:has(.canvas-operation-panel.is-inline.is-composer)
+  .canvas-operation-workbench-content {
+  min-height: 0;
+}
+
 .canvas-operation-workbench-head {
   display: grid;
   min-height: 40px;
