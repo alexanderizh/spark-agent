@@ -15,6 +15,7 @@ const CANVAS_SHORTCUT_HELP_GROUPS: Array<{
       { keys: ['Ctrl / Cmd', '点击'], desc: '追加选择节点' },
       { keys: ['Shift', '点击'], desc: '追加选择节点' },
       { keys: ['框选'], desc: '批量选择节点' },
+      { keys: ['Ctrl / Cmd', 'A'], desc: '选中当前组内节点' },
     ],
   },
   {

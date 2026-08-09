@@ -101,6 +101,7 @@ import {
   buildCanvasSnapshotFileName,
   canvasTaskFailureMessage,
   collectGroupDescendantNodes,
+  collectSelectableGroupChildNodeIds,
   cssEscape,
   findLatestCreatedOperationNode,
   isRecord,
@@ -502,6 +503,7 @@ const CANVAS_SHORTCUT_HELP_GROUPS: Array<{
       { keys: ['Ctrl / Cmd', '点击'], desc: '追加选择节点' },
       { keys: ['Shift', '点击'], desc: '追加选择节点' },
       { keys: ['框选'], desc: '批量选择节点' },
+      { keys: ['Ctrl / Cmd', 'A'], desc: '选中当前组内节点' },
     ],
   },
   {
@@ -2255,6 +2257,29 @@ export function CanvasWorkspaceView({
       )
     },
     [addNodesToGroup, selectedGroups, selectedTopLevelNodes],
+  )
+
+  const handleSelectGroupChildren = useCallback(
+    (groupId: string) => {
+      const currentSnapshot = snapshotRef.current
+      const groupNode = currentSnapshot?.nodes.find(
+        (node) => node.id === groupId && node.type === 'group',
+      )
+      if (!currentSnapshot || !groupNode) return
+
+      const childIds = collectSelectableGroupChildNodeIds(currentSnapshot.nodes, groupId)
+      if (childIds.length === 0) {
+        message.info('组内没有可选中的节点')
+        return
+      }
+
+      // 组保持原有的单节点语义；折叠组先展开，保证选中结果在画布上可见。
+      if (groupNode.data.collapsed === true) {
+        void updateNodeData(groupId, { collapsed: false })
+      }
+      handleSelectionChange(childIds)
+    },
+    [handleSelectionChange, updateNodeData],
   )
 
   const handleRemoveFromGroup = useCallback(
@@ -8180,6 +8205,7 @@ export function CanvasWorkspaceView({
             onMergeSelectionToImage={() => void handleMergeSelectionToImage()}
             onCreateGroupFromSelection={handleCreateGroup}
             onAddSelectionToGroup={handleAddSelectionToGroup}
+            onSelectGroupChildren={handleSelectGroupChildren}
             onRemoveNodeFromGroup={(nodeId) => handleRemoveFromGroup([nodeId])}
             onDissolveGroup={handleDissolveGroup}
             onDuplicateSelectedNodes={() => void duplicateNodes(selectedNodeIds)}

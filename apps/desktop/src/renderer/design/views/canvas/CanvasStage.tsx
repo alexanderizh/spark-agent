@@ -606,6 +606,7 @@ function CanvasStageInner({
   onAddSelectionToGroup,
   onRemoveNodeFromGroup,
   onDissolveGroup,
+  onSelectGroupChildren,
   onDuplicateSelectedNodes,
   onToggleLockSelectedNodes,
   onBringSelectedNodesToFront,
@@ -673,6 +674,7 @@ function CanvasStageInner({
   onAddSelectionToGroup: (groupId: string) => void
   onRemoveNodeFromGroup: (nodeId: string) => void
   onDissolveGroup: (groupId: string) => void
+  onSelectGroupChildren?: (groupId: string) => void
   onDuplicateSelectedNodes?: () => void
   onToggleLockSelectedNodes?: () => void
   onBringSelectedNodesToFront?: () => void
@@ -781,6 +783,7 @@ function CanvasStageInner({
       addSelectionToGroup: onAddSelectionToGroup,
       removeNodeFromGroup: onRemoveNodeFromGroup,
       dissolveGroup: onDissolveGroup,
+      ...(onSelectGroupChildren ? { selectGroupChildren: onSelectGroupChildren } : {}),
       ...(onAddNodeToAgent ? { addNodeToAgent: onAddNodeToAgent } : {}),
       ...(onRunOperationNode ? { runOperationNode: onRunOperationNode } : {}),
       openAiComposer: onOpenAiComposer,
@@ -828,6 +831,7 @@ function CanvasStageInner({
       onAudioSpeed,
       onExpandOperationOutputs,
       onRemoveNodeFromGroup,
+      onSelectGroupChildren,
       onAddNodeToAgent,
       onRunOperationNode,
       onCreateOperationChild,
@@ -1866,6 +1870,32 @@ function CanvasStageInner({
     paneContextMenu,
     selectedNodeIds.length,
   ])
+
+  useEffect(() => {
+    const handleSelectAllGroupChildren = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== 'a' ||
+        (!event.metaKey && !event.ctrlKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        !onSelectGroupChildren ||
+        isEditableEventTarget(event.target) ||
+        selectedNodeIds.length !== 1
+      ) {
+        return
+      }
+
+      const selectedNode = snapshotNodeById.get(selectedNodeIds[0] ?? '')
+      if (selectedNode?.type !== 'group') return
+
+      event.preventDefault()
+      event.stopPropagation()
+      onSelectGroupChildren(selectedNode.id)
+    }
+
+    window.addEventListener('keydown', handleSelectAllGroupChildren)
+    return () => window.removeEventListener('keydown', handleSelectAllGroupChildren)
+  }, [onSelectGroupChildren, selectedNodeIds, snapshotNodeById])
 
   const handleResetZoom = useCallback(() => {
     const instance = flowInstanceRef.current
