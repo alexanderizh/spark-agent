@@ -8,14 +8,6 @@ describe('canvas node handle styles', () => {
       fileURLToPath(new URL('./CanvasWorkspaceView.less', import.meta.url)),
       'utf8',
     )
-    const v4NodeStyles = readFileSync(
-      fileURLToPath(new URL('./uiux-v4/nodes.less', import.meta.url)),
-      'utf8',
-    )
-    const v4StageStyles = readFileSync(
-      fileURLToPath(new URL('./uiux-v4/stage.less', import.meta.url)),
-      'utf8',
-    )
     const nodeSource = readFileSync(
       fileURLToPath(new URL('./CanvasNode.tsx', import.meta.url)),
       'utf8',
@@ -38,20 +30,14 @@ describe('canvas node handle styles', () => {
     expect(coreRule).toMatch(/overflow:\s*hidden\s*;/)
     expect(handleRule).toBeDefined()
     expect(handleRule).toMatch(/z-index:\s*8\s*;/)
-    expect(v4NodeStyles).toMatch(/\.canvas-node\s*\{[\s\S]*?overflow:\s*visible\s*;/)
-    expect(v4NodeStyles).toMatch(/\.canvas-node-handle\s*\{[\s\S]*?width:\s*28px\s*;/)
-    expect(v4NodeStyles).toMatch(/&::after\s*\{[\s\S]*?width:\s*10px\s*;/)
-    expect(v4NodeStyles).toMatch(/\.canvas-node-handle\s*\{[\s\S]*?opacity:\s*0\s*;/)
-    expect(v4NodeStyles).toContain('.canvas-node-connection-follow')
-    expect(nodeSource).toContain(
-      'const showResizer = !locked && (selected || resizeHovered || resizing)',
-    )
+    expect(nodeSource).toContain('const showResizer =')
+    expect(nodeSource).toContain('!locked && !collapsedGroupPresentation')
     expect(nodeSource).toContain('onPointerEnter={() => setResizeHovered(true)}')
     expect(nodeSource).toContain('onResizeStart={() => setResizing(true)}')
     expect(stageSource).toContain('interactionWidth: 36')
     expect(stageSource).toContain('connectionRadius={32}')
     expect(stageSource).toContain("target.closest('.react-flow__pane')")
-    expect(stageSource).toContain('onAddTextAtPosition(position)')
+    expect(stageSource).toContain('handleAddTextFromPane')
     expect(cinematicNodeStyles).toMatch(
       /\.canvas-node-handle\s*\{[\s\S]*?width:\s*13px;[\s\S]*?min-width:\s*13px;[\s\S]*?box-sizing:\s*border-box;/,
     )
@@ -70,11 +56,5 @@ describe('canvas node handle styles', () => {
       /\.canvas-node:hover \.canvas-node-handle,[\s\S]*?--canvas-node-handle-scale: 1\.35;/,
     )
     expect(cinematicNodeStyles).toContain('.canvas-node-selected .canvas-node-handle')
-    expect(v4StageStyles).toMatch(
-      /\.react-flow__edge-interaction\s*\{[\s\S]*?stroke-width:\s*36px\s*;/,
-    )
-    expect(v4StageStyles).toMatch(
-      /\.react-flow__connection-path\s*\{[\s\S]*?stroke-width:\s*3px\s*;/,
-    )
   })
 })

@@ -80,13 +80,9 @@ vi.mock('antd', () => ({
         </button>
       </div>
     ) : null,
-  Checkbox: ({
-    checked,
-    disabled,
-  }: {
-    checked?: boolean
-    disabled?: boolean
-  }) => <input type="checkbox" checked={checked} disabled={disabled} readOnly />,
+  Checkbox: ({ checked, disabled }: { checked?: boolean; disabled?: boolean }) => (
+    <input type="checkbox" checked={checked} disabled={disabled} readOnly />
+  ),
   Spin: () => <span>loading</span>,
   message: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }))
@@ -94,7 +90,6 @@ vi.mock('antd', () => ({
 vi.mock('./canvas.api', () => ({ canvasApi: { openSnapshot: mocks.openSnapshot } }))
 
 import { CanvasProjectDetail } from './CanvasProjectDetail'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const baseProject: CanvasProject = {
@@ -166,9 +161,7 @@ describe('CanvasProjectDetail project cover', () => {
     const clickFileInput = vi.spyOn(fileInput!, 'click')
 
     await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="查看项目封面：电影项目"]')
-        ?.click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="查看项目封面：电影项目"]')?.click(),
     )
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
     expect(clickFileInput).not.toHaveBeenCalled()
@@ -281,7 +274,7 @@ describe('CanvasProjectDetail project cover', () => {
 
 describe('CanvasProjectDetail cover styles', () => {
   const styles = readFileSync(
-    resolve(process.cwd(), 'src/renderer/design/views/canvas/uiux-v4/projects.less'),
+    resolve(process.cwd(), 'src/renderer/design/views/canvas/cinematic/project-surface.less'),
     'utf8',
   )
 

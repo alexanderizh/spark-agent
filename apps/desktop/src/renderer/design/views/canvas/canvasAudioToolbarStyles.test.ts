@@ -7,12 +7,10 @@ const readSource = (relativePath: string) =>
 
 describe('canvas audio toolbar overflow styles', () => {
   it('lets selected audio chrome escape both canvas theme content clips', () => {
-    for (const relativePath of ['./uiux-v4/nodes.less', './cinematic/nodes.less']) {
-      const source = readSource(relativePath)
-      expect(source).toMatch(
-        /\.canvas-node-core-audio\s*,\s*\.canvas-node-body-audio\s*\{[\s\S]*?overflow:\s*visible\s*!important\s*;/,
-      )
-    }
+    const source = readSource('./cinematic/nodes.less')
+    expect(source).toMatch(
+      /\.canvas-node-core-audio\s*,\s*\.canvas-node-body-audio\s*\{[\s\S]*?overflow:\s*visible\s*!important\s*;/,
+    )
   })
 
   it('keeps audio body content paintable when cinematic uses content-visibility for other nodes', () => {

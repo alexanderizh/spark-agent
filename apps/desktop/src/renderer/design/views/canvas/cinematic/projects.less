@@ -1,3 +1,5 @@
+// Project listing primitives share the cinematic canvas ownership boundary.
+// The visual refinement layer lives in project-surface.less and is loaded immediately after this file.
 .canvas-projects-view {
   display: flex;
   flex: 1;
@@ -382,3 +384,6 @@
     grid-template-columns: 1fr;
   }
 }
+
+// Keep the project route on one public style entry while preserving the visual refinement owner.
+@import (less) './project-surface.less';
