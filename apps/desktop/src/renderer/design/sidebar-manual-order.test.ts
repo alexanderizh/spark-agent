@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { moveItem, SerialTaskQueue, sortByManualOrder } from './sidebar-manual-order'
+import {
+  moveItem,
+  SerialTaskQueue,
+  sortByManualOrder,
+  sortByManualOrderWithinPinnedSections,
+} from './sidebar-manual-order'
 
 describe('sortByManualOrder', () => {
   it('uses persisted ranks and keeps newly created items first in fallback order', () => {
@@ -21,6 +26,26 @@ describe('sortByManualOrder', () => {
 describe('moveItem', () => {
   it('moves an item to the requested index', () => {
     expect(moveItem(['a', 'b', 'c'], 0, 2)).toEqual(['b', 'c', 'a'])
+  })
+})
+
+describe('sortByManualOrderWithinPinnedSections', () => {
+  it('keeps pinned items first while preserving manual order within each section', () => {
+    const items = [
+      { id: 'pinned-a', pinned: true },
+      { id: 'normal-a', pinned: false },
+      { id: 'pinned-b', pinned: true },
+      { id: 'normal-b', pinned: false },
+    ]
+
+    expect(
+      sortByManualOrderWithinPinnedSections(
+        items,
+        ['normal-b', 'pinned-b', 'normal-a', 'pinned-a'],
+        (item) => item.id,
+        (item) => item.pinned,
+      ).map((item) => item.id),
+    ).toEqual(['pinned-b', 'pinned-a', 'normal-b', 'normal-a'])
   })
 })
 
