@@ -15,6 +15,7 @@ import {
   expandCanvasInputNodes,
   materializeCanvasTaskInputFiles,
 } from './canvasWorkspaceTaskInput'
+import { canvasOperationKind } from './canvasOperationKind'
 
 export type CanvasPromptSubmission = CanvasPromptTaskFields & {
   prompt: string
@@ -74,7 +75,10 @@ export async function buildCanvasPromptSubmission(input: {
     ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
   })
   const rawFiles = (compiled.inputFiles ?? []) as CanvasMediaTaskInputFile[]
-  const inputFiles = await materializeCanvasTaskInputFiles(rawFiles, input.inputTransport)
+  const inputFiles = await materializeCanvasTaskInputFiles(
+    rawFiles,
+    canvasOperationKind(input.operation) === 'local_media' ? undefined : input.inputTransport,
+  )
   return {
     prompt: compiled.compiledUserText,
     promptDocument: visibleDocument,
