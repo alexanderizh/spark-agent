@@ -298,7 +298,22 @@ export function collectGroupDescendantNodes(nodes: CanvasNode[], groupId: string
   return descendants
 }
 
-export function findGroupContainingNodes(nodes: CanvasNode[], nodeIds: string[]): CanvasNode | null {
+/**
+ * 返回组的第一层可批量选择节点。
+ *
+ * 组本身仍是独立的选择对象；这里只返回直接子节点，避免一次操作穿透嵌套组，
+ * 同时跳过隐藏和锁定节点，保持与 React Flow 的 selectable 语义一致。
+ */
+export function collectSelectableGroupChildNodeIds(nodes: CanvasNode[], groupId: string): string[] {
+  return nodes
+    .filter((node) => node.parentNodeId === groupId && !node.hidden && !node.locked)
+    .map((node) => node.id)
+}
+
+export function findGroupContainingNodes(
+  nodes: CanvasNode[],
+  nodeIds: string[],
+): CanvasNode | null {
   const expectedIds = new Set(nodeIds)
   if (expectedIds.size === 0) return null
   const groups = nodes.filter((node) => node.type === 'group')

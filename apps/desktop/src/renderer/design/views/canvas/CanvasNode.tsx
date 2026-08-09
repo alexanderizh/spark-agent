@@ -357,6 +357,7 @@ export type CanvasFlowNodeData = {
     addSelectionToGroup: (groupId: string) => void
     removeNodeFromGroup: (nodeId: string) => void
     dissolveGroup: (groupId: string) => void
+    selectGroupChildren?: (groupId: string) => void
     /** 单节点右键：把该节点加入画布 Agent 对话引用列表 */
     addNodeToAgent?: (nodeId: string) => void
     /** 单任务节点右键：使用已保存配置直接提交运行 */
@@ -1161,6 +1162,19 @@ export const CanvasNode = memo(function CanvasNode({
           : []),
         ...(isGroup
           ? [
+              ...(actions.selectGroupChildren
+                ? [
+                    {
+                      key: 'select-group-children',
+                      label: (
+                        <span className="canvas-menu-item">
+                          <Icons.CheckSquare size={14} /> 选中组内节点
+                        </span>
+                      ),
+                      onClick: () => actions.selectGroupChildren?.(node.id),
+                    },
+                  ]
+                : []),
               {
                 key: 'toggle-group-collapse',
                 label: (
