@@ -21,10 +21,13 @@ export const AUTO_NODE_META_BAR_CLEARANCE = 28
 
 export function placeAutoNodeToRight(
   anchor: CanvasAutoPlacementRect,
+  size?: CanvasAutoPlacementSize,
 ): CanvasAutoPlacementPoint {
   return {
     x: Math.round(anchor.x + anchor.width + AUTO_NODE_RIGHT_GAP),
-    y: Math.round(anchor.y + AUTO_NODE_META_BAR_CLEARANCE),
+    y: Math.round(
+      size ? anchor.y + (anchor.height - size.height) / 2 : anchor.y + AUTO_NODE_META_BAR_CLEARANCE,
+    ),
   }
 }
 
@@ -34,14 +37,17 @@ export function stackAutoNodesToRight(
 ): CanvasAutoPlacementPoint[] {
   const x = Math.round(anchor.x + anchor.width + AUTO_NODE_RIGHT_GAP)
   const positions: CanvasAutoPlacementPoint[] = []
-  let cursorY = anchor.y + AUTO_NODE_META_BAR_CLEARANCE
+  const rowGap = AUTO_NODE_VERTICAL_GAP + AUTO_NODE_META_BAR_CLEARANCE
+  const totalHeight =
+    sizes.reduce((total, size) => total + size.height, 0) + Math.max(0, sizes.length - 1) * rowGap
+  let cursorY = anchor.y + (anchor.height - totalHeight) / 2
 
   for (const size of sizes) {
     positions.push({
       x,
       y: Math.round(cursorY),
     })
-    cursorY += size.height + AUTO_NODE_VERTICAL_GAP + AUTO_NODE_META_BAR_CLEARANCE
+    cursorY += size.height + rowGap
   }
 
   return positions

@@ -461,6 +461,7 @@ export function useCanvasWorkspace(projectId: string) {
       y: number
       kind?: 'text' | 'prompt'
       format?: 'plain' | 'markdown' | 'prompt'
+      preservePreferredPosition?: boolean
     }) => {
       const current = snapshot
       if (!current) return
@@ -514,6 +515,7 @@ export function useCanvasWorkspace(projectId: string) {
       height?: number
       imageWidth?: number
       imageHeight?: number
+      preservePreferredPosition?: boolean
     }) => {
       const current = snapshot
       if (!current) return
@@ -530,7 +532,13 @@ export function useCanvasWorkspace(projectId: string) {
 
   /** 创建空图片节点（工厂菜单直接落位、后续上传填充；不建 asset）。 */
   const createEmptyImageNode = useCallback(
-    async (input: { x: number; y: number; width?: number; height?: number }) => {
+    async (input: {
+      x: number
+      y: number
+      width?: number
+      height?: number
+      preservePreferredPosition?: boolean
+    }) => {
       const current = snapshot
       if (!current) return
       const node = await canvasApi.createEmptyImageNode({
@@ -552,6 +560,7 @@ export function useCanvasWorkspace(projectId: string) {
       y: number
       width?: number
       height?: number
+      preservePreferredPosition?: boolean
     }) => {
       const current = snapshot
       if (!current) return
@@ -581,6 +590,7 @@ export function useCanvasWorkspace(projectId: string) {
       mediaWidth?: number
       mediaHeight?: number
       durationMs?: number
+      preservePreferredPosition?: boolean
     }) => {
       const current = snapshot
       if (!current) return
@@ -865,7 +875,13 @@ export function useCanvasWorkspace(projectId: string) {
 
   // ─── 资产 → board（文档 §7.2）───────────────────────────────────────────
   const insertAsset = useCallback(
-    async (input: { assetId: string; boardId: string; x: number; y: number }) => {
+    async (input: {
+      assetId: string
+      boardId: string
+      x: number
+      y: number
+      preservePreferredPosition?: boolean
+    }) => {
       const node = await canvasApi.insertAssetToBoard({ projectId, ...input })
       if (node) await applyTaskSnapshot(canvasApi.openSnapshot(projectId))
       return node
@@ -1068,6 +1084,8 @@ export function useCanvasWorkspace(projectId: string) {
       outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
       outputTitle?: CreateCanvasTaskRequest['outputTitle']
       shotScriptConfig?: ShotScriptConfig
+      preservePreferredPosition?: boolean
+      autoPlaceAfterInputs?: boolean
     }) => {
       const next = await canvasApi.createOperationNode({ projectId, ...input })
       return applyTaskSnapshot(Promise.resolve(next))

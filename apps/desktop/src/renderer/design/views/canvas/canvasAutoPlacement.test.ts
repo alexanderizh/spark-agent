@@ -9,17 +9,20 @@ import {
 } from './canvasAutoPlacement'
 
 describe('canvasAutoPlacement', () => {
-  it('places a single auto-created node to the right with toolbar clearance', () => {
+  it('places a single auto-created node to the right and aligns its center axis', () => {
     expect(
-      placeAutoNodeToRight({
-        x: 120,
-        y: 80,
-        width: 520,
-        height: 240,
-      }),
+      placeAutoNodeToRight(
+        {
+          x: 120,
+          y: 80,
+          width: 520,
+          height: 240,
+        },
+        { width: 300, height: 160 },
+      ),
     ).toEqual({
       x: 120 + 520 + AUTO_NODE_RIGHT_GAP,
-      y: 80 + AUTO_NODE_META_BAR_CLEARANCE,
+      y: 80 + (240 - 160) / 2,
     })
   })
 
@@ -40,13 +43,13 @@ describe('canvasAutoPlacement', () => {
     ).toEqual([
       {
         x: 40 + 560 + AUTO_NODE_RIGHT_GAP,
-        y: 60 + AUTO_NODE_META_BAR_CLEARANCE,
+        y: 60 + (230 - (340 + 280 + AUTO_NODE_VERTICAL_GAP + AUTO_NODE_META_BAR_CLEARANCE)) / 2,
       },
       {
         x: 40 + 560 + AUTO_NODE_RIGHT_GAP,
         y:
           60 +
-          AUTO_NODE_META_BAR_CLEARANCE +
+          (230 - (340 + 280 + AUTO_NODE_VERTICAL_GAP + AUTO_NODE_META_BAR_CLEARANCE)) / 2 +
           340 +
           AUTO_NODE_VERTICAL_GAP +
           AUTO_NODE_META_BAR_CLEARANCE,

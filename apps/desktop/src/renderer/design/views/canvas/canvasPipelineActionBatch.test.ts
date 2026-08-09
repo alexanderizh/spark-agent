@@ -3,7 +3,6 @@ import {
   planCanvasPipelineTaskPositions,
   resolveCanvasPipelineAssetTargets,
 } from './canvasPipelineActionBatch'
-import { OPERATION_NODE_DEFAULT_SIZE } from './canvasNodeSize'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot, CanvasTask } from './canvas.types'
 
 const at = '2026-07-16T00:00:00.000Z'
@@ -129,7 +128,7 @@ describe('canvas pipeline action batch', () => {
     ])
   })
 
-  it('plans separated task nodes and moves the whole batch away from an obstacle', () => {
+  it('plans a centered batch behind the source without splitting it around obstacles', () => {
     const source = node({
       id: 'source',
       type: 'text_generate',
@@ -146,15 +145,12 @@ describe('canvas pipeline action batch', () => {
     })
 
     expect(positions).toHaveLength(4)
-    expect(
-      positions.every(
-        (position) =>
-          position.x + OPERATION_NODE_DEFAULT_SIZE.width <= obstacle.x ||
-          position.x >= obstacle.x + obstacle.width ||
-          position.y + OPERATION_NODE_DEFAULT_SIZE.height <= obstacle.y ||
-          position.y >= obstacle.y + obstacle.height,
-      ),
-    ).toBe(true)
+    expect(positions).toEqual([
+      { x: 416, y: -342 },
+      { x: 940, y: -342 },
+      { x: 1464, y: -342 },
+      { x: 416, y: 142 },
+    ])
     expect(new Set(positions.map((position) => `${position.x}:${position.y}`)).size).toBe(4)
   })
 })

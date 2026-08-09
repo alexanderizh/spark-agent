@@ -178,13 +178,15 @@ export function placeNodeRightOfNodes(
   nodes: CanvasNode[],
   fallback: { x: number; y: number },
   gap = 80,
+  size?: { width: number; height: number },
 ): { x: number; y: number } {
   if (nodes.length === 0) return fallback
   const right = Math.max(...nodes.map((node) => node.x + node.width))
   const top = Math.min(...nodes.map((node) => node.y))
+  const bottom = Math.max(...nodes.map((node) => node.y + node.height))
   return {
     x: Math.round(right + gap),
-    y: Math.round(top),
+    y: Math.round(size ? top + (bottom - top - size.height) / 2 : top),
   }
 }
 

@@ -1,6 +1,10 @@
 import { readAssetKind } from './canvasFilmAssets'
 import { isOperationNode } from './canvas.capabilities'
-import { resolveCollisionFreeBatchPositions } from './canvasCollisionPlacement'
+import {
+  getCanvasBatchLayoutSize,
+  resolveCollisionFreeBatchPositions,
+} from './canvasCollisionPlacement'
+import { placeAutoNodeToRight } from './canvasAutoPlacement'
 import { buildCanvasOperationRunViews } from './canvasOperationRuns'
 import { expandCanvasInputNodes } from './canvasWorkspaceTaskInput'
 import { OPERATION_NODE_DEFAULT_SIZE } from './canvasNodeSize'
@@ -58,19 +62,18 @@ export function resolveCanvasPipelineAssetTargets(input: {
   return targets
 }
 
-/** 为一批后续任务节点计算规整、等间距且避让已有画布内容的落点。 */
+/** 为一批后续任务节点计算来源节点右侧、整体中轴线对齐的规整落点。 */
 export function planCanvasPipelineTaskPositions(input: {
   sourceNode: CanvasNode
   count: number
   existingNodes: CanvasNode[]
 }): Array<{ x: number; y: number }> {
+  const sizes = Array.from({ length: input.count }, () => OPERATION_NODE_DEFAULT_SIZE)
   return resolveCollisionFreeBatchPositions({
-    preferred: {
-      x: input.sourceNode.x + input.sourceNode.width + 80,
-      y: input.sourceNode.y,
-    },
-    sizes: Array.from({ length: input.count }, () => OPERATION_NODE_DEFAULT_SIZE),
+    preferred: placeAutoNodeToRight(input.sourceNode, getCanvasBatchLayoutSize(sizes)),
+    sizes,
     nodes: input.existingNodes,
     boardId: input.sourceNode.boardId,
+    preservePreferredPosition: true,
   })
 }
