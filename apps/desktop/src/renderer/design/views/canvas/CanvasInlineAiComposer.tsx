@@ -2081,6 +2081,19 @@ export function modelSuggestedFields(model: CanvasMediaModelSummary | undefined)
     .toLowerCase()
   const fields: SchemaField[] = []
 
+  // MiniMax-H3 的官方时长是连续整数范围 4–15 秒。作为旧模型/缺失
+  // paramSchema 时的兜底，也必须保留范围信息，不能落回通用的 3/5/8/10。
+  if (fingerprint.includes('minimax-h3') || fingerprint.includes('minimax h3')) {
+    fields.push({
+      name: 'durationSeconds',
+      title: '时长(秒)',
+      type: 'integer',
+      enumValues: [],
+      minimum: 4,
+      maximum: 15,
+    })
+  }
+
   if (
     fingerprint.includes('gemini') ||
     fingerprint.includes('imagen') ||
@@ -2166,6 +2179,7 @@ export function mergeSchemaFields(
   ...suggestedFieldGroups: SchemaField[][]
 ): SchemaField[] {
   const hasModelSchema = baseFields.length > 0
+  const baseFieldNames = new Set(baseFields.map((field) => field.name))
   const dimensionFieldPolicy = imageDimensionFieldPolicy(baseFields)
   const seen = new Set<string>()
   const result: SchemaField[] = []
@@ -2180,10 +2194,16 @@ export function mergeSchemaFields(
     if (existingIndex >= 0) {
       const existing = result[existingIndex]
       if (!existing) continue
+      // Schema fields are authoritative. In particular, a generic operation field must not
+      // replace a model-specific numeric range with its legacy enum values.
+      if (baseFieldNames.has(field.name)) continue
       result[existingIndex] = {
-        ...field,
         ...existing,
-        enumValues: existing.enumValues.length > 0 ? existing.enumValues : field.enumValues,
+        ...field,
+        enumValues:
+          field.enumValues.length > 0 || field.minimum !== undefined || field.maximum !== undefined
+            ? field.enumValues
+            : existing.enumValues,
       }
       continue
     }
