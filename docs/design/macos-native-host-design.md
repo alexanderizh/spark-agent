@@ -1,6 +1,6 @@
 # macOS Native Host、AX/CGEvent 与应用快照设计
 
-> 状态: 实施中 | 最后核对: 2026-08-01
+> 状态: 实施中 | 最后核对: 2026-08-09
 
 本文是 CU-03 macOS Native Host 的可直接开发规格，记录已经落地的生产边界、wire、signed/local 打包、故障恢复、ScreenCaptureKit、AXUIElement 和 CGEvent 控制闭环。当前代码可交付可信 Host 能力探测、窗口列表、单窗口 PNG、full/diff AX tree、无 AX 时视觉空树与坐标兜底、语义动作、受限键鼠和加密应用快照；最终实体机矩阵仍是发布门槛。
 
@@ -10,7 +10,7 @@ Electron 主进程：
 
 - `NativeHostArtifact.ts`：artifact manifest、最终签名字节 SHA-256、Apple designated requirement 和父应用 Team ID 绑定。
 - `NativeHostFrameCodec.ts`：5-byte 帧头和增量解码；在完整 payload 分配/处理前拒绝空、未知、超限和截断帧。
-- `NativeHostClient.ts`：子进程、握手、request ID、并发 pending map、binary 邻接、hash、timeout、Abort 和终止。
+- `NativeHostClient.ts`：子进程、握手、request ID、FIFO 单通道操作队列、binary 邻接、hash、timeout、Abort 和终止。
 - `NativeHostComputerUseBackend.ts`：共享连接、capability 映射、崩溃连接失效和下一操作重连。
 - `NativeApplicationSnapshotCaptureService.ts`：敏感应用阻断、前台唯一窗口选择、捕获后 window/app/PID/代码身份复核、PNG 二次校验、预览、Vault/Repository 补偿事务。
 - `NativeHostBackendFactory.ts`：生产路径与 app/host 信任链 composition root。
@@ -39,7 +39,8 @@ offset  size  meaning
 3. stdout 只允许 frame；诊断只写 stderr，且不包含窗口标题、路径、截图、AX 文本或输入正文。
 4. Electron spawn 使用绝对路径、`shell=false`、仅 stdin/stdout/stderr pipe 和最小 `LANG/LC_ALL` 环境。
 5. 默认请求超时 20 秒；`drag` 与 `wait_for` 按协议内动作时长增加 5 秒清理余量（总上限 180 秒）。timeout、Abort、进程错误或协议错误会终止子进程并拒绝全部 pending 请求；backend 清除连接，后续操作重新走完整信任验证与握手。
-6. Swift 使用 `readabilityHandler -> AsyncStream` 读取长连接。不得改回等待 EOF 的同步 `read(upToCount:)`；回归测试必须证明 stdin 保持打开时也能收到 frame。
+6. Native Host 是同步请求处理器；Electron 客户端必须把能力探针、观察、截图、动作和取消都排入同一 FIFO 队列，禁止在 binary descriptor 与 binary payload 之间写入下一请求。队列达到有界容量时返回可重试错误，不得无限堆积。
+7. Swift 使用 `readabilityHandler -> AsyncStream` 读取长连接。不得改回等待 EOF 的同步 `read(upToCount:)`；回归测试必须证明 stdin 保持打开时也能收到 frame。
 
 ## 3. 启动信任链
 
@@ -77,7 +78,7 @@ Runtime 只接受 manifest 明确声明的两种模式：
 - `AXSecureTextField` 不返回 value，不声明 `set_value`，并形成 `sensitiveRegions`；名称、value、role、action 和 geometry 全部本地有界清洗。
 - action envelope 带可验证 execution lane：Invoke/SetValue/SelectText 固定为 `background_semantic`，observe/wait 固定为 `passive`，CGEvent/focus/scroll 固定为 `foreground_input`。旧 App 未携带 lane 时 Host 按动作安全推导；显式 lane 与动作不匹配时 App Zod 与 Swift decoder 双端 fail-closed。
 - 后台语义动作直接对绑定 PID 的 AX 元素执行，不激活目标应用；元素 Scroll 当前仍按元素 bounds 经受管 CGEvent 执行，不伪装成 AX 语义动作。不支持或未产生效果返回稳定 `action_noop|action_not_allowed`。
-- CGEvent 支持归一化窗口坐标 click/move/drag/scroll、组合键和 UTF-16 文本；仅 `foreground_input` 会等待 300 ms 全局输入空闲、短时激活目标窗口，并在动作退出路径恢复原前台应用和指针位置。所有 Host 注入事件写入进程专属来源标记；listen-only Event Tap 只把真实用户输入计入冲突检测。用户点击绑定窗口（含 observation 与首次 execute 之间的点击）立即把会话标记为接管，后续动作返回 `handoff_required`；用户在其他应用移动鼠标或键入只延后前台输入，不阻断后台 AX 语义动作。长拖拽、组合键和文本输入在注入过程中持续复核 PID/bundle/executable/signing identity、取消与接管状态，稳定应用身份漂移、取消或接管立即停止。drag 通过兜底 mouse-up 避免遗留按下状态。安全输入框拒绝文本及可修改值的 keypress。
+- CGEvent 支持归一化窗口坐标 click/move/drag/scroll、组合键和 UTF-16 文本；`foreground_input` 最多等待 350 ms 让真实用户输入静止，必要时激活目标窗口，并让目标应用保持前台以连续执行后续步骤，不再逐动作恢复 Spark 与鼠标位置。所有 Host 注入事件写入进程专属来源标记；listen-only Event Tap 只把真实用户输入计入冲突检测。键盘输入仅在绑定应用确实为前台时触发接管；鼠标按下通过 CGWindow 前后顺序解析点击点的最上层可见窗口，只有该窗口属于绑定 PID 且点击落在绑定边界内才返回 `handoff_required`，避免 Spark、弹层或其他重叠窗口仅因坐标相交而误报。绑定前的历史输入不再追溯成接管；用户在其他应用移动鼠标或键入只短暂延后前台输入，不阻断后台 AX 语义动作。长拖拽、组合键和文本输入在注入过程中持续复核 PID/bundle/executable/signing identity、取消与接管状态，稳定应用身份漂移、取消或接管立即停止。drag 通过兜底 mouse-up 避免遗留按下状态。安全输入框拒绝文本及可修改值的 keypress。
 - `execute_action` 只返回严格 `action_result`；Electron 随后重新 `observe`。动作前后原图仅驻留有界内存，持久层只接收敏感区域脱敏后的缩略图并设置 24 小时 TTL；noop 使用感知图像指纹与无版本语义元素摘要，`wait_for` 则以 Host 条件结果为准。
 - cancel session 会使旧 observation 和 element refs 失效，并拒绝该 session 的后续动作。
 

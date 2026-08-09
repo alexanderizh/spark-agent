@@ -4,7 +4,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ComputerSession, ComputerUseEvent, SessionId } from '@spark/protocol'
-import { ComputerActivityBlock } from './ComputerActivityBlock'
+import { ComputerActivityBlock, ComputerActivityProvider } from './ComputerActivityBlock'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../i18n', () => {
@@ -148,11 +148,21 @@ describe('ComputerActivityBlock', () => {
 
   it('removes the previous timeline immediately while the next session loads', async () => {
     await act(async () => {
-      root.render(<ComputerActivityBlock sessionId={'session-1' as SessionId} />)
+      root.render(
+        <ComputerActivityProvider sessionId={'session-1' as SessionId}>
+          <ComputerActivityBlock />
+        </ComputerActivityProvider>,
+      )
     })
     expect(container.textContent).toContain('risk=L1')
 
-    act(() => root.render(<ComputerActivityBlock sessionId={'session-2' as SessionId} />))
+    act(() =>
+      root.render(
+        <ComputerActivityProvider sessionId={'session-2' as SessionId}>
+          <ComputerActivityBlock />
+        </ComputerActivityProvider>,
+      ),
+    )
     expect(container.textContent).toBe('')
 
     await act(async () => {
@@ -163,7 +173,11 @@ describe('ComputerActivityBlock', () => {
 
   it('pauses before offering every visible application in the target picker', async () => {
     await act(async () => {
-      root.render(<ComputerActivityBlock sessionId={'session-1' as SessionId} />)
+      root.render(
+        <ComputerActivityProvider sessionId={'session-1' as SessionId}>
+          <ComputerActivityBlock />
+        </ComputerActivityProvider>,
+      )
     })
     const button = (label: string) =>
       [...container.querySelectorAll('button')].find((item) => item.textContent === label)
@@ -180,5 +194,23 @@ describe('ComputerActivityBlock', () => {
       computerSessionId: 'computer-1',
       targetWindowId: 'window-2',
     })
+  })
+
+  it('renders activity only in the matching conversation turn', async () => {
+    await act(async () => {
+      root.render(
+        <ComputerActivityProvider sessionId={'session-1' as SessionId}>
+          <div data-testid="matching">
+            <ComputerActivityBlock turnId="turn-computer-1" />
+          </div>
+          <div data-testid="unrelated">
+            <ComputerActivityBlock turnId="turn-unrelated" />
+          </div>
+        </ComputerActivityProvider>,
+      )
+    })
+
+    expect(container.querySelector('[data-testid="matching"]')?.textContent).toContain('risk=L1')
+    expect(container.querySelector('[data-testid="unrelated"]')?.textContent).toBe('')
   })
 })

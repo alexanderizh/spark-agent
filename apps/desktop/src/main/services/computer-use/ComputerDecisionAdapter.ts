@@ -16,9 +16,11 @@ import {
 import { createLogger } from '@spark/shared'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 
-const MAX_TREE_PROMPT_CHARS = 200_000
-const MAX_ELEMENT_PROMPT_CHARS = 100_000
-const MAX_ELEMENT_PROMPT_COUNT = 2_000
+// A desktop model needs both the screenshot and the useful AX controls, not a near-raw dump of
+// every node. Keeping this bounded materially lowers first-token latency on large Electron apps.
+const MAX_TREE_PROMPT_CHARS = 32_000
+const MAX_ELEMENT_PROMPT_CHARS = 48_000
+const MAX_ELEMENT_PROMPT_COUNT = 400
 const log = createLogger('computer-use-decision')
 export const MIN_BATCH_ACTIONS = 2
 export const MAX_BATCH_ACTIONS = 8
@@ -58,6 +60,20 @@ export interface ComputerActionFailureContext {
   requiredAlternative: boolean
 }
 
+export interface ComputerVerificationFailureContext {
+  failedCriteria: string[]
+  unsupportedCriteria: number
+}
+
+export interface ComputerRecentAction {
+  action: Readonly<Record<string, unknown>>
+  intent: string
+  outcome: 'executed' | 'failed'
+  resultingAppId: string
+  resultingWindowId: string
+  errorCode?: string
+}
+
 export interface ComputerDecisionInput {
   objective: string
   successCriteria: VerificationSpec[]
@@ -65,6 +81,8 @@ export interface ComputerDecisionInput {
   screenshot: Buffer
   stepIndex: number
   previousActionFailure?: ComputerActionFailureContext
+  previousVerificationFailure?: ComputerVerificationFailureContext
+  recentActions?: ComputerRecentAction[]
   /**
    * When true, the prompt also offers a batch `actions` decision so the model
    * can plan a short sequence in one round-trip (codex-style). Off = the model
@@ -100,11 +118,7 @@ export class GenericComputerDecisionAdapter {
 
   async decide(input: ComputerDecisionInput): Promise<ComputerDecision> {
     let lastError: unknown
-    const attempts = decisionAttemptPlan(
-      this.model,
-      input.screenshot.length > 0,
-      hasUsefulAccessibilityState(input.observation),
-    )
+    const attempts = decisionAttemptPlan(this.model, input.screenshot.length > 0)
     for (const [attempt, candidate] of attempts.entries()) {
       try {
         const result = await this.generate({
@@ -175,37 +189,24 @@ interface ComputerDecisionAttempt {
 function decisionAttemptPlan(
   primary: ComputerDecisionModelConfig,
   screenshotAvailable: boolean,
-  preferAccessibility: boolean,
 ): ComputerDecisionAttempt[] {
   const primaryModel = withoutFallbackModels(primary)
   const fallbacks = (primary.fallbackModels ?? []).map(withoutFallbackModels)
   const candidates: ComputerDecisionAttempt[] = []
-  if (preferAccessibility) {
-    candidates.push({ model: primaryModel, includeScreenshot: false, responseFormat: 'json' })
-  }
+  // The screenshot and AX summary are complementary. Starting vision-first avoids spending an
+  // entire model round-trip on incomplete/custom-rendered accessibility trees.
   if (screenshotAvailable) {
     candidates.push({ model: primaryModel, includeScreenshot: true, responseFormat: 'json' })
     for (const model of fallbacks) {
       candidates.push({ model, includeScreenshot: true, responseFormat: 'json' })
     }
   }
-  if (!preferAccessibility) {
-    candidates.push({ model: primaryModel, includeScreenshot: false, responseFormat: 'json' })
-  }
+  candidates.push({ model: primaryModel, includeScreenshot: false, responseFormat: 'json' })
   for (const model of fallbacks) {
     candidates.push({ model, includeScreenshot: false, responseFormat: 'json' })
   }
   candidates.push({ model: primaryModel, includeScreenshot: false, responseFormat: 'text' })
   return dedupeDecisionAttempts(candidates).slice(0, 6)
-}
-
-function hasUsefulAccessibilityState(observation: ComputerObservation): boolean {
-  if (observation.elements.length > 0) return true
-  const tree = observation.tree.text.trim()
-  if (tree.length < 24) return false
-  return /\b(button|textbox|searchbox|combobox|link|menuitem|tab|checkbox|radio)\b|按钮|输入|搜索|链接|菜单|选项卡/iu.test(
-    tree,
-  )
 }
 
 function withoutFallbackModels(model: ComputerDecisionModelConfig): ComputerDecisionModelConfig {
@@ -291,7 +292,7 @@ Valid named keys: Alt, Backspace, Control, Delete, End, Enter, Escape, Home, Met
 const BATCH_DECISION_SYSTEM_PROMPT = `${DECISION_SYSTEM_PROMPT}
 You may also return a short batch of actions that you expect to remain valid when executed in sequence:
 {"type":"actions","intent":"short reason for the whole sequence","actions":[<2 to 8 supported actions in order>]}
-Only use a batch for a sequence whose later steps stay valid after the earlier ones run (for example a series of keypresses, typing, scrolls, waits, or clicks on stable targets). The host re-checks the target before every step and stops the batch the moment a target becomes stale, so prefer a single "action" whenever a step depends on the result of the previous one. Never use a batch to bypass the one-action-per-decision discipline for risky or unrelated actions; when unsure, return a single action.`
+Prefer a batch whenever the next 2–8 steps are foreseeable. Expected dependencies are encouraged: click a field then type; open the OS launcher then type an app name and press Enter; focus a form control then type and submit; issue a shortcut then wait for loading. Stop the batch immediately before a step that needs a newly rendered target or an uncertain navigation result. The host re-observes and validates after every action and safely stops stale batches. Never batch unrelated actions or use batching to bypass policy.`
 
 function buildDecisionSystemPrompt(platform: NodeJS.Platform, allowBatch: boolean): string {
   const platformName = platform === 'darwin' ? 'macOS' : platform === 'win32' ? 'Windows' : platform
@@ -313,6 +314,14 @@ function buildDecisionPrompt(input: ComputerDecisionInput, attempt: number): str
     ...(input.previousActionFailure == null
       ? []
       : [`Previous action failure: ${JSON.stringify(input.previousActionFailure)}`]),
+    ...(input.previousVerificationFailure == null
+      ? []
+      : [`Previous verification failure: ${JSON.stringify(input.previousVerificationFailure)}`]),
+    ...(input.recentActions == null || input.recentActions.length === 0
+      ? []
+      : [
+          `Recent action history, oldest to newest (do not redo completed work): ${JSON.stringify(input.recentActions)}`,
+        ]),
     ...(attempt === 0
       ? []
       : [
@@ -322,10 +331,30 @@ function buildDecisionPrompt(input: ComputerDecisionInput, attempt: number): str
 }
 
 function serializeElements(elements: ComputerElementRef[]): string {
-  const selected = elements.slice(0, MAX_ELEMENT_PROMPT_COUNT)
+  const selected = prioritizeElements(elements)
+    .slice(0, MAX_ELEMENT_PROMPT_COUNT)
+    .map((element) => ({
+      ...element,
+      ...(element.value == null ? {} : { value: element.value.slice(0, 500) }),
+    }))
   const serialized = JSON.stringify(selected)
   if (serialized.length <= MAX_ELEMENT_PROMPT_CHARS) return serialized
   return `${serialized.slice(0, MAX_ELEMENT_PROMPT_CHARS)}…<truncated>`
+}
+
+function prioritizeElements(elements: ComputerElementRef[]): ComputerElementRef[] {
+  const actionable: ComputerElementRef[] = []
+  const informative: ComputerElementRef[] = []
+  for (const element of elements) {
+    if (element.focused || (element.enabled && element.actions.length > 0)) actionable.push(element)
+    else if (
+      element.bounds.width > 0 &&
+      element.bounds.height > 0 &&
+      (element.name.trim() !== '' || element.value?.trim() !== '')
+    )
+      informative.push(element)
+  }
+  return [...actionable, ...informative]
 }
 
 function parseDecision(text: string): ComputerDecision {
@@ -403,7 +432,10 @@ function invalidDecision(): ComputerUseBrokerError {
  * Markdown fence. Extract one balanced object while keeping action validation strict.
  */
 function extractDecisionJson(text: string): string {
-  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+  const trimmed = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
   try {
     JSON.parse(trimmed)
     return trimmed

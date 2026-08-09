@@ -1,6 +1,6 @@
 # Windows Native Host、WGC/UIA 与 SendInput 设计
 
-> 状态: 已落地 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-09
 
 本文记录 Windows Computer Use Native Host 的当前生产边界。实现位于 `apps/desktop/native/windows/spark-computer-host`，使用 Rust、`windows-rs` 与 `windows-capture`；最终签名安装包和 Windows 10/11 真机矩阵仍是发布签收门槛。
 
@@ -18,11 +18,13 @@
 - `persistentCapture=true` 时按 HWND/进程/可执行身份复用一个 WGC session，队列容量 2，只接受当前 observe 单调时钟之后的新帧；2 秒超时或 stream failure 清理会话并最多回退一次单帧。
 - UIA 遍历限制元素数和序列化文本大小，生成稳定 element ref、tree version 与 full/diff；密码和 provider-secure 节点不发布 value 并形成敏感区域。
 - UIA automation/structure event handler 监听布局、文本、选区、窗口打开/关闭和结构变化，以原子 generation 使缓存失效。只有目标、订阅、缓存、generation 与 1 秒 TTL 同时满足时复用；语义动作前主动标脏。
+- Observe 绑定的是窗口身份而不是“当前必须前台”：后台目标按 HWND、PID 和 executable identity 做隔离校验后允许 WGC/UIA 观察；观察开始和结束都复核身份，目标在期间消失或被替换则返回可重试的 `focus_mismatch`。
 
 ## 3. 执行通道
 
 - `background_semantic` 使用 Invoke、Value、SelectionItem、Scroll、Focus、ExpandCollapse pattern，不激活其他应用；不支持或无效果返回稳定错误。
 - `foreground_input` 使用 SendInput，仅在目标 HWND/PID/身份仍一致且不处于 secure desktop 时执行。真实用户输入与 Host 注入事件通过 injected flag 分离。
+- 后台目标执行 `foreground_input` 前先显式恢复窗口并等待前台确认，然后才进入 SendInput；点击、语义调用和快捷键允许预期地改变焦点，动作后交由上层重新枚举前台目标。显式绑定任务仍拒绝跨窗漂移。
 - 用户点击目标窗口立即触发 takeover；其他应用输入只延后前台动作。拖拽、组合键和 UTF-16 文本输入在每步检查 cancel/takeover/目标身份，释放守卫确保失败时补发 mouse/key up。
 - lane 与动作类型在 TypeScript Zod 和 Rust strict decoder 双端校验；旧 envelope 可按动作安全推导，显式不匹配拒绝。
 

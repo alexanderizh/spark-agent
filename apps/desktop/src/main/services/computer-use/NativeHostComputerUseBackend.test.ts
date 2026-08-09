@@ -495,6 +495,62 @@ describe('NativeHostComputerUseBackend', () => {
     )
   })
 
+  it('follows a newly focused application after an unbound shortcut action', async () => {
+    const newlyFocusedWindow = {
+      ...FOCUSED_WINDOW,
+      app: { ...FOCUSED_WINDOW.app, id: 'app-2', name: 'Other' },
+      window: { ...FOCUSED_WINDOW.window, id: 'window-2', title: 'Other document' },
+      focused: true,
+    }
+    const crossAppObservation: ComputerObservation = {
+      ...OBSERVATION,
+      frameId: 'frame-2',
+      treeVersion: 'tree-2',
+      foreground: {
+        app: newlyFocusedWindow.app,
+        window: newlyFocusedWindow.window,
+      },
+      screenshot: { ...OBSERVATION.screenshot, snapshotId: 'snapshot-2' },
+    }
+    const connection = createControlConnection([OBSERVATION, crossAppObservation])
+    vi.mocked(connection.listWindows)
+      .mockResolvedValueOnce([FOCUSED_WINDOW])
+      .mockResolvedValueOnce([newlyFocusedWindow])
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'windows',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: (() => {
+        const ids = ['snapshot-1', 'snapshot-2']
+        return () => ids.shift() ?? 'unexpected'
+      })(),
+    })
+    const signal = new AbortController().signal
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal })
+
+    const envelope = {
+      computerSessionId: 'computer-1',
+      actionId: 'action-1',
+      targetAppId: 'app-1',
+      targetWindowId: 'window-1',
+      action: { type: 'keypress', keys: ['ALT', 'TAB'] },
+    } as ComputerActionEnvelope
+
+    await expect(
+      backend.execute({ envelope, observation: OBSERVATION, signal }),
+    ).resolves.toMatchObject({
+      observation: expect.objectContaining({
+        foreground: {
+          app: newlyFocusedWindow.app,
+          window: newlyFocusedWindow.window,
+        },
+      }),
+    })
+    expect(connection.observe).toHaveBeenLastCalledWith(
+      expect.objectContaining({ appId: 'app-2', windowId: 'window-2' }),
+    )
+  })
+
   it('trusts an executed Host action even when its immediate visual evidence is unchanged', async () => {
     const unchanged = {
       ...OBSERVATION,
@@ -607,6 +663,47 @@ describe('NativeHostComputerUseBackend', () => {
 
     await expect(
       backend.execute({ envelope, observation: OBSERVATION, signal }),
+    ).resolves.toBeDefined()
+  })
+
+  it('keeps window focus recovery available when accessibility is unavailable', async () => {
+    const focusManifest: NativeHostCapabilityManifest = {
+      ...CONTROL_MANIFEST,
+      backends: { ...CONTROL_MANIFEST.backends, accessibility: 'unavailable' },
+      features: { ...CONTROL_MANIFEST.features, semanticActions: false },
+    }
+    const after = {
+      ...OBSERVATION,
+      frameId: 'frame-2',
+      treeVersion: 'tree-2',
+      screenshot: { ...OBSERVATION.screenshot, snapshotId: 'snapshot-2' },
+    }
+    const connection = createControlConnection([OBSERVATION, after])
+    vi.mocked(connection.getCapabilities).mockResolvedValue(focusManifest)
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'windows',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: (() => {
+        const ids = ['snapshot-1', 'snapshot-2']
+        return () => ids.shift() ?? 'unexpected'
+      })(),
+    })
+    const signal = new AbortController().signal
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal })
+
+    await expect(
+      backend.execute({
+        envelope: {
+          computerSessionId: 'computer-1',
+          actionId: 'action-1',
+          targetAppId: 'app-1',
+          targetWindowId: 'window-1',
+          action: { type: 'focus_window', windowId: 'window-1' },
+        } as ComputerActionEnvelope,
+        observation: OBSERVATION,
+        signal,
+      }),
     ).resolves.toBeDefined()
   })
 

@@ -19,8 +19,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     MOUSEEVENTF_WHEEL, MOUSEINPUT, SendInput, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetSystemMetrics, GetWindowRect, GetWindowThreadProcessId,
-    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    GetForegroundWindow, GetSystemMetrics, GetWindowRect, GetWindowThreadProcessId, IsWindow,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_RESTORE,
+    SetForegroundWindow, ShowWindow,
 };
 use windows::core::PWSTR;
 
@@ -76,6 +77,32 @@ pub fn target_window(window_id: &str) -> Result<TargetWindow, InputError> {
     })
 }
 
+pub fn focus_window(window_id: &str) -> Result<(), InputError> {
+    let hwnd = window_id
+        .parse::<isize>()
+        .ok()
+        .filter(|value| *value != 0)
+        .ok_or(InputError::WindowUnavailable)?;
+    let hwnd = HWND(hwnd as *mut _);
+    if !unsafe { IsWindow(hwnd) }.as_bool() {
+        return Err(InputError::WindowUnavailable);
+    }
+    unsafe {
+        ShowWindow(hwnd, SW_RESTORE);
+        SetForegroundWindow(hwnd)
+            .as_bool()
+            .then_some(())
+            .ok_or(InputError::InjectionFailed)
+    }?;
+    thread::sleep(Duration::from_millis(100));
+    target_window(window_id).and_then(|current| {
+        current
+            .foreground
+            .then_some(())
+            .ok_or(InputError::WindowUnavailable)
+    })
+}
+
 pub fn execute(
     action: &ComputerAction,
     expected: &TargetWindow,
@@ -86,6 +113,13 @@ pub fn execute(
     let desktop = virtual_desktop()?;
     let rect = window_rect(expected.hwnd)?;
     match action {
+        ComputerAction::FocusWindow { window_id } => {
+            stop_if_requested(&should_stop)?;
+            if window_id != &expected.hwnd.to_string() {
+                return Err(InputPolicyError::FocusMismatch.into());
+            }
+            focus_window(window_id)?;
+        }
         ComputerAction::Click {
             point,
             button,

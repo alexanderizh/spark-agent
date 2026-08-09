@@ -12,7 +12,6 @@ final class MacUserInputMonitor: @unchecked Sendable {
   private var bindings: [String: UserInputBinding] = [:]
   private var takeoverSessions: Set<String> = []
   private var lastUserInputAt = Date.distantPast.timeIntervalSinceReferenceDate
-  private var lastUserPointerDown: (at: TimeInterval, point: CGPoint)?
   private var eventTap: CFMachPort?
   private var runLoopSource: CFRunLoopSource?
   private var thread: Thread?
@@ -34,18 +33,12 @@ final class MacUserInputMonitor: @unchecked Sendable {
     start()
   }
 
-  func bind(sessionID: String, processID: pid_t, bounds: NativeRect, observedAt: TimeInterval) {
+  func bind(sessionID: String, processID: pid_t, bounds: NativeRect) {
     lock.withLock {
       let isNewBinding = bindings[sessionID] == nil
       bindings[sessionID] = UserInputBinding(processID: processID, bounds: bounds)
       if isNewBinding {
         takeoverSessions.remove(sessionID)
-        if let pointerDown = lastUserPointerDown,
-          pointerDown.at >= observedAt,
-          contains(pointerDown.point, in: bounds)
-        {
-          takeoverSessions.insert(sessionID)
-        }
       }
     }
   }
@@ -63,8 +56,8 @@ final class MacUserInputMonitor: @unchecked Sendable {
 
   func waitForUserInputIdle(
     sessionID: String,
-    idleFor: Duration = .milliseconds(300),
-    maximumWait: Duration = .milliseconds(750)
+    idleFor: Duration = .milliseconds(120),
+    maximumWait: Duration = .milliseconds(350)
   ) async throws {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: maximumWait)
@@ -142,24 +135,48 @@ final class MacUserInputMonitor: @unchecked Sendable {
     }
     let now = Date.timeIntervalSinceReferenceDate
     let point = event.location
-    let frontmostProcessID =
+    let keyboardProcessID =
       type == .keyDown ? NSWorkspace.shared.frontmostApplication?.processIdentifier : nil
+    let pointerProcessID =
+      type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown
+      ? topmostWindowProcessID(at: point) : nil
     lock.withLock {
       lastUserInputAt = now
-      if let frontmostProcessID {
-        for (sessionID, binding) in bindings where binding.processID == frontmostProcessID {
+      if let keyboardProcessID {
+        for (sessionID, binding) in bindings where binding.processID == keyboardProcessID {
           takeoverSessions.insert(sessionID)
         }
       }
       guard type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown else {
         return
       }
-      lastUserPointerDown = (at: now, point: point)
-      for (sessionID, binding) in bindings where contains(point, in: binding.bounds) {
+      guard let pointerProcessID else { return }
+      for (sessionID, binding) in bindings
+      where binding.processID == pointerProcessID && contains(point, in: binding.bounds)
+      {
         takeoverSessions.insert(sessionID)
       }
     }
   }
+}
+
+/// Resolves the visible window that actually owns a mouse-down point. Checking only whether
+/// a point falls inside the controlled window is insufficient because Spark, sheets, dialogs,
+/// and other applications can overlap the same rectangle.
+func topmostWindowProcessID(at point: CGPoint) -> pid_t? {
+  guard
+    let rawWindows = CGWindowListCopyWindowInfo(
+      [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+  else { return nil }
+  for window in rawWindows {
+    guard let boundsDictionary = window[kCGWindowBounds as String] as? NSDictionary,
+      let bounds = CGRect(dictionaryRepresentation: boundsDictionary),
+      bounds.contains(point),
+      let processID = window[kCGWindowOwnerPID as String] as? NSNumber
+    else { continue }
+    return pid_t(processID.int32Value)
+  }
+  return nil
 }
 
 private struct UserInputBinding {

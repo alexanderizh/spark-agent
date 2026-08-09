@@ -69,18 +69,25 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     bytes: Buffer
   }): Promise<{ visualFingerprint: string }> {
     assertEvidenceImage(input.observation, input.payload, input.bytes)
-    this.cacheLatest(input.computerSessionId, input.observation.screenshot.snapshotId, input.bytes)
     const processed = this.imageProcessor(input.bytes, input.observation)
     if (processed.bytes.length < 1 || !/^[a-f0-9]{16,128}$/iu.test(processed.perceptualHash)) {
       throw incompatibleEvidence()
     }
+    // The decision model uses the same bounded, redacted 1200px evidence as durable audit.
+    // Sending the raw Retina/4K PNG every step adds large upload and vision-encoding latency
+    // without improving target selection, and can expose regions already classified sensitive.
+    this.cacheLatest(
+      input.computerSessionId,
+      input.observation.screenshot.snapshotId,
+      processed.bytes,
+    )
     const imageBlobId = this.createId()
     const imageSha256 = sha256(processed.bytes)
     const expiresAt = new Date(this.now().getTime() + EXECUTION_EVIDENCE_TTL_MS).toISOString()
 
     // Fire-and-forget: the expensive encrypted-vault + SQLite write runs on the per-session
     // serial chain without blocking the live action. `cacheLatest` above already made this
-    // frame available to `readLatestImage`, and the wire layer has already validated the
+    // sanitized frame available to `readLatestImage`, and the wire layer has already validated the
     // payload, so a storage fault must never fail the observation that produced it.
     void this.scheduleDurableWrite({
       computerSessionId: input.computerSessionId,

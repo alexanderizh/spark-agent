@@ -16,12 +16,11 @@ pub fn list_windows() -> Result<Vec<Value>, ()> {
         .collect())
 }
 
-pub fn focused_window_descriptor(app_id: &str, window_id: &str) -> Result<Value, ()> {
+pub fn window_descriptor(app_id: &str, window_id: &str) -> Result<Value, ()> {
     list_windows()?
         .into_iter()
         .find(|descriptor| {
-            descriptor.get("focused").and_then(Value::as_bool) == Some(true)
-                && descriptor.pointer("/app/id").and_then(Value::as_str) == Some(app_id)
+            descriptor.pointer("/app/id").and_then(Value::as_str) == Some(app_id)
                 && descriptor.pointer("/window/id").and_then(Value::as_str) == Some(window_id)
         })
         .ok_or(())
