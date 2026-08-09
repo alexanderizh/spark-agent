@@ -7919,14 +7919,12 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   overflow-y: auto;
 }
 
-/* 模型选择器：搜索框固定顶部，下方列表自身滚动。对齐 chat 端 ComposerV2 的标杆实现，
-   覆盖 views.css 里 .composer-model-menu 的 overflow（改为内层 .composer-model-list 滚动），
-   也覆盖 base .composer-menu/.composer-dropdown-menu 的 overflow:auto（外层改为 hidden）。 */
 .composer-model-menu {
   display: flex;
   flex-direction: column;
   max-height: min(var(--composer-menu-max-height, 420px), calc(100vh - 96px));
   overflow: hidden;
+  box-shadow: var(--shadow-md);
 }
 
 .composer-model-search {
@@ -13730,7 +13728,10 @@ body.canvas-agent-panel-resizing {
 .canvas-operation-preset-dialog .ant-input-affix-wrapper-focused,
 .canvas-operation-preset-dialog .ant-select-focused .ant-select-selector {
   border-color: color-mix(in srgb, var(--primary) 56%, var(--border)) !important;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent) !important;
+  // box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent) !important;
+}
+.ant-select-focused, .ant-select-open{
+  box-shadow: null;
 }
 
 .canvas-operation-preset-modal-shell {

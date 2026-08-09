@@ -31,6 +31,11 @@ import {
   type SupportedDesktopPlatform,
 } from './definitions.js'
 import {
+  type ExternalCapabilityAdapter,
+  type ExternalCapabilityId,
+  type ExternalCapabilityDescription,
+} from './externalCapabilityAdapters.js'
+import {
   OptionalCapabilityStateStore,
   type ActiveCapabilityState,
 } from './OptionalCapabilityStateStore.js'
@@ -48,6 +53,7 @@ export interface OptionalCapabilityManagerOptions {
   onProgress?: (progress: OptionalCapabilityProgress) => void
   onSnapshot?: (snapshot: OptionalCapabilitySnapshot) => void
   logger?: CapabilityLogger
+  externalAdapters?: Partial<Record<ExternalCapabilityId, ExternalCapabilityAdapter>>
 }
 
 type CapabilityLogger = Pick<ReturnType<typeof createLogger>, 'info' | 'warn' | 'error'>
@@ -74,8 +80,10 @@ export class OptionalCapabilityManager {
   private readonly errors = new Map<OptionalCapabilityId, CapabilityErrorState>()
   private readonly controllers = new Map<OptionalCapabilityId, AbortController>()
   private readonly verifiedActiveStates = new Map<OptionalCapabilityId, string>()
+  private readonly externalAutoUpdates = new Map<ExternalCapabilityId, boolean>()
   private readonly progressListeners = new Set<(progress: OptionalCapabilityProgress) => void>()
   private readonly logger: CapabilityLogger
+  private readonly externalAdapters: Partial<Record<ExternalCapabilityId, ExternalCapabilityAdapter>>
   private queueTail: Promise<void> = Promise.resolve()
   private queuedJobs = 0
   private manifest: SparkInstallManifest | null = null
@@ -92,6 +100,7 @@ export class OptionalCapabilityManager {
     this.onProgress = options.onProgress
     this.onSnapshot = options.onSnapshot
     this.logger = options.logger ?? createLogger('optional-capabilities')
+    this.externalAdapters = options.externalAdapters ?? {}
   }
 
   async list(): Promise<OptionalCapabilitySnapshot> {
@@ -142,6 +151,10 @@ export class OptionalCapabilityManager {
   async cancel(id: OptionalCapabilityId): Promise<OptionalCapabilityMutationResponse> {
     const controller = this.controllers.get(id)
     const definition = getOptionalCapabilityDefinition(id)
+    if (!definition.cancellable) {
+      const snapshot = await this.buildSnapshot()
+      return { success: false, message: `${definition.displayName}当前安装任务不支持取消`, snapshot }
+    }
     if (!controller) {
       const snapshot = await this.buildSnapshot()
       return { success: false, message: `${definition.displayName}当前没有可取消的安装`, snapshot }
@@ -158,6 +171,11 @@ export class OptionalCapabilityManager {
   }
 
   async uninstall(id: OptionalCapabilityId): Promise<OptionalCapabilityMutationResponse> {
+    const definition = getOptionalCapabilityDefinition(id)
+    if (!definition.supportsUninstall) {
+      const snapshot = await this.buildSnapshot()
+      return { success: false, message: `${definition.displayName}不支持从应用内卸载`, snapshot }
+    }
     const activeInstall = this.installs.get(id)
     if (activeInstall) {
       this.controllers.get(id)?.abort()
@@ -210,6 +228,13 @@ export class OptionalCapabilityManager {
     id: OptionalCapabilityId,
     enabled: boolean,
   ): Promise<OptionalCapabilitySnapshot> {
+    if (isExternalCapabilityId(id)) {
+      this.externalAutoUpdates.set(id, enabled)
+      await this.store.writeAutoUpdate(id, enabled)
+      const snapshot = await this.buildSnapshot()
+      this.onSnapshot?.(snapshot)
+      return snapshot
+    }
     const active = await this.store.read(id)
     if (active) await this.store.write({ ...active, autoUpdate: enabled })
     const snapshot = await this.buildSnapshot()
@@ -285,6 +310,9 @@ export class OptionalCapabilityManager {
       this.logger.info(
         `event=optional_capability_install capability=${id} stage=started status=running`,
       )
+      if (definition.source === 'external') {
+        return await this.performExternalInstall(id as ExternalCapabilityId, signal)
+      }
       const manifest = await this.refreshManifest().catch((error) => {
         throw capabilityError(
           'manifest_unavailable',
@@ -582,6 +610,33 @@ export class OptionalCapabilityManager {
   private async buildSnapshot(): Promise<OptionalCapabilitySnapshot> {
     const capabilities = await Promise.all(
       OPTIONAL_CAPABILITY_DEFINITIONS.map(async (definition): Promise<OptionalCapabilityItem> => {
+        if (definition.source === 'external') {
+          const externalId = definition.id as ExternalCapabilityId
+          const description = await this.describeExternalCapability(externalId)
+          const externalError = this.errors.get(externalId)
+          const autoUpdate =
+            this.externalAutoUpdates.get(externalId) ??
+            (await this.store.readAutoUpdate(externalId)) ??
+            true
+          this.externalAutoUpdates.set(externalId, autoUpdate)
+          return {
+            id: externalId,
+            displayName: definition.displayName,
+            description: definition.description,
+            ...description,
+            ...(externalError
+              ? {
+                  state: 'error' as const,
+                  error: externalError.message,
+                  errorCode: externalError.code,
+                  retryable: externalError.retryable,
+                }
+              : {}),
+            autoUpdate,
+            cancellable: definition.cancellable,
+            supportsUninstall: definition.supportsUninstall,
+          }
+        }
         const active = await this.store.read(definition.id).catch(() => null)
         const artifacts = this.manifest
           ? definition.selectArtifacts(this.manifest, this.options.platform, this.options.arch)
@@ -619,6 +674,8 @@ export class OptionalCapabilityManager {
             ? Object.values(active.artifacts).reduce((sum, artifact) => sum + artifact.size, 0)
             : null,
           autoUpdate: active?.autoUpdate ?? true,
+          cancellable: definition.cancellable,
+          supportsUninstall: definition.supportsUninstall,
           ...(error
             ? { error: error.message, errorCode: error.code, retryable: error.retryable }
             : {}),
@@ -630,6 +687,135 @@ export class OptionalCapabilityManager {
       checkedAt: this.now().toISOString(),
       manifestUpdatedAt: this.manifest?.updatedAt || null,
       remoteAvailable: this.manifestAvailable,
+    }
+  }
+
+  private async describeExternalCapability(
+    id: ExternalCapabilityId,
+  ): Promise<ExternalCapabilityDescription> {
+    const adapter = this.externalAdapters[id]
+    if (!adapter) {
+      return {
+        state: 'missing',
+        installedVersion: null,
+        targetVersion: null,
+        downloadSize: 0,
+        installedSize: null,
+      }
+    }
+    try {
+      return await adapter.describe({
+        manifest: this.manifest ?? emptyManifest(),
+        platform: this.options.platform,
+        arch: this.options.arch,
+        signal: new AbortController().signal,
+      })
+    } catch (error) {
+      return {
+        state: 'error',
+        installedVersion: null,
+        targetVersion: null,
+        downloadSize: 0,
+        installedSize: null,
+        error: error instanceof Error ? error.message : String(error),
+        errorCode: 'internal_error',
+        retryable: true,
+      }
+    }
+  }
+
+  private async performExternalInstall(
+    id: ExternalCapabilityId,
+    signal: AbortSignal,
+  ): Promise<OptionalCapabilityMutationResponse> {
+    const definition = getOptionalCapabilityDefinition(id)
+    const adapter = this.externalAdapters[id]
+    if (!adapter) {
+      const message = `${definition.displayName}安装适配器尚未注册`
+      const snapshot = await this.buildSnapshot()
+      return { success: false, message, errorCode: 'internal_error', snapshot }
+    }
+    let manifest = this.manifest ?? emptyManifest()
+    try {
+      manifest = await this.refreshManifest()
+    } catch {
+      // Chromium can install from the already bundled Playwright package without
+      // the Spark artifact manifest. Other adapters will report a precise
+      // artifact-unavailable error from their own selector.
+    }
+    try {
+      const result = await adapter.install(
+        {
+          manifest,
+          platform: this.options.platform,
+          arch: this.options.arch,
+          signal,
+        },
+        (phase, downloaded, total, message, version) =>
+          this.emitProgress(
+            id,
+            definition.displayName,
+            phase,
+            downloaded,
+            total,
+            0,
+            message,
+            version,
+          ),
+      )
+      if (!result.success) {
+        this.errors.set(id, {
+          code: result.errorCode ?? 'internal_error',
+          message: result.message,
+          retryable: result.retryable ?? true,
+        })
+        this.emitProgress(
+          id,
+          definition.displayName,
+          'error',
+          0,
+          0,
+          0,
+          result.message,
+          undefined,
+          result.errorCode ?? 'internal_error',
+          result.retryable ?? true,
+        )
+      } else {
+        this.errors.delete(id)
+        this.emitProgress(id, definition.displayName, 'ready', 0, 0, 0, result.message)
+      }
+      const snapshot = await this.buildSnapshot()
+      this.onSnapshot?.(snapshot)
+      return {
+        success: result.success,
+        message: result.message,
+        ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+        snapshot,
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const failure: CapabilityErrorState = {
+        code: 'internal_error',
+        message: `${definition.displayName}安装失败：${message}`,
+        retryable: true,
+      }
+      this.errors.set(id, failure)
+      this.emitProgress(
+        id,
+        definition.displayName,
+        'error',
+        0,
+        0,
+        0,
+        failure.message,
+        undefined,
+        failure.code,
+        failure.retryable,
+      )
+      const snapshot = await this.buildSnapshot()
+      this.onSnapshot?.(snapshot)
+      return { success: false, message: failure.message, errorCode: failure.code, snapshot }
     }
   }
 
@@ -912,4 +1098,12 @@ function safeSegment(value: string): string {
     throw new Error(`不安全的能力包路径片段：${value}`)
   }
   return value
+}
+
+function isExternalCapabilityId(id: OptionalCapabilityId): id is ExternalCapabilityId {
+  return id === 'codex-runtime' || id === 'ffmpeg' || id === 'chromium' || id === 'voice-pack'
+}
+
+function emptyManifest(): SparkInstallManifest {
+  return { schemaVersion: 1, updatedAt: '', artifacts: [] }
 }

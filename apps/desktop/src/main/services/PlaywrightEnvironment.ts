@@ -56,6 +56,11 @@ function getBundledBrowserDirCandidates(): string[] {
 
   if (app.isPackaged) {
     candidates.push(join(process.resourcesPath, 'browsers'))
+    try {
+      candidates.push(join(app.getPath('userData'), 'browsers'))
+    } catch {
+      // app may not be ready in tests or very early startup
+    }
   }
 
   // Keep the direct __dirname-derived guesses first for the common dev case,

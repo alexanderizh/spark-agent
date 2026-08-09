@@ -115,6 +115,39 @@ export class OptionalCapabilityStateStore {
     await rename(temporary, target)
   }
 
+  async readAutoUpdate(id: OptionalCapabilityId): Promise<boolean | null> {
+    try {
+      const parsed = JSON.parse(
+        await readFile(join(this.root, 'auto-update.json'), 'utf8'),
+      ) as Record<string, unknown>
+      return typeof parsed[id] === 'boolean' ? parsed[id] : null
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      return null
+    }
+  }
+
+  async writeAutoUpdate(id: OptionalCapabilityId, enabled: boolean): Promise<void> {
+    let preferences: Record<string, boolean> = {}
+    try {
+      const parsed = JSON.parse(
+        await readFile(join(this.root, 'auto-update.json'), 'utf8'),
+      ) as Record<string, unknown>
+      preferences = {}
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value === 'boolean') preferences[key] = value
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    preferences[id] = enabled
+    const target = join(this.root, 'auto-update.json')
+    const temporary = `${target}.new`
+    await mkdir(this.root, { recursive: true })
+    await writeFile(temporary, `${JSON.stringify(preferences, null, 2)}\n`, { mode: 0o600 })
+    await rename(temporary, target)
+  }
+
   async remove(id: OptionalCapabilityId): Promise<void> {
     await rm(this.capabilityRoot(id), { recursive: true, force: true })
   }

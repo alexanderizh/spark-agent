@@ -3,6 +3,27 @@
   color: var(--text-secondary);
 }
 
+.optional-capability-modal {
+  &.ant-modal {
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 48px);
+    margin: 0 auto;
+    top: 24px !important;
+  }
+
+  .ant-modal-container {
+    display: flex;
+    max-height: calc(100vh - 48px);
+    flex-direction: column;
+  }
+
+  .ant-modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
 .optional-capability-choice-list {
   display: grid;
   gap: 10px;

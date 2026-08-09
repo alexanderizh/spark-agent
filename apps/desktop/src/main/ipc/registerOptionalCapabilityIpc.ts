@@ -5,6 +5,7 @@ import type {
   SupportedDesktopArch,
   SupportedDesktopPlatform,
 } from '../services/optional-capabilities/definitions.js'
+import { getExternalCapabilityAdapters } from '../services/optional-capabilities/externalCapabilityAdapters.js'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
 
 type Manager = Pick<
@@ -30,6 +31,7 @@ export function getOptionalCapabilityManager(): OptionalCapabilityManager {
     userDataDir: app.getPath('userData'),
     platform: currentPlatform(),
     arch: currentArchitecture(),
+    externalAdapters: getExternalCapabilityAdapters(),
     onProgress: (progress) =>
       pushStreamEvent('stream:optional-capability:progress', progress),
   })

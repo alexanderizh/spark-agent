@@ -25,6 +25,7 @@ vi.mock('./useOptionalCapabilities', () => ({
           downloadSize: 10,
           installedSize: 20,
           autoUpdate: true,
+          supportsUninstall: false,
         },
       ],
       checkedAt: '2026-08-02T00:00:00.000Z',
@@ -70,5 +71,11 @@ describe('OptionalCapabilitiesSettingsCard', () => {
     await act(async () => autoUpdate?.click())
 
     expect(container.textContent).toContain('保存自动更新设置失败')
+  })
+
+  it('does not offer in-app uninstall for externally managed resources', async () => {
+    await act(async () => root.render(<OptionalCapabilitiesSettingsCard />))
+
+    expect(container.textContent).not.toContain('卸载')
   })
 })

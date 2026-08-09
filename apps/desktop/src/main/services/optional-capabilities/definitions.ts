@@ -11,6 +11,9 @@ export interface OptionalCapabilityDefinition {
   id: OptionalCapabilityId
   displayName: string
   description: string
+  source: 'archive' | 'external'
+  cancellable: boolean
+  supportsUninstall: boolean
   selectArtifacts(
     manifest: SparkInstallManifest,
     platform: SupportedDesktopPlatform,
@@ -60,9 +63,21 @@ function selectByPrefix(
 
 export const OPTIONAL_CAPABILITY_DEFINITIONS: OptionalCapabilityDefinition[] = [
   {
+    id: 'codex-runtime',
+    displayName: 'Codex 本地运行环境',
+    description: '为本地 Codex Agent 提供与应用内 SDK 匹配的原生运行时。',
+    source: 'external',
+    cancellable: false,
+    supportsUninstall: false,
+    selectArtifacts: () => [],
+  },
+  {
     id: 'office-viewer',
     displayName: '离线 Office 预览',
     description: '在本机预览 DOCX、XLSX、PPT 和 PPTX 文件所需的 Worker、WASM 与字体。',
+    source: 'archive',
+    cancellable: true,
+    supportsUninstall: true,
     selectArtifacts(manifest, platform, arch) {
       const artifact = selectByPrefix(
         manifest,
@@ -78,6 +93,9 @@ export const OPTIONAL_CAPABILITY_DEFINITIONS: OptionalCapabilityDefinition[] = [
     id: 'local-depth',
     displayName: '本地深度处理',
     description: '在本机生成深度图和深度视频转换结果所需的推理 Runtime 与模型。',
+    source: 'archive',
+    cancellable: true,
+    supportsUninstall: true,
     selectArtifacts(manifest, platform, arch) {
       const runtime = selectByPrefix(
         manifest,
@@ -95,6 +113,33 @@ export const OPTIONAL_CAPABILITY_DEFINITIONS: OptionalCapabilityDefinition[] = [
       )
       return runtime && model ? [runtime, model] : []
     },
+  },
+  {
+    id: 'ffmpeg',
+    displayName: 'FFmpeg',
+    description: '为视频剪辑、关键帧提取和转码提供本地 FFmpeg/ffprobe。',
+    source: 'external',
+    cancellable: false,
+    supportsUninstall: false,
+    selectArtifacts: () => [],
+  },
+  {
+    id: 'chromium',
+    displayName: 'Chromium 浏览器运行环境',
+    description: '为 Playwright 网页自动化提供独立的 Chromium 浏览器。',
+    source: 'external',
+    cancellable: false,
+    supportsUninstall: false,
+    selectArtifacts: () => [],
+  },
+  {
+    id: 'voice-pack',
+    displayName: '语音输入资源',
+    description: '为离线语音输入提供本地推理运行时与语音识别模型。',
+    source: 'external',
+    cancellable: false,
+    supportsUninstall: false,
+    selectArtifacts: () => [],
   },
 ]
 

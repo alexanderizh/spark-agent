@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SparkInstallManifest } from '../../../../../../packages/agent-runtime/src/services/skill-registry/artifact-manifest'
 import { OPTIONAL_CAPABILITY_DEFINITIONS } from './definitions'
+import type { ExternalCapabilityAdapter } from './externalCapabilityAdapters'
 import { OptionalCapabilityManager } from './OptionalCapabilityManager'
 
 const roots: string[] = []
@@ -193,11 +194,112 @@ async function writeDepthModelPackage(destination: string, version: string): Pro
 }
 
 describe('OptionalCapabilityManager', () => {
-  it('defines only Office Viewer and local depth capabilities', () => {
+  it('defines selectable capabilities in the startup resource order', () => {
     expect(OPTIONAL_CAPABILITY_DEFINITIONS.map((definition) => definition.id)).toEqual([
+      'codex-runtime',
       'office-viewer',
       'local-depth',
+      'ffmpeg',
+      'chromium',
+      'voice-pack',
     ])
+  })
+
+  it('publishes external capability state and routes its install progress', async () => {
+    const root = await fixtureRoot()
+    let installed = false
+    const progress: string[] = []
+    const adapter: ExternalCapabilityAdapter = {
+      async describe() {
+        return {
+          state: installed ? 'ready' : 'missing',
+          installedVersion: installed ? '1.0.0' : null,
+          targetVersion: '1.0.0',
+          downloadSize: 200,
+          installedSize: installed ? 200 : null,
+        }
+      },
+      async install(_context, report) {
+        report('downloading', 100, 200, '正在下载测试资源', '1.0.0')
+        installed = true
+        report('ready', 200, 200, '测试资源安装完成', '1.0.0')
+        return { success: true, message: '测试资源安装完成' }
+      },
+    }
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: async () => manifest(),
+      externalAdapters: { chromium: adapter },
+      onProgress: (event) => {
+        if (event.capabilityId === 'chromium') progress.push(event.phase)
+      },
+    })
+
+    await expect(manager.check(true)).resolves.toMatchObject({
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({ id: 'chromium', state: 'missing', downloadSize: 200 }),
+      ]),
+    })
+    await expect(manager.install('chromium')).resolves.toMatchObject({ success: true })
+    expect(progress).toEqual(expect.arrayContaining(['queued', 'downloading', 'ready']))
+
+    await manager.setAutoUpdate('chromium', false)
+    const restarted = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      externalAdapters: { chromium: adapter },
+    })
+    await expect(restarted.list()).resolves.toMatchObject({
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({ id: 'chromium', autoUpdate: false }),
+      ]),
+    })
+  })
+
+  it('keeps external installation failures visible in the returned snapshot', async () => {
+    const root = await fixtureRoot()
+    const adapter: ExternalCapabilityAdapter = {
+      async describe() {
+        return {
+          state: 'missing',
+          installedVersion: null,
+          targetVersion: '1.0.0',
+          downloadSize: 200,
+          installedSize: null,
+        }
+      },
+      async install() {
+        return {
+          success: false,
+          message: '测试资源下载失败',
+          errorCode: 'download_failed',
+          retryable: true,
+        }
+      },
+    }
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      externalAdapters: { chromium: adapter },
+    })
+
+    const result = await manager.install('chromium')
+
+    expect(result.success).toBe(false)
+    expect(result.snapshot.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'chromium',
+          state: 'error',
+          error: '测试资源下载失败',
+          errorCode: 'download_failed',
+        }),
+      ]),
+    )
   })
 
   it('selects compatible artifacts and installs a capability once for concurrent callers', async () => {

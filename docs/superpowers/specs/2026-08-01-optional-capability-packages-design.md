@@ -1,8 +1,8 @@
 # 桌面端可选能力包与后台安装设计
 
-> 状态: 已落地 | 最后核对: 2026-08-02
+> 状态: 已落地 | 最后核对: 2026-08-10
 
-> 交付范围：本轮已完成离线 Office Viewer 与本地深度处理；Computer Use 按明确要求完全跳过，现有实现和打包边界保持不变，不属于本轮验收结论。
+> 交付范围：Office Viewer 与本地深度处理已落地；2026-08-10 起扩展统一首次资源选择中心，接入 Codex native runtime、FFmpeg、Chromium 和语音资源。Computer Use 仍完全排除在本设计之外。
 
 ## 背景
 
@@ -21,7 +21,7 @@ SparkWork 当前把本地深度推理运行时、独立 Node Runtime、Playwrigh
 ## 目标
 
 1. 立即裁剪基础包中不需要的 ONNX Web Runtime 和异平台 Native 二进制。
-2. 建立统一的可选能力包管理器，支持离线 Office 预览和本地深度处理。
+2. 建立统一的可选能力包管理器，支持离线 Office 预览、本地深度处理、Codex native runtime、FFmpeg、Chromium 和语音资源。
 3. 应用启动时只检查远程清单；由用户选择需要的能力后后台安装。
 4. 右上角统一展示下载、校验、解压和激活进度。
 5. 设置「完整性」页支持安装、更新、修复、卸载和自动更新。
@@ -56,14 +56,14 @@ SparkWork 当前把本地深度推理运行时、独立 Node Runtime、Playwrigh
 
 ## 总体架构
 
-新增统一 `OptionalCapabilityManager`，负责：
+统一 `OptionalCapabilityManager` 负责：
 
 - 获取和缓存 Spark artifact manifest；
 - 将远程 artifact 聚合为用户可理解的能力包；
 - 根据当前平台、架构和应用版本选择兼容制品；
 - 读取已安装版本和完整性状态；
 - 串行调度下载、SHA-256 校验、解压、健康检查和原子激活；
-- 向主进程 IPC、右上角进度中心和设置页发布同一份状态；
+- 向主进程 IPC、右上角进度中心和设置页发布同一份状态；Codex、FFmpeg、Chromium、Voice 通过适配器复用已有完整性服务；
 - 在安装失败、取消或应用退出时保留当前激活版本。
 
 能力定义和通用安装状态放在独立模块中，不继续增加已经超过 6,000 行的

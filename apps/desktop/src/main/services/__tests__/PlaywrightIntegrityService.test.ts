@@ -22,6 +22,8 @@ import {
   detectIntegrity,
   buildStatus,
   getCachedIntegrity,
+  getBrowserInstallCommand,
+  getBrowserInstallDirectory,
   invalidateCache,
 } from '../PlaywrightIntegrityService.js'
 
@@ -126,6 +128,37 @@ describe('PlaywrightIntegrityService', () => {
       // resolvable from this test's working directory.
       expect(typeof status.mcpInstalled).toBe('boolean')
       expect(typeof status.browserReady).toBe('boolean')
+    })
+  })
+
+  describe('browser installation', () => {
+    it('uses a writable user-data directory for packaged browser downloads', () => {
+      expect(
+        getBrowserInstallDirectory({
+          packaged: true,
+          userDataPath: '/Users/test/Library/Application Support/SparkWork',
+          targetDir: '/unused',
+        }),
+      ).toBe('/Users/test/Library/Application Support/SparkWork/browsers')
+    })
+
+    it('runs the packaged Playwright CLI through the standalone Node runtime', () => {
+      expect(
+        getBrowserInstallCommand({
+          packaged: true,
+          standaloneNodePath: '/Applications/SparkWork.app/Contents/Resources/runtime/node/node',
+          packagedCliPath: '/Applications/SparkWork.app/Contents/Resources/playwright-mcp/node_modules/playwright/cli.js',
+          platform: 'darwin',
+        }),
+      ).toEqual({
+        command: '/Applications/SparkWork.app/Contents/Resources/runtime/node/node',
+        args: [
+          '/Applications/SparkWork.app/Contents/Resources/playwright-mcp/node_modules/playwright/cli.js',
+          'install',
+          'chromium',
+        ],
+        shell: false,
+      })
     })
   })
 })

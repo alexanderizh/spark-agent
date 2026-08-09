@@ -139,6 +139,10 @@ extraResources:
     to: playwright-mcp/node_modules/playwright-core
     filter:
       - '**/*'
+  - from: ../../node_modules/playwright
+    to: playwright-mcp/node_modules/playwright
+    filter:
+      - '**/*'
   - from: out/main/migrations
     to: migrations
     filter:

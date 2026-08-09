@@ -16991,7 +16991,10 @@ body.inspector-resizing {
 .settings-content .ant-select-focused .ant-select-selector {
   border-color: transparent !important;
   background: var(--bg-sunken) !important;
-  box-shadow: inset 0 0 0 1.5px var(--primary) !important;
+  /* box-shadow: inset 0 0 0 1.5px var(--primary) !important; */
+}
+.ant-select-focused, .ant-select-open, .ant-input-outlined{
+  box-shadow: unset!important;
 }
 
 /* Segmented 分段控件：轨道灰底，选中项实色填充 */
