@@ -56,6 +56,7 @@ import { GitBranchDialog, GitCommitDialog, GitCreateBranchDialog } from './chat/
 import { GitEnvPanel } from './chat/ChatGitEnv'
 import {
   getRightGutterWidth,
+  shouldAutoCollapseGitEnvPanelForViewport,
   shouldAutoCollapseGitEnvPanel,
 } from './chat/git-env-panel-layout'
 import { FileChipIcon } from './chat/ChatFileIcon'
@@ -1448,7 +1449,13 @@ export function ChatView({
       const spaceConstrained = shouldAutoCollapseGitEnvPanel(rightGutter)
       const wasSpaceConstrained = gitEnvPanelSpaceConstrainedRef.current
 
-      if (spaceConstrained && showGitEnvPanelRef.current) {
+      if (
+        shouldAutoCollapseGitEnvPanelForViewport({
+          panelOpen: showGitEnvPanelRef.current,
+          spaceConstrained,
+          wasSpaceConstrained,
+        })
+      ) {
         gitEnvPanelViewportCollapsedRef.current = true
         showGitEnvPanelRef.current = false
         setShowGitEnvPanel(false)

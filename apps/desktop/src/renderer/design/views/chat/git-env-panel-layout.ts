@@ -7,3 +7,15 @@ export function getRightGutterWidth(chatMainRight: number, contentRight: number)
 export function shouldAutoCollapseGitEnvPanel(rightGutter: number | null): boolean {
   return rightGutter != null && rightGutter < GIT_ENV_PANEL_MIN_RIGHT_GUTTER
 }
+
+export function shouldAutoCollapseGitEnvPanelForViewport({
+  panelOpen,
+  spaceConstrained,
+  wasSpaceConstrained,
+}: {
+  panelOpen: boolean
+  spaceConstrained: boolean
+  wasSpaceConstrained: boolean
+}): boolean {
+  return panelOpen && spaceConstrained && !wasSpaceConstrained
+}
