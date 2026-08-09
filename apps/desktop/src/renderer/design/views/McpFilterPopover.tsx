@@ -71,16 +71,16 @@ export function McpFilterPopover({
           {STATUS_OPTIONS.map((option) => {
             const active = statusFilter === option.value
             return (
-              <button
+              <Button
                 key={option.value}
-                type="button"
+                type="text" size="small"
                 className={`mv_filter_option ${active ? 'mv_filter_option_active' : ''}`}
                 onClick={() => onStatusChange(option.value)}
               >
                 <span className="mv_filter_option_dot" />
                 <span className="mv_filter_option_label">{option.label}</span>
                 <span className="mv_filter_count">{statusCounts[option.value]}</span>
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -89,24 +89,24 @@ export function McpFilterPopover({
       <div className="mv_filter_section">
         <div className="mv_filter_section_title">作用域</div>
         <div className="mv_filter_options">
-          <button
-            type="button"
+          <Button
+            type="text" size="small"
             className={`mv_filter_option ${scopeFilter === 'all' ? 'mv_filter_option_active' : ''}`}
             onClick={() => onScopeChange('all')}
           >
             <span className="mv_filter_option_label">全部</span>
-          </button>
+          </Button>
           {SCOPES.map((scope) => {
             const active = scopeFilter === scope
             return (
-              <button
+              <Button
                 key={scope}
-                type="button"
+                type="text" size="small"
                 className={`mv_filter_option ${active ? 'mv_filter_option_active' : ''}`}
                 onClick={() => onScopeChange(scope)}
               >
                 <span className="mv_filter_option_label">{capitalize(scope)}</span>
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -129,7 +129,7 @@ export function McpFilterPopover({
       onOpenChange={setOpen}
     >
       <Button
-        size="middle"
+        size="small"
         icon={<Icons.Filter size={12} />}
         className={`mv_filter_btn ${activeCount > 0 ? 'mv_filter_btn_active' : ''}`}
       >

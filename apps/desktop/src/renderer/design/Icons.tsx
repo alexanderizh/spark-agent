@@ -155,6 +155,12 @@ export const Icons = {
       <path d="M8 11l8-4M8 13l8 4" />
     </IconBase>
   ),
+  Plugins: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M9 3h6v4h3a3 3 0 0 1 3 3v4h-4v3a3 3 0 0 1-3 3h-4v-4H7a3 3 0 0 1-3-3v-4h4V6a3 3 0 0 1 3-3z" />
+      <path d="M12 7v10M7 12h10" />
+    </IconBase>
+  ),
   Team: (p: IconProps) => (
     <IconBase {...p}>
       <circle cx="9" cy="8" r="3.5" />

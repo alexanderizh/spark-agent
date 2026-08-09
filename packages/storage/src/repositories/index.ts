@@ -90,10 +90,24 @@ export type {
   CreateConnectorConnectionParams,
   UpdateConnectorConnectionParams,
 } from './connector.repository.js'
+export {
+  ConnectorAccountRepository,
+  PluginRuntimeAuditRepository,
+} from './plugin-runtime.repository.js'
+export type {
+  ConnectorAccountRow,
+  UpsertConnectorAccountParams,
+  UpdateConnectorAccountParams,
+  PluginRuntimeAuditParams,
+} from './plugin-runtime.repository.js'
 export { ProviderProfileRepository } from './provider.repository.js'
 export { RulesRepository } from './rules.repository.js'
 export { PermissionProfileRepository } from './permission.repository.js'
-export type { PermissionDecisionRow, PermissionProfileRow, PermissionRuleRow } from './permission.repository.js'
+export type {
+  PermissionDecisionRow,
+  PermissionProfileRow,
+  PermissionRuleRow,
+} from './permission.repository.js'
 export { ModelProfileRepository } from './model-profile.repository.js'
 export type { ModelProfileRow } from './model-profile.repository.js'
 export { MediaModelManifestRepository } from './media-model-manifest.repository.js'
@@ -117,18 +131,50 @@ export { SkillRepository } from './skill.repository.js'
 export type { SkillRow } from './skill.repository.js'
 export { SkillRegistryRepository } from './skill-registry.repository.js'
 export type { SkillRegistryRow } from './skill-registry.repository.js'
+export { PluginRepository } from './plugin.repository.js'
+export type {
+  PluginPermissionRow,
+  PluginRegistryRow,
+  PluginResourceRow,
+  PluginRow,
+  PluginSource,
+  PluginState,
+  PluginTrust,
+} from './plugin.repository.js'
 export { SettingsRepository } from './settings.repository.js'
 export type { SettingsRow } from './settings.repository.js'
 export { UsageLedgerRepository } from './usage-ledger.repository.js'
-export type { UsageLedgerRow, RecordUsageParams, UsageSummary, ModelUsageGroup, DailyUsageGroup } from './usage-ledger.repository.js'
+export type {
+  UsageLedgerRow,
+  RecordUsageParams,
+  UsageSummary,
+  ModelUsageGroup,
+  DailyUsageGroup,
+} from './usage-ledger.repository.js'
 export { ContextPreferenceRepository } from './context-preference.repository.js'
-export type { ContextPreferenceRow, UpsertContextPreferenceParams, ListContextPreferencesParams } from './context-preference.repository.js'
+export type {
+  ContextPreferenceRow,
+  UpsertContextPreferenceParams,
+  ListContextPreferencesParams,
+} from './context-preference.repository.js'
 export { SessionSummaryRepository } from './session-summary.repository.js'
 export type { SessionSummaryRow, CreateSessionSummaryParams } from './session-summary.repository.js'
 export { AgentRepository } from './agent.repository.js'
-export type { AgentConfig, AgentItem, AgentRow, CreateAgentParams, UpdateAgentParams } from './agent.repository.js'
+export type {
+  AgentConfig,
+  AgentItem,
+  AgentRow,
+  CreateAgentParams,
+  UpdateAgentParams,
+} from './agent.repository.js'
 export { WorkflowRepository } from './workflow.repository.js'
-export type { CreateWorkflowParams, UpdateWorkflowParams, WorkflowItem, WorkflowRow, WorkflowStatus } from './workflow.repository.js'
+export type {
+  CreateWorkflowParams,
+  UpdateWorkflowParams,
+  WorkflowItem,
+  WorkflowRow,
+  WorkflowStatus,
+} from './workflow.repository.js'
 export { WorkflowRunRepository } from './workflow-run.repository.js'
 export type {
   CreateWorkflowRunParams,
@@ -137,7 +183,12 @@ export type {
   WorkflowRunStatus,
 } from './workflow-run.repository.js'
 export { TeamDispatchRepository } from './team-dispatch.repository.js'
-export type { TeamDispatchRow, TeamDispatchState, CreateTeamDispatchParams, UpdateTeamDispatchParams } from './team-dispatch.repository.js'
+export type {
+  TeamDispatchRow,
+  TeamDispatchState,
+  CreateTeamDispatchParams,
+  UpdateTeamDispatchParams,
+} from './team-dispatch.repository.js'
 export { TeamDiscussionRepository } from './team-discussion.repository.js'
 export type {
   TeamDiscussionRow,
@@ -179,7 +230,12 @@ export type {
 } from './task-execution.repository.js'
 export { MemoryRepository } from './memory.repository.js'
 export type { MemoryEntryRow, MemoryEntryInsert } from './memory.repository.js'
-export { MemorySearchRepository, upsertFtsRow, deleteFtsRow, ftsTableExists } from './memory-search.repository.js'
+export {
+  MemorySearchRepository,
+  upsertFtsRow,
+  deleteFtsRow,
+  ftsTableExists,
+} from './memory-search.repository.js'
 export type {
   MemoryScopeFilter,
   FtsSearchOptions,
@@ -194,7 +250,19 @@ export type { SessionRow, CreateSessionParams, ListSessionsParams } from './sess
 export type { WorkspaceRow, CreateWorkspaceParams, WorktreeMeta } from './workspace.repository.js'
 export type { AgentEventRow, QueryEventsParams, InsertEventParams } from './event.repository.js'
 export type { ProviderProfileRow, CreateProviderParams } from './provider.repository.js'
-export type { RuleRow, CreateRuleParams, UpdateRuleParams, ListRulesParams } from './rules.repository.js'
+export type {
+  RuleRow,
+  CreateRuleParams,
+  UpdateRuleParams,
+  ListRulesParams,
+} from './rules.repository.js'
 
 export { GoalRepository } from './goal.repository.js'
-export type { SessionGoal, GoalBudget, GoalValidation, GoalProgressEntry, GoalStatus, GoalMode } from './goal.repository.js'
+export type {
+  SessionGoal,
+  GoalBudget,
+  GoalValidation,
+  GoalProgressEntry,
+  GoalStatus,
+  GoalMode,
+} from './goal.repository.js'

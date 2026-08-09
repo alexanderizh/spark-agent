@@ -35,6 +35,7 @@ import type { UpdateAgentParams, CreateProviderParams } from '@spark/storage'
 import type { SettingsRepository } from '@spark/storage'
 import type { TeamDefinitionRepository } from '@spark/storage'
 import type { GitHubConnectorService } from './github-connector.service.js'
+import type { PluginManager } from './plugins/plugin-manager.service.js'
 import { ProviderService } from './provider.service.js'
 import {
   CustomMediaProviderConfiguratorService,
@@ -86,6 +87,7 @@ export interface PlatformBridgeDeps {
   agentRepo: AgentRepository
   teamRepo: TeamDefinitionRepository
   settingsRepo: SettingsRepository
+  pluginManager: PluginManager
   githubConnectorService: GitHubConnectorService
   sessionScheduleTools: SessionScheduleAgentTools
   sessionService: {

@@ -131,11 +131,7 @@ describe('GitHubConnectorService', () => {
 
     const connection = await service.connect({
       token: 'github_pat_test',
-      selectedRepos: [
-        'https://github.com/OpenAI/Codex/',
-        'owner/repo.git',
-        'OWNER/repo/',
-      ],
+      selectedRepos: ['https://github.com/OpenAI/Codex/', 'owner/repo.git', 'OWNER/repo/'],
       enabledCapabilities: ['repositories'],
       allowWrites: false,
     })
@@ -143,5 +139,16 @@ describe('GitHubConnectorService', () => {
     expect(connection.config.selectedRepos).toEqual(['openai/codex', 'owner/repo'])
     expect(connection.config.enabledCapabilities).toEqual(['repositories'])
     expect(service.getStatusForTools().mcpToolsEnabled).toBe(false)
+  })
+
+  it('blocks Agent tools when the owning capability package is disabled', async () => {
+    const repo = createRepo()
+    const service = new GitHubConnectorService(repo as never, () => false)
+
+    expect(service.getStatusForTools().runtimeEnabled).toBe(false)
+    await expect(service.listRepositories({})).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

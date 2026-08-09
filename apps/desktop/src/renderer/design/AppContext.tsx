@@ -45,6 +45,7 @@ export type ViewId =
   | 'skills'
   | 'skill-store'
   | 'mcp'
+  | 'plugins'
   | 'providers'
   | 'memory'
   | 'settings'
