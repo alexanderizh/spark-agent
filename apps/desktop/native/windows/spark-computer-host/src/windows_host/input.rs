@@ -84,7 +84,7 @@ pub fn focus_window(window_id: &str) -> Result<(), InputError> {
         .filter(|value| *value != 0)
         .ok_or(InputError::WindowUnavailable)?;
     let hwnd = HWND(hwnd as *mut _);
-    if !unsafe { IsWindow(hwnd) }.as_bool() {
+    if !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
         return Err(InputError::WindowUnavailable);
     }
     unsafe {
