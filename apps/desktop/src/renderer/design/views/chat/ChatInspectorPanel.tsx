@@ -33,6 +33,7 @@ import type {
   WorkspaceInfo,
 } from '@spark/protocol'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '@spark/protocol'
+import { hasChatConfigScope } from './chat-config-panel-state'
 import type { SessionSummary } from '../../SessionSidebarContext'
 import type {
   ContextLedgerState,
@@ -198,7 +199,7 @@ export function ChatConfigPanel({
   }, [getEnvConfig, getPromptConfig, sessionId, workspaceId, agentId])
 
   useEffect(() => {
-    if (sessionId == null) {
+    if (!hasChatConfigScope(sessionId, workspaceId)) {
       setPromptConfig(null)
       setEnvConfig(null)
       setProjectPromptDraft('')
@@ -208,7 +209,7 @@ export function ChatConfigPanel({
       return
     }
     void loadRuntimeConfig()
-  }, [loadRuntimeConfig, sessionId])
+  }, [loadRuntimeConfig, sessionId, workspaceId])
 
   const savePromptLayer = useCallback(
     async (scope: 'project' | 'session', scopeRef: string, content: string) => {
@@ -359,7 +360,7 @@ export function ChatConfigPanel({
       )}
       <div className="inspector scroll">
         {/* 环境变量 */}
-        {session != null && envConfig != null && (
+        {hasChatConfigScope(sessionId, workspaceId) && envConfig != null && (
           <div className="inspector-section">
             <h4 className="config-panel-header" onClick={() => setEnvCollapsed(!envCollapsed)}>
               <Icons.Lock size={11} />
@@ -396,7 +397,7 @@ export function ChatConfigPanel({
         )}
 
         {/* 提示词 */}
-        {session != null && promptConfig != null && (
+        {hasChatConfigScope(sessionId, workspaceId) && promptConfig != null && (
           <div className="inspector-section">
             <h4
               className="config-panel-header"
