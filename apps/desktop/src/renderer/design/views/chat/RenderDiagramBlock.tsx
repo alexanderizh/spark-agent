@@ -5,6 +5,7 @@ import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import { MarkdownCodeBlock } from '../../components/MarkdownCodeBlock'
 import { BlockTrafficHeader } from '../../components/BlockTrafficHeader'
 import type { UIBlock } from '../../services/event-mapper'
+import { DiagramViewport } from './DiagramViewport'
 import './RenderDiagramBlock.less'
 
 // 两个渲染器各自懒加载：mermaid (~1.5MB) 与 markmap+d3 只在实际出图时才拉取，首屏不背体积
@@ -31,7 +32,7 @@ export function RenderDiagramBlock({ block }: { block: DiagramBlock }) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [fullscreen])
 
-  const preview = (
+  const renderPreview = () => (
     <Suspense fallback={<div className="render-diagram-loading">正在加载渲染器…</div>}>
       {isMarkmap ? (
         <MarkmapDiagram source={block.source} theme={resolvedTheme} />
@@ -62,7 +63,7 @@ export function RenderDiagramBlock({ block }: { block: DiagramBlock }) {
     </div>
   ) : (
     <div className="render-diagram-frame-wrap">
-      {preview}
+      <DiagramViewport ariaLabel={`${block.title}图表视口`}>{renderPreview()}</DiagramViewport>
     </div>
   )
 
@@ -128,7 +129,11 @@ export function RenderDiagramBlock({ block }: { block: DiagramBlock }) {
                 <Icons.X size={15} />
               </button>
             </div>
-            <div className="render-diagram-fullscreen-body">{preview}</div>
+            <div className="render-diagram-fullscreen-body">
+              <DiagramViewport fullscreen ariaLabel={`${block.title}全屏图表视口`}>
+                {renderPreview()}
+              </DiagramViewport>
+            </div>
           </div>
         </div>
       )}

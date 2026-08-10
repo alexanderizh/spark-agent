@@ -71,52 +71,174 @@
 .render-diagram-frame-wrap {
   position: relative;
   min-height: 120px;
-  /* 自适应内容高度：不写死 height，由内部 svg 撑开；超长流程图超出 600 后滚动 */
-  max-height: 600px;
-  overflow: auto;
+  overflow: hidden;
   background: var(--render-diagram-bg-soft);
 }
 
-.render-diagram-canvas {
+.render-diagram-viewport-shell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--render-diagram-bg-soft);
+}
+
+.render-diagram-viewport-shell.is-fullscreen {
   width: 100%;
+  height: 100%;
+  flex: 1;
+}
+
+.render-diagram-zoom-controls {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--render-diagram-border) 86%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--render-diagram-bg) 92%, transparent);
+  box-shadow: 0 4px 14px rgba(31, 41, 55, 0.08);
+  backdrop-filter: blur(8px);
+}
+
+.render-diagram-zoom-button,
+.render-diagram-zoom-label {
+  display: grid;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--render-diagram-muted);
+  cursor: pointer;
+}
+
+.render-diagram-zoom-button {
+  width: 28px;
+}
+
+.render-diagram-zoom-label {
+  min-width: 48px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.render-diagram-zoom-button:hover:not(:disabled),
+.render-diagram-zoom-label:hover {
+  background: var(--hover, rgba(36, 32, 27, 0.055));
+  color: var(--render-diagram-text);
+}
+
+.render-diagram-zoom-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.render-diagram-zoom-button:focus-visible,
+.render-diagram-zoom-label:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary, #6366f1) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.render-diagram-zoom-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--render-diagram-divider);
+}
+
+.render-diagram-viewport {
+  min-height: 220px;
+  max-height: 600px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.render-diagram-viewport-shell.is-fullscreen .render-diagram-viewport {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  flex: 1;
+  cursor: grab;
+}
+
+.render-diagram-viewport-shell.is-fullscreen .render-diagram-viewport.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.render-diagram-viewport-stage {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  min-height: 220px;
+  align-items: safe center;
+  justify-content: safe center;
+  box-sizing: border-box;
+  padding: 48px 24px 24px;
+}
+
+.render-diagram-viewport-shell.is-fullscreen .render-diagram-viewport-stage {
+  min-height: 100%;
+  padding: 56px 32px 32px;
+}
+
+.render-diagram-viewport-surface {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.render-diagram-viewport-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  transform-origin: top left;
+}
+
+.render-diagram-canvas {
+  position: relative;
+  width: max-content;
   min-height: 120px;
   display: flex;
   align-items: flex-start;
-  /* safe center：内容不溢出时居中（窄图好看）；溢出时退化为左对齐，
-     保证宽图的左半部分可被滚动到达，规避 flex justify-content:center 的左侧裁切坑。 */
-  justify-content: safe center;
-  padding: 12px;
   box-sizing: border-box;
 }
 
 /* mermaid 输出的 svg 自带固定 px 宽高（按内容布局算出），保持其原始尺寸：
-   不压缩、不缩放。宽图溢出 canvas 时由 frame-wrap 横向滚动，高图溢出 600 时纵向滚动。
+   不压缩、不缩放。宽图和高图溢出时由 DiagramViewport 提供双向滚动。
    svg 落在宿主 host div 内（React 不管理的逃生舱节点），故选择器挂在 host 下。 */
 .render-diagram-mermaid-host {
+  display: block;
+  width: max-content;
   flex-shrink: 0;
 }
 .render-diagram-mermaid-host > svg {
   display: block;
   max-width: none;
-  height: auto;
 }
 
 .render-diagram-canvas-markmap {
-  width: 100%;
+  width: max-content;
 }
 
 /* markmap 的 svg 在 effect 里手动创建并 append 到 host。
-   高度由 effect 按 markmap.state.rect 内容包围盒算出后写入 style.height（钳制 200~600），
-   故这里不写死 height:100%，min-height 仅作渲染前的占位兜底。 */
+   宽高由 state.rect 的自然布局边界直接写入，不自动 fit，不压缩。 */
 .render-diagram-markmap-host {
-  width: 100%;
-  min-height: 200px;
+  width: max-content;
+  min-width: 1px;
+  min-height: 1px;
 }
 
 .render-diagram-markmap-svg {
-  width: 100%;
-  min-height: 200px;
   display: block;
+  max-width: none;
 }
 
 /* markmap 节点文字色随主题；dark 下默认白字 */
@@ -238,9 +360,10 @@
 }
 
 .render-diagram-fullscreen-body {
+  display: flex;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   background: var(--render-diagram-bg-soft);
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { HtmlRenderTheme } from '@spark/shared'
+import { parseDiagramViewBox } from './diagramViewportMath'
 
 type MermaidDiagramProps = {
   source: string
@@ -89,10 +90,13 @@ export default function RenderMermaidDiagram({ source, theme }: MermaidDiagramPr
 
   useEffect(() => {
     let cancelled = false
-    setStatus('loading')
-    setErrorMessage(null)
+    const host = hostRef.current
+    if (!host) return
+    const hostElement: HTMLDivElement = host
 
     async function run() {
+      setStatus('loading')
+      setErrorMessage(null)
       try {
         const mermaid = (await import('mermaid')).default
         mermaid.initialize({
@@ -105,7 +109,18 @@ export default function RenderMermaidDiagram({ source, theme }: MermaidDiagramPr
         const id = `spark-mmd-${(mermaidRenderSeq += 1)}`
         const { svg } = await mermaid.render(id, source.trim())
         if (cancelled) return
-        if (hostRef.current) hostRef.current.innerHTML = svg
+        hostElement.innerHTML = svg
+        const svgElement = hostElement.querySelector<SVGSVGElement>('svg')
+        const naturalSize = parseDiagramViewBox(svgElement?.getAttribute('viewBox') ?? null)
+        if (svgElement && naturalSize) {
+          const width = Math.ceil(naturalSize.width)
+          const height = Math.ceil(naturalSize.height)
+          svgElement.setAttribute('width', String(width))
+          svgElement.setAttribute('height', String(height))
+          svgElement.style.removeProperty('max-width')
+          svgElement.style.width = `${width}px`
+          svgElement.style.height = `${height}px`
+        }
         setStatus('rendered')
       } catch (error) {
         if (cancelled) return
@@ -118,7 +133,7 @@ export default function RenderMermaidDiagram({ source, theme }: MermaidDiagramPr
     return () => {
       cancelled = true
       // 重跑/卸载前清空宿主，避免上一轮 svg 残留堆叠
-      if (hostRef.current) hostRef.current.innerHTML = ''
+      hostElement.innerHTML = ''
     }
   }, [source, theme])
 

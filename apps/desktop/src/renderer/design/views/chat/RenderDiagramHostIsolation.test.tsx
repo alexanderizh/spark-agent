@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import RenderMermaidDiagram from './RenderMermaidDiagram'
@@ -32,5 +34,13 @@ describe('diagram renderer host-node isolation', () => {
     const hostStart = html.indexOf('render-diagram-markmap-host')
     const hostTag = html.slice(hostStart, html.indexOf('</div>', hostStart))
     expect(hostTag).not.toContain('正在生成思维导图')
+  })
+
+  it('markmap does not automatically fit the whole graph into a constrained viewport', () => {
+    const source = readFileSync(resolve(__dirname, 'RenderMarkmapDiagram.tsx'), 'utf8')
+    expect(source).not.toMatch(/markmap\.fit\?\.\(/)
+    expect(source).not.toContain('Markmap.create(')
+    expect(source).toContain('await markmap.setData(root)')
+    expect(source).not.toContain('fit 缩小后看全貌')
   })
 })
