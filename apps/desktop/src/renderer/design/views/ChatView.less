@@ -2636,15 +2636,13 @@ html[data-theme='dark'] .composer-file-drop-overlay {
  * 全部限定在 .composer-model-menu 内，避免影响同样复用 .composer-menu-item
  * 的权限菜单 / enriched 菜单。
  */
-.composer-model-menu .composer-model-item,
-.composer-cli-model-submenu .composer-model-item {
+.composer-model-menu .composer-model-item {
   display: flex;
   align-items: center;
   border-radius: var(--r-sm);
 }
 
-.composer-model-menu .composer-model-item .composer-menu-item,
-.composer-cli-model-submenu .composer-model-item .composer-menu-item {
+.composer-model-menu .composer-model-item .composer-menu-item {
   flex: 1 1 auto;
   min-width: 0;
   gap: 8px;
@@ -2655,28 +2653,14 @@ html[data-theme='dark'] .composer-file-drop-overlay {
    是为了盖过 views.css 里同名的 .composer-dropdown-menu .composer-menu-item:hover）。 */
 .composer-model-menu .composer-model-item .composer-menu-item,
 .composer-model-menu .composer-model-item .composer-menu-item:hover,
-.composer-model-menu .composer-model-item .composer-menu-item.active,
-.composer-cli-model-submenu .composer-model-item .composer-menu-item,
-.composer-cli-model-submenu .composer-model-item .composer-menu-item:hover,
-.composer-cli-model-submenu .composer-model-item .composer-menu-item.active {
+.composer-model-menu .composer-model-item .composer-menu-item.active {
   background: transparent;
 }
 
 .composer-model-menu .composer-model-item:hover,
 .composer-model-menu .composer-model-item:focus-within,
-.composer-model-menu .composer-model-item.is-active,
-.composer-cli-model-submenu .composer-model-item:hover,
-.composer-cli-model-submenu .composer-model-item:focus-within,
-.composer-cli-model-submenu .composer-model-item.is-active {
+.composer-model-menu .composer-model-item.is-active {
   background: color-mix(in srgb, var(--text) 5%, transparent);
-}
-
-/* CLI 行由外层 trigger 统一绘制悬浮背景，避免模型行自身再叠一层矩形底色。 */
-.composer-cli-model-trigger .composer-model-item,
-.composer-cli-model-trigger .composer-model-item:hover,
-.composer-cli-model-trigger .composer-model-item:focus-within,
-.composer-cli-model-trigger .composer-model-item.is-active {
-  background: transparent;
 }
 
 .composer-model-item-label {

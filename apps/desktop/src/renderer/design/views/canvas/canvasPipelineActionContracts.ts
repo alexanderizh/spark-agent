@@ -110,7 +110,7 @@ export function buildCanvasPipelineOperationDraft(
       return {
         operation: 'text_generate',
         title: '按剧情分集',
-        systemPrompt: `请把下面的长剧本按剧情冲突、悬念节奏和合理时长完成分集。每集必须包含集号、标题、开场钩子、主要冲突、结尾悬念，并使用现有场次剧本格式输出完整正文；不要只给剧情摘要。\n\n${input.sourceText}`,
+        systemPrompt: `请把下面的长剧本按剧情冲突、悬念节奏和合理时长完成分集。每集必须包含集号、标题、开场钩子、主要冲突、结尾悬念，并使用现有场次剧本格式输出完整正文；每场首行使用「第1场｜内景｜地点｜时间」「场1 内景 地点 时间」或「INT. 地点 - 时间」等场次标题，未知字段保留空值；不要只给剧情摘要。\n\n${input.sourceText}`,
         message: '确认分集 Prompt、Agent 与模型后点击开始任务',
         taskPipelineRole: 'screenplay',
         outputPipelineRole: 'screenplay',

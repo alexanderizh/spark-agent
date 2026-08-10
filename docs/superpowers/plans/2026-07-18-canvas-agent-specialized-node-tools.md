@@ -1,6 +1,6 @@
 # Canvas Agent Specialized Node Tools Implementation Plan
 
-> 状态: 已落地 | 最后核对: 2026-08-10
+> 状态: 已落地 | 最后核对: 2026-08-11
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -171,7 +171,7 @@ type CanvasSemanticTextValidation =
 
 - [x] **Step 4: 接入文本任务完成路径**
 
-在创建语义产物节点前调用校验器。剧本兼容现有“第N场｜内/外景｜地点｜时间”等场次标题；分镜缺失的可编辑字段补空字符串，summary 不作为阻断条件。JSON 解析前先做低风险修复，容忍代码围栏、前后说明、尾逗号、注释、智能/单引号、未加引号字段名和字符串裸换行；被截断且无法安全修复的 JSON 不强行补齐。无法恢复专用语义时把 task 标记为 failed、保留 `rawResponse` 和 `modelOutputText`；只要模型返回了文本，就创建不带 screenplay/shot 角色的普通文本回显节点。可恢复的分镜结果继续使用程序生成的 Markdown 文本并更新 `project.metadata.film.shotGroups`。
+在创建语义产物节点前调用校验器。剧本兼容现有“第N场｜内/外景｜地点｜时间”、`场次/场景`、数字场号和 `INT./EXT.` 等场次标题；非空响应未识别到标题时自动补入 `第1场｜｜｜`，场次中的未知字段留空供编辑，只有空响应才阻断剧本节点创建。分镜缺失的可编辑字段补空字符串，summary 不作为阻断条件。JSON 解析前先做低风险修复，容忍代码围栏、前后说明、尾逗号、注释、智能/单引号、未加引号字段名和字符串裸换行；被截断且无法安全修复的 JSON 不强行补齐。无法恢复专用语义时把 task 标记为 failed、保留 `rawResponse` 和 `modelOutputText`；只要模型返回了文本，就创建不带 screenplay/shot 角色的普通文本回显节点。可恢复的分镜结果继续使用程序生成的 Markdown 文本并更新 `project.metadata.film.shotGroups`。
 
 - [x] **Step 5: 运行校验、物化和文本任务回归测试**
 

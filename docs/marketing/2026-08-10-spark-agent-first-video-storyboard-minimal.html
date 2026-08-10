@@ -65,7 +65,7 @@
       .beat-window { position: relative; overflow: hidden; border-radius: 16px; background: #101317; transform: translateX(32px); opacity: .98; animation: window-in 6s cubic-bezier(.2,.8,.2,1) infinite; }
       .beat-window img { display: block; width: 100%; aspect-ratio: 1.76; object-fit: cover; object-position: center; filter: saturate(.82); }
       .beat-window .screen-chrome { opacity: .7; }
-      .beat-window::after { content: "LEGACY REFERENCE / RE-CAPTURE REQUIRED"; position: absolute; left: 22px; bottom: 22px; padding: 7px 9px; color: #fff; background: rgba(0,0,0,.6); font: 9px var(--mono); letter-spacing: .08em; }
+      .beat-window::after { content: "CURRENT CAPTURE / NEW-HERO-01"; position: absolute; left: 22px; bottom: 22px; padding: 7px 9px; color: #fff; background: rgba(0,0,0,.6); font: 9px var(--mono); letter-spacing: .08em; }
       .beat-glow { position: absolute; left: 10%; right: 10%; top: 17%; height: 1px; background: var(--teal); box-shadow: 0 0 24px var(--teal); opacity: 0; animation: glow-line 6s ease-in-out infinite; }
       .beat-focus { position: absolute; right: 17%; top: 26%; width: 24%; height: 31%; border: 1px solid var(--teal); border-radius: 10px; box-shadow: 0 0 0 999px rgba(0,0,0,.1), 0 0 28px rgba(112,228,216,.33); opacity: 0; animation: focus-in 6s ease-in-out infinite; }
       .beat-label { position: absolute; right: 13%; top: 18%; color: var(--teal); font: 9px var(--mono); letter-spacing: .1em; opacity: 0; animation: focus-in 6s ease-in-out 2.4s infinite; }
@@ -266,7 +266,7 @@
           <h1>从任务，<br />到<em>作品。</em></h1>
           <p class="hero-sub">首支视频只做一件事：让观众看见 Spark Agent 的两大空间——工作台和画布——以及把它们接起来的本地 Runtime。左边是一句判断，右边是产品按节奏进入、展开、被看见。</p>
           <div class="hero-meta"><span><b>片型</b> 功能总览，不是教程</span><span><b>语言</b> 极简大字 + 真实产品画面</span><span><b>输出</b> 16:9 master / 9:16 cutdown</span></div>
-          <div class="hero-stage"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/workbench-overview.png" alt="Spark Agent 工作台构图参考" /><span class="screen-tag">LEGACY REFERENCE / RE-CAPTURE</span></div></div>
+          <div class="hero-stage"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="video-prototype/public/assets/01_workbench_home.png" alt="Spark Agent 当前工作台实机截图" /><span class="screen-tag">CURRENT CAPTURE / NEW-HERO-01</span></div></div>
         </div>
       </section>
 
@@ -278,7 +278,7 @@
             <p>这才是最终视频的首页画面：文案不是静态旁白板，产品窗口也不是一张截图。右侧从一个干净的窗口壳进入，随后面板、路径线和关键结果依次出现。</p>
             <div class="beat-steps"><div class="beat-step"><time>00:00–02</time><div><strong>留白先出现</strong><span>只出现“从任务，到作品。”，不急着展示功能。</span></div></div><div class="beat-step"><time>00:02–05</time><div><strong>产品窗口进场</strong><span>右侧 UI 从右向左轻推，窗口壳和截图分两层进入。</span></div></div><div class="beat-step"><time>00:05–09</time><div><strong>关键区域被点亮</strong><span>会话、终端、Review 依次出现 spotlight，不全屏扫一遍。</span></div></div><div class="beat-step"><time>00:09–12</time><div><strong>一句关系成立</strong><span>“一个本地 Runtime，接住两种工作。”进入下一段截面图。</span></div></div></div>
           </div>
-          <div class="beat-visual"><div class="beat-stage"><div class="beat-window"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/workbench-overview.png" alt="首页 UI 动画构图参考" /><div class="beat-glow"></div><div class="beat-focus"></div><span class="beat-label">FOCUS / REVIEW</span></div></div></div>
+          <div class="beat-visual"><div class="beat-stage"><div class="beat-window"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="video-prototype/public/assets/01_workbench_home.png" alt="首页 UI 动画当前实机画面" /><div class="beat-glow"></div><div class="beat-focus"></div><span class="beat-label">FOCUS / CURRENT UI</span></div></div></div>
         </div>
       </section>
 
@@ -319,8 +319,8 @@
 
       <section class="refresh-section" id="capture-refresh">
         <div class="refresh-inner">
-          <div class="refresh-head"><h2>旧截图只做参考，<br /><em>正式片全部重拍。</em></h2><p>当前 HTML 中的旧版图片用于确认构图、窗口比例和镜头节奏。进入视频制作时，所有产品画面都按下面的新采集编号重新录制，避免版本错位。</p></div>
-          <div class="refresh-grid"><article class="refresh-card"><b>NEW-HERO-01</b><strong>首页 Workbench 全景</strong><p>新版本、干净演示项目、窗口壳、无私人路径。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-WB-02</b><strong>工作台功能串联</strong><p>工具、Team、Workflow、Memory、Schedule 连续操作。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-CAN-01</b><strong>画布与资产中心</strong><p>最新版画布、节点血缘、快速整理、折叠组。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-CAN-04</b><strong>导演台与 360°</strong><p>角色、相机、构图、全景拖动的完整交互路径。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-CAN-05</b><strong>Video Workbench</strong><p>深度转换、剪辑、时间线、关键帧实际操作。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-CAN-06</b><strong>Canvas Agent</strong><p>动态模型、Skill 加载、分析画布并创建节点。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-CASE-01</b><strong>代码 / PPT 案例</strong><p>各准备一条可公开复现、可剪成 5–8 秒的结果路径。</p><span class="status">准备案例</span></article><article class="refresh-card"><b>NEW-CASE-03/04</b><strong>视频复刻 / 小说短剧</strong><p>确认演示素材版权与输入文本，再开始实拍。</p><span class="status">先定素材</span></article></div>
+          <div class="refresh-head"><h2>实机画面已更新，<br /><em>后续案例继续补录。</em></h2><p>首页、工作台侧面板、Agent / Provider / Skills、画布项目页和“视频复刻”节点编辑器已经按当前 Spark Agent 版本重新采集。代码、PPT、视频复刻过程和小说短剧路径仍按编号补录，期间不再引用旧截图。</p></div>
+          <div class="refresh-grid"><article class="refresh-card"><b>NEW-HERO-01</b><strong>首页 Workbench 全景</strong><p>当前版本欢迎页与本地项目上下文。</p><span class="status">已采集</span></article><article class="refresh-card"><b>NEW-WB-02</b><strong>工作台功能侧面板</strong><p>Workflow、Task Board、Scheduled Tasks、Agent、Provider、Skills。</p><span class="status">已采集</span></article><article class="refresh-card"><b>NEW-CAN-01</b><strong>画布与资产中心</strong><p>当前项目列表、资源瀑布流和视频复刻项目。</p><span class="status">已采集</span></article><article class="refresh-card"><b>NEW-CAN-04</b><strong>导演台与 360°</strong><p>角色、相机、构图、全景拖动的完整交互路径。</p><span class="status">待补录</span></article><article class="refresh-card"><b>NEW-CAN-05</b><strong>Video Workbench</strong><p>深度转换、剪辑、时间线、关键帧实际操作。</p><span class="status">待补录</span></article><article class="refresh-card"><b>NEW-CAN-06</b><strong>Canvas Agent</strong><p>当前画布 Agent 面板已采集；动态模型与 Skill 操作待补录。</p><span class="status">部分已采集</span></article><article class="refresh-card"><b>NEW-CASE-01/02</b><strong>代码 / PPT 案例</strong><p>各准备一条可公开复现、可剪成 5–8 秒的结果路径。</p><span class="status">待补录</span></article><article class="refresh-card"><b>NEW-CASE-03/04</b><strong>视频复刻 / 小说短剧</strong><p>确认演示素材版权与输入文本，再开始实拍。</p><span class="status">待补录</span></article></div>
         </div>
       </section>
 
@@ -332,7 +332,7 @@
         <div class="section-inner">
           <section class="chapter" id="workbench" data-chapter="workbench">
             <div class="chapter-kicker"><strong>01</strong> / WORKBENCH<br />00:24 — 02:28</div>
-            <div class="chapter-body"><h2>让任务<br /><em>真的被推进。</em></h2><p class="lead">工作台段落不展示所有按钮，而是用一条任务路径，把特色功能串起来：任务输入 → 工具执行 → Agent 协同 → 工作流 → 记忆 → 定时。</p><figure class="chapter-visual"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/workbench-overview.png" alt="工作台总览" /><span class="tag">W-01 / WORKBENCH</span></div></figure><div class="chapter-note"><div><span>画面</span><p>真实工作台全景，轻微推入；侧面板局部放大。</p></div><div><span>字幕</span><p>目标、执行、验证、结果，在同一个项目里。</p></div><div><span>动画</span><p>一条细线从会话连接到终端、Review 和产物。</p></div></div><details><summary>展开这一章的镜头节奏</summary><p>00:24 工作台总览；00:42 功能侧面板；01:00 内置终端 / 搜索 / 浏览器 / 媒体工具；01:18 Host → Member 协同；01:38 工作流编排；02:00 后台记忆抽取；02:14 会话级 / 全局双层定时任务。每个功能只留下一个关键动作，后续分别做教学视频。</p></details></div>
+            <div class="chapter-body"><h2>让任务<br /><em>真的被推进。</em></h2><p class="lead">工作台段落不展示所有按钮，而是用一条任务路径，把特色功能串起来：任务输入 → 工具执行 → Agent 协同 → 工作流 → 记忆 → 定时。</p><figure class="chapter-visual"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="video-prototype/public/assets/01_workbench_home.png" alt="当前版本工作台总览" /><span class="tag">NEW-HERO-01 / CURRENT WORKBENCH</span></div></figure><div class="chapter-note"><div><span>画面</span><p>当前版本工作台全景，轻微推入；侧面板局部放大。</p></div><div><span>字幕</span><p>目标、执行、验证、结果，在同一个项目里。</p></div><div><span>动画</span><p>一条细线从会话连接到终端、Review 和产物。</p></div></div><details><summary>展开这一章的镜头节奏</summary><p>00:24 工作台总览；00:42 功能侧面板；01:00 内置终端 / 搜索 / 浏览器 / 媒体工具；01:18 Host → Member 协同；01:38 工作流编排；02:00 后台记忆抽取；02:14 会话级 / 全局双层定时任务。每个功能只留下一个关键动作，后续分别做教学视频。</p></details></div>
           </section>
 
           <section class="chapter" id="tools" data-chapter="workbench">
@@ -345,12 +345,12 @@
 
             <article class="case-row">
               <div class="case-copy"><div class="case-kicker">CASE 01 · 00:42 / WORKBENCH</div><h3>开发<br />代码</h3><p>把一个真实问题交给 Agent：读项目、改代码、跑验证、查看 Diff，再决定是否接受。</p><div class="case-path"><span>真实项目</span><span>终端验证</span><span>Git Review</span><span>Checkpoint</span></div><p class="case-proof">一句字幕：让 AI 改得动，也审得住。</p></div>
-              <figure class="case-frame"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/code-development.png" alt="Spark Agent 代码开发案例" /></div><span class="case-stamp">OUTPUT / CODE + REVIEW</span></figure>
+              <figure class="case-frame"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="video-prototype/public/assets/09_case_result_collage.png" alt="当前代码与 PPT 结果墙" /></div><span class="case-stamp">CURRENT CAPTURE / CODE + PPT</span></figure>
             </article>
 
             <article class="case-row">
               <div class="case-copy"><div class="case-kicker">CASE 02 · 01:08 / DELIVERY</div><h3>做一份<br />PPT</h3><p>从一句主题或一份资料开始，生成结构、页面和可交付的演示文稿；继续导出 PPTX、DOCX 或网页。</p><div class="case-path"><span>主题输入</span><span>结构生成</span><span>HTML Slides</span><span>PPTX / DOCX</span></div><p class="case-proof">一句字幕：从想法，到能拿去讲的页面。</p></div>
-              <figure class="case-frame"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/ppt-docs.png" alt="Spark Agent PPT 与文档案例" /></div><span class="case-stamp">OUTPUT / SLIDES + DOCS</span></figure>
+              <figure class="case-frame"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="video-prototype/public/assets/09_case_result_collage.png" alt="当前 PPT 与代码结果墙" /></div><span class="case-stamp">CURRENT CAPTURE / SLIDES + CODE</span></figure>
             </article>
 
             <article class="case-row">
@@ -368,7 +368,7 @@
 
           <section class="chapter" id="canvas" data-chapter="canvas">
             <div class="chapter-kicker"><strong>02</strong> / CANVAS<br />02:28 — 04:48</div>
-            <div class="chapter-body"><h2>让创作<br /><em>有上下文。</em></h2><p class="lead">画布段落使用更宽的留白和更慢的镜头运动。真实截图负责证明能力，虚拟节点动画负责解释创作关系。</p><figure class="chapter-visual"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/infinite-canvas.png" alt="Spark Agent 无限画布真实截图" /><span class="tag">C-01 / CANVAS</span></div></figure><div class="chapter-note"><div><span>画面</span><p>画布全景、资产中心、节点血缘；真实截图做主画面。</p></div><div><span>字幕</span><p>剧本、角色、场景、镜头和结果，继续派生。</p></div><div><span>动画</span><p>连线先出现，节点后出现；强调关系。</p></div></div><details><summary>展开这一章的镜头节奏</summary><p>02:28 工作台连线变成画布网格；02:42 画布与资产中心；03:00 快速整理与组节点折叠；03:13 Provider 多渠道本地配置（火山 / 百炼等只展示渠道与配置，不在首片承诺免费额度）；03:26 角色身份板、故事板、场景提取；03:42 3D 导演台；03:58 场景 360°；04:10 深度视频、视频编辑、关键帧；04:25 画布 Agent、动态模型 / Skill；04:37 画布工作流提取。</p></details></div>
+            <div class="chapter-body"><h2>让创作<br /><em>有上下文。</em></h2><p class="lead">画布段落使用更宽的留白和更慢的镜头运动。真实截图负责证明能力，虚拟节点动画负责解释创作关系。</p><figure class="chapter-visual"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="video-prototype/public/assets/06_canvas_overview.png" alt="当前 Spark Agent 无限画布实机截图" /><span class="tag">NEW-CAN-01 / CURRENT CANVAS</span></div></figure><div class="chapter-note"><div><span>画面</span><p>画布全景、资产中心、节点血缘；真实截图做主画面。</p></div><div><span>字幕</span><p>剧本、角色、场景、镜头和结果，继续派生。</p></div><div><span>动画</span><p>连线先出现，节点后出现；强调关系。</p></div></div><details><summary>展开这一章的镜头节奏</summary><p>02:28 工作台连线变成画布网格；02:42 画布与资产中心；03:00 快速整理与组节点折叠；03:13 Provider 多渠道本地配置（火山 / 百炼等只展示渠道与配置，不在首片承诺免费额度）；03:26 角色身份板、故事板、场景提取；03:42 3D 导演台；03:58 场景 360°；04:10 深度视频、视频编辑、关键帧；04:25 画布 Agent、动态模型 / Skill；04:37 画布工作流提取。</p></details></div>
           </section>
 
           <section class="chapter" id="film" data-chapter="canvas">
@@ -378,7 +378,7 @@
 
           <section class="chapter" id="director" data-chapter="canvas">
             <div class="chapter-kicker"><strong>02.2</strong> / DIRECTOR</div>
-            <div class="chapter-body"><h2>先设计镜头，<br /><em>再生成画面。</em></h2><p class="lead">3D 导演台、360° 场景和视频时间线不靠炫技。它们共同证明：画布不只是图片生成入口，而是一个能组织镜头的工作台。</p><figure class="chapter-visual"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/director-stage.png" alt="3D 导演台截图" /><span class="tag">C-04 / DIRECTOR STAGE</span></div></figure><div class="chapter-note"><div><span>镜头 1</span><p>角色、相机、构图同时变化。</p></div><div><span>镜头 2</span><p>360° 场景拖动一圈。</p></div><div><span>镜头 3</span><p>视频时间线切出关键帧。</p></div></div><details><summary>展开制作备注</summary><p>真实素材：director-stage.png、panorama-360.png，以及 VideoWorkbench 实机录屏。Remotion 只负责相机框、playhead、关键帧卡片与字幕，不重绘产品本身。</p></details></div>
+            <div class="chapter-body"><h2>先设计镜头，<br /><em>再生成画面。</em></h2><p class="lead">3D 导演台、360° 场景和视频时间线不靠炫技。它们共同证明：画布不只是图片生成入口，而是一个能组织镜头的工作台。</p><figure class="chapter-visual"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="video-prototype/public/assets/07_canvas_agent_panel.png" alt="当前 Canvas Agent 实机截图；导演台待补录" /><span class="tag">NEW-CAN-06 / CANVAS AGENT</span></div></figure><div class="chapter-note"><div><span>镜头 1</span><p>角色、相机、构图同时变化。</p></div><div><span>镜头 2</span><p>360° 场景拖动一圈。</p></div><div><span>镜头 3</span><p>视频时间线切出关键帧。</p></div></div><details><summary>展开制作备注</summary><p>当前已采集 Canvas Agent 画面；3D 导演台、360° 场景和 VideoWorkbench 使用后续录屏，不再引用旧截图。Remotion 负责相机框、playhead、关键帧卡片与字幕，不重绘产品本身。</p></details></div>
           </section>
 
           <section class="chapter" id="agent" data-chapter="canvas">

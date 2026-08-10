@@ -32,4 +32,12 @@ describe('window chrome layout contract', () => {
     expect(cinematicStyles).toContain('height: var(--window-titlebar-height)')
     expect(cinematicStyles).toContain('padding-left: var(--window-titlebar-safe-left)')
   })
+
+  it('keeps every toast hit target outside the window drag region', () => {
+    const styles = readSource('./styles/styles.css')
+
+    expect(styles).toMatch(
+      /\.spark-lobe-toast-host,\s*\.spark-lobe-toast-host \*\s*\{[^}]*-webkit-app-region:\s*no-drag;/s,
+    )
+  })
 })

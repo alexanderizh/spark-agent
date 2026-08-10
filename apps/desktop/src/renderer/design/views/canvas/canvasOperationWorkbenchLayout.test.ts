@@ -35,4 +35,16 @@ describe('operation workbench media layout', () => {
       /\.canvas-node-bottom-editor:not\(\.is-fullscreen\)[\s\S]*?:has\(\s*\.canvas-operation-workbench-preview \.canvas-operation-output-media\.is-detail\s*\)\s*\{[^}]*width:/s,
     )
   })
+
+  it('详情预览沿用面板底色并为长文本保留滚动高度', () => {
+    const workbenchStyles = readSource('./CanvasOperationWorkbench.less')
+    const previewStyles = readSource('./CanvasOperationOutputPreview.less')
+
+    expect(workbenchStyles).toMatch(
+      /\.canvas-operation-workbench-preview\s*\{[\s\S]*?background:\s*var\(--canvas-edit-bg, var\(--panel\)\)/,
+    )
+    expect(previewStyles).toMatch(
+      /\.canvas-operation-workbench-preview\s*>[\s\S]*?\.canvas-operation-output-text\.is-detail[\s\S]*?align-self:\s*stretch[\s\S]*?flex:\s*1 1 auto/,
+    )
+  })
 })

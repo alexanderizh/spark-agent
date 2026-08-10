@@ -5,6 +5,16 @@
   overflow: hidden;
 }
 
+// 详情预览位于 flex 横向舞台内。文本内容的默认高度是内容本身的高度，
+// 在长剧本时会被舞台的 overflow:hidden 裁切；让它沿舞台高度收缩，滚动交给自身。
+.canvas-operation-workbench-preview > .canvas-operation-output-storyboard.is-detail,
+.canvas-operation-workbench-preview > .canvas-operation-output-json.is-detail,
+.canvas-operation-workbench-preview > .canvas-operation-output-text.is-detail {
+  align-self: stretch;
+  flex: 1 1 auto;
+  max-height: 100%;
+}
+
 .canvas-operation-output-storyboard .canvas-node-shot-table-wrap {
   height: 100%;
 }
@@ -34,7 +44,7 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #080a0e;
+  background: var(--canvas-edit-bg, var(--panel));
 }
 
 .canvas-operation-workbench:not(.is-fullscreen) .canvas-operation-output-media.is-detail {

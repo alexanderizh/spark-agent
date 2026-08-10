@@ -5,7 +5,7 @@ import { SPECIALIZED_NODE_SCHEMAS } from './canvasSpecializedNodeSchemas'
 import { materializeStoryboardRows } from './canvasStoryboardMaterialization'
 import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { formatStoryboardRowsAsMarkdown } from './canvasTextInputPresentation'
-import { isValidScreenplayText } from './canvasTextOutputValidation'
+import { isValidScreenplayText, normalizeScreenplayText } from './canvasTextOutputValidation'
 import type { CanvasAsset, CanvasNode, CanvasNodeData, CanvasSnapshot } from './canvas.types'
 
 type JSONSchema = Record<string, unknown>
@@ -171,11 +171,12 @@ function contentTool(
     handler: async (ctx, input) => {
       const text = String(input.text ?? '').trim()
       if (!text) throw new Error('正文不能为空')
-      if (validate && !validate(text)) throw new Error('剧本正文不符合现有场次剧本格式')
+      const normalizedText = role === 'screenplay' ? normalizeScreenplayText(text) : text
+      if (validate && !validate(normalizedText)) throw new Error('剧本正文不符合现有场次剧本格式')
       return materializeFilmAssetNode(ctx, {
         kind,
         name: String(input.title ?? '').trim(),
-        text,
+        text: normalizedText,
         pipelineRole: role,
         sourceNodeIds: input.sourceNodeIds,
         x: input.x,
@@ -400,7 +401,7 @@ export const SPECIALIZED_CANVAS_NODE_TOOLS: ReadonlyArray<SpecializedCanvasToolD
   contentTool('canvas_create_chapter_node', '按画布现有章节格式创建章节资产和节点。', 'chapter', 'chapter'),
   contentTool(
     'canvas_create_screenplay_node',
-    '按画布现有场次剧本格式创建或更新剧本资产和节点；正文必须包含场次标题和对白。',
+    '按画布现有场次剧本格式创建或更新剧本资产和节点；正文非空即可，缺少场次标题时自动补入可编辑的空字段首场。',
     'script',
     'screenplay',
     isValidScreenplayText,

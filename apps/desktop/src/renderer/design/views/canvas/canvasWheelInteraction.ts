@@ -7,10 +7,23 @@ const CANVAS_NODE_SCROLL_REGION_SELECTOR = [
   '.canvas-operation-output-json',
   '.canvas-operation-output-text',
   '.canvas-operation-output-list-items',
+  '.canvas-operation-history',
+  '.canvas-operation-node-settings',
+  '.canvas-operation-panel-body',
+  '.canvas-bottom-floating-body',
+  '.canvas-node-edit-bottom-body',
+].join(', ')
+
+const CANVAS_FLOATING_PANEL_SELECTOR = [
+  '.canvas-node-bottom-editor',
+  '.canvas-node-floating-panel',
+  '.canvas-operation-panel',
+  '.canvas-bottom-floating-panel',
 ].join(', ')
 
 /**
- * 只有已选中节点中实际可滚动的内容区才截留普通滚轮；其余位置交给画布平移。
+ * 只有已选中节点或显式画布浮层中的实际可滚动内容区才截留普通滚轮；
+ * 其余位置交给画布平移。
  */
 export function findSelectedCanvasNodeScrollRegion(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element)) return null
@@ -23,6 +36,16 @@ export function findSelectedCanvasNodeScrollRegion(target: EventTarget | null): 
   const overlayScrollRegion = target.closest<HTMLElement>('[data-canvas-overlay-scroll]')
   if (overlayScrollRegion) {
     return overlayScrollRegion
+  }
+
+  // 节点详情/产物工作台会被渲染到画布节点外的浮层中。它们没有
+  // `.canvas-node-shell` 祖先，但仍必须优先截留滚轮，避免画布捕获浮层内容区的滚动。
+  const floatingPanel = target.closest<HTMLElement>(CANVAS_FLOATING_PANEL_SELECTOR)
+  const floatingScrollRegion = target.closest<HTMLElement>(CANVAS_NODE_SCROLL_REGION_SELECTOR)
+  if (floatingPanel && floatingScrollRegion && floatingPanel.contains(floatingScrollRegion)) {
+    const canScrollY = floatingScrollRegion.scrollHeight - floatingScrollRegion.clientHeight > 1
+    const canScrollX = floatingScrollRegion.scrollWidth - floatingScrollRegion.clientWidth > 1
+    return canScrollY || canScrollX ? floatingScrollRegion : null
   }
 
   const nodeShell = target.closest<HTMLElement>('.canvas-node-shell')

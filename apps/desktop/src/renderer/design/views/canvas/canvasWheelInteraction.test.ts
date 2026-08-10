@@ -74,4 +74,35 @@ describe('findSelectedCanvasNodeScrollRegion', () => {
 
     expect(findSelectedCanvasNodeScrollRegion(child)).toBe(inlinePanel)
   })
+
+  it('支持节点外的底部产物面板滚动', () => {
+    const floatingPanel = document.createElement('div')
+    floatingPanel.className = 'canvas-node-bottom-editor'
+    const outputText = document.createElement('div')
+    outputText.className = 'canvas-operation-output-text'
+    const child = document.createElement('span')
+    outputText.append(child)
+    floatingPanel.append(outputText)
+    document.body.append(floatingPanel)
+    setElementSize(outputText, { clientHeight: 100, scrollHeight: 240 })
+
+    expect(findSelectedCanvasNodeScrollRegion(child)).toBe(outputText)
+  })
+
+  it('覆盖浮层中的任务配置和运行历史滚动区', () => {
+    for (const className of ['canvas-operation-panel-body', 'canvas-operation-history']) {
+      const floatingPanel = document.createElement('div')
+      floatingPanel.className = 'canvas-node-floating-panel'
+      const scrollRegion = document.createElement('div')
+      scrollRegion.className = className
+      const child = document.createElement('span')
+      scrollRegion.append(child)
+      floatingPanel.append(scrollRegion)
+      document.body.append(floatingPanel)
+      setElementSize(scrollRegion, { clientHeight: 100, scrollHeight: 240 })
+
+      expect(findSelectedCanvasNodeScrollRegion(child)).toBe(scrollRegion)
+      floatingPanel.remove()
+    }
+  })
 })

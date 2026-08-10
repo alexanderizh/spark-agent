@@ -47,8 +47,15 @@ function storyboard(shots: Record<string, unknown>[]): string {
 }
 
 describe('canvas semantic text output validation', () => {
-  it('rejects arbitrary prose as a screenplay result', () => {
-    expect(validateCanvasSemanticTextOutput('screenplay', '这是一个故事梗概。')).toMatchObject({
+  it('keeps non-empty screenplay prose usable by adding a blank first scene', () => {
+    expect(validateCanvasSemanticTextOutput('screenplay', '这是一个故事梗概。')).toEqual({
+      ok: true,
+      text: '第1场｜｜｜\n\n这是一个故事梗概。',
+    })
+  })
+
+  it('only rejects an empty screenplay result', () => {
+    expect(validateCanvasSemanticTextOutput('screenplay', '   ')).toMatchObject({
       ok: false,
       code: 'invalid_screenplay_output',
     })
@@ -71,6 +78,20 @@ describe('canvas semantic text output validation', () => {
     )
 
     expect(result).toMatchObject({ ok: true })
+  })
+
+  it.each([
+    '【场号 1 内景｜二年级教室｜傍晚】',
+    '场次1｜内景｜二年级教室｜傍晚',
+    '场景一：内景｜二年级教室｜傍晚',
+    '1. INT. CLASSROOM - DAY',
+  ])('accepts common screenplay scene heading variant: %s', (heading) => {
+    expect(
+      validateCanvasSemanticTextOutput('screenplay', `${heading}\n\n动作：人物入场。`),
+    ).toEqual({
+      ok: true,
+      text: `${heading}\n\n动作：人物入场。`,
+    })
   })
 
   it('does not require optional screenplay sections before creating a usable draft', () => {

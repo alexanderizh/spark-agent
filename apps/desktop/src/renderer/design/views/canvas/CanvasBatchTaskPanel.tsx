@@ -90,6 +90,15 @@ export function CanvasBatchTaskPanel({
     }
   }, [open])
 
+  const resultCompleted =
+    state.mode === 'result' &&
+    state.results.length > 0 &&
+    state.results.every((result) => result.status === 'succeeded')
+
+  useEffect(() => {
+    if (resultCompleted) onClose()
+  }, [onClose, resultCompleted])
+
   if (!session) return null
 
   const sessionActiveEntry = session.activeNodeId
@@ -140,7 +149,6 @@ export function CanvasBatchTaskPanel({
         : '批量配置参数'
   const busy = state.saving || state.mode === 'submitting'
   const closePanel = () => {
-    if (busy) return
     setActiveOperation(null)
     setActiveNodeId(null)
     setGroupSelection(null)
@@ -158,7 +166,8 @@ export function CanvasBatchTaskPanel({
       centered
       destroyOnHidden
       className="canvas-batch-task-modal"
-      closable={!busy}
+      closable
+      closeIcon={<Icons.X size={16} />}
       maskClosable={!busy}
       keyboard={!busy}
       onCancel={closePanel}

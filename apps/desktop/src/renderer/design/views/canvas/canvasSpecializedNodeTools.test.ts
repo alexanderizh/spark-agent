@@ -211,6 +211,19 @@ describe('specialized canvas node tools', () => {
     })
   })
 
+  it('keeps non-formatted screenplay text and adds a blank first scene', async () => {
+    const { context, snapshot } = fakeContext()
+    await tool('canvas_create_screenplay_node').handler(context, {
+      title: '自由格式剧本',
+      text: '这是模型生成的剧情正文。',
+    })
+
+    expect(snapshot.assets[0]?.contentText).toBe('第1场｜｜｜\n\n这是模型生成的剧情正文。')
+    expect(snapshot.nodes.find((node) => node.id === 'node-1')?.data.text).toBe(
+      '第1场｜｜｜\n\n这是模型生成的剧情正文。',
+    )
+  })
+
   it('rejects empty semantic names before creating assets', async () => {
     const { context, spies } = fakeContext()
 

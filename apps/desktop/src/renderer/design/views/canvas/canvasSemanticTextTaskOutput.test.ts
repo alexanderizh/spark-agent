@@ -140,7 +140,7 @@ describe('semantic canvas text task output', () => {
     Object.assign(window, { spark: { invoke: vi.fn().mockResolvedValue({}) } })
   })
 
-  it('keeps invalid specialized output as an editable plain-text result node', async () => {
+  it('keeps non-formatted screenplay output as an editable screenplay node', async () => {
     seedSemanticTask('screenplay')
 
     const snapshot = await canvasApi.applyTextTaskResult('project-1', 'task-1', {
@@ -150,28 +150,21 @@ describe('semantic canvas text task output', () => {
     })
 
     expect(snapshot.tasks[0]).toMatchObject({
-      status: 'failed',
-      errorMsg: 'invalid_screenplay_output',
+      status: 'completed',
     })
     expect(snapshot.tasks[0]?.outputNodeIds).toHaveLength(1)
     expect(snapshot.tasks[0]?.modelOutputText).toBe('这是一个自由格式故事梗概。')
     expect(snapshot.tasks[0]?.completedAt).toBeTruthy()
-    expect(snapshot.nodes.some((node) => node.data.pipelineRole === 'screenplay')).toBe(false)
-    const fallbackNode = snapshot.nodes.find((node) =>
+    const screenplayNode = snapshot.nodes.find((node) =>
       snapshot.tasks[0]?.outputNodeIds.includes(node.id),
     )
-    expect(fallbackNode).toMatchObject({
+    expect(screenplayNode).toMatchObject({
       type: 'text',
-      taskId: 'task-1',
       data: {
-        text: '这是一个自由格式故事梗概。',
+        text: '第1场｜｜｜\n\n这是一个自由格式故事梗概。',
         origin: 'task_output',
+        pipelineRole: 'screenplay',
       },
-    })
-    expect(
-      snapshot.assets.find((asset) => asset.id === fallbackNode?.assetId)?.metadata,
-    ).toMatchObject({
-      validationCode: 'invalid_screenplay_output',
     })
   })
 

@@ -138,6 +138,5 @@ minio/
 .zcode/
 .superpowers/
 .spark-agent/
-todo/
 .playwright-mcp/
-design-drafts/
+docs/marketing/
