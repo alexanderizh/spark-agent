@@ -44,11 +44,11 @@ The website documents all of the above. Documentation is treated as first-class 
 - /canvas explains canvas nodes, creative tooling, director stage, and generation-task lineage.
 - /architecture explains the local-first desktop architecture, Agent Runtime, MCP, Provider, storage, permissions, and data flow.
 - /download recommends macOS, Windows, or Linux releases and links to available downloads.
-- /docs links to repository documentation and organizes quick start, coding, team, canvas, and ecosystem workflows. 14 topic pages are individually browseable.
+- /docs links to repository documentation and organizes quick start, coding, team, canvas, and ecosystem workflows. 20 topic pages are individually browseable.
 - /docs/search provides full-text search across all topics.
 - /roadmap explains current, next, and future development focus.
 - /open-source links to GitHub, README, docs, and license.
-- /contact links to GitHub Issues, Discussions, and private security reporting.
+- /contact links to GitHub Issues, Discussions, private security reporting, plus email (open@yiqibyte.com) and QQ discussion group (1041461465).
 
 ## FAQ
 Q: Is Spark Work local-first? A: Yes, project data and runtime state are designed around local desktop storage.
@@ -56,5 +56,5 @@ Q: Is Spark Work only for developers? A: No, developers can use the coding loop,
 Q: Can it create film storyboards? A: It includes an infinite-canvas film workflow with script breakdown, shot planning, storyboard grids, film assets, timelines, and generation-task organization.
 Q: Which models are supported? A: Text paths include Claude Agent SDK and Codex. Model, image, video, and audio capabilities depend on configured providers and manifests.
 Q: How does it reduce Agent risk? A: It exposes isolated work, checkpoints, change review, permission approval, usage records, and audit events.
-Q: Where is the official documentation? A: On this site at /docs, with 14 topic pages indexed at /docs/<slug>, full-text search at /docs/search, and an llms-full.txt for AI assistants.
+Q: Where is the official documentation? A: On this site at /docs, with 20 topic pages indexed at /docs/<slug>, full-text search at /docs/search, and an llms-full.txt for AI assistants.
 Q: Can I extend the model list? A: Yes. Provider records (text/image/voice/video) and Skill/MCP records can be added through Settings or programmatically through the `spark_platform` MCP.

@@ -148,7 +148,7 @@ export const docsTopics: DocsTopicMeta[] = [
     updatedAt: '2026-06-29',
     icon: 'LayoutGrid',
     githubSource: 'docs/ai-infinite-canvas-mvp.md',
-    relatedSlugs: ['media-providers', 'image-providers', 'content-production'],
+    relatedSlugs: ['media-providers', 'image-providers', 'canvas-video-workbench'],
   },
   {
     slug: 'media-providers',
@@ -388,6 +388,34 @@ export const docsTopics: DocsTopicMeta[] = [
     updatedAt: '2026-06-29',
     icon: 'FileText',
     relatedSlugs: ['team-mode', 'governance', 'builtin-tools'],
+  },
+  {
+    slug: 'session-scheduled-tasks',
+    title: '会话定时任务',
+    detail: 'interval / cron / once 三类触发，会话级自动续接',
+    description:
+      'Spark Work 会话内定时任务：在单个会话作用域创建持久化任务，到点自动用本会话当时的 Agent/模型/权限/工作区续接一轮对话。支持 interval（固定间隔）/ cron（5 字段表达式）/ once（单次定时），用户工具栏和 Agent MCP 工具两个入口，调度引擎托管重试、并发与下次执行。',
+    category: 'governance',
+    level: 'intermediate',
+    keywords: ['定时任务', 'session_schedule', 'cron', 'interval', '轮询', '无人值守', '计划任务', 'scheduled task'],
+    readTime: 6,
+    updatedAt: '2026-08-10',
+    icon: 'RefreshCw',
+    relatedSlugs: ['agents-workflows', 'governance', 'builtin-tools'],
+  },
+  {
+    slug: 'canvas-video-workbench',
+    title: '视频工作台',
+    detail: '深度视频转换、关键帧提取与一站式剪辑',
+    description:
+      'Spark Work 画布视频工作台：视频节点的全屏一站式处理台，覆盖深度视频转换（本地 Depth Anything V2，离线不上云）、关键帧提取（scene / iframe / uniform 三策略，超限自动退化，可回填画布）、剪辑处理（转码、切割、音频分离、变速、倒放、画面裁剪）和多段时间线轨道拼接。',
+    category: 'canvas',
+    level: 'intermediate',
+    keywords: ['视频工作台', '深度视频转换', 'Depth Anything', '关键帧', 'keyframe', '视频剪辑', 'video workbench', 'video_depth_map'],
+    readTime: 7,
+    updatedAt: '2026-08-10',
+    icon: 'LayoutGrid',
+    relatedSlugs: ['canvas-mvp', 'media-providers', 'image-providers'],
   },
 ]
 
