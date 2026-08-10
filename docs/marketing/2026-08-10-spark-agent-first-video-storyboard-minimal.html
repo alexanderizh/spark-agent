@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Spark Agent 首支产品发布视频的极简大字分镜与产品画面设计稿" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230c0d0f'/%3E%3Cpath d='M16 40c9-19 23-25 32-16-8-1-15 4-18 13 6-5 13-7 18-4-8 12-20 15-32 7Z' fill='%2379e8dd'/%3E%3C/svg%3E" />
+    <title>Spark Agent / First Look — Minimal Storyboard</title>
+    <style>
+      :root {
+        --black: #0c0d0f;
+        --ink: #121417;
+        --muted: #7b8088;
+        --line: #dedfdc;
+        --paper: #f7f7f4;
+        --paper-2: #eceeea;
+        --teal: #70e4d8;
+        --teal-deep: #1aa79c;
+        --orange: #df9560;
+        --serif: "Iowan Old Style", "Noto Serif SC", "Songti SC", serif;
+        --sans: "Avenir Next", "Hiragino Sans GB", "PingFang SC", sans-serif;
+        --mono: "SFMono-Regular", "Menlo", monospace;
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body { margin: 0; color: var(--ink); background: var(--paper); font-family: var(--sans); }
+      a { color: inherit; }
+      button { font: inherit; }
+      .page { overflow: hidden; }
+      .topbar { display: flex; justify-content: space-between; align-items: center; width: min(1320px, calc(100% - 48px)); margin: auto; padding: 22px 0; color: var(--muted); font: 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+      .topbar strong { color: var(--ink); font-weight: 600; }
+
+      .hero { min-height: 94vh; padding: 40px 0 110px; background: var(--paper); }
+      .hero-inner { width: min(1320px, calc(100% - 48px)); margin: auto; }
+      .eyebrow { margin: 72px 0 24px; color: var(--teal-deep); font: 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+      h1 { max-width: 980px; margin: 0; font: 500 clamp(64px, 11vw, 166px)/.91 var(--serif); letter-spacing: -.075em; }
+      h1 em { color: var(--teal-deep); font-style: normal; }
+      .hero-sub { max-width: 580px; margin: 34px 0 56px; color: #575c64; font-size: clamp(16px, 1.7vw, 21px); line-height: 1.75; }
+      .hero-meta { display: flex; flex-wrap: wrap; gap: 20px; color: var(--muted); font: 11px var(--mono); }
+      .hero-meta b { color: var(--ink); font-weight: 500; }
+      .hero-stage { position: relative; margin-top: 72px; padding: 12px; border-radius: 28px; background: #dfe3df; box-shadow: 0 35px 80px rgba(20, 27, 25, .16); }
+      .screen { position: relative; overflow: hidden; border-radius: 19px; background: #101317; box-shadow: 0 2px 0 rgba(255,255,255,.64) inset; }
+      .screen-chrome { display: flex; align-items: center; gap: 7px; height: 31px; padding: 0 13px; background: #171b1f; }
+      .screen-chrome i { width: 7px; height: 7px; border-radius: 50%; background: #d77e7a; }
+      .screen-chrome i:nth-child(2) { background: #dfaf64; }
+      .screen-chrome i:nth-child(3) { background: #74c6a2; }
+      .screen img { display: block; width: 100%; aspect-ratio: 1.94; object-fit: cover; object-position: center; }
+      .screen-tag { position: absolute; right: 20px; bottom: 18px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.35); border-radius: 999px; color: #fff; background: rgba(0,0,0,.45); font: 10px var(--mono); letter-spacing: .08em; }
+      .hero-stage::after { content: "REAL SCREEN / W-01"; position: absolute; right: 22px; bottom: -30px; color: var(--muted); font: 10px var(--mono); letter-spacing: .12em; }
+
+      .beat-section { padding: 150px 0 135px; background: #e5e8e3; }
+      .beat-inner { display: grid; grid-template-columns: .7fr 1.3fr; gap: 80px; align-items: center; width: min(1320px, calc(100% - 48px)); margin: auto; }
+      .beat-copy h2 { margin: 0; font: 500 clamp(48px, 7vw, 100px)/.94 var(--serif); letter-spacing: -.065em; }
+      .beat-copy h2 em { color: var(--teal-deep); font-style: normal; }
+      .beat-copy p { max-width: 430px; margin: 25px 0 35px; color: #60666d; font-size: 15px; line-height: 1.7; }
+      .beat-steps { display: grid; gap: 0; max-width: 440px; }
+      .beat-step { display: grid; grid-template-columns: 72px 1fr; gap: 14px; padding: 15px 0; border-top: 1px solid #c8ccc7; }
+      .beat-step time { color: var(--teal-deep); font: 10px var(--mono); }
+      .beat-step strong { display: block; color: #30353b; font-size: 13px; font-weight: 600; }
+      .beat-step span { display: block; margin-top: 5px; color: #70767c; font-size: 12px; line-height: 1.45; }
+      .beat-visual { position: relative; min-height: 560px; display: grid; place-items: center; }
+      .beat-visual::before { content: "FRAME 01 / HERO UI ENTRANCE"; position: absolute; right: 0; top: 0; color: #7c858b; font: 10px var(--mono); letter-spacing: .1em; }
+      .beat-stage { position: relative; width: min(690px, 100%); padding: 13px; border-radius: 24px; background: #cfd4cf; box-shadow: 0 35px 70px rgba(23, 29, 28, .17); }
+      .beat-window { position: relative; overflow: hidden; border-radius: 16px; background: #101317; transform: translateX(32px); opacity: .98; animation: window-in 6s cubic-bezier(.2,.8,.2,1) infinite; }
+      .beat-window img { display: block; width: 100%; aspect-ratio: 1.76; object-fit: cover; object-position: center; filter: saturate(.82); }
+      .beat-window .screen-chrome { opacity: .7; }
+      .beat-window::after { content: "LEGACY REFERENCE / RE-CAPTURE REQUIRED"; position: absolute; left: 22px; bottom: 22px; padding: 7px 9px; color: #fff; background: rgba(0,0,0,.6); font: 9px var(--mono); letter-spacing: .08em; }
+      .beat-glow { position: absolute; left: 10%; right: 10%; top: 17%; height: 1px; background: var(--teal); box-shadow: 0 0 24px var(--teal); opacity: 0; animation: glow-line 6s ease-in-out infinite; }
+      .beat-focus { position: absolute; right: 17%; top: 26%; width: 24%; height: 31%; border: 1px solid var(--teal); border-radius: 10px; box-shadow: 0 0 0 999px rgba(0,0,0,.1), 0 0 28px rgba(112,228,216,.33); opacity: 0; animation: focus-in 6s ease-in-out infinite; }
+      .beat-label { position: absolute; right: 13%; top: 18%; color: var(--teal); font: 9px var(--mono); letter-spacing: .1em; opacity: 0; animation: focus-in 6s ease-in-out 2.4s infinite; }
+      @keyframes window-in { 0%, 8% { transform: translateX(32px) scale(.97); opacity: 0; } 22%, 72% { transform: translateX(0) scale(1); opacity: 1; } 88%, 100% { transform: translateX(-16px) scale(1.01); opacity: 0; } }
+      @keyframes glow-line { 0%, 19% { opacity: 0; transform: scaleX(.2); } 29%, 72% { opacity: 1; transform: scaleX(1); } 84%, 100% { opacity: 0; transform: scaleX(.6); } }
+      @keyframes focus-in { 0%, 35% { opacity: 0; transform: scale(.92); } 48%, 72% { opacity: 1; transform: scale(1); } 88%, 100% { opacity: 0; } }
+
+      .timeline-section { color: var(--paper); background: var(--black); }
+      .timeline-inner { width: min(1320px, calc(100% - 48px)); margin: auto; padding: 145px 0 135px; }
+      .timeline-heading { display: grid; grid-template-columns: .85fr 1.15fr; gap: 50px; align-items: end; margin-bottom: 72px; }
+      .timeline-heading h2 { margin: 0; font: 500 clamp(50px, 7vw, 100px)/.94 var(--serif); letter-spacing: -.065em; }
+      .timeline-heading h2 em { color: var(--teal); font-style: normal; }
+      .timeline-heading p { max-width: 500px; margin: 0; color: #a4a9ae; font-size: 15px; line-height: 1.7; }
+      .timeline-ruler { display: grid; grid-template-columns: repeat(9, 1fr); padding-left: 125px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,.22); color: #777f85; font: 10px var(--mono); }
+      .timeline-row { display: grid; grid-template-columns: 125px 1.15fr .9fr 1.2fr; gap: 22px; padding: 22px 0; border-bottom: 1px solid rgba(255,255,255,.11); align-items: start; }
+      .timeline-row time { color: var(--teal); font: 11px var(--mono); line-height: 1.5; }
+      .timeline-row h3 { margin: 0; color: var(--paper); font: 500 26px/1 var(--serif); letter-spacing: -.04em; }
+      .timeline-row p { margin: 8px 0 0; color: #959ca3; font-size: 12px; line-height: 1.55; }
+      .timeline-row .visual { color: #d8dcd8; font-size: 12px; line-height: 1.55; }
+      .timeline-row .visual b { display: inline-block; margin-bottom: 7px; color: var(--orange); font: 9px var(--mono); letter-spacing: .08em; }
+      .timeline-row .motion { color: #a6c7c2; font-size: 12px; line-height: 1.55; }
+      .timeline-row .motion b { display: block; margin-bottom: 7px; color: var(--teal); font: 9px var(--mono); letter-spacing: .08em; }
+      .timeline-row .capture { margin-top: 8px; color: #7e868d; font: 9px var(--mono); letter-spacing: .06em; }
+      .timeline-row .capture::before { content: "↳ "; color: var(--orange); }
+
+      .refresh-section { padding: 125px 0; background: var(--paper); }
+      .refresh-inner { width: min(1320px, calc(100% - 48px)); margin: auto; }
+      .refresh-head { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 38px; }
+      .refresh-head h2 { margin: 0; font: 500 clamp(44px, 6vw, 82px)/.95 var(--serif); letter-spacing: -.06em; }
+      .refresh-head h2 em { color: var(--teal-deep); font-style: normal; }
+      .refresh-head p { max-width: 420px; margin: 0; color: #687078; font-size: 14px; line-height: 1.65; }
+      .refresh-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
+      .refresh-card { min-height: 185px; padding: 19px; border: 1px solid #cfd2ce; border-radius: 14px; background: #fbfbf8; }
+      .refresh-card b { display: block; margin-bottom: 20px; color: var(--teal-deep); font: 10px var(--mono); letter-spacing: .1em; }
+      .refresh-card strong { display: block; margin-bottom: 9px; color: #30353b; font-size: 14px; }
+      .refresh-card p { margin: 0; color: #737a80; font-size: 12px; line-height: 1.55; }
+      .refresh-card .status { display: inline-block; margin-top: 18px; padding: 5px 7px; border-radius: 4px; color: #6c4d36; background: #f4e4d2; font: 9px var(--mono); }
+
+      .dark-section { color: var(--paper); background: var(--black); }
+      .section-inner { width: min(1320px, calc(100% - 48px)); margin: auto; padding: 150px 0; }
+      .section-label { margin: 0 0 28px; color: var(--teal); font: 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+      .section-title { max-width: 920px; margin: 0; font: 500 clamp(48px, 8vw, 118px)/.94 var(--serif); letter-spacing: -.065em; }
+      .section-title em { color: var(--teal); font-style: normal; }
+      .section-copy { max-width: 560px; margin: 28px 0 0; color: #a7abb2; font-size: 16px; line-height: 1.75; }
+
+      .cutaway-wrap { position: relative; min-height: 590px; margin-top: 84px; display: grid; place-items: center; }
+      .cutaway { position: relative; width: min(820px, 90vw); height: 430px; transform: perspective(1100px) rotateX(54deg) rotateZ(-11deg); transform-style: preserve-3d; }
+      .cutaway-layer { position: absolute; left: 50%; width: 75%; height: 106px; transform: translateX(-50%); border: 1px solid rgba(255,255,255,.25); border-radius: 17px; display: flex; align-items: center; padding-left: 28px; box-shadow: 0 18px 35px rgba(0,0,0,.26); transition: 350ms ease; }
+      .cutaway-layer:hover { transform: translateX(-50%) translateZ(18px); border-color: var(--teal); }
+      .cutaway-layer span { transform: rotateZ(11deg) rotateX(-54deg); color: #e7e9e7; font-size: 14px; }
+      .cutaway-layer small { display: block; margin-top: 6px; color: rgba(255,255,255,.55); font: 10px var(--mono); }
+      .cutaway-layer.l1 { top: 12px; background: linear-gradient(120deg, #313b41, #1b2428); }
+      .cutaway-layer.l2 { top: 102px; background: linear-gradient(120deg, #145a59, #123334); }
+      .cutaway-layer.l3 { top: 192px; background: linear-gradient(120deg, #35305b, #211e39); }
+      .cutaway-layer.l4 { top: 282px; background: linear-gradient(120deg, #614933, #33281f); }
+      .cutaway-layer.l5 { top: 372px; background: linear-gradient(120deg, #202326, #121416); }
+      .cutaway-orbit { position: absolute; inset: 10% 11%; border: 1px solid rgba(112,228,216,.25); border-radius: 50%; transform: rotateX(54deg) rotateZ(11deg); pointer-events: none; }
+      .cutaway-orbit::after { content: "WORK  /  CREATE  /  MEMORY"; position: absolute; right: 3%; top: 7%; color: rgba(112,228,216,.66); font: 10px var(--mono); transform: rotateZ(-11deg); }
+      .cutaway-note { position: absolute; right: 2%; bottom: 8%; width: 210px; color: #9aa1a7; font-size: 12px; line-height: 1.6; }
+      .cutaway-note b { display: block; margin-bottom: 8px; color: var(--teal); font: 10px var(--mono); letter-spacing: .1em; }
+
+      .chapter-nav { position: sticky; top: 0; z-index: 10; display: flex; gap: 18px; align-items: center; overflow-x: auto; padding: 14px max(24px, calc((100vw - 1320px) / 2)); color: #8b9299; background: rgba(247,247,244,.94); border-bottom: 1px solid var(--line); backdrop-filter: blur(14px); }
+      .chapter-nav button { flex: none; border: 0; padding: 0; color: inherit; background: transparent; cursor: pointer; font: 10px var(--mono); letter-spacing: .1em; }
+      .chapter-nav button.active, .chapter-nav button:hover { color: var(--teal-deep); }
+      .chapter-nav .line { width: 70px; height: 1px; background: var(--line); }
+
+      .chapters { background: var(--paper-2); }
+      .chapter { display: grid; grid-template-columns: 0.35fr 1.65fr; gap: 60px; min-height: 760px; padding: 150px 0; border-bottom: 1px solid var(--line); align-items: center; }
+      .chapter:last-child { border-bottom: 0; }
+      .chapter-kicker { align-self: start; color: var(--muted); font: 11px var(--mono); letter-spacing: .1em; }
+      .chapter-kicker strong { display: block; margin-bottom: 16px; color: var(--teal-deep); font: 500 40px var(--serif); letter-spacing: -.05em; }
+      .chapter-body { min-width: 0; }
+      .chapter-body h2 { max-width: 740px; margin: 0; font: 500 clamp(46px, 7vw, 100px)/.95 var(--serif); letter-spacing: -.065em; }
+      .chapter-body h2 em { color: var(--teal-deep); font-style: normal; }
+      .chapter-body .lead { max-width: 520px; margin: 28px 0 42px; color: #636970; font-size: 16px; line-height: 1.7; }
+      .chapter-visual { position: relative; overflow: hidden; margin: 0; padding: 10px; border-radius: 21px; background: #d8dcd8; box-shadow: 0 24px 58px rgba(23, 29, 28, .12); }
+      .chapter-visual .screen { border-radius: 13px; }
+      .chapter-visual img { width: 100%; display: block; aspect-ratio: 1.94; object-fit: cover; }
+      .chapter-visual .tag { position: absolute; left: 21px; bottom: 21px; padding: 7px 9px; border-radius: 5px; color: #f2f4f3; background: rgba(0,0,0,.57); font: 9px var(--mono); letter-spacing: .08em; }
+      .chapter-note { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+      .chapter-note div { padding: 13px 14px; border-top: 1px solid #c9ccc8; }
+      .chapter-note span { display: block; margin-bottom: 7px; color: var(--muted); font: 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+      .chapter-note p { margin: 0; color: #4e545b; font-size: 12px; line-height: 1.55; }
+      details { margin-top: 22px; }
+      summary { color: var(--teal-deep); cursor: pointer; font: 11px var(--mono); letter-spacing: .08em; }
+      details p { max-width: 690px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+      .mini-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 38px; border-radius: 21px; background: var(--black); }
+      .mini-flow div { position: relative; min-height: 130px; padding: 18px; border: 1px solid rgba(112,228,216,.38); border-radius: 11px; color: var(--paper); background: rgba(112,228,216,.05); }
+      .mini-flow div:not(:last-child)::after { content: "→"; position: absolute; right: -23px; top: 50%; color: var(--teal); font: 20px var(--mono); }
+      .mini-flow b { display: block; margin-bottom: 14px; color: var(--teal); font: 10px var(--mono); }
+      .mini-flow span { font-size: 13px; line-height: 1.5; }
+
+      .case-reel { padding: 155px 0 125px; border-bottom: 1px solid var(--line); }
+      .case-intro { display: grid; grid-template-columns: .7fr 1.3fr; gap: 60px; align-items: end; margin-bottom: 80px; }
+      .case-intro h2 { margin: 0; font: 500 clamp(52px, 7vw, 100px)/.93 var(--serif); letter-spacing: -.065em; }
+      .case-intro h2 em { color: var(--teal-deep); font-style: normal; }
+      .case-intro p { max-width: 470px; margin: 0; color: #636970; font-size: 16px; line-height: 1.7; }
+      .case-row { display: grid; grid-template-columns: .65fr 1.35fr; gap: 55px; align-items: center; padding: 55px 0; border-top: 1px solid #cfd2ce; }
+      .case-row:nth-child(even) { grid-template-columns: 1.35fr .65fr; }
+      .case-row:nth-child(even) .case-copy { order: 2; }
+      .case-copy .case-kicker { color: var(--teal-deep); font: 10px var(--mono); letter-spacing: .12em; }
+      .case-copy h3 { max-width: 410px; margin: 17px 0 14px; font: 500 clamp(36px, 5vw, 72px)/.95 var(--serif); letter-spacing: -.06em; }
+      .case-copy p { max-width: 390px; margin: 0; color: #656b72; font-size: 14px; line-height: 1.7; }
+      .case-path { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 23px; }
+      .case-path span { padding: 6px 8px; border: 1px solid #cfd2ce; border-radius: 999px; color: #5d646b; font: 9px var(--mono); letter-spacing: .04em; }
+      .case-proof { margin-top: 28px !important; color: var(--teal-deep) !important; font-size: 12px !important; }
+      .case-frame { position: relative; overflow: hidden; padding: 9px; border-radius: 18px; background: #d8dcd8; box-shadow: 0 22px 48px rgba(23, 29, 28, .12); }
+      .case-frame .screen { border-radius: 12px; }
+      .case-frame img { display: block; width: 100%; aspect-ratio: 1.9; object-fit: cover; }
+      .case-frame .case-stamp { position: absolute; right: 21px; bottom: 20px; padding: 7px 9px; border-radius: 5px; color: #f6f6f2; background: rgba(0,0,0,.62); font: 9px var(--mono); letter-spacing: .08em; }
+      .case-frame.video-case { min-height: 300px; background: #151b1d; }
+      .video-rebuild { position: absolute; inset: 9px; overflow: hidden; border-radius: 12px; background: linear-gradient(125deg, #3b5754 0%, #182124 47%, #5d3f37 100%); }
+      .video-rebuild::before { content: "REFERENCE"; position: absolute; left: 26px; top: 23px; color: rgba(255,255,255,.57); font: 10px var(--mono); letter-spacing: .12em; }
+      .video-rebuild::after { content: "REBUILD"; position: absolute; right: 26px; top: 23px; color: var(--teal); font: 10px var(--mono); letter-spacing: .12em; }
+      .video-rebuild .shot { position: absolute; left: 15%; right: 15%; top: 24%; height: 44%; border: 1px solid rgba(255,255,255,.34); background: linear-gradient(135deg, rgba(112,228,216,.31), rgba(223,149,96,.2)); }
+      .video-rebuild .shot::after { content: "KEYFRAME 03"; position: absolute; left: 13px; bottom: 11px; color: rgba(255,255,255,.8); font: 9px var(--mono); }
+      .video-rebuild .playhead { position: absolute; left: 54%; bottom: 0; width: 1px; height: 25%; background: var(--orange); box-shadow: 0 0 15px var(--orange); }
+      .video-rebuild .film { position: absolute; left: 15%; right: 15%; bottom: 11%; height: 31px; border-top: 1px solid rgba(255,255,255,.43); background: repeating-linear-gradient(90deg, rgba(112,228,216,.44) 0 28px, transparent 28px 31px); }
+      .case-frame.novel-case { background: #182123; }
+      .novel-rebuild { position: absolute; inset: 9px; overflow: hidden; border-radius: 12px; background: radial-gradient(circle at 72% 32%, rgba(223,149,96,.38), transparent 27%), linear-gradient(120deg, #1d3434, #1b242b 52%, #2f2032); }
+      .novel-rebuild .script { position: absolute; left: 10%; top: 17%; width: 32%; height: 64%; padding: 16px; border: 1px solid rgba(255,255,255,.24); color: rgba(255,255,255,.68); background: rgba(255,255,255,.07); font: 10px/1.8 var(--mono); }
+      .novel-rebuild .script::before { content: "NOVEL / CHAPTER 01"; display: block; margin-bottom: 11px; color: var(--teal); }
+      .novel-rebuild .story { position: absolute; right: 10%; top: 20%; width: 42%; height: 53%; border: 1px solid rgba(223,149,96,.61); background: linear-gradient(135deg, rgba(223,149,96,.2), rgba(23, 35, 38, .82)); }
+      .novel-rebuild .story::after { content: "CHARACTER  →  SCENE  →  SHOT"; position: absolute; left: 16px; bottom: 15px; color: var(--orange); font: 9px var(--mono); }
+      .case-cta { display: flex; justify-content: space-between; gap: 18px; align-items: center; margin-top: 45px; padding-top: 20px; border-top: 1px solid #cfd2ce; color: var(--muted); font: 10px var(--mono); letter-spacing: .08em; }
+      .case-cta strong { color: var(--teal-deep); font-weight: 500; }
+
+      .canvas-surface { position: relative; overflow: hidden; min-height: 490px; padding: 50px; border-radius: 21px; background-color: #162024; background-image: linear-gradient(rgba(112,228,216,.11) 1px, transparent 1px), linear-gradient(90deg, rgba(112,228,216,.11) 1px, transparent 1px); background-size: 34px 34px; }
+      .canvas-node { position: absolute; min-width: 126px; padding: 15px; border: 1px solid rgba(112,228,216,.65); border-radius: 10px; color: #eef4f0; background: rgba(12, 27, 29, .88); box-shadow: 0 17px 30px rgba(0,0,0,.22); }
+      .canvas-node small { display: block; margin-bottom: 12px; color: var(--teal); font: 9px var(--mono); }
+      .canvas-node strong { font-size: 14px; font-weight: 500; }
+      .canvas-node.n1 { left: 8%; top: 20%; }
+      .canvas-node.n2 { left: 37%; top: 10%; border-color: rgba(203,160,255,.75); background: rgba(48,30,62,.88); }
+      .canvas-node.n3 { right: 9%; top: 28%; border-color: rgba(223,149,96,.75); background: rgba(55,36,24,.88); }
+      .canvas-node.n4 { left: 29%; bottom: 13%; }
+      .canvas-wire { position: absolute; height: 1px; background: linear-gradient(90deg, var(--teal), #cba0ff); transform-origin: left center; }
+      .canvas-wire.w1 { left: 20%; top: 31%; width: 240px; transform: rotate(-12deg); }
+      .canvas-wire.w2 { left: 57%; top: 30%; width: 190px; transform: rotate(20deg); }
+      .canvas-wire.w3 { left: 47%; top: 57%; width: 150px; transform: rotate(150deg); }
+      .canvas-caption { position: absolute; left: 32px; bottom: 25px; color: rgba(255,255,255,.54); font: 10px var(--mono); letter-spacing: .1em; }
+
+      .asset-strip { display: flex; gap: 10px; overflow-x: auto; padding: 20px 0 7px; }
+      .asset-chip { flex: none; min-width: 155px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: #fbfbf8; }
+      .asset-chip b { display: block; margin-bottom: 9px; color: var(--teal-deep); font: 10px var(--mono); }
+      .asset-chip span { color: #454b51; font-size: 13px; }
+
+      .footer { padding: 150px 0 90px; color: var(--paper); background: var(--black); text-align: center; }
+      .footer h2 { margin: 0; font: 500 clamp(54px, 9vw, 130px)/.92 var(--serif); letter-spacing: -.075em; }
+      .footer h2 em { color: var(--teal); font-style: normal; }
+      .footer p { max-width: 500px; margin: 30px auto 0; color: #a7abb2; font-size: 15px; line-height: 1.7; }
+      .footer small { display: block; margin-top: 70px; color: #646a72; font: 10px var(--mono); letter-spacing: .1em; }
+
+      @media (max-width: 820px) {
+        .topbar, .hero-inner, .section-inner { width: min(100% - 32px, 1320px); }
+        .hero { padding-top: 10px; }
+        .eyebrow { margin-top: 62px; }
+        .chapter { grid-template-columns: 1fr; gap: 25px; padding: 100px 0; min-height: auto; }
+        .chapter-kicker { align-self: auto; }
+        .chapter-kicker strong { display: inline; margin-right: 10px; }
+        .chapter-note { grid-template-columns: 1fr; }
+        .case-intro { grid-template-columns: 1fr; gap: 18px; margin-bottom: 45px; }
+        .case-row, .case-row:nth-child(even) { grid-template-columns: 1fr; gap: 28px; padding: 45px 0; }
+        .case-row:nth-child(even) .case-copy { order: initial; }
+        .beat-inner, .timeline-heading { grid-template-columns: 1fr; gap: 38px; }
+        .beat-section, .timeline-inner, .refresh-section { padding: 100px 0; }
+        .timeline-ruler { padding-left: 0; }
+        .timeline-row { grid-template-columns: 70px 1fr; gap: 15px; }
+        .timeline-row .visual, .timeline-row .motion { grid-column: 2; }
+        .refresh-grid { grid-template-columns: 1fr 1fr; }
+        .mini-flow { grid-template-columns: 1fr 1fr; padding: 22px; }
+        .mini-flow div:not(:last-child)::after { display: none; }
+        .cutaway-wrap { min-height: 470px; }
+        .cutaway { transform: perspective(900px) rotateX(52deg) rotateZ(-8deg) scale(.86); }
+        .cutaway-note { right: 0; bottom: 0; width: 190px; }
+      }
+      @media (max-width: 560px) {
+        .topbar { font-size: 9px; }
+        .topbar span:last-child { display: none; }
+        h1 { font-size: 70px; }
+        .section-inner { padding: 95px 0; }
+        .chapter-body h2 { font-size: 57px; }
+        .case-copy h3 { font-size: 52px; }
+        .refresh-grid { grid-template-columns: 1fr; }
+        .mini-flow { grid-template-columns: 1fr; }
+        .cutaway { transform: perspective(800px) rotateX(50deg) rotateZ(-6deg) scale(.68); margin-left: -8%; }
+        .cutaway-note { bottom: -34px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar"><strong>SPARK AGENT / FIRST LOOK</strong><span>VIDEO STORYBOARD · V2 MINIMAL</span><span>2026.08.10 / REVIEW</span></header>
+
+      <section class="hero" id="top">
+        <div class="hero-inner">
+          <p class="eyebrow">A PRODUCT SYSTEM TOUR · 04:58</p>
+          <h1>从任务，<br />到<em>作品。</em></h1>
+          <p class="hero-sub">首支视频只做一件事：让观众看见 Spark Agent 的两大空间——工作台和画布——以及把它们接起来的本地 Runtime。左边是一句判断，右边是产品按节奏进入、展开、被看见。</p>
+          <div class="hero-meta"><span><b>片型</b> 功能总览，不是教程</span><span><b>语言</b> 极简大字 + 真实产品画面</span><span><b>输出</b> 16:9 master / 9:16 cutdown</span></div>
+          <div class="hero-stage"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/workbench-overview.png" alt="Spark Agent 工作台构图参考" /><span class="screen-tag">LEGACY REFERENCE / RE-CAPTURE</span></div></div>
+        </div>
+      </section>
+
+      <section class="beat-section" id="hero-beat">
+        <div class="beat-inner">
+          <div class="beat-copy">
+            <p class="section-label" style="color:var(--teal-deep)">FRAME CHOREOGRAPHY · 00:00 — 00:12</p>
+            <h2>左边说一句，<br /><em>右边让产品进场。</em></h2>
+            <p>这才是最终视频的首页画面：文案不是静态旁白板，产品窗口也不是一张截图。右侧从一个干净的窗口壳进入，随后面板、路径线和关键结果依次出现。</p>
+            <div class="beat-steps"><div class="beat-step"><time>00:00–02</time><div><strong>留白先出现</strong><span>只出现“从任务，到作品。”，不急着展示功能。</span></div></div><div class="beat-step"><time>00:02–05</time><div><strong>产品窗口进场</strong><span>右侧 UI 从右向左轻推，窗口壳和截图分两层进入。</span></div></div><div class="beat-step"><time>00:05–09</time><div><strong>关键区域被点亮</strong><span>会话、终端、Review 依次出现 spotlight，不全屏扫一遍。</span></div></div><div class="beat-step"><time>00:09–12</time><div><strong>一句关系成立</strong><span>“一个本地 Runtime，接住两种工作。”进入下一段截面图。</span></div></div></div>
+          </div>
+          <div class="beat-visual"><div class="beat-stage"><div class="beat-window"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/workbench-overview.png" alt="首页 UI 动画构图参考" /><div class="beat-glow"></div><div class="beat-focus"></div><span class="beat-label">FOCUS / REVIEW</span></div></div></div>
+        </div>
+      </section>
+
+      <section class="dark-section" id="cutaway">
+        <div class="section-inner">
+          <p class="section-label">00:12 — THE PRODUCT CUTAWAY</p>
+          <h2 class="section-title">表面是界面，<br /><em>里面是 Runtime。</em></h2>
+          <p class="section-copy">这一段不用解释技术名词，只用一个虚拟截面图说明产品关系：可见界面之下，是工作区、Agent、工具、记忆和本地数据层。</p>
+          <div class="cutaway-wrap">
+            <div class="cutaway-orbit"></div>
+            <div class="cutaway">
+              <div class="cutaway-layer l1"><span>01 / SURFACE<small>对话 · 文件 · 画布 · 面板</small></span></div>
+              <div class="cutaway-layer l2"><span>02 / WORKFLOWS<small>节点 · 审批 · 验证 · 交付</small></span></div>
+              <div class="cutaway-layer l3"><span>03 / AGENTS<small>单 Agent · Team · Canvas Agent</small></span></div>
+              <div class="cutaway-layer l4"><span>04 / TOOLS + MEMORY<small>终端 · 浏览器 · 媒体 · 记忆抽取</small></span></div>
+              <div class="cutaway-layer l5"><span>05 / LOCAL DATA<small>Workspace · SQLite · Keychain · Assets</small></span></div>
+            </div>
+            <div class="cutaway-note"><b>FRAME NOTE</b>截面图只出现 8–10 秒。它负责建立心智模型，接下来所有功能都回到真实截图。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="timeline-section" id="timeline">
+        <div class="timeline-inner">
+          <div class="timeline-heading"><h2>这不是静态页面，<br /><em>是时间线。</em></h2><p>这一段恢复导演审阅需要的密度：每行对应一个视频段落，分别写清左侧文案、右侧画面、进入动画和新的实机采集要求。旧截图只用于构图参考，正式片全部换成新录屏。</p></div>
+          <div class="timeline-ruler"><span>00:00</span><span>00:30</span><span>01:00</span><span>01:30</span><span>02:00</span><span>02:30</span><span>03:30</span><span>04:10</span><span>04:58</span></div>
+          <div class="timeline-row"><time>00:00<br />00:12</time><div><h3>从任务，到作品。</h3><p>左侧大字；右侧窗口从画面外进入。</p></div><div class="visual"><b>RIGHT VISUAL</b><br />新录制的 Workbench 全景，带窗口壳与局部 Review 入口。</div><div class="motion"><b>ENTRANCE</b>窗口滑入 → 面板 stagger → spotlight → 连接到 Runtime 截面。<div class="capture">NEW-HERO-01 / 重新录制全景</div></div></div>
+          <div class="timeline-row"><time>00:12<br />00:24</time><div><h3>表面是界面，里面是 Runtime。</h3><p>虚拟产品截面图，建立整体心智模型。</p></div><div class="visual"><b>RIGHT VISUAL</b><br />五层截面：Surface / Workflow / Agent / Tools + Memory / Local Data。</div><div class="motion"><b>CUTAWAY</b>每层从上到下分离，最后回到同一个核心。<div class="capture">GENERATED-CUT-01 / Remotion + SVG</div></div></div>
+          <div class="timeline-row"><time>00:24<br />01:06</time><div><h3>让任务真的被推进。</h3><p>工作台、侧面板和内置工具。</p></div><div class="visual"><b>RIGHT VISUAL</b><br />Workbench 新版全景 → Files / Tools / Review / Tasks 局部画面。</div><div class="motion"><b>SCREEN PATH</b>不缩放整张图；用镜头框依次推到真实区域。<div class="capture">NEW-WB-01 / 全景 + 侧栏 + 终端 + 浏览器</div></div></div>
+          <div class="timeline-row"><time>01:06<br />01:38</time><div><h3>功能最后，变成什么？</h3><p>第一个案例蒙太奇：开发代码 + 做 PPT。</p></div><div class="visual"><b>RIGHT VISUAL</b><br />代码改动 / 测试 / Review；随后一份可交付的 PPT 页面进入右侧。</div><div class="motion"><b>CASE MONTAGE</b>两种结果以同一个窗口壳切换，保持“输入 → 产物”语法。<div class="capture">NEW-CASE-01 / 代码；NEW-CASE-02 / PPT</div></div></div>
+          <div class="timeline-row"><time>01:38<br />02:28</time><div><h3>一个 Agent，还是一支团队？</h3><p>Agent 协同、工作流、记忆和双层定时。</p></div><div class="visual"><b>RIGHT VISUAL</b><br />Host → Member 群聊；节点流程；后台记忆抽取；Session / Global schedule。</div><div class="motion"><b>STATE BUILD</b>成员气泡、节点、日历按同一条时间线逐层叠入。<div class="capture">NEW-WB-02 / Team + Workflow + Memory + Schedule</div></div></div>
+          <div class="timeline-row"><time>02:28<br />03:26</time><div><h3>让创作有上下文。</h3><p>画布全景、资产关系、多渠道配置和快速整理。</p></div><div class="visual"><b>RIGHT VISUAL</b><br />Canvas 新版全景；资产中心；Provider 渠道；节点整理与折叠。</div><div class="motion"><b>CANVAS ARRIVAL</b>工作台路径线变成画布网格，节点从线的末端生成。<div class="capture">NEW-CAN-01 / 画布全景；NEW-CAN-02 / Provider；NEW-CAN-03 / Node ops</div></div></div>
+          <div class="timeline-row"><time>03:26<br />04:10</time><div><h3>从故事，到镜头。</h3><p>小说到短剧案例；角色、故事板、场景和 3D 导演台。</p></div><div class="visual"><b>RIGHT VISUAL</b><br />小说片段 → 角色身份板 → 场景 → Storyboard → Director Stage → 360°。</div><div class="motion"><b>FILM BUILD</b>文本像纸张一样展开，角色卡与镜头卡从字里长出来。<div class="capture">NEW-CASE-04 / 小说到短剧；NEW-CAN-04 / Director + 360</div></div></div>
+          <div class="timeline-row"><time>04:10<br />04:37</time><div><h3>复刻一个视频。</h3><p>参考视频、深度转换、编辑时间线和关键帧。</p></div><div class="visual"><b>RIGHT VISUAL</b><br />Video Workbench 新录屏；参考镜头、playhead、关键帧胶片条。</div><div class="motion"><b>FILMSTRIP</b>参考画面切成镜头格，关键帧被拉出并重新排列。<div class="capture">NEW-CASE-03 / Video rebuild；NEW-CAN-05 / Video Lab</div></div></div>
+          <div class="timeline-row"><time>04:37<br />04:58</time><div><h3>一句话，画布开始行动。</h3><p>画布 Agent、动态模型 / Skill、工作流提取和片尾。</p></div><div class="visual"><b>RIGHT VISUAL</b><br />Agent 输入一句话，模型 / Skill 标签切换，节点被创建；Work / Create 回到 Logo。</div><div class="motion"><b>RETURN</b>节点胶囊沿连接线回到 Runtime；片尾只留产品名与链接。<div class="capture">NEW-CAN-06 / Canvas Agent + Workflow extract</div></div></div>
+        </div>
+      </section>
+
+      <section class="refresh-section" id="capture-refresh">
+        <div class="refresh-inner">
+          <div class="refresh-head"><h2>旧截图只做参考，<br /><em>正式片全部重拍。</em></h2><p>当前 HTML 中的旧版图片用于确认构图、窗口比例和镜头节奏。进入视频制作时，所有产品画面都按下面的新采集编号重新录制，避免版本错位。</p></div>
+          <div class="refresh-grid"><article class="refresh-card"><b>NEW-HERO-01</b><strong>首页 Workbench 全景</strong><p>新版本、干净演示项目、窗口壳、无私人路径。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-WB-02</b><strong>工作台功能串联</strong><p>工具、Team、Workflow、Memory、Schedule 连续操作。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-CAN-01</b><strong>画布与资产中心</strong><p>最新版画布、节点血缘、快速整理、折叠组。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-CAN-04</b><strong>导演台与 360°</strong><p>角色、相机、构图、全景拖动的完整交互路径。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-CAN-05</b><strong>Video Workbench</strong><p>深度转换、剪辑、时间线、关键帧实际操作。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-CAN-06</b><strong>Canvas Agent</strong><p>动态模型、Skill 加载、分析画布并创建节点。</p><span class="status">必须重拍</span></article><article class="refresh-card"><b>NEW-CASE-01</b><strong>代码 / PPT 案例</strong><p>各准备一条可公开复现、可剪成 5–8 秒的结果路径。</p><span class="status">准备案例</span></article><article class="refresh-card"><b>NEW-CASE-03/04</b><strong>视频复刻 / 小说短剧</strong><p>确认演示素材版权与输入文本，再开始实拍。</p><span class="status">先定素材</span></article></div>
+        </div>
+      </section>
+
+      <nav class="chapter-nav" aria-label="章节导航">
+        <button data-target="workbench">01 WORKBENCH</button><span class="line"></span><button data-target="cases">CASE REEL</button><span class="line"></span><button data-target="canvas">02 CANVAS</button><span class="line"></span><button data-target="outro">03 OUTRO</button>
+      </nav>
+
+      <main class="chapters">
+        <div class="section-inner">
+          <section class="chapter" id="workbench" data-chapter="workbench">
+            <div class="chapter-kicker"><strong>01</strong> / WORKBENCH<br />00:24 — 02:28</div>
+            <div class="chapter-body"><h2>让任务<br /><em>真的被推进。</em></h2><p class="lead">工作台段落不展示所有按钮，而是用一条任务路径，把特色功能串起来：任务输入 → 工具执行 → Agent 协同 → 工作流 → 记忆 → 定时。</p><figure class="chapter-visual"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/workbench-overview.png" alt="工作台总览" /><span class="tag">W-01 / WORKBENCH</span></div></figure><div class="chapter-note"><div><span>画面</span><p>真实工作台全景，轻微推入；侧面板局部放大。</p></div><div><span>字幕</span><p>目标、执行、验证、结果，在同一个项目里。</p></div><div><span>动画</span><p>一条细线从会话连接到终端、Review 和产物。</p></div></div><details><summary>展开这一章的镜头节奏</summary><p>00:24 工作台总览；00:42 功能侧面板；01:00 内置终端 / 搜索 / 浏览器 / 媒体工具；01:18 Host → Member 协同；01:38 工作流编排；02:00 后台记忆抽取；02:14 会话级 / 全局双层定时任务。每个功能只留下一个关键动作，后续分别做教学视频。</p></details></div>
+          </section>
+
+          <section class="chapter" id="tools" data-chapter="workbench">
+            <div class="chapter-kicker"><strong>01.1</strong> / THE PATH</div>
+            <div class="chapter-body"><h2>不是功能列表，<br /><em>是一条路径。</em></h2><p class="lead">用 Remotion 把真实录屏中的关键状态提炼成一条极简路径。观众读的是关系，不是按钮名称。</p><div class="mini-flow"><div><b>01 / INPUT</b><span>提出目标<br />进入项目上下文</span></div><div><b>02 / EXECUTE</b><span>工具与 Agent<br />开始行动</span></div><div><b>03 / VERIFY</b><span>审批、测试、审查<br />看见改动</span></div><div><b>04 / KEEP</b><span>记忆、任务、产物<br />留下来继续用</span></div></div><div class="chapter-note"><div><span>声音</span><p>键盘、终端、一次审批 click。</p></div><div><span>色彩</span><p>工作台只用黑、白、青。</p></div><div><span>后续</span><p>可拆成工作流教学片。</p></div></div></div>
+          </section>
+
+          <section class="case-reel" id="cases" data-chapter="cases">
+            <div class="case-intro"><h2>功能最后，<br /><em>变成什么？</em></h2><p>首支视频中间加入一段案例蒙太奇。它不教操作，只让观众看到 Spark Agent 的能力如何落到具体结果里。每个案例 5–8 秒，后续再各自拆成教学视频。</p></div>
+
+            <article class="case-row">
+              <div class="case-copy"><div class="case-kicker">CASE 01 · 00:42 / WORKBENCH</div><h3>开发<br />代码</h3><p>把一个真实问题交给 Agent：读项目、改代码、跑验证、查看 Diff，再决定是否接受。</p><div class="case-path"><span>真实项目</span><span>终端验证</span><span>Git Review</span><span>Checkpoint</span></div><p class="case-proof">一句字幕：让 AI 改得动，也审得住。</p></div>
+              <figure class="case-frame"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/code-development.png" alt="Spark Agent 代码开发案例" /></div><span class="case-stamp">OUTPUT / CODE + REVIEW</span></figure>
+            </article>
+
+            <article class="case-row">
+              <div class="case-copy"><div class="case-kicker">CASE 02 · 01:08 / DELIVERY</div><h3>做一份<br />PPT</h3><p>从一句主题或一份资料开始，生成结构、页面和可交付的演示文稿；继续导出 PPTX、DOCX 或网页。</p><div class="case-path"><span>主题输入</span><span>结构生成</span><span>HTML Slides</span><span>PPTX / DOCX</span></div><p class="case-proof">一句字幕：从想法，到能拿去讲的页面。</p></div>
+              <figure class="case-frame"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/ppt-docs.png" alt="Spark Agent PPT 与文档案例" /></div><span class="case-stamp">OUTPUT / SLIDES + DOCS</span></figure>
+            </article>
+
+            <article class="case-row">
+              <div class="case-copy"><div class="case-kicker">CASE 03 · 04:10 / CANVAS VIDEO LAB</div><h3>复刻<br />一个视频</h3><p>把参考视频放进画布，拆出镜头、节奏和关键帧，再进入深度转换、视频编辑和新的生成任务。</p><div class="case-path"><span>Reference</span><span>Shot Split</span><span>Keyframes</span><span>Rebuild</span></div><p class="case-proof">一句字幕：不是复制文件，而是拆出可继续创作的结构。</p></div>
+              <figure class="case-frame video-case"><div class="video-rebuild"><div class="shot"></div><div class="playhead"></div><div class="film"></div></div><span class="case-stamp">OUTPUT / REFERENCE → REBUILD</span></figure>
+            </article>
+
+            <article class="case-row">
+              <div class="case-copy"><div class="case-kicker">CASE 04 · 03:26 / FILM WORKFLOW</div><h3>小说<br />到短剧</h3><p>把长文本变成角色、场景、故事板和镜头描述，再交给导演台和生成节点继续推进。</p><div class="case-path"><span>Novel</span><span>Characters</span><span>Scenes</span><span>Storyboard</span><span>Shots</span></div><p class="case-proof">一句字幕：从一段故事，到一组可以拍的镜头。</p></div>
+              <figure class="case-frame novel-case"><div class="novel-rebuild"><div class="script">他推开门。<br />房间里没有灯。<br />桌上只留下一台相机。</div><div class="story"></div></div><span class="case-stamp">OUTPUT / NOVEL → SHORT DRAMA</span></figure>
+            </article>
+
+            <div class="case-cta"><span>CASE REEL / 4 个结果瞬间</span><strong>后续：每个案例独立成为一条教学视频 →</strong></div>
+          </section>
+
+          <section class="chapter" id="canvas" data-chapter="canvas">
+            <div class="chapter-kicker"><strong>02</strong> / CANVAS<br />02:28 — 04:48</div>
+            <div class="chapter-body"><h2>让创作<br /><em>有上下文。</em></h2><p class="lead">画布段落使用更宽的留白和更慢的镜头运动。真实截图负责证明能力，虚拟节点动画负责解释创作关系。</p><figure class="chapter-visual"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/infinite-canvas.png" alt="Spark Agent 无限画布真实截图" /><span class="tag">C-01 / CANVAS</span></div></figure><div class="chapter-note"><div><span>画面</span><p>画布全景、资产中心、节点血缘；真实截图做主画面。</p></div><div><span>字幕</span><p>剧本、角色、场景、镜头和结果，继续派生。</p></div><div><span>动画</span><p>连线先出现，节点后出现；强调关系。</p></div></div><details><summary>展开这一章的镜头节奏</summary><p>02:28 工作台连线变成画布网格；02:42 画布与资产中心；03:00 快速整理与组节点折叠；03:13 Provider 多渠道本地配置（火山 / 百炼等只展示渠道与配置，不在首片承诺免费额度）；03:26 角色身份板、故事板、场景提取；03:42 3D 导演台；03:58 场景 360°；04:10 深度视频、视频编辑、关键帧；04:25 画布 Agent、动态模型 / Skill；04:37 画布工作流提取。</p></details></div>
+          </section>
+
+          <section class="chapter" id="film" data-chapter="canvas">
+            <div class="chapter-kicker"><strong>02.1</strong> / FILM TOOLS</div>
+            <div class="chapter-body"><h2>从故事，<br /><em>到镜头。</em></h2><p class="lead">影视工具不用做成复杂的功能墙。把它们像电影片头一样，一个一个出现，再让它们进入真实的画布。</p><figure class="chapter-visual"><div class="canvas-surface"><div class="canvas-node n1"><small>CHARACTER</small><strong>角色身份板</strong></div><div class="canvas-node n2"><small>STORYBOARD</small><strong>故事板</strong></div><div class="canvas-node n3"><small>SCENE</small><strong>场景提取</strong></div><div class="canvas-node n4"><small>SHOT</small><strong>镜头描述</strong></div><div class="canvas-wire w1"></div><div class="canvas-wire w2"></div><div class="canvas-wire w3"></div><span class="canvas-caption">VIRTUAL CANVAS / STORY → SHOT</span></div></figure><div class="chapter-note"><div><span>实拍</span><p>角色库、故事板、场景提取菜单。</p></div><div><span>生成</span><p>节点关系图与镜头卡片。</p></div><div><span>转场</span><p>用一条线从角色连到镜头。</p></div></div></div>
+          </section>
+
+          <section class="chapter" id="director" data-chapter="canvas">
+            <div class="chapter-kicker"><strong>02.2</strong> / DIRECTOR</div>
+            <div class="chapter-body"><h2>先设计镜头，<br /><em>再生成画面。</em></h2><p class="lead">3D 导演台、360° 场景和视频时间线不靠炫技。它们共同证明：画布不只是图片生成入口，而是一个能组织镜头的工作台。</p><figure class="chapter-visual"><div class="screen"><div class="screen-chrome"><i></i><i></i><i></i></div><img src="../../apps/website/public/showcase/director-stage.png" alt="3D 导演台截图" /><span class="tag">C-04 / DIRECTOR STAGE</span></div></figure><div class="chapter-note"><div><span>镜头 1</span><p>角色、相机、构图同时变化。</p></div><div><span>镜头 2</span><p>360° 场景拖动一圈。</p></div><div><span>镜头 3</span><p>视频时间线切出关键帧。</p></div></div><details><summary>展开制作备注</summary><p>真实素材：director-stage.png、panorama-360.png，以及 VideoWorkbench 实机录屏。Remotion 只负责相机框、playhead、关键帧卡片与字幕，不重绘产品本身。</p></details></div>
+          </section>
+
+          <section class="chapter" id="agent" data-chapter="canvas">
+            <div class="chapter-kicker"><strong>02.3</strong> / CANVAS AGENT</div>
+            <div class="chapter-body"><h2>一句话，<br /><em>画布开始行动。</em></h2><p class="lead">结尾用画布 Agent 收束画布段落：动态选择模型，加载 Skill，拆任务、建节点、继续派生。</p><figure class="chapter-visual"><div class="canvas-surface" style="background-size: 38px 38px"><div class="canvas-node n1"><small>AGENT</small><strong>分析画布</strong></div><div class="canvas-node n2"><small>MODEL / SKILL</small><strong>动态加载</strong></div><div class="canvas-node n3"><small>OUTPUT</small><strong>生成节点</strong></div><div class="canvas-wire w1"></div><div class="canvas-wire w2"></div><span class="canvas-caption">CANVAS AGENT / PROMPT → NODES</span></div></figure><div class="chapter-note"><div><span>输入</span><p>“把这个角色拆成三种镜头。”</p></div><div><span>过程</span><p>模型与 Skill 标签动态切换。</p></div><div><span>结果</span><p>节点被创建并连回画布。</p></div></div></div>
+          </section>
+        </div>
+      </main>
+
+      <section class="dark-section" id="outro">
+        <div class="section-inner">
+          <p class="section-label">04:48 — OUTRO</p>
+          <h2 class="section-title">看得见。<br />接得上。<br /><em>还能继续做。</em></h2>
+          <p class="section-copy">Work 与 Create 回到同一个产品名。片尾只保留 Logo、官网和下载入口，不再塞功能清单。</p>
+          <div class="asset-strip"><div class="asset-chip"><b>REAL SCREEN</b><span>Workbench / Canvas / Director</span></div><div class="asset-chip"><b>VIRTUAL CUTAWAY</b><span>Runtime / Memory / Local Data</span></div><div class="asset-chip"><b>REMOTION</b><span>Spotlight / Node / Filmstrip</span></div><div class="asset-chip"><b>GENERATED</b><span>Cover / Transition / End Card</span></div></div>
+        </div>
+      </section>
+
+      <footer class="footer"><h2>从任务，<br /><em>到作品。</em></h2><p>这版审阅稿把功能表退到导演备注，把产品画面推到主舞台。确认后进入实机采集与 Remotion rough cut。</p><small>SPARK AGENT / FIRST LOOK / V2 MINIMAL STORYBOARD / 2026.08.10</small></footer>
+    </div>
+    <script>
+      const nav = [...document.querySelectorAll('.chapter-nav button')];
+      const chapters = [...document.querySelectorAll('.chapter, .case-reel')];
+      const setActive = (id) => nav.forEach((button) => button.classList.toggle('active', button.dataset.target === id));
+      nav.forEach((button) => button.addEventListener('click', () => document.getElementById(button.dataset.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
+      const observer = new IntersectionObserver((entries) => entries.forEach((entry) => entry.isIntersecting && setActive(entry.target.dataset.chapter === 'canvas' ? 'canvas' : entry.target.dataset.chapter === 'cases' ? 'cases' : 'workbench')), { rootMargin: '-25% 0px -60% 0px' });
+      chapters.forEach((chapter) => observer.observe(chapter));
+    </script>
+  </body>
+</html>
