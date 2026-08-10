@@ -24,6 +24,9 @@
   <url><loc>https://spark-agent.dev/docs/governance</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://spark-agent.dev/docs/board-view</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://spark-agent.dev/docs/desktop-guide</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/long-term-memory</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/session-scheduled-tasks</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://spark-agent.dev/docs/canvas-video-workbench</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://spark-agent.dev/roadmap</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://spark-agent.dev/open-source</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
   <url><loc>https://spark-agent.dev/contact</loc><changefreq>yearly</changefreq><priority>0.4</priority></url>

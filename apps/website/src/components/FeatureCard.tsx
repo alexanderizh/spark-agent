@@ -1,12 +1,15 @@
 import {
+  Activity,
   Boxes,
   Braces,
+  CalendarClock,
   Code2,
   Cpu,
   Database,
   Film,
   GitBranch,
   LayoutDashboard,
+  ListOrdered,
   ShieldCheck,
   UsersRound,
   Wrench,
@@ -24,6 +27,9 @@ const icons: Record<string, LucideIcon> = {
   canvas: LayoutDashboard,
   film: Film,
   provider: Database,
+  schedule: CalendarClock,
+  heatmap: Activity,
+  order: ListOrdered,
 }
 
 export function FeatureCard({ title, icon, summary, href, proof, items }: FeatureGroup) {

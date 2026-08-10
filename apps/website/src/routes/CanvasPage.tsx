@@ -58,6 +58,22 @@ export function CanvasPage() {
           </article>
         </div>
       </Section>
+      <Section title="视频工作台：深度转换、关键帧与一站式剪辑" intro="画布上的视频节点直接进入工作台，完成深度视频转换、关键帧提取和参数化剪辑，产物再回填为画布节点继续创作。">
+        <div className="grid cards">
+          <article className="card">
+            <h3>深度视频转换</h3>
+            <p>基于本地 Depth Anything V2 模型，把视频转成「近白远黑」的深度视频。首次运行自动下载模型，之后完全离线执行，视频不上传云端。</p>
+          </article>
+          <article className="card">
+            <h3>关键帧提取</h3>
+            <p>三种策略按需提取：场景突变检测、编码关键帧（I 帧）和均匀采样，超限自动退化均匀采样。提取的帧可批量回填为画布图片节点。</p>
+          </article>
+          <article className="card">
+            <h3>剪辑与转码</h3>
+            <p>转码（MP4 / WebM / MOV / GIF）、等分切割、音频分离、变速、倒放和画面裁剪；多段时间线轨道支持拼接、排序与连播。</p>
+          </article>
+        </div>
+      </Section>
       <Section title="画布里的真实工作场景" intro="下面是 Spark Work 桌面端截图，展示导演台、资产中心和 360 全景预览如何服务同一个项目。">
         <div className="grid cards canvas-gallery">
           <article className="card image-card" id="film">

@@ -35,6 +35,9 @@ Each topic page is self-contained with TOC, FAQ, HowTo structured data, and JSON
 - Governance (permissions/rules/hooks/audit): /docs/governance
 - Board view (kanban task tracker): /docs/board-view
 - Desktop architecture (Electron + local-first): /docs/desktop-guide
+- Long-term memory (3-scope recall + hybrid retrieval): /docs/long-term-memory
+- Session scheduled tasks (interval/cron/once, session-scoped): /docs/session-scheduled-tasks
+- Canvas video workbench (depth map / keyframes / editing): /docs/canvas-video-workbench
 
 ## Core capabilities
 - Local-first desktop workbench that keeps project context, workspace files, assets, credentials, and audit records visible to the user

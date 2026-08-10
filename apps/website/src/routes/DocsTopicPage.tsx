@@ -28,6 +28,9 @@ const docPageLoaders: Record<string, () => Promise<{ default: DocsPageContent }>
   'builtin-tools': () => import('../content/docs-pages/builtin-tools'),
   'workflow-usage': () => import('../content/docs-pages/workflow-usage'),
   'board-view': () => import('../content/docs-pages/board-view'),
+  'long-term-memory': () => import('../content/docs-pages/long-term-memory'),
+  'session-scheduled-tasks': () => import('../content/docs-pages/session-scheduled-tasks'),
+  'canvas-video-workbench': () => import('../content/docs-pages/canvas-video-workbench'),
 }
 
 function DocsPageFallback() {
