@@ -176,7 +176,10 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
             const listTag = (block.ordered ? 'ol' : 'ul') as 'ol' | 'ul'
             return React.createElement(
               listTag,
-              { key: index },
+              {
+                key: index,
+                ...(block.ordered && block.start !== 1 ? { start: block.start } : {}),
+              },
               block.items.map((item, itemIndex) => (
                 <li key={itemIndex} className={item.checked !== undefined ? 'md-task' : undefined}>
                   {item.checked !== undefined && (
