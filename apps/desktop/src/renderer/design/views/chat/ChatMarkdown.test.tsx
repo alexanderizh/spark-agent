@@ -5,8 +5,19 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+type MockMarkdownBlock =
+  | { kind: 'paragraph'; text: string }
+  | {
+      kind: 'list'
+      ordered: true
+      start: number
+      items: Array<{ text: string; checked?: boolean }>
+    }
+
 const markdownMocks = vi.hoisted(() => ({
-  parseMarkdown: vi.fn((content: string) => [{ kind: 'paragraph' as const, text: content }]),
+  parseMarkdown: vi.fn((content: string): MockMarkdownBlock[] => [
+    { kind: 'paragraph', text: content },
+  ]),
 }))
 
 vi.mock('./ChatMarkdownUtils', () => ({
@@ -103,5 +114,20 @@ describe('MarkdownText', () => {
       'partial response',
     ])
     expect(container.textContent).toBe('stable paragraphpartial response')
+  })
+
+  it('uses the original start for an ordered list block', () => {
+    markdownMocks.parseMarkdown.mockReturnValueOnce([
+      {
+        kind: 'list',
+        ordered: true,
+        start: 2,
+        items: [{ text: 'second item' }],
+      },
+    ])
+
+    act(() => root.render(<MarkdownText content="2. second item" />))
+
+    expect(container.querySelector('ol')?.getAttribute('start')).toBe('2')
   })
 })

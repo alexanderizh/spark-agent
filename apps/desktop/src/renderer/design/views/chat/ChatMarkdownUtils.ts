@@ -4,7 +4,13 @@ export type MarkdownBlock =
   | { kind: 'code'; lang: string; code: string }
   | { kind: 'incomplete_code'; lang: string; code: string }
   | { kind: 'quote'; text: string }
-  | { kind: 'list'; ordered: boolean; items: Array<{ text: string; checked?: boolean }> }
+  | { kind: 'list'; ordered: false; items: Array<{ text: string; checked?: boolean }> }
+  | {
+      kind: 'list'
+      ordered: true
+      start: number
+      items: Array<{ text: string; checked?: boolean }>
+    }
   | { kind: 'table'; headers: string[]; rows: string[][] }
   | { kind: 'hr' }
 
@@ -68,10 +74,24 @@ export function parseMarkdown(content: string): MarkdownBlock[] {
     const listMatch = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/)
     if (listMatch) {
       const ordered = /\d+[.)]/.test(listMatch[2] ?? '')
+      const start = ordered ? Number.parseInt(listMatch[2] ?? '1', 10) : 1
       const items: Array<{ text: string; checked?: boolean }> = []
       while (index < lines.length) {
         const match = (lines[index] ?? '').match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/)
-        if (!match || /\d+[.)]/.test(match[2] ?? '') !== ordered) break
+        if (!match || /\d+[.)]/.test(match[2] ?? '') !== ordered) {
+          if (!(lines[index] ?? '').trim()) {
+            let nextItemIndex = index + 1
+            while (nextItemIndex < lines.length && !(lines[nextItemIndex] ?? '').trim()) {
+              nextItemIndex += 1
+            }
+            const nextMatch = (lines[nextItemIndex] ?? '').match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/)
+            if (nextMatch && /\d+[.)]/.test(nextMatch[2] ?? '') === ordered) {
+              index = nextItemIndex
+              continue
+            }
+          }
+          break
+        }
         const itemText = match[3] ?? ''
         const task = itemText.match(/^\[([ xX])]\s+(.*)$/)
         items.push(
@@ -81,7 +101,9 @@ export function parseMarkdown(content: string): MarkdownBlock[] {
         )
         index += 1
       }
-      blocks.push({ kind: 'list', ordered, items })
+      blocks.push(
+        ordered ? { kind: 'list', ordered, start, items } : { kind: 'list', ordered, items },
+      )
       continue
     }
 
@@ -133,6 +155,9 @@ export function parseMarkdown(content: string): MarkdownBlock[] {
 export function findStableMarkdownPrefixEnd(content: string): number {
   let inFence = false
   let stableEnd = 0
+  let previousNonBlankLine = ''
+  // 空行可能只是宽松列表的条目分隔；等下一条完整内容出现后再决定是否稳定该边界。
+  let pendingListBoundary: { end: number; kind: 'ordered' | 'unordered' } | null = null
   const linePattern = /[^\n]*(?:\n|$)/g
   let match: RegExpExecArray | null
 
@@ -141,14 +166,37 @@ export function findStableMarkdownPrefixEnd(content: string): number {
     if (rawLine.length === 0) break
     const line = rawLine.endsWith('\n') ? rawLine.slice(0, -1) : rawLine
     const normalizedLine = line.endsWith('\r') ? line.slice(0, -1) : line
+    if (normalizedLine.trim().length > 0) {
+      if (
+        pendingListBoundary != null &&
+        rawLine.endsWith('\n') &&
+        getListKind(normalizedLine) !== pendingListBoundary.kind
+      ) {
+        stableEnd = pendingListBoundary.end
+      }
+      pendingListBoundary = null
+    }
     if (/^```(?:[A-Za-z0-9_-]*)\s*$/.test(normalizedLine)) {
       inFence = !inFence
     } else if (!inFence && normalizedLine.trim().length === 0 && rawLine.endsWith('\n')) {
-      stableEnd = match.index + rawLine.length
+      const boundary = match.index + rawLine.length
+      const previousListKind = getListKind(previousNonBlankLine)
+      if (previousListKind == null) {
+        stableEnd = boundary
+      } else {
+        pendingListBoundary = { end: boundary, kind: previousListKind }
+      }
     }
+    if (normalizedLine.trim().length > 0) previousNonBlankLine = normalizedLine
   }
 
   return stableEnd
+}
+
+function getListKind(line: string): 'ordered' | 'unordered' | null {
+  const match = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/)
+  if (!match) return null
+  return /\d+[.)]/.test(match[2] ?? '') ? 'ordered' : 'unordered'
 }
 
 function splitTableRow(line: string): string[] {
