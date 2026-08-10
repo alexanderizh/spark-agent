@@ -271,6 +271,7 @@ describe('ProjectSessionGroup pagination', () => {
     )
     if (projectMenuButton == null) throw new Error('Missing project actions button')
     await act(async () => projectMenuButton.click())
+    expect(document.querySelectorAll('.action-menu')).toHaveLength(1)
 
     const copyPathButton = Array.from(
       document.querySelectorAll<HTMLButtonElement>('.action-menu-item'),
@@ -339,6 +340,7 @@ describe('ProjectSessionGroup pagination', () => {
     })
 
     expect(contextMenuEvent.defaultPrevented).toBe(true)
+    expect(document.querySelectorAll('.action-menu')).toHaveLength(1)
     expect(
       Array.from(document.querySelectorAll<HTMLButtonElement>('.action-menu-item')).some((button) =>
         button.textContent?.includes('复制路径'),

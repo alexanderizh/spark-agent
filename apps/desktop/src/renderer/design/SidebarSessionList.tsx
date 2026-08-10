@@ -1090,6 +1090,7 @@ export function ProjectSessionGroup({
   const { t } = useI18n()
   const optionalToast = useOptionalToast()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const [visibleSessionCount, setVisibleSessionCount] = useState(PROJECT_SESSION_INITIAL_VISIBLE)
   const isActiveProject = activeWorkspaceId === group.workspace.id
 
@@ -1162,12 +1163,12 @@ export function ProjectSessionGroup({
     <div className={`proj-group ${isActiveProject ? 'active-project' : ''}`}>
       <Dropdown
         menu={{ items: [] }}
-        open={menuOpen}
-        onOpenChange={setMenuOpen}
+        open={contextMenuOpen}
+        onOpenChange={setContextMenuOpen}
         trigger={['contextMenu']}
         placement="bottomLeft"
         popupRender={() => (
-          <ActionMenu onAction={() => setMenuOpen(false)} items={projectMenuItems} />
+          <ActionMenu onAction={() => setContextMenuOpen(false)} items={projectMenuItems} />
         )}
       >
         <div
