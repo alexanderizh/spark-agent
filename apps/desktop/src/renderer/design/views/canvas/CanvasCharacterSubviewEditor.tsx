@@ -341,6 +341,7 @@ export function CanvasCharacterSubviewEditor({
       className="canvas-character-subview-editor-modal"
       style={{ top: modalTop }}
       destroyOnHidden
+      getContainer={() => document.body}
       footer={[
         <Button key="cancel" onClick={onClose} disabled={saving}>
           取消

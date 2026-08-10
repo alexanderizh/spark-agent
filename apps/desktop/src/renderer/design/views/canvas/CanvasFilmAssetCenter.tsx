@@ -774,6 +774,7 @@ function AssetListTab({
       <Modal
         open={sheetAsset !== null}
         zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
+        getContainer={() => document.body}
         title={`生成角色图 · ${sheetAsset?.title ?? ''}`}
         okText={`生成 ${sheetAspects.length} 组`}
         cancelText="取消"
@@ -1354,6 +1355,7 @@ function ManuscriptImportModal({
       open={open}
       title="导入文稿"
       zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
+      getContainer={() => document.body}
       okText={selectedCount > 0 ? `导入 ${selectedCount} 章` : '导入'}
       cancelText="取消"
       okButtonProps={{ disabled: selectedCount === 0 || parsing, loading: importing }}
@@ -2315,6 +2317,7 @@ function ShotGroupTab({
         <Modal
           open={presetOpen}
           zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
+          getContainer={() => document.body}
           title="项目风格与风格预设"
           okText="保存预设"
           cancelText="关闭"
@@ -2475,6 +2478,7 @@ function ShotGroupTab({
         <Modal
           open={edlOpen}
           zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
+          getContainer={() => document.body}
           title="成片清单 (EDL)"
           width={720}
           okText="插入画布为文本节点"
@@ -2772,6 +2776,7 @@ function ShotSegmentEditor({
       <Modal
         open={autoOpen}
         zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
+        getContainer={() => document.body}
         title="按剧本自动分镜（按秒）"
         width={680}
         okText={plannedShots.length > 0 ? `生成 ${plannedShots.length} 个分镜` : '生成'}
@@ -2842,6 +2847,7 @@ function ShotSegmentEditor({
       <Modal
         open={splitTarget != null}
         zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
+        getContainer={() => document.body}
         title={`拆分「${splitTarget?.title ?? ''}」为多段`}
         width={560}
         okText={splitPreview.length > 1 ? `拆成 ${splitPreview.length} 段` : '无需拆分'}
@@ -2883,6 +2889,7 @@ function ShotSegmentEditor({
       <Modal
         open={importOpen}
         zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
+        getContainer={() => document.body}
         title="导入分镜表（解析 JSON / Markdown）"
         width={720}
         okText={parsedRows.length > 0 ? `导入 ${parsedRows.length} 个分镜` : '解析'}
