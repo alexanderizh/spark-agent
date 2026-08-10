@@ -6043,10 +6043,7 @@ export interface IpcChannelMap
 
   // Browser helpers
   'browser:open-external': [BrowserOpenExternalRequest, BrowserOpenExternalResponse]
-  'browser:get-link-metadata': [
-    BrowserGetLinkMetadataRequest,
-    BrowserGetLinkMetadataResponse,
-  ]
+  'browser:get-link-metadata': [BrowserGetLinkMetadataRequest, BrowserGetLinkMetadataResponse]
   'html:open-window': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
   'html:open-external': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
 
