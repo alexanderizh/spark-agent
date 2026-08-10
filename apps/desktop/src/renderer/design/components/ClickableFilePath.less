@@ -12,7 +12,10 @@
   background: color-mix(in srgb, var(--color-primary-6) 8%, transparent);
   cursor: pointer;
   text-decoration: none;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
   transition:
     background 0.15s ease,
     color 0.15s ease,
@@ -31,82 +34,91 @@
 
 /* 链接（URL/mailto）保持普通 <a> 行为：不阻止默认导航 */
 .clickable-url {
+  font-size: var(--font-lg);
+  font-weight: 400;
+
   // <a> 默认有 visited 颜色，统一覆盖为主题色
   &:visited {
     color: var(--color-primary-6);
   }
 }
 
+// Markdown 的通用链接规则会给所有 .md-surface a 添加下划线；链接卡片和裸链接都不需要下划线。
+.md-surface .clickable-url,
+.md-surface .clickable-url:hover,
+.md-surface .clickable-url:visited,
+.md-surface .clickable-url:visited:hover {
+  text-decoration: none;
+}
+
 .clickable-url-card {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  width: min(100%, 420px);
-  padding: 7px 10px;
-  margin: 4px 0;
-  border: 1px solid color-mix(in srgb, var(--color-primary-6) 18%, var(--border));
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--color-primary-6) 6%, var(--panel));
+  gap: 5px;
+  width: fit-content;
+  max-width: min(100%, 420px);
+  padding: 2px 0;
+  margin: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   vertical-align: middle;
   color: var(--text);
   text-align: left;
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-primary-6) 6%, transparent);
+  white-space: nowrap;
+  box-sizing: border-box;
+  box-shadow: none;
 
   &:hover,
   &:visited:hover {
     color: var(--text);
-    background: color-mix(in srgb, var(--color-primary-6) 10%, var(--panel));
-    border-color: color-mix(in srgb, var(--color-primary-6) 32%, var(--border));
-    box-shadow: 0 5px 16px color-mix(in srgb, var(--color-primary-6) 10%, transparent);
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
   }
 }
 
 .clickable-url-card-icon {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  border-radius: 7px;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 0;
+  border-radius: 0;
   object-fit: contain;
-  background: var(--bg);
+  background: transparent;
+  box-shadow: none;
 }
 
-.clickable-url-card-icon-fallback {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-primary-6);
-  background: color-mix(in srgb, var(--color-primary-6) 12%, var(--panel));
+// 覆盖 .md-surface img 的通用图片样式，避免 favicon 被加上边框、圆角和外边距。
+.md-surface .clickable-url-card-icon {
+  display: block;
+  max-width: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
 }
 
 .clickable-url-card-body {
-  display: grid;
+  display: block;
+  flex: 1 1 auto;
   min-width: 0;
-  gap: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.25;
 }
 
 .clickable-url-card-title,
-.clickable-url-card-domain,
 .clickable-url-card-url {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .clickable-url-card-title {
-  font-size: var(--font-sm);
-  font-weight: 600;
-}
-
-.clickable-url-card-domain {
-  color: var(--color-primary-6);
-  font-size: 11px;
-}
-
-.clickable-url-card-url {
-  max-width: 100%;
-  color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-lg);
+  font-weight: 400;
 }
 
 .clickable-url-context-menu {
