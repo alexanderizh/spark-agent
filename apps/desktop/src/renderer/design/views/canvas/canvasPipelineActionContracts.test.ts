@@ -14,7 +14,8 @@ describe('canvas pipeline action contracts', () => {
       taskPipelineRole: 'screenplay',
       outputPipelineRole: 'screenplay',
     })
-    expect(draft.systemPrompt).toContain('【场号 内/外景 地点 时间】')
+    expect(draft.systemPrompt).toContain('第1场｜内景｜地点｜时间')
+    expect(draft.systemPrompt).toContain('场1 内景 地点 时间')
     expect(draft.systemPrompt).toContain('第一章：林岚走进雨夜茶馆。')
   })
 
@@ -117,6 +118,7 @@ describe('canvas pipeline action contracts', () => {
     })
     expect(draft.systemPrompt).toContain('分集')
     expect(draft.systemPrompt).toContain('场次剧本格式')
+    expect(draft.systemPrompt).toContain('第1场｜内景｜地点｜时间')
   })
 
   it('builds the recommended 360 panorama operation from its action id', () => {

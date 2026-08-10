@@ -42,7 +42,7 @@ function renderAction(action: CanvasNodeToolbarAction, compact = false) {
   return (
     <Tooltip key={action.key} title={action.tooltip ?? action.label}>
       <Button
-        size="small"
+        size="middle"
         type="text"
         className={`canvas-node-selection-toolbar-button${action.danger ? ' is-danger' : ''}${compact ? ' is-compact' : ''}`}
         aria-label={action.label}
@@ -98,7 +98,7 @@ export function CanvasNodeSelectionToolbar({ entries }: { entries: CanvasNodeToo
           >
             <Tooltip title={entry.label}>
               <Button
-                size="small"
+                size="middle"
                 type="text"
                 className="canvas-node-selection-toolbar-button"
                 aria-label={entry.label}

@@ -292,7 +292,8 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: color-mix(in srgb, var(--bg-sunken) 88%, #080a0e);
+  // 详情内容属于浮层面板，使用与顶部面板一致的底色，和画布背景明确分层。
+  background: var(--canvas-edit-bg, var(--panel));
 }
 
 .canvas-operation-workbench:not(.is-fullscreen):has(
@@ -577,6 +578,10 @@
 
 .canvas-operation-workbench-preview .canvas-node-shot-table {
   min-width: 1120px;
+}
+
+.canvas-operation-workbench-preview .canvas-node-shot-table thead th {
+  background: var(--canvas-edit-bg, var(--panel));
 }
 
 .canvas-operation-workbench-empty {

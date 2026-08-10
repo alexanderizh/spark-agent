@@ -25,12 +25,17 @@ export type CanvasSemanticTextValidationOptions = {
  * 「场1 内景 …」、带 Markdown 标题/方括号的版本，或传统 INT./EXT. 标记；
  * 不要求同一行必须同时出现地点、时间、出场人物和对白，缺失内容留给用户编辑。
  */
-const SCREENPLAY_SCENE_HEADING =
-  /^(?:\s*#{1,6}\s*)?(?:【\s*)?(?:(?:第\s*)?(?:\d+|[一二三四五六七八九十百千万]+)\s*场|场\s*(?:\d+|[一二三四五六七八九十百千万]+)|(?:第\s*)?(?:\d+|[一二三四五六七八九十百千万]+)(?=\s*(?:内景|外景|室内|室外|[｜|]))|(?:INT|EXT)\.?)(?=\s|[｜|:：】]|$)/im
+const SCREENPLAY_SCENE_HEADING_PATTERNS: readonly RegExp[] = [
+  /^(?:\s*#{1,6}\s*)?(?:【\s*)?(?:(?:第\s*)?(?:\d+|[一二三四五六七八九十百千万]+)\s*场|场\s*(?:\d+|[一二三四五六七八九十百千万]+)|(?:第\s*)?(?:\d+|[一二三四五六七八九十百千万]+)(?=\s*(?:内景|外景|室内|室外|[｜|]))|(?:INT|EXT)\.?)(?=\s|[｜|:：】]|$)/im,
+  /^\s*(?:#{1,6}\s*)?(?:【\s*)?(?:场景|场次|场号|scene)\s*(?:(?:编号|号)?\s*[：:]?\s*(?:\d+|[一二三四五六七八九十百千万]+))?(?=\s|[｜|:：】\-]|$)/im,
+  /^\s*(?:#{1,6}\s*)?(?:【\s*)?\d{1,3}[.)、]?\s*(?=(?:INT|EXT)\.?\b|内景|外景|室内|室外)/im,
+]
+
+const DEFAULT_SCREENPLAY_SCENE_HEADING = '第1场｜｜｜'
 
 export function isValidScreenplayText(text: string): boolean {
   const value = text.trim()
-  return Boolean(value && SCREENPLAY_SCENE_HEADING.test(value))
+  return Boolean(value && SCREENPLAY_SCENE_HEADING_PATTERNS.some((pattern) => pattern.test(value)))
 }
 
 export function validateCanvasSemanticTextOutput(
@@ -41,14 +46,14 @@ export function validateCanvasSemanticTextOutput(
   void options
   const value = text.trim()
   if (role === 'screenplay') {
-    if (!isValidScreenplayText(value)) {
+    if (!value) {
       return {
         ok: false,
         code: 'invalid_screenplay_output',
-        message: '剧本结果缺少可识别的场次标题；已保留模型原文，可作为普通文本继续编辑。',
+        message: '剧本结果为空，无法创建剧本节点。',
       }
     }
-    return { ok: true, text: value }
+    return { ok: true, text: normalizeScreenplayText(value) }
   }
   if (role === 'shot') {
     const envelope = parseCompleteStoryboardEnvelope(value)
@@ -98,6 +103,15 @@ export function validateCanvasSemanticTextOutput(
     }
   }
   return { ok: true, text: value }
+}
+
+/**
+ * 剧本任务的目标是先让用户拿到可编辑内容，而不是因标题小变体丢弃整段结果。
+ * 非空文本缺少场次标题时补一个字段为空的首场，后续仍可由用户继续补全地点、时间等。
+ */
+export function normalizeScreenplayText(text: string): string {
+  if (isValidScreenplayText(text)) return text
+  return `${DEFAULT_SCREENPLAY_SCENE_HEADING}\n\n${text}`
 }
 
 function normalizeRecoverableStoryboardRows(rows: ParsedShotRow[]): ParsedShotRow[] {

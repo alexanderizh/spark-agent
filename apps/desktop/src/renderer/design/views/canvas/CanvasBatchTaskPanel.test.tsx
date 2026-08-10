@@ -77,15 +77,28 @@ vi.mock('antd', async () => {
       open,
       children,
       title,
+      closable = true,
+      closeIcon,
+      onCancel,
     }: {
       open?: boolean
       children?: React.ReactNode
       title?: React.ReactNode
+      closable?: boolean
+      closeIcon?: React.ReactNode
+      onCancel?: () => void
     }) =>
       open
         ? ReactActual.createElement(
             'div',
             { role: 'dialog' },
+            closable
+              ? ReactActual.createElement(
+                  'button',
+                  { type: 'button', 'aria-label': '关闭弹窗', onClick: onCancel },
+                  closeIcon,
+                )
+              : null,
             ReactActual.createElement('h2', null, title),
             children,
           )
@@ -248,8 +261,35 @@ describe('CanvasBatchTaskPanel', () => {
     expect(batchTaskPanelStyles).toContain('--batch-muted: var(--text-muted)')
     expect(batchTaskPanelStyles).toContain('background: var(--panel)')
     expect(batchTaskPanelStyles).toContain('color: var(--success)')
+    expect(batchTaskPanelStyles).toContain('max-height: calc(100vh - 48px)')
+    expect(batchTaskPanelStyles).toContain('overflow: hidden')
     expect(batchTaskPanelStyles).not.toContain('--color-bg-container')
     expect(batchTaskPanelStyles).not.toContain('--color-text')
+  })
+
+  it('keeps the header close action available while submitting', async () => {
+    const onClose = vi.fn()
+    const { container } = await render(state('submitting'), { onClose })
+    const close = container.querySelector<HTMLButtonElement>('[aria-label="关闭弹窗"]')
+
+    expect(close).not.toBeNull()
+    await act(async () => close?.click())
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes automatically after all confirmed submissions succeed', async () => {
+    const current = state('result')
+    current.results = current.session!.entries.map((entry) => ({
+      nodeId: entry.nodeId,
+      batchId: 'batch-1',
+      status: 'succeeded' as const,
+    }))
+    const onClose = vi.fn()
+
+    await render(current, { onClose })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('focuses the first invalid node in configuration mode', async () => {

@@ -1,6 +1,6 @@
 # Spark Agent 个人视角产品宣传计划
 
-> 状态: 实施中 | 最后核对: 2026-07-19
+> 状态: 实施中 | 最后核对: 2026-08-10
 
 ## 1. 计划目标
 
@@ -316,7 +316,7 @@ Spark Agent 能力很广，宣传时不能同时向所有人说话。首月唯�
 7. 当前边界、适合与不适合的人；
 8. 下载 / 文档 / 提问 CTA。
 
-现有官网截图可优先复用 `apps/website/public/showcase/` 中的工作台、工作流、代码审查、团队模式、Provider、无限画布、资产中心和导演台素材。发布前统一裁切比例、字号、边距和角标，不直接把尺寸不一的原始截图拼在一起。
+首支视频优先使用当前版本实机截图：`docs/marketing/video-prototype/public/assets/01_workbench_home.png`、`02_workbench_active_task.png`、`05_workbench_schedule.png`、`06_canvas_overview.png`、`07_canvas_agent_panel.png`、`08_provider_config.png`、`09_case_result_collage.png`。截图只承担能力证据，整体画面仍由插图、Remotion 动画和短录屏建立节奏；发布前统一裁切比例、字号、边距和角标，不直接把尺寸不一的原始截图拼在一起。
 
 ### 9.2 系列封面命名
 

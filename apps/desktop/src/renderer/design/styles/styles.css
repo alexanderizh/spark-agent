@@ -1048,7 +1048,8 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    titlebar (.shell-titlebar / .win-titlebar) which carries
    `-webkit-app-region: drag`. Without this override the top toast's close
    button is unreachable — Electron intercepts the mouse for window dragging. */
-.spark-lobe-toast-host {
+.spark-lobe-toast-host,
+.spark-lobe-toast-host * {
   --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #ffffff) 97%, var(--bg-soft, #fefefe));
   --spark-toast-border: color-mix(in srgb, var(--border-strong, #d7d2c9) 42%, transparent);
   --spark-toast-shadow:
@@ -1057,6 +1058,9 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   --spark-toast-backdrop: none;
 
   -webkit-app-region: no-drag;
+}
+
+.spark-lobe-toast-host {
   z-index: 3400 !important;
 }
 
@@ -1189,11 +1193,6 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
   -webkit-app-region: no-drag;
   z-index: 3401 !important;
 }
-.ant-dropdown:has(.composer-cli-model-submenu) {
-  -webkit-app-region: no-drag;
-  z-index: 3402 !important;
-}
-
 /* antd Dropdown menu (renders as .ant-dropdown-menu.user-menu portal).
    Force label content into a single-line flex row so icon + text never wrap.
    Selectors intentionally cover the nested submenu popup too — antd does NOT

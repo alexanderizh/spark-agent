@@ -443,7 +443,8 @@ export function buildShotSegmentVideoPrompt(
 export function buildChapterToScreenplayInstruction(chapterText: string): string {
   return [
     '请把下面的小说/长文稿章节改写为影视剧本（场次剧本）。',
-    '要求：按场次切分，每场标注【场号 内/外景 地点 时间】；正文用「动作描述 + 角色对白 + 旁白」格式；',
+    '要求：按场次切分；每场第一行使用可识别的场次标题，例如「第1场｜内景｜地点｜时间」「场1 内景 地点 时间」或「INT. 地点 - 时间」。地点、时间等未知时保留空字段（如「第1场｜｜｜」）；',
+    '正文用「动作描述 + 角色对白 + 旁白」格式；',
     '保留关键情节与人物关系；对白口语化、可表演；输出可直接用于后续角色/场景/分镜拆解，不要解释过程。',
     `章节原文：\n${clipTextHeadTail(chapterText, CHAPTER_SOURCE_TOKEN_BUDGET)}`,
   ].join('\n\n')
