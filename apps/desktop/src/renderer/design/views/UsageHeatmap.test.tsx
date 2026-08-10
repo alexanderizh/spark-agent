@@ -78,7 +78,21 @@ describe('UsageHeatmap', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 10))
     })
 
-    expect(invoke).toHaveBeenCalledWith('usage:get-by-date-range', expect.any(Object))
+    expect(invoke).toHaveBeenCalledWith(
+      'usage:get-by-date-range',
+      expect.objectContaining({
+        endDate: expect.any(String),
+        startDate: expect.any(String),
+      }),
+    )
+    const request = invoke.mock.calls[0]?.[1] as {
+      endDate: string
+      startDate: string
+    }
+    expect(Date.parse(request.endDate) - Date.parse(request.startDate)).toBe(
+      365 * 24 * 60 * 60 * 1000 - 1,
+    )
+    expect(container.querySelector('button[aria-pressed="true"]')?.textContent).toBe('1 年')
     expect(container.textContent).toContain('1.2K tokens')
     expect(container.querySelector('[aria-label*="次请求"]')).not.toBeNull()
     expect(container.querySelector('[title*="1.2K tokens"]')).not.toBeNull()
