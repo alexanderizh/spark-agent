@@ -32,7 +32,6 @@ vi.mock('./FileDisplay', () => ({
 }))
 
 import { ClickableUrl } from './ClickableFilePath'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('ClickableUrl', () => {
@@ -81,11 +80,44 @@ describe('ClickableUrl', () => {
       root.render(<ClickableUrl url="https://example.com/article" />)
     })
 
-    expect(container.querySelector('.clickable-url-card-title')?.textContent).toBe('Example article')
-    expect(container.querySelector('.clickable-url-card-domain')?.textContent).toBe('example.com')
-    expect(container.querySelector('.clickable-url-card-url')?.textContent).toBe(
+    expect(container.querySelector('.clickable-url-card-body')?.textContent).toBe('Example article')
+    expect(container.querySelector('.clickable-url-card-icon')).not.toBeNull()
+    expect(container.querySelector('.clickable-url-card-domain')).toBeNull()
+    expect(container.querySelector('.clickable-url-card-url')).toBeNull()
+  })
+
+  it('shows only the icon and URL when metadata has no title', async () => {
+    invoke.mockResolvedValue({
+      metadata: {
+        title: '',
+        faviconUrl: 'https://example.com/favicon.ico',
+      },
+    })
+
+    await act(async () => {
+      root.render(<ClickableUrl url="https://example.com/article" />)
+    })
+
+    expect(container.querySelector('.clickable-url-card-body')?.textContent).toBe(
       'https://example.com/article',
     )
+    expect(container.querySelector('.clickable-url-card-icon')).not.toBeNull()
+    expect(container.querySelector('.clickable-url-card-title')).toBeNull()
+  })
+
+  it('does not reserve an icon slot when metadata has no favicon', async () => {
+    invoke.mockResolvedValue({
+      metadata: {
+        title: 'Example article',
+      },
+    })
+
+    await act(async () => {
+      root.render(<ClickableUrl url="https://example.com/article" />)
+    })
+
+    expect(container.querySelector('.clickable-url-card-body')?.textContent).toBe('Example article')
+    expect(container.querySelector('.clickable-url-card-icon')).toBeNull()
   })
 
   it('offers open and copy actions from the content-style context menu', async () => {
@@ -98,7 +130,9 @@ describe('ClickableUrl', () => {
     expect(link).not.toBeNull()
 
     act(() => {
-      link?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 24, clientY: 36 }))
+      link?.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, clientX: 24, clientY: 36 }),
+      )
     })
 
     expect(container.querySelector('.context-action-menu')).not.toBeNull()

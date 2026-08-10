@@ -76,16 +76,12 @@ export function parseLinkMetadata(html: string, pageUrl: string): BrowserLinkMet
     findMetaContent(html, ['og:title', 'twitter:title']) ??
     (() => {
       const match = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)
-      return match?.[1] == null
-        ? null
-        : decodeHtmlEntities(match[1]).replace(/\s+/g, ' ').trim()
+      return match?.[1] == null ? null : decodeHtmlEntities(match[1]).replace(/\s+/g, ' ').trim()
     })()
-
-  if (title == null || title.length === 0) return null
 
   const faviconUrl = findIconUrl(html, pageUrl)
   return {
-    title: title.slice(0, 240),
+    title: (title ?? '').slice(0, 240),
     ...(faviconUrl != null ? { faviconUrl } : {}),
   }
 }

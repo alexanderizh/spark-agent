@@ -386,13 +386,7 @@ function renderInlineMarkdown(
             />,
           )
         } else {
-          nodes.push(
-            <ClickableUrl
-              key={key}
-              url={href || '#'}
-              label={link[2] ?? ''}
-            />,
-          )
+          nodes.push(<ClickableUrl key={key} url={href || '#'} label={link[2] ?? ''} />)
         }
       }
     } else if (token.startsWith('`')) {

@@ -221,7 +221,11 @@ function LinkContextMenu({
         <Icons.ExternalLink size={14} />
         <span>在浏览器中打开</span>
       </button>
-      <button type="button" className="action-menu-item" onClick={() => void copy(url, '已复制链接')}>
+      <button
+        type="button"
+        className="action-menu-item"
+        onClick={() => void copy(url, '已复制链接')}
+      >
         <Icons.Copy size={14} />
         <span>复制链接</span>
       </button>
@@ -235,14 +239,6 @@ function LinkContextMenu({
       </button>
     </div>
   )
-}
-
-function getUrlDomain(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./i, '')
-  } catch {
-    return url
-  }
 }
 
 function LinkPreviewIcon({
@@ -265,11 +261,7 @@ function LinkPreviewIcon({
       />
     )
   }
-  return (
-    <span className="clickable-url-card-icon clickable-url-card-icon-fallback" aria-hidden="true">
-      <Icons.Globe size={16} />
-    </span>
-  )
+  return null
 }
 
 /**
@@ -302,6 +294,11 @@ export function ClickableUrl({ url, label }: { url: string; label?: string }): R
       ? metadataState.metadata
       : undefined
   const faviconFailed = metadata?.faviconUrl != null && failedFaviconUrl === metadata.faviconUrl
+  const metadataTitle = metadata?.title.trim() ?? ''
+  const hasFavicon = metadata?.faviconUrl != null && !faviconFailed
+  const previewMetadata =
+    metadata != null && (metadataTitle.length > 0 || hasFavicon) ? metadata : null
+  const hasPreview = previewMetadata != null
 
   useEffect(() => {
     if (!isHttpUrl) return
@@ -327,7 +324,7 @@ export function ClickableUrl({ url, label }: { url: string; label?: string }): R
   }, [])
 
   const displayText = label ?? url
-  const hasPreview = metadata != null
+  const cardText = metadataTitle || displayText
 
   return (
     <>
@@ -336,21 +333,23 @@ export function ClickableUrl({ url, label }: { url: string; label?: string }): R
         href={href}
         target="_blank"
         rel="noreferrer"
-        title={hasPreview ? metadata.title : href}
-        aria-label={hasPreview ? `${metadata.title} — ${href}` : href}
+        title={hasPreview ? cardText : href}
+        aria-label={hasPreview ? `${cardText} — ${href}` : href}
         onContextMenu={handleContextMenu}
       >
         {hasPreview ? (
           <>
             <LinkPreviewIcon
-              metadata={metadata}
+              metadata={previewMetadata}
               failed={faviconFailed}
-              onError={() => setFailedFaviconUrl(metadata.faviconUrl ?? null)}
+              onError={() => setFailedFaviconUrl(previewMetadata.faviconUrl ?? null)}
             />
             <span className="clickable-url-card-body">
-              <span className="clickable-url-card-title">{metadata.title}</span>
-              <span className="clickable-url-card-domain">{getUrlDomain(href)}</span>
-              <span className="clickable-url-card-url">{displayText}</span>
+              <span
+                className={metadataTitle ? 'clickable-url-card-title' : 'clickable-url-card-url'}
+              >
+                {cardText}
+              </span>
             </span>
           </>
         ) : (
