@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Button } from '@lobehub/ui'
 import type {
   ComputerSession,
   ComputerUseEvent,
@@ -6,6 +7,7 @@ import type {
   SessionId,
 } from '@spark/protocol'
 import { useI18n } from '../i18n'
+import { Icons } from '../Icons'
 import {
   groupComputerActivityEvents,
   isTerminalComputerActivityEvent,
@@ -219,6 +221,7 @@ function ComputerActivityCard({
   return (
     <details className={`computer-activity-card is-${status.kind}`} open={!terminal}>
       <summary>
+        <Icons.ChevronRight size={12} className="computer-activity-chev" />
         <span className="computer-activity-status-dot" aria-hidden="true" />
         <span className="computer-activity-title">{t('computerActivity.title')}</span>
         <span className="computer-activity-status">{status.label}</span>
@@ -234,30 +237,35 @@ function ComputerActivityCard({
       </ol>
       {session != null && !terminal && (
         <div className="computer-activity-controls">
-          <span className="computer-activity-target">
-            {t('computerActivity.control.target', {
-              target: t('computerActivity.control.allApplications'),
-            })}
-          </span>
           <div className="computer-activity-control-actions">
             {controlStatus !== 'paused' && (
-              <button type="button" disabled={controlBusy} onClick={() => void control('pause')}>
+              <Button type="text" size="small" disabled={controlBusy} onClick={() => void control('pause')}>
                 {t('computerActivity.control.pause')}
-              </button>
+              </Button>
             )}
             {controlStatus === 'paused' && (
-              <button type="button" disabled={controlBusy} onClick={() => void openTargetPicker()}>
+              <Button
+                type="text"
+                size="small"
+                disabled={controlBusy}
+                onClick={() => void openTargetPicker()}
+              >
                 {t('computerActivity.control.changeTarget')}
-              </button>
+              </Button>
             )}
             {controlStatus !== 'paused' && (
-              <button type="button" disabled={controlBusy} onClick={() => void control('takeover')}>
+              <Button
+                type="text"
+                size="small"
+                disabled={controlBusy}
+                onClick={() => void control('takeover')}
+              >
                 {t('computerActivity.control.takeover')}
-              </button>
+              </Button>
             )}
-            <button type="button" disabled={controlBusy} onClick={() => void control('stop')}>
+            <Button type="text" size="small" disabled={controlBusy} onClick={() => void control('stop')}>
               {t('computerActivity.control.stop')}
-            </button>
+            </Button>
           </div>
           {windows != null && (
             <div className="computer-activity-target-picker">
@@ -272,13 +280,14 @@ function ComputerActivityCard({
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
+              <Button
+                type="text"
+                size="small"
                 disabled={controlBusy || selectedWindowId === ''}
                 onClick={() => void bindTarget()}
               >
                 {t('computerActivity.control.bind')}
-              </button>
+              </Button>
             </div>
           )}
           {controlError != null && (
