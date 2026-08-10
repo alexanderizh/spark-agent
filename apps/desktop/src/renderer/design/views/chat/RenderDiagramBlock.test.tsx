@@ -1,4 +1,6 @@
 import React from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RenderDiagramBlock } from './RenderDiagramBlock'
@@ -50,5 +52,12 @@ describe('RenderDiagramBlock', () => {
       />,
     )
     expect(markup).toContain('外链被拦截')
+  })
+
+  it('wraps both inline and fullscreen previews in independent diagram viewports', () => {
+    const source = readFileSync(resolve(__dirname, 'RenderDiagramBlock.tsx'), 'utf8')
+    expect(source).toContain("import { DiagramViewport } from './DiagramViewport'")
+    expect(source.match(/<DiagramViewport/g)).toHaveLength(2)
+    expect(source).toContain('<DiagramViewport fullscreen')
   })
 })
