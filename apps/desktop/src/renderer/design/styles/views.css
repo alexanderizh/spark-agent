@@ -2182,7 +2182,11 @@ body.sidebar-resizing {
   }
 }
 .md-table-wrap {
+  width: 100%;
+  max-width: 100%;
   overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   margin: 10px 0;
   border: 0;
   border-radius: var(--r-md);
@@ -2190,11 +2194,17 @@ body.sidebar-resizing {
   box-shadow: var(--md-table-shadow);
 }
 .md-surface table {
-  width: 100%;
+  width: max-content;
   min-width: 100%;
+  max-width: none;
   border-collapse: separate;
   border-spacing: 0;
   font-size: var(--font-sm);
+}
+.md-surface .md-table-wrap th,
+.md-surface .md-table-wrap td {
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 .md-surface th,
 .md-surface td {
