@@ -63,7 +63,7 @@ import {
 import { CANVAS_NODE_META_BAR_HEIGHT } from './canvasNodeSize'
 import { operationNodePresentationSize } from './canvasOperationNodePresentation'
 import { resolveCanvasVideoNodePresentationSize } from './canvasVideoNodePresentation'
-import { CANVAS_PIPELINE_MENU_GROUPS, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
+import { CANVAS_FILM_PIPELINE_OPS, CANVAS_PIPELINE_MENU_GROUPS } from './canvasPipelineOps'
 import {
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
   CANVAS_FUNCTIONAL_MENU_LABEL,
@@ -1115,8 +1115,8 @@ function CanvasStageInner({
     maxHeight: number
     anchorPoint: CanvasStagePoint
   } | null>(null)
-  /** 影视创作菜单暂时展示完整动作目录，后续再恢复按节点语义筛选。 */
-  const panePipelineOperations = CANVAS_PIPELINE_OPS
+  /** 基础任务菜单承载视频生成，影视创作菜单只展示文本 / 资产 / 视觉流水线。 */
+  const panePipelineOperations = CANVAS_FILM_PIPELINE_OPS
   const panePipelineOperationGroups = useMemo(
     () =>
       CANVAS_PIPELINE_MENU_GROUPS.map((group) => ({

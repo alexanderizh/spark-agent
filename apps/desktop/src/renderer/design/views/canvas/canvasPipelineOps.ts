@@ -186,6 +186,16 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   },
 ]
 
+/**
+ * 右键「影视创作」菜单使用的动作目录。
+ *
+ * 视频生成已经由「基础任务 → 视频」承载，影视创作菜单只保留文本、资产提取和视觉生成
+ * 流水线，避免同一个视频入口同时出现在两个层级。
+ */
+export const CANVAS_FILM_PIPELINE_OPS: CanvasPipelineOp[] = CANVAS_PIPELINE_OPS.filter(
+  (op) => op.kind !== 'video',
+)
+
 export function getOp(id: string): CanvasPipelineOp | undefined {
   return CANVAS_PIPELINE_OPS.find((op) => op.id === id)
 }

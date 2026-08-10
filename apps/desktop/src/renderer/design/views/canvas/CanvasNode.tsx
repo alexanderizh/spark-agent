@@ -89,7 +89,7 @@ function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.Reac
   return <IconFn size={size} />
 }
 
-const ALL_PIPELINE_ACTIONS = getAllPipelineActions()
+const FILM_PIPELINE_ACTIONS = getAllPipelineActions().filter((action) => action.kind !== 'video')
 
 function openAudioTrim(ref: { current: CanvasAudioNodePresentationHandle | null }) {
   ref.current?.openTrim()
@@ -692,7 +692,7 @@ export const CanvasNode = memo(function CanvasNode({
 
   const hasOperationOutput = !isTask || Boolean(operationOutputState.primaryOutput)
   const canCreateOperationFromNode = !isTask || hasOperationOutput
-  const pipelineActions = ALL_PIPELINE_ACTIONS
+  const pipelineActions = FILM_PIPELINE_ACTIONS
   // 子类型切换（仅 image/text）：当前子类型 + 可选项，供右键菜单「切换类型」渲染。
   const subtypeSwitch = useMemo(() => {
     if (!isSubtypeSwitchable(node)) return null
@@ -1100,17 +1100,60 @@ export const CanvasNode = memo(function CanvasNode({
               onClick: () => actions.createOperationChild(node.id, item.operation),
             }))
           : []),
-        ...(isImageContent && actions.annotateImage
+        ...(isImageContent && hasOperationOutput
           ? [
-              {
-                key: 'annotate-image',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Edit size={14} /> 图片标注
-                  </span>
-                ),
-                onClick: () => actions.annotateImage?.(node.id),
-              },
+              ...(isPanorama360
+                ? [
+                    {
+                      key: 'preview-panorama',
+                      label: (
+                        <span className="canvas-menu-item">
+                          <Icons.Globe size={14} /> 全景预览
+                        </span>
+                      ),
+                      onClick: () => actions.previewPanorama(node.id),
+                    },
+                  ]
+                : []),
+              ...(actions.annotateImage
+                ? [
+                    {
+                      key: 'annotate-image',
+                      label: (
+                        <span className="canvas-menu-item">
+                          <Icons.Edit size={14} /> 图片标注
+                        </span>
+                      ),
+                      onClick: () => actions.annotateImage?.(node.id),
+                    },
+                  ]
+                : []),
+              ...(actions.extractCharacterSubview
+                ? [
+                    {
+                      key: 'extract-character-subview',
+                      label: (
+                        <span className="canvas-menu-item">
+                          <Icons.Crop size={14} /> 提取子视图
+                        </span>
+                      ),
+                      onClick: () => actions.extractCharacterSubview?.(node.id),
+                    },
+                  ]
+                : []),
+              ...(actions.splitGridImage
+                ? [
+                    {
+                      key: 'split-grid-image',
+                      label: (
+                        <span className="canvas-menu-item">
+                          <Icons.Grid size={14} /> 宫格切分
+                        </span>
+                      ),
+                      onClick: () => actions.splitGridImage?.(node.id),
+                    },
+                  ]
+                : []),
             ]
           : []),
         {
@@ -1270,6 +1313,9 @@ export const CanvasNode = memo(function CanvasNode({
       isVideoWorkbench,
       locked,
       canCreateOperationFromNode,
+      hasOperationOutput,
+      isImageContent,
+      isPanorama360,
       collapsedGroupPresentation,
       contentNode,
       contextMenuBoundary.maxHeight,
