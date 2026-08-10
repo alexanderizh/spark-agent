@@ -281,13 +281,24 @@ describe('canvas operation output model', () => {
     node.data.operation = 'text_generate'
     node.data.modelParams = { workflow: 'script_breakdown' }
     snapshot.nodes = [node]
-    snapshot.assets = [asset('character-a', '角色 A', 'text'), asset('character-b', '角色 B', 'text')]
+    snapshot.assets = [
+      asset('character-a', '角色 A', 'text'),
+      asset('character-b', '角色 B', 'text'),
+    ]
     snapshot.tasks = [task('task-2', [], ['character-a', 'character-b'], 'script_breakdown')]
     snapshot.edges = []
 
     expect(resolveCanvasOperationInputNodes(node, snapshot)).toEqual([
-      expect.objectContaining({ id: 'operation-output:character-a', assetId: 'character-a', type: 'text' }),
-      expect.objectContaining({ id: 'operation-output:character-b', assetId: 'character-b', type: 'text' }),
+      expect.objectContaining({
+        id: 'operation-output:character-a',
+        assetId: 'character-a',
+        type: 'text',
+      }),
+      expect.objectContaining({
+        id: 'operation-output:character-b',
+        assetId: 'character-b',
+        type: 'text',
+      }),
     ])
   })
 
@@ -306,6 +317,26 @@ describe('canvas operation output model', () => {
         assetId: 'asset-a',
       }),
     )
+  })
+
+  it('把资源元数据中的全景标记补回已有的图片产物节点', () => {
+    const snapshot = snapshotFixture()
+    const node = snapshot.nodes[0]!
+    const persistedOutput = outputNode('output-a', 'asset-a', '方案 A')
+    snapshot.nodes = [node, persistedOutput]
+    snapshot.assets = [
+      {
+        ...asset('asset-a', '方案 A'),
+        metadata: { panorama360: { projection: 'equirectangular' } },
+      },
+    ]
+    snapshot.tasks = [task('task-2', ['output-a'], ['asset-a'])]
+    snapshot.edges = []
+
+    expect(resolveCanvasOperationResourceNode(node, snapshot)).toMatchObject({
+      id: 'output-a',
+      data: { panorama360: { projection: 'equirectangular' } },
+    })
   })
 
   it('selects explicit outputs for expansion and deduplicates history by asset identity', () => {

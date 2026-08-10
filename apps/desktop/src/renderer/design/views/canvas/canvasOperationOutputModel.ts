@@ -71,7 +71,9 @@ export function resolveCanvasOperationOutputState(
     for (let runIndex = 0; runIndex < runs.length; runIndex += 1) {
       const run = runs[runIndex]
       if (!run) continue
-      const outputIndex = run.outputs.findIndex((output) => outputMatchesId(output, primaryOutputId))
+      const outputIndex = run.outputs.findIndex((output) =>
+        outputMatchesId(output, primaryOutputId),
+      )
       if (outputIndex >= 0) {
         primaryRunIndex = runIndex
         primaryOutputIndex = outputIndex
@@ -103,13 +105,23 @@ function outputToInputNode(
   operationNode: CanvasNode,
   snapshot: CanvasSnapshot,
 ): CanvasNode | null {
-  if (output.nodeId) {
-    const persisted = snapshot.nodes.find((node) => node.id === output.nodeId)
-    if (persisted) return persisted
-  }
   const asset = output.assetId
     ? snapshot.assets.find((candidate) => candidate.id === output.assetId)
     : undefined
+  if (output.nodeId) {
+    const persisted = snapshot.nodes.find((node) => node.id === output.nodeId)
+    if (persisted) {
+      const panorama360 =
+        persisted.data.panorama360 ??
+        output.panorama360 ??
+        (asset?.metadata.panorama360 as CanvasNode['data']['panorama360'] | undefined)
+      if (!panorama360 || persisted.data.panorama360) return persisted
+      return {
+        ...persisted,
+        data: { ...persisted.data, panorama360 },
+      }
+    }
+  }
   if (!asset) return null
   const type = assetNodeType(asset)
   const width = asset.width && asset.width > 0 ? Math.min(640, asset.width) : 360
@@ -120,6 +132,9 @@ function outputToInputNode(
   const url = output.url ?? asset.url ?? undefined
   const thumbnailUrl = output.thumbnailUrl ?? asset.thumbnailUrl ?? undefined
   const mimeType = output.mimeType ?? asset.mimeType ?? undefined
+  const panorama360 =
+    output.panorama360 ??
+    (asset.metadata.panorama360 as CanvasNode['data']['panorama360'] | undefined)
   const filePath =
     output.filePath ??
     asset.storageKey ??
@@ -155,7 +170,7 @@ function outputToInputNode(
             ...(mimeType ? { mimeType } : {}),
             origin: 'task_output',
             ...(output.pipelineRole ? { pipelineRole: output.pipelineRole } : {}),
-            ...(output.panorama360 ? { panorama360: output.panorama360 } : {}),
+            ...(panorama360 ? { panorama360 } : {}),
           },
     createdAt: output.createdAt || asset.createdAt,
     updatedAt: output.updatedAt || asset.updatedAt,
@@ -196,7 +211,9 @@ export function resolveCanvasOperationResourceNode(
     operationNode,
     buildCanvasOperationRunViews(operationNode, snapshot),
   )
-  return state.primaryOutput ? outputToInputNode(state.primaryOutput, operationNode, snapshot) : null
+  return state.primaryOutput
+    ? outputToInputNode(state.primaryOutput, operationNode, snapshot)
+    : null
 }
 
 export function selectCanvasOperationOutputs(

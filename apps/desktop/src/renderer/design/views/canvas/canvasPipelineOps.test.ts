@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CANVAS_FILM_PIPELINE_OPS,
   CANVAS_PIPELINE_MENU_GROUPS,
   CANVAS_PIPELINE_OPS,
   buildOpPrompt,
@@ -23,6 +24,13 @@ describe('canvasPipelineOps', () => {
     ])
     const groupIds = new Set(CANVAS_PIPELINE_MENU_GROUPS.map((group) => group.id))
     expect(CANVAS_PIPELINE_OPS.every((op) => groupIds.has(op.kind))).toBe(true)
+  })
+
+  it('影视创作菜单不重复展示基础任务中的视频生成入口', () => {
+    expect(CANVAS_FILM_PIPELINE_OPS.every((op) => op.kind !== 'video')).toBe(true)
+    expect(CANVAS_FILM_PIPELINE_OPS.map((op) => op.id)).not.toContain('keyframe.to_video')
+    expect(CANVAS_FILM_PIPELINE_OPS.map((op) => op.id)).toContain('shot.to_keyframes')
+    expect(getOp('keyframe.to_video')).toBeDefined()
   })
 
   it('剧本角色有完整的专用 op', () => {

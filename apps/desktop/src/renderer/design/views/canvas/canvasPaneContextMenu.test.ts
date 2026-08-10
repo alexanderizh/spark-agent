@@ -99,11 +99,22 @@ describe('canvas pane context menu', () => {
 
   it('uses the same task operation source for content and functional nodes with outputs', () => {
     expect(nodeSource).toContain('CANVAS_PIPELINE_MENU_GROUPS.flatMap')
+    expect(nodeSource).toContain(
+      "getAllPipelineActions().filter((action) => action.kind !== 'video')",
+    )
     expect(nodeSource).toContain('canvasVisibleBaseCreateOperations().map')
     expect(nodeSource).not.toContain('CANVAS_BASE_TASK_MENU_LABEL')
     expect(floatingToolbarSource).toContain('CANVAS_PIPELINE_MENU_GROUPS.map')
     expect(floatingToolbarSource).toContain('const pipelineActionGroups =')
     expect(workspaceSource).toContain('<CanvasFloatingNodeToolbar')
+  })
+
+  it('为图片任务和图片资源的右键菜单提供统一图片操作', () => {
+    expect(nodeSource).toContain("key: 'preview-panorama'")
+    expect(nodeSource).toContain("key: 'annotate-image'")
+    expect(nodeSource).toContain("key: 'extract-character-subview'")
+    expect(nodeSource).toContain("key: 'split-grid-image'")
+    expect(nodeSource).toContain('isImageContent && hasOperationOutput')
   })
 
   it('flattens right-click image and video creation entries beside add text', () => {

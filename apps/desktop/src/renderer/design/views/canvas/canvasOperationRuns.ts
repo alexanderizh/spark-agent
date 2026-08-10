@@ -1,10 +1,5 @@
 import { isOperationNode } from './canvas.capabilities'
-import type {
-  CanvasAsset,
-  CanvasNode,
-  CanvasSnapshot,
-  CanvasTaskStatus,
-} from './canvas.types'
+import type { CanvasAsset, CanvasNode, CanvasSnapshot, CanvasTaskStatus } from './canvas.types'
 
 export type CanvasOperationOutputView = {
   id: string
@@ -89,6 +84,9 @@ function operationOutputView(
   const thumbnailUrl = node?.data.thumbnailUrl ?? asset?.thumbnailUrl ?? undefined
   const text = node?.data.text ?? asset?.contentText ?? undefined
   const mimeType = node?.data.mimeType ?? asset?.mimeType ?? undefined
+  const panorama360 =
+    node?.data.panorama360 ??
+    (asset?.metadata.panorama360 as CanvasNode['data']['panorama360'] | undefined)
   const width = node?.data.mediaWidth ?? asset?.width ?? undefined
   const height = node?.data.mediaHeight ?? asset?.height ?? undefined
   const pipelineRole = outputPipelineRole(node, asset)
@@ -111,7 +109,7 @@ function operationOutputView(
     ...(height ? { height } : {}),
     ...(pipelineRole ? { pipelineRole } : {}),
     ...(node?.data.productionState ? { productionState: node.data.productionState } : {}),
-    ...(node?.data.panorama360 ? { panorama360: node.data.panorama360 } : {}),
+    ...(panorama360 ? { panorama360 } : {}),
     createdAt: node?.createdAt ?? asset?.createdAt ?? '',
     updatedAt: node?.updatedAt ?? asset?.updatedAt ?? '',
   }
@@ -212,11 +210,20 @@ export function buildCanvasOperationRunViews(
     const outputs = collectOutputs(taskId, [], [])
     if (outputs.length === 0) return []
     const createdAt =
-      (generatedEdgesByTaskId.get(taskId) ?? []).map((edge) => edge.createdAt).sort().at(-1) ??
-      outputs.map((output) => output.createdAt).sort().at(-1) ??
+      (generatedEdgesByTaskId.get(taskId) ?? [])
+        .map((edge) => edge.createdAt)
+        .sort()
+        .at(-1) ??
+      outputs
+        .map((output) => output.createdAt)
+        .sort()
+        .at(-1) ??
       operationNode.updatedAt
     const completedAt =
-      outputs.map((output) => output.updatedAt).sort().at(-1) ?? operationNode.updatedAt
+      outputs
+        .map((output) => output.updatedAt)
+        .sort()
+        .at(-1) ?? operationNode.updatedAt
     return [
       {
         taskId,
@@ -230,8 +237,9 @@ export function buildCanvasOperationRunViews(
     ]
   })
 
-  return [...persistedRuns, ...recoveredRuns]
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+  return [...persistedRuns, ...recoveredRuns].sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt),
+  )
 }
 
 export function canvasOperationRunsFingerprint(runs: CanvasOperationRunView[]): string {
