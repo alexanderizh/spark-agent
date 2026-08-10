@@ -10932,7 +10932,7 @@ body.inspector-resizing {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--divider) 18%, transparent);
 }
 .usage-heatmap-cell--interactive {
-  cursor: help;
+  cursor: default;
   transition:
     transform 120ms ease,
     box-shadow 120ms ease,

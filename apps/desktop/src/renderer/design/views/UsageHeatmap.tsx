@@ -34,7 +34,7 @@ function formatDayLabel(
 }
 
 export function UsageHeatmap() {
-  const [range, setRange] = useState<UsageHeatmapRange>('12w')
+  const [range, setRange] = useState<UsageHeatmapRange>('1y')
   const [dailyGroups, setDailyGroups] = useState<UsageHeatmapDailyGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
