@@ -64,6 +64,7 @@ import wechatLogo from '../../assets/remote-channels/wechat.svg'
 export { ProviderEditPanel } from './ProvidersView'
 import { MemoryPanel } from './MemoryPanel'
 import { SettingsLogViewer } from './SettingsLogViewer'
+import { UsageHeatmap } from './UsageHeatmap'
 import { needsSdkInstallAction } from './sdkIntegrityPresentation'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
 import type {
@@ -643,6 +644,8 @@ function GeneralSection() {
     <div className="settings-section">
       <h2>通用</h2>
       <div className="lede">应用启动、语言、默认行为。</div>
+
+      <UsageHeatmap />
 
       <div className="settings-card" style={{ marginBottom: 10 }}>
         <SettingsRow
