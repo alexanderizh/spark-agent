@@ -1193,6 +1193,10 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
   -webkit-app-region: no-drag;
   z-index: 3401 !important;
 }
+.ant-dropdown:has(.composer-cli-model-submenu) {
+  -webkit-app-region: no-drag;
+  z-index: 3402 !important;
+}
 /* antd Dropdown menu (renders as .ant-dropdown-menu.user-menu portal).
    Force label content into a single-line flex row so icon + text never wrap.
    Selectors intentionally cover the nested submenu popup too — antd does NOT
