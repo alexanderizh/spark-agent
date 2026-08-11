@@ -90,6 +90,30 @@ function resolvePreviewPath(filePath: string, workspaceRootPath?: string): strin
   return `${workspaceRootPath.replace(/[\\/]+$/, '')}${separator}${normalized}`
 }
 
+/**
+ * base64url 编码绝对路径为 `safe-file://x/<encoded>`。
+ * 编码方式与主进程 SafeFileProtocol.toSafeFileUrl、MarkdownImage.encodeToSafeFileUrl 一致。
+ */
+function encodeToSafeFileUrl(absolutePath: string): string {
+  const encoded = btoa(unescape(encodeURIComponent(absolutePath)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `safe-file://x/${encoded}`
+}
+
+/**
+ * 把预览路径转成 `<audio>`/`<video>` 可直接用作 src 的 URL：
+ *   - http(s)/safe-file: URL 原样返回（远程资源或已编码本地资源）
+ *   - 本地绝对路径编码成 safe-file://（safe-file 协议已声明 stream + Range 支持，音视频可流式播放）
+ * 与 MarkdownImage.resolveImageSrc 同策略。
+ */
+function resolveMediaSrc(filePath: string): string {
+  if (isRemoteUrl(filePath)) return filePath
+  if (isLocalPath(filePath)) return encodeToSafeFileUrl(filePath)
+  return filePath
+}
+
 const FILE_PREVIEW_WIDTH_KEY = 'spark.filePreviewPanel.width'
 const FILE_PREVIEW_DEFAULT_WIDTH = 760
 const FILE_PREVIEW_MIN_WIDTH = 420
@@ -192,8 +216,13 @@ export function FilePreviewPanel({
 
   // 读取文件内容
   useEffect(() => {
-    if (fileType === 'image' || fileType === 'universal') {
-      // 图片与 Flyfish Viewer 通用预览不需要读取文本内容，直接用 URL/路径渲染。
+    if (
+      fileType === 'image' ||
+      fileType === 'universal' ||
+      fileType === 'audio' ||
+      fileType === 'video'
+    ) {
+      // 图片 / Flyfish Viewer / 音视频预览不需要读取文本内容，直接用 URL/路径渲染。
       return
     }
 
@@ -437,6 +466,20 @@ export function FilePreviewPanel({
         {!previewLoading && !previewError && fileType === 'image' && (
           <div className="file-preview-image">
             <MarkdownImage src={resolvedFilePath} alt={fileName} />
+          </div>
+        )}
+        {!previewLoading && !previewError && fileType === 'audio' && (
+          <div className="file-preview-audio">
+            <audio controls preload="metadata" src={resolveMediaSrc(resolvedFilePath)}>
+              当前环境不支持音频播放，可使用右上角「用默认应用打开」。
+            </audio>
+          </div>
+        )}
+        {!previewLoading && !previewError && fileType === 'video' && (
+          <div className="file-preview-video">
+            <video controls preload="metadata" src={resolveMediaSrc(resolvedFilePath)}>
+              当前环境不支持视频播放，可使用右上角「用默认应用打开」。
+            </video>
           </div>
         )}
         {!previewLoading && !previewError && fileType === 'universal' && viewerSource !== null && (

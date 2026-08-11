@@ -17,7 +17,11 @@
  * 保证「后端收集到的」与「前端能渲染的」集合一致。
  */
 import type { ReactNode } from 'react'
+import { useCallback } from 'react'
 import { MarkdownImage } from '../../components/MarkdownImage'
+import { Icons } from '../../Icons'
+import { useIpcInvoke } from '../../hooks/useIpc'
+import { useToast } from '../../components/Toast'
 import './PresentedMedia.less'
 
 /** presented_files 里的文件引用，与后端 extractPresentedFiles 返回结构一致 */
@@ -87,6 +91,33 @@ function getBaseName(filePath: string): string {
 }
 
 /**
+ * 媒体卡片的「用默认应用打开」按钮。
+ * 音视频产物本就在本地磁盘，在系统默认播放器里打开比「下载」更实用。
+ */
+function PresentedMediaOpenButton({ filePath }: { filePath: string }): ReactNode {
+  const { invoke: openFile } = useIpcInvoke('file:open')
+  const { toast } = useToast()
+  const handleOpen = useCallback(async () => {
+    try {
+      const res = await openFile({ filePath })
+      if (!res.opened) toast.error(res.error ?? '无法打开文件')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '打开文件失败')
+    }
+  }, [filePath, openFile, toast])
+  return (
+    <button
+      type="button"
+      className="presented-media-action"
+      title="用默认应用打开"
+      onClick={handleOpen}
+    >
+      <Icons.ExternalLink size={13} />
+    </button>
+  )
+}
+
+/**
  * 渲染 presented_files 中的媒体部分。媒体自包含预览能力（图片走 MarkdownImage 全屏，
  * 音视频走原生 controls），不依赖外部 onFilePreview。
  */
@@ -107,22 +138,40 @@ export function PresentedMediaList<T extends PresentedFile>({
           return <MarkdownImage key={file.path} src={file.path} alt={label} />
         }
         if (kind === 'audio') {
+          const ext = getExtension(file.path).toUpperCase()
           return (
             <div key={file.path} className="presented-media-audio">
-              <span className="presented-media-label" title={file.path}>
-                {label}
-              </span>
-              <audio controls src={encodeToSafeFileUrl(file.path)} />
+              <div className="presented-media-audio-head">
+                <span className="presented-media-audio-icon" aria-hidden="true">
+                  <Icons.AudioLines size={15} />
+                </span>
+                <span className="presented-media-audio-name" title={file.path}>
+                  {label}
+                </span>
+                {ext && <span className="presented-media-audio-ext">{ext}</span>}
+                <PresentedMediaOpenButton filePath={file.path} />
+              </div>
+              <audio controls preload="metadata" src={encodeToSafeFileUrl(file.path)}>
+                当前环境不支持音频播放，可点击右侧按钮用默认应用打开。
+              </audio>
             </div>
           )
         }
         return (
-          <video
-            key={file.path}
-            className="presented-media-video"
-            controls
-            src={encodeToSafeFileUrl(file.path)}
-          />
+          <div key={file.path} className="presented-media-video-wrap">
+            <div className="presented-media-video-head">
+              <span className="presented-media-video-name" title={file.path}>
+                {label}
+              </span>
+              <PresentedMediaOpenButton filePath={file.path} />
+            </div>
+            <video
+              className="presented-media-video"
+              controls
+              preload="metadata"
+              src={encodeToSafeFileUrl(file.path)}
+            />
+          </div>
         )
       })}
     </div>

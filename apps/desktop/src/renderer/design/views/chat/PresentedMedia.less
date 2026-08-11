@@ -22,8 +22,8 @@
 .presented-media-audio {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-width: 360px;
+  gap: 8px;
+  width: min(100%, 420px);
   padding: 10px 12px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
@@ -34,12 +34,90 @@
   }
 }
 
-.presented-media-label {
-  font-size: var(--font-xs, 12px);
+.presented-media-audio-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.presented-media-audio-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.presented-media-audio-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presented-media-audio-ext {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--text-faint) 18%, transparent);
+  color: var(--text-muted);
+  font-size: var(--font-xs, 11px);
+  letter-spacing: 0.5px;
+}
+
+.presented-media-video-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(100%, 560px);
+}
+
+.presented-media-video-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.presented-media-video-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-sm);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.presented-media-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+
+  &:hover {
+    background: color-mix(in srgb, var(--text-faint) 16%, transparent);
+    color: var(--text);
+  }
 }
 
 .presented-media-video {
