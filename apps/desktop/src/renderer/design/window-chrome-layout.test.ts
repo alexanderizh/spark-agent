@@ -25,12 +25,29 @@ describe('window chrome layout contract', () => {
     const workspaceStyles = readSource('./views/canvas/CanvasWorkspaceView.less')
     const cinematicStyles = readSource('./views/canvas/cinematic/shell.less')
 
-    expect(app).toContain(
-      "t.view === 'canvas' || t.view === 'canvas-workflows' || t.view === 'canvas-prompts'",
+    expect(app).toMatch(
+      /t\.view === 'canvas'\s*\|\|\s*t\.view === 'canvas-workflows'\s*\|\|\s*t\.view === 'canvas-prompts'/,
     )
     expect(workspaceStyles).toContain('padding-left: var(--window-titlebar-safe-left)')
     expect(cinematicStyles).toContain('height: var(--window-titlebar-height)')
     expect(cinematicStyles).toContain('padding-left: var(--window-titlebar-safe-left)')
+  })
+
+  it('keeps the settings titlebar surface aligned with the settings navigation', () => {
+    const styles = readSource('./styles/styles.css')
+    const viewStyles = readSource('./styles/views.css')
+
+    expect(styles).toContain('--settings-nav-width: 240px')
+    expect(styles).toMatch(
+      /\.app\.titlebar-surface-settings \.shell-titlebar,[\s\S]*?var\(--settings-nav-width\)[\s\S]*?\}/,
+    )
+    expect(styles).toMatch(
+      /\.app\.titlebar-surface-settings \.main-content-area\s*\{[^}]*transition:\s*none;/s,
+    )
+    expect(styles).toMatch(
+      /@media \(max-width: 980px\)\s*\{[\s\S]*?\.app\.titlebar-surface-settings \.shell-titlebar,[\s\S]*?background:\s*var\(--bg-sunken\);/,
+    )
+    expect(viewStyles).toMatch(/\.settings-nav\s*\{[^}]*width:\s*var\(--settings-nav-width\);/s)
   })
 
   it('keeps every toast hit target outside the window drag region', () => {

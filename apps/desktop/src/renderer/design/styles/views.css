@@ -7625,7 +7625,7 @@ body.inspector-resizing {
   background: var(--bg);
 }
 .settings-nav {
-  width: 216px;
+  width: var(--settings-nav-width);
   flex-shrink: 0;
   background: var(--bg-sunken);
   padding: 0 var(--pad-md) var(--pad-md) var(--pad-md);
