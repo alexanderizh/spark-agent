@@ -261,7 +261,20 @@ export const minimaxSpeechSchema = {
     voice: {
       type: 'string',
       title: '音色 ID',
-      description: '映射到 MiniMax voice_setting.voice_id',
+      description: '映射到 MiniMax voice_setting.voice_id。完整列表见 platform.minimaxi.com/docs/faq/system-voice-id',
+      // 精选高频系统音色（来源：系统音色列表 FAQ，327 个里取中文高频 8 个）。
+      // x-allow-custom 让画布渲染为 AutoComplete：既可选推荐值，也可输入复刻/文生音色 ID。
+      examples: [
+        'male-qn-qingse',
+        'male-qn-jingying',
+        'female-shaonv',
+        'female-yujie',
+        'female-chengshu',
+        'female-tianmei',
+        'cute_boy',
+        'lovely_girl',
+      ],
+      'x-allow-custom': true,
     },
     speed: { type: 'number', title: '语速', minimum: 0.5, maximum: 2, default: 1 },
     vol: { type: 'number', title: '音量', minimum: 0, maximum: 10, default: 1 },
@@ -295,7 +308,9 @@ export const minimaxSpeechSchema = {
       enum: ['mp3', 'wav', 'pcm', 'flac'],
       default: 'mp3',
     },
-    output_format: { type: 'string', title: '输出格式', enum: ['url', 'hex'], default: 'url' },
+    // output_format 是 adapter 内部落盘策略（url=下载链接/hex=base64 内联），
+    // 非用户可调参数，标记 x-hidden 在参数面板隐藏。
+    output_format: { type: 'string', title: '输出格式', enum: ['url', 'hex'], default: 'url', 'x-hidden': true },
     aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
     subtitle_enable: { type: 'boolean', title: '字幕', default: false },
     subtitle_type: {
@@ -305,6 +320,7 @@ export const minimaxSpeechSchema = {
       default: 'sentence',
     },
   },
+  required: ['voice'],
 }
 
 export const minimaxMusicSchema = {
@@ -312,7 +328,7 @@ export const minimaxMusicSchema = {
   additionalProperties: true,
   properties: {
     lyrics: { type: 'string', title: '歌词' },
-    output_format: { type: 'string', title: '输出格式', enum: ['url', 'hex'], default: 'hex' },
+    output_format: { type: 'string', title: '输出格式', enum: ['url', 'hex'], default: 'hex', 'x-hidden': true },
     aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
     lyrics_optimizer: { type: 'boolean', title: '歌词优化', default: false },
     is_instrumental: { type: 'boolean', title: '纯音乐', default: false },
@@ -340,7 +356,11 @@ export const bailianQwenTtsSchema = {
     voice: {
       type: 'string',
       title: '音色',
-      description: '使用的系统音色（参见百炼支持的系统音色列表），如 Cherry / Ethan',
+      description: '使用的系统音色。完整列表见百炼控制台「语音技术 > 系统音色」',
+      // Cherry 为文档 §2.3 官方示例音色（来源 bailian/tts.md L128）。
+      // 完整系统音色列表在控制台（文档未内联），此处仅给官方示例值。
+      examples: ['Cherry'],
+      'x-allow-custom': true,
     },
     language_type: {
       type: 'string',
@@ -373,6 +393,7 @@ export const bailianQwenTtsSchema = {
       description: '对 instructions 语义优化，依赖 instructions，仅 instruct 系（§2.4）',
     },
   },
+  required: ['voice'],
 }
 
 /**
@@ -387,7 +408,11 @@ export const bailianCosyvoiceTtsSchema = {
     voice: {
       type: 'string',
       title: '音色',
-      description: '系统音色 / 声音复刻音色 / 声音设计音色（§3.4）',
+      description: 'CosyVoice 不支持系统音色，须用声音复刻/声音设计音色 ID。完整列表见百炼控制台「语音技术 > 声音复刻」（§3.4）',
+      // longanhuan_v3.6 为文档官方复刻音色示例（来源 bailian/tts.md）。
+      // CosyVoice 明确不支持系统音色（§8），仅可用复刻/设计音色 ID。
+      examples: ['longanhuan_v3.6'],
+      'x-allow-custom': true,
     },
     format: {
       type: 'string',
@@ -458,6 +483,7 @@ export const bailianCosyvoiceTtsSchema = {
       description: '目标语言数组，当前版本仅处理第一个元素（§3.4）',
     },
   },
+  required: ['voice'],
 }
 
 /**
@@ -473,7 +499,11 @@ export const volcengineAudioSchema = {
     text_prompt: { type: 'string', description: '自然语言音频生成提示词（必选），描述音效/人声/配乐' },
     speaker: {
       type: 'string',
-      description: '音色 ID；与 audio_data/audio_url 三者互斥，仅填其一',
+      description: '音色 ID；与 audio_data/audio_url 三者互斥，仅填其一。完整列表见控制台 > 音色库',
+      // zh_male_bvlazysheep 为文档官方示例音色（来源 volcengine/tts.md）。
+      // 豆包语音音色全在控制台（325 个），文档未内联完整列表。
+      examples: ['zh_male_bvlazysheep'],
+      'x-allow-custom': true,
     },
     format: {
       type: 'string',
@@ -527,7 +557,11 @@ export const volcengineSpeechSchema = {
   properties: {
     speaker: {
       type: 'string',
-      description: '音色 ID（必选），见豆包语音合成模型 2.0 音色列表',
+      description: '音色 ID（必选）。完整列表见控制台 > 音色库（豆包语音合成模型 2.0 音色列表）',
+      // zh_male_bvlazysheep 为文档官方示例音色（来源 volcengine/tts.md）。
+      // 豆包语音音色全在控制台（325 个），文档未内联完整列表。
+      examples: ['zh_male_bvlazysheep'],
+      'x-allow-custom': true,
     },
     text: { type: 'string', description: '待合成文本（必选）' },
     format: {

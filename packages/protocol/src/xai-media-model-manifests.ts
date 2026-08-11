@@ -96,7 +96,15 @@ export const XAI_TTS_PARAM_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    voiceId: { type: 'string', title: '音色', default: 'eve' },
+    voiceId: {
+      type: 'string',
+      title: '音色',
+      default: 'eve',
+      // 精选 8 个高频内置音色（来源 §1.5 内置音色清单，共 26 个）。
+      // x-allow-custom 让画布渲染为 AutoComplete：既可选推荐值，也可输入自定义音色 ID。
+      examples: ['eve', 'leo', 'rex', 'sal', 'orion', 'luna', 'iris', 'helios'],
+      'x-allow-custom': true,
+    },
     language: { type: 'string', title: '语言', default: 'auto' },
     outputFormat: {
       // §1.3 Codec 表：mp3/wav/pcm/mulaw/alaw（无 opus/flac）

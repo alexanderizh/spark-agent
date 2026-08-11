@@ -16,6 +16,18 @@ export type SchemaField = {
   pattern?: string
   description?: string
   placeholder?: string
+  /**
+   * 是否为必填字段（来自 manifest paramSchema 的 JSON Schema `required[]`）。
+   * 渲染为标签红星提示用户。仅 UI 提示，最终校验由 adapter 运行时兜底
+   *（如 voice 缺失时 adapter 抛 MediaProviderError）。
+   */
+  required?: boolean
+  /**
+   * 是否在参数面板隐藏（来自 manifest paramSchema 的 `x-hidden: true`）。
+   * 用于 adapter 内部落盘策略字段（如 output_format=url/hex），不应暴露给用户。
+   * schemaFields 阶段即过滤，不进入 partitionParameterFields。
+   */
+  hidden?: boolean
 }
 
 export type CanvasParameterControlKind =
