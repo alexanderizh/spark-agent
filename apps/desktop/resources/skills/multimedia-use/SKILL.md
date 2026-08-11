@@ -153,7 +153,7 @@ tags:
 
 ## MiniMax（minimax-hailuo）专项规则
 
-以下规则仅适用于 `providerKind=minimax-hailuo` 的已启用 MiniMax Manifest（`image-01` / `image-01-live` / `Hailuo-2.3` / `Hailuo-2.3-Fast` / `MiniMax-H3` / 视频 Agent 模板）。语音 T2A 与音乐本轮**仅文档未开发**，preset 已移除，不要调用，也不要假设它们与视频共用参数。
+以下规则仅适用于 `providerKind=minimax-hailuo` 的已启用 MiniMax Manifest（`image-01` / `image-01-live` / `Hailuo-2.3` / `Hailuo-2.3-Fast` / `MiniMax-H3` / 视频 Agent 模板 / `speech-2.8-hd` / `speech-2.8-turbo` / `music-2.6`）。
 
 - 图像生成与编辑共用同一 endpoint `POST /v1/image_generation`，按是否传 `subject_reference` 区分能力，不是按 modelId 拆 endpoint。`image-01` 支持文生图 + 图生图（人物主体参考）；`image-01-live` 是画风增强模型，`style`（`style_type` ∈ 漫画/元气/中世纪/水彩 + `style_weight` ∈ (0,1] 默认 0.8）仅对它生效，传给 `image-01` 会被忽略。
 - `subject_reference` 当前仅支持 `type=character`（人像）、单张参考图、JPG/JPEG/PNG 且 <10MB；官方建议单人正面照。`width`/`height`（[512,2048] 且为 8 的倍数）仅 `image-01` 生效，`image-01-live` 不要传；与 `aspect_ratio` 同传时以 `aspect_ratio` 为准。`aspect_ratio` 含 `21:9` 但仅 `image-01` 可用。
@@ -166,6 +166,8 @@ tags:
 - **产物下载链路不同**：v1 视频先 `GET /v1/query/video_generation` 拿 `file_id`，再 `GET /v1/files/retrieve?file_id=` 拿 `download_url`（有效期 1 小时）；V2 任务成功后响应直接含 `content.url`（CDN 链接，有时效需及时下载）；视频 Agent 模板直接返回 `video_url`。`file_id` 官方在 query 页声明为 string、在 download 页声明为 int64，跨通道不一致——**统一按字符串透传**防止 JS 精度丢失。
 - 视频 Agent 模板（11 个官方 template_id）走 `video.generate`，`template_id` 在画布参数控件以中文名下拉呈现，选择中文名即对应数字 id，不要手动拼数字。
 - 用户要人工管理远端文件时，引导其打开「无限画布 → 项目资产中心 → Files → MiniMax」：可上传/列出/删除文件、复制 File ID，并把文件「加入视频生成」直接创建带 fileId 的画布节点（命中 adapter 的 `mm_file://` 短路，省去重复上传）。注意 Files 的 `purpose` 在 upload/list 是 `video_generation_input`、在 delete 是 `video_generation`，这是官方文档矛盾，按端点分别传值，不要统一。
+- **语音合成 T2A（`speech-2.8-hd` / `speech-2.8-turbo`，同步）**：endpoint `POST /v1/t2a_v2`。必填 `text`（≤10000 字符，支持停顿标记 `<#x#>`）+ `voice_setting.voice_id`——schema 字段名是 `voice`，adapter 映射到官方 `voice_id`；可填 300+ 系统音色 ID 或复刻/文生音色 ID，缺失时用 provider 默认 `male-qn-qingse` 兜底。可选 `emotion`（happy/sad/angry/fearful/disgusted/surprised/calm/fluent/whisper；`whisper` 仅 speech-2.6 系，speech-2.8 不支持）、`speed`[0.5,2]、`vol`(0,10]、`pitch`[-12,12]、`language_boost`、`subtitle_enable`/`subtitle_type`。`output_format` 默认 `url`（下载链接 24h），`hex` 时 `data.audio` 返回 hex 字符串。错误走 v1 `base_resp`（1004 鉴权 / 1039 限流 / 1042 非法字符>10% / 2013 参数；**T2A HTTP 子集不含 1008 余额、1026 敏感**）。
+- **音乐生成（`music-2.6`，同步）**：endpoint `POST /v1/music_generation`。必填 `model`；`prompt`（风格/情绪/场景，≤2000）与 `lyrics`（≤3500，`\n` 分行，支持 `[Verse]`/`[Chorus]`/`[Bridge]` 等结构标签）为条件必填——纯音乐（`is_instrumental:true`）必填 prompt、非纯音乐必填 lyrics。可选 `lyrics_optimizer`（空 lyrics 时由 prompt 自动生成）、`aigc_watermark`。`output_format` 默认 `url`。错误走 v1 `base_resp`（含 1008 余额、1026 敏感，与 T2A HTTP 子集不同）。
 
 官方依据：
 
@@ -176,6 +178,8 @@ tags:
 - 视频 Agent 模板：https://platform.minimaxi.com/docs/api-reference/video-agent-create
 - 视频文件下载 / Files retrieve：https://platform.minimaxi.com/docs/api-reference/video-generation-download
 - 错误码汇总：https://platform.minimaxi.com/docs/api-reference/errorcode
+- 语音合成（T2A HTTP）：https://platform.minimaxi.com/docs/api-reference/speech-t2a-http
+- 音乐生成：https://platform.minimaxi.com/docs/api-reference/music-generation
 - 速率限制：https://platform.minimaxi.com/docs/guides/rate-limits
 - 模型家族：https://platform.minimaxi.com/docs/guides/models-intro
 

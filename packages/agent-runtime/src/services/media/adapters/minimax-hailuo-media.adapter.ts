@@ -32,6 +32,7 @@ import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.
 import type {
   MediaGenerateInput,
   MediaGenerateOutput,
+  MediaGeneratedAsset,
   MediaInputFile,
   MediaProviderAdapter,
   MediaProviderContext,
@@ -63,6 +64,9 @@ const VIDEO_CAPABILITIES: readonly MediaCapabilityId[] = [
   'video.image_to_video',
   'video.reference_to_video',
 ]
+// 音频（speech-2.8-hd/turbo 文生语音、music-2.6 文生音乐），均走 v1 通道（HTTP 恒 200 + base_resp 业务码）。
+// 来源：docs/integrations/minimax/speech-music.md §1（T2A HTTP）/ §6（Music Generation）。
+const AUDIO_CAPABILITIES: readonly MediaCapabilityId[] = ['audio.speech', 'audio.music']
 
 /** V2(H3) content[] 元素（简化类型，仅描述发送形态）。 */
 type MinimaxV2ContentItem =
@@ -90,6 +94,7 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
   private readonly capabilities = new Set<MediaCapabilityId>([
     ...IMAGE_CAPABILITIES,
     ...VIDEO_CAPABILITIES,
+    ...AUDIO_CAPABILITIES,
   ])
   private readonly artifact = new MediaArtifactService()
 
@@ -113,6 +118,7 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
       )
     }
     if (capability.startsWith('image.')) return this.generateImage(input, ctx)
+    if (capability.startsWith('audio.')) return this.generateAudio(input, ctx)
     return this.generateVideo(input, ctx)
   }
 
@@ -189,6 +195,202 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
       ),
     )
     return { provider: this.id, model, mode: 'sync', assets, rawResponse: resp }
+  }
+
+  // ─── 音频路径：speech（T2A）/ music，均同步返回，走 /v1 通道 ────────────────
+
+  private async generateAudio(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
+    const capability = input.capability as MediaCapabilityId
+    if (capability === 'audio.music') return this.generateMusic(input, ctx)
+    return this.generateSpeech(input, ctx)
+  }
+
+  // ─── 文生语音 T2A（speech-2.8-hd/turbo，POST /v1/t2a_v2，同步）──────────────
+  // 文档：docs/integrations/minimax/speech-music.md §1。必填 model + text；
+  // voice_setting.voice_id 必填（schema 字段名 voice，映射到官方 voice_id）。
+  // 错误归一复用 assertMinimaxBaseResp（T2A HTTP base_resp 子集见 §1.5）。
+
+  private async generateSpeech(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
+    const capability = 'audio.speech' as MediaCapabilityId
+    const text = (input.prompt ?? '').trim()
+    if (!text) {
+      throw new MediaProviderError('invalid_input', 'MiniMax T2A 需要文本（prompt）')
+    }
+    const model = ctx.defaultModel
+    const base = baseEndpoint(ctx)
+
+    const params = buildMinimaxSpeechParams(input, ctx)
+    if (!params.voice_id) {
+      throw new MediaProviderError(
+        'invalid_input',
+        'MiniMax T2A 需要 voice_id（modelParams.voice 或 provider mediaDefaults.audio.voice）',
+      )
+    }
+
+    const voiceSetting: Record<string, unknown> = { voice_id: params.voice_id }
+    if (params.speed != null) voiceSetting.speed = params.speed
+    if (params.vol != null) voiceSetting.vol = params.vol
+    if (params.pitch != null) voiceSetting.pitch = params.pitch
+    if (params.emotion) voiceSetting.emotion = params.emotion
+
+    const body: Record<string, unknown> = {
+      model,
+      text,
+      stream: false,
+      output_format: params.output_format, // 'url' | 'hex'，默认 url
+      voice_setting: voiceSetting,
+      audio_setting: { format: params.format ?? 'mp3' },
+      aigc_watermark: params.aigc_watermark ?? false,
+    }
+    if (params.language_boost) body.language_boost = params.language_boost
+    if (params.subtitle_enable != null) {
+      body.subtitle_enable = params.subtitle_enable
+      if (params.subtitle_type) body.subtitle_type = params.subtitle_type
+    }
+
+    const url = `${base}/v1/t2a_v2`
+    logMediaCall({
+      provider: this.id,
+      capability,
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: { text: text.slice(0, 120), voice: params.voice_id },
+    })
+
+    const resp = await fetchJson(url, {
+      method: 'POST',
+      headers: authHeaders(ctx),
+      body: JSON.stringify(body),
+      fetchImpl: ctx.fetch,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
+    })
+    assertMinimaxBaseResp(resp)
+
+    const asset = await this.writeMinimaxAudioAsset(
+      resp,
+      input,
+      'minimax-speech',
+      params.output_format,
+      params.format,
+      ctx,
+    )
+    logMediaResult({ provider: this.id, capability, ok: true, assetCount: 1 })
+    return { provider: this.id, model, mode: 'sync', assets: [asset], rawResponse: resp }
+  }
+
+  // ─── 文生音乐（music-2.6，POST /v1/music_generation，同步）──────────────────
+  // 文档：docs/integrations/minimax/speech-music.md §6。必填 model；prompt/lyrics 条件必填。
+  // 错误归一复用 assertMinimaxBaseResp（Music base_resp 子集见 §6.1）。
+
+  private async generateMusic(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
+    const capability = 'audio.music' as MediaCapabilityId
+    const prompt = (input.prompt ?? '').trim()
+    if (!prompt) {
+      throw new MediaProviderError('invalid_input', 'MiniMax 音乐生成需要描述（prompt）')
+    }
+    const model = ctx.defaultModel
+    const base = baseEndpoint(ctx)
+
+    const params = buildMinimaxMusicParams(input, ctx)
+    const body: Record<string, unknown> = {
+      model,
+      prompt,
+      output_format: params.output_format,
+      // audio_setting.format 始终传（§6.1 L425/L433：mp3/wav/pcm，默认 mp3），
+      // 与 T2A 一致；否则用户选的 format 静默丢失且 hex 落盘 mimeType 与实际不符。
+      audio_setting: { format: params.format ?? 'mp3' },
+      aigc_watermark: params.aigc_watermark ?? false,
+    }
+    if (params.lyrics) body.lyrics = params.lyrics
+    if (params.is_instrumental != null) body.is_instrumental = params.is_instrumental
+    if (params.lyrics_optimizer != null) body.lyrics_optimizer = params.lyrics_optimizer
+
+    const url = `${base}/v1/music_generation`
+    logMediaCall({
+      provider: this.id,
+      capability,
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: { prompt: prompt.slice(0, 120) },
+    })
+
+    const resp = await fetchJson(url, {
+      method: 'POST',
+      headers: authHeaders(ctx),
+      body: JSON.stringify(body),
+      fetchImpl: ctx.fetch,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 180_000),
+    })
+    assertMinimaxBaseResp(resp)
+
+    const asset = await this.writeMinimaxAudioAsset(
+      resp,
+      input,
+      'minimax-music',
+      params.output_format,
+      params.format,
+      ctx,
+    )
+    logMediaResult({ provider: this.id, capability, ok: true, assetCount: 1 })
+    return { provider: this.id, model, mode: 'sync', assets: [asset], rawResponse: resp }
+  }
+
+  /**
+   * MiniMax 音频产物落盘：response.data.audio 在 output_format=url 时是下载 URL，
+   * hex 时是 16 进制编码字符串（§1.5 / §6.1）。url 复用 downloadMediaAsset（含重试），
+   * hex 用 Buffer.from(hex,'hex') + writeBinaryAsset。
+   *
+   * 字段读取：T2A 的 data.audio 为 url/hex 双形态（§1.5 L100「格式与请求指定输出格式一致」）；
+   * Music hex 走 data.audio（§6.1 L446），但 url 模式返回字段名官方 schema 未定义（MusicData 仅
+   * status/audio，文档 L461/L535 标注「需实调验证」）——故 url 模式优先 data.audio，回退 data.url 兜底。
+   */
+  private async writeMinimaxAudioAsset(
+    resp: unknown,
+    input: MediaGenerateInput,
+    filePrefix: string,
+    outputFormat: string | undefined,
+    format: string | undefined,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGeneratedAsset> {
+    const audioRaw = readPath(resp, 'data', 'audio') ?? readPath(resp, 'data', 'url')
+    if (typeof audioRaw !== 'string' || audioRaw.length === 0) {
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No audio in MiniMax response: ${JSON.stringify(resp).slice(0, 800)}`,
+      )
+    }
+    const filename = filenameHelper(input, filePrefix, 0, 1)
+    if (outputFormat === 'hex') {
+      const buffer = Buffer.from(audioRaw, 'hex')
+      return this.artifact.writeBinaryAsset(
+        'audio',
+        buffer,
+        input.outputDir,
+        filename,
+        mimeTypeFromAudioFormat(format),
+      )
+    }
+    return this.artifact.downloadMediaAsset(
+      'audio',
+      audioRaw,
+      input.outputDir,
+      filename,
+      ctx.fetch,
+      configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+    )
   }
 
   // ─── 视频路径：按 modelId 分流到 v1 / 模板 / V2(H3) ─────────────────────────
@@ -522,6 +724,95 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
 }
 
 // ─── 请求体构造 ──────────────────────────────────────────────────────────────
+
+/**
+ * T2A 请求参数（speech-2.8-hd/turbo）。schema 字段名 voice 映射到官方 voice_setting.voice_id；
+ * voice 缺失时用 provider mediaDefaults.audio.voice 兜底（来源 §1.2）。
+ * output_format 默认 url（与 manifest capability defaults 一致；hex 模式 data.audio 返回 hex 字符串）。
+ */
+function buildMinimaxSpeechParams(
+  input: MediaGenerateInput,
+  ctx: MediaProviderContext,
+): {
+  voice_id: string | undefined
+  speed: number | undefined
+  vol: number | undefined
+  pitch: number | undefined
+  emotion: string | undefined
+  language_boost: string | undefined
+  format: string | undefined
+  output_format: string
+  aigc_watermark: boolean | undefined
+  subtitle_enable: boolean | undefined
+  subtitle_type: string | undefined
+} {
+  const raw = removeBlankParams(input.modelParams)
+  const aliases = ctx.mediaManifestCapability?.aliases
+  const normalized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    normalized[aliases?.[key] ?? key] = value
+  }
+  const defaultsVoice = ctx.mediaDefaults?.audio?.voice
+  return {
+    voice_id:
+      stringVal(normalized.voice) ??
+      stringVal(normalized.voice_id) ??
+      (typeof defaultsVoice === 'string' && defaultsVoice ? defaultsVoice : undefined),
+    speed: numberVal(normalized.speed),
+    vol: numberVal(normalized.vol),
+    pitch: numberVal(normalized.pitch),
+    emotion: stringVal(normalized.emotion),
+    language_boost: stringVal(normalized.language_boost),
+    format: stringVal(normalized.format),
+    output_format: stringVal(normalized.output_format) ?? 'url',
+    aigc_watermark: boolVal(normalized.aigc_watermark),
+    subtitle_enable: boolVal(normalized.subtitle_enable),
+    subtitle_type: stringVal(normalized.subtitle_type),
+  }
+}
+
+/** 音乐生成请求参数（music-2.6，§6.1）。output_format 默认 url。 */
+function buildMinimaxMusicParams(
+  input: MediaGenerateInput,
+  ctx: MediaProviderContext,
+): {
+  lyrics: string | undefined
+  output_format: string
+  aigc_watermark: boolean | undefined
+  lyrics_optimizer: boolean | undefined
+  is_instrumental: boolean | undefined
+  format: string | undefined
+} {
+  const raw = removeBlankParams(input.modelParams)
+  const aliases = ctx.mediaManifestCapability?.aliases
+  const normalized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    normalized[aliases?.[key] ?? key] = value
+  }
+  return {
+    lyrics: stringVal(normalized.lyrics),
+    output_format: stringVal(normalized.output_format) ?? 'url',
+    aigc_watermark: boolVal(normalized.aigc_watermark),
+    lyrics_optimizer: boolVal(normalized.lyrics_optimizer),
+    is_instrumental: boolVal(normalized.is_instrumental),
+    format: stringVal(normalized.format),
+  }
+}
+
+/** audio_setting.format → mime 类型（hex 模式落盘用；来源 §1.3 / §6.1）。 */
+function mimeTypeFromAudioFormat(format: string | undefined): string {
+  switch (format) {
+    case 'wav':
+      return 'audio/wav'
+    case 'pcm':
+      return 'audio/pcm'
+    case 'flac':
+      return 'audio/flac'
+    case 'mp3':
+    default:
+      return 'audio/mpeg'
+  }
+}
 
 /** 图像请求参数：从 modelParams + manifest aliases 归一，image-01-live 组装嵌套 style。 */
 function buildMinimaxImageParams(
