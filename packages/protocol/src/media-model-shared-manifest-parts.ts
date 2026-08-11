@@ -461,6 +461,116 @@ export const bailianCosyvoiceTtsSchema = {
 }
 
 /**
+ * 火山豆包音频生成（seed-audio-1.0，audio.music）参数 schema。
+ * 同步 POST /api/v3/tts/create，X-Api-Key 鉴权；响应体内含 base64 audio + 2h 有效 url。
+ * 字段来源：docs/integrations/volcengine/music.md §audio_config（X-Api-Key + body 段）。
+ * 注意：sample_rate 官方默认 40000 但不在枚举内（文档矛盾），schema 不设 default，
+ * adapter 不传则走官方默认。
+ */
+export const volcengineAudioSchema = {
+  type: 'object',
+  properties: {
+    text_prompt: { type: 'string', description: '自然语言音频生成提示词（必选），描述音效/人声/配乐' },
+    speaker: {
+      type: 'string',
+      description: '音色 ID；与 audio_data/audio_url 三者互斥，仅填其一',
+    },
+    format: {
+      type: 'string',
+      enum: ['wav', 'mp3', 'pcm', 'ogg_opus'],
+      default: 'wav',
+      description: '输出音频格式',
+    },
+    sample_rate: {
+      type: 'number',
+      enum: [8000, 16000, 24000, 32000, 44100, 48000],
+      description: '采样率 Hz',
+    },
+    speech_rate: {
+      type: 'number',
+      minimum: -50,
+      maximum: 100,
+      default: 0,
+      description: '语速，100=2.0 倍速，-50=0.5 倍速',
+    },
+    loudness_rate: {
+      type: 'number',
+      minimum: -50,
+      maximum: 100,
+      default: 0,
+      description: '音量，100=2.0 倍，-50=0.5 倍',
+    },
+    pitch_rate: {
+      type: 'number',
+      minimum: -12,
+      maximum: 12,
+      default: 0,
+      description: '音调，正值升高、负值降低',
+    },
+    enable_subtitle: {
+      type: 'boolean',
+      default: false,
+      description: '开启字级时间戳字幕',
+    },
+  },
+  required: ['text_prompt'],
+} as const
+
+/**
+ * 火山豆包语音合成（seed-tts-2.0，audio.speech）参数 schema。
+ * 单向流式 POST /api/v3/tts/unidirectional（HTTP Chunked），累积 chunk 落盘。
+ * 鉴权头：X-Api-Key（必选）+ X-Api-Resource-Id: seed-tts-2.0（必选）+ X-Api-Request-Id（必选）。
+ * 字段来源：docs/integrations/volcengine/tts.md §req_params/audio_params。
+ */
+export const volcengineSpeechSchema = {
+  type: 'object',
+  properties: {
+    speaker: {
+      type: 'string',
+      description: '音色 ID（必选），见豆包语音合成模型 2.0 音色列表',
+    },
+    text: { type: 'string', description: '待合成文本（必选）' },
+    format: {
+      type: 'string',
+      enum: ['mp3', 'pcm', 'ogg_opus', 'wav'],
+      default: 'mp3',
+      description: '音频格式，流式场景推荐 pcm（wav 流式会重复 header）',
+    },
+    sample_rate: {
+      type: 'number',
+      enum: [8000, 16000, 22050, 24000, 32000, 44100, 48000],
+      description: '采样率 Hz',
+    },
+    bit_rate: {
+      type: 'number',
+      minimum: 64000,
+      maximum: 160000,
+      description: '比特率 bps，仅对 mp3 生效',
+    },
+    speech_rate: {
+      type: 'number',
+      minimum: -50,
+      maximum: 100,
+      default: 0,
+      description: '语速',
+    },
+    loudness_rate: {
+      type: 'number',
+      minimum: -50,
+      maximum: 100,
+      default: 0,
+      description: '音量',
+    },
+    enable_subtitle: {
+      type: 'boolean',
+      default: false,
+      description: '开启字级时间戳字幕',
+    },
+  },
+  required: ['speaker', 'text'],
+} as const
+
+/**
  * MiniMax Hailuo 2.3 / 2.3-Fast 视频生成（v1，POST /v1/video_generation）参数 schema。
  * 首/尾帧由画布 inputFiles 的 role(first_frame/last_frame) 驱动，不是 API 参数，
  * 因此不再暴露 useFirstFrame/useLastFrame（无对应官方字段，曾误导表单）。

@@ -38,6 +38,7 @@ import type { MediaUploader } from './media-uploader.js'
 import { ApimartMediaAdapter } from './adapters/apimart-media.adapter.js'
 import { AgnesMediaAdapter } from './adapters/agnes-media.adapter.js'
 import { VolcengineArkMediaAdapter } from './adapters/volcengine-ark-media.adapter.js'
+import { VolcengineSpeechMediaAdapter } from './adapters/volcengine-speech-media.adapter.js'
 import { BailianMediaAdapter } from './adapters/bailian-media.adapter.js'
 import { XaiMediaAdapter } from './adapters/xai-media.adapter.js'
 import { TemplateMediaAdapter } from './adapters/template-media.adapter.js'
@@ -111,6 +112,7 @@ export class MediaRouterService {
     // 火山方舟（Seedance 视频 / Seedream 图片）：真实 API 需嵌套 content[] 数组，
     // 模板适配器无法表达，故用专用 adapter；supports(capability) 时优先于模板适配器。
     this.register(new VolcengineArkMediaAdapter())
+    this.register(new VolcengineSpeechMediaAdapter())
     this.register(new BailianMediaAdapter())
     this.register(new OpenAiOfficialMediaAdapter())
     this.register(new GoogleGenerativeAiMediaAdapter('google-generative-ai'))

@@ -28,6 +28,7 @@ export type MediaTaskPollingStrategy =
   | 'openai-sora'
   | 'tencent-tokenhub'
   | 'volcengine-ark'
+  | 'volcengine-speech'
   | 'xai'
 
 export interface MediaTaskPollingDescriptor {
