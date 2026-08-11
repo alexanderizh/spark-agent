@@ -46,6 +46,16 @@ function binaryRes(buf: Buffer): Response {
   } as Response
 }
 
+// 单向流式 TTS 响应：JSON 对象序列（连续无分隔，最接近真实流且最考验花括号切分）。
+// 用真实 Response 构造，使 res.body.getReader() 可被 adapter 调用。
+function streamRes(frames: unknown[]): Response {
+  const body = frames.map((f) => JSON.stringify(f)).join('')
+  return new Response(body, {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
 // ID3v2 头（mp3 测试用，非合法完整 mp3，仅用于落盘 buffer 比对）
 const FAKE_MP3 = Buffer.from([0x49, 0x44, 0x33, 0x04, 0x10, 0x00, 0x00, 0x00, 0x20, 0x53])
 // RIFF/WAVE 头（wav 测试用）
@@ -102,9 +112,18 @@ describe('VolcengineSpeechMediaAdapter', () => {
     expect(new MediaRouterService().listAdapters()).toContain('volcengine-speech')
   })
 
-  it('audio.speech: POST /api/v3/tts/unidirectional 流式落盘 mp3 + 鉴权三头 + body 结构', async () => {
+  it('audio.speech: JSON 流逐帧 base64 解码 concat 落盘 + 鉴权三头 + body + usage', async () => {
+    // FAKE_MP3 拆成两段，模拟流式分帧（各帧 data 为 base64 片段）
+    const part1 = Buffer.from([0x49, 0x44, 0x33, 0x04, 0x10])
+    const part2 = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x53])
     const fetchImpl = mockFetch(async (url) => {
-      if (url.endsWith('/api/v3/tts/unidirectional')) return binaryRes(FAKE_MP3)
+      if (url.endsWith('/api/v3/tts/unidirectional')) {
+        return streamRes([
+          { code: 0, message: '', data: part1.toString('base64') },
+          { code: 0, message: '', data: part2.toString('base64') },
+          { code: 20000000, message: 'ok', data: null, usage: { text_words: 4 } },
+        ])
+      }
       throw new Error(`unexpected fetch ${url}`)
     })
     const out = await new VolcengineSpeechMediaAdapter().invoke(
@@ -120,7 +139,10 @@ describe('VolcengineSpeechMediaAdapter', () => {
     expect(out.assets[0]?.type).toBe('audio')
     expect(out.assets[0]?.mimeType).toBe('audio/mpeg')
     expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
+    // 两段 concat = FAKE_MP3
     expect(readFileSync(out.assets[0]?.filePath ?? '')).toEqual(FAKE_MP3)
+    // usage 透传（结束帧的 usage 字段）
+    expect((out.rawResponse as Record<string, unknown>)?.usage).toMatchObject({ text_words: 4 })
 
     // 鉴权三头（X-Api-Key + X-Api-Resource-Id + X-Api-Request-Id）
     const init = fetchImpl.mock.calls[0]?.[1]!
@@ -136,6 +158,44 @@ describe('VolcengineSpeechMediaAdapter', () => {
       req_params: { text: '你好世界', speaker: 'zh_male_bvlazysheep' },
       audio_params: { format: 'mp3' },
     })
+  })
+
+  it('audio.speech 业务错误: 流内 code=45000000(音色鉴权失败) 抛错含码', async () => {
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/api/v3/tts/unidirectional')) {
+        return streamRes([{ code: 45000000, message: 'speaker permission denied' }])
+      }
+      throw new Error(`unexpected ${url}`)
+    })
+    await expect(
+      new VolcengineSpeechMediaAdapter().invoke(
+        makeInput({
+          capability: 'audio.speech',
+          outputDir: tmpDir,
+          modelParams: { speaker: 'zh_male_unauthorized' },
+        }),
+        makeContext({ fetch: fetchImpl }),
+      ),
+    ).rejects.toThrow(/45000000/)
+  })
+
+  it('audio.speech 空音频流: 仅结束帧无 data → 抛空音频流', async () => {
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/api/v3/tts/unidirectional')) {
+        return streamRes([{ code: 20000000, message: 'ok', data: null }])
+      }
+      throw new Error(`unexpected ${url}`)
+    })
+    await expect(
+      new VolcengineSpeechMediaAdapter().invoke(
+        makeInput({
+          capability: 'audio.speech',
+          outputDir: tmpDir,
+          modelParams: { speaker: 'zh_male_test' },
+        }),
+        makeContext({ fetch: fetchImpl }),
+      ),
+    ).rejects.toThrow(/空音频流/)
   })
 
   it('audio.speech speaker 缺失: modelParams/mediaDefaults 均无 → invalid_input', async () => {
