@@ -17,7 +17,14 @@ import vueIcon from '../../assets/file-icons/vue.svg'
 import xmlIcon from '../../assets/file-icons/xml.svg'
 import yamlIcon from '../../assets/file-icons/yaml.svg'
 
-export type PreviewFileType = 'markdown' | 'html' | 'image' | 'text' | 'universal'
+export type PreviewFileType =
+  | 'markdown'
+  | 'html'
+  | 'image'
+  | 'text'
+  | 'audio'
+  | 'video'
+  | 'universal'
 
 export type FileTypeTone =
   | 'code'
@@ -222,6 +229,38 @@ export const FLYFISH_VIEWER_EXTENSIONS = new Set([
   '.parquet',
   '.avro',
   '.webarchive',
+])
+
+/**
+ * 音频扩展名（带点）。getPreviewFileType 优先于 universal 拦截，避免落到未装配
+ * audio renderer 的 @file-viewer 报错；改由原生 <audio controls> 预览。
+ * 与 SafeFileProtocol 的 MIME 表、PresentedMedia 的 AUDIO_EXTENSIONS 对齐。
+ */
+export const AUDIO_PREVIEW_EXTENSIONS = new Set([
+  '.aac',
+  '.flac',
+  '.m4a',
+  '.mp3',
+  '.ogg',
+  '.oga',
+  '.opus',
+  '.wav',
+  '.weba',
+  '.mid',
+  '.midi',
+])
+
+/**
+ * 视频扩展名（带点）。同上，由原生 <video controls> 预览。
+ */
+export const VIDEO_PREVIEW_EXTENSIONS = new Set([
+  '.avi',
+  '.m4v',
+  '.mkv',
+  '.mov',
+  '.mp4',
+  '.mpeg',
+  '.webm',
 ])
 
 export const COMMON_FILE_EXTENSIONS = new Set([
@@ -467,6 +506,11 @@ export function getPreviewFileType(filePath: string): PreviewFileType | null {
     return 'image'
   }
   if (ext === '.txt' || ext === '.text' || ext === '.log') return 'text'
+  // 音视频优先于 universal 拦截：.mp3/.mp4 等虽在 FLYFISH_VIEWER_EXTENSIONS 里，
+  // 但项目未装配 audio/video renderer，落到 @file-viewer 会显示「尚未装配 renderer」报错。
+  // 改由 FilePreviewPanel 的原生 <audio>/<video> 分支预览（safe-file:// 已支持 Range/stream）。
+  if (AUDIO_PREVIEW_EXTENSIONS.has(ext)) return 'audio'
+  if (VIDEO_PREVIEW_EXTENSIONS.has(ext)) return 'video'
   if (FLYFISH_VIEWER_EXTENSIONS.has(ext)) return 'universal'
   return null
 }

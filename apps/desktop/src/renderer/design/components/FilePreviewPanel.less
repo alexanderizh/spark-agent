@@ -219,6 +219,35 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   }
 }
 
+.file-preview-audio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  height: 100%;
+  padding: 24px 16px;
+  background: var(--panel, #fff);
+
+  audio {
+    width: min(100%, 560px);
+  }
+}
+
+.file-preview-video {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  height: 100%;
+  padding: 16px;
+  background: var(--panel, #fff);
+
+  video {
+    max-width: 100%;
+    max-height: 100%;
+  }
+}
+
 .file-preview-html {
   display: block;
   width: 100%;
