@@ -9,6 +9,7 @@ export interface ApimartVideoInputFieldsInput {
   referenceImages: string[]
   referenceVideos: string[]
   referenceAudios: string[]
+  generationType?: string | undefined
 }
 
 const SKYREELS_MODELS = new Set(['skyreels-v4-fast', 'skyreels-v4-std'])
@@ -36,6 +37,8 @@ const IMAGE_URL_FRAME_MODELS = new Set([
   'viduq3-pro',
   'viduq3-turbo',
   'Omni-Flash-Ext',
+  'wan3.0-video',
+  'flux-3-video',
 ])
 const FIRST_FRAME_ONLY_MODELS = new Set([
   'MiniMax-Hailuo-2.3',
@@ -52,16 +55,48 @@ const ROLE_FRAME_MODELS = new Set([
   'doubao-seedance-2.0-mini',
   'doubao-seedance-1-0-pro-fast',
   'doubao-seedance-1-0-pro-quality',
+  'doubao-seedance-2.5',
 ])
 
 /** APIMart 视频模型的素材字段并不统一，必须按官方模型请求契约独立序列化。 */
 export function buildApimartVideoInputFields(
   input: ApimartVideoInputFieldsInput,
 ): Record<string, unknown> {
+  if (input.capability === 'video.generate' && input.modelId === 'flux-3-video') {
+    return compact({
+      image_urls: nonEmpty([
+        ...(input.firstFrame ? [input.firstFrame] : []),
+        ...(input.lastFrame ? [input.lastFrame] : []),
+        ...input.referenceImages,
+      ]),
+      video_url: input.inputVideo,
+    })
+  }
+  if (input.capability === 'video.generate' && input.modelId === 'wan3.0-video') {
+    if (
+      input.generationType === 'reference' ||
+      input.referenceVideos.length > 0 ||
+      input.referenceAudios.length > 0
+    ) {
+      return referenceInputFields(input)
+    }
+    return compact({
+      image_urls: nonEmpty([
+        ...(input.firstFrame ? [input.firstFrame] : []),
+        ...(input.lastFrame ? [input.lastFrame] : []),
+        ...input.referenceImages,
+      ]),
+    })
+  }
   if (input.capability === 'video.image_to_video') return frameInputFields(input)
   if (input.capability === 'video.reference_to_video') return referenceInputFields(input)
   if (input.capability === 'video.edit' || input.capability === 'video.extend') {
-    if (input.modelId === 'wan2.7-videoedit' || input.modelId === 'gemini-omni-flash-preview') {
+    if (
+      input.modelId === 'wan2.7-videoedit' ||
+      input.modelId === 'wan3.0-video' ||
+      input.modelId === 'doubao-seedance-2.5' ||
+      input.modelId === 'gemini-omni-flash-preview'
+    ) {
       return compact({
         video_urls: nonEmpty(input.inputVideo ? [input.inputVideo] : []),
         image_urls: nonEmpty(input.referenceImages),
@@ -92,6 +127,12 @@ function frameInputFields(input: ApimartVideoInputFieldsInput): Record<string, u
     })
   }
   if (input.modelId === 'MiniMax-Hailuo-02') {
+    return compact({
+      first_frame_image: input.firstFrame,
+      last_frame_image: input.lastFrame,
+    })
+  }
+  if (input.modelId === 'MiniMax-H3') {
     return compact({
       first_frame_image: input.firstFrame,
       last_frame_image: input.lastFrame,

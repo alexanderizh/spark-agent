@@ -553,25 +553,47 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     const capability =
       input.capability ?? capabilityForOperation(input.operation)[0] ?? 'video.generate'
     const prompt = (input.prompt ?? '').trim()
-    if (!prompt && capability === 'video.generate') {
+    const promptRequired = ctx.mediaManifestCapability?.input.required.includes('prompt') ?? true
+    if (!prompt && capability === 'video.generate' && promptRequired) {
       throw new MediaProviderError('invalid_input', 'prompt is required for video generation')
     }
     const model = ctx.defaultModel
-    const videoDefaults = ctx.mediaDefaults?.video
+    const videoParams = resolveVideoParams(input, ctx)
     const inputFiles = input.inputFiles ?? []
+    const isApimartUnifiedModel =
+      ctx.mediaProvider === 'apimart' && (model === 'wan3.0-video' || model === 'flux-3-video')
     const imageFiles = inputFiles.filter(
       (f) =>
         f.type === 'image' ||
         (f.type === 'file' && (!f.mimeType || f.mimeType.toLowerCase().startsWith('image/'))),
     )
+    const isWanFrameGeneration =
+      isApimartUnifiedModel &&
+      model === 'wan3.0-video' &&
+      capability === 'video.generate' &&
+      videoParams.generationType !== 'reference' &&
+      !inputFiles.some(
+        (file) =>
+          file.type === 'video' ||
+          file.type === 'audio' ||
+          (file.type === 'file' &&
+            (file.mimeType?.toLowerCase().startsWith('video/') ||
+              file.mimeType?.toLowerCase().startsWith('audio/'))),
+      ) &&
+      !videoParams.fileUrl &&
+      !videoParams.linkUrl
     const firstImage =
-      imageFiles.find((f) => f.role === 'first_frame') ??
-      (capability === 'video.image_to_video'
+      (capability === 'video.image_to_video' || isWanFrameGeneration
+        ? imageFiles.find((f) => f.role === 'first_frame')
+        : undefined) ??
+      (capability === 'video.image_to_video' || isWanFrameGeneration
         ? imageFiles.find((f) => f.role !== 'last_frame' && f.role !== 'reference')
         : undefined)
     const lastImage =
-      imageFiles.find((f) => f.role === 'last_frame') ??
-      (capability === 'video.image_to_video'
+      (capability === 'video.image_to_video' || isWanFrameGeneration
+        ? imageFiles.find((f) => f.role === 'last_frame')
+        : undefined) ??
+      (capability === 'video.image_to_video' || isWanFrameGeneration
         ? imageFiles.find((file) => file !== firstImage && file.role == null)
         : undefined)
     const explicitReferenceImages = imageFiles.filter((f) => f.role === 'reference')
@@ -584,19 +606,27 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     const referenceImages =
       capability === 'video.reference_to_video' && explicitReferenceImages.length === 0
         ? imageFiles
-        : [...explicitReferenceImages, ...unassignedFrameReferences]
+        : isApimartUnifiedModel && capability === 'video.generate'
+          ? imageFiles.filter((file) => file !== firstImage && file !== lastImage)
+          : [...explicitReferenceImages, ...unassignedFrameReferences]
     const videoFiles = inputFiles.filter(
       (f) =>
         f.type === 'video' || (f.type === 'file' && f.mimeType?.toLowerCase().startsWith('video/')),
     )
     const inputVideo =
       videoFiles.find((f) => f.role === 'input') ??
-      (capability === 'video.edit' || capability === 'video.extend' ? videoFiles[0] : undefined)
+      (capability === 'video.edit' ||
+      capability === 'video.extend' ||
+      (isApimartUnifiedModel && model === 'flux-3-video' && capability === 'video.generate')
+        ? videoFiles[0]
+        : undefined)
     const explicitReferenceVideos = videoFiles.filter((f) => f.role === 'reference')
     const referenceVideos =
       capability === 'video.reference_to_video' && explicitReferenceVideos.length === 0
         ? videoFiles
-        : explicitReferenceVideos
+        : isApimartUnifiedModel && model === 'wan3.0-video' && capability === 'video.generate'
+          ? videoFiles
+          : explicitReferenceVideos
     const explicitReferenceAudios = inputFiles.filter(
       (f) =>
         (f.type === 'audio' ||
@@ -610,7 +640,13 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
               f.type === 'audio' ||
               (f.type === 'file' && f.mimeType?.toLowerCase().startsWith('audio/')),
           )
-        : explicitReferenceAudios
+        : isApimartUnifiedModel && model === 'wan3.0-video' && capability === 'video.generate'
+          ? inputFiles.filter(
+              (f) =>
+                f.type === 'audio' ||
+                (f.type === 'file' && f.mimeType?.toLowerCase().startsWith('audio/')),
+            )
+          : explicitReferenceAudios
     const firstImageRef = firstImage ? mediaInputRef(firstImage, ctx.mediaProvider) : undefined
     const lastImageRef = lastImage ? mediaInputRef(lastImage, ctx.mediaProvider) : undefined
     const referenceImageRefs = referenceImages
@@ -628,39 +664,42 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     const referenceVideoRefs = rawVideoRefs.filter((ref): ref is string => Boolean(ref))
     const referenceAudioRefs = rawAudioRefs.filter((ref): ref is string => Boolean(ref))
     const isApimart = ctx.mediaProvider === 'apimart'
-    const aspectRatio =
-      input.modelParams?.aspectRatio ??
-      input.modelParams?.aspect_ratio ??
-      input.modelParams?.size ??
-      videoDefaults?.aspectRatio
+    const isFluxDraftFinalize =
+      model === 'flux-3-video' &&
+      capability === 'video.generate' &&
+      typeof videoParams.draftFromTaskId === 'string'
+    const aspectRatio = videoParams.aspectRatio ?? videoParams.size
     const aspectRatioField = ctx.mediaManifestCapability?.aliases?.aspectRatio ?? 'aspect_ratio'
-    const duration =
-      input.modelParams?.durationSeconds ??
-      input.modelParams?.duration ??
-      videoDefaults?.durationSeconds
-    const providerVideoInputFields = isApimart
-      ? buildApimartVideoInputFields({
-          modelId: model,
-          capability,
-          firstFrame: firstImageRef,
-          lastFrame: lastImageRef,
-          inputVideo: inputVideoRef,
-          referenceImages: referenceImageRefs,
-          referenceVideos: referenceVideoRefs,
-          referenceAudios: referenceAudioRefs,
-        })
-      : {
-          ...(firstImageRef
-            ? ctx.mediaProvider === 'xai'
-              ? { image: { url: firstImageRef } }
-              : { image: firstImageRef, first_frame_image: firstImageRef }
-            : {}),
-          ...(lastImageRef ? { last_frame_image: lastImageRef } : {}),
-          ...(referenceImageRefs.length > 0
-            ? { reference_images: referenceImageRefs.map((url) => ({ url })) }
-            : {}),
-          ...(inputVideoRef ? { video: inputVideoRef, video_url: inputVideoRef } : {}),
-        }
+    const duration = videoParams.durationSeconds
+    const providerVideoInputFields = isFluxDraftFinalize
+      ? {}
+      : isApimart
+        ? buildApimartVideoInputFields({
+            modelId: model,
+            capability,
+            firstFrame: firstImageRef,
+            lastFrame: lastImageRef,
+            inputVideo: inputVideoRef,
+            referenceImages: referenceImageRefs,
+            referenceVideos: referenceVideoRefs,
+            referenceAudios: referenceAudioRefs,
+            generationType:
+              typeof videoParams.generationType === 'string'
+                ? videoParams.generationType
+                : undefined,
+          })
+        : {
+            ...(firstImageRef
+              ? ctx.mediaProvider === 'xai'
+                ? { image: { url: firstImageRef } }
+                : { image: firstImageRef, first_frame_image: firstImageRef }
+              : {}),
+            ...(lastImageRef ? { last_frame_image: lastImageRef } : {}),
+            ...(referenceImageRefs.length > 0
+              ? { reference_images: referenceImageRefs.map((url) => ({ url })) }
+              : {}),
+            ...(inputVideoRef ? { video: inputVideoRef, video_url: inputVideoRef } : {}),
+          }
     const nativeModel = isApimart ? apimartNativeModelId(model) : model
     const hasImageInput = Boolean(firstImageRef || lastImageRef || referenceImageRefs.length > 0)
     const hasVideoInput = Boolean(inputVideoRef || referenceVideoRefs.length > 0)
@@ -677,7 +716,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         ))
     const passthroughParams = extraAllowed(
       ctx.extraParams,
-      input.modelParams,
+      videoParams,
       [
         'aspectRatio',
         'aspect_ratio',
@@ -701,25 +740,25 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ],
       ctx.mediaManifestCapability,
     )
+    const providerPassthroughParams = applyVideoParamAliases(
+      isFluxDraftFinalize
+        ? { draftFromTaskId: videoParams.draftFromTaskId, resolution: videoParams.resolution }
+        : passthroughParams,
+      ctx.mediaManifestCapability,
+    )
     const body: Record<string, unknown> = {
       model: nativeModel,
-      ...(prompt ? { prompt } : {}),
-      ...(sendAspectRatio ? { [aspectRatioField]: aspectRatio } : {}),
-      ...(sendDuration ? { duration } : {}),
-      ...(videoDefaults?.quality || input.modelParams?.quality
-        ? { quality: input.modelParams?.quality ?? videoDefaults?.quality }
+      ...(!isFluxDraftFinalize && prompt ? { prompt } : {}),
+      ...(sendAspectRatio && !isFluxDraftFinalize ? { [aspectRatioField]: aspectRatio } : {}),
+      ...(sendDuration && !isFluxDraftFinalize ? { duration } : {}),
+      ...(!isFluxDraftFinalize && videoParams.quality ? { quality: videoParams.quality } : {}),
+      ...(!isFluxDraftFinalize && videoParams.fps != null ? { fps: videoParams.fps } : {}),
+      ...(videoParams.resolution ? { resolution: videoParams.resolution } : {}),
+      ...(!isFluxDraftFinalize && videoParams.seed != null ? { seed: videoParams.seed } : {}),
+      ...(!isFluxDraftFinalize && videoParams.editStrength != null
+        ? { edit_strength: videoParams.editStrength }
         : {}),
-      ...(videoDefaults?.fps != null || input.modelParams?.fps != null
-        ? { fps: input.modelParams?.fps ?? videoDefaults?.fps }
-        : {}),
-      ...(videoDefaults?.resolution || input.modelParams?.resolution
-        ? { resolution: input.modelParams?.resolution ?? videoDefaults?.resolution }
-        : {}),
-      ...(input.modelParams?.seed != null ? { seed: input.modelParams.seed } : {}),
-      ...(input.modelParams?.editStrength != null
-        ? { edit_strength: input.modelParams.editStrength }
-        : {}),
-      ...passthroughParams,
+      ...providerPassthroughParams,
       ...providerVideoInputFields,
     }
     const url = `${baseEndpoint(ctx)}/videos/generations`
@@ -1125,7 +1164,57 @@ function shouldSendApimartAspectRatio(
     return false
   }
   if (capability === 'video.edit' && model === 'wan2.7-videoedit') return false
+  if (
+    capability === 'video.image_to_video' &&
+    (model === 'wan3.0-video' || model === 'flux-3-video' || model === 'MiniMax-H3')
+  ) {
+    return model === 'flux-3-video' ? true : false
+  }
+  if (capability === 'video.image_to_video' && model === 'doubao-seedance-2.5') return false
   return true
+}
+
+function resolveVideoParams(
+  input: MediaGenerateInput,
+  ctx: MediaProviderContext,
+): Record<string, unknown> {
+  const capability = ctx.mediaManifestCapability
+  const aliases = capability?.aliases ?? {}
+  const nativeToCanonical = new Map<string, string>([
+    ['aspect_ratio', 'aspectRatio'],
+    ['ratio', 'aspectRatio'],
+    ['duration', 'durationSeconds'],
+    ['generate_audio', 'generateAudio'],
+    ['output_format', 'outputFormat'],
+    ['draft_from_task_id', 'draftFromTaskId'],
+    ['safety_tolerance', 'safetyTolerance'],
+    ['generation_type', 'generationType'],
+    ['file_url', 'fileUrl'],
+    ['link_url', 'linkUrl'],
+  ])
+  for (const [canonical, native] of Object.entries(aliases)) {
+    nativeToCanonical.set(native, canonical)
+  }
+  const normalized: Record<string, unknown> = {
+    ...(ctx.mediaDefaults?.video ?? {}),
+    ...(capability?.defaults ?? {}),
+  }
+  for (const [key, value] of Object.entries(input.modelParams ?? {})) {
+    if (value !== undefined && value !== null) {
+      normalized[nativeToCanonical.get(key) ?? key] = value
+    }
+  }
+  return normalized
+}
+
+function applyVideoParamAliases(
+  params: Record<string, unknown>,
+  capability: MediaModelCapabilityManifest | undefined,
+): Record<string, unknown> {
+  const aliases = capability?.aliases ?? {}
+  return Object.fromEntries(
+    Object.entries(params).map(([key, value]) => [aliases[key] ?? key, value]),
+  )
 }
 
 /** 匹配比例型值（如 16:9、19.5:9、1:1）。xAI 用它把「size 误传比例」归一化到 aspect_ratio。 */

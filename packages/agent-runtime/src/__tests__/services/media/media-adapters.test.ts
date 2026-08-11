@@ -758,6 +758,95 @@ describe('MediaRouterService', () => {
     expect(captured.body.aspect_ratio).toBeUndefined()
   })
 
+  it('APIMart new video models serialize their documented request fields', async () => {
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const cases = [
+      {
+        modelId: 'wan3.0-video',
+        capability: 'video.generate' as const,
+        operation: 'text_to_video' as const,
+        prompt: '',
+        modelParams: { file_url: 'https://cdn/reference.pdf' },
+        expected: { file_url: 'https://cdn/reference.pdf' },
+      },
+      {
+        modelId: 'doubao-seedance-2.5',
+        capability: 'video.edit' as const,
+        operation: 'video_edit' as const,
+        prompt: 'edit this clip',
+        inputFiles: [{ type: 'video' as const, role: 'input' as const, url: 'https://cdn/in.mp4' }],
+        expected: { size: 'adaptive', duration: -1, video_urls: ['https://cdn/in.mp4'] },
+      },
+      {
+        modelId: 'flux-3-video',
+        capability: 'video.extend' as const,
+        operation: 'video_extend' as const,
+        prompt: 'continue the shot',
+        modelParams: { durationSeconds: 6 },
+        inputFiles: [{ type: 'video' as const, role: 'input' as const, url: 'https://cdn/in.mp4' }],
+        expected: { video_url: 'https://cdn/in.mp4', duration: 6 },
+      },
+      {
+        modelId: 'MiniMax-H3',
+        capability: 'video.image_to_video' as const,
+        operation: 'image_to_video' as const,
+        prompt: 'transition between frames',
+        inputFiles: [
+          { type: 'image' as const, role: 'first_frame' as const, url: 'https://cdn/first.png' },
+          { type: 'image' as const, role: 'last_frame' as const, url: 'https://cdn/last.png' },
+        ],
+        expected: {
+          first_frame_image: 'https://cdn/first.png',
+          last_frame_image: 'https://cdn/last.png',
+        },
+      },
+    ]
+
+    for (const testCase of cases) {
+      let postedBody: Record<string, unknown> = {}
+      const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+        (entry) => entry.providerKind === 'apimart' && entry.modelId === testCase.modelId,
+      )
+      expect(manifest, testCase.modelId).toBeDefined()
+      const fetchMock = makeFetch([
+        {
+          match: '/videos/generations',
+          respond: (init) => {
+            postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+            return { ok: true, status: 200, body: { video_url: 'https://cdn/result.mp4' } }
+          },
+        },
+        {
+          match: 'https://cdn/result.mp4',
+          respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+        },
+      ])
+
+      await router.invoke(
+        {
+          operation: testCase.operation,
+          capability: testCase.capability,
+          outputDir: tmpDir,
+          prompt: testCase.prompt,
+          ...(testCase.inputFiles ? { inputFiles: testCase.inputFiles } : {}),
+          ...(testCase.modelParams ? { modelParams: testCase.modelParams } : {}),
+        },
+        {
+          providers: [
+            makeProvider({
+              defaultModel: testCase.modelId,
+              mediaCapabilities: [testCase.capability],
+              mediaModelManifests: manifest ? [manifest] : [],
+            }),
+          ],
+          fetch: fetchMock,
+        },
+      )
+
+      expect(postedBody).toMatchObject({ model: testCase.modelId, ...testCase.expected })
+    }
+  })
+
   it('APIMart reference-to-video sends every role-tagged media input in provider arrays', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])

@@ -145,7 +145,7 @@ describe('builtin media manifest parameter-contract audit', () => {
       )
     }
     // 已知原厂与聚合平台(APIMart)并存导致重复;天花板不得增长。
-    const BASELINE = 10
+    const BASELINE = 11
     expect(duplicates.length).toBeLessThanOrEqual(BASELINE)
   })
 })

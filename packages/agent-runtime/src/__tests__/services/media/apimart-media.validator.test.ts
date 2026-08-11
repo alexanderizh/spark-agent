@@ -56,18 +56,12 @@ describe('APIMart media request validation', () => {
     const accepted = validate({
       modelId: 'wan2.7-r2v',
       capability: 'video.reference_to_video',
-      inputFiles: [
-        ...images(3),
-        ...videos(2),
-      ],
+      inputFiles: [...images(3), ...videos(2)],
     })
     const rejected = validate({
       modelId: 'wan2.7-r2v',
       capability: 'video.reference_to_video',
-      inputFiles: [
-        ...images(3),
-        ...videos(3),
-      ],
+      inputFiles: [...images(3), ...videos(3)],
     })
 
     expect(accepted.blockingIssues).toEqual([])
@@ -96,9 +90,9 @@ describe('APIMart media request validation', () => {
       modelParams: { durationSeconds: 6 },
     })
 
-    expect(invalidImages.blockingIssues.some((issue) => issue.message.includes('1 张或 3 张'))).toBe(
-      true,
-    )
+    expect(
+      invalidImages.blockingIssues.some((issue) => issue.message.includes('1 张或 3 张')),
+    ).toBe(true)
     expect(validImages.blockingIssues).toEqual([])
     expect(invalidVideo.blockingIssues.some((issue) => issue.message.includes('不能同时传'))).toBe(
       true,
@@ -145,10 +139,7 @@ describe('APIMart media request validation', () => {
     const pixverseTransition = validate({
       modelId: 'pixverse-v6',
       capability: 'video.image_to_video',
-      inputFiles: [
-        ...images(1, 'first_frame'),
-        ...images(1, 'last_frame'),
-      ],
+      inputFiles: [...images(1, 'first_frame'), ...images(1, 'last_frame')],
       modelParams: { durationSeconds: 6 },
     })
 
@@ -199,28 +190,19 @@ describe('APIMart media request validation', () => {
     const standardTail = validate({
       modelId: 'kling-v2-6',
       capability: 'video.image_to_video',
-      inputFiles: [
-        ...images(1, 'first_frame'),
-        ...images(1, 'last_frame'),
-      ],
+      inputFiles: [...images(1, 'first_frame'), ...images(1, 'last_frame')],
       modelParams: { mode: 'std', audio: false },
     })
     const professionalTail = validate({
       modelId: 'kling-v2-6',
       capability: 'video.image_to_video',
-      inputFiles: [
-        ...images(1, 'first_frame'),
-        ...images(1, 'last_frame'),
-      ],
+      inputFiles: [...images(1, 'first_frame'), ...images(1, 'last_frame')],
       modelParams: { mode: 'pro', audio: false },
     })
     const tailWithAudio = validate({
       modelId: 'kling-v2-6',
       capability: 'video.image_to_video',
-      inputFiles: [
-        ...images(1, 'first_frame'),
-        ...images(1, 'last_frame'),
-      ],
+      inputFiles: [...images(1, 'first_frame'), ...images(1, 'last_frame')],
       modelParams: { mode: 'pro', audio: true },
     })
 
@@ -228,9 +210,9 @@ describe('APIMart media request validation', () => {
       true,
     )
     expect(professionalTail.blockingIssues).toEqual([])
-    expect(tailWithAudio.blockingIssues.some((issue) => issue.message.includes('尾帧与音频互斥'))).toBe(
-      true,
-    )
+    expect(
+      tailWithAudio.blockingIssues.some((issue) => issue.message.includes('尾帧与音频互斥')),
+    ).toBe(true)
   })
 
   it('enforces Wan 2.5 480p ratio and required audio setting', () => {
@@ -255,6 +237,103 @@ describe('APIMart media request validation', () => {
     expect(invalidAudio.blockingIssues.some((issue) => issue.message.includes('audio=true'))).toBe(
       true,
     )
+  })
+
+  it('accepts Wan 3.0 media-only generation and rejects conflicting document links', () => {
+    const mediaOnly = validate({
+      modelId: 'wan3.0-video',
+      capability: 'video.generate',
+      prompt: '',
+      inputFiles: images(1, 'reference'),
+    })
+    const conflictingLinks = validate({
+      modelId: 'wan3.0-video',
+      capability: 'video.generate',
+      prompt: '',
+      modelParams: {
+        file_url: 'https://cdn/reference.pdf',
+        link_url: 'https://example.com/article',
+      },
+    })
+
+    expect(mediaOnly.blockingIssues).toEqual([])
+    expect(
+      conflictingLinks.blockingIssues.some((issue) => issue.code === 'conflicting_params'),
+    ).toBe(true)
+  })
+
+  it('rejects Wan 3.0 frame mode mixed with reference media', () => {
+    const result = validate({
+      modelId: 'wan3.0-video',
+      capability: 'video.generate',
+      modelParams: { generation_type: 'frame' },
+      inputFiles: [
+        ...images(1, 'first_frame'),
+        { type: 'video', role: 'reference', url: 'https://cdn/reference.mp4' },
+      ],
+    })
+
+    expect(result.blockingIssues.some((issue) => issue.code === 'conflicting_params')).toBe(true)
+  })
+
+  it('validates FLUX 3 draft and explicit continuation modes', () => {
+    const draft = validate({
+      modelId: 'flux-3-video',
+      capability: 'video.generate',
+      modelParams: { draft: true, resolution: 'fhd' },
+    })
+    const continuation = validate({
+      modelId: 'flux-3-video',
+      capability: 'video.generate',
+      modelParams: { mode: 'v2v' },
+      inputFiles: videos(1),
+    })
+
+    expect(draft.blockingIssues.some((issue) => issue.message.includes('草稿模式'))).toBe(true)
+    expect(continuation.blockingIssues).toEqual([])
+  })
+
+  it('rejects unknown FLUX 3 generation modes', () => {
+    const result = validate({
+      modelId: 'flux-3-video',
+      capability: 'video.generate',
+      modelParams: { mode: 'unknown' },
+    })
+
+    expect(result.blockingIssues.some((issue) => issue.code === 'invalid_enum')).toBe(true)
+  })
+
+  it('rejects mixed frame and reference assets for MiniMax-H3', () => {
+    const result = validate({
+      modelId: 'MiniMax-H3',
+      capability: 'video.image_to_video',
+      inputFiles: [
+        ...images(1, 'first_frame'),
+        { type: 'video', role: 'reference', url: 'https://cdn/reference.mp4' },
+      ],
+    })
+
+    expect(result.blockingIssues.some((issue) => issue.code === 'conflicting_params')).toBe(true)
+  })
+
+  it('enforces Seedance 2.5 edit and extend constraints', () => {
+    const accepted = validate({
+      modelId: 'doubao-seedance-2.5',
+      capability: 'video.edit',
+      inputFiles: videos(1),
+      modelParams: { aspectRatio: 'adaptive', durationSeconds: -1 },
+    })
+    const rejected = validate({
+      modelId: 'doubao-seedance-2.5',
+      capability: 'video.extend',
+      inputFiles: videos(1),
+      modelParams: { aspectRatio: '16:9', durationSeconds: 5 },
+    })
+
+    expect(accepted.blockingIssues).toEqual([])
+    expect(
+      rejected.blockingIssues.filter((issue) => issue.code === 'conflicting_params'),
+    ).toHaveLength(2)
   })
 })
 

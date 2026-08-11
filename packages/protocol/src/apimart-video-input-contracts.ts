@@ -15,6 +15,7 @@ type ApimartVideoCapabilityId =
   | 'video.image_to_video'
   | 'video.reference_to_video'
   | 'video.edit'
+  | 'video.extend'
 
 export interface ApimartVideoInputContract {
   id: ApimartVideoCapabilityId
@@ -44,10 +45,12 @@ interface EditInputProfile {
 }
 
 interface ApimartVideoInputProfile {
-  frameImages?: 1 | 2
+  generatePromptOptional?: boolean
+  frameImages?: 1 | 2 | 10
   framePromptOptional?: boolean
   reference?: ReferenceInputProfile
   edit?: EditInputProfile
+  extend?: EditInputProfile
 }
 
 const IMAGE_MIME = ['image/png', 'image/jpeg', 'image/webp']
@@ -108,6 +111,27 @@ const APIMART_VIDEO_INPUT_PROFILES: Readonly<Record<string, ApimartVideoInputPro
   'wan2.7': { frameImages: 2, framePromptOptional: true },
   'wan2.7-r2v': { reference: { maxImages: 5, maxVideos: 5 } },
   'wan2.7-videoedit': { edit: { maxImages: 4, maxVideos: 1, promptOptional: true } },
+  'wan3.0-video': {
+    generatePromptOptional: true,
+    frameImages: 2,
+    framePromptOptional: true,
+    reference: { maxImages: 10, maxVideos: 5, maxAudios: 5, promptOptional: true },
+  },
+  'doubao-seedance-2.5': {
+    frameImages: 2,
+    reference: { maxImages: 30, maxVideos: 10, maxAudios: 10 },
+    edit: { maxImages: 30, maxVideos: 1 },
+    extend: { maxImages: 30, maxVideos: 1 },
+  },
+  'flux-3-video': {
+    generatePromptOptional: true,
+    frameImages: 10,
+    extend: { maxVideos: 1 },
+  },
+  'MiniMax-H3': {
+    frameImages: 2,
+    reference: { maxImages: 9, maxVideos: 3, maxAudios: 3 },
+  },
   'kling-v2-6': { frameImages: 2 },
   'kling-v3': { frameImages: 2 },
   'kling-v3-omni': {
@@ -144,19 +168,18 @@ export function apimartVideoInputContracts(modelId: string): ApimartVideoInputCo
     {
       id: 'video.generate',
       label: '文生视频',
-      input: { required: ['prompt'] },
+      input: { required: profile.generatePromptOptional ? [] : ['prompt'] },
     },
   ]
 
   if (profile.frameImages) {
-    contracts.push(
-      frameContract(profile.frameImages, profile.framePromptOptional === true),
-    )
+    contracts.push(frameContract(profile.frameImages, profile.framePromptOptional === true))
   } else if (profile.reference?.maxImages) {
     contracts.push(referenceImageToVideoContract(profile.reference))
   }
   if (profile.reference) contracts.push(referenceContract(profile.reference))
-  if (profile.edit) contracts.push(editContract(profile.edit))
+  if (profile.edit) contracts.push(editContract(profile.edit, 'video.edit'))
+  if (profile.extend) contracts.push(editContract(profile.extend, 'video.extend'))
   return contracts
 }
 
@@ -170,6 +193,18 @@ export function apimartVideoCapabilityDefaults(
     delete next.durationSeconds
     delete next.duration
   }
+  if (modelId === 'doubao-seedance-2.5') {
+    if (capabilityId === 'video.image_to_video') {
+      next.aspectRatio = 'adaptive'
+    }
+    if (capabilityId === 'video.edit' || capabilityId === 'video.extend') {
+      next.aspectRatio = 'adaptive'
+      next.durationSeconds = -1
+    }
+  }
+  if (modelId === 'MiniMax-H3' && capabilityId !== 'video.generate') {
+    next.aspectRatio = 'adaptive'
+  }
   if (modelId === 'happyhorse-1.0' && capabilityId !== 'video.edit') {
     delete next.audio_setting
   }
@@ -177,14 +212,19 @@ export function apimartVideoCapabilityDefaults(
 }
 
 function frameContract(
-  maxFrameImages: 1 | 2,
+  maxFrameImages: 1 | 2 | 10,
   promptOptional = false,
 ): ApimartVideoInputContract {
   return {
     id: 'video.image_to_video',
-    label: maxFrameImages === 2 ? '首帧 / 首尾帧生视频' : '首帧生视频',
+    label:
+      maxFrameImages === 10
+        ? '关键帧生视频'
+        : maxFrameImages === 2
+          ? '首帧 / 首尾帧生视频'
+          : '首帧生视频',
     input: {
-      required: [...(promptOptional ? [] : ['prompt'] as const), 'image'],
+      required: [...(promptOptional ? [] : (['prompt'] as const)), 'image'],
       // Reference-image limits belong to video.reference_to_video. Keeping
       // this value frame-specific prevents a model with (for example) 15
       // reference images from advertising 15 first/last-frame inputs.
@@ -194,16 +234,15 @@ function frameContract(
     rolePolicy: {
       imageRoles: [
         'first_frame',
-        ...(maxFrameImages === 2 ? (['last_frame'] as const) : []),
+        ...(maxFrameImages >= 2 ? (['last_frame'] as const) : []),
+        ...(maxFrameImages === 10 ? (['reference_image'] as const) : []),
       ],
       defaultRoleAssignment: 'first_then_last_then_reference',
     },
   }
 }
 
-function referenceImageToVideoContract(
-  profile: ReferenceInputProfile,
-): ApimartVideoInputContract {
+function referenceImageToVideoContract(profile: ReferenceInputProfile): ApimartVideoInputContract {
   return {
     id: 'video.image_to_video',
     label: '参考图生视频',
@@ -244,12 +283,15 @@ function referenceContract(profile: ReferenceInputProfile): ApimartVideoInputCon
   }
 }
 
-function editContract(profile: EditInputProfile): ApimartVideoInputContract {
+function editContract(
+  profile: EditInputProfile,
+  id: 'video.edit' | 'video.extend',
+): ApimartVideoInputContract {
   return {
-    id: 'video.edit',
-    label: '视频编辑',
+    id,
+    label: id === 'video.extend' ? '视频扩展' : '视频编辑',
     input: {
-      required: [...(profile.promptOptional ? [] : ['prompt'] as const), 'video'],
+      required: [...(profile.promptOptional ? [] : (['prompt'] as const)), 'video'],
       maxVideos: profile.maxVideos,
       ...(profile.maxImages != null ? { maxImages: profile.maxImages } : {}),
       acceptedMimeTypes: [...VIDEO_MIME, ...(profile.maxImages != null ? IMAGE_MIME : [])],
