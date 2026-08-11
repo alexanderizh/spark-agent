@@ -11,6 +11,7 @@ const TOOL_NAME_MAPPING: Readonly<Record<string, string>> = {
   WebFetch: 'web_fetch',
   WebSearch: 'web_search',
   Agent: 'subagent',
+  Task: 'subagent',
   ExitPlanMode: 'exit_plan_mode',
   EnterPlanMode: 'enter_plan_mode',
   AskUserQuestion: 'ask_user_question',

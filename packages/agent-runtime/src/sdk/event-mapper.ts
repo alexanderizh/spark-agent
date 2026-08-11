@@ -46,13 +46,39 @@ interface EventContext {
   subagentSegments?: Map<string, SegmentState>
   /** Running SDK subagents used to attribute provider signals that omit parent_tool_use_id. */
   activeSubagents?: Map<string, { name: string }>
+  /** Prevent duplicate lifecycle events when SDK task and Agent messages overlap. */
+  startedSubagentToolCallIds?: Set<string>
+  /** SDK Agent tool ids that must resolve to an already-emitted stable card id. */
+  subagentToolCallAliases?: Map<string, string>
+  /** Agent tool calls that have started but are not yet linked to an SDK task id. */
+  pendingSubagentLaunches?: Map<string, SubagentLaunchIdentity>
+  /** Completed Agent tool calls that may still receive a late SDK task identity. */
+  completedSubagentLaunches?: Map<string, SubagentLaunchIdentity>
+  /** Completion sources already emitted for a stable subagent card identity. */
+  subagentCompletions?: Map<string, SubagentCompletionState>
 }
 
 interface SubagentTaskState {
   toolCallId: string
+  sdkToolCallId?: string
   name: string
   description: string
+  task: string
+  isSubagent: boolean
   skipTranscript: boolean
+  terminal: boolean
+}
+
+interface SubagentLaunchIdentity {
+  toolCallId: string
+  name: string
+  description: string
+  task: string
+}
+
+interface SubagentCompletionState {
+  notificationEmitted: boolean
+  resultEmitted: boolean
 }
 
 interface StructuredAgentCompletedResult {
@@ -113,6 +139,7 @@ function closeSegments(ctx: EventContext): void {
 }
 
 function getSubagentSegmentState(ctx: EventContext, toolCallId: string): SegmentState {
+  toolCallId = canonicalSubagentToolCallId(ctx, toolCallId)
   const states = (ctx.subagentSegments ??= new Map())
   let state = states.get(toolCallId)
   if (state == null) {
@@ -134,20 +161,217 @@ function currentSubagentSegment(
 }
 
 function closeSubagentSegments(ctx: EventContext, toolCallId: string): void {
-  ctx.subagentSegments?.delete(toolCallId)
+  ctx.subagentSegments?.delete(canonicalSubagentToolCallId(ctx, toolCallId))
 }
 
 function getSubagentTasks(ctx: EventContext): Map<string, SubagentTaskState> {
   return (ctx.subagentTasksById ??= new Map())
 }
 
+function canonicalSubagentToolCallId(ctx: EventContext, toolCallId: string): string {
+  return ctx.subagentToolCallAliases?.get(toolCallId) ?? toolCallId
+}
+
+function correlateSubagentMessageToolCallId(ctx: EventContext, toolCallId: string): string {
+  const canonical = canonicalSubagentToolCallId(ctx, toolCallId)
+  if (canonical !== toolCallId || findSubagentTask(ctx, canonical) != null) return canonical
+  const active = [...(ctx.activeSubagents?.keys() ?? [])]
+  if (active.length === 1) {
+    const stableToolCallId = active[0]
+    if (stableToolCallId == null) return canonical
+    const task = findSubagentTask(ctx, stableToolCallId)
+    if (task == null || task.state.sdkToolCallId != null) return canonical
+    task.state.sdkToolCallId = toolCallId
+    linkSubagentToolCallId(ctx, toolCallId, stableToolCallId)
+    return stableToolCallId
+  }
+  if (active.length > 1) return canonical
+
+  const hiddenCandidates = [...getSubagentTasks(ctx).values()].filter(
+    (task) => task.sdkToolCallId == null && (!task.isSubagent || task.skipTranscript),
+  )
+  if (hiddenCandidates.length !== 1) return canonical
+  const hiddenTask = hiddenCandidates[0]
+  if (hiddenTask == null) return canonical
+  hiddenTask.sdkToolCallId = toolCallId
+  linkSubagentToolCallId(ctx, toolCallId, hiddenTask.toolCallId)
+  return hiddenTask.toolCallId
+}
+
+function linkSubagentToolCallId(
+  ctx: EventContext,
+  sdkToolCallId: string,
+  stableToolCallId: string,
+): void {
+  if (sdkToolCallId === stableToolCallId) return
+  const aliases = (ctx.subagentToolCallAliases ??= new Map())
+  aliases.set(sdkToolCallId, stableToolCallId)
+  const sdkCompletion = ctx.subagentCompletions?.get(sdkToolCallId)
+  if (sdkCompletion != null) {
+    const stableCompletion = ctx.subagentCompletions?.get(stableToolCallId)
+    ctx.subagentCompletions?.set(stableToolCallId, {
+      notificationEmitted:
+        sdkCompletion.notificationEmitted || stableCompletion?.notificationEmitted === true,
+      resultEmitted: sdkCompletion.resultEmitted || stableCompletion?.resultEmitted === true,
+    })
+    ctx.subagentCompletions?.delete(sdkToolCallId)
+  }
+}
+
 function registerActiveSubagent(ctx: EventContext, toolCallId: string, name: string): void {
+  toolCallId = canonicalSubagentToolCallId(ctx, toolCallId)
   const active = (ctx.activeSubagents ??= new Map())
   active.set(toolCallId, { name })
 }
 
 function unregisterActiveSubagent(ctx: EventContext, toolCallId: string): void {
-  ctx.activeSubagents?.delete(toolCallId)
+  ctx.activeSubagents?.delete(canonicalSubagentToolCallId(ctx, toolCallId))
+}
+
+function markSubagentStarted(ctx: EventContext, toolCallId: string): boolean {
+  toolCallId = canonicalSubagentToolCallId(ctx, toolCallId)
+  const started = (ctx.startedSubagentToolCallIds ??= new Set())
+  if (started.has(toolCallId)) return false
+  started.add(toolCallId)
+  return true
+}
+
+function getSubagentCompletionState(
+  ctx: EventContext,
+  toolCallId: string,
+): SubagentCompletionState {
+  toolCallId = canonicalSubagentToolCallId(ctx, toolCallId)
+  const completions = (ctx.subagentCompletions ??= new Map())
+  let state = completions.get(toolCallId)
+  if (state == null) {
+    state = { notificationEmitted: false, resultEmitted: false }
+    completions.set(toolCallId, state)
+  }
+  return state
+}
+
+function hasSubagentResultCompleted(ctx: EventContext, toolCallId: string): boolean {
+  return (
+    ctx.subagentCompletions?.get(canonicalSubagentToolCallId(ctx, toolCallId))?.resultEmitted ===
+    true
+  )
+}
+
+function hasSubagentCompleted(ctx: EventContext, toolCallId: string): boolean {
+  const completion = ctx.subagentCompletions?.get(canonicalSubagentToolCallId(ctx, toolCallId))
+  return completion?.notificationEmitted === true || completion?.resultEmitted === true
+}
+
+function suppressSubagentTranscript(
+  ctx: EventContext,
+  toolCallId: string,
+  task?: SubagentTaskState,
+): boolean {
+  return (
+    (task != null && (!task.isSubagent || task.skipTranscript || task.terminal)) ||
+    hasSubagentResultCompleted(ctx, toolCallId)
+  )
+}
+
+function isSubagentTask(taskType?: string, subagentType?: string): boolean {
+  const normalizedTaskType = taskType?.trim().toLowerCase()
+  return (
+    normalizedTaskType === 'agent' ||
+    normalizedTaskType === 'remote_agent' ||
+    Boolean(subagentType?.trim())
+  )
+}
+
+function normalizeLaunchField(value: string): string {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+function launchIdentitiesMatch(
+  candidate: SubagentLaunchIdentity,
+  expected: Omit<SubagentLaunchIdentity, 'toolCallId'>,
+): boolean {
+  const candidateName = normalizeLaunchField(candidate.name)
+  const expectedName = normalizeLaunchField(expected.name)
+  if (candidateName !== 'Subagent' && expectedName !== 'Subagent' && candidateName !== expectedName)
+    return false
+
+  const candidateTask = normalizeLaunchField(candidate.task)
+  const expectedTask = normalizeLaunchField(expected.task)
+  const candidateDescription = normalizeLaunchField(candidate.description)
+  const expectedDescription = normalizeLaunchField(expected.description)
+  const candidateHasExplicitTask =
+    candidateTask.length > 0 && candidateTask !== candidateDescription
+  const expectedHasExplicitTask = expectedTask.length > 0 && expectedTask !== expectedDescription
+  if (candidateHasExplicitTask && expectedHasExplicitTask) return candidateTask === expectedTask
+  return candidateDescription.length > 0 && candidateDescription === expectedDescription
+}
+
+function takeMatchingPendingSubagentLaunch(
+  ctx: EventContext,
+  expected: Omit<SubagentLaunchIdentity, 'toolCallId'>,
+): SubagentLaunchIdentity | undefined {
+  const pending = ctx.pendingSubagentLaunches
+  if (pending == null) return undefined
+  const matches = [...pending.values()].filter((candidate) =>
+    launchIdentitiesMatch(candidate, expected),
+  )
+  if (matches.length !== 1) return undefined
+  const match = matches[0]
+  if (match == null) return undefined
+  pending.delete(match.toolCallId)
+  return match
+}
+
+function takeMatchingCompletedSubagentLaunch(
+  ctx: EventContext,
+  expected: Omit<SubagentLaunchIdentity, 'toolCallId'>,
+): SubagentLaunchIdentity | undefined {
+  const completed = ctx.completedSubagentLaunches
+  if (completed == null) return undefined
+  const matches = [...completed.values()].filter((candidate) =>
+    launchIdentitiesMatch(candidate, expected),
+  )
+  if (matches.length !== 1) return undefined
+  const match = matches[0]
+  if (match == null) return undefined
+  completed.delete(match.toolCallId)
+  return match
+}
+
+function rememberCompletedSubagentLaunch(ctx: EventContext, toolCallId: string): void {
+  const launch = ctx.pendingSubagentLaunches?.get(toolCallId)
+  if (launch == null) return
+  ctx.pendingSubagentLaunches?.delete(toolCallId)
+  const completed = (ctx.completedSubagentLaunches ??= new Map())
+  completed.set(toolCallId, launch)
+}
+
+function findMatchingUnlinkedSubagentTask(
+  ctx: EventContext,
+  expected: Omit<SubagentLaunchIdentity, 'toolCallId'>,
+  includeHidden = false,
+): { taskId: string; state: SubagentTaskState } | undefined {
+  const matches = [...getSubagentTasks(ctx)].filter(
+    ([, task]) =>
+      task.isSubagent &&
+      (includeHidden || !task.skipTranscript) &&
+      !task.terminal &&
+      task.sdkToolCallId == null &&
+      launchIdentitiesMatch(
+        {
+          toolCallId: task.toolCallId,
+          name: task.name,
+          description: task.description,
+          task: task.task,
+        },
+        expected,
+      ),
+  )
+  if (matches.length !== 1) return undefined
+  const match = matches[0]
+  if (match == null) return undefined
+  const [taskId, state] = match
+  return { taskId, state }
 }
 
 function subagentEventOrigin(
@@ -155,6 +379,7 @@ function subagentEventOrigin(
   toolCallId: string,
   fallbackName?: string,
 ): RuntimeEventOrigin {
+  toolCallId = canonicalSubagentToolCallId(ctx, toolCallId)
   return {
     kind: 'subagent',
     toolCallId,
@@ -173,7 +398,9 @@ function providerSignalOrigin(ctx: EventContext, agentId?: string): RuntimeEvent
   }
   const active = [...(ctx.activeSubagents?.entries() ?? [])]
   if (active.length === 1) {
-    const [toolCallId, subagent] = active[0]!
+    const entry = active[0]
+    if (entry == null) return { kind: 'runtime', name: 'Claude SDK' }
+    const [toolCallId, subagent] = entry
     return { kind: 'subagent', toolCallId, name: subagent.name }
   }
   return {
@@ -187,14 +414,78 @@ function subagentTaskIdentity(
   taskId: string,
   toolUseId?: string,
   fallback?: Partial<SubagentTaskState>,
+  claimPendingLaunch = false,
 ): SubagentTaskState {
   const tasks = getSubagentTasks(ctx)
   const previous = tasks.get(taskId)
+  const exactPendingLaunch =
+    previous == null && toolUseId != null ? ctx.pendingSubagentLaunches?.get(toolUseId) : undefined
+  const pendingLaunch =
+    exactPendingLaunch ??
+    (previous == null &&
+    toolUseId == null &&
+    claimPendingLaunch &&
+    fallback?.isSubagent === true &&
+    fallback.name != null &&
+    fallback.description != null &&
+    fallback.task != null
+      ? takeMatchingPendingSubagentLaunch(ctx, {
+          name: fallback.name,
+          description: fallback.description,
+          task: fallback.task,
+        })
+      : undefined)
+  const completedLaunch =
+    pendingLaunch == null &&
+    previous == null &&
+    toolUseId == null &&
+    claimPendingLaunch &&
+    fallback?.isSubagent === true &&
+    fallback.name != null &&
+    fallback.description != null &&
+    fallback.task != null
+      ? takeMatchingCompletedSubagentLaunch(ctx, {
+          name: fallback.name,
+          description: fallback.description,
+          task: fallback.task,
+        })
+      : undefined
+  const stableToolCallId =
+    previous?.toolCallId ??
+    pendingLaunch?.toolCallId ??
+    completedLaunch?.toolCallId ??
+    toolUseId ??
+    `claude-task:${taskId}`
+  if (toolUseId != null) linkSubagentToolCallId(ctx, toolUseId, stableToolCallId)
+  if (toolUseId != null) ctx.pendingSubagentLaunches?.delete(toolUseId)
+  if (toolUseId != null) ctx.completedSubagentLaunches?.delete(toolUseId)
+  const fallbackName = fallback?.name
+  const fallbackTask = fallback?.task
+  const fallbackDescription = fallback?.description
+  const sdkToolCallId =
+    toolUseId ?? pendingLaunch?.toolCallId ?? completedLaunch?.toolCallId ?? previous?.sdkToolCallId
   const next = {
-    toolCallId: toolUseId ?? previous?.toolCallId ?? `claude-task:${taskId}`,
-    name: fallback?.name ?? previous?.name ?? 'Subagent',
-    description: fallback?.description ?? previous?.description ?? 'Background task',
-    skipTranscript: fallback?.skipTranscript ?? previous?.skipTranscript ?? false,
+    toolCallId: stableToolCallId,
+    ...(sdkToolCallId != null ? { sdkToolCallId } : {}),
+    name:
+      pendingLaunch != null && (fallbackName == null || fallbackName === 'Subagent')
+        ? pendingLaunch.name
+        : (fallbackName ?? previous?.name ?? 'Subagent'),
+    description:
+      fallbackDescription ??
+      pendingLaunch?.description ??
+      previous?.description ??
+      'Background task',
+    task:
+      pendingLaunch != null && (fallbackTask == null || fallbackTask === fallbackDescription)
+        ? pendingLaunch.task
+        : (fallbackTask ?? previous?.task ?? fallbackDescription ?? 'Background task'),
+    isSubagent: fallback?.isSubagent === true || previous?.isSubagent === true,
+    skipTranscript: fallback?.skipTranscript === true || previous?.skipTranscript === true,
+    terminal:
+      fallback?.terminal === true ||
+      previous?.terminal === true ||
+      hasSubagentCompleted(ctx, stableToolCallId),
   }
   tasks.set(taskId, next)
   return next
@@ -204,6 +495,7 @@ function findSubagentTask(
   ctx: EventContext,
   toolCallId: string,
 ): { taskId: string; state: SubagentTaskState } | undefined {
+  toolCallId = canonicalSubagentToolCallId(ctx, toolCallId)
   for (const [taskId, task] of getSubagentTasks(ctx)) {
     if (task.toolCallId === toolCallId) return { taskId, state: task }
   }
@@ -260,13 +552,29 @@ export function mapSDKMessageToEvents(message: SDKMessage, ctx: EventContext): A
 
 function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[] {
   if (msg.subtype === 'task_started') {
-    const task = subagentTaskIdentity(ctx, msg.task_id, msg.tool_use_id, {
-      name: msg.subagent_type ?? msg.workflow_name ?? msg.task_type ?? 'Subagent',
-      description: msg.description,
-      skipTranscript: msg.skip_transcript === true,
-    })
+    const isSubagent = isSubagentTask(msg.task_type, msg.subagent_type)
+    const task = subagentTaskIdentity(
+      ctx,
+      msg.task_id,
+      msg.tool_use_id,
+      {
+        name: msg.subagent_type ?? 'Subagent',
+        description: msg.description,
+        task: msg.prompt ?? msg.description,
+        isSubagent,
+        skipTranscript: msg.skip_transcript === true,
+      },
+      true,
+    )
+    if (
+      !task.isSubagent ||
+      task.skipTranscript ||
+      task.terminal ||
+      hasSubagentCompleted(ctx, task.toolCallId)
+    )
+      return []
     registerActiveSubagent(ctx, task.toolCallId, task.name)
-    if (task.skipTranscript) return []
+    if (!markSubagentStarted(ctx, task.toolCallId)) return []
     return [
       {
         ...baseEvent(ctx),
@@ -284,10 +592,31 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
     const task = subagentTaskIdentity(ctx, msg.task_id, msg.tool_use_id, {
       ...(msg.subagent_type != null ? { name: msg.subagent_type } : {}),
       description: msg.description,
+      ...(msg.subagent_type != null ? { isSubagent: true } : {}),
     })
+    if (
+      !task.isSubagent ||
+      task.skipTranscript ||
+      task.terminal ||
+      hasSubagentCompleted(ctx, task.toolCallId)
+    )
+      return []
     registerActiveSubagent(ctx, task.toolCallId, task.name)
-    if (task.skipTranscript) return []
+    const started = markSubagentStarted(ctx, task.toolCallId)
+      ? [
+          {
+            ...baseEvent(ctx),
+            type: 'subagent_started' as const,
+            toolCallId: task.toolCallId,
+            taskId: msg.task_id,
+            name: task.name,
+            role: task.description,
+            task: task.task,
+          },
+        ]
+      : []
     return [
+      ...started,
       {
         ...baseEvent(ctx),
         type: 'subagent_progress',
@@ -308,13 +637,19 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
     const task = subagentTaskIdentity(ctx, msg.task_id, undefined, {
       ...(msg.patch.description != null ? { description: msg.patch.description } : {}),
     })
+    if (task.terminal || hasSubagentCompleted(ctx, task.toolCallId)) return []
     const status = msg.patch.status === 'killed' ? 'stopped' : msg.patch.status
     if (status === 'completed' || status === 'failed' || status === 'stopped') {
+      task.terminal = true
       unregisterActiveSubagent(ctx, task.toolCallId)
-    } else if (status === 'pending' || status === 'running' || status === 'paused') {
+    } else if (
+      task.isSubagent &&
+      !task.skipTranscript &&
+      (status === 'pending' || status === 'running' || status === 'paused')
+    ) {
       registerActiveSubagent(ctx, task.toolCallId, task.name)
     }
-    if (task.skipTranscript) return []
+    if (!task.isSubagent || task.skipTranscript) return []
     return [
       {
         ...baseEvent(ctx),
@@ -332,8 +667,12 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
     const task = subagentTaskIdentity(ctx, msg.task_id, msg.tool_use_id, {
       skipTranscript: msg.skip_transcript === true,
     })
+    task.terminal = true
     unregisterActiveSubagent(ctx, task.toolCallId)
-    if (task.skipTranscript) return []
+    if (!task.isSubagent || task.skipTranscript) return []
+    const completion = getSubagentCompletionState(ctx, task.toolCallId)
+    if (completion.notificationEmitted || completion.resultEmitted) return []
+    completion.notificationEmitted = true
     return [
       {
         ...baseEvent(ctx),
@@ -628,14 +967,24 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
   const events: AgentEvent[] = []
   const content = msg.message.content
   const isSubagentMessage = msg.parent_tool_use_id != null
+  const parentToolUseId =
+    msg.parent_tool_use_id != null
+      ? correlateSubagentMessageToolCallId(ctx, msg.parent_tool_use_id)
+      : undefined
+  const subagentTask = parentToolUseId != null ? findSubagentTask(ctx, parentToolUseId) : undefined
+  if (
+    parentToolUseId != null &&
+    suppressSubagentTranscript(ctx, parentToolUseId, subagentTask?.state)
+  )
+    return []
 
   // Subagent assistant messages carry parent_tool_use_id pointing to the
   // Agent tool_use that spawned them. Accumulate their usage so we can attach
   // it to the eventual subagent_completed event.
   if (isSubagentMessage && msg.message.usage) {
     const acc = getSubagentUsage(ctx)
-    const prev = acc.get(msg.parent_tool_use_id!) ?? { inputTokens: 0, outputTokens: 0 }
-    acc.set(msg.parent_tool_use_id!, {
+    const prev = acc.get(parentToolUseId!) ?? { inputTokens: 0, outputTokens: 0 }
+    acc.set(parentToolUseId!, {
       inputTokens: prev.inputTokens + (msg.message.usage.input_tokens ?? 0),
       outputTokens: prev.outputTokens + (msg.message.usage.output_tokens ?? 0),
     })
@@ -648,18 +997,18 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
         events.push({
           ...baseEvent(ctx),
           type: 'subagent_message',
-          toolCallId: msg.parent_tool_use_id!,
+          toolCallId: parentToolUseId!,
           contentKind: block.type,
           mode: 'complete',
           content,
-          segmentId: currentSubagentSegment(ctx, msg.parent_tool_use_id!, block.type),
+          segmentId: currentSubagentSegment(ctx, parentToolUseId!, block.type),
         })
       }
       continue
     }
     events.push(...mapContentBlock(block, ctx))
   }
-  if (isSubagentMessage) closeSubagentSegments(ctx, msg.parent_tool_use_id!)
+  if (isSubagentMessage) closeSubagentSegments(ctx, parentToolUseId!)
   else closeSegments(ctx)
 
   if (msg.error != null) {
@@ -676,7 +1025,7 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
         ? {
             origin: subagentEventOrigin(
               ctx,
-              msg.parent_tool_use_id!,
+              parentToolUseId!,
               msg.subagent_type ?? msg.task_description,
             ),
           }
@@ -760,7 +1109,16 @@ function summarizeSubagentOutput(output: string): string {
 }
 
 function mapUserMessage(msg: SDKUserMessage, ctx: EventContext): AgentEvent[] {
-  const parentToolUseId = msg.parent_tool_use_id
+  const parentToolUseId =
+    msg.parent_tool_use_id != null
+      ? correlateSubagentMessageToolCallId(ctx, msg.parent_tool_use_id)
+      : undefined
+  const subagentTask = parentToolUseId != null ? findSubagentTask(ctx, parentToolUseId) : undefined
+  if (
+    parentToolUseId != null &&
+    suppressSubagentTranscript(ctx, parentToolUseId, subagentTask?.state)
+  )
+    return []
   const structuredAgentResult = extractStructuredAgentResult(msg.tool_use_result)
   if (typeof msg.message.content === 'string') {
     if (parentToolUseId == null || msg.message.content.length === 0) return []
@@ -803,17 +1161,20 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
   if (event == null) return []
 
   if (msg.parent_tool_use_id != null && event.type === 'content_block_delta') {
+    const parentToolUseId = correlateSubagentMessageToolCallId(ctx, msg.parent_tool_use_id)
+    const subagentTask = findSubagentTask(ctx, parentToolUseId)
+    if (suppressSubagentTranscript(ctx, parentToolUseId, subagentTask?.state)) return []
     const delta = event.delta
     if (delta?.type === 'text_delta' && delta.text != null) {
       return [
         {
           ...baseEvent(ctx),
           type: 'subagent_message',
-          toolCallId: msg.parent_tool_use_id,
+          toolCallId: parentToolUseId,
           contentKind: 'text',
           mode: 'delta',
           content: delta.text,
-          segmentId: currentSubagentSegment(ctx, msg.parent_tool_use_id, 'text'),
+          segmentId: currentSubagentSegment(ctx, parentToolUseId, 'text'),
         },
       ]
     }
@@ -822,11 +1183,11 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
         {
           ...baseEvent(ctx),
           type: 'subagent_message',
-          toolCallId: msg.parent_tool_use_id,
+          toolCallId: parentToolUseId,
           contentKind: 'thinking',
           mode: 'delta',
           content: delta.thinking,
-          segmentId: currentSubagentSegment(ctx, msg.parent_tool_use_id, 'thinking'),
+          segmentId: currentSubagentSegment(ctx, parentToolUseId, 'thinking'),
         },
       ]
     }
@@ -1211,16 +1572,42 @@ function mapContentBlock(
       rememberPlanFileChange(block.name, toolInput, ctx)
       // Intercept Agent tool calls → emit SubagentStartedEvent
       if (block.name === 'Agent' || mapSDKToolName(block.name) === 'subagent') {
-        const name = typeof toolInput.agent === 'string' ? toolInput.agent : 'Subagent'
-        registerActiveSubagent(ctx, block.id, name)
+        const name =
+          typeof toolInput.subagent_type === 'string'
+            ? toolInput.subagent_type
+            : typeof toolInput.agent === 'string'
+              ? toolInput.agent
+              : 'Subagent'
+        const description = typeof toolInput.description === 'string' ? toolInput.description : ''
+        const task = typeof toolInput.prompt === 'string' ? toolInput.prompt : ''
+        const matchingTask =
+          findSubagentTask(ctx, block.id) ??
+          findMatchingUnlinkedSubagentTask(ctx, { name, description, task }, true)
+        const stableToolCallId = matchingTask?.state.toolCallId ?? block.id
+        if (hasSubagentResultCompleted(ctx, stableToolCallId)) return []
+        if (matchingTask != null) {
+          matchingTask.state.sdkToolCallId = block.id
+          linkSubagentToolCallId(ctx, block.id, stableToolCallId)
+          if (matchingTask.state.skipTranscript || matchingTask.state.terminal) return []
+          matchingTask.state.name = name
+          if (description.length > 0) matchingTask.state.description = description
+          if (task.length > 0) matchingTask.state.task = task
+          matchingTask.state.isSubagent = true
+          ctx.pendingSubagentLaunches?.delete(block.id)
+        } else {
+          const pending = (ctx.pendingSubagentLaunches ??= new Map())
+          pending.set(block.id, { toolCallId: block.id, name, description, task })
+        }
+        registerActiveSubagent(ctx, stableToolCallId, name)
+        if (!markSubagentStarted(ctx, stableToolCallId)) return []
         return [
           {
             ...baseEvent(ctx),
             type: 'subagent_started',
-            toolCallId: block.id,
+            toolCallId: stableToolCallId,
             name,
-            role: typeof toolInput.description === 'string' ? toolInput.description : '',
-            task: typeof toolInput.prompt === 'string' ? toolInput.prompt : '',
+            role: description,
+            task,
           },
         ]
       }
@@ -1261,12 +1648,16 @@ function mapContentBlock(
       if (toolName === 'subagent' || structuredAgentResult != null) {
         const subagentInput = getToolInputs(ctx).get(block.tool_use_id)
         const task = findSubagentTask(ctx, block.tool_use_id)
+        if (task?.state.skipTranscript === true) return []
+        const stableToolCallId = canonicalSubagentToolCallId(ctx, block.tool_use_id)
         const name =
           structuredAgentResult?.status === 'completed' && structuredAgentResult.agentType != null
             ? structuredAgentResult.agentType
-            : typeof subagentInput?.agent === 'string'
-              ? subagentInput.agent
-              : (task?.state.name ?? 'Subagent')
+            : typeof subagentInput?.subagent_type === 'string'
+              ? subagentInput.subagent_type
+              : typeof subagentInput?.agent === 'string'
+                ? subagentInput.agent
+                : (task?.state.name ?? 'Subagent')
         if (
           !isError &&
           (structuredAgentResult?.status === 'async_launched' ||
@@ -1277,54 +1668,69 @@ function mapContentBlock(
               ? structuredAgentResult.agentId
               : extractAsyncSubagentAgentId(content)
           if (agentId != null) {
-            getAsyncSubagentLaunches(ctx).set(agentId, { toolCallId: block.tool_use_id, name })
+            getAsyncSubagentLaunches(ctx).set(agentId, { toolCallId: stableToolCallId, name })
           }
           return []
         }
-        unregisterActiveSubagent(ctx, block.tool_use_id)
+        const completion = getSubagentCompletionState(ctx, stableToolCallId)
+        if (completion.resultEmitted) return []
+        completion.resultEmitted = true
+        if (task != null) task.state.terminal = true
+        ctx.pendingSubagentLaunches?.delete(block.tool_use_id)
+        unregisterActiveSubagent(ctx, stableToolCallId)
         const fullOutput =
           !isError && structuredAgentResult?.status === 'completed'
             ? structuredAgentResult.output
             : content
         const summary = summarizeSubagentOutput(fullOutput)
-        const usage = getSubagentUsage(ctx).get(block.tool_use_id)
+        const usage = getSubagentUsage(ctx).get(stableToolCallId)
         return [
           {
             ...baseEvent(ctx),
             type: 'subagent_completed',
-            toolCallId: block.tool_use_id,
+            toolCallId: stableToolCallId,
             ...(task != null ? { taskId: task.taskId } : {}),
             name,
             status: isError ? 'error' : 'success',
             resultSummary: isError ? content || 'Subagent failed' : summary,
             output: fullOutput || '',
-            ...(structuredAgentResult?.status === 'completed'
-              ? {
-                  ...(structuredAgentResult.inputTokens != null
-                    ? { inputTokens: structuredAgentResult.inputTokens }
-                    : {}),
-                  ...(structuredAgentResult.outputTokens != null
-                    ? { outputTokens: structuredAgentResult.outputTokens }
-                    : {}),
-                  ...(structuredAgentResult.totalTokens != null
-                    ? { totalTokens: structuredAgentResult.totalTokens }
-                    : {}),
-                  ...(structuredAgentResult.totalToolUseCount != null
-                    ? { toolUses: structuredAgentResult.totalToolUseCount }
-                    : {}),
-                  ...(structuredAgentResult.totalDurationMs != null
-                    ? { durationMs: structuredAgentResult.totalDurationMs }
-                    : {}),
-                }
+            ...(structuredAgentResult?.status === 'completed' &&
+            structuredAgentResult.inputTokens != null
+              ? { inputTokens: structuredAgentResult.inputTokens }
               : usage != null
-                ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
+                ? { inputTokens: usage.inputTokens }
                 : {}),
+            ...(structuredAgentResult?.status === 'completed' &&
+            structuredAgentResult.outputTokens != null
+              ? { outputTokens: structuredAgentResult.outputTokens }
+              : usage != null
+                ? { outputTokens: usage.outputTokens }
+                : {}),
+            ...(structuredAgentResult?.status === 'completed' &&
+            structuredAgentResult.totalTokens != null
+              ? { totalTokens: structuredAgentResult.totalTokens }
+              : {}),
+            ...(structuredAgentResult?.status === 'completed' &&
+            structuredAgentResult.totalToolUseCount != null
+              ? { toolUses: structuredAgentResult.totalToolUseCount }
+              : {}),
+            ...(structuredAgentResult?.status === 'completed' &&
+            structuredAgentResult.totalDurationMs != null
+              ? { durationMs: structuredAgentResult.totalDurationMs }
+              : {}),
           },
         ]
       }
 
       const asyncSubagent = findAsyncSubagentForSendMessage(ctx, block.tool_use_id, toolName)
       if (asyncSubagent != null) {
+        const completion = getSubagentCompletionState(ctx, asyncSubagent.toolCallId)
+        if (completion.resultEmitted) return []
+        completion.resultEmitted = true
+        getAsyncSubagentLaunches(ctx).delete(asyncSubagent.agentId)
+        const task = findSubagentTask(ctx, asyncSubagent.toolCallId)
+        if (task != null) task.state.terminal = true
+        else rememberCompletedSubagentLaunch(ctx, asyncSubagent.toolCallId)
         unregisterActiveSubagent(ctx, asyncSubagent.toolCallId)
         const summary = summarizeSubagentOutput(content)
         return [
@@ -1379,12 +1785,13 @@ function findAsyncSubagentForSendMessage(
   ctx: EventContext,
   toolCallId: string,
   toolName: string,
-): { toolCallId: string; name: string } | null {
+): { agentId: string; toolCallId: string; name: string } | null {
   if (toolName !== 'SendMessage') return null
   const input = getToolInputs(ctx).get(toolCallId)
   const to = input?.to ?? input?.agentId
   if (typeof to !== 'string') return null
-  return getAsyncSubagentLaunches(ctx).get(to) ?? null
+  const launch = getAsyncSubagentLaunches(ctx).get(to)
+  return launch != null ? { agentId: to, ...launch } : null
 }
 
 function buildFileChangeEvent(
