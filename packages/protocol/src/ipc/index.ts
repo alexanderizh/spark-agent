@@ -4728,10 +4728,16 @@ export interface RemoteExecuteCommandRequest {
   message: string
   sessionId?: string
 }
+export interface RemoteMessageAction {
+  label: string
+  command: string
+  style?: 'default' | 'primary' | 'danger'
+}
 export interface RemoteExecuteCommandResponse {
   ok: boolean
   title: string
   text: string
+  actions?: RemoteMessageAction[]
 }
 
 export interface RemoteRuntimeStatusRequest {}

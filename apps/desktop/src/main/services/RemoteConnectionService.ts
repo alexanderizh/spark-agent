@@ -10,10 +10,12 @@ import type {
   RemoteConnectionGlobalSettings,
   RemoteConnectionStatus,
   RemoteCreateBotDraftResponse,
+  RemoteMessageAction as ProtocolRemoteMessageAction,
   RemotePairingChallenge,
   RemotePairingMode,
   RemoteTestResponse,
 } from '@spark/protocol'
+import { filterTelegramCallbackActions } from '../ipc/remote-command-utils.js'
 
 const SETTINGS_CATEGORY = 'remote-connections'
 const SETTINGS_KEY = 'data'
@@ -31,10 +33,32 @@ export type RemoteInboundMessage = {
   messageId?: string
 }
 
-export type RemoteInboundHandler = (message: RemoteInboundMessage) => Promise<{
+export type RemoteMessageAction = ProtocolRemoteMessageAction
+
+export type RemoteInboundResponse = {
   title: string
   text: string
-} | void>
+  actions?: RemoteMessageAction[]
+}
+
+export type RemoteInboundHandler = (
+  message: RemoteInboundMessage,
+) => Promise<RemoteInboundResponse | void>
+
+type RemoteOutboundMessage = {
+  title?: string
+  text: string
+  actions?: RemoteMessageAction[]
+}
+
+function buildRemoteRuntimeErrorMessage(error: unknown): string {
+  const message = (error instanceof Error ? error.message : String(error)).trim().slice(0, 1000)
+  return `处理失败：${message || '未知错误'}\n\n建议：发送 /status 查看连接状态，发送 /help 查看可用命令；如果问题与模型有关，请依次使用 /providers、/models、/use-model。`
+}
+
+function formatRemoteOutboundText(message: RemoteOutboundMessage): string {
+  return message.title != null ? `${message.title}\n${message.text}` : message.text
+}
 
 export type RemoteConnectionChangeEvent = {
   reason: 'connection-saved' | 'connection-deleted' | 'pairing-updated' | 'runtime-updated'
@@ -75,6 +99,21 @@ type FeishuMessageReceiveEvent = {
   }
 }
 
+type FeishuCardActionReceiveEvent = {
+  action?: {
+    value?: unknown
+  }
+  open_chat_id?: string
+  chat_id?: string
+  operator?: {
+    operator_id?: {
+      open_id?: string
+      user_id?: string
+    }
+  }
+  token?: string
+}
+
 type TokenCacheEntry = {
   token: string
   expiresAt: number
@@ -108,8 +147,8 @@ const COMMAND_CATALOG: RemoteCommandDefinition[] = [
   { name: 'help', usage: '/help', description: '查看远程可用命令', capability: 'system' },
   {
     name: 'sessions',
-    usage: '/sessions',
-    description: '列出最近会话',
+    usage: '/sessions [all|idle|running|error]',
+    description: '查看主机会话，可按状态筛选',
     capability: 'switchSession',
   },
   {
@@ -378,6 +417,27 @@ function parseWebhookBody(
   if (!isRecord(body)) return { kind: 'ignore' }
 
   if (channel === 'telegram') {
+    const callback = isRecord(body.callback_query) ? body.callback_query : undefined
+    const callbackMessage = isRecord(callback?.message) ? callback.message : undefined
+    const callbackChat = isRecord(callbackMessage?.chat) ? callbackMessage.chat : undefined
+    const callbackFrom = isRecord(callback?.from) ? callback.from : undefined
+    const callbackText = readString(callback?.data)
+    if (callback != null && callbackChat != null && callbackText != null) {
+      const externalId = String(callbackChat.id ?? '')
+      if (externalId.length === 0) return { kind: 'ignore' }
+      const username = readString(callbackFrom?.username)
+      const firstName = readString(callbackFrom?.first_name)
+      return {
+        kind: 'message',
+        externalId,
+        senderName:
+          username != null
+            ? `${firstName ?? username}(@${username})`
+            : (firstName ?? 'Telegram 用户'),
+        text: normalizeInboundText(channel, callbackText),
+        ...(callback.id != null ? { messageId: `telegram:callback:${String(callback.id)}` } : {}),
+      }
+    }
     const message = isRecord(body.message) ? body.message : undefined
     const chat = isRecord(message?.chat) ? message.chat : undefined
     const from = isRecord(message?.from) ? message.from : undefined
@@ -464,6 +524,43 @@ function splitText(text: string, maxLen: number): string[] {
     chunks.push(chars.slice(index, index + maxLen).join(''))
   }
   return chunks
+}
+
+function chunkActions<T>(actions: T[], size = 2): T[][] {
+  const rows: T[][] = []
+  for (let index = 0; index < actions.length; index += size) {
+    rows.push(actions.slice(index, index + size))
+  }
+  return rows
+}
+
+function buildFeishuCard(message: RemoteOutboundMessage): Record<string, unknown> {
+  const actions = message.actions ?? []
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: 'blue',
+      title: {
+        tag: 'plain_text',
+        content: (message.title ?? 'SparkWork').slice(0, 80),
+      },
+    },
+    elements: [
+      {
+        tag: 'div',
+        text: { tag: 'lark_md', content: message.text.slice(0, 10_000) },
+      },
+      ...chunkActions(actions, 3).map((row) => ({
+        tag: 'action',
+        actions: row.map((action) => ({
+          tag: 'button',
+          text: { tag: 'plain_text', content: action.label.slice(0, 30) },
+          type: action.style ?? 'default',
+          value: { command: action.command.slice(0, 200) },
+        })),
+      })),
+    ],
+  }
 }
 
 function plainText(markdown: string): string {
@@ -980,7 +1077,7 @@ export class RemoteConnectionService {
       await this.sendDirectMessage(
         latest,
         message.externalId,
-        '该远程会话尚未绑定。请先在 SparkWork 设置里生成配对码，然后发送 /bind 配对码。',
+        '该远程会话尚未绑定。请先在 SparkWork 设置里生成配对码，然后发送 /bind <配对码>。配对失败时请重新生成未过期的配对码。',
       )
       return
     }
@@ -991,7 +1088,7 @@ export class RemoteConnectionService {
       await this.sendDirectMessage(
         latest,
         message.externalId,
-        '远程连接运行时尚未就绪，请稍后重试。',
+        '远程连接运行时尚未就绪，请稍后重试；如果持续失败，请在桌面端检查远程连接状态后发送 /status。',
       )
       return
     }
@@ -1005,18 +1102,14 @@ export class RemoteConnectionService {
         ...(message.messageId != null ? { messageId: message.messageId } : {}),
       })
       if (response != null) {
-        await this.sendDirectMessage(
-          latest,
-          message.externalId,
-          `${response.title}\n${response.text}`.trim(),
-        )
+        await this.sendDirectMessage(latest, message.externalId, {
+          title: response.title,
+          text: response.text.trim(),
+          ...(response.actions != null ? { actions: response.actions } : {}),
+        })
       }
     } catch (err) {
-      await this.sendDirectMessage(
-        latest,
-        message.externalId,
-        `处理失败：${err instanceof Error ? err.message : String(err)}`,
-      )
+      await this.sendDirectMessage(latest, message.externalId, buildRemoteRuntimeErrorMessage(err))
     }
   }
 
@@ -1045,7 +1138,7 @@ export class RemoteConnectionService {
       await this.sendDirectMessage(
         latest,
         externalId,
-        `绑定失败：${err instanceof Error ? err.message : String(err)}`,
+        `绑定失败：${err instanceof Error ? err.message : String(err)}\n\n建议：检查配对码是否过期；回到 SparkWork 重新生成配对码后，再发送 /bind <配对码>。`,
       )
     }
   }
@@ -1167,14 +1260,18 @@ export class RemoteConnectionService {
           onError?: (error: unknown) => void
         }) => { start: (input: { eventDispatcher: unknown }) => Promise<void>; close: () => void }
         EventDispatcher: new (options: Record<string, unknown>) => {
-          register: (
-            handlers: Record<string, (data: FeishuMessageReceiveEvent) => Promise<void>>,
-          ) => unknown
+          register: (handlers: Record<string, (data: unknown) => Promise<void>>) => unknown
         }
       }
       const dispatcher = new lark.EventDispatcher({}).register({
         'im.message.receive_v1': async (event) => {
-          await this.handleFeishuWsEvent(connectionId, state, event)
+          await this.handleFeishuWsEvent(connectionId, state, event as FeishuMessageReceiveEvent)
+        },
+        'card.action.trigger': async (event) => {
+          await this.handleFeishuCardActionEvent(
+            connectionId,
+            event as FeishuCardActionReceiveEvent,
+          )
         },
       })
       const client = new lark.WSClient({
@@ -1236,6 +1333,28 @@ export class RemoteConnectionService {
     })
   }
 
+  private async handleFeishuCardActionEvent(
+    connectionId: string,
+    event: FeishuCardActionReceiveEvent,
+  ): Promise<void> {
+    const connection = this.readStore().connections.find((item) => item.id === connectionId)
+    if (connection == null || !connection.enabled || connection.channel !== 'feishu') return
+
+    const value = isRecord(event.action?.value) ? event.action.value : undefined
+    const command = readString(value?.command)
+    const externalId = readString(event.open_chat_id) ?? readString(event.chat_id)
+    if (command == null || externalId == null) return
+    const operatorId = event.operator?.operator_id
+    const senderName =
+      readString(operatorId?.open_id) ?? readString(operatorId?.user_id) ?? '飞书用户'
+    await this.handleInboundMessage(connection, {
+      externalId,
+      senderName,
+      text: normalizeInboundText('feishu', command),
+      ...(event.token != null ? { messageId: `feishu:action:${event.token}` } : {}),
+    })
+  }
+
   private async pollTelegramOnce(connectionId: string, state: TelegramPollingState): Promise<void> {
     const connection = this.readStore().connections.find((item) => item.id === connectionId)
     if (connection == null || !connection.enabled || connection.channel !== 'telegram') {
@@ -1245,7 +1364,7 @@ export class RemoteConnectionService {
 
     try {
       const response = await fetch(
-        `https://api.telegram.org/bot${encodeURIComponent(state.token)}/getUpdates?offset=${state.offset}&timeout=25&allowed_updates=${encodeURIComponent(JSON.stringify(['message']))}`,
+        `https://api.telegram.org/bot${encodeURIComponent(state.token)}/getUpdates?offset=${state.offset}&timeout=25&allowed_updates=${encodeURIComponent(JSON.stringify(['message', 'callback_query']))}`,
       )
       if (response.status === 401 || response.status === 404) {
         state.running = false
@@ -1259,7 +1378,7 @@ export class RemoteConnectionService {
       }
       const payload = (await response.json()) as {
         ok?: boolean
-        result?: Array<{ update_id: number; message?: unknown }>
+        result?: Array<{ update_id: number; message?: unknown; callback_query?: unknown }>
       }
       if (payload.ok === false) throw new Error('Telegram getUpdates returned ok=false')
       state.failCount = 0
@@ -1268,11 +1387,28 @@ export class RemoteConnectionService {
         if (update.message != null) {
           await this.handleInboundWebhook(connection, { message: update.message })
         }
+        if (update.callback_query != null) {
+          const callback = isRecord(update.callback_query) ? update.callback_query : undefined
+          const callbackId = readString(callback?.id)
+          if (callbackId != null) void this.answerTelegramCallback(state.token, callbackId)
+          await this.handleInboundWebhook(connection, { callback_query: update.callback_query })
+        }
         state.offset = update.update_id + 1
       }
     } catch (err) {
       state.failCount += 1
       state.lastError = err instanceof Error ? err.message : String(err)
+    }
+  }
+
+  private async answerTelegramCallback(token: string, callbackId: string): Promise<void> {
+    try {
+      await this.postJson(
+        `https://api.telegram.org/bot${encodeURIComponent(token)}/answerCallbackQuery`,
+        { callback_query_id: callbackId },
+      )
+    } catch {
+      // 按钮回执失败不影响命令继续执行。
     }
   }
 
@@ -1309,35 +1445,52 @@ export class RemoteConnectionService {
   private async sendDirectMessage(
     connection: RemoteConnectionConfig,
     externalId: string,
-    text: string,
+    message: string | RemoteOutboundMessage,
   ): Promise<void> {
+    const outbound: RemoteOutboundMessage =
+      typeof message === 'string' ? { text: message } : message
     if (connection.channel === 'telegram') {
-      await this.sendTelegramMessage(connection, externalId, text)
+      await this.sendTelegramMessage(connection, externalId, outbound)
       return
     }
     if (connection.channel === 'feishu') {
-      await this.sendFeishuMessage(connection, externalId, text)
+      await this.sendFeishuMessage(connection, externalId, outbound)
       return
     }
     if (connection.channel === 'qq') {
-      await this.sendQqMessage(connection, externalId, text)
+      await this.sendQqMessage(connection, externalId, formatRemoteOutboundText(outbound))
       return
     }
-    await this.sendClawMessage(connection, externalId, text)
+    await this.sendClawMessage(connection, externalId, formatRemoteOutboundText(outbound))
   }
 
   private async sendTelegramMessage(
     connection: RemoteConnectionConfig,
     externalId: string,
-    text: string,
+    message: RemoteOutboundMessage,
   ): Promise<void> {
     const token = readString(connection.credentials.botToken)
     if (token == null) throw new Error('Telegram bot token 未配置')
-    for (const chunk of splitText(text, 3900)) {
+    const chunks = splitText(formatRemoteOutboundText(message), 3900)
+    for (const [index, chunk] of chunks.entries()) {
+      const actions =
+        index === chunks.length - 1 ? filterTelegramCallbackActions(message.actions ?? []) : []
       await this.postJson(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`, {
         chat_id: externalId,
         text: chunk,
         disable_web_page_preview: true,
+        ...(actions.length > 0
+          ? {
+              reply_markup: {
+                inline_keyboard: chunkActions(actions).map((row) =>
+                  row.map((action) => ({
+                    text: action.label,
+                    callback_data: action.command,
+                  })),
+                ),
+              },
+            }
+          : {}),
       })
     }
   }
@@ -1376,7 +1529,7 @@ export class RemoteConnectionService {
   private async sendFeishuMessage(
     connection: RemoteConnectionConfig,
     externalId: string,
-    text: string,
+    message: RemoteOutboundMessage,
   ): Promise<void> {
     const appId = readString(connection.credentials.appId)
     const appSecret = readString(connection.credentials.appSecret)
@@ -1385,11 +1538,17 @@ export class RemoteConnectionService {
     const receiveIdType = resolveFeishuReceiveIdType(externalId)
     await this.postJson(
       `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`,
-      {
-        receive_id: externalId,
-        msg_type: 'text',
-        content: JSON.stringify({ text }),
-      },
+      message.actions != null && message.actions.length > 0
+        ? {
+            receive_id: externalId,
+            msg_type: 'interactive',
+            content: JSON.stringify(buildFeishuCard(message)),
+          }
+        : {
+            receive_id: externalId,
+            msg_type: 'text',
+            content: JSON.stringify({ text: formatRemoteOutboundText(message) }),
+          },
       { Authorization: `Bearer ${token}` },
     )
   }
@@ -1430,7 +1589,8 @@ export class RemoteConnectionService {
   ): Promise<void> {
     const appId = readString(connection.credentials.qqBotAppId)
     const clientSecret = readString(connection.credentials.qqBotSecret)
-    if (appId == null || clientSecret == null) throw new Error('QQ 机器人 AppID 或 AppSecret 未配置')
+    if (appId == null || clientSecret == null)
+      throw new Error('QQ 机器人 AppID 或 AppSecret 未配置')
     const token = await this.getQqToken(connection.id, appId, clientSecret)
     await this.postJson(
       `https://api.sgroup.qq.com/v2/groups/${encodeURIComponent(externalId)}/messages`,

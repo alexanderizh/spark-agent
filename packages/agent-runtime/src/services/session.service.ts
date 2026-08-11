@@ -8589,6 +8589,7 @@ export class SessionService {
 
   async listSessions(params?: {
     workspaceId?: string
+    status?: 'idle' | 'running' | 'error'
     limit?: number
     offset?: number
     includeArchived?: boolean
