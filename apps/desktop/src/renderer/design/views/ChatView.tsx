@@ -6943,9 +6943,9 @@ const AgentMsg = React.memo(function AgentMsg({
   // isLatest = 最近 2 条 assistant 消息（见外层 expandedAssistantMessageIds）。
   const suppressAutoCollapse = !!sessionRunning && !!isLatest
 
-  // 思考与工具日志总开关：输出完毕后默认折叠本气泡内所有「思考过程」与工具日志组，
-  // 由顶部「思考和工具日志」切换条统一控制（流式中不生效，保留思考进度反馈）。
-  const [toolLogsOpen, setToolLogsOpen] = useState(false)
+  // 思考与工具日志总开关：输出完毕后默认保持展开，避免轮次结束时自动隐藏过程日志；
+  // 用户仍可通过顶部「思考和工具日志」切换条手动收起（流式中不生效，保留思考进度反馈）。
+  const [toolLogsOpen, setToolLogsOpen] = useState(true)
   const thinkingBlocksCount = blocks.filter(
     (b) => b.kind === 'thinking' && !isHiddenTimelineBlock(b),
   ).length
@@ -6958,8 +6958,8 @@ const AgentMsg = React.memo(function AgentMsg({
       b.kind === 'team_dispatch' ||
       b.kind === 'team_discussion_status',
   ).length
-  // 正文里独立的文件 diff 板块（file_change 带 diff）同样纳入折叠：输出完毕后默认隐藏，
-  // 由顶部切换条统一展开。嵌在工具输出里的 GitDiffContent 已被 tool-log-group 覆盖，无需另计。
+  // 正文里独立的文件 diff 板块（file_change 带 diff）同样纳入总开关控制。
+  // 嵌在工具输出里的 GitDiffContent 已被 tool-log-group 覆盖，无需另计。
   const fileChangeDiffBlocksCount = blocks.filter(
     (b) => b.kind === 'file_change' && typeof b.diff === 'string' && b.diff.length > 0,
   ).length

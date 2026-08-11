@@ -5162,7 +5162,7 @@ body.side-chat-resizing {
   opacity: 1;
 }
 
-/* 思考与工具日志总开关：输出完毕后，默认隐藏本气泡内所有「思考过程」、工具日志组，
+/* 思考与工具日志总开关：用户手动收起后，隐藏本气泡内所有「思考过程」、工具日志组，
    以及附属的可折叠块（checkpoint / plan_proposed / team_dispatch / team_discussion_status），
    由顶部「思考和工具日志」切换条统一控制；流式中不生效，运行反馈照常显示。
    master toggle 自身也用 thinking-section，故用 :not(.tool-logs-master) 排除，避免把自己一起隐藏。 */
