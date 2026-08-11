@@ -19,6 +19,10 @@ describe('SparkWork application foundation prompt', () => {
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('make a reasonable assumption')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('is not completion')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('observed evidence')
+    expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain(
+      'never automatically add an AI assistant, model provider, tool, platform, or other non-user identity as a commit author or co-author',
+    )
+    expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('Co-authored-by')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('durable task-state file')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('every conversation turn')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('distinct from assistant proposals')
