@@ -2474,6 +2474,50 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
   },
 
+  /* ─── 火山豆包语音（Volcengine Speech，独立于方舟；X-Api-Key 鉴权）─── */
+  /* 与方舟(volcengine-ark)分属不同控制台/域名/鉴权头，故独立 provider。
+     文档：docs/integrations/volcengine/tts.md（seed-tts-2.0 单向流式）、
+           docs/integrations/volcengine/music.md（seed-audio-1.0 同步）。 */
+  {
+    id: 'volcengine-speech-tts',
+    vendorId: 'volcengine',
+    name: '火山豆包语音合成',
+    provider: 'openai',
+    apiEndpoint: 'https://openspeech.bytedance.com',
+    defaultModel: 'seed-tts-2.0',
+    modelIds: ['seed-tts-2.0'],
+    modelType: 'voice',
+    mediaProvider: 'volcengine-speech',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.speech'],
+    mediaModelRefs: [
+      { manifestId: 'volcengine-speech:seed-tts-2.0', modelId: 'seed-tts-2.0', enabled: true },
+    ],
+    // speaker 必填（tts.md req_params.speaker）；默认用文档示例音色 zh_male_bvlazysheep
+    // （tts.md §混音示例 source_speaker），用户须在管理页填控制台音色库的实际音色 ID。
+    mediaDefaults: { audio: { voice: 'zh_male_bvlazysheep', format: 'mp3' } },
+    sourceUrls: ['https://www.volcengine.com/docs/6561/2528925'],
+  },
+  {
+    id: 'volcengine-speech-audio',
+    vendorId: 'volcengine',
+    name: '火山豆包音频生成',
+    provider: 'openai',
+    apiEndpoint: 'https://openspeech.bytedance.com',
+    defaultModel: 'seed-audio-1.0',
+    modelIds: ['seed-audio-1.0'],
+    modelType: 'voice',
+    mediaProvider: 'volcengine-speech',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.music'],
+    mediaModelRefs: [
+      { manifestId: 'volcengine-speech:seed-audio-1.0', modelId: 'seed-audio-1.0', enabled: true },
+    ],
+    // seed-audio-1.0 speaker 可选（music.md：speaker/audio_data/audio_url 三选一）。
+    mediaDefaults: { audio: { format: 'wav' } },
+    sourceUrls: ['https://www.volcengine.com/docs/6561/2550782'],
+  },
+
   /* ─── 腾讯云 TokenHub 多媒体（图片 + 视频）─── */
   {
     id: 'tencent-tokenhub-image',

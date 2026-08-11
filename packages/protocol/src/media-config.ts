@@ -22,6 +22,7 @@ export type MediaProviderKind =
   | 'google-generative-ai'
   | 'bailian'
   | 'volcengine-ark'
+  | 'volcengine-speech'
   | 'kling'
   | 'pixverse'
   | 'minimax-hailuo'
@@ -90,6 +91,7 @@ export const MEDIA_PROVIDER_KINDS = [
   'google-generative-ai',
   'bailian',
   'volcengine-ark',
+  'volcengine-speech',
   'kling',
   'pixverse',
   'minimax-hailuo',

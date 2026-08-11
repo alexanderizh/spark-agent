@@ -160,6 +160,21 @@ tags:
 - 上传与管理文件：https://help.aliyun.com/zh/model-studio/upload-file-api 、https://help.aliyun.com/zh/model-studio/get-file-api
 - 异步任务管理：https://help.aliyun.com/zh/model-studio/manage-asynchronous-tasks
 
+## 火山豆包语音（volcengine-speech）专项规则
+
+以下规则适用于 `providerKind=volcengine-speech`，与方舟（volcengine-ark）是**独立 provider**（不同域名/鉴权头/控制台），不能混用：
+
+- 域名 `openspeech.bytedance.com`，鉴权头 `X-Api-Key`（**不是**方舟的 `Bearer`）。API Key 从语音控制台 > API Key 管理获取，与方舟 key 不通用。
+- 语音合成（`audio.speech`，seed-tts-2.0）走单向流式 `POST /api/v3/tts/unidirectional`，**speaker 必填**（从控制台 > 音色库获取音色 ID）；额外鉴权头 `X-Api-Resource-Id: seed-tts-2.0` + `X-Api-Request-Id`。adapter 累积 HTTP Chunked 流式 chunk 后整段落盘。`format` 支持 mp3/pcm/ogg_opus/wav（流式推荐 pcm，wav 流式会重复 header）。
+- 音频生成（`audio.music`，seed-audio-1.0）走同步 `POST /api/v3/tts/create`，`text_prompt` 必填，用自然语言描述音效/人声/配乐；响应顶层 `code`（0=成功）+ `url`（2h 有效，需立即落盘）。`speaker` 可选（与 audio_data/audio_url 三选一）。
+- 错误归一：music 顶层 `code != 0` 抛业务错误（含码与 message）；TTS 非 2xx 抛 HTTP 状态码 + 响应体。
+- 本轮未做（文档已入库，留后续 Phase）：voice_clone 声音复刻（走第三套 AKSK 签名 `open.volcengineapi.com`）、ASR 转写（paraformer/bigasr，异步轮询）、说话人分离（ASR 参数 `enable_speaker_info`）。
+- 官方文档：
+  - 语音合成 seed-tts-2.0：https://www.volcengine.com/docs/6561/2528925
+  - 音频生成 seed-audio-1.0：https://www.volcengine.com/docs/6561/2550782
+  - 音色列表：https://www.volcengine.com/docs/6561/1257544
+  - 错误码查询：https://www.volcengine.com/docs/6561/2534853
+
 ## MiniMax（minimax-hailuo）专项规则
 
 以下规则仅适用于 `providerKind=minimax-hailuo` 的已启用 MiniMax Manifest（`image-01` / `image-01-live` / `Hailuo-2.3` / `Hailuo-2.3-Fast` / `MiniMax-H3` / 视频 Agent 模板 / `speech-2.8-hd` / `speech-2.8-turbo` / `music-2.6`）。
