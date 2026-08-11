@@ -437,3 +437,61 @@ describe('CanvasInlineAiComposer node default model params', () => {
     ).toBe('2048x1024')
   })
 })
+
+describe('schemaFields required / hidden / examples', () => {
+  it('marks fields listed in schema.required as required', () => {
+    const fields = schemaFields({
+      type: 'object',
+      properties: {
+        voice: { type: 'string', title: '音色' },
+        speed: { type: 'number', title: '语速' },
+      },
+      required: ['voice'],
+    })
+    const voice = fields.find((f) => f.name === 'voice')
+    const speed = fields.find((f) => f.name === 'speed')
+    expect(voice?.required).toBe(true)
+    expect(speed?.required).toBeUndefined()
+  })
+
+  it('filters out fields marked x-hidden (adapter-internal params like output_format)', () => {
+    const fields = schemaFields({
+      type: 'object',
+      properties: {
+        voice: { type: 'string', title: '音色' },
+        output_format: { type: 'string', 'x-hidden': true },
+      },
+      required: ['voice'],
+    })
+    expect(fields.map((f) => f.name)).toEqual(['voice'])
+  })
+
+  it('exposes examples as enumValues only when x-allow-custom is true', () => {
+    // x-allow-custom=true：examples 进 enumValues（AutoComplete 候选）
+    const withCustom = schemaFields({
+      type: 'object',
+      properties: {
+        voice: {
+          type: 'string',
+          examples: ['eve', 'leo'],
+          'x-allow-custom': true,
+        },
+      },
+    })
+    const customField = withCustom.find((f) => f.name === 'voice')
+    expect(customField?.enumValues).toEqual(['eve', 'leo'])
+    expect(customField?.allowCustom).toBe(true)
+
+    // 无 x-allow-custom：examples 不进 enumValues（仅作 placeholder），避免把
+    // 未经 provider 契约保证的值当成合法枚举
+    const withoutCustom = schemaFields({
+      type: 'object',
+      properties: {
+        voice: { type: 'string', examples: ['eve', 'leo'] },
+      },
+    })
+    const plainField = withoutCustom.find((f) => f.name === 'voice')
+    expect(plainField?.enumValues).toEqual([])
+    expect(plainField?.placeholder).toBe('eve')
+  })
+})

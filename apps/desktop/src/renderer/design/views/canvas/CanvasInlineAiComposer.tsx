@@ -1699,7 +1699,23 @@ type ComposerCache = {
 export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
   const properties = schema.properties
   if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return []
+  // JSON Schema 顶层 `required: string[]` 标记必填字段，用于渲染红星提示。
+  // 最终校验由 adapter 运行时兜底（如 voice 缺失时 adapter 抛 MediaProviderError）。
+  const requiredNames = new Set(
+    Array.isArray(schema.required)
+      ? schema.required.filter((name): name is string => typeof name === 'string')
+      : [],
+  )
   return Object.entries(properties as Record<string, unknown>)
+    .filter(([, raw]) => {
+      // manifest paramSchema 可标记 `x-hidden: true` 隐藏 adapter 内部字段
+      //（如 output_format=url/hex 落盘策略），不暴露给用户。
+      const spec =
+        raw && typeof raw === 'object' && !Array.isArray(raw)
+          ? (raw as Record<string, unknown>)
+          : {}
+      return spec['x-hidden'] !== true
+    })
     .slice(0, 12)
     .map(([name, raw]) => {
       const spec =
@@ -1768,6 +1784,7 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
         ...(pattern ? { pattern } : {}),
         ...(typeof spec.description === 'string' ? { description: spec.description } : {}),
         ...(examples[0] ? { placeholder: examples[0] } : {}),
+        ...(requiredNames.has(name) ? { required: true } : {}),
       }
     })
 }
@@ -2066,35 +2083,24 @@ export function operationSuggestedFields(operation: CanvasOperationType): Schema
     return fields
   }
   if (operation === 'text_to_audio') {
+    // 兜底字段：仅在所选模型无 paramSchema 时使用。
+    // voice 的合法值因渠道而异（MiniMax male-qn-*、百炼 Cherry、火山 zh_male_*、xAI eve），
+    // 不硬编码具体音色避免误导；选模型后由 schema 驱动给出 examples。
+    // speed 各渠道参数名不同（speed/rate/speech_rate），不在兜底暴露。
     return [
       {
         name: 'voice',
         title: '音色 voice',
         type: 'string',
-        enumValues: [
-          'alloy',
-          'ash',
-          'ballad',
-          'coral',
-          'echo',
-          'fable',
-          'nova',
-          'onyx',
-          'sage',
-          'shimmer',
-        ],
+        enumValues: [],
+        placeholder: '选择模型后可从音色列表选择，或直接输入音色 ID',
+        required: true,
       },
       {
         name: 'format',
         title: '格式 format',
         type: 'string',
-        enumValues: ['mp3', 'wav', 'aac', 'flac', 'opus'],
-      },
-      {
-        name: 'speed',
-        title: '语速 speed',
-        type: 'number',
-        enumValues: ['0.75', '1', '1.25', '1.5'],
+        enumValues: ['mp3', 'wav'],
       },
     ]
   }

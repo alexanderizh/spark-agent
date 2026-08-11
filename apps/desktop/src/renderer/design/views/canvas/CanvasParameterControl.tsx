@@ -379,7 +379,10 @@ export function CanvasParameterControl({
       data-parameter-name={field.name}
     >
       <div className="canvas-parameter-control-head">
-        <span title={field.description}>{presentation.label}</span>
+        <span title={field.description}>
+          {presentation.label}
+          {field.required && <em className="canvas-parameter-required-mark">*</em>}
+        </span>
         {field.description && <small>{field.description}</small>}
       </div>
       {controlNode}
