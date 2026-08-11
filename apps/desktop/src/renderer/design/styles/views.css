@@ -1589,7 +1589,7 @@ body.sidebar-resizing {
 }
 .md-surface {
   min-width: 0;
-  font-weight: 500;
+  font-weight: 450;
   color: inherit;
   overflow-wrap: anywhere;
   line-height: 2.1;

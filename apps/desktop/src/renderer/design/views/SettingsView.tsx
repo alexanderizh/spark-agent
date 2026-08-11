@@ -30,6 +30,7 @@ import {
   saveShortcuts,
 } from '../hooks/useKeyboard'
 import {
+  DEFAULT_APPEARANCE,
   UI_ZOOM_MAX,
   UI_ZOOM_MIN,
   UI_ZOOM_STEP,
@@ -1607,16 +1608,41 @@ function QrPayloadPreview({ payload }: { payload: string }) {
 
 /* ───────── APPEARANCE ───────── */
 function AppearanceSection() {
-  const { t, setTweak } = useApp()
+  const { t, setTweak, resetVisualTweaks, requestConfirm } = useApp()
   const a = useAppearanceSettings()
   const setA = patchAppearance
   const fontOptions = useMemo(() => getAppearanceFontOptions(a.font), [a.font])
   const selectedFontAvailable = isAppearanceFontAvailable(a.font)
 
+  const resetAppearance = useCallback(async () => {
+    const ok = await requestConfirm({
+      title: '重置外观设置？',
+      description: '主题、主色、密度、字体、字号、缩放、圆角等将恢复为默认值，不可撤销。',
+      confirmText: '重置',
+      danger: true,
+    })
+    if (!ok) return
+    // A 层（useAppearance）覆盖式写入 10 个外观字段；B 层（视觉 tweak）单条
+    // persist 链一次性写入 4 个视觉字段。两者最终落地的都是默认值，即使远端
+    // 两条 IPC 链交错，被覆盖掉的也是默认值，重启后仍为默认值。
+    patchAppearance(DEFAULT_APPEARANCE)
+    resetVisualTweaks()
+  }, [requestConfirm, resetVisualTweaks])
+
   return (
     <div className="settings-section">
       <h2>外观</h2>
       <div className="lede">主题、密度、字体、布局。这些设置实时生效。</div>
+      <div className="row row-mb-sm" style={{ justifyContent: 'flex-end' }}>
+        <Button
+          size="middle"
+          type="text"
+          icon={<Icons.Refresh size={13} />}
+          onClick={resetAppearance}
+        >
+          重置为默认
+        </Button>
+      </div>
 
       <div className="subsec-h">主题</div>
       <div className="theme-grid">
