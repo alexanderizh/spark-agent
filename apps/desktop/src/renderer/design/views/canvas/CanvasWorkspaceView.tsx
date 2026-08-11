@@ -785,6 +785,8 @@ export function CanvasWorkspaceView({
   /** 用户显式「添加到 Agent 对话」的引用节点；与画布选区解耦，发送时以这里为准 */
   const [agentNodeRefs, setAgentNodeRefs] = useState<CanvasNode[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const operationImageUploadInputRef = useRef<HTMLInputElement>(null)
+  const operationImageUploadTargetNodeIdRef = useRef<string | null>(null)
   const uploadFilesInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   /** 非空时表示下一次 fileInput 选择是「替换该图片节点」而非新增节点 */
@@ -6798,6 +6800,54 @@ export function CanvasWorkspaceView({
     [canvasViewportRef, handleDropFiles],
   )
 
+  const handleSelectOperationInput = useCallback(
+    (targetNodeId: string) => {
+      startPromptNodePicker(
+        targetNodeId,
+        (pickedNode) => {
+          if (pickedNode.type !== 'image') {
+            message.warning('图片反推仅支持图片节点')
+            return
+          }
+          void connectNodes({ sourceNodeId: pickedNode.id, targetNodeId }).catch((error) => {
+            message.error(error instanceof Error ? error.message : '连接输入图片失败')
+          })
+        },
+        { keepWhenInactive: true },
+      )
+    },
+    [connectNodes, startPromptNodePicker],
+  )
+
+  const handleUploadOperationInput = useCallback((targetNodeId: string) => {
+    operationImageUploadTargetNodeIdRef.current = targetNodeId
+    operationImageUploadInputRef.current?.click()
+  }, [])
+
+  const handleOperationImageUploadChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      event.target.value = ''
+      const targetNodeId = operationImageUploadTargetNodeIdRef.current
+      operationImageUploadTargetNodeIdRef.current = null
+      if (!file || !targetNodeId) return
+      if (!file.type.startsWith('image/')) {
+        message.warning('请选择图片文件')
+        return
+      }
+      try {
+        const uploadedNode = await handlePromptLocalUpload(file)
+        if (!uploadedNode) return
+        await connectNodes({ sourceNodeId: uploadedNode.id, targetNodeId })
+        setSelectedNodeIds([targetNodeId])
+        message.success('图片已上传并连接到图片反推节点')
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '上传并连接图片失败')
+      }
+    },
+    [connectNodes, handlePromptLocalUpload],
+  )
+
   /**
    * 空白处右键 → 创建一个无上游的 AI 操作节点（用户后续自己连线）。
    * 不绑定 inputNodeIds，prompt 留空，由用户在操作面板填完后再运行。
@@ -8274,6 +8324,8 @@ export function CanvasWorkspaceView({
             onRunOperationNode={(nodeId) => {
               void batchTasks.controller.runSingle(nodeId).catch(() => undefined)
             }}
+            onSelectOperationInput={handleSelectOperationInput}
+            onUploadOperationInput={handleUploadOperationInput}
             onConfigureSelectedTasks={batchTasks.controller.openConfigure}
             onSubmitSelectedTasks={(nodeIds) => {
               void batchTasks.controller.openSubmit(nodeIds).catch((error) => {
@@ -8811,6 +8863,13 @@ export function CanvasWorkspaceView({
           </div>
         </div>
       </Modal>
+      <input
+        ref={operationImageUploadInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={(event) => void handleOperationImageUploadChange(event)}
+      />
       <input
         ref={fileInputRef}
         type="file"

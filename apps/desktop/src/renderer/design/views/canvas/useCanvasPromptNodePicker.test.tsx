@@ -90,4 +90,29 @@ describe('useCanvasPromptNodePicker', () => {
     expect(picker.ownerNodeId).toBeNull()
     await act(async () => root.unmount())
   })
+
+  it('keeps card input picking active when its operation panel is closed', async () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const onPick = vi.fn()
+    let picker!: ReturnType<typeof useCanvasPromptNodePicker>
+
+    function Harness() {
+      const [, setSelectedNodeIds] = useState<string[]>([])
+      picker = useCanvasPromptNodePicker({
+        nodes: [ownerNode, sourceNode],
+        activeOperationNodeId: null,
+        setSelectedNodeIds,
+      })
+      return null
+    }
+
+    await act(async () => root.render(<Harness />))
+    await act(async () => picker.start('owner', onPick, { keepWhenInactive: true }))
+    await act(async () => picker.interceptNodeSelect('source'))
+
+    expect(onPick).toHaveBeenCalledWith(sourceNode)
+    expect(picker.ownerNodeId).toBeNull()
+    await act(async () => root.unmount())
+  })
 })

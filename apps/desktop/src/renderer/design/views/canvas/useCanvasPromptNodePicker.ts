@@ -4,6 +4,11 @@ import type { CanvasNode } from './canvas.types'
 type CanvasPromptNodePickSession = {
   ownerNodeId: string
   onPick(node: CanvasNode): void
+  keepWhenInactive: boolean
+}
+
+type CanvasPromptNodePickerStartOptions = {
+  keepWhenInactive?: boolean
 }
 
 export function useCanvasPromptNodePicker({
@@ -31,8 +36,16 @@ export function useCanvasPromptNodePicker({
   }, [])
 
   const start = useCallback(
-    (nextOwnerNodeId: string, onPick: (node: CanvasNode) => void) => {
-      sessionRef.current = { ownerNodeId: nextOwnerNodeId, onPick }
+    (
+      nextOwnerNodeId: string,
+      onPick: (node: CanvasNode) => void,
+      options?: CanvasPromptNodePickerStartOptions,
+    ) => {
+      sessionRef.current = {
+        ownerNodeId: nextOwnerNodeId,
+        onPick,
+        keepWhenInactive: options?.keepWhenInactive === true,
+      }
       pendingSelectionRestoreRef.current = null
       setOwnerNodeId(nextOwnerNodeId)
       setSelectedNodeIds([nextOwnerNodeId])
@@ -73,7 +86,10 @@ export function useCanvasPromptNodePicker({
   )
 
   useEffect(() => {
-    if (ownerNodeId && activeOperationNodeId !== ownerNodeId) cancel(ownerNodeId)
+    const session = sessionRef.current
+    if (ownerNodeId && !session?.keepWhenInactive && activeOperationNodeId !== ownerNodeId) {
+      cancel(ownerNodeId)
+    }
   }, [activeOperationNodeId, cancel, ownerNodeId])
 
   useEffect(() => {

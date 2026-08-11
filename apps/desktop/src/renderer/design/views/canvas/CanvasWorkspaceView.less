@@ -1938,6 +1938,26 @@
   line-height: 1.5;
 }
 
+.canvas-operation-input-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.canvas-operation-input-actions .ant-btn,
+.canvas-operation-input-actions button {
+  padding-inline: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.canvas-operation-input-actions .ant-btn:hover,
+.canvas-operation-input-actions button:hover {
+  color: var(--text-primary);
+}
+
 .canvas-node-task-meta {
   width: 100%;
   color: color-mix(in srgb, var(--text-muted) 82%, white);
