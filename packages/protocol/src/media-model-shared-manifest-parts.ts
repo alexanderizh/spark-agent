@@ -327,6 +327,140 @@ export const minimaxMusicSchema = {
 }
 
 /**
+ * 百炼 Qwen-TTS 系列参数 schema。
+ * 来源 docs/integrations/bailian/tts.md §2.4（Qwen-TTS HTTP API input 字段）。
+ * 仅含 modelParams 可控字段：voice（必填）、language_type、instructions、optimize_instructions。
+ * instructions/optimize_instructions 仅 qwen3-tts-instruct-flash 系生效（§2.4）。
+ * Qwen-TTS 不支持 format/sample_rate 等音频参数（产物默认 wav，§2.5）。
+ */
+export const bailianQwenTtsSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    voice: {
+      type: 'string',
+      title: '音色',
+      description: '使用的系统音色（参见百炼支持的系统音色列表），如 Cherry / Ethan',
+    },
+    language_type: {
+      type: 'string',
+      title: '语种',
+      enum: [
+        'Auto',
+        'Chinese',
+        'English',
+        'German',
+        'Italian',
+        'Portuguese',
+        'Spanish',
+        'Japanese',
+        'Korean',
+        'French',
+        'Russian',
+      ],
+      default: 'Auto',
+      description: '合成音频的语种，默认 Auto（来源 §2.4）',
+    },
+    instructions: {
+      type: 'string',
+      title: '指令',
+      description: '设置指令，控制合成效果。最大 1600 Token，仅中/英，仅 qwen3-tts-instruct-flash 系（§2.4）',
+    },
+    optimize_instructions: {
+      type: 'boolean',
+      title: '指令优化',
+      default: false,
+      description: '对 instructions 语义优化，依赖 instructions，仅 instruct 系（§2.4）',
+    },
+  },
+}
+
+/**
+ * 百炼 CosyVoice / Qwen-Audio-TTS 参数 schema。
+ * 来源 docs/integrations/bailian/tts.md §3.4（SpeechSynthesizer HTTP API input 字段）。
+ * adapter 仅透传用户显式传入的字段，未传由官方默认兜底（§3.4 默认列）。
+ */
+export const bailianCosyvoiceTtsSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    voice: {
+      type: 'string',
+      title: '音色',
+      description: '系统音色 / 声音复刻音色 / 声音设计音色（§3.4）',
+    },
+    format: {
+      type: 'string',
+      title: '音频格式',
+      enum: ['mp3', 'pcm', 'wav', 'opus'],
+      default: 'mp3',
+      description: '音频编码格式，默认 mp3（来源 §3.4）',
+    },
+    sample_rate: {
+      type: 'integer',
+      title: '采样率',
+      enum: [8000, 16000, 22050, 24000, 44100, 48000],
+      default: 22050,
+      description: '音频采样率（Hz），默认 22050（来源 §3.4）',
+    },
+    volume: {
+      type: 'integer',
+      title: '音量',
+      minimum: 0,
+      maximum: 100,
+      default: 50,
+      description: '音量 [0,100]，默认 50（来源 §3.4）',
+    },
+    rate: {
+      type: 'number',
+      title: '语速',
+      minimum: 0.5,
+      maximum: 2,
+      default: 1,
+      description: '语速 [0.5,2.0]，默认 1.0（来源 §3.4）',
+    },
+    pitch: {
+      type: 'number',
+      title: '音调',
+      minimum: 0.5,
+      maximum: 2,
+      default: 1,
+      description: '音调 [0.5,2.0]，默认 1.0（来源 §3.4）',
+    },
+    bit_rate: {
+      type: 'integer',
+      title: '码率',
+      minimum: 6,
+      maximum: 510,
+      description: '音频码率（kbps）[6,510]，仅 format=opus 时支持（来源 §3.4）',
+    },
+    seed: {
+      type: 'integer',
+      title: '随机种子',
+      minimum: 0,
+      maximum: 65535,
+      default: 0,
+      description: '生成随机数种子 [0,65535]，默认 0（来源 §3.4）',
+    },
+    instruction: {
+      type: 'string',
+      title: '指令',
+      description: '控制方言、情感或角色等合成效果（§3.4）',
+    },
+    enable_ssml: { type: 'boolean', title: 'SSML', description: '是否开启 SSML（§3.4）' },
+    language_hints: {
+      type: 'array',
+      title: '目标语言',
+      items: {
+        type: 'string',
+        enum: ['zh', 'en', 'fr', 'de', 'ja', 'ko', 'ru', 'pt', 'th', 'id', 'vi', 'es', 'it', 'ms', 'fil', 'ar'],
+      },
+      description: '目标语言数组，当前版本仅处理第一个元素（§3.4）',
+    },
+  },
+}
+
+/**
  * MiniMax Hailuo 2.3 / 2.3-Fast 视频生成（v1，POST /v1/video_generation）参数 schema。
  * 首/尾帧由画布 inputFiles 的 role(first_frame/last_frame) 驱动，不是 API 参数，
  * 因此不再暴露 useFirstFrame/useLastFrame（无对应官方字段，曾误导表单）。
