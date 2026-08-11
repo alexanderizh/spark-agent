@@ -78,11 +78,12 @@ describe('xAI media manifests', () => {
     expect(manifest?.invocation.requestTemplate).toMatchObject({
       text: '{{text}}',
       voice_id: '{{voiceId}}',
-      output_format: '{{outputFormat}}',
+      output_format: { codec: '{{outputFormat}}' },
     })
     expect(properties).toHaveProperty('voiceId')
     expect(properties).toHaveProperty('language')
     expect(properties).toHaveProperty('outputFormat')
     expect(properties).not.toHaveProperty('voice')
+    expect(properties).not.toHaveProperty('speed')
   })
 })

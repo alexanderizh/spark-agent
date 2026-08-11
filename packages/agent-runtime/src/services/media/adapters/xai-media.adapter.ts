@@ -278,19 +278,17 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       params.sampleRate ?? params.sample_rate,
       params.bitRate ?? params.bit_rate,
     )
-    const speed = numericParam(params.speed) ?? audioDefaults?.speed
     const withTimestamps = params.withTimestamps === true || params.with_timestamps === true
+    // §1.1 L47：optimize_streaming_latency 为 integer（0/1/2），非 boolean。
+    const optimizeLatency =
+      numericParam(params.optimizeStreamingLatency) ??
+      numericParam(params.optimize_streaming_latency)
     const body: Record<string, unknown> = {
       text,
       voice_id: stringParam(params.voiceId ?? params.voice_id) ?? audioDefaults?.voice ?? 'eve',
       language: stringParam(params.language) ?? 'auto',
       output_format: outputFormat,
-      ...(speed !== undefined ? { speed } : {}),
-      ...(typeof params.optimizeStreamingLatency === 'boolean'
-        ? { optimize_streaming_latency: params.optimizeStreamingLatency }
-        : typeof params.optimize_streaming_latency === 'boolean'
-          ? { optimize_streaming_latency: params.optimize_streaming_latency }
-          : {}),
+      ...(optimizeLatency !== undefined ? { optimize_streaming_latency: optimizeLatency } : {}),
       ...(typeof params.textNormalization === 'boolean'
         ? { text_normalization: params.textNormalization }
         : typeof params.text_normalization === 'boolean'
@@ -773,9 +771,11 @@ function xaiImageExtension(params: Record<string, unknown>): string {
 }
 
 function mimeFromTtsCodec(codec: string): string {
+  // §1.3 Codec → Content-Type 对照表：mp3=audio/mpeg, wav=audio/wav,
+  // pcm=audio/pcm, mulaw=audio/basic (G.711 μ-law), alaw=audio/alaw (G.711 A-law)。
   const normalized = codec.toLowerCase()
-  if (normalized === 'wav' || normalized === 'pcm') return `audio/${normalized}`
-  if (normalized === 'opus') return 'audio/opus'
-  if (normalized === 'flac') return 'audio/flac'
+  if (normalized === 'wav' || normalized === 'pcm' || normalized === 'alaw')
+    return `audio/${normalized}`
+  if (normalized === 'mulaw') return 'audio/basic'
   return 'audio/mpeg'
 }

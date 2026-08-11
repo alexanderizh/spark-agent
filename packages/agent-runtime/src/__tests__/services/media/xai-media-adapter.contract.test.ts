@@ -415,7 +415,7 @@ describe('XaiMediaAdapter official contract', () => {
           voiceId: 'Ara',
           language: 'zh-CN',
           outputFormat: { codec: 'wav', sample_rate: 24000, bit_rate: 128000 },
-          speed: 1.2,
+          optimizeStreamingLatency: 1,
         },
       },
       context(fetchImpl, 'grok-tts'),
@@ -427,7 +427,7 @@ describe('XaiMediaAdapter official contract', () => {
       voice_id: 'Ara',
       language: 'zh-CN',
       output_format: { codec: 'wav', sample_rate: 24000, bit_rate: 128000 },
-      speed: 1.2,
+      optimize_streaming_latency: 1,
     })
   })
 
@@ -482,7 +482,7 @@ describe('XaiMediaAdapter official contract', () => {
     }) as typeof fetch
     const ctx = context(fetchImpl, 'grok-tts')
     ctx.mediaDefaults = {
-      audio: { voice: 'Ara', format: 'wav', speed: 1.1 },
+      audio: { voice: 'Ara', format: 'wav' },
       polling: { intervalMs: 1, timeoutMs: 100 },
     }
 
@@ -499,8 +499,37 @@ describe('XaiMediaAdapter official contract', () => {
     expect(body).toMatchObject({
       voice_id: 'Ara',
       output_format: { codec: 'wav' },
-      speed: 1.1,
     })
+  })
+
+  it('maps TTS codec to the documented Content-Type for mulaw/alaw (§1.3)', async () => {
+    const fetchImpl = (async (_input: string | URL | Request, _init?: RequestInit) =>
+      new Response(Buffer.from('audio'))) as typeof fetch
+    const captured: Array<{ codec: string; mime: string | undefined }> = []
+
+    for (const codec of ['mulaw', 'alaw', 'mp3', 'wav', 'pcm']) {
+      const result = await adapter.invoke(
+        {
+          operation: 'text_to_audio',
+          capability: 'audio.speech',
+          outputDir,
+          prompt: 'codec test',
+          modelParams: { outputFormat: codec },
+        },
+        context(fetchImpl, 'grok-tts'),
+      )
+      captured.push({ codec, mime: result.assets[0]?.mimeType })
+    }
+
+    // §1.3 Codec → Content-Type：mp3=audio/mpeg, wav=audio/wav, pcm=audio/pcm,
+    // mulaw=audio/basic (G.711 μ-law), alaw=audio/alaw (G.711 A-law)。
+    expect(captured).toEqual([
+      { codec: 'mulaw', mime: 'audio/basic' },
+      { codec: 'alaw', mime: 'audio/alaw' },
+      { codec: 'mp3', mime: 'audio/mpeg' },
+      { codec: 'wav', mime: 'audio/wav' },
+      { codec: 'pcm', mime: 'audio/pcm' },
+    ])
   })
 
   it('uses storage_options and preserves each image public URL', async () => {

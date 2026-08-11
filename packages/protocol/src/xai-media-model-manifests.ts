@@ -90,6 +90,8 @@ export const XAI_VIDEO_15_MANIFESTS: readonly MediaModelManifest[] = XAI_VIDEO_1
   }),
 )
 
+// 字段与枚举来源 docs/integrations/xai/audio.md §1.1（参数表）/ §1.3（输出格式枚举）。
+// 注意：xAI TTS 文档未列 speed 参数（区别于 OpenAI TTS），不要臆测添加。
 export const XAI_TTS_PARAM_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -97,15 +99,30 @@ export const XAI_TTS_PARAM_SCHEMA = {
     voiceId: { type: 'string', title: '音色', default: 'eve' },
     language: { type: 'string', title: '语言', default: 'auto' },
     outputFormat: {
+      // §1.3 Codec 表：mp3/wav/pcm/mulaw/alaw（无 opus/flac）
       type: 'string',
       title: '输出格式',
-      enum: ['mp3', 'wav', 'pcm', 'opus', 'flac'],
+      enum: ['mp3', 'wav', 'pcm', 'mulaw', 'alaw'],
       default: 'mp3',
     },
-    sampleRate: { type: 'integer', title: '采样率', minimum: 8000 },
-    bitRate: { type: 'integer', title: '码率', minimum: 8000 },
-    speed: { type: 'number', title: '语速', minimum: 0.7, maximum: 1.5, default: 1 },
-    optimizeStreamingLatency: { type: 'boolean', title: '优化流式延迟' },
+    // §1.3 采样率枚举：8000/16000/22050/24000(默认)/44100/48000
+    sampleRate: {
+      type: 'integer',
+      title: '采样率',
+      enum: [8000, 16000, 22050, 24000, 44100, 48000],
+    },
+    // §1.3 比特率枚举（仅 mp3）：32000/64000/96000/128000(默认)/192000
+    bitRate: {
+      type: 'integer',
+      title: '码率',
+      enum: [32000, 64000, 96000, 128000, 192000],
+    },
+    // §1.1 L47：integer 0/1/2（同步 REST 文档未列 2，保守暴露 0/1/2 三档）
+    optimizeStreamingLatency: {
+      type: 'integer',
+      title: '优化流式延迟',
+      enum: [0, 1, 2],
+    },
     textNormalization: { type: 'boolean', title: '文本规范化' },
     withTimestamps: { type: 'boolean', title: '返回时间戳', default: false },
   },

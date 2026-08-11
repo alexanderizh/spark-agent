@@ -145,6 +145,8 @@ tags:
   - `voice` 必填（adapter 取 `modelParams.voice` 或 provider `mediaDefaults.audio.voice` 兜底）。preset 默认 `Cherry` 是 Qwen-TTS 示例音色；CosyVoice 须用其专属音色（如 `longanhuan_v3.6`），调用 cosyvoice 时必须显式指定 voice。
   - WebSocket 流式 / 音色克隆 / ASR 转写本轮未接入。
 
+- xAI TTS（`providerKind=xai`，`audio.speech`，同步 REST `POST /v1/tts`）：`text`（≤15000 字符，支持 Speech Tags）、`voice_id`（26 内置音色，默认 `eve`，大小写不敏感）、`language`（**必填**，BCP-47 或 `auto`）。**xAI TTS 不支持 `speed`**（区别于 OpenAI TTS，文档 §1.1 未列，不要臆测传入）。`output_format` 为对象 `{codec, sample_rate, bit_rate}`：codec 仅 `mp3`/`wav`/`pcm`/`mulaw`/`alaw`（无 opus/flac）；sample_rate ∈ 8000/16000/22050/24000/44100/48000；bit_rate ∈ 32000/64000/96000/128000/192000（仅 mp3）。`optimize_streaming_latency` 是 **integer 0/1/2**（非 boolean）。默认返回二进制音频流，adapter 直接落盘。
+
 官方依据：
 
 - Wan 2.7 图像：https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference
