@@ -17,10 +17,11 @@
  *    - 文档：docs/integrations/volcengine/music.md
  *
  * 2. 语音合成（seed-tts-2.0，audio.speech）—— POST /api/v3/tts/unidirectional，
- *    单向流式（HTTP Chunked）。
+ *    单向流式（HTTP Chunked）。官方文档 docId 1598757。
  *    - 鉴权三头：X-Api-Key + X-Api-Resource-Id:seed-tts-2.0 + X-Api-Request-Id(uuid)。
  *    - 必填 req_params.text + req_params.speaker；audio_params.format 等。
- *    - 响应：HTTP Chunked 二进制音频流，fetch.arrayBuffer() 累积所有 chunk 后落盘。
+ *    - 响应：JSON 对象流（非二进制），每帧 {code,message,data(base64音频),sentence?,usage?}；
+ *      逐帧 base64 解码后 concat 成完整音频。成功码 20000000（结束帧），错误 4xxxxxxx/5xxxxxxx。
  *    - 文档：docs/integrations/volcengine/tts.md
  */
 
@@ -159,9 +160,10 @@ export class VolcengineSpeechMediaAdapter implements MediaProviderAdapter {
   }
 
   // ─── 语音合成（seed-tts-2.0，/api/v3/tts/unidirectional，单向流式）─────────
-  // 文档：docs/integrations/volcengine/tts.md。HTTP Chunked 二进制音频流，
-  // fetch.arrayBuffer() 累积所有 chunk 后落盘。鉴权三头：X-Api-Key +
-  // X-Api-Resource-Id:seed-tts-2.0 + X-Api-Request-Id(uuid)。
+  // 文档：docs/integrations/volcengine/tts.md（官方 docId 1598757）。响应是 JSON 对象流，
+  // 每帧 {code,message,data(base64音频片段),sentence?,usage?}；parseVolcTtsStream 逐帧
+  // base64 解码后 concat。鉴权三头：X-Api-Key + X-Api-Resource-Id:seed-tts-2.0 +
+  // X-Api-Request-Id(uuid)。成功码 20000000（结束帧），错误 4xxxxxxx/5xxxxxxx。
   private async generateSpeech(
     input: MediaGenerateInput,
     ctx: MediaProviderContext,
@@ -210,7 +212,8 @@ export class VolcengineSpeechMediaAdapter implements MediaProviderAdapter {
     const timeoutMs = resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
-    let buffer: Buffer
+    let audioBuffer: Buffer
+    let usage: Record<string, unknown> | undefined
     try {
       const fetchImpl = ctx.fetch ?? fetch
       const res = await fetchImpl(url, {
@@ -226,8 +229,10 @@ export class VolcengineSpeechMediaAdapter implements MediaProviderAdapter {
           `Volcengine speech ${res.status}: ${errText.slice(0, 800)}`,
         )
       }
-      // HTTP Chunked 流式：arrayBuffer() 等待并拼接所有 chunk 为单一 Buffer。
-      buffer = Buffer.from(await res.arrayBuffer())
+      // 响应是 JSON 对象流（非二进制）：parseVolcTtsStream 逐帧 base64 解码后 concat。
+      const parsed = await parseVolcTtsStream(res)
+      audioBuffer = parsed.audio
+      usage = parsed.usage
     } catch (err) {
       if (controller.signal.aborted && isAbortError(err)) {
         throw new MediaProviderError(
@@ -239,13 +244,13 @@ export class VolcengineSpeechMediaAdapter implements MediaProviderAdapter {
     } finally {
       clearTimeout(timer)
     }
-    if (buffer.length === 0) {
+    if (audioBuffer.length === 0) {
       throw new MediaProviderError('provider_http_error', 'Volcengine speech 返回空音频流')
     }
     const filename = filenameHelper(input, 'volcengine-speech', 0, 1)
     const asset = await this.artifact.writeBinaryAsset(
       'audio',
-      buffer,
+      audioBuffer,
       input.outputDir,
       filename,
       mimeTypeFromSpeechFormat(params.format),
@@ -256,7 +261,7 @@ export class VolcengineSpeechMediaAdapter implements MediaProviderAdapter {
       model: SEED_TTS_RESOURCE_ID,
       mode: 'sync',
       assets: [asset],
-      rawResponse: { bytes: buffer.length, format: params.format ?? 'mp3' },
+      rawResponse: { bytes: audioBuffer.length, format: params.format ?? 'mp3', usage },
     }
   }
 }
@@ -331,6 +336,78 @@ function readBool(v: unknown): boolean | undefined {
 
 function isAbortError(err: unknown): boolean {
   return err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
+}
+
+/**
+ * 解析火山单向流式 TTS 的 JSON 流响应（官方 docId 1598757）。
+ *
+ * 响应体是连续的 JSON 对象序列（每帧 {code,message,data,sentence?,usage?}）。文档
+ * 未明示帧分隔符（NDJSON `\n` vs 无分隔连续 JSON），这里用花括号深度切分——同时
+ * 兼容两种情况，且能正确处理 chunk 边界与 JSON 边界不对齐（跨 read() 累积）。
+ *
+ * 音频在 data 字段（base64），逐帧解码后 concat。错误码 4xxxxxxx / 5xxxxxxx 抛出
+ * （Math.floor(code / 10_000_000) ∈ {4,5}）；成功码 20000000（结束帧）与 0（中间数据帧）。
+ */
+async function parseVolcTtsStream(
+  res: Response,
+): Promise<{ audio: Buffer; usage: Record<string, unknown> | undefined }> {
+  const reader = res.body?.getReader()
+  if (!reader) {
+    throw new MediaProviderError('provider_http_error', 'Volcengine speech 响应体为空')
+  }
+  const decoder = new TextDecoder('utf-8')
+  const chunks: Buffer[] = []
+  let usage: Record<string, unknown> | undefined
+  let buf = ''
+  let depth = 0
+  let start = -1
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+
+    for (let i = 0; i < buf.length; i++) {
+      const ch = buf[i]
+      if (ch === '{') {
+        if (depth === 0) start = i
+        depth++
+      } else if (ch === '}') {
+        if (depth > 0) {
+          depth--
+          if (depth === 0 && start >= 0) {
+            const jsonStr = buf.slice(start, i + 1)
+            buf = buf.slice(i + 1)
+            i = -1
+            start = -1
+            let frame: Record<string, unknown>
+            try {
+              frame = JSON.parse(jsonStr) as Record<string, unknown>
+            } catch {
+              continue
+            }
+            const code = typeof frame.code === 'number' ? frame.code : 0
+            const codePrefix = Math.floor(code / 10_000_000)
+            if (codePrefix === 4 || codePrefix === 5) {
+              throw new MediaProviderError(
+                'provider_http_error',
+                `Volcengine speech ${code}: ${String(frame.message ?? '').slice(0, 500)}`,
+              )
+            }
+            const data = frame.data
+            if (typeof data === 'string' && data.length > 0) {
+              chunks.push(Buffer.from(data, 'base64'))
+            }
+            if (frame.usage && typeof frame.usage === 'object') {
+              usage = frame.usage as Record<string, unknown>
+            }
+          }
+        }
+      }
+    }
+  }
+  const audio = Buffer.concat(chunks)
+  return { audio, usage }
 }
 
 /** 音频格式 → MIME 映射（music 与 tts 共用，枚举见 music.md / tts.md）。 */
