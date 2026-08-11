@@ -3,6 +3,7 @@ import { mapSDKToolName } from './tool-name-mapper.js'
 
 describe('mapSDKToolName', () => {
   it.each([
+    ['Task', 'subagent'],
     ['ListMcpResources', 'list_mcp_resources'],
     ['ReadMcpResource', 'read_mcp_resource'],
     ['ReadMcpResourceDir', 'read_mcp_resource_dir'],
