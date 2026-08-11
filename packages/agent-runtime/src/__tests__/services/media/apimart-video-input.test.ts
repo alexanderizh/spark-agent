@@ -35,9 +35,7 @@ describe('APIMart video input serialization', () => {
           image_urls: ['https://cdn/image-1.png', 'https://cdn/image-2.png'],
         },
       ],
-      ref_videos: [
-        { tag: '@video1', type: 'reference', video_url: 'https://cdn/video.mp4' },
-      ],
+      ref_videos: [{ tag: '@video1', type: 'reference', video_url: 'https://cdn/video.mp4' }],
     })
   })
 
@@ -154,6 +152,63 @@ describe('APIMart video input serialization', () => {
     expect(
       buildApimartVideoInputFields({
         modelId: 'doubao-seedance-2.0',
+        capability: 'video.image_to_video',
+        ...references,
+        firstFrame: 'https://cdn/first.png',
+        lastFrame: 'https://cdn/last.png',
+        referenceImages: [],
+        referenceVideos: [],
+      }),
+    ).toEqual({
+      image_with_roles: [
+        { url: 'https://cdn/first.png', role: 'first_frame' },
+        { url: 'https://cdn/last.png', role: 'last_frame' },
+      ],
+    })
+  })
+
+  it('keeps FLUX 3 keyframe order in image_urls', () => {
+    expect(
+      buildApimartVideoInputFields({
+        modelId: 'flux-3-video',
+        capability: 'video.image_to_video',
+        ...references,
+        firstFrame: 'https://cdn/first.png',
+        lastFrame: 'https://cdn/last.png',
+        referenceImages: ['https://cdn/middle-1.png', 'https://cdn/middle-2.png'],
+        referenceVideos: [],
+      }),
+    ).toEqual({
+      image_urls: [
+        'https://cdn/first.png',
+        'https://cdn/last.png',
+        'https://cdn/middle-1.png',
+        'https://cdn/middle-2.png',
+      ],
+    })
+  })
+
+  it('uses dedicated first/last frame fields for APIMart MiniMax-H3', () => {
+    expect(
+      buildApimartVideoInputFields({
+        modelId: 'MiniMax-H3',
+        capability: 'video.image_to_video',
+        ...references,
+        firstFrame: 'https://cdn/first.png',
+        lastFrame: 'https://cdn/last.png',
+        referenceImages: [],
+        referenceVideos: [],
+      }),
+    ).toEqual({
+      first_frame_image: 'https://cdn/first.png',
+      last_frame_image: 'https://cdn/last.png',
+    })
+  })
+
+  it('uses role-based first/last frames for APIMart Seedance 2.5', () => {
+    expect(
+      buildApimartVideoInputFields({
+        modelId: 'doubao-seedance-2.5',
         capability: 'video.image_to_video',
         ...references,
         firstFrame: 'https://cdn/first.png',

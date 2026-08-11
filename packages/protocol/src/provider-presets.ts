@@ -1581,11 +1581,21 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'doubao-seedance-1-0-pro-fast',
       'doubao-seedance-1-0-pro-quality',
       'doubao-seedance-2.0',
+      'wan3.0-video',
+      'doubao-seedance-2.5',
+      'flux-3-video',
+      'MiniMax-H3',
     ],
     modelType: 'video',
     mediaProvider: 'apimart',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
+    mediaCapabilities: [
+      'video.generate',
+      'video.image_to_video',
+      'video.reference_to_video',
+      'video.edit',
+      'video.extend',
+    ],
     mediaModelRefs: [
       { manifestId: 'apimart:kling-v2-6', modelId: 'kling-v2-6', enabled: true },
       { manifestId: 'apimart:kling-v3', modelId: 'kling-v3', enabled: true },
@@ -1653,13 +1663,23 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
         enabled: true,
       },
       { manifestId: 'apimart:doubao-seedance-2.0', modelId: 'doubao-seedance-2.0', enabled: true },
+      { manifestId: 'apimart:wan3.0-video', modelId: 'wan3.0-video', enabled: true },
+      { manifestId: 'apimart:doubao-seedance-2.5', modelId: 'doubao-seedance-2.5', enabled: true },
+      { manifestId: 'apimart:flux-3-video', modelId: 'flux-3-video', enabled: true },
+      { manifestId: 'apimart:MiniMax-H3', modelId: 'MiniMax-H3', enabled: true },
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
       timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       polling: { intervalMs: 6000 },
     },
-    sourceUrls: ['https://docs.apimart.ai/cn/api-reference/videos'],
+    sourceUrls: [
+      'https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation',
+      'https://docs.apimart.ai/en/api-reference/videos/doubao-seedance-2-5/generation',
+      'https://docs.apimart.ai/en/api-reference/videos/flux-3-video/generation',
+      'https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation',
+      'https://docs.apimart.ai/en/api-reference/videos/kling-3.0-turbo/generation',
+    ],
   },
 
   /* ─── xAI 图片（Grok Imagine）─── */
@@ -1913,7 +1933,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaCapabilities: ['audio.speech'],
     mediaModelRefs: [
       { manifestId: 'bailian:qwen3-tts-flash', modelId: 'qwen3-tts-flash', enabled: true },
-      { manifestId: 'bailian:cosyvoice-v3.5-flash', modelId: 'cosyvoice-v3.5-flash', enabled: true },
+      {
+        manifestId: 'bailian:cosyvoice-v3.5-flash',
+        modelId: 'cosyvoice-v3.5-flash',
+        enabled: true,
+      },
     ],
     // voice 为 qwen3-tts-flash 开箱默认（§2.3 示例音色 Cherry）；cosyvoice 需用其专属音色
     // （§3.4，如 longanhuan_v3.6），用户须在调用时显式指定。format 仅 cosyvoice 生效。

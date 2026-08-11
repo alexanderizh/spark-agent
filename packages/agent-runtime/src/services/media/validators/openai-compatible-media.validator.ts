@@ -33,7 +33,8 @@ export function validateOpenAiCompatibleMediaRequest(
   ) {
     issues.push(validationIssue('missing_required', '语音转写需要音频文件', ['inputFiles']))
   }
-  if (context.capability === 'video.generate' && !prompt) {
+  const promptRequired = context.manifestCapability?.input.required.includes('prompt') ?? true
+  if (context.capability === 'video.generate' && !prompt && promptRequired) {
     issues.push(validationIssue('missing_required', '视频生成需要提示词', ['prompt']))
   }
   return issues

@@ -1139,6 +1139,104 @@ const apimartVideoModelSchemas: Record<
   string,
   { schema: Record<string, unknown>; defaults: Record<string, unknown> }
 > = {
+  /* ─── Wan3.0（APIMart：统一多模态参考/首尾帧入口）─── */
+  'wan3.0-video': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: {
+          type: 'string',
+          title: '比例',
+          enum: ['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16'],
+          default: 'adaptive',
+        },
+        durationSeconds: { type: 'integer', title: '时长', minimum: -1, maximum: 30, default: 5 },
+        resolution: {
+          type: 'string',
+          title: '分辨率',
+          enum: ['480P', '720P', '1080P'],
+          default: '1080P',
+        },
+        audio: { type: 'boolean', title: '生成音频', default: true },
+        watermark: { type: 'boolean', title: '水印', default: false },
+        seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+        generationType: { type: 'string', title: '生成类型', enum: ['frame', 'reference'] },
+        fileUrl: { type: 'string', title: '参考文件 URL', format: 'uri' },
+        linkUrl: { type: 'string', title: '参考网页 URL', format: 'uri' },
+      },
+    },
+    defaults: { aspectRatio: 'adaptive', durationSeconds: 5, resolution: '1080P', audio: true },
+  },
+  /* ─── FLUX 3 Video（APIMart：T2V/I2V/视频续写/草稿）─── */
+  'flux-3-video': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: {
+          type: 'string',
+          title: '比例',
+          enum: ['auto', '21:9', '2:1', '16:9', '4:3', '1:1', '3:4', '9:16'],
+          default: 'auto',
+        },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 5, maximum: 20, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['hd', 'fhd'], default: 'hd' },
+        audio: { type: 'boolean', title: '生成音频', default: true },
+        draft: { type: 'boolean', title: '草稿模式', default: false },
+        draftFromTaskId: { type: 'string', title: '草稿任务 ID' },
+        safetyTolerance: {
+          type: 'integer',
+          title: '审核容忍度',
+          minimum: 0,
+          maximum: 4,
+          default: 2,
+        },
+        mode: {
+          type: 'string',
+          title: '生成模式',
+          description: '可选：t2v、i2v、v2v 或 draft_enhance；不填时由输入素材自动判断',
+        },
+      },
+    },
+    defaults: {
+      aspectRatio: 'auto',
+      durationSeconds: 5,
+      resolution: 'hd',
+      audio: true,
+      safetyTolerance: 2,
+    },
+  },
+  /* ─── MiniMax-H3（APIMart：复用 APIMart 视频统一入口）─── */
+  'MiniMax-H3': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        durationSeconds: {
+          type: 'integer',
+          title: '时长(秒)',
+          minimum: 4,
+          maximum: 15,
+          default: 5,
+        },
+        resolution: {
+          type: 'string',
+          title: '分辨率',
+          enum: ['768P', '2K'],
+          default: '2K',
+        },
+        aspectRatio: {
+          type: 'string',
+          title: '画幅',
+          enum: ['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+          default: 'adaptive',
+        },
+        watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '2K' },
+  },
   /* ─── Sora 2 / Sora 2 Pro（APIMart：aspect_ratio 仅 16:9/9:16；无 resolution；
          sora-2 时长 10/15s，sora-2-pro 时长 15/25s；支持 watermark）─── */
   'sora-2': {
@@ -1929,6 +2027,34 @@ const apimartVideoModelSchemas: Record<
       generate_audio: true,
     },
   },
+  'doubao-seedance-2.5': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: {
+          type: 'string',
+          title: '比例',
+          enum: ['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16', '21:9'],
+          default: 'adaptive',
+        },
+        durationSeconds: { type: 'integer', title: '时长', minimum: -1, maximum: 30, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' },
+        generateAudio: { type: 'boolean', title: '生成音频', default: true },
+        watermark: { type: 'boolean', title: '水印', default: false },
+        outputFormat: { type: 'string', title: '输出格式', enum: ['mp4', 'mov'], default: 'mp4' },
+        returnLastFrame: { type: 'boolean', title: '返回尾帧', default: false },
+        seed: { type: 'integer', title: '随机种子' },
+      },
+    },
+    defaults: {
+      aspectRatio: 'adaptive',
+      durationSeconds: 5,
+      resolution: '720p',
+      generateAudio: true,
+      outputFormat: 'mp4',
+    },
+  },
 }
 
 /** APIMart 视频模型中，画面比例字段在 provider 侧为 `size`（非默认 `aspect_ratio`）的 modelId 集合。
@@ -1946,7 +2072,44 @@ const apimartVideoSizeFieldModels = new Set([
   'doubao-seedance-2.0',
   'doubao-seedance-2-0-fast',
   'doubao-seedance-2-0-mini',
+  'wan3.0-video',
+  'doubao-seedance-2.5',
 ])
+
+function apimartCapabilityParamSchema(
+  modelId: string,
+  capabilityId: string,
+): Record<string, unknown> {
+  if (modelId === 'doubao-seedance-2.0') return apimartSeedance2VideoSchema
+  const base = apimartVideoModelSchemas[modelId]?.schema ?? videoSchema
+  if (modelId !== 'doubao-seedance-2.5') return base
+  const properties = (base.properties ?? {}) as Record<string, Record<string, unknown>>
+  if (capabilityId === 'video.image_to_video') {
+    return {
+      ...base,
+      properties: {
+        ...properties,
+        aspectRatio: { ...properties.aspectRatio, enum: ['adaptive'], default: 'adaptive' },
+      },
+    }
+  }
+  if (capabilityId === 'video.edit' || capabilityId === 'video.extend') {
+    const {
+      minimum: _minimum,
+      maximum: _maximum,
+      ...durationSchema
+    } = properties.durationSeconds ?? {}
+    return {
+      ...base,
+      properties: {
+        ...properties,
+        aspectRatio: { ...properties.aspectRatio, enum: ['adaptive'], default: 'adaptive' },
+        durationSeconds: { ...durationSchema, enum: [-1], default: -1 },
+      },
+    }
+  }
+  return base
+}
 
 const videoSchema = {
   type: 'object',
@@ -2295,7 +2458,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/videos/{{taskId}}',
         resultPaths: ['remixed_from_video_id'],
       },
-      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
+      polling: {
+        intervalMs: 5000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+        statusMap: commonStatusMap,
+      },
     },
     docs: {
       sourceUrls: ['https://agnes-ai.com/zh-Hans/docs/overview'],
@@ -2397,7 +2564,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/tasks/{{taskId}}',
         resultPaths: ['data.result.videos[].url[]', 'video_url', 'data[].url', 'output.url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
+      polling: {
+        intervalMs: 5000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+        statusMap: commonStatusMap,
+      },
     },
     docs: { sourceUrls: ['https://docs.apimart.ai/cn'] },
     safety: { allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
@@ -2545,6 +2716,26 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       modelId: 'doubao-seedance-2.0',
       displayName: 'APIMart Doubao Seedance 2.0',
     },
+    {
+      id: 'apimart:wan3.0-video',
+      modelId: 'wan3.0-video',
+      displayName: 'APIMart Wan 3.0 Video',
+    },
+    {
+      id: 'apimart:doubao-seedance-2.5',
+      modelId: 'doubao-seedance-2.5',
+      displayName: 'APIMart Doubao Seedance 2.5',
+    },
+    {
+      id: 'apimart:flux-3-video',
+      modelId: 'flux-3-video',
+      displayName: 'APIMart FLUX 3 Video',
+    },
+    {
+      id: 'apimart:MiniMax-H3',
+      modelId: 'MiniMax-H3',
+      displayName: 'APIMart MiniMax H3',
+    },
     { id: 'apimart:sora-2-pro', modelId: 'sora-2-pro', displayName: 'APIMart Sora 2 Pro' },
     { id: 'apimart:veo3.1-fast', modelId: 'veo3.1-fast', displayName: 'APIMart VEO 3.1 Fast' },
     {
@@ -2664,10 +2855,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       ...contract,
       output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
       // Seedance 2.0（APIMart flavor）走专用 schema；其余模型按 modelId 取独立 schema。
-      paramSchema:
-        entry.modelId === 'doubao-seedance-2.0'
-          ? apimartSeedance2VideoSchema
-          : (apimartVideoModelSchemas[entry.modelId]?.schema ?? videoSchema),
+      paramSchema: apimartCapabilityParamSchema(entry.modelId, contract.id),
       defaults: apimartVideoCapabilityDefaults(
         entry.modelId,
         contract.id,
@@ -2687,6 +2875,15 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio',
         durationSeconds: 'duration',
         editStrength: 'edit_strength',
+        generateAudio: 'generate_audio',
+        outputFormat: 'output_format',
+        returnLastFrame: 'return_last_frame',
+        draftFromTaskId: 'draft_from_task_id',
+        safetyTolerance: 'safety_tolerance',
+        generationType: 'generation_type',
+        fileUrl: 'file_url',
+        linkUrl: 'link_url',
+        ...(entry.modelId === 'MiniMax-H3' ? { watermark: 'aigc_watermark' } : {}),
       },
     })),
     invocation: {
@@ -2710,7 +2907,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/tasks/{{taskId}}',
         resultPaths: ['data.result.videos[].url[]', 'video_url', 'data[].url', 'output.url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
+      polling: {
+        intervalMs: 5000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+        statusMap: commonStatusMap,
+      },
     },
     docs: { sourceUrls: ['https://docs.apimart.ai/cn'] },
     safety: { allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
@@ -2868,7 +3069,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/videos/{{taskId}}',
         resultPaths: ['video.url', 'video_url', 'data[].url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
+      polling: {
+        intervalMs: 5000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+        statusMap: commonStatusMap,
+      },
     },
     docs: { sourceUrls: ['https://docs.x.ai/developers/model-capabilities/imagine'] },
     safety: { maxPromptLength: 8000, allowLocalFiles: true },
@@ -3142,7 +3347,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           statusEndpoint: '/v1/videos/text2video/{{taskId}}',
           resultPaths: ['video_url', 'output.video_url', 'data.video_url', 'data.url'],
         },
-        polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
+        polling: {
+          intervalMs: 5000,
+          timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+          statusMap: commonStatusMap,
+        },
       },
       docs: { sourceUrls: ['https://klingapi.com/zh/docs/text-to-video'] },
       safety: { maxPromptLength: 2500, allowLocalFiles: true },
@@ -3440,7 +3649,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/v1/query/video_generation?task_id={{taskId}}',
         resultPaths: ['file_id', 'data.file_id'],
       },
-      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
+      polling: {
+        intervalMs: 5000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+        statusMap: commonStatusMap,
+      },
     },
     docs: {
       sourceUrls: [
@@ -3493,7 +3706,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/v1/query/video_generation?task_id={{taskId}}',
         resultPaths: ['file_id', 'data.file_id'],
       },
-      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
+      polling: {
+        intervalMs: 5000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+        statusMap: commonStatusMap,
+      },
     },
     docs: {
       sourceUrls: [
@@ -3535,7 +3752,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/v1/query/video_template_generation?task_id={{taskId}}',
         resultPaths: ['video_url', 'data.video_url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
+      polling: {
+        intervalMs: 5000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+        statusMap: commonStatusMap,
+      },
     },
     docs: {
       sourceUrls: [
@@ -3620,7 +3841,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/v2/query/video_generation/{{taskId}}',
         resultPaths: ['task.content.url', 'content.url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS, statusMap: commonStatusMap },
+      polling: {
+        intervalMs: 5000,
+        timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+        statusMap: commonStatusMap,
+      },
     },
     docs: {
       sourceUrls: [

@@ -60,6 +60,46 @@ describe('APIMart video manifests', () => {
       maxVideos: 5,
     })
     expectInput('wan2.7-videoedit', 'video.edit', { maxImages: 4, maxVideos: 1 })
+    expectInput('wan3.0-video', 'video.reference_to_video', {
+      maxImages: 10,
+      maxVideos: 5,
+      maxAudios: 5,
+    })
+    expectInput('doubao-seedance-2.5', 'video.reference_to_video', {
+      maxImages: 30,
+      maxVideos: 10,
+      maxAudios: 10,
+    })
+    expectInput('flux-3-video', 'video.extend', { maxVideos: 1 })
+    expectInput('MiniMax-H3', 'video.reference_to_video', {
+      maxImages: 9,
+      maxVideos: 3,
+      maxAudios: 3,
+    })
+  })
+
+  it('keeps new APIMart model capability boundaries and defaults', () => {
+    expect(findCapability('wan3.0-video', 'video.generate')?.input.required).toEqual([])
+    expect(findCapability('wan3.0-video', 'video.edit')).toBeUndefined()
+    expect(findCapability('flux-3-video', 'video.edit')).toBeUndefined()
+    expect(findCapability('flux-3-video', 'video.extend')).toBeDefined()
+    expect(findCapability('doubao-seedance-2.5', 'video.edit')?.defaults).toMatchObject({
+      aspectRatio: 'adaptive',
+      durationSeconds: -1,
+    })
+    expect(findCapability('doubao-seedance-2.5', 'video.extend')?.defaults).toMatchObject({
+      aspectRatio: 'adaptive',
+      durationSeconds: -1,
+    })
+    expect(findCapability('MiniMax-H3', 'video.generate')?.defaults).not.toHaveProperty('watermark')
+    expect(
+      (
+        findCapability('MiniMax-H3', 'video.generate')?.paramSchema.properties as Record<
+          string,
+          unknown
+        >
+      ).watermark,
+    ).toBeDefined()
   })
 
   it('does not guess a one-image limit for an unknown APIMart model', () => {
@@ -110,9 +150,7 @@ describe('APIMart video manifests', () => {
     ]) {
       const capability = findCapability(modelId, 'video.image_to_video')
       expect(capability?.input.maxImages, modelId).toBe(1)
-      expect(capability && inferRolePolicy(capability).imageRoles, modelId).toEqual([
-        'first_frame',
-      ])
+      expect(capability && inferRolePolicy(capability).imageRoles, modelId).toEqual(['first_frame'])
     }
   })
 
@@ -184,7 +222,10 @@ describe('APIMart video manifests', () => {
 
   it('uses the documented Seedance 1.5 audio default while allowing explicit audio=false', () => {
     const capability = findCapability('doubao-seedance-1-5-pro', 'video.generate')
-    const properties = capability?.paramSchema.properties as Record<string, { default?: unknown; enum?: unknown[] }>
+    const properties = capability?.paramSchema.properties as Record<
+      string,
+      { default?: unknown; enum?: unknown[] }
+    >
 
     expect(properties.audio?.default).toBe(true)
     expect(capability?.defaults?.audio).toBe(true)
