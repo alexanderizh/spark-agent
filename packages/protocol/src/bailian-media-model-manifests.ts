@@ -7,9 +7,10 @@ import type {
 } from './media-model-manifest.js'
 import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from './media-config.js'
 import {
-  audioSpeechSchema,
+  bailianCosyvoiceTtsSchema,
   bailianImageSchema,
   bailianQwenImageSchema,
+  bailianQwenTtsSchema,
 } from './media-model-shared-manifest-parts.js'
 
 const bailianCommonStatusMap = {
@@ -1480,32 +1481,77 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     capabilities: [
       {
         id: 'audio.speech',
-        label: '文生音频',
+        label: '文生语音',
         input: { required: ['text'] as MediaManifestInputKind[] },
         output: {
           types: ['audio'] as MediaManifestOutputKind[],
-          mimeTypes: ['audio/mpeg', 'audio/wav', 'audio/ogg'],
+          mimeTypes: ['audio/wav', 'audio/mpeg'],
         },
-        paramSchema: audioSpeechSchema,
-        defaults: { format: 'mp3', voice: 'default', speed: 1 },
+        // 专用 adapter（不走 template adapter）：adapter 按 model 前缀分流，
+        // Qwen-TTS 系列走 §2 multimodal-generation/generation。
+        // paramSchema 不含 format/speed（§2.4 无此字段），voice 必填。
+        paramSchema: bailianQwenTtsSchema,
+        defaults: { voice: 'Cherry' },
       },
     ],
     invocation: {
       mode: 'sync',
-      endpoint: '/audio/speech',
+      endpoint: '/api/v1/services/aigc/multimodal-generation/generation',
       method: 'POST',
       contentType: 'json',
       requestTemplate: {
         model: '{{modelId}}',
-        input: '{{text}}',
-        voice: '{{voice}}',
-        format: '{{format}}',
-        speed: '{{speed}}',
+        input: { text: '{{text}}', voice: '{{voice}}', language_type: '{{language_type}}' },
       },
-      response: { kind: 'binary_response' },
+      // 响应为 JSON，音频 URL 在 output.audio.url（24h 有效 OSS 地址，§2.5/§2.6）
+      response: { kind: 'url', jsonPaths: ['output.audio.url'], download: true },
     },
     docs: {
-      sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'],
+      sourceUrls: ['https://help.aliyun.com/zh/model-studio/qwen-tts-api'],
+    },
+  },
+  {
+    id: 'bailian:cosyvoice-v3.5-flash',
+    providerKind: 'bailian',
+    modelId: 'cosyvoice-v3.5-flash',
+    displayName: 'CosyVoice v3.5 Flash',
+    domains: ['audio'],
+    capabilities: [
+      {
+        id: 'audio.speech',
+        label: '文生语音',
+        input: { required: ['text'] as MediaManifestInputKind[] },
+        output: {
+          types: ['audio'] as MediaManifestOutputKind[],
+          mimeTypes: ['audio/mpeg', 'audio/wav', 'audio/pcm', 'audio/ogg'],
+        },
+        // 专用 adapter：CosyVoice / Qwen-Audio-TTS 系列走 §3 SpeechSynthesizer。
+        paramSchema: bailianCosyvoiceTtsSchema,
+        defaults: { voice: 'longanhuan_v3.6', format: 'mp3', sample_rate: 22050 },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      // §3.1 L237：dashscope host 对 SpeechSynthesizer 仍可用
+      endpoint: '/api/v1/services/audio/tts/SpeechSynthesizer',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          text: '{{text}}',
+          voice: '{{voice}}',
+          format: '{{format}}',
+          sample_rate: '{{sample_rate}}',
+          volume: '{{volume}}',
+          rate: '{{rate}}',
+          pitch: '{{pitch}}',
+        },
+      },
+      response: { kind: 'url', jsonPaths: ['output.audio.url'], download: true },
+    },
+    docs: {
+      sourceUrls: ['https://help.aliyun.com/zh/model-studio/cosyvoice-tts-http-api'],
     },
   },
 ]

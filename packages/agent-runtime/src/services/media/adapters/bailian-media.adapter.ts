@@ -39,6 +39,7 @@ const CAPABILITIES: readonly MediaCapabilityId[] = [
   'video.reference_to_video',
   'video.edit',
   'video.extend',
+  'audio.speech',
 ]
 
 type BailianMediaType =
@@ -70,9 +71,117 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
       )
     }
     if (!ctx.apiKey) throw new MediaProviderError('api_key_missing', 'Missing Bailian API key')
+    if (capability.startsWith('audio.')) return this.generateSpeech(input, ctx)
     return capability.startsWith('image.')
       ? this.generateImage(input, ctx, capability)
       : this.generateVideo(input, ctx, capability)
+  }
+
+  private async generateSpeech(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
+    const text = requiredPrompt(input, 'audio.speech')
+    const model = mediaAdapterModelId(ctx)
+    // 百炼 TTS 有两套 HTTP API（来源 docs/integrations/bailian/tts.md）：
+    //   - Qwen-TTS 系列（qwen-tts* / qwen3-tts*）：§2 multimodal-generation/generation
+    //   - CosyVoice / Qwen-Audio-TTS：§3 audio/tts/SpeechSynthesizer
+    // 按 model 前缀分流。§3.1 L237 确认 dashscope host 对 SpeechSynthesizer 仍可用。
+    const isCosyvoice = model.startsWith('cosyvoice') || model.startsWith('qwen-audio')
+    return isCosyvoice
+      ? this.generateCosyvoiceTts(input, ctx, text, model)
+      : this.generateQwenTts(input, ctx, text, model)
+  }
+
+  private async generateQwenTts(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+    text: string,
+    model: string,
+  ): Promise<MediaGenerateOutput> {
+    const params = (input.modelParams ?? {}) as Record<string, unknown>
+    const voice = readBailianVoice(params, ctx)
+    // 请求体严格按 tts.md §2.3 / §2.4：input 为对象，仅含
+    // text/voice/language_type/instructions/optimize_instructions。
+    // instructions/optimize_instructions 仅 qwen3-tts-instruct-flash 系生效（§2.4）。
+    const ttsInput: Record<string, unknown> = { text, voice }
+    if (typeof params.language_type === 'string') ttsInput.language_type = params.language_type
+    if (typeof params.instructions === 'string') ttsInput.instructions = params.instructions
+    if (typeof params.optimize_instructions === 'boolean')
+      ttsInput.optimize_instructions = params.optimize_instructions
+    const body = { model, input: ttsInput }
+    const url =
+      ctx.requestEndpointOverride ?? `${aigcBaseUrl(ctx)}/multimodal-generation/generation`
+    logMediaCall({ provider: this.id, capability: 'audio.speech', model, method: 'POST', url, body })
+    const data = await fetchJson(url, {
+      method: 'POST',
+      headers: headers(ctx),
+      body: JSON.stringify(body),
+      fetchImpl: ctx.fetch,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
+      errorExtractor: bailianError,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
+    })
+    const audioUrl = readBailianAudioUrl(data)
+    const asset = await this.artifact.downloadMediaAsset(
+      'audio',
+      audioUrl,
+      input.outputDir,
+      filenameHelper(input, 'bailian-tts', 0, 1),
+      ctx.fetch,
+      configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+    )
+    logMediaResult({ provider: this.id, capability: 'audio.speech', ok: true, assetCount: 1 })
+    return { provider: this.id, model, mode: 'sync', assets: [asset], rawResponse: data }
+  }
+
+  private async generateCosyvoiceTts(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+    text: string,
+    model: string,
+  ): Promise<MediaGenerateOutput> {
+    const params = (input.modelParams ?? {}) as Record<string, unknown>
+    const voice = readBailianVoice(params, ctx)
+    // 请求体严格按 tts.md §3.3 / §3.4：input 为对象，含 format/sample_rate/volume/
+    // rate/pitch/bit_rate/seed/instruction/enable_ssml/language_hints 等。仅透传用户显式
+    // 传入的字段，未传则由官方默认值兜底（§3.4 默认列：format=mp3, sample_rate=22050...）。
+    const ttsInput: Record<string, unknown> = { text, voice }
+    if (typeof params.format === 'string') ttsInput.format = params.format
+    if (isFiniteNumber(params.sample_rate)) ttsInput.sample_rate = params.sample_rate
+    if (isFiniteNumber(params.volume)) ttsInput.volume = params.volume
+    if (isFiniteNumber(params.rate)) ttsInput.rate = params.rate
+    if (isFiniteNumber(params.pitch)) ttsInput.pitch = params.pitch
+    if (isFiniteNumber(params.bit_rate)) ttsInput.bit_rate = params.bit_rate
+    if (isFiniteNumber(params.seed)) ttsInput.seed = params.seed
+    if (typeof params.instruction === 'string') ttsInput.instruction = params.instruction
+    if (typeof params.enable_ssml === 'boolean') ttsInput.enable_ssml = params.enable_ssml
+    if (Array.isArray(params.language_hints)) ttsInput.language_hints = params.language_hints
+    const body = { model, input: ttsInput }
+    const url =
+      ctx.requestEndpointOverride ??
+      `${apiV1BaseUrl(ctx)}/services/audio/tts/SpeechSynthesizer`
+    logMediaCall({ provider: this.id, capability: 'audio.speech', model, method: 'POST', url, body })
+    const data = await fetchJson(url, {
+      method: 'POST',
+      headers: headers(ctx),
+      body: JSON.stringify(body),
+      fetchImpl: ctx.fetch,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
+      errorExtractor: bailianError,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
+    })
+    const audioUrl = readBailianAudioUrl(data)
+    const asset = await this.artifact.downloadMediaAsset(
+      'audio',
+      audioUrl,
+      input.outputDir,
+      filenameHelper(input, 'bailian-tts', 0, 1),
+      ctx.fetch,
+      configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+    )
+    logMediaResult({ provider: this.id, capability: 'audio.speech', ok: true, assetCount: 1 })
+    return { provider: this.id, model, mode: 'sync', assets: [asset], rawResponse: data }
   }
 
   private async generateImage(
@@ -809,6 +918,36 @@ function bailianError(_status: number, body: unknown): string | undefined {
   return code || message
     ? `${code ?? 'BailianError'}: ${message ?? 'request failed'}${request}`
     : undefined
+}
+
+function readBailianVoice(params: Record<string, unknown>, ctx: MediaProviderContext): string {
+  const fromParams = typeof params.voice === 'string' ? params.voice : undefined
+  const voice = fromParams ?? ctx.mediaDefaults?.audio?.voice
+  if (!voice) {
+    throw new MediaProviderError(
+      'invalid_input',
+      '百炼 TTS 需要 voice（modelParams.voice 或 provider mediaDefaults.audio.voice）',
+    )
+  }
+  return voice
+}
+
+function readBailianAudioUrl(data: unknown): string {
+  if (!data || typeof data !== 'object') {
+    throw new MediaProviderError('provider_http_error', 'No audio in Bailian response')
+  }
+  const url = (data as { output?: { audio?: { url?: unknown } } }).output?.audio?.url
+  if (typeof url !== 'string' || !url) {
+    throw new MediaProviderError(
+      'provider_http_error',
+      `No audio url in Bailian response: ${JSON.stringify(data).slice(0, 800)}`,
+    )
+  }
+  return url
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
 }
 
 function requestId(value: unknown): string | undefined {

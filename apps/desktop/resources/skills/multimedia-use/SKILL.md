@@ -139,10 +139,17 @@ tags:
 - 视频/音频素材需要该模型 API 明确允许的 HTTP/HTTPS URL；图像还可以用 API 允许的 Base64。Managed Agents、DashScope 原生与 OpenAI 兼容 Files API 的 `file_id` 不可直接传给多媒体生成接口。DashScope Files 返回的下载 URL 也不能因为存在就推断为万相素材 URL。
 - 百炼 DashScope 原生 Files 已可在「无限画布 → 项目资产中心 → Files」中管理：仅北京 Region 公共 `https://dashscope.aliyuncs.com/api/v1/files`，上传必须使用本地 `files` multipart 字段和 `purpose`=`file-extract` / `batch` / `fine-tune`。它只用于文件解析、Batch 与模型微调；不作为万相图片/视频素材。上传响应可能部分成功，必须逐项显示失败的 `code`、`message`、`request_id`。删除远端文件前仍需用户明确确认。
 - 当错误含 `request_id`、`code` 或字段名时，要保留它们并指出可修复的输入字段；不要将百炼的错误结构按 OpenAI 或火山方舟格式臆测解析。
+- 百炼 TTS（`audio.speech`）按 model 前缀分流两套 HTTP API（均走 `dashscope.aliyuncs.com`，Bearer 鉴权，响应均为 `output.audio.url`，24h 有效 OSS 地址，需立即落盘）：
+  - **Qwen-TTS 系列**（`qwen3-tts-flash` / `qwen3-tts-instruct-flash` 等 `qwen*-tts*`）：`POST /api/v1/services/aigc/multimodal-generation/generation`。body `{model, input:{text, voice, language_type?, instructions?, optimize_instructions?}}`。**不支持** format/sample_rate/speed（§2.4 无此字段）；产物默认 wav。`instructions`/`optimize_instructions` 仅 `qwen3-tts-instruct-flash` 系生效。
+  - **CosyVoice / Qwen-Audio-TTS**（`cosyvoice*` / `qwen-audio*`，如 `cosyvoice-v3.5-flash`）：`POST /api/v1/services/audio/tts/SpeechSynthesizer`。body `{model, input:{text, voice, format?, sample_rate?, volume?, rate?, pitch?, bit_rate?, seed?, instruction?, enable_ssml?, language_hints?}}`。`format` 支持 mp3/pcm/wav/opus（默认 mp3）；`bit_rate` 仅 opus 生效。
+  - `voice` 必填（adapter 取 `modelParams.voice` 或 provider `mediaDefaults.audio.voice` 兜底）。preset 默认 `Cherry` 是 Qwen-TTS 示例音色；CosyVoice 须用其专属音色（如 `longanhuan_v3.6`），调用 cosyvoice 时必须显式指定 voice。
+  - WebSocket 流式 / 音色克隆 / ASR 转写本轮未接入。
 
 官方依据：
 
 - Wan 2.7 图像：https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference
+- Qwen-TTS：https://help.aliyun.com/zh/model-studio/qwen-tts-api
+- CosyVoice：https://help.aliyun.com/zh/model-studio/cosyvoice-tts-http-api
 - Qwen-Image 文生图：https://help.aliyun.com/zh/model-studio/qwen-image-api
 - Qwen-Image 图像编辑：https://help.aliyun.com/zh/model-studio/qwen-image-edit-api
 - Wan 2.7 图生视频：https://help.aliyun.com/zh/model-studio/image-to-video-general-api-reference

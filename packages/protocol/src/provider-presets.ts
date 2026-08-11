@@ -1906,16 +1906,22 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'openai',
     apiEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     defaultModel: 'qwen3-tts-flash',
-    modelIds: ['qwen3-tts-flash'],
+    modelIds: ['qwen3-tts-flash', 'cosyvoice-v3.5-flash'],
     modelType: 'voice',
     mediaProvider: 'bailian',
     mediaApiType: 'sync',
     mediaCapabilities: ['audio.speech'],
     mediaModelRefs: [
       { manifestId: 'bailian:qwen3-tts-flash', modelId: 'qwen3-tts-flash', enabled: true },
+      { manifestId: 'bailian:cosyvoice-v3.5-flash', modelId: 'cosyvoice-v3.5-flash', enabled: true },
     ],
-    mediaDefaults: { audio: { voice: 'default', format: 'mp3', speed: 1 } },
-    sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'],
+    // voice 为 qwen3-tts-flash 开箱默认（§2.3 示例音色 Cherry）；cosyvoice 需用其专属音色
+    // （§3.4，如 longanhuan_v3.6），用户须在调用时显式指定。format 仅 cosyvoice 生效。
+    mediaDefaults: { audio: { voice: 'Cherry', format: 'mp3' } },
+    sourceUrls: [
+      'https://help.aliyun.com/zh/model-studio/qwen-tts-api',
+      'https://help.aliyun.com/zh/model-studio/cosyvoice-tts-http-api',
+    ],
   },
 
   /* ─── 火山方舟视频（Seedance 2.5 / 2.0 / 2.0 Fast / 2.0 Mini / 1.5 Pro / 1.0 Pro / 1.0 Pro Fast）─── */
