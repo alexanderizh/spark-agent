@@ -338,6 +338,9 @@ type AppCtx = {
   setHasUnsavedChanges: (value: boolean) => void
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
   requestPrompt: (options: PromptOptions) => Promise<string | null>
+  /** 一次性将主题/主色/密度/空状态主题等视觉 tweak 重置为默认值。
+   *  相比连调多次 setTweak，这里单条 persist 链避免远端 merge 竞态。 */
+  resetVisualTweaks: () => void
   hasDialogOpen: boolean
   dialogHost: DialogHostProps
 }
@@ -413,6 +416,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (prev[key] === val) return prev
       return { ...prev, [key]: val }
     })
+  }, [])
+
+  const resetVisualTweaks = useCallback<AppCtx['resetVisualTweaks']>(() => {
+    const patch: PersistedVisualTweaks = {
+      theme: DEFAULT_TWEAKS.theme,
+      emptyHeroTheme: DEFAULT_TWEAKS.emptyHeroTheme,
+      primary: DEFAULT_TWEAKS.primary,
+      density: DEFAULT_TWEAKS.density,
+    }
+    hasUserVisualChangeRef.current = true
+    // 同步清理旧版 theme 残留（applyTweak('theme') 也会写这个 key），保持重启后一致
+    window.localStorage.setItem(THEME_STORAGE_KEY, DEFAULT_TWEAKS.theme)
+    persistVisualTweaks(patch)
+    setT((prev) => ({ ...prev, ...patch }))
   }, [])
 
   const setTweak = useCallback<AppCtx['setTweak']>(
@@ -502,6 +519,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setHasUnsavedChanges,
       requestConfirm,
       requestPrompt,
+      resetVisualTweaks,
       hasDialogOpen: confirmRequest != null || promptRequest != null,
       dialogHost: {
         confirmRequest,
@@ -541,6 +559,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setHasUnsavedChanges,
       requestConfirm,
       requestPrompt,
+      resetVisualTweaks,
       confirmRequest,
       promptRequest,
     ],
