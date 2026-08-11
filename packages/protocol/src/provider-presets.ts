@@ -2343,8 +2343,51 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
   },
 
-  /* ─── MiniMax 语音（本轮不开发；manifest 骨架见 media-model-manifest.ts，文档见 docs/integrations/minimax/speech-music.md）─── */
-  /* 按「语音/音乐仅文档不开发」指令移除 preset：错误归一不完整的 template 兜底路径（base_resp 失败检测不到）不应暴露给用户；恢复时从 git 历史取回 minimax-speech preset。 */
+  /* ─── MiniMax 语音（speech-2.8-hd/turbo，POST /v1/t2a_v2，同步）─── */
+  /* 恢复说明：上轮按「仅文档不开发」移除，根因是 template adapter 兜底路径不跑 assertMinimaxBaseResp，
+     base_resp 业务错误（1004/1026 等）检测不到。现 audio 接入专用 adapter，主动 assertMinimaxBaseResp
+     归一 v1 错误码，根因消除。文档：docs/integrations/minimax/speech-music.md §1。 */
+  {
+    id: 'minimax-hailuo-speech',
+    vendorId: 'minimax',
+    name: 'MiniMax 语音',
+    provider: 'openai',
+    apiEndpoint: 'https://api.minimaxi.com',
+    defaultModel: 'speech-2.8-hd',
+    modelIds: ['speech-2.8-hd', 'speech-2.8-turbo'],
+    modelType: 'voice',
+    mediaProvider: 'minimax-hailuo',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.speech'],
+    mediaModelRefs: [
+      { manifestId: 'minimax:speech-2.8-hd', modelId: 'speech-2.8-hd', enabled: true },
+      { manifestId: 'minimax:speech-2.8-turbo', modelId: 'speech-2.8-turbo', enabled: true },
+    ],
+    // voice 兜底用官方示例音色 male-qn-qingse（§2.2），用户可在 provider 管理页改。
+    mediaDefaults: { audio: { voice: 'male-qn-qingse', format: 'mp3', speed: 1 } },
+    sourceUrls: [
+      'https://platform.minimaxi.com/docs/api-reference/speech-t2a-http',
+      'https://platform.minimaxi.com/docs/api-reference/api-overview',
+    ],
+  },
+
+  /* ─── MiniMax 音乐（music-2.6，POST /v1/music_generation，同步）─── */
+  {
+    id: 'minimax-hailuo-music',
+    vendorId: 'minimax',
+    name: 'MiniMax 音乐',
+    provider: 'openai',
+    apiEndpoint: 'https://api.minimaxi.com',
+    defaultModel: 'music-2.6',
+    modelIds: ['music-2.6'],
+    modelType: 'voice',
+    mediaProvider: 'minimax-hailuo',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.music'],
+    mediaModelRefs: [{ manifestId: 'minimax:music-2.6', modelId: 'music-2.6', enabled: true }],
+    mediaDefaults: { audio: { format: 'mp3' } },
+    sourceUrls: ['https://platform.minimaxi.com/docs/api-reference/music-generation'],
+  },
 
   /* ─── MiniMax Hailuo 视频 ─── */
   {

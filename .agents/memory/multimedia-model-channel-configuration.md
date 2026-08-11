@@ -223,3 +223,11 @@ paramPolicy: {
 - API Key 只在最终保存、模型发现或真实诊断时传入 ProviderService，进入系统 Keychain；工具返回、请求预览、异常和日志都不能包含明文。
 - `providers_media_diagnose.execute` 复用画布的 MediaRouterService，因此可验证实际适配器、参数编译、请求、轮询和产物解析。真实调用可能计费，必须先取得用户明确同意并设置 `confirmExecute=true`。
 - Agent 只能把官方文档明确声明的参数、枚举、状态映射和结果路径写入 Manifest。文档 URL 写入 `docs.sourceUrls`，便于后续协议漂移复核。
+
+## 十二、MiniMax 音频闭环（speech / music）
+
+- MiniMax v1 通道的 audio.speech（T2A `POST /v1/t2a_v2`）/ audio.music（`POST /v1/music_generation`）必须接入专用 adapter（`MinimaxHailuoMediaAdapter`），不能依赖 manifest 的 `requestTemplate` 兜底：template adapter 路径不会执行 `assertMinimaxBaseResp`，导致「HTTP 200 + `base_resp.status_code` 非 0」的业务错误（1004 鉴权 / 1026 敏感 / 2013 参数等）检测不到，用户拿到空响应或误导性成功。这是上一轮移除 minimax audio preset 的根因；专用 adapter 内主动 `assertMinimaxBaseResp` 后根因消除。
+- audio 产物双路径由 `output_format` 决定：`url`（默认）时 `data.audio` 是下载链接（24h），复用 `downloadMediaAsset`；`hex` 时 `data.audio` 是 16 进制字符串，用 `Buffer.from(hex,'hex')` + `writeBinaryAsset` 落盘。T2A 与 Music 响应形态一致（`data.audio` 在 url/hex 下承载不同内容）。
+- `voice_id` 必填但不硬枚举（300+ 系统音色 + 动态复刻/文生音色）：schema 字段名用 `voice`（description 引导），adapter 映射到官方 `voice_setting.voice_id`；缺失时用 provider `mediaDefaults.audio.voice`（preset 默认 `male-qn-qingse`，官方示例音色）兜底，再缺失则 `invalid_input` 报错。
+- base_resp 错误码子集按接口不同：T2A HTTP 不含 1008 余额、1026 敏感（含 1004/1039/1042/2013）；Music 含 1008/1026。统一走 `MINIMAX_V1_ERROR_MAP` 归一，未覆盖码兜底 `provider_http_error`。`1042`（非法字符>10%）尚未映射，可后续补 `invalid_parameter_value`。
+- manifest capability `defaults.output_format` 与 schema `default` 必须一致（统一 `url`），否则编辑器回显与运行时默认分歧。music 的 `audio_setting.format` 仅 `mp3/wav/pcm`（无 flac），与 T2A 的 `mp3/pcm/flac/wav/pcmu_raw/pcmu_wav/opus` 不同。

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { rmSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
+import { rmSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { MinimaxHailuoMediaAdapter } from '../../../services/media/adapters/minimax-hailuo-media.adapter.js'
@@ -65,6 +65,8 @@ function binaryRes(buf: Buffer): Response {
 const FAKE_MP4 = Buffer.from([
   0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
 ])
+// ID3v2 头（音频测试用，非合法完整 mp3，仅用于落盘 buffer 比对）
+const FAKE_MP3 = Buffer.from([0x49, 0x44, 0x33, 0x04, 0x10, 0x00, 0x00, 0x00, 0x20, 0x53])
 const FAKE_PNG = Buffer.from(
   Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
@@ -166,7 +168,12 @@ describe('MinimaxHailuoMediaAdapter', () => {
     })
     const out = await new MinimaxHailuoMediaAdapter().invoke(
       makeInput({ outputDir: tmpDir }),
-      makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+      makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
     )
     expect(out.mode).toBe('sync')
     expect(out.assets).toHaveLength(1)
@@ -194,7 +201,12 @@ describe('MinimaxHailuoMediaAdapter', () => {
 
     await new MinimaxHailuoMediaAdapter().invoke(
       makeInput({ outputDir: tmpDir, modelParams: { width: 1536, height: 1024 } }),
-      makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+      makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
     )
     const body = JSON.parse(
       fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/image_generation'))?.[1]?.body as string,
@@ -204,7 +216,12 @@ describe('MinimaxHailuoMediaAdapter', () => {
     await expect(
       new MinimaxHailuoMediaAdapter().invoke(
         makeInput({ outputDir: tmpDir, modelParams: { width: 1537, height: 1024 } }),
-        makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+        makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
       ),
     ).rejects.toThrow('8 的倍数')
   })
@@ -248,7 +265,12 @@ describe('MinimaxHailuoMediaAdapter', () => {
         outputDir: tmpDir,
         modelParams: { styleType: '漫画', style_type: '漫画', style_weight: 0.6 },
       }),
-      makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+      makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
     )
     const body = JSON.parse(
       fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/image_generation'))?.[1]?.body as string,
@@ -277,7 +299,12 @@ describe('MinimaxHailuoMediaAdapter', () => {
         inputFiles: [{ type: 'image', url: 'https://cdn/ref.jpg', role: 'reference' }],
         outputDir: tmpDir,
       }),
-      makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+      makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
     )
     const body = JSON.parse(
       fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/image_generation'))?.[1]?.body as string,
@@ -360,7 +387,12 @@ describe('MinimaxHailuoMediaAdapter', () => {
     await expect(
       new MinimaxHailuoMediaAdapter().invoke(
         makeInput({ outputDir: tmpDir }),
-        makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+        makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
       ),
     ).rejects.toMatchObject({
       name: 'MediaProviderError',
@@ -1076,5 +1108,259 @@ describe('MinimaxHailuoMediaAdapter', () => {
         { type: 'audio', url: 'https://cdn/a.mp3', role: 'reference', sizeBytes: 16 * 1024 * 1024 },
       ]),
     ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'out_of_range' })]))
+  })
+
+  // ─── 音频（speech T2A / music，/v1 通道，同步）──────────────────────────────
+  // 文档：docs/integrations/minimax/speech-music.md §1（T2A HTTP）/ §6（Music）。
+
+  it('audio.speech(T2A) url 路径: POST /v1/t2a_v2，data.audio 为下载 URL，落盘 mp3', async () => {
+    const manifest = findManifest('minimax:speech-2.8-hd')
+    const cap = manifest.capabilities.find((c) => c.id === 'audio.speech')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/t2a_v2')) {
+        return jsonRes({
+          data: { audio: 'https://cdn/tts.mp3', status: 2 },
+          extra_info: { audio_length: 1200, audio_format: 'mp3' },
+          base_resp: { status_code: 0, status_msg: 'success' },
+        })
+      }
+      if (url === 'https://cdn/tts.mp3') return binaryRes(FAKE_MP3)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const out = await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'text_to_audio',
+        capability: 'audio.speech',
+        prompt: '你好世界',
+        modelParams: { voice: 'male-qn-qingse', emotion: 'happy' },
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
+    )
+    expect(out.mode).toBe('sync')
+    expect(out.assets).toHaveLength(1)
+    expect(out.assets[0]?.type).toBe('audio')
+    expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
+    const post = fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/t2a_v2'))?.[1]
+    expect(JSON.parse(post?.body as string)).toMatchObject({
+      model: 'speech-2.8-hd',
+      text: '你好世界',
+      stream: false,
+      output_format: 'url',
+      voice_setting: { voice_id: 'male-qn-qingse', emotion: 'happy' },
+      audio_setting: { format: 'mp3' },
+    })
+  })
+
+  it('audio.speech(T2A) hex 路径: data.audio 为 hex 字符串，Buffer.from(hex) 落盘', async () => {
+    const manifest = findManifest('minimax:speech-2.8-hd')
+    const cap = manifest.capabilities.find((c) => c.id === 'audio.speech')!
+    const hexAudio = FAKE_MP3.toString('hex')
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/t2a_v2')) {
+        return jsonRes({
+          data: { audio: hexAudio, status: 2 },
+          base_resp: { status_code: 0, status_msg: 'success' },
+        })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const out = await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'text_to_audio',
+        capability: 'audio.speech',
+        prompt: 'hex 测试',
+        modelParams: { voice: 'female-shaonv', output_format: 'hex' },
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
+    )
+    expect(out.assets).toHaveLength(1)
+    const file = out.assets[0]?.filePath ?? ''
+    expect(existsSync(file)).toBe(true)
+    expect(readFileSync(file).equals(FAKE_MP3)).toBe(true)
+    const post = fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/t2a_v2'))?.[1]
+    expect(JSON.parse(post?.body as string).output_format).toBe('hex')
+  })
+
+  it('audio.speech voice 缺失: modelParams 与 mediaDefaults 均无 voice → invalid_input', async () => {
+    const manifest = findManifest('minimax:speech-2.8-hd')
+    const cap = manifest.capabilities.find((c) => c.id === 'audio.speech')!
+    const fetchImpl = mockFetch(async () => jsonRes({ base_resp: { status_code: 0 } }))
+    await expect(
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({
+          operation: 'text_to_audio',
+          capability: 'audio.speech',
+          prompt: '无音色',
+          outputDir: tmpDir,
+        }),
+        makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
+      ),
+    ).rejects.toMatchObject({ name: 'MediaProviderError', code: 'invalid_input' })
+  })
+
+  it('audio.music: POST /v1/music_generation，prompt + lyrics 落盘音频', async () => {
+    const manifest = findManifest('minimax:music-2.6')
+    const cap = manifest.capabilities.find((c) => c.id === 'audio.music')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/music_generation')) {
+        return jsonRes({
+          data: { audio: 'https://cdn/music.mp3', status: 2 },
+          extra_info: { music_duration: 25364 },
+          base_resp: { status_code: 0, status_msg: 'success' },
+        })
+      }
+      if (url === 'https://cdn/music.mp3') return binaryRes(FAKE_MP3)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const out = await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'text_to_audio',
+        capability: 'audio.music',
+        prompt: '轻快的钢琴曲',
+        modelParams: { lyrics: '[Verse 1]\n歌词一行', is_instrumental: false, format: 'wav' },
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
+    )
+    expect(out.mode).toBe('sync')
+    expect(out.assets[0]?.type).toBe('audio')
+    expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
+    const post = fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/music_generation'))?.[1]
+    expect(JSON.parse(post?.body as string)).toMatchObject({
+      model: 'music-2.6',
+      prompt: '轻快的钢琴曲',
+      lyrics: '[Verse 1]\n歌词一行',
+      is_instrumental: false,
+      // audio_setting.format 必须随用户选择传入（§6.1），否则格式静默丢失
+      audio_setting: { format: 'wav' },
+    })
+  })
+
+  it('audio.music url 模式 data.audio 缺失时回退 data.url（字段名官方未定义，文档 L461/L535）', async () => {
+    const manifest = findManifest('minimax:music-2.6')
+    const cap = manifest.capabilities.find((c) => c.id === 'audio.music')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/music_generation')) {
+        // data 无 audio 字段，仅 data.url（模拟官方 url 模式另一种可能字段名）
+        return jsonRes({
+          data: { url: 'https://cdn/music-fallback.mp3', status: 2 },
+          base_resp: { status_code: 0, status_msg: 'success' },
+        })
+      }
+      if (url === 'https://cdn/music-fallback.mp3') return binaryRes(FAKE_MP3)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const out = await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'text_to_audio',
+        capability: 'audio.music',
+        prompt: '回退测试',
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: manifest.modelId,
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+      }),
+    )
+    expect(out.assets).toHaveLength(1)
+    expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
+  })
+
+  it('audio base_resp 错误归一: 1004→auth_failed / 1026→content_policy_blocked / 2013→invalid_parameter_value', async () => {
+    const speechManifest = findManifest('minimax:speech-2.8-hd')
+    const speechCap = speechManifest.capabilities.find((c) => c.id === 'audio.speech')!
+    const musicManifest = findManifest('minimax:music-2.6')
+    const musicCap = musicManifest.capabilities.find((c) => c.id === 'audio.music')!
+
+    // 1004 鉴权失败（T2A HTTP 子集含 1004）
+    await expect(
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({
+          operation: 'text_to_audio',
+          capability: 'audio.speech',
+          prompt: 'x',
+          modelParams: { voice: 'male-qn-qingse' },
+          outputDir: tmpDir,
+        }),
+        makeContext({
+          fetch: mockFetch(async () =>
+            jsonRes({ base_resp: { status_code: 1004, status_msg: '鉴权失败' } }),
+          ),
+          mediaManifest: speechManifest,
+          mediaManifestCapability: speechCap,
+        }),
+      ),
+    ).rejects.toMatchObject({
+      name: 'MediaProviderError',
+      normalized: { code: 'auth_failed', providerCode: '1004' },
+    })
+
+    // 1026 内容违规（Music 子集含 1026；T2A HTTP 子集不含，故用 music 验证）
+    await expect(
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({
+          operation: 'text_to_audio',
+          capability: 'audio.music',
+          prompt: 'x',
+          outputDir: tmpDir,
+        }),
+        makeContext({
+          fetch: mockFetch(async () =>
+            jsonRes({ base_resp: { status_code: 1026, status_msg: '涉及敏感内容' } }),
+          ),
+          mediaManifest: musicManifest,
+          mediaManifestCapability: musicCap,
+        }),
+      ),
+    ).rejects.toMatchObject({
+      name: 'MediaProviderError',
+      normalized: { code: 'content_policy_blocked', providerCode: '1026' },
+    })
+
+    // 2013 参数错误（两接口子集均含）
+    await expect(
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({
+          operation: 'text_to_audio',
+          capability: 'audio.music',
+          prompt: 'x',
+          outputDir: tmpDir,
+        }),
+        makeContext({
+          fetch: mockFetch(async () =>
+            jsonRes({ base_resp: { status_code: 2013, status_msg: '参数异常' } }),
+          ),
+          mediaManifest: musicManifest,
+          mediaManifestCapability: musicCap,
+        }),
+      ),
+    ).rejects.toMatchObject({
+      name: 'MediaProviderError',
+      normalized: { code: 'invalid_parameter_value', providerCode: '2013' },
+    })
   })
 })

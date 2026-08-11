@@ -266,6 +266,12 @@ export const minimaxSpeechSchema = {
     speed: { type: 'number', title: '语速', minimum: 0.5, maximum: 2, default: 1 },
     vol: { type: 'number', title: '音量', minimum: 0, maximum: 10, default: 1 },
     pitch: { type: 'integer', title: '音调', minimum: -12, maximum: 12, default: 0 },
+    emotion: {
+      type: 'string',
+      title: '情绪',
+      enum: ['happy', 'sad', 'angry', 'fearful', 'disgusted', 'surprised', 'calm', 'fluent', 'whisper'],
+      description: 'fluent/whisper 仅 speech-2.6 系生效；speech-2.8 系不支持 whisper（来源 §1.2）',
+    },
     language_boost: {
       type: 'string',
       title: '语言增强',
@@ -289,7 +295,7 @@ export const minimaxSpeechSchema = {
       enum: ['mp3', 'wav', 'pcm', 'flac'],
       default: 'mp3',
     },
-    output_format: { type: 'string', title: '输出格式', enum: ['url', 'hex'], default: 'hex' },
+    output_format: { type: 'string', title: '输出格式', enum: ['url', 'hex'], default: 'url' },
     aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
     subtitle_enable: { type: 'boolean', title: '字幕', default: false },
     subtitle_type: {
@@ -313,8 +319,9 @@ export const minimaxMusicSchema = {
     format: {
       type: 'string',
       title: '音频格式',
-      enum: ['mp3', 'wav', 'pcm', 'flac'],
+      enum: ['mp3', 'wav', 'pcm'],
       default: 'mp3',
+      description: '音乐生成仅支持 mp3/wav/pcm（来源 §6.1 audio_setting.format）',
     },
   },
 }
