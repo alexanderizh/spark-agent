@@ -295,7 +295,22 @@ import { getBrowserBridgeServer } from '../services/BrowserBridgeServer.js'
 import { resolveBrowserAutomationMcpServerPath } from '../services/BrowserAutomationMcpRuntime.js'
 import { resolveStandaloneNodeRuntimePath } from '../services/StandaloneNodeRuntime.js'
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
-import type { RemoteInboundMessage } from '../services/RemoteConnectionService.js'
+import type {
+  RemoteInboundMessage,
+  RemoteInboundResponse,
+} from '../services/RemoteConnectionService.js'
+import {
+  buildRemoteErrorGuidance,
+  buildRemoteSessionActions,
+  formatRows,
+  parseRemoteSessionFilter,
+  resolveRemoteSelection,
+} from './remote-command-utils.js'
+import type {
+  RemoteSelectionKind,
+  RemoteSelectionRow,
+  RemoteSessionStatus,
+} from './remote-command-utils.js'
 import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
 import { registerPluginRuntimeIpc } from '../services/PluginRuntime/registerPluginRuntimeIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
@@ -2109,7 +2124,7 @@ function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void 
   } else if (event.type === 'agent_error') {
     remoteTurnTargets.delete(event.turnId)
     void getRemoteConnectionService()
-      .sendReply(target.connectionId, target.externalId, `处理失败：${event.message}`)
+      .sendReply(target.connectionId, target.externalId, buildRemoteErrorGuidance(event.message))
       .catch((err) => {
         log.warn(`Failed to send remote error reply: ${String(err)}`)
       })
@@ -2469,22 +2484,6 @@ function parseRemoteCommand(
   return { name: name.toLowerCase(), args, text: body }
 }
 
-function formatRows(
-  rows: Array<{ id: string; label: string; meta?: string }>,
-  empty: string,
-): string {
-  if (rows.length === 0) return empty
-  return rows
-    .map(
-      (row, index) =>
-        `${index + 1}. ${row.label}\n   ${row.id}${row.meta != null ? ` · ${row.meta}` : ''}`,
-    )
-    .join('\n')
-}
-
-type RemoteSelectionRow = { id: string; label: string; meta?: string }
-type RemoteSelectionKind = 'providers' | 'models' | 'agents' | 'sessions' | 'workspaces' | 'windows'
-
 const REMOTE_SELECTION_CACHE_TTL_MS = 10 * 60_000
 const remoteSelectionCache = new Map<string, { expiresAt: number; rows: RemoteSelectionRow[] }>()
 const remoteAuditLog: Array<{
@@ -2519,71 +2518,6 @@ function getCachedRemoteSelection(
   const cached = remoteSelectionCache.get(`${connectionId}:${kind}`)
   if (cached == null || cached.expiresAt < Date.now()) return null
   return cached.rows
-}
-
-function quoteRemoteRows(rows: RemoteSelectionRow[]): string {
-  return rows.map((row, index) => `${index + 1}. ${row.label} (${row.id})`).join('\n')
-}
-
-function resolveRemoteSelection(
-  input: string,
-  rows: RemoteSelectionRow[],
-  options: { kindLabel: string; cachedRows?: RemoteSelectionRow[] | null },
-): { ok: true; row: RemoteSelectionRow } | { ok: false; title: string; text: string } {
-  const value = input.trim()
-  if (value.length === 0) {
-    return { ok: false, title: `缺少${options.kindLabel}`, text: `请输入序号、名称或 ID。` }
-  }
-
-  if (/^\d+$/.test(value)) {
-    const index = Number(value) - 1
-    const source = options.cachedRows ?? rows
-    if (options.cachedRows == null) {
-      return {
-        ok: false,
-        title: '序号已过期',
-        text: `请先发送 /${options.kindLabel === 'Provider' ? 'providers' : 'help'} 重新查看列表，再使用序号。`,
-      }
-    }
-    const row = source[index]
-    if (row == null) {
-      return { ok: false, title: '序号不存在', text: `可用范围：1-${source.length}` }
-    }
-    return { ok: true, row }
-  }
-
-  const idMatch = rows.find((row) => row.id === value)
-  if (idMatch != null) return { ok: true, row: idMatch }
-
-  const normalized = value.toLocaleLowerCase()
-  const nameMatches = rows.filter((row) => row.label.trim().toLocaleLowerCase() === normalized)
-  const onlyNameMatch = nameMatches[0]
-  if (nameMatches.length === 1 && onlyNameMatch != null) return { ok: true, row: onlyNameMatch }
-  if (nameMatches.length > 1) {
-    return {
-      ok: false,
-      title: `${options.kindLabel} 名称不唯一`,
-      text: `请改用序号或 ID：\n${quoteRemoteRows(nameMatches)}`,
-    }
-  }
-
-  const partialMatches = rows.filter((row) => row.label.toLocaleLowerCase().includes(normalized))
-  const onlyPartialMatch = partialMatches[0]
-  if (partialMatches.length === 1 && onlyPartialMatch != null)
-    return { ok: true, row: onlyPartialMatch }
-  if (partialMatches.length > 1) {
-    return {
-      ok: false,
-      title: `${options.kindLabel} 匹配不唯一`,
-      text: `请改用更完整名称、序号或 ID：\n${quoteRemoteRows(partialMatches.slice(0, 10))}`,
-    }
-  }
-
-  return {
-    ok: false,
-    title: `未找到${options.kindLabel}`,
-    text: `未找到：${value}。请发送对应列表命令查看可用项。`,
-  }
 }
 
 function appendRemoteAudit(entry: Omit<(typeof remoteAuditLog)[number], 'at'>): void {
@@ -2628,11 +2562,39 @@ async function createRemoteSession(
   return { sessionId: created.sessionId, connectionName: connection.name }
 }
 
+const REMOTE_SESSION_QUERY_LIMIT = 1000
+const REMOTE_SESSION_DISPLAY_LIMIT = 20
+
+function formatRemoteSessionStatus(status: RemoteSessionStatus): string {
+  if (status === 'running') return '运行中'
+  if (status === 'error') return '错误'
+  return '空闲'
+}
+
+async function listRemoteSessionRows(status?: RemoteSessionStatus): Promise<{
+  rows: RemoteSelectionRow[]
+  total: number
+}> {
+  const result = await getSessionService().listSessions({
+    includeArchived: false,
+    limit: REMOTE_SESSION_QUERY_LIMIT,
+    ...(status != null ? { status } : {}),
+  })
+  return {
+    total: result.total,
+    rows: result.sessions.map((item) => ({
+      id: item.id,
+      label: item.title || '新会话',
+      meta: `${formatRemoteSessionStatus(item.status)} · ${item.messageCount} 条消息`,
+    })),
+  }
+}
+
 async function executeRemoteCommand(
   connectionId: string,
   message: string,
   explicitSessionId?: string,
-): Promise<{ ok: boolean; title: string; text: string }> {
+): Promise<{ ok: boolean } & RemoteInboundResponse> {
   const remoteService = getRemoteConnectionService()
   const store = remoteService.list()
   const connection = store.connections.find((item) => item.id === connectionId)
@@ -2646,7 +2608,15 @@ async function executeRemoteCommand(
     capability: keyof typeof connection.capabilities,
   ): { ok: boolean; title: string; text: string } | null => {
     if (connection.capabilities[capability]) return null
-    return { ok: false, title: '功能未授权', text: `该连接没有启用 ${capability} 能力。` }
+    const hint =
+      capability === 'switchSession'
+        ? '请在设置中启用会话切换能力；启用后可使用 /sessions 和 /use-session。'
+        : capability === 'switchModel'
+          ? '请在设置中启用模型切换能力；启用后可使用 /providers、/models 和 /use-model。'
+          : capability === 'switchAgent'
+            ? '请在设置中启用 Agent 切换能力；启用后可使用 /agents 和 /use-agent。'
+            : '请在设置中启用对应能力，或发送 /help 查看当前连接可用命令。'
+    return { ok: false, title: '功能未授权', text: `该连接没有启用 ${capability} 能力。\n${hint}` }
   }
 
   if (command.name === 'help') {
@@ -2680,6 +2650,16 @@ async function executeRemoteCommand(
           })
           .join('\n\n') +
         '\n\n示例：/providers 后发送 /use-provider 2；也可发送 /use-provider 智谱 GLM Coding Plan 或完整 ID。',
+      ...(connection.capabilities.runCommands
+        ? {
+            actions: [
+              { label: '查看会话', command: '/sessions' },
+              { label: '查看运行中', command: '/sessions running' },
+              { label: '查看模型', command: '/models' },
+              { label: '查看 Provider', command: '/providers' },
+            ],
+          }
+        : {}),
     }
   }
 
@@ -2708,17 +2688,29 @@ async function executeRemoteCommand(
   if (command.name === 'sessions') {
     const blocked = requireCapability('switchSession')
     if (blocked != null) return blocked
-    const result = await getSessionService().listSessions({ includeArchived: false, limit: 12 })
-    const rows = result.sessions.map((item) => ({
-      id: item.id,
-      label: item.title || '新会话',
-      meta: `${item.status} · ${item.messageCount} 条消息`,
-    }))
-    cacheRemoteSelection(connection.id, 'sessions', rows)
+    const filter = parseRemoteSessionFilter(command.args)
+    if (filter.error != null) {
+      return {
+        ok: false,
+        title: '状态筛选无效',
+        text: `${filter.error}\n可用状态：all、idle、running、error。`,
+      }
+    }
+    const result = await listRemoteSessionRows(filter.status)
+    const visibleRows = result.rows.slice(0, REMOTE_SESSION_DISPLAY_LIMIT)
+    cacheRemoteSelection(connection.id, 'sessions', visibleRows)
+    const statusText = filter.status == null ? '全部状态' : formatRemoteSessionStatus(filter.status)
+    const suffix =
+      result.total > visibleRows.length
+        ? `\n\n共 ${result.total} 个会话，当前显示前 ${visibleRows.length} 个。可使用完整 sessionId 切换。`
+        : ''
     return {
       ok: true,
-      title: '最近会话',
-      text: formatRows(rows, '暂无会话'),
+      title: `主机会话 · ${statusText}`,
+      text: `${formatRows(visibleRows, '暂无符合条件的会话')}${suffix}`,
+      ...(connection.capabilities.runCommands
+        ? { actions: buildRemoteSessionActions(visibleRows) }
+        : {}),
     }
   }
 
@@ -2726,21 +2718,27 @@ async function executeRemoteCommand(
     const blocked = requireCapability('switchSession')
     if (blocked != null) return blocked
     const target = command.args.join(' ')
-    if (target == null)
-      return { ok: false, title: '缺少 sessionId', text: '用法：/use-session <sessionId>' }
-    const result = await getSessionService().listSessions({ includeArchived: false, limit: 12 })
-    const rows = result.sessions.map((item) => ({
-      id: item.id,
-      label: item.title || '新会话',
-      meta: `${item.status} · ${item.messageCount} 条消息`,
-    }))
+    if (target.length === 0) {
+      return {
+        ok: false,
+        title: '缺少目标会话',
+        text: '用法：/use-session <序号|名称|sessionId>。请先发送 /sessions 查看会话。',
+      }
+    }
+    const result = await listRemoteSessionRows()
+    const rows = result.rows
     const resolved = resolveRemoteSelection(target, rows, {
       kindLabel: '会话',
+      listCommand: '/sessions',
       cachedRows: getCachedRemoteSelection(connection.id, 'sessions'),
     })
     if (!resolved.ok) return resolved
     remoteService.updateConnectionDefaults(connection.id, { defaultSessionId: resolved.row.id })
-    return { ok: true, title: '已切换默认会话', text: `${resolved.row.label}\n${resolved.row.id}` }
+    return {
+      ok: true,
+      title: '已切换默认会话',
+      text: `${resolved.row.label}\n${resolved.row.id}\n\n后续手机消息会继续进入该会话。发送 /status 可确认当前默认会话。`,
+    }
   }
 
   if (command.name === 'models') {
@@ -2757,6 +2755,15 @@ async function executeRemoteCommand(
       ok: true,
       title: '模型配置',
       text: formatRows(rows, '暂无模型配置'),
+      ...(connection.capabilities.runCommands
+        ? {
+            actions: rows.slice(0, 6).map((row, index) => ({
+              label: `切换 ${row.label}`,
+              command: `/use-model ${index + 1}`,
+              style: 'primary' as const,
+            })),
+          }
+        : {}),
     }
   }
 
@@ -2770,6 +2777,15 @@ async function executeRemoteCommand(
       ok: true,
       title: 'Provider 配置',
       text: formatRows(rows, '暂无 Provider'),
+      ...(connection.capabilities.runCommands
+        ? {
+            actions: rows.slice(0, 6).map((row, index) => ({
+              label: `切换 ${row.label}`,
+              command: `/use-provider ${index + 1}`,
+              style: 'primary' as const,
+            })),
+          }
+        : {}),
     }
   }
 
@@ -2783,6 +2799,15 @@ async function executeRemoteCommand(
       ok: true,
       title: 'Agent',
       text: formatRows(rows, '暂无 Agent'),
+      ...(connection.capabilities.runCommands
+        ? {
+            actions: rows.slice(0, 6).map((row, index) => ({
+              label: `切换 ${row.label}`,
+              command: `/use-agent ${index + 1}`,
+              style: 'primary' as const,
+            })),
+          }
+        : {}),
     }
   }
 
@@ -2813,6 +2838,7 @@ async function executeRemoteCommand(
         .map((item) => ({ id: item.id, label: item.name, meta: item.rootPath }))
       const resolved = resolveRemoteSelection(workspaceInput, rows, {
         kindLabel: '工作区',
+        listCommand: '/workspaces',
         cachedRows: getCachedRemoteSelection(connection.id, 'workspaces'),
       })
       if (!resolved.ok) return resolved
@@ -2847,8 +2873,15 @@ async function executeRemoteCommand(
     const blocked = requireCapability(capability)
     if (blocked != null) return blocked
     const target = command.args.join(' ')
-    if (target.length === 0)
-      return { ok: false, title: '缺少目标 ID', text: `用法：/${command.name} <id>` }
+    if (target.length === 0) {
+      const listCommand =
+        command.name === 'use-model'
+          ? '/models'
+          : command.name === 'use-provider'
+            ? '/providers'
+            : '/agents'
+      return executeRemoteCommand(connectionId, listCommand, sessionId)
+    }
     let resolved: { ok: true; row: RemoteSelectionRow } | { ok: false; title: string; text: string }
     if (command.name === 'use-provider') {
       const rows = (await getProviderService().listProviders()).map((item) => ({
@@ -2858,6 +2891,7 @@ async function executeRemoteCommand(
       }))
       resolved = resolveRemoteSelection(target, rows, {
         kindLabel: 'Provider',
+        listCommand: '/providers',
         cachedRows: getCachedRemoteSelection(connection.id, 'providers'),
       })
     } else if (command.name === 'use-model') {
@@ -2870,6 +2904,7 @@ async function executeRemoteCommand(
         }))
       resolved = resolveRemoteSelection(target, rows, {
         kindLabel: '模型',
+        listCommand: '/models',
         cachedRows: getCachedRemoteSelection(connection.id, 'models'),
       })
     } else {
@@ -2883,6 +2918,7 @@ async function executeRemoteCommand(
         }))
       resolved = resolveRemoteSelection(target, rows, {
         kindLabel: 'Agent',
+        listCommand: '/agents',
         cachedRows: getCachedRemoteSelection(connection.id, 'agents'),
       })
     }
@@ -3018,12 +3054,15 @@ async function executeRemoteCommand(
 
 async function handleRemoteInboundMessage(
   message: RemoteInboundMessage,
-): Promise<{ title: string; text: string } | void> {
+): Promise<RemoteInboundResponse | void> {
   const prefix = message.connection.commandPrefix.trim() || '/'
   const isCommandMessage = message.text.trim().startsWith(prefix)
   if (isCommandMessage) {
     if (!message.connection.capabilities.runCommands) {
-      return { title: '功能未授权', text: '该连接没有启用远程命令能力。' }
+      return {
+        title: '功能未授权',
+        text: '该连接没有启用远程命令能力。请在设置中启用后发送 /help 查看可用操作。',
+      }
     }
     const result = await executeRemoteCommand(
       message.connection.id,
@@ -3034,7 +3073,10 @@ async function handleRemoteInboundMessage(
   }
 
   if (!message.connection.capabilities.sendMessages) {
-    return { title: '功能未授权', text: '该连接没有启用消息投递能力。' }
+    return {
+      title: '功能未授权',
+      text: '该连接没有启用消息投递能力。请在设置中启用后再发送任务消息；发送 /help 可查看命令。',
+    }
   }
   const sessionId =
     message.connection.defaultSessionId ??
@@ -3061,6 +3103,17 @@ async function handleRemoteInboundMessage(
   registerRemoteTurn(result.turnId, target)
   void sendRemoteTurnReplyFromHistory(sessionId, result.turnId, target).catch((err) => {
     log.warn(`Failed to send remote reply from history: ${String(err)}`)
+    if (!remoteTurnTargets.has(result.turnId)) return
+    remoteTurnTargets.delete(result.turnId)
+    void getRemoteConnectionService()
+      .sendReply(
+        target.connectionId,
+        target.externalId,
+        buildRemoteErrorGuidance(err instanceof Error ? err.message : String(err)),
+      )
+      .catch((sendErr) => {
+        log.warn(`Failed to send remote history error reply: ${String(sendErr)}`)
+      })
   })
   return undefined
 }
