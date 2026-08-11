@@ -2081,7 +2081,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaApiType: 'sync',
     mediaCapabilities: ['audio.speech'],
     mediaModelRefs: [{ manifestId: 'xai:grok-tts', modelId: 'grok-tts', enabled: true }],
-    mediaDefaults: { audio: { voice: 'eve', format: 'mp3', speed: 1 } },
+    mediaDefaults: { audio: { voice: 'eve', format: 'mp3' } },
     sourceUrls: ['https://docs.x.ai/developers/model-capabilities/audio/text-to-speech'],
   },
 

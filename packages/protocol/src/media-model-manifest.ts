@@ -2912,7 +2912,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         text: '{{text}}',
         voice_id: '{{voiceId}}',
         language: '{{language}}',
-        output_format: '{{outputFormat}}',
+        // §1.1 output_format 为对象 {codec, sample_rate, bit_rate}
+        output_format: { codec: '{{outputFormat}}' },
       },
       response: { kind: 'binary_response' },
     },

@@ -85,7 +85,7 @@ describe('provider presets', () => {
   it('wires xAI TTS to its manifest with provider-compatible defaults', () => {
     expect(getProviderPresetById('xai-tts')).toMatchObject({
       mediaModelRefs: [{ manifestId: 'xai:grok-tts', modelId: 'grok-tts', enabled: true }],
-      mediaDefaults: { audio: { voice: 'eve', format: 'mp3', speed: 1 } },
+      mediaDefaults: { audio: { voice: 'eve', format: 'mp3' } },
     })
   })
 })
