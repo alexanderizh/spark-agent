@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import { CheckCircle, Save } from 'lucide-react'
 import { Popover } from '@lobehub/ui'
 import { Switch } from 'antd'
@@ -8,14 +7,12 @@ import { TeamInspectorSection } from '../../components/TeamInspectorSection'
 import { WorktreePanel } from '../../components/WorktreePanel'
 import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
-import { renderPlanInline } from '../../ChatInteractions'
 import { clamp, formatTokenCount } from './ChatViewUtils'
 import {
   extractInspectorFileChanges,
   extractInspectorSubagents,
   isRecord,
   type InspectorTask,
-  type SidebarPlan,
 } from './ChatInspectorUtils'
 import type {
   AgentEvent,
@@ -48,8 +45,6 @@ const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, 
 const EMPTY_ENV_LAYER: EnvConfigGetResponse['project'] = { enabled: true, vars: [] }
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
 const LOCAL_CODEX_CLI_MODEL_DISPLAY = 'codex cli'
-
-type MarkdownTextComponent = (props: { content: string }) => ReactNode
 
 type EnvVarRowProps = {
   item: EnvVarItem
@@ -1125,48 +1120,6 @@ const PromptSectionBlock = React.memo(function PromptSectionBlock({
     </div>
   )
 })
-
-export function PlanSummary({
-  plan,
-  renderMarkdown,
-}: {
-  plan: SidebarPlan
-  renderMarkdown: MarkdownTextComponent
-}) {
-  const MarkdownRenderer = renderMarkdown
-  const completed = plan.items.filter((item) => item.status === 'done').length
-  const total = plan.items.length
-  const percent = total === 0 ? 0 : Math.round((completed / total) * 100)
-
-  return (
-    <div className="inspector-plan">
-      {percent && percent > 0 ? (
-        <div className="inspector-progress">
-          <span style={{ width: `${percent}%` }} />
-        </div>
-      ) : null}
-
-      {plan.explanation && (
-        <div className="inspector-plan-note md-surface">
-          <MarkdownRenderer content={plan.explanation} />
-        </div>
-      )}
-      <div className="inspector-plan-items">
-        {plan.items.map((item, index) => (
-          <div key={`${item.text}-${index}`} className={`inspector-plan-item ${item.status}`}>
-            <span className="inspector-plan-dot-wrap">
-              <span className="inspector-plan-dot">
-                {item.status === 'done' && <Icons.Check size={10} />}
-                {item.status === 'running' && <Icons.Spinner size={10} />}
-              </span>
-            </span>
-            <span className="text">{renderPlanInline(item.text)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 /**
  * TaskListItem — 单个任务的渲染单元。

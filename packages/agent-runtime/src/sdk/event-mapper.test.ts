@@ -299,7 +299,11 @@ describe('mapSDKMessageToEvents', () => {
   })
 
   it('keeps SDK tool result names and emits file changes for write tools', () => {
-    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map<string, string>() }
+    const ctx = {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      toolNamesById: new Map<string, string>(),
+    }
     const assistant: SDKAssistantMessage = {
       type: 'assistant',
       uuid: 'assistant-1',
@@ -911,6 +915,104 @@ describe('mapSDKMessageToEvents', () => {
       expect.objectContaining({
         type: 'plan_proposed',
         plan: '# Plan from file\n\n1. Read code\n2. Add tests',
+      }),
+    ])
+  })
+
+  it('replays plan-file Edit changes before ExitPlanMode fallback', () => {
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map<string, string>() }
+    const planPath = '/home/u/.claude/plans/abc-plan.md'
+
+    mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-write',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: {
+          role: 'assistant',
+          content: [{
+            type: 'tool_use',
+            id: 'tool-write',
+            name: 'Write',
+            input: {
+              file_path: planPath,
+              content: '# Plan code\n\n1. Read code\n2. Add code tests',
+            },
+          }],
+        },
+      },
+      ctx,
+    )
+    mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-edit',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: {
+          role: 'assistant',
+          content: [{
+            type: 'tool_use',
+            id: 'tool-edit',
+            name: 'Edit',
+            input: {
+              file_path: planPath,
+              old_string: '1. Read code',
+              new_string: '1. Read and verify code',
+            },
+          }],
+        },
+      },
+      ctx,
+    )
+    mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-edit-all',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: {
+          role: 'assistant',
+          content: [{
+            type: 'tool_use',
+            id: 'tool-edit-all',
+            name: 'Edit',
+            input: {
+              filePath: planPath,
+              oldString: 'code',
+              newString: 'source',
+              replaceAll: true,
+            },
+          }],
+        },
+      },
+      ctx,
+    )
+
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-exit',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: {
+          role: 'assistant',
+          content: [{
+            type: 'tool_use',
+            id: 'tool-exit',
+            name: 'ExitPlanMode',
+            input: {},
+          }],
+        },
+      },
+      ctx,
+    )
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'plan_proposed',
+        plan: '# Plan source\n\n1. Read and verify source\n2. Add source tests',
       }),
     ])
   })
