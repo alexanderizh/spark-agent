@@ -615,6 +615,8 @@ function CanvasStageInner({
   /** 单节点右键：把该节点加入画布 Agent 对话引用列表（节点富菜单入口） */
   onAddNodeToAgent,
   onRunOperationNode,
+  onSelectOperationInput,
+  onUploadOperationInput,
   onConfigureSelectedTasks,
   onSubmitSelectedTasks,
   onOpenAiComposer,
@@ -686,6 +688,8 @@ function CanvasStageInner({
   onAddNodeToAgent?: (nodeId: string) => void
   /** 单节点右键 → 使用已保存配置提交任务 */
   onRunOperationNode?: (nodeId: string) => void
+  onSelectOperationInput?: (nodeId: string) => void
+  onUploadOperationInput?: (nodeId: string) => void
   /** 多选任务节点右键 → 打开批量配置面板 */
   onConfigureSelectedTasks?: (nodeIds: string[]) => void
   /** 多选任务节点右键 → 校验并批量提交 */
@@ -786,6 +790,8 @@ function CanvasStageInner({
       ...(onSelectGroupChildren ? { selectGroupChildren: onSelectGroupChildren } : {}),
       ...(onAddNodeToAgent ? { addNodeToAgent: onAddNodeToAgent } : {}),
       ...(onRunOperationNode ? { runOperationNode: onRunOperationNode } : {}),
+      ...(onSelectOperationInput ? { selectOperationInput: onSelectOperationInput } : {}),
+      ...(onUploadOperationInput ? { uploadOperationInput: onUploadOperationInput } : {}),
       openAiComposer: onOpenAiComposer,
       editNode: onEditNode,
       ...(onRenameNode ? { renameNode: onRenameNode } : {}),
@@ -834,6 +840,8 @@ function CanvasStageInner({
       onSelectGroupChildren,
       onAddNodeToAgent,
       onRunOperationNode,
+      onSelectOperationInput,
+      onUploadOperationInput,
       onCreateOperationChild,
       onPipelineAction,
       onSetProductionState,

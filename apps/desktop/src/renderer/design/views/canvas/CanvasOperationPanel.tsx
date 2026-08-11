@@ -260,6 +260,14 @@ export function buildOperationPanelSnapshotSignature(
       `${task.id}:${task.status}:${task.updatedAt ?? ''}:${task.prompt ?? ''}:${task.negativePrompt ?? ''}`,
     )
   }
+  parts.push(
+    snapshot.nodes
+      .map(
+        (item) => `${item.id}:${item.type}:${item.updatedAt}:${item.hidden ? 'hidden' : 'visible'}`,
+      )
+      .sort()
+      .join('|'),
+  )
   return parts.join('|')
 }
 

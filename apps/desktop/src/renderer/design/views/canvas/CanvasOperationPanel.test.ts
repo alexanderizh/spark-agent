@@ -54,6 +54,7 @@ import {
   buildOperationPanelEditablePromptDocument,
   buildOperationPanelPromptOwnerNodeIds,
   expandOperationPanelPromptNodeIds,
+  buildOperationPanelSnapshotSignature,
   materializeOperationPanelPromptNodeIds,
   isCommonOperationModelParam,
   isGeneratedCanvasFunctionalPrompt,
@@ -551,6 +552,54 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
     expect(isCommonOperationModelParam({ name: 'serviceTier', title: '推理档位' })).toBe(false)
     expect(isCommonOperationModelParam({ name: 'returnLastFrame', title: '返回尾帧图' })).toBe(
       false,
+    )
+  })
+})
+
+describe('buildOperationPanelSnapshotSignature', () => {
+  it('invalidates when an unconnected image node is uploaded while the panel is open', () => {
+    const operationNode: CanvasNode = {
+      id: 'operation-1',
+      projectId: 'project-1',
+      boardId: 'board-1',
+      userId: 1,
+      type: 'task',
+      title: '图片反推',
+      assetId: null,
+      taskId: null,
+      parentNodeId: null,
+      x: 0,
+      y: 0,
+      width: 320,
+      height: 240,
+      rotation: 0,
+      zIndex: 0,
+      locked: false,
+      hidden: false,
+      data: { operation: 'image_prompt_reverse' },
+      createdAt: '',
+      updatedAt: 'operation-updated',
+    }
+    const imageNode: CanvasNode = {
+      ...operationNode,
+      id: 'image-1',
+      type: 'image',
+      title: '上传图片',
+      data: { url: 'safe-file://image-1.png', mimeType: 'image/png' },
+      updatedAt: 'image-created',
+    }
+    const baseSnapshot: CanvasSnapshot = {
+      project: {} as CanvasSnapshot['project'],
+      board: {} as CanvasSnapshot['board'],
+      nodes: [operationNode],
+      edges: [],
+      assets: [],
+      tasks: [],
+    }
+    const uploadedSnapshot = { ...baseSnapshot, nodes: [operationNode, imageNode] }
+
+    expect(buildOperationPanelSnapshotSignature(uploadedSnapshot, operationNode.id)).not.toBe(
+      buildOperationPanelSnapshotSignature(baseSnapshot, operationNode.id),
     )
   })
 })

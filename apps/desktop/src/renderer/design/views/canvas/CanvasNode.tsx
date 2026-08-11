@@ -17,7 +17,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react'
-import { Dropdown } from '@lobehub/ui'
+import { Button, Dropdown } from '@lobehub/ui'
 import { Progress, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
@@ -362,6 +362,8 @@ export type CanvasFlowNodeData = {
     addNodeToAgent?: (nodeId: string) => void
     /** 单任务节点右键：使用已保存配置直接提交运行 */
     runOperationNode?: (nodeId: string) => void
+    selectOperationInput?: (nodeId: string) => void
+    uploadOperationInput?: (nodeId: string) => void
     openAiComposer: (nodeId: string) => void
     saveToLibrary: (nodeId: string) => void
     annotateImage?: (nodeId: string) => void
@@ -569,6 +571,7 @@ export const CanvasNode = memo(function CanvasNode({
     inlinePanelExtraHeight,
     inlineToolbar,
     collapsedGroupPresentation,
+    lineage,
     selectedNodeCount = 1,
   } = data as CanvasFlowNodeData
   const locked = Boolean(node.locked)
@@ -615,6 +618,8 @@ export const CanvasNode = memo(function CanvasNode({
   const activeOperationOutput =
     operationRuns[operationSelection.runIndex]?.outputs[operationSelection.outputIndex]
   const isAudioTaskNode = isTask && node.data.operation === 'extract_audio'
+  const showImagePromptInputActions =
+    isTask && node.data.operation === 'image_prompt_reverse' && (lineage?.incoming ?? 0) === 0
   const selectOperationOutput = (
     runIndex: number,
     outputIndex: number,
@@ -1835,6 +1840,36 @@ export const CanvasNode = memo(function CanvasNode({
                                 node.data.prompt ??
                                 '点击节点下方编辑面板调整参数后运行'}
                             </div>
+                            {showImagePromptInputActions ? (
+                              <div className="canvas-operation-input-actions nodrag nopan">
+                                {actions.selectOperationInput ? (
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    onClick={(event) => {
+                                      event.preventDefault()
+                                      event.stopPropagation()
+                                      actions.selectOperationInput?.(node.id)
+                                    }}
+                                  >
+                                    从画布选择
+                                  </Button>
+                                ) : null}
+                                {actions.uploadOperationInput ? (
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    onClick={(event) => {
+                                      event.preventDefault()
+                                      event.stopPropagation()
+                                      actions.uploadOperationInput?.(node.id)
+                                    }}
+                                  >
+                                    上传图片
+                                  </Button>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
                         }
                       />
