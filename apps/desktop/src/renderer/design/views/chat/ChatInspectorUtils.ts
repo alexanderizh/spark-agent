@@ -3,20 +3,24 @@ import { countDiffLines } from './ChatViewUtils'
 
 export type PlanItemStatus = 'done' | 'running' | 'pending'
 
-export type PlanItem = {
-  status: PlanItemStatus
-  text: string
-  meta?: string
-}
-
-export type SidebarPlan = {
+type SidebarPlanBase = {
   id: string
   title: string
+}
+
+export type SidebarPlanProposal = SidebarPlanBase & {
+  kind: 'proposal'
+  /** ExitPlanMode 提交的不可变审批方案原文。 */
+  rawPlan: string
+}
+
+export type SidebarPlanProgress = SidebarPlanBase & {
+  kind: 'progress'
   explanation?: string | undefined
   items: Array<{ text: string; status: PlanItemStatus }>
-  /** 原始 plan_proposed 文本，仅来自 ExitPlanMode 的计划才有，用于与待审批计划去重。 */
-  rawPlan?: string | undefined
 }
+
+export type SidebarPlan = SidebarPlanProposal | SidebarPlanProgress
 
 export type ParsedTodo = {
   id?: string
@@ -53,53 +57,6 @@ export interface InspectorTask {
   activeForm?: string | undefined
   status: InspectorTaskStatus
   createdAt: number
-}
-
-/** Parse a markdown plan text into structured plan items. */
-export function parsePlanToItems(plan: string): PlanItem[] {
-  const items: PlanItem[] = []
-  const lines = plan.split('\n')
-  for (const line of lines) {
-    const trimmed = line.trim()
-    const checkboxMatch = trimmed.match(/^[-*]\s+\[([ x*])\]\s+(.*)$/)
-    if (checkboxMatch) {
-      const mark = checkboxMatch[1]
-      const text = checkboxMatch[2] ?? ''
-      if (mark === 'x' || mark === 'X') {
-        items.push({ status: 'done', text })
-      } else if (mark === '*') {
-        items.push({ status: 'running', text })
-      } else {
-        items.push({ status: 'pending', text })
-      }
-      continue
-    }
-
-    const numberedMatch = trimmed.match(/^\d+\.\s+(.*)$/)
-    if (numberedMatch) {
-      items.push({ status: 'pending', text: numberedMatch[1] ?? '' })
-      continue
-    }
-
-    const bulletMatch = trimmed.match(/^[-*]\s+(.*)$/)
-    if (
-      bulletMatch &&
-      (bulletMatch[1] ?? '').length > 0 &&
-      !(bulletMatch[1] ?? '').startsWith('[')
-    ) {
-      items.push({ status: 'pending', text: bulletMatch[1] ?? '' })
-    }
-  }
-
-  if (items.length === 0 && plan.trim().length > 0) {
-    const fallbackItem: PlanItem = {
-      status: 'pending',
-      text: plan.trim().slice(0, 200),
-    }
-    if (plan.trim().length > 200) fallbackItem.meta = '...'
-    items.push(fallbackItem)
-  }
-  return items
 }
 
 export function parseTodosFromInputOrOutput(
@@ -274,12 +231,11 @@ export function extractPlans(messages: UIMessage[]): SidebarPlan[] {
   for (const message of messages) {
     for (const block of message.blocks) {
       if (block.kind === 'plan_proposed') {
-        const items = parsePlanToItems(block.plan)
-        if (items.length === 0) continue
+        if (block.plan.trim().length === 0) continue
         plans.push({
           id: `${message.id}:plan_proposed`,
-          title: 'Agent 计划',
-          items,
+          kind: 'proposal',
+          title: 'Agent 方案',
           rawPlan: block.plan,
         })
         continue
@@ -309,6 +265,7 @@ export function extractPlans(messages: UIMessage[]): SidebarPlan[] {
       if (items.length === 0) continue
       plans.push({
         id: block.toolCallId,
+        kind: 'progress',
         title: String(block.toolInput.title ?? (todos.length > 0 ? 'Todo 计划' : 'Agent 计划')),
         explanation:
           typeof block.toolInput.explanation === 'string' ? block.toolInput.explanation : undefined,

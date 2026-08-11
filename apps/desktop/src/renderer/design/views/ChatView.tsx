@@ -72,6 +72,8 @@ import {
 } from './chat/ChatDocumentOutput'
 import { PresentedMediaList, filterMediaPresentedFiles } from './chat/PresentedMedia'
 import { MarkdownText } from './chat/ChatMarkdown'
+import { PlanSidePanel } from './chat/PlanSidePanel'
+import { PlanSummary } from './chat/PlanSummary'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
 import {
@@ -155,13 +157,10 @@ import {
 import {
   extractInspectorFileChanges,
   extractInspectorSubagents,
-  extractPlans,
   extractSessionProgressTasks,
   isRecord,
-  parsePlanToItems,
   parseTodosFromInputOrOutput,
   type InspectorTask,
-  type SidebarPlan,
 } from './chat/ChatInspectorUtils'
 import type {
   AgentAdapter,
@@ -196,12 +195,7 @@ import {
   useCloseOnOutside,
   writeComposerPrefs,
 } from './chat/ComposerV2'
-import {
-  buildUsageDataFromEvents,
-  ChatConfigPanel,
-  ChatInspector,
-  PlanSummary,
-} from './chat/ChatInspectorPanel'
+import { buildUsageDataFromEvents, ChatConfigPanel, ChatInspector } from './chat/ChatInspectorPanel'
 import {
   extractRunningTeamAgentIds,
   extractRunningTeamMemberIds,
@@ -216,7 +210,6 @@ import {
   NetPermCard,
   MCPPermCard,
   HunkDiff,
-  PlanCard,
   renderPlanInline,
   SubagentCard,
   Checkpoint,
@@ -4592,10 +4585,17 @@ function renderBlocks(
           </div>
         )
       case 'plan_proposed': {
-        const items = parsePlanToItems(block.plan)
         return (
           <div key={i} className="tool-logs-collapsible" style={{ marginTop: 4, marginBottom: 4 }}>
-            <PlanCard title="摘要" items={items} />
+            <PlanSummary
+              plan={{
+                id: `inline-plan-proposal-${i}`,
+                kind: 'proposal',
+                title: '执行方案',
+                rawPlan: block.plan,
+              }}
+              renderMarkdown={MarkdownText}
+            />
           </div>
         )
       }
@@ -7747,217 +7747,6 @@ function StoppedMarker() {
         已停止生成
       </span>
       <span className="stopped-marker-line" />
-    </div>
-  )
-}
-
-function PlanSidePanel({
-  session,
-  messages,
-  proposedPlan,
-  onClose,
-  onClearProposedPlan,
-  onPlanApproved,
-}: {
-  session: SessionSummary | null
-  messages: UIMessage[]
-  proposedPlan: { sessionId: SessionId; plan: string } | null
-  onClose: () => void
-  onClearProposedPlan: () => void
-  onPlanApproved: (sessionId: SessionId) => void
-}) {
-  // 当前待审批/最新计划已经在上方单独展示，历史区要把内容相同的那条剔除，
-  // 否则同一份计划会同时出现在「待审批」和「历史计划」两个区块。
-  const plans = extractPlans(messages).filter(
-    (plan) => proposedPlan == null || plan.rawPlan !== proposedPlan.plan,
-  )
-  const hasPlan = proposedPlan != null || plans.length > 0
-  const isPlanMode = session?.permissionMode === 'claude-plan'
-
-  return (
-    <div className="inspector-frame embedded">
-      <div className="inspector scroll">
-        {proposedPlan != null && isPlanMode && (
-          <PlanApprovalPanel
-            sessionId={proposedPlan.sessionId}
-            plan={proposedPlan.plan}
-            onClose={onClearProposedPlan}
-            onPlanApproved={onPlanApproved}
-          />
-        )}
-
-        {proposedPlan != null && !isPlanMode && (
-          <div className="inspector-section">
-            <h4>最新计划</h4>
-            <div className="plan-approval-body md-surface">
-              <MarkdownText content={proposedPlan.plan} />
-            </div>
-          </div>
-        )}
-
-        {!hasPlan && (
-          <div className="inspector-section">
-            <div className="inspector-muted">暂无计划。Agent 生成计划后会自动显示在这里。</div>
-          </div>
-        )}
-
-        {plans.length > 0 && (
-          <div className="inspector-section">
-            <h4>历史计划</h4>
-            {plans.map((plan) => (
-              <PlanSummary key={plan.id} plan={plan} renderMarkdown={MarkdownText} />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function PlanApprovalPanel({
-  sessionId,
-  plan,
-  onClose,
-  onPlanApproved,
-}: {
-  sessionId: SessionId
-  plan: string
-  onClose: () => void
-  onPlanApproved: (sessionId: SessionId) => void
-}) {
-  const { toast } = useToast()
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(plan)
-  const [editBuffer, setEditBuffer] = useState(plan)
-  const [busy, setBusy] = useState(false)
-  const isEdited = draft !== plan
-
-  const approve = async () => {
-    if (busy) return
-    setBusy(true)
-    try {
-      await window.spark.invoke('session:submit-turn', {
-        sessionId,
-        message: `批准上述计划。请按如下计划继续执行：\n\n${draft}`,
-        permissionMode: 'claude-auto-edits',
-        interruptActive: true,
-      })
-      writeComposerPrefs({ permissionMode: 'claude-auto-edits' })
-      onPlanApproved(sessionId)
-      toast.success('计划已批准，已切换为自动执行模式')
-      onClose()
-    } catch (err) {
-      toast.error(`批准失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const reject = async () => {
-    if (busy) return
-    setBusy(true)
-    try {
-      // 精准拒绝：后端解除该会话的 plan 审批闸门 + 写入持久化的 plan_rejected 标记
-      // （使重开/切换会话后不再弹出已拒绝的计划）。不走 session:cancel，避免其
-      // 内部全局 teamDispatchService.cancelAll() 误伤其他会话进行中的 team 协作。
-      await window.spark.invoke('session:reject-plan', { sessionId })
-    } catch {
-      // 后端清理失败不应阻塞前端关闭审批面板
-    } finally {
-      setBusy(false)
-    }
-    toast.success('已拒绝计划，未执行')
-    onClose()
-  }
-
-  return (
-    <div className="plan-approval">
-      {editing ? (
-        <textarea
-          className="plan-approval-textarea"
-          value={editBuffer}
-          onChange={(e) => setEditBuffer(e.target.value)}
-          rows={Math.min(24, Math.max(12, editBuffer.split('\n').length + 1))}
-          autoFocus
-        />
-      ) : (
-        <div className="plan-approval-body md-surface">
-          <MarkdownText content={draft} />
-        </div>
-      )}
-      <div className="plan-approval-foot">
-        {!editing && (
-          <Button
-            type="text"
-            size="small"
-            danger
-            disabled={busy}
-            onClick={reject}
-            icon={<Icons.X size={14} />}
-          >
-            拒绝
-          </Button>
-        )}
-        <div className="flex1" />
-        {!editing && isEdited && (
-          <Button
-            type="text"
-            size="small"
-            disabled={busy}
-            icon={<Icons.RotateCcw size={14} />}
-            onClick={() => {
-              setDraft(plan)
-              setEditBuffer(plan)
-            }}
-          >
-            恢复原计划
-          </Button>
-        )}
-        {!editing && (
-          <Button
-            type="text"
-            size="small"
-            disabled={busy}
-            icon={<Icons.Edit size={14} />}
-            onClick={() => {
-              setEditBuffer(draft)
-              setEditing(true)
-            }}
-          >
-            编辑
-          </Button>
-        )}
-        {editing && (
-          <Button type="text" size="small" onClick={() => setEditing(false)}>
-            放弃修改
-          </Button>
-        )}
-        {editing && (
-          <Button
-            type="primary"
-            size="small"
-            disabled={editBuffer === draft}
-            icon={<Icons.Check size={14} />}
-            onClick={() => {
-              setDraft(editBuffer)
-              setEditing(false)
-            }}
-          >
-            保存编辑
-          </Button>
-        )}
-        {!editing && (
-          <Button
-            type="primary"
-            size="small"
-            loading={busy}
-            onClick={approve}
-            icon={<Icons.Check size={14} />}
-          >
-            {isEdited ? '批准执行' : '批准执行'}
-          </Button>
-        )}
-      </div>
     </div>
   )
 }

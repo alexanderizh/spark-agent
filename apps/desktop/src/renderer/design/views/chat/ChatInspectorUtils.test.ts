@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { MessageBuilder, type UIBlock, type UIMessage } from '../../services/event-mapper'
 import {
+  extractPlans,
   extractInspectorTasks,
   extractSessionProgressTasks,
   parseTodosFromInputOrOutput,
@@ -260,6 +261,63 @@ describe('chat inspector task progress', () => {
 
     expect(extractSessionProgressTasks([assistantMessage('streaming', [create, update])])).toEqual([
       expect.objectContaining({ id: '#1', status: 'in_progress' }),
+    ])
+  })
+})
+
+describe('chat inspector plans', () => {
+  it('keeps plan proposals as immutable markdown instead of fake progress items', () => {
+    const rawPlan = [
+      '# 修复方案',
+      '',
+      '## 背景',
+      '- 这是一条背景说明，不是待办',
+      '',
+      '## 实施步骤',
+      '1. 修改展示职责',
+    ].join('\n')
+
+    expect(
+      extractPlans([assistantMessage('completed', [{ kind: 'plan_proposed', plan: rawPlan }])]),
+    ).toEqual([
+      {
+        id: 'assistant-1:plan_proposed',
+        kind: 'proposal',
+        title: 'Agent 方案',
+        rawPlan,
+      },
+    ])
+  })
+
+  it('keeps todo and update_plan tool snapshots as mutable progress', () => {
+    const todo = toolBlock('todo_write', {
+      todos: [{ content: '实现修复', status: 'in_progress', activeForm: '正在实现修复' }],
+    })
+    const updatePlan = toolBlock(
+      'update_plan',
+      {
+        title: '交付计划',
+        explanation: '按阶段推进',
+        plan: [{ step: '运行验证', status: 'pending' }],
+      },
+      { toolCallId: 'update-plan-1' },
+    )
+
+    expect(extractPlans([assistantMessage('streaming', [todo, updatePlan])])).toEqual([
+      {
+        id: 'update-plan-1',
+        kind: 'progress',
+        title: '交付计划',
+        explanation: '按阶段推进',
+        items: [{ text: '运行验证', status: 'pending' }],
+      },
+      {
+        id: 'todo_write-1',
+        kind: 'progress',
+        title: 'Todo 计划',
+        explanation: undefined,
+        items: [{ text: '正在实现修复', status: 'running' }],
+      },
     ])
   })
 })

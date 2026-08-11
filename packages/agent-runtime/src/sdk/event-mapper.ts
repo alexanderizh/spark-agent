@@ -1206,15 +1206,9 @@ function mapContentBlock(
       ctx.toolNamesById?.set(block.id, mapSDKToolName(block.name))
       const toolInput = normalizeToolInput(block.input)
       getToolInputs(ctx).set(block.id, toolInput)
-      // 追踪计划文件写入：新版 CLI 计划模式要求 agent 先把计划 Write 到
+      // 追踪计划文件写入：新版 CLI 计划模式要求 agent 先把计划 Write/Edit 到
       // .claude/plans/*.md，ExitPlanMode 的 input 里不再带 plan 文本。
-      // 这里把指向计划文件的 Write/Edit 内容记下来，ExitPlanMode 时取用它。
-      if (isPlanFileWriteTool(block.name) && getPlanFilePath(toolInput) != null) {
-        const content = typeof toolInput.content === 'string' ? toolInput.content : ''
-        if (content.trim().length > 0) {
-          getLastPlanWrite(ctx).content = content
-        }
-      }
+      rememberPlanFileChange(block.name, toolInput, ctx)
       // Intercept Agent tool calls → emit SubagentStartedEvent
       if (block.name === 'Agent' || mapSDKToolName(block.name) === 'subagent') {
         const name = typeof toolInput.agent === 'string' ? toolInput.agent : 'Subagent'
@@ -1232,7 +1226,7 @@ function mapContentBlock(
       }
       if (isPlanProposalTool(block.name)) {
         // 优先用 ExitPlanMode input.plan；取不到则回退到本 turn 追踪到的计划文件内容。
-        const plan = extractPlanText(toolInput) ?? getLastPlanWrite(ctx).content
+        const plan = extractPlanText(toolInput) ?? getLastPlanFileState(ctx).content
         return mapPlanProposal(plan, ctx)
       }
       return [
@@ -1584,16 +1578,61 @@ function getToolResults(ctx: EventContext): Map<string, string> {
 }
 
 /**
- * 本 turn 内最后一次「计划文件写入」的内容。
+ * 本 turn 内最后一个计划文件的已知路径和内容。
  *
  * 新版 CLI 计划模式：agent 把计划 Write 到 .claude/plans/*.md，ExitPlanMode 的
- * input 不再带 plan 文本。我们在 tool_use 阶段记下这次写入的内容，等
+ * input 不再带 plan 文本。我们在 tool_use 阶段重放 Write/Edit，等
  * ExitPlanMode 到来时用它作为 plan_proposed 的 plan 文本。
  */
-function getLastPlanWrite(ctx: EventContext): { content: string } {
-  const record = ctx as EventContext & { lastPlanWrite?: { content: string } }
-  if (record.lastPlanWrite == null) record.lastPlanWrite = { content: '' }
+function getLastPlanFileState(ctx: EventContext): { filePath: string | null; content: string } {
+  const record = ctx as EventContext & {
+    lastPlanWrite?: { filePath: string | null; content: string }
+  }
+  if (record.lastPlanWrite == null) record.lastPlanWrite = { filePath: null, content: '' }
   return record.lastPlanWrite
+}
+
+function rememberPlanFileChange(
+  sdkName: string,
+  input: Record<string, unknown>,
+  ctx: EventContext,
+): void {
+  if (!isPlanFileWriteTool(sdkName)) return
+  const filePath = getPlanFilePath(input)
+  if (filePath == null) return
+
+  const lastWrite = getLastPlanFileState(ctx)
+  const mappedName = mapSDKToolName(sdkName)
+  if (mappedName === 'write_file') {
+    if (typeof input.content !== 'string') return
+    lastWrite.filePath = filePath
+    lastWrite.content = input.content
+    return
+  }
+
+  if (mappedName !== 'edit_file' || lastWrite.filePath !== filePath) return
+  if (typeof input.content === 'string') {
+    lastWrite.content = input.content
+    return
+  }
+
+  const oldString = firstStringField(input, ['old_string', 'oldString'])
+  const newString = firstStringField(input, ['new_string', 'newString'])
+  if (oldString == null || oldString.length === 0 || newString == null) return
+  if (!lastWrite.content.includes(oldString)) return
+
+  const replaceAll = input.replace_all === true || input.replaceAll === true
+  lastWrite.content = replaceAll
+    ? lastWrite.content.split(oldString).join(newString)
+    : lastWrite.content.replace(oldString, newString)
+}
+
+function firstStringField(input: Record<string, unknown>, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = input[key]
+    if (typeof value === 'string') return value
+  }
+  return null
 }
 
 function isPlanFileWriteTool(sdkName: string): boolean {
