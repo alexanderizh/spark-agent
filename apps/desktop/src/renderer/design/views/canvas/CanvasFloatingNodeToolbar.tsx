@@ -230,7 +230,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
       type="text"
       icon={icon}
       onClick={onClick}
-      style={{display: "flex", alignItems:'center', justifyContent: 'flex-start'}}
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}
       {...(options?.danger ? { className: 'canvas-floating-menu-danger' } : {})}
       {...(options?.disabled ? { disabled: true } : {})}
     >
@@ -272,7 +272,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
           />
         )}
         {isOperation && (
-          <Tag color={operationStatusColor} size='small' bordered>
+          <Tag color={operationStatusColor} size="small" bordered>
             {floatingOperationStatusLabel(operationStatus)}
           </Tag>
         )}
