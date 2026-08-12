@@ -251,9 +251,12 @@ body.terminal-resizing {
   padding-right: 0 !important;
 }
 
-/* xterm 的字距需要通过 Terminal({ letterSpacing }) 调整。
-   直接覆盖 .xterm-rows/span 的 letter-spacing 会和 FitAddon 的列宽计算不同步，
-   导致右侧留白但提前换行。 */
+/* xterm 的字距由 Terminal({ letterSpacing }) 与 FitAddon 共同计算。
+   rows 这里保留同值的最终兜底，避免 xterm 的动态补偿或应用全局排版规则
+   把字距再次撑开；不要覆盖字符 span，宽字符/粗体需要 xterm 自己计算间距。 */
+.builtin-terminal-panel .xterm-rows {
+  letter-spacing: -1px !important;
+}
 .builtin-terminal-panel .xterm-viewport::-webkit-scrollbar {
   width: 8px;
 }
