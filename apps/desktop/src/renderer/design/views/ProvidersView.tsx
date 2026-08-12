@@ -941,6 +941,8 @@ function ProvidersView() {
   const showProviderEdit = t.showProviderEdit
   const [profiles, setProfiles] = useState<ProviderProfile[]>([])
   const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([])
+  /** 列表加载中：初始为 true（挂载即触发一次刷新），列表为空时用 loading 视图替代空状态 */
+  const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [managedEditingProfile, setManagedEditingProfile] = useState<ProviderProfile | null>(null)
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthCheckResponse>>({})
@@ -986,12 +988,14 @@ function ProvidersView() {
   }, [])
 
   const refresh = useCallback(() => {
+    setLoading(true)
     Promise.all([listProviders({ includeDisabled: true }), listModels({})])
       .then(([providerRes, modelRes]) => {
         setProfiles(providerRes.profiles)
         setModelProfiles(modelRes.models)
       })
       .catch(console.error)
+      .finally(() => setLoading(false))
   }, [listModels, listProviders])
 
   const { refreshPlatformCatalog } = usePlatformModelCatalogRefresh(refresh)
@@ -1290,7 +1294,7 @@ function ProvidersView() {
               size="small"
               shape="circle"
               type="text"
-              icon={<Icons.Refresh />}
+              icon={loading ? <Icons.Spinner size={12} /> : <Icons.Refresh />}
               onClick={() => void refreshPlatformCatalog()}
               title="刷新 (Ctrl+R)"
               aria-label="刷新"
@@ -1451,9 +1455,16 @@ function ProvidersView() {
         {/* ─── 可滚动内容区（catalog + cards / empty） ─── */}
         <div className="pv_scroll">
           {uiProfiles.length === 0 ? (
-            <div className="pv_empty">
-              尚未配置 Provider — 点击「从模板添加」快速开始，或「自定义添加」手动配置
-            </div>
+            loading ? (
+              <div className="pv_loading">
+                <Icons.Spinner size={24} />
+                <span>正在加载 Provider…</span>
+              </div>
+            ) : (
+              <div className="pv_empty">
+                尚未配置 Provider — 点击「从模板添加」快速开始，或「自定义添加」手动配置
+              </div>
+            )
           ) : visibleProfiles.length === 0 ? (
             <div className="pv_empty">没有匹配的 Provider — 调整搜索关键字或类型筛选试试</div>
           ) : (
