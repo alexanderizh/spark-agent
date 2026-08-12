@@ -1102,41 +1102,59 @@ h3 {
 }
 @media (min-width: 1024px) {
   .hero {
-    gap: 3rem;
-    padding-top: clamp(4rem, 8vw, 7rem);
-    text-align: center;
+    /* 桌面端：左右两栏（左品牌 / 右界面预览），不再上下堆叠 */
+    gap: clamp(1.5rem, 3vw, 2.6rem);
+    padding-top: clamp(3.5rem, 7vw, 6rem);
+    text-align: left;
   }
   .enhanced-hero {
-    grid-template-rows: auto minmax(360px, 1fr);
-    gap: clamp(1rem, 2.4vw, 1.75rem);
-    min-height: max(650px, calc(100svh - 220px));
+    /* 左右两栏：整块内容在 min-height 容器内垂直居中（grid-template-rows: auto
+       让单行收缩到内容高度，align-content: center 把整行推到容器正中），
+       再用 align-items: start 让左右两栏顶部对齐——即「居中的前提下尽量对齐」。
+       max-width 限制首页 hero 区域最大宽度并水平居中。 */
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    grid-template-rows: auto;
+    align-content: center;
+    align-items: start;
+    gap: clamp(1.5rem, 3vw, 2.6rem);
+    max-width: 1440px;
+    margin-inline: auto;
+    min-height: max(560px, calc(100svh - 180px));
     padding-top: clamp(1.1rem, 2.8vw, 2rem);
     padding-bottom: clamp(0.8rem, 2.2vw, 1.6rem);
+    text-align: left;
+  }
+  .enhanced-hero h1 {
+    font-size: clamp(2.8rem, 5vw, 4.4rem);
+    line-height: 1.08;
+  }
+  .enhanced-hero .hero-text {
+    align-self: start;
+    max-width: 34rem;
+    margin-inline: 0;
+  }
+  .enhanced-hero .hero-subtitle {
+    max-width: 34rem;
+    margin: 0.9rem 0 0;
+    font-size: 1.08rem;
+  }
+  .enhanced-hero .cta {
+    justify-content: flex-start;
+    margin-top: 1.5rem;
   }
   .enhanced-hero .hero-app {
-    width: min(1120px, 100%);
-    height: 100%;
-    min-height: 600px;
-  }
-  .enhanced-hero .hero-app__scaler,
-  .enhanced-hero .hero-app__chrome {
-    height: 100%;
-  }
-  .enhanced-hero .hero-app__chrome {
-    display: flex;
-    flex-direction: column;
-  }
-  .enhanced-hero .hero-app__body {
-    flex: 1;
-    min-height: 0;
-    aspect-ratio: auto;
+    align-self: start;
+    width: 100%;
+    /* 720px 是 HeroAppMockup 内部等比缩放层的设计原宽（SCALE_BASE），
+       容器到此宽度时 scale=1 全尺寸最清晰；高度由 16:9 推导，内容区够高时自然放大。 */
+    max-width: min(720px, 100%);
   }
   .hero-text {
-    margin-inline: auto;
-    max-width: 64rem;
+    margin-inline: 0;
+    max-width: 34rem;
   }
   .hero .cta {
-    justify-content: center;
+    justify-content: flex-start;
   }
   .cards,
   .feature-grid-wide {
@@ -1154,49 +1172,21 @@ h3 {
     max-width: 72rem;
   }
 }
-@media (min-width: 1920px) {
-  .hero {
-    max-width: 1600px;
-    margin-inline: auto;
-  }
-}
 @media (min-width: 1024px) and (max-height: 820px) {
   .enhanced-hero {
-    grid-template-columns: minmax(0, 0.72fr) minmax(520px, 1fr);
-    /* row 高度 = banner 自然高度（约 390px），不再强制撑满视口，
-       让 center 对齐后 hero 区域上下都有 padding 留出呼吸空间，banner 不再"顶天" */
+    /* 矮视口：左右布局已由 1024px 主断点接管，这里只放开强制高度，
+       让内容按自然高度排布，避免 banner 顶天或溢出视口 */
     grid-template-rows: auto;
     min-height: 0;
-    gap: clamp(1.25rem, 3vw, 2.4rem);
+    gap: clamp(1.25rem, 3vw, 2.2rem);
     padding-top: clamp(1rem, 2.4vw, 1.5rem);
     padding-bottom: clamp(1rem, 2.4vw, 1.5rem);
-    text-align: left;
   }
   .enhanced-hero h1 {
-    font-size: clamp(2.8rem, 5vw, 4.1rem);
-  }
-  .enhanced-hero .hero-text {
-    max-width: 35rem;
-    margin-inline: 0;
-  }
-  .enhanced-hero .hero-subtitle {
-    max-width: 49rem;
-    margin: 0.65rem 0 0;
-    font-size: 1.05rem;
-  }
-  .enhanced-hero .cta {
-    justify-content: flex-start;
-    margin-top: 0.8rem;
-  }
-  .enhanced-hero .button {
-    padding-block: 0.72rem;
+    font-size: clamp(2.6rem, 4.6vw, 3.8rem);
   }
   .enhanced-hero .hero-app {
-    /* 小视口横向布局：banner 宽度从 680 减到 560，高度从 ~390 减到 ~361，
-       让 hero 区域总高度 ≈ 视口 - 64 (nav) - 64 (上下 padding)，
-       在 ≤ 477px 高的窗口下也能完整显示，banner 上下都留出呼吸空间。 */
     max-width: min(560px, 100%);
-    min-height: 360px;
   }
   .pmq-band {
     padding-top: 10px;
