@@ -81,6 +81,7 @@ import {
   type VendorMeta,
 } from '@spark/protocol'
 import { EMPTY_COMPOSER_DRAFT } from './ChatComposerTypes'
+import { writeAgentRuntimePrefs } from './composerAgentRuntimePrefs'
 import {
   createComposerDraftWriter,
   gcComposerDraftBuckets,
@@ -2733,6 +2734,7 @@ export function ComposerV2({
         const nextMode = nextOption.value
         setDraftPermissionMode(nextMode)
         writeComposerPrefs({ permissionMode: nextMode })
+        writeAgentRuntimePrefs(effectiveAgentId, { permissionMode: nextMode })
         if (session != null) void persistRuntimePatch({ permissionMode: nextMode })
         toast.info(`权限模式: ${nextOption.label}`)
       }
@@ -3184,6 +3186,7 @@ export function ComposerV2({
   const handleReasoningChange = async (reasoningEffort: SessionReasoningEffort) => {
     setDraftReasoning(reasoningEffort)
     writeComposerPrefs({ reasoningEffort })
+    writeAgentRuntimePrefs(effectiveAgentId, { reasoningEffort })
     if (session != null) await persistRuntimePatch({ reasoningEffort })
   }
 
@@ -3738,6 +3741,7 @@ export function ComposerV2({
               const permissionMode = mode as PermissionModeChoice
               setDraftPermissionMode(permissionMode)
               writeComposerPrefs({ permissionMode })
+              writeAgentRuntimePrefs(effectiveAgentId, { permissionMode })
               if (session != null) void persistRuntimePatch({ permissionMode })
             }}
             options={permissionOptions}
