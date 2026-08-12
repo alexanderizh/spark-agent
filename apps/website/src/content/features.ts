@@ -35,12 +35,14 @@ export const featureGroups: FeatureGroup[] = [
   {
     title: 'A2A 团队模式',
     icon: 'code',
-    summary: '不是单 Agent 单线程干活，而是让主 Agent 组织一支可分工、可汇总、可审查的执行团队。',
+    summary: '不是单 Agent 单线程干活，而是让主 Agent 组织一支可分工、可汇总、可审查的执行团队，协作共识与成果结构化落账。',
     href: '/features#team',
     proof: '适合复杂交付、跨角色协作和需要复盘的团队任务',
     items: [
       '把编码、审查、调研、内容生产拆给不同 Agent 并行推进',
       '每个成员 Agent 可单独配置模型、工具、Skills、MCP 和上下文',
+      'Outcome Room 协作治理：共识与成果写入 Living Ledger 动态账本，confirm / reject / 修订治理动作，CAS 版本控制防并发覆盖',
+      '类型化交接 Typed Handoff 与 Steering Gate 把关：成员收尾前先过闸门，approve / revise / stop 后再进入下一环',
       '通过群聊式事件流回看分派、执行、交接和汇总过程',
     ],
   },
@@ -131,11 +133,12 @@ export const featureGroups: FeatureGroup[] = [
   {
     title: '会沉淀会进化的长期记忆',
     icon: 'audit',
-    summary: 'Agent 自动记住你的偏好、项目背景和长期约定，跨会话可用，越用越懂你而不是每次从零开始。',
+    summary: 'Claude 与 Codex 双内核共用同一套边缘记忆：Agent 自动记住你的偏好、项目背景和长期约定，跨会话、切内核都无缝延续。',
     href: '/docs/long-term-memory',
     proof: '适合长期项目、个人偏好沉淀和团队约定积累',
     items: [
       '三层作用域隔离：跨项目通用的身份偏好、当前项目专属的决策背景、单个 Agent 的角色记忆各自独立，不会串味',
+      '边缘记忆独立于对话内核运行：无论走 Claude Agent SDK 还是 Codex 路径，读写同一套记忆库，切换内核上下文不丢失',
       '后台自动抽取不干扰对话：主对话用强模型推进任务，记忆沉淀走独立的便宜小模型，成本最优且故障不影响主流程',
       '会进化会整合：重复记忆自动合并、零散反馈自动升华为通用模式，关键词和语义混合检索都能命中',
     ],
@@ -150,30 +153,6 @@ export const featureGroups: FeatureGroup[] = [
       '支持固定间隔、标准 Cron 表达式和单次定时三种触发方式',
       '用户和 Agent 都能创建：会话工具栏手建，或 Agent 用 session_schedule_* 工具自助管理',
       '重试、并发和下次执行时间由调度引擎托管，目标达成后自动清理',
-    ],
-  },
-  {
-    title: 'Token 用量热力图',
-    icon: 'heatmap',
-    summary: '设置页内置贡献图风格的用量热力图，按天聚合输入 + 输出 + 推理三类 Token，12 周 / 6 个月 / 1 年可切换。',
-    href: '/features#audit',
-    proof: '适合需要复盘模型用量、控制成本和发现异常消耗的团队',
-    items: [
-      '每日 Token = 输入 + 输出 + 推理，按 UTC 日聚合，与本地用量账本口径一致',
-      '5 档颜色强度，悬停或聚焦显示日期、Token 数与请求次数',
-      '数据全部来自本地 usage_ledger，不上云，隐私不出机器',
-    ],
-  },
-  {
-    title: '会话置顶与拖拽排序',
-    icon: 'order',
-    summary: '侧栏会话支持置顶 + 拖拽双层排序：置顶段在前、普通段在后，两段各自再按手动顺序排列。',
-    href: '/features#coding',
-    proof: '适合项目多、会话密、需要把当前重点钉在顶部的使用者',
-    items: [
-      '置顶按最近置顶时间排，未置顶按最近更新倒序，与后端 SQL 排序口径一致',
-      '项目维度独立排序，拖拽得到的手动顺序即时归位',
-      '新会话和新置顶自动落到所属段顶部，取消置顶即时重排',
     ],
   },
 ]

@@ -80,8 +80,6 @@ const taskExecutionFeatureTitles = new Set([
   '多层级环境、规则与权限',
   '会沉淀会进化的长期记忆',
   '会话定时任务与无人值守',
-  'Token 用量热力图',
-  '会话置顶与拖拽排序',
 ])
 
 const taskExecutionFeatures = featureGroups.filter((g) => taskExecutionFeatureTitles.has(g.title))
