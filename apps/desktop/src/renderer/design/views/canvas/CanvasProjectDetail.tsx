@@ -181,7 +181,11 @@ export function CanvasProjectDetail({
   const times = [
     { label: '创建时间', value: formatDate(project.createdAt), icon: <Icons.Calendar size={13} /> },
     { label: '更新时间', value: formatDate(project.updatedAt), icon: <Icons.Clock size={13} /> },
-    { label: '最后打开', value: formatDate(project.lastOpenedAt), icon: <Icons.ExternalLink size={13} /> },
+    {
+      label: '最后打开',
+      value: formatDate(project.lastOpenedAt),
+      icon: <Icons.ExternalLink size={13} />,
+    },
   ]
 
   // ── 项目资源（图片/视频），从 snapshot 拉取 ──────────────────────────────
@@ -234,7 +238,8 @@ export function CanvasProjectDetail({
       const label = asset.title ?? '未命名资源'
       Modal.confirm({
         title: `删除「${label}」？`,
-        content: '该资源会从项目资源库移除，并删除其源文件（本地文件与已上传的平台文件），此操作不可撤销。',
+        content:
+          '该资源会从项目资源库移除，并删除其源文件（本地文件与已上传的平台文件），此操作不可撤销。',
         okText: '删除',
         okButtonProps: { danger: true },
         cancelText: '取消',
@@ -355,8 +360,7 @@ export function CanvasProjectDetail({
 
   // 全选/全不选：仅作用于「当前可见筛选集合」，避免和分页/筛选语义打架
   const allFilteredSelected = useMemo(
-    () =>
-      filteredAssets.length > 0 && filteredAssets.every((a) => selectedIds.has(a.id)),
+    () => filteredAssets.length > 0 && filteredAssets.every((a) => selectedIds.has(a.id)),
     [filteredAssets, selectedIds],
   )
   const toggleSelectAll = useCallback(() => {
@@ -544,7 +548,9 @@ export function CanvasProjectDetail({
       {/* 标题栏：左侧标题+状态，右侧项目操作。 */}
       <div className="canvas-detail-header">
         <div className="canvas-detail-header-left">
-          <h1 className="canvas-detail-title" title={project.title}>{project.title}</h1>
+          <h1 className="canvas-detail-title" title={project.title}>
+            {project.title}
+          </h1>
           <Tag color={project.status === 'archived' ? 'default' : 'green'}>
             {project.status === 'archived' ? '已归档' : '进行中'}
           </Tag>
@@ -605,11 +611,7 @@ export function CanvasProjectDetail({
             }}
           >
             <Tooltip title="更多操作">
-              <button
-                type="button"
-                className="canvas-detail-icon-btn"
-                aria-label="更多项目操作"
-              >
+              <button type="button" className="canvas-detail-icon-btn" aria-label="更多项目操作">
                 <Icons.More size={15} />
               </button>
             </Tooltip>
@@ -632,17 +634,6 @@ export function CanvasProjectDetail({
       <p className="canvas-detail-description">
         {project.description || '暂无描述，点击「编辑」补充项目说明。'}
       </p>
-
-      {/* 统计 */}
-      <div className="canvas-detail-stats">
-        {stats.map((s) => (
-          <div key={s.label} className="canvas-detail-stat">
-            <span className="canvas-detail-stat-icon">{s.icon}  <p>{s.label}</p></span>
-            <span className="canvas-detail-stat-value">{s.value}</span>
-            {/* <span className="canvas-detail-stat-label">{s.label}</span> */}
-          </div>
-        ))}
-      </div>
 
       {/* 项目资源（图片/视频）——首批 20 个，支持筛选。
           从 snapshot.assets 拉取，只展示有视觉预览的 image/video 类型。 */}
@@ -671,12 +662,17 @@ export function CanvasProjectDetail({
           </div>
         ) : visibleAssets.length === 0 ? (
           <div className="canvas-detail-assets-empty">
-            暂无{assetFilter === 'image' ? '图片' : assetFilter === 'video' ? '视频' : '图片/视频'}资源
+            暂无{assetFilter === 'image' ? '图片' : assetFilter === 'video' ? '视频' : '图片/视频'}
+            资源
           </div>
         ) : (
           <>
             {selectedIds.size > 0 && (
-              <div className="canvas-detail-asset-batchbar" role="toolbar" aria-label="资源批量操作">
+              <div
+                className="canvas-detail-asset-batchbar"
+                role="toolbar"
+                aria-label="资源批量操作"
+              >
                 <span className="canvas-detail-asset-batchbar-count">
                   已选 {selectedIds.size}
                   {filteredAssets.length > MAX_ASSET_SELECTION
@@ -704,7 +700,12 @@ export function CanvasProjectDetail({
                   >
                     批量删除 ({Math.min(selectedIds.size, MAX_ASSET_SELECTION)})
                   </Button>
-                  <Button size="small" type="text" onClick={clearSelection} disabled={batchDeleting}>
+                  <Button
+                    size="small"
+                    type="text"
+                    onClick={clearSelection}
+                    disabled={batchDeleting}
+                  >
                     取消
                   </Button>
                 </div>
@@ -859,10 +860,7 @@ export function CanvasProjectDetail({
         footer={null}
         width="auto"
         centered
-        title={
-          previewAsset?.title ||
-          (previewAsset?.type === 'video' ? '视频预览' : '图片预览')
-        }
+        title={previewAsset?.title || (previewAsset?.type === 'video' ? '视频预览' : '图片预览')}
         className="canvas-detail-preview-modal"
         destroyOnHidden
       >
