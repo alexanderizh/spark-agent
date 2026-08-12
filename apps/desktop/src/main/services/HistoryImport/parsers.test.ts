@@ -352,4 +352,62 @@ describe('codexParser', () => {
     expect(meta.sourceSessionId).toBe('cx-1')
     expect(meta.messageCount).toBe(2)
   })
+
+  it('剥离 SparkWork 注入的技能目录/运行时上下文/MCP 段，保留真实用户消息', () => {
+    // 模拟 buildCodexPrompt 拼接出的 user message：注入段 + 真实用户输入
+    const injectedText = [
+      '# Spark Skills',
+      '[Available Skills Catalog]',
+      'Metadata only. Each entry contains only skill id, name, and description.',
+      '',
+      '- builtin:demo - Demo: a demo skill',
+      '',
+      '# Spark Runtime Context',
+      '当前会话运行时上下文。',
+      '',
+      '# MCP Servers',
+      'The following MCP servers have been configured for Codex CLI when supported:',
+      '- server1',
+      '',
+      '请帮我重构这段代码',
+    ].join('\n')
+    const injectedJsonl = jsonl([
+      {
+        type: 'session_meta',
+        timestamp: '2026-06-14T03:00:00.000Z',
+        payload: { id: 'cx-inj', cwd: '/proj', timestamp: '2026-06-14T03:00:00.000Z' },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-06-14T03:00:01.000Z',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: injectedText }] },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-06-14T03:00:02.000Z',
+        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '好的' }] },
+      },
+    ])
+
+    const { events, meta } = parseCodexRollout(injectedJsonl, {
+      sessionId: 'new-inj',
+      sourceSessionId: 'cx-inj',
+      threadName: null,
+      fallbackTimestamp: FALLBACK_TS,
+    })
+
+    // user_message 内容应为剥离注入段后的真实用户消息，而非 [Available Skills Catalog] 开头的整段
+    const userMsg = events.find((e) => e.type === 'user_message')
+    expect(userMsg).toMatchObject({ content: '请帮我重构这段代码' })
+
+    // messageCount 只计真实用户消息 + assistant，注入段不计入
+    expect(meta.messageCount).toBe(2)
+    // 无 threadName 时标题取剥离后的真实用户消息
+    expect(meta.title).toBe('请帮我重构这段代码')
+
+    // extractCodexMeta（scan 路径）同样反映剥离后的计数与标题
+    const metaOnly = extractCodexMeta(injectedJsonl, null, 'fallback')
+    expect(metaOnly.messageCount).toBe(2)
+    expect(metaOnly.title).toBe('请帮我重构这段代码')
+  })
 })

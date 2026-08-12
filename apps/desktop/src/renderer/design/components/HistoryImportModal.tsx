@@ -139,7 +139,7 @@ export function HistoryImportModal() {
 
   const [phase, setPhase] = useState<Phase>('scanning')
   const [items, setItems] = useState<HistoryImportItem[]>([])
-  const [sourceTab, setSourceTab] = useState<HistoryImportSource>('claude-code')
+  const [sourceTab, setSourceTab] = useState<HistoryImportSource>('codex')
   const [search, setSearch] = useState('')
   const [projectFilter, setProjectFilter] = useState('all')
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
@@ -229,17 +229,12 @@ export function HistoryImportModal() {
       const nextItems = responses
         .flatMap((response) => response.items)
         .sort((a, b) => (b.lastTimestamp ?? '').localeCompare(a.lastTimestamp ?? ''))
-      const counts = nextItems.reduce<Record<HistoryImportSource, number>>(
-        (result, item) => ({ ...result, [item.source]: result[item.source] + 1 }),
-        { 'claude-code': 0, codex: 0 },
-      )
-
       const minimumDuration = 720
       const remaining = minimumDuration - (Date.now() - startedAt)
       if (remaining > 0) await wait(remaining)
       if (requestId !== scanRequestRef.current) return
       setItems(nextItems)
-      setSourceTab(counts.codex > counts['claude-code'] ? 'codex' : 'claude-code')
+      setSourceTab('codex')
       setPhase('select')
     } catch (error) {
       if (requestId !== scanRequestRef.current) return
@@ -289,8 +284,8 @@ export function HistoryImportModal() {
 
   const sourceOptions = useMemo(
     () => [
-      { label: `Claude Code ${counts['claude-code'].toLocaleString()}`, value: 'claude-code' },
       { label: `Codex ${counts.codex.toLocaleString()}`, value: 'codex' },
+      { label: `Claude Code ${counts['claude-code'].toLocaleString()}`, value: 'claude-code' },
     ],
     [counts],
   )

@@ -67,6 +67,29 @@ function isInjectedContext(text: string): boolean {
   )
 }
 
+/**
+ * 剥离 SparkWork 注入到 codex user message 开头的运行时上下文段，保留真实用户消息。
+ *
+ * SparkWork 调用 codex 时会把「技能目录 / 运行时上下文 / MCP 清单」与真实用户输入
+ * 拼接成同一条 user message（见 codex-cli-executor.buildCodexPrompt），结构为：
+ *   # Spark Skills\n[Available Skills Catalog]\n...\n\n# Spark Runtime Context\n...\n\n# MCP Servers\n...\n\n<真实用户消息>
+ * 这些注入段（含 [Available Skills Catalog] 等）不是真实用户输入，预览/导入时应剥离。
+ *
+ * 实测所有含 `# Spark Skills` 的消息均同时含 `# MCP Servers`（最后一个注入段），
+ * 且该段内部仅单换行，其后第一个 `\n\n` 即真实用户消息起点，可可靠定位。
+ * 不符合该结构时原样返回，避免误删真实内容。
+ */
+function stripSparkInjectedSections(text: string): string {
+  if (!text.startsWith('# Spark Skills')) return text
+  const marker = '\n# MCP Servers\n'
+  const markerIdx = text.lastIndexOf(marker)
+  if (markerIdx === -1) return text
+  const sep = text.indexOf('\n\n', markerIdx + marker.length)
+  if (sep === -1) return text
+  const userMessage = text.slice(sep + 2)
+  return userMessage.trim().length > 0 ? userMessage.trimStart() : text
+}
+
 function messageText(content: CodexContentBlock[] | undefined): string {
   if (!Array.isArray(content)) return ''
   return content
@@ -95,7 +118,10 @@ function firstUserText(lines: CodexLine[]): string | null {
     const p = l.payload
     if (p?.type === 'message' && p.role === 'user') {
       const text = messageText(p.content)
-      if (text.trim().length > 0 && !isInjectedContext(text)) return text
+      if (text.trim().length === 0) continue
+      if (isInjectedContext(text)) continue
+      const cleaned = stripSparkInjectedSections(text)
+      if (cleaned.trim().length > 0) return cleaned
     }
   }
   return null
@@ -137,7 +163,10 @@ function collectMeta(lines: CodexLine[], threadName: string | null, fallbackId: 
       if (p.role === 'assistant') messageCount++
       else if (p.role === 'user') {
         const text = messageText(p.content)
-        if (text.trim().length > 0 && !isInjectedContext(text)) messageCount++
+        if (text.trim().length === 0) continue
+        if (isInjectedContext(text)) continue
+        const cleaned = stripSparkInjectedSections(text)
+        if (cleaned.trim().length > 0) messageCount++
       }
     }
   }
@@ -181,10 +210,12 @@ export function parseCodexRollout(
 
       if (p.role === 'user') {
         if (isInjectedContext(text2)) continue
+        const cleaned = stripSparkInjectedSections(text2)
+        if (cleaned.trim().length === 0) continue
         builder.newTurn()
         segIndex = 0
         sawFirstUserTurn = true
-        builder.push({ type: 'user_message', content: text2, timestamp: ts })
+        builder.push({ type: 'user_message', content: cleaned, timestamp: ts })
       } else if (p.role === 'assistant') {
         if (!sawFirstUserTurn) {
           builder.newTurn()
