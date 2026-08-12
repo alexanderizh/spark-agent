@@ -561,7 +561,10 @@
   color: var(--text);
   font-size: var(--font-xs);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 
   &:hover {
     background: var(--surface-hover, rgba(120, 120, 130, 0.12));
@@ -974,7 +977,6 @@
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--panel);
-
 }
 
 .git-review-content.has-tree {
@@ -2281,7 +2283,6 @@ body.git-review-tree-resizing {
 .app.theme-light .chat-layout > .unified-side-panel {
   background: transparent;
 }
-
 .chat-main-active .composer-inner {
   padding-bottom: 0px;
 }
@@ -2357,7 +2358,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 }
 
 @keyframes composer-file-drop-fade {
-  from { opacity: 0; }
+  from {
+    opacity: 0;
+  }
 }
 
 @keyframes composer-file-drop-rise {
@@ -2867,10 +2870,10 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 
 .composer-actions-popup {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
+  bottom: calc(100% + 4px);
+  left: -12px;
   z-index: 50;
-  min-width: 184px;
+  min-width: 200px;
   padding: 5px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -3292,7 +3295,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 }
 
 .composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-auto,
-.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-auto .composer-menu-item-label {
+.composer-menu.permission-menu
+  .composer-menu-item.permission-menu-item.tone-auto
+  .composer-menu-item-label {
   color: var(--text);
 }
 
@@ -3333,7 +3338,10 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   stroke-width: 2;
 }
 
-.composer-menu.permission-menu .permission-menu-item.tone-auto .composer-permission-menu-meta .composer-menu-check,
+.composer-menu.permission-menu
+  .permission-menu-item.tone-auto
+  .composer-permission-menu-meta
+  .composer-menu-check,
 .composer-menu.permission-menu
   .permission-menu-item.tone-danger
   .composer-permission-menu-meta
@@ -4552,7 +4560,7 @@ body.side-chat-resizing {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  .composer-inner{
+  .composer-inner {
     padding-bottom: 8px;
   }
   /* 侧边聊天的消息流与输入框左右内边距：主会话靠 .chat-main-active 父级注入 padding，
@@ -4732,15 +4740,8 @@ body.side-chat-resizing {
     var(--side-chat-width, min(44vw, 620px)),
     calc(100% - max(24px, var(--chat-main-min-width, 566px)))
   );
-  min-width: min(
-    360px,
-    calc(100% - max(24px, var(--chat-main-min-width, 566px)))
-  );
-  max-width: min(
-    1200px,
-    72vw,
-    calc(100% - max(24px, var(--chat-main-min-width, 566px)))
-  );
+  min-width: min(360px, calc(100% - max(24px, var(--chat-main-min-width, 566px))));
+  max-width: min(1200px, 72vw, calc(100% - max(24px, var(--chat-main-min-width, 566px))));
   height: 100vh;
   flex: 0 1 var(--side-chat-width, min(44vw, 620px));
   position: relative;
@@ -4925,7 +4926,10 @@ body.side-chat-resizing {
   background: var(--panel-elev);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
 }
 
 .unified-side-panel-add:hover {
@@ -4982,7 +4986,10 @@ body.side-chat-resizing {
   color: var(--text);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.05s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.05s ease;
 }
 
 .unified-side-panel-empty-card:hover {
@@ -5282,7 +5289,6 @@ body.side-chat-resizing {
   box-shadow: 0 0 0 2px var(--panel);
 }
 
-
 .chat-message-selectbar {
   position: sticky;
   top: 8px;
@@ -5324,7 +5330,9 @@ body.side-chat-resizing {
   color: var(--text);
   font-size: var(--font-sm);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .chat-message-selectbar button:hover:not(:disabled) {
@@ -5409,7 +5417,9 @@ body.side-chat-resizing {
   color: #fff;
   cursor: pointer;
   user-select: none;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
   z-index: 2;
 }
 .msg-select-check:hover {
@@ -5425,7 +5435,9 @@ body.side-chat-resizing {
 .msg-select-check .msg-select-checkmark {
   opacity: 0;
   transform: scale(0.6);
-  transition: opacity 0.12s, transform 0.12s;
+  transition:
+    opacity 0.12s,
+    transform 0.12s;
 }
 .msg.is-selected .msg-select-check {
   background: var(--primary);

@@ -244,7 +244,9 @@
     opacity: 0;
     transform: translateY(4px);
     pointer-events: none;
-    transition: opacity 0.16s ease, transform 0.16s ease;
+    transition:
+      opacity 0.16s ease,
+      transform 0.16s ease;
   }
   .canvas-detail-cover:hover .canvas-detail-cover-toolbar,
   .canvas-detail-cover:focus-within .canvas-detail-cover-toolbar {
@@ -386,43 +388,6 @@
     }
   }
 
-  .canvas-detail-stats {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-  }
-  .canvas-detail-stat {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 14px;
-    border-radius: var(--canvas-ui-radius-md);
-    background: var(--canvas-ui-surface);
-    border: 1px solid var(--canvas-ui-border);
-  }
-  .canvas-detail-stat-icon {
-    color: var(--primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    p{
-      margin: 0;
-      margin-top: 1px;
-      padding: 0 4px;
-      display: inline;
-    }
-  }
-  .canvas-detail-stat-value {
-    font-size: 22px;
-    font-weight: 650;
-    color: var(--text-strong);
-  }
-  .canvas-detail-stat-label {
-    font-size: 11px;
-    color: var(--text-faint);
-  }
-
   // ── 项目资源网格（图片/视频卡片，首批 20 个） ──────────────────────────
   .canvas-detail-assets {
     display: flex;
@@ -457,7 +422,9 @@
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
     &:hover:not(.active) {
       color: var(--text);
     }
@@ -523,7 +490,10 @@
     color: var(--text-muted);
     font-size: 12px;
     cursor: pointer;
-    transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+    transition:
+      border-color 0.12s ease,
+      color 0.12s ease,
+      background 0.12s ease;
     &:hover {
       color: var(--text);
       background: var(--canvas-ui-surface-muted);
@@ -540,7 +510,9 @@
     overflow: hidden;
     cursor: zoom-in; // 点击预览的视觉提示
     border: 2px solid transparent;
-    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    transition:
+      border-color 0.12s ease,
+      box-shadow 0.12s ease;
     img,
     video {
       width: 100%;
@@ -778,6 +750,10 @@
   &:hover {
     background: rgba(0, 0, 0, 0.66);
   }
-  &.prev { left: 20px; }
-  &.next { right: 20px; }
+  &.prev {
+    left: 20px;
+  }
+  &.next {
+    right: 20px;
+  }
 }

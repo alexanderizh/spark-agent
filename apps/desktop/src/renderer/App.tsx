@@ -47,7 +47,7 @@ import { Icons } from './design/Icons'
 import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
 import { Button, Dropdown, Modal, type MenuProps } from 'antd'
-import { Tooltip } from '@lobehub/ui'
+import { Segmented, Tooltip } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { getSidebarAutoSyncAction } from './sidebarAutoSync'
 import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
@@ -58,6 +58,7 @@ import {
   removeUserQuestion,
   type UserQuestionQueues,
 } from './user-question-queue'
+import './app.less'
 
 const ChatView = React.lazy(async () => ({
   default: (await import('./design/views/ChatView')).ChatView,
@@ -795,7 +796,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               aria-label={tr(item.labelKey)}
             >
               <item.icon size={16} />
-              <span className='shared-resource-btn-label'>{tr(item.labelKey)}</span>
+              <span className="shared-resource-btn-label">{tr(item.labelKey)}</span>
             </button>
           </Tooltip>
         ))}
@@ -812,8 +813,8 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             align={{ offset: [4, 0] }}
             styles={{
               root: {
-                width: 216,
-                minWidth: 216,
+                width: 256,
+                minWidth: 246,
                 maxWidth: 'calc(100vw - 24px)',
               },
             }}
@@ -843,85 +844,94 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                         },
                       ]),
                   {
-                    key: 'theme',
-                    label: menuLabel(<Icons.Brush size={14} />, 'Theme'),
-                    children: [
-                      {
-                        key: 'theme-light',
-                        label: menuLabel(<Icons.Sun size={14} />, 'Light', t.theme === 'light'),
-                      },
-                      {
-                        key: 'theme-dark',
-                        label: menuLabel(<Icons.Moon size={14} />, 'Dark', t.theme === 'dark'),
-                      },
-                      {
-                        key: 'theme-system',
-                        label: menuLabel(
-                          <Icons.Monitor size={14} />,
-                          'System',
-                          t.theme === 'system',
-                        ),
-                      },
-                      {
-                        key: 'empty-hero-theme',
-                        label: menuLabel(<Icons.Layers size={14} />, '会话主题'),
-                        children: EMPTY_HERO_THEMES.map((theme) => ({
-                          key: `empty-hero-theme-${theme.id}`,
-                          title: theme.description,
-                          label: menuLabel(
-                            <span
-                              className="user-menu-accent-swatch"
-                              style={{ background: theme.preview }}
-                            />,
-                            theme.name,
-                            t.emptyHeroTheme === theme.id,
-                          ),
-                        })),
-                      },
-                      {
-                        key: 'accent',
-                        label: menuLabel(
-                          <span
-                            className="user-menu-accent-dot"
-                            style={{ background: t.primary }}
-                          />,
-                          tr('app.user.accent'),
-                        ),
-                        children: Object.entries(PRIMARIES).map(([color, info]) => ({
-                          key: `accent-${color}`,
-                          label: menuLabel(
-                            <span
-                              className="user-menu-accent-swatch"
-                              style={{ background: color }}
-                            />,
-                            info.name,
-                            t.primary === color,
-                          ),
-                        })),
-                      },
-                      {
-                        key: 'sidebar-style',
-                        label: menuLabel(<Icons.PanelLeft size={14} />, tr('app.sidebar.style')),
-                        children: [
-                          {
-                            key: 'sidebar-style-floating',
-                            label: menuLabel(
-                              <Icons.SidebarShow size={14} />,
-                              tr('app.sidebar.styleFloating'),
-                              t.sidebarStyle === 'floating',
-                            ),
-                          },
-                          {
-                            key: 'sidebar-style-flat',
-                            label: menuLabel(
-                              <Icons.PanelLeft size={14} />,
-                              tr('app.sidebar.styleFlat'),
-                              t.sidebarStyle === 'flat',
-                            ),
-                          },
-                        ],
-                      },
-                    ],
+                    key: 'appearance',
+                    className: 'user-menu-appearance-menu-item',
+                    label: (
+                      <div
+                        className="user-menu-appearance"
+                        role="group"
+                        aria-label="外观"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <span className="user-menu-appearance-label">
+                          <Icons.Sun size={14} />
+                          <span>外观</span>
+                        </span>
+                        <Segmented
+                          className="user-menu-inline-segmented user-menu-inline-segmented-appearance"
+                          size="small"
+                          value={t.theme}
+                          options={[
+                            { label: '浅色', value: 'light' },
+                            { label: '深色', value: 'dark' },
+                            { label: '系统', value: 'system' },
+                          ]}
+                          onChange={(value) => setTweak('theme', value as typeof t.theme)}
+                        />
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'empty-hero-theme',
+                    popupClassName: 'user-menu-submenu-popup',
+                    label: menuLabel(<Icons.Layers size={14} />, '会话主题'),
+                    children: EMPTY_HERO_THEMES.map((theme) => ({
+                      key: `empty-hero-theme-${theme.id}`,
+                      title: theme.description,
+                      label: menuLabel(
+                        <span
+                          className="user-menu-accent-swatch"
+                          style={{ background: theme.preview }}
+                        />,
+                        theme.name,
+                        t.emptyHeroTheme === theme.id,
+                      ),
+                    })),
+                  },
+                  {
+                    key: 'accent',
+                    popupClassName: 'user-menu-submenu-popup',
+                    label: menuLabel(
+                      <span className="user-menu-accent-dot" style={{ background: t.primary }} />,
+                      tr('app.user.accent'),
+                    ),
+                    children: Object.entries(PRIMARIES).map(([color, info]) => ({
+                      key: `accent-${color}`,
+                      label: menuLabel(
+                        <span className="user-menu-accent-swatch" style={{ background: color }} />,
+                        info.name,
+                        t.primary === color,
+                      ),
+                    })),
+                  },
+                  {
+                    key: 'sidebar-style-inline',
+                    className: 'user-menu-inline-menu-item',
+                    label: (
+                      <div
+                        className="user-menu-inline-control"
+                        role="group"
+                        aria-label={tr('app.sidebar.style')}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <span className="user-menu-inline-control-label">
+                          <Icons.PanelLeft size={14} />
+                          <span>{tr('app.sidebar.style')}</span>
+                        </span>
+                        <Segmented
+                          className="user-menu-inline-segmented user-menu-inline-segmented-sidebar"
+                          size="small"
+                          value={t.sidebarStyle}
+                          options={[
+                            { label: tr('app.sidebar.styleFloating'), value: 'floating' },
+                            { label: tr('app.sidebar.styleFlat'), value: 'flat' },
+                          ]}
+                          onChange={(value) =>
+                            setTweak('sidebarStyle', value as typeof t.sidebarStyle)
+                          }
+                        />
+                      </div>
+                    ),
                   },
                   {
                     key: 'remote',
@@ -929,6 +939,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                   },
                   {
                     key: 'contact',
+                    popupClassName: 'user-menu-submenu-popup',
                     label: menuLabel(<Icons.Users size={14} />, tr('app.user.contactUs')),
                     children: [
                       {
@@ -954,9 +965,13 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                   },
                   {
                     key: 'about-spark',
+                    popupClassName: 'user-menu-submenu-popup',
                     label: menuLabel(<Icons.Sparkles size={14} />, tr('app.user.aboutSpark')),
                     children: [
-                      { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
+                      {
+                        key: 'github',
+                        label: menuLabel(<Icons.GitHub size={14} />, 'GitHub'),
+                      },
                       {
                         key: 'website',
                         label: menuLabel(<Icons.Home size={14} />, tr('app.user.website')),
@@ -979,21 +994,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                     case 'login':
                       auth.setFlow('login')
                       setTweak('view', 'account-center')
-                      break
-                    case 'theme-light':
-                      setTweak('theme', 'light' as typeof t.theme)
-                      break
-                    case 'theme-dark':
-                      setTweak('theme', 'dark' as typeof t.theme)
-                      break
-                    case 'theme-system':
-                      setTweak('theme', 'system' as typeof t.theme)
-                      break
-                    case 'sidebar-style-floating':
-                      setTweak('sidebarStyle', 'floating')
-                      break
-                    case 'sidebar-style-flat':
-                      setTweak('sidebarStyle', 'flat')
                       break
                     default:
                       if (key.startsWith('empty-hero-theme-')) {
