@@ -98,6 +98,20 @@ describe('workspace Git status for an unpushed local branch', () => {
     expect(fileDiff.diff).toContain('+local feature')
   })
 
+  it('returns diff for untracked new file even when untracked flag is missing', async () => {
+    // 复现变更卡片未透传 changeType 的场景：前端传 untracked=false，
+    // 但文件实际未跟踪。修复前 `git diff HEAD` 对未跟踪文件返回空 → 永远显示"无改动"；
+    // 修复后由 ls-files 兜底判断走 --no-index，整个文件以新增呈现。
+    const workspacePath = await createUnpushedFeatureRepository()
+    await fs.writeFile(path.join(workspacePath, 'brand-new.txt'), 'brand new content\n')
+
+    const fileDiff = await getWorkspaceGitFileDiff(workspacePath, 'brand-new.txt', false)
+
+    expect(fileDiff.isBinary).toBe(false)
+    expect(fileDiff.diff.trim().length).toBeGreaterThan(0)
+    expect(fileDiff.diff).toContain('+brand new content')
+  })
+
   it('keeps pending counts separate while reviewing committed and working changes together', async () => {
     const workspacePath = await createUnpushedFeatureRepository()
     await fs.writeFile(path.join(workspacePath, 'base.txt'), 'base changed\n')

@@ -534,7 +534,21 @@ export function TurnFileSummaryCard({
               return (
                 <div
                   key={i}
-                  className="turn-summary-file-row"
+                  className={`turn-summary-file-row${canOpen && onFilePreview ? ' is-clickable' : ''}`}
+                  style={canOpen && onFilePreview ? { cursor: 'pointer' } : undefined}
+                  onClick={
+                    canOpen && onFilePreview
+                      ? (event) => {
+                          // 点行内「打开方式」等按钮时不触发行级打开，避免重复触发
+                          if (
+                            event.target instanceof Element &&
+                            event.target.closest('button, a')
+                          )
+                            return
+                          onFilePreview(file.path, 'text')
+                        }
+                      : undefined
+                  }
                   onContextMenu={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
