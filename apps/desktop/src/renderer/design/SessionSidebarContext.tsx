@@ -48,6 +48,7 @@ import {
   buildSessionScheduleSummaries,
   type SessionScheduleSummaries,
 } from './session-schedule-summary'
+import { readAgentRuntimePrefs } from './views/chat/composerAgentRuntimePrefs'
 
 // 供 SidebarSessionList 等消费方在本地排序时复用（与后端 listSessions 排序对齐）。
 export { sortSessionsByPinned }
@@ -1029,8 +1030,13 @@ export function SessionSidebarProvider({
             ? selectedAgent?.agentAdapter
             : undefined) ??
           getProviderAdapterKind(profile)
+        // 新会话默认值优先回填「该 agent 上次被用户选择的」权限/推理强度（按 agentId 缓存）。
+        // 仅新会话创建路径生效；切换 agent 初始化与老会话初始化不受影响。
+        const agentRuntimePrefs =
+          selectedAgent != null ? readAgentRuntimePrefs(selectedAgent.id) : undefined
         const permissionMode =
           (options.permissionMode as SessionPermissionMode) ??
+          agentRuntimePrefs?.permissionMode ??
           selectedAgent?.permissionMode ??
           getValidPermissionMode(prefs.permissionMode, agentAdapter)
         const modelId = resolveModelForProvider(profile, [
@@ -1043,7 +1049,10 @@ export function SessionSidebarProvider({
         const agentId =
           optionAgentId ?? nonEmptyString(selectedAgent?.id) ?? 'platform-manager-agent'
         const reasoningEffort =
-          (options.reasoningEffort as SessionReasoningEffort) ?? prefs.reasoningEffort ?? 'medium'
+          (options.reasoningEffort as SessionReasoningEffort) ??
+          agentRuntimePrefs?.reasoningEffort ??
+          prefs.reasoningEffort ??
+          'medium'
         const debugMode = typeof options.debugMode === 'boolean' ? options.debugMode : undefined
         const cliSparkOverride =
           options.cliSparkOverride === null
