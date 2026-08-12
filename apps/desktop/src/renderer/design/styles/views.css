@@ -3158,11 +3158,8 @@ body.sidebar-resizing {
 }
 
 @media (max-width: 900px) {
-  .chat-main {
-    --chat-main-min-width: 0px;
-  }
-
   .chat-layout {
+    --chat-main-min-width: 0px;
     overflow-x: hidden;
   }
 
