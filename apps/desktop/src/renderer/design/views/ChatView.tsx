@@ -199,7 +199,9 @@ import { buildUsageDataFromEvents, ChatConfigPanel, ChatInspector } from './chat
 import {
   extractRunningTeamAgentIds,
   extractRunningTeamMemberIds,
+  hasRunningTeamMemberActivity,
 } from './chat/ChatTeamActivityUtils'
+import { useTeamActivityLogsVisible } from './chat/team-log-visibility'
 import { GitDiffContent, parseUnifiedDiff, type DiffHunk } from './chat/ChatDiffUtils'
 import { useApp } from '../AppContext'
 import { Icons } from '../Icons'
@@ -402,6 +404,7 @@ export function ChatView({
 }: ChatViewProps = {}) {
   const { t, setTweak } = useApp()
   const appearance = useAppearanceSettings()
+  const showTeamActivityLogs = useTeamActivityLogsVisible()
   // ── Shared state from SessionSidebarContext ──
   const sessionCtx = useSessionSidebar()
   const active = sessionCtx.activeSessionId
@@ -2327,7 +2330,7 @@ export function ChatView({
 
   return (
     <div
-      className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}`}
+      className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}${teamConfig.enabled && showTeamActivityLogs ? ' team-logs-visible' : ''}`}
       ref={chatLayoutRef}
     >
       <SelectionQuoteContextMenu onQuote={handleQuoteSelection} />
@@ -3113,6 +3116,12 @@ function ChatStream({
       if (event.sessionId !== sessionId) return false
       if (loadedEventIdsRef.current.has(event.id)) return false
       const callbacks = viewCallbacksRef.current
+      const hadRunningTeamMemberActivity =
+        event.type === 'agent_status' &&
+        hasRunningTeamMemberActivity(
+          builderRef.current.getAllMessages(),
+          getBlockTeamMemberContext,
+        )
       // /clear 等清空历史的命令在写入新事件前会先发这条「分隔符」事件，
       // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
       // 让随后的 user/assistant/completed 在干净的画布上重新渲染。
@@ -3148,12 +3157,19 @@ function ChatStream({
       loadedEventIdsRef.current.add(event.id)
 
       if (event.type === 'agent_status') {
+        const keepTeamSessionRunning =
+          hadRunningTeamMemberActivity ||
+          hasRunningTeamMemberActivity(
+            builderRef.current.getAllMessages(),
+            getBlockTeamMemberContext,
+          )
         setAgentIsRunning(isRunningAgentStatus(event.status))
         applyAgentStatus(
           event.status,
           callbacks.onStatusChange,
           callbacks.onSessionStatusChange,
           isStreamingRef,
+          keepTeamSessionRunning,
         )
         if (
           event.status === 'completed' ||
@@ -3360,6 +3376,7 @@ function ChatStream({
           callbacks.onStatusChange,
           callbacks.onSessionStatusChange,
           isStreamingRef,
+          hasRunningTeamMemberActivity(nextMessages, getBlockTeamMemberContext),
         )
       }
       const latestContext = getLatestContextUsageEvent(events)
@@ -4381,6 +4398,7 @@ function applyAgentStatus(
   onStatusChange: (s: string) => void,
   onSessionStatusChange: (status: SessionSummary['status']) => void,
   isStreamingRef: { current: boolean },
+  keepSessionRunning = false,
 ): void {
   const labels: Record<AgentStatusValue, string> = {
     idle: '',
@@ -4403,14 +4421,14 @@ function applyAgentStatus(
     isStreamingRef.current = true
   }
   if (status === 'idle' || status === 'completed' || status === 'cancelled') {
-    onSessionStatusChange('idle')
-    isStreamingRef.current = false
+    onSessionStatusChange(keepSessionRunning ? 'running' : 'idle')
+    isStreamingRef.current = keepSessionRunning
     // 不在此处重置 userScrolledRef：agent 结束瞬间若用户正在上滚浏览，无条件清零会把视图弹回底部
     // （与「流式中反弹」独立的另一条反弹路径）。跟随状态交给下一次用户滚动 / 发送消息时按实际位置重算。
   }
   if (status === 'error') {
-    onSessionStatusChange('error')
-    isStreamingRef.current = false
+    onSessionStatusChange(keepSessionRunning ? 'running' : 'error')
+    isStreamingRef.current = keepSessionRunning
   }
 }
 
@@ -5132,6 +5150,7 @@ function TeamMemberActivityBlockView({
   const member = agents.find((a) => a.id === memberAgentId)
   const memberName = member?.name ?? memberAgentId
   const avatar = getAgentAvatarConfig(member?.metadata, memberAgentId, memberName)
+  const showActivityLogs = useTeamActivityLogsVisible()
 
   // 该成员气泡的纯文本（复制内容）+ 源 event id（删除）。只取 team_member_message block。
   const memberTextBlocks = useMemo(
@@ -5155,7 +5174,7 @@ function TeamMemberActivityBlockView({
     [memberTextBlocks],
   )
 
-  if (!hasVisibleTeamMemberActivityBlocks(blocks)) return null
+  if (!hasVisibleTeamMemberActivityBlocks(blocks, showActivityLogs)) return null
 
   return (
     <>
@@ -5184,6 +5203,7 @@ function TeamMemberActivityBlockView({
         {renderTeamMemberActivityBlocks(
           blocks,
           onFilePreview != null ? { sessionId, onFilePreview } : { sessionId },
+          showActivityLogs,
         )}
       </TeamMemberBubble>
       {drawerOpen && (
@@ -5211,10 +5231,45 @@ function renderTeamMemberActivityBlocks(
     sessionId: SessionId
     onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   },
+  showActivityLogs: boolean,
 ): ReactNode {
-  // 团队模式下不展示成员的执行日志（tool_call/terminal/file_change），避免每个成员都挂一个
-  // “执行日志”折叠块导致会话分块、视觉割裂；只保留成员的最终回复正文。
-  const resultBlocks = blocks.filter((block) => !isTeamMemberLogBlock(block))
+  // 默认保持结果优先；用户在团队检查器显式打开后，再复用标准活动日志组件。
+  const resultBlocks = showActivityLogs
+    ? blocks
+    : blocks.filter((block) => !isTeamMemberLogBlock(block))
+
+  if (showActivityLogs) {
+    const nodes: ReactNode[] = []
+    let activityBlocks: UIBlock[] = []
+    const flushActivity = (key: string) => {
+      if (activityBlocks.length === 0) return
+      nodes.push(
+        <Fragment key={key}>
+          {renderBlocksGrouped(activityBlocks, { ...options, surface: 'inspector' })}
+        </Fragment>,
+      )
+      activityBlocks = []
+    }
+    resultBlocks.forEach((block, index) => {
+      if (block.kind !== 'team_member_message') {
+        activityBlocks.push(block)
+        return
+      }
+      flushActivity(`member-activity-${index}`)
+      if (block.content.trim().length === 0) return
+      nodes.push(
+        <div key={`member-message-${index}`} className="md-surface">
+          <MarkdownText
+            content={block.content}
+            isStreaming={block.isStreaming}
+            {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+          />
+        </div>,
+      )
+    })
+    flushActivity('member-activity-end')
+    return <>{nodes}</>
+  }
 
   return (
     <>
@@ -5238,7 +5293,12 @@ function renderTeamMemberActivityBlocks(
 }
 
 function isTeamMemberLogBlock(block: UIBlock): boolean {
-  return block.kind === 'tool_call' || block.kind === 'terminal' || block.kind === 'file_change'
+  return (
+    block.kind === 'thinking' ||
+    block.kind === 'tool_call' ||
+    block.kind === 'terminal' ||
+    block.kind === 'file_change'
+  )
 }
 
 function isTeamMemberActivityRunning(blocks: UIBlock[]): boolean {
@@ -6624,6 +6684,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   onStartMultiSelect?: () => void
   onRetry?: () => void
 }) {
+  const showTeamActivityLogs = useTeamActivityLogsVisible()
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
 
@@ -6644,7 +6705,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
           )
         }
         if (segment.kind === 'team_member_activity') {
-          if (!hasVisibleTeamMemberActivityBlocks(segment.blocks)) return null
+          if (!hasVisibleTeamMemberActivityBlocks(segment.blocks, showTeamActivityLogs)) return null
           return (
             <div
               key={`team-member-activity-${index}`}
@@ -6745,6 +6806,7 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
     Extract<AssistantMessageSegment, { kind: 'team_member_activity' }>
   >()
   const runningDispatches = new Set<string>()
+  const terminalDispatches = new Set<string>()
   // Preserve timeline order: host/member blocks only merge while they remain contiguous.
   // This keeps host follow-up after member output visible as a new bubble at the bottom.
   const ensureAgentSegment = () => {
@@ -6768,11 +6830,17 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
         memberAgentId: block.memberAgentId,
       })
       const isRunning = block.state === 'pending' || block.state === 'working'
-      if (isRunning) runningDispatches.add(key)
-      else runningDispatches.delete(key)
+      if (isRunning) {
+        runningDispatches.add(key)
+        terminalDispatches.delete(key)
+      } else {
+        runningDispatches.delete(key)
+        terminalDispatches.add(key)
+      }
       const segment = latestTeamMemberSegments.get(key)
       if (segment != null)
-        segment.running = isRunning || isTeamMemberActivityRunning(segment.blocks)
+        segment.running =
+          isRunning || (!terminalDispatches.has(key) && isTeamMemberActivityRunning(segment.blocks))
       segments.push({ kind: 'team', blocks: [block] })
       continue
     }
@@ -6808,7 +6876,9 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
       }
       latestTeamMemberSegments.set(key, segment)
       segment.blocks.push(block)
-      segment.running = runningDispatches.has(key) || isTeamMemberActivityRunning(segment.blocks)
+      segment.running =
+        runningDispatches.has(key) ||
+        (!terminalDispatches.has(key) && isTeamMemberActivityRunning(segment.blocks))
       continue
     }
     ensureAgentSegment().blocks.push(block)
@@ -6832,7 +6902,12 @@ function getBlockTeamMemberContext(block: UIBlock): TeamMemberEventContext | und
   if (block.kind === 'team_member_message') {
     return { dispatchId: block.dispatchId, memberAgentId: block.memberAgentId }
   }
-  if (block.kind === 'tool_call' || block.kind === 'terminal' || block.kind === 'file_change') {
+  if (
+    block.kind === 'thinking' ||
+    block.kind === 'tool_call' ||
+    block.kind === 'terminal' ||
+    block.kind === 'file_change'
+  ) {
     return block.teamMemberContext
   }
   return undefined

@@ -1332,6 +1332,67 @@ describe('SessionSidebarContext', () => {
     expect(latestCtxRef.current?.sessionAgentStatuses['old-session']).toBeUndefined()
   })
 
+  it('does not let a host terminal event override an authoritative running team queue', async () => {
+    let queueChangedHandler: ((event: Record<string, unknown>) => void) | null = null
+    let agentEventHandler: ((event: Record<string, unknown>) => void) | null = null
+    const session = {
+      id: 'team-session',
+      title: 'Team session',
+      status: 'running',
+      workspaceIds: [],
+      updatedAt: '2026-08-12T00:00:00.000Z',
+    } as unknown as SessionSummary
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [session], total: 1 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:queue-changed') queueChangedHandler = callback
+        if (channel === 'stream:session:agent-event') agentEventHandler = callback
+        return vi.fn()
+      }),
+    })
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 30))
+    })
+
+    await act(async () => {
+      queueChangedHandler?.({ sessionId: 'team-session', running: true, queuedTurns: [] })
+      agentEventHandler?.({
+        type: 'agent_status',
+        sessionId: 'team-session',
+        status: 'completed',
+      })
+    })
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('running')
+
+    await act(async () => {
+      queueChangedHandler?.({ sessionId: 'team-session', running: false, queuedTurns: [] })
+    })
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('idle')
+  })
+
   it('archives immediately and restores the session from the toast undo action', async () => {
     const session: SessionSummary = {
       id: 'session-archive' as SessionId,

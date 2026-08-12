@@ -5189,15 +5189,27 @@ body.side-chat-resizing {
 
 /* 团队会话只展示成员正文，隐藏 Agent 的内部思考与工具活动；选择器必须限定在
    team-mode-active 下，确保单 Agent 会话继续保留原有的日志总开关与展开能力。 */
-.team-mode-active .msg-bubble-agent .thinking-section,
-.team-mode-active .msg-bubble-agent .chat-activity-segment,
-.team-mode-active .msg-bubble-agent .tool-log-group,
-.team-mode-active .msg-bubble-agent .tool-call,
-.team-mode-active .msg-bubble-agent .tool-logs-collapsible,
-.team-mode-active .msg-bubble-agent .diff.hunk-mode,
-.team-mode-active .msg-bubble-agent .parallel-tools-indicator,
-.team-mode-active .msg-bubble-agent .msg-content.is-tool-logs-only {
+.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .thinking-section,
+.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .chat-activity-segment,
+.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .tool-log-group,
+.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .tool-call,
+.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .tool-logs-collapsible,
+.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .diff.hunk-mode,
+.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .parallel-tools-indicator,
+.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .msg-content.is-tool-logs-only {
   display: none;
+}
+
+.team-log-visibility-section h4 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.team-log-visibility-help {
+  margin: 6px 0 0;
+  line-height: 1.55;
 }
 
 /* 会话活动日志：内容区字号与日志标题保持一致，只比正文小一号。 */

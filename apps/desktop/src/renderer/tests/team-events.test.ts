@@ -364,4 +364,32 @@ describe('MessageBuilder · Team Mode', () => {
     expect(block?.status).toBe('success')
     expect(block?.output).toBe('ok')
   })
+
+  it('keeps forwarded member thinking inside the dispatch timeline', () => {
+    const b = new MessageBuilder()
+    b.processEvent({
+      ...base('team_dispatch_requested'),
+      type: 'team_dispatch_requested',
+      dispatchId: 'd1',
+      hostAgentId: 'code-agent',
+      memberAgentId: 'reviewer',
+      task,
+    } as AgentEvent)
+    b.processEvent({
+      ...base('agent_thinking'),
+      type: 'agent_thinking',
+      mode: 'complete',
+      content: 'Checking the call graph',
+      segmentId: 'think-1',
+      teamMemberContext: { dispatchId: 'd1', memberAgentId: 'reviewer' },
+    } as AgentEvent)
+
+    const block = findBlock(b, 'thinking')
+    expect(block).toMatchObject({
+      content: 'Checking the call graph',
+      isStreaming: false,
+      teamMemberContext: { dispatchId: 'd1', memberAgentId: 'reviewer' },
+    })
+    expect(b.getAllMessages()).toHaveLength(1)
+  })
 })
