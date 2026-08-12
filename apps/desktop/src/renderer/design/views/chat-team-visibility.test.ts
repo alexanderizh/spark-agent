@@ -51,6 +51,20 @@ describe('hasVisibleTeamMemberActivityBlocks', () => {
     expect(hasVisibleTeamMemberActivityBlocks(blocks)).toBe(true)
   })
 
+  it('reveals log-only member activity only when the team log preference is enabled', () => {
+    const blocks: UIBlock[] = [
+      {
+        kind: 'thinking',
+        content: 'Checking the event stream',
+        isStreaming: true,
+        teamMemberContext: { dispatchId: 'dispatch-1', memberAgentId: 'agent-1' },
+      },
+    ]
+
+    expect(hasVisibleTeamMemberActivityBlocks(blocks)).toBe(false)
+    expect(hasVisibleTeamMemberActivityBlocks(blocks, true)).toBe(true)
+  })
+
   it('hides assistant thinking and tool logs only while team mode is active', () => {
     const stylesheet = readFileSync(
       fileURLToPath(new URL('./ChatView.less', import.meta.url)),
@@ -58,18 +72,18 @@ describe('hasVisibleTeamMemberActivityBlocks', () => {
     )
     const teamLogRule =
       stylesheet.match(
-        /\.team-mode-active \.msg-bubble-agent \.thinking-section,[\s\S]*?\{\s*display:\s*none;\s*\}/,
+        /\.team-mode-active:not\(\.team-logs-visible\) \.msg-bubble-agent \.thinking-section,[\s\S]*?\{\s*display:\s*none;\s*\}/,
       )?.[0] ?? ''
 
-    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .thinking-section')
-    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .chat-activity-segment')
-    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .tool-log-group')
-    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .tool-call')
-    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .tool-logs-collapsible')
-    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .diff.hunk-mode')
-    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .parallel-tools-indicator')
+    expect(teamLogRule).toContain('.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .thinking-section')
+    expect(teamLogRule).toContain('.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .chat-activity-segment')
+    expect(teamLogRule).toContain('.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .tool-log-group')
+    expect(teamLogRule).toContain('.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .tool-call')
+    expect(teamLogRule).toContain('.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .tool-logs-collapsible')
+    expect(teamLogRule).toContain('.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .diff.hunk-mode')
+    expect(teamLogRule).toContain('.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .parallel-tools-indicator')
     expect(teamLogRule).toContain(
-      '.team-mode-active .msg-bubble-agent .msg-content.is-tool-logs-only',
+      '.team-mode-active:not(.team-logs-visible) .msg-bubble-agent .msg-content.is-tool-logs-only',
     )
   })
 })

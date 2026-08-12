@@ -575,6 +575,8 @@ export interface AgentThinkingEvent extends BaseEvent {
   segmentId?: string
   agentId?: string
   agentName?: string
+  /** Team Mode：该思考片段来自某个被调度成员 Agent 时的归属信息 */
+  teamMemberContext?: TeamMemberEventContext
 }
 
 export type GoalEventStatus =

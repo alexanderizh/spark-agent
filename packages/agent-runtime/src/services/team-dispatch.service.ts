@@ -73,6 +73,8 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
   emitEvent: (event: AgentEvent) => void
   /** turn 级取消信号（session cancel 触发） */
   signal?: AbortSignal
+  /** 成员执行占用变化；用于把 dispatch 纳入会话级权威运行态。 */
+  onActivityChange?: (sessionId: string) => void
   /**
    * 外层 dispatch 的绝对截止时间。成员在 turn 内同步咨询队友时复用该 deadline，
    * 避免 B 等 C 把 A→B 的外层 turn 拖到超时。
@@ -246,6 +248,7 @@ export class TeamDispatchService {
     // ── 超时 / 取消 ─────────────────────────────────────────────────────────
     const controller = new AbortController()
     this.controllers.set(dispatchId, { controller, sessionId: ctx.sessionId })
+    ctx.onActivityChange?.(ctx.sessionId)
     const onParentAbort = () => controller.abort()
     ctx.signal?.addEventListener('abort', onParentAbort)
     // parallel=true 时绕过 turn 串行队列（agent_dispatch_batch 显式并行场景）。
@@ -435,6 +438,7 @@ export class TeamDispatchService {
         controller.abort()
         ctx.signal?.removeEventListener('abort', onParentAbort)
         this.controllers.delete(dispatchId)
+        ctx.onActivityChange?.(ctx.sessionId)
       }
     }
     const runPromise =
@@ -714,6 +718,14 @@ export class TeamDispatchService {
       cancelled += 1
     }
     return cancelled
+  }
+
+  /** 会话是否仍有正在执行或等待执行槽位的成员 dispatch。 */
+  hasActiveDispatches(sessionId: string): boolean {
+    for (const entry of this.controllers.values()) {
+      if (entry.sessionId === sessionId) return true
+    }
+    return false
   }
 
   async cancelAllAndWait(): Promise<void> {

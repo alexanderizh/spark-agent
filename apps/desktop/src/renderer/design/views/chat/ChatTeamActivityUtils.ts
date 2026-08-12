@@ -11,6 +11,18 @@ export function extractRunningTeamMemberIds(
   getMemberContext: GetMemberContext,
 ): string[] {
   const running = new Set<string>()
+  const terminalDispatches = new Set<string>()
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (
+        block.kind === 'team_dispatch' &&
+        block.state !== 'pending' &&
+        block.state !== 'working'
+      ) {
+        terminalDispatches.add(block.dispatchId)
+      }
+    }
+  }
   for (const message of messages) {
     for (const block of message.blocks) {
       if (block.kind === 'team_dispatch') {
@@ -18,11 +30,17 @@ export function extractRunningTeamMemberIds(
         continue
       }
       if (block.kind === 'team_member_message') {
-        if (block.isStreaming) running.add(block.memberAgentId)
+        if (block.isStreaming && !terminalDispatches.has(block.dispatchId)) {
+          running.add(block.memberAgentId)
+        }
         continue
       }
       const memberContext = getMemberContext(block)
       if (memberContext == null) continue
+      if (terminalDispatches.has(memberContext.dispatchId)) continue
+      if (block.kind === 'thinking' && block.isStreaming) {
+        running.add(memberContext.memberAgentId)
+      }
       if (
         block.kind === 'tool_call' &&
         (block.status === 'pending' || block.status === 'running')
@@ -35,6 +53,13 @@ export function extractRunningTeamMemberIds(
     }
   }
   return Array.from(running)
+}
+
+export function hasRunningTeamMemberActivity(
+  messages: UIMessage[],
+  getMemberContext: GetMemberContext,
+): boolean {
+  return extractRunningTeamMemberIds(messages, getMemberContext).length > 0
 }
 
 export function extractRunningTeamAgentIds(

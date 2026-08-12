@@ -1,6 +1,9 @@
 import type { UIBlock } from '../services/event-mapper'
 
-export function hasVisibleTeamMemberActivityBlocks(blocks: UIBlock[]): boolean {
+export function hasVisibleTeamMemberActivityBlocks(
+  blocks: UIBlock[],
+  showActivityLogs = false,
+): boolean {
   return blocks.some((block) => {
     switch (block.kind) {
       case 'team_member_message':
@@ -8,7 +11,8 @@ export function hasVisibleTeamMemberActivityBlocks(blocks: UIBlock[]): boolean {
       case 'tool_call':
       case 'terminal':
       case 'file_change':
-        return false
+      case 'thinking':
+        return showActivityLogs
       default:
         return true
     }

@@ -407,6 +407,7 @@ export function SessionSidebarProvider({
 }) {
   const { t: appState, requestConfirm, requestPrompt } = useApp()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const queueRunningRef = useRef<Record<string, boolean>>({})
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [agents, setAgents] = useState<ManagedAgent[]>([])
@@ -613,6 +614,9 @@ export function SessionSidebarProvider({
         ])
       setWorkspaces(workspaceRes.workspaces)
       setSessions(sessionRes.sessions)
+      queueRunningRef.current = Object.fromEntries(
+        sessionRes.sessions.map((session) => [session.id, session.status === 'running']),
+      )
       // The persisted session summary is the recovery source of truth. If a live terminal
       // event was missed, do not let the transient agent-status map keep a stale spinner alive.
       setSessionAgentStatuses((prev) => {
@@ -680,6 +684,7 @@ export function SessionSidebarProvider({
   useEffect(() => {
     return (
       window.spark?.on?.('stream:session:queue-changed', (snapshot: SessionGetQueueResponse) => {
+        queueRunningRef.current[snapshot.sessionId] = snapshot.running
         setSessions((prev) =>
           prev.map((item) => {
             if (item.id !== snapshot.sessionId) return item
@@ -717,6 +722,7 @@ export function SessionSidebarProvider({
           prev.map((item) => {
             if (item.id !== sessionId) return item
             if (terminal) {
+              if (queueRunningRef.current[sessionId] === true) return item
               return item.status === 'running' ? { ...item, status: 'idle' } : item
             }
             return item.status === 'running'

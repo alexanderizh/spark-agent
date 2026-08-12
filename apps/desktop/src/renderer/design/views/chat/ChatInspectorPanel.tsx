@@ -31,6 +31,10 @@ import type {
 } from '@spark/protocol'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '@spark/protocol'
 import { hasChatConfigScope } from './chat-config-panel-state'
+import {
+  setTeamActivityLogsVisible,
+  useTeamActivityLogsVisible,
+} from './team-log-visibility'
 import type { SessionSummary } from '../../SessionSidebarContext'
 import type {
   ContextLedgerState,
@@ -536,6 +540,7 @@ export function ChatInspector({
   checkpointEnabled: boolean
   onOpenCheckpointTimeline: () => void
 }) {
+  const showTeamActivityLogs = useTeamActivityLogsVisible()
   const subagents = extractInspectorSubagents(messages)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const projectContextSources = projectContext?.sources ?? []
@@ -596,7 +601,22 @@ export function ChatInspector({
       />
       <div className="inspector scroll">
         {teamConfig.enabled && (
-          <TeamInspectorSection
+          <>
+            <div className="inspector-section team-log-visibility-section">
+              <h4>
+                <span>显示思考与执行日志</span>
+                <Switch
+                  size="small"
+                  checked={showTeamActivityLogs}
+                  onChange={setTeamActivityLogsVisible}
+                  aria-label="显示团队思考、命令和工具日志"
+                />
+              </h4>
+              <p className="inspector-muted team-log-visibility-help">
+                打开后在会话时间线显示 Host 与成员的思考、命令、工具及文件变更；默认关闭以保持结果优先。
+              </p>
+            </div>
+            <TeamInspectorSection
             config={teamConfig}
             fallbackProviderProfileId={session?.providerProfileId ?? null}
             fallbackModelId={session?.modelId ?? null}
@@ -621,7 +641,8 @@ export function ChatInspector({
               })
             }
             onChangeConfig={onChangeTeamConfig}
-          />
+            />
+          </>
         )}
         <div className="inspector-section">
           <h4>会话信息</h4>

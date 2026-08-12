@@ -93,6 +93,32 @@ describe('TeamDispatchService', () => {
     )
   })
 
+  it('tracks active dispatches per session and reports both lifecycle edges', async () => {
+    let releaseMember!: () => void
+    const memberFinished = new Promise<void>((resolve) => {
+      releaseMember = resolve
+    })
+    const onActivityChange = vi.fn()
+    const { ctx } = makeCtx({
+      onActivityChange,
+      executeMember: async () => {
+        await memberFinished
+        return { content: 'done' }
+      },
+    })
+
+    const run = service.run(makeTask(), ctx)
+    await vi.waitFor(() => expect(service.hasActiveDispatches('sess-1')).toBe(true))
+    expect(service.hasActiveDispatches('another-session')).toBe(false)
+    expect(onActivityChange).toHaveBeenLastCalledWith('sess-1')
+
+    releaseMember()
+    await run
+
+    expect(service.hasActiveDispatches('sess-1')).toBe(false)
+    expect(onActivityChange).toHaveBeenCalledTimes(2)
+  })
+
   it('rejects a member not in memberAgentIds without calling executeMember', async () => {
     const executeMember = vi.fn()
     const { ctx } = makeCtx({ executeMember })

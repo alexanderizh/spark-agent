@@ -60,6 +60,7 @@ import type {
   UserMessageEvent,
   AssistantMessageEvent,
   AgentStatusEvent,
+  AgentStatusValue,
   SessionHistoryResetEvent,
   HookNode,
   SessionAttachment,
@@ -778,6 +779,8 @@ export class SessionService {
   private readonly resumeGate = new ResumeGateManager()
   private readonly mcpService: McpService
   private teamDispatchService: TeamDispatchService | null = null
+  /** Host 已终止但成员仍在收尾时，延后到会话所有执行都退出后再落库的真实终态。 */
+  private readonly deferredHostTerminalStatus = new Map<string, AgentStatusValue>()
   private readonly teamMcpToolNames = new WeakMap<object, ReadonlySet<string>>()
   /** FR-0b 修复（审查 B-1）：turnId → 该 turn 创建的 codex HTTP 桥接 handle；turn 结束统一 close 防 leak。 */
   private readonly teamMcpHandlesByTurn = new Map<string, Set<TeamMcpBridgeHandle>>()
@@ -1927,11 +1930,11 @@ export class SessionService {
       return { turnId, started: false }
     }
 
-    if (this.activeLoops.has(sessionId)) {
+    if (this.hasActiveSessionExecution(sessionId)) {
       if (params.interruptActive === true) {
         // 显式中断当前 loop（与 sendQueuedTurnNow 同模式），让批准消息立即起跑，
         // 不再依赖上一个 plan turn 的 finally 兜底（时机不可控，会被用户感知为"卡住"）。
-        const loop = this.activeLoops.get(sessionId)!
+        const loop = this.activeLoops.get(sessionId)
         const eventRepo = new EventRepository(this.db)
         const interruptedTurnId =
           this.runningTurnIds.get(sessionId) ?? getLatestTurnIdFromEvents(eventRepo, sessionId)
@@ -1939,7 +1942,7 @@ export class SessionService {
         this.onApprovalCancel?.(sessionId)
         // 仅收本会话的 team dispatch（原为 cancelAll，会误伤其他会话的协作）
         this.teamDispatchService?.cancelBySession(sessionId)
-        loop.cancel()
+        loop?.cancel()
         this.activeLoops.delete(sessionId)
         this.runningTurnIds.delete(sessionId)
         this.emitAndPersist(
@@ -2011,7 +2014,7 @@ export class SessionService {
     mentionAgentId?: string,
     invocationObserver?: (snapshot: SDKInvocationSnapshot) => void,
   ): Promise<void> {
-    if (this.activeLoops.has(sessionId)) {
+    if (this.hasActiveSessionExecution(sessionId)) {
       this.enqueueTurn(
         sessionId,
         this.makePendingTurn(
@@ -3673,11 +3676,7 @@ export class SessionService {
       if (pendingTerminalStatus == null) return null
       const status = pendingTerminalStatus.status
       this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
-      if (status === 'completed' || status === 'cancelled') {
-        sessionRepo.updateStatus(sessionId, 'idle')
-      } else if (status === 'error') {
-        sessionRepo.updateStatus(sessionId, 'error')
-      }
+      this.updateStatusAfterHostTerminal(sessionRepo, sessionId, status)
       pendingTerminalStatus = null
       return status
     }
@@ -3905,7 +3904,7 @@ export class SessionService {
               terminalStatus === 'completed' ||
               terminalStatus === 'cancelled')
           ) {
-            sessionRepo.updateStatus(sessionId, 'idle')
+            this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'completed')
           }
           return
         }
@@ -3950,7 +3949,7 @@ export class SessionService {
             terminalStatus === 'completed' ||
             terminalStatus === 'cancelled')
         ) {
-          sessionRepo.updateStatus(sessionId, 'idle')
+          this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'completed')
         }
       })
       .catch(() => {
@@ -3959,7 +3958,7 @@ export class SessionService {
         const ownsSession = this.activeLoops.get(sessionId) === executor
         const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
         if (ownsSession && terminalStatus !== 'completed' && terminalStatus !== 'cancelled') {
-          sessionRepo.updateStatus(sessionId, 'error')
+          this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'error')
         }
       })
       .finally(() => {
@@ -3974,6 +3973,7 @@ export class SessionService {
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
           if (this.runningTurnIds.get(sessionId) === turnId) this.runningTurnIds.delete(sessionId)
+          this.reconcileSessionExecutionStatus(sessionId)
           void this.continueGoalOrQueue(sessionId)
         }
       })
@@ -4177,11 +4177,7 @@ export class SessionService {
       if (pendingTerminalStatus == null) return null
       const status = pendingTerminalStatus.status
       this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
-      if (status === 'completed' || status === 'cancelled') {
-        sessionRepo.updateStatus(sessionId, 'idle')
-      } else if (status === 'error') {
-        sessionRepo.updateStatus(sessionId, 'error')
-      }
+      this.updateStatusAfterHostTerminal(sessionRepo, sessionId, status)
       pendingTerminalStatus = null
       return status
     }
@@ -4334,7 +4330,7 @@ export class SessionService {
               terminalStatus === 'completed' ||
               terminalStatus === 'cancelled')
           ) {
-            sessionRepo.updateStatus(sessionId, 'idle')
+            this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'completed')
           }
           return
         }
@@ -4349,7 +4345,7 @@ export class SessionService {
             terminalStatus === 'completed' ||
             terminalStatus === 'cancelled')
         ) {
-          sessionRepo.updateStatus(sessionId, 'idle')
+          this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'completed')
         }
         this.continuityCoordinator.schedule(sessionId, turnId, config.model)
         void this.maybeWriteMemoryFromTurn(
@@ -4369,7 +4365,7 @@ export class SessionService {
         const ownsSession = this.activeLoops.get(sessionId) === executor
         const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
         if (ownsSession && terminalStatus !== 'completed' && terminalStatus !== 'cancelled') {
-          sessionRepo.updateStatus(sessionId, 'error')
+          this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'error')
         }
       })
       .finally(() => {
@@ -4382,6 +4378,7 @@ export class SessionService {
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
           if (this.runningTurnIds.get(sessionId) === turnId) this.runningTurnIds.delete(sessionId)
+          this.reconcileSessionExecutionStatus(sessionId)
           void this.continueGoalOrQueue(sessionId)
         }
       })
@@ -5487,6 +5484,7 @@ export class SessionService {
           currentDepth: ctx.currentDepth ?? 0,
           emitEvent: (event) =>
             this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
+          onActivityChange: (sessionId) => this.handleTeamDispatchActivityChange(sessionId),
           ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
           executeMember: ({
             member,
@@ -5704,6 +5702,8 @@ export class SessionService {
                   currentDepth: ctx.currentDepth ?? 0,
                   emitEvent: (event) =>
                     this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
+                  onActivityChange: (sessionId) =>
+                    this.handleTeamDispatchActivityChange(sessionId),
                   ...(ctx.signal != null ? { signal: ctx.signal } : {}),
                   ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
                   executeMember: ({
@@ -7181,6 +7181,7 @@ export class SessionService {
       } else if (event.type === 'agent_error') {
         memberError = event.message
       } else if (
+        event.type === 'agent_thinking' ||
         event.type === 'tool_call' ||
         event.type === 'tool_result' ||
         event.type === 'file_change' ||
@@ -7687,7 +7688,7 @@ export class SessionService {
       this.emitQueueChanged(sessionId)
       return
     }
-    if (this.activeLoops.has(sessionId) || this.startingSessions.has(sessionId)) {
+    if (this.hasActiveSessionExecution(sessionId) || this.startingSessions.has(sessionId)) {
       this.emitQueueChanged(sessionId)
       return
     }
@@ -7845,9 +7846,58 @@ export class SessionService {
   private queueSnapshot(sessionId: string): SessionGetQueueResponse {
     return {
       sessionId: sessionId as SessionId,
-      running: this.activeLoops.has(sessionId) || this.startingSessions.has(sessionId),
+      running:
+        this.activeLoops.has(sessionId) ||
+        this.startingSessions.has(sessionId) ||
+        this.teamDispatchService?.hasActiveDispatches(sessionId) === true,
       queuedTurns: this.toQueuedTurns(this.pendingTurns.get(sessionId) ?? []),
     }
+  }
+
+  private hasActiveSessionExecution(sessionId: string): boolean {
+    return (
+      this.activeLoops.has(sessionId) ||
+      this.teamDispatchService?.hasActiveDispatches(sessionId) === true
+    )
+  }
+
+  private handleTeamDispatchActivityChange(sessionId: string): void {
+    this.reconcileSessionExecutionStatus(sessionId)
+    if (!this.queueSnapshot(sessionId).running) {
+      setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
+    }
+  }
+
+  private reconcileSessionExecutionStatus(sessionId: string): void {
+    const snapshot = this.queueSnapshot(sessionId)
+    const sessionRepo = new SessionRepository(this.db)
+    if (sessionRepo.get(sessionId) == null) return
+    if (snapshot.running) {
+      sessionRepo.updateStatus(sessionId, 'running')
+    } else {
+      const deferredTerminalStatus = this.deferredHostTerminalStatus.get(sessionId)
+      this.deferredHostTerminalStatus.delete(sessionId)
+      if (deferredTerminalStatus === 'error') {
+        sessionRepo.updateStatus(sessionId, 'error')
+      } else if (sessionRepo.get(sessionId)?.status === 'running') {
+        sessionRepo.updateStatus(sessionId, 'idle')
+      }
+    }
+    this.onQueueChanged?.(snapshot)
+  }
+
+  private updateStatusAfterHostTerminal(
+    sessionRepo: SessionRepository,
+    sessionId: string,
+    status: AgentStatusValue,
+  ): void {
+    if (this.teamDispatchService?.hasActiveDispatches(sessionId) === true) {
+      this.deferredHostTerminalStatus.set(sessionId, status)
+      sessionRepo.updateStatus(sessionId, 'running')
+      return
+    }
+    this.deferredHostTerminalStatus.delete(sessionId)
+    sessionRepo.updateStatus(sessionId, status === 'error' ? 'error' : 'idle')
   }
 
   private toQueuedTurns(turns: PendingTurn[]): SessionQueuedTurn[] {
@@ -8275,7 +8325,7 @@ export class SessionService {
     const repo = new GoalRepository(this.db)
     const goal = repo.getCurrent(sessionId)
     if (goal == null || goal.status !== 'active') return
-    if (this.activeLoops.has(sessionId)) return
+    if (this.hasActiveSessionExecution(sessionId)) return
     const budgetStopSummary = this.getGoalLoopBudgetStopSummary(sessionId, goal)
     if (budgetStopSummary != null) {
       log.warn('goal loop: stopped by budget', { sessionId, goalId: goal.id })
@@ -8377,7 +8427,7 @@ export class SessionService {
     this.onApprovalCancel?.(sessionId)
     // 只取消**本会话**进行中的 team dispatch（连同其 member 执行器）。
     // 这里曾经是 cancelAll()，会把其他会话正在跑的团队协作一并打断。
-    this.teamDispatchService?.cancelBySession(sessionId)
+    const cancelledTeamDispatches = this.teamDispatchService?.cancelBySession(sessionId) ?? 0
     if (loop == null) {
       if (startingTurnId != null) {
         this.emitAndPersist(
@@ -8386,6 +8436,11 @@ export class SessionService {
           createUserCancelledTurnEvent(sessionId, startingTurnId),
           eventRepo,
         )
+        new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+        this.emitQueueChanged(sessionId)
+        return { cancelled: true }
+      }
+      if (cancelledTeamDispatches > 0) {
         new SessionRepository(this.db).updateStatus(sessionId, 'idle')
         this.emitQueueChanged(sessionId)
         return { cancelled: true }
@@ -8532,7 +8587,7 @@ export class SessionService {
     this.activeLoops.delete(sessionId)
     this.runningTurnIds.delete(sessionId)
     // 同一会话下正在进行的团队成员执行也要一起收掉，否则 member executor 会成为孤儿。
-    this.teamDispatchService?.cancelBySession(sessionId)
+    const cancelledTeamDispatches = this.teamDispatchService?.cancelBySession(sessionId) ?? 0
     this.startingSessions.delete(sessionId)
     this.startingTurnIds.delete(sessionId)
     this.pendingTurns.delete(sessionId)
@@ -8544,7 +8599,7 @@ export class SessionService {
     getDebugLogServer().deleteSession(sessionId)
     this.onApprovalCancel?.(sessionId)
     this.emitQueueChanged(sessionId)
-    return activeLoop != null
+    return activeLoop != null || startingTurnId != null || cancelledTeamDispatches > 0
   }
 
   async getHistory(params: {

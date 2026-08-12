@@ -82,7 +82,13 @@ export interface UserQuestionAnswerSummary {
 
 export type UIBlock =
   | { kind: 'text'; content: string; isStreaming: boolean; segmentId?: string }
-  | { kind: 'thinking'; content: string; isStreaming: boolean; segmentId?: string }
+  | {
+      kind: 'thinking'
+      content: string
+      isStreaming: boolean
+      segmentId?: string
+      teamMemberContext?: TeamMemberEventContext
+    }
   | { kind: 'cancelled'; message: string }
   | {
       kind: 'tool_call'
@@ -591,12 +597,28 @@ export class MessageBuilder {
       }
 
       case 'agent_thinking': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        const home =
+          event.teamMemberContext != null
+            ? this.findTeamMemberDispatchHome(event.teamMemberContext.dispatchId)
+            : undefined
+        const msg =
+          home ?? this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        if (home != null && !home.eventIds.includes(event.id)) home.eventIds.push(event.id)
         this.applyAgentSnapshot(msg, event)
         if (event.mode === 'complete') {
           this.applySegmentComplete(msg.blocks, 'thinking', event.content, event.segmentId)
         } else {
           this.applySegmentDelta(msg.blocks, 'thinking', event.content, event.segmentId)
+        }
+        if (event.teamMemberContext != null) {
+          const block = [...msg.blocks]
+            .reverse()
+            .find(
+              (candidate): candidate is Extract<UIBlock, { kind: 'thinking' }> =>
+                candidate.kind === 'thinking' &&
+                (event.segmentId == null || candidate.segmentId === event.segmentId),
+            )
+          if (block != null) block.teamMemberContext = event.teamMemberContext
         }
         break
       }
