@@ -851,7 +851,7 @@ function ChatListItem({
       onOpenChange={(open) => {
         if (!editing) setHoverOpen(open)
       }}
-      // overlayClassName="session-hover-card-popover"
+      overlayClassName="session-hover-card-popover"
       content={
         <SessionHoverCard
           title={hoverTitle}

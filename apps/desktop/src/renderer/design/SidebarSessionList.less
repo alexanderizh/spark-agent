@@ -925,16 +925,29 @@
 
 /* ─── 会话行悬浮信息面板（扁平简约卡片，右侧浮出） ─── */
 .session-hover-card-popover {
-  .ant-popover-inner {
-    padding: 0;
-    background: var(--bg-elevated);
+  // antd 6 uses filter: drop-shadow on the Popover root rather than box-shadow.
+  filter: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18) !important;
+  border-radius: 12px;
+
+  .ant-popover-container {
+    padding: 12px;
+    background: var(--panel-elev, var(--panel, var(--bg-soft)));
     border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    box-shadow: 0 6px 18px color-mix(in srgb, #000 28%, transparent);
+    border-radius: 12px;
+    overflow: hidden;
+    filter: none !important;
+    box-shadow: none !important;
   }
 
+  .ant-popover-content,
+  .ant-popover-inner,
   .ant-popover-inner-content {
     padding: 0;
+    background: transparent;
+    border: 0;
+    filter: none !important;
+    box-shadow: none !important;
   }
 
   /* 扁平化：隐藏默认箭头 */
