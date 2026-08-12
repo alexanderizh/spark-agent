@@ -146,6 +146,9 @@ import {
   type HtmlRenderContextValue,
 } from './chat/RenderHtmlBlock'
 import { RenderDiagramBlock } from './chat/RenderDiagramBlock'
+import { CodeViewerPanel } from '../components/code-viewer/CodeViewerPanel'
+import type { OpenCodeFile, CodeViewMode } from '../components/code-viewer/types'
+import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
 import type { HtmlOpenMode } from '../services/render-html'
 import {
   clamp,
@@ -540,6 +543,9 @@ export function ChatView({
     filePreview: { filePath: string; fileType: PreviewFileType } | null
     sideChatSessionId: SessionId | null
     activeHtmlPanelBlockId: string | null
+    codeFiles: OpenCodeFile[]
+    activeCodePath: string | null
+    codeViewMode: CodeViewMode
   }
   const emptyPanelSnapshot: PanelSnapshot = {
     unifiedSideTabs: [],
@@ -553,6 +559,9 @@ export function ChatView({
     filePreview: null,
     sideChatSessionId: null,
     activeHtmlPanelBlockId: null,
+    codeFiles: [],
+    activeCodePath: null,
+    codeViewMode: 'source',
   }
   // 各 session 的面板快照（仅内存）
   const panelStateBySessionRef = useRef<Map<string, PanelSnapshot>>(new Map())
@@ -908,6 +917,9 @@ export function ChatView({
       setSideChatSessionId(null)
       setActiveHtmlPanelBlockId(null)
       setActiveHtmlRemotePresentation(null)
+      setCodeFiles([])
+      setActiveCodePath(null)
+      setCodeViewMode('source')
       return
     }
     const snap = panelStateBySessionRef.current.get(active)
@@ -925,6 +937,9 @@ export function ChatView({
       setSideChatSessionId(null)
       setActiveHtmlPanelBlockId(null)
       setActiveHtmlRemotePresentation(null)
+      setCodeFiles([])
+      setActiveCodePath(null)
+      setCodeViewMode('source')
       return
     }
     // 恢复该会话上次的展开状态
@@ -940,6 +955,9 @@ export function ChatView({
     setSideChatSessionId(snap.sideChatSessionId)
     setActiveHtmlPanelBlockId(snap.activeHtmlPanelBlockId)
     setActiveHtmlRemotePresentation(null)
+    setCodeFiles(snap.codeFiles)
+    setActiveCodePath(snap.activeCodePath)
+    setCodeViewMode(snap.codeViewMode)
     // side-chat 运行时 state 清空，交给 SessionStream（key 随 sideChatSessionId 变化）重新订阅填充
     setSideChatMessages([])
     setSideChatContextInputTokens(0)
@@ -1145,6 +1163,17 @@ export function ChatView({
     fileType: PreviewFileType
   } | null>(null)
 
+  // ── 「代码」tab：应用内代码查看/编辑器（Monaco）──
+  // 受控于 ChatView 以便切会话快照存盘；内容运行时态（读取/脏标/外部变更）在
+  // CodeViewerPanel 内部的 useCodeViewerFiles 管理，与 tabs 增删解耦。
+  const [codeFiles, setCodeFiles] = useState<OpenCodeFile[]>([])
+  const [activeCodePath, setActiveCodePath] = useState<string | null>(null)
+  const [codeViewMode, setCodeViewMode] = useState<CodeViewMode>('source')
+  // workspace root 同步到 ref：resolveAbsCodePath/openInCodeTab 声明在 activeSessionWorkspace
+  // 之前（TDZ），直接引用会报 used-before-declaration；改走 ref，在 activeSessionWorkspace
+  // 声明之后的 render 阶段同步最新值。
+  const workspaceRootRef = useRef<string | null>(null)
+
   // 镜像当前面板状态供 active 切换 effect 读取（render 阶段写入，先于 effect 执行）
   latestPanelStateRef.current = {
     unifiedSideTabs,
@@ -1158,6 +1187,9 @@ export function ChatView({
     filePreview,
     sideChatSessionId,
     activeHtmlPanelBlockId,
+    codeFiles,
+    activeCodePath,
+    codeViewMode,
   }
 
   // ── IPC hooks (only those NOT duplicated in context) ──
@@ -1263,8 +1295,98 @@ export function ChatView({
     [active, controlGoal],
   )
 
+  // 把相对/绝对/远程路径解析为本地绝对路径，供 code tab 与 file:read 使用。
+  // 与 FilePreviewPanel.resolvePreviewPath 同策略，避免相对路径打不开。
+  const resolveAbsCodePath = useCallback((filePath: string): string => {
+    if (/^https?:\/\//i.test(filePath) || filePath.startsWith('safe-file://')) return filePath
+    if (filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath)) return filePath
+    const root = workspaceRootRef.current
+    if (root == null) return filePath
+    const sep = root.includes('\\') ? '\\' : '/'
+    const norm = filePath.replace(/^\.\//, '').replace(/^[\\/]+/, '')
+    return `${root.replace(/[\\/]+$/, '')}${sep}${norm}`
+  }, [])
+
+  // 在「代码」tab 打开一个文件（已存在则更新 diff/行号/变更类型并激活）
+  const openInCodeTab = useCallback(
+    (
+      filePath: string,
+      opts?: {
+        lineNumber?: number
+        diff?: string
+        changeType?: OpenCodeFile['changeType']
+      },
+    ) => {
+      const absPath = resolveAbsCodePath(filePath)
+      const root = workspaceRootRef.current
+      const displayPath = (() => {
+        if (root == null) return filePath
+        const norm = (p: string) => p.replace(/\\/g, '/')
+        const nr = norm(root).replace(/\/+$/, '')
+        const np = norm(absPath)
+        return np.startsWith(`${nr}/`) ? np.slice(nr.length + 1) : filePath
+      })()
+      setCodeFiles((prev) =>
+        prev.some((f) => f.absPath === absPath)
+          ? prev.map((f) =>
+              f.absPath === absPath
+                ? {
+                    ...f,
+                    diff: opts?.diff ?? f.diff,
+                    lineNumber: opts?.lineNumber ?? f.lineNumber,
+                    changeType: opts?.changeType ?? f.changeType,
+                  }
+                : f,
+            )
+          : [
+              ...prev,
+              {
+                absPath,
+                displayPath,
+                fileType: 'text' as PreviewFileType,
+                diff: opts?.diff,
+                lineNumber: opts?.lineNumber,
+                changeType: opts?.changeType,
+              },
+            ],
+      )
+      setActiveCodePath(absPath)
+      // 收起其他面板 + 打开统一面板的 code tab
+      setShowInspector(false)
+      setShowConfigPanel(false)
+      setShowGitReviewPanel(false)
+      setShowSideChatPanel(false)
+      setShowTerminalPanel(false)
+      setFilePreview(null)
+      clearHtmlPresentation()
+      setShowCheckpointTimeline(false)
+      setUnifiedSideTabs((tabs) => (tabs.includes('code') ? tabs : [...tabs, 'code']))
+      setActiveUnifiedSideTab('code')
+      setUnifiedPanelOpen(true)
+    },
+    [resolveAbsCodePath, clearHtmlPresentation],
+  )
+
+  const closeCodeFile = useCallback(
+    (absPath: string) => {
+      setCodeFiles((prev) => {
+        const next = prev.filter((f) => f.absPath !== absPath)
+        setActiveCodePath((cur) => (cur !== absPath ? cur : (next.at(-1)?.absPath ?? null)))
+        if (next.length === 0) closeUnifiedSidePanel('code')
+        return next
+      })
+    },
+    [closeUnifiedSidePanel],
+  )
+
   const handleFilePreview = useCallback(
     (filePath: string, fileType: PreviewFileType) => {
+      if (isCodeLikeFile(filePath)) {
+        // 代码 / 配置 / 文本类 → 进「代码」tab（Monaco 查看 + 编辑）
+        openInCodeTab(filePath)
+        return
+      }
+      // 其余（md/html/image/音视频/office）仍走文件预览面板，保持向后兼容
       setShowInspector(false)
       setShowConfigPanel(false)
       setShowGitReviewPanel(false)
@@ -1275,7 +1397,7 @@ export function ChatView({
       setShowCheckpointTimeline(false)
       setFilePreview({ filePath, fileType })
     },
-    [clearHtmlPresentation],
+    [clearHtmlPresentation, openInCodeTab],
   )
 
   // 打开会话检查器：与配置面板、统一面板、文件预览互斥（同一时刻只显示一个）
@@ -1352,6 +1474,8 @@ export function ChatView({
     return workspaces.find((item) => item.id === sessionWorkspaceId) ?? activeWorkspace
   })()
   const activeSessionWorkspaceId = activeSessionWorkspace?.id ?? null
+  // 同步 workspace root 到 ref，供「代码」tab 的 resolveAbsCodePath/openInCodeTab 使用
+  workspaceRootRef.current = activeSessionWorkspace?.rootPath ?? activeWorkspace?.rootPath ?? null
   const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
   const activeProviderContextWindow = resolveProviderContextWindow(
     activeProvider?.supportsMillionContext === true,
@@ -2706,7 +2830,17 @@ export function ChatView({
           onOpen={openUnifiedSidePanel}
           onCloseTab={closeUnifiedSidePanel}
         >
-          {activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
+          {activeUnifiedSideTab === 'code' ? (
+            <CodeViewerPanel
+              files={codeFiles}
+              activeAbsPath={activeCodePath}
+              viewMode={codeViewMode}
+              onSelectActive={setActiveCodePath}
+              onCloseFile={closeCodeFile}
+              onViewModeChange={setCodeViewMode}
+              workspaceId={gitWorkspaceId ?? null}
+            />
+          ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
             <GitReviewPanel
               workspaceId={gitWorkspaceId}
               workspaceRootPath={gitWorkspace?.rootPath ?? null}

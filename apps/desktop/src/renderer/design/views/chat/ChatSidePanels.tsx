@@ -14,13 +14,21 @@ export type SideChatSessionOption = {
   pinned?: boolean
 }
 
-export type UnifiedSidePanelKind = 'config' | 'terminal' | 'side-chat' | 'review' | 'plan' | 'html'
+export type UnifiedSidePanelKind =
+  | 'config'
+  | 'terminal'
+  | 'side-chat'
+  | 'review'
+  | 'plan'
+  | 'html'
+  | 'code'
 
 // 配置入口已上移到会话头部按钮组；统一面板只保留终端/侧聊/审查/计划 4 个 tab。
 const UNIFIED_SIDE_PANEL_QUICK_ITEMS: UnifiedSidePanelKind[] = [
   'terminal',
   'side-chat',
   'review',
+  'code',
   'plan',
 ]
 
@@ -60,6 +68,13 @@ const getUnifiedSidePanelMeta = (
       label: 'HTML',
       title: 'HTML 内容',
       shortcutLabel: '打开 HTML 内容面板',
+      icon: <Icons.Code size={14} />,
+    }
+  if (kind === 'code')
+    return {
+      label: '代码',
+      title: '代码查看器',
+      shortcutLabel: '打开代码查看器',
       icon: <Icons.Code size={14} />,
     }
   return {

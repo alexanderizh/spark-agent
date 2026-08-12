@@ -346,8 +346,15 @@ export async function getWorkspaceGitFileDiff(
   filePath: string,
   untracked: boolean,
 ): Promise<WorkspaceGitFileDiffResponse> {
+  // 以 git 自身跟踪状态为准：未跟踪文件 `git diff` 永远返回空，必须走 `--no-index`。
+  // 前端透传的 untracked 可能缺失（变更卡片未带 changeType），此处用 ls-files 兜底。
+  // 已 staged 的新文件仍在 index 中，ls-files 命中 → 走 tracked 分支，由 `git diff HEAD` 以 new file 呈现。
+  const tracked =
+    (await tryGitStdout(rootPath, ['ls-files', '--error-unmatch', '--', filePath])) != null
+  const effectiveUntracked = untracked || !tracked
+
   let diff: string
-  if (untracked) {
+  if (effectiveUntracked) {
     diff =
       (await tryGitDiffStdout(rootPath, ['diff', '--no-index', '--', '/dev/null', filePath])) ?? ''
   } else {
