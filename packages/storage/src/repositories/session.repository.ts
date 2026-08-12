@@ -373,6 +373,14 @@ export class SessionRepository extends BaseRepository {
     this.raw
       .prepare('UPDATE memory_entry SET source_session_id = NULL WHERE source_session_id = ?')
       .run(id)
+    // Team Outcome Room ledger uses a deterministic session-scoped room id. Clean both
+    // append-only events and rebuildable projection in the same deletion transaction.
+    this.raw.prepare('DELETE FROM room_ledger_events WHERE room_id = ?').run(`team-room:${id}`)
+    this.raw.prepare('DELETE FROM room_ledger_records WHERE room_id = ?').run(`team-room:${id}`)
+    this.raw.prepare('DELETE FROM team_handoff_events WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM team_handoffs WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM team_steering_gate_events WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM team_steering_gates WHERE session_id = ?').run(id)
 
     return this.raw.prepare('DELETE FROM sessions WHERE id = ?').run(id).changes > 0
   }

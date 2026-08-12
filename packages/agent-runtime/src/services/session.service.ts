@@ -87,6 +87,7 @@ import {
   type TeamMcpBridgeHandle,
   type TeamToolDefinition,
 } from './team-mcp-http-bridge.js'
+import { TeamLedgerRuntimeAdapter } from './team-ledger-runtime-adapter.js'
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
 import { buildWorkflowBindingAuthorityPrompt } from './workflow-system-prompt.js'
 import { buildContextLedger } from './context-ledger.js'
@@ -2697,6 +2698,7 @@ export class SessionService {
                   discussionRoundIndex: activeDiscussionRound,
                 }
               : {}),
+            ledgerActorAuthority: 'system-observed',
           })) ?? undefined
         // 告诉 UI（及下面拼进系统提示词的编排提示）：本轮宿主进入编排模式（保留全量
         // 工具，提示词引导「优先派发」——不再剥离 Edit/Write/Bash，产品决策 2026-07-04）。
@@ -2802,6 +2804,7 @@ export class SessionService {
               exposeTeamDispatchTools: false,
               discussionId: mentionDiscussion.id,
               discussionRoundIndex: mentionDiscussion.round_index,
+              ledgerActorAuthority: 'agent-inferred',
             })) ?? undefined
         }
       }
@@ -5388,6 +5391,8 @@ export class SessionService {
     deadlineAt?: number
     /** Legacy flag kept for old callers; Codex API providers now use SDK-backed MCP-capable routing. */
     codexConsumerIsOpenAi?: boolean
+    /** Trusted runtime authority for ledger mutations; member turns are agent-inferred. */
+    ledgerActorAuthority?: import('@spark/storage').RoomLedgerAuthority
   }): Promise<SDKMcpServerConfig | null> {
     // FR-0b：目标消费者是 codex 时用 HTTP 桥接（codex 子进程无法回调主进程 in-process sdk server）；
     // claude 消费者走 in-process（现状）。两形态共用下方 tool 定义，避免实现漂移。
@@ -5397,6 +5402,17 @@ export class SessionService {
       ctx.consumerAdapter !== 'claude-sdk'
     const discussionId = ctx.discussionId
     const discussionRepo = discussionId != null ? this.getTeamDiscussionRepository() : null
+    const ledgerAdapter = discussionId != null
+      ? new TeamLedgerRuntimeAdapter(this.db, {
+          sessionId: ctx.sessionId,
+          discussionId,
+          actorId: ctx.hostAgent.id,
+          actorAuthority: ctx.ledgerActorAuthority ?? 'system-observed',
+          ...(ctx.teamConfig.threadContextTokenBudget != null
+            ? { maxEntries: 50, maxChars: Math.min(6000, ctx.teamConfig.threadContextTokenBudget * 4) }
+            : {}),
+        })
+      : null
     let currentDiscussionRound = ctx.discussionRoundIndex ?? 0
     let discussionConcludedReason: 'concluded' | 'canceled' | 'max_rounds' | null = null
 
@@ -5513,6 +5529,7 @@ export class SessionService {
                     discussionRoundIndex: currentDiscussionRound,
                   }
                 : {}),
+              ledgerActorAuthority: 'agent-inferred',
               ...(ctx.hostPermissionMode != null
                 ? { hostPermissionMode: ctx.hostPermissionMode }
                 : {}),
@@ -5733,6 +5750,7 @@ export class SessionService {
                             discussionRoundIndex: currentDiscussionRound,
                           }
                         : {}),
+                      ledgerActorAuthority: 'agent-inferred',
                       ...(ctx.hostPermissionMode != null
                         ? { hostPermissionMode: ctx.hostPermissionMode }
                         : {}),
@@ -6377,6 +6395,11 @@ export class SessionService {
 
     const defs: TeamToolDefinition[] = [
       ...(ctx.exposeTeamDispatchTools ? [dispatchDef, dispatchBatchDef] : []),
+      ...(ledgerAdapter != null
+        ? ledgerAdapter
+            .buildToolDefinitions()
+            .filter((def) => ctx.ledgerActorAuthority !== 'agent-inferred' || def.name === 'team_ledger_read' || def.name === 'team_ledger_propose')
+        : []),
       ...(agentMessageDef != null ? [agentMessageDef] : []),
       ...(roundAdvanceDef != null ? [roundAdvanceDef] : []),
       ...(concludeDef != null ? [concludeDef] : []),
@@ -6597,6 +6620,7 @@ export class SessionService {
     teamConfig: TeamModeConfig
     discussionId?: string
     discussionRoundIndex?: number
+    ledgerActorAuthority?: import('@spark/storage').RoomLedgerAuthority
     /** 宿主会话的生效权限模式（用于成员继承 bypass/full-access） */
     hostPermissionMode?: SessionPermissionMode
   }): Promise<TeamMemberExecutionResult> {
@@ -6615,6 +6639,7 @@ export class SessionService {
       teamConfig,
       discussionId,
       discussionRoundIndex,
+      ledgerActorAuthority,
       hostPermissionMode,
     } = args
 
@@ -6848,7 +6873,7 @@ export class SessionService {
     // peer messaging 关着时成员也必须知道团队里有谁；agent_message 工具（能力）按开关。
     const memberTeamPrompt =
       discussionId != null
-        ? buildTeamRosterPrompt(hostAgentForPrompt, members, teamConfig, {
+        ? `${buildTeamRosterPrompt(hostAgentForPrompt, members, teamConfig, {
             perspective: 'member',
             viewingMember: member,
             enablePeerMessaging: memberCanPeerMessage,
@@ -6857,7 +6882,15 @@ export class SessionService {
               teamConfig.threadContextTokenBudget,
               member.id,
             ),
-          })
+          })}\n\n${new TeamLedgerRuntimeAdapter(this.db, {
+            sessionId,
+            discussionId,
+            actorId: member.id,
+            actorAuthority: 'agent-inferred',
+          ...(teamConfig.threadContextTokenBudget != null
+            ? { maxChars: Math.min(6000, teamConfig.threadContextTokenBudget * 4) }
+            : {}),
+          }).renderActiveSummary()}`
         : undefined
     const userMessage = memberRouteMessage
     const canContinueDiscussionSession =
@@ -6987,6 +7020,7 @@ export class SessionService {
               }
             : {}),
           ...(hostIsFullAccess && hostPermissionMode != null ? { hostPermissionMode } : {}),
+          ...(ledgerActorAuthority != null ? { ledgerActorAuthority } : {}),
         })) ?? undefined
       if (memberTeamServer != null) memberMcpServers.spark_team = memberTeamServer
     }

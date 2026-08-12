@@ -207,6 +207,14 @@ export {
   DEFAULT_THREAD_TOKEN_BUDGET,
 } from './team-discussion.repository.js'
 export { TeamDefinitionRepository } from './team-definition.repository.js'
+export { RoomLedgerRepository } from './room-ledger.repository.js'
+export type {
+  RoomLedgerRecord,
+  RoomLedgerStatus,
+  RoomLedgerAuthority,
+  RoomLedgerOperation,
+  RoomLedgerEvent,
+} from './room-ledger.repository.js'
 export type {
   AgentTeamRow,
   AgentTeamItem,

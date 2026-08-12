@@ -236,6 +236,21 @@ vi.mock('../../services/debug-log-server.service.js', () => ({
 vi.mock('@spark/storage', () => {
   const now = () => '2026-05-28T00:00:00.000Z'
 
+  class RoomLedgerService {
+    static forAgent() { return new RoomLedgerService() }
+    static forSystem() { return new RoomLedgerService() }
+    static forUser() { return new RoomLedgerService() }
+    getActiveContext() { return [] }
+    create(input: Record<string, unknown>) { return input }
+    correct(input: Record<string, unknown>) { return input }
+    invalidate(input: Record<string, unknown>) { return input }
+    tombstone(input: Record<string, unknown>) { return input }
+    confirm(input: Record<string, unknown>) { return input }
+    reject(input: Record<string, unknown>) { return input }
+    restore(input: Record<string, unknown>) { return input }
+    deleteRoom() { return 0 }
+  }
+
   class SessionRepository {
     create(params: {
       id: string
@@ -1071,6 +1086,7 @@ vi.mock('@spark/storage', () => {
     ScheduledTaskRepository,
     TaskExecutionRepository,
     TurnRequestRepository,
+    RoomLedgerService,
   }
 })
 
@@ -3173,6 +3189,14 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual([
       'agent_dispatch',
       'agent_dispatch_batch',
+      'team_ledger_read',
+      'team_ledger_propose',
+      'team_ledger_confirm',
+      'team_ledger_reject',
+      'team_ledger_correct',
+      'team_ledger_invalidate',
+      'team_ledger_tombstone',
+      'team_ledger_restore',
       'agent_message',
       'team_round_advance',
       'team_conclude',
@@ -3414,6 +3438,8 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(memberTeamServer).toBeDefined()
     // 嵌套关着：只有 agent_message + 只读 team_thread_read，不能越权获得 dispatch / 轮次控制工具
     expect(memberTeamServer?.instance.tools.map((tool) => tool.name)).toEqual([
+      'team_ledger_read',
+      'team_ledger_propose',
       'agent_message',
       'team_thread_read',
     ])
@@ -3496,9 +3522,13 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(teamServer).toBeDefined()
     // 只可对话（agent_message）+ 只读翻线程（team_thread_read），不可派发
     expect(teamServer?.instance.tools.map((tool) => tool.name)).toEqual([
+      'team_ledger_read',
+      'team_ledger_propose',
       'agent_message',
       'team_thread_read',
     ])
+    expect(teamServer?.instance.tools.map((tool) => tool.name)).not.toContain('team_ledger_confirm')
+    expect(teamServer?.instance.tools.map((tool) => tool.name)).not.toContain('team_ledger_restore')
     // 关键回归：peer-only server 不得触发编排模式工具剥离（成员还要 Edit/Write/Bash 干活）
     const disallowed = (config?.disallowedTools as string[] | undefined) ?? []
     expect(disallowed).not.toContain('Edit')
@@ -4177,6 +4207,14 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual([
       'agent_dispatch',
       'agent_dispatch_batch',
+      'team_ledger_read',
+      'team_ledger_propose',
+      'team_ledger_confirm',
+      'team_ledger_reject',
+      'team_ledger_correct',
+      'team_ledger_invalidate',
+      'team_ledger_tombstone',
+      'team_ledger_restore',
       'team_round_advance',
       'team_conclude',
       'team_thread_read',

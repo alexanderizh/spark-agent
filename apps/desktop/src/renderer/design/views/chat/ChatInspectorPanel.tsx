@@ -4,6 +4,7 @@ import { Popover } from '@lobehub/ui'
 import { Switch } from 'antd'
 import { Icons } from '../../Icons'
 import { TeamInspectorSection } from '../../components/TeamInspectorSection'
+import { OutcomeRoomContainer } from '../../outcome-room/OutcomeRoomContainer'
 import { WorktreePanel } from '../../components/WorktreePanel'
 import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
@@ -616,6 +617,10 @@ export function ChatInspector({
                 打开后在会话时间线显示 Host 与成员的思考、命令、工具及文件变更；默认关闭以保持结果优先。
               </p>
             </div>
+            <OutcomeRoomContainer
+              sessionId={session?.id}
+              runningMemberCount={runningTeamAgentIds.length}
+            />
             <TeamInspectorSection
             config={teamConfig}
             fallbackProviderProfileId={session?.providerProfileId ?? null}
