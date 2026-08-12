@@ -16,7 +16,7 @@ const NODE_TYPE_LABELS: Partial<Record<CanvasNodeType, string>> = {
   image_compose: '多图合成',
   storyboard_grid: '故事板',
   panorama_360: '全景图',
-  text_generate: '文本生成',
+  text_generate: '文本生文',
   text_rewrite: '文本改写',
   prompt_optimize: 'Prompt 优化',
   image_prompt_reverse: '图片反推',

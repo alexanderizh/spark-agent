@@ -204,7 +204,6 @@ const BUILTIN_PROMPTS: Partial<Record<CanvasOperationType, string>> = {
   image_compose: '请将输入图片自然合成为一张高质量图片。',
   storyboard_grid: '故事板风格：线描稿。请把场景拆成一张横向多分格故事板图，用于后续视频生成参考。',
   panorama_360: '请基于输入内容生成一张可用于 360° 全景预览的等距柱状投影场景图。',
-  text_generate: '请基于输入内容生成结构清晰、信息完整的文本。',
   text_rewrite: '请基于输入内容进行改写，保持原意并提升表达质量。',
   prompt_optimize: '请优化提示词，使其更清晰、可执行，并保留用户原始意图。',
   image_prompt_reverse: IMAGE_PROMPT_REVERSE_PROMPT,

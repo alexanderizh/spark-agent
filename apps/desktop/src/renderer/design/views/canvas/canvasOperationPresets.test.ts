@@ -51,6 +51,7 @@ describe('canvasOperationPresets', () => {
     expect(readBuiltinCanvasOperationPreset('image_edit').prompt).toBe(
       '请基于输入图片进行自然编辑，保持主体与画面质量。',
     )
+    expect(readBuiltinCanvasOperationPreset('text_generate').prompt).toBe('')
   })
 
   it('builds a fixed direct-output instruction for image prompt reverse', () => {
@@ -156,7 +157,7 @@ describe('canvasOperationPresets', () => {
     })
 
     expect(readCanvasOperationPreset('text_generate')).toEqual({
-      prompt: '请基于输入内容生成结构清晰、信息完整的文本。',
+      prompt: '',
       negativePrompt: '',
       agentId: 'agent:writer',
       providerProfileId: 'provider:text',
@@ -441,7 +442,7 @@ describe('canvasOperationPresets', () => {
 
     // lastUsed 清掉后，preset 立即生效
     expect(readCanvasResolvedPresetTarget('text_generate')).toEqual({
-      prompt: '请基于输入内容生成结构清晰、信息完整的文本。',
+      prompt: '',
       negativePrompt: '',
       providerProfileId: 'provider:text',
       modelId: 'gpt-5',

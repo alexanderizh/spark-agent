@@ -33,8 +33,9 @@ describe('canvasNodeGenerationMenu', () => {
     expect(new Set(allOperationIds).size).toBe(allOperationIds.length)
   })
 
-  it('removes the general text group while retaining image, video, and audio groups', () => {
+  it('keeps the basic text task above image, video, and audio groups', () => {
     expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => group.id)).toEqual([
+      'text',
       'image',
       'video',
       'audio',
@@ -43,6 +44,7 @@ describe('canvasNodeGenerationMenu', () => {
 
   it('exposes the merged base task operations across image, video, and audio groups', () => {
     expect(canvasBaseCreateOperations().map((item) => item.operation)).toEqual([
+      'text_generate',
       'text_to_image',
       'image_prompt_reverse',
       'text_to_video',
@@ -54,14 +56,24 @@ describe('canvasNodeGenerationMenu', () => {
   })
 
   it('offers one unified image generation entry plus image prompt reverse', () => {
-    expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.find((group) => group.id === 'image')?.items).toEqual([
+    expect(
+      CANVAS_BASE_CREATE_OPERATION_GROUPS.find((group) => group.id === 'image')?.items,
+    ).toEqual([
       { operation: 'text_to_image', label: '图片生成', icon: 'Image' },
       { operation: 'image_prompt_reverse', label: '图片反推', icon: 'FileText' },
     ])
   })
 
+  it('offers text-to-text as the first basic task without a built-in prompt contract', () => {
+    expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.find((group) => group.id === 'text')?.items).toEqual(
+      [{ operation: 'text_generate', label: '文本生文', icon: 'FileText' }],
+    )
+  })
+
   it('offers one unified video generation entry plus the independent depth tool', () => {
-    expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.find((group) => group.id === 'video')?.items).toEqual([
+    expect(
+      CANVAS_BASE_CREATE_OPERATION_GROUPS.find((group) => group.id === 'video')?.items,
+    ).toEqual([
       { operation: 'text_to_video', label: '视频生成', icon: 'Video' },
       { operation: 'video_depth_map', label: '深度视频转换', icon: 'Video' },
       { operation: 'extract_audio', label: '分离音频', icon: 'Audio' },
@@ -70,6 +82,7 @@ describe('canvasNodeGenerationMenu', () => {
 
   it('hides audio from the current right-click menu without deleting its definitions', () => {
     expect(CANVAS_VISIBLE_BASE_CREATE_OPERATION_GROUPS.map((group) => group.id)).toEqual([
+      'text',
       'image',
       'video',
     ])
@@ -78,6 +91,7 @@ describe('canvasNodeGenerationMenu', () => {
 
   it('flattens visible image and video operations for the right-click menu', () => {
     expect(canvasVisibleBaseCreateOperations().map((item) => item.operation)).toEqual([
+      'text_generate',
       'text_to_image',
       'image_prompt_reverse',
       'text_to_video',

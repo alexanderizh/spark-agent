@@ -16,7 +16,7 @@ export type CanvasNodeGenerationMenuItem = {
 }
 
 export type CanvasNodeGenerationMenuGroup = {
-  id: 'image' | 'video' | 'audio'
+  id: 'text' | 'image' | 'video' | 'audio'
   label: string
   items: CanvasNodeGenerationMenuItem[]
 }
@@ -30,6 +30,11 @@ export const CANVAS_FUNCTIONAL_CREATE_OPERATIONS: CanvasNodeGenerationMenuItem[]
 ]
 
 export const CANVAS_BASE_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGroup[] = [
+  {
+    id: 'text',
+    label: '文本',
+    items: [{ operation: 'text_generate', label: '文本生文', icon: 'FileText' }],
+  },
   {
     id: 'image',
     label: '图像',
