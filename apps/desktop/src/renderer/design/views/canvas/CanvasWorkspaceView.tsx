@@ -205,7 +205,7 @@ import {
 } from './canvasWorkspaceFilm'
 import { buildPromptOptimizationInstruction } from './canvasPromptEditing'
 import { resolveStoryboardSplitSourceNode, splitStoryboardNode } from './canvasStoryboardNodeSplit'
-import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
+import { buildOpPrompt, CANVAS_PIPELINE_OPS, getCanvasPipelineInputType } from './canvasPipelineOps'
 import {
   planCanvasPipelineTaskPositions,
   resolveCanvasPipelineAssetTargets,
@@ -5614,29 +5614,54 @@ export function CanvasWorkspaceView({
     const node = snapshot.nodes.find((item) => item.id === nodeId)
     if (!node) return
     const pipelineTextSource = resolveCanvasPipelineTextSource(node, snapshot)
-    // 分镜 / 关键帧节点：从 shotRef 解析分镜后执行（§S6/§S7 节点化）
+    const action = CANVAS_PIPELINE_OPS.find((item) => item.id === actionId)
+    const inputType = getCanvasPipelineInputType(pipelineTextSource.sourceNode)
+    if (action && (!inputType || !action.inputTypes.includes(inputType))) {
+      message.warning(
+        `「${action.label}」仅支持${action.inputTypes.join('、')}输入，当前节点不是可用的媒体类型`,
+      )
+      return
+    }
+    // 分镜 / 关键帧节点：媒体型动作仍按输入内容执行；只有已有分镜回链时才启用
+    // 分组批处理等增强行为，不把语义回链当成动作的必要前置条件。
     if (
       actionId === 'shot.to_keyframes' ||
       actionId === 'shot.to_video' ||
       actionId === 'keyframe.to_video'
     ) {
       const shotSourceNode = pipelineTextSource.sourceNode
-      if (actionId === 'shot.to_keyframes' && shotSourceNode.type === 'text') {
-        const sourceText = pipelineTextSource.sourceText
-        const parsedRows = sourceText ? parseShotTable(sourceText) : []
-        if (isShotScriptText(sourceText) && parsedRows.length >= 2) {
-          await createConfiguredOperationNode({
-            sourceNode: shotSourceNode,
-            operation: 'storyboard_grid',
-            title: '生成分镜关键帧图',
-            prompt:
-              '请根据输入的分镜脚本文本，生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性。',
-            nodeMessage: '确认故事板 Prompt、Agent 与模型后点击开始任务',
-            taskPipelineRole: 'shot',
-            outputPipelineRole: 'keyframe',
-          })
-          return
-        }
+      if (
+        actionId === 'shot.to_keyframes' &&
+        ['text', 'prompt', 'image'].includes(getCanvasPipelineInputType(shotSourceNode) ?? '')
+      ) {
+        await createConfiguredOperationNode({
+          sourceNode: shotSourceNode,
+          operation: 'storyboard_grid',
+          title: '生成分镜关键帧图',
+          prompt:
+            '请根据输入内容生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性；输入可以是普通文本、分镜脚本或图片参考。',
+          nodeMessage: '确认故事板 Prompt、Agent 与模型后点击开始任务',
+          taskPipelineRole: 'shot',
+          outputPipelineRole: 'keyframe',
+        })
+        return
+      }
+      if (
+        actionId === 'keyframe.to_video' &&
+        getCanvasPipelineInputType(shotSourceNode) === 'image'
+      ) {
+        await createConfiguredOperationNode({
+          sourceNode: shotSourceNode,
+          operation: 'image_to_video',
+          title: '生成视频',
+          prompt:
+            pipelineTextSource.sourceText ||
+            '请根据输入图片生成连贯的视频，保持主体、构图和视觉风格一致。',
+          nodeMessage: '确认视频 Prompt、Agent 与模型后点击开始任务',
+          taskPipelineRole: 'keyframe',
+          outputPipelineRole: 'clip',
+        })
+        return
       }
       if (actionId === 'shot.to_video') {
         const groupId = shotSourceNode.data.shotGroupId ?? node.data.shotGroupId
@@ -5659,11 +5684,25 @@ export function CanvasWorkspaceView({
       }
       const resolved = resolveShotFromNode(shotSourceNode) ?? resolveShotFromNode(node)
       if (!resolved) {
-        message.warning(
-          actionId === 'shot.to_video'
-            ? '该节点未关联可直接出视频的分镜片段，请先生成关键帧图或补充分镜片段关联'
-            : '该节点未关联分镜，无法执行',
-        )
+        if (actionId === 'shot.to_video') {
+          const draft = buildCanvasPipelineOperationDraft({
+            actionId,
+            sourceText: pipelineTextSource.sourceText,
+            styleBible: buildProductionBiblePrompt(snapshot.project.metadata),
+          })
+          await createConfiguredOperationNode({
+            sourceNode: shotSourceNode,
+            operation: draft.operation,
+            title: draft.title,
+            prompt: draft.systemPrompt,
+            nodeMessage: draft.message,
+            ...(draft.modelParams ? { modelParams: draft.modelParams } : {}),
+            ...(draft.taskPipelineRole ? { taskPipelineRole: draft.taskPipelineRole } : {}),
+            ...(draft.outputPipelineRole ? { outputPipelineRole: draft.outputPipelineRole } : {}),
+          })
+          return
+        }
+        message.warning('该节点没有可用的分镜关键帧输入')
         return
       }
       if (actionId === 'shot.to_keyframes') {
@@ -5674,11 +5713,9 @@ export function CanvasWorkspaceView({
       return
     }
     const { sourceNode: textSourceNode, sourceText } = pipelineTextSource
-    const requireAssetTargets = (label: string): CanvasPipelineAssetTarget[] => {
+    const resolveAssetTargets = (): CanvasPipelineAssetTarget[] => {
       const targets = resolveCanvasPipelineAssetTargets({ sourceNode: node, actionId, snapshot })
-      if (targets.length === 0) {
-        message.warning(`该节点没有可用的${label}产物，无法执行此操作`)
-      }
+      // 同类型影视资产存在时继续批量创建；没有资产时由普通文本/Prompt直接创建单个任务。
       return targets
     }
     const createAssetTaskBatch = async (
@@ -5733,12 +5770,32 @@ export function CanvasWorkspaceView({
       case 'screenplay.storyboard_grid':
         handleStoryboardGridFromNode(textSourceNode)
         break
+      case 'screenplay.split_episodes':
+      case 'scene.panorama_360': {
+        const draft = buildCanvasPipelineOperationDraft({
+          actionId,
+          sourceText,
+          styleBible: buildProductionBiblePrompt(snapshot.project.metadata),
+        })
+        await createConfiguredOperationNode({
+          sourceNode: textSourceNode,
+          operation: draft.operation,
+          title: draft.title,
+          prompt: draft.systemPrompt,
+          nodeMessage: draft.message,
+          ...(draft.modelParams ? { modelParams: draft.modelParams } : {}),
+          ...(draft.taskPipelineRole ? { taskPipelineRole: draft.taskPipelineRole } : {}),
+          ...(draft.outputPipelineRole ? { outputPipelineRole: draft.outputPipelineRole } : {}),
+          ...(draft.shotScriptConfig ? { shotScriptConfig: draft.shotScriptConfig } : {}),
+        })
+        break
+      }
       case 'character.three_view': {
         // 右键菜单入口：创建并选中操作节点，由用户双击或右键“编辑节点”打开配置
         // （不直接触发任务，与「生成分镜脚本 / 提取角色」等专用流水线行为保持一致）
         // 资产中心按钮入口仍走 handleGenerateCharacterSheets 直接发起任务。
         const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
-        const targets = resolveCanvasPipelineAssetTargets({ sourceNode: node, actionId, snapshot })
+        const targets = resolveAssetTargets()
         if (targets.length === 0) {
           // 普通文本/功能文本没有角色资产时，仍可直接把当前文本作为角色设定创建身份板任务。
           // 后续若先执行“提取角色”，同一入口会自动切换为按角色资产批量创建。
@@ -5807,15 +5864,42 @@ export function CanvasWorkspaceView({
       case 'effect.effect_image': {
         // 右键菜单入口：创建并选中操作节点，由用户双击或右键“编辑节点”打开配置
         // 资产中心按钮入口仍走 handleGenerateAssetReference 直接发起任务。
-        const targets = requireAssetTargets(
-          actionId === 'scene.scene_image'
-            ? '场景'
-            : actionId === 'prop.prop_image'
-              ? '道具'
-              : '特效',
-        )
-        if (targets.length === 0) break
+        const targets = resolveAssetTargets()
         const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
+        if (targets.length === 0) {
+          const draft = buildCanvasPipelineOperationDraft({
+            actionId,
+            sourceText,
+            ...(styleBible ? { styleBible } : {}),
+          })
+          const position = planCanvasPipelineTaskPositions({
+            sourceNode: textSourceNode,
+            count: 1,
+            existingNodes: snapshot.nodes,
+          })[0]
+          if (!position) break
+          const created = await createConfiguredOperationNode({
+            sourceNode: textSourceNode,
+            position,
+            operation: draft.operation,
+            title: draft.title,
+            prompt: draft.systemPrompt,
+            nodeMessage: draft.message,
+            ...(draft.modelParams ? { modelParams: draft.modelParams } : {}),
+            ...(draft.taskPipelineRole ? { taskPipelineRole: draft.taskPipelineRole } : {}),
+            ...(draft.outputPipelineRole ? { outputPipelineRole: draft.outputPipelineRole } : {}),
+            selectCreated: false,
+            announce: false,
+          })
+          if (created) {
+            setSelectedNodeIds([created.id])
+            requestAnimationFrame(() => canvasViewportControlsRef.current?.focusNodes([created.id]))
+            message.success(
+              `已创建${actionId === 'scene.scene_image' ? '场景' : actionId === 'prop.prop_image' ? '道具' : '特效'}图任务节点`,
+            )
+          }
+          break
+        }
         await createAssetTaskBatch(targets, ({ sourceNode, asset: targetAsset }, position) => {
           const kind = readAssetKind(targetAsset)
           const title =
@@ -6134,24 +6218,23 @@ export function CanvasWorkspaceView({
     })
   }
 
-  /** 生成分镜关键帧图：优先消费当前分镜脚本文本，否则回退到项目最近的分镜分组 */
+  /** 生成分镜关键帧图：任意文本或图片都可以直接作为输入；已有分镜分组仅作为增强回退。 */
   const handleStoryboardGridFromNode = (sourceNode?: CanvasNode) => {
-    if (sourceNode?.type === 'text') {
-      const sourceText = (sourceNode.data.text ?? '').trim()
-      const parsedRows = sourceText ? parseShotTable(sourceText) : []
-      if (isShotScriptText(sourceText) && parsedRows.length >= 2) {
-        void createConfiguredOperationNode({
-          sourceNode,
-          operation: 'storyboard_grid',
-          title: '生成分镜关键帧图',
-          prompt:
-            '请根据输入的分镜脚本文本，生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性。',
-          nodeMessage: '确认故事板 Prompt、Agent 与模型后点击开始任务',
-          taskPipelineRole: 'shot',
-          outputPipelineRole: 'keyframe',
-        })
-        return
-      }
+    if (
+      sourceNode &&
+      ['text', 'prompt', 'image'].includes(getCanvasPipelineInputType(sourceNode) ?? '')
+    ) {
+      void createConfiguredOperationNode({
+        sourceNode,
+        operation: 'storyboard_grid',
+        title: '生成分镜关键帧图',
+        prompt:
+          '请根据输入内容生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性；输入可以是普通文本、分镜脚本或图片参考。',
+        nodeMessage: '确认故事板 Prompt、Agent 与模型后点击开始任务',
+        taskPipelineRole: 'shot',
+        outputPipelineRole: 'keyframe',
+      })
+      return
     }
     const snapshot = snapshotRef.current
     if (!snapshot) return
@@ -6159,7 +6242,7 @@ export function CanvasWorkspaceView({
     const groups = film?.shotGroups ?? []
     const group = groups[groups.length - 1]
     if (!group || group.segments.length === 0) {
-      message.warning('暂无分镜片段，请先「生成分镜脚本」并导入分镜表，再生成分镜图')
+      message.warning('暂无可用输入，请连接文本或图片节点后再生成分镜图')
       return
     }
     handleGenerateStoryboardGrid(group, { openPanel: false })

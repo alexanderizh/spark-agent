@@ -27,6 +27,7 @@ import {
   getOpsForRole,
   getOpsForNode,
   type CanvasPipelineAssetKind,
+  type CanvasPipelineInputType,
   type CanvasPipelineOp,
   type PipelineOpKind,
 } from './canvasPipelineOps'
@@ -43,6 +44,8 @@ export type PipelineAction = {
   kind: PipelineOpKind
   /** 产出节点的流水线角色 */
   produces: CanvasPipelineRole
+  /** 允许的输入媒体类型；只用于内容类型约束，不表达上游语义角色。 */
+  inputTypes: CanvasPipelineInputType[]
   /** 若直接落为媒体任务，对应的 operation（agent 文本动作则为空） */
   operation?: CanvasOperationType
   /** 图标 key（映射到 Icons.*） */
@@ -55,6 +58,7 @@ function toAction(op: CanvasPipelineOp): PipelineAction {
     label: op.label,
     kind: op.kind,
     produces: op.produces,
+    inputTypes: op.inputTypes,
     icon: op.icon,
     ...(op.baseOperation ? { operation: op.baseOperation } : {}),
   }

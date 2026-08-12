@@ -122,7 +122,7 @@ export function buildCanvasPipelineOperationDraft(
         operation: 'storyboard_grid',
         title: '生成分镜关键帧图',
         systemPrompt:
-          '请根据输入的分镜脚本文本，生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性。',
+          '请根据输入内容生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性；输入可以是普通文本、分镜脚本或图片参考。',
         message: '确认故事板 Prompt、Agent 与模型后点击开始任务',
         taskPipelineRole: 'shot',
         outputPipelineRole: 'keyframe',

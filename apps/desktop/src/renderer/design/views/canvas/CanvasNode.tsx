@@ -37,7 +37,7 @@ import {
   keepsCanvasMediaNodeAspectRatio,
   pickCanvasNodeMinSize,
 } from './canvasNodeSize'
-import { getAllPipelineActions } from './canvasPipeline'
+import { getNodePipelineActions } from './canvasPipeline'
 import { CANVAS_PIPELINE_MENU_GROUPS, type CanvasPipelineAssetKind } from './canvasPipelineOps'
 import {
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
@@ -88,8 +88,6 @@ function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.Reac
   const IconFn = (iconKey && map[iconKey]) || Icons.Workflow
   return <IconFn size={size} />
 }
-
-const FILM_PIPELINE_ACTIONS = getAllPipelineActions().filter((action) => action.kind !== 'video')
 
 function openAudioTrim(ref: { current: CanvasAudioNodePresentationHandle | null }) {
   ref.current?.openTrim()
@@ -561,6 +559,7 @@ export const CanvasNode = memo(function CanvasNode({
   const {
     actions,
     canvasNode: node,
+    assetKinds = [],
     assetSubviewCount = 0,
     operationRuns = [],
     operationRunsFingerprint = '',
@@ -697,7 +696,11 @@ export const CanvasNode = memo(function CanvasNode({
 
   const hasOperationOutput = !isTask || Boolean(operationOutputState.primaryOutput)
   const canCreateOperationFromNode = !isTask || hasOperationOutput
-  const pipelineActions = FILM_PIPELINE_ACTIONS
+  const pipelineActions = contentNode
+    ? getNodePipelineActions(contentNode, { assetKinds }).filter(
+        (action) => action.kind !== 'video',
+      )
+    : []
   // 子类型切换（仅 image/text）：当前子类型 + 可选项，供右键菜单「切换类型」渲染。
   const subtypeSwitch = useMemo(() => {
     if (!isSubtypeSwitchable(node)) return null

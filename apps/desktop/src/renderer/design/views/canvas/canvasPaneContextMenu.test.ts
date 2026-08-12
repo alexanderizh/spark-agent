@@ -99,9 +99,7 @@ describe('canvas pane context menu', () => {
 
   it('uses the same task operation source for content and functional nodes with outputs', () => {
     expect(nodeSource).toContain('CANVAS_PIPELINE_MENU_GROUPS.flatMap')
-    expect(nodeSource).toContain(
-      "getAllPipelineActions().filter((action) => action.kind !== 'video')",
-    )
+    expect(nodeSource).toContain('getNodePipelineActions(contentNode, { assetKinds })')
     expect(nodeSource).toContain('canvasVisibleBaseCreateOperations().map')
     expect(nodeSource).not.toContain('CANVAS_BASE_TASK_MENU_LABEL')
     expect(floatingToolbarSource).toContain('CANVAS_PIPELINE_MENU_GROUPS.map')

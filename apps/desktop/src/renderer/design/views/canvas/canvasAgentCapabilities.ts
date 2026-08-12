@@ -4,7 +4,7 @@ import {
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
 } from './canvasNodeGenerationMenu'
 import { getNodePipelineActions } from './canvasPipeline'
-import { getOp } from './canvasPipelineOps'
+import { getCanvasPipelineInputType, getOp } from './canvasPipelineOps'
 import type {
   CanvasAsset,
   CanvasNode,
@@ -17,11 +17,7 @@ export type CanvasAgentActionExecution =
   | 'create_operation_node'
   | 'requires_user_interaction'
 
-export type CanvasAgentActionSource =
-  | 'pipeline'
-  | 'node_menu'
-  | 'recommended_flow'
-  | 'canvas_tool'
+export type CanvasAgentActionSource = 'pipeline' | 'node_menu' | 'recommended_flow' | 'canvas_tool'
 
 export type CanvasAgentAvailableAction = {
   id: string
@@ -31,6 +27,7 @@ export type CanvasAgentAvailableAction = {
   execution: CanvasAgentActionExecution
   description: string
   operation?: CanvasOperationType
+  inputTypes?: string[]
   outputPipelineRole?: CanvasPipelineRole
   toolName?: string
   toolRecipe?: {
@@ -67,7 +64,8 @@ function pipelineActions(
     ),
   }).map((action) => {
     const definition = getOp(action.id)
-    const operation = action.operation ?? (definition?.kind === 'extract' ? 'text_generate' : undefined)
+    const operation =
+      action.operation ?? (definition?.kind === 'extract' ? 'text_generate' : undefined)
     return {
       id: action.id,
       label: action.label,
@@ -76,6 +74,7 @@ function pipelineActions(
       execution: 'create_operation_node' as const,
       description: `沿用节点“影视创作”能力，产出 ${action.produces} 节点。`,
       ...(operation ? { operation } : {}),
+      ...(definition?.inputTypes ? { inputTypes: definition.inputTypes } : {}),
       outputPipelineRole: action.produces,
       guidance: '默认只创建待确认操作节点；用户明确要求立即生成时再运行。',
     }
@@ -83,16 +82,30 @@ function pipelineActions(
 }
 
 function recommendedFlowActions(node: CanvasNode): CanvasAgentAvailableAction[] {
+  // 这里仅提供角色化的推荐说明；真正能否执行由 pipelineActions 的 inputTypes
+  // 决定，因此推荐层不会成为普通文本/图片/视频的来源门槛。
+  const inputType = getCanvasPipelineInputType(node)
+  if (!inputType) return []
+  const filterByInputType = (actions: CanvasAgentAvailableAction[]) =>
+    actions
+      .filter((action) => {
+        const definition = getOp(action.id)
+        return !definition || definition.inputTypes.includes(inputType)
+      })
+      .map((action) => {
+        const definition = getOp(action.id)
+        return definition?.inputTypes ? { ...action, inputTypes: definition.inputTypes } : action
+      })
   const role = node.data.pipelineRole
   if (role === 'screenplay') {
-    return [
+    return filterByInputType([
       {
         id: 'screenplay.extract_props',
         label: '提取关键道具',
         category: 'pipeline',
         source: 'recommended_flow',
         execution: 'create_operation_node',
-        description: '从剧本提取会影响镜头生成和叙事连续性的关键道具。',
+        description: '从当前文本提取会影响镜头生成和叙事连续性的关键道具。',
         operation: 'text_generate',
         outputPipelineRole: 'prop',
         guidance: '要求结构化 JSON 输出；落库前按同名道具去重。',
@@ -103,7 +116,7 @@ function recommendedFlowActions(node: CanvasNode): CanvasAgentAvailableAction[] 
         category: 'pipeline',
         source: 'recommended_flow',
         execution: 'create_operation_node',
-        description: '从剧本提取需要独立视觉设计的粒子、能量、天气和环境特效。',
+        description: '从当前文本提取需要独立视觉设计的粒子、能量、天气和环境特效。',
         operation: 'text_generate',
         outputPipelineRole: 'effect',
         guidance: '只提取影响画面生成的特效，避免把普通动作误当作特效资产。',
@@ -114,33 +127,35 @@ function recommendedFlowActions(node: CanvasNode): CanvasAgentAvailableAction[] 
         category: 'pipeline',
         source: 'recommended_flow',
         execution: 'create_operation_node',
-        description: '把长剧本按冲突、悬念和目标时长拆成多集剧本，仍保留在当前单画布。',
+        description: '把当前文本按冲突、悬念和目标时长拆成多集剧本。',
         operation: 'text_generate',
         outputPipelineRole: 'screenplay',
         guidance: '每集应有集号、标题、开场钩子、主要冲突、结尾悬念和完整剧本正文。',
       },
-    ]
+    ])
   }
   if (role === 'scene') {
-    return [
+    return filterByInputType([
       {
         id: 'scene.panorama_360',
         label: '生成重点场景 360 全景图',
         category: 'pipeline',
         source: 'recommended_flow',
         execution: 'create_operation_node',
-        description: '为高频、剧情关键或需要复杂空间调度的场景建立可环视环境基准。',
+        description: '为当前文本或图片建立可环视环境基准。',
         operation: 'panorama_360',
         outputPipelineRole: 'design_card',
-        guidance: '普通一次性场景不必生成；重点场景使用 2:1 equirectangular 输出。',
+        guidance: '重点场景使用 2:1 equirectangular 输出。',
       },
-    ]
+    ])
   }
   return []
 }
 
 function generationActions(node: CanvasNode): CanvasAgentAvailableAction[] {
-  const supportsGeneration = ['text', 'prompt', 'image', 'audio', 'video', 'group'].includes(node.type)
+  const supportsGeneration = ['text', 'prompt', 'image', 'audio', 'video', 'group'].includes(
+    node.type,
+  )
   if (!supportsGeneration) return []
   const items = [
     ...CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
@@ -373,8 +388,8 @@ export function getCanvasAgentAvailableActions(
 ): CanvasAgentAvailableAction[] {
   const assetKinds = options.assetKinds ?? []
   const actions = [
-    ...pipelineActions(node, assetKinds),
     ...recommendedFlowActions(node),
+    ...pipelineActions(node, assetKinds),
     ...generationActions(node),
     ...contextualUiActions(node),
     ...groupActions(node),
@@ -389,9 +404,7 @@ export function getCanvasAgentAvailableActions(
           operation: action.operation,
           inputNodeIds: [node.id],
           title: action.label,
-          ...(action.outputPipelineRole
-            ? { outputPipelineRole: action.outputPipelineRole }
-            : {}),
+          ...(action.outputPipelineRole ? { outputPipelineRole: action.outputPipelineRole } : {}),
         },
       },
     }
@@ -404,7 +417,10 @@ export function getCanvasAgentAvailableActions(
   })
 }
 
-export function resolveNodeAssetKinds(node: CanvasNode, assets: readonly CanvasAsset[]): FilmAssetKind[] {
+export function resolveNodeAssetKinds(
+  node: CanvasNode,
+  assets: readonly CanvasAsset[],
+): FilmAssetKind[] {
   const asset = node.assetId ? assets.find((item) => item.id === node.assetId) : undefined
   const kind = asset ? readAssetKind(asset) : null
   return kind ? [kind] : []

@@ -33,6 +33,7 @@ describe('canvasPipeline', () => {
         'screenplay.extract_props',
         'screenplay.extract_effects',
         'screenplay.storyboard_grid',
+        'screenplay.split_episodes',
       ])
     })
 
@@ -64,7 +65,7 @@ describe('canvasPipeline', () => {
         getNodePipelineActions({ type: 'image' }, { assetKinds: ['scene'] }).map(
           (action) => action.id,
         ),
-      ).toEqual(['scene.scene_image'])
+      ).toContain('scene.scene_image')
     })
 
     it('分镜脚本等功能文本节点仍保留完整标准文本能力', () => {

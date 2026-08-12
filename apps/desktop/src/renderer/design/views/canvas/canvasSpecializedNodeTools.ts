@@ -1,25 +1,42 @@
 import { buildProductionBiblePrompt } from './canvasPipeline'
 import { buildCanvasPipelineOperationDraft } from './canvasPipelineActionContracts'
-import { readFilmData, type CreateFilmAssetInput, type FilmAssetKind, type ShotSegment } from './canvasFilmAssets'
+import {
+  readFilmData,
+  type CreateFilmAssetInput,
+  type FilmAssetKind,
+  type ShotSegment,
+} from './canvasFilmAssets'
 import { SPECIALIZED_NODE_SCHEMAS } from './canvasSpecializedNodeSchemas'
 import { materializeStoryboardRows } from './canvasStoryboardMaterialization'
 import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { formatStoryboardRowsAsMarkdown } from './canvasTextInputPresentation'
 import { isValidScreenplayText, normalizeScreenplayText } from './canvasTextOutputValidation'
+import { getCanvasPipelineInputType, getOp } from './canvasPipelineOps'
 import type { CanvasAsset, CanvasNode, CanvasNodeData, CanvasSnapshot } from './canvas.types'
 
 type JSONSchema = Record<string, unknown>
 
 type SpecializedCanvasWorkspace = {
   createTextNode: (input: { text: string; x: number; y: number }) => Promise<CanvasNode | undefined>
-  insertAsset: (input: { assetId: string; boardId: string; x: number; y: number }) => Promise<CanvasNode | null>
+  insertAsset: (input: {
+    assetId: string
+    boardId: string
+    x: number
+    y: number
+  }) => Promise<CanvasNode | null>
   createFilmAsset: (input: CreateFilmAssetInput) => Promise<CanvasAsset>
   updateFilmAsset: (assetId: string, patch: Record<string, unknown>) => Promise<void>
   updateNodeData: (nodeId: string, data: Partial<CanvasNodeData>) => Promise<void>
   patchNodes: (nodeIds: string[], patch: Partial<CanvasNode>) => Promise<void>
   connectNodes: (input: { sourceNodeId: string; targetNodeId: string }) => Promise<void>
-  createShotGroup: (input: { name: string; description?: string }) => Promise<{ id: string; name: string; segments: ShotSegment[] }>
-  createShotSegment: (groupId: string, input: Partial<ShotSegment> & { title: string }) => Promise<ShotSegment | void>
+  createShotGroup: (input: {
+    name: string
+    description?: string
+  }) => Promise<{ id: string; name: string; segments: ShotSegment[] }>
+  createShotSegment: (
+    groupId: string,
+    input: Partial<ShotSegment> & { title: string },
+  ) => Promise<ShotSegment | void>
   createOperationNode: (input: {
     boardId: string
     operation: import('./canvas.types').CanvasOperationType
@@ -61,10 +78,14 @@ function activeBoardId(snapshot: CanvasSnapshot): string {
 
 function placement(snapshot: CanvasSnapshot, x?: number, y?: number): { x: number; y: number } {
   if (x != null && y != null) return { x, y }
-  const visible = snapshot.nodes.filter((node) => !node.hidden && node.boardId === activeBoardId(snapshot))
+  const visible = snapshot.nodes.filter(
+    (node) => !node.hidden && node.boardId === activeBoardId(snapshot),
+  )
   return {
     x: visible.length ? Math.max(...visible.map((node) => node.x + node.width)) + 40 : 80,
-    y: visible.length ? Math.round(visible.reduce((sum, node) => sum + node.y, 0) / visible.length) : 80,
+    y: visible.length
+      ? Math.round(visible.reduce((sum, node) => sum + node.y, 0) / visible.length)
+      : 80,
   }
 }
 
@@ -96,7 +117,8 @@ async function upsertFilmAsset(
   const existing = snapshot.assets.find(
     (asset) => asset.metadata?.kind === input.kind && asset.title?.trim() === name,
   )
-  if (!existing) return { asset: await ctx.workspace.createFilmAsset({ ...input, name }), reused: false }
+  if (!existing)
+    return { asset: await ctx.workspace.createFilmAsset({ ...input, name }), reused: false }
   await ctx.workspace.updateFilmAsset(existing.id, {
     title: name,
     contentText: input.text ?? existing.contentText ?? '',
@@ -216,7 +238,10 @@ function segmentDraft(segment: ShotSegment): Partial<ShotSegment> & { title: str
   return draft
 }
 
-async function createStoryboardNode(ctx: SpecializedCanvasToolContext, input: any): Promise<unknown> {
+async function createStoryboardNode(
+  ctx: SpecializedCanvasToolContext,
+  input: any,
+): Promise<unknown> {
   const snapshot = requireSnapshot(ctx)
   const sources = sourceNodes(snapshot, input.sourceNodeIds)
   const rows = parseShotTable(JSON.stringify({ shots: input.shots ?? [] }))
@@ -297,7 +322,10 @@ async function createShotNode(ctx: SpecializedCanvasToolContext, input: any): Pr
   const created = await ctx.workspace.createShotSegment(input.groupId, segmentDraft(prepared))
   if (!created?.id) throw new Error('分镜片段创建后未返回 segment id')
   const pos = placement(snapshot, input.x, input.y)
-  const node = await ctx.workspace.createTextNode({ text: formatStoryboardRowsAsMarkdown([row]), ...pos })
+  const node = await ctx.workspace.createTextNode({
+    text: formatStoryboardRowsAsMarkdown([row]),
+    ...pos,
+  })
   if (!node) throw new Error('分镜片段已创建，但单镜节点插入失败')
   await ctx.workspace.updateNodeData(node.id, {
     text: formatStoryboardRowsAsMarkdown([row]),
@@ -366,13 +394,23 @@ const pipelineOperationTool: SpecializedCanvasToolDescriptor = {
     const snapshot = requireSnapshot(ctx)
     const sourceNode = snapshot.nodes.find((node) => node.id === input.sourceNodeId && !node.hidden)
     if (!sourceNode) throw new Error(`未找到来源节点 ${input.sourceNodeId}`)
+    const action = getOp(String(input.actionId))
+    if (!action) throw new Error(`不支持的画布流水线动作：${input.actionId}`)
+    const inputType = getCanvasPipelineInputType(sourceNode)
+    if (!inputType || !action.inputTypes.includes(inputType)) {
+      throw new Error(
+        `「${action.label}」不支持${inputType ?? '当前'}输入，仅支持${action.inputTypes.join('、')}`,
+      )
+    }
     const sourceText =
       sourceNode.data.text?.trim() ||
       (sourceNode.assetId
         ? snapshot.assets.find((asset) => asset.id === sourceNode.assetId)?.contentText?.trim()
         : '') ||
       ''
-    if (!sourceText) throw new Error('来源节点没有可用文本内容')
+    if (inputType === 'text' || inputType === 'prompt') {
+      if (!sourceText) throw new Error('来源节点没有可用文本内容')
+    }
     const draft = buildCanvasPipelineOperationDraft({
       actionId: input.actionId,
       sourceText,
@@ -398,7 +436,12 @@ const pipelineOperationTool: SpecializedCanvasToolDescriptor = {
 }
 
 export const SPECIALIZED_CANVAS_NODE_TOOLS: ReadonlyArray<SpecializedCanvasToolDescriptor> = [
-  contentTool('canvas_create_chapter_node', '按画布现有章节格式创建章节资产和节点。', 'chapter', 'chapter'),
+  contentTool(
+    'canvas_create_chapter_node',
+    '按画布现有章节格式创建章节资产和节点。',
+    'chapter',
+    'chapter',
+  ),
   contentTool(
     'canvas_create_screenplay_node',
     '按画布现有场次剧本格式创建或更新剧本资产和节点；正文非空即可，缺少场次标题时自动补入可编辑的空字段首场。',
@@ -426,14 +469,29 @@ export const SPECIALIZED_CANVAS_NODE_TOOLS: ReadonlyArray<SpecializedCanvasToolD
   mediaTool('canvas_insert_design_card_node', '把现有图片节点/资产标记为设定图卡。', 'image', {
     pipelineRole: 'design_card',
   }),
-  mediaTool('canvas_insert_keyframe_node', '把现有图片节点/资产标记为分镜关键帧并写入回链。', 'image', {
-    pipelineRole: 'keyframe',
-  }),
-  mediaTool('canvas_insert_clip_node', '把现有视频节点/资产标记为视频片段并写入分镜回链。', 'video', {
-    pipelineRole: 'clip',
-  }),
-  mediaTool('canvas_insert_panorama_node', '把现有图片节点/资产标记为 360 等距柱状投影全景图。', 'image', {
-    panorama360: { projection: 'equirectangular' },
-  }),
+  mediaTool(
+    'canvas_insert_keyframe_node',
+    '把现有图片节点/资产标记为分镜关键帧并写入回链。',
+    'image',
+    {
+      pipelineRole: 'keyframe',
+    },
+  ),
+  mediaTool(
+    'canvas_insert_clip_node',
+    '把现有视频节点/资产标记为视频片段并写入分镜回链。',
+    'video',
+    {
+      pipelineRole: 'clip',
+    },
+  ),
+  mediaTool(
+    'canvas_insert_panorama_node',
+    '把现有图片节点/资产标记为 360 等距柱状投影全景图。',
+    'image',
+    {
+      panorama360: { projection: 'equirectangular' },
+    },
+  ),
   pipelineOperationTool,
 ]
