@@ -1253,7 +1253,7 @@ describe('canvas operation inheritance', () => {
     if (!operationNode?.taskId) throw new Error('Operation node was not created')
     expect(operationNode.data.promptDocument?.blocks).toEqual([])
     expect(operationNode.data.prompt).toBeUndefined()
-    expect(operationNode.data.systemPrompt).toBeTruthy()
+    expect(operationNode.data.systemPrompt).toBeUndefined()
 
     const connected = await canvasApi.connectNodes('project-1', {
       sourceNodeId: 'source-text',
@@ -2225,8 +2225,7 @@ describe('canvas operation inheritance', () => {
     const operationNode = snapshot.nodes.find((node) => node.type === 'text_generate')
     const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
     expect(pendingTask?.prompt).toBeNull()
-    expect(pendingTask?.systemPrompt).not.toContain('请输出三段式文案结构')
-    expect(pendingTask?.systemPrompt).toContain('请基于输入内容生成结构清晰、信息完整的文本。')
+    expect(pendingTask?.systemPrompt).toBeUndefined()
     expect(pendingTask?.agentId).toBe('agent:copywriter')
     expect(pendingTask?.providerProfileId).toBe('provider:text')
     expect(pendingTask?.modelId).toBe('gpt-5')

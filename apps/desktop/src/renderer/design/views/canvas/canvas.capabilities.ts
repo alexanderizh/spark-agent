@@ -7,6 +7,15 @@ import type {
 
 export const CANVAS_CAPABILITIES: CanvasCapability[] = [
   {
+    id: 'canvas.text-generate',
+    label: '文本生文',
+    operation: 'text_generate',
+    inputTypes: ['text', 'prompt'],
+    outputTypes: ['text'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
     id: 'canvas.image-prompt-reverse',
     label: '图片反推',
     operation: 'image_prompt_reverse',
@@ -77,15 +86,6 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     operation: 'panorama_360',
     inputTypes: ['text', 'prompt', 'image'],
     outputTypes: ['image'],
-    enabled: true,
-    paramsSchema: {},
-  },
-  {
-    id: 'canvas.text-generate',
-    label: '文本生成',
-    operation: 'text_generate',
-    inputTypes: ['text', 'prompt'],
-    outputTypes: ['text'],
     enabled: true,
     paramsSchema: {},
   },
