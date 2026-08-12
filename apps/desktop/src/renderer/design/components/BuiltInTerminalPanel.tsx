@@ -336,8 +336,10 @@ function useResolvedTheme(): 'light' | 'dark' {
 }
 
 const RESIZE_DEBOUNCE_MS = 80
-const TERMINAL_FONT_SIZE = 12
-const TERMINAL_LETTER_SPACING = 0.1
+const TERMINAL_FONT_SIZE = 14
+// xterm rounds this value when calculating the cell width. Sub-pixel positive
+// values such as 0.1 therefore render almost the same as the default 0.
+const TERMINAL_LETTER_SPACING = -1
 const TERMINAL_LINE_HEIGHT = 1.2
 
 function TerminalBody({ tab, sessionId, isActive, workspace: _workspace }: TerminalBodyProps) {
