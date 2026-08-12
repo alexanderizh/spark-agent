@@ -1,0 +1,13 @@
+.team-p1-panel { margin-top: 12px; padding: 14px; border: 1px solid var(--ant-color-border-secondary); border-radius: 12px; background: var(--ant-color-bg-container); }
+.team-p1-panel header, .team-p1-panel article, .team-p1-panel__columns { display: flex; gap: 10px; align-items: center; }
+.team-p1-panel header { justify-content: space-between; }
+.team-p1-panel__columns { align-items: flex-start; margin-top: 10px; }
+.team-p1-panel__columns > div { flex: 1; min-width: 0; }
+.team-p1-panel article { flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--ant-color-border-secondary); }
+.team-p1-panel article span { flex: 1 1 100%; color: var(--ant-color-text-secondary); font-size: 12px; }
+.team-p1-panel button { cursor: pointer; }
+
+@media (max-width: 900px) {
+  .team-p1-panel__columns { flex-direction: column; }
+  .team-p1-panel__columns > div { width: 100%; }
+}

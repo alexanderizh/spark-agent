@@ -23,6 +23,19 @@ export { segmentCjk, buildFtsMatchQuery } from './segment-cjk.js'
 
 // Repository（向后兼容）
 export { BaseRepository } from './repository.js'
+export { RoomLedgerService, RoomLedgerConflictError } from './room-ledger.service.js'
+export type { RoomLedgerMutationInput } from './room-ledger.service.js'
+export { TeamHandoffService, TeamHandoffConflictError, TEAM_HANDOFF_MAX_PER_DISCUSSION } from './team-handoff.service.js'
+export type { TeamHandoffRecord, TeamHandoffEvent, TeamHandoffStatus, TeamHandoffSensitivity, TeamHandoffOperation } from './team-handoff.service.js'
+export { SteeringGateService, SteeringGateConflictError, STEERING_GATE_MAX_PER_DISCUSSION } from './steering-gate.service.js'
+export type { SteeringGateRecord, SteeringGateEvent, SteeringGateStatus, SteeringGateImpact, SteeringTargetType, SteeringGateOperation, SteeringCapability } from './steering-gate.service.js'
+export type {
+  RoomLedgerRecord,
+  RoomLedgerStatus,
+  RoomLedgerAuthority,
+  RoomLedgerOperation,
+  RoomLedgerEvent,
+} from './repositories/room-ledger.repository.js'
 
 // 领域 Repository
 export {

@@ -68,6 +68,8 @@ import type { SidebarOrderIpcChannelMap } from '../sidebar-order.js'
 import type { AppUnreadBadgeIpcChannelMap } from '../app-unread-badge.js'
 import type { PluginIpcChannelMap } from '../plugin.js'
 import type { PluginRuntimeIpcChannelMap } from '../plugin-runtime.js'
+import type { OutcomeRoomIpcChannelMap } from '../outcome-room.js'
+import type { TeamP1IpcChannelMap } from '../team-p1.js'
 import type {
   ApplicationSnapshotIpcChannelMap,
   ComputerUseIpcChannelMap,
@@ -5538,7 +5540,9 @@ export interface IpcChannelMap
     AppUnreadBadgeIpcChannelMap,
     SidebarOrderIpcChannelMap,
     PluginIpcChannelMap,
-    PluginRuntimeIpcChannelMap {
+    PluginRuntimeIpcChannelMap,
+    OutcomeRoomIpcChannelMap,
+    TeamP1IpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]

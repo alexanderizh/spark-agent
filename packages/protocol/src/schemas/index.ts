@@ -34,6 +34,8 @@ import {
 } from '../computer-use/index.js'
 import { PluginIpcSchemaRegistry } from '../plugin.js'
 import { PluginRuntimeIpcSchemaRegistry } from '../plugin-runtime.js'
+import { OutcomeRoomIpcSchemaRegistry } from '../outcome-room.js'
+import { TeamP1IpcSchemaRegistry } from '../team-p1.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -890,6 +892,8 @@ export const IpcSchemaRegistry = {
   ...VideoChannelTasksIpcSchemaRegistry,
   ...PluginIpcSchemaRegistry,
   ...PluginRuntimeIpcSchemaRegistry,
+  ...OutcomeRoomIpcSchemaRegistry,
+  ...TeamP1IpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,
