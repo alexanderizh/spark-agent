@@ -84,6 +84,11 @@ export function canvasFlowNodeDataEqual(
 ): boolean {
   if (prev.actions !== next.actions) return false
   if (prev.selectedNodeCount !== next.selectedNodeCount) return false
+  if (
+    prev.assetKinds?.length !== next.assetKinds?.length ||
+    prev.assetKinds?.some((kind, index) => kind !== next.assetKinds?.[index])
+  )
+    return false
   if (prev.lineage !== next.lineage) return false
   if (prev.operationRunsFingerprint !== next.operationRunsFingerprint) return false
   if (prev.isGeneratedOutput !== next.isGeneratedOutput) return false

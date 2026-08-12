@@ -74,6 +74,19 @@ describe('getCanvasAgentAvailableActions', () => {
     })
   })
 
+  it('普通文本和无语义图片按媒体类型发现专用动作', () => {
+    const textActions = getCanvasAgentAvailableActions(node({ type: 'text' }))
+    const imageActions = getCanvasAgentAvailableActions(
+      node({ type: 'image', data: { url: 'reference.png' } }),
+    )
+
+    expect(textActions.map((action) => action.id)).toContain('screenplay.extract_characters')
+    expect(textActions.map((action) => action.id)).toContain('scene.scene_image')
+    expect(imageActions.map((action) => action.id)).toContain('character.three_view')
+    expect(imageActions.map((action) => action.id)).toContain('keyframe.to_video')
+    expect(imageActions.map((action) => action.id)).not.toContain('screenplay.extract_characters')
+  })
+
   it('为图片节点公开图片右键能力并标记交互方式', () => {
     const actions = getCanvasAgentAvailableActions(node({ type: 'image', data: { url: 'x.png' } }))
 

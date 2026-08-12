@@ -83,37 +83,40 @@ function fakeContext(snapshot = baseSnapshot()) {
     snapshot.assets.push(asset)
     return asset
   })
-  const insertAsset = vi.fn(async ({ assetId, x, y }: { assetId: string; x: number; y: number }) => {
-    const asset = snapshot.assets.find((item) => item.id === assetId)!
-    const node: CanvasNode = {
-      id: `node-${++nodeSequence}`,
-      projectId: 'project-1',
-      boardId: 'board-1',
-      userId: 0,
-      type: 'text',
-      title: asset.title ?? null,
-      assetId,
-      x,
-      y,
-      width: 320,
-      height: 200,
-      rotation: 0,
-      zIndex: 1,
-      locked: false,
-      hidden: false,
-      data: { text: asset.contentText ?? '' },
-      createdAt: at,
-      updatedAt: at,
-    }
-    snapshot.nodes.push(node)
-    return node
-  })
+  const insertAsset = vi.fn(
+    async ({ assetId, x, y }: { assetId: string; x: number; y: number }) => {
+      const asset = snapshot.assets.find((item) => item.id === assetId)!
+      const node: CanvasNode = {
+        id: `node-${++nodeSequence}`,
+        projectId: 'project-1',
+        boardId: 'board-1',
+        userId: 0,
+        type: 'text',
+        title: asset.title ?? null,
+        assetId,
+        x,
+        y,
+        width: 320,
+        height: 200,
+        rotation: 0,
+        zIndex: 1,
+        locked: false,
+        hidden: false,
+        data: { text: asset.contentText ?? '' },
+        createdAt: at,
+        updatedAt: at,
+      }
+      snapshot.nodes.push(node)
+      return node
+    },
+  )
   const updateNodeData = vi.fn(async (nodeId: string, data: Record<string, unknown>) => {
     const node = snapshot.nodes.find((item) => item.id === nodeId)!
     node.data = { ...node.data, ...data }
   })
   const patchNodes = vi.fn(async (nodeIds: string[], patch: Partial<CanvasNode>) => {
-    for (const node of snapshot.nodes.filter((item) => nodeIds.includes(item.id))) Object.assign(node, patch)
+    for (const node of snapshot.nodes.filter((item) => nodeIds.includes(item.id)))
+      Object.assign(node, patch)
   })
   const createTextNode = vi.fn(async ({ text, x, y }: { text: string; x: number; y: number }) => {
     const node: CanvasNode = {
@@ -168,7 +171,14 @@ function fakeContext(snapshot = baseSnapshot()) {
         createOperationNode,
       },
     },
-    spies: { createFilmAsset, insertAsset, updateNodeData, createShotGroup, createShotSegment, createOperationNode },
+    spies: {
+      createFilmAsset,
+      insertAsset,
+      updateNodeData,
+      createShotGroup,
+      createShotSegment,
+      createOperationNode,
+    },
     snapshot,
   }
 }
@@ -257,7 +267,11 @@ describe('specialized canvas node tools', () => {
       ],
     })
 
-    expect(result).toMatchObject({ nodeId: 'node-1', groupIds: ['group-1'], segmentIds: ['segment-1'] })
+    expect(result).toMatchObject({
+      nodeId: 'node-1',
+      groupIds: ['group-1'],
+      segmentIds: ['segment-1'],
+    })
     expect(spies.createShotSegment).toHaveBeenCalledWith(
       'group-1',
       expect.objectContaining({ title: '推门进入', durationSec: 4 }),
@@ -283,6 +297,48 @@ describe('specialized canvas node tools', () => {
     )
     expect(spies.createOperationNode.mock.calls[0]?.[0]?.systemPrompt).toContain(
       '只输出一个完整 JSON 对象',
+    )
+  })
+
+  it('creates a specialized image operation from ordinary text without a semantic role', async () => {
+    const snapshot = baseSnapshot()
+    snapshot.nodes[0] = { ...snapshot.nodes[0]!, data: { text: '雨夜茶馆，木质柜台与暖色吊灯。' } }
+    const { context, spies } = fakeContext(snapshot)
+
+    await tool('canvas_create_pipeline_operation_node').handler(context, {
+      actionId: 'scene.scene_image',
+      sourceNodeId: 'source-1',
+    })
+
+    expect(spies.createOperationNode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'text_to_image',
+        inputNodeIds: ['source-1'],
+        outputPipelineRole: 'design_card',
+      }),
+    )
+  })
+
+  it('allows an image input for keyframe generation without a shot role', async () => {
+    const snapshot = baseSnapshot()
+    snapshot.nodes[0] = {
+      ...snapshot.nodes[0]!,
+      type: 'image',
+      data: { url: 'frame.png' },
+    }
+    const { context, spies } = fakeContext(snapshot)
+
+    await tool('canvas_create_pipeline_operation_node').handler(context, {
+      actionId: 'screenplay.storyboard_grid',
+      sourceNodeId: 'source-1',
+    })
+
+    expect(spies.createOperationNode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'storyboard_grid',
+        inputNodeIds: ['source-1'],
+        outputPipelineRole: 'keyframe',
+      }),
     )
   })
 

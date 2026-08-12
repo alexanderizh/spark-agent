@@ -7,12 +7,18 @@
  * 纯逻辑、无 DOM/IPC，便于单测。
  */
 
-import type { CanvasOperationType, CanvasNodeType, CanvasPipelineRole } from './canvas.types'
+import type { CanvasNodeType, CanvasOperationType, CanvasPipelineRole } from './canvas.types'
 import { buildAgentPresetPrompt } from './canvasAgentPromptPresets'
 import { buildEntityExtractionPrompt, type ExtractEntityKind } from './canvasEntityExtract'
 
 /** op 类别：文本生成 / 实体抽取(一对多) / 图像生成 / 视频生成 */
 export type PipelineOpKind = 'text' | 'extract' | 'image' | 'video'
+
+/**
+ * 专用流水线动作真正关心的是输入媒体，而不是输入节点在影视流水线里的语义角色。
+ * 例如普通文本、章节文本和剧本文本都可以作为分镜脚本的输入。
+ */
+export type CanvasPipelineInputType = 'text' | 'prompt' | 'image' | 'video' | 'audio'
 
 export const CANVAS_PIPELINE_MENU_GROUPS: ReadonlyArray<{
   id: PipelineOpKind
@@ -34,25 +40,20 @@ export type CanvasPipelineOp = {
   kind: PipelineOpKind
   /** 产出节点的流水线角色 */
   produces: CanvasPipelineRole
-  /** 适用的源流水线角色 */
+  /** 适用的源流水线角色（仅用于推荐顺序和角色化展示，不是输入校验） */
   appliesTo: CanvasPipelineRole[]
-  /** 是否也适用于「无 pipelineRole 的纯文本/Prompt 节点」（让剧本文本节点右键即可用） */
+  /** @deprecated 兼容旧目录数据；节点动作发现改用 inputTypes。 */
   appliesToText?: boolean
+  /** 真正的输入约束，只按内容媒体类型筛选。 */
+  inputTypes: CanvasPipelineInputType[]
   /** 落为任务时的 operation */
   baseOperation?: CanvasOperationType
   /** 抽取类 op 的实体种类 */
   extractKind?: ExtractEntityKind
 }
 
-/** 可直接从同类型影视资产卡片继续创建的图像任务类型。 */
+/** 可直接从同类型影视资产卡片继续创建的图像任务类型（保留作为旧调用的兼容类型）。 */
 export type CanvasPipelineAssetKind = 'character' | 'scene' | 'prop' | 'effect'
-
-const ASSET_KIND_BY_ACTION: Partial<Record<string, CanvasPipelineAssetKind>> = {
-  'character.three_view': 'character',
-  'scene.scene_image': 'scene',
-  'prop.prop_image': 'prop',
-  'effect.effect_image': 'effect',
-}
 
 export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   // 章节（也适用于任意文本节点：剧本/普通文本都可发起剧本化改写）
@@ -64,6 +65,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     produces: 'screenplay',
     appliesTo: ['chapter'],
     appliesToText: true,
+    inputTypes: ['text', 'prompt'],
     baseOperation: 'text_rewrite',
   },
   // 剧本（也适用于任意文本节点）
@@ -75,6 +77,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     produces: 'shot',
     appliesTo: ['screenplay'],
     appliesToText: true,
+    inputTypes: ['text', 'prompt'],
     baseOperation: 'text_generate',
   },
   {
@@ -85,6 +88,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     produces: 'character',
     appliesTo: ['screenplay'],
     appliesToText: true,
+    inputTypes: ['text', 'prompt'],
     extractKind: 'character',
   },
   {
@@ -95,6 +99,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     produces: 'scene',
     appliesTo: ['screenplay'],
     appliesToText: true,
+    inputTypes: ['text', 'prompt'],
     extractKind: 'scene',
   },
   {
@@ -105,6 +110,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     produces: 'prop',
     appliesTo: ['screenplay'],
     appliesToText: true,
+    inputTypes: ['text', 'prompt'],
     extractKind: 'prop',
   },
   {
@@ -115,6 +121,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     produces: 'effect',
     appliesTo: ['screenplay'],
     appliesToText: true,
+    inputTypes: ['text', 'prompt'],
     extractKind: 'effect',
   },
   {
@@ -125,7 +132,8 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     produces: 'keyframe',
     appliesTo: ['screenplay'],
     appliesToText: true,
-    baseOperation: 'text_to_image',
+    inputTypes: ['text', 'prompt', 'image'],
+    baseOperation: 'storyboard_grid',
   },
   // 角色 / 场景 / 道具 / 特效设计图
   {
@@ -136,6 +144,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     produces: 'design_card',
     appliesTo: ['character'],
     appliesToText: true,
+    inputTypes: ['text', 'prompt', 'image'],
     baseOperation: 'text_to_image',
   },
   {
@@ -145,6 +154,8 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     kind: 'image',
     produces: 'design_card',
     appliesTo: ['scene'],
+    appliesToText: true,
+    inputTypes: ['text', 'prompt', 'image'],
     baseOperation: 'text_to_image',
   },
   {
@@ -154,6 +165,8 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     kind: 'image',
     produces: 'design_card',
     appliesTo: ['prop'],
+    appliesToText: true,
+    inputTypes: ['text', 'prompt', 'image'],
     baseOperation: 'text_to_image',
   },
   {
@@ -163,6 +176,8 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     kind: 'image',
     produces: 'design_card',
     appliesTo: ['effect'],
+    appliesToText: true,
+    inputTypes: ['text', 'prompt', 'image'],
     baseOperation: 'text_to_image',
   },
   // 分镜 / 关键帧
@@ -173,7 +188,8 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     kind: 'image',
     produces: 'keyframe',
     appliesTo: ['shot'],
-    baseOperation: 'text_to_image',
+    inputTypes: ['text', 'prompt', 'image'],
+    baseOperation: 'storyboard_grid',
   },
   {
     id: 'keyframe.to_video',
@@ -182,7 +198,30 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     kind: 'video',
     produces: 'clip',
     appliesTo: ['keyframe'],
+    inputTypes: ['image'],
     baseOperation: 'image_to_video',
+  },
+  {
+    id: 'screenplay.split_episodes',
+    label: '按剧情分集',
+    icon: 'FileText',
+    kind: 'text',
+    produces: 'screenplay',
+    appliesTo: ['screenplay'],
+    appliesToText: true,
+    inputTypes: ['text', 'prompt'],
+    baseOperation: 'text_generate',
+  },
+  {
+    id: 'scene.panorama_360',
+    label: '生成重点场景 360 全景图',
+    icon: 'Globe',
+    kind: 'image',
+    produces: 'design_card',
+    appliesTo: ['scene'],
+    appliesToText: true,
+    inputTypes: ['text', 'prompt', 'image'],
+    baseOperation: 'panorama_360',
   },
 ]
 
@@ -206,37 +245,89 @@ export function getOpsForRole(role: CanvasPipelineRole | undefined): CanvasPipel
   return CANVAS_PIPELINE_OPS.filter((op) => op.appliesTo.includes(role))
 }
 
+const OPERATION_OUTPUT_INPUT_TYPE: Partial<Record<CanvasNodeType, CanvasPipelineInputType>> = {
+  text_to_image: 'image',
+  image_to_image: 'image',
+  image_edit: 'image',
+  image_compose: 'image',
+  storyboard_grid: 'image',
+  panorama_360: 'image',
+  text_generate: 'text',
+  text_rewrite: 'text',
+  prompt_optimize: 'prompt',
+  image_prompt_reverse: 'text',
+  text_to_video: 'video',
+  image_to_video: 'video',
+  video_edit: 'video',
+  video_extend: 'video',
+  video_depth_map: 'video',
+  extract_audio: 'audio',
+  text_to_audio: 'audio',
+  audio_transcribe: 'text',
+}
+
+/** 读取节点实际承载的输入媒体类型；不读取 pipelineRole。 */
+export function getCanvasPipelineInputType(node: {
+  type: CanvasNodeType
+  data?: {
+    pipelineRole?: CanvasPipelineRole
+    operation?: CanvasOperationType
+    text?: string
+    url?: string
+    mimeType?: string
+  }
+}): CanvasPipelineInputType | undefined {
+  if (node.type === 'text') return 'text'
+  if (node.type === 'prompt') return 'prompt'
+  if (node.type === 'image' || node.type === 'panorama_360') return 'image'
+  if (node.type === 'video') return 'video'
+  if (node.type === 'audio') return 'audio'
+  if (node.type === 'group') return 'text'
+  const operation = node.data?.operation ?? node.type
+  const outputType = OPERATION_OUTPUT_INPUT_TYPE[operation]
+  if (outputType) return outputType
+  if (node.data?.mimeType?.startsWith('image/')) return 'image'
+  if (node.data?.mimeType?.startsWith('video/')) return 'video'
+  if (node.data?.mimeType?.startsWith('audio/')) return 'audio'
+  if (node.data?.text?.trim()) return 'text'
+  if (node.data?.url) return 'image'
+  return undefined
+}
+
 /**
  * 某节点可执行的 op。
- * 文本/Prompt/组节点（chapter / screenplay / 普通文本 / 含文本的组）共享同一份「全量文本菜单」：
- * 合并「按角色匹配」与「appliesToText」两路，按 CANVAS_PIPELINE_OPS 原始顺序返回。
- * 这样章节、剧本、普通文本节点，以及包含文本的组节点，都能使用：转剧本 / 生成分镜脚本 / 提取角色 / 提取场景 / 生成分镜关键帧图 / 生成角色身份板；
- * 关联影视资产的其他节点还可按资产类型获得对应的角色/场景/道具/特效出图入口。
+ * 节点动作发现只按节点实际输入媒体类型筛选；pipelineRole 不参与门控。
+ * appliesTo 仍由 getOpsForRole 提供角色化推荐和兼容查询，但不能阻止普通文本、图片或其他
+ * 合法媒体输入使用同一个专用动作。
  */
 export function getOpsForNode(
   node: {
     type: CanvasNodeType
-    data?: { pipelineRole?: CanvasPipelineRole }
+    data?: {
+      pipelineRole?: CanvasPipelineRole
+      operation?: CanvasOperationType
+      text?: string
+      url?: string
+      mimeType?: string
+    }
   },
-  options: { assetKinds?: readonly CanvasPipelineAssetKind[] } = {},
+  options: {
+    assetKinds?: readonly CanvasPipelineAssetKind[]
+    inputTypes?: readonly CanvasPipelineInputType[]
+  } = {},
 ): CanvasPipelineOp[] {
-  const role = node.data?.pipelineRole
-  const isTextNode = node.type === 'text' || node.type === 'prompt' || node.type === 'group'
-  const assetKinds = options.assetKinds ?? []
-  const matchesAssetKind = (op: CanvasPipelineOp) => {
-    const assetKind = ASSET_KIND_BY_ACTION[op.id]
-    return assetKind != null && assetKinds.includes(assetKind)
-  }
-  if (!isTextNode) {
-    return CANVAS_PIPELINE_OPS.filter(
-      (op) => (role != null && op.appliesTo.includes(role)) || matchesAssetKind(op),
-    )
-  }
-  return CANVAS_PIPELINE_OPS.filter((op) => {
-    if (role && op.appliesTo.includes(role)) return true
-    if (matchesAssetKind(op)) return true
-    return Boolean(op.appliesToText)
-  })
+  // assetKinds 仅保留在 API 中兼容旧调用；动作是否可用不再由影视资产语义决定。
+  void options.assetKinds
+  const inputTypes =
+    options.inputTypes ??
+    (() => {
+      const inputType = getCanvasPipelineInputType(node)
+      return inputType ? [inputType] : []
+    })()
+  if (inputTypes.length === 0) return []
+  return CANVAS_PIPELINE_OPS.filter((op) =>
+    op.inputTypes.some((inputType) => inputTypes.includes(inputType)),
+  )
 }
 
 /** 文本/抽取类 op 的提示词（图像/视频类返回空，由 workspace 用各自资产构建） */
