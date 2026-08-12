@@ -129,6 +129,7 @@ import { useAppControlComposerPrefill } from './composerAppControl'
 import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
+import { sortByManualOrderWithinPinnedSections } from '../../sidebar-manual-order'
 import {
   settleOptimisticUserSend,
   startOptimisticUserSend,
@@ -4198,10 +4199,20 @@ function ProjectPicker({
   const rootRef = useRef<HTMLDivElement | null>(null)
   useCloseOnOutside(rootRef, () => setOpen(false), open)
 
-  // 全部普通项目：按更新时间倒序，排除临时项目、画布项目与 worktree。
+  // 与会话栏（SidebarSessionList）保持一致的项目排序：
+  //   1. listSelectableWorkspaces 先过滤临时/画布/worktree 项目，按 updatedAt 倒序作为 fallback；
+  //   2. 再套 sidebarOrder.projectIds（用户在侧栏手动拖出的顺序）+ 置顶段（pinnedAt 非空）前置。
+  // 这样置顶项目恒定居首，手动顺序也与侧栏一致。
+  const { sidebarOrder } = useSessionSidebar()
   const projects = useMemo(
-    () => listSelectableWorkspaces(workspaces, NO_PROJECT_WORKSPACE_NAME),
-    [workspaces],
+    () =>
+      sortByManualOrderWithinPinnedSections(
+        listSelectableWorkspaces(workspaces, NO_PROJECT_WORKSPACE_NAME),
+        sidebarOrder.projectIds,
+        (workspace) => workspace.id,
+        (workspace) => workspace.pinnedAt != null,
+      ),
+    [workspaces, sidebarOrder.projectIds],
   )
 
   const noProjectWorkspace = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null
