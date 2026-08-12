@@ -15,7 +15,7 @@ const Body = () => (
         <tr><th>字段</th><th>类型</th><th>说明</th></tr>
       </thead>
       <tbody>
-        <tr><td>mediaProvider</td><td>枚举</td><td>平台 / 适配器，如 apimart / xai / bailian / openai-compatible / openai-images / google-generative-ai / volcengine-ark / kling / pixverse / wan / hailuo / happyhorse / omni / custom</td></tr>
+        <tr><td>mediaProvider</td><td>枚举</td><td>平台 / 适配器，如 apimart / xai / bailian / openai-compatible / openai-images / google-generative-ai / volcengine-ark / volcengine-speech / kling / pixverse / wan / hailuo / happyhorse / omni / minimax-hailuo / custom</td></tr>
         <tr><td>mediaApiType</td><td>sync / async / auto</td><td>同步直出 / 异步轮询 / 自动适配</td></tr>
         <tr><td>mediaCapabilities</td><td>MediaCapabilityId[]</td><td>声明的能力（image.generate、audio.speech、video.generate …）</td></tr>
         <tr><td>mediaDefaults</td><td>对象</td><td>默认 size / voice / aspect / 轮询间隔 / 超时</td></tr>
@@ -60,7 +60,7 @@ apimart-audio-whisper      — APIMart Whisper
 apimart-audio-tts          — APIMart TTS
 apimart-video-veo3         — APIMart VEO 3.x 系列 (veo3 / veo3.1-fast / veo3.1-quality / veo3.1-lite)
 apimart-video-sora2        — APIMart Sora 2 / Sora 2 Pro
-apimart-video-collection   — APIMart 综合（Kling 2.6/3.0/3.0 Turbo/v3 Omni/O1、Vidu Q3、Wan 2.5/2.6/2.7+R2V+VideoEdit、HappyHorse 1.0/1.1、SkyReels V4 fast/std、Pixverse v6、Gemini Omni Flash、Omni-Flash-Ext、MiniMax Hailuo 02/2.3、Grok Imagine 1.5 Video、Doubao Seedance 1.5/2.0 系列）
+apimart-video-collection   — APIMart 综合（Kling 2.6/3.0/3.0 Turbo/v3 Omni/O1、Vidu Q3、Wan 2.5/2.6/2.7+R2V+VideoEdit、Wan 3.0、HappyHorse 1.0/1.1、SkyReels V4 fast/std、Pixverse v6、Gemini Omni Flash、Omni-Flash-Ext、MiniMax Hailuo 02/2.3、MiniMax-H3、Grok Imagine 1.5 Video、Doubao Seedance 1.5/2.0/2.5 系列、FLUX 3 Video）
 xai-imagine-image          — xAI
 xai-imagine-video          — xAI (async, generate/i2v/edit/extend)
 xai-tts                    — xAI
@@ -69,6 +69,8 @@ bailian-video-happyhorse   — 阿里云百炼 HappyHorse
 bailian-video-wan-i2v      — 阿里云百炼 Wan
 bailian-audio-tts          — 阿里云百炼
 volcengine-seedance-video  — 火山方舟 (async)
+volcengine-speech-tts      — 火山豆包语音 seed-tts-2.0（单向流式 TTS，独立渠道）
+volcengine-speech-audio    — 火山豆包语音 seed-audio-1.0（音频生成，独立渠道）
 kling-video                — Kling 可灵视频 (3.0 / 2.x, async)
 hailuo-video               — Hailuo 2.3 视频 (async)`}
     </pre>
@@ -87,10 +89,11 @@ hailuo-video               — Hailuo 2.3 视频 (async)`}
     </ul>
     <p>当前内置参数覆盖：</p>
     <ul>
-      <li><strong>APIMart</strong>：GPT Image 1 / 1.5 / 2 / Wan 2.7 Image / Qwen Image 2.0 + Pro / Seedream 4.0 / 4.5 / 5.0 Lite / 5.0 Pro / Gemini Nano Banana 2/Pro/官方 / Imagen 4.0 / Z-Image-Turbo / Grok Imagine 1.5 Image / Sora 2 + Pro / Veo 3 + 3.1 fast/quality/lite / Kling v2.6 / v3 / v3 Omni / 3.0 Turbo / O1 / Vidu Q3 pro/turbo/mix/standard / Wan 2.5/2.6/2.7+R2V+VideoEdit / HappyHorse 1.0/1.1 / SkyReels V4 fast/std / Pixverse v6 / Gemini Omni Flash / Omni-Flash-Ext / MiniMax Hailuo 02/2.3 / Grok Imagine 1.5 Video / Doubao Seedance 1.5/2.0 系列 — size、aspect、resolution、count、format、顺序生成、搜索开关、视频时长、分辨率、首末帧、音频标志。</li>
-      <li><strong>xAI</strong>：Grok Imagine Image Quality / Grok Imagine Video / Grok TTS — aspect、duration、resolution、first frame、format、voice、video edit / extend（duration 1-15s）。</li>
+      <li><strong>APIMart</strong>：GPT Image 1 / 1.5 / 2 / Wan 2.7 Image / Qwen Image 2.0 + Pro / Seedream 4.0 / 4.5 / 5.0 Lite / 5.0 Pro / Gemini Nano Banana 2/Pro/官方 / Imagen 4.0 / Z-Image-Turbo / Grok Imagine 1.5 Image / Sora 2 + Pro / Veo 3 + 3.1 fast/quality/lite / Kling v2.6 / v3 / v3 Omni / 3.0 Turbo / O1 / Vidu Q3 pro/turbo/mix/standard / Wan 2.5/2.6/2.7+R2V+VideoEdit / Wan 3.0 / HappyHorse 1.0/1.1 / SkyReels V4 fast/std / Pixverse v6 / Gemini Omni Flash / Omni-Flash-Ext / MiniMax Hailuo 02/2.3 / MiniMax-H3（多模态参考） / Grok Imagine 1.5 Video / Doubao Seedance 1.5/2.0/2.5 系列 / FLUX 3 Video — size、aspect、resolution、count、format、顺序生成、搜索开关、视频时长、分辨率、首末帧、音频标志。</li>
+      <li><strong>xAI</strong>：Grok Imagine Image Quality / Grok Imagine Video / Grok TTS — aspect、duration、resolution、first frame、format、voice、video edit / extend（duration 1-15s）。TTS 参数按官方文档核对：<code>codec</code> 枚举 mp3 / wav / pcm / mulaw / alaw，<code>optimizeStreamingLatency</code> 为整数 0/1/2，无 <code>speed</code> 参数。</li>
       <li><strong>阿里百炼</strong>：Wan 2.7 全系（Image Pro / T2V / I2V / R2V / VideoEdit）、HappyHorse 全系（1.0/1.1 T2V、1.1 I2V/R2V、1.0 Video Edit）、Qwen3 TTS Flash。</li>
-      <li><strong>火山</strong>：Doubao Seedance 2.0 / 2.0 Fast。</li>
+      <li><strong>火山方舟</strong>：Doubao Seedance 2.0 / 2.0 Fast。</li>
+      <li><strong>火山豆包语音</strong>（独立渠道 volcengine-speech）：seed-tts-2.0 语音合成 — speaker（必填音色）、format（mp3 / pcm / ogg / wav）、sample_rate、bit_rate、speech_rate、loudness_rate；seed-audio-1.0 音频生成。</li>
       <li><strong>Kling</strong>：Video 3.0 / 3.0 Omni / O1 / 2.6 Pro / 2.6 Standard / 2.5 Turbo。</li>
       <li><strong>Hailuo</strong>：Image 01 / Speech 2.8 HD/Turbo / Music 2.6 / Hailuo 2.3。</li>
     </ul>
@@ -103,6 +106,7 @@ hailuo-video               — Hailuo 2.3 视频 (async)`}
         <tr><td>xAI</td><td>https://api.x.ai/v1</td></tr>
         <tr><td>阿里百炼</td><td>https://dashscope.aliyuncs.com/api/v1/services/aigc</td></tr>
         <tr><td>火山方舟</td><td>https://ark.cn-beijing.volces.com/api</td></tr>
+        <tr><td>火山豆包语音</td><td>https://openspeech.bytedance.com（X-Api-Key 鉴权，区别于方舟的 Bearer；流式 TTS 走 /api/v3/tts/unidirectional，音频生成为 /api/v3/tts/create）</td></tr>
       </tbody>
     </table>
     <p>
@@ -184,7 +188,7 @@ export const mediaProviders: DocsPageContent = {
   quickReference: [
     { key: '统一能力 id', value: 'image.generate/edit/variations · audio.speech/transcription · video.generate/image_to_video/edit/extend' },
     { key: 'Manifest 存储', value: 'media_model_manifests + media_provider_models（migration 033）' },
-    { key: '默认端点', value: 'APIMart api.apimart.ai/v1 · xAI api.x.ai/v1 · 阿里百炼 dashscope.aliyuncs.com · 火山 ark.cn-beijing.volces.com' },
+    { key: '默认端点', value: 'APIMart api.apimart.ai/v1 · xAI api.x.ai/v1 · 阿里百炼 dashscope.aliyuncs.com · 火山方舟 ark.cn-beijing.volces.com · 火山豆包语音 openspeech.bytedance.com（X-Api-Key）' },
     { key: '兼容图片 MCP', value: 'spark_image（仅旧配置兜底）' },
     { key: '统一 MCP', value: 'spark_media（image / audio / video，多 Provider 模型路由）' },
     { key: '产物目录', value: '.spark-artifacts/media/{images,audio,videos,text}' },
@@ -206,8 +210,8 @@ export const mediaProviders: DocsPageContent = {
     'video.generate/image_to_video/edit/extend）。核心字段：mediaProvider（apimart/xai/bailian/openai-images/google-generative-ai/volcengine-ark/kling/pixverse/wan/hailuo/happyhorse/omni/custom）、' +
     'mediaApiType（sync/async/auto）、mediaCapabilities、mediaDefaults、mediaModelRefs。MediaModelManifest 是模型元数据单一来源，' +
     '驱动 Provider 编辑默认值、画布 AI 操作参数面板、spark_media MCP 工具 schema。内置预设：apimart-images/tts/whisper/video-veo3/video-sora2、xai-imagine-image/video/tts、' +
-    'bailian-images/video-happyhorse/video-wan-i2v/audio-tts、volcengine-seedance-video、kling-video、hailuo-video。' +
-    '默认端点：APIMart api.apimart.ai/v1、xAI api.x.ai/v1、阿里百炼 dashscope.aliyuncs.com、火山 ark.cn-beijing.volces.com。' +
+    'bailian-images/video-happyhorse/video-wan-i2v/audio-tts、volcengine-seedance-video、volcengine-speech-tts/audio（火山豆包语音独立渠道）、kling-video、hailuo-video。' +
+    '默认端点：APIMart api.apimart.ai/v1、xAI api.x.ai/v1、阿里百炼 dashscope.aliyuncs.com、火山方舟 ark.cn-beijing.volces.com、火山豆包语音 openspeech.bytedance.com（X-Api-Key）。' +
     '扩展新平台优先用 MediaModelManifest，需要自定义鉴权/回调时再写专属适配器。',
   Body,
 }

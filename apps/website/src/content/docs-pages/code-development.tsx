@@ -74,7 +74,36 @@ const Body = () => (
       没装 CLI 也可以走「补丁」流程：导出 <code>.patch</code> 文件，手动 <code>git am</code>。
     </p>
 
-    <h2 id="best-practices">6. 最佳实践</h2>
+    <h2 id="code-viewer">6. 应用内代码查看与编辑</h2>
+    <p>
+      不离开应用也能看代码、改代码：统一侧面板的「代码」tab 内置 Monaco 编辑器，
+      对标 IDE 体验，且与 Agent 会话深度联动。
+    </p>
+    <ul>
+      <li>
+        <strong>入口</strong>：会话侧栏「代码」tab；代码变更记录里的文件行整行可点击直接打开；
+        回答里引用的 <code>file (line N)</code> 也可点击跳转到对应行并高亮。
+      </li>
+      <li>
+        <strong>编辑体验</strong>：源码 / 本次改动 diff 双视图切换、多文件 tabs、面包屑导航、
+        <code>Cmd+S</code> 保存、跳转行高亮、minimap 开关（默认关）、外部编辑器打开（VSCode / Cursor 等）。
+      </li>
+      <li>
+        <strong>冲突防护</strong>：保存前检测文件是否被外部改动，提示后再写入，防止覆盖 Agent
+        或其他进程的改动。
+      </li>
+      <li>
+        <strong>文件树资源管理器</strong>：右键中文菜单支持新建文件 / 新建目录 / 重命名 /
+        复制粘贴 / 删除，内置文件搜索；删除走系统回收站（<code>shell.trashItem</code>），可恢复。
+      </li>
+      <li>
+        <strong>回填会话</strong>：编辑器聚焦时「添加选中代码（<code>Cmd/Ctrl+Alt+I</code>）」以双行 chip
+        （文件名 + 路径:行号区间）追加到输入框，发送时才转为文本；「添加文件（<code>Alt+F</code>）」复用附件通道。
+      </li>
+      <li>非代码文件（图片 / PDF 等）自动走文件预览面板，行为向后兼容。</li>
+    </ul>
+
+    <h2 id="best-practices">7. 最佳实践</h2>
     <ul>
       <li>永远在 Worktree 里跑 AI 改动，主分支留作「可信基线」。</li>
       <li>小步提交：让 Agent 改完一个文件就提交一次，便于回退。</li>
@@ -93,7 +122,8 @@ export const codeDevelopment: DocsPageContent = {
     { id: 'terminal', title: '3. 内置终端', level: 2 },
     { id: 'review', title: '4. 审查与补丁', level: 2 },
     { id: 'pr', title: '5. Pull Request 与补丁', level: 2 },
-    { id: 'best-practices', title: '6. 最佳实践', level: 2 },
+    { id: 'code-viewer', title: '6. 应用内代码查看与编辑', level: 2 },
+    { id: 'best-practices', title: '7. 最佳实践', level: 2 },
   ],
   faq: [
     {
@@ -113,6 +143,16 @@ export const codeDevelopment: DocsPageContent = {
       question: '支持 Gitee / 自建 GitLab 吗？',
       answer:
         '支持。PR 生成走的是通用 Git 平台适配层，可在 Provider 配置里填入自定义 API 根路径与 Token。',
+    },
+    {
+      question: '在应用内编辑文件会覆盖 Agent 的改动吗？',
+      answer:
+        '不会。保存前会检测文件是否已被外部修改（比如 Agent 正在写这个文件），检测到冲突会先提示，由你决定是否覆盖。',
+    },
+    {
+      question: '应用内删除的文件能找回吗？',
+      answer:
+        '能。删除走系统回收站（shell.trashItem），而不是直接删磁盘文件，可以从系统回收站恢复。',
     },
   ],
   quickReference: [

@@ -115,7 +115,81 @@ const Body = () => (
       历史可经 <code>team:list-dispatches</code> 查询。
     </p>
 
-    <h2 id="best-practices">6. 最佳实践</h2>
+    <h2 id="outcome-room">6. 成果作业间（Outcome Room）与 Living Ledger</h2>
+    <p>
+      团队协作的共识和成果不散落在聊天流里，而是结构化落入一张「活账本」（Living Ledger）：
+      每条记录都有版本、权威等级、状态和来源，成员可以在同一份账本上对齐，而不是靠翻聊天记录。
+    </p>
+    <ul>
+      <li>
+        <strong>入口</strong>：右侧 Inspector → 团队成员区，即 Outcome Room 面板；每个团队会话对应一个
+        room（<code>team-room:&#123;sessionId&#125;</code>），按 discussion 讨论线程隔离作用域。
+      </li>
+      <li>
+        <strong>记录模型</strong>：每条记录包含 <code>logicalKey / value / status / authority /
+        confidence / sourceRefs</code>、版本号、操作者与时间、过期时间和纠错关联；事件日志追加写入，
+        当前投影可在事务内重放重建，历史永不物理删除。
+      </li>
+      <li>
+        <strong>状态机</strong>：<code>proposed → active → superseded | invalid | expired | deleted</code>，
+        提案也可 <code>proposed → rejected</code>；终态记录可 <code>restore</code> 回到 active。
+        默认上下文只返回未过期的 active / proposed 记录，每个 (room, discussion) 最多保留 100 个当前 key。
+      </li>
+      <li>
+        <strong>权威等级</strong>：<code>user &gt; system &gt; agent</code> 三级固定排序，落账权威由
+        服务端 capability 绑定决定（<code>user-confirmed / system-observed / agent-inferred</code>），
+        低等级 actor 不能修改更高等级记录的 current 版本。
+      </li>
+      <li>
+        <strong>治理动作</strong>：用户在面板上可对提案执行
+        <code>confirm / reject / correct / invalidate / restore</code>；所有动作带 discussion、
+        记录 ID 和版本快照，由主进程用 user capability 校验后落账。
+      </li>
+      <li>
+        <strong>并发防覆盖</strong>：写入用 <code>expectedVersion</code> 做 CAS 乐观锁，
+        版本不匹配抛冲突而不是静默覆盖，冲突时 UI 提示可恢复并保留最后一次有效快照。
+      </li>
+      <li>
+        <strong>成员可见</strong>：Host 派发任务前，会把当前 discussion 的 active、未过期 Ledger
+        摘要自动注入成员 prompt（含权威、版本、来源），成员能基于账本共识干活。
+      </li>
+      <li>
+        <strong>Agent 侧工具</strong>：<code>spark_team</code> 暴露 8 个账本工具——
+        <code>team_ledger_read / team_ledger_propose / confirm / reject / correct / invalidate /
+        tombstone / restore</code>；成员只可见读取与 propose 增量，治理工具仅对可信 host/system 上下文可见。
+      </li>
+    </ul>
+
+    <h2 id="handoff-gate">7. 类型化交接与 Steering Gate</h2>
+    <p>成员之间的交接不再是一句「我干完了」，而是带验收标准、产物引用和敏感度的结构化交接单；高风险动作先过闸门再执行。</p>
+    <ul>
+      <li>
+        <strong>Typed Handoff（类型化交接）</strong>：交接单包含
+        <code>purpose / inputs / expectedOutput / acceptanceCriteria / deadline / sensitivity</code>
+        （sensitivity 分 <code>public / internal / confidential / restricted</code>），
+        并携带 <code>artifactRefs / evidenceRefs</code> 产物与证据引用。
+        状态机：<code>draft → submitted → accepted</code>，接收方可
+        <code>request_clarification / reject</code>，完成后 <code>complete</code>，随时可 <code>cancel</code>。
+      </li>
+      <li>
+        <strong>Steering Gate（转向闸门）</strong>：针对
+        <code>ledger / record / artifact / handoff / task</code> 五类目标设置闸门，
+        带触发条件、影响等级（<code>low / medium / high / critical</code>）与推荐动作。
+        状态机：<code>waiting → approved | revise | stopped | expired</code>，
+        由主持人在成员收尾前把关，approve 放行、revise 打回修改、stop 中止、expire 过期失效。
+      </li>
+      <li>
+        <strong>权限边界</strong>：agent 只能读取和创建草稿/等待闸门，执行治理迁移
+        （accept / approve / revise / stop 等）必须由 system 或 user capability 完成；
+        每次迁移带 <code>expectedVersion</code> 防并发冲突，操作以唯一 <code>opId</code> 幂等。
+      </li>
+      <li>
+        会话内可经 <code>team-p1:get</code> 读取交接与闸门快照，主进程在
+        <code>team-p1:mutate</code> 时重新解析可信 discussion 并校验版本后落库。
+      </li>
+    </ul>
+
+    <h2 id="best-practices">8. 最佳实践</h2>
     <ul>
       <li>Member 数量控制在 3~5 个：超过后 dispatch 调度成本陡增。</li>
       <li>把每个 Member 的定位写在 Agent Prompt 里，避免与 Host 抢任务。</li>
@@ -134,7 +208,9 @@ export const teamMode: DocsPageContent = {
     { id: 'avatar-timeline', title: '4. 头像与时间线 UI', level: 2 },
     { id: 'nesting-budget', title: '5. 嵌套与预算', level: 2 },
     { id: 'events', title: '6. 事件', level: 2 },
-    { id: 'best-practices', title: '7. 最佳实践', level: 2 },
+    { id: 'outcome-room', title: '7. 成果作业间（Outcome Room）与 Living Ledger', level: 2 },
+    { id: 'handoff-gate', title: '8. 类型化交接与 Steering Gate', level: 2 },
+    { id: 'best-practices', title: '9. 最佳实践', level: 2 },
   ],
   faq: [
     {
@@ -155,6 +231,16 @@ export const teamMode: DocsPageContent = {
       question: '可以查看历史分派吗？',
       answer:
         '可以。团队模式提供 team:list-dispatches 接口，能看到每次分派的入参、状态、产物。',
+    },
+    {
+      question: 'Outcome Room 的账本和普通聊天记录有什么区别？',
+      answer:
+        '聊天记录是线性时间流，账本是结构化状态：每条记录有版本、权威等级（user > system > agent）、状态和来源，支持 confirm / reject / correct / invalidate / restore 治理动作，并用版本号 CAS 防止并发覆盖。共识以账本为准，而不是翻聊天。',
+    },
+    {
+      question: 'Typed Handoff 和 Steering Gate 是谁在用？',
+      answer:
+        '两者都是成员交接/收尾环节的把关机制：Typed Handoff 让交接带验收标准和产物引用（draft → submitted → accepted），Steering Gate 让主持人在成员收尾前 approve / revise / stop / expire。Agent 只能创建草稿和等待闸门，治理动作由用户或系统执行。',
     },
   ],
   quickReference: [
