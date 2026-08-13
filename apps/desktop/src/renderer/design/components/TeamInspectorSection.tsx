@@ -16,10 +16,16 @@ import { Icons } from '../Icons'
 import { deriveTeamAvatar } from '../teamAvatar'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
-import { Checkbox as LobeCheckbox, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
+import {
+  Checkbox as LobeCheckbox,
+  Input as LobeInput,
+  Select as LobeSelect,
+  TextArea as LobeTextArea,
+} from '@lobehub/ui'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
 import type { ManagedTeam, TeamModeConfig } from '@spark/protocol'
+import { Button } from '@lobehub/ui'
 
 export interface TeamInspectorAgent {
   id: string
@@ -288,9 +294,6 @@ export function TeamInspectorSection({
           {/* 团队来源徽章：当 config.teamId 命中长期团队时显示 */}
           {sourceTeam != null && (
             <div className="team-roster-source">
-              <span className="team-roster-source-label">
-                <Icons.Team size={12} /> 来自团队
-              </span>
               <span className="team-roster-source-name" title={sourceTeam.description}>
                 {sourceTeam.name}
                 {sourceTeam.builtIn && <span className="team-roster-source-tag">内置</span>}
@@ -376,10 +379,17 @@ export function TeamInspectorSection({
                 onClick={() => setHostPickerOpen((prev) => !prev)}
                 title="点击切换主持人"
               >
-                <AgentAvatar id={host.id} name={host.name} builtIn={host.builtIn} metadata={host.metadata} />
+                <AgentAvatar
+                  id={host.id}
+                  name={host.name}
+                  builtIn={host.builtIn}
+                  metadata={host.metadata}
+                />
                 <span className="team-roster-info">
                   <span className="team-roster-name">{host.name}</span>
-                  {host.description && <span className="team-roster-desc">{host.description.slice(0, 40)}</span>}
+                  {host.description && (
+                    <span className="team-roster-desc">{host.description.slice(0, 40)}</span>
+                  )}
                 </span>
                 <span className="team-roster-host-badge">主持人</span>
                 {hostPickerOpen ? (
@@ -423,7 +433,12 @@ export function TeamInspectorSection({
                 className="team-roster-row team-roster-row-clickable"
                 onClick={() => setExpandedId((prev) => (prev === agent.id ? null : agent.id))}
               >
-                <AgentAvatar id={agent.id} name={agent.name} builtIn={agent.builtIn} metadata={agent.metadata} />
+                <AgentAvatar
+                  id={agent.id}
+                  name={agent.name}
+                  builtIn={agent.builtIn}
+                  metadata={agent.metadata}
+                />
                 <span className="team-roster-info">
                   <span className="team-roster-name-line">
                     <span className="team-roster-name">{agent.name}</span>
@@ -434,7 +449,9 @@ export function TeamInspectorSection({
                       </span>
                     )}
                   </span>
-                  {agent.description && <span className="team-roster-desc">{agent.description.slice(0, 40)}</span>}
+                  {agent.description && (
+                    <span className="team-roster-desc">{agent.description.slice(0, 40)}</span>
+                  )}
                 </span>
                 <button
                   type="button"
@@ -492,9 +509,10 @@ export function TeamInspectorSection({
 
           {/* 邀请成员：弹出浮层选择候选 Agent */}
           <div className="team-roster-invite-wrap" ref={inviteRef}>
-            <button
-              type="button"
+            <Button
               ref={inviteBtnRef}
+              type="primary"
+              size='middle'
               className="team-roster-invite-btn"
               disabled={candidates.length === 0}
               title={candidates.length === 0 ? '已没有可邀请的 Agent' : '邀请成员加入团队'}
@@ -502,7 +520,7 @@ export function TeamInspectorSection({
             >
               <Icons.Plus size={14} />
               <span>邀请成员</span>
-            </button>
+            </Button>
             {inviteOpen && candidates.length > 0 && (
               <div
                 className="team-roster-invite-pop"
@@ -542,7 +560,11 @@ export function TeamInspectorSection({
           </div>
 
           {/* 高级设置 */}
-          <button type="button" className="team-roster-advanced-toggle" onClick={() => setAdvancedOpen(!advancedOpen)}>
+          <button
+            type="button"
+            className="team-roster-advanced-toggle"
+            onClick={() => setAdvancedOpen(!advancedOpen)}
+          >
             高级 {advancedOpen ? <Icons.ChevronUp size={12} /> : <Icons.ChevronDown size={12} />}
           </button>
           {advancedOpen && (

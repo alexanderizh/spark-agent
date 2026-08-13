@@ -13,6 +13,7 @@ import {
   outcomeTitle,
   summarizeOutcomeRoom,
 } from './outcomeRoomModel'
+import {Button} from '@lobehub/ui'
 import './OutcomeRoomPanel.less'
 
 type MutationPayload = Omit<OutcomeRoomMutateRequest, 'sessionId'>
@@ -92,15 +93,15 @@ export function OutcomeRoomPanel(props: OutcomeRoomPanelProps) {
           <span className="outcome-room-kicker">OUTCOME ROOM</span>
           <h3>{snapshot == null ? '团队成果作业间' : outcomeTitle(snapshot)}</h3>
         </div>
-        <button
-          type="button"
-          className="outcome-room-icon-button"
+        <Button
+          type="text"
+          size='small'
           aria-label="重新加载团队账本"
           onClick={onRefresh}
           disabled={loading}
         >
           <RefreshCw size={15} aria-hidden />
-        </button>
+        </Button>
       </header>
 
       {loading && snapshot == null ? (

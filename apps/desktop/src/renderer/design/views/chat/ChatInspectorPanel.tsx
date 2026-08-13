@@ -612,14 +612,8 @@ export function ChatInspector({
                   aria-label="显示团队思考、命令和工具日志"
                 />
               </h4>
-              <p className="inspector-muted team-log-visibility-help">
-                打开后在会话时间线显示 Host 与成员的思考、命令、工具及文件变更；默认关闭以保持结果优先。
-              </p>
             </div>
-            <OutcomeRoomContainer
-              sessionId={session?.id}
-              runningMemberCount={runningTeamAgentIds.length}
-            />
+            
             <TeamInspectorSection
             config={teamConfig}
             fallbackProviderProfileId={session?.providerProfileId ?? null}
@@ -645,6 +639,10 @@ export function ChatInspector({
               })
             }
             onChangeConfig={onChangeTeamConfig}
+            />
+            <OutcomeRoomContainer
+              sessionId={session?.id}
+              runningMemberCount={runningTeamAgentIds.length}
             />
           </>
         )}
