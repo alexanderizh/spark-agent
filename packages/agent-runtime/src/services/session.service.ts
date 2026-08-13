@@ -430,6 +430,12 @@ interface FirstTurnTitleContext {
   model: string
   userMessage: string
 }
+/** 首轮标题精炼失败后的补偿重试：后续 turn 完成时最多再尝试的次数。 */
+const TITLE_REFINEMENT_MAX_RETRIES = 2
+interface PendingTitleRefinement {
+  ctx: FirstTurnTitleContext & { assistantMessage: string }
+  retries: number
+}
 interface TryStartSDKTurnOptions extends UserMessagePresentation {
   firstTurnTitleContext?: FirstTurnTitleContext
   /**
@@ -794,6 +800,12 @@ export class SessionService {
     string,
     { providerId: string; model: string }
   >()
+  /**
+   * 首轮 LLM 标题精炼失败（思考模型 token 耗尽、网络抖动等）后保留的重试上下文。
+   * 后续 turn 完成时若标题仍是临时形态（首条消息截断/默认名）自动重试，
+   * 成功、用户手动改名、达到重试上限或会话删除时清除。
+   */
+  private readonly pendingTitleRefinements = new Map<string, PendingTitleRefinement>()
   private usageLedgerLastByTurn = new Map<
     string,
     {
@@ -4284,7 +4296,16 @@ export class SessionService {
           void this.refineSessionTitleAsync(sessionId, sessionRepo, {
             ...titleCtx,
             assistantMessage: assistantTurnText,
+          }).then((retryWorthy) => {
+            if (retryWorthy) {
+              this.pendingTitleRefinements.set(sessionId, {
+                ctx: { ...titleCtx, assistantMessage: assistantTurnText },
+                retries: 0,
+              })
+            }
           })
+        } else {
+          this.maybeRetrySessionTitleRefinement(sessionId, sessionRepo)
         }
         if (assistantTurnText.length > 0) {
           this.updateGoalFromAssistantBlock(sessionId, assistantTurnText)
@@ -4881,18 +4902,22 @@ export class SessionService {
     }
   }
 
+  /**
+   * @returns true 表示本次 LLM 精炼失败、值得后续 turn 重试（LLM 返回空/异常）；
+   *   false 表示无需重试（成功、会话已删除、用户已手动改名、或 LLM 成功但结果与现标题相同）。
+   */
   private async refineSessionTitleAsync(
     sessionId: string,
     sessionRepo: SessionRepository,
     ctx: FirstTurnTitleContext & { assistantMessage: string },
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       const current = sessionRepo.get(sessionId)
-      if (current == null) return
+      if (current == null) return false
       // Skip if user has manually renamed the session in the meantime
       const derivedFromFirst = deriveSessionTitle(ctx.userMessage)
       if (current.title !== derivedFromFirst && !shouldDeriveSessionTitle(current.title)) {
-        return
+        return false
       }
       const refined = await generateSessionTitle({
         providerType: ctx.providerType,
@@ -4902,14 +4927,38 @@ export class SessionService {
         userMessage: ctx.userMessage,
         assistantMessage: ctx.assistantMessage,
       })
-      if (refined == null || refined.length === 0 || refined === current.title) return
+      if (refined == null || refined.length === 0) return true
+      if (refined === current.title) return false
       sessionRepo.updateTitle(sessionId, refined)
       this.onSessionRenamed?.(sessionId, refined)
+      return false
     } catch (err) {
       log.warn(
         `refineSessionTitleAsync failed: ${err instanceof Error ? err.message : String(err)}`,
       )
+      return true
     }
+  }
+
+  /**
+   * 首轮标题精炼失败的补偿重试：后续任意 turn 完成时，若该会话仍有待重试上下文，
+   * 且标题未被用户手动改名（由 refineSessionTitleAsync 内部守卫），则再试一次；
+   * 成功或达到 TITLE_REFINEMENT_MAX_RETRIES 上限后清除条目，防止 Map 无限增长。
+   */
+  private maybeRetrySessionTitleRefinement(
+    sessionId: string,
+    sessionRepo: SessionRepository,
+  ): void {
+    const pending = this.pendingTitleRefinements.get(sessionId)
+    if (pending == null) return
+    pending.retries += 1
+    void this.refineSessionTitleAsync(sessionId, sessionRepo, pending.ctx).then(
+      (retryWorthy) => {
+        if (!retryWorthy || pending.retries >= TITLE_REFINEMENT_MAX_RETRIES) {
+          this.pendingTitleRefinements.delete(sessionId)
+        }
+      },
+    )
   }
 
   /**
@@ -9196,6 +9245,7 @@ export class SessionService {
     this.pendingUserQuestionGate.releaseSession(sessionId)
     this.eventSequencer.clear(sessionId)
     this.iterationOverrides.delete(sessionId)
+    this.pendingTitleRefinements.delete(sessionId)
     TodoStore.clear(sessionId)
     getDebugLogServer().deleteSession(sessionId)
     // Runtime state is session-owned and must not survive a deleted session.

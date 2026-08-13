@@ -13,6 +13,11 @@ const TITLE_MAX_CHARS = 16
 const TITLE_PROMPT_USER_MAX_CHARS = 800
 const TITLE_PROMPT_ASSISTANT_MAX_CHARS = 800
 const REQUEST_TIMEOUT_MS = 15_000
+/**
+ * 输出 token 预算。思考型模型（如 GLM）的思考 token 计入该预算：
+ * 64 会被思考耗尽导致正文为空 → 标题精炼静默失败，因此给足余量。
+ */
+const TITLE_MAX_OUTPUT_TOKENS = 512
 
 const ANTHROPIC_DEFAULT_ENDPOINT = 'https://api.anthropic.com'
 const OPENAI_DEFAULT_ENDPOINT = 'https://api.openai.com/v1'
@@ -71,7 +76,7 @@ async function callAnthropic(params: GenerateTitleParams, prompt: string): Promi
   const url = `${endpoint}/v1/messages`
   const body = {
     model: params.model,
-    max_tokens: 64,
+    max_tokens: TITLE_MAX_OUTPUT_TOKENS,
     messages: [{ role: 'user', content: prompt }],
   }
   try {
@@ -84,7 +89,7 @@ async function callAnthropic(params: GenerateTitleParams, prompt: string): Promi
       },
       body: JSON.stringify(body),
       timeoutMs: REQUEST_TIMEOUT_MS,
-      maxRetries: 0,
+      maxRetries: 1,
     })
     const text = data.content?.find((item) => item.type === 'text')?.text
     return typeof text === 'string' ? text : null
@@ -100,7 +105,7 @@ async function callOpenAICompatible(params: GenerateTitleParams, prompt: string)
   const url = `${endpoint}/chat/completions`
   const body = {
     model: params.model,
-    max_tokens: 64,
+    max_tokens: TITLE_MAX_OUTPUT_TOKENS,
     temperature: 0.3,
     messages: [{ role: 'user', content: prompt }],
   }
@@ -113,7 +118,7 @@ async function callOpenAICompatible(params: GenerateTitleParams, prompt: string)
       },
       body: JSON.stringify(body),
       timeoutMs: REQUEST_TIMEOUT_MS,
-      maxRetries: 0,
+      maxRetries: 1,
     })
     const text = data.choices?.[0]?.message?.content
     return typeof text === 'string' ? text : null
