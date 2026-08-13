@@ -115,7 +115,7 @@
   gap: 6px;
   padding-right: 8px;
   padding-left: 8px;
-  padding-top: 8px;
+  padding-top: 0px;
 
   // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
@@ -924,4 +924,98 @@
   strong {
     color: var(--color-text-2);
   }
+}
+
+/* ─── Density + shared window surface ──────────────────────────────────────
+   Keep this page aligned with the app's spacing/typography tokens and remove
+   the seam between the native drag strip and the scheduled-task surface. */
+
+.scheduled-tasks-view {
+  padding: 0 0 var(--pad-lg);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.st-header {
+  padding: var(--pad-md) var(--pad-lg) var(--pad-sm);
+  border-bottom-color: var(--divider);
+  background: var(--bg);
+  gap: var(--pad-sm);
+}
+
+.st-header-left {
+  gap: var(--pad-sm);
+
+  h2 {
+    font-size: var(--font-lg);
+    font-weight: 600;
+  }
+}
+
+.st-header-right {
+  gap: var(--pad-xs);
+}
+
+.st-filter-bar {
+  padding: var(--pad-sm) var(--pad-lg);
+  gap: var(--pad-sm);
+  background: var(--bg);
+}
+
+.st-filter-tabs {
+  gap: 2px;
+}
+
+.st-filter-tab {
+  padding: 5px var(--pad-md);
+  border-radius: var(--r-sm);
+  font-size: var(--font-sm);
+}
+
+.st-content {
+  gap: var(--pad-md);
+  padding: var(--pad-sm) var(--pad-lg);
+  background: var(--bg);
+}
+
+.st-list {
+  gap: var(--pad-xs);
+}
+
+.st-task-card {
+  padding: var(--pad-sm) var(--pad-md);
+  border-radius: var(--r-sm);
+}
+
+.st-task-card-header {
+  margin-bottom: var(--pad-xs);
+}
+
+.st-task-name,
+.st-task-footer,
+.st-task-stats {
+  font-size: var(--font-xs);
+}
+
+.st-task-meta {
+  margin-bottom: var(--pad-xs);
+}
+
+.st-detail {
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+}
+
+/* App renders the native drag strip immediately before this view. */
+.app:has(.scheduled-tasks-view) .mac-window-drag-header,
+.app:has(.scheduled-tasks-view) .main-content-area,
+.app:has(.scheduled-tasks-view) .main,
+.app:has(.scheduled-tasks-view) .view-body {
+  background: var(--bg) !important;
+  background-image: none !important;
+}
+
+.app:has(.scheduled-tasks-view) .mac-window-drag-header {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }

@@ -2,6 +2,8 @@
    Spark Agent — Design Tokens & Base Styles
    ============================================================ */
 
+@import './components.css';
+
 :root {
   /* Primary color is set on .app element by JS via --primary / --primary-soft */
   --primary: #6366f1;
@@ -507,14 +509,14 @@ html[data-backdrop-blur='1'] .sidebar-style-floating .floating-sidebar {
 html[data-theme='light'][data-backdrop-blur='1']
   .sidebar-style-floating.theme-light
   .floating-sidebar {
-  background: color-mix(in srgb, #fff 78%, transparent);
+  background: color-mix(in srgb, #fff 58%, transparent);
   border-color: rgba(255, 255, 255, 0.72);
 }
 
 html[data-theme='dark'][data-backdrop-blur='1']
   .sidebar-style-floating.theme-dark
   .floating-sidebar {
-  background: color-mix(in srgb, var(--panel-elev) 84%, transparent);
+  background: color-mix(in srgb, var(--panel-elev) 54%, transparent);
   border-color: rgba(255, 255, 255, 0.09);
 }
 
@@ -544,7 +546,7 @@ html[data-theme='dark'][data-backdrop-blur='1']
   .floating-sidebar {
   background: color-mix(
     in srgb,
-    color-mix(in srgb, var(--panel-elev) 84%, transparent),
+    color-mix(in srgb, var(--panel-elev) 54%, transparent),
     #000 var(--sidebar-focus-darken, 6%)
   );
 }
@@ -1318,7 +1320,6 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
 .user-menu-submenu-popup .ant-dropdown-menu {
   min-width: 200px;
   padding: 4px;
-  background: var(--panel-elev);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-md);
 }
@@ -1768,234 +1769,6 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
   height: auto;
 }
 
-/* ============================================================
-   GENERIC COMPONENTS
-   ============================================================ */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: var(--r-md);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    background 0.12s,
-    border-color 0.12s,
-    box-shadow 0.12s,
-    color 0.12s;
-  white-space: nowrap;
-}
-.btn:hover {
-  background: var(--hover);
-  border-color: var(--border-strong);
-}
-.btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-.btn.active {
-  background: var(--selected);
-  border-color: var(--primary);
-  color: var(--primary);
-}
-.btn:disabled,
-.btn[disabled] {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-.btn.primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--primary-fg);
-}
-.btn.primary:hover {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
-}
-.btn.ghost {
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-muted);
-}
-.btn.ghost:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.btn.danger {
-  color: var(--danger);
-}
-.btn.danger:hover {
-  background: var(--danger-bg);
-  border-color: var(--danger);
-}
-.btn.sm {
-  height: var(--control-h-sm);
-  padding: 0 8px;
-  font-size: var(--font-xs);
-}
-.btn.icon {
-  width: 28px;
-  padding: 0;
-}
-.btn .btn-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: var(--r-lg);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-}
-.badge.dot::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.badge.success {
-  color: var(--success);
-  background: var(--success-bg);
-  border-color: transparent;
-}
-.badge.warning {
-  color: var(--warning);
-  background: var(--warning-bg);
-  border-color: transparent;
-}
-.badge.danger {
-  color: var(--danger);
-  background: var(--danger-bg);
-  border-color: transparent;
-}
-.badge.info {
-  color: var(--info);
-  background: var(--info-bg);
-  border-color: transparent;
-}
-.badge.primary {
-  color: var(--primary);
-  background: var(--primary-soft);
-  border-color: transparent;
-}
-
-.kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: var(--r-xs);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-weight: 500;
-}
-
-/* Sidebar shortcut hints — auto-aligned to the right */
-.sidebar-kbd {
-  margin-left: auto;
-  font-size: 9px;
-  opacity: 0.6;
-}
-
-.card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-}
-.card-header {
-  padding: var(--pad-md) var(--pad-lg);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: var(--pad-md);
-}
-.card-title {
-  font-size: var(--font-base);
-  font-weight: 600;
-  color: var(--text-strong);
-}
-.card-body {
-  padding: var(--pad-lg);
-}
-
-.divider {
-  height: 1px;
-  background: var(--divider);
-  margin: var(--pad-sm) 0;
-}
-.divider.v {
-  width: 1px;
-  height: 100%;
-}
-
-.icon-btn {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--r-sm);
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition:
-    background 0.12s,
-    color 0.12s,
-    box-shadow 0.12s;
-}
-.icon-btn:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.icon-btn.active {
-  background: var(--selected);
-  color: var(--primary);
-}
-.icon-btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-.icon-btn:disabled,
-.icon-btn[disabled] {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-.icon-btn:disabled:hover,
-.icon-btn[disabled]:hover {
-  background: transparent;
-  color: var(--text-muted);
-}
-.icon-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
 /* 导航栏、会话头部和会话侧面板的交互图标使用统一前景色。 */
 .chat-layout .tabbar-actions .icon-btn,
 .chat-layout .chat-sidebar-topbar-actions .icon-btn,
@@ -2045,69 +1818,6 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
   .unified-side-panel-menu-item
   :is(.chat-view-icon, svg) {
   color: var(--sidebar-text, var(--text));
-}
-
-/* Search input */
-.search-input {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 10px;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  color: var(--text-muted);
-  font-size: var(--font-sm);
-  min-width: 200px;
-}
-
-.search-input input {
-  background: transparent;
-  border: none !important;
-  outline: none;
-  flex: 1;
-  font-size: var(--font-sm);
-  color: var(--text);
-  font-family: inherit;
-  height: 28px;
-  padding: 0;
-  box-shadow: none !important;
-}
-.search-input input:focus {
-  box-shadow: none !important;
-  border-color: transparent !important;
-}
-.search-input input::placeholder {
-  color: var(--text-faint);
-}
-.search-input svg {
-  width: 14px;
-  height: 14px;
-  color: var(--text-faint);
-}
-
-/* dot indicator */
-.dot-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-faint);
-  flex-shrink: 0;
-  box-shadow: 0 0 0 2px var(--bg-soft);
-}
-.dot-indicator.green {
-  background: var(--success);
-  box-shadow: 0 0 0 3px var(--success-bg);
-}
-.dot-indicator.yellow {
-  background: var(--warning);
-}
-.dot-indicator.red {
-  background: var(--danger);
-}
-.dot-indicator.blue {
-  background: var(--info);
 }
 
 /* ── Scrollbar — 全局彻底隐藏（Windows 桌面端滚动条过丑，历史多次修改未生效）──
