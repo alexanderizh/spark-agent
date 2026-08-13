@@ -1,4 +1,5 @@
 import { Modal } from '@lobehub/ui'
+import { GLOBAL_DIALOG_Z_INDEX } from './dialogZIndex'
 
 type ConfirmDialogProps = {
   open: boolean
@@ -27,6 +28,7 @@ export function ConfirmDialog({
       open={open}
       title={title}
       width={440}
+      zIndex={GLOBAL_DIALOG_Z_INDEX}
       okText={confirmText}
       cancelText={cancelText}
       okButtonProps={{ danger: danger ?? false }}

@@ -4,7 +4,7 @@ import React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Dropdown } from 'antd'
+import { Dropdown, Modal } from 'antd'
 import { Checkbox as LobeCheckbox, TextArea as LobeTextArea } from '@lobehub/ui'
 import { AppDialogHost, AppProvider, useApp } from '../design/AppContext'
 import { ComposerActionsMenu } from '../design/components/ComposerActionsMenu'
@@ -213,6 +213,84 @@ describe('Desktop UI system overlays', () => {
     })
 
     expect(container.querySelector('[data-testid="prompt-result"]')?.textContent).toBe('Research Agent')
+  })
+
+  it('keeps global confirm dialogs above modals opened later in the session', async () => {
+    function ConfirmAboveModalHarness() {
+      const { requestConfirm } = useApp()
+      const [skillOpen, setSkillOpen] = React.useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setSkillOpen(true)}>
+            打开技能详情
+          </button>
+          <Modal open={skillOpen} title="技能详情" className="skill-detail-modal">
+            技能内容
+          </Modal>
+          <button
+            type="button"
+            onClick={() => {
+              void requestConfirm({
+                title: '卸载？',
+                description: '确认卸载',
+                confirmText: '卸载',
+                danger: true,
+              })
+            }}
+          >
+            卸载
+          </button>
+        </>
+      )
+    }
+
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <AppProvider>
+          <ConfirmAboveModalHarness />
+          <AppDialogHost />
+        </AppProvider>,
+      )
+    })
+
+    // 会话中先触发过一次全局确认弹窗：其 portal 关闭后仍常驻 body
+    await act(async () => {
+      click(buttonByText('卸载'))
+      await Promise.resolve()
+    })
+    await act(async () => {
+      click(buttonByText('取消'))
+      await Promise.resolve()
+    })
+
+    // 之后再打开普通弹窗（技能详情），门户排在确认弹窗之后
+    await act(async () => {
+      click(buttonByText('打开技能详情'))
+      await Promise.resolve()
+    })
+
+    // 在技能详情弹窗内再次触发确认弹窗
+    await act(async () => {
+      click(buttonByText('卸载'))
+      await Promise.resolve()
+    })
+
+    const wraps = Array.from(document.body.querySelectorAll<HTMLElement>('.ant-modal-wrap'))
+    const confirmWrap = wraps.find((wrap) =>
+      wrap.querySelector('.spark-confirm-dialog') != null,
+    )
+    const skillWrap = wraps.find((wrap) =>
+      wrap.querySelector('.skill-detail-modal') != null,
+    )
+    expect(confirmWrap).toBeDefined()
+    expect(skillWrap).toBeDefined()
+
+    const confirmZ = Number(confirmWrap?.style.zIndex ?? 0)
+    const skillZ = Number(skillWrap?.style.zIndex ?? 0)
+    // 确认弹窗必须有显式 z-index，且高于普通弹窗，否则会被后开的普通弹窗盖住
+    expect(confirmZ).toBeGreaterThan(0)
+    expect(confirmZ).toBeGreaterThan(skillZ)
   })
 
   it('keeps custom textarea and checkbox controls usable', () => {
