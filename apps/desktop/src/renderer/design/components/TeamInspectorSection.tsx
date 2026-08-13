@@ -17,6 +17,7 @@ import { deriveTeamAvatar } from '../teamAvatar'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
 import {
+  Button as LobeButton,
   Checkbox as LobeCheckbox,
   Input as LobeInput,
   Select as LobeSelect,
@@ -25,7 +26,6 @@ import {
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
 import type { ManagedTeam, TeamModeConfig } from '@spark/protocol'
-import { Button } from '@lobehub/ui'
 
 export interface TeamInspectorAgent {
   id: string
@@ -509,18 +509,16 @@ export function TeamInspectorSection({
 
           {/* 邀请成员：弹出浮层选择候选 Agent */}
           <div className="team-roster-invite-wrap" ref={inviteRef}>
-            <Button
+            <LobeButton
               ref={inviteBtnRef}
-              type="primary"
-              size='middle'
-              className="team-roster-invite-btn"
+              block
+              icon={<Icons.Plus size={14} />}
               disabled={candidates.length === 0}
               title={candidates.length === 0 ? '已没有可邀请的 Agent' : '邀请成员加入团队'}
               onClick={handleToggleInvite}
             >
-              <Icons.Plus size={14} />
-              <span>邀请成员</span>
-            </Button>
+              邀请成员
+            </LobeButton>
             {inviteOpen && candidates.length > 0 && (
               <div
                 className="team-roster-invite-pop"
