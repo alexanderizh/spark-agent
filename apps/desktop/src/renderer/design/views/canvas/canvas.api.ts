@@ -2934,11 +2934,13 @@ export const canvasApi = {
   /**
    * 删除整部文稿：级联删除其全部 chapter 资产，并清掉项目级文稿索引。
    * 章节通过 metadata.manuscriptId 精确归属；兼容老数据再按 tag「文稿:标题」兜底。
+   * `hardDelete=true` 时同时清理这些资产关联的本地/Provider 文件。
    * 返回被删除的章节数 + 最新快照。
    */
   async deleteManuscript(
     projectId: string,
     manuscriptAssetId: string,
+    options?: { hardDelete?: boolean },
   ): Promise<{ snapshot: CanvasSnapshot; deletedChapters: number }> {
     const db = readDb()
     const manuscript = db.assets.find(
@@ -2958,13 +2960,16 @@ export const canvasApi = {
       return Array.isArray(tags) && tags.includes(legacyTag)
     }
 
-    const before = db.assets.length
+    const deletedAssets = db.assets.filter(
+      (asset) =>
+        (asset.id === manuscriptAssetId && asset.projectId === projectId) || isOwnedChapter(asset),
+    )
     db.assets = db.assets.filter(
       (asset) =>
         !(asset.id === manuscriptAssetId && asset.projectId === projectId) &&
         !isOwnedChapter(asset),
     )
-    const deletedChapters = before - db.assets.length - (manuscript ? 1 : 0)
+    const deletedChapters = deletedAssets.filter((asset) => asset.id !== manuscriptAssetId).length
 
     // 清掉项目级文稿索引（仅当指向被删文稿时）
     const project = db.projects.find((item) => item.id === projectId)
@@ -2978,6 +2983,13 @@ export const canvasApi = {
 
     updateProjectCounts(db, projectId)
     writeDb(db)
+    if (options?.hardDelete) {
+      for (const asset of deletedAssets) {
+        cleanupAssetSourceFiles(asset).catch((error) => {
+          logCanvasAssetCleanupWarning('deleteManuscript', error)
+        })
+      }
+    }
     return { snapshot: await this.openSnapshot(projectId), deletedChapters }
   },
 
@@ -3022,7 +3034,7 @@ export const canvasApi = {
    * 删除影视资产（默认只从项目移除引用，不动源文件，文档 §11.3）。
    *
    * `hardDelete=true` 时才额外清理该资产关联的源文件（Provider 文件 + 本地路径），
-   * 目前只有项目管理页的资源瀑布流会这样调用。
+   * 由明确提供「删除资产」语义的管理入口调用。
    */
   async deleteFilmAsset(
     projectId: string,
@@ -3035,9 +3047,8 @@ export const canvasApi = {
     updateProjectCounts(db, projectId)
     writeDb(db)
 
-    // 默认只移除引用，不动磁盘 / Provider 上的源文件：画布内的删除（资产中心、
-    // agent 工具）都走这条默认路径，语义与改造前一致。
-    // 只有项目管理页的资源瀑布流会显式传 hardDelete=true，表示「连源文件一起删」。
+    // 默认只移除引用，不动磁盘 / Provider 上的源文件，保留 agent 等调用方的软治理语义。
+    // 资产管理入口显式传 hardDelete=true，表示「连源文件一起删」。
     const hardDelete = options?.hardDelete === true
     if (hardDelete && target) {
       cleanupAssetSourceFiles(target).catch((error) => {
@@ -4602,8 +4613,8 @@ export const canvasApi = {
     writeDb(db)
 
     // 画布内删节点只做软删（hidden=true，可撤销），刻意不清理源文件：
-    // 同一张图/视频可能被多个节点或分镜引用，画布上的删除是「从画面移走」而不是
-    // 「从磁盘删掉」。真正的源文件清理放在项目管理页的资源瀑布流里手动触发。
+    // 同一张图/视频可能被多个节点或分镜引用，单独删除节点只是「从画面移走」。
+    // 资产管理入口若要彻底删除，会在此之后调用 deleteFilmAsset({ hardDelete: true })。
   },
 
   async createTask(projectId: string, request: CreateCanvasTaskRequest): Promise<CanvasSnapshot> {
@@ -7141,7 +7152,7 @@ async function ensureVideoThumbnail(
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * 源文件清理：仅在项目管理页删除资源时，同步清理数据库外的实际文件
+ * 源文件清理：在明确的资产管理入口删除资源时，同步清理数据库外的实际文件
  * ──────────────────────────────────────────────────────────────────────────
  *
  * 当前删除语义：
@@ -7149,7 +7160,7 @@ async function ensureVideoThumbnail(
  *    **不清理任何源文件**——画布上的删除只是「从画面移走」，同一素材可能仍被
  *    其它节点 / 分镜引用。
  *  - canvas.api.deleteFilmAsset：从 db.assets 移除（硬删，无撤销）；只有显式
- *    传 hardDelete=true 时（项目管理页的资源瀑布流）才继续清理源文件。
+ *    传 hardDelete=true 时（资产管理入口）才继续清理源文件。
  *
  * cleanupAssetSourceFiles 从 CanvasAsset 上识别 (providerProfileId, fileId) /
  * 本地路径，去重后通过 `canvas:asset:cleanup-files` 让主进程执行删除。

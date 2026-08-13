@@ -190,7 +190,8 @@ describe('canvas node deletion', () => {
 
   it('never dispatches cleanup-files IPC when deleting nodes, even if they carry source files', async () => {
     // 画布内删节点是软删（hidden=true，可撤销），刻意不清理源文件：
-    // 同一素材可能仍被其它节点/分镜引用，真正的源文件清理只在管理页资源瀑布流触发。
+    // 同一素材可能仍被其它节点/分镜引用；资产管理入口会在节点软删后
+    // 另行调用 deleteFilmAsset({ hardDelete: true }) 清理源文件。
     const raw = window.localStorage.getItem(STORAGE_KEY)
     expect(raw).toBeTruthy()
     const seeded = JSON.parse(raw!) as CanvasDb
@@ -219,7 +220,7 @@ describe('canvas node deletion', () => {
   })
 
   it('cleans asset source files only when deleteFilmAsset is called with hardDelete', async () => {
-    // 管理页瀑布流走 hardDelete=true → 清源文件；画布内（资产中心 / agent 工具)
+    // 管理类资产入口走 hardDelete=true → 清源文件；Agent 等治理调用
     // 不传该选项 → 只移除引用。
     const raw = window.localStorage.getItem(STORAGE_KEY)
     expect(raw).toBeTruthy()
@@ -277,5 +278,56 @@ describe('canvas node deletion', () => {
     }
     expect(payload.providerFiles).toEqual([{ providerProfileId: 'profile-x', fileId: 'pf-1' }])
     expect(payload.localPaths).toEqual(['/tmp/project-1/hard.png'])
+  })
+
+  it('cleans manuscript and chapter source files when hard deleting a manuscript', async () => {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    expect(raw).toBeTruthy()
+    const seeded = JSON.parse(raw!) as CanvasDb
+    seeded.assets.push(
+      {
+        id: 'manuscript-1',
+        projectId: 'project-1',
+        userId: 0,
+        type: 'file',
+        source: 'manual',
+        title: 'Manuscript',
+        storageKey: '/tmp/project-1/manuscript.txt',
+        metadata: { kind: 'manuscript' },
+        createdAt: at,
+        updatedAt: at,
+      },
+      {
+        id: 'chapter-1',
+        projectId: 'project-1',
+        userId: 0,
+        type: 'file',
+        source: 'manual',
+        title: 'Chapter 1',
+        metadata: { kind: 'chapter', manuscriptId: 'manuscript-1' },
+        storageKey: '/tmp/project-1/chapter-1.txt',
+        createdAt: at,
+        updatedAt: at,
+      },
+    )
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded))
+    __resetCanvasHotCache()
+
+    const invokeMock = window.spark.invoke as unknown as ReturnType<typeof vi.fn>
+    invokeMock.mockClear()
+
+    const result = await canvasApi.deleteManuscript('project-1', 'manuscript-1', {
+      hardDelete: true,
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(result.deletedChapters).toBe(1)
+    const cleanupCalls = invokeMock.mock.calls.filter(
+      (call) => call[0] === 'canvas:asset:cleanup-files',
+    )
+    expect(cleanupCalls).toHaveLength(2)
+    expect(
+      cleanupCalls.map((call) => (call[1] as { localPaths: string[] }).localPaths[0]).sort(),
+    ).toEqual(['/tmp/project-1/chapter-1.txt', '/tmp/project-1/manuscript.txt'])
   })
 })

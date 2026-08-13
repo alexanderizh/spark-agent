@@ -968,10 +968,11 @@ export function useCanvasWorkspace(projectId: string) {
 
   /** 删除整部文稿：级联删除全部章节，返回删除的章节数 */
   const deleteManuscript = useCallback(
-    async (manuscriptAssetId: string) => {
+    async (manuscriptAssetId: string, options?: { hardDelete?: boolean }) => {
       const { snapshot: next, deletedChapters } = await canvasApi.deleteManuscript(
         projectId,
         manuscriptAssetId,
+        options,
       )
       await applyCanvasMutationSnapshot(Promise.resolve(next))
       return deletedChapters
