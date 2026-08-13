@@ -3,7 +3,6 @@ export const EMPTY_HERO_THEME_IDS = [
   'celestial',
   'studio',
   'midnight',
-  'moss',
   'geometry',
 ] as const
 
@@ -57,15 +56,6 @@ export const EMPTY_HERO_THEMES: readonly EmptyHeroTheme[] = [
     titleLines: ['夜深了，灵感正清醒'],
     body: '从一个想法开始，让 Agent 陪你把它完成。',
     preview: 'linear-gradient(135deg, #090b18 0%, #29245e 58%, #745cff 100%)',
-  },
-  {
-    id: 'moss',
-    name: '苔原晨光',
-    description: '安静自然与有机秩序',
-    eyebrow: 'A QUIET START',
-    titleLines: ['慢一点，也能走得很远'],
-    body: '整理思路，选择方向，然后开始。',
-    preview: 'linear-gradient(135deg, #f6f5ef 0%, #9caf88 60%, #526b4a 100%)',
   },
   {
     id: 'geometry',

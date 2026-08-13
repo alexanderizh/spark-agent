@@ -113,7 +113,7 @@ describe('AppContext visual tweak persistence', () => {
         return {
           value: {
             theme: 'dark',
-            emptyHeroTheme: 'moss',
+            emptyHeroTheme: 'geometry',
             primary: '#10b981',
             density: 'compact',
             font: 'inter',
@@ -149,11 +149,11 @@ describe('AppContext visual tweak persistence', () => {
     })
 
     expect(container.querySelector('[data-testid="visual-tweaks"]')?.textContent).toBe(
-      'dark:moss:#10b981:compact',
+      'dark:geometry:#10b981:compact',
     )
     expect(JSON.parse(localStorage.getItem('spark-settings-appearance') ?? '{}')).toMatchObject({
       theme: 'dark',
-      emptyHeroTheme: 'moss',
+      emptyHeroTheme: 'geometry',
       primary: '#10b981',
       density: 'compact',
       font: 'inter',

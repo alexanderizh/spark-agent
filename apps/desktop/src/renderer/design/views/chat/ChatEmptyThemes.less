@@ -149,12 +149,6 @@
     linear-gradient(160deg, #f7f8ff, #eef1fb 58%, #f4f7ff);
 }
 
-.app:has(.chat-main-empty[data-empty-theme='moss']) {
-  --empty-session-backdrop:
-    radial-gradient(circle at 7% 18%, rgba(242, 194, 155, 0.28), transparent 25%),
-    radial-gradient(circle at 91% 73%, rgba(140, 168, 122, 0.15), transparent 31%), #f7f7f1;
-}
-
 .app:has(.chat-main-empty[data-empty-theme='geometry']) {
   --empty-session-backdrop: #faf8f2;
 }
@@ -182,13 +176,6 @@
     radial-gradient(circle at 73% 17%, rgba(101, 88, 238, 0.2), transparent 29%),
     radial-gradient(circle at 28% 58%, rgba(40, 105, 151, 0.13), transparent 32%),
     linear-gradient(105deg, #242426 0%, #171a25 13%, #0a1022 52%, #07101f);
-}
-
-.app.theme-dark:has(.chat-main-empty[data-empty-theme='moss']) {
-  --empty-session-backdrop:
-    radial-gradient(circle at 7% 18%, rgba(184, 125, 86, 0.18), transparent 27%),
-    radial-gradient(circle at 91% 73%, rgba(100, 133, 83, 0.18), transparent 33%),
-    linear-gradient(150deg, #121712, #182017 58%, #111914);
 }
 
 .app.theme-dark:has(.chat-main-empty[data-empty-theme='geometry']) {
@@ -1031,7 +1018,6 @@
  */
 .chat-main-empty[data-empty-theme] .single-empty-heading,
 .chat-main-empty[data-empty-theme='studio'] .single-empty-heading,
-.chat-main-empty[data-empty-theme='moss'] .single-empty-heading,
 .chat-main-empty[data-empty-theme='geometry'] .single-empty-heading {
   min-height: 108px;
   grid-template-columns: minmax(0, 1fr) minmax(160px, 240px);
@@ -1274,25 +1260,10 @@
 
   .single-empty-heading,
   .chat-main-empty[data-empty-theme='studio'] .single-empty-heading,
-  .chat-main-empty[data-empty-theme='moss'] .single-empty-heading,
   .chat-main-empty[data-empty-theme='geometry'] .single-empty-heading {
     min-height: 0;
     grid-template-columns: 1fr;
     padding: 0 8px;
-  }
-
-  .chat-main-empty[data-empty-theme='moss'] .single-empty-copy,
-  .chat-main-empty[data-empty-theme='moss'] .single-empty-art {
-    grid-column: 1;
-  }
-
-  .chat-main-empty[data-empty-theme='moss'] .single-empty-copy {
-    grid-row: 1;
-  }
-
-  .single-empty-art,
-  .chat-main-empty[data-empty-theme='moss'] .single-empty-art {
-    display: none;
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {

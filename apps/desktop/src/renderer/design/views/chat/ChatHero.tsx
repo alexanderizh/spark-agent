@@ -93,7 +93,6 @@ const EMPTY_HERO_THEME_SHORT_LABELS: Record<EmptyHeroThemeId, string> = {
   celestial: '星图',
   studio: '灵感',
   midnight: '午夜',
-  moss: '苔原',
   geometry: '几何',
 }
 
@@ -397,14 +396,6 @@ export function SingleAgentEmptyHero({
               <EmptyHeroThemeSwitcher themeId={theme.id} onSelectTheme={onSelectTheme} />
             </div>
             <p className="single-empty-body">{theme.body}</p>
-          </div>
-          <div className="single-empty-art" aria-hidden="true">
-            <span className="single-empty-art-orb" />
-            <span className="single-empty-art-ring ring-one" />
-            <span className="single-empty-art-ring ring-two" />
-            <span className="single-empty-art-spark" />
-            <span className="single-empty-art-dot dot-one" />
-            <span className="single-empty-art-dot dot-two" />
           </div>
         </div>
       )}
