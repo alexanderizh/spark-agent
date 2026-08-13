@@ -40,9 +40,11 @@ import {
 import { getNodePipelineActions } from './canvasPipeline'
 import { CANVAS_PIPELINE_MENU_GROUPS, type CanvasPipelineAssetKind } from './canvasPipelineOps'
 import {
+  CANVAS_FEATURE_MENU_LABEL,
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
   CANVAS_FUNCTIONAL_MENU_LABEL,
-  canvasVisibleBaseCreateOperations,
+  canvasVisibleFeatureCreateOperations,
+  canvasVisiblePrimaryCreateOperations,
 } from './canvasNodeGenerationMenu'
 import { getOperationVisual } from './canvasOperationIcons'
 import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
@@ -1041,14 +1043,14 @@ export const CanvasNode = memo(function CanvasNode({
               { type: 'divider' as const },
             ]
           : []),
-        ...(pipelineActions.length > 0 || canCreateOperationFromNode
+        ...(pipelineActions.length > 0
           ? [
               {
                 key: 'pipeline-actions',
                 popupClassName: 'canvas-node-context-submenu-popup',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Workflow size={14} /> {CANVAS_FUNCTIONAL_MENU_LABEL}
+                    <Icons.Film size={14} /> {CANVAS_FUNCTIONAL_MENU_LABEL}
                   </span>
                 ),
                 children: [
@@ -1075,14 +1077,30 @@ export const CanvasNode = memo(function CanvasNode({
                         ]
                       : []
                   }),
+                ],
+              },
+              { type: 'divider' as const },
+            ]
+          : []),
+        ...(contextualAiActions.length > 0 || canCreateOperationFromNode
+          ? [
+              {
+                key: 'feature-actions',
+                popupClassName: 'canvas-node-context-submenu-popup',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Sparkles size={14} /> {CANVAS_FEATURE_MENU_LABEL}
+                  </span>
+                ),
+                children: [
                   {
                     type: 'group' as const,
-                    key: 'pipeline-group-node-enhance',
-                    label: '通用视觉工具',
+                    key: 'feature-group-node-enhance',
+                    label: '视觉工具',
                     children: [
                       ...contextualAiActions,
                       ...CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => ({
-                        key: `pipeline-op-${item.operation}`,
+                        key: `feature-op-${item.operation}`,
                         label: (
                           <span className="canvas-menu-item">
                             {resolvePipelineIcon(item.icon)} {item.label}
@@ -1092,13 +1110,81 @@ export const CanvasNode = memo(function CanvasNode({
                       })),
                     ],
                   },
+                  ...(canCreateOperationFromNode
+                    ? [
+                        {
+                          type: 'group' as const,
+                          key: 'feature-group-media-tools',
+                          label: '媒体工具',
+                          children: canvasVisibleFeatureCreateOperations().map((item) => ({
+                            key: `feature-op-${item.operation}`,
+                            label: (
+                              <span className="canvas-menu-item">
+                                {getOperationVisual(item.operation).icon} {item.label}
+                              </span>
+                            ),
+                            onClick: () => actions.createOperationChild(node.id, item.operation),
+                          })),
+                        },
+                      ]
+                    : []),
+                  ...(isImageContent && hasOperationOutput
+                    ? [
+                        {
+                          type: 'group' as const,
+                          key: 'feature-group-image-tools',
+                          label: '图片工具',
+                          children: [
+                            ...(actions.annotateImage
+                              ? [
+                                  {
+                                    key: 'annotate-image',
+                                    label: (
+                                      <span className="canvas-menu-item">
+                                        <Icons.Edit size={14} /> 图片标注
+                                      </span>
+                                    ),
+                                    onClick: () => actions.annotateImage?.(node.id),
+                                  },
+                                ]
+                              : []),
+                            ...(actions.extractCharacterSubview
+                              ? [
+                                  {
+                                    key: 'extract-character-subview',
+                                    label: (
+                                      <span className="canvas-menu-item">
+                                        <Icons.Crop size={14} /> 提取子视图
+                                      </span>
+                                    ),
+                                    onClick: () => actions.extractCharacterSubview?.(node.id),
+                                  },
+                                ]
+                              : []),
+                            ...(actions.splitGridImage
+                              ? [
+                                  {
+                                    key: 'split-grid-image',
+                                    label: (
+                                      <span className="canvas-menu-item">
+                                        <Icons.Grid size={14} /> 宫格切分
+                                      </span>
+                                    ),
+                                    onClick: () => actions.splitGridImage?.(node.id),
+                                  },
+                                ]
+                              : []),
+                          ],
+                        },
+                      ]
+                    : []),
                 ],
               },
               { type: 'divider' as const },
             ]
           : []),
         ...(canCreateOperationFromNode
-          ? canvasVisibleBaseCreateOperations().map((item) => ({
+          ? canvasVisiblePrimaryCreateOperations().map((item) => ({
               key: `op-${item.operation}`,
               label: (
                 <span className="canvas-menu-item">
@@ -1108,60 +1194,17 @@ export const CanvasNode = memo(function CanvasNode({
               onClick: () => actions.createOperationChild(node.id, item.operation),
             }))
           : []),
-        ...(isImageContent && hasOperationOutput
+        ...(isImageContent && hasOperationOutput && isPanorama360
           ? [
-              ...(isPanorama360
-                ? [
-                    {
-                      key: 'preview-panorama',
-                      label: (
-                        <span className="canvas-menu-item">
-                          <Icons.Globe size={14} /> 全景预览
-                        </span>
-                      ),
-                      onClick: () => actions.previewPanorama(node.id),
-                    },
-                  ]
-                : []),
-              ...(actions.annotateImage
-                ? [
-                    {
-                      key: 'annotate-image',
-                      label: (
-                        <span className="canvas-menu-item">
-                          <Icons.Edit size={14} /> 图片标注
-                        </span>
-                      ),
-                      onClick: () => actions.annotateImage?.(node.id),
-                    },
-                  ]
-                : []),
-              ...(actions.extractCharacterSubview
-                ? [
-                    {
-                      key: 'extract-character-subview',
-                      label: (
-                        <span className="canvas-menu-item">
-                          <Icons.Crop size={14} /> 提取子视图
-                        </span>
-                      ),
-                      onClick: () => actions.extractCharacterSubview?.(node.id),
-                    },
-                  ]
-                : []),
-              ...(actions.splitGridImage
-                ? [
-                    {
-                      key: 'split-grid-image',
-                      label: (
-                        <span className="canvas-menu-item">
-                          <Icons.Grid size={14} /> 宫格切分
-                        </span>
-                      ),
-                      onClick: () => actions.splitGridImage?.(node.id),
-                    },
-                  ]
-                : []),
+              {
+                key: 'preview-panorama',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Globe size={14} /> 全景预览
+                  </span>
+                ),
+                onClick: () => actions.previewPanorama(node.id),
+              },
             ]
           : []),
         {

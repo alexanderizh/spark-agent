@@ -65,9 +65,11 @@ import { operationNodePresentationSize } from './canvasOperationNodePresentation
 import { resolveCanvasVideoNodePresentationSize } from './canvasVideoNodePresentation'
 import { CANVAS_FILM_PIPELINE_OPS, CANVAS_PIPELINE_MENU_GROUPS } from './canvasPipelineOps'
 import {
+  CANVAS_FEATURE_MENU_LABEL,
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
   CANVAS_FUNCTIONAL_MENU_LABEL,
-  canvasVisibleBaseCreateOperations,
+  canvasVisibleFeatureCreateOperations,
+  canvasVisiblePrimaryCreateOperations,
 } from './canvasNodeGenerationMenu'
 import { getOperationVisual } from './canvasOperationIcons'
 import { readCharacterSubviews } from './canvasCharacterLibrary'
@@ -384,6 +386,13 @@ function CanvasPaneResourceNodeActions({
       )}
     </>
   )
+}
+
+/** 把流水线动作的语义图标 key 映射为画布图标。 */
+function resolvePanePipelineIcon(iconKey: string | undefined): ReactNode {
+  const map = Icons as unknown as Record<string, (p: { size?: number }) => ReactNode>
+  const IconFn = (iconKey && map[iconKey]) || Icons.Workflow
+  return <IconFn size={14} />
 }
 
 export type CanvasStageViewport = Viewport & {
@@ -1694,9 +1703,10 @@ function CanvasStageInner({
     (event: MouseEvent | ReactMouseEvent<Element, MouseEvent>) => {
       event.preventDefault()
       event.stopPropagation()
+      onSelectionChange([])
       openPaneContextMenuAt(event)
     },
-    [openPaneContextMenuAt],
+    [onSelectionChange, openPaneContextMenuAt],
   )
 
   const handleStageContextMenuCapture = useCallback(
@@ -1732,9 +1742,12 @@ function CanvasStageInner({
       event.preventDefault()
       event.stopPropagation()
       event.nativeEvent.stopImmediatePropagation?.()
+      if (!targetNodeId) {
+        onSelectionChange([])
+      }
       openPaneContextMenuAt(event)
     },
-    [openPaneContextMenuAt, selectedNodeIds],
+    [onSelectionChange, openPaneContextMenuAt, selectedNodeIds],
   )
 
   const closePaneContextMenu = useCallback(() => {
@@ -2147,10 +2160,11 @@ function CanvasStageInner({
       _event: MouseEvent | TouchEvent,
       params: { nodeId: string | null; handleType: HandleType | null },
     ) => {
-      pendingConnectionRef.current =
-        params.nodeId && params.handleType === 'source' ? { sourceNodeId: params.nodeId } : null
+      const sourceNodeId = params.handleType === 'source' ? params.nodeId : null
+      pendingConnectionRef.current = sourceNodeId ? { sourceNodeId } : null
+      if (sourceNodeId) onSelectionChange([])
     },
-    [],
+    [onSelectionChange],
   )
 
   const handleConnectEnd = useCallback(
@@ -2887,29 +2901,12 @@ function CanvasStageInner({
                   <div className="canvas-pane-context-section-title">任务节点</div>
                   {onCreatePipelineAtPosition && (
                     <CanvasPaneContextSubmenu
-                      icon={<Icons.Workflow size={14} />}
+                      icon={<Icons.Film size={14} />}
                       label={CANVAS_FUNCTIONAL_MENU_LABEL}
                       openLeft={paneContextMenu.openSubmenusLeft}
                       openUp={paneContextMenu.openSubmenusUp}
                       stageElement={stageElement}
                     >
-                      <CanvasPaneResourceNodeActions
-                        onAddImage={handleAddImageFromPane}
-                        onAddDirectorStage3D={
-                          onAddDirectorStage3DAtPosition
-                            ? handleAddDirectorStage3DFromPane
-                            : undefined
-                        }
-                        onAddVideoWorkbench={
-                          onAddVideoWorkbenchAtPosition
-                            ? handleAddVideoWorkbenchFromPane
-                            : undefined
-                        }
-                        onInsertAsset={
-                          onInsertAssetFromPane ? handleInsertAssetFromPane : undefined
-                        }
-                      />
-                      <div className="canvas-pane-context-divider" />
                       {panePipelineOperationGroups.map((group) => (
                         <div key={group.id} className="canvas-pane-context-group">
                           <div className="canvas-pane-context-section-title">{group.label}</div>
@@ -2920,35 +2917,76 @@ function CanvasStageInner({
                               role="menuitem"
                               onClick={() => handleCreatePipelineFromPane(op.id)}
                             >
-                              <Icons.Workflow size={14} />
+                              {resolvePanePipelineIcon(op.icon)}
                               <span>{op.label}</span>
                             </button>
                           ))}
                         </div>
                       ))}
-                      <div className="canvas-pane-context-section-title">通用视觉工具</div>
-                      {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => {
-                        const visual = getOperationVisual(item.operation)
-                        return (
-                          <button
-                            type="button"
-                            key={item.operation}
-                            role="menuitem"
-                            className={`canvas-pane-context-op ${visual.colorClass}`}
-                            onClick={() => handleCreateOperationFromPane(item.operation)}
-                          >
-                            <span className="canvas-pane-context-op-icon">{visual.icon}</span>
-                            <span>{item.label}</span>
-                          </button>
-                        )
-                      })}
                     </CanvasPaneContextSubmenu>
                   )}
+                  <CanvasPaneContextSubmenu
+                    icon={<Icons.Sparkles size={14} />}
+                    label={CANVAS_FEATURE_MENU_LABEL}
+                    openLeft={paneContextMenu.openSubmenusLeft}
+                    openUp={paneContextMenu.openSubmenusUp}
+                    stageElement={stageElement}
+                  >
+                    <CanvasPaneResourceNodeActions
+                      onAddImage={handleAddImageFromPane}
+                      onAddDirectorStage3D={
+                        onAddDirectorStage3DAtPosition
+                          ? handleAddDirectorStage3DFromPane
+                          : undefined
+                      }
+                      onAddVideoWorkbench={
+                        onAddVideoWorkbenchAtPosition ? handleAddVideoWorkbenchFromPane : undefined
+                      }
+                      onInsertAsset={onInsertAssetFromPane ? handleInsertAssetFromPane : undefined}
+                    />
+                    {onCreateOperationAtPosition && (
+                      <>
+                        <div className="canvas-pane-context-divider" />
+                        <div className="canvas-pane-context-section-title">视觉工具</div>
+                        {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => {
+                          const visual = getOperationVisual(item.operation)
+                          return (
+                            <button
+                              type="button"
+                              key={item.operation}
+                              role="menuitem"
+                              className={`canvas-pane-context-op ${visual.colorClass}`}
+                              onClick={() => handleCreateOperationFromPane(item.operation)}
+                            >
+                              <span className="canvas-pane-context-op-icon">{visual.icon}</span>
+                              <span>{item.label}</span>
+                            </button>
+                          )
+                        })}
+                        <div className="canvas-pane-context-section-title">媒体工具</div>
+                        {canvasVisibleFeatureCreateOperations().map((item) => {
+                          const visual = getOperationVisual(item.operation)
+                          return (
+                            <button
+                              type="button"
+                              key={item.operation}
+                              role="menuitem"
+                              className={`canvas-pane-context-op ${visual.colorClass}`}
+                              onClick={() => handleCreateOperationFromPane(item.operation)}
+                            >
+                              <span className="canvas-pane-context-op-icon">{visual.icon}</span>
+                              <span>{item.label}</span>
+                            </button>
+                          )
+                        })}
+                      </>
+                    )}
+                  </CanvasPaneContextSubmenu>
                   {onCreateOperationAtPosition && (
                     <>
                       <CanvasPaneResourceNodeActions onAddText={handleAddTextFromPane} />
                       <div className="canvas-pane-context-divider" />
-                      {canvasVisibleBaseCreateOperations().map((item) => {
+                      {canvasVisiblePrimaryCreateOperations().map((item) => {
                         const visual = getOperationVisual(item.operation)
                         return (
                           <button

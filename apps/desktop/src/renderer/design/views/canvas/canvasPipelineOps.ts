@@ -127,7 +127,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   {
     id: 'screenplay.storyboard_grid',
     label: '生成分镜关键帧图',
-    icon: 'Image',
+    icon: 'Grid',
     kind: 'image',
     produces: 'keyframe',
     appliesTo: ['screenplay'],
@@ -139,7 +139,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   {
     id: 'character.three_view',
     label: '生成角色身份板',
-    icon: 'User',
+    icon: 'Users',
     kind: 'image',
     produces: 'design_card',
     appliesTo: ['character'],
@@ -150,7 +150,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   {
     id: 'scene.scene_image',
     label: '生成场景图',
-    icon: 'Box',
+    icon: 'Map',
     kind: 'image',
     produces: 'design_card',
     appliesTo: ['scene'],
@@ -161,7 +161,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   {
     id: 'prop.prop_image',
     label: '生成道具图',
-    icon: 'Box',
+    icon: 'Package',
     kind: 'image',
     produces: 'design_card',
     appliesTo: ['prop'],
@@ -184,7 +184,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   {
     id: 'shot.to_keyframes',
     label: '生成关键帧',
-    icon: 'Image',
+    icon: 'ImagePlus',
     kind: 'image',
     produces: 'keyframe',
     appliesTo: ['shot'],
@@ -204,7 +204,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   {
     id: 'screenplay.split_episodes',
     label: '按剧情分集',
-    icon: 'FileText',
+    icon: 'Layers',
     kind: 'text',
     produces: 'screenplay',
     appliesTo: ['screenplay'],
@@ -214,7 +214,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   },
   {
     id: 'scene.panorama_360',
-    label: '生成重点场景 360 全景图',
+    label: '场景 360 全景图',
     icon: 'Globe',
     kind: 'image',
     produces: 'design_card',
