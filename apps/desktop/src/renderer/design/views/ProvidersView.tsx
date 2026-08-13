@@ -110,6 +110,10 @@ import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
 import { ProviderManifestContractEditor } from '../components/ProviderManifestContractEditor'
 import { ManagedModelPreferencesModal } from './platform-model/ManagedModelPreferencesModal'
 import { editableProviderApiKeyPayload, loadEditableProviderSnapshot } from './providerApiKeyEcho'
+import {
+  CONTEXT_WINDOW_PRESETS,
+  resolveContextWindowSelectValue,
+} from '../utils/context-window'
 import './ProvidersView.less'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -194,27 +198,6 @@ const ROUTING_SLOTS: Array<{ value: RoutingComplexity; label: string; hint: stri
   { value: 'complex', label: '复杂任务', hint: '开发、重构、debug、测试、方案' },
   { value: 'longContext', label: '长上下文', hint: '超长历史或大上下文任务' },
 ]
-
-/**
- * 上下文窗口下拉预设。
- * - 0：默认（未配置，运行时回落 200K 或 supportsMillionContext=true 时 1M）
- * - 200K / 256K / 400K / 1M：常见档位
- * - -1：自定义（显示数字输入框）
- */
-const CONTEXT_WINDOW_PRESETS: Array<{ value: number; label: string }> = [
-  { value: 0, label: '默认 (200K)' },
-  { value: 200_000, label: '200K' },
-  { value: 256_000, label: '256K' },
-  { value: 400_000, label: '400K' },
-  { value: 1_000_000, label: '1M' },
-  { value: -1, label: '自定义…' },
-]
-
-function resolveContextWindowSelectValue(contextWindow: number): number {
-  if (contextWindow <= 0) return 0
-  if (CONTEXT_WINDOW_PRESETS.some((p) => p.value === contextWindow)) return contextWindow
-  return -1
-}
 
 const EMPTY_MEDIA_FORM = {
   mediaProvider: '' as MediaProviderKind | '',
