@@ -3246,6 +3246,7 @@ export function registerAllIpcHandlers(): void {
       ...(req.skillId != null ? { skillId: req.skillId } : {}),
       ...(req.skillParams != null ? { skillParams: req.skillParams } : {}),
       ...(req.attachments != null ? { attachments: req.attachments } : {}),
+      ...(req.sessionReferences != null ? { sessionReferences: req.sessionReferences } : {}),
       ...(req.teamConfig != null ? { teamConfig: req.teamConfig } : {}),
       ...(req.mentionAgentId != null ? { mentionAgentId: req.mentionAgentId } : {}),
       ...(req.interruptActive === true ? { interruptActive: true } : {}),
@@ -3285,6 +3286,7 @@ export function registerAllIpcHandlers(): void {
         ...(req.skillId != null ? { skillId: req.skillId } : {}),
         ...(req.skillParams != null ? { skillParams: req.skillParams } : {}),
         ...(req.attachments != null ? { attachments: req.attachments } : {}),
+        ...(req.sessionReferences != null ? { sessionReferences: req.sessionReferences } : {}),
         ...(req.teamConfig != null ? { teamConfig: req.teamConfig } : {}),
         ...(req.mentionAgentId != null ? { mentionAgentId: req.mentionAgentId } : {}),
         ...(req.interruptActive === true ? { interruptActive: true } : {}),
@@ -3417,6 +3419,48 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('session:list-pending-questions', async (req) => {
     return { questions: pendingUserQuestions.list(req.sessionId) }
+  })
+
+  typedIpcHandle('session:fork', async (req) => {
+    log.info(`session:fork requested, sourceSessionId=${req.sourceSessionId}`)
+    const result = await getSessionService().forkSession(req)
+    pushStreamEvent('stream:session:created', {
+      sessionId: result.sessionId,
+      session: result.session,
+    })
+    return result
+  })
+
+  typedIpcHandle('session:get-lineage', async (req) => {
+    return getSessionService().getSessionLineage(req.sessionId)
+  })
+
+  typedIpcHandle('session:reference-candidates', async (req) => {
+    return getSessionService().listSessionReferenceCandidates(req)
+  })
+
+  typedIpcHandle('session:attach-reference', async (req) => {
+    return getSessionService().attachSessionReference(req)
+  })
+
+  typedIpcHandle('session:list-references', async (req) => {
+    return getSessionService().listSessionReferences(req.targetSessionId)
+  })
+
+  typedIpcHandle('session:update-reference', async (req) => {
+    return getSessionService().updateSessionReference(req)
+  })
+
+  typedIpcHandle('session:revoke-reference', async (req) => {
+    return getSessionService().revokeSessionReference(req)
+  })
+
+  typedIpcHandle('session:read-reference', async (req) => {
+    return getSessionService().readReferencedSession({ ...req, actor: 'user' })
+  })
+
+  typedIpcHandle('session:search-reference', async (req) => {
+    return getSessionService().searchReferencedSession({ ...req, actor: 'user' })
   })
 
   // ─── Provider Handlers ─────────────────────────────────────────────────

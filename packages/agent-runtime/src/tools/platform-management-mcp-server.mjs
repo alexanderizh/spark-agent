@@ -1652,6 +1652,43 @@ function toolDefinitions() {
       },
     },
 
+    // ── Read-only referenced sessions ──
+    {
+      name: 'referenced_sessions_list',
+      description:
+        '列出当前会话已明确授权的参考会话。只返回 opaque referenceId、标题、快照水位和状态，不接受任意 sessionId。',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'referenced_session_search',
+      description:
+        '在当前会话已授权的参考会话中搜索用户消息和完整助手消息。先调用 referenced_sessions_list 获取 referenceId。',
+      inputSchema: {
+        type: 'object',
+        required: ['referenceId', 'query'],
+        properties: {
+          referenceId: { type: 'string', description: '来自 referenced_sessions_list 的 opaque referenceId' },
+          query: { type: 'string', minLength: 1, maxLength: 200, description: '搜索关键词' },
+          limit: { type: 'integer', minimum: 1, maximum: 20, description: '结果数量上限，默认 10' },
+        },
+      },
+    },
+    {
+      name: 'referenced_session_read',
+      description:
+        '按完整轮次分页读取当前会话已授权的参考会话。不会返回 system prompt、密钥、权限载荷或未脱敏的内部工具参数。',
+      inputSchema: {
+        type: 'object',
+        required: ['referenceId'],
+        properties: {
+          referenceId: { type: 'string', description: '来自 referenced_sessions_list 的 opaque referenceId' },
+          cursor: { type: 'integer', minimum: 0, description: '上一次返回的 nextCursor' },
+          turnLimit: { type: 'integer', minimum: 1, maximum: 8, description: '最多读取的完整轮次数' },
+          detail: { type: 'string', enum: ['transcript', 'user_visible_activity'], default: 'transcript' },
+        },
+      },
+    },
+
     // ── Current-session Scheduled Tasks ──
     {
       name: 'session_schedule_list',
@@ -1781,6 +1818,9 @@ async function handleToolCall(name, args) {
     sessions_switch_mode: 'sessions.switch_mode',
     sessions_switch_permission: 'sessions.switch_permission',
     sessions_switch_reasoning_effort: 'sessions.switch_reasoning_effort',
+    referenced_sessions_list: 'referenced_sessions.list',
+    referenced_session_read: 'referenced_session.read',
+    referenced_session_search: 'referenced_session.search',
     session_schedule_list: 'session_schedule.list',
     session_schedule_get: 'session_schedule.get',
     session_schedule_create: 'session_schedule.create',
@@ -1809,7 +1849,11 @@ async function handleToolCall(name, args) {
   // Auto-inject sessionId for current-session tools (read from env). Never trust
   // or forward a model-provided session id.
   const rpcArgs = { ...args }
-  if (name.startsWith('sessions_') || name.startsWith('session_schedule_')) {
+  if (
+    name.startsWith('sessions_') ||
+    name.startsWith('session_schedule_') ||
+    name.startsWith('referenced_session')
+  ) {
     if (!SESSION_ID) {
       return {
         content: [{ type: 'text', text: 'Error: current session id is unavailable' }],

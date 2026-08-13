@@ -38,6 +38,7 @@ import { OutcomeRoomIpcSchemaRegistry } from '../outcome-room.js'
 import { TeamP1IpcSchemaRegistry } from '../team-p1.js'
 import { TaskGraphIpcSchemaRegistry } from '../task-graph.js'
 import { DeliberationIpcSchemaRegistry } from '../deliberation.js'
+import { CrossSessionCollaborationIpcSchemaRegistry } from '../cross-session-collaboration.js'
 import { EvidenceCostIpcSchemaRegistry } from '../evidence-cost.js'
 import { ReplayIpcSchemaRegistry } from '../replay-playbook.js'
 
@@ -266,6 +267,25 @@ export const SessionSendTurnRequestSchema = z.object({
       }),
     )
     .max(20)
+    .optional(),
+  sessionReferences: z
+    .array(
+      z
+        .object({
+          sourceSessionId: SessionIdSchema,
+          snapshotSeq: z.number().int().min(0).optional(),
+        })
+        .strict(),
+    )
+    .max(10)
+    .superRefine((references, context) => {
+      if (new Set(references.map((reference) => reference.sourceSessionId)).size !== references.length) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'sessionReferences must not contain duplicate source sessions',
+        })
+      }
+    })
     .optional(),
   appSnapshotIds: z
     .array(ComputerUseIdentifierSchema)
@@ -936,6 +956,7 @@ export const IpcSchemaRegistry = {
   ...TeamP1IpcSchemaRegistry,
   ...TaskGraphIpcSchemaRegistry,
   ...DeliberationIpcSchemaRegistry,
+  ...CrossSessionCollaborationIpcSchemaRegistry,
   ...EvidenceCostIpcSchemaRegistry,
   ...ReplayIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,

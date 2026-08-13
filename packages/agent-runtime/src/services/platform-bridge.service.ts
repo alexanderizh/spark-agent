@@ -74,6 +74,39 @@ function requireSessionId(params: Record<string, unknown>): string {
   return sessionId
 }
 
+function requireText(params: Record<string, unknown>, key: string, maxLength: number): string {
+  const value = typeof params[key] === 'string' ? params[key].trim() : ''
+  if (!value) throw new Error(`Missing parameter: ${key}`)
+  if (value.length > maxLength) throw new Error(`${key} exceeds maximum length ${maxLength}`)
+  return value
+}
+
+/**
+ * Keep session routing identifiers inside the main-process boundary. The model
+ * only needs the opaque referenceId to use the read/search tools; exposing the
+ * source or target session IDs would make the authorization boundary
+ * needlessly discoverable and encourage callers to treat them as tool inputs.
+ */
+function stripSessionRoutingFields(value: unknown): unknown {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return value
+  const safe = { ...(value as Record<string, unknown>) }
+  delete safe.sourceSessionId
+  delete safe.targetSessionId
+  return safe
+}
+
+function sanitizeReferencedSessionPayload(value: unknown): unknown {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return value
+  const payload = { ...(value as Record<string, unknown>) }
+  if (Array.isArray(payload.references)) {
+    payload.references = payload.references.map(stripSessionRoutingFields)
+  }
+  if (payload.reference != null) {
+    payload.reference = stripSessionRoutingFields(payload.reference)
+  }
+  return payload
+}
+
 // ─── Types ────────────────────────────────────────────────────────────
 
 export interface PlatformBridgeDeps {
@@ -132,6 +165,23 @@ export interface PlatformBridgeDeps {
       sessionId: string
       toolName: string
       args: unknown
+    }): Promise<unknown>
+    listSessionReferences(sessionId: string): Promise<{ references: unknown[] }>
+    listActiveSessionReferences(sessionId: string): Promise<{ references: unknown[] }>
+    readReferencedSession(params: {
+      targetSessionId: string
+      referenceId: string
+      cursor?: number
+      turnLimit?: number
+      detail?: 'transcript' | 'user_visible_activity'
+      actor?: 'user' | 'agent' | 'system'
+    }): Promise<unknown>
+    searchReferencedSession(params: {
+      targetSessionId: string
+      referenceId: string
+      query: string
+      limit?: number
+      actor?: 'user' | 'agent' | 'system'
     }): Promise<unknown>
   }
   /**
@@ -402,6 +452,35 @@ export class PlatformBridgeService {
         return this.sessionSwitchPermission(d, params)
       case 'sessions.switch_reasoning_effort':
         return this.sessionSwitchReasoningEffort(d, params)
+
+      // Read-only cross-session context. The child process supplies only the
+      // current session identity; SessionService checks reference ownership and
+      // status again before returning any content.
+      case 'referenced_sessions.list':
+        return sanitizeReferencedSessionPayload(
+          await d.sessionService.listActiveSessionReferences(requireSessionId(params)),
+        )
+      case 'referenced_session.read':
+        return sanitizeReferencedSessionPayload(
+          await d.sessionService.readReferencedSession({
+            targetSessionId: requireSessionId(params),
+            referenceId: requireText(params, 'referenceId', 160),
+            ...(typeof params.cursor === 'number' ? { cursor: params.cursor } : {}),
+            ...(typeof params.turnLimit === 'number' ? { turnLimit: params.turnLimit } : {}),
+            ...(params.detail === 'user_visible_activity' ? { detail: params.detail } : {}),
+            actor: 'agent',
+          }),
+        )
+      case 'referenced_session.search':
+        return sanitizeReferencedSessionPayload(
+          await d.sessionService.searchReferencedSession({
+            targetSessionId: requireSessionId(params),
+            referenceId: requireText(params, 'referenceId', 160),
+            query: requireText(params, 'query', 200),
+            ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+            actor: 'agent',
+          }),
+        )
 
       // ── Current-session scheduled tasks ──
       case 'session_schedule.list':

@@ -46,6 +46,20 @@ export type {
   CreateApplicationSnapshotWithBlobsParams,
 } from './application-snapshot.repository.js'
 export { SessionRepository } from './session.repository.js'
+export { SessionCollaborationRepository } from './session-collaboration.repository.js'
+export type {
+  SessionReferenceStatus,
+  SessionReferenceAuditAction,
+  SessionLineageRow,
+  SessionReferenceRow,
+  SessionReferenceAuditRow,
+  SessionReferenceCandidate,
+  SessionReferenceView,
+  SessionForkResult,
+  ReferencedSessionTurn,
+  ReferencedSessionReadResult,
+  ReferencedSessionSearchHit,
+} from './session-collaboration.repository.js'
 export { WorkspaceRepository } from './workspace.repository.js'
 export { CanvasProjectRepository, CanvasSnapshotRepository } from './canvas.repository.js'
 export type {

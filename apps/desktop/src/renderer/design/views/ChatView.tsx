@@ -105,6 +105,8 @@ import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
 import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
 import { ChatTurnNavigator } from './chat/ChatTurnNavigator'
 import { buildChatTurnNavItems, type ChatTurnNavItem } from './chat/chat-turn-navigation'
+import { SessionForkDialog } from './chat/SessionForkDialog'
+import { SessionLineageBar } from './chat/SessionLineageBar'
 import { ApplicationSnapshotPreviewCard } from './chat/ApplicationSnapshotPreviewCard'
 import { reorderChatTurnSummaryBlocks } from './chat/chat-turn-summary-order'
 import {
@@ -307,7 +309,9 @@ import type {
   EnvConfigGetResponse,
   EnvVarItem,
   SessionId,
+  SessionLineage,
   SessionReasoningEffort,
+  TurnId,
   SessionGetQueueResponse,
   SessionQueuedTurn,
   SkillConfigGetResponse,
@@ -429,6 +433,14 @@ export function ChatView({
 
   // ── Local UI/runtime state ──
   const [showInspector, setShowInspector] = useState(false)
+  const [forkDialog, setForkDialog] = useState<{ turnId: TurnId; ordinal?: number } | null>(null)
+  const [activeLineage, setActiveLineage] = useState<SessionLineage | null>(null)
+  const [activeChildLineages, setActiveChildLineages] = useState<SessionLineage[]>([])
+  const [lineageSessionId, setLineageSessionId] = useState<SessionId | null>(null)
+  const [lineageAnchor, setLineageAnchor] = useState<{
+    sessionId: SessionId
+    turnId: TurnId
+  } | null>(null)
   const [sessionScheduleEnabledCount, setSessionScheduleEnabledCount] = useState(0)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
@@ -1495,6 +1507,75 @@ export function ChatView({
 
   // ── Computed values ──
   const activeSession = sessions.find((s) => s.id === active) ?? null
+  const { invoke: getSessionLineage } = useIpcInvoke('session:get-lineage')
+  useEffect(() => {
+    if (active == null) {
+      setActiveLineage(null)
+      setActiveChildLineages([])
+      setLineageSessionId(null)
+      return
+    }
+    let cancelled = false
+    void getSessionLineage({ sessionId: active })
+      .then((result) => {
+        if (!cancelled) {
+          setActiveLineage(result.lineage)
+          setActiveChildLineages(result.children ?? [])
+          setLineageSessionId(active)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setActiveLineage(null)
+          setActiveChildLineages([])
+          setLineageSessionId(active)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [active, getSessionLineage])
+  const lineageSource =
+    activeLineage == null
+      ? null
+      : (sessions.find((session) => session.id === activeLineage.parentSessionId) ?? null)
+  const handleOpenLineageSource = useCallback(() => {
+    if (activeLineage == null || lineageSource == null) return
+    setLineageAnchor(
+      activeLineage.forkAnchorTurnId == null
+        ? null
+        : {
+            sessionId: activeLineage.parentSessionId,
+            turnId: activeLineage.forkAnchorTurnId,
+          },
+    )
+    sessionCtx.setActiveSession(activeLineage.parentSessionId)
+    sessionCtx.setActiveWorkspace(lineageSource.workspaceIds[0] ?? null)
+    setTweak('view', 'chat')
+  }, [activeLineage, lineageSource, sessionCtx, setTweak])
+  const handleOpenLineageChild = useCallback(
+    (childLineage: SessionLineage) => {
+      const childSession = sessions.find((session) => session.id === childLineage.childSessionId)
+      setLineageAnchor(null)
+      sessionCtx.setActiveSession(childLineage.childSessionId)
+      sessionCtx.revealSession(childLineage.childSessionId)
+      if (childSession != null) {
+        sessionCtx.setActiveWorkspace(childSession.workspaceIds[0] ?? null)
+      }
+      setTweak('view', 'chat')
+    },
+    [sessions, sessionCtx, setTweak],
+  )
+  const handleForkDialogConfirm = useCallback(
+    async (title: string) => {
+      if (active == null || forkDialog == null) return false
+      const created = await sessionCtx.handleForkSession(active, forkDialog.turnId, title)
+      if (created == null) return false
+      setForkDialog(null)
+      return true
+    },
+    [active, forkDialog, sessionCtx.handleForkSession],
+  )
   const showSessionSchedule =
     active != null && sessionCtx.sessionScheduleTargetId === active && activeSession != null
 
@@ -2634,6 +2715,21 @@ export function ChatView({
         )}
         {active != null && (
           <Fragment key="active-session-content">
+            {lineageSessionId === active &&
+              (activeLineage != null || activeChildLineages.length > 0) && (
+                <SessionLineageBar
+                  {...(activeLineage != null
+                    ? {
+                        sourceTitle: activeLineage.sourceTitleSnapshot,
+                        sourceAvailable: lineageSource != null,
+                        hasParent: true,
+                        ...(lineageSource != null ? { onOpenSource: handleOpenLineageSource } : {}),
+                      }
+                    : { hasParent: false })}
+                  childLineages={activeChildLineages}
+                  onOpenChild={handleOpenLineageChild}
+                />
+              )}
             {!showEmptyHero && (
               <ChatTabbar
                 key="chat-tabbar"
@@ -2737,6 +2833,15 @@ export function ChatView({
                 emptyStateVariant="loading"
                 modelSwitchMarkers={modelSwitchMarkers}
                 showTurnNavigator
+                scrollToTurnId={
+                  lineageAnchor != null && active === lineageAnchor.sessionId
+                    ? lineageAnchor.turnId
+                    : null
+                }
+                onTurnScrolled={() => setLineageAnchor(null)}
+                onRequestFork={(turnId, ordinal) => {
+                  setForkDialog({ turnId, ...(ordinal != null ? { ordinal } : {}) })
+                }}
               />
             </HtmlRenderProvider>
             {userQuestion != null && (
@@ -2748,6 +2853,17 @@ export function ChatView({
               />
             )}
           </Fragment>
+        )}
+
+        {forkDialog != null && activeSession != null && (
+          <SessionForkDialog
+            key={`${activeSession.id}:${forkDialog.turnId}`}
+            open
+            sourceTitle={activeSession.title}
+            {...(forkDialog.ordinal != null ? { turnOrdinal: forkDialog.ordinal } : {})}
+            onCancel={() => setForkDialog(null)}
+            onConfirm={handleForkDialogConfirm}
+          />
         )}
 
         {showSessionSchedule && activeSession != null && (
@@ -3112,6 +3228,9 @@ function ChatStream({
   emptyStateVariant = 'hint',
   modelSwitchMarkers = [],
   showTurnNavigator = false,
+  scrollToTurnId = null,
+  onTurnScrolled,
+  onRequestFork,
 }: {
   sessionId: SessionId
   optimisticMessages?: OptimisticUserMessage[]
@@ -3168,6 +3287,11 @@ function ChatStream({
   modelSwitchMarkers?: ModelSwitchMarker[]
   /** 仅主会话启用；侧聊和窄内容区保持原布局。 */
   showTurnNavigator?: boolean
+  /** 从来源条跳转时，定位到对应的分叉锚点轮次。 */
+  scrollToTurnId?: TurnId | null
+  onTurnScrolled?: () => void
+  /** 在一个已完成轮次尾部打开物化分叉流程。 */
+  onRequestFork?: (turnId: TurnId, ordinal?: number) => void
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const streamId = useId()
@@ -4214,6 +4338,38 @@ function ChatStream({
     virtualMessageListRef.current?.scrollToIndex(item.startMessageIndex, 'start', behavior)
   }, [])
 
+  const pendingLineageScrollRef = useRef<TurnId | null>(null)
+  useEffect(() => {
+    if (scrollToTurnId == null) {
+      pendingLineageScrollRef.current = null
+      return
+    }
+    pendingLineageScrollRef.current = scrollToTurnId
+  }, [scrollToTurnId])
+
+  // A lineage anchor may be outside the initial history window. Keep loading
+  // older pages until the anchor is materialized, then use the same virtual
+  // list navigation path as the turn navigator.
+  useEffect(() => {
+    const turnId = pendingLineageScrollRef.current
+    if (turnId == null) return
+    const item = turnNavItems.find((candidate) => candidate.turnId === turnId)
+    if (item != null) {
+      pendingLineageScrollRef.current = null
+      handleNavigateToTurn(item, 'smooth')
+      onTurnScrolled?.()
+      return
+    }
+    if (hasMoreHistoryRef.current && !loadingOlderRef.current) {
+      loadOlderRef.current()
+      return
+    }
+    if (!isLoadingHistory && !loadingOlderRef.current && !hasMoreHistoryRef.current) {
+      pendingLineageScrollRef.current = null
+      onTurnScrolled?.()
+    }
+  }, [displayMessages, handleNavigateToTurn, isLoadingHistory, onTurnScrolled, turnNavItems])
+
   useEffect(() => {
     const handleScrollToRunningAgent = (event: Event) => {
       const agentId = (event as CustomEvent<{ agentId?: string }>).detail?.agentId
@@ -4311,11 +4467,36 @@ function ChatStream({
                 const nextMessage = displayMessages[index + 1]
                 const isTurnEnd = msg.turnId != null && nextMessage?.turnId !== msg.turnId
                 const activityTurnId = isTurnEnd ? msg.turnId : undefined
-                if (marker == null && !isTurnEnd) return null
+                const turnNavItem =
+                  msg.turnId == null
+                    ? undefined
+                    : turnNavItems.find((item) => item.turnId === msg.turnId)
+                const canForkFromTurn =
+                  onRequestFork != null &&
+                  turnNavItem != null &&
+                  isTurnEnd &&
+                  turnNavItem.status !== 'streaming'
+                if (marker == null && !isTurnEnd && !canForkFromTurn) return null
                 return (
                   <>
                     {marker != null && <ModelSwitchNotice marker={marker} />}
                     {activityTurnId != null && <ComputerActivityBlock turnId={activityTurnId} />}
+                    {canForkFromTurn && (
+                      <button
+                        type="button"
+                        className="session-fork-after-turn"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onRequestFork?.(
+                            msg.turnId as TurnId,
+                            turnNavItems.find((item) => item.turnId === msg.turnId)?.ordinal,
+                          )
+                        }}
+                      >
+                        <Icons.GitBranch size={12} />
+                        从此处分支
+                      </button>
+                    )}
                   </>
                 )
               }}

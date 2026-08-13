@@ -48,6 +48,7 @@ export type {
 // 领域 Repository
 export {
   SessionRepository,
+  SessionCollaborationRepository,
   WorkspaceRepository,
   EventRepository,
   TurnRequestRepository,
@@ -103,6 +104,15 @@ export {
 
 export type {
   SessionRow,
+  SessionLineageRow,
+  SessionReferenceRow,
+  SessionReferenceAuditRow,
+  SessionReferenceCandidate,
+  SessionReferenceView,
+  SessionForkResult,
+  ReferencedSessionTurn,
+  ReferencedSessionReadResult,
+  ReferencedSessionSearchHit,
   CreateSessionParams,
   ListSessionsParams,
   WorkspaceRow,

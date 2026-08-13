@@ -18,6 +18,8 @@ interface ComposerActionsMenuProps {
   onAddAttachments: () => void
   /** 触发「添加相关文件或目录」：选中后挂为路径引用（不发送内容，仅作上下文参考） */
   onAddContextFiles?: () => void
+  /** 打开会话参考选择器 */
+  onAddSessionReference?: () => void
   /** 把技能名作为 `@技能名 ` 插入到输入框（由父组件实现光标位置） */
   onInsertSkillMention: (skill: SkillItem) => void
   /** 触发斜杠命令菜单：等同在输入框键入 `/` */
@@ -33,6 +35,7 @@ type SkillSubPlacement = 'top-right' | 'bottom-right' | 'top-left' | 'bottom-lef
 export function ComposerActionsMenu({
   onAddAttachments,
   onAddContextFiles,
+  onAddSessionReference,
   onInsertSkillMention,
   onInsertSlashCommand,
   onOpenSkillStore,
@@ -139,6 +142,12 @@ export function ComposerActionsMenu({
     onAddContextFiles?.()
   }
 
+  const handleSessionReferenceClick = () => {
+    setOpen(false)
+    setSkillSubOpen(false)
+    onAddSessionReference?.()
+  }
+
   const handleCommandClick = () => {
     setOpen(false)
     setSkillSubOpen(false)
@@ -195,6 +204,19 @@ export function ComposerActionsMenu({
                 <Icons.FolderPlus size={14} />
               </span>
               <span className="composer-actions-item-label">添加相关文件或目录</span>
+            </button>
+          )}
+          {onAddSessionReference && (
+            <button
+              type="button"
+              className="composer-actions-item"
+              onClick={handleSessionReferenceClick}
+              onMouseEnter={() => setSkillSubOpen(false)}
+            >
+              <span className="composer-actions-item-icon">
+                <Icons.MessageSquare size={14} />
+              </span>
+              <span className="composer-actions-item-label">添加会话作为参考</span>
             </button>
           )}
           {onInsertSlashCommand && (

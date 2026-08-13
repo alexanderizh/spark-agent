@@ -173,26 +173,34 @@ export class EventRepository extends BaseRepository {
 
   /** 批量写入事件（在单个事务中） */
   insertBatch(events: InsertEventParams[]): void {
+    const insertAll = this.raw.transaction(() => {
+      this.insertBatchInTransaction(events)
+    })
+
+    insertAll()
+  }
+
+  /**
+   * Insert events while the caller owns an outer SQLite transaction.
+   * Collaboration fork creation uses this to atomically persist the child,
+   * lineage record and materialized event snapshot.
+   */
+  insertBatchInTransaction(events: InsertEventParams[]): void {
     const stmt = this.raw.prepare(`
       INSERT INTO agent_events (id, session_id, run_id, turn_id, event_type, event_json)
       VALUES (?, ?, ?, ?, ?, ?)
     `)
-
-    const insertAll = this.raw.transaction(() => {
-      for (const event of events) {
-        stmt.run(
-          event.id,
-          event.sessionId,
-          event.runId ?? null,
-          event.turnId ?? null,
-          event.eventType,
-          event.eventJson,
-        )
-        this.indexEventForSearch(event)
-      }
-    })
-
-    insertAll()
+    for (const event of events) {
+      stmt.run(
+        event.id,
+        event.sessionId,
+        event.runId ?? null,
+        event.turnId ?? null,
+        event.eventType,
+        event.eventJson,
+      )
+      this.indexEventForSearch(event)
+    }
   }
 
   /**

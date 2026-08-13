@@ -76,6 +76,7 @@ import {
   type SessionGetQueueResponse,
   type SessionQueuedTurn,
   type SessionAttachment,
+  type SessionReferenceCandidate,
   type TeamModeConfig,
   type WorkspaceInfo,
   type WorkspaceGitStatusResponse,
@@ -110,6 +111,7 @@ import type {
   ComposerPrefillPayload,
   ComposerPrefs,
   ComposerDraftSnapshot,
+  ComposerSessionReference,
   ContextMenuItem,
   MessageAttachment,
   PermissionModeChoice,
@@ -128,7 +130,11 @@ import { formatTokenCount } from './ChatViewUtils'
 import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
 import { resolvePendingQuickReplies } from '../../services/quick-reply-suggestions'
 import { useAppControlComposerPrefill } from './composerAppControl'
-import { useInsertToComposer, formatCodeReferenceLine, type CodeReference } from '../../components/code-viewer/composerInsert'
+import {
+  useInsertToComposer,
+  formatCodeReferenceLine,
+  type CodeReference,
+} from '../../components/code-viewer/composerInsert'
 import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
@@ -144,6 +150,12 @@ import {
   readCliSparkOverrideCache,
   rememberCliSparkOverride,
 } from '../../utils/cli-spark-override-cache'
+import { SessionReferencePicker } from './SessionReferencePicker'
+import {
+  hasSessionReferenceDrag,
+  isSessionReferenceDropTarget,
+  readSessionReferenceDragPayload,
+} from './session-reference-dnd'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -943,6 +955,7 @@ export function ComposerV2({
   const historyIndexRef = useRef(-1)
   const historyDraftRef = useRef('') // preserves the in-progress draft when user starts browsing history
   const dragDepthRef = useRef(0)
+  const sessionDragDepthRef = useRef(0)
   const [fileDropActive, setFileDropActive] = useState(false)
   // ── Escape double-press interrupt ──
   const escapeTimestampRef = useRef(0)
@@ -1046,9 +1059,7 @@ export function ComposerV2({
       if (!isBuiltInLocalCliProvider(cliProvider)) continue
       result.set(
         cliProvider.id,
-        getCliSparkOverrideProviders(providers, cliProvider).filter(
-          isCliSparkConversationProvider,
-        ),
+        getCliSparkOverrideProviders(providers, cliProvider).filter(isCliSparkConversationProvider),
       )
     }
     return result
@@ -1090,12 +1101,7 @@ export function ComposerV2({
       setCliSparkOverride(null)
     }
     cliSparkCacheHydratedSessionRef.current = hydrationKey
-  }, [
-    cliSparkProviders,
-    selectedProvider,
-    session?.cliSparkOverride,
-    session?.id,
-  ])
+  }, [cliSparkProviders, selectedProvider, session?.cliSparkOverride, session?.id])
   const contextWindow = resolveModelContextWindowForProvider(
     sessionModelId || draftModelId || selectedProvider?.defaultModel,
     selectedProvider?.supportsMillionContext === true,
@@ -1113,6 +1119,7 @@ export function ComposerV2({
   const draftState = drafts[draftBucketKey] ?? EMPTY_COMPOSER_DRAFT
   const value = draftState.value
   const attachments = draftState.attachments
+  const sessionReferences = draftState.sessionReferences
   const manualExpanded = draftState.manualExpanded
   // 代码位置引用（编辑器右键「添加选中代码」产生）：纯渲染层 state，不进 draft / protocol，
   // 切会话会丢失（第一版不持久化，与并行改动零冲突）。发送时转为「路径:行号」文本交给模型。
@@ -1158,7 +1165,10 @@ export function ComposerV2({
   // 真正发送时再做详细校验（toast 提示）
   const needsTeamSelection = isNewSessionComposer && teamConfig.enabled && teamConfig.teamId == null
   const canSubmit =
-    (value.trim().length > 0 || attachments.length > 0 || codeReferences.length > 0) &&
+    (value.trim().length > 0 ||
+      attachments.length > 0 ||
+      codeReferences.length > 0 ||
+      sessionReferences.length > 0) &&
     selectedProvider != null &&
     effectiveModelId.length > 0 &&
     !needsTeamSelection
@@ -1196,6 +1206,7 @@ export function ComposerV2({
         if (
           next.value === base.value &&
           next.attachments === base.attachments &&
+          next.sessionReferences === base.sessionReferences &&
           next.manualExpanded === base.manualExpanded
         ) {
           return current
@@ -1270,6 +1281,238 @@ export function ComposerV2({
     [updateDraft],
   )
 
+  const setSessionReferences = useCallback(
+    (next: React.SetStateAction<ComposerSessionReference[]>) => {
+      updateDraft((draft) => ({
+        ...draft,
+        sessionReferences: typeof next === 'function' ? next(draft.sessionReferences) : next,
+      }))
+    },
+    [updateDraft],
+  )
+
+  const [sessionReferencePickerOpen, setSessionReferencePickerOpen] = useState(false)
+  const [sessionReferenceDropActive, setSessionReferenceDropActive] = useState(false)
+  const [attachedSessionReferences, setAttachedSessionReferences] = useState<
+    ComposerSessionReference[]
+  >([])
+  const [updatingReferenceIds, setUpdatingReferenceIds] = useState<Set<string>>(() => new Set())
+  const referenceItems = useMemo(() => {
+    const bySource = new Map<string, ComposerSessionReference>()
+    for (const reference of sessionReferences) bySource.set(reference.sourceSessionId, reference)
+    // Persisted references are authoritative once a session has been loaded.
+    // This prevents an older local draft (without the opaque referenceId) from
+    // masking the server-side reference and losing update/revoke capabilities.
+    for (const reference of attachedSessionReferences)
+      bySource.set(reference.sourceSessionId, reference)
+    return [...bySource.values()]
+  }, [attachedSessionReferences, sessionReferences])
+  const fallbackReferenceCandidates = useMemo<SessionReferenceCandidate[]>(
+    () =>
+      sessions
+        .filter((item) => item.id !== session?.id)
+        .map((item) => ({
+          sessionId: item.id,
+          title: item.title,
+          projectId: item.projectId,
+          workspaceIds: item.workspaceIds,
+          status: item.status,
+          archived: item.archivedAt != null,
+          updatedAt: item.updatedAt,
+          // The target session does not exist yet, so the renderer cannot ask
+          // the candidate IPC for an exact boundary. -1 is an internal
+          // sentinel meaning "let storage resolve the latest completed turn".
+          latestCompletedSeq: -1,
+          latestCompletedTurnId: null,
+          turnCount: item.turnCount ?? item.messageCount,
+        })),
+    [session?.id, sessions],
+  )
+  const addSessionReference = useCallback(
+    (candidate: {
+      sessionId: string
+      title: string
+      projectId?: string | null
+      latestCompletedSeq: number
+      turnCount?: number
+      status?: string
+    }) => {
+      if (candidate.sessionId === session?.id) {
+        toast.warning('不能把当前会话添加为自身参考')
+        return
+      }
+      if (referenceItems.some((item) => item.sourceSessionId === candidate.sessionId)) {
+        toast.info('这个会话已经添加为参考')
+        return
+      }
+      if (referenceItems.length >= 10) {
+        toast.warning('每个会话最多添加 10 个参考会话')
+        return
+      }
+      setSessionReferences((current) => [
+        ...current,
+        {
+          sourceSessionId: candidate.sessionId,
+          title: candidate.title,
+          ...(candidate.latestCompletedSeq > 0
+            ? { snapshotSeq: candidate.latestCompletedSeq }
+            : {}),
+          ...(candidate.projectId != null ? { projectId: candidate.projectId } : {}),
+          ...(candidate.turnCount != null ? { turnCount: candidate.turnCount } : {}),
+          status: 'active',
+        },
+      ])
+      toast.success(`已添加参考：${candidate.title || '未命名会话'}`)
+    },
+    [referenceItems, session?.id, setSessionReferences, toast],
+  )
+
+  const removeSessionReference = useCallback(
+    (sourceSessionId: string) => {
+      setSessionReferences((current) =>
+        current.filter((item) => item.sourceSessionId !== sourceSessionId),
+      )
+    },
+    [setSessionReferences],
+  )
+
+  const detachSessionReference = useCallback(
+    async (reference: ComposerSessionReference) => {
+      setAttachedSessionReferences((current) =>
+        current.filter((item) => item.sourceSessionId !== reference.sourceSessionId),
+      )
+      const targetSessionId = session?.id
+      if (targetSessionId == null) return
+      try {
+        if (reference.referenceId != null) {
+          await window.spark.invoke('session:revoke-reference', {
+            targetSessionId,
+            referenceId: reference.referenceId,
+          })
+        } else {
+          const current = await window.spark.invoke('session:list-references', { targetSessionId })
+          const persisted = current.references.find(
+            (item) => item.sourceSessionId === reference.sourceSessionId,
+          )
+          if (persisted != null) {
+            await window.spark.invoke('session:revoke-reference', {
+              targetSessionId,
+              referenceId: persisted.id,
+            })
+          }
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '撤销会话参考失败')
+      }
+    },
+    [session?.id, toast],
+  )
+
+  const refreshAttachedReferences = useCallback(async () => {
+    if (session?.id == null) return
+    try {
+      const result = await window.spark.invoke('session:list-references', {
+        targetSessionId: session.id,
+      })
+      setAttachedSessionReferences(
+        result.references
+          .filter((item) => item.status !== 'revoked')
+          .map((item) => ({
+            referenceId: item.id,
+            sourceSessionId: item.sourceSessionId,
+            title: item.title,
+            snapshotSeq: item.snapshotSeq,
+            projectId: item.projectId,
+            turnCount: item.turnCount,
+            status: item.status,
+          })),
+      )
+    } catch {
+      // The send already succeeded; a stale chip is preferable to masking it
+      // with a second error toast. The next session refresh will reconcile it.
+    }
+  }, [session?.id])
+
+  const handleRemoveReference = useCallback(
+    (reference: ComposerSessionReference) => {
+      removeSessionReference(reference.sourceSessionId)
+      void detachSessionReference(reference)
+    },
+    [detachSessionReference, removeSessionReference],
+  )
+
+  const handleUpdateReference = useCallback(
+    async (reference: ComposerSessionReference) => {
+      const targetSessionId = session?.id
+      if (targetSessionId == null || reference.referenceId == null || reference.status !== 'active')
+        return
+      const referenceId = reference.referenceId
+      setUpdatingReferenceIds((current) => new Set(current).add(referenceId))
+      try {
+        const result = await window.spark.invoke('session:update-reference', {
+          targetSessionId,
+          referenceId,
+        })
+        setAttachedSessionReferences((current) =>
+          current.map((item) =>
+            item.referenceId === result.reference.id
+              ? {
+                  ...item,
+                  title: result.reference.title,
+                  snapshotSeq: result.reference.snapshotSeq,
+                  projectId: result.reference.projectId,
+                  turnCount: result.reference.turnCount,
+                  status: result.reference.status,
+                }
+              : item,
+          ),
+        )
+        toast.success(`已更新参考快照：${result.reference.title || '未命名会话'}`)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '更新会话参考失败')
+      } finally {
+        setUpdatingReferenceIds((current) => {
+          const next = new Set(current)
+          next.delete(referenceId)
+          return next
+        })
+      }
+    },
+    [session?.id, toast],
+  )
+
+  useEffect(() => {
+    if (session?.id == null) {
+      setAttachedSessionReferences([])
+      return
+    }
+    let cancelled = false
+    void window.spark
+      .invoke('session:list-references', { targetSessionId: session.id })
+      .then((result) => {
+        if (cancelled) return
+        setAttachedSessionReferences(
+          result.references
+            .filter((item) => item.status !== 'revoked')
+            .map((item) => ({
+              referenceId: item.id,
+              sourceSessionId: item.sourceSessionId,
+              title: item.title,
+              snapshotSeq: item.snapshotSeq,
+              projectId: item.projectId,
+              turnCount: item.turnCount,
+              status: item.status,
+            })),
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setAttachedSessionReferences([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.id])
+
   const setManualExpanded = useCallback(
     (next: React.SetStateAction<boolean>) => {
       updateDraft((draft) => ({
@@ -1288,9 +1531,14 @@ export function ComposerV2({
       const next = { ...current }
       for (const key of uniqueKeys) {
         const existing = next[key]
-        if (existing != null && (existing.value !== '' || existing.attachments.length > 0)) {
+        if (
+          existing != null &&
+          (existing.value !== '' ||
+            existing.attachments.length > 0 ||
+            existing.sessionReferences.length > 0)
+        ) {
           // 内存里清成空草稿（UI 立即反映），localStorage 里直接删 key（per-bucket O(1)）
-          next[key] = { ...existing, value: '', attachments: [] }
+          next[key] = { ...existing, value: '', attachments: [], sessionReferences: [] }
           draftWriterRef.current?.removeBucket(key)
           changed = true
         }
@@ -1417,20 +1665,30 @@ export function ComposerV2({
     ],
   )
 
-  const mapQueuedTurns = (turns: SessionQueuedTurn[]): QueuedMessage[] =>
-    projectQueuedTurnsForDisplay(turns).map((turn) => ({
-      id: turn.turnId,
-      turnId: turn.turnId,
-      content: turn.message,
-      enqueuedAt: turn.enqueuedAt,
-      attachments: (turn.attachments ?? []).map((a, i) => ({
-        id: `${turn.turnId}-${i}`,
-        type: a.type,
-        path: a.path,
-        name: getFileNameFromPath(a.path),
+  const mapQueuedTurns = useCallback(
+    (turns: SessionQueuedTurn[]): QueuedMessage[] =>
+      projectQueuedTurnsForDisplay(turns).map((turn) => ({
+        id: turn.turnId,
+        turnId: turn.turnId,
+        content: turn.message,
+        enqueuedAt: turn.enqueuedAt,
+        attachments: (turn.attachments ?? []).map((a, i) => ({
+          id: `${turn.turnId}-${i}`,
+          type: a.type,
+          path: a.path,
+          name: getFileNameFromPath(a.path),
+        })),
+        sessionReferences: (turn.sessionReferences ?? []).map((reference) => ({
+          sourceSessionId: reference.sourceSessionId,
+          title:
+            sessions.find((item) => item.id === reference.sourceSessionId)?.title ??
+            reference.sourceSessionId,
+          ...(reference.snapshotSeq !== undefined ? { snapshotSeq: reference.snapshotSeq } : {}),
+        })),
+        editable: turn.userMessageVisibility !== 'hidden',
       })),
-      editable: turn.userMessageVisibility !== 'hidden',
-    }))
+    [sessions],
+  )
 
   const applyQueueState = useCallback(
     (snapshot: SessionGetQueueResponse | null | undefined) => {
@@ -1441,7 +1699,7 @@ export function ComposerV2({
         snapshot.queuedTurns.map((turn) => turn.turnId),
       )
     },
-    [onOptimisticQueueStateChange, session?.id],
+    [mapQueuedTurns, onOptimisticQueueStateChange, session?.id],
   )
 
   const refreshQueueState = useCallback(
@@ -1544,7 +1802,12 @@ export function ComposerV2({
         const next: ComposerDraftMap = { ...current }
         let changed = false
         if (targetId != null && next[targetId] != null) {
-          next[targetId] = { ...next[targetId], value: '', attachments: [] }
+          next[targetId] = {
+            ...next[targetId],
+            value: '',
+            attachments: [],
+            sessionReferences: [],
+          }
           draftWriterRef.current?.removeBucket(targetId)
           changed = true
         }
@@ -1553,6 +1816,7 @@ export function ComposerV2({
             ...next[NEW_SESSION_DRAFT_BUCKET],
             value: '',
             attachments: [],
+            sessionReferences: [],
           }
           draftWriterRef.current?.removeBucket(NEW_SESSION_DRAFT_BUCKET)
           changed = true
@@ -1729,6 +1993,16 @@ export function ComposerV2({
               sessionId,
               message: text,
               ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
+              ...(sessionReferences.length > 0
+                ? {
+                    sessionReferences: sessionReferences.map((reference) => ({
+                      sourceSessionId: reference.sourceSessionId as SessionId,
+                      ...(reference.snapshotSeq !== undefined
+                        ? { snapshotSeq: reference.snapshotSeq }
+                        : {}),
+                    })),
+                  }
+                : {}),
               ...getCurrentRuntimePatch(),
               ...(teamConfig.enabled && effectiveHostAgentId != null
                 ? { teamConfig, agentId: effectiveHostAgentId }
@@ -1749,6 +2023,7 @@ export function ComposerV2({
             }
             onSent(sessionId, sendRes.started)
             await refreshQueueState(sessionId)
+            await refreshAttachedReferences()
             clearDraftBuckets([draftBucketKey, sessionId, NEW_SESSION_DRAFT_BUCKET])
             return
           }
@@ -1765,6 +2040,7 @@ export function ComposerV2({
           toast.error(err instanceof Error ? err.message : '命令执行失败')
           setValue(text)
           setAttachments(turnAttachments)
+          setSessionReferences(sessionReferences)
         } finally {
           setSending(false)
         }
@@ -1825,6 +2101,16 @@ export function ComposerV2({
           sessionId: targetSessionId,
           message: text,
           ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
+          ...(sessionReferences.length > 0
+            ? {
+                sessionReferences: sessionReferences.map((reference) => ({
+                  sourceSessionId: reference.sourceSessionId as SessionId,
+                  ...(reference.snapshotSeq !== undefined
+                    ? { snapshotSeq: reference.snapshotSeq }
+                    : {}),
+                })),
+              }
+            : {}),
           ...getCurrentRuntimePatch(),
           ...(teamConfig.enabled && effectiveHostAgentId != null
             ? { teamConfig, agentId: effectiveHostAgentId }
@@ -1853,6 +2139,7 @@ export function ComposerV2({
         }
         onSent(targetSessionId, res.started)
         await refreshQueueState(targetSessionId)
+        await refreshAttachedReferences()
         clearDraftBuckets([draftBucketKey, targetSessionId, NEW_SESSION_DRAFT_BUCKET])
       } catch (err) {
         optimisticSend?.fail(err instanceof Error ? err.message : String(err))
@@ -1860,6 +2147,7 @@ export function ComposerV2({
         toast.error(err instanceof Error ? err.message : '发送消息失败')
         setValue(text)
         setAttachments(turnAttachments)
+        setSessionReferences(sessionReferences)
       } finally {
         setSending(false)
       }
@@ -1879,6 +2167,8 @@ export function ComposerV2({
       onCommandComplete,
       onSent,
       refreshQueueState,
+      refreshAttachedReferences,
+      sessionReferences,
       selectedProvider,
       selectedProviderAdapter,
       messages,
@@ -1889,6 +2179,7 @@ export function ComposerV2({
       createWorktree,
       worktreeBranch,
       setAttachments,
+      setSessionReferences,
       setValue,
       teamConfig,
       toast,
@@ -1974,6 +2265,19 @@ export function ComposerV2({
     [appendAttachments, prepareImagePreview, statFileKind, toast],
   )
 
+  const handleDropSessionReference = useCallback(
+    (payload: ReturnType<typeof readSessionReferenceDragPayload>) => {
+      if (payload == null) return
+      addSessionReference({
+        sessionId: payload.sessionId,
+        title: payload.title,
+        ...(payload.projectId != null ? { projectId: payload.projectId } : {}),
+        latestCompletedSeq: 0,
+      })
+    },
+    [addSessionReference],
+  )
+
   /**
    * 「添加相关文件或目录」：选中文件或文件夹后挂到输入框，发送时仅作为上下文路径引用传给 Agent
    * （后端不会读取内容，只是把路径写进 prompt ledger；目录还会加入 agent 可访问目录表）。
@@ -2003,12 +2307,24 @@ export function ComposerV2({
   useEffect(() => {
     const resetDragState = () => {
       dragDepthRef.current = 0
+      sessionDragDepthRef.current = 0
       setFileDropActive(false)
+      setSessionReferenceDropActive(false)
     }
     const shouldHandle = (event: DragEvent) =>
       shouldHandleComposerFileDrop(event.dataTransfer, event.target, sending)
 
     const handleDragEnter = (event: DragEvent) => {
+      if (
+        !sending &&
+        hasSessionReferenceDrag(event.dataTransfer) &&
+        isSessionReferenceDropTarget(event.target)
+      ) {
+        event.preventDefault()
+        sessionDragDepthRef.current += 1
+        setSessionReferenceDropActive(true)
+        return
+      }
       if (!shouldHandle(event)) {
         resetDragState()
         return
@@ -2018,6 +2334,16 @@ export function ComposerV2({
       setFileDropActive(true)
     }
     const handleDragOver = (event: DragEvent) => {
+      if (
+        !sending &&
+        hasSessionReferenceDrag(event.dataTransfer) &&
+        isSessionReferenceDropTarget(event.target)
+      ) {
+        event.preventDefault()
+        if (event.dataTransfer != null) event.dataTransfer.dropEffect = 'copy'
+        setSessionReferenceDropActive(true)
+        return
+      }
       if (!shouldHandle(event)) {
         resetDragState()
         return
@@ -2027,11 +2353,27 @@ export function ComposerV2({
       setFileDropActive(true)
     }
     const handleDragLeave = (event: DragEvent) => {
+      if (hasSessionReferenceDrag(event.dataTransfer)) {
+        sessionDragDepthRef.current = Math.max(0, sessionDragDepthRef.current - 1)
+        if (sessionDragDepthRef.current === 0) setSessionReferenceDropActive(false)
+        return
+      }
       if (!hasFileDataTransfer(event.dataTransfer)) return
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
       if (dragDepthRef.current === 0) setFileDropActive(false)
     }
     const handleDrop = (event: DragEvent) => {
+      if (
+        !sending &&
+        hasSessionReferenceDrag(event.dataTransfer) &&
+        isSessionReferenceDropTarget(event.target)
+      ) {
+        event.preventDefault()
+        const payload = readSessionReferenceDragPayload(event.dataTransfer)
+        resetDragState()
+        handleDropSessionReference(payload)
+        return
+      }
       if (!shouldHandle(event)) {
         resetDragState()
         return
@@ -2061,7 +2403,7 @@ export function ComposerV2({
       window.removeEventListener('drop', handleDrop)
       window.removeEventListener('blur', resetDragState)
     }
-  }, [handleDropFilePaths, sending, toast])
+  }, [handleDropFilePaths, handleDropSessionReference, sending, toast])
 
   const handlePaste = useCallback(
     async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -2126,7 +2468,13 @@ export function ComposerV2({
     if (!canSubmit || voiceInputActiveRef.current) return
     if (!submitGateRef.current.tryEnter()) return
     setTextEditMenu(null)
-    const rawText = value.trim() || '请查看附件。'
+    const rawText =
+      value.trim() ||
+      (attachments.length > 0
+        ? '请查看附件。'
+        : sessionReferences.length > 0
+          ? '请结合已添加的会话参考。'
+          : '请查看附件。')
     const turnAttachments = attachments
     // Prepend reply context if quoting a message
     let text = rawText
@@ -2155,6 +2503,7 @@ export function ComposerV2({
     historyDraftRef.current = ''
     setValue('')
     setAttachments([])
+    setSessionReferences([])
     setCodeReferences([])
     // 发送后清除 pending mention（避免下一条消息误带）；dispatchMessage 内已通过 text 计算用过
     setPendingMention(null)
@@ -2216,7 +2565,8 @@ export function ComposerV2({
   const handleEditQueuedMessage = async (message: QueuedMessage) => {
     if (session?.id == null || !message.editable) return
     setValue(message.content)
-    if (message.attachments.length > 0) setAttachments(message.attachments)
+    setAttachments(message.attachments)
+    setSessionReferences(message.sessionReferences)
     const res = await cancelQueuedTurn({ sessionId: session.id, turnId: message.turnId })
     setQueuedMessages(mapQueuedTurns(res.queuedTurns))
     if (res.cancelled) onOptimisticQueueTurnCancelled?.(session.id, message.turnId)
@@ -3398,10 +3748,20 @@ export function ComposerV2({
             </div>
           </div>
         )}
+        {sessionReferenceDropActive && (
+          <div className="composer-session-ref-drop-overlay" aria-live="polite">
+            <div className="composer-session-ref-drop-target">
+              <Icons.MessageSquarePlus size={32} />
+              <strong>松开即可添加会话参考</strong>
+              <span>模型将按需只读访问该会话</span>
+            </div>
+          </div>
+        )}
         {activeQuickReplies != null &&
           !isBusy &&
           value.trim().length === 0 &&
-          attachments.length === 0 && (
+          attachments.length === 0 &&
+          sessionReferences.length === 0 && (
             <QuickReplySuggestions
               replies={activeQuickReplies.replies}
               onSelect={(reply) => void dispatchMessage(reply, [], null)}
@@ -3409,7 +3769,8 @@ export function ComposerV2({
             />
           )}
         <div
-          className={`composer composer-v2 has-workspace-picks ${teamConfig.enabled ? 'composer-team-mode' : ''} ${manualExpanded ? 'expanded' : ''}`}
+          data-session-reference-drop-target
+          className={`composer composer-v2 has-workspace-picks ${teamConfig.enabled ? 'composer-team-mode' : ''} ${manualExpanded ? 'expanded' : ''}${sessionReferenceDropActive ? ' is-session-reference-drop-active' : ''}`}
         >
           {teamConfig.enabled && (
             <div className="composer-team-banner">
@@ -3449,8 +3810,60 @@ export function ComposerV2({
           {(codeReferences.length > 0 ||
             imageAttachments.length > 0 ||
             fileAttachments.length > 0 ||
-            directoryAttachments.length > 0) && (
+            directoryAttachments.length > 0 ||
+            referenceItems.length > 0) && (
             <div className="composer-attachments-inside">
+              {referenceItems.length > 0 && (
+                <div
+                  className="composer-attachment-strip composer-session-ref-strip"
+                  aria-label="会话参考"
+                >
+                  {referenceItems.map((reference) => (
+                    <div
+                      key={reference.sourceSessionId}
+                      className={`composer-attachment-chip composer-session-ref-chip${reference.status === 'unavailable' ? ' is-unavailable' : ''}`}
+                      title={
+                        reference.projectId != null
+                          ? `${reference.title} · ${reference.projectId}`
+                          : reference.title
+                      }
+                    >
+                      <Icons.MessageSquare size={13} />
+                      <div className="composer-session-ref-copy">
+                        <span>{reference.title || '未命名会话'}</span>
+                        <small>
+                          {reference.status === 'unavailable'
+                            ? '来源已不可用'
+                            : `${reference.turnCount ?? 0} 轮 · 只读参考`}
+                        </small>
+                      </div>
+                      {reference.referenceId != null && reference.status === 'active' && (
+                        <button
+                          type="button"
+                          title="更新到最新快照"
+                          aria-label={`更新 ${reference.title || '会话'} 快照`}
+                          disabled={updatingReferenceIds.has(reference.referenceId)}
+                          onClick={() => void handleUpdateReference(reference)}
+                        >
+                          {updatingReferenceIds.has(reference.referenceId) ? (
+                            <Icons.Spinner size={12} />
+                          ) : (
+                            <Icons.Refresh size={12} />
+                          )}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        title="移除会话参考"
+                        aria-label={`移除 ${reference.title || '会话'} 参考`}
+                        onClick={() => handleRemoveReference(reference)}
+                      >
+                        <Icons.X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               {codeReferences.length > 0 && (
                 <div className="composer-attachment-strip composer-code-ref-strip">
                   {codeReferences.map((ref) => {
@@ -3729,6 +4142,7 @@ export function ComposerV2({
             onInsertSkillMention={handleInsertSkillMention}
             onOpenSkillStore={onOpenSkillStore}
             onAddContextFiles={() => void handleAddContextFiles()}
+            onAddSessionReference={() => setSessionReferencePickerOpen(true)}
             onInsertSlashCommand={() => {
               // 打开斜杠命令面板：保留已有输入，不覆盖 value。
               // 弹窗以全量列表呈现；选中命令后由 selectSlashCmd 在当前光标处增量插入。
@@ -3748,6 +4162,18 @@ export function ComposerV2({
             }}
             // 仅在发送瞬间禁用（防重复提交）；任务执行中允许继续挂附件/插技能（只改下一轮草稿，不影响运行中的会话）
             disabled={sending}
+          />
+          <SessionReferencePicker
+            open={sessionReferencePickerOpen}
+            targetSessionId={session?.id ?? null}
+            selected={referenceItems}
+            workspaceId={activeWorkspaceId}
+            fallbackCandidates={fallbackReferenceCandidates}
+            onClose={() => setSessionReferencePickerOpen(false)}
+            onSelect={(candidate) => {
+              addSessionReference(candidate)
+              setSessionReferencePickerOpen(false)
+            }}
           />
           {!(isNewSessionComposer && teamConfig.enabled) && (
             <AgentPicker
@@ -4898,9 +5324,7 @@ function ProviderModelPicker({
     for (const [primaryId, sparkProviders] of cliSparkProvidersByPrimaryId ?? []) {
       const groups = prioritizeManagedProviderGroups(
         sparkProviders
-          .filter(
-            isCliSparkConversationProvider,
-          )
+          .filter(isCliSparkConversationProvider)
           .map((provider) => {
             const configuredModels = provider.modelIds.length
               ? provider.modelIds
@@ -5101,7 +5525,7 @@ function ProviderModelPicker({
                       leading={
                         vendor ? (
                           <ProviderLogo
-                            style={{minWidth: 14}}
+                            style={{ minWidth: 14 }}
                             vendor={vendor}
                             size={getProviderPickerLogoSize(provider)}
                             shape="rounded"
@@ -5135,7 +5559,11 @@ function ProviderModelPicker({
                     : undefined
                 const sparkModelLabel =
                   sparkProvider != null && cliSparkOverride != null
-                    ? getPickerModelDisplayLabel(sparkProvider, cliSparkOverride.modelId, modelNameById)
+                    ? getPickerModelDisplayLabel(
+                        sparkProvider,
+                        cliSparkOverride.modelId,
+                        modelNameById,
+                      )
                     : undefined
                 return (
                   <CliProviderModelMenu

@@ -12,17 +12,13 @@
  *   - 未实际变化的 team 也不重复广播。
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { request as httpRequest } from 'node:http'
 import { join } from 'node:path'
 import { mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
-import {
-  AgentRepository,
-  SparkDatabase,
-  TeamDefinitionRepository,
-} from '@spark/storage'
+import { AgentRepository, SparkDatabase, TeamDefinitionRepository } from '@spark/storage'
 import {
   PlatformBridgeService,
   type PlatformBridgeDeps,
@@ -45,7 +41,10 @@ describe('PlatformBridgeService.agentDelete 联动清理 agent_teams 残留', ()
   const canvasCalls: Array<{ sessionId: string; toolName: string; args: unknown }> = []
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `spark-bridge-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    testDir = join(
+      tmpdir(),
+      `spark-bridge-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
     mkdirSync(testDir, { recursive: true })
     const dbPath = join(testDir, 'test.db')
     const migrationsDir = join(process.cwd(), '..', 'storage', 'migrations')
@@ -85,17 +84,32 @@ describe('PlatformBridgeService.agentDelete 联动清理 agent_teams 残留', ()
     rmSync(testDir, { recursive: true, force: true })
   })
 
-  function callRpc(method: string, params: Record<string, unknown>): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+  function callRpc(
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
     const body = JSON.stringify({ method, params })
     return new Promise((resolve, reject) => {
       const req = httpRequest(
-        { host: '127.0.0.1', port, path: '/rpc', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } },
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/rpc',
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'content-length': Buffer.byteLength(body),
+          },
+        },
         (res) => {
           const chunks: Buffer[] = []
           res.on('data', (c) => chunks.push(c))
           res.on('end', () => {
-            try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))) }
-            catch (err) { reject(err) }
+            try {
+              resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+            } catch (err) {
+              reject(err)
+            }
           })
         },
       )
@@ -151,7 +165,9 @@ describe('PlatformBridgeService.agentDelete 联动清理 agent_teams 残留', ()
       .map((c) => c.id)
     expect(teamUpdateIds.sort()).toEqual(['team-host', 'team-member'])
     expect(changes).toContainEqual({ scope: 'agent', action: 'delete', id: 'agent-a' })
-    expect(changes).not.toContainEqual(expect.objectContaining({ scope: 'team', id: 'team-unrelated' }))
+    expect(changes).not.toContainEqual(
+      expect.objectContaining({ scope: 'team', id: 'team-unrelated' }),
+    )
   })
 
   it('host 命中且过滤后 members 为空时,hostAgentId 重置为空串', async () => {
@@ -186,9 +202,7 @@ describe('PlatformBridgeService.agentDelete 联动清理 agent_teams 残留', ()
     expect(res).toMatchObject({ ok: true })
 
     expect(teamRepo.get('team-distinct')!.hostAgentId).toBe('agent-other')
-    expect(changes).toEqual([
-      { scope: 'agent', action: 'delete', id: 'agent-orphan' },
-    ])
+    expect(changes).toEqual([{ scope: 'agent', action: 'delete', id: 'agent-orphan' }])
   })
 
   it('删除不存在的 agent 返回 success=false,不触发任何清理', async () => {
@@ -217,3 +231,122 @@ describe('PlatformBridgeService.agentDelete 联动清理 agent_teams 残留', ()
     ])
   })
 })
+
+describe('PlatformBridgeService referenced sessions payload privacy', () => {
+  let service: PlatformBridgeService
+  let port = 0
+
+  afterEach(async () => {
+    await service.stop()
+  })
+
+  it('strips source and target session IDs from list/read/search responses', async () => {
+    const reference = {
+      id: 'reference-opaque-id',
+      targetSessionId: 'target-session-secret',
+      sourceSessionId: 'source-session-secret',
+      title: 'Research notes',
+      sourceTitleSnapshot: 'Research notes',
+      projectId: 'project-1',
+      snapshotSeq: 12,
+      status: 'active',
+      createdAt: '2026-08-14T00:00:00.000Z',
+      updatedAt: '2026-08-14T00:00:00.000Z',
+      turnCount: 2,
+    }
+    const sessionService = {
+      listActiveSessionReferences: vi.fn(async () => ({ references: [reference] })),
+      readReferencedSession: vi.fn(async () => ({
+        reference,
+        turns: [
+          {
+            turnId: 'turn-1',
+            userMessage: 'Question',
+            assistantMessages: ['Answer'],
+            activities: [],
+            firstSeq: 0,
+            lastSeq: 2,
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })),
+      searchReferencedSession: vi.fn(async () => ({
+        reference,
+        hits: [{ turnId: 'turn-1', seq: 1, role: 'assistant', snippet: 'Answer' }],
+      })),
+    }
+
+    service = new PlatformBridgeService()
+    port = await service.start({ sessionService } as unknown as PlatformBridgeDeps)
+
+    const list = await callBridgeRpc(port, 'referenced_sessions.list', {
+      sessionId: 'target-session-secret',
+    })
+    const read = await callBridgeRpc(port, 'referenced_session.read', {
+      sessionId: 'target-session-secret',
+      referenceId: 'reference-opaque-id',
+    })
+    const search = await callBridgeRpc(port, 'referenced_session.search', {
+      sessionId: 'target-session-secret',
+      referenceId: 'reference-opaque-id',
+      query: 'Answer',
+    })
+
+    for (const response of [list, read, search]) {
+      expect(JSON.stringify(response)).not.toContain('source-session-secret')
+      expect(JSON.stringify(response)).not.toContain('target-session-secret')
+    }
+    expect(list).toMatchObject({ ok: true, data: { references: [{ id: 'reference-opaque-id' }] } })
+    expect(read).toMatchObject({ ok: true, data: { reference: { id: 'reference-opaque-id' } } })
+    expect(search).toMatchObject({ ok: true, data: { reference: { id: 'reference-opaque-id' } } })
+    expect(sessionService.listActiveSessionReferences).toHaveBeenCalledWith('target-session-secret')
+    expect(sessionService.readReferencedSession).toHaveBeenCalledWith({
+      targetSessionId: 'target-session-secret',
+      referenceId: 'reference-opaque-id',
+      actor: 'agent',
+    })
+    expect(sessionService.searchReferencedSession).toHaveBeenCalledWith({
+      targetSessionId: 'target-session-secret',
+      referenceId: 'reference-opaque-id',
+      query: 'Answer',
+      actor: 'agent',
+    })
+  })
+})
+
+async function callBridgeRpc(
+  port: number,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+  const body = JSON.stringify({ method, params })
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: '127.0.0.1',
+        port,
+        path: '/rpc',
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'content-length': Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+          } catch (error) {
+            reject(error)
+          }
+        })
+      },
+    )
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}

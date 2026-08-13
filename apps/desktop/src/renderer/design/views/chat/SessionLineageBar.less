@@ -1,0 +1,102 @@
+.session-lineage-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 14%, var(--border));
+  background: color-mix(in srgb, var(--primary) 5%, var(--bg));
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.session-lineage-bar-icon {
+  display: inline-flex;
+  color: var(--primary);
+}
+
+.session-lineage-bar-label {
+  white-space: nowrap;
+}
+
+.session-lineage-bar-source {
+  max-width: min(360px, 42vw);
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-lineage-bar-source:hover {
+  text-decoration: underline;
+}
+
+.session-lineage-bar-source.is-unavailable {
+  color: var(--text-muted);
+  cursor: default;
+  font-weight: 500;
+}
+
+.session-lineage-bar-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-lineage-bar-children-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.session-lineage-bar-children-toggle:hover {
+  border-color: color-mix(in srgb, var(--primary) 20%, var(--border));
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+  color: var(--primary);
+}
+
+.session-lineage-bar-children {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 2px 0 1px 20px;
+}
+
+.session-lineage-bar-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--primary) 12%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--primary) 5%, var(--bg));
+  color: var(--primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.session-lineage-bar-child span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

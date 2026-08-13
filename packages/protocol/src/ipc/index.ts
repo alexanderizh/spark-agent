@@ -71,6 +71,28 @@ import type { PluginIpcChannelMap } from '../plugin.js'
 import type { PluginRuntimeIpcChannelMap } from '../plugin-runtime.js'
 import type { OutcomeRoomIpcChannelMap } from '../outcome-room.js'
 import type { TeamP1IpcChannelMap } from '../team-p1.js'
+import type { TaskGraphIpcChannelMap } from '../task-graph.js'
+import type { DeliberationIpcChannelMap } from '../deliberation.js'
+import type { EvidenceCostIpcChannelMap } from '../evidence-cost.js'
+import type { ReplayPlaybookIpcChannelMap } from '../replay-playbook.js'
+import type {
+  SessionAttachReferenceRequest,
+  SessionAttachReferenceResponse,
+  SessionForkRequest,
+  SessionForkResponse,
+  SessionLineageRequest,
+  SessionLineageResponse,
+  SessionListReferencesRequest,
+  SessionListReferencesResponse,
+  SessionReadReferenceRequest,
+  SessionReadReferenceResponse,
+  SessionReferenceCandidatesRequest,
+  SessionReferenceCandidatesResponse,
+  SessionReferenceIdRequest,
+  SessionSearchReferenceRequest,
+  SessionSearchReferenceResponse,
+  SessionUpdateReferenceResponse,
+} from '../cross-session-collaboration.js'
 import type {
   ApplicationSnapshotIpcChannelMap,
   ComputerUseIpcChannelMap,
@@ -127,6 +149,25 @@ export type SessionPermissionMode =
 export interface SessionAttachment {
   type: 'image' | 'file' | 'directory'
   path: string
+}
+
+export type {
+  SessionAttachReferenceRequest,
+  SessionAttachReferenceResponse,
+  SessionForkRequest,
+  SessionForkResponse,
+  SessionLineageRequest,
+  SessionLineageResponse,
+  SessionListReferencesRequest,
+  SessionListReferencesResponse,
+  SessionReadReferenceRequest,
+  SessionReadReferenceResponse,
+  SessionReferenceCandidatesRequest,
+  SessionReferenceCandidatesResponse,
+  SessionReferenceIdRequest,
+  SessionSearchReferenceRequest,
+  SessionSearchReferenceResponse,
+  SessionUpdateReferenceResponse,
 }
 
 export type GoalStatus =
@@ -259,6 +300,11 @@ export interface SessionSendTurnRequest {
   skillId?: string
   skillParams?: Record<string, unknown>
   attachments?: SessionAttachment[]
+  /** 当前 turn 发送时新增的只读会话参考；不会作为文件附件处理。 */
+  sessionReferences?: Array<{
+    sourceSessionId: SessionId
+    snapshotSeq?: number
+  }>
   /** 用户显式确认发送的应用快照 ID；由主进程按会话所有权解析，不接受原始路径。 */
   appSnapshotIds?: string[]
   /** 团队模式配置：仅在 Team Mode 下随 turn 提交，主进程据此分支到 runHostTurn */
@@ -294,6 +340,10 @@ export interface SessionQueuedTurn extends UserMessagePresentation {
   message: string
   enqueuedAt: string
   attachments?: SessionAttachment[]
+  sessionReferences?: Array<{
+    sourceSessionId: SessionId
+    snapshotSeq?: number
+  }>
 }
 
 export interface SessionGetQueueRequest {
@@ -5604,7 +5654,11 @@ export interface IpcChannelMap
     PluginIpcChannelMap,
     PluginRuntimeIpcChannelMap,
     OutcomeRoomIpcChannelMap,
-    TeamP1IpcChannelMap {
+    TeamP1IpcChannelMap,
+    TaskGraphIpcChannelMap,
+    DeliberationIpcChannelMap,
+    EvidenceCostIpcChannelMap,
+    ReplayPlaybookIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
@@ -5642,6 +5696,18 @@ export interface IpcChannelMap
     SessionListPendingQuestionsRequest,
     SessionListPendingQuestionsResponse,
   ]
+  'session:fork': [SessionForkRequest, SessionForkResponse]
+  'session:get-lineage': [SessionLineageRequest, SessionLineageResponse]
+  'session:reference-candidates': [
+    SessionReferenceCandidatesRequest,
+    SessionReferenceCandidatesResponse,
+  ]
+  'session:attach-reference': [SessionAttachReferenceRequest, SessionAttachReferenceResponse]
+  'session:list-references': [SessionListReferencesRequest, SessionListReferencesResponse]
+  'session:update-reference': [SessionReferenceIdRequest, SessionUpdateReferenceResponse]
+  'session:revoke-reference': [SessionReferenceIdRequest, { revoked: boolean }]
+  'session:read-reference': [SessionReadReferenceRequest, SessionReadReferenceResponse]
+  'session:search-reference': [SessionSearchReferenceRequest, SessionSearchReferenceResponse]
 
   // Provider
   'provider:list': [ProviderListRequest, ProviderListResponse]

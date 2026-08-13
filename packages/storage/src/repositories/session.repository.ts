@@ -364,6 +364,20 @@ export class SessionRepository extends BaseRepository {
     const exists = this.raw.prepare('SELECT 1 FROM sessions WHERE id = ?').get(id)
     if (exists == null) return false
 
+    // A deleted source remains a valid historical reference target, but the
+    // agent must not read it anymore. Keep this defensive for partial migration
+    // test databases that predate collaboration migration 079.
+    try {
+      this.raw
+        .prepare(
+          `UPDATE session_references SET status = 'unavailable', updated_at = ?
+           WHERE source_session_id = ? AND status = 'active'`,
+        )
+        .run(new Date().toISOString(), id)
+    } catch {
+      // Table is absent in an old/partial schema; normal session deletion still works.
+    }
+
     this.raw.prepare('DELETE FROM usage_ledger WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM session_summaries WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM run_usage_summaries WHERE session_id = ?').run(id)
@@ -381,6 +395,12 @@ export class SessionRepository extends BaseRepository {
     this.raw.prepare('DELETE FROM team_handoffs WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM team_steering_gate_events WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM team_steering_gates WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM task_graph_events WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM task_graph_edges WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM task_graph_nodes WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM deliberation_events WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM deliberation_conflicts WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM deliberations WHERE session_id = ?').run(id)
 
     return this.raw.prepare('DELETE FROM sessions WHERE id = ?').run(id).changes > 0
   }
