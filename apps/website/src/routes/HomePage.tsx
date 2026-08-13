@@ -89,21 +89,23 @@ export function HomePage() {
   return (
     <>
       <Seo jsonLd={faqJsonLd()} />
-      <section className="hero enhanced-hero">
-        <div className="hero-text">
-          <h1>Spark Work</h1>
-          <p className="hero-subtitle">
-            本地优先的桌面端 AI Agent 工作台。把代码开发、办公文档、主题调研、多媒体创作和可重复执行的工作流放进同一个可审查的工作台。
-          </p>
-          <div className="cta">
-            <HeroDownloadButton />
+      <div className="hero-fold">
+        <section className="hero enhanced-hero">
+          <div className="hero-text">
+            <h1>Spark Work</h1>
+            <p className="hero-subtitle">
+              本地优先的桌面端 AI Agent 工作台。把代码开发、办公文档、主题调研、多媒体创作和可重复执行的工作流放进同一个可审查的工作台。
+            </p>
+            <div className="cta">
+              <HeroDownloadButton />
+            </div>
           </div>
-        </div>
-        <HeroAppMockup />
-      </section>
-      <section className="pmq-band" aria-label="已接入的大模型平台">
-        <ProviderMarquee />
-      </section>
+          <HeroAppMockup />
+        </section>
+        <section className="pmq-band" aria-label="已接入的大模型平台">
+          <ProviderMarquee />
+        </section>
+      </div>
       <section className="section">
         <div className="feature-groups">
           <div className="feature-group-block">
