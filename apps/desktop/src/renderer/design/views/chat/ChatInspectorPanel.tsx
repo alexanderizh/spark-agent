@@ -45,6 +45,7 @@ import type {
   UsageSnapshot,
 } from './ChatUsageTypes'
 import type { UIMessage } from '../../services/event-mapper'
+import { getVisibleTurnPromptSnapshotUserMessage } from './internal-turn-message-visibility'
 
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 const EMPTY_ENV_LAYER: EnvConfigGetResponse['project'] = { enabled: true, vars: [] }
@@ -396,6 +397,7 @@ export function ChatConfigPanel({
           </div>
         )}
 
+
         {/* 提示词 */}
         {hasChatConfigScope(sessionId, workspaceId) && promptConfig != null && (
           <div className="inspector-section">
@@ -455,7 +457,6 @@ export function ChatConfigPanel({
             )}
           </div>
         )}
-
       </div>
     </div>
   )
@@ -613,7 +614,7 @@ export function ChatInspector({
                 />
               </h4>
             </div>
-            
+
             <TeamInspectorSection
             config={teamConfig}
             fallbackProviderProfileId={session?.providerProfileId ?? null}
@@ -1004,7 +1005,8 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
   turnNumber: number
 }) {
   const [expanded, setExpanded] = useState(false)
-  const userPreview = useMemo(() => truncateText(snapshot.userMessage, 80), [snapshot.userMessage])
+  const visibleUserMessage = getVisibleTurnPromptSnapshotUserMessage(snapshot)
+  const userPreview = useMemo(() => truncateText(visibleUserMessage, 80), [visibleUserMessage])
   const totalPromptChars = useMemo(
     () => snapshot.systemPromptSections.reduce((sum, s) => sum + s.charCount, 0),
     [snapshot.systemPromptSections],
@@ -1043,7 +1045,7 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
         <span className="prompt-turn-time">{relativeTime(snapshot.timestamp)}</span>
       </div>
       <div className="prompt-turn-summary">
-        <span className="prompt-turn-user" title={snapshot.userMessage}>
+        <span className="prompt-turn-user" title={visibleUserMessage}>
           {userPreview}
         </span>
         <span className="prompt-turn-meta">
@@ -1065,7 +1067,7 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
           {/* 用户消息 */}
           <div className="prompt-section-block">
             <div className="prompt-section-label">用户消息</div>
-            <pre className="prompt-section-content">{snapshot.userMessage}</pre>
+            <pre className="prompt-section-content">{visibleUserMessage}</pre>
           </div>
 
           {/* 系统提示词各段落 */}

@@ -222,6 +222,7 @@ import {
   MediaModelManifestSchema,
   isAutoRouterProvider,
   migrateMediaModelManifestToV2,
+  SCHEDULED_TASK_TURN_PRESENTATION,
   validateMediaModelManifestSemantics,
 } from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
@@ -1852,6 +1853,7 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
     const result = await sessionService.sendTurn({
       sessionId: created.sessionId,
       message: params.promptTemplate,
+      ...SCHEDULED_TASK_TURN_PRESENTATION,
       providerProfileId: runtime.providerProfileId,
       ...(runtime.modelId != null ? { modelId: runtime.modelId } : {}),
       ...(runtime.agentId != null ? { agentId: runtime.agentId } : {}),

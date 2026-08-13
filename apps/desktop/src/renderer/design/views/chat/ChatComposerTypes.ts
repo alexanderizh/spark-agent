@@ -55,6 +55,8 @@ export type QueuedMessage = {
   content: string
   enqueuedAt: string
   attachments: ComposerAttachment[]
+  /** Internal queued prompts stay controllable but cannot be copied into the user composer. */
+  editable: boolean
 }
 
 export type ComposerAttachment = SessionAttachment & {

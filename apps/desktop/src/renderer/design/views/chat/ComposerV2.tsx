@@ -47,6 +47,7 @@ import { filterProvidersForVisibleUi } from '../../utils/auto-router-ui'
 import { countExistingMembers } from '../../teamMembership'
 import { normalizeEduAssetUrl, resolveModelContextWindowForProvider } from '@spark/shared'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from '../chat-copy'
+import { projectQueuedTurnsForDisplay } from './internal-turn-message-visibility'
 import {
   CLAUDE_AUTO_ROUTER_PROVIDER_ID,
   CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
@@ -1417,7 +1418,7 @@ export function ComposerV2({
   )
 
   const mapQueuedTurns = (turns: SessionQueuedTurn[]): QueuedMessage[] =>
-    turns.map((turn) => ({
+    projectQueuedTurnsForDisplay(turns).map((turn) => ({
       id: turn.turnId,
       turnId: turn.turnId,
       content: turn.message,
@@ -1428,6 +1429,7 @@ export function ComposerV2({
         path: a.path,
         name: getFileNameFromPath(a.path),
       })),
+      editable: turn.userMessageVisibility !== 'hidden',
     }))
 
   const applyQueueState = useCallback(
@@ -2212,7 +2214,7 @@ export function ComposerV2({
   }
 
   const handleEditQueuedMessage = async (message: QueuedMessage) => {
-    if (session?.id == null) return
+    if (session?.id == null || !message.editable) return
     setValue(message.content)
     if (message.attachments.length > 0) setAttachments(message.attachments)
     const res = await cancelQueuedTurn({ sessionId: session.id, turnId: message.turnId })
@@ -3286,14 +3288,16 @@ export function ComposerV2({
               <div key={message.id} className="composer-queue-item">
                 <Icons.Clock size={15} className="composer-queue-icon" />
                 <span className="composer-queue-text">{message.content}</span>
-                <button
-                  type="button"
-                  className="composer-queue-icon-btn composer-queue-edit-btn"
-                  title="编辑"
-                  onClick={() => void handleEditQueuedMessage(message)}
-                >
-                  <Icons.Edit size={14} />
-                </button>
+                {message.editable && (
+                  <button
+                    type="button"
+                    className="composer-queue-icon-btn composer-queue-edit-btn"
+                    title="编辑"
+                    onClick={() => void handleEditQueuedMessage(message)}
+                  >
+                    <Icons.Edit size={14} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className="composer-queue-icon-btn composer-queue-send-btn"

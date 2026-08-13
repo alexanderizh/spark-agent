@@ -1,3 +1,5 @@
+import { SCHEDULED_TASK_TURN_PRESENTATION } from '@spark/protocol'
+
 export interface SessionScheduledTaskTurnParams {
   sessionId: string
   promptTemplate: string
@@ -6,7 +8,12 @@ export interface SessionScheduledTaskTurnParams {
 
 export interface SessionScheduledTaskTurnDeps {
   getSession: (sessionId: string) => { id: string; archived_at: string | null } | null
-  submitTurn: (params: { sessionId: string; message: string }) => Promise<{ turnId: string }>
+  submitTurn: (params: {
+    sessionId: string
+    message: string
+    turnSource: 'scheduled_task'
+    userMessageVisibility: 'hidden'
+  }) => Promise<{ turnId: string }>
 }
 
 /** Queue a scheduled turn in its existing session, preserving that session's live runtime config. */
@@ -26,6 +33,7 @@ export async function runSessionScheduledTaskTurn(
   const result = await deps.submitTurn({
     sessionId: params.sessionId,
     message: params.promptTemplate,
+    ...SCHEDULED_TASK_TURN_PRESENTATION,
   })
   return {
     sessionId: params.sessionId,
