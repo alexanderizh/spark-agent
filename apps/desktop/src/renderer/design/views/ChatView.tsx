@@ -107,6 +107,11 @@ import { ChatTurnNavigator } from './chat/ChatTurnNavigator'
 import { buildChatTurnNavItems, type ChatTurnNavItem } from './chat/chat-turn-navigation'
 import { SessionForkDialog } from './chat/SessionForkDialog'
 import { SessionLineageBar } from './chat/SessionLineageBar'
+import { MessageHoverBar } from './chat/MessageHoverBar'
+import {
+  UserMessageSessionReferences,
+  type UserMessageSessionReferenceDisplay,
+} from './chat/UserMessageSessionReferences'
 import { ApplicationSnapshotPreviewCard } from './chat/ApplicationSnapshotPreviewCard'
 import { reorderChatTurnSummaryBlocks } from './chat/chat-turn-summary-order'
 import {
@@ -4467,46 +4472,47 @@ function ChatStream({
                 const nextMessage = displayMessages[index + 1]
                 const isTurnEnd = msg.turnId != null && nextMessage?.turnId !== msg.turnId
                 const activityTurnId = isTurnEnd ? msg.turnId : undefined
-                const turnNavItem =
-                  msg.turnId == null
-                    ? undefined
-                    : turnNavItems.find((item) => item.turnId === msg.turnId)
-                const canForkFromTurn =
-                  onRequestFork != null &&
-                  turnNavItem != null &&
-                  isTurnEnd &&
-                  turnNavItem.status !== 'streaming'
-                if (marker == null && !isTurnEnd && !canForkFromTurn) return null
+                if (marker == null && activityTurnId == null) return null
                 return (
                   <>
                     {marker != null && <ModelSwitchNotice marker={marker} />}
                     {activityTurnId != null && <ComputerActivityBlock turnId={activityTurnId} />}
-                    {canForkFromTurn && (
-                      <button
-                        type="button"
-                        className="session-fork-after-turn"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onRequestFork?.(
-                            msg.turnId as TurnId,
-                            turnNavItems.find((item) => item.turnId === msg.turnId)?.ordinal,
-                          )
-                        }}
-                      >
-                        <Icons.GitBranch size={12} />
-                        从此处分支
-                      </button>
-                    )}
                   </>
                 )
               }}
-              renderItem={(msg, index) =>
-                msg.role === 'user' ? (
+              renderItem={(msg, index) => {
+                const nextMessage = displayMessages[index + 1]
+                const isTurnEnd = msg.turnId != null && nextMessage?.turnId !== msg.turnId
+                const turnNavItem =
+                  msg.turnId == null
+                    ? undefined
+                    : turnNavItems.find((item) => item.turnId === msg.turnId)
+                const onFork =
+                  onRequestFork != null &&
+                  isTurnEnd &&
+                  turnNavItem != null &&
+                  turnNavItem.status !== 'streaming'
+                    ? () => onRequestFork(msg.turnId as TurnId, turnNavItem.ordinal)
+                    : undefined
+
+                return msg.role === 'user' ? (
                   <UserMsg
                     key={msg.id}
                     timestamp={msg.timestamp}
                     blocks={msg.blocks}
                     {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
+                    {...(msg.sessionReferences != null && msg.sessionReferences.length > 0
+                      ? {
+                          sessionReferences: msg.sessionReferences.map((reference) => ({
+                            sourceSessionId: reference.sourceSessionId,
+                            title:
+                              reference.title ??
+                              sessions.find((item) => item.id === reference.sourceSessionId)
+                                ?.title ??
+                              '未命名会话',
+                          })),
+                        }
+                      : {})}
                     {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
                       ? {
                           mentionAgentName:
@@ -4535,6 +4541,23 @@ function ChatStream({
                             onResendMessage({
                               text: extractTextFromBlocks(msg.blocks),
                               attachments: msg.attachments ?? [],
+                              ...(msg.sessionReferences != null && msg.sessionReferences.length > 0
+                                ? {
+                                    sessionReferences: msg.sessionReferences.map((reference) => ({
+                                      sourceSessionId: reference.sourceSessionId,
+                                      title:
+                                        reference.title ??
+                                        sessions.find(
+                                          (item) => item.id === reference.sourceSessionId,
+                                        )?.title ??
+                                        '未命名会话',
+                                      ...(reference.snapshotSeq !== undefined
+                                        ? { snapshotSeq: reference.snapshotSeq }
+                                        : {}),
+                                      status: 'active',
+                                    })),
+                                  }
+                                : {}),
                             }),
                         }
                       : {})}
@@ -4581,6 +4604,7 @@ function ChatStream({
                               onStartMultiSelect: () => enterMultiSelectMode(msg.id),
                             }
                           : {})}
+                        {...(onFork != null ? { onFork } : {})}
                         {...(onReplyTo != null && msg.status !== 'streaming'
                           ? {
                               onReply: (selectedText?: string) =>
@@ -4600,7 +4624,7 @@ function ChatStream({
                     )
                   })()
                 )
-              }
+              }}
             />
           </ComputerActivityProvider>
           {showWaitingAgent && (
@@ -6382,73 +6406,6 @@ function reconstructHunkDiff(hunk: DiffHunk): string {
   return [header, ...lines].join('\n')
 }
 
-/** 格式化时间戳 — 根据 timestampFormat 设置输出相对或绝对时间 */
-function formatMsgTime(timestamp?: string): string {
-  if (!timestamp) return ''
-  const d = new Date(timestamp)
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  const abs = `${hh}:${mm}`
-  const fmt = readAppearance().timestampFormat
-  if (fmt === 'abs') return abs
-  // relative time
-  const now = Date.now()
-  const diffMs = now - d.getTime()
-  if (diffMs < 60_000) return '刚刚'
-  if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)} 分钟前`
-  if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)} 小时前`
-  return abs
-}
-
-/** 消息悬浮操作栏：时间 + 复制按钮 + 删除按钮，放在气泡内部。position: left=agent消息(左下角), right=用户消息(右下角) */
-function MessageHoverBar({
-  timestamp,
-  textContent,
-  position,
-  onDelete,
-  onResend,
-}: {
-  timestamp?: string | undefined
-  textContent: string
-  position: 'left' | 'right'
-  onDelete?: () => void
-  /** 仅用户消息：把这条消息的文本+附件重新塞回输入区 */
-  onResend?: () => void
-}) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard
-      .writeText(textContent)
-      .then(() => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      })
-      .catch(() => {})
-  }, [textContent])
-
-  const time = formatMsgTime(timestamp)
-
-  return (
-    <div className={`msg-hover-bar msg-hover-${position}`}>
-      {time && <span className="msg-hover-time">{time}</span>}
-      {onResend && (
-        <button className="msg-hover-resend" title="重发" onClick={onResend}>
-          <Icons.RotateCw size={12} />
-        </button>
-      )}
-      <button className="msg-hover-copy" title="复制" onClick={handleCopy}>
-        {copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
-      </button>
-      {onDelete && (
-        <button className="msg-hover-delete" title="删除" onClick={onDelete}>
-          <Icons.Trash size={12} />
-        </button>
-      )}
-    </div>
-  )
-}
-
 function InlineContextMenu({
   x,
   y,
@@ -6586,6 +6543,7 @@ const UserMsg = React.memo(
     timestamp,
     blocks,
     attachments = [],
+    sessionReferences = [],
     deliveryState,
     deliveryError,
     onDelete,
@@ -6601,6 +6559,7 @@ const UserMsg = React.memo(
     timestamp?: string | undefined
     blocks: UIBlock[]
     attachments?: MessageAttachment[]
+    sessionReferences?: UserMessageSessionReferenceDisplay[]
     deliveryState?: UIMessage['deliveryState']
     deliveryError?: string
     onDelete?: () => void
@@ -6716,6 +6675,9 @@ const UserMsg = React.memo(
             <Icons.Check className="msg-select-checkmark" size={14} />
           </label>
         )}
+        {sessionReferences.length > 0 && (
+          <UserMessageSessionReferences references={sessionReferences} />
+        )}
         {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
         <div className="msg-user-line">
           <CollapsibleContent>
@@ -6777,6 +6739,7 @@ const UserMsg = React.memo(
     return (
       prev.blocks === next.blocks &&
       prev.attachments === next.attachments &&
+      prev.sessionReferences === next.sessionReferences &&
       prev.mentionAgentName === next.mentionAgentName &&
       prev.deliveryState === next.deliveryState &&
       prev.deliveryError === next.deliveryError &&
@@ -6965,7 +6928,8 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
  * 已完成且非最新的行不会再被 mutate（blocks 引用永久稳定），可安全跳过——这正是
  * 长会话流式时大量历史行被无谓重渲染（重跑 markdown 解析）的根因。
  * 故意忽略 onDelete/onReply/onFilePreview 等回调标识：它们每次 render 都是新函数，
- * 但其「是否存在」对给定消息是稳定的，不应触发重渲染。
+ * 但其「是否存在」对给定消息是稳定的，不应触发重渲染；onFork 例外，因为轮次边界
+ * 变化会改变它是否应该出现在当前消息上。
  */
 type AssistantRowCompareProps = {
   sessionId: SessionId
@@ -6983,6 +6947,7 @@ type AssistantRowCompareProps = {
   selectionMode?: boolean
   selected?: boolean
   onRetry?: () => void
+  onFork?: () => void
 }
 
 function assistantRowsPropsAreEqual(
@@ -7004,7 +6969,8 @@ function assistantRowsPropsAreEqual(
     prev.timestamp === next.timestamp &&
     prev.selectionMode === next.selectionMode &&
     prev.selected === next.selected &&
-    (prev.onRetry != null) === (next.onRetry != null)
+    (prev.onRetry != null) === (next.onRetry != null) &&
+    (prev.onFork != null) === (next.onFork != null)
   )
 }
 
@@ -7022,6 +6988,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   assistantAvatarSrc,
   showIdentity,
   onDelete,
+  onFork,
   onReply,
   onFilePreview,
   messageId,
@@ -7045,6 +7012,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   assistantAvatarSrc: string
   showIdentity: boolean
   onDelete?: () => void
+  onFork?: () => void
   onReply?: (selectedText?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   sessionRunning?: boolean
@@ -7066,6 +7034,10 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   const showTeamActivityLogs = useTeamActivityLogsVisible()
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
+  const lastAgentSegmentIndex = segments.reduce(
+    (lastIndex, segment, index) => (segment.kind === 'agent' ? index : lastIndex),
+    -1,
+  )
 
   return (
     <>
@@ -7152,6 +7124,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             {...(messageStatus != null ? { messageStatus } : {})}
             {...(timestamp != null ? { timestamp } : {})}
             {...(onDelete != null ? { onDelete } : {})}
+            {...(onFork != null && index === lastAgentSegmentIndex ? { onFork } : {})}
             {...(onReply != null ? { onReply } : {})}
             {...(selectionMode !== undefined ? { selectionMode } : {})}
             {...(selected !== undefined ? { selected } : {})}
@@ -7318,6 +7291,7 @@ const AgentMsg = React.memo(function AgentMsg({
   showIdentity = true,
   running,
   onDelete,
+  onFork,
   onReply,
   onFilePreview,
   selectionMode = false,
@@ -7340,6 +7314,7 @@ const AgentMsg = React.memo(function AgentMsg({
   running?: boolean
   sessionRunning?: boolean
   onDelete?: () => void
+  onFork?: () => void
   onReply?: (selectedText?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   selectionMode?: boolean
@@ -7624,12 +7599,13 @@ const AgentMsg = React.memo(function AgentMsg({
             </CollapsibleContent>
           )}
           {isCancelled && <StoppedMarker />}
-          {isFinished && textContent && (
+          {isFinished && (textContent || onFork != null) && (
             <MessageHoverBar
               timestamp={timestamp}
               textContent={textContent}
               position="left"
               {...(onDelete ? { onDelete } : {})}
+              {...(onFork ? { onFork } : {})}
             />
           )}
         </div>

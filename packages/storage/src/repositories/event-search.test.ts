@@ -56,6 +56,15 @@ describe('EventRepository — 会话内容搜索 (FTS5)', () => {
     }
   }
 
+  function teamMemberMessage(sessionId: string, content: string, id?: string): InsertEventParams {
+    return {
+      id: id ?? `evt-${Math.random().toString(36).slice(2)}`,
+      sessionId,
+      eventType: 'team_member_message',
+      eventJson: JSON.stringify({ content, mode: 'complete' }),
+    }
+  }
+
   it('FTS 搜索命中写入的用户消息，并返回纯文本 snippet（不是 JSON 乱码）', () => {
     repo.insert(userMessage('s1', '请帮我把登录页面改成深色主题'))
     repo.insert(userMessage('s2', '另一段无关内容，不应该命中'))
@@ -83,6 +92,7 @@ describe('EventRepository — 会话内容搜索 (FTS5)', () => {
   it('assistant_message 与 user_message 都被索引；流式 delta 不进索引', () => {
     repo.insert(userMessage('s1', 'hello world'))
     repo.insert(assistantMessage('s1', 'world peace reply'))
+    repo.insert(teamMemberMessage('s1', 'world team reply'))
     // delta 是同一段正文的碎片，索引它们会产生重复命中
     repo.insert({
       id: 'delta-1',
@@ -173,6 +183,31 @@ describe('EventRepository — 会话内容搜索 (FTS5)', () => {
     expect(results.map((r) => r.sessionId)).toEqual(['s-legacy'])
   })
 
+  it('旧的回填标记会升级索引版本并补入团队成员消息', async () => {
+    db.raw
+      .prepare(
+        `INSERT INTO app_settings (category, key, value, updated_at)
+         VALUES ('session-search', 'ftsBackfillDone', 'true', ?)`,
+      )
+      .run(new Date().toISOString())
+    db.raw
+      .prepare(
+        `INSERT INTO agent_events (id, session_id, run_id, turn_id, event_type, event_json)
+         VALUES (?, ?, NULL, NULL, ?, ?)`,
+      )
+      .run(
+        'legacy-team-member-1',
+        's-legacy-team',
+        'team_member_message',
+        JSON.stringify({ content: '团队成员的历史结论', mode: 'complete' }),
+      )
+
+    const processed = await repo.backfillSearchIndexIfNeeded()
+    expect(processed).toBe(1)
+    expect(repo.searchByContent('历史结论', 10).map((r) => r.sessionId)).toEqual(['s-legacy-team'])
+    expect(await repo.backfillSearchIndexIfNeeded()).toBe(0)
+  })
+
   it('extractSearchableEventBody 只返回对话正文的纯文本', () => {
     expect(
       extractSearchableEventBody(
@@ -183,6 +218,12 @@ describe('EventRepository — 会话内容搜索 (FTS5)', () => {
 
     // 工具事件不参与检索
     expect(extractSearchableEventBody('tool_call', JSON.stringify({ input: {} }))).toBeNull()
+    expect(
+      extractSearchableEventBody(
+        'team_member_message',
+        JSON.stringify({ content: 'member reply', mode: 'complete' }),
+      ),
+    ).toBe('member reply')
     // delta 不参与检索
     expect(
       extractSearchableEventBody(
@@ -259,6 +300,36 @@ describe('EventRepository — FTS 不可用时降级到 LIKE', () => {
     })
 
     expect(repo.searchByContent('fallback-private-marker', 10)).toEqual([])
+
+    db.close()
+  })
+
+  it('LIKE 兜底不会把运行时事件 JSON 当成会话正文', () => {
+    const db = new SparkDatabase(join(testDir, 'runtime-event-fallback.db'))
+    db.runMigrations(join(process.cwd(), 'migrations'))
+    db.raw.exec(`DROP TRIGGER IF EXISTS agent_events_fts_after_delete`)
+    db.raw.exec(`DROP TABLE IF EXISTS agent_event_fts`)
+    db.raw.exec(`DROP TABLE IF EXISTS agent_event_fts_map`)
+
+    const repo = new EventRepository(db)
+    repo.insert({
+      id: 'tool-event',
+      sessionId: 'runtime-session',
+      eventType: 'tool_call',
+      eventJson: JSON.stringify({
+        toolName: 'internal-tool',
+        input: { content: 'runtime-private-marker' },
+      }),
+    })
+    repo.insert({
+      id: 'status-event',
+      sessionId: 'status-session',
+      eventType: 'agent_status',
+      eventJson: JSON.stringify({ status: 'completed', message: 'status-private-marker' }),
+    })
+
+    expect(repo.searchByContent('runtime-private-marker', 10)).toEqual([])
+    expect(repo.searchByContent('status-private-marker', 10)).toEqual([])
 
     db.close()
   })

@@ -23,12 +23,13 @@ import { buildFtsMatchQuery, segmentCjk } from '../segment-cjk.js'
  * 参与会话内容检索的事件类型。
  *
  * 只索引真正的对话正文：工具调用参数、文件 diff、终端输出、base64 之类的载荷
- * 既是噪音也会把索引撑爆。用户搜「会话里说过什么」，指的就是这两类。
+ * 既是噪音也会把索引撑爆。用户搜「会话里说过什么」，指的是用户、助手和团队成员消息。
  */
-const SEARCHABLE_EVENT_TYPES = new Set(['user_message', 'assistant_message'])
+const SEARCHABLE_EVENT_TYPES = new Set(['user_message', 'assistant_message', 'team_member_message'])
 
 /** 单条事件参与索引的正文上限，防止超长贴文把 FTS 索引撑爆 */
 const MAX_INDEXED_BODY_CHARS = 20_000
+const FTS_BACKFILL_VERSION = '2'
 
 /**
  * 从事件 JSON 中取出可检索的纯文本正文。
@@ -155,7 +156,7 @@ export class EventRepository extends BaseRepository {
     `)
 
     // 同一事务内同步更新会话内容搜索索引（FTS5）。
-    // 与主表分离：非 user/assistant 消息 / 流式 delta 不进 FTS，
+    // 与主表分离：非对话消息 / 流式 delta 不进 FTS，
     // 既避免噪音也避免把索引撑爆。详见 061_agent_event_fts.sql。
     const tx = this.raw.transaction(() => {
       stmt.run(
@@ -718,7 +719,7 @@ export class EventRepository extends BaseRepository {
    * 按事件内容搜索，返回匹配的 session ID 列表和内容片段。
    *
    * 走 agent_event_fts（FTS5）+ segmentCjk CJK 预分词：
-   *   - 索引覆盖 user_message / assistant_message 的纯文本正文，不再搜序列化 JSON
+   *   - 索引覆盖用户、助手和团队成员消息的纯文本正文，不再搜序列化 JSON
    *   - FTS5 只负责检索 + bm25 排序（解决性能问题）；
    *     snippet 由 JS 从原始纯文本正文切，不依赖 FTS5 snippet() 在 contentless 表上
    *     不稳定的行为，且能保证 snippet 就是纯文本而非 JSON 乱码
@@ -836,12 +837,13 @@ export class EventRepository extends BaseRepository {
     for (const row of rows) {
       if (seen.has(row.session_id)) continue
       const body = extractSearchableEventBody(row.event_type, row.event_json)
-      if (row.event_type === 'user_message' && body == null) continue
+      // Fallback must preserve the same visibility boundary as FTS. Never
+      // search raw JSON from tool/runtime events: it can contain internal
+      // arguments, prompts, or status payloads that are not transcript text.
+      if (body == null) continue
+      if (!body.toLowerCase().includes(query.toLowerCase())) continue
       seen.add(row.session_id)
-      // 只在真正的对话正文里找匹配点——避免命中字段名/工具参数等 JSON 结构噪音
-      const haystack = body ?? row.event_json
-      if (!haystack.toLowerCase().includes(query.toLowerCase())) continue
-      results.push({ sessionId: row.session_id, snippet: makeTextSnippet(haystack, query) })
+      results.push({ sessionId: row.session_id, snippet: makeTextSnippet(body, query) })
       if (results.length >= limit) break
     }
     return results
@@ -856,7 +858,7 @@ export class EventRepository extends BaseRepository {
    * 回填存量事件的搜索索引（幂等）。
    *
    * 061 迁移只建表，不回填——回填需要 segmentCjk 分词，必须在 JS 侧分批做。
-   * 标记写在 app_settings(session-search / ftsBackfillDone)，重复调用直接返回。
+   * 标记写在 app_settings(session-search / ftsBackfillVersion)，重复调用直接返回。
    *
    * **异步分批**：better-sqlite3 是同步 API，纯 while 循环会在万级事件量上
    * 阻塞 Electron main 进程数秒、UI 卡死。每批之间 yield 给事件循环（setTimeout 0），
@@ -869,8 +871,10 @@ export class EventRepository extends BaseRepository {
     const settings = this.raw.prepare(
       `SELECT value FROM app_settings WHERE category = ? AND key = ?`,
     )
-    const done = settings.get('session-search', 'ftsBackfillDone') as { value: string } | undefined
-    if (done?.value === 'true') return 0
+    const version = settings.get('session-search', 'ftsBackfillVersion') as
+      | { value: string }
+      | undefined
+    if (version?.value === FTS_BACKFILL_VERSION) return 0
 
     const BACKFILL_BATCH = 500
     let lastEventId: string | null = null
@@ -878,7 +882,7 @@ export class EventRepository extends BaseRepository {
     const scanStmt = this.raw.prepare(
       `SELECT id, session_id, event_type, event_json
        FROM agent_events
-       WHERE event_type IN ('user_message', 'assistant_message')
+       WHERE event_type IN ('user_message', 'assistant_message', 'team_member_message')
          AND id > ?
        ORDER BY id ASC
        LIMIT ?`,
@@ -920,7 +924,12 @@ export class EventRepository extends BaseRepository {
       `INSERT INTO app_settings (category, key, value, updated_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(category, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     )
-    upsertSetting.run('session-search', 'ftsBackfillDone', 'true', new Date().toISOString())
+    upsertSetting.run(
+      'session-search',
+      'ftsBackfillVersion',
+      FTS_BACKFILL_VERSION,
+      new Date().toISOString(),
+    )
     return processed
   }
 }

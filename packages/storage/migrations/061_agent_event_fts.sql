@@ -8,7 +8,7 @@
 --   4. `%` `_` 未转义，用户搜 `%` 会匹配全库。
 --
 -- 方案：contentless FTS5（与 042 的 memory_fts 同一套范式），只索引
--- user_message / assistant_message 的**纯文本正文**。
+-- user_message / assistant_message / team_member_message 的**纯文本正文**。
 --
 -- 写入内容必须先过 segmentCjk()（CJK 逐字预分词，见 @spark/storage segment-cjk），
 -- tokenizer 保持 unicode61；查询侧用 buildFtsMatchQuery() 包成短语。
@@ -16,7 +16,7 @@
 --
 -- 存量事件的回填不能在纯 SQL 里做（需要 JS 侧 segmentCjk + 事件正文解析），
 -- 由 EventRepository.backfillSearchIndexIfNeeded() 在代码侧分批完成，
--- 以 app_settings(session-search / ftsBackfillDone) 标记幂等。
+-- 以 app_settings(session-search / ftsBackfillVersion) 标记幂等。
 
 CREATE VIRTUAL TABLE IF NOT EXISTS agent_event_fts USING fts5(
   body,

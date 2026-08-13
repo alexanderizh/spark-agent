@@ -130,6 +130,7 @@ import { formatTokenCount } from './ChatViewUtils'
 import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
 import { resolvePendingQuickReplies } from '../../services/quick-reply-suggestions'
 import { useAppControlComposerPrefill } from './composerAppControl'
+import { useSessionReferenceAddControl } from './session-reference-control'
 import {
   useInsertToComposer,
   formatCodeReferenceLine,
@@ -156,6 +157,7 @@ import {
   hasSessionReferenceDrag,
   isSessionReferenceDropTarget,
   readSessionReferenceDragPayload,
+  type SessionReferenceDragPayload,
 } from './session-reference-dnd'
 
 type ContextUsageState = {
@@ -1303,13 +1305,11 @@ export function ComposerV2({
   const [attachedSessionReferences, setAttachedSessionReferences] = useState<
     ComposerSessionReference[]
   >([])
-  const [updatingReferenceIds, setUpdatingReferenceIds] = useState<Set<string>>(() => new Set())
-  const referenceItems = useMemo(() => {
+  const knownReferenceItems = useMemo(() => {
     const bySource = new Map<string, ComposerSessionReference>()
     for (const reference of sessionReferences) bySource.set(reference.sourceSessionId, reference)
-    // Persisted references are authoritative once a session has been loaded.
-    // This prevents an older local draft (without the opaque referenceId) from
-    // masking the server-side reference and losing update/revoke capabilities.
+    // Persisted references remain part of the session authorization catalog,
+    // but are not rendered back into the composer after a successful send.
     for (const reference of attachedSessionReferences)
       bySource.set(reference.sourceSessionId, reference)
     return [...bySource.values()]
@@ -1348,11 +1348,11 @@ export function ComposerV2({
         toast.warning('不能把当前会话添加为自身参考')
         return
       }
-      if (referenceItems.some((item) => item.sourceSessionId === candidate.sessionId)) {
+      if (knownReferenceItems.some((item) => item.sourceSessionId === candidate.sessionId)) {
         toast.info('这个会话已经添加为参考')
         return
       }
-      if (referenceItems.length >= 10) {
+      if (knownReferenceItems.length >= 10) {
         toast.warning('每个会话最多添加 10 个参考会话')
         return
       }
@@ -1371,8 +1371,25 @@ export function ComposerV2({
       ])
       toast.success(`已添加参考：${candidate.title || '未命名会话'}`)
     },
-    [referenceItems, session?.id, setSessionReferences, toast],
+    [knownReferenceItems, session?.id, setSessionReferences, toast],
   )
+
+  const addSessionReferenceFromPayload = useCallback(
+    (payload: SessionReferenceDragPayload) => {
+      addSessionReference({
+        sessionId: payload.sessionId,
+        title: payload.title,
+        ...(payload.projectId != null ? { projectId: payload.projectId } : {}),
+        ...(payload.turnCount != null ? { turnCount: payload.turnCount } : {}),
+        latestCompletedSeq: 0,
+      })
+    },
+    [addSessionReference],
+  )
+  useSessionReferenceAddControl({
+    sessionId: session?.id ?? null,
+    onAdd: addSessionReferenceFromPayload,
+  })
 
   const removeSessionReference = useCallback(
     (sourceSessionId: string) => {
@@ -1381,38 +1398,6 @@ export function ComposerV2({
       )
     },
     [setSessionReferences],
-  )
-
-  const detachSessionReference = useCallback(
-    async (reference: ComposerSessionReference) => {
-      setAttachedSessionReferences((current) =>
-        current.filter((item) => item.sourceSessionId !== reference.sourceSessionId),
-      )
-      const targetSessionId = session?.id
-      if (targetSessionId == null) return
-      try {
-        if (reference.referenceId != null) {
-          await window.spark.invoke('session:revoke-reference', {
-            targetSessionId,
-            referenceId: reference.referenceId,
-          })
-        } else {
-          const current = await window.spark.invoke('session:list-references', { targetSessionId })
-          const persisted = current.references.find(
-            (item) => item.sourceSessionId === reference.sourceSessionId,
-          )
-          if (persisted != null) {
-            await window.spark.invoke('session:revoke-reference', {
-              targetSessionId,
-              referenceId: persisted.id,
-            })
-          }
-        }
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : '撤销会话参考失败')
-      }
-    },
-    [session?.id, toast],
   )
 
   const refreshAttachedReferences = useCallback(async () => {
@@ -1435,58 +1420,10 @@ export function ComposerV2({
           })),
       )
     } catch {
-      // The send already succeeded; a stale chip is preferable to masking it
-      // with a second error toast. The next session refresh will reconcile it.
+      // The send already succeeded. The next session refresh will reconcile
+      // the persisted reference catalog used by the picker.
     }
   }, [session?.id])
-
-  const handleRemoveReference = useCallback(
-    (reference: ComposerSessionReference) => {
-      removeSessionReference(reference.sourceSessionId)
-      void detachSessionReference(reference)
-    },
-    [detachSessionReference, removeSessionReference],
-  )
-
-  const handleUpdateReference = useCallback(
-    async (reference: ComposerSessionReference) => {
-      const targetSessionId = session?.id
-      if (targetSessionId == null || reference.referenceId == null || reference.status !== 'active')
-        return
-      const referenceId = reference.referenceId
-      setUpdatingReferenceIds((current) => new Set(current).add(referenceId))
-      try {
-        const result = await window.spark.invoke('session:update-reference', {
-          targetSessionId,
-          referenceId,
-        })
-        setAttachedSessionReferences((current) =>
-          current.map((item) =>
-            item.referenceId === result.reference.id
-              ? {
-                  ...item,
-                  title: result.reference.title,
-                  snapshotSeq: result.reference.snapshotSeq,
-                  projectId: result.reference.projectId,
-                  turnCount: result.reference.turnCount,
-                  status: result.reference.status,
-                }
-              : item,
-          ),
-        )
-        toast.success(`已更新参考快照：${result.reference.title || '未命名会话'}`)
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : '更新会话参考失败')
-      } finally {
-        setUpdatingReferenceIds((current) => {
-          const next = new Set(current)
-          next.delete(referenceId)
-          return next
-        })
-      }
-    },
-    [session?.id, toast],
-  )
 
   useEffect(() => {
     if (session?.id == null) {
@@ -1973,7 +1910,20 @@ export function ComposerV2({
               return
             }
           }
-          const res = await window.spark.invoke('command:execute', { sessionId, message: text })
+          const res = await window.spark.invoke('command:execute', {
+            sessionId,
+            message: text,
+            ...(sessionReferences.length > 0
+              ? {
+                  sessionReferences: sessionReferences.map((reference) => ({
+                    sourceSessionId: reference.sourceSessionId as SessionId,
+                    ...(reference.snapshotSeq !== undefined
+                      ? { snapshotSeq: reference.snapshotSeq }
+                      : {}),
+                  })),
+                }
+              : {}),
+          })
           if (res.forwardToAgent) {
             // 转发给 Agent：作为普通消息发送
             optimisticSend = startOptimisticUserSend(
@@ -1981,6 +1931,7 @@ export function ComposerV2({
                 sessionId,
                 content: text,
                 attachments: turnAttachments,
+                sessionReferences,
                 hiddenUntilStarted: isWorking,
                 ...(replySnapshot?.agentId != null
                   ? { mentionAgentId: replySnapshot.agentId }
@@ -2090,6 +2041,7 @@ export function ComposerV2({
             sessionId: targetSessionId,
             content: text,
             attachments: turnAttachments,
+            sessionReferences,
             hiddenUntilStarted: isWorking,
             ...(replySnapshot?.agentId != null
               ? { mentionAgentId: replySnapshot.agentId }
@@ -2275,14 +2227,9 @@ export function ComposerV2({
   const handleDropSessionReference = useCallback(
     (payload: ReturnType<typeof readSessionReferenceDragPayload>) => {
       if (payload == null) return
-      addSessionReference({
-        sessionId: payload.sessionId,
-        title: payload.title,
-        ...(payload.projectId != null ? { projectId: payload.projectId } : {}),
-        latestCompletedSeq: 0,
-      })
+      addSessionReferenceFromPayload(payload)
     },
-    [addSessionReference],
+    [addSessionReferenceFromPayload],
   )
 
   /**
@@ -3546,7 +3493,7 @@ export function ComposerV2({
 
   /**
    * React to external composer prefill requests:
-   * - historical "resend" writes text and attachments back into the draft;
+   * - historical "resend" writes text, attachments, and session references back into the draft;
    * - empty-hero recommendation cards write only text, select the target agent, and never send.
    *
    * requestId 单调递增保证每次触发都会同步一次。
@@ -3573,6 +3520,7 @@ export function ComposerV2({
     // 文本立即写入（用户能马上看到效果）
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setValue(payload.text)
+    setSessionReferences(payload.sessionReferences ?? [])
 
     const stamp = Date.now()
     const placeholders: ComposerAttachment[] = payload.attachments.map((att, index) => ({
@@ -3618,7 +3566,14 @@ export function ComposerV2({
     })
 
     textareaRef.current?.focus()
-  }, [resendRequest, setValue, setAttachments, prepareImagePreview, onResendConsumed])
+  }, [
+    resendRequest,
+    setValue,
+    setAttachments,
+    setSessionReferences,
+    prepareImagePreview,
+    onResendConsumed,
+  ])
 
   const handleAgentChange = (agentId: string) => applyAgentRuntime(agentId)
 
@@ -3843,57 +3798,41 @@ export function ComposerV2({
             imageAttachments.length > 0 ||
             fileAttachments.length > 0 ||
             directoryAttachments.length > 0 ||
-            referenceItems.length > 0) && (
+            sessionReferences.length > 0) && (
             <div className="composer-attachments-inside">
-              {referenceItems.length > 0 && (
+              {sessionReferences.length > 0 && (
                 <div
                   className="composer-attachment-strip composer-session-ref-strip"
                   aria-label="会话参考"
                 >
-                  {referenceItems.map((reference) => (
-                    <div
-                      key={reference.sourceSessionId}
-                      className={`composer-attachment-chip composer-session-ref-chip${reference.status === 'unavailable' ? ' is-unavailable' : ''}`}
-                      title={
-                        reference.projectId != null
-                          ? `${reference.title} · ${reference.projectId}`
-                          : reference.title
-                      }
-                    >
-                      <Icons.MessageSquare size={13} />
-                      <div className="composer-session-ref-copy">
-                        <span>{reference.title || '未命名会话'}</span>
-                        <small>
-                          {reference.status === 'unavailable'
-                            ? '来源已不可用'
-                            : `${reference.turnCount ?? 0} 轮 · 只读参考`}
-                        </small>
-                      </div>
-                      {reference.referenceId != null && reference.status === 'active' && (
-                        <button
-                          type="button"
-                          title="更新到最新快照"
-                          aria-label={`更新 ${reference.title || '会话'} 快照`}
-                          disabled={updatingReferenceIds.has(reference.referenceId)}
-                          onClick={() => void handleUpdateReference(reference)}
-                        >
-                          {updatingReferenceIds.has(reference.referenceId) ? (
-                            <Icons.Spinner size={12} />
-                          ) : (
-                            <Icons.Refresh size={12} />
-                          )}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        title="移除会话参考"
-                        aria-label={`移除 ${reference.title || '会话'} 参考`}
-                        onClick={() => handleRemoveReference(reference)}
+                  {sessionReferences.map((reference) => {
+                    const referenceTitle = reference.title || '未命名会话'
+                    return (
+                      <Tooltip
+                        key={reference.sourceSessionId}
+                        title={referenceTitle}
+                        placement="top"
+                        mouseEnterDelay={0.05}
                       >
-                        <Icons.X size={12} />
-                      </button>
-                    </div>
-                  ))}
+                        <div
+                          className={`composer-attachment-chip composer-session-ref-chip${reference.status === 'unavailable' ? ' is-unavailable' : ''}`}
+                        >
+                          <Icons.MessageSquare size={13} />
+                          <div className="composer-session-ref-copy">
+                            <span>{referenceTitle}</span>
+                          </div>
+                          <button
+                            type="button"
+                            title="移除会话参考"
+                            aria-label={`移除 ${referenceTitle} 参考`}
+                            onClick={() => removeSessionReference(reference.sourceSessionId)}
+                          >
+                            <Icons.X size={12} />
+                          </button>
+                        </div>
+                      </Tooltip>
+                    )
+                  })}
                 </div>
               )}
               {codeReferences.length > 0 && (
@@ -4198,7 +4137,7 @@ export function ComposerV2({
           <SessionReferencePicker
             open={sessionReferencePickerOpen}
             targetSessionId={session?.id ?? null}
-            selected={referenceItems}
+            selected={knownReferenceItems}
             workspaceId={activeWorkspaceId}
             fallbackCandidates={fallbackReferenceCandidates}
             onClose={() => setSessionReferencePickerOpen(false)}

@@ -75,6 +75,7 @@ import type {
   HistoryImportSource,
   ProposedGoalContract,
   SessionReference,
+  SessionReferenceInput,
   SessionReferenceCandidate,
   SessionLineage,
   ReferencedSessionTurn,
@@ -444,6 +445,8 @@ interface TryStartSDKTurnOptions extends UserMessagePresentation {
   agentId?: string
   /** Memory System：当前 workspace 根路径（project scope 记忆文件存放） */
   workspaceRootPath?: string
+  /** 当前 turn 附带的只读会话参考，沿执行链传给 user_message 事件。 */
+  sessionReferences?: SessionReferenceInput[]
 }
 type SessionRuntimePatch = {
   providerProfileId?: string
@@ -460,7 +463,7 @@ type PendingTurn = UserMessagePresentation & {
   message: string
   enqueuedAt: string
   attachments?: SessionAttachment[]
-  sessionReferences?: Array<{ sourceSessionId: string; snapshotSeq?: number }>
+  sessionReferences?: SessionReferenceInput[]
   runtimePatch?: SessionRuntimePatch
   skillId?: string
   skillParams?: Record<string, unknown>
@@ -485,7 +488,7 @@ type SendTurnParams = UserMessagePresentation & {
   skillId?: string
   skillParams?: Record<string, unknown>
   attachments?: SessionAttachment[]
-  sessionReferences?: Array<{ sourceSessionId: string; snapshotSeq?: number }>
+  sessionReferences?: SessionReferenceInput[]
   teamConfig?: TeamModeConfig
   mentionAgentId?: string
   interruptActive?: boolean
@@ -1664,6 +1667,7 @@ export class SessionService {
   async executeCommandAsEvents(params: {
     sessionId: string
     message: string
+    sessionReferences?: SessionReferenceInput[]
   }): Promise<{ isCommand: boolean; forwardToAgent?: boolean; started?: boolean }> {
     if (!isCommand(params.message)) return { isCommand: false }
     const parsed = parseCommand(params.message)
@@ -1851,6 +1855,17 @@ export class SessionService {
     const result = await this.commandRegistry.execute(parsed, ctx, deps)
 
     if (result.forwardToAgent) return { isCommand: true, forwardToAgent: true }
+    const sessionReferences = params.sessionReferences?.slice(0, 10) ?? []
+    if (sessionReferences.length > 0) {
+      new SessionCollaborationRepository(this.db).attachReferencesInTransaction({
+        references: sessionReferences.map((reference) => ({
+          targetSessionId: params.sessionId,
+          sourceSessionId: reference.sourceSessionId,
+          ...(reference.snapshotSeq !== undefined ? { snapshotSeq: reference.snapshotSeq } : {}),
+          actor: 'user' as const,
+        })),
+      })
+    }
 
     // Inject result as events into the chat stream. Internal commands that end here
     // emit a terminal agent_status so the UI can clear loading, but commands that
@@ -1893,6 +1908,7 @@ export class SessionService {
       timestamp: new Date().toISOString(),
       seq: seq0 + seqOffset,
       content: params.message,
+      ...(sessionReferences.length > 0 ? { sessionReferences } : {}),
     }
     seqOffset += 1
     const cmdName = params.message.replace(/^\//, '').split(' ')[0]
@@ -2114,22 +2130,12 @@ export class SessionService {
     const userMessagePresentation = pickUserMessagePresentation(params)
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
+    const sessionReferences = params.sessionReferences?.slice(0, 10) ?? []
     const turnId = crypto.randomUUID()
     if (userMessagePresentation.userMessageVisibility !== 'hidden') {
       // A new visible user turn supersedes any pending internal continuation.
       this.resetTeamDispatchAutoContinuation(sessionId)
       this.removeQueuedTeamDispatchAutoContinuations(sessionId)
-    }
-    if (params.sessionReferences != null && params.sessionReferences.length > 0) {
-      const collaboration = new SessionCollaborationRepository(this.db)
-      for (const reference of params.sessionReferences.slice(0, 10)) {
-        collaboration.attachReference({
-          targetSessionId: sessionId,
-          sourceSessionId: reference.sourceSessionId,
-          ...(reference.snapshotSeq !== undefined ? { snapshotSeq: reference.snapshotSeq } : {}),
-          actor: 'user',
-        })
-      }
     }
     // __SPARK_DEBUG_START__
     log.info('[BUG-DEBUG] dispatchTurn received', {
@@ -2164,15 +2170,48 @@ export class SessionService {
       attachments,
       mentionAgentId,
       userMessagePresentation,
-      params.sessionReferences,
+      sessionReferences.length > 0 ? sessionReferences : undefined,
     )
-    if (durable) {
-      new TurnRequestRepository(this.db).create({
-        id: turnId,
-        sessionId,
-        payloadJson: JSON.stringify(pendingTurn),
-        createdAt: pendingTurn.enqueuedAt,
-      })
+    const collaboration =
+      sessionReferences.length > 0 ? new SessionCollaborationRepository(this.db) : null
+    const turnRequestRepository = durable ? new TurnRequestRepository(this.db) : null
+    // Reference attachment and durable acceptance form one database boundary.
+    // A bad reference or a failed turn-request insert therefore leaves neither
+    // a partial authorization nor an orphaned accepted turn behind.
+    const persistTurn = () => {
+      if (collaboration != null) {
+        collaboration.attachReferencesInTransaction({
+          references: sessionReferences.map((reference) => ({
+            targetSessionId: sessionId,
+            sourceSessionId: reference.sourceSessionId,
+            ...(reference.snapshotSeq !== undefined ? { snapshotSeq: reference.snapshotSeq } : {}),
+            actor: 'user' as const,
+          })),
+        })
+      }
+      if (turnRequestRepository != null) {
+        const request = {
+          id: turnId,
+          sessionId,
+          payloadJson: JSON.stringify(pendingTurn),
+          createdAt: pendingTurn.enqueuedAt,
+        }
+        // A few lightweight SessionService tests provide a repository double
+        // that predates createInTransaction; keep that double compatible while
+        // the real repository remains atomic in production.
+        if (typeof turnRequestRepository.createInTransaction === 'function') {
+          turnRequestRepository.createInTransaction(request)
+        } else {
+          turnRequestRepository.create(request)
+        }
+      }
+    }
+    if (collaboration != null || turnRequestRepository != null) {
+      const database = this.db as unknown as {
+        raw?: { transaction?: (work: () => void) => () => void }
+      }
+      if (typeof database.raw?.transaction === 'function') database.raw.transaction(persistTurn)()
+      else persistTurn()
     }
     const currentGoal = new GoalRepository(this.db).getCurrent(sessionId)
     if (currentGoal?.status === 'active' || this.pendingUserQuestionGate.isBlocked(sessionId)) {
@@ -2246,6 +2285,8 @@ export class SessionService {
         attachments,
         mentionAgentId,
         invocationObserver,
+        false,
+        sessionReferences.length > 0 ? sessionReferences : undefined,
       )
     } catch (error) {
       this.handleQueuedTurnStartFailure(sessionId, pendingTurn, error)
@@ -2267,6 +2308,7 @@ export class SessionService {
     invocationObserver?: (snapshot: SDKInvocationSnapshot) => void,
     /** true = 派发额度续跑的内部 turn；进入队列时必须保留该标记。 */
     isTeamDispatchAutoContinuation = false,
+    sessionReferences?: SessionReferenceInput[],
   ): Promise<void> {
     if (this.hasActiveSessionExecution(sessionId)) {
       this.enqueueTurn(
@@ -2280,7 +2322,7 @@ export class SessionService {
           attachments,
           mentionAgentId,
           userMessagePresentation,
-          undefined,
+          sessionReferences,
           isTeamDispatchAutoContinuation,
         ),
       )
@@ -2308,7 +2350,7 @@ export class SessionService {
           attachments,
           mentionAgentId,
           userMessagePresentation,
-          undefined,
+          sessionReferences,
           isTeamDispatchAutoContinuation,
         ),
       )
@@ -2327,7 +2369,7 @@ export class SessionService {
           attachments,
           mentionAgentId,
           userMessagePresentation,
-          undefined,
+          sessionReferences,
           isTeamDispatchAutoContinuation,
         ),
       )
@@ -2351,6 +2393,7 @@ export class SessionService {
         mentionAgentId,
         invocationObserver,
         userMessagePresentation,
+        sessionReferences,
       )
     } finally {
       if (ownsStartingTurn && this.startingTurnIds.get(sessionId) === turnId) {
@@ -2373,6 +2416,7 @@ export class SessionService {
     mentionAgentId?: string,
     invocationObserver?: (snapshot: SDKInvocationSnapshot) => void,
     userMessagePresentation?: UserMessagePresentation,
+    sessionReferences?: SessionReferenceInput[],
   ): Promise<void> {
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
@@ -3470,6 +3514,7 @@ export class SessionService {
         agentId: agent.id,
         workspaceRootPath,
         ...userMessagePresentation,
+        ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
       }
       // Local CLI 走宿主 OAuth，没有可直发的 apiKey；跳过远程标题精炼，
       // 仍保留首轮触发的简单本地标题（deriveSessionTitle）。
@@ -3576,6 +3621,7 @@ export class SessionService {
         agentId: agent.id,
         workspaceRootPath,
         ...userMessagePresentation,
+        ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
       },
     )
   }
@@ -3594,6 +3640,7 @@ export class SessionService {
     statusMessage: string
     detail: string
     rawError?: string
+    sessionReferences?: SessionReferenceInput[]
   }): void {
     const makeBase = () => ({
       id: crypto.randomUUID(),
@@ -3610,6 +3657,9 @@ export class SessionService {
         ...makeBase(),
         type: 'user_message',
         content: params.message,
+        ...(params.sessionReferences != null && params.sessionReferences.length > 0
+          ? { sessionReferences: params.sessionReferences }
+          : {}),
       },
       params.eventRepo,
     )
@@ -3650,6 +3700,7 @@ export class SessionService {
     options: TryStartSDKTurnOptions = {},
   ): Promise<void> {
     const userMessagePresentation = pickUserMessagePresentation(options)
+    const sessionReferences = options.sessionReferences
     const makeBase = () => ({
       id: crypto.randomUUID(),
       sessionId,
@@ -3667,6 +3718,9 @@ export class SessionService {
           type: 'user_message',
           content: message,
           ...userMessagePresentation,
+          ...(sessionReferences != null && sessionReferences.length > 0
+            ? { sessionReferences }
+            : {}),
         },
         eventRepo,
       )
@@ -3708,6 +3762,9 @@ export class SessionService {
           type: 'user_message',
           content: message,
           ...userMessagePresentation,
+          ...(sessionReferences != null && sessionReferences.length > 0
+            ? { sessionReferences }
+            : {}),
         },
         eventRepo,
       )
@@ -3822,7 +3879,15 @@ export class SessionService {
         this.emitAndPersist(
           sessionId,
           turnId,
-          event.type === 'user_message' ? { ...event, ...userMessagePresentation } : event,
+          event.type === 'user_message'
+            ? {
+                ...event,
+                ...userMessagePresentation,
+                ...(sessionReferences != null && sessionReferences.length > 0
+                  ? { sessionReferences }
+                  : {}),
+              }
+            : event,
           eventRepo,
         )
       }
@@ -4001,7 +4066,13 @@ export class SessionService {
       }
       let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
       if (event.type === 'user_message') {
-        outgoing = { ...outgoing, ...userMessagePresentation } as UserMessageEvent
+        outgoing = {
+          ...outgoing,
+          ...userMessagePresentation,
+          ...(sessionReferences != null && sessionReferences.length > 0
+            ? { sessionReferences }
+            : {}),
+        } as UserMessageEvent
       }
       if (mentionAgentId != null) {
         if (event.type === 'assistant_message' && typeof event.content === 'string') {
@@ -4284,6 +4355,7 @@ export class SessionService {
     options: TryStartSDKTurnOptions = {},
   ): Promise<void> {
     const userMessagePresentation = pickUserMessagePresentation(options)
+    const sessionReferences = options.sessionReferences
     const makeBase = () => ({
       id: crypto.randomUUID(),
       sessionId,
@@ -4302,6 +4374,9 @@ export class SessionService {
           type: 'user_message',
           content: message,
           ...userMessagePresentation,
+          ...(sessionReferences != null && sessionReferences.length > 0
+            ? { sessionReferences }
+            : {}),
         },
         eventRepo,
       )
@@ -4404,7 +4479,15 @@ export class SessionService {
         this.emitAndPersist(
           sessionId,
           turnId,
-          event.type === 'user_message' ? { ...event, ...userMessagePresentation } : event,
+          event.type === 'user_message'
+            ? {
+                ...event,
+                ...userMessagePresentation,
+                ...(sessionReferences != null && sessionReferences.length > 0
+                  ? { sessionReferences }
+                  : {}),
+              }
+            : event,
           eventRepo,
         )
       }
@@ -4510,7 +4593,13 @@ export class SessionService {
       }
       let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
       if (event.type === 'user_message') {
-        outgoing = { ...outgoing, ...userMessagePresentation } as UserMessageEvent
+        outgoing = {
+          ...outgoing,
+          ...userMessagePresentation,
+          ...(sessionReferences != null && sessionReferences.length > 0
+            ? { sessionReferences }
+            : {}),
+        } as UserMessageEvent
       }
       if (mentionAgentId != null) {
         if (event.type === 'assistant_message' && typeof event.content === 'string') {
@@ -4529,7 +4618,14 @@ export class SessionService {
             ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
           }
         } else if (event.type === 'user_message') {
-          outgoing = { ...event, ...userMessagePresentation, mentionAgentId }
+          outgoing = {
+            ...event,
+            ...userMessagePresentation,
+            ...(sessionReferences != null && sessionReferences.length > 0
+              ? { sessionReferences }
+              : {}),
+            mentionAgentId,
+          }
         } else if (
           mentionMemberContext != null &&
           (event.type === 'tool_call' ||
@@ -8128,7 +8224,7 @@ export class SessionService {
     attachments?: SessionAttachment[],
     mentionAgentId?: string,
     userMessagePresentation?: UserMessagePresentation,
-    sessionReferences?: Array<{ sourceSessionId: string; snapshotSeq?: number }>,
+    sessionReferences?: SessionReferenceInput[],
     isTeamDispatchAutoContinuation = false,
   ): PendingTurn {
     return {
@@ -8221,6 +8317,7 @@ export class SessionService {
       next.mentionAgentId,
       undefined,
       next.isTeamDispatchAutoContinuation === true,
+      next.sessionReferences,
     )
       .catch((error) => this.handleQueuedTurnStartFailure(sessionId, next, error))
       .finally(() => {
@@ -8278,6 +8375,9 @@ export class SessionService {
           type: 'user_message',
           content: turn.message,
           ...(turn.attachments ? { attachments: turn.attachments } : {}),
+          ...(turn.sessionReferences != null && turn.sessionReferences.length > 0
+            ? { sessionReferences: turn.sessionReferences }
+            : {}),
           ...pickUserMessagePresentation(turn),
         },
         eventRepo,

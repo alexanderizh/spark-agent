@@ -29,6 +29,13 @@ import type { DiagramRenderType } from '@spark/shared'
 /** Renderer-only delivery state for a user message submitted optimistically. */
 export type UserMessageDeliveryState = 'submitting' | 'queued' | 'accepted' | 'failed' | 'cancelled'
 
+export interface UIMessageSessionReference {
+  sourceSessionId: string
+  snapshotSeq?: number
+  /** Renderer-only title carried by optimistic messages; persisted events resolve it from session data. */
+  title?: string
+}
+
 export interface UIMessage {
   id: string
   turnId?: string
@@ -47,6 +54,8 @@ export interface UIMessage {
     previewPath?: string
     previewUrl?: string
   }>
+  /** Read-only session references submitted with this user turn. */
+  sessionReferences?: UIMessageSessionReference[]
   usage: {
     inputTokens: number
     outputTokens: number
@@ -536,6 +545,16 @@ export class MessageBuilder {
           blocks: [{ kind: 'text', content: event.content, isStreaming: false }],
           ...(event.attachments != null && event.attachments.length > 0
             ? { attachments: event.attachments }
+            : {}),
+          ...(event.sessionReferences != null && event.sessionReferences.length > 0
+            ? {
+                sessionReferences: event.sessionReferences.map((reference) => ({
+                  sourceSessionId: reference.sourceSessionId,
+                  ...(reference.snapshotSeq !== undefined
+                    ? { snapshotSeq: reference.snapshotSeq }
+                    : {}),
+                })),
+              }
             : {}),
           usage: null,
           timestamp: event.timestamp,

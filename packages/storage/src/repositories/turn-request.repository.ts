@@ -19,6 +19,16 @@ export class TurnRequestRepository extends BaseRepository {
   }
 
   create(params: { id: string; sessionId: string; payloadJson: string; createdAt: string }): void {
+    this.createInTransaction(params)
+  }
+
+  /** Create a request while the caller owns an outer SQLite transaction. */
+  createInTransaction(params: {
+    id: string
+    sessionId: string
+    payloadJson: string
+    createdAt: string
+  }): void {
     this.raw
       .prepare(
         `

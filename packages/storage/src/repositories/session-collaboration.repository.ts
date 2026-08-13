@@ -100,7 +100,20 @@ const TERMINAL_STATUSES = new Set(['idle', 'completed', 'cancelled', 'error'])
 const MAX_REFERENCE_COUNT = 10
 const MAX_READ_TURNS = 8
 const MAX_READ_CHARS = 24_000
+const MAX_ACTIVITY_ROWS_PER_TURN = 32
+// Reserve enough room for one bounded terminal status activity per selected
+// turn. It must remain visible even when transcript text consumes the budget.
+const MAX_ACTIVITY_ENTRY_CHARS = 'agent_status'.length + 120 + 40 + 400
 const MAX_SEARCH_QUERY_CHARS = 200
+const MAX_CANDIDATE_CONTENT_SESSIONS = 1_000
+const REFERENCE_SEARCH_BATCH_SIZE = 512
+
+type AttachReferenceParams = {
+  targetSessionId: string
+  sourceSessionId: string
+  snapshotSeq?: number
+  actor?: 'user' | 'agent' | 'system'
+}
 
 /**
  * Storage boundary for collaboration semantics. It owns the consistency rules
@@ -279,12 +292,75 @@ export class SessionCollaborationRepository extends BaseRepository {
   }): SessionReferenceCandidate[] {
     const limit = clampInt(params.limit, 1, 50, 30)
     const query = params.query?.trim() ?? ''
+    if (query.length > MAX_SEARCH_QUERY_CHARS) {
+      throw new Error('搜索关键词长度不能超过 200 个字符')
+    }
     const conditions = ['id <> ?']
     const args: unknown[] = [params.targetSessionId]
     if (!params.includeArchived) conditions.push('archived_at IS NULL')
     if (query) {
-      conditions.push("title LIKE ? ESCAPE '\\'")
-      args.push(`%${escapeLike(query)}%`)
+      const pattern = `%${escapeLike(query)}%`
+      const contentSessionIds = [
+        ...new Set(
+          this.events
+            .searchByContent(query, MAX_CANDIDATE_CONTENT_SESSIONS)
+            .map((match) => match.sessionId),
+        ),
+      ]
+      if (contentSessionIds.length === 0) {
+        conditions.push("title LIKE ? ESCAPE '\\'")
+        args.push(pattern)
+      } else {
+        const sessionPlaceholders = contentSessionIds.map(() => '?').join(', ')
+        conditions.push(`
+          (
+            title LIKE ? ESCAPE '\\'
+            OR (
+              id IN (${sessionPlaceholders})
+              AND EXISTS (
+                SELECT 1 FROM agent_events searchable_events
+                WHERE searchable_events.session_id = sessions.id
+                  AND searchable_events.turn_id IS NOT NULL
+                  AND searchable_events.event_type IN (
+                    'user_message', 'assistant_message', 'team_member_message'
+                  )
+                  AND COALESCE(
+                    searchable_events.event_mode,
+                    json_extract(searchable_events.event_json, '$.mode'),
+                    'complete'
+                  ) = 'complete'
+                  AND (
+                    searchable_events.event_type <> 'user_message'
+                    OR COALESCE(
+                      json_extract(searchable_events.event_json, '$.userMessageVisibility'),
+                      'visible'
+                    ) <> 'hidden'
+                  )
+                  AND EXISTS (
+                    SELECT 1 FROM agent_events visible_user_events
+                    WHERE visible_user_events.session_id = searchable_events.session_id
+                      AND visible_user_events.turn_id = searchable_events.turn_id
+                      AND visible_user_events.event_type = 'user_message'
+                      AND COALESCE(
+                        json_extract(visible_user_events.event_json, '$.userMessageVisibility'),
+                        'visible'
+                      ) <> 'hidden'
+                  )
+                  AND EXISTS (
+                    SELECT 1 FROM agent_events completion_events
+                    WHERE completion_events.session_id = searchable_events.session_id
+                      AND completion_events.turn_id = searchable_events.turn_id
+                      AND completion_events.event_type = 'agent_status'
+                      AND json_extract(completion_events.event_json, '$.status')
+                        IN ('idle', 'completed', 'cancelled', 'error')
+                  )
+                  AND json_extract(searchable_events.event_json, '$.content') LIKE ? ESCAPE '\\'
+              )
+            )
+          )
+        `)
+        args.push(pattern, ...contentSessionIds, pattern)
+      }
     }
     const rows = this.raw
       .prepare(
@@ -298,84 +374,144 @@ export class SessionCollaborationRepository extends BaseRepository {
     return rows.map((row) => this.toCandidate(row, latestCompletedBySession.get(row.id)))
   }
 
-  attachReference(params: {
-    targetSessionId: string
-    sourceSessionId: string
-    snapshotSeq?: number
-    actor?: 'user' | 'agent' | 'system'
-  }): SessionReferenceView {
-    if (params.targetSessionId === params.sourceSessionId)
-      throw new Error('不能把当前会话添加为自身参考')
-    const target = this.raw
-      .prepare('SELECT id FROM sessions WHERE id = ?')
-      .get(params.targetSessionId)
-    const source = this.raw
-      .prepare('SELECT * FROM sessions WHERE id = ?')
-      .get(params.sourceSessionId) as SessionRow | undefined
-    if (target == null || source == null) throw new Error('目标会话或参考会话不存在')
+  attachReference(params: AttachReferenceParams): SessionReferenceView {
+    const references = this.attachReferences({ references: [params] })
+    const reference = references[0]
+    if (reference == null) throw new Error('参考会话引用创建失败')
+    return reference
+  }
 
-    const existing = this.raw
-      .prepare(
-        `SELECT * FROM session_references
-         WHERE target_session_id = ? AND source_session_id = ? AND status = 'active'
-         ORDER BY updated_at DESC LIMIT 1`,
-      )
-      .get(params.targetSessionId, params.sourceSessionId) as SessionReferenceRow | undefined
-    if (existing != null) return this.toReferenceView(existing)
+  /**
+   * Attach several references atomically. Validation happens for the complete
+   * batch before the first insert, so one invalid source cannot leave a partial
+   * set of references behind.
+   */
+  attachReferences(params: { references: AttachReferenceParams[] }): SessionReferenceView[] {
+    const tx = this.raw.transaction(() => this.attachReferencesInTransaction(params))
+    return tx() as SessionReferenceView[]
+  }
 
-    const activeCount = this.raw
-      .prepare(
-        `SELECT COUNT(*) AS count FROM session_references
-         WHERE target_session_id = ? AND status = 'active'`,
-      )
-      .get(params.targetSessionId) as { count: number }
-    if (activeCount.count >= MAX_REFERENCE_COUNT)
-      throw new Error(`每个会话最多添加 ${MAX_REFERENCE_COUNT} 个参考会话`)
+  /** Use when the caller owns a wider transaction, such as dispatchTurn. */
+  attachReferencesInTransaction(params: {
+    references: AttachReferenceParams[]
+  }): SessionReferenceView[] {
+    const references = params.references.slice(0, MAX_REFERENCE_COUNT)
+    if (references.length === 0) return []
 
-    const completedTurns = getCompletedTurns(this.events.queryAllBySession(source.id))
-    const latest = completedTurns.at(-1)
-    const requested = params.snapshotSeq ?? latest?.cutoffSeq ?? 0
-    if (!Number.isInteger(requested) || requested < 0) throw new Error('参考会话快照位置无效')
-    if (latest == null && requested !== 0) throw new Error('参考会话还没有可读取的完整轮次')
-    if (latest != null && !completedTurns.some((turn) => turn.cutoffSeq === requested)) {
-      throw new Error('参考会话只能绑定到完整轮次边界')
-    }
+    const activeCounts = new Map<string, number>()
+    const pendingRows = new Map<string, SessionReferenceRow>()
+    const prepared: Array<{
+      row: SessionReferenceRow
+      actor: 'user' | 'agent' | 'system'
+      isNew: boolean
+    }> = []
 
-    const now = new Date().toISOString()
-    const row: SessionReferenceRow = {
-      id: crypto.randomUUID(),
-      target_session_id: params.targetSessionId,
-      source_session_id: source.id,
-      snapshot_seq: requested,
-      source_title_snapshot: source.title,
-      status: 'active',
-      created_at: now,
-      revoked_at: null,
-      updated_at: now,
-    }
-    const tx = this.raw.transaction(() => {
-      this.raw
+    // Read and validate the entire batch first. No database writes happen in
+    // this pass; this also makes the quota check account for new unique rows
+    // that appear later in the same batch.
+    for (const reference of references) {
+      if (reference.targetSessionId === reference.sourceSessionId)
+        throw new Error('不能把当前会话添加为自身参考')
+      const target = this.raw
+        .prepare('SELECT id FROM sessions WHERE id = ?')
+        .get(reference.targetSessionId)
+      const source = this.raw
+        .prepare('SELECT * FROM sessions WHERE id = ?')
+        .get(reference.sourceSessionId) as SessionRow | undefined
+      if (target == null || source == null) throw new Error('目标会话或参考会话不存在')
+
+      const key = `${reference.targetSessionId}\u0000${reference.sourceSessionId}`
+      const existing = this.raw
         .prepare(
-          `INSERT INTO session_references
-           (id, target_session_id, source_session_id, snapshot_seq, source_title_snapshot,
-            status, created_at, revoked_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `SELECT * FROM session_references
+           WHERE target_session_id = ? AND source_session_id = ? AND status = 'active'
+           ORDER BY updated_at DESC LIMIT 1`,
         )
-        .run(
-          row.id,
-          row.target_session_id,
-          row.source_session_id,
-          row.snapshot_seq,
-          row.source_title_snapshot,
-          row.status,
-          row.created_at,
-          row.revoked_at,
-          row.updated_at,
-        )
-      this.writeAudit(row.id, 'attach', params.actor ?? 'user', { snapshotSeq: requested }, now)
-    })
-    tx()
-    return this.toReferenceView(row)
+        .get(reference.targetSessionId, reference.sourceSessionId) as
+        | SessionReferenceRow
+        | undefined
+      if (existing != null) {
+        prepared.push({
+          row: existing,
+          actor: reference.actor ?? 'user',
+          isNew: false,
+        })
+        continue
+      }
+      const pending = pendingRows.get(key)
+      if (pending != null) {
+        prepared.push({ row: pending, actor: reference.actor ?? 'user', isNew: false })
+        continue
+      }
+
+      const activeCount =
+        activeCounts.get(reference.targetSessionId) ??
+        (
+          this.raw
+            .prepare(
+              `SELECT COUNT(*) AS count FROM session_references
+             WHERE target_session_id = ? AND status = 'active'`,
+            )
+            .get(reference.targetSessionId) as { count: number }
+        ).count
+      if (activeCount >= MAX_REFERENCE_COUNT)
+        throw new Error(`每个会话最多添加 ${MAX_REFERENCE_COUNT} 个参考会话`)
+
+      const completedTurns = getCompletedTurns(this.events.queryAllBySession(source.id))
+      const latest = completedTurns.at(-1)
+      const requested = reference.snapshotSeq ?? latest?.cutoffSeq ?? 0
+      if (!Number.isInteger(requested) || requested < 0) throw new Error('参考会话快照位置无效')
+      if (latest == null && requested !== 0) throw new Error('参考会话还没有可读取的完整轮次')
+      if (latest != null && !completedTurns.some((turn) => turn.cutoffSeq === requested)) {
+        throw new Error('参考会话只能绑定到完整轮次边界')
+      }
+
+      const now = new Date().toISOString()
+      const row: SessionReferenceRow = {
+        id: crypto.randomUUID(),
+        target_session_id: reference.targetSessionId,
+        source_session_id: source.id,
+        snapshot_seq: requested,
+        source_title_snapshot: source.title,
+        status: 'active',
+        created_at: now,
+        revoked_at: null,
+        updated_at: now,
+      }
+      pendingRows.set(key, row)
+      activeCounts.set(reference.targetSessionId, activeCount + 1)
+      prepared.push({ row, actor: reference.actor ?? 'user', isNew: true })
+    }
+
+    const insert = this.raw.prepare(
+      `INSERT INTO session_references
+       (id, target_session_id, source_session_id, snapshot_seq, source_title_snapshot,
+        status, created_at, revoked_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    for (const item of prepared) {
+      if (!item.isNew) continue
+      const row = item.row
+      insert.run(
+        row.id,
+        row.target_session_id,
+        row.source_session_id,
+        row.snapshot_seq,
+        row.source_title_snapshot,
+        row.status,
+        row.created_at,
+        row.revoked_at,
+        row.updated_at,
+      )
+      this.writeAudit(
+        row.id,
+        'attach',
+        item.actor,
+        { snapshotSeq: row.snapshot_seq },
+        row.created_at,
+      )
+    }
+    return prepared.map((item) => this.toReferenceView(item.row))
   }
 
   listReferences(targetSessionId: string): SessionReferenceView[] {
@@ -492,10 +628,15 @@ export class SessionCollaborationRepository extends BaseRepository {
     if (!Number.isInteger(cursor) || cursor < -1) throw new Error('参考会话读取游标无效')
     const turnLimit = clampInt(params.turnLimit, 1, MAX_READ_TURNS, 4)
     const includeActivities = params.detail === 'user_visible_activity'
-    const rows = this.raw
+    // Select complete turn windows first, then fetch their events. The old
+    // event-count LIMIT could cut a dense turn in half, causing the next page
+    // to repeat or omit part of the same turn. The cursor now always advances
+    // to the last seq of a complete turn.
+    const turnWindows = this.raw
       .prepare(
         `WITH completed_turns AS (
-           SELECT turn_id FROM agent_events
+           SELECT turn_id, MIN(seq) AS first_seq, MAX(seq) AS last_seq
+           FROM agent_events
            WHERE session_id = ? AND seq <= ? AND turn_id IS NOT NULL
            GROUP BY turn_id
            HAVING MAX(CASE WHEN event_type = 'user_message'
@@ -505,33 +646,90 @@ export class SessionCollaborationRepository extends BaseRepository {
                 AND json_extract(event_json, '$.status') IN ('idle', 'completed', 'cancelled', 'error')
                 THEN 1 ELSE 0 END) = 1
          )
-         SELECT * FROM agent_events
-         WHERE session_id = ? AND seq > ? AND seq <= ?
-           AND turn_id IN (SELECT turn_id FROM completed_turns)
-           AND (
-             (event_type = 'user_message'
-               AND COALESCE(json_extract(event_json, '$.userMessageVisibility'), 'visible') <> 'hidden')
-             OR (event_type IN ('assistant_message', 'team_member_message')
-               AND COALESCE(event_mode, json_extract(event_json, '$.mode'), 'complete') = 'complete')
-             OR (? = 1 AND event_type IN ('tool_result', 'file_change', 'agent_status'))
-           )
-         ORDER BY seq ASC LIMIT ?`,
+         SELECT turn_id, first_seq, last_seq
+         FROM completed_turns
+         WHERE first_seq > ?
+         ORDER BY first_seq ASC
+         LIMIT ?`,
       )
-      .all(
-        source.id,
-        row.snapshot_seq,
-        source.id,
-        cursor,
-        row.snapshot_seq,
-        includeActivities ? 1 : 0,
-        turnLimit * 80 + 1,
-      ) as AgentEventRow[]
+      .all(source.id, row.snapshot_seq, cursor, turnLimit) as Array<{
+      turn_id: string
+      first_seq: number
+      last_seq: number
+    }>
+    const selectedTurnIds = turnWindows.map((turn) => turn.turn_id)
+    let rows: AgentEventRow[] = []
+    if (selectedTurnIds.length > 0) {
+      const placeholders = selectedTurnIds.map(() => '?').join(', ')
+      const transcriptRows = this.raw
+        .prepare(
+          `SELECT * FROM agent_events
+           WHERE session_id = ? AND seq <= ? AND turn_id IN (${placeholders})
+             AND (
+               (event_type = 'user_message'
+                 AND COALESCE(json_extract(event_json, '$.userMessageVisibility'), 'visible') <> 'hidden')
+               OR (event_type IN ('assistant_message', 'team_member_message')
+                 AND COALESCE(event_mode, json_extract(event_json, '$.mode'), 'complete') = 'complete')
+             )
+           ORDER BY seq ASC`,
+        )
+        .all(source.id, row.snapshot_seq, ...selectedTurnIds) as AgentEventRow[]
+
+      const activityRows = includeActivities
+        ? (this.raw
+            .prepare(
+              `WITH non_terminal_activities AS (
+                 SELECT e.*,
+                   ROW_NUMBER() OVER (PARTITION BY e.turn_id ORDER BY e.seq ASC) AS activity_rank
+                 FROM agent_events e
+                 WHERE e.session_id = ? AND e.seq <= ? AND e.turn_id IN (${placeholders})
+                   AND e.event_type IN ('tool_result', 'file_change', 'agent_status')
+                   AND NOT (
+                     e.event_type = 'agent_status'
+                     AND json_extract(e.event_json, '$.status')
+                       IN ('idle', 'completed', 'cancelled', 'error')
+                   )
+               ), terminal_activities AS (
+                 SELECT e.*,
+                   ROW_NUMBER() OVER (PARTITION BY e.turn_id ORDER BY e.seq DESC) AS terminal_rank
+                 FROM agent_events e
+                 WHERE e.session_id = ? AND e.seq <= ? AND e.turn_id IN (${placeholders})
+                   AND e.event_type = 'agent_status'
+                   AND json_extract(e.event_json, '$.status')
+                     IN ('idle', 'completed', 'cancelled', 'error')
+               )
+               SELECT * FROM non_terminal_activities
+               WHERE activity_rank <= ?
+               UNION ALL
+               SELECT * FROM terminal_activities
+               WHERE terminal_rank = 1
+               ORDER BY seq ASC`,
+            )
+            .all(
+              source.id,
+              row.snapshot_seq,
+              ...selectedTurnIds,
+              source.id,
+              row.snapshot_seq,
+              ...selectedTurnIds,
+              MAX_ACTIVITY_ROWS_PER_TURN - 1,
+            ) as AgentEventRow[])
+        : []
+      rows = [...transcriptRows, ...activityRows].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    }
     const grouped = groupReferenceRows(rows, turnLimit, includeActivities)
-    const lastSeq = grouped.turns.at(-1)?.lastSeq ?? null
+    // The cursor is a turn boundary, never the last event that happened to fit
+    // within the character budget. Otherwise the tail of the current turn can
+    // look like a later page even though the next page correctly starts after
+    // that turn's first_seq.
+    const lastReturnedTurnId = grouped.turns.at(-1)?.turnId ?? null
+    const lastReturnedWindow =
+      lastReturnedTurnId == null
+        ? null
+        : (turnWindows.find((turn) => turn.turn_id === lastReturnedTurnId) ?? null)
+    const lastSeq = lastReturnedWindow?.last_seq ?? null
     const hasMore =
-      rows.length > turnLimit * 80 ||
-      (lastSeq != null &&
-        this.hasReferenceRowsAfter(source.id, lastSeq, row.snapshot_seq, includeActivities))
+      lastSeq != null && this.hasReferenceRowsAfter(source.id, lastSeq, row.snapshot_seq)
     const now = new Date().toISOString()
     this.writeAudit(
       row.id,
@@ -570,9 +768,8 @@ export class SessionCollaborationRepository extends BaseRepository {
       throw new Error('参考会话已删除')
     }
     const limit = clampInt(params.limit, 1, 20, 10)
-    const sourceRows = this.raw
-      .prepare(
-        `WITH completed_turns AS (
+    const searchBatch = this.raw.prepare(
+      `WITH completed_turns AS (
            SELECT turn_id FROM agent_events
            WHERE session_id = ? AND seq <= ? AND turn_id IS NOT NULL
            GROUP BY turn_id
@@ -583,42 +780,43 @@ export class SessionCollaborationRepository extends BaseRepository {
                 AND json_extract(event_json, '$.status') IN ('idle', 'completed', 'cancelled', 'error')
                 THEN 1 ELSE 0 END) = 1
          )
-         SELECT * FROM agent_events WHERE session_id = ? AND seq <= ?
+         SELECT * FROM agent_events
+         WHERE session_id = ? AND seq > ? AND seq <= ?
            AND turn_id IN (SELECT turn_id FROM completed_turns)
            AND ((event_type = 'user_message'
              AND COALESCE(json_extract(event_json, '$.userMessageVisibility'), 'visible') <> 'hidden')
              OR (event_type IN ('assistant_message', 'team_member_message')
                AND COALESCE(event_mode, json_extract(event_json, '$.mode'), 'complete') = 'complete'))
-         ORDER BY seq ASC LIMIT 5000`,
-      )
-      .all(
-        row.source_session_id,
-        row.snapshot_seq,
-        row.source_session_id,
-        row.snapshot_seq,
-      ) as AgentEventRow[]
+         ORDER BY seq ASC LIMIT ?`,
+    )
     const needle = query.toLocaleLowerCase()
     const hits: ReferencedSessionSearchHit[] = []
-    for (const event of sourceRows) {
-      if (event.event_type === 'user_message') {
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(event.event_json)
-        } catch {
-          continue
-        }
-        if ((parsed as { userMessageVisibility?: unknown }).userMessageVisibility === 'hidden')
-          continue
+    let scanCursor = -1
+    while (hits.length < limit) {
+      const sourceRows = searchBatch.all(
+        row.source_session_id,
+        row.snapshot_seq,
+        row.source_session_id,
+        scanCursor,
+        row.snapshot_seq,
+        REFERENCE_SEARCH_BATCH_SIZE,
+      ) as AgentEventRow[]
+      if (sourceRows.length === 0) break
+      for (const event of sourceRows) {
+        const body = extractSearchableEventBody(event.event_type, event.event_json)
+        if (body == null || !body.toLocaleLowerCase().includes(needle)) continue
+        hits.push({
+          turnId: event.turn_id ?? '',
+          seq: event.seq ?? 0,
+          role: event.event_type === 'user_message' ? 'user' : 'assistant',
+          snippet: makeSnippet(body, query),
+        })
+        if (hits.length >= limit) break
       }
-      const body = extractSearchableEventBody(event.event_type, event.event_json)
-      if (body == null || !body.toLocaleLowerCase().includes(needle)) continue
-      hits.push({
-        turnId: event.turn_id ?? '',
-        seq: event.seq ?? 0,
-        role: event.event_type === 'user_message' ? 'user' : 'assistant',
-        snippet: makeSnippet(body, query),
-      })
-      if (hits.length >= limit) break
+      const lastScannedSeq = sourceRows.at(-1)?.seq
+      if (lastScannedSeq == null || lastScannedSeq <= scanCursor) break
+      scanCursor = lastScannedSeq
+      if (sourceRows.length < REFERENCE_SEARCH_BATCH_SIZE) break
     }
     const now = new Date().toISOString()
     this.writeAudit(
@@ -735,20 +933,12 @@ export class SessionCollaborationRepository extends BaseRepository {
       .run(crypto.randomUUID(), referenceId, action, actor, JSON.stringify(detail), createdAt)
   }
 
-  private hasReferenceRowsAfter(
-    sessionId: string,
-    seq: number,
-    snapshotSeq: number,
-    includeActivities: boolean,
-  ): boolean {
-    const activity = includeActivities
-      ? `OR event_type IN ('tool_result', 'file_change', 'agent_status')`
-      : ''
+  private hasReferenceRowsAfter(sessionId: string, seq: number, snapshotSeq: number): boolean {
     const row = this.raw
       .prepare(
         `
         WITH completed_turns AS (
-          SELECT turn_id FROM agent_events
+          SELECT turn_id, MIN(seq) AS first_seq FROM agent_events
           WHERE session_id = ? AND seq <= ? AND turn_id IS NOT NULL
           GROUP BY turn_id
           HAVING MAX(CASE WHEN event_type = 'user_message'
@@ -758,17 +948,12 @@ export class SessionCollaborationRepository extends BaseRepository {
                AND json_extract(event_json, '$.status') IN ('idle', 'completed', 'cancelled', 'error')
                THEN 1 ELSE 0 END) = 1
         )
-        SELECT 1 FROM agent_events
-        WHERE session_id = ? AND seq > ? AND seq <= ?
-          AND turn_id IN (SELECT turn_id FROM completed_turns)
-          AND ((event_type = 'user_message'
-            AND COALESCE(json_extract(event_json, '$.userMessageVisibility'), 'visible') <> 'hidden')
-            OR (event_type IN ('assistant_message', 'team_member_message')
-              AND COALESCE(event_mode, json_extract(event_json, '$.mode'), 'complete') = 'complete') ${activity})
+        SELECT 1 FROM completed_turns
+        WHERE first_seq > ?
         LIMIT 1
       `,
       )
-      .get(sessionId, snapshotSeq, sessionId, seq, snapshotSeq)
+      .get(sessionId, snapshotSeq, seq)
     return row != null
   }
 
@@ -931,7 +1116,18 @@ function groupReferenceRows(
   includeActivities: boolean,
 ): { turns: ReferencedSessionTurn[] } {
   const byTurn = new Map<string, ReferencedSessionTurn>()
-  let chars = 0
+  const terminalActivityReserve = includeActivities
+    ? new Set(rows.map((row) => row.turn_id).filter((turnId): turnId is string => turnId != null))
+        .size * MAX_ACTIVITY_ENTRY_CHARS
+    : 0
+  let outputChars = 0
+  const appendBoundedText = (value: string, maxChars: number): string => {
+    const remaining = MAX_READ_CHARS - terminalActivityReserve - outputChars
+    if (remaining <= 0) return ''
+    const text = trimText(value, Math.min(maxChars, remaining))
+    outputChars += text.length
+    return text
+  }
   for (const row of rows) {
     if (row.turn_id == null) continue
     let parsed: Record<string, unknown>
@@ -955,13 +1151,18 @@ function groupReferenceRows(
     }
     turn.lastSeq = Math.max(turn.lastSeq, row.seq ?? turn.lastSeq)
     const content = typeof parsed.content === 'string' ? parsed.content : ''
-    if (row.event_type === 'user_message' && parsed.userMessageVisibility !== 'hidden')
-      turn.userMessage = trimText(content, 8_000)
+    if (
+      row.event_type === 'user_message' &&
+      parsed.userMessageVisibility !== 'hidden' &&
+      turn.userMessage.length === 0
+    ) {
+      turn.userMessage = appendBoundedText(content, 8_000)
+    }
     if (
       (row.event_type === 'assistant_message' || row.event_type === 'team_member_message') &&
       parsed.mode !== 'delta'
     ) {
-      const text = trimText(content, 8_000)
+      const text = appendBoundedText(content, 8_000)
       if (text) turn.assistantMessages.push(text)
     }
     if (
@@ -970,16 +1171,33 @@ function groupReferenceRows(
         row.event_type === 'file_change' ||
         row.event_type === 'agent_status')
     ) {
+      const toolName =
+        typeof parsed.toolName === 'string' ? parsed.toolName.slice(0, 120) : undefined
+      const status = typeof parsed.status === 'string' ? parsed.status.slice(0, 40) : undefined
+      const summary = typeof parsed.error === 'string' ? trimText(parsed.error, 400) : undefined
+      const activityChars =
+        row.event_type.length +
+        (toolName?.length ?? 0) +
+        (status?.length ?? 0) +
+        (summary?.length ?? 0)
+      const isTerminalStatus =
+        row.event_type === 'agent_status' &&
+        typeof status === 'string' &&
+        TERMINAL_STATUSES.has(status)
+      if (
+        !isTerminalStatus &&
+        outputChars + activityChars > MAX_READ_CHARS - terminalActivityReserve
+      )
+        continue
+      outputChars += activityChars
       const activity = {
         type: row.event_type,
-        ...(typeof parsed.toolName === 'string' ? { toolName: parsed.toolName.slice(0, 120) } : {}),
-        ...(typeof parsed.status === 'string' ? { status: parsed.status.slice(0, 40) } : {}),
-        ...(typeof parsed.error === 'string' ? { summary: trimText(parsed.error, 400) } : {}),
+        ...(toolName != null ? { toolName } : {}),
+        ...(status != null ? { status } : {}),
+        ...(summary != null ? { summary } : {}),
       }
       turn.activities.push(activity)
     }
-    chars += content.length
-    if (chars >= MAX_READ_CHARS) break
   }
   return {
     turns: [...byTurn.values()].filter(
@@ -995,8 +1213,8 @@ function normalizeForkTitle(title: string | undefined, sourceTitle: string): str
 }
 
 function clampInt(value: number | undefined, min: number, max: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback
-  return Math.max(min, Math.min(max, Math.trunc(value!)))
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.max(min, Math.min(max, Math.trunc(value)))
 }
 
 function escapeLike(value: string): string {

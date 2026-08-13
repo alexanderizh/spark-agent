@@ -1218,7 +1218,7 @@ export function SessionSidebarProvider({
         const childWorkspaceId = result.session.workspaceIds[0] ?? null
         setActiveWorkspace(childWorkspaceId)
         if (result.sourceWasRunning) {
-          toast.info('源会话仍在运行；协作会话只复制到最近一个已完成轮次。')
+          toast.info('源会话仍在运行；副本只复制到最近一个已完成轮次。')
         }
         window.dispatchEvent(
           new CustomEvent('spark:composer:reset-draft', {
@@ -1227,7 +1227,7 @@ export function SessionSidebarProvider({
         )
         return result.sessionId
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : '创建协作会话失败')
+        toast.error(error instanceof Error ? error.message : '复制会话失败')
         return null
       }
     },

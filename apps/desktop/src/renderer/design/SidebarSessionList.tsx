@@ -39,6 +39,7 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { Icons } from './Icons'
 import { writeSessionReferenceDragPayload } from './views/chat/session-reference-dnd'
+import { requestSessionReferenceAdd } from './views/chat/session-reference-control'
 import {
   useSessionSidebar,
   buildProjectGroups,
@@ -769,6 +770,8 @@ function ChatListItem({
   onArchive,
   onDelete,
   onCollaborate,
+  onAddToConversation,
+  sessionReferenceDragEnabled = false,
   dragActivatorProps,
   revealSessionId,
   onRevealed,
@@ -786,6 +789,8 @@ function ChatListItem({
   onArchive?: (session: SessionSummary) => void
   onDelete?: (session: SessionSummary) => void
   onCollaborate?: (session: SessionSummary) => void
+  onAddToConversation?: (session: SessionSummary) => void
+  sessionReferenceDragEnabled?: boolean
   dragActivatorProps?: React.HTMLAttributes<HTMLDivElement> | undefined
   // When this id matches the session, scroll it into view (set by the command
   // palette via SessionSidebarContext.revealSession). Cleared via onRevealed.
@@ -881,25 +886,28 @@ function ChatListItem({
     >
       <div
         ref={itemRef}
-        className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${contextOpen ? 'is-context-open' : ''} ${statusClass}`}
+        className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${contextOpen ? 'is-context-open' : ''} ${statusClass}${sessionReferenceDragEnabled ? ' is-reference-draggable' : ''}`}
         {...dragActivatorProps}
+        draggable={sessionReferenceDragEnabled || undefined}
+        onDragStart={
+          sessionReferenceDragEnabled
+            ? (event) => {
+                writeSessionReferenceDragPayload(event.dataTransfer, {
+                  sessionId: s.id,
+                  title: s.title || t('sidebar.newSession'),
+                  projectId: s.projectId,
+                  updatedAt: s.updatedAt,
+                  turnCount: s.turnCount ?? s.messageCount,
+                })
+              }
+            : undefined
+        }
         onClick={() => onClick(s.id)}
         onContextMenu={(e) => {
           e.preventDefault()
           e.stopPropagation()
           setContextOpen(true)
           setMenuOpen(true)
-        }}
-        draggable
-        onDragStart={(event) => {
-          // dnd-kit owns sortable drag handles; a native payload is only
-          // useful when the row is dragged outside the sidebar.
-          writeSessionReferenceDragPayload(event.dataTransfer, {
-            sessionId: s.id,
-            title: s.title || t('sidebar.newSession'),
-            projectId: s.projectId,
-            updatedAt: s.updatedAt,
-          })
         }}
       >
         <div className="chat-item-row">
@@ -1022,9 +1030,14 @@ function ChatListItem({
                         },
                       },
                       {
-                        icon: <Icons.MessageSquarePlus size={14} />,
-                        label: '新建协作会话',
+                        icon: <Icons.Copy size={14} />,
+                        label: '复制会话',
                         onClick: () => onCollaborate?.(s),
+                      },
+                      {
+                        icon: <Icons.MessageSquarePlus size={14} />,
+                        label: '添加到对话',
+                        onClick: () => onAddToConversation?.(s),
                       },
                       {
                         icon: <Icons.Trash size={14} />,
@@ -1083,6 +1096,7 @@ export function ProjectSessionGroup({
   onArchiveSession,
   onDeleteSession,
   onCollaborate,
+  onAddToConversation,
   projectDragActivatorProps,
   sessionSortProjectId,
   revealSessionId,
@@ -1110,6 +1124,7 @@ export function ProjectSessionGroup({
   onArchiveSession: (session: SessionSummary) => void
   onDeleteSession: (session: SessionSummary) => void
   onCollaborate?: (session: SessionSummary) => void
+  onAddToConversation?: (session: SessionSummary) => void
   projectDragActivatorProps?: React.HTMLAttributes<HTMLDivElement> | undefined
   sessionSortProjectId?: string
   revealSessionId?: SessionId | null | undefined
@@ -1345,6 +1360,8 @@ export function ProjectSessionGroup({
                         onArchive={onArchiveSession}
                         onDelete={onDeleteSession}
                         {...(onCollaborate != null ? { onCollaborate } : {})}
+                        {...(onAddToConversation != null ? { onAddToConversation } : {})}
+                        sessionReferenceDragEnabled={sessionSortProjectId == null}
                         dragActivatorProps={dragActivatorProps}
                       />
                     </React.Fragment>
@@ -1403,6 +1420,7 @@ type FlatGroupActions = {
   onArchiveSession: (session: SessionSummary) => Promise<void>
   onDeleteSession: (session: SessionSummary) => Promise<void>
   onCollaborate?: (session: SessionSummary) => void
+  onAddToConversation?: (session: SessionSummary) => void
 }
 
 export function FlatGroup({
@@ -1595,7 +1613,13 @@ export function FlatGroup({
                   onTogglePinned={actions.onToggleSessionPinned}
                   onArchive={actions.onArchiveSession}
                   onDelete={actions.onDeleteSession}
-                  {...(actions.onCollaborate != null ? { onCollaborate: actions.onCollaborate } : {})}
+                  {...(actions.onCollaborate != null
+                    ? { onCollaborate: actions.onCollaborate }
+                    : {})}
+                  {...(actions.onAddToConversation != null
+                    ? { onAddToConversation: actions.onAddToConversation }
+                    : {})}
+                  sessionReferenceDragEnabled={sessionSortProjectId == null}
                   dragActivatorProps={dragActivatorProps}
                 />
               )
@@ -1982,6 +2006,27 @@ export function SidebarSessionList() {
       if (id != null) setTweak('view', 'chat')
     },
     [ctx.handleForkSession, setTweak],
+  )
+
+  const handleAddSessionToConversation = useCallback(
+    async (sourceSession: SessionSummary) => {
+      if (appState.view !== 'chat') {
+        message.info('请先打开一个对话')
+        return
+      }
+      const applied = await requestSessionReferenceAdd(
+        {
+          sessionId: sourceSession.id,
+          title: sourceSession.title || t('sidebar.newSession'),
+          projectId: sourceSession.projectId,
+          updatedAt: sourceSession.updatedAt,
+          turnCount: sourceSession.turnCount ?? sourceSession.messageCount,
+        },
+        ctx.activeSessionId,
+      )
+      if (!applied) message.info('当前对话输入区不可用')
+    },
+    [appState.view, ctx.activeSessionId, t],
   )
 
   // Sidebar global filter (status / project / lastActivity / groupBy)
@@ -2554,6 +2599,7 @@ export function SidebarSessionList() {
                               onArchiveSession={ctx.handleArchiveSession}
                               onDeleteSession={ctx.handleDeleteSession}
                               onCollaborate={handleCollaborateSession}
+                              onAddToConversation={handleAddSessionToConversation}
                               projectDragActivatorProps={projectDragActivatorProps}
                               {...(canReorderSessions
                                 ? { sessionSortProjectId: workspace.id }
@@ -2665,6 +2711,7 @@ export function SidebarSessionList() {
                           onArchiveSession: ctx.handleArchiveSession,
                           onDeleteSession: ctx.handleDeleteSession,
                           onCollaborate: handleCollaborateSession,
+                          onAddToConversation: handleAddSessionToConversation,
                         }}
                         {...(canReorderSessions &&
                         group.id === 'project:no-project' &&
