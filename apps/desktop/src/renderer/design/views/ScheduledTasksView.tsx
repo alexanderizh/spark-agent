@@ -629,6 +629,7 @@ export function ScheduledTasksView() {
           </Button>
           <Button
             size="middle"
+            type="text"
             danger
             icon={<Icons.Trash />}
             onClick={() => void handleDeleteSelected()}
