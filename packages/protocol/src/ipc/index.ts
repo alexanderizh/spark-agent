@@ -5219,6 +5219,8 @@ export interface CanvasMediaTaskAsset {
   height?: number
   durationMs?: number
   contentText?: string
+  /** 产物级标题（如「首帧」「尾帧」）；物化资源节点时优先于默认「图片 N」 */
+  title?: string
 }
 
 export interface CanvasMediaTaskCreateResponse {
@@ -5300,6 +5302,19 @@ export interface CanvasAudioExtractTaskCancelRequest {
   runtimeTaskId: string
 }
 export interface CanvasAudioExtractTaskCancelResponse {
+  cancelled: boolean
+}
+export interface CanvasFrameExtractTaskCreateRequest {
+  projectId: string
+  clientTaskId: string
+  inputPath: string
+  /** 源视频文件名（不含扩展名），用于语义化产物命名，如 `宣传片_首帧.jpg` */
+  sourceFileName?: string
+}
+export interface CanvasFrameExtractTaskCancelRequest {
+  runtimeTaskId: string
+}
+export interface CanvasFrameExtractTaskCancelResponse {
   cancelled: boolean
 }
 
@@ -6136,6 +6151,14 @@ export interface IpcChannelMap
   'canvas:task:cancel-extract-audio': [
     CanvasAudioExtractTaskCancelRequest,
     CanvasAudioExtractTaskCancelResponse,
+  ]
+  'canvas:task:extract-first-last-frames': [
+    CanvasFrameExtractTaskCreateRequest,
+    CanvasMediaTaskCreateResponse,
+  ]
+  'canvas:task:cancel-extract-first-last-frames': [
+    CanvasFrameExtractTaskCancelRequest,
+    CanvasFrameExtractTaskCancelResponse,
   ]
   'canvas:task:generate-text': [CanvasTextTaskCreateRequest, CanvasTextTaskCreateResponse]
   'canvas:task:cancel-media': [CanvasMediaTaskCancelRequest, CanvasMediaTaskCancelResponse]

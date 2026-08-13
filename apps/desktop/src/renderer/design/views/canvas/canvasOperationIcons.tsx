@@ -130,6 +130,12 @@ export function getOperationVisual(operation: CanvasOperationType): OperationVis
         category: 'audio',
         colorClass: 'canvas-op-color-audio',
       }
+    case 'extract_first_last_frames':
+      return {
+        icon: <Icons.Image size={ICON_SIZE} />,
+        category: 'video',
+        colorClass: 'canvas-op-color-video',
+      }
     default: {
       // 编译期 exhaustiveness 检查：新增 operation 忘补 case 时，
       // `operation` 在此分支不再是 never，TS 会报错强制补全；

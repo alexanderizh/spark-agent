@@ -1386,6 +1386,15 @@ export const IpcSchemaRegistry = {
   'canvas:task:cancel-extract-audio': z.object({
     runtimeTaskId: z.string().min(1).max(200),
   }),
+  'canvas:task:extract-first-last-frames': z.object({
+    projectId: z.string().min(1).max(200),
+    clientTaskId: z.string().min(1).max(200),
+    inputPath: z.string().min(1).max(4096),
+    sourceFileName: z.string().min(1).max(255).optional(),
+  }),
+  'canvas:task:cancel-extract-first-last-frames': z.object({
+    runtimeTaskId: z.string().min(1).max(200),
+  }),
   'canvas:task:cancel-media': z.object({
     runtimeTaskId: z.string().min(1).max(200),
   }),

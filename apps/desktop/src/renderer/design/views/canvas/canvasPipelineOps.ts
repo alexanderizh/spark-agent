@@ -262,6 +262,7 @@ const OPERATION_OUTPUT_INPUT_TYPE: Partial<Record<CanvasNodeType, CanvasPipeline
   video_extend: 'video',
   video_depth_map: 'video',
   extract_audio: 'audio',
+  extract_first_last_frames: 'image',
   text_to_audio: 'audio',
   audio_transcribe: 'text',
 }

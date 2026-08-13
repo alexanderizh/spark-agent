@@ -54,6 +54,15 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     paramsSchema: {},
   },
   {
+    id: 'canvas.extract-first-last-frames',
+    label: '提取首尾帧',
+    operation: 'extract_first_last_frames',
+    inputTypes: ['video'],
+    outputTypes: ['image'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
     id: 'canvas.image-edit',
     label: '图生图 / 图片编辑',
     operation: 'image_edit',
@@ -189,6 +198,7 @@ export const OPERATION_NODE_TYPES: ReadonlySet<string> = new Set<CanvasNodeType>
   'video_extend',
   'video_depth_map',
   'extract_audio',
+  'extract_first_last_frames',
   'text_to_audio',
   'audio_transcribe',
 ])
@@ -254,6 +264,8 @@ export function operationNodeIcon(op: CanvasOperationType | null): string {
       return '◐'
     case 'extract_audio':
       return '🎼'
+    case 'extract_first_last_frames':
+      return '🖼️'
     case 'text_to_audio':
       return '🎵'
     case 'audio_transcribe':

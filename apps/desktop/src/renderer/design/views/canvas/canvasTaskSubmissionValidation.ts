@@ -138,8 +138,12 @@ export function validateCanvasLocalTaskSubmission<T extends CanvasTaskSubmission
 ): T {
   const issues: MediaContractIssue[] = []
   // local_media 通道的 operation 共用一段视频校验，文案按 operation 区分
-  const isExtractAudio = request.operation === 'extract_audio'
-  const taskTitle = isExtractAudio ? '分离音频' : '深度视频转换'
+  const taskTitle =
+    request.operation === 'extract_audio'
+      ? '分离音频'
+      : request.operation === 'extract_first_last_frames'
+        ? '提取首尾帧'
+        : '深度视频转换'
   const files = request.inputFiles ?? []
   const videoCount = files.filter((file) => matchesMediaKind(file, 'video')).length
   if (videoCount === 0) {

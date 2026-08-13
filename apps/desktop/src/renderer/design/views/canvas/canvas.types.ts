@@ -39,6 +39,7 @@ export type CanvasNodeType =
   | 'video_extend'
   | 'video_depth_map'
   | 'extract_audio'
+  | 'extract_first_last_frames'
   | 'text_to_audio'
   | 'audio_transcribe'
   /** @deprecated 旧通用任务节点，保留读取兼容，新代码不再创建 */
@@ -65,6 +66,7 @@ export type CanvasOperationType =
   | 'video_extend'
   | 'video_depth_map'
   | 'extract_audio'
+  | 'extract_first_last_frames'
 
 export type CanvasInputTransport = 'auto' | 'cloud_url' | 'base64'
 export type CanvasTaskInputPayloadField = 'url' | 'dataUrl' | 'path' | 'unknown'
