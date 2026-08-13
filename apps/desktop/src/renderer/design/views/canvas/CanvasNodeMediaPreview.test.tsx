@@ -4,11 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  CanvasNodeMediaPreview,
-  resolveCanvasNodeMediaUrl,
-} from './CanvasNodeMediaPreview'
-
+import { CanvasNodeMediaPreview, resolveCanvasNodeMediaUrl } from './CanvasNodeMediaPreview'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const mountedRoots: Array<{ root: Root; container: HTMLElement }> = []
@@ -34,17 +30,18 @@ describe('CanvasNodeMediaPreview', () => {
     expect(html).toContain('alt="图片预览"')
   })
 
-  it('renders a controlled video preview without node double-click handlers', () => {
+  it('renders the custom video player without native controls', () => {
     const html = renderToStaticMarkup(
       <CanvasNodeMediaPreview type="video" url="https://example.com/video.mp4" />,
     )
 
     expect(html).toContain('<video')
-    expect(html).toContain('controls=""')
-    expect(html).toContain('controlsList="noremoteplayback"')
-    expect(html).toContain('disablePictureInPicture=""')
+    // 自研播放器：去掉原生 controls，控件由 canvas-video-player overlay 承载。
+    expect(html).not.toContain('controls=""')
     expect(html).toContain('playsInline=""')
     expect(html).toContain('preload="metadata"')
+    expect(html).toContain('canvas-video-player')
+    expect(html).toContain('nodrag nopan')
     expect(html).not.toContain('onDoubleClick')
   })
 

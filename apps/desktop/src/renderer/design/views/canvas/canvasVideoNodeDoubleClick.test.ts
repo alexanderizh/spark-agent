@@ -9,14 +9,19 @@ const workspaceSource = readFileSync(
 )
 
 describe('canvas video node double click', () => {
-  it('prevents native video preview and dispatches the node editor action', () => {
-    expect(nodeSource).toContain('onClickCapture={(event) => {')
-    expect(nodeSource).toContain('onDoubleClickCapture={(event) => {')
-    expect(nodeSource).toContain('if (event.detail < 2) return')
-    expect(nodeSource).toContain('controlsList="nofullscreen noremoteplayback"')
-    expect(nodeSource).toContain('event.preventDefault()')
+  it('uses the custom player and dispatches the node editor action on video double click', () => {
+    const playerSource = readFileSync(
+      fileURLToPath(new URL('./videoPlayer/CanvasVideoPlayer.tsx', import.meta.url)),
+      'utf8',
+    )
+
+    expect(nodeSource).toContain(
+      "import { CanvasVideoPlayer } from './videoPlayer/CanvasVideoPlayer'",
+    )
+    expect(nodeSource).toContain('onDoubleClickEdit={() => actions.editNode(node.id)}')
+    expect(playerSource).toContain('if (event.target === videoRef.current) onDoubleClickEdit?.()')
+    expect(playerSource).not.toContain('controls=""')
     expect(nodeSource).not.toContain("if (node.type === 'video') return")
-    expect(nodeSource).toContain('actions.editNode(node.id)')
   })
 
   it('routes plain video nodes to the generic node edit panel', () => {
@@ -32,7 +37,7 @@ describe('canvas video node double click', () => {
     expect(nodeSource).toContain('className="canvas-node-inline-primary-action')
     expect(nodeSource).toContain('accept="video/*"')
     expect(nodeSource).toContain('actions.replaceVideo?.(node.id, file)')
-    expect(workspaceSource).toContain("import { replaceCanvasVideoNode } from './canvasMediaNodeReplacement'")
+    expect(workspaceSource).toContain('replaceCanvasVideoNode')
     expect(workspaceSource).toContain('onReplaceVideo={handleReplaceVideo}')
   })
 })

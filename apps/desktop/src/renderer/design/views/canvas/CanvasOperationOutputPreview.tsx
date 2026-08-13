@@ -12,6 +12,7 @@ import {
   resolveCanvasTextOutputPresentation,
 } from './canvasOperationOutputPresentation'
 import type { CanvasOperationOutputView } from './canvasOperationRuns'
+import { CanvasVideoPlayer } from './videoPlayer/CanvasVideoPlayer'
 import './CanvasOperationOutputPreview.less'
 
 export type CanvasAudioPreviewActions = {
@@ -67,29 +68,13 @@ export function CanvasOperationOutputPreview({
   }
   if (output.type === 'video' && normalizedUrl) {
     return (
-      <video
-        className={`canvas-operation-output-media is-${variant} nodrag nopan`}
+      <CanvasVideoPlayer
+        className={`canvas-operation-output-media is-${variant}`}
         src={normalizedUrl}
-        controls
-        controlsList="noremoteplayback"
-        disablePictureInPicture
-        playsInline
-        preload="metadata"
-        onLoadedMetadata={(event) => {
-          const width = event.currentTarget.videoWidth
-          const height = event.currentTarget.videoHeight
+        onVideoMetadata={({ width, height }) => {
           if (width > 0 && height > 0) onVideoMetadata?.({ width, height })
         }}
-        onClickCapture={(event) => {
-          if (event.detail < 2) return
-          event.preventDefault()
-          event.stopPropagation()
-          onVideoEdit?.()
-        }}
-        onDoubleClickCapture={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-        }}
+        onDoubleClickEdit={onVideoEdit}
       />
     )
   }
