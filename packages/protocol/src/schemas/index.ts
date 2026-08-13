@@ -937,6 +937,11 @@ export const IpcSchemaRegistry = {
   'platform-model:update-model-preferences': z.object({
     modelIds: z.array(z.string().min(1).max(200)).min(1).max(200),
     defaultModel: z.string().min(1).max(200),
+    contextWindow: z.number().int().min(0).max(10_000_000).optional(),
+    modelContextWindows: z.record(
+      z.string().min(1).max(200),
+      z.number().int().min(1_024).max(10_000_000),
+    ).optional(),
   }),
   'platform-model:refresh-catalog': z.object({
     force: z.boolean().optional(),

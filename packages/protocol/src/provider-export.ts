@@ -24,7 +24,10 @@ import { ProviderMediaModelRefSchema } from './media-model-manifest.js'
 export const PROVIDER_EXPORT_VERSION = 2 as const
 
 /** 支持的版本范围：v1（不含 apiKey）和 v2（含 apiKey）均可导入 */
-export const ProviderExportVersionSchema = z.union([z.literal(1), z.literal(PROVIDER_EXPORT_VERSION)])
+export const ProviderExportVersionSchema = z.union([
+  z.literal(1),
+  z.literal(PROVIDER_EXPORT_VERSION),
+])
 
 const ProviderIconStyleSchema = z.enum(['avatar', 'mono'])
 const ProviderIconConfigSchema = z.object({
@@ -57,6 +60,10 @@ export const ProviderExportProfileSchema = z.object({
   supportsMillionContext: z.boolean(),
   /** 自定义上下文窗口（tokens）；优先级高于 supportsMillionContext */
   contextWindow: z.number().int().min(0).max(10_000_000).optional(),
+  /** 模型级上下文窗口（tokens）；未配置模型回落到 contextWindow */
+  modelContextWindows: z
+    .record(z.string().min(1).max(200), z.number().int().min(1_024).max(10_000_000))
+    .optional(),
   /** 文本任务默认最大输出 tokens */
   maxTokens: z.number().int().min(0).max(10_000_000).optional(),
   isDefault: z.boolean(),
@@ -67,7 +74,10 @@ export const ProviderExportProfileSchema = z.object({
   /** OpenAI/Codex API 风格 */
   codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
   /** 模型能力类型 */
-  modelType: z.enum(['image', 'text', 'multimodal', 'voice', 'video']).optional().default('multimodal'),
+  modelType: z
+    .enum(['image', 'text', 'multimodal', 'voice', 'video'])
+    .optional()
+    .default('multimodal'),
   /** 图片模型供应商类型 */
   imageProvider: z.string().min(1).max(80).nullable().optional(),
   /** 图片模型调用方式 */

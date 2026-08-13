@@ -75,6 +75,7 @@ import {
   createLogger,
   deriveTeamAvatar,
   normalizeEduAssetUrl,
+  resolveModelContextWindowForProvider,
   setLogLevel,
   initFileLogger,
   readLogTail,
@@ -4279,12 +4280,18 @@ export function registerAllIpcHandlers(): void {
         candidate != null ? resolveCanvasTextExecutionAdapter(candidate, agent) : null
       if (candidate != null && executionAdapter != null) {
         const model = resolveCanvasTextModel(req.modelId, agent?.modelId, candidate.defaultModel)
+        const providerContextWindow = resolveModelContextWindowForProvider(
+          model,
+          candidate.supportsMillionContext,
+          candidate.contextWindow,
+          candidate.modelContextWindows,
+        )
         const tokenBudget = resolveCanvasTextTokenBudget({
           operation: req.operation,
           modelId: model,
           requestedMaxTokens,
           providerMaxTokens: candidate.maxTokens,
-          providerContextWindow: candidate.contextWindow,
+          providerContextWindow,
           providerSupportsMillionContext: candidate.supportsMillionContext,
           taskPipelineRole: req.taskPipelineRole,
           prompt: runtimeRequest.prompt,
@@ -4422,13 +4429,19 @@ export function registerAllIpcHandlers(): void {
       }
       const outputCapabilityCache = getCanvasTextOutputCapabilityCache()
       const learnedMaxTokens = outputCapabilityCache.get(capabilityKey)
+      const providerContextWindow = resolveModelContextWindowForProvider(
+        model,
+        chosen.profile.supportsMillionContext,
+        chosen.profile.contextWindow,
+        chosen.profile.modelContextWindows,
+      )
       const tokenBudget = resolveCanvasTextTokenBudget({
         operation: req.operation,
         modelId: model,
         requestedMaxTokens,
         providerMaxTokens: chosen.profile.maxTokens,
         learnedMaxTokens,
-        providerContextWindow: chosen.profile.contextWindow,
+        providerContextWindow,
         providerSupportsMillionContext: chosen.profile.supportsMillionContext,
         taskPipelineRole: req.taskPipelineRole,
         prompt: runtimeRequest.prompt,

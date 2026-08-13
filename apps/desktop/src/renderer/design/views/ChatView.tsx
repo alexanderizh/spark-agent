@@ -336,7 +336,7 @@ import {
   VENDOR_CATALOG,
   type VendorMeta,
 } from '@spark/protocol'
-import { normalizeEduAssetUrl, resolveProviderContextWindow } from '@spark/shared'
+import { normalizeEduAssetUrl, resolveModelContextWindowForProvider } from '@spark/shared'
 import { ProviderLogo } from '../components/ProviderLogo'
 
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
@@ -1511,9 +1511,11 @@ export function ChatView({
   // 同步 workspace root 到 ref，供「代码」tab 的 resolveAbsCodePath/openInCodeTab 使用
   workspaceRootRef.current = activeSessionWorkspace?.rootPath ?? activeWorkspace?.rootPath ?? null
   const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
-  const activeProviderContextWindow = resolveProviderContextWindow(
+  const activeProviderContextWindow = resolveModelContextWindowForProvider(
+    activeSession?.modelId ?? activeProvider?.defaultModel,
     activeProvider?.supportsMillionContext === true,
     activeProvider?.contextWindow,
+    activeProvider?.modelContextWindows,
   )
   // 仅在「无活跃会话」或「活跃会话历史已加载完且确实为空」时显示新建会话 hero；
   // 历史加载中不显示，避免老会话进入时先闪一下空会话。

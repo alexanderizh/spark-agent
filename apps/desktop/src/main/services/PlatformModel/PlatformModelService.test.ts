@@ -176,6 +176,7 @@ describe('PlatformModelService delivery boundaries', () => {
     mocks.updateManagedModelPreferences.mockResolvedValue({
       modelIds: ['MiniMax-M3', 'deepseek-v4'],
       defaultModel: 'MiniMax-M3',
+      contextWindow: 400_000,
     })
   })
 
@@ -186,17 +187,45 @@ describe('PlatformModelService delivery boundaries', () => {
       service.updateModelPreferences({
         modelIds: ['deepseek-v4', 'MiniMax-M3'],
         defaultModel: 'MiniMax-M3',
+        contextWindow: 400_000,
       }),
     ).resolves.toMatchObject({
       modelIds: ['MiniMax-M3', 'deepseek-v4'],
       defaultModel: 'MiniMax-M3',
+      contextWindow: 400_000,
     })
 
     expect(mocks.updateManagedModelPreferences).toHaveBeenCalledWith({
       modelIds: ['deepseek-v4', 'MiniMax-M3'],
       defaultModel: 'MiniMax-M3',
+      contextWindow: 400_000,
     })
     expect(service.getStatus().models).toEqual(['MiniMax-M3', 'deepseek-v4'])
+  })
+
+  it('forwards model-level context windows without collapsing them to one value', async () => {
+    const service = createService()
+    mocks.updateManagedModelPreferences.mockResolvedValueOnce({
+      modelIds: ['MiniMax-M3', 'deepseek-v4'],
+      defaultModel: 'MiniMax-M3',
+      modelContextWindows: { 'MiniMax-M3': 1_000_000, 'deepseek-v4': 256_000 },
+    })
+
+    await expect(
+      service.updateModelPreferences({
+        modelIds: ['MiniMax-M3', 'deepseek-v4'],
+        defaultModel: 'MiniMax-M3',
+        modelContextWindows: { 'MiniMax-M3': 1_000_000, 'deepseek-v4': 256_000 },
+      }),
+    ).resolves.toMatchObject({
+      modelContextWindows: { 'MiniMax-M3': 1_000_000, 'deepseek-v4': 256_000 },
+    })
+
+    expect(mocks.updateManagedModelPreferences).toHaveBeenCalledWith({
+      modelIds: ['MiniMax-M3', 'deepseek-v4'],
+      defaultModel: 'MiniMax-M3',
+      modelContextWindows: { 'MiniMax-M3': 1_000_000, 'deepseek-v4': 256_000 },
+    })
   })
 
   it('singleflights concurrent catalog refreshes and persists media refs separately', async () => {

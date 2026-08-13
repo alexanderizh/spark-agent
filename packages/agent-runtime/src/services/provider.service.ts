@@ -314,6 +314,7 @@ function rowToProfile(row: {
     : config.managed === true && config.managedType === 'newapi'
       ? PLATFORM_NEWAPI_MAX_TOKENS
       : undefined
+  const isManagedPlatformProvider = config.managed === true && config.managedType === 'newapi'
   return {
     id: row.id,
     name,
@@ -326,8 +327,9 @@ function rowToProfile(row: {
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
     ...(config.mediaApiEndpoint !== undefined && { mediaApiEndpoint: config.mediaApiEndpoint }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
-    supportsMillionContext: config.supportsMillionContext === true,
+    supportsMillionContext: isManagedPlatformProvider || config.supportsMillionContext === true,
     ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
+    ...(config.modelContextWindows !== undefined && { modelContextWindows: config.modelContextWindows }),
     ...(maxTokens !== undefined && { maxTokens }),
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
@@ -1109,6 +1111,14 @@ export class ProviderService {
       // 媒体适配器按 OpenAI 兼容路径拼接 /images/*，因此使用平台 /v1 入口。
       mediaApiEndpoint: `${params.baseUrl.replace(/\/+$/, '')}/v1`,
       maxTokens: PLATFORM_NEWAPI_MAX_TOKENS,
+      // 平台官方模型默认支持 1M 上下文；模型级配置仍可覆盖此 fallback。
+      supportsMillionContext: true,
+      ...(existingConfig?.contextWindow !== undefined
+        ? { contextWindow: existingConfig.contextWindow }
+        : {}),
+      ...(existingConfig?.modelContextWindows !== undefined
+        ? { modelContextWindows: normalizeModelContextWindows(existingConfig.modelContextWindows, availableModelIds) }
+        : {}),
       modelType: 'text',
       managed: true,
       managedType: 'newapi',
@@ -1164,6 +1174,11 @@ export class ProviderService {
         availableModelIds,
         modelIds,
         defaultModel,
+        // 兼容已创建的旧平台 Provider：未配置模型级值时也按 1M 解析。
+        supportsMillionContext: true,
+        ...(config.modelContextWindows !== undefined
+          ? { modelContextWindows: normalizeModelContextWindows(config.modelContextWindows, availableModelIds) }
+          : {}),
         // 平台目录是受管多媒体模型的唯一来源。整表替换可同时完成新增、下线
         // 和旧版“图片模型误存进 modelIds”数据的迁移。
         mediaModelRefs: params.mediaModelRefs,
@@ -1177,6 +1192,10 @@ export class ProviderService {
   async updateManagedNewApiModelPreferences(params: {
     modelIds: string[]
     defaultModel: string
+    /** 0 清除自定义上下文窗口；正整数设置；undefined 不修改。 */
+    contextWindow?: number
+    /** 模型级上下文窗口；传入时替换旧的 Provider 级配置。 */
+    modelContextWindows?: Record<string, number>
   }): Promise<ProviderProfile> {
     const row = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
     if (!row || !isManagedProviderRow(row)) throw new Error('平台官方 Provider 尚未就绪')
@@ -1188,8 +1207,20 @@ export class ProviderService {
     const requestedDefault = params.defaultModel.trim()
     const defaultModel = selected.includes(requestedDefault) ? requestedDefault : firstSelected
     const modelIds = normalizeModelIds(defaultModel, selected)
+    const nextConfig = { ...config, defaultModel, modelIds, availableModelIds }
+    nextConfig.supportsMillionContext = true
+    if (params.modelContextWindows !== undefined) {
+      nextConfig.modelContextWindows = normalizeModelContextWindows(
+        params.modelContextWindows,
+        availableModelIds,
+      )
+      delete nextConfig.contextWindow
+    } else if (params.contextWindow !== undefined) {
+      if (params.contextWindow > 0) nextConfig.contextWindow = Math.floor(params.contextWindow)
+      else delete nextConfig.contextWindow
+    }
     this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
-      config: { ...config, defaultModel, modelIds, availableModelIds },
+      config: nextConfig,
     })
     const updated = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
     if (!updated) throw new Error('平台官方 Provider 更新后无法读取')
@@ -1464,6 +1495,8 @@ interface ProviderConfig {
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens），优先级高于 supportsMillionContext。 */
   contextWindow?: number
+  /** 模型级上下文窗口（tokens）。 */
+  modelContextWindows?: Record<string, number>
   maxTokens?: number
   temperature?: number
   /** 档位映射；未配置则回落 defaultModel */
@@ -1518,6 +1551,21 @@ function normalizeModelIds(defaultModel: string, modelIds?: string[]): string[] 
     .map((item) => item.trim())
     .filter((item) => item.length > 0)
   return [...new Set(normalized)]
+}
+
+function normalizeModelContextWindows(
+  values: Record<string, number>,
+  availableModelIds: string[],
+): Record<string, number> {
+  const available = new Set(availableModelIds)
+  return Object.fromEntries(
+    Object.entries(values).filter(([modelId, value]) =>
+      available.has(modelId)
+      && Number.isInteger(value)
+      && value >= 1_024
+      && value <= 10_000_000,
+    ),
+  )
 }
 
 function normalizeProviderIcon(icon: ProviderConfig['providerIcon']): ProviderIconConfig | undefined {
@@ -1897,6 +1945,7 @@ function rowToExportProfile(
     ...(config.providerIcon !== undefined && { providerIcon: config.providerIcon }),
     supportsMillionContext: config.supportsMillionContext === true,
     ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
+    ...(config.modelContextWindows !== undefined && { modelContextWindows: config.modelContextWindows }),
     ...(typeof config.maxTokens === 'number' && config.maxTokens > 0 && { maxTokens: config.maxTokens }),
     isDefault: row.is_default === 1,
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
@@ -1929,6 +1978,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   supportsMillionContext?: boolean
   contextWindow?: number
+  modelContextWindows?: Record<string, number>
   maxTokens?: number
   haikuModel?: string
   sonnetModel?: string
@@ -1950,6 +2000,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     ...(profile.codexApiKind !== undefined && { codexApiKind: profile.codexApiKind }),
     supportsMillionContext: profile.supportsMillionContext,
     ...(typeof profile.contextWindow === 'number' && profile.contextWindow > 0 && { contextWindow: profile.contextWindow }),
+    ...(profile.modelContextWindows !== undefined && { modelContextWindows: profile.modelContextWindows }),
     ...(typeof profile.maxTokens === 'number' && profile.maxTokens > 0 && { maxTokens: profile.maxTokens }),
     ...(profile.haikuModel != null && profile.haikuModel.length > 0 && { haikuModel: profile.haikuModel }),
     ...(profile.sonnetModel != null && profile.sonnetModel.length > 0 && { sonnetModel: profile.sonnetModel }),
