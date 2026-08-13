@@ -51,3 +51,40 @@
     transition: none;
   }
 }
+
+/* 代码位置引用 chip：双行（上行文件名 + 图标，下行 路径:行号）。
+   基础布局（inline-flex / align-items:center / gap）继承自 views.css 的 .composer-attachment-chip。 */
+.composer-v2 .composer-code-ref-strip {
+  flex-wrap: wrap;
+}
+
+.composer-v2 .composer-code-ref-chip {
+  height: auto;
+  max-width: 360px;
+  padding: 4px 7px 4px 10px;
+}
+
+.composer-v2 .composer-code-ref-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.composer-v2 .composer-code-ref-name {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-v2 .composer-code-ref-loc {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--text) 60%, transparent);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
