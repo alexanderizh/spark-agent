@@ -463,3 +463,267 @@
 .cv-sb-spacer {
   flex: 1;
 }
+
+/* ── 文件树开关按钮（位于 cv-filetabs 最左） ── */
+.cv-ftab-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 100%;
+  flex: none;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--cv-border-soft);
+  color: var(--cv-text-faint);
+  cursor: pointer;
+  &:hover:not(:disabled) {
+    background: var(--cv-bg-3);
+    color: var(--cv-text);
+  }
+  &.on {
+    color: var(--cv-accent);
+    background: var(--cv-accent-soft);
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+/* ── 横向主布局：文件树 | 拖拽条 | 编辑器列 ── */
+.cv-main-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.cv-explorer {
+  flex: none;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--cv-bg-2);
+  border-right: 1px solid var(--cv-border);
+}
+.cv-explorer-resize {
+  flex: none;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 6;
+  &:hover,
+  &:active {
+    background: var(--cv-border);
+  }
+}
+.cv-editor-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+body.cv-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+/* ── 文件树（fe-*） ── */
+.fe-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-size: 12px;
+  color: var(--cv-text);
+  background: transparent;
+}
+.fe-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  flex: none;
+  border-bottom: 1px solid var(--cv-border-soft);
+}
+.fe-toolbar-label {
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--cv-text-dim);
+}
+.fe-toolbar-spacer {
+  display: none;
+}
+.fe-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--cv-text-faint);
+  cursor: pointer;
+  &:hover {
+    background: var(--cv-bg-3);
+    color: var(--cv-text);
+  }
+  &.on {
+    color: var(--cv-accent);
+    background: var(--cv-accent-soft);
+  }
+}
+.fe-collapse-all-icon {
+  transform: rotate(-90deg);
+}
+
+.fe-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  flex: none;
+  border-bottom: 1px solid var(--cv-border-soft);
+  background: var(--cv-bg-2);
+}
+.fe-search-icon {
+  display: flex;
+  color: var(--cv-text-faint);
+}
+.fe-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  background: var(--cv-bg);
+  border: 1px solid var(--cv-border-soft);
+  border-radius: 4px;
+  color: var(--cv-text);
+  font-size: 12px;
+  padding: 0 6px;
+  outline: none;
+  &:focus {
+    border-color: var(--cv-accent);
+  }
+}
+.fe-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  color: var(--cv-text-faint);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  &:hover {
+    background: var(--cv-bg-3);
+    color: var(--cv-text);
+  }
+}
+
+.fe-tree-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.fe-tree {
+  padding: 4px 0 12px;
+}
+.fe-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding-right: 6px;
+  cursor: pointer;
+  color: var(--cv-text);
+  white-space: nowrap;
+  &:hover {
+    background: var(--cv-bg-3);
+  }
+  &.selected {
+    background: var(--cv-accent-soft);
+  }
+  &.cut {
+    opacity: 0.5;
+    .fe-name {
+      text-decoration: line-through;
+    }
+  }
+}
+.fe-chevron {
+  display: flex;
+  align-items: center;
+  flex: none;
+  color: var(--cv-text-faint);
+  transition: transform 0.12s ease;
+  &.open {
+    transform: rotate(90deg);
+  }
+  &.invisible {
+    visibility: hidden;
+  }
+}
+.fe-icon {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+.fe-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fe-badge {
+  display: flex;
+  align-items: center;
+  flex: none;
+  color: var(--cv-text-faint);
+}
+.fe-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  background: var(--cv-bg);
+  border: 1px solid var(--cv-accent);
+  border-radius: 3px;
+  color: var(--cv-text);
+  font-size: 12px;
+  padding: 0 4px;
+  outline: none;
+}
+.fe-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 12px;
+  color: var(--cv-text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+.fe-state-error {
+  color: var(--cv-red);
+}
+.fe-spin {
+  animation: cv-spin 0.9s linear infinite;
+  display: inline-flex;
+}
+.fe-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
