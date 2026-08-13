@@ -14,8 +14,8 @@ import type { CanvasAsset, CanvasNode, CanvasSnapshot } from './canvas.types'
 import { readLastPromptCategory, saveLastPromptCategory } from './canvasPromptLibraryCategories'
 import { encodeToSafeFileUrl, readFileAsDataUrl } from './canvas-safe-file'
 import {
+  collectNodeImageCoverAssets,
   isPromptCoverAsset,
-  isPromptCoverNode,
   resolveNodeOutputAsset,
 } from './canvasPromptLibraryCover'
 import { isPromptTextNode, readPromptLibraryText } from './canvasPromptLibraryData'
@@ -108,12 +108,19 @@ export function SaveToLibraryDialog({
   const [submitting, setSubmitting] = useState(false)
   const coverFileInputRef = useRef<HTMLInputElement | null>(null)
   const outputAsset = useMemo(() => resolveNodeOutputAsset(node, snapshot), [node, snapshot])
-  const imageCoverNodes = useMemo(() => {
-    const filtered = snapshot.nodes.filter((candidate) => {
-      return isPromptCoverNode(candidate, resolveNodeOutputAsset(candidate, snapshot))
-    })
-    // 从画布选择封面：按更新时间从新到旧排序，缺 updatedAt 的兜底为 0
-    return filtered.slice().sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+  // 从画布选择封面：候选是产物级——任务节点的每一张图片产物都单独可选。
+  // 跨节点按 asset.id 去重后，按更新时间从新到旧排序。
+  const coverCandidates = useMemo(() => {
+    const seen = new Set<string>()
+    const collected: CanvasAsset[] = []
+    for (const candidate of snapshot.nodes) {
+      for (const asset of collectNodeImageCoverAssets(candidate, snapshot)) {
+        if (seen.has(asset.id)) continue
+        seen.add(asset.id)
+        collected.push(asset)
+      }
+    }
+    return collected.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }, [snapshot])
 
   // 节点变化时重置表单
@@ -195,9 +202,8 @@ export function SaveToLibraryDialog({
     setCoverPreviewUrl(URL.createObjectURL(file))
   }
 
-  const handlePickCover = (candidate: CanvasNode) => {
-    const asset = resolveNodeOutputAsset(candidate, snapshot)
-    if (!isPromptCoverNode(candidate, asset)) return
+  const handlePickCover = (asset: CanvasAsset) => {
+    if (!isPromptCoverAsset(asset)) return
     setCoverAssetId(asset.id)
     setCoverUrl(assetPreviewUrl(asset))
     setCoverMimeType(null)
@@ -467,8 +473,7 @@ export function SaveToLibraryDialog({
         )}
         <PromptCoverPickerModal
           open={coverPickerOpen}
-          candidates={imageCoverNodes}
-          snapshot={snapshot}
+          candidates={coverCandidates}
           onClose={() => setCoverPickerOpen(false)}
           onPick={handlePickCover}
         />
@@ -534,37 +539,31 @@ function PromptTextPickerModal({
 function PromptCoverPickerModal({
   open,
   candidates,
-  snapshot,
   onClose,
   onPick,
 }: {
   open: boolean
-  candidates: CanvasNode[]
-  snapshot: CanvasSnapshot
+  candidates: CanvasAsset[]
   onClose: () => void
-  onPick: (node: CanvasNode) => void
+  onPick: (asset: CanvasAsset) => void
 }) {
   return (
     <Modal open={open} title="从画布选择封面" onCancel={onClose} footer={null} width={560}>
       <div className="canvas-film-save-cover-grid">
         {candidates.length === 0 ? (
-          <Empty description="画布上还没有图片节点" />
+          <Empty description="画布上还没有可选图片" />
         ) : (
-          candidates.map((candidate) => {
-            const asset = resolveNodeOutputAsset(candidate, snapshot)
-            if (!isPromptCoverNode(candidate, asset)) return null
-            return (
-              <button
-                key={candidate.id}
-                type="button"
-                className="canvas-film-save-cover-card"
-                onClick={() => onPick(candidate)}
-              >
-                <AssetThumbnail asset={asset} />
-                <span>{candidate.title ?? asset.title ?? '未命名图片'}</span>
-              </button>
-            )
-          })
+          candidates.map((asset) => (
+            <button
+              key={asset.id}
+              type="button"
+              className="canvas-film-save-cover-card"
+              onClick={() => onPick(asset)}
+            >
+              <AssetThumbnail asset={asset} />
+              <span>{asset.title || '未命名图片'}</span>
+            </button>
+          ))
         )}
       </div>
     </Modal>

@@ -216,6 +216,34 @@ export function resolveCanvasOperationResourceNode(
     : null
 }
 
+/**
+ * 收集操作节点全部运行产物中的图片资产（跨所有 run，按 asset.id 去重）。
+ *
+ * 与节点卡片缩略图切换器同口径：产物级选择（如「从画布选择封面」）要能选到
+ * 节点产出的每一张图，而不是只有主产物；主产物/下游输入语义仍由
+ * resolveCanvasOperationResourceNode / resolveCanvasOperationInputNodes 提供。
+ */
+export function collectCanvasOperationImageAssets(
+  operationNode: CanvasNode,
+  snapshot: CanvasSnapshot,
+): CanvasAsset[] {
+  if (!isOperationNode(operationNode)) return []
+  const runs = buildCanvasOperationRunViews(operationNode, snapshot)
+  const assetsById = new Map(snapshot.assets.map((asset) => [asset.id, asset]))
+  const seen = new Set<string>()
+  const collected: CanvasAsset[] = []
+  for (const run of runs) {
+    for (const output of run.outputs) {
+      if (!output.assetId || seen.has(output.assetId)) continue
+      const asset = assetsById.get(output.assetId)
+      if (!asset || asset.type !== 'image') continue
+      seen.add(output.assetId)
+      collected.push(asset)
+    }
+  }
+  return collected
+}
+
 export function selectCanvasOperationOutputs(
   runs: CanvasOperationRunView[],
   selection:
