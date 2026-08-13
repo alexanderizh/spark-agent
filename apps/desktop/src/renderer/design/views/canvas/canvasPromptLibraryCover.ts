@@ -1,5 +1,8 @@
 import { isOperationNode } from './canvas.capabilities'
-import { resolveCanvasOperationResourceNode } from './canvasOperationOutputModel'
+import {
+  collectCanvasOperationImageAssets,
+  resolveCanvasOperationResourceNode,
+} from './canvasOperationOutputModel'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot } from './canvas.types'
 
 /** 提示词封面只接受图片资产；URL 是否存在不能代表资产是图片。 */
@@ -7,13 +10,38 @@ export function isPromptCoverAsset(asset: CanvasAsset | null | undefined): asset
   return asset?.type === 'image'
 }
 
-export function isPromptCoverNode(
-  node: Pick<CanvasNode, 'type'> | null | undefined,
-  asset: CanvasAsset | null | undefined,
-): asset is CanvasAsset {
-  return (
-    (node?.type === 'image' || (node != null && isOperationNode(node))) && isPromptCoverAsset(asset)
-  )
+/**
+ * 枚举一个画布节点可作为提示词封面的全部图片资产。
+ *
+ * image 节点返回自身资产；操作节点返回全部运行产物中的图片资产——一次任务
+ * 可能产出多张图，封面候选要逐张列出，而不是只给主产物；其余节点没有封面资产。
+ */
+export function collectNodeImageCoverAssets(
+  node: CanvasNode | null,
+  snapshot: CanvasSnapshot,
+): CanvasAsset[] {
+  if (!node) return []
+  const ownAsset = node.assetId
+    ? (snapshot.assets.find((asset) => asset.id === node.assetId) ?? null)
+    : null
+  const own = isPromptCoverAsset(ownAsset) ? [ownAsset] : []
+  if (node.type === 'image') {
+    if (own.length > 0) return own
+    // 旧数据的 image 节点可能只有 taskId，资产挂在任务输出上；沿用主产物
+    // 投影回退，保持与改造前一致的候选语义。
+    const resolved = resolveNodeOutputAsset(node, snapshot)
+    return isPromptCoverAsset(resolved) ? [resolved] : []
+  }
+  if (isOperationNode(node)) {
+    const seen = new Set(own.map((asset) => asset.id))
+    const outputs = collectCanvasOperationImageAssets(node, snapshot).filter((asset) => {
+      if (seen.has(asset.id)) return false
+      seen.add(asset.id)
+      return true
+    })
+    return [...own, ...outputs]
+  }
+  return []
 }
 
 /**

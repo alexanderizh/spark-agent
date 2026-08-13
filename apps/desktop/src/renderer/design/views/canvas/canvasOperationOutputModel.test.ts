@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  collectCanvasOperationImageAssets,
   inferCanvasOperationOutputMode,
   resolveCanvasOperationInputNodes,
   resolveCanvasOperationOutputState,
@@ -349,5 +350,37 @@ describe('canvas operation output model', () => {
         selectedOutputIds: ['asset-b', 'output-old', 'asset-b'],
       }).map((output) => output.nodeId),
     ).toEqual(['output-b', 'output-old'])
+  })
+
+  it('collects every image asset across all runs for asset-level picking', () => {
+    const snapshot = snapshotFixture()
+    const node = snapshot.nodes[0]!
+
+    // runs 按 createdAt 降序：task-2（asset-a/asset-b）在前，task-1（asset-old）在后
+    expect(collectCanvasOperationImageAssets(node, snapshot).map((item) => item.id)).toEqual([
+      'asset-a',
+      'asset-b',
+      'asset-old',
+    ])
+  })
+
+  it('skips non-image outputs when collecting image assets', () => {
+    const snapshot = snapshotFixture()
+    const node = snapshot.nodes[0]!
+    snapshot.assets = snapshot.assets.map((item) =>
+      item.id === 'asset-old' ? { ...item, type: 'text' } : item,
+    )
+
+    expect(collectCanvasOperationImageAssets(node, snapshot).map((item) => item.id)).toEqual([
+      'asset-a',
+      'asset-b',
+    ])
+  })
+
+  it('collects nothing for non-operation nodes', () => {
+    const snapshot = snapshotFixture()
+    const imageNode = snapshot.nodes.find((item) => item.id === 'output-a')!
+
+    expect(collectCanvasOperationImageAssets(imageNode, snapshot)).toEqual([])
   })
 })
