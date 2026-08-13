@@ -286,6 +286,7 @@ export const CanvasOperationTypeSchema = z.enum([
   'video_extend',
   'video_depth_map',
   'extract_audio',
+  'extract_first_last_frames',
 ])
 export type CanvasOperationType = z.infer<typeof CanvasOperationTypeSchema>
 
@@ -325,6 +326,8 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
     case 'video_depth_map':
     // 分离音频走本地 ffmpeg，不经过云端 media adapter。
     case 'extract_audio':
+    // 提取首尾帧走本地 ffmpeg，不经过云端 media adapter。
+    case 'extract_first_last_frames':
       return []
     default:
       return []

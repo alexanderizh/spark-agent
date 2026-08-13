@@ -26,6 +26,7 @@ const NODE_TYPE_LABELS: Partial<Record<CanvasNodeType, string>> = {
   video_extend: '视频扩展',
   video_depth_map: '深度视频转换',
   extract_audio: '分离音频',
+  extract_first_last_frames: '提取首尾帧',
   text_to_audio: '文生音频',
   audio_transcribe: '语音转写',
   task: '任务',

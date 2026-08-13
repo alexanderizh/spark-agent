@@ -5560,14 +5560,25 @@ export const canvasApi = {
                 ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
               },
             )
-          : this.createLocalDepthTask(
-              projectId,
-              { ...request, boardId: node.boardId },
-              {
-                bindToNodeId: nodeId,
-                ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
-              },
-            )
+          : request.operation === 'extract_first_last_frames'
+            ? this.createLocalFrameExtractTask(
+                projectId,
+                { ...request, boardId: node.boardId },
+                {
+                  bindToNodeId: nodeId,
+                  ...(params.inputNodeIds
+                    ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN }
+                    : {}),
+                },
+              )
+            : this.createLocalDepthTask(
+                projectId,
+                { ...request, boardId: node.boardId },
+                {
+                  bindToNodeId: nodeId,
+                  ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+                },
+              )
         : this.createMediaTask(
             projectId,
             { ...request, boardId: node.boardId },
@@ -5602,6 +5613,10 @@ export const canvasApi = {
           })
         } else if (task.operation === 'extract_audio') {
           await window.spark.invoke('canvas:task:cancel-extract-audio', {
+            runtimeTaskId,
+          })
+        } else if (task.operation === 'extract_first_last_frames') {
+          await window.spark.invoke('canvas:task:cancel-extract-first-last-frames', {
             runtimeTaskId,
           })
         } else {
@@ -5832,6 +5847,95 @@ export const canvasApi = {
         status: 'running',
         progress: response.progress ?? 1,
         message: response.message ?? '本地音频分离任务已创建',
+      }
+      taskNode.updatedAt = now()
+    }
+    writeDb(db)
+    return this.openSnapshot(projectId, request.boardId)
+  },
+
+  /**
+   * 创建本地「提取首尾帧」任务（走 main process → FfmpegRunner.extractFramesAtTimes）。
+   *
+   * 与 createLocalAudioExtractTask 同通道（local_media）：probe 取时长后抽
+   * [0s, duration-0.1s] 两帧，产物通过 applyMediaTaskResult 物化为两个图片节点
+   * + generated 连线（asset.title 携带「首帧/尾帧」语义化标题）。
+   */
+  async createLocalFrameExtractTask(
+    projectId: string,
+    requestInput: CreateCanvasTaskRequest & { inputFiles?: CanvasMediaTaskInputFile[] },
+    options?: {
+      bindToNodeId?: string
+      validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
+    },
+  ): Promise<CanvasSnapshot> {
+    const request = validateCanvasLocalTaskSubmission(requestInput)
+    const inputFile = request.inputFiles?.[0]
+    const inputPath = inputFile?.path?.trim()
+    if (!inputPath) throw new Error('提取首尾帧需要可读取的本地视频路径或视频 URL')
+
+    const started = await this.startWorkflowTask(projectId, {
+      boardId: request.boardId,
+      operation: 'extract_first_last_frames',
+      title: request.taskTitle ?? '提取首尾帧',
+      prompt: '',
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      ...(options?.bindToNodeId ? { bindToNodeId: options.bindToNodeId } : {}),
+      ...(request.outputPlacement ? { outputPlacement: request.outputPlacement } : {}),
+      provider: 'local_ffmpeg',
+      modelId: 'ffmpeg-extract-frames',
+      modelParams: request.modelParams ?? {},
+      progress: 1,
+      message: '准备本地 ffmpeg 提取首尾帧',
+    })
+
+    let response: CanvasMediaTaskCreateResponse
+    try {
+      const sourceFileName = canvasInputSourceBaseName(inputFile)
+      response = await window.spark.invoke('canvas:task:extract-first-last-frames', {
+        projectId,
+        clientTaskId: started.taskId,
+        inputPath,
+        ...(sourceFileName ? { sourceFileName } : {}),
+      })
+    } catch (error) {
+      response = {
+        status: 'failed',
+        providerProfileId: '',
+        provider: 'local_ffmpeg',
+        model: 'ffmpeg-extract-frames',
+        mode: 'async',
+        assets: [],
+        error: {
+          code: 'ipc_error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }
+    }
+    if (response.status !== 'running') {
+      return this.applyMediaTaskResult(projectId, started.taskId, response)
+    }
+
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === started.taskId && item.projectId === projectId)
+    const taskNode = task?.operationNodeId
+      ? db.nodes.find((item) => item.id === task.operationNodeId && item.projectId === projectId)
+      : null
+    if (task) {
+      task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+      task.providerTaskId = response.requestId ?? task.providerTaskId ?? null
+      task.requestId = response.requestId ?? response.runtimeTaskId ?? null
+      task.progress = response.progress ?? task.progress
+      task.inputFileDiagnostics = summarizeCanvasTaskInputFiles(request.inputFiles ?? [])
+      task.updatedAt = now()
+    }
+    if (taskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'running',
+        progress: response.progress ?? 1,
+        message: response.message ?? '本地提取首尾帧任务已创建',
       }
       taskNode.updatedAt = now()
     }
@@ -6823,12 +6927,15 @@ export const canvasApi = {
         typeof taskNode.data.outputTitle === 'string' && taskNode.data.outputTitle.trim().length > 0
           ? taskNode.data.outputTitle.trim()
           : null
+      // 产物级标题（如提取首尾帧的「首帧/尾帧」）优先于 outputTitle 与默认「图片 N」
+      const explicitAssetTitle = assetOut.title?.trim() || null
       const assetTitle =
-        customOutputTitle != null
+        explicitAssetTitle ??
+        (customOutputTitle != null
           ? preparedOutputs.length === 0
             ? customOutputTitle
             : `${customOutputTitle} ${preparedOutputs.length + 1}`
-          : defaultAssetTitle
+          : defaultAssetTitle)
       const asset: CanvasAsset = {
         id: uid('canvas_asset'),
         projectId,

@@ -257,6 +257,7 @@ import { registerVoiceIpc } from './registerVoiceIpc.js'
 import { registerCanvasWorkflowIpc } from './registerCanvasWorkflowIpc.js'
 import { registerCanvasDepthTaskIpc } from './registerCanvasDepthTaskIpc.js'
 import { registerCanvasAudioExtractIpc } from './registerCanvasAudioExtractIpc.js'
+import { registerCanvasFrameExtractIpc } from './registerCanvasFrameExtractIpc.js'
 import { registerOptionalCapabilityIpc } from './registerOptionalCapabilityIpc.js'
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
@@ -3152,6 +3153,7 @@ export function registerAllIpcHandlers(): void {
   registerCanvasWorkflowIpc()
   registerCanvasDepthTaskIpc()
   registerCanvasAudioExtractIpc()
+  registerCanvasFrameExtractIpc()
   registerOptionalCapabilityIpc()
   registerOutcomeRoomIpc()
   registerTeamP1Ipc()

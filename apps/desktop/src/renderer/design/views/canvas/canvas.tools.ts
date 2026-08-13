@@ -471,6 +471,7 @@ const OPERATION_TYPES: CanvasOperationType[] = [
   'video_edit',
   'video_extend',
   'extract_audio',
+  'extract_first_last_frames',
 ]
 
 const FILM_ASSET_KINDS = [

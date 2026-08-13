@@ -51,6 +51,17 @@ export function resolveCanvasOperationPanelMode(
       submitLabel: '分离音频',
     }
   }
+  if (operation === 'extract_first_last_frames') {
+    return {
+      executionKind,
+      runtimeKind: 'none',
+      showPromptEditor: false,
+      dedicatedMediaKind: 'video',
+      showCustomParams: false,
+      showLocalDepthNotice: false,
+      submitLabel: '提取首尾帧',
+    }
+  }
   if (executionKind === 'text') {
     return {
       executionKind,

@@ -54,6 +54,7 @@ describe('canvasNodeGenerationMenu', () => {
       'text_to_video',
       'video_depth_map',
       'extract_audio',
+      'extract_first_last_frames',
       'text_to_audio',
       'audio_transcribe',
     ])
@@ -81,6 +82,7 @@ describe('canvasNodeGenerationMenu', () => {
       { operation: 'text_to_video', label: '视频生成', icon: 'Video' },
       { operation: 'video_depth_map', label: '深度视频转换', icon: 'Video' },
       { operation: 'extract_audio', label: '分离音频', icon: 'Audio' },
+      { operation: 'extract_first_last_frames', label: '提取首尾帧', icon: 'Image' },
     ])
   })
 
@@ -101,13 +103,15 @@ describe('canvasNodeGenerationMenu', () => {
       'text_to_video',
       'video_depth_map',
       'extract_audio',
+      'extract_first_last_frames',
     ])
   })
 
-  it('moves depth conversion and audio extraction into featured tools', () => {
+  it('moves depth conversion, audio extraction and frame extraction into featured tools', () => {
     expect(canvasVisibleFeatureCreateOperations().map((item) => item.operation)).toEqual([
       'video_depth_map',
       'extract_audio',
+      'extract_first_last_frames',
     ])
     expect(canvasVisiblePrimaryCreateOperations().map((item) => item.operation)).toEqual([
       'text_generate',

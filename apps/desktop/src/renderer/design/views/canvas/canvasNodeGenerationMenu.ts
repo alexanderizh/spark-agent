@@ -53,6 +53,7 @@ export const CANVAS_BASE_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGroup[
       { operation: 'text_to_video', label: '视频生成', icon: 'Video' },
       { operation: 'video_depth_map', label: '深度视频转换', icon: 'Video' },
       { operation: 'extract_audio', label: '分离音频', icon: 'Audio' },
+      { operation: 'extract_first_last_frames', label: '提取首尾帧', icon: 'Image' },
     ],
   },
   {
@@ -77,6 +78,7 @@ export function canvasVisibleBaseCreateOperations(): CanvasNodeGenerationMenuIte
 const CANVAS_FEATURE_CREATE_OPERATION_IDS = new Set<CanvasOperationType>([
   'video_depth_map',
   'extract_audio',
+  'extract_first_last_frames',
 ])
 
 /** 「特色功能」承载的通用媒体工具。 */

@@ -728,7 +728,13 @@ function CanvasStageInner({
   onCreateOperationChild: (
     parentId: string,
     operation: import('./canvas.types').CanvasOperationType,
-    options?: { title?: string; prompt?: string; modelParams?: Record<string, unknown> },
+    options?: {
+      title?: string
+      prompt?: string
+      modelParams?: Record<string, unknown>
+      /** 无需用户确认配置的本地任务（如提取首尾帧）：创建后立即提交运行 */
+      autoRun?: boolean
+    },
   ) => void
   onPipelineAction: (nodeId: string, actionId: string) => void
   onSetProductionState: (

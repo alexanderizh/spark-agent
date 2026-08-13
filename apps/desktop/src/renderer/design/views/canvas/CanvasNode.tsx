@@ -387,7 +387,13 @@ export type CanvasFlowNodeData = {
     createOperationChild: (
       parentId: string,
       operation: import('./canvas.types').CanvasOperationType,
-      options?: { title?: string; prompt?: string; modelParams?: Record<string, unknown> },
+      options?: {
+        title?: string
+        prompt?: string
+        modelParams?: Record<string, unknown>
+        /** 无需用户确认配置的本地任务（如提取首尾帧）：创建后立即提交运行 */
+        autoRun?: boolean
+      },
     ) => void
     /** 流水线一键编排（设计 §7）：actionId 来自 getPipelineActions */
     pipelineAction: (nodeId: string, actionId: string) => void
@@ -881,6 +887,15 @@ export const CanvasNode = memo(function CanvasNode({
         label: '分离音频',
         icon: <Icons.AudioLines size={15} />,
         onClick: () => actions.createOperationChild(videoToolbarSourceNodeId, 'extract_audio'),
+      })
+      addAction({
+        key: 'extract-first-last-frames',
+        label: '提取首尾帧',
+        icon: <Icons.Image size={15} />,
+        onClick: () =>
+          actions.createOperationChild(videoToolbarSourceNodeId, 'extract_first_last_frames', {
+            autoRun: true,
+          }),
       })
     }
     addAction({

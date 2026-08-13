@@ -5951,7 +5951,13 @@ export function CanvasWorkspaceView({
     (
       parentId: string,
       operation: CanvasOperationType,
-      options?: { title?: string; prompt?: string; modelParams?: Record<string, unknown> },
+      options?: {
+        title?: string
+        prompt?: string
+        modelParams?: Record<string, unknown>
+        /** 无需用户确认配置的本地任务（如提取首尾帧）：创建后立即提交运行 */
+        autoRun?: boolean
+      },
     ) => {
       const snap = snapshotRef.current
       if (!snap) return
@@ -5978,11 +5984,32 @@ export function CanvasWorkspaceView({
         )
         if (created) {
           setSelectedNodeIds([created.id])
-          message.info('已创建并连接任务节点，双击或右键“编辑节点”可打开配置')
+          if (options?.autoRun) {
+            // 本地无配置任务：按 used_as_input 连线展开输入节点并立即提交。
+            // 父节点可能是操作节点（多产物任务），expandCanvasInputNodes 会收敛到当前主产物。
+            const inputNodes = next
+              ? expandCanvasInputNodes(
+                  next.nodes.filter((item) => item.id === parentId),
+                  next,
+                )
+              : []
+            const inputFiles = buildTaskInputFiles(inputNodes)
+            try {
+              await runOperationNode(created.id, {
+                prompt: '',
+                inputNodeIds: [parentId],
+                ...(inputFiles.length > 0 ? { inputFiles } : {}),
+              })
+            } catch (error) {
+              message.error(error instanceof Error ? error.message : '任务提交失败')
+            }
+          } else {
+            message.info('已创建并连接任务节点，双击或右键“编辑节点”可打开配置')
+          }
         }
       })()
     },
-    [createOperationNode],
+    [createOperationNode, runOperationNode],
   )
   const onPipelineActionStable = useCallback((nodeId: string, actionId: string) => {
     void handleNodePipelineActionRef.current(nodeId, actionId)
