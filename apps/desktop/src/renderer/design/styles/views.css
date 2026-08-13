@@ -1930,7 +1930,7 @@ body.sidebar-resizing {
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
   font-size: var(--font-base);
   font-weight: 400;
   cursor: pointer;
@@ -1938,7 +1938,7 @@ body.sidebar-resizing {
   font-family: inherit;
 }
 .thinking-toggle:hover {
-  color: var(--text-muted);
+  color: var(--text);
 }
 .thinking-toggle .chev {
   transition: transform 0.15s;
@@ -1954,8 +1954,8 @@ body.sidebar-resizing {
   align-items: center;
   justify-content: center;
   flex: 0 0 16px;
-  color: var(--text-faint);
-  opacity: 0.72;
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
+  opacity: 0.82;
   line-height: 1;
   transition: opacity 0.12s;
 }
@@ -1972,7 +1972,7 @@ body.sidebar-resizing {
   font-weight: inherit;
 }
 .thinking-spinner {
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
   flex-shrink: 0;
 }
 .thinking-body {
@@ -2146,7 +2146,7 @@ body.sidebar-resizing {
 }
 .tool-call-head .chev {
   margin-left: 0;
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
   transition: transform 0.15s;
 }
 .tool-call.open .chev {
@@ -2167,7 +2167,7 @@ body.sidebar-resizing {
 
 .tool-log-group {
   margin: 8px 0;
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
 }
 .tool-log-summary {
   width: auto;
@@ -2178,7 +2178,7 @@ body.sidebar-resizing {
   padding: 0;
   border: 0 !important;
   background: transparent !important;
-  color: var(--text-faint) !important;
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%) !important;
   font: inherit;
   font-size: var(--font-base);
   font-weight: 400;
@@ -2190,7 +2190,7 @@ body.sidebar-resizing {
 .tool-log-summary:focus,
 .tool-log-summary:active {
   background: transparent !important;
-  color: var(--text-muted) !important;
+  color: var(--text) !important;
   box-shadow: none !important;
 }
 .ant-btn.tool-log-summary,
@@ -2212,18 +2212,18 @@ body.sidebar-resizing {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
   flex: 0 0 auto;
-  opacity: 0.72;
+  opacity: 0.82;
 }
 .tool-log-summary-icon--read {
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
 }
 .tool-log-group.is-running .tool-log-summary-icon--read {
   color: var(--accent, #6366f1);
 }
 .tool-log-summary-icon--tool {
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
 }
 .tool-log-summary .chev {
   color: inherit;
@@ -2261,7 +2261,7 @@ body.sidebar-resizing {
 }
 .tool-log-entry-subtitle {
   flex: 0 0 auto;
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
   font-size: var(--font-xs);
 }
 .tool-log-card {
@@ -2282,7 +2282,7 @@ body.sidebar-resizing {
 }
 .tool-log-section-label {
   margin-bottom: 8px;
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
   font-size: var(--font-xs);
   line-height: 1;
 }
@@ -2312,7 +2312,7 @@ body.sidebar-resizing {
 
 /* Terminal-form (command + stdout/stderr) */
 .tool-log-section--terminal .tool-log-section-label {
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
 }
 .tool-log-section--terminal .tool-log-terminal {
   background: color-mix(in srgb, var(--term-bg) 94%, white);
@@ -2350,7 +2350,7 @@ body.sidebar-resizing {
 .tool-log-streaming {
   display: inline-flex;
   padding: 10px 14px 12px;
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-muted) 88%, var(--text) 12%);
   font-size: var(--font-xs);
 }
 
