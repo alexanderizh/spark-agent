@@ -1189,10 +1189,7 @@ export function ProjectSessionGroup({
   const unpinnedSessions = sessions.filter((s) => s.pinnedAt == null)
   const hasMoreSessions = unpinnedSessions.length > visibleSessionCount
   const canCollapseSessions = visibleSessionCount > PROJECT_SESSION_INITIAL_VISIBLE
-  const visibleSessions = [
-    ...pinnedSessions,
-    ...unpinnedSessions.slice(0, visibleSessionCount),
-  ]
+  const visibleSessions = [...pinnedSessions, ...unpinnedSessions.slice(0, visibleSessionCount)]
   // Reveal: if the target session lives in this group but falls beyond the
   // paginated window, expand the window so it renders before we scroll to it.
   // 置顶段始终全展示，故只需在非置顶段里定位目标；命中置顶则无需展开。
@@ -1340,11 +1337,11 @@ export function ProjectSessionGroup({
                     dragActivatorProps?: React.HTMLAttributes<HTMLDivElement>,
                   ) => (
                     <React.Fragment key={session.id}>
-                      {dateMarker != null && (
+                      {/* {dateMarker != null && (
                         <div className="session-date-marker" aria-label={`会话日期 ${dateMarker}`}>
                           {dateMarker}
                         </div>
-                      )}
+                      )} */}
                       <ChatListItem
                         session={session}
                         active={activeSessionId}

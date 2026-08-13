@@ -165,7 +165,7 @@ export function buildCanvasPipelineOperationDraft(
     case 'scene.panorama_360':
       return {
         operation: 'panorama_360',
-        title: '生成重点场景 360 全景图',
+        title: '场景 360 全景图',
         systemPrompt: `请根据以下场景设定生成 2:1 equirectangular 等距柱状投影全景图。保持水平线稳定、左右边缘无缝衔接，并完整表现前后左右空间关系。\n\n${input.sourceText}`,
         message: '确认全景图 Prompt、Agent 与模型后点击开始任务',
         taskPipelineRole: 'scene',
