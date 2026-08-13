@@ -1878,19 +1878,6 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
   pointer-events: none;
   z-index: 1;
 }
-/* Size variants */
-.select-sm .spark-select,
-.spark-select.sm {
-  min-height: 28px;
-  font-size: var(--font-xs);
-}
-.input-w-sm {
-  width: 80px;
-}
-.input-max-sm {
-  max-width: 120px;
-}
-
 /* ============================================================
    SPARK TEXTAREA — Arco Input.TextArea 主题覆盖
    ============================================================ */
@@ -1900,18 +1887,6 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
 /* ============================================================
    SPARK CHECKBOX — Arco Checkbox 主题覆盖
    ============================================================ */
-
-/* Size variants */
-.select-full .spark-select,
-.spark-select.full {
-  width: 100%;
-}
-
-/* Override .form-grid children */
-.form-grid > .spark-input-wrap,
-.form-grid > .spark-textarea {
-  width: 100%;
-}
 
 /* Radio button styling (for sandbox level) */
 .spark-radio {

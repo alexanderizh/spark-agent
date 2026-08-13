@@ -68,6 +68,7 @@ import { SettingsLogViewer } from './SettingsLogViewer'
 import { UsageHeatmap } from './UsageHeatmap'
 import { needsSdkInstallAction } from './sdkIntegrityPresentation'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
+import './SettingsView.less'
 import type {
   SessionAgentAdapter,
   SessionPermissionMode,
@@ -4162,7 +4163,9 @@ function TelemetrySection() {
       <div className="form-grid">
         <label>
           记录运行时日志
-          <span className="sub">每轮保存白盒提示词快照（侧栏「运行时日志」面板），关闭可显著节省存储</span>
+          <span className="sub">
+            每轮保存白盒提示词快照（侧栏「运行时日志」面板），关闭可显著节省存储
+          </span>
         </label>
         <Switch
           size="middle"
