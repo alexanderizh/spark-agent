@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { planCanvasOperationOutputMaterialization } from './canvasOperationOutputMaterialization'
+import {
+  AUTO_NODE_META_BAR_CLEARANCE,
+  AUTO_NODE_RIGHT_GAP,
+  AUTO_NODE_VERTICAL_GAP,
+} from './canvasAutoPlacement'
+import { IMAGE_NODE_DEFAULT_SIZE } from './canvasNodeSize'
 import type { CanvasNode } from './canvas.types'
 import type { CanvasOperationOutputView } from './canvasOperationRuns'
 
@@ -65,16 +71,55 @@ describe('canvas operation output materialization', () => {
     expect(plan.items[0]?.x).not.toBe(existing.x)
   })
 
-  it('lays out large batches in a compact grid to the right of the step node', () => {
+  it('stacks expanded outputs in a single column to the right, centered on the operation node', () => {
+    const operation = operationNode()
     const plan = planCanvasOperationOutputMaterialization({
-      operationNode: operationNode(),
+      operationNode: operation,
       outputs: [output('a'), output('b'), output('c'), output('d')],
       existingNodes: [],
     })
 
     expect(plan.items).toHaveLength(4)
-    expect(plan.items[0]?.x).toBeGreaterThan(operationNode().x + operationNode().width)
-    expect(plan.items[1]?.x).toBeGreaterThan(plan.items[0]?.x ?? 0)
-    expect(plan.items[3]?.y).toBeGreaterThan(plan.items[0]?.y ?? 0)
+    // 单列：所有产物 x 一致，位于原节点右侧固定间距处。
+    const expectedX = operation.x + operation.width + AUTO_NODE_RIGHT_GAP
+    for (const item of plan.items) {
+      expect(item.x).toBe(expectedX)
+    }
+    // 行距固定：默认图片节点高度 + 纵向间距。
+    const rowStep = IMAGE_NODE_DEFAULT_SIZE.height + AUTO_NODE_VERTICAL_GAP + AUTO_NODE_META_BAR_CLEARANCE
+    expect(plan.items[1]!.y - plan.items[0]!.y).toBe(rowStep)
+    expect(plan.items[2]!.y - plan.items[1]!.y).toBe(rowStep)
+    expect(plan.items[3]!.y - plan.items[2]!.y).toBe(rowStep)
+    // 列的垂直中点与原节点中心对齐。
+    const first = plan.items[0]!
+    const last = plan.items[3]!
+    expect((first.y + (last.y + IMAGE_NODE_DEFAULT_SIZE.height)) / 2).toBe(
+      operation.y + operation.height / 2,
+    )
+  })
+
+  it('keeps the deterministic column placement even when nodes block the target area', () => {
+    const operation = operationNode()
+    const blocker: CanvasNode = {
+      ...operation,
+      id: 'blocker',
+      type: 'text',
+      x: operation.x + operation.width,
+      y: -600,
+      width: 800,
+      height: 2000,
+    }
+    const plan = planCanvasOperationOutputMaterialization({
+      operationNode: operation,
+      outputs: [output('a'), output('b')],
+      existingNodes: [operation, blocker],
+    })
+
+    expect(plan.items).toHaveLength(2)
+    const expectedX = operation.x + operation.width + AUTO_NODE_RIGHT_GAP
+    expect(plan.items[0]?.x).toBe(expectedX)
+    expect(plan.items[1]?.x).toBe(expectedX)
+    expect(plan.items[0]?.y).toBeLessThan(operation.y)
+    expect(plan.items[1]?.y).toBeGreaterThan(operation.y)
   })
 })

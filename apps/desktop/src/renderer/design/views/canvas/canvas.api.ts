@@ -74,13 +74,9 @@ import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import { materializeStoryboardRows } from './canvasStoryboardMaterialization'
 import { materializeCanvasTextTaskFallbackOutput } from './canvasTextTaskFallbackOutput'
 import { validateCanvasSemanticTextOutput } from './canvasTextOutputValidation'
-import { placeAutoNodeToRight } from './canvasAutoPlacement'
+import { placeAutoNodeToRight, stackAutoNodesToRight } from './canvasAutoPlacement'
 import { planGroupLayout } from './canvasGroupLayout'
-import {
-  getCanvasBatchLayoutSize,
-  resolveCollisionFreeBatchPositions,
-  resolveCollisionFreeNodePosition,
-} from './canvasCollisionPlacement'
+import { resolveCollisionFreeNodePosition } from './canvasCollisionPlacement'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -7031,21 +7027,17 @@ export const canvasApi = {
     }
 
     const outputSizes = preparedOutputs.map((item) => item.resultNodeSize)
-    const outputPlacements = resolveCollisionFreeBatchPositions({
-      preferred: placeAutoNodeToRight(
-        {
-          x: taskNode.x,
-          y: taskNode.y,
-          width: taskNode.width,
-          height: taskNode.height,
-        },
-        getCanvasBatchLayoutSize(outputSizes),
-      ),
-      sizes: outputSizes,
-      nodes: db.nodes,
-      boardId: task.boardId,
-      preservePreferredPosition: true,
-    })
+    // 多产物统一在任务节点右侧纵向单列展开，列的垂直中点与任务节点中心对齐；
+    // 不做碰撞回避，配合 createGroupNode 自动成组，保证产物组落位规整、便于框选。
+    const outputPlacements = stackAutoNodesToRight(
+      {
+        x: taskNode.x,
+        y: taskNode.y,
+        width: taskNode.width,
+        height: taskNode.height,
+      },
+      outputSizes,
+    )
 
     for (const [index, output] of preparedOutputs.entries()) {
       const placement = outputPlacements[index]

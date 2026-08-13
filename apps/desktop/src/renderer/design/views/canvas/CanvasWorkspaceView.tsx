@@ -2727,6 +2727,9 @@ export function CanvasWorkspaceView({
           boardId: current.board.id,
           x: item.x,
           y: item.y,
+          // 布局计划已给出确定性的单列落点，跳过 insertAsset 内部的碰撞搜索，
+          // 避免产物被逐节点二次挪动、破坏纵向单列对齐。
+          preservePreferredPosition: true,
         })
         if (!created) continue
         // 资产记录可能保留旧的方形音频尺寸；分离音频展开后统一落成长条资源节点。
