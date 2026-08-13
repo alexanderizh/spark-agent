@@ -1771,20 +1771,24 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
 
 /* 导航栏、会话头部和会话侧面板的交互图标使用统一前景色。 */
 .chat-layout .tabbar-actions .icon-btn,
-.chat-layout .chat-sidebar-topbar-actions .icon-btn,
 .chat-layout .tabbar-actions .git-session-trigger {
-  color: var(--sidebar-text, var(--text));
+  color: var(--text-muted);
 }
 .chat-layout .tabbar-actions .icon-btn svg {
   width: 14px;
   height: 14px;
 }
 .chat-layout .tabbar-actions .icon-btn:hover,
+.chat-layout .tabbar-actions .git-session-trigger:hover {
+  color: var(--text);
+}
 .chat-layout .tabbar-actions .icon-btn.active,
-.chat-layout .chat-sidebar-topbar-actions .icon-btn:hover,
-.chat-layout .chat-sidebar-topbar-actions .icon-btn.active,
-.chat-layout .tabbar-actions .git-session-trigger:hover,
 .chat-layout .tabbar-actions .git-session-trigger.active {
+  color: var(--text-muted);
+}
+.chat-layout .chat-sidebar-topbar-actions .icon-btn,
+.chat-layout .chat-sidebar-topbar-actions .icon-btn:hover,
+.chat-layout .chat-sidebar-topbar-actions .icon-btn.active {
   color: var(--sidebar-text, var(--text));
 }
 .chat-layout
