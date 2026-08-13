@@ -11,6 +11,9 @@ apps/desktop/native/windows/spark-computer-host/target/
 dist/
 out/
 build/
+!apps/desktop/build/
+apps/desktop/build/*
+!apps/desktop/build/installer.nsh
 .build/
 .swiftpm/
 .vite/

@@ -76,6 +76,9 @@ win:
   signExts:
     - .exe
 nsis:
+  # Keep the selectable parent directory separate from the application files.
+  # The custom include changes the automatic child directory to spark-worker.
+  include: build/installer.nsh
   shortcutName: SparkWork
   uninstallDisplayName: SparkWork ${version}
   # A selectable installation directory requires the assisted NSIS installer.

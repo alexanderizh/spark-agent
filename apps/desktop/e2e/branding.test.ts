@@ -20,6 +20,7 @@ interface BuilderConfig {
     }
   }
   nsis?: {
+    include?: string
     shortcutName?: string
     uninstallDisplayName?: string
     oneClick?: boolean
@@ -41,10 +42,19 @@ describe('desktop branding boundaries', () => {
     expect(config.mac?.extendInfo?.CFBundleDisplayName).toBe('SparkWork')
     expect(config.mac?.extendInfo?.NSMicrophoneUsageDescription).toContain('麦克风')
     expect(config.nsis?.shortcutName).toBe('SparkWork')
+    expect(config.nsis?.include).toBe('build/installer.nsh')
     expect(config.nsis?.uninstallDisplayName).toBe('SparkWork ${version}')
     expect(config.nsis?.oneClick).toBe(false)
     expect(config.nsis?.allowToChangeInstallationDirectory).toBe(true)
     expect(config.linux?.desktop?.entry?.Name).toBe('SparkWork')
+  })
+
+  it('installs Windows files under the dedicated spark-worker directory', () => {
+    const config = load(readFileSync(join(ROOT, 'electron-builder.yml'), 'utf8')) as BuilderConfig
+    const installerScript = readFileSync(join(ROOT, 'build/installer.nsh'), 'utf8')
+
+    expect(config.nsis?.include).toBe('build/installer.nsh')
+    expect(installerScript).toMatch(/!define APP_FILENAME "spark-worker"/)
   })
 
   it('keeps the macOS microphone declarations required by Hardened Runtime', () => {
