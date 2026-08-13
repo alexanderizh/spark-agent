@@ -51,6 +51,7 @@ import type {
   AgentEvent,
   CliSparkOverride,
   SessionCancelQueuedTurnResponse,
+  SessionClearQueuedTurnsResponse,
   SessionSendQueuedTurnNowResponse,
   SessionCreateResponse,
   SessionGetQueueResponse,
@@ -7948,6 +7949,29 @@ export class SessionService {
     }
     return {
       cancelled,
+      queuedTurns: this.queueSnapshot(params.sessionId).queuedTurns,
+    }
+  }
+
+  /**
+   * 清空当前会话尚未启动的队列。这里只移除 pendingTurns，并将对应的持久化请求标记为
+   * cancelled；activeLoops / team dispatch 不在此操作范围内，因此不会中断正在执行的任务。
+   */
+  clearQueuedTurns(params: { sessionId: string }): SessionClearQueuedTurnsResponse {
+    const queue = this.pendingTurns.get(params.sessionId) ?? []
+    if (queue.length === 0) {
+      return { cancelledCount: 0, queuedTurns: this.queueSnapshot(params.sessionId).queuedTurns }
+    }
+
+    // 清空后不应因本轮团队预算耗尽状态再次自动补入隐藏 continuation。
+    this.resetTeamDispatchAutoContinuation(params.sessionId)
+    this.pendingTurns.delete(params.sessionId)
+    const requestRepo = new TurnRequestRepository(this.db)
+    for (const turn of queue) requestRepo.cancel(turn.turnId)
+    this.emitQueueChanged(params.sessionId)
+
+    return {
+      cancelledCount: queue.length,
       queuedTurns: this.queueSnapshot(params.sessionId).queuedTurns,
     }
   }

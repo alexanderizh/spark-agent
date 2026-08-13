@@ -4648,7 +4648,9 @@ body.side-chat-resizing {
 
 /* 待执行会话列表：整体一个容器，内部用分隔线区分（用后代选择器提升特异性，稳定覆盖 views.css 的卡片化样式） */
 .composer-queue-panel.composer-queue-panel {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  max-height: min(320px, 38vh);
   gap: 0;
   margin: 0 0 8px;
   padding: 2px;
@@ -4656,6 +4658,49 @@ body.side-chat-resizing {
   border-radius: var(--r-md);
   background: var(--panel);
   overflow: hidden;
+}
+.composer-queue-panel .composer-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 8px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+.composer-queue-panel .composer-queue-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-weight: 600;
+}
+.composer-queue-panel .composer-queue-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  border: 0;
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.composer-queue-panel .composer-queue-clear-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+.composer-queue-panel .composer-queue-clear-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.composer-queue-panel .composer-queue-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .composer-queue-panel .composer-queue-item {
   display: grid;
