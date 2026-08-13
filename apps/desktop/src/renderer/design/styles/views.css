@@ -1937,6 +1937,16 @@ body.sidebar-resizing {
   width: fit-content;
   font-family: inherit;
 }
+
+/* 会话活动日志的各级折叠标题统一字号，避免工具调用层继承到更小的字号。 */
+.thinking-toggle,
+.chat-activity-segment-toggle,
+.tool-log-summary,
+.tool-call-head,
+.tool-log-entry-head {
+  font-size: var(--font-base);
+}
+
 .thinking-toggle:hover {
   color: var(--text);
 }
