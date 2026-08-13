@@ -237,18 +237,72 @@ vi.mock('@spark/storage', () => {
   const now = () => '2026-05-28T00:00:00.000Z'
 
   class RoomLedgerService {
-    static forAgent() { return new RoomLedgerService() }
-    static forSystem() { return new RoomLedgerService() }
-    static forUser() { return new RoomLedgerService() }
-    getActiveContext() { return [] }
-    create(input: Record<string, unknown>) { return input }
-    correct(input: Record<string, unknown>) { return input }
-    invalidate(input: Record<string, unknown>) { return input }
-    tombstone(input: Record<string, unknown>) { return input }
-    confirm(input: Record<string, unknown>) { return input }
-    reject(input: Record<string, unknown>) { return input }
-    restore(input: Record<string, unknown>) { return input }
-    deleteRoom() { return 0 }
+    static forAgent() {
+      return new RoomLedgerService()
+    }
+    static forSystem() {
+      return new RoomLedgerService()
+    }
+    static forUser() {
+      return new RoomLedgerService()
+    }
+    getActiveContext() {
+      return []
+    }
+    create(input: Record<string, unknown>) {
+      return input
+    }
+    correct(input: Record<string, unknown>) {
+      return input
+    }
+    invalidate(input: Record<string, unknown>) {
+      return input
+    }
+    tombstone(input: Record<string, unknown>) {
+      return input
+    }
+    confirm(input: Record<string, unknown>) {
+      return input
+    }
+    reject(input: Record<string, unknown>) {
+      return input
+    }
+    restore(input: Record<string, unknown>) {
+      return input
+    }
+    deleteRoom() {
+      return 0
+    }
+  }
+
+  class TaskGraphService {
+    static forAgent() {
+      return new TaskGraphService()
+    }
+    static forSystem() {
+      return new TaskGraphService()
+    }
+    static forUser() {
+      return new TaskGraphService()
+    }
+    snapshot() {
+      return { nodes: [], edges: [], events: [], syncedAt: now() }
+    }
+    createNode(input: Record<string, unknown>) {
+      return input
+    }
+    createEdge(input: Record<string, unknown>) {
+      return input
+    }
+    transition(input: Record<string, unknown>) {
+      return input
+    }
+    retry(input: Record<string, unknown>) {
+      return input
+    }
+    reassign(input: Record<string, unknown>) {
+      return input
+    }
   }
 
   class SessionRepository {
@@ -1087,6 +1141,7 @@ vi.mock('@spark/storage', () => {
     TaskExecutionRepository,
     TurnRequestRepository,
     RoomLedgerService,
+    TaskGraphService,
   }
 })
 
@@ -3246,6 +3301,36 @@ describe('SessionService runtime provider/model resolution', () => {
       'team_ledger_invalidate',
       'team_ledger_tombstone',
       'team_ledger_restore',
+      'team_task_graph_read',
+      'team_task_graph_create_node',
+      'team_task_graph_add_edge',
+      'team_task_graph_start',
+      'team_task_graph_complete',
+      'team_task_graph_fail',
+      'team_task_graph_retry',
+      'team_task_graph_reassign',
+      'team_deliberation_read',
+      'team_deliberation_propose',
+      'team_deliberation_add_evidence',
+      'team_deliberation_add_alternative',
+      'team_deliberation_add_risk',
+      'team_deliberation_vote',
+      'team_deliberation_decide',
+      'team_deliberation_resolve',
+      'team_evidence_cost_read',
+      'team_evidence_add',
+      'team_cost_record_usage',
+      'team_evidence_verify',
+      'team_evidence_invalidate',
+      'team_cost_set_budget',
+      'team_replay_read',
+      'team_replay_diff',
+      'team_replay_fork',
+      'team_playbook_list',
+      'team_playbook_propose',
+      'team_playbook_publish',
+      'team_playbook_apply',
+      'team_playbook_archive',
       'agent_message',
       'team_round_advance',
       'team_conclude',
@@ -3489,6 +3574,27 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(memberTeamServer?.instance.tools.map((tool) => tool.name)).toEqual([
       'team_ledger_read',
       'team_ledger_propose',
+      'team_task_graph_read',
+      'team_task_graph_create_node',
+      'team_task_graph_add_edge',
+      'team_task_graph_start',
+      'team_task_graph_complete',
+      'team_task_graph_fail',
+      'team_task_graph_retry',
+      'team_deliberation_read',
+      'team_deliberation_propose',
+      'team_deliberation_add_evidence',
+      'team_deliberation_add_alternative',
+      'team_deliberation_add_risk',
+      'team_deliberation_vote',
+      'team_evidence_cost_read',
+      'team_evidence_add',
+      'team_cost_record_usage',
+      'team_replay_read',
+      'team_replay_diff',
+      'team_replay_fork',
+      'team_playbook_list',
+      'team_playbook_propose',
       'agent_message',
       'team_thread_read',
     ])
@@ -3573,6 +3679,27 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(teamServer?.instance.tools.map((tool) => tool.name)).toEqual([
       'team_ledger_read',
       'team_ledger_propose',
+      'team_task_graph_read',
+      'team_task_graph_create_node',
+      'team_task_graph_add_edge',
+      'team_task_graph_start',
+      'team_task_graph_complete',
+      'team_task_graph_fail',
+      'team_task_graph_retry',
+      'team_deliberation_read',
+      'team_deliberation_propose',
+      'team_deliberation_add_evidence',
+      'team_deliberation_add_alternative',
+      'team_deliberation_add_risk',
+      'team_deliberation_vote',
+      'team_evidence_cost_read',
+      'team_evidence_add',
+      'team_cost_record_usage',
+      'team_replay_read',
+      'team_replay_diff',
+      'team_replay_fork',
+      'team_playbook_list',
+      'team_playbook_propose',
       'agent_message',
       'team_thread_read',
     ])
@@ -4264,6 +4391,36 @@ describe('SessionService runtime provider/model resolution', () => {
       'team_ledger_invalidate',
       'team_ledger_tombstone',
       'team_ledger_restore',
+      'team_task_graph_read',
+      'team_task_graph_create_node',
+      'team_task_graph_add_edge',
+      'team_task_graph_start',
+      'team_task_graph_complete',
+      'team_task_graph_fail',
+      'team_task_graph_retry',
+      'team_task_graph_reassign',
+      'team_deliberation_read',
+      'team_deliberation_propose',
+      'team_deliberation_add_evidence',
+      'team_deliberation_add_alternative',
+      'team_deliberation_add_risk',
+      'team_deliberation_vote',
+      'team_deliberation_decide',
+      'team_deliberation_resolve',
+      'team_evidence_cost_read',
+      'team_evidence_add',
+      'team_cost_record_usage',
+      'team_evidence_verify',
+      'team_evidence_invalidate',
+      'team_cost_set_budget',
+      'team_replay_read',
+      'team_replay_diff',
+      'team_replay_fork',
+      'team_playbook_list',
+      'team_playbook_propose',
+      'team_playbook_publish',
+      'team_playbook_apply',
+      'team_playbook_archive',
       'team_round_advance',
       'team_conclude',
       'team_thread_read',

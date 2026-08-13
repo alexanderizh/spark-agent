@@ -736,7 +736,7 @@
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--text);
   background: transparent;
   padding: 0;
@@ -748,7 +748,7 @@
   display: inline-flex;
   gap: 6px;
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  font-size: 10.5px;
+  font-size: var(--font-sm);
   flex-shrink: 0;
 }
 .turn-summary-file-row .file-stats .add {

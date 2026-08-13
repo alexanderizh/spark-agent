@@ -1301,9 +1301,8 @@ body.sidebar-resizing {
   margin-top: 2px;
 }
 .md-surface h2 {
-  font-size: 18px;
+  font-size: 16px;
   padding-bottom: 2px;
-  border-bottom: 1px solid var(--md-divider);
 }
 .md-surface h3 {
   font-size: 15px;
@@ -2548,10 +2547,7 @@ body.sidebar-resizing {
   border-radius: var(--r-lg);
   background: var(--panel);
   /* 悬浮阴影 — 上方加阴影增强浮起感 */
-  box-shadow:
-    0 1px 8px rgba(39, 39, 39, 0.01),
-    0 0 0 1px rgba(39, 39, 39, 0.01),
-    var(--shadow-sm);
+  box-shadow: var(--shadow-md);
   /* border: 1px solid var(--border); */
 }
 
@@ -3058,7 +3054,11 @@ body.sidebar-resizing {
   display: flex;
   flex-direction: column;
   max-height: min(320px, 38vh);
-  margin: 0 0 4px;
+  margin: 0 0 6px;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--bg-sunken);
   overflow: hidden;
 }
 .composer-queue-header {
@@ -3066,25 +3066,26 @@ body.sidebar-resizing {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 30px;
-  padding: 2px 8px;
+  min-height: 34px;
+  padding: 0 4px 2px 8px;
   color: var(--text-muted);
   font-size: var(--font-xs);
 }
-.composer-queue-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.composer-queue-hint {
   min-width: 0;
-  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
 }
 .composer-queue-clear-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
+  min-height: 28px;
   border: 0;
-  padding: 3px 6px;
+  padding: 0 7px;
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted);
@@ -3092,7 +3093,7 @@ body.sidebar-resizing {
   cursor: pointer;
 }
 .composer-queue-clear-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  background: var(--panel);
   color: var(--danger);
 }
 .composer-queue-clear-btn:disabled {
@@ -3103,42 +3104,101 @@ body.sidebar-resizing {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0 2px 0 0;
 }
 .composer-queue-item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 8px 10px;
+  gap: 7px;
+  min-height: 40px;
+  padding: 5px 7px 5px 4px;
+  border: 0;
   border-radius: var(--r-md);
   background: var(--panel);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
+  transition:
+    transform 180ms ease,
+    background 160ms ease;
 }
-.composer-queue-item.active {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+.composer-queue-item:hover {
+  background: color-mix(in srgb, var(--text) 3%, var(--panel));
+}
+.composer-queue-item.is-dragging {
+  z-index: 2;
+  background: color-mix(in srgb, var(--primary) 8%, var(--panel));
+  box-shadow: none;
+  opacity: 0.96;
+}
+.composer-queue-item.is-drop-target {
   background: color-mix(in srgb, var(--primary) 7%, var(--panel));
 }
-.composer-queue-icon {
-  color: var(--text-faint);
-}
-.composer-queue-item.active .composer-queue-icon {
-  color: var(--primary);
-}
 .composer-queue-text {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
   font-size: var(--font-sm);
+  line-height: 1.35;
 }
-.composer-queue-status {
+.composer-queue-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+  transition:
+    color 150ms ease,
+    background 150ms ease;
+}
+.composer-queue-drag-handle:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
   color: var(--primary);
-  font-size: var(--font-xs);
-  font-weight: 600;
-  white-space: nowrap;
+}
+.composer-queue-drag-handle:active {
+  cursor: grabbing;
+}
+.composer-queue-copy {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.composer-queue-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+.composer-queue-actions .composer-queue-icon-btn {
+  width: 28px;
+  height: 28px;
+}
+.composer-queue-drag-handle:focus-visible,
+.composer-queue-icon-btn:focus-visible,
+.composer-queue-clear-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+}
+.composer-queue-icon-btn:disabled,
+.composer-queue-drag-handle:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-queue-item,
+  .composer-queue-drag-handle {
+    transition: none;
+  }
 }
 .composer-queue-action,
 .composer-queue-icon-btn {

@@ -767,7 +767,11 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     startingTurnIds: Map<string, string>
     runningTurnIds: Map<string, string>
     cancelledTurnIds: Set<string>
-    teamDispatchService: { cancelBySession: (sessionId: string) => number }
+    db: unknown
+    teamDispatchService: {
+      cancelBySession: (sessionId: string) => number
+      hasActiveDispatches: (sessionId: string) => boolean
+    }
     teamDispatchBudgetExhaustedTurns: Map<string, string>
     teamDispatchAutoContinuationTracker: { clear: () => void; reset: (sessionId: string) => void }
   }
@@ -789,7 +793,16 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     service.startingTurnIds = new Map()
     service.runningTurnIds = new Map()
     service.cancelledTurnIds = new Set()
-    service.teamDispatchService = { cancelBySession: vi.fn(() => 0) }
+    service.db = {
+      raw: {
+        transaction: (work: () => number) => () => work(),
+        prepare: () => ({ run: () => ({ changes: 0 }) }),
+      },
+    }
+    service.teamDispatchService = {
+      cancelBySession: vi.fn(() => 0),
+      hasActiveDispatches: vi.fn(() => false),
+    }
     service.teamDispatchBudgetExhaustedTurns = new Map()
     service.teamDispatchAutoContinuationTracker = { clear: vi.fn(), reset: vi.fn() }
     return service

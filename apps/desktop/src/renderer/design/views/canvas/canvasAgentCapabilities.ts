@@ -138,7 +138,7 @@ function recommendedFlowActions(node: CanvasNode): CanvasAgentAvailableAction[] 
     return filterByInputType([
       {
         id: 'scene.panorama_360',
-        label: '生成重点场景 360 全景图',
+        label: '场景 360 全景图',
         category: 'pipeline',
         source: 'recommended_flow',
         execution: 'create_operation_node',

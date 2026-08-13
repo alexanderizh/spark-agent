@@ -2036,7 +2036,9 @@ export class SessionService {
     limit?: number
   }): Promise<{ candidates: SessionReferenceCandidate[] }> {
     return {
-      candidates: new SessionCollaborationRepository(this.db).listCandidates(params).map(toProtocolCandidate),
+      candidates: new SessionCollaborationRepository(this.db)
+        .listCandidates(params)
+        .map(toProtocolCandidate),
     }
   }
 
@@ -2054,11 +2056,15 @@ export class SessionService {
 
   async listSessionReferences(sessionId: string): Promise<{ references: SessionReference[] }> {
     return {
-      references: new SessionCollaborationRepository(this.db).listReferences(sessionId).map(toProtocolReference),
+      references: new SessionCollaborationRepository(this.db)
+        .listReferences(sessionId)
+        .map(toProtocolReference),
     }
   }
 
-  async listActiveSessionReferences(sessionId: string): Promise<{ references: SessionReference[] }> {
+  async listActiveSessionReferences(
+    sessionId: string,
+  ): Promise<{ references: SessionReference[] }> {
     const result = await this.listSessionReferences(sessionId)
     return { references: result.references.filter((reference) => reference.status === 'active') }
   }
@@ -2108,7 +2114,10 @@ export class SessionService {
     const result = new SessionCollaborationRepository(this.db).searchReference(params)
     return {
       reference: toProtocolReference(result.reference),
-      hits: result.hits.map((hit) => ({ ...hit, turnId: hit.turnId as import('@spark/protocol').TurnId })),
+      hits: result.hits.map((hit) => ({
+        ...hit,
+        turnId: hit.turnId as import('@spark/protocol').TurnId,
+      })),
     }
   }
 
@@ -3013,8 +3022,7 @@ export class SessionService {
                 }
               : {}),
             ledgerActorAuthority: 'system-observed',
-            onDispatchBudgetExceeded: () =>
-              this.markTeamDispatchBudgetExhausted(sessionId, turnId),
+            onDispatchBudgetExceeded: () => this.markTeamDispatchBudgetExhausted(sessionId, turnId),
           })) ?? undefined
         // 告诉 UI（及下面拼进系统提示词的编排提示）：本轮宿主进入编排模式（保留全量
         // 工具，提示词引导「优先派发」——不再剥离 Edit/Write/Bash，产品决策 2026-07-04）。
@@ -11332,9 +11340,7 @@ function toProtocolCandidate(
   }
 }
 
-function toProtocolReference(
-  row: import('@spark/storage').SessionReferenceView,
-): SessionReference {
+function toProtocolReference(row: import('@spark/storage').SessionReferenceView): SessionReference {
   return {
     id: row.id,
     targetSessionId: row.targetSessionId as SessionId,
