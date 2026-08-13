@@ -1,11 +1,8 @@
 import { z } from 'zod'
-import {
-  DeliberationService,
-  type DeliberationLedgerWriter,
-  type DeliberationRecord,
-} from '../../../storage/src/deliberation.service.js'
+import { DeliberationService } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
-import type { DeliberationProposal } from '@spark/protocol'
+import type { DeliberationLedgerWriter } from '@spark/storage'
+import type { DeliberationProposal, DeliberationRecord } from '@spark/protocol'
 import type { TeamToolDefinition, TeamToolHandlerResult } from './team-mcp-http-bridge.js'
 
 const ID = z.string().trim().min(1).max(160)
