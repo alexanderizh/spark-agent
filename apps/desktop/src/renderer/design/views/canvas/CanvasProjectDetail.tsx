@@ -196,8 +196,8 @@ export function CanvasProjectDetail({
   const [assetFilter, setAssetFilter] = useState<'all' | CanvasAssetType>('all')
   /**
    * 右键「删除」二次确认与提交：
-   *  - hardDelete=true：管理页独有的「硬删」语义，连同源文件一起清理；
-   *    画布内的删除不传该选项，只移除引用
+   *  - hardDelete=true：明确的资产管理入口使用「硬删」语义，连同源文件一起清理；
+   *    仅画布节点/Agent 的治理删除不传该选项，只移除引用
    *  - assetRev：删除后触发 useEffect 重新拉一次 snapshot，避免乐观更新与 DB 漂移
    */
   const [assetRev, setAssetRev] = useState(0)
@@ -247,8 +247,8 @@ export function CanvasProjectDetail({
           // 乐观更新：先把被删条目从本地列表移除
           setAssets((current) => current.filter((item) => item.id !== asset.id))
           try {
-            // hardDelete=true 是这里独有的语义：管理页的删除要连源文件一起清，
-            // 画布内的删除（节点 / 资产中心）只移除引用，不动磁盘与 Provider 文件。
+            // hardDelete=true 表示管理入口的删除要连源文件一起清理；
+            // 仅画布节点/Agent 的治理删除保留不动磁盘与 Provider 文件的语义。
             await canvasApi.deleteFilmAsset(project.id, asset.id, { hardDelete: true })
             message.success('已删除资源')
           } catch (error) {

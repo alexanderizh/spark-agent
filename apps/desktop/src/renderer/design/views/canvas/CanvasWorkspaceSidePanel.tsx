@@ -56,7 +56,7 @@ type CanvasWorkspaceSidePanelProps = {
   onInsertAsset: (assetId: string) => void
   onInsertSubview: (ownerAsset: any, sourceImageAsset: any, subview: any) => void
   onOpenAssetDetail: () => void
-  onRemoveAssetReferences: (assetIds: string[]) => Promise<void>
+  onDeleteAssets: (assetIds: string[]) => Promise<void>
   onOpenPresetCenter: () => void
   onSaveProjectSettings: (settings: CanvasProjectSettings) => Promise<void>
   onSaveStyleBible: (styleBible: string) => Promise<void>
@@ -100,7 +100,7 @@ export function CanvasWorkspaceSidePanel({
   onInsertAsset,
   onInsertSubview,
   onOpenAssetDetail,
-  onRemoveAssetReferences,
+  onDeleteAssets,
   onOpenPresetCenter,
   onSaveProjectSettings,
   onSaveStyleBible,
@@ -207,7 +207,7 @@ export function CanvasWorkspaceSidePanel({
                 onDownloadOne={(resource) => downloadCanvasResource(resource)}
                 detailResetKey={assetDetailResetKey}
                 onOpenDetail={onOpenAssetDetail}
-                onRemoveReferences={onRemoveAssetReferences}
+                onDeleteAssets={onDeleteAssets}
               />
             </div>
           )}

@@ -492,7 +492,7 @@ export function CanvasPromptLibraryView() {
   const handleDeletePrompt = async (asset: CanvasAsset, source: 'global' | 'project') => {
     try {
       if (source === 'project') {
-        await canvasApi.deleteFilmAsset(asset.projectId, asset.id)
+        await canvasApi.deleteFilmAsset(asset.projectId, asset.id, { hardDelete: true })
         if (editor?.assetId === asset.id) closeEditor()
         message.success(`已删除提示词：${asset.title ?? '提示词'}`)
         void reload()

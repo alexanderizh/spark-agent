@@ -132,7 +132,7 @@ export type FilmCenterHandlers = {
       attributes?: Record<string, string>
     },
   ) => Promise<void>
-  deleteFilmAsset: (assetId: string) => Promise<void>
+  deleteFilmAsset: (assetId: string, options?: { hardDelete?: boolean }) => Promise<void>
   onOptimizeAsset: (asset: CanvasAsset) => void
   onBreakdownScriptAsset?: (asset: CanvasAsset) => Promise<void>
   /** 导入文稿（设计 §S1）：接收已解析+按范围切片的章节，返回创建的章节数 */
@@ -143,7 +143,10 @@ export type FilmCenterHandlers = {
   }) => Promise<number>
   onOptimizeManuscriptDraft?: (text: string) => void
   /** 删除整部文稿（级联删除全部章节）：返回删除的章节数 */
-  deleteManuscript?: (manuscriptAssetId: string) => Promise<number>
+  deleteManuscript?: (
+    manuscriptAssetId: string,
+    options?: { hardDelete?: boolean },
+  ) => Promise<number>
   /** 章节转剧本（设计 §S2）：基于章节内容创建剧本资产，可继续拆解 */
   onChapterToScreenplay?: (asset: CanvasAsset) => Promise<void>
   /** 导出成片清单 EDL（设计 §S9）：把时间线文本插入画布 */
@@ -457,12 +460,12 @@ function AssetListTab({
       title: `删除${FILM_ASSET_KIND_LABELS[kind]}？`,
       content:
         usageCount > 0
-          ? `「${asset.title ?? '未命名'}」正在被引用 ${usageCount} 次。删除后分镜或画布节点会失去这个资源引用。`
-          : `确认删除「${asset.title ?? '未命名'}」？此操作会从项目资源库移除该条目。`,
+          ? `「${asset.title ?? '未命名'}」正在被引用 ${usageCount} 次。删除后分镜或画布节点会失去这个资源引用，并删除关联的本地/平台文件。`
+          : `确认删除「${asset.title ?? '未命名'}」？此操作会从项目资源库移除该条目，并删除关联的本地/平台文件。`,
       okText: '删除',
       cancelText: '取消',
       okButtonProps: { danger: true },
-      onOk: () => handlers.deleteFilmAsset(asset.id),
+      onOk: () => handlers.deleteFilmAsset(asset.id, { hardDelete: true }),
     })
   }
 
@@ -946,12 +949,12 @@ function ManuscriptListView({
     const count = chapterCountOf(m)
     Modal.confirm({
       title: `删除文稿《${m.title ?? '未命名'}》？`,
-      content: `将同时删除其 ${count} 个章节，且无法恢复。`,
+      content: `将同时删除其 ${count} 个章节及关联的本地/平台文件，且无法恢复。`,
       okText: '删除',
       cancelText: '取消',
       okButtonProps: { danger: true },
       onOk: async () => {
-        const deleted = await handlers.deleteManuscript!(m.id)
+        const deleted = await handlers.deleteManuscript!(m.id, { hardDelete: true })
         message.success(`已删除文稿及 ${deleted} 个章节`)
       },
     })
@@ -1141,7 +1144,7 @@ function ChapterListView({
                             okText: '删除',
                             cancelText: '取消',
                             okButtonProps: { danger: true },
-                            onOk: () => handlers.deleteFilmAsset(chapter.id),
+                            onOk: () => handlers.deleteFilmAsset(chapter.id, { hardDelete: true }),
                           })
                         }}
                       />

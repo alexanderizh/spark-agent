@@ -5373,8 +5373,9 @@ export function CanvasWorkspaceView({
 
   const handleDeleteManuscript: NonNullable<FilmCenterHandlers['deleteManuscript']> = async (
     manuscriptAssetId,
+    options,
   ) => {
-    return deleteManuscript(manuscriptAssetId)
+    return deleteManuscript(manuscriptAssetId, options)
   }
 
   const handleSaveStylePreset: NonNullable<FilmCenterHandlers['onSaveStylePreset']> = async (
@@ -8843,12 +8844,15 @@ export function CanvasWorkspaceView({
             void handleApplyCharacterSubview(ownerAsset, sourceImageAsset, subview)
           }
           onOpenAssetDetail={() => closeCanvasFloatPanels('asset-detail')}
-          onRemoveAssetReferences={async (assetIds) => {
+          onDeleteAssets={async (assetIds) => {
             const targetAssetSet = new Set(assetIds)
             const nodeIds = snapshot.nodes
               .filter((node) => node.assetId && targetAssetSet.has(node.assetId))
               .map((node) => node.id)
             if (nodeIds.length > 0) await deleteNodes(nodeIds)
+            for (const assetId of assetIds) {
+              await deleteFilmAsset(assetId, { hardDelete: true })
+            }
           }}
           onOpenPresetCenter={() => setPresetModalOpen(true)}
           onSaveProjectSettings={updateProjectSettings}

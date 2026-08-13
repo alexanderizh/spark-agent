@@ -30,16 +30,16 @@ const MAX_SELECTION = 30
 /**
  * 左侧工作台「资产管理」tab（文档 §7.2）。
  *
- * 偏治理：列表/网格视图切换、多选、批量下载/插入/移除引用、
+ * 偏治理：列表/网格视图切换、多选、批量下载/插入/删除资产、
  * 查看被哪些节点引用、由哪个任务生成、落盘路径。
- * 资产删除两段式（文档 §11.3）：这里只做「移除引用」，不做「删文件」。
+ * 批量删除会同时移除资产记录、画布节点引用和资产关联的本地/Provider 文件。
  */
 export function CanvasAssetManagerPanel({
   assets,
   nodes,
   tasks,
   onInsertAssets,
-  onRemoveReferences,
+  onDeleteAssets,
   onInsertOne,
   onInsertSubview,
   onDownloadOne,
@@ -50,7 +50,7 @@ export function CanvasAssetManagerPanel({
   nodes: CanvasNode[]
   tasks: CanvasTask[]
   onInsertAssets: (assetIds: string[]) => void
-  onRemoveReferences: (assetIds: string[]) => Promise<void> | void
+  onDeleteAssets: (assetIds: string[]) => Promise<void>
   onInsertOne: (assetId: string) => void
   onInsertSubview: (
     ownerAsset: CanvasAsset,
@@ -244,11 +244,15 @@ export function CanvasAssetManagerPanel({
     setSelectedIds([])
   }
 
-  const handleBatchRemove = async () => {
+  const handleBatchDelete = async () => {
     if (selectedIds.length === 0) return
-    await onRemoveReferences(selectedIds)
-    message.success(`已移除 ${selectedIds.length} 个资产的节点引用`)
-    setSelectedIds([])
+    try {
+      await onDeleteAssets(selectedIds)
+      message.success(`已删除 ${selectedIds.length} 个资产及其关联文件`)
+      setSelectedIds([])
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '批量删除资产失败')
+    }
   }
 
   return (
@@ -373,13 +377,13 @@ export function CanvasAssetManagerPanel({
               </Tooltip>
             </Popconfirm>
             <Popconfirm
-              title={`确定移除 ${selectedIds.length} 个资产的节点引用？（不删文件）`}
-              okText="移除"
+              title={`确定删除 ${selectedIds.length} 个资产？关联的本地文件和平台文件也会删除，此操作不可撤销。`}
+              okText="删除"
               cancelText="取消"
               okButtonProps={{ danger: true }}
-              onConfirm={() => void handleBatchRemove()}
+              onConfirm={() => void handleBatchDelete()}
             >
-              <Tooltip title="移除节点引用（不删文件）">
+              <Tooltip title="删除资产及其关联文件">
                 <Button
                   size="middle"
                   type="text"
