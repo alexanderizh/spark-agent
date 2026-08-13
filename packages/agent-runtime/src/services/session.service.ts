@@ -304,6 +304,7 @@ import {
 } from './session-event-sequencer.js'
 import {
   createLogger,
+  resolveModelContextWindowForProvider,
   resolveProviderContextWindow,
   resolveSoftContextLimitForWindow,
 } from '@spark/shared'
@@ -2228,6 +2229,7 @@ export class SessionService {
       codexApiKind?: 'chat' | 'responses'
       supportsMillionContext?: boolean
       contextWindow?: number
+      modelContextWindows?: Record<string, number>
       haikuModel?: string
       sonnetModel?: string
       opusModel?: string
@@ -2399,9 +2401,11 @@ export class SessionService {
           agentAdapter,
           isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
         )
-    const contextWindowTokens = resolveProviderContextWindow(
+    const contextWindowTokens = resolveModelContextWindowForProvider(
+      model,
       config.supportsMillionContext === true,
       config.contextWindow,
+      config.modelContextWindows,
     )
     const storedContinuitySummary = new SessionSummaryRepository(this.db).getLatest(sessionId)
     // Provider 原生 resume 管理逐轮历史；Spark 的结构化胶囊 + 精确近期历史只服务

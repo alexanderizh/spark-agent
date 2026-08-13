@@ -197,11 +197,25 @@ export class PlatformModelService {
   async updateModelPreferences(params: {
     modelIds: string[]
     defaultModel: string
-  }): Promise<{ modelIds: string[]; defaultModel: string }> {
+    contextWindow?: number
+    modelContextWindows?: Record<string, number>
+  }): Promise<{
+    modelIds: string[]
+    defaultModel: string
+    contextWindow?: number
+    modelContextWindows?: Record<string, number>
+  }> {
     const profile = await this.providerService().updateManagedNewApiModelPreferences(params)
     this.status = { ...this.status, models: [...profile.modelIds] }
     this.emitProviderChanged('update')
-    return { modelIds: profile.modelIds, defaultModel: profile.defaultModel }
+    return {
+      modelIds: profile.modelIds,
+      defaultModel: profile.defaultModel,
+      ...(profile.contextWindow !== undefined ? { contextWindow: profile.contextWindow } : {}),
+      ...(profile.modelContextWindows !== undefined
+        ? { modelContextWindows: profile.modelContextWindows }
+        : {}),
+    }
   }
 
   async redeem(code: string): Promise<PlatformModelRedeemResponse> {

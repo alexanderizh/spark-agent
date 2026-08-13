@@ -20,6 +20,7 @@ import type { AgentEvent } from '@spark/protocol'
 import {
   clipTextHeadTail,
   estimateTokens,
+  resolveModelContextWindowForProvider,
   resolveProviderContextWindow,
 } from '@spark/shared'
 
@@ -256,16 +257,20 @@ export function formatDialogueEntriesWithinTokenBudget(
  */
 export function resolveProviderContextWindowFromProviderRow(
   row: { config_json: string | null } | null | undefined,
+  modelId?: string,
 ): number {
   if (row == null) return resolveProviderContextWindow(false)
   try {
     const config = JSON.parse(row.config_json ?? '{}') as {
       supportsMillionContext?: boolean
       contextWindow?: number
+      modelContextWindows?: Record<string, number>
     }
-    return resolveProviderContextWindow(
+    return resolveModelContextWindowForProvider(
+      modelId,
       config.supportsMillionContext === true,
       typeof config.contextWindow === 'number' ? config.contextWindow : undefined,
+      config.modelContextWindows,
     )
   } catch {
     return resolveProviderContextWindow(false)

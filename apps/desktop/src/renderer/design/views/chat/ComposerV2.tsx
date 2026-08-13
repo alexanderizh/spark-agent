@@ -45,7 +45,7 @@ import {
 import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../../avatar'
 import { filterProvidersForVisibleUi } from '../../utils/auto-router-ui'
 import { countExistingMembers } from '../../teamMembership'
-import { normalizeEduAssetUrl, resolveProviderContextWindow } from '@spark/shared'
+import { normalizeEduAssetUrl, resolveModelContextWindowForProvider } from '@spark/shared'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from '../chat-copy'
 import {
   CLAUDE_AUTO_ROUTER_PROVIDER_ID,
@@ -1095,9 +1095,11 @@ export function ComposerV2({
     session?.cliSparkOverride,
     session?.id,
   ])
-  const contextWindow = resolveProviderContextWindow(
+  const contextWindow = resolveModelContextWindowForProvider(
+    sessionModelId || draftModelId || selectedProvider?.defaultModel,
     selectedProvider?.supportsMillionContext === true,
     selectedProvider?.contextWindow,
+    selectedProvider?.modelContextWindows,
   )
   const draftBucketKey = session?.id ?? NEW_SESSION_DRAFT_BUCKET
   const sessionWorkspaceId = session?.workspaceIds[0] ?? null

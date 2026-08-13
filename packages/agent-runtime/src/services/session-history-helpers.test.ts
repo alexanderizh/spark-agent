@@ -4,6 +4,7 @@ import {
   computeHistoryEntryTokenBudget,
   computeHistoryTokenBudget,
   formatDialogueEntriesWithinTokenBudget,
+  resolveProviderContextWindowFromProviderRow,
 } from './session-history-helpers.js'
 
 describe('session-history-helpers', () => {
@@ -16,6 +17,33 @@ describe('session-history-helpers', () => {
     expect(computeHistoryEntryTokenBudget(200_000)).toBe(1_500)
     expect(computeHistoryEntryTokenBudget(1_000_000)).toBe(4_000)
     expect(computeHistoryEntryTokenBudget(32_000)).toBe(1_000)
+  })
+
+  it('resolves a model-specific context window from a provider row', () => {
+    expect(
+      resolveProviderContextWindowFromProviderRow(
+        {
+          config_json: JSON.stringify({
+            supportsMillionContext: false,
+            contextWindow: 400_000,
+            modelContextWindows: { 'glm-5': 1_000_000 },
+          }),
+        },
+        'glm-5',
+      ),
+    ).toBe(1_000_000)
+    expect(
+      resolveProviderContextWindowFromProviderRow(
+        {
+          config_json: JSON.stringify({
+            supportsMillionContext: false,
+            contextWindow: 400_000,
+            modelContextWindows: { 'glm-5': 1_000_000 },
+          }),
+        },
+        'deepseek-v4',
+      ),
+    ).toBe(400_000)
   })
 
   it('clips each entry before applying the total history budget', () => {

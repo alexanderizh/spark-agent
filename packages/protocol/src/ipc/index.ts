@@ -621,6 +621,8 @@ export interface ProviderProfile {
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。优先级高于 supportsMillionContext；<=0 / undefined 视为未配置。 */
   contextWindow?: number
+  /** 模型级上下文窗口（tokens）；未配置模型回落到 contextWindow。 */
+  modelContextWindows?: Record<string, number>
   /** 文本任务默认最大输出 tokens。<=0 / undefined 视为未配置。 */
   maxTokens?: number
   /** Haiku 档（子 agent / Task 工具默认）；为空时回落 defaultModel */
@@ -744,11 +746,17 @@ export interface PlatformModelOpenPurchaseLinkRequest {
 export interface PlatformModelUpdatePreferencesRequest {
   modelIds: string[]
   defaultModel: string
+  /** 自定义上下文窗口（tokens）；传 0 清除配置并恢复运行时默认值。 */
+  contextWindow?: number
+  /** 模型级上下文窗口（tokens）；未配置模型使用运行时默认值。 */
+  modelContextWindows?: Record<string, number>
 }
 
 export interface PlatformModelUpdatePreferencesResponse {
   modelIds: string[]
   defaultModel: string
+  contextWindow?: number
+  modelContextWindows?: Record<string, number>
 }
 
 export interface PlatformModelUsageLog {

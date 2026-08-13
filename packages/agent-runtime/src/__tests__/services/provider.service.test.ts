@@ -1395,6 +1395,7 @@ describe('ProviderService', () => {
       managedType: 'newapi',
       managedOwnerUserId: '42',
       maxTokens: 128_000,
+      supportsMillionContext: true,
       isDefault: false,
     })
     expect(keystore.setSecret).toHaveBeenCalledWith(
@@ -1512,6 +1513,7 @@ describe('ProviderService', () => {
     )
 
     expect(profile?.maxTokens).toBe(128_000)
+    expect(profile?.supportsMillionContext).toBe(true)
   })
 
   it('preserves local managed model preferences when the platform model list refreshes', async () => {
@@ -1541,6 +1543,84 @@ describe('ProviderService', () => {
       'MiniMax-M3',
       'qwen3.6-plus',
     ])
+  })
+
+  it('updates and clears the managed provider context window with model preferences', async () => {
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5', 'deepseek-v4'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    const configured = await service.updateManagedNewApiModelPreferences({
+      modelIds: ['glm-5', 'deepseek-v4'],
+      defaultModel: 'glm-5',
+      contextWindow: 400_001.9,
+    })
+    expect(configured.contextWindow).toBe(400_001)
+
+    const refreshed = await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5', 'deepseek-v4'],
+      apiKey: 'sk-platform-secret',
+    })
+    expect(refreshed.contextWindow).toBe(400_001)
+
+    const reset = await service.updateManagedNewApiModelPreferences({
+      modelIds: ['glm-5', 'deepseek-v4'],
+      defaultModel: 'glm-5',
+      contextWindow: 0,
+    })
+    expect(reset).not.toHaveProperty('contextWindow')
+  })
+
+  it('persists context windows independently for each managed text model', async () => {
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5', 'deepseek-v4', 'qwen3.6-plus'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    const configured = await service.updateManagedNewApiModelPreferences({
+      modelIds: ['deepseek-v4', 'glm-5'],
+      defaultModel: 'glm-5',
+      modelContextWindows: {
+        'glm-5': 1_000_000,
+        'deepseek-v4': 256_000,
+        'qwen3.6-plus': 400_000,
+      },
+    })
+
+    expect(configured.modelContextWindows).toEqual({
+      'glm-5': 1_000_000,
+      'deepseek-v4': 256_000,
+      'qwen3.6-plus': 400_000,
+    })
+    expect(configured).not.toHaveProperty('contextWindow')
+
+    const refreshed = await service.refreshManagedNewApiModels({
+      ownerUserId: '42',
+      modelIds: ['glm-5', 'deepseek-v4'],
+      mediaModelRefs: [],
+    })
+    expect(refreshed.modelContextWindows).toEqual({
+      'glm-5': 1_000_000,
+      'deepseek-v4': 256_000,
+    })
+  })
+
+  it('uses a 1M context fallback for new managed models', async () => {
+    const profile = await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['new-model'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    expect(profile.supportsMillionContext).toBe(true)
   })
 
   it('moves tagged platform image models out of stale chat preferences during catalog refresh', async () => {
