@@ -1,6 +1,6 @@
 import type { CanvasOperationOutputView } from './canvasOperationRuns'
 import type { CanvasNode } from './canvas.types'
-import { resolveCollisionFreeBatchPositions } from './canvasCollisionPlacement'
+import { AUTO_NODE_RIGHT_GAP, stackAutoNodesToRight } from './canvasAutoPlacement'
 import {
   AUDIO_NODE_DEFAULT_SIZE,
   IMAGE_NODE_DEFAULT_SIZE,
@@ -59,21 +59,15 @@ export function planCanvasOperationOutputMaterialization({
     if (output.type === 'text' || output.type === 'prompt') return pickTextNodeSize(output.text)
     return output.type === 'file' ? TEXT_NODE_DEFAULT_SIZE : IMAGE_NODE_DEFAULT_SIZE
   })
-  const positions = resolveCollisionFreeBatchPositions({
-    preferred: {
-      x: operationNode.x + operationNode.width + 60,
-      y: operationNode.y,
-    },
-    sizes,
-    nodes: existingNodes,
-    boardId: operationNode.boardId,
-  })
+  // 展开产物固定为原节点右侧的纵向单列，列的垂直中点与原节点中心对齐；
+  // 不做碰撞回避，保证多产物展开的落位确定、规整、便于后续框选操作。
+  const positions = stackAutoNodesToRight(operationNode, sizes)
   return {
     existingNodeIds,
     unsupportedOutputIds,
     items: missing.map((output, index) => ({
       output,
-      x: positions[index]?.x ?? operationNode.x + operationNode.width + 60,
+      x: positions[index]?.x ?? operationNode.x + operationNode.width + AUTO_NODE_RIGHT_GAP,
       y: positions[index]?.y ?? operationNode.y,
     })),
   }
