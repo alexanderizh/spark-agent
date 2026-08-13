@@ -376,6 +376,17 @@ export interface SessionClearQueuedTurnsResponse {
   queuedTurns: SessionQueuedTurn[]
 }
 
+export interface SessionReorderQueuedTurnsRequest {
+  sessionId: SessionId
+  turnIds: string[]
+}
+
+export interface SessionReorderQueuedTurnsResponse {
+  changed: boolean
+  running: boolean
+  queuedTurns: SessionQueuedTurn[]
+}
+
 export interface SessionSendQueuedTurnNowRequest {
   sessionId: SessionId
   turnId: string
@@ -5682,6 +5693,10 @@ export interface IpcChannelMap
   'session:get-queue': [SessionGetQueueRequest, SessionGetQueueResponse]
   'session:cancel-queued-turn': [SessionCancelQueuedTurnRequest, SessionCancelQueuedTurnResponse]
   'session:clear-queued-turns': [SessionClearQueuedTurnsRequest, SessionClearQueuedTurnsResponse]
+  'session:reorder-queued-turns': [
+    SessionReorderQueuedTurnsRequest,
+    SessionReorderQueuedTurnsResponse,
+  ]
   'session:send-queued-turn-now': [
     SessionSendQueuedTurnNowRequest,
     SessionSendQueuedTurnNowResponse,

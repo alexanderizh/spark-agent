@@ -705,6 +705,51 @@ describe('SessionService team dispatch auto-continuation', () => {
     expect(service.emitQueueChanged).toHaveBeenCalledWith('session-1')
     expect(prepare).toHaveBeenCalledTimes(2)
   })
+
+  it('reorders only pending turns and rejects incomplete order payloads', () => {
+    const activeExecution = { cancel: vi.fn() }
+    const service = Object.create(SessionService.prototype) as {
+      activeLoops: Map<string, { cancel: () => void }>
+      startingSessions: Set<string>
+      pendingTurns: Map<string, Array<{ turnId: string; message: string; enqueuedAt: string }>>
+      emitQueueChanged: (sessionId: string) => void
+      reorderQueuedTurns: (params: { sessionId: string; turnIds: string[] }) => {
+        changed: boolean
+        running: boolean
+        queuedTurns: Array<{ turnId: string }>
+      }
+    }
+    service.activeLoops = new Map([['session-1', activeExecution]])
+    service.startingSessions = new Set()
+    service.pendingTurns = new Map([
+      [
+        'session-1',
+        [
+          { turnId: 'turn-1', message: 'first', enqueuedAt: '2026-08-14T00:00:00.000Z' },
+          { turnId: 'turn-2', message: 'second', enqueuedAt: '2026-08-14T00:01:00.000Z' },
+        ],
+      ],
+    ])
+    service.emitQueueChanged = vi.fn()
+
+    const reordered = service.reorderQueuedTurns({
+      sessionId: 'session-1',
+      turnIds: ['turn-2', 'turn-1'],
+    })
+
+    expect(reordered.changed).toBe(true)
+    expect(reordered.running).toBe(true)
+    expect(reordered.queuedTurns.map((turn) => turn.turnId)).toEqual(['turn-2', 'turn-1'])
+    expect(activeExecution.cancel).not.toHaveBeenCalled()
+    expect(service.emitQueueChanged).toHaveBeenCalledWith('session-1')
+
+    const invalid = service.reorderQueuedTurns({
+      sessionId: 'session-1',
+      turnIds: ['turn-2'],
+    })
+    expect(invalid.changed).toBe(false)
+    expect(invalid.queuedTurns.map((turn) => turn.turnId)).toEqual(['turn-2', 'turn-1'])
+  })
 })
 
 describe('SessionService.clearSessionMemory (删除/清空会话的执行器回收)', () => {

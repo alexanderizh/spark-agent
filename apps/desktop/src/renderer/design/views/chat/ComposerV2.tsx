@@ -151,6 +151,7 @@ import {
   rememberCliSparkOverride,
 } from '../../utils/cli-spark-override-cache'
 import { SessionReferencePicker } from './SessionReferencePicker'
+import { QueuedTaskList } from './QueuedTaskList'
 import {
   hasSessionReferenceDrag,
   isSessionReferenceDropTarget,
@@ -882,6 +883,7 @@ export function ComposerV2({
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
   const [queueVisible, setQueueVisible] = useState(true)
   const [clearingQueue, setClearingQueue] = useState(false)
+  const [reorderingQueue, setReorderingQueue] = useState(false)
   // 「为本会话创建隔离 worktree」开关（新会话或尚无消息的空会话、且 git 项目可用）
   const [createWorktree, setCreateWorktree] = useState(false)
   const [worktreeBranch, setWorktreeBranch] = useState('')
@@ -974,6 +976,7 @@ export function ComposerV2({
   const { invoke: getQueue } = useIpcInvoke('session:get-queue')
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
   const { invoke: clearQueuedTurns } = useIpcInvoke('session:clear-queued-turns')
+  const { invoke: reorderQueuedTurns } = useIpcInvoke('session:reorder-queued-turns')
   const { invoke: sendQueuedTurnNow } = useIpcInvoke('session:send-queued-turn-now')
   const { invoke: getSetting } = useIpcInvoke('settings:get')
   const { invoke: writeClipboardText } = useIpcInvoke('clipboard:write-text')
@@ -2587,6 +2590,34 @@ export function ComposerV2({
     }
   }
 
+  const handleReorderQueuedMessages = async (orderedTurnIds: readonly string[]) => {
+    if (session?.id == null || reorderingQueue || orderedTurnIds.length !== queuedMessages.length) {
+      return
+    }
+    const currentById = new Map(queuedMessages.map((message) => [message.turnId, message]))
+    const reorderedMessages = orderedTurnIds
+      .map((turnId) => currentById.get(turnId))
+      .filter((message): message is QueuedMessage => message != null)
+    if (reorderedMessages.length !== queuedMessages.length) return
+
+    const previousMessages = queuedMessages
+    setQueuedMessages(reorderedMessages)
+    setReorderingQueue(true)
+    try {
+      const res = await reorderQueuedTurns({ sessionId: session.id, turnIds: [...orderedTurnIds] })
+      applyQueueState({
+        sessionId: session.id,
+        running: res.running,
+        queuedTurns: res.queuedTurns,
+      })
+    } catch (err) {
+      setQueuedMessages(previousMessages)
+      toast.error(`调整队列顺序失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setReorderingQueue(false)
+    }
+  }
+
   const handleEditQueuedMessage = async (message: QueuedMessage) => {
     if (session?.id == null || !message.editable) return
     setValue(message.content)
@@ -3658,61 +3689,16 @@ export function ComposerV2({
           />
         )}
         {showTaskQueue && queueVisible && (
-          <div className="composer-queue-panel">
-            <div className="composer-queue-header">
-              <span className="composer-queue-title">
-                <Icons.Clock size={14} aria-hidden="true" />
-                排队中 · {queuedMessages.length}
-              </span>
-              <button
-                type="button"
-                className="composer-queue-clear-btn"
-                title="取消全部排队消息，不影响当前正在执行的任务"
-                disabled={clearingQueue}
-                onClick={() => void handleClearQueuedMessages()}
-              >
-                <Icons.Trash size={13} aria-hidden="true" />
-                {clearingQueue ? '清空中…' : '清空队列'}
-              </button>
-            </div>
-            <div className="composer-queue-list">
-              {queuedMessages.map((message) => (
-                <div key={message.id} className="composer-queue-item">
-                  <Icons.Clock size={15} className="composer-queue-icon" />
-                  <span className="composer-queue-text">{message.content}</span>
-                  {message.editable && (
-                    <button
-                      type="button"
-                      className="composer-queue-icon-btn composer-queue-edit-btn"
-                      title="编辑"
-                      disabled={clearingQueue}
-                      onClick={() => void handleEditQueuedMessage(message)}
-                    >
-                      <Icons.Edit size={14} />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="composer-queue-icon-btn composer-queue-send-btn"
-                    title="立即执行"
-                    disabled={clearingQueue}
-                    onClick={() => void handleSendQueuedNow(message)}
-                  >
-                    <Icons.Send size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className="composer-queue-icon-btn"
-                    title="移除"
-                    disabled={clearingQueue}
-                    onClick={() => void handleRemoveQueuedMessage(message)}
-                  >
-                    <Icons.Trash size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          <QueuedTaskList
+            messages={queuedMessages}
+            clearing={clearingQueue}
+            reordering={reorderingQueue}
+            onClear={() => void handleClearQueuedMessages()}
+            onEdit={(message) => void handleEditQueuedMessage(message)}
+            onSendNow={(message) => void handleSendQueuedNow(message)}
+            onRemove={(message) => void handleRemoveQueuedMessage(message)}
+            onReorder={handleReorderQueuedMessages}
+          />
         )}
         {slashOpen && flatSlashList.length > 0 && (
           <div className="slash-cmd-popup" ref={slashListRef}>

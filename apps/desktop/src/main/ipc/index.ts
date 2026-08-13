@@ -3329,6 +3329,11 @@ export function registerAllIpcHandlers(): void {
     return getSessionService().clearQueuedTurns(req)
   })
 
+  typedIpcHandle('session:reorder-queued-turns', async (req) => {
+    log.info(`session:reorder-queued-turns requested, sessionId=${req.sessionId}`)
+    return getSessionService().reorderQueuedTurns(req)
+  })
+
   typedIpcHandle('session:send-queued-turn-now', async (req) => {
     log.info(
       `session:send-queued-turn-now requested, sessionId=${req.sessionId}, turnId=${req.turnId}`,
