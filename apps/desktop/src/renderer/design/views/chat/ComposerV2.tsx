@@ -932,6 +932,8 @@ export function ComposerV2({
   const [previewAttachment, setPreviewAttachment] = useState<ComposerAttachment | null>(null)
   const [textEditMenu, setTextEditMenu] = useState<TextEditMenuState | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const composerParamBarRef = useRef<HTMLDivElement | null>(null)
+  useResponsiveComposerParamVisibility(composerParamBarRef)
   const composingRef = useRef(false)
   const lastFocusedDraftBucketRef = useRef<string | null>(null)
   // ── Mention (@) 状态：仅团队模式启用时生效 ──
@@ -4180,7 +4182,7 @@ export function ComposerV2({
             </button>
           </div>
         </div>
-        <div className="composer-param-bar composer-controls">
+        <div ref={composerParamBarRef} className="composer-param-bar composer-controls">
           <ComposerActionsMenu
             onAddAttachments={() => void handleAddAttachments()}
             onInsertSkillMention={handleInsertSkillMention}
@@ -5728,50 +5730,67 @@ export function useCloseOnOutside(
   }, [active, onClose, ref])
 }
 
-// 参数选择栏溢出隐藏：宽度不够时，从最右开始在原地 display:none 各个控件，
-// 让 spacer（flex:1）能重新吃满剩余空间，避免视觉上换行/重叠。
+// 参数选择栏响应式隐藏：只折叠右侧的低优先级控件，让 spacer 重新吃满剩余空间。
 // 不能用 overflow:hidden —— 会把 .composer-select 的下拉弹窗一起裁掉。
-function useOverflowHide(ref: RefObject<HTMLElement | null>, skipClassNames: string[] = []) {
+function useResponsiveComposerParamVisibility(ref: RefObject<HTMLElement | null>) {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
+    const previousDisplay = new Map<HTMLElement, string>()
+
+    const restore = () => {
+      previousDisplay.forEach((display, item) => {
+        item.style.display = display
+      })
+      previousDisplay.clear()
+    }
+
+    const getHideable = () =>
+      [
+        el.querySelector<HTMLElement>(
+          ':scope > .composer-param-tail > .composer-worktree-controls',
+        ),
+        el.querySelector<HTMLElement>(':scope > .composer-debug-toggle'),
+      ].filter((item): item is HTMLElement => item != null)
+
+    const requiredWidth = () => {
+      const visibleChildren = Array.from(el.children).filter(
+        (child) => (child as HTMLElement).style.display !== 'none',
+      ) as HTMLElement[]
+      const gap = Number.parseFloat(getComputedStyle(el).columnGap || '0') || 0
+      return (
+        visibleChildren
+          .filter((child) => !child.classList.contains('spacer'))
+          .reduce((width, child) => width + child.getBoundingClientRect().width, 0) +
+        Math.max(0, visibleChildren.length - 1) * gap
+      )
+    }
+
     const update = () => {
-      const children = Array.from(el.children) as HTMLElement[]
-      const hideable = children.filter((c) => {
-        if (c.classList.contains('spacer')) return false
-        for (const cn of skipClassNames) if (c.classList.contains(cn)) return false
-        return true
+      restore()
+      const availableWidth = el.getBoundingClientRect().width
+      if (availableWidth <= 0) return
+
+      // worktree 位于参数栏最右侧，优先隐藏；仍放不下时再隐藏调试开关。
+      getHideable().forEach((item) => {
+        if (requiredWidth() <= availableWidth) return
+        previousDisplay.set(item, item.style.display)
+        item.style.display = 'none'
       })
-      // 先恢复全部，确保宽度变化时能重新计算
-      hideable.forEach((c) => {
-        if (c.dataset.overflowHidden === '1') {
-          c.style.display = c.dataset.prevDisplay ?? ''
-          delete c.dataset.overflowHidden
-          delete c.dataset.prevDisplay
-        }
-      })
-      // spacer 被 flex:1 撑起 ≥4px 时表示无溢出；否则从最右开始隐藏。
-      for (let i = hideable.length - 1; i >= 0; i--) {
-        const spacer = el.querySelector(':scope > .spacer') as HTMLElement | null
-        if ((spacer?.getBoundingClientRect().width ?? 0) >= 4) break
-        const c = hideable[i]
-        if (c == null || c.dataset.overflowHidden === '1') continue
-        c.dataset.prevDisplay = c.style.display
-        c.dataset.overflowHidden = '1'
-        c.style.display = 'none'
-      }
     }
     update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    // worktree / queued-chip 是条件渲染，子树变化时重新计算
-    const mo = new MutationObserver(update)
-    mo.observe(el, { childList: true })
+
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
+    ro?.observe(el)
+    // worktree / queued-chip 是条件渲染，子树变化时重新计算。
+    const mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver(update)
+    mo?.observe(el, { childList: true })
     return () => {
-      ro.disconnect()
-      mo.disconnect()
+      restore()
+      ro?.disconnect()
+      mo?.disconnect()
     }
-  }, [ref, skipClassNames.join('|')])
+  }, [ref])
 }
 
 function AdapterIcon({ adapter }: { adapter: AgentAdapter }) {

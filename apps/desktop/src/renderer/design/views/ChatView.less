@@ -2727,16 +2727,12 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   }
 }
 
-/* ─── 参数选择栏：宽度不够时右侧覆盖左侧 ───
+/* ─── 参数选择栏：宽度不够时由 React 测量并隐藏低优先级控件 ───
  * 覆盖 views.css 的 `.composer-controls { flex-wrap: wrap }`。
- * 右侧组（worktree/hint/send）放入 `.composer-param-tail`，绝对定位贴
- * 右并带不透明背景；左侧溢出时被 tail 盖住而非被裁切，所以 worktree 等控件
- * 永远完整可见。tail 离开文档流后，spacer 仍负责把左侧保持在左半区。
+ * 右侧组保持在正常 flex 流中，避免用 overflow 裁剪参数选择器的弹窗。
  */
 .composer-inner > .composer-param-bar.composer-controls {
   flex-wrap: nowrap;
-  overflow-x: visible;
-  overflow-y: visible;
   position: relative;
 
   > * {
@@ -2749,25 +2745,14 @@ html[data-theme='dark'] .composer-file-drop-overlay {
     min-width: 0;
   }
 
-  /* 右侧组：绝对定位脱离文档流，贴右边，带不透明背景遮挡左侧溢出内容 */
+  /* 右侧组保持在文档流中，宽度不足时由响应式逻辑隐藏 worktree。 */
   > .composer-param-tail {
-    position: absolute;
-    right: 0;
-    bottom: 4px;
     display: inline-flex;
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
-    /* 与参数栏同色，保证遮盖左侧时无缝衔接（同 views.css 的 --composer-toolbar-bg） */
-    background: var(--composer-toolbar-bg);
-    /* 右下圆角与 param-bar 底部圆角对齐，避免方角溢出卡片圆角 */
-    border-radius: 0 0 var(--r-lg) 0;
-    padding: 0px 0 0px 8px;
+    padding: 0;
     height: 29px;
-    display: flex;
-    align-items: center;
-    z-index: 1;
-    pointer-events: auto;
   }
 
   /* 参数栏选择器：图标与标签文字共用 18px 行框，避免 CJK 字体视觉偏上 */
