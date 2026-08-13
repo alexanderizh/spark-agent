@@ -1,16 +1,13 @@
-/* 折叠编组是 420×300 的插页式文件夹；这里只改变投影外观，不改变真实组尺寸。 */
+/* 折叠编组是 420×300 的插页式文件夹；这里只改变投影外观，不改变真实组尺寸。
+   投影必须挂在封面层而不是节点容器上：容器内还渲染悬浮工具栏（DOM 子元素，
+   绝对定位在节点上方），filter 会按整棵子树的轮廓投影，把工具栏也染上一层
+   发散光晕。 */
 .canvas-node.canvas-node-collapsed-group {
   overflow: visible;
   border: 0;
   border-radius: 38px;
   background: transparent;
   box-shadow: none;
-  filter: drop-shadow(0 22px 26px rgba(15, 23, 42, 0.22));
-}
-
-.canvas-node-collapsed-group.canvas-node-selected {
-  filter: drop-shadow(0 22px 26px rgba(15, 23, 42, 0.22))
-    drop-shadow(0 0 8px color-mix(in srgb, var(--primary) 56%, transparent));
 }
 
 .canvas-collapsed-group-cover {
@@ -28,6 +25,12 @@
   color: var(--group-ink);
   cursor: pointer;
   user-select: none;
+  filter: drop-shadow(0 22px 26px rgba(15, 23, 42, 0.22));
+}
+
+.canvas-node-collapsed-group.canvas-node-selected .canvas-collapsed-group-cover {
+  filter: drop-shadow(0 22px 26px rgba(15, 23, 42, 0.22))
+    drop-shadow(0 0 8px color-mix(in srgb, var(--primary) 56%, transparent));
 }
 
 .canvas-collapsed-group-cover[data-group-color='indigo'] {
