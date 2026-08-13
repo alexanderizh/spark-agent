@@ -585,6 +585,11 @@
     radial-gradient(circle at 20% 82%, rgba(91, 178, 255, 0.1), transparent 30%), #fbfaff;
 }
 
+/* 星图的提示条融入底部留白，不再额外生成一枚浮动胶囊背景。 */
+.chat-main-empty[data-empty-theme='celestial'] .hero-tips-ticker {
+  background: transparent;
+}
+
 .chat-main-empty[data-empty-theme='celestial'] .chat-hero-grid {
   background-image:
     linear-gradient(rgba(97, 87, 154, 0.055) 1px, transparent 1px),
@@ -964,10 +969,87 @@
 .app.theme-dark .chat-main-empty[data-empty-theme='celestial'] {
   --eh-accent: #a895ff;
   --eh-accent-2: #6f88ff;
+  /* 输入区回到无主题时的通用暗色 token，不再叠加星图材质。 */
+  --eh-surface-strong: #303030;
+  --composer-toolbar-bg: #3d3d3d;
   background:
     radial-gradient(circle at 74% 18%, rgba(130, 105, 255, 0.22), transparent 30%),
     radial-gradient(circle at 20% 82%, rgba(70, 151, 225, 0.12), transparent 32%),
     linear-gradient(150deg, #11111c, #151426 56%, #101522);
+}
+
+/*
+ * 星图页面保留自己的背景，但输入区完全复用无主题的暗色基线。
+ * 这些 token 放在 composer-inner 上，避免把星图页面的 hero 卡片一起改成中性灰。
+ */
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-inner {
+  --bg: #262626;
+  --bg-soft: #2c2c2c;
+  --bg-sunken: #1a1a1a;
+  --composer-toolbar-bg: #3d3d3d;
+  --panel: #303030;
+  --panel-elev: #383838;
+  --hover: rgba(255, 255, 255, 0.04);
+  --active: rgba(255, 255, 255, 0.07);
+  --border: #3d3d3d;
+  --text: #e4e4e7;
+  --text-strong: #fafafa;
+  --text-muted: #9ca3af;
+  --text-faint: #6b7280;
+  --eh-ink: #e4e4e7;
+  --eh-muted: #9ca3af;
+  --eh-line: #3d3d3d;
+  --eh-shadow: rgba(0, 0, 0, 0.32);
+  --eh-popup-surface: #383838;
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-wrap {
+  position: static;
+  z-index: 5;
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer.composer-v2 {
+  overflow: visible;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  box-shadow:
+    0 1px 8px rgba(39, 39, 39, 0.01),
+    0 0 0 1px rgba(39, 39, 39, 0.01),
+    var(--shadow-sm);
+  backdrop-filter: none;
+}
+
+/* 无主题基线由外层 composer 绘制底色，input-shell 保持透明，避免圆角处溢出。 */
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer.composer-v2 .composer-input-shell {
+  background: transparent;
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer.composer-v2 .composer-submit-row {
+  background: var(--panel);
+}
+
+.app.theme-dark
+  .chat-main-empty[data-empty-theme='celestial']
+  .composer.composer-v2
+  .composer-submit-picks {
+  background: transparent;
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-param-bar,
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-param-tail {
+  background: var(--composer-toolbar-bg);
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-input::placeholder {
+  color: var(--text-faint);
+  -webkit-text-fill-color: var(--text-faint);
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-send-round {
+  background: var(--text-strong);
+  color: var(--bg);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
 }
 
 .app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .chat-hero-grid {
