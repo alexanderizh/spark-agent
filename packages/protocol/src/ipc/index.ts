@@ -4272,6 +4272,59 @@ export interface FileStatKindResponse {
   kind: FileStatKind
 }
 
+// ─── File Operations Channels (Explorer: trash / create / move / copy) ───────
+// 用于代码查看器左侧的文件树资源管理器。所有 path 均为相对 workspace root 的 posix 路径，
+// 与 WorkspaceTreeEntry.path / WorkspaceFileChangePayload.path 语义一致；
+// 绝对路径解析与越界防护（含 symlink 逃逸）由后端 handler 统一负责。
+
+/** 文件冲突策略：error 报错 / overwrite 覆盖 / merge 合并（仅目录对目录）/ rename 自动改名（仅 copy） */
+export type FileConflictPolicy = 'error' | 'overwrite' | 'merge' | 'rename'
+
+/** 文件操作通用结果（trash/create-file/create-directory/move/copy 共用） */
+export interface FileOperationResult {
+  ok: boolean
+  /** 失败原因（路径越界 / 目标已存在 / 源不存在 / 回收站不可用等） */
+  error?: string
+  /** rename 策略下后端实际使用的目标相对路径（可能与请求 toPath 不同）；前端据此提示「已复制为 xxx_copy」 */
+  finalPath?: string
+}
+
+export interface FileTrashRequest {
+  workspaceId: string
+  /** 相对 workspace root 的 posix 路径 */
+  path: string
+}
+
+export interface FileCreateFileRequest {
+  workspaceId: string
+  /** 相对 workspace root 的 posix 路径；父目录不存在时自动 mkdir -p */
+  path: string
+  /** 初始内容（可选，默认创建空文件） */
+  content?: string
+}
+
+export interface FileCreateDirectoryRequest {
+  workspaceId: string
+  /** 相对 workspace root 的 posix 路径；支持递归创建多层 */
+  path: string
+}
+
+export interface FileMoveRequest {
+  workspaceId: string
+  fromPath: string
+  toPath: string
+  /** 目标已存在时的处理策略（默认 error） */
+  ifExists?: FileConflictPolicy
+}
+
+export interface FileCopyRequest {
+  workspaceId: string
+  fromPath: string
+  toPath: string
+  /** 目标已存在时的处理策略（默认 error） */
+  ifExists?: FileConflictPolicy
+}
+
 // ─── Scheduled Task Channels ──────────────────────────────────────────────────
 
 export type ScheduledTaskTriggerType = 'interval' | 'cron' | 'once'
@@ -5929,6 +5982,12 @@ export interface IpcChannelMap
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
   'file:prepare-session-images': [FilePrepareSessionImagesRequest, FilePrepareSessionImagesResponse]
   'file:stat-kind': [FileStatKindRequest, FileStatKindResponse]
+  // File Operations — 文件树资源管理器（删除到回收站 / 新建 / 移动 / 复制）
+  'file:trash': [FileTrashRequest, FileOperationResult]
+  'file:create-file': [FileCreateFileRequest, FileOperationResult]
+  'file:create-directory': [FileCreateDirectoryRequest, FileOperationResult]
+  'file:move': [FileMoveRequest, FileOperationResult]
+  'file:copy': [FileCopyRequest, FileOperationResult]
 
   // Canvas Media Generation (infinite canvas → platform adapter)
   'canvas:media-capabilities:list': [

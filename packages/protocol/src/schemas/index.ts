@@ -329,6 +329,42 @@ export const FileStatKindRequestSchema = z.object({
   path: z.string().min(1),
 })
 
+/** 文件操作冲突策略 */
+export const FileConflictPolicySchema = z.enum(['error', 'overwrite', 'merge', 'rename'])
+
+/** 文件树相对路径：posix 风格，1–2000 字符 */
+const explorerPathSchema = z.string().min(1).max(2000)
+
+export const FileTrashRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  path: explorerPathSchema,
+})
+
+export const FileCreateFileRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  path: explorerPathSchema,
+  content: z.string().max(10_000_000).optional(),
+})
+
+export const FileCreateDirectoryRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  path: explorerPathSchema,
+})
+
+export const FileMoveRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  fromPath: explorerPathSchema,
+  toPath: explorerPathSchema,
+  ifExists: FileConflictPolicySchema.optional(),
+})
+
+export const FileCopyRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  fromPath: explorerPathSchema,
+  toPath: explorerPathSchema,
+  ifExists: FileConflictPolicySchema.optional(),
+})
+
 export const ClipboardWriteTextRequestSchema = z.object({
   text: z.string().max(10_000_000),
 })
@@ -953,6 +989,11 @@ export const IpcSchemaRegistry = {
   'file:prepare-image-preview': FilePrepareImagePreviewRequestSchema,
   'file:prepare-session-images': FilePrepareSessionImagesRequestSchema,
   'file:stat-kind': FileStatKindRequestSchema,
+  'file:trash': FileTrashRequestSchema,
+  'file:create-file': FileCreateFileRequestSchema,
+  'file:create-directory': FileCreateDirectoryRequestSchema,
+  'file:move': FileMoveRequestSchema,
+  'file:copy': FileCopyRequestSchema,
   'clipboard:write-text': ClipboardWriteTextRequestSchema,
   'app:get-startup-settings': z.object({}),
   'app:set-startup-settings': z.object({

@@ -147,6 +147,12 @@ import {
 } from './chat/RenderHtmlBlock'
 import { RenderDiagramBlock } from './chat/RenderDiagramBlock'
 import { CodeViewerPanel } from '../components/code-viewer/CodeViewerPanel'
+import {
+  useCodeExplorerVisible,
+  useCodeExplorerWidth,
+  setCodeExplorerVisible,
+  setCodeExplorerWidth,
+} from '../components/code-viewer/file-explorer/fileExplorerVisibility'
 import type { OpenCodeFile, CodeViewMode } from '../components/code-viewer/types'
 import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
 import type { HtmlOpenMode } from '../services/render-html'
@@ -545,6 +551,7 @@ export function ChatView({
     codeFiles: OpenCodeFile[]
     activeCodePath: string | null
     codeViewMode: CodeViewMode
+    codeExplorerExpandedDirs: string[]
   }
   const emptyPanelSnapshot: PanelSnapshot = {
     unifiedSideTabs: [],
@@ -561,6 +568,7 @@ export function ChatView({
     codeFiles: [],
     activeCodePath: null,
     codeViewMode: 'source',
+    codeExplorerExpandedDirs: [],
   }
   // 各 session 的面板快照（仅内存）
   const panelStateBySessionRef = useRef<Map<string, PanelSnapshot>>(new Map())
@@ -919,6 +927,7 @@ export function ChatView({
       setCodeFiles([])
       setActiveCodePath(null)
       setCodeViewMode('source')
+      setCodeExplorerExpandedDirs(new Set())
       return
     }
     const snap = panelStateBySessionRef.current.get(active)
@@ -939,6 +948,7 @@ export function ChatView({
       setCodeFiles([])
       setActiveCodePath(null)
       setCodeViewMode('source')
+      setCodeExplorerExpandedDirs(new Set())
       return
     }
     // 恢复该会话上次的展开状态
@@ -957,6 +967,7 @@ export function ChatView({
     setCodeFiles(snap.codeFiles)
     setActiveCodePath(snap.activeCodePath)
     setCodeViewMode(snap.codeViewMode)
+    setCodeExplorerExpandedDirs(new Set(snap.codeExplorerExpandedDirs ?? []))
     // side-chat 运行时 state 清空，交给 SessionStream（key 随 sideChatSessionId 变化）重新订阅填充
     setSideChatMessages([])
     setSideChatContextInputTokens(0)
@@ -1168,6 +1179,12 @@ export function ChatView({
   const [codeFiles, setCodeFiles] = useState<OpenCodeFile[]>([])
   const [activeCodePath, setActiveCodePath] = useState<string | null>(null)
   const [codeViewMode, setCodeViewMode] = useState<CodeViewMode>('source')
+  // 文件树展开目录（per-session：切会话随快照恢复；visible/width 才跨重启走全局 store）
+  const [codeExplorerExpandedDirs, setCodeExplorerExpandedDirs] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const codeExplorerVisible = useCodeExplorerVisible()
+  const codeExplorerWidth = useCodeExplorerWidth()
   // workspace root 同步到 ref：resolveAbsCodePath/openInCodeTab 声明在 activeSessionWorkspace
   // 之前（TDZ），直接引用会报 used-before-declaration；改走 ref，在 activeSessionWorkspace
   // 声明之后的 render 阶段同步最新值。
@@ -1189,6 +1206,7 @@ export function ChatView({
     codeFiles,
     activeCodePath,
     codeViewMode,
+    codeExplorerExpandedDirs: Array.from(codeExplorerExpandedDirs),
   }
 
   // ── IPC hooks (only those NOT duplicated in context) ──
@@ -1371,6 +1389,23 @@ export function ChatView({
       setCodeFiles((prev) => {
         const next = prev.filter((f) => f.absPath !== absPath)
         setActiveCodePath((cur) => (cur !== absPath ? cur : (next.at(-1)?.absPath ?? null)))
+        if (next.length === 0) closeUnifiedSidePanel('code')
+        return next
+      })
+    },
+    [closeUnifiedSidePanel],
+  )
+
+  // 批量关闭多个 code tab（右键菜单：关闭右侧/左侧/全部/已保存）。空数组直接返回。
+  const closeCodeFiles = useCallback(
+    (absPaths: string[]) => {
+      if (absPaths.length === 0) return
+      const closing = new Set(absPaths)
+      setCodeFiles((prev) => {
+        const next = prev.filter((f) => !closing.has(f.absPath))
+        setActiveCodePath((cur) =>
+          cur != null && closing.has(cur) ? (next.at(-1)?.absPath ?? null) : cur,
+        )
         if (next.length === 0) closeUnifiedSidePanel('code')
         return next
       })
@@ -2849,8 +2884,17 @@ export function ChatView({
               viewMode={codeViewMode}
               onSelectActive={setActiveCodePath}
               onCloseFile={closeCodeFile}
+              onCloseFiles={closeCodeFiles}
               onViewModeChange={setCodeViewMode}
               workspaceId={gitWorkspaceId ?? null}
+              explorerVisible={codeExplorerVisible}
+              explorerWidth={codeExplorerWidth}
+              explorerExpandedDirs={codeExplorerExpandedDirs}
+              workspaceRootPath={gitWorkspace?.rootPath ?? null}
+              onExplorerVisibleChange={setCodeExplorerVisible}
+              onExplorerWidthChange={setCodeExplorerWidth}
+              onExplorerExpandedChange={setCodeExplorerExpandedDirs}
+              onOpenFileFromExplorer={(rel) => openInCodeTab(rel)}
             />
           ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
             <GitReviewPanel

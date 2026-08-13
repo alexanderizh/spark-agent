@@ -259,6 +259,7 @@ import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc
 import { registerSidebarOrderIpc } from './registerSidebarOrderIpc.js'
 import { getPluginManager, registerPluginIpc } from './registerPluginIpc.js'
 import { registerFilePreviewIpc } from './registerFilePreviewIpc.js'
+import { registerFileOperationsIpc } from './registerFileOperationsIpc.js'
 import { registerSessionImageOptimizerIpc } from './registerSessionImageOptimizerIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
 import { ComputerUseAgentController } from '../services/computer-use/ComputerUseAgentController.js'
@@ -3123,6 +3124,7 @@ async function handleRemoteInboundMessage(
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
   registerFilePreviewIpc()
+  registerFileOperationsIpc()
   registerSessionImageOptimizerIpc()
   registerFontAssetIpc()
   registerVoiceIpc()
