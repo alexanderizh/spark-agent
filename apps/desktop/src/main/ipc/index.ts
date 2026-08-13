@@ -8886,7 +8886,10 @@ export function registerAllIpcHandlers(): void {
     const maxX = workArea.x + workArea.width - nextWidth
     const nextX = Math.max(workArea.x, Math.min(bounds.x, maxX))
 
-    win.setBounds({ ...bounds, x: nextX, width: nextWidth }, true)
+    // animate=false：窗口尺寸瞬时到位。macOS 上 animate=true 会触发系统原生
+    // CoreAnimation 平滑过渡，展开统一面板等场景下会出现"宽度一点点拉长"的观感；
+    // 这里只是保证窗口容纳最小宽度，不需要缓动动画。
+    win.setBounds({ ...bounds, x: nextX, width: nextWidth }, false)
     if (autoWindowWidthState != null) {
       autoWindowWidthState.managedWidth = nextWidth
       if (nextWidth <= autoWindowWidthState.baselineWidth + AUTO_WINDOW_WIDTH_TOLERANCE) {

@@ -1767,8 +1767,21 @@ export function ChatView({
       const layoutStyle = window.getComputedStyle(layout)
       const mainMinWidth = Number.parseFloat(layoutStyle.getPropertyValue('--chat-main-min-width'))
       const chatMainMinWidth = Number.isFinite(mainMinWidth) ? mainMinWidth : 520
+      // 面板宽度取「期望宽度」(flex-basis)而非 getBoundingClientRect 的「被压缩后实际宽度」。
+      // 旧实现用实际宽度会让 minWidth 自引用：窗口 grow → 面板恢复变宽 → 实际宽度变大 →
+      // minWidth 又变大 → 再 grow，每帧约 +8px 形成"缓慢拉长"。flex-basis 是面板未压缩时的
+      // 目标宽度（.unified-side-panel 为 var(--side-chat-width, min(44vw,620px))，常量），
+      // 一次 grow 即可让窗口到位。取 max(flexBasis, actual)：面板被压缩时用 flexBasis（更大、
+      // 打破循环）；flex-basis 解析失败(auto/NaN)时回退 actual，绝不比旧行为算得更小，向后兼容。
       const sidePanelsWidth = Array.from(layout.children).reduce((sum, child) => {
-        return child === chatAreaRef.current ? sum : sum + child.getBoundingClientRect().width
+        if (child === chatAreaRef.current) return sum
+        const flexBasisPx = Number.parseFloat(window.getComputedStyle(child).flexBasis)
+        const actualWidth = child.getBoundingClientRect().width
+        const preferredWidth =
+          Number.isFinite(flexBasisPx) && flexBasisPx > 0
+            ? Math.max(flexBasisPx, actualWidth)
+            : actualWidth
+        return sum + preferredWidth
       }, 0)
       const desiredLayoutWidth = chatMainMinWidth + sidePanelsWidth
       const minWidth = Math.max(
