@@ -7,9 +7,20 @@ import {
   parseExtractedEntities,
   type ExtractEntityKind,
 } from './canvasEntityExtract'
+import {
+  parseSplitEpisodesOutput,
+  SPLIT_EPISODES_WORKFLOW,
+  type ParsedSplitEpisode,
+} from './canvasEpisodeSplit'
 
 export type CanvasSemanticTextValidation =
-  | { ok: true; text: string; storyboardRows?: ParsedShotRow[] }
+  | {
+      ok: true
+      text: string
+      storyboardRows?: ParsedShotRow[]
+      /** 分集任务（workflow=split_episodes）按集拆分出的数组；解析失败时不携带。 */
+      episodes?: ParsedSplitEpisode[]
+    }
   | {
       ok: false
       code: 'invalid_screenplay_output' | 'invalid_storyboard_output' | 'invalid_entity_output'
@@ -18,6 +29,8 @@ export type CanvasSemanticTextValidation =
 
 export type CanvasSemanticTextValidationOptions = {
   shotScriptConfig?: ShotScriptConfig | null
+  /** 任务 modelParams.workflow；用于 screenplay 角色识别分集任务并按集拆分。 */
+  workflow?: string | null
 }
 
 /**
@@ -43,7 +56,6 @@ export function validateCanvasSemanticTextOutput(
   text: string,
   options: CanvasSemanticTextValidationOptions = {},
 ): CanvasSemanticTextValidation {
-  void options
   const value = text.trim()
   if (role === 'screenplay') {
     if (!value) {
@@ -51,6 +63,17 @@ export function validateCanvasSemanticTextOutput(
         ok: false,
         code: 'invalid_screenplay_output',
         message: '剧本结果为空，无法创建剧本节点。',
+      }
+    }
+    if (options.workflow === SPLIT_EPISODES_WORKFLOW) {
+      // 分集任务优先按集拆成数组；每集正文单独做场次标题规范化，
+      // 拆分失败时保持整段单节点输出，不因结构问题判任务失败。
+      const episodes = parseSplitEpisodesOutput(value).map((episode) => ({
+        ...episode,
+        script: normalizeScreenplayText(episode.script),
+      }))
+      if (episodes.length > 0) {
+        return { ok: true, text: normalizeScreenplayText(value), episodes }
       }
     }
     return { ok: true, text: normalizeScreenplayText(value) }
