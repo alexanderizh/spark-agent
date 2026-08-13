@@ -8,13 +8,14 @@
   --cv-bg: #1e1e1f;
   --cv-bg-2: #252527;
   --cv-bg-3: #2d2d30;
-  --cv-border: #3a3a3d;
-  --cv-border-soft: #333337;
+  --cv-border: var(--border-strong, #3a3a3d);
+  --cv-border-soft: var(--border, #333337);
   --cv-text: #d4d4d4;
   --cv-text-dim: #9a9aa0;
   --cv-text-faint: #6e6e72;
-  --cv-accent: #4f7cff;
-  --cv-accent-soft: rgba(79, 124, 255, 0.16);
+  --cv-accent: var(--primary, #4f7cff);
+  --cv-accent-soft: var(--primary-soft, rgba(79, 124, 255, 0.16));
+  --cv-accent-fg: var(--primary-fg, #fff);
   --cv-green: #2ea043;
   --cv-red: #f85149;
   --cv-add-bg: rgba(46, 160, 67, 0.16);
@@ -35,12 +36,12 @@
     --cv-bg: #ffffff;
     --cv-bg-2: #f5f5f7;
     --cv-bg-3: #ededf0;
-    --cv-border: #e3e3e8;
-    --cv-border-soft: #eaeaee;
+    --cv-border: var(--border-strong, #e3e3e8);
+    --cv-border-soft: var(--border, #eaeaee);
     --cv-text: #2b2b2f;
     --cv-text-dim: #686870;
     --cv-text-faint: #9a9aa2;
-    --cv-accent-soft: rgba(79, 124, 255, 0.1);
+    --cv-accent-soft: var(--primary-soft, rgba(79, 124, 255, 0.1));
     --cv-add-bg: rgba(46, 160, 67, 0.1);
     --cv-del-bg: rgba(248, 81, 73, 0.08);
     --cv-warn: #b07900;
@@ -78,7 +79,6 @@
   &.active {
     background: var(--cv-bg);
     color: var(--cv-text);
-    box-shadow: inset 0 2px 0 var(--cv-accent);
   }
 }
 .cv-ftab-icon {
@@ -198,7 +198,7 @@
     }
     &.on {
       background: var(--cv-accent);
-      color: #fff;
+      color: var(--cv-accent-fg);
     }
     &:disabled {
       opacity: 0.4;
@@ -211,7 +211,7 @@
   align-items: center;
   gap: 4px;
   background: var(--cv-accent);
-  color: #fff;
+  color: var(--cv-accent-fg);
   border: 0;
   font-size: 11px;
   padding: 4px 10px;
@@ -366,7 +366,7 @@
 }
 /* 跳转行高亮（deltaDecorations 注入的 className） */
 .cv-body .code-viewer-jump-line {
-  background: rgba(79, 124, 255, 0.16) !important;
+  background: var(--cv-accent-soft) !important;
   border-left: 2px solid var(--cv-accent) !important;
 }
 
