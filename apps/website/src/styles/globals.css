@@ -1107,11 +1107,24 @@ h3 {
     padding-top: clamp(3.5rem, 7vw, 6rem);
     text-align: left;
   }
+  .hero-fold {
+    /* 首屏一屏折叠区：hero + 跑马灯合起来精确占满一屏（视口高 − nav 高）。
+       flex:1 让 hero 自适应撑满剩余空间，pmq-band 作为最后一个子项自然贴底，
+       不再用魔数硬凑三者高度——无论视口/跑马灯高度怎么变都严格合占一屏。 */
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100svh - var(--nav-h, 64px));
+  }
+  .hero-fold > .enhanced-hero {
+    /* hero 占满 fold 内跑马灯以上的全部剩余高度；min-height:0 允许在 flex 容器里收缩 */
+    flex: 1;
+    min-height: 0;
+  }
   .enhanced-hero {
-    /* 左右两栏：整块内容在 min-height 容器内垂直居中（grid-template-rows: auto
-       让单行收缩到内容高度，align-content: center 把整行推到容器正中），
-       再用 align-items: start 让左右两栏顶部对齐——即「居中的前提下尽量对齐」。
-       max-width 限制首页 hero 区域最大宽度并水平居中。 */
+    /* 左右两栏：整块内容在 hero（flex:1 撑满后的剩余高度）内垂直居中
+       （grid-template-rows: auto 让单行收缩到内容高度，align-content: center
+       把整行推到容器正中），再用 align-items: start 让左右两栏顶部对齐——
+       即「居中的前提下尽量对齐」。max-width 限制首页 hero 区域最大宽度并水平居中。 */
     grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
     grid-template-rows: auto;
     align-content: center;
@@ -1119,7 +1132,6 @@ h3 {
     gap: clamp(1.5rem, 3vw, 2.6rem);
     max-width: 1440px;
     margin-inline: auto;
-    min-height: max(560px, calc(100svh - 180px));
     padding-top: clamp(1.1rem, 2.8vw, 2rem);
     padding-bottom: clamp(0.8rem, 2.2vw, 1.6rem);
     text-align: left;
