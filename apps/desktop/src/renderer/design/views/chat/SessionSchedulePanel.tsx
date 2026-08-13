@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import type { ScheduledTaskItem, ScheduledTaskTriggerType } from '@spark/protocol'
 
+import { classNames } from '../../utils/class-names'
 import './SessionSchedulePanel.less'
 
 type SessionScheduleTarget = {
@@ -36,6 +37,8 @@ type FormState = {
   runAt: string
   cronExpression: string
   enabled: boolean
+  skipIfSessionRunning: boolean
+  continueOnError: boolean
 }
 
 const EMPTY_FORM: FormState = {
@@ -46,6 +49,8 @@ const EMPTY_FORM: FormState = {
   runAt: '',
   cronExpression: '0 */1 * * *',
   enabled: true,
+  skipIfSessionRunning: true,
+  continueOnError: true,
 }
 
 function parseScheduleDate(value: string | null): Date | null {
@@ -161,6 +166,8 @@ export function SessionSchedulePanel({
       runAt: toDateTimeLocalValue(task.runAt),
       cronExpression: task.cronExpression ?? '0 */1 * * *',
       enabled: task.enabled,
+      skipIfSessionRunning: task.skipIfSessionRunning !== false,
+      continueOnError: task.continueOnError !== false,
     })
     setError(null)
     setShowForm(true)
@@ -188,6 +195,8 @@ export function SessionSchedulePanel({
         cronExpression: form.triggerType === 'cron' ? form.cronExpression.trim() : null,
         scope: 'session',
         sessionId: session.id,
+        skipIfSessionRunning: form.skipIfSessionRunning,
+        continueOnError: form.continueOnError,
         concurrencyPolicy: 'queue',
       }
       if (editingTask == null) {
@@ -330,21 +339,21 @@ export function SessionSchedulePanel({
               <div className="session-schedule-trigger-tabs">
                 <button
                   type="button"
-                  className={form.triggerType === 'interval' ? 'is-active' : ''}
+                  className={classNames(form.triggerType === 'interval' && 'is-active')}
                   onClick={() => setForm((current) => ({ ...current, triggerType: 'interval' }))}
                 >
                   <Repeat2 size={14} /> 固定间隔
                 </button>
                 <button
                   type="button"
-                  className={form.triggerType === 'once' ? 'is-active' : ''}
+                  className={classNames(form.triggerType === 'once' && 'is-active')}
                   onClick={() => setForm((current) => ({ ...current, triggerType: 'once' }))}
                 >
                   <CalendarClock size={14} /> 单次
                 </button>
                 <button
                   type="button"
-                  className={form.triggerType === 'cron' ? 'is-active' : ''}
+                  className={classNames(form.triggerType === 'cron' && 'is-active')}
                   onClick={() => setForm((current) => ({ ...current, triggerType: 'cron' }))}
                 >
                   Cron
@@ -405,9 +414,57 @@ export function SessionSchedulePanel({
               <button
                 type="button"
                 role="switch"
+                aria-label="创建后启用"
                 aria-checked={form.enabled}
-                className={`session-schedule-switch${form.enabled ? ' is-on' : ''}`}
+                className={classNames('session-schedule-switch', form.enabled && 'is-on')}
                 onClick={() => setForm((current) => ({ ...current, enabled: !current.enabled }))}
+              >
+                <span />
+              </button>
+            </label>
+
+            <label className="session-schedule-enable-row">
+              <span>
+                <strong>会话运行中跳过</strong>
+                <small>上一条消息仍在运行或排队时，不追加新的消息</small>
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-label="会话运行中跳过"
+                aria-checked={form.skipIfSessionRunning}
+                className={classNames(
+                  'session-schedule-switch',
+                  form.skipIfSessionRunning && 'is-on',
+                )}
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    skipIfSessionRunning: !current.skipIfSessionRunning,
+                  }))
+                }
+              >
+                <span />
+              </button>
+            </label>
+
+            <label className="session-schedule-enable-row">
+              <span>
+                <strong>报错后继续执行</strong>
+                <small>会话上一轮报错后，仍按计划继续触发</small>
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-label="报错后继续执行"
+                aria-checked={form.continueOnError}
+                className={classNames('session-schedule-switch', form.continueOnError && 'is-on')}
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    continueOnError: !current.continueOnError,
+                  }))
+                }
               >
                 <span />
               </button>
@@ -447,7 +504,7 @@ export function SessionSchedulePanel({
                 tasks.map((task) => (
                   <article
                     key={task.id}
-                    className={`session-schedule-item${task.enabled ? '' : ' is-paused'}`}
+                    className={classNames('session-schedule-item', !task.enabled && 'is-paused')}
                   >
                     <div className="session-schedule-item-main">
                       <div className="session-schedule-item-title-row">
@@ -457,13 +514,18 @@ export function SessionSchedulePanel({
                           role="switch"
                           aria-label={task.enabled ? '暂停任务' : '启用任务'}
                           aria-checked={task.enabled}
-                          className={`session-schedule-switch${task.enabled ? ' is-on' : ''}`}
+                          className={classNames('session-schedule-switch', task.enabled && 'is-on')}
                           onClick={() => void toggleTask(task)}
                         >
                           <span />
                         </button>
                       </div>
                       <p>{task.promptTemplate}</p>
+                      {!task.enabled && task.lastError != null && (
+                        <small className="session-schedule-item-error">
+                          已暂停：{task.lastError}
+                        </small>
+                      )}
                       <div className="session-schedule-item-meta">
                         <span>{formatSchedule(task)}</span>
                         <span>{formatNextRun(task.nextRunAt)}</span>

@@ -12,6 +12,8 @@ function makeTask(overrides: Partial<ScheduledTaskItem> = {}): ScheduledTaskItem
     scope: 'session',
     sessionId: 'session-current',
     pausedByArchive: false,
+    skipIfSessionRunning: true,
+    continueOnError: true,
     triggerType: 'interval',
     intervalSeconds: 300,
     cronExpression: null,
@@ -93,6 +95,8 @@ describe('SessionScheduleAgentTools', () => {
         model_id: null,
         workspace_id: null,
         concurrency_policy: 'queue',
+        skip_if_session_running: true,
+        continue_on_error: true,
       }),
     )
     expect(onChanged).toHaveBeenCalledWith('create', current.id)

@@ -20,6 +20,8 @@ export interface ScheduledTaskRow {
   scope: 'global' | 'session'
   session_id: string | null
   paused_by_archive: number
+  skip_if_session_running: number
+  continue_on_error: number
   trigger_type: 'interval' | 'cron' | 'once'
   interval_seconds: number | null
   cron_expression: string | null
@@ -63,6 +65,8 @@ export interface CreateScheduledTaskParams {
   scope?: 'global' | 'session'
   session_id?: string | null
   paused_by_archive?: boolean
+  skip_if_session_running?: boolean
+  continue_on_error?: boolean
   trigger_type: 'interval' | 'cron' | 'once'
   interval_seconds?: number | null
   cron_expression?: string | null
@@ -175,6 +179,7 @@ export class ScheduledTaskRepository extends BaseRepository {
         `
       INSERT INTO scheduled_tasks (
         id, name, description, enabled, scope, session_id, paused_by_archive,
+        skip_if_session_running, continue_on_error,
         trigger_type, interval_seconds, cron_expression, run_at, timezone,
         start_at, end_at, max_executions,
         agent_id, team_id, model_id, workspace_id,
@@ -182,7 +187,7 @@ export class ScheduledTaskRepository extends BaseRepository {
         max_retries, retry_delay_seconds, retry_backoff,
         notifications, concurrency_policy, tags, history_retention_days,
         status, next_run_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -193,6 +198,8 @@ export class ScheduledTaskRepository extends BaseRepository {
         params.scope ?? 'global',
         params.session_id ?? null,
         params.paused_by_archive === true ? 1 : 0,
+        params.skip_if_session_running !== false ? 1 : 0,
+        params.continue_on_error !== false ? 1 : 0,
         params.trigger_type,
         params.interval_seconds ?? null,
         params.cron_expression ?? null,
@@ -240,6 +247,14 @@ export class ScheduledTaskRepository extends BaseRepository {
       session_id: params.session_id,
       paused_by_archive:
         params.paused_by_archive !== undefined ? (params.paused_by_archive ? 1 : 0) : undefined,
+      skip_if_session_running:
+        params.skip_if_session_running !== undefined
+          ? params.skip_if_session_running
+            ? 1
+            : 0
+          : undefined,
+      continue_on_error:
+        params.continue_on_error !== undefined ? (params.continue_on_error ? 1 : 0) : undefined,
       trigger_type: params.trigger_type,
       interval_seconds: params.interval_seconds,
       cron_expression: params.cron_expression,

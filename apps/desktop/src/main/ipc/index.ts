@@ -211,6 +211,7 @@ import type {
   VideoProcessProgress,
   CanvasMediaPreviewTemplateInvocationResponse,
   MediaCapabilityId,
+  SessionId,
 } from '@spark/protocol'
 import type {
   CanvasAssetDownloadBatchResultItem,
@@ -1677,6 +1678,19 @@ export function getScheduledTaskService(): ScheduledTaskService {
     )
     // Inject executor: creates a session and sends the prompt
     _scheduledTaskService.setExecutor(scheduledTaskExecutor)
+    _scheduledTaskService.setSessionTaskStateReader((sessionId) => {
+      const sessionRepo = new SessionRepository(getDatabase())
+      const session = sessionRepo.get(sessionId)
+      if (session == null) return { kind: 'missing' as const }
+      const queue = getSessionService().getQueueState({ sessionId: sessionId as SessionId })
+      return {
+        kind: 'available' as const,
+        // submitTurn returns after durable enqueue, so queuedTurns is part of
+        // the busy state even if the executor has not started yet.
+        running: queue.running || queue.queuedTurns.length > 0,
+        status: session.status,
+      }
+    })
   }
   return _scheduledTaskService
 }
@@ -2187,6 +2201,9 @@ function getSessionService(): SessionService {
     const onEvent: SessionEventHandler = (event) => {
       pushStreamEvent('stream:session:agent-event', event)
       handleRemoteTurnEvent(event)
+      if (event.type === 'agent_status' && event.status === 'error') {
+        _scheduledTaskService?.handleSessionError(event.sessionId, event.message)
+      }
     }
     const onApproval: ApprovalHandler = async (sessionId, toolName, toolInput, sdkContext) => {
       let selectedDecision: PermissionApprovalDecision | undefined
@@ -7750,6 +7767,8 @@ export function registerAllIpcHandlers(): void {
       enabled: req.enabled !== false,
       scope: req.scope ?? 'global',
       session_id: req.scope === 'session' ? (req.sessionId ?? null) : null,
+      skip_if_session_running: req.skipIfSessionRunning !== false,
+      continue_on_error: req.continueOnError !== false,
       trigger_type: req.triggerType,
       interval_seconds: req.intervalSeconds ?? null,
       cron_expression: req.cronExpression ?? null,
@@ -7783,6 +7802,8 @@ export function registerAllIpcHandlers(): void {
       name: req.name,
       description: req.description,
       trigger_type: req.triggerType,
+      skip_if_session_running: req.skipIfSessionRunning,
+      continue_on_error: req.continueOnError,
       interval_seconds: req.intervalSeconds,
       cron_expression: req.cronExpression,
       run_at: req.runAt,

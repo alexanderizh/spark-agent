@@ -1,6 +1,6 @@
 # 会话级计划任务设计
 
-> 状态: 已落地 | 最后核对: 2026-08-04
+> 状态: 已落地 | 最后核对: 2026-08-14
 
 ## 1. 目标
 
@@ -43,6 +43,8 @@ SessionService.submitTurn（持久化排队）
 - `scope TEXT NOT NULL DEFAULT 'global'`：`global | session`。
 - `session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE`：仅 `scope=session` 时非空。
 - `paused_by_archive INTEGER NOT NULL DEFAULT 0`：标记任务是否因为会话归档而被系统暂停。
+- `skip_if_session_running INTEGER NOT NULL DEFAULT 1`：会话存在活动或排队 turn 时跳过本次触发。
+- `continue_on_error INTEGER NOT NULL DEFAULT 1`：会话上一轮报错后是否继续保留后续触发；关闭时暂停该计划任务。
 
 约束由服务层与 IPC Schema 双重验证：
 
@@ -67,7 +69,7 @@ SessionService.submitTurn（持久化排队）
 
 Cron 使用 `cron-parser` 解析完整五字段表达式并按任务时区计算，非法范围（如分钟 `61`）在保存前拒绝。正常到期的单次任务在提交本次 turn 后自动禁用，不再计入启用任务。
 
-正常运行期间，到期任务仍由统一 tick 找出并创建 `task_executions`。同一个任务已有执行时继续遵循任务并发策略；会话内 turn 始终由 `SessionService.submitTurn` 串行排队。
+正常运行期间，到期任务仍由统一 tick 找出并创建 `task_executions`。同一个任务已有执行时继续遵循任务并发策略；会话内 turn 始终由 `SessionService.submitTurn` 串行排队。会话任务在创建 execution 前读取绑定会话的活动状态和持久化队列：`skip_if_session_running=1` 时，活动或排队 turn 会跳过本次触发并计算下一次时间；一次性任务保留原定时点，延后 60 秒重试；状态读取失败时不创建 execution 并延后重试。`continue_on_error=0` 时，主进程收到会话 `agent_status=error` 事件会立即暂停任务，调度 tick 仍以持久化会话 `error` 状态兜底。关闭运行中跳过后，任务仍可按已有并发策略排入会话队列。
 
 `task_executions.completed` 表示本次调度请求已成功提交到会话持久化队列。真正的 Agent turn 完成/失败继续由会话 `agent_status` 事件、侧栏未读状态和 Hook 通知呈现，避免引入第二套 turn 生命周期。
 
@@ -90,10 +92,10 @@ Cron 使用 `cron-parser` 解析完整五字段表达式并按任务时区计算
 
 扩展现有类型与请求：
 
-- `ScheduledTaskItem` 增加 `scope`、`sessionId`、`pausedByArchive`。
+- `ScheduledTaskItem` 增加 `scope`、`sessionId`、`pausedByArchive`、`skipIfSessionRunning`、`continueOnError`。
 - list 支持 `scope`、`sessionId` 过滤。
-- create 支持 `scope`、`sessionId`。
-- update 不允许修改既有任务的 `scope` 与 `sessionId`。
+- create 支持 `scope`、`sessionId` 以及两个会话执行保护开关，缺省均为开启。
+- update 支持修改两个执行保护开关，但不允许修改既有任务的 `scope` 与 `sessionId`。
 
 执行器参数增加可选 `sessionId`：
 
@@ -124,6 +126,7 @@ Cron 使用 `cron-parser` 解析完整五字段表达式并按任务时区计算
 - 任务名称、Prompt。
 - 单次/固定间隔/Cron 调度。
 - 创建后启用开关。
+- “会话运行中跳过”和“报错后继续执行”开关，默认开启；表单说明活动/排队 turn 与错误状态的处理方式。
 - 明确提示“执行时使用会话当前配置”“会话归档会自动暂停”。
 
 ### 主题与视觉层级
@@ -154,12 +157,13 @@ Cron 使用 `cron-parser` 解析完整五字段表达式并按任务时区计算
 - 执行前会话已删除：外键已删除任务；并发竞态中执行器再次验证并将 execution 标为失败。
 - 执行前会话已归档：拒绝提交，保持任务为禁用状态。
 - 表单非法：Prompt/名称为空、间隔小于 10 秒、单次时间不在未来、Cron 不能计算下一次时间时前后端均拒绝。
+- 会话运行中跳过只推进任务的下一次时间，不创建新的 execution；一次性任务延后 60 秒重试；关闭报错后继续时，任务在错误事件到达时转为禁用，用户重新启用后恢复；会话状态读取失败时保持任务不投递并记录可重试错误。
 - 归档恢复时某任务配置已失效：该任务保持禁用并记录错误，不阻塞其他任务恢复。
 
 ## 10. 测试与验收
 
-- migration/仓储：默认全局作用域、按会话过滤、会话删除级联、归档暂停标记。
-- 调度服务：会话创建/列表、启动跳过漏跑、单次漏跑禁用、归档与恢复、全局任务行为不变。
+- migration/仓储：默认全局作用域、两个保护开关默认开启、按会话过滤、会话删除级联、归档暂停标记。
+- 调度服务：会话创建/列表、运行中/排队 turn 跳过、一次性任务延后、状态读取失败保护、错误事件即时暂停、错误后继续、启动跳过漏跑、单次漏跑禁用、归档与恢复、全局任务行为不变。
 - 主进程执行器：会话任务调用 `submitTurn` 且不创建会话、不传运行时覆盖；全局任务仍创建会话。
 - 协议：新增字段和过滤请求可通过 typed IPC 编译。
 - UI：侧栏入口、顶栏入口、任务列表/表单交互、窄窗口布局。

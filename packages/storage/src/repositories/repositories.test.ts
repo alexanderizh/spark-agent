@@ -97,6 +97,38 @@ describe('ScheduledTaskRepository session scope', () => {
     expect(repo.listAll({ scope: 'session', sessionId: 'session-a' }).map((row) => row.id)).toEqual(
       ['task-a'],
     )
+    expect(repo.get('task-a')).toMatchObject({
+      skip_if_session_running: 1,
+      continue_on_error: 1,
+    })
+  })
+
+  it('persists session task overlap and error continuation guards', () => {
+    repo.create({
+      id: 'guarded-task',
+      name: 'Guarded',
+      scope: 'session',
+      session_id: 'session-a',
+      skip_if_session_running: false,
+      continue_on_error: false,
+      trigger_type: 'interval',
+      interval_seconds: 300,
+      prompt_template: 'Run with guards',
+    })
+
+    expect(repo.get('guarded-task')).toMatchObject({
+      skip_if_session_running: 0,
+      continue_on_error: 0,
+    })
+
+    repo.update('guarded-task', {
+      skip_if_session_running: true,
+      continue_on_error: true,
+    })
+    expect(repo.get('guarded-task')).toMatchObject({
+      skip_if_session_running: 1,
+      continue_on_error: 1,
+    })
   })
 
   it('cascades a deleted session to its tasks and execution history', () => {

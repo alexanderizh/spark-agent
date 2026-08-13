@@ -4418,6 +4418,8 @@ export interface ScheduledTaskItem {
   scope: ScheduledTaskScope
   sessionId: string | null
   pausedByArchive: boolean
+  skipIfSessionRunning: boolean
+  continueOnError: boolean
   triggerType: ScheduledTaskTriggerType
   intervalSeconds: number | null
   cronExpression: string | null
@@ -4459,6 +4461,8 @@ export interface ScheduledTaskCreateRequest {
   enabled?: boolean
   scope?: ScheduledTaskScope
   sessionId?: string | null
+  skipIfSessionRunning?: boolean
+  continueOnError?: boolean
   triggerType: ScheduledTaskTriggerType
   intervalSeconds?: number | null
   cronExpression?: string | null
@@ -4493,6 +4497,8 @@ export interface ScheduledTaskUpdateRequest {
   name?: string
   description?: string
   enabled?: boolean
+  skipIfSessionRunning?: boolean
+  continueOnError?: boolean
   triggerType?: ScheduledTaskTriggerType
   intervalSeconds?: number | null
   cronExpression?: string | null
