@@ -70,7 +70,7 @@ type EvidenceMutation =
 
 export type EvidenceCostMutationPayload = EvidenceMutation
 
-interface EvidenceCostMutationRequest extends EvidenceMutation {
+type EvidenceCostMutationRequest = EvidenceMutation & {
   sessionId: SessionId
   expectedDiscussionId: string
   opId: string
@@ -85,7 +85,7 @@ interface EvidenceCostState {
   mutate: (payload: EvidenceCostMutationPayload) => Promise<void>
 }
 
-type Invoke = (channel: string, request: Record<string, unknown>) => Promise<unknown>
+type Invoke = (channel: string, request: object) => Promise<unknown>
 
 const MAX_ITEMS = 100
 
@@ -207,7 +207,7 @@ export function useEvidenceCost(sessionId: SessionId | undefined, discussionId: 
   return { snapshot, loading, error, mutatingKey, refresh, mutate }
 }
 
-function invoke(channel: string, request: Record<string, unknown>): Promise<unknown> {
+function invoke(channel: string, request: object): Promise<unknown> {
   return (window.spark.invoke as unknown as Invoke)(channel, request)
 }
 

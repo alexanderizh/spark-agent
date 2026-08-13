@@ -16,6 +16,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@spark/protocol": "workspace:*",
     "@spark/shared": "workspace:*",
     "better-sqlite3": "^12.11.1",
     "sqlite-vec": "0.1.9",

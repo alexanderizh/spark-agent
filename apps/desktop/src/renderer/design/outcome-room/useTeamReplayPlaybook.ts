@@ -104,6 +104,11 @@ export interface TeamReplayPlaybookState {
 
 type Invoke = (channel: string, request: Record<string, unknown>) => Promise<unknown>
 
+interface ActiveReplayScope {
+  sessionId: SessionId | undefined
+  discussionId: string | undefined
+}
+
 const SCHEMA_VERSION = 1
 
 export function useTeamReplayPlaybook(
@@ -123,7 +128,7 @@ export function useTeamReplayPlaybook(
   const [mutatingKey, setMutatingKey] = useState<string | null>(null)
   const mounted = useRef(false)
   const generation = useRef(0)
-  const activeScope = useRef<{ sessionId?: SessionId; discussionId?: string }>({ sessionId, discussionId })
+  const activeScope = useRef<ActiveReplayScope>({ sessionId, discussionId })
   const readRef = useRef<() => Promise<void>>(async () => undefined)
   const readFlight = useRef<Promise<void> | null>(null)
   const readSequence = useRef(0)
@@ -254,7 +259,8 @@ export function useTeamReplayPlaybook(
       if (readFlight.current != null) return readFlight.current
       const requestSequence = ++readSequence.current
       setLoading(true)
-      const flight = (async () => {
+      let flight: Promise<void> | null = null
+      flight = (async () => {
         try {
         const timelineOpId = operationIdFor(operationIds.current, 'replay:timeline')
         const [timelineResult, playbookResult] = await Promise.allSettled([

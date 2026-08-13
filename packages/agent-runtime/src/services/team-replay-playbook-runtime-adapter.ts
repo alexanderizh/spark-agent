@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { ReplayPlaybookService } from '../../../storage/src/replay-playbook.service.js'
-import type { SparkDatabase } from '../../../storage/src/database.js'
+import { ReplayPlaybookService } from '@spark/storage'
+import type { SparkDatabase } from '@spark/storage'
 import type { TeamToolDefinition, TeamToolHandlerResult } from './team-mcp-http-bridge.js'
 
 const ID = z.string().trim().min(1).max(160)
