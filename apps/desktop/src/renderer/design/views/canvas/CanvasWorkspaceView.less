@@ -7627,26 +7627,6 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   font-weight: 700;
 }
 
-.composer-agent-picker .composer-select-icon .composer-agent-picker-avatar,
-.composer-agent-picker .composer-select-icon .spark-avatar-fallback {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: block;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.composer-menu-item-label .composer-menu-avatar,
-.composer-menu-item-label .spark-avatar-fallback {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  display: block;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
 .composer-agent-menu {
   width: 280px;
   max-height: min(var(--composer-menu-max-height, 360px), calc(100vh - 48px));
@@ -7691,34 +7671,6 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   max-height: min(var(--composer-menu-max-height, 420px), calc(100vh - 96px));
   overflow: hidden;
   box-shadow: var(--shadow-md);
-}
-
-.composer-model-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  flex-shrink: 0;
-  margin: 0 0 4px;
-  padding: 0 8px;
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--text) 4%, transparent);
-  color: var(--text-faint);
-}
-
-.composer-model-search input {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: var(--font-sm);
-  outline: none;
-}
-
-.composer-model-list {
-  overflow: auto;
-  flex: 1 1 auto;
 }
 
 .canvas-node-floating-panel .canvas-node-edit-bottom-panel.is-composer:not(.is-fullscreen) {

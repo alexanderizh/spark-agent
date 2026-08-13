@@ -12,6 +12,7 @@ import { StreamingErrorCard } from './chat/StreamingErrorCard'
 import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
 import { CancellationNotice } from './chat/CancellationNotice'
 import { useSessionSidebar } from '../SessionSidebarContext'
+import './ProjectView.less'
 
 /** File change status tracked via file_change agent events */
 type FileChangeStatus = 'create' | 'modify' | 'delete'

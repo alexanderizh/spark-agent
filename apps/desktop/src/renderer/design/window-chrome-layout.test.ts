@@ -36,6 +36,7 @@ describe('window chrome layout contract', () => {
   it('keeps the settings titlebar surface aligned with the settings navigation', () => {
     const styles = readSource('./styles/styles.css')
     const viewStyles = readSource('./styles/views.css')
+    const settingsStyles = readSource('./views/SettingsView.less')
 
     expect(styles).toContain('--settings-nav-width: 240px')
     expect(styles).toMatch(
@@ -47,7 +48,8 @@ describe('window chrome layout contract', () => {
     expect(styles).toMatch(
       /@media \(max-width: 980px\)\s*\{[\s\S]*?\.app\.titlebar-surface-settings \.shell-titlebar,[\s\S]*?background:\s*var\(--bg-sunken\);/,
     )
-    expect(viewStyles).toMatch(/\.settings-nav\s*\{[^}]*width:\s*var\(--settings-nav-width\);/s)
+    expect(settingsStyles).toMatch(/\.settings-nav\s*\{[^}]*width:\s*var\(--settings-nav-width\);/s)
+    expect(viewStyles).not.toMatch(/(^|\n)\.settings-nav\s*\{/)
   })
 
   it('keeps every toast hit target outside the window drag region', () => {

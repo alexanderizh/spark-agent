@@ -14,6 +14,7 @@ import {
 } from '../builtinAvatars'
 import { AvatarImage } from './AvatarImage'
 import { useToast } from './Toast'
+import './AvatarPicker.less'
 
 export interface AvatarPickerProps {
   value: SparkAvatarConfig

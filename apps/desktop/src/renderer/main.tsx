@@ -8,7 +8,6 @@ import './design/styles/views.css'
 import './design/styles/markdown-code-semantics.css'
 import './design/styles/workflow-loop-body.css'
 import './design/styles/interactions.css'
-import './design/styles/board.css'
 import './design/styles/global-overrides.css'
 
 const rootElement = document.getElementById('root')
