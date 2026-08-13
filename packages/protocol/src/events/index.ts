@@ -23,6 +23,12 @@
  */
 
 import { z } from 'zod'
+import type { UserMessagePresentation } from '../turn-message-presentation.js'
+export type {
+  TurnSource,
+  UserMessagePresentation,
+  UserMessageVisibility,
+} from '../turn-message-presentation.js'
 
 // ─── 基础类型 ────────────────────────────────────────────────────────────────
 
@@ -60,7 +66,7 @@ export type BaseEvent = z.infer<typeof BaseEventSchema>
 // ─── 消息类事件 ──────────────────────────────────────────────────────────────
 
 /** 用户发送的消息 */
-export interface UserMessageEvent extends BaseEvent {
+export interface UserMessageEvent extends BaseEvent, UserMessagePresentation {
   type: 'user_message'
   content: string
   /** 附件（图片/文件/目录路径，目录作为上下文引用）*/
@@ -897,7 +903,7 @@ export interface PromptSection {
  * 在每个 turn 启动时发出，包含系统提示词、用户消息、模型配置等信息，
  * 用于白盒模式下的提示词审计与调试。
  */
-export interface TurnPromptSnapshotEvent extends BaseEvent {
+export interface TurnPromptSnapshotEvent extends BaseEvent, UserMessagePresentation {
   type: 'turn_prompt_snapshot'
   turnId: string
   /** 触发本轮的用户消息 */

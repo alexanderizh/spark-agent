@@ -17,6 +17,7 @@
  */
 
 import type { AgentEvent, SessionId, TurnId, TeamA2ATask, TeamA2AReply } from '../events/index.js'
+import type { UserMessagePresentation } from '../turn-message-presentation.js'
 import type { HookNode } from '../hooks.js'
 import type {
   ProviderMediaDefaults,
@@ -288,7 +289,7 @@ export interface SessionSubmitTurnResponse extends SessionSendTurnResponse {
   accepted: true
 }
 
-export interface SessionQueuedTurn {
+export interface SessionQueuedTurn extends UserMessagePresentation {
   turnId: string
   message: string
   enqueuedAt: string

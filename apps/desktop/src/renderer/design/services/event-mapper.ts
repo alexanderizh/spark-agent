@@ -5,6 +5,8 @@ import type {
   TeamA2AReply,
   TeamMemberEventContext,
   TurnPromptSnapshotEvent,
+  TurnSource,
+  UserMessageVisibility,
   RuntimeEventOrigin,
   UserQuestionOption,
   UserQuestionPrompt,
@@ -30,6 +32,10 @@ export type UserMessageDeliveryState = 'submitting' | 'queued' | 'accepted' | 'f
 export interface UIMessage {
   id: string
   turnId?: string
+  /** Persisted Turn source; used by the renderer's visible projection and audit-safe actions. */
+  turnSource?: TurnSource
+  /** Only the user bubble is hidden; logical messages and assistant output remain available. */
+  userMessageVisibility?: UserMessageVisibility
   role: 'user' | 'assistant'
   status: 'streaming' | 'completed' | 'error' | 'cancelled'
   blocks: UIBlock[]
@@ -535,6 +541,10 @@ export class MessageBuilder {
           timestamp: event.timestamp,
           eventIds: [event.id],
           ...(event.mentionAgentId != null ? { mentionAgentId: event.mentionAgentId } : {}),
+          ...(event.turnSource != null ? { turnSource: event.turnSource } : {}),
+          ...(event.userMessageVisibility != null
+            ? { userMessageVisibility: event.userMessageVisibility }
+            : {}),
         }
         const existingAssistantIndex = this.messages.findIndex(
           (message) => message.role === 'assistant' && message.turnId === event.turnId,

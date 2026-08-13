@@ -44,7 +44,12 @@ export function extractSearchableEventBody(eventType: string, eventJson: string)
     return null
   }
   if (parsed == null || typeof parsed !== 'object') return null
-  const event = parsed as { content?: unknown; mode?: unknown }
+  const event = parsed as {
+    content?: unknown
+    mode?: unknown
+    userMessageVisibility?: unknown
+  }
+  if (eventType === 'user_message' && event.userMessageVisibility === 'hidden') return null
   // 流式 delta 是同一段正文的碎片，索引它们会产生大量重复命中；只索引完整消息。
   if (event.mode === 'delta') return null
   if (typeof event.content !== 'string') return null
@@ -210,9 +215,11 @@ export class EventRepository extends BaseRepository {
       const rowid =
         info.lastInsertRowid != null
           ? (info.lastInsertRowid as number | bigint)
-          : (this.raw
-              .prepare('SELECT rowid FROM agent_event_fts_map WHERE event_id = ?')
-              .get(params.id) as { rowid: number | bigint } | undefined)?.rowid
+          : (
+              this.raw
+                .prepare('SELECT rowid FROM agent_event_fts_map WHERE event_id = ?')
+                .get(params.id) as { rowid: number | bigint } | undefined
+            )?.rowid
       if (rowid == null) return
       // segmentCjk 必须与查询侧一致——这是 FTS5 CJK 检索的硬约束。
       this.raw
@@ -231,9 +238,7 @@ export class EventRepository extends BaseRepository {
     if (this.searchIndexEnabled === undefined) {
       try {
         const row = this.raw
-          .prepare(
-            `SELECT name FROM sqlite_master WHERE type='table' AND name='agent_event_fts'`,
-          )
+          .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='agent_event_fts'`)
           .get() as { name: string } | undefined
         this.searchIndexEnabled = row?.name === 'agent_event_fts'
       } catch {
@@ -422,9 +427,7 @@ export class EventRepository extends BaseRepository {
        ORDER BY seq DESC, created_at DESC, rowid DESC
        LIMIT 1`,
     )
-    return (
-      (stmt.get(sessionId, eventType, jsonPath, value) as AgentEventRow | undefined) ?? null
-    )
+    return (stmt.get(sessionId, eventType, jsonPath, value) as AgentEventRow | undefined) ?? null
   }
 
   /** 按 session 查询完整事件历史，按时间线正序返回。 */
@@ -812,7 +815,7 @@ export class EventRepository extends BaseRepository {
   ): Array<{ sessionId: string; snippet: string }> {
     const pattern = `%${this.escapeLikePattern(query)}%`
     const stmt = this.raw.prepare(
-      `SELECT DISTINCT session_id, event_json
+      `SELECT DISTINCT session_id, event_type, event_json
        FROM agent_events
        WHERE event_json LIKE ? ESCAPE '\\'
        ORDER BY created_at DESC
@@ -824,8 +827,9 @@ export class EventRepository extends BaseRepository {
     const results: Array<{ sessionId: string; snippet: string }> = []
     for (const row of rows) {
       if (seen.has(row.session_id)) continue
-      seen.add(row.session_id)
       const body = extractSearchableEventBody(row.event_type, row.event_json)
+      if (row.event_type === 'user_message' && body == null) continue
+      seen.add(row.session_id)
       // 只在真正的对话正文里找匹配点——避免命中字段名/工具参数等 JSON 结构噪音
       const haystack = body ?? row.event_json
       if (!haystack.toLowerCase().includes(query.toLowerCase())) continue
@@ -857,9 +861,7 @@ export class EventRepository extends BaseRepository {
     const settings = this.raw.prepare(
       `SELECT value FROM app_settings WHERE category = ? AND key = ?`,
     )
-    const done = settings.get('session-search', 'ftsBackfillDone') as
-      | { value: string }
-      | undefined
+    const done = settings.get('session-search', 'ftsBackfillDone') as { value: string } | undefined
     if (done?.value === 'true') return 0
 
     const BACKFILL_BATCH = 500
@@ -879,9 +881,7 @@ export class EventRepository extends BaseRepository {
     const ftsStmt = this.raw.prepare(
       `INSERT OR REPLACE INTO agent_event_fts (rowid, body) VALUES (?, ?)`,
     )
-    const lookupStmt = this.raw.prepare(
-      `SELECT rowid FROM agent_event_fts_map WHERE event_id = ?`,
-    )
+    const lookupStmt = this.raw.prepare(`SELECT rowid FROM agent_event_fts_map WHERE event_id = ?`)
 
     while (true) {
       const rows = scanStmt.all(lastEventId ?? '', BACKFILL_BATCH) as Array<{

@@ -11,6 +11,7 @@ import { MessageBuilder, type UIBlock, type UIMessage } from '../services/event-
 import { StreamingErrorCard } from './chat/StreamingErrorCard'
 import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
 import { CancellationNotice } from './chat/CancellationNotice'
+import { projectVisibleChatMessages } from './chat/internal-turn-message-visibility'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import './ProjectView.less'
 
@@ -400,6 +401,7 @@ function DiffLine({ type, ln, text }: { type: string; ln?: string; text: string 
 function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) {
   const [sessionId, setSessionId] = useState<SessionId | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
+  const visibleMessages = useMemo(() => projectVisibleChatMessages(messages), [messages])
   const [agentStatus, setAgentStatus] = useState<AgentStatusValue>('idle')
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(true)
@@ -555,14 +557,14 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
               <div className="empty-desc">{notice}</div>
             </div>
           )}
-          {!loading && !notice && messages.length === 0 && (
+          {!loading && !notice && visibleMessages.length === 0 && (
             <div className="empty-state">
               <div className="empty-icon"><Icons.Sparkles size={24} /></div>
               <div className="empty-title">开始对话</div>
               <div className="empty-desc">在此输入消息开始与 Agent 对话</div>
             </div>
           )}
-          {!loading && messages.map((message) => (
+          {!loading && visibleMessages.map((message) => (
             <MiniMsg key={message.id} user={message.role === 'user'} status={message.status === 'streaming' ? 'running' : undefined}>
               {message.blocks.map((block, index) => renderBlock(block, index))}
             </MiniMsg>

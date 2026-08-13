@@ -22,6 +22,8 @@ describe('runSessionScheduledTaskTurn', () => {
     expect(submitTurn).toHaveBeenCalledWith({
       sessionId: 'session-1',
       message: 'Inspect the current repository state',
+      turnSource: 'scheduled_task',
+      userMessageVisibility: 'hidden',
     })
     expect(onSessionCreated).toHaveBeenCalledWith('session-1')
     expect(result).toEqual({ sessionId: 'session-1', output: 'Turn turn-1 queued' })

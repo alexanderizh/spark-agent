@@ -96,6 +96,25 @@ describe('EventRepository — 会话内容搜索 (FTS5)', () => {
     expect(results.filter((r) => r.sessionId === 's1')).toHaveLength(1)
   })
 
+  it('不索引明确隐藏的内部用户消息正文', () => {
+    repo.insert({
+      ...userMessage('s-hidden', 'scheduled-private-marker'),
+      eventJson: JSON.stringify({
+        content: 'scheduled-private-marker',
+        turnSource: 'scheduled_task',
+        userMessageVisibility: 'hidden',
+      }),
+    })
+
+    expect(repo.searchByContent('scheduled-private-marker', 10)).toEqual([])
+    expect(
+      extractSearchableEventBody(
+        'user_message',
+        JSON.stringify({ content: 'secret', userMessageVisibility: 'hidden' }),
+      ),
+    ).toBeNull()
+  })
+
   it('deleteBySession 同步清除该 session 的索引项（触发器保证）', () => {
     repo.insert(userMessage('s1', 'unique-marker-xyz-to-delete'))
     expect(repo.searchByContent('unique-marker-xyz-to-delete', 10)).toHaveLength(1)
@@ -156,7 +175,10 @@ describe('EventRepository — 会话内容搜索 (FTS5)', () => {
 
   it('extractSearchableEventBody 只返回对话正文的纯文本', () => {
     expect(
-      extractSearchableEventBody('user_message', JSON.stringify({ content: 'hi', mode: 'complete' })),
+      extractSearchableEventBody(
+        'user_message',
+        JSON.stringify({ content: 'hi', mode: 'complete' }),
+      ),
     ).toBe('hi')
 
     // 工具事件不参与检索
@@ -170,7 +192,10 @@ describe('EventRepository — 会话内容搜索 (FTS5)', () => {
     ).toBeNull()
     // 空 content 不参与
     expect(
-      extractSearchableEventBody('user_message', JSON.stringify({ content: '   ', mode: 'complete' })),
+      extractSearchableEventBody(
+        'user_message',
+        JSON.stringify({ content: '   ', mode: 'complete' }),
+      ),
     ).toBeNull()
     // 坏 JSON 不抛
     expect(extractSearchableEventBody('user_message', '{bad')).toBeNull()
@@ -210,6 +235,30 @@ describe('EventRepository — FTS 不可用时降级到 LIKE', () => {
 
     const results = repo.searchByContent('降级路径', 10)
     expect(results.map((r) => r.sessionId)).toEqual(['s1'])
+
+    db.close()
+  })
+
+  it('LIKE 兜底不会暴露明确隐藏的内部用户消息', () => {
+    const db = new SparkDatabase(join(testDir, 'hidden-fallback.db'))
+    db.runMigrations(join(process.cwd(), 'migrations'))
+    db.raw.exec(`DROP TRIGGER IF EXISTS agent_events_fts_after_delete`)
+    db.raw.exec(`DROP TABLE IF EXISTS agent_event_fts`)
+    db.raw.exec(`DROP TABLE IF EXISTS agent_event_fts_map`)
+
+    const repo = new EventRepository(db)
+    repo.insert({
+      id: 'hidden-event',
+      sessionId: 'hidden-session',
+      eventType: 'user_message',
+      eventJson: JSON.stringify({
+        content: 'fallback-private-marker',
+        turnSource: 'scheduled_task',
+        userMessageVisibility: 'hidden',
+      }),
+    })
+
+    expect(repo.searchByContent('fallback-private-marker', 10)).toEqual([])
 
     db.close()
   })

@@ -341,6 +341,24 @@ describe('MessageBuilder', () => {
     expect(messages[0]?.blocks).toMatchObject([{ kind: 'text', content: 'hello' }])
   })
 
+  it('preserves internal Turn presentation metadata on the logical user message', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('user_message'),
+      type: 'user_message',
+      content: 'internal prompt',
+      turnSource: 'scheduled_task',
+      userMessageVisibility: 'hidden',
+    })
+
+    expect(builder.getAllMessages()[0]).toMatchObject({
+      role: 'user',
+      turnSource: 'scheduled_task',
+      userMessageVisibility: 'hidden',
+    })
+  })
+
   it('does not append duplicate streaming deltas with the same event id', () => {
     const builder = new MessageBuilder()
     const delta: AgentEvent = {

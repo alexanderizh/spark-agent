@@ -816,7 +816,15 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
     startingTurnIds: Map<string, string>
     cancelledTurnIds: Set<string>
     startNextQueuedTurn: (sessionId: string) => void
-    startTurn: (sessionId: string, turnId: string, message: string) => Promise<void>
+    startTurn: (
+      sessionId: string,
+      turnId: string,
+      message: string,
+      presentation?: {
+        turnSource?: 'user' | 'scheduled_task' | 'goal_contract_draft' | 'goal_iteration'
+        userMessageVisibility?: 'visible' | 'hidden'
+      },
+    ) => Promise<void>
   }
 
   function makeStartTurnService(maxConcurrent: number, activeCount: number): StartTurnInternals {
@@ -832,13 +840,11 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
     service.cancelledTurnIds = new Set()
     service.startNextQueuedTurn = vi.fn()
     service.enqueueTurn = vi.fn()
-    service.makePendingTurn = vi.fn(
-      (turnId: string, message: string) => ({
-        turnId,
-        message,
-        enqueuedAt: '2026-07-26T00:00:00.000Z',
-      }),
-    )
+    service.makePendingTurn = vi.fn((turnId: string, message: string) => ({
+      turnId,
+      message,
+      enqueuedAt: '2026-07-26T00:00:00.000Z',
+    }))
     return service
   }
 
@@ -854,6 +860,27 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
     expect(service.activeLoops.has('session-new')).toBe(false)
     expect(enqueueTurn).toHaveBeenCalledOnce()
     expect(enqueueTurn.mock.calls[0]![0]).toBe('session-new')
+  })
+
+  it('入队时保留内部 Turn 的来源与用户消息可见性', async () => {
+    const service = makeStartTurnService(1, 1)
+    const presentation = {
+      turnSource: 'scheduled_task' as const,
+      userMessageVisibility: 'hidden' as const,
+    }
+
+    await service.startTurn('session-new', 'turn-1', 'internal prompt', presentation)
+
+    expect(service.makePendingTurn).toHaveBeenCalledWith(
+      'turn-1',
+      'internal prompt',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      presentation,
+    )
   })
 
   it('全局未满时 startTurn 正常进入（不被误拦）', async () => {
@@ -892,6 +919,44 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
     })
 
     expect(enqueueTurn).not.toHaveBeenCalled()
+  })
+})
+
+describe('SessionService.queueSnapshot (内部 Turn 展示隔离)', () => {
+  it('给 Renderer 队列保留 hidden 展示元数据', () => {
+    const service = Object.create(SessionService.prototype) as {
+      toQueuedTurns: (
+        turns: Array<{
+          turnId: string
+          message: string
+          enqueuedAt: string
+          userMessageVisibility?: 'visible' | 'hidden'
+        }>,
+      ) => Array<{ turnId: string; message: string }>
+    }
+
+    expect(
+      service.toQueuedTurns([
+        {
+          turnId: 'internal-turn',
+          message: 'internal prompt',
+          enqueuedAt: '2026-08-13T00:00:00.000Z',
+          userMessageVisibility: 'hidden',
+        },
+        {
+          turnId: 'user-turn',
+          message: 'visible prompt',
+          enqueuedAt: '2026-08-13T00:00:01.000Z',
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        turnId: 'internal-turn',
+        message: 'internal prompt',
+        userMessageVisibility: 'hidden',
+      }),
+      expect.objectContaining({ turnId: 'user-turn', message: 'visible prompt' }),
+    ])
   })
 })
 

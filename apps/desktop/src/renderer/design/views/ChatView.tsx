@@ -99,6 +99,7 @@ import {
   type ToolLogGroupKind,
 } from './chat/ChatActivitySegments'
 import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
+import { projectVisibleChatMessages } from './chat/internal-turn-message-visibility'
 import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
 import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
 import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
@@ -994,6 +995,14 @@ export function ChatView({
   const chatLayoutRef = useRef<HTMLDivElement | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
+  const activeVisibleMessages = useMemo(
+    () => projectVisibleChatMessages(activeMessages),
+    [activeMessages],
+  )
+  const sideChatVisibleMessages = useMemo(
+    () => projectVisibleChatMessages(sideChatMessages),
+    [sideChatMessages],
+  )
   const activeHtmlPanelBlock = useMemo(() => {
     if (activeHtmlPanelBlockId == null) return null
     for (const message of activeMessages) {
@@ -1156,7 +1165,7 @@ export function ChatView({
   }, [sessionCtx, setTweak])
 
   const handleCopyAllMessages = useCallback(() => {
-    const markdown = serializeMessagesToMarkdown(activeMessages)
+    const markdown = serializeMessagesToMarkdown(activeVisibleMessages)
     if (!markdown) {
       toast.info('当前会话暂无可复制的聊天记录')
       return
@@ -1165,7 +1174,7 @@ export function ChatView({
       .writeText(markdown)
       .then(() => toast.success('已复制全部聊天记录'))
       .catch((err) => toast.error(err instanceof Error ? err.message : '复制失败'))
-  }, [activeMessages, toast])
+  }, [activeVisibleMessages, toast])
 
   // ── 文件预览状态 ──
   const [filePreview, setFilePreview] = useState<{
@@ -1724,10 +1733,7 @@ export function ChatView({
     prevAutoOpenGitChangedFilesRef.current = currChangedFiles
     prevAutoOpenGoalPresentRef.current = currGoalPresent
 
-    if (
-      shouldOpen &&
-      shouldAutoCollapseGitEnvPanel(readGitEnvPanelRightGutter())
-    ) {
+    if (shouldOpen && shouldAutoCollapseGitEnvPanel(readGitEnvPanelRightGutter())) {
       gitEnvPanelViewportCollapsedRef.current = true
       return
     }
@@ -2394,7 +2400,7 @@ export function ChatView({
         contextUsage={contextUsage}
         contextLedger={contextLedger}
         isWorking={composerIsWorking}
-        messages={activeMessages}
+        messages={activeVisibleMessages}
         approvalRequest={approvalRequest}
         {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
         onCreateSession={(options) =>
@@ -2452,7 +2458,7 @@ export function ChatView({
         contextUsage={contextUsage}
         contextLedger={contextLedger}
         isWorking={composerIsWorking}
-        messages={activeMessages}
+        messages={activeVisibleMessages}
         approvalRequest={approvalRequest}
         {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
         onCreateSession={(options) =>
@@ -2789,7 +2795,7 @@ export function ChatView({
         <ChatInspector
           session={activeSession}
           workspace={activeSessionWorkspace ?? activeWorkspace}
-          messages={active == null ? [] : activeMessages}
+          messages={active == null ? [] : activeVisibleMessages}
           usageData={sessionUsageData}
           projectContext={projectContext}
           contextUsage={contextUsage}
@@ -2915,7 +2921,7 @@ export function ChatView({
           ) : activeUnifiedSideTab === 'plan' ? (
             <PlanSidePanel
               session={activeSession}
-              messages={activeMessages}
+              messages={activeVisibleMessages}
               proposedPlan={
                 proposedPlan != null && active != null && proposedPlan.sessionId === active
                   ? proposedPlan
@@ -3001,7 +3007,7 @@ export function ChatView({
                     contextUsage={sideChatContextUsage}
                     contextLedger={sideChatContextLedger}
                     isWorking={isComposerSessionWorking(sideChatSession.status)}
-                    messages={sideChatMessages}
+                    messages={sideChatVisibleMessages}
                     approvalRequest={null}
                     onCreateSession={(options) =>
                       createSideChatSession(options as Record<string, unknown>)
@@ -3168,7 +3174,10 @@ function ChatStream({
   const virtualMessageListRef = useRef<VirtualMessageListHandle | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
   const displayMessages = useMemo(
-    () => mergeOptimisticUserMessages(messages, optimisticMessages ?? [], sessionId),
+    () =>
+      projectVisibleChatMessages(
+        mergeOptimisticUserMessages(messages, optimisticMessages ?? [], sessionId),
+      ),
     [messages, optimisticMessages, sessionId],
   )
   const turnNavItems = useMemo(() => buildChatTurnNavItems(displayMessages), [displayMessages])
@@ -3310,10 +3319,7 @@ function ChatStream({
       const callbacks = viewCallbacksRef.current
       const hadRunningTeamMemberActivity =
         event.type === 'agent_status' &&
-        hasRunningTeamMemberActivity(
-          builderRef.current.getAllMessages(),
-          getBlockTeamMemberContext,
-        )
+        hasRunningTeamMemberActivity(builderRef.current.getAllMessages(), getBlockTeamMemberContext)
       // /clear 等清空历史的命令在写入新事件前会先发这条「分隔符」事件，
       // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
       // 让随后的 user/assistant/completed 在干净的画布上重新渲染。
@@ -4053,12 +4059,12 @@ function ChatStream({
   }, [displayMessages, agents, assistantAgentId, assistantName, assistantAvatarSrc])
 
   const selectedMessages = useMemo(
-    () => messages.filter((msg) => selectedMessageIds.has(msg.id)),
-    [messages, selectedMessageIds],
+    () => displayMessages.filter((msg) => selectedMessageIds.has(msg.id)),
+    [displayMessages, selectedMessageIds],
   )
   const expandedAssistantMessageIds = useMemo(
-    () => getRecentAssistantMessageIds(messages, 2),
-    [messages],
+    () => getRecentAssistantMessageIds(displayMessages, 2),
+    [displayMessages],
   )
 
   const toggleMessageSelected = useCallback((messageId: string) => {
@@ -4084,9 +4090,9 @@ function ChatStream({
   const selectAllMessages = useCallback(() => {
     // streaming 消息不渲染勾选框、无法取消，不纳入选中集
     setSelectedMessageIds(
-      new Set(messages.filter((msg) => msg.status !== 'streaming').map((msg) => msg.id)),
+      new Set(displayMessages.filter((msg) => msg.status !== 'streaming').map((msg) => msg.id)),
     )
-  }, [messages])
+  }, [displayMessages])
 
   const clearSelection = useCallback(() => {
     setSelectedMessageIds(new Set())

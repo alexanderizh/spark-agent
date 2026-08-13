@@ -36,4 +36,40 @@ describe('buildErrorRetryPayload', () => {
       attachments: [{ type: 'file', path: '/tmp/input.txt', name: 'input.txt' }],
     })
   })
+
+  it('does not reuse an earlier visible user turn for a hidden internal turn failure', () => {
+    const messages: UIMessage[] = [
+      {
+        id: 'user-visible',
+        turnId: 'turn-visible',
+        role: 'user',
+        status: 'completed',
+        blocks: [{ kind: 'text', content: 'do not retry this', isStreaming: false }],
+        usage: null,
+        eventIds: ['user-visible'],
+      },
+      {
+        id: 'user-hidden',
+        turnId: 'turn-internal',
+        role: 'user',
+        status: 'completed',
+        blocks: [{ kind: 'text', content: 'internal prompt', isStreaming: false }],
+        usage: null,
+        eventIds: ['user-hidden'],
+        turnSource: 'goal_iteration',
+        userMessageVisibility: 'hidden',
+      },
+      {
+        id: 'assistant-error',
+        turnId: 'turn-internal',
+        role: 'assistant',
+        status: 'error',
+        blocks: [{ kind: 'error', code: 'FAILED', message: 'failed', retryable: true }],
+        usage: null,
+        eventIds: ['assistant-error'],
+      },
+    ]
+
+    expect(buildErrorRetryPayload(messages, 2)).toBeNull()
+  })
 })

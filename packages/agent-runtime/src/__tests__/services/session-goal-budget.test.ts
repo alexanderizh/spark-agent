@@ -296,5 +296,9 @@ describe('SessionService goal loop budget enforcement', () => {
     expect(state.goals.get('goal-1')?.status).toBe('active')
     expect(state.goals.get('goal-1')?.progressLog).toHaveLength(2)
     expect(startTurn).toHaveBeenCalledTimes(1)
+    expect(startTurn).toHaveBeenCalledWith('session-1', expect.any(String), expect.any(String), {
+      turnSource: 'goal_iteration',
+      userMessageVisibility: 'hidden',
+    })
   })
 })

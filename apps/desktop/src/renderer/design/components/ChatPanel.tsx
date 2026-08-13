@@ -21,6 +21,7 @@ import {
 } from '../services/event-mapper'
 import { StreamingErrorCard } from '../views/chat/StreamingErrorCard'
 import { RuntimeSignalCard } from '../views/chat/RuntimeSignalCard'
+import { projectVisibleChatMessages } from '../views/chat/internal-turn-message-visibility'
 import { CancellationNotice } from '../views/chat/CancellationNotice'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
@@ -721,7 +722,8 @@ export function ChatPanel({
     if (status === 'streaming') return 'agent 正在回复...'
     return placeholder ?? '输入消息（Enter 发送，Shift+Enter 换行）'
   }, [cancelling, error, loading, status, placeholder])
-  const turns = useMemo(() => groupChatPanelMessagesByTurn(messages), [messages])
+  const visibleMessages = useMemo(() => projectVisibleChatMessages(messages), [messages])
+  const turns = useMemo(() => groupChatPanelMessagesByTurn(visibleMessages), [visibleMessages])
 
   return (
     <div className="chat-panel">
@@ -770,7 +772,7 @@ export function ChatPanel({
             </button>
           </div>
         )}
-        {messages.length === 0 &&
+        {visibleMessages.length === 0 &&
           pendingUserText == null &&
           !showAssistantPending &&
           emptyState && <div className="chat-panel-empty">{emptyState}</div>}

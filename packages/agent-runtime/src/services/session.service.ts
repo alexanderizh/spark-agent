@@ -62,6 +62,7 @@ import type {
   AgentStatusEvent,
   AgentStatusValue,
   SessionHistoryResetEvent,
+  UserMessagePresentation,
   HookNode,
   SessionAttachment,
   UserQuestionPrompt,
@@ -72,10 +73,13 @@ import type {
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import {
+  GOAL_CONTRACT_DRAFT_TURN_PRESENTATION,
+  GOAL_ITERATION_TURN_PRESENTATION,
   LOCAL_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
+  pickUserMessagePresentation,
   getAutoRouterAdapterForProviderId,
 } from '@spark/protocol'
 import { estimateTokens, normalizeReasoningBudgetTokens } from '@spark/shared'
@@ -407,7 +411,7 @@ interface FirstTurnTitleContext {
   model: string
   userMessage: string
 }
-interface TryStartSDKTurnOptions {
+interface TryStartSDKTurnOptions extends UserMessagePresentation {
   firstTurnTitleContext?: FirstTurnTitleContext
   /**
    * 团队模式 @ 路由：当前 turn 实际由该 Member 直接响应。
@@ -433,7 +437,7 @@ type SessionRuntimePatch = {
   chatMode?: 'agent' | 'ask' | 'edit' | 'review'
   reasoningEffort?: SparkReasoningEffort
 }
-type PendingTurn = {
+type PendingTurn = UserMessagePresentation & {
   turnId: string
   message: string
   enqueuedAt: string
@@ -445,7 +449,7 @@ type PendingTurn = {
   mentionAgentId?: string
 }
 
-type SendTurnParams = {
+type SendTurnParams = UserMessagePresentation & {
   sessionId: string
   message: string
   providerProfileId?: string
@@ -1882,6 +1886,7 @@ export class SessionService {
   ): Promise<{ turnId: string; started: boolean }> {
     if (this.disposing) throw new Error('Session service is shutting down')
     const { sessionId, message, skillId, skillParams, mentionAgentId, invocationObserver } = params
+    const userMessagePresentation = pickUserMessagePresentation(params)
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
@@ -1917,6 +1922,7 @@ export class SessionService {
       skillParams,
       attachments,
       mentionAgentId,
+      userMessagePresentation,
     )
     if (durable) {
       new TurnRequestRepository(this.db).create({
@@ -1991,6 +1997,7 @@ export class SessionService {
         sessionId,
         turnId,
         message,
+        userMessagePresentation,
         runtimePatch,
         skillId,
         skillParams,
@@ -2009,6 +2016,7 @@ export class SessionService {
     sessionId: string,
     turnId: string,
     message: string,
+    userMessagePresentation?: UserMessagePresentation,
     runtimePatch?: SessionRuntimePatch,
     skillId?: string,
     skillParams?: Record<string, unknown>,
@@ -2027,6 +2035,7 @@ export class SessionService {
           skillParams,
           attachments,
           mentionAgentId,
+          userMessagePresentation,
         ),
       )
       return
@@ -2052,6 +2061,7 @@ export class SessionService {
           skillParams,
           attachments,
           mentionAgentId,
+          userMessagePresentation,
         ),
       )
       return
@@ -2068,6 +2078,7 @@ export class SessionService {
           skillParams,
           attachments,
           mentionAgentId,
+          userMessagePresentation,
         ),
       )
       return
@@ -2089,6 +2100,7 @@ export class SessionService {
         attachments,
         mentionAgentId,
         invocationObserver,
+        userMessagePresentation,
       )
     } finally {
       if (ownsStartingTurn && this.startingTurnIds.get(sessionId) === turnId) {
@@ -2110,6 +2122,7 @@ export class SessionService {
     attachments?: SessionAttachment[],
     mentionAgentId?: string,
     invocationObserver?: (snapshot: SDKInvocationSnapshot) => void,
+    userMessagePresentation?: UserMessagePresentation,
   ): Promise<void> {
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
@@ -2189,8 +2202,11 @@ export class SessionService {
       }
     }
     // W1.1b：history 加载延后到 sdkResume 判定后，避免 SDK resume 路径下重复摘要写入。
-    const isFirstTurn = existingEventCount === 0 && shouldDeriveSessionTitle(session.title)
-    if (isFirstTurn) {
+    const shouldGenerateSessionTitle =
+      existingEventCount === 0 &&
+      userMessagePresentation?.userMessageVisibility !== 'hidden' &&
+      shouldDeriveSessionTitle(session.title)
+    if (shouldGenerateSessionTitle) {
       const derivedTitle = deriveSessionTitle(message)
       sessionRepo.updateTitle(sessionId, derivedTitle)
       this.onSessionRenamed?.(sessionId, derivedTitle)
@@ -3012,6 +3028,7 @@ export class SessionService {
           permissionMode,
           toolCount: toolCountEstimate,
           sdkSessionId,
+          ...userMessagePresentation,
           ...(runtimeLogEnabled ? { runtimeLoadStatus } : {}),
           ...(agentAdapter === 'claude-sdk' || agentAdapter === 'claude'
             ? { sdkPreset: 'claude_code' }
@@ -3200,11 +3217,12 @@ export class SessionService {
         primaryWorkspaceId: primaryWorkspaceId ?? '',
         agentId: agent.id,
         workspaceRootPath,
+        ...userMessagePresentation,
       }
       // Local CLI 走宿主 OAuth，没有可直发的 apiKey；跳过远程标题精炼，
       // 仍保留首轮触发的简单本地标题（deriveSessionTitle）。
       // Mention turn 不参与首轮标题精炼（会话已有上下文）。
-      if (isFirstTurn && !isLocalCli && !isMentionTurn) {
+      if (shouldGenerateSessionTitle && !isLocalCli && !isMentionTurn) {
         turnOptions.firstTurnTitleContext = {
           providerType: provider.provider_type,
           apiKey,
@@ -3305,6 +3323,7 @@ export class SessionService {
         primaryWorkspaceId: primaryWorkspaceId ?? '',
         agentId: agent.id,
         workspaceRootPath,
+        ...userMessagePresentation,
       },
     )
   }
@@ -3378,6 +3397,7 @@ export class SessionService {
     config: SDKExecutorConfig,
     options: TryStartSDKTurnOptions = {},
   ): Promise<void> {
+    const userMessagePresentation = pickUserMessagePresentation(options)
     const makeBase = () => ({
       id: crypto.randomUUID(),
       sessionId,
@@ -3394,6 +3414,7 @@ export class SessionService {
           ...makeBase(),
           type: 'user_message',
           content: message,
+          ...userMessagePresentation,
         },
         eventRepo,
       )
@@ -3434,6 +3455,7 @@ export class SessionService {
           ...makeBase(),
           type: 'user_message',
           content: message,
+          ...userMessagePresentation,
         },
         eventRepo,
       )
@@ -3545,7 +3567,12 @@ export class SessionService {
         userMessage: message,
         rawError: canvasSetupFailure,
       })) {
-        this.emitAndPersist(sessionId, turnId, event, eventRepo)
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          event.type === 'user_message' ? { ...event, ...userMessagePresentation } : event,
+          eventRepo,
+        )
       }
       sessionRepo.updateStatus(sessionId, 'error')
       return
@@ -3721,6 +3748,9 @@ export class SessionService {
         if (key != null) observedFileChangeKeys.add(key)
       }
       let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
+      if (event.type === 'user_message') {
+        outgoing = { ...outgoing, ...userMessagePresentation } as UserMessageEvent
+      }
       if (mentionAgentId != null) {
         if (event.type === 'assistant_message' && typeof event.content === 'string') {
           outgoing = {
@@ -3738,7 +3768,7 @@ export class SessionService {
             ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
           }
         } else if (event.type === 'user_message') {
-          outgoing = { ...event, mentionAgentId }
+          outgoing = { ...(outgoing as UserMessageEvent), mentionAgentId }
         } else if (
           mentionMemberContext != null &&
           (event.type === 'tool_call' ||
@@ -3995,6 +4025,7 @@ export class SessionService {
     config: SDKExecutorConfig,
     options: TryStartSDKTurnOptions = {},
   ): Promise<void> {
+    const userMessagePresentation = pickUserMessagePresentation(options)
     const makeBase = () => ({
       id: crypto.randomUUID(),
       sessionId,
@@ -4012,6 +4043,7 @@ export class SessionService {
           ...makeBase(),
           type: 'user_message',
           content: message,
+          ...userMessagePresentation,
         },
         eventRepo,
       )
@@ -4111,7 +4143,12 @@ export class SessionService {
         userMessage: message,
         rawError: canvasSetupFailure,
       })) {
-        this.emitAndPersist(sessionId, turnId, event, eventRepo)
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          event.type === 'user_message' ? { ...event, ...userMessagePresentation } : event,
+          eventRepo,
+        )
       }
       sessionRepo.updateStatus(sessionId, 'error')
       return
@@ -4214,6 +4251,9 @@ export class SessionService {
         if (key != null) observedFileChangeKeys.add(key)
       }
       let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
+      if (event.type === 'user_message') {
+        outgoing = { ...outgoing, ...userMessagePresentation } as UserMessageEvent
+      }
       if (mentionAgentId != null) {
         if (event.type === 'assistant_message' && typeof event.content === 'string') {
           outgoing = {
@@ -4231,7 +4271,7 @@ export class SessionService {
             ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
           }
         } else if (event.type === 'user_message') {
-          outgoing = { ...event, mentionAgentId }
+          outgoing = { ...event, ...userMessagePresentation, mentionAgentId }
         } else if (
           mentionMemberContext != null &&
           (event.type === 'tool_call' ||
@@ -5406,17 +5446,21 @@ export class SessionService {
       ctx.consumerAdapter !== 'claude-sdk'
     const discussionId = ctx.discussionId
     const discussionRepo = discussionId != null ? this.getTeamDiscussionRepository() : null
-    const ledgerAdapter = discussionId != null
-      ? new TeamLedgerRuntimeAdapter(this.db, {
-          sessionId: ctx.sessionId,
-          discussionId,
-          actorId: ctx.hostAgent.id,
-          actorAuthority: ctx.ledgerActorAuthority ?? 'system-observed',
-          ...(ctx.teamConfig.threadContextTokenBudget != null
-            ? { maxEntries: 50, maxChars: Math.min(6000, ctx.teamConfig.threadContextTokenBudget * 4) }
-            : {}),
-        })
-      : null
+    const ledgerAdapter =
+      discussionId != null
+        ? new TeamLedgerRuntimeAdapter(this.db, {
+            sessionId: ctx.sessionId,
+            discussionId,
+            actorId: ctx.hostAgent.id,
+            actorAuthority: ctx.ledgerActorAuthority ?? 'system-observed',
+            ...(ctx.teamConfig.threadContextTokenBudget != null
+              ? {
+                  maxEntries: 50,
+                  maxChars: Math.min(6000, ctx.teamConfig.threadContextTokenBudget * 4),
+                }
+              : {}),
+          })
+        : null
     let currentDiscussionRound = ctx.discussionRoundIndex ?? 0
     let discussionConcludedReason: 'concluded' | 'canceled' | 'max_rounds' | null = null
 
@@ -5723,8 +5767,7 @@ export class SessionService {
                   currentDepth: ctx.currentDepth ?? 0,
                   emitEvent: (event) =>
                     this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
-                  onActivityChange: (sessionId) =>
-                    this.handleTeamDispatchActivityChange(sessionId),
+                  onActivityChange: (sessionId) => this.handleTeamDispatchActivityChange(sessionId),
                   ...(ctx.signal != null ? { signal: ctx.signal } : {}),
                   ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
                   executeMember: ({
@@ -6402,7 +6445,12 @@ export class SessionService {
       ...(ledgerAdapter != null
         ? ledgerAdapter
             .buildToolDefinitions()
-            .filter((def) => ctx.ledgerActorAuthority !== 'agent-inferred' || def.name === 'team_ledger_read' || def.name === 'team_ledger_propose')
+            .filter(
+              (def) =>
+                ctx.ledgerActorAuthority !== 'agent-inferred' ||
+                def.name === 'team_ledger_read' ||
+                def.name === 'team_ledger_propose',
+            )
         : []),
       ...(agentMessageDef != null ? [agentMessageDef] : []),
       ...(roundAdvanceDef != null ? [roundAdvanceDef] : []),
@@ -6891,9 +6939,9 @@ export class SessionService {
             discussionId,
             actorId: member.id,
             actorAuthority: 'agent-inferred',
-          ...(teamConfig.threadContextTokenBudget != null
-            ? { maxChars: Math.min(6000, teamConfig.threadContextTokenBudget * 4) }
-            : {}),
+            ...(teamConfig.threadContextTokenBudget != null
+              ? { maxChars: Math.min(6000, teamConfig.threadContextTokenBudget * 4) }
+              : {}),
           }).renderActiveSummary()}`
         : undefined
     const userMessage = memberRouteMessage
@@ -7701,6 +7749,7 @@ export class SessionService {
     skillParams?: Record<string, unknown>,
     attachments?: SessionAttachment[],
     mentionAgentId?: string,
+    userMessagePresentation?: UserMessagePresentation,
   ): PendingTurn {
     return {
       turnId,
@@ -7711,6 +7760,7 @@ export class SessionService {
       ...(skillId != null ? { skillId } : {}),
       ...(skillParams != null ? { skillParams } : {}),
       ...(mentionAgentId != null ? { mentionAgentId } : {}),
+      ...userMessagePresentation,
     }
   }
 
@@ -7781,6 +7831,7 @@ export class SessionService {
       sessionId,
       next.turnId,
       next.message,
+      pickUserMessagePresentation(next),
       next.runtimePatch,
       next.skillId,
       next.skillParams,
@@ -7843,6 +7894,7 @@ export class SessionService {
           type: 'user_message',
           content: turn.message,
           ...(turn.attachments ? { attachments: turn.attachments } : {}),
+          ...pickUserMessagePresentation(turn),
         },
         eventRepo,
       )
@@ -7944,6 +7996,7 @@ export class SessionService {
       message: turn.message,
       enqueuedAt: turn.enqueuedAt,
       ...(turn.attachments != null ? { attachments: turn.attachments } : {}),
+      ...pickUserMessagePresentation(turn),
     }))
   }
 
@@ -8144,6 +8197,7 @@ export class SessionService {
         params.sessionId,
         draftTurnId,
         buildGoalContractDraftPrompt(pending.objective),
+        GOAL_CONTRACT_DRAFT_TURN_PRESENTATION,
       )
       return { goal: toProtocolGoal(repo.getCurrent(params.sessionId)) }
     }
@@ -8383,7 +8437,7 @@ export class SessionService {
     this.emitGoalEvent(sessionId, goal, 'goal_progress', 'active', 'Started next Goal iteration', {
       phase: 'review',
     })
-    await this.startTurn(sessionId, turnId, prompt)
+    await this.startTurn(sessionId, turnId, prompt, GOAL_ITERATION_TURN_PRESENTATION)
   }
 
   private emitGoalEvent(

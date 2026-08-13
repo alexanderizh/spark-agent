@@ -15,10 +15,13 @@ export function buildErrorRetryPayload(
   ) {
     return null
   }
+  if (assistant.userMessageVisibility === 'hidden') return null
 
   for (let index = assistantIndex - 1; index >= 0; index -= 1) {
     const message = messages[index]
     if (message?.role !== 'user') continue
+    if (assistant.turnId != null && message.turnId !== assistant.turnId) continue
+    if (message.userMessageVisibility === 'hidden') return null
     const text = message.blocks
       .filter((block) => block.kind === 'text')
       .map((block) => block.content)

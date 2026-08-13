@@ -1,5 +1,6 @@
 // @spark/protocol — 公共导出入口
 export * from './events/index.js'
+export * from './turn-message-presentation.js'
 export * from './ipc/index.js'
 export * from './media-config.js'
 export * from './minimax-media-endpoints.js'
