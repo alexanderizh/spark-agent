@@ -15,9 +15,9 @@ describe('empty conversation themes', () => {
     expect(DEFAULT_EMPTY_HERO_THEME).toBe('celestial')
   })
 
-  it('defines six unique selectable themes', () => {
-    expect(EMPTY_HERO_THEMES).toHaveLength(6)
-    expect(new Set(EMPTY_HERO_THEMES.map((theme) => theme.id)).size).toBe(6)
+  it('defines five unique selectable themes', () => {
+    expect(EMPTY_HERO_THEMES).toHaveLength(5)
+    expect(new Set(EMPTY_HERO_THEMES.map((theme) => theme.id)).size).toBe(5)
     expect(EMPTY_HERO_THEMES.map((theme) => theme.id)).toEqual(EMPTY_HERO_THEME_IDS)
   })
 
@@ -26,7 +26,7 @@ describe('empty conversation themes', () => {
     expect(isEmptyHeroThemeId('none')).toBe(true)
     expect(isEmptyHeroThemeId('luminous')).toBe(false)
     expect(isEmptyHeroThemeId('unknown')).toBe(false)
-    expect(getEmptyHeroTheme('moss').name).toBe('苔原晨光')
+    expect(getEmptyHeroTheme('geometry').name).toBe('几何引擎')
     expect(getEmptyHeroTheme('unknown' as never).id).toBe(DEFAULT_EMPTY_HERO_THEME)
   })
 
