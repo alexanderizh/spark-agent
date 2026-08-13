@@ -254,10 +254,6 @@ function EmptyHeroThemeSwitcher({
         aria-label={`切换会话主题，当前为${theme.name}`}
         aria-expanded={open}
       >
-        <span>主题</span>
-        <span className="empty-hero-theme-trigger-separator" aria-hidden="true">
-          ·
-        </span>
         <span>{EMPTY_HERO_THEME_SHORT_LABELS[theme.id]}</span>
         <Icons.ChevronDown size={11} aria-hidden="true" />
       </button>
