@@ -90,6 +90,8 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
    * auto/工具触发的目标回复不再自动转发，目标想继续对话可自己调 agent_message。
    */
   autoMentionHops?: number
+  /** Host 本 turn 的派发预算耗尽时通知 SessionService，触发隐藏 continuation turn。 */
+  onDispatchBudgetExceeded?: () => void
   /** 实际运行 member 一次 turn */
   executeMember: (args: {
     member: M
@@ -201,6 +203,7 @@ export class TeamDispatchService {
       const count = (this.dispatchCountByTurn.get(ctx.turnId) ?? 0) + 1
       this.dispatchCountByTurn.set(ctx.turnId, count)
       if (count > this.maxDispatchesPerTurn) {
+        ctx.onDispatchBudgetExceeded?.()
         return fail('internal', `Dispatch budget exceeded (${this.maxDispatchesPerTurn} per turn).`)
       }
     }

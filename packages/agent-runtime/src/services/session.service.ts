@@ -91,6 +91,11 @@ import {
 import { estimateTokens, normalizeReasoningBudgetTokens } from '@spark/shared'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
+import {
+  TEAM_DISPATCH_AUTO_CONTINUATION_PRESENTATION,
+  TEAM_DISPATCH_AUTO_CONTINUATION_PROMPT,
+  TeamDispatchAutoContinuationTracker,
+} from './team-dispatch-auto-continuation.js'
 import { runMemberExecutorIfActive } from './member-execution-lifecycle.js'
 import {
   getTeamMcpHttpBridge,
@@ -459,6 +464,8 @@ type PendingTurn = UserMessagePresentation & {
   skillParams?: Record<string, unknown>
   /** 团队模式：用户通过 @ 指定的直接处理 Agent ID（mention routing） */
   mentionAgentId?: string
+  /** 内部续跑标记：只用于用户新消息/停止时从队列移除，不改变隐藏消息展示策略。 */
+  isTeamDispatchAutoContinuation?: boolean
 }
 
 type SendTurnParams = UserMessagePresentation & {
@@ -801,6 +808,10 @@ export class SessionService {
   /** Host 已终止但成员仍在收尾时，延后到会话所有执行都退出后再落库的真实终态。 */
   private readonly deferredHostTerminalStatus = new Map<string, AgentStatusValue>()
   private readonly teamMcpToolNames = new WeakMap<object, ReadonlySet<string>>()
+  /** sessionId → the host turn whose dispatch budget was exhausted. */
+  private readonly teamDispatchBudgetExhaustedTurns = new Map<string, string>()
+  /** Bounds one budget-exhaustion continuation chain without imposing a user-visible turn limit. */
+  private readonly teamDispatchAutoContinuationTracker = new TeamDispatchAutoContinuationTracker()
   /** FR-0b 修复（审查 B-1）：turnId → 该 turn 创建的 codex HTTP 桥接 handle；turn 结束统一 close 防 leak。 */
   private readonly teamMcpHandlesByTurn = new Map<string, Set<TeamMcpBridgeHandle>>()
   private readonly pluginRuntimeMcpHandlesByTurn = new Map<string, Set<PluginRuntimeMcpHandle>>()
@@ -843,6 +854,93 @@ export class SessionService {
       )
     }
     return this.teamDispatchService
+  }
+
+  private markTeamDispatchBudgetExhausted(sessionId: string, turnId: string): void {
+    // The callback is attached only to the Host's team MCP server. Keep the
+    // running-turn check anyway so a late member callback cannot revive a
+    // cancelled/replaced session turn.
+    if (this.runningTurnIds.get(sessionId) !== turnId) return
+    this.teamDispatchBudgetExhaustedTurns.set(sessionId, turnId)
+  }
+
+  private resetTeamDispatchAutoContinuation(sessionId: string): void {
+    this.teamDispatchBudgetExhaustedTurns.delete(sessionId)
+    this.teamDispatchAutoContinuationTracker.reset(sessionId)
+  }
+
+  /** Start a hidden Host turn after the previous Host turn has released all resources. */
+  private async continueAfterTeamDispatchBudget(
+    sessionId: string,
+    exhaustedTurnId: string,
+  ): Promise<void> {
+    if (this.teamDispatchBudgetExhaustedTurns.get(sessionId) !== exhaustedTurnId) return
+    this.teamDispatchBudgetExhaustedTurns.delete(sessionId)
+
+    if (this.disposing) {
+      this.resetTeamDispatchAutoContinuation(sessionId)
+      return
+    }
+
+    // A continuation must never jump over an approval or a question that the
+    // current Host turn has left for the user to resolve.
+    if (
+      this.pendingPlanApprovals.has(sessionId) ||
+      this.pendingUserQuestionGate.isBlocked(sessionId)
+    ) {
+      this.resetTeamDispatchAutoContinuation(sessionId)
+      this.emitQueueChanged(sessionId)
+      return
+    }
+
+    // A visible user turn already waiting in FIFO order takes precedence over
+    // an internal continuation. The user can then decide how to proceed.
+    if ((this.pendingTurns.get(sessionId)?.length ?? 0) > 0) {
+      this.resetTeamDispatchAutoContinuation(sessionId)
+      await this.continueGoalOrQueue(sessionId)
+      return
+    }
+
+    const attempt = this.teamDispatchAutoContinuationTracker.claim(sessionId)
+    if (attempt == null) {
+      log.warn('team dispatch auto-continuation safety valve reached', {
+        sessionId,
+      })
+      this.resetTeamDispatchAutoContinuation(sessionId)
+      await this.continueGoalOrQueue(sessionId)
+      return
+    }
+
+    const continuationTurnId = crypto.randomUUID()
+    log.info('starting hidden team dispatch continuation turn', {
+      sessionId,
+      exhaustedTurnId,
+      continuationTurnId,
+      attempt,
+    })
+    try {
+      await this.startTurn(
+        sessionId,
+        continuationTurnId,
+        TEAM_DISPATCH_AUTO_CONTINUATION_PROMPT,
+        TEAM_DISPATCH_AUTO_CONTINUATION_PRESENTATION,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      )
+    } catch (error) {
+      log.warn('team dispatch auto-continuation failed to start', {
+        sessionId,
+        continuationTurnId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      this.resetTeamDispatchAutoContinuation(sessionId)
+      if (!this.hasActiveSessionExecution(sessionId)) await this.continueGoalOrQueue(sessionId)
+    }
   }
 
   private getTurnFileChangeKeys(sessionId: string, turnId: string): Set<string> {
@@ -2015,6 +2113,11 @@ export class SessionService {
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
+    if (userMessagePresentation.userMessageVisibility !== 'hidden') {
+      // A new visible user turn supersedes any pending internal continuation.
+      this.resetTeamDispatchAutoContinuation(sessionId)
+      this.removeQueuedTeamDispatchAutoContinuations(sessionId)
+    }
     if (params.sessionReferences != null && params.sessionReferences.length > 0) {
       const collaboration = new SessionCollaborationRepository(this.db)
       for (const reference of params.sessionReferences.slice(0, 10)) {
@@ -2160,6 +2263,8 @@ export class SessionService {
     attachments?: SessionAttachment[],
     mentionAgentId?: string,
     invocationObserver?: (snapshot: SDKInvocationSnapshot) => void,
+    /** true = 派发额度续跑的内部 turn；进入队列时必须保留该标记。 */
+    isTeamDispatchAutoContinuation = false,
   ): Promise<void> {
     if (this.hasActiveSessionExecution(sessionId)) {
       this.enqueueTurn(
@@ -2173,6 +2278,8 @@ export class SessionService {
           attachments,
           mentionAgentId,
           userMessagePresentation,
+          undefined,
+          isTeamDispatchAutoContinuation,
         ),
       )
       return
@@ -2199,6 +2306,8 @@ export class SessionService {
           attachments,
           mentionAgentId,
           userMessagePresentation,
+          undefined,
+          isTeamDispatchAutoContinuation,
         ),
       )
       return
@@ -2216,6 +2325,8 @@ export class SessionService {
           attachments,
           mentionAgentId,
           userMessagePresentation,
+          undefined,
+          isTeamDispatchAutoContinuation,
         ),
       )
       return
@@ -2856,6 +2967,8 @@ export class SessionService {
                 }
               : {}),
             ledgerActorAuthority: 'system-observed',
+            onDispatchBudgetExceeded: () =>
+              this.markTeamDispatchBudgetExhausted(sessionId, turnId),
           })) ?? undefined
         // 告诉 UI（及下面拼进系统提示词的编排提示）：本轮宿主进入编排模式（保留全量
         // 工具，提示词引导「优先派发」——不再剥离 Edit/Write/Bash，产品决策 2026-07-04）。
@@ -4138,6 +4251,7 @@ export class SessionService {
       .finally(() => {
         this.activeExecutionPromises.delete(executor)
         this.cancelledTurnIds.delete(turnId)
+        const shouldAutoContinue = this.teamDispatchBudgetExhaustedTurns.get(sessionId) === turnId
         // 清理本 turn 的 dispatch 预算计数，避免长生命周期进程内存增长
         this.teamDispatchService?.clearTurn(turnId)
         this.clearTurnFileChangeKeys(sessionId, turnId)
@@ -4148,7 +4262,12 @@ export class SessionService {
           this.activeLoops.delete(sessionId)
           if (this.runningTurnIds.get(sessionId) === turnId) this.runningTurnIds.delete(sessionId)
           this.reconcileSessionExecutionStatus(sessionId)
-          void this.continueGoalOrQueue(sessionId)
+          if (shouldAutoContinue) {
+            void this.continueAfterTeamDispatchBudget(sessionId, turnId)
+          } else {
+            this.resetTeamDispatchAutoContinuation(sessionId)
+            void this.continueGoalOrQueue(sessionId)
+          }
         }
       })
   }
@@ -4555,6 +4674,7 @@ export class SessionService {
       .finally(() => {
         this.activeExecutionPromises.delete(executor)
         this.cancelledTurnIds.delete(turnId)
+        const shouldAutoContinue = this.teamDispatchBudgetExhaustedTurns.get(sessionId) === turnId
         this.teamDispatchService?.clearTurn(turnId)
         this.clearTurnFileChangeKeys(sessionId, turnId)
         // FR-0b 修复（审查 B-1）：回收本 turn 创建的 codex HTTP 桥接 handle（Host 主循环路径）。
@@ -4563,7 +4683,12 @@ export class SessionService {
           this.activeLoops.delete(sessionId)
           if (this.runningTurnIds.get(sessionId) === turnId) this.runningTurnIds.delete(sessionId)
           this.reconcileSessionExecutionStatus(sessionId)
-          void this.continueGoalOrQueue(sessionId)
+          if (shouldAutoContinue) {
+            void this.continueAfterTeamDispatchBudget(sessionId, turnId)
+          } else {
+            this.resetTeamDispatchAutoContinuation(sessionId)
+            void this.continueGoalOrQueue(sessionId)
+          }
         }
       })
   }
@@ -5574,6 +5699,8 @@ export class SessionService {
     codexConsumerIsOpenAi?: boolean
     /** Trusted runtime authority for ledger mutations; member turns are agent-inferred. */
     ledgerActorAuthority?: import('@spark/storage').RoomLedgerAuthority
+    /** Host-only notification used to schedule a hidden continuation after cleanup. */
+    onDispatchBudgetExceeded?: () => void
   }): Promise<SDKMcpServerConfig | null> {
     // FR-0b：目标消费者是 codex 时用 HTTP 桥接（codex 子进程无法回调主进程 in-process sdk server）；
     // claude 消费者走 in-process（现状）。两形态共用下方 tool 定义，避免实现漂移。
@@ -5704,6 +5831,9 @@ export class SessionService {
           emitEvent: (event) =>
             this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
           onActivityChange: (sessionId) => this.handleTeamDispatchActivityChange(sessionId),
+          ...(ctx.onDispatchBudgetExceeded != null
+            ? { onDispatchBudgetExceeded: ctx.onDispatchBudgetExceeded }
+            : {}),
           ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
           executeMember: ({
             member,
@@ -7746,6 +7876,8 @@ export class SessionService {
       this.startingTurnIds.clear()
       this.runningTurnIds.clear()
       this.cancelledTurnIds.clear()
+      this.teamDispatchBudgetExhaustedTurns.clear()
+      this.teamDispatchAutoContinuationTracker.clear()
       this.pendingTurns.clear()
       this.pendingPlanApprovals.clear()
       this.pendingUserQuestionGate.clear()
@@ -7829,10 +7961,21 @@ export class SessionService {
     turnId: string
   }): Promise<SessionSendQueuedTurnNowResponse> {
     const { sessionId, turnId } = params
-    const queue = this.pendingTurns.get(sessionId) ?? []
-    const targetIdx = queue.findIndex((t) => t.turnId === turnId)
+    this.resetTeamDispatchAutoContinuation(sessionId)
+    let queue = this.pendingTurns.get(sessionId) ?? []
+    let targetIdx = queue.findIndex((t) => t.turnId === turnId)
     if (targetIdx === -1) {
       return { started: false, queuedTurns: this.queueSnapshot(sessionId).queuedTurns }
+    }
+    // Explicitly prioritizing a visible queued turn also cancels any older
+    // continuation that was waiting behind the concurrency/member-dispatch gate.
+    if (queue[targetIdx]?.isTeamDispatchAutoContinuation !== true) {
+      this.removeQueuedTeamDispatchAutoContinuations(sessionId)
+      queue = this.pendingTurns.get(sessionId) ?? []
+      targetIdx = queue.findIndex((t) => t.turnId === turnId)
+      if (targetIdx === -1) {
+        return { started: false, queuedTurns: this.queueSnapshot(sessionId).queuedTurns }
+      }
     }
     const targetTurn = queue.splice(targetIdx, 1)[0]!
 
@@ -7897,6 +8040,18 @@ export class SessionService {
     this.emitQueueChanged(sessionId)
   }
 
+  /** Remove queued internal continuations without touching visible/user turns. */
+  private removeQueuedTeamDispatchAutoContinuations(sessionId: string): boolean {
+    const queue = this.pendingTurns.get(sessionId)
+    if (queue == null || queue.length === 0) return false
+    const nextQueue = queue.filter((turn) => turn.isTeamDispatchAutoContinuation !== true)
+    if (nextQueue.length === queue.length) return false
+    if (nextQueue.length === 0) this.pendingTurns.delete(sessionId)
+    else this.pendingTurns.set(sessionId, nextQueue)
+    this.emitQueueChanged(sessionId)
+    return true
+  }
+
   private makePendingTurn(
     turnId: string,
     message: string,
@@ -7907,6 +8062,7 @@ export class SessionService {
     mentionAgentId?: string,
     userMessagePresentation?: UserMessagePresentation,
     sessionReferences?: Array<{ sourceSessionId: string; snapshotSeq?: number }>,
+    isTeamDispatchAutoContinuation = false,
   ): PendingTurn {
     return {
       turnId,
@@ -7918,6 +8074,7 @@ export class SessionService {
       ...(skillId != null ? { skillId } : {}),
       ...(skillParams != null ? { skillParams } : {}),
       ...(mentionAgentId != null ? { mentionAgentId } : {}),
+      ...(isTeamDispatchAutoContinuation ? { isTeamDispatchAutoContinuation: true } : {}),
       ...userMessagePresentation,
     }
   }
@@ -7995,6 +8152,8 @@ export class SessionService {
       next.skillParams,
       next.attachments,
       next.mentionAgentId,
+      undefined,
+      next.isTeamDispatchAutoContinuation === true,
     )
       .catch((error) => this.handleQueuedTurnStartFailure(sessionId, next, error))
       .finally(() => {
@@ -8672,6 +8831,8 @@ export class SessionService {
   }
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
+    this.resetTeamDispatchAutoContinuation(sessionId)
+    const removedQueuedContinuation = this.removeQueuedTeamDispatchAutoContinuations(sessionId)
     const loop = this.activeLoops.get(sessionId)
     const startingTurnId = this.startingTurnIds.get(sessionId)
     const eventRepo = new EventRepository(this.db)
@@ -8702,6 +8863,10 @@ export class SessionService {
       }
       if (cancelledTeamDispatches > 0) {
         new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+        this.emitQueueChanged(sessionId)
+        return { cancelled: true }
+      }
+      if (removedQueuedContinuation) {
         this.emitQueueChanged(sessionId)
         return { cancelled: true }
       }
@@ -8828,6 +8993,7 @@ export class SessionService {
    * @returns 是否终止了一个正在运行的执行器（调用方据此决定要不要写取消事件）。
    */
   private clearSessionMemory(sessionId: string): boolean {
+    this.resetTeamDispatchAutoContinuation(sessionId)
     const activeLoop = this.activeLoops.get(sessionId)
     const startingTurnId = this.startingTurnIds.get(sessionId)
     const runningTurnId = this.runningTurnIds.get(sessionId)
