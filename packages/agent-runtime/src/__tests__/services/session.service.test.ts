@@ -664,6 +664,47 @@ describe('SessionService team dispatch auto-continuation', () => {
     expect(service.pendingTurns.get('session-1')).toEqual([{ turnId: 'visible-user-turn' }])
     expect(service.emitQueueChanged).toHaveBeenCalledWith('session-1')
   })
+
+  it('clears queued turns without cancelling the active executor', () => {
+    const activeExecution = { cancel: vi.fn() }
+    const prepare = vi.fn(() => ({ run: vi.fn(() => ({ changes: 1 })) }))
+    const service = Object.create(SessionService.prototype) as {
+      activeLoops: Map<string, { cancel: () => void }>
+      db: { raw: { prepare: typeof prepare } }
+      pendingTurns: Map<string, Array<{ turnId: string; message: string; enqueuedAt: string }>>
+      startingSessions: Set<string>
+      resetTeamDispatchAutoContinuation: (sessionId: string) => void
+      emitQueueChanged: (sessionId: string) => void
+      clearQueuedTurns: (params: { sessionId: string }) => {
+        cancelledCount: number
+        queuedTurns: unknown[]
+      }
+    }
+    service.activeLoops = new Map([['session-1', activeExecution]])
+    service.db = { raw: { prepare } }
+    service.pendingTurns = new Map([
+      [
+        'session-1',
+        [
+          { turnId: 'turn-1', message: 'first', enqueuedAt: '2026-08-14T00:00:00.000Z' },
+          { turnId: 'turn-2', message: 'second', enqueuedAt: '2026-08-14T00:01:00.000Z' },
+        ],
+      ],
+    ])
+    service.startingSessions = new Set()
+    service.resetTeamDispatchAutoContinuation = vi.fn()
+    service.emitQueueChanged = vi.fn()
+
+    const result = service.clearQueuedTurns({ sessionId: 'session-1' })
+
+    expect(result.cancelledCount).toBe(2)
+    expect(result.queuedTurns).toEqual([])
+    expect(service.pendingTurns.has('session-1')).toBe(false)
+    expect(activeExecution.cancel).not.toHaveBeenCalled()
+    expect(service.resetTeamDispatchAutoContinuation).toHaveBeenCalledWith('session-1')
+    expect(service.emitQueueChanged).toHaveBeenCalledWith('session-1')
+    expect(prepare).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('SessionService.clearSessionMemory (删除/清空会话的执行器回收)', () => {

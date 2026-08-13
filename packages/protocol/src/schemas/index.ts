@@ -410,6 +410,10 @@ export const SessionCancelQueuedTurnRequestSchema = z.object({
   turnId: z.string().uuid(),
 })
 
+export const SessionClearQueuedTurnsRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
 export const SessionGetHistoryRequestSchema = z.object({
   sessionId: SessionIdSchema,
   full: z.boolean().optional().default(false),
@@ -923,6 +927,7 @@ export const IpcSchemaRegistry = {
   'session:submit-turn': SessionSendTurnRequestSchema,
   'session:get-queue': SessionGetQueueRequestSchema,
   'session:cancel-queued-turn': SessionCancelQueuedTurnRequestSchema,
+  'session:clear-queued-turns': SessionClearQueuedTurnsRequestSchema,
   'session:cancel': SessionCancelRequestSchema,
   'session:reject-plan': SessionRejectPlanRequestSchema,
   'session:get-history': SessionGetHistoryRequestSchema,
