@@ -16,7 +16,7 @@ import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
 import { ActionIcon, Button, Dropdown, Icon, Input, Modal, Tooltip } from '@lobehub/ui'
 import { Archive, Clock3, Maximize2, Minimize2, Pin, PinOff } from 'lucide-react'
-import { Popover } from 'antd'
+import { Popover, message } from 'antd'
 import {
   closestCenter,
   DndContext,
@@ -73,6 +73,13 @@ import { composeProjectGroupSessions } from './sidebar-session-sort'
 import { filterCanvasSessions, isCanvasWorkspace } from './workspace-visibility'
 import { SidebarProjectDropZone } from './components/SidebarProjectDropZone'
 import { useOptionalToast } from './components/Toast'
+import {
+  getDataTransferFilePaths,
+  getFileNameFromPath,
+  hasFileDataTransfer,
+  isUnresolvableFileDrop,
+} from './services/composer-attachments'
+import { getDirectoryDropIntent } from './services/project-folder-drop'
 
 const projectSortableId = (projectId: string): string => `project:${projectId}`
 const sessionSortableId = (projectId: string, sessionId: string): string =>
@@ -1612,13 +1619,13 @@ export function FlatGroup({
 }
 
 /* ─── CreateProjectModal ─── */
-function CreateProjectModal({
+export function CreateProjectModal({
   name,
   path,
   notice,
   setName,
-  setPath,
   onPickPath,
+  onDropPath,
   onCancel,
   onCreate,
 }: {
@@ -1626,27 +1633,61 @@ function CreateProjectModal({
   path: string
   notice: string
   setName: (v: string) => void
-  setPath: (v: string) => void
   onPickPath: () => void
+  onDropPath: (path: string) => Promise<void>
   onCancel: () => void
   onCreate: (useTempDir?: boolean) => void
 }) {
   const { t } = useI18n()
+  const optionalToast = useOptionalToast()
+  const [dropActive, setDropActive] = useState(false)
+  const dragDepthRef = useRef(0)
+
+  const resetDropState = useCallback(() => {
+    dragDepthRef.current = 0
+    setDropActive(false)
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('blur', resetDropState)
+    return () => window.removeEventListener('blur', resetDropState)
+  }, [resetDropState])
+
+  const canHandleDirectoryDrop = (dataTransfer: DataTransfer | null) =>
+    getDirectoryDropIntent(dataTransfer) !== 'reject'
+
+  const showDropWarning = (text: string) => {
+    if (optionalToast) optionalToast.toast.warning(text)
+    else message.warning(text)
+  }
+
+  const showDropError = (text: string) => {
+    if (optionalToast) optionalToast.toast.error(text)
+    else message.error(text)
+  }
+
   return (
     <Modal
       centered
       open
-      width={440}
-      title={t('sidebar.project.createTitle')}
+      width={600}
+      title={
+        <div className="project-create-modal-title">
+          <span className="project-create-modal-title-icon" aria-hidden="true">
+            <Icons.FolderPlus size={22} />
+          </span>
+          <span className="project-create-modal-title-copy">
+            <strong>{t('sidebar.project.createTitle')}</strong>
+            <small>{t('sidebar.project.createSubtitle')}</small>
+          </span>
+        </div>
+      }
       onCancel={onCancel}
       className="project-create-modal"
       footer={
         <div className="project-create-modal-footer">
-          <Button size="middle" type="text" onClick={() => onCreate(true)}>
-            {t('sidebar.project.createEmpty')}
-          </Button>
           <span className="project-create-modal-footer-spacer" />
-          <Button size="middle" type="text" onClick={onCancel}>
+          <Button size="middle" type="default" onClick={onCancel}>
             {t('common.cancel')}
           </Button>
           <Button size="middle" type="primary" onClick={() => onCreate(false)}>
@@ -1656,7 +1697,6 @@ function CreateProjectModal({
       }
     >
       <div className="project-create-modal-body">
-        <div className="project-create-modal-desc">{t('sidebar.project.createSubtitle')}</div>
         {notice && (
           <div className="session-notice in-modal">
             <Icons.AlertTriangle size={12} />
@@ -1669,21 +1709,84 @@ function CreateProjectModal({
             value={name}
             placeholder={t('sidebar.project.placeholder')}
             onChange={(e) => setName(e.target.value)}
+            autoFocus
           />
         </label>
         <label className="field">
-          <span>{t('sidebar.project.folderOptional')}</span>
-          <div className="path-picker">
-            <Input
-              value={path}
-              placeholder="/Users/you/projects/my-agent"
-              onChange={(e) => setPath(e.target.value)}
-            />
-            <Button size="middle" type="text" onClick={onPickPath}>
-              {t('common.choose')}
+          <span>{t('sidebar.project.folderLabel')}</span>
+          <div
+            className={`project-create-dropzone${dropActive ? ' is-drag-active' : ''}${path ? ' has-path' : ''}`}
+            onDragEnter={(event) => {
+              if (!canHandleDirectoryDrop(event.dataTransfer)) return
+              event.preventDefault()
+              event.stopPropagation()
+              dragDepthRef.current += 1
+              setDropActive(true)
+            }}
+            onDragOver={(event) => {
+              if (!canHandleDirectoryDrop(event.dataTransfer)) return
+              event.preventDefault()
+              event.stopPropagation()
+              event.dataTransfer.dropEffect = 'copy'
+              setDropActive(true)
+            }}
+            onDragLeave={(event) => {
+              if (!canHandleDirectoryDrop(event.dataTransfer)) return
+              event.preventDefault()
+              event.stopPropagation()
+              dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+              if (dragDepthRef.current === 0) setDropActive(false)
+            }}
+            onDrop={(event) => {
+              const dropIntent = getDirectoryDropIntent(event.dataTransfer)
+              if (dropIntent === 'reject') {
+                if (hasFileDataTransfer(event.dataTransfer)) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  showDropWarning(t('sidebar.project.dropFile'))
+                }
+                resetDropState()
+                return
+              }
+              event.preventDefault()
+              event.stopPropagation()
+              const paths = getDataTransferFilePaths(event.dataTransfer)
+              const unresolvable = isUnresolvableFileDrop(event.dataTransfer, paths)
+              resetDropState()
+              if (unresolvable) {
+                showDropError(t('sidebar.project.dropUnresolvable'))
+                return
+              }
+              if (paths[0]) void onDropPath(paths[0])
+            }}
+          >
+            <div className="project-create-dropzone-copy">
+              <span className="project-create-dropzone-icon" aria-hidden="true">
+                <Icons.FolderOpen size={30} />
+              </span>
+              {path ? (
+                <>
+                  <strong title={path}>{getFileNameFromPath(path)}</strong>
+                  <span className="project-create-dropzone-path" title={path}>
+                    {path}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <strong>{t('sidebar.project.dropFolder')}</strong>
+                  <span>{t('sidebar.project.dropFolderHint')}</span>
+                </>
+              )}
+            </div>
+            <Button
+              size="middle"
+              type="primary"
+              icon={<Icons.FolderOpen size={16} />}
+              onClick={onPickPath}
+            >
+              {path ? t('common.change') : t('sidebar.project.chooseFolder')}
             </Button>
           </div>
-          <div className="field-hint">{t('sidebar.project.tempHint')}</div>
         </label>
       </div>
     </Modal>
@@ -2562,10 +2665,10 @@ export function SidebarSessionList() {
             path={ctx.projectPath}
             notice={ctx.projectNotice}
             setName={ctx.setProjectName}
-            setPath={ctx.setProjectPath}
             onPickPath={() => {
               void ctx.handlePickProjectPath()
             }}
+            onDropPath={ctx.handleDropProjectPath}
             onCancel={() => {
               ctx.setProjectDialog(null)
             }}
