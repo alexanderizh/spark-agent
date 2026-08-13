@@ -22,6 +22,7 @@ export type CanvasNodeGenerationMenuGroup = {
 }
 
 export const CANVAS_FUNCTIONAL_MENU_LABEL = '影视创作'
+export const CANVAS_FEATURE_MENU_LABEL = '特色功能'
 export const CANVAS_BASE_TASK_MENU_LABEL = '基础任务'
 
 export const CANVAS_FUNCTIONAL_CREATE_OPERATIONS: CanvasNodeGenerationMenuItem[] = [
@@ -71,6 +72,25 @@ export const CANVAS_VISIBLE_BASE_CREATE_OPERATION_GROUPS =
 /** 右键菜单使用的扁平基础任务列表；保留分组定义供其他入口按类别展示。 */
 export function canvasVisibleBaseCreateOperations(): CanvasNodeGenerationMenuItem[] {
   return CANVAS_VISIBLE_BASE_CREATE_OPERATION_GROUPS.flatMap((group) => group.items)
+}
+
+const CANVAS_FEATURE_CREATE_OPERATION_IDS = new Set<CanvasOperationType>([
+  'video_depth_map',
+  'extract_audio',
+])
+
+/** 「特色功能」承载的通用媒体工具。 */
+export function canvasVisibleFeatureCreateOperations(): CanvasNodeGenerationMenuItem[] {
+  return canvasVisibleBaseCreateOperations().filter((item) =>
+    CANVAS_FEATURE_CREATE_OPERATION_IDS.has(item.operation),
+  )
+}
+
+/** 右键菜单一级直接展示的基础任务，不包含已归入「特色功能」的媒体工具。 */
+export function canvasVisiblePrimaryCreateOperations(): CanvasNodeGenerationMenuItem[] {
+  return canvasVisibleBaseCreateOperations().filter(
+    (item) => !CANVAS_FEATURE_CREATE_OPERATION_IDS.has(item.operation),
+  )
 }
 
 export function canvasBaseCreateOperations(): CanvasNodeGenerationMenuItem[] {

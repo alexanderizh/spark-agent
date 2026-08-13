@@ -2,16 +2,20 @@ import { describe, expect, it } from 'vitest'
 import {
   CANVAS_BASE_TASK_MENU_LABEL,
   CANVAS_BASE_CREATE_OPERATION_GROUPS,
+  CANVAS_FEATURE_MENU_LABEL,
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
   CANVAS_FUNCTIONAL_MENU_LABEL,
   CANVAS_VISIBLE_BASE_CREATE_OPERATION_GROUPS,
   canvasBaseCreateOperations,
   canvasVisibleBaseCreateOperations,
+  canvasVisibleFeatureCreateOperations,
+  canvasVisiblePrimaryCreateOperations,
 } from './canvasNodeGenerationMenu'
 
 describe('canvasNodeGenerationMenu', () => {
-  it('names the two task tiers as film creation and base tasks', () => {
+  it('names film creation, featured tools, and base tasks separately', () => {
     expect(CANVAS_FUNCTIONAL_MENU_LABEL).toBe('影视创作')
+    expect(CANVAS_FEATURE_MENU_LABEL).toBe('特色功能')
     expect(CANVAS_BASE_TASK_MENU_LABEL).toBe('基础任务')
   })
 
@@ -97,6 +101,19 @@ describe('canvasNodeGenerationMenu', () => {
       'text_to_video',
       'video_depth_map',
       'extract_audio',
+    ])
+  })
+
+  it('moves depth conversion and audio extraction into featured tools', () => {
+    expect(canvasVisibleFeatureCreateOperations().map((item) => item.operation)).toEqual([
+      'video_depth_map',
+      'extract_audio',
+    ])
+    expect(canvasVisiblePrimaryCreateOperations().map((item) => item.operation)).toEqual([
+      'text_generate',
+      'text_to_image',
+      'image_prompt_reverse',
+      'text_to_video',
     ])
   })
 })
