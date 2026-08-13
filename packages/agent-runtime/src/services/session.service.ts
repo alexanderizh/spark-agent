@@ -92,6 +92,11 @@ import {
   type TeamToolDefinition,
 } from './team-mcp-http-bridge.js'
 import { TeamLedgerRuntimeAdapter } from './team-ledger-runtime-adapter.js'
+import {
+  buildTeamRuntimeToolDefinitions,
+  createTeamRuntimeAdapters,
+  deleteTeamRuntimeState,
+} from './team-runtime-tooling.js'
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
 import { buildWorkflowBindingAuthorityPrompt } from './workflow-system-prompt.js'
 import { buildContextLedger } from './context-ledger.js'
@@ -5461,6 +5466,24 @@ export class SessionService {
               : {}),
           })
         : null
+    // Task Graph / Deliberation 与 Ledger 共用当前 turn 的可信 session + discussion
+    // scope。工具参数只承载操作数据，身份由此处绑定；成员 turn 使用 agent capability，
+    // 因而不会获得转派或最终裁决权限。
+    const runtimeCapability: 'agent' | 'system' =
+      ctx.ledgerActorAuthority === 'agent-inferred' ? 'agent' : 'system'
+    const runtimeAdapters =
+      discussionId != null
+        ? createTeamRuntimeAdapters(
+            this.db,
+            {
+              sessionId: ctx.sessionId,
+              discussionId,
+              actorId: ctx.hostAgent.id,
+              capability: runtimeCapability,
+            },
+            ledgerAdapter ?? undefined,
+          )
+        : null
     let currentDiscussionRound = ctx.discussionRoundIndex ?? 0
     let discussionConcludedReason: 'concluded' | 'canceled' | 'max_rounds' | null = null
 
@@ -6452,6 +6475,7 @@ export class SessionService {
                 def.name === 'team_ledger_propose',
             )
         : []),
+      ...(runtimeAdapters != null ? buildTeamRuntimeToolDefinitions(runtimeAdapters) : []),
       ...(agentMessageDef != null ? [agentMessageDef] : []),
       ...(roundAdvanceDef != null ? [roundAdvanceDef] : []),
       ...(concludeDef != null ? [concludeDef] : []),
@@ -8689,6 +8713,8 @@ export class SessionService {
     this.iterationOverrides.delete(sessionId)
     TodoStore.clear(sessionId)
     getDebugLogServer().deleteSession(sessionId)
+    // Runtime state is session-owned and must not survive a deleted session.
+    deleteTeamRuntimeState(this.db, sessionId)
     this.onApprovalCancel?.(sessionId)
     this.emitQueueChanged(sessionId)
     return activeLoop != null || startingTurnId != null || cancelledTeamDispatches > 0

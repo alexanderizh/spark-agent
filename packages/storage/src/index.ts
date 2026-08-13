@@ -29,6 +29,14 @@ export { TeamHandoffService, TeamHandoffConflictError, TEAM_HANDOFF_MAX_PER_DISC
 export type { TeamHandoffRecord, TeamHandoffEvent, TeamHandoffStatus, TeamHandoffSensitivity, TeamHandoffOperation } from './team-handoff.service.js'
 export { SteeringGateService, SteeringGateConflictError, STEERING_GATE_MAX_PER_DISCUSSION } from './steering-gate.service.js'
 export type { SteeringGateRecord, SteeringGateEvent, SteeringGateStatus, SteeringGateImpact, SteeringTargetType, SteeringGateOperation, SteeringCapability } from './steering-gate.service.js'
+export { TaskGraphService, TaskGraphConflictError } from './task-graph.service.js'
+export type { TaskGraphScope, TaskGraphEvent, TaskGraphCapability, TaskEdgeRecord } from './task-graph.service.js'
+export { DeliberationService, DeliberationConflictError, DELIBERATION_MAX_PER_DISCUSSION } from './deliberation.service.js'
+export type { DeliberationScope, DeliberationLedgerWriter } from './deliberation.service.js'
+export { EvidenceCostService, EvidenceCostConflictError } from './evidence-cost.service.js'
+export type { EvidenceCostScope, EvidenceCostCapability } from './evidence-cost.service.js'
+export { ReplayPlaybookService, ReplayPlaybookConflictError } from './replay-playbook.service.js'
+export type { ReplayScope, ReplayCapability } from './replay-playbook.service.js'
 export type {
   RoomLedgerRecord,
   RoomLedgerStatus,

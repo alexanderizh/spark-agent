@@ -120,6 +120,33 @@ export class TeamLedgerRuntimeAdapter {
 
   deleteRoom(): number { return this.service.deleteRoom(this.roomId) }
 
+  /** Deliberation callback: persist a decision's ledger write in the same trusted room scope. */
+  write(input: {
+    logicalKey: string
+    value: unknown
+    reason: string
+    sessionId: string
+    roomId: string
+    discussionId: string
+    deliberationId: string
+    opId: string
+  }): void {
+    if (input.sessionId !== this.context.sessionId || input.roomId !== this.roomId || input.discussionId !== this.context.discussionId) {
+      throw new Error('Ledger write scope does not match the current team runtime context.')
+    }
+    this.service.create({
+      roomId: this.roomId,
+      discussionId: this.context.discussionId,
+      logicalKey: input.logicalKey,
+      value: input.value,
+      reason: input.reason,
+      opId: `deliberation:${input.deliberationId}:${input.opId}`,
+      status: 'active',
+      authority: this.context.actorAuthority,
+      sourceRefs: [`deliberation:${input.deliberationId}`],
+    })
+  }
+
   private mutate(operation: Exclude<RoomLedgerOperation, 'replace' | 'expire'>, args: { key: string; value?: unknown; status?: 'proposed'; expectedVersion?: number | undefined; sourceRefs?: string[] | undefined; reason?: string | undefined }): Promise<TeamToolHandlerResult> {
     if (this.context.actorAuthority === 'agent-inferred' && operation !== 'create') return Promise.resolve(this.error('Only host/system authority may confirm or mutate ledger state.'))
     const input: RoomLedgerMutationInput = {

@@ -36,6 +36,10 @@ import { PluginIpcSchemaRegistry } from '../plugin.js'
 import { PluginRuntimeIpcSchemaRegistry } from '../plugin-runtime.js'
 import { OutcomeRoomIpcSchemaRegistry } from '../outcome-room.js'
 import { TeamP1IpcSchemaRegistry } from '../team-p1.js'
+import { TaskGraphIpcSchemaRegistry } from '../task-graph.js'
+import { DeliberationIpcSchemaRegistry } from '../deliberation.js'
+import { EvidenceCostIpcSchemaRegistry } from '../evidence-cost.js'
+import { ReplayIpcSchemaRegistry } from '../replay-playbook.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -930,6 +934,10 @@ export const IpcSchemaRegistry = {
   ...PluginRuntimeIpcSchemaRegistry,
   ...OutcomeRoomIpcSchemaRegistry,
   ...TeamP1IpcSchemaRegistry,
+  ...TaskGraphIpcSchemaRegistry,
+  ...DeliberationIpcSchemaRegistry,
+  ...EvidenceCostIpcSchemaRegistry,
+  ...ReplayIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,

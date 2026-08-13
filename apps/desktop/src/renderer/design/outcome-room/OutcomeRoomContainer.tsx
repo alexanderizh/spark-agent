@@ -2,6 +2,9 @@ import type { SessionId } from '@spark/protocol'
 import { OutcomeRoomPanel } from './OutcomeRoomPanel'
 import { useOutcomeRoom } from './useOutcomeRoom'
 import { TeamP1Panel } from './TeamP1Panel'
+import { TeamRuntimePanel } from './TeamRuntimePanel'
+import { EvidenceCostPanel } from './EvidenceCostPanel'
+import { ReplayPlaybookPanel } from './ReplayPlaybookPanel'
 
 export function OutcomeRoomContainer({
   sessionId,
@@ -22,5 +25,8 @@ export function OutcomeRoomContainer({
       onMutate={room.mutate}
     />
     <TeamP1Panel sessionId={sessionId} />
+    <TeamRuntimePanel sessionId={sessionId} />
+    <EvidenceCostPanel sessionId={sessionId} discussionId={room.snapshot?.discussion?.id} />
+    <ReplayPlaybookPanel sessionId={sessionId} discussionId={room.snapshot?.discussion?.id} />
   </>
 }
