@@ -7,8 +7,10 @@ import type {
   TaskGraphSnapshot,
 } from '@spark/protocol'
 
-export type TaskGraphMutationPayload = Omit<TaskGraphMutation, 'sessionId' | 'opId'>
-export type DeliberationMutationPayload = Omit<DeliberationMutateRequest, 'sessionId' | 'opId'>
+type WithoutRuntimeScope<T> = T extends unknown ? Omit<T, 'sessionId' | 'opId'> : never
+
+export type TaskGraphMutationPayload = WithoutRuntimeScope<TaskGraphMutation>
+export type DeliberationMutationPayload = WithoutRuntimeScope<DeliberationMutateRequest>
 
 export interface TeamRuntimeState {
   taskGraph: TaskGraphSnapshot | null

@@ -53,3 +53,10 @@
 - Outcome Room 容器现挂载 Evidence/Cost、Task Graph/Deliberation、Replay/Playbook 三类面板；Replay/Playbook 使用当前 Outcome Room discussion scope，discussion 不存在时不发起读取。
 
 TaskGraph、结构化 Deliberation、Evidence/Cost、Replay/Playbook 已完成本批最小 runtime/UI 接线，并通过对应聚焦门禁；真实 Electron 端到端验收尚未完成，当前未作通过声明。
+
+## 交付验证（2026-08-14）
+
+- 独立后端/运行时与前端/IPC 对抗审查均为 `APPROVED`，未发现仍可复现的权限、作用域、幂等、CAS、竞态、XSS 或资源边界缺陷。
+- 聚焦回归通过：Protocol 14/14、Storage 60/60、Agent Runtime 31/31、Desktop Outcome Room 70/70；严格类型检查中 Protocol、Storage、Agent Runtime 通过，Outcome Room 相关 Renderer 文件无类型诊断。
+- Desktop production build 通过；migration 1–82 已在聚焦测试的临时 SQLite 中实际执行，静态 migration 校验也通过。
+- 恢复 Electron ABI 并重新构建后，Playwright 的 production shell 启动冒烟已通过（1/1）；此前 `SIGABRT` 属于原生模块 ABI 环境问题。Outcome Room 专项真实界面验收仍受限：对当前 SparkWork 使用受治理桌面控制时连续停留在 `planning` 且未取得控制租约，现有独立 Electron E2E 也没有可复用的 Team discussion fixture。因此 375/768/1024/1440、深浅主题和真实 Tab 焦点仍保留为具备 Team fixture 后的冒烟验证项。

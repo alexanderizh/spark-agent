@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { TaskGraphService } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
-import type { TaskAcceptanceStatus, TaskEdgeType, TaskNodeStatus } from '@spark/protocol'
+import type { TaskAcceptanceStatus, TaskNodeStatus } from '@spark/protocol'
 import type { TeamToolDefinition, TeamToolHandlerResult } from './team-mcp-http-bridge.js'
 
 const ID = z.string().trim().min(1).max(160)
@@ -74,7 +74,10 @@ export class TeamTaskGraphRuntimeAdapter {
       description: 'Add a dependency or parallel edge between current discussion task nodes.',
       schema: addEdgeInput.shape,
       handler: async (args) => this.mutate(args, addEdgeInput, (input) => this.service.createEdge({
-        ...input,
+        id: input.id,
+        fromNodeId: input.fromNodeId,
+        toNodeId: input.toNodeId,
+        ...(input.type !== undefined ? { type: input.type } : {}),
         opId: operationId(this.context.actorId, input.opId),
       })),
     }

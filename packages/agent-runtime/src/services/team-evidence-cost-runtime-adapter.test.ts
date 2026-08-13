@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { SparkDatabase } from '../../../storage/src/database.js'
+import { SparkDatabase } from '@spark/storage'
 import { TeamEvidenceCostRuntimeAdapter } from './team-evidence-cost-runtime-adapter.js'
 
 describe('TeamEvidenceCostRuntimeAdapter', () => {

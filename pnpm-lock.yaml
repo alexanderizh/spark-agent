@@ -480,6 +480,9 @@ importers:
 
   packages/storage:
     dependencies:
+      '@spark/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@spark/shared':
         specifier: workspace:*
         version: link:../shared

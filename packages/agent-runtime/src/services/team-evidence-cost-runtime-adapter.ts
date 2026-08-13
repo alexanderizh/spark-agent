@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { EvidenceCostService } from '../../../storage/src/evidence-cost.service.js'
-import type { SparkDatabase } from '../../../storage/src/database.js'
+import { EvidenceCostService } from '@spark/storage'
+import type { SparkDatabase } from '@spark/storage'
 import type { TeamToolDefinition, TeamToolHandlerResult } from './team-mcp-http-bridge.js'
 
 const ID = z.string().trim().min(1).max(160)

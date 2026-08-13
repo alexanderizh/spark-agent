@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { CostAggregate, CostEvent, EvidenceRecord, EvidenceStatus } from '../../../packages/protocol/src/evidence-cost.js'
-import { aggregateCost } from '../../../packages/protocol/src/evidence-cost.js'
+import type { CostAggregate, CostEvent, EvidenceRecord, EvidenceStatus } from '@spark/protocol'
+import { aggregateCost } from '@spark/protocol'
 import type { SparkDatabase } from './database.js'
 
 export type EvidenceCostCapability = 'agent' | 'system' | 'user'
