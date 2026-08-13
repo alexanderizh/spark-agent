@@ -476,7 +476,12 @@ export function SessionSchedulePanel({
                       <button type="button" title="编辑" onClick={() => beginEdit(task)}>
                         <Pencil size={14} />
                       </button>
-                      <button type="button" title="删除" onClick={() => void deleteTask(task)}>
+                      <button
+                        type="button"
+                        title="删除"
+                        className="is-danger"
+                        onClick={() => void deleteTask(task)}
+                      >
                         <Trash2 size={14} />
                       </button>
                     </div>

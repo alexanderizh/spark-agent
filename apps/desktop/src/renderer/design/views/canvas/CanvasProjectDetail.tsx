@@ -694,6 +694,7 @@ export function CanvasProjectDetail({
                   </Button>
                   <Button
                     size="small"
+                    variant="solid"
                     danger
                     loading={batchDeleting}
                     onClick={() => handleRequestDeleteAssets(Array.from(selectedIds))}
