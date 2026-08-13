@@ -373,6 +373,7 @@ type SessionSidebarCtx = {
   handleCreateProject: (useTempDir?: boolean) => Promise<void>
   handleAddDroppedProjects: (paths: string[]) => Promise<void>
   handlePickProjectPath: () => Promise<void>
+  handleDropProjectPath: (path: string) => Promise<void>
   projectDialog: 'create' | null
   setProjectDialog: (d: 'create' | null) => void
   projectName: string
@@ -1228,16 +1229,43 @@ export function SessionSidebarProvider({
   )
 
   // Project dialog
+  const applyProjectPath = useCallback(
+    (nextPath: string) => {
+      setProjectPath(nextPath)
+      if (!projectName.trim()) setProjectName(getBasename(nextPath))
+    },
+    [projectName],
+  )
+
   const handlePickProjectPath = useCallback(async () => {
     try {
       const selected = await openDirectoryDialog({ title: t('project.chooseOrCreateFolder') })
       if (selected.canceled || selected.filePath == null) return
-      setProjectPath(selected.filePath)
-      if (!projectName.trim()) setProjectName(getBasename(selected.filePath))
+      applyProjectPath(selected.filePath)
+      setProjectNotice('')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('project.choosePathFailed'))
     }
-  }, [openDirectoryDialog, projectName, toast])
+  }, [applyProjectPath, openDirectoryDialog, t, toast])
+
+  const handleDropProjectPath = useCallback(
+    async (path: string) => {
+      const nextPath = path.trim()
+      if (!nextPath) return
+      try {
+        const { kind } = await statFileKind({ path: nextPath })
+        if (kind !== 'directory') {
+          toast.warning(t('sidebar.project.dropFile'))
+          return
+        }
+        applyProjectPath(nextPath)
+        setProjectNotice('')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('sidebar.project.dropFailed'))
+      }
+    },
+    [applyProjectPath, statFileKind, t, toast],
+  )
 
   const handleCreateProject = useCallback(
     async (useTempDir = false) => {
@@ -1920,6 +1948,7 @@ export function SessionSidebarProvider({
       handleCreateProject,
       handleAddDroppedProjects,
       handlePickProjectPath,
+      handleDropProjectPath,
       projectDialog,
       setProjectDialog,
       projectName,
@@ -1982,6 +2011,7 @@ export function SessionSidebarProvider({
       handleCreateProject,
       handleAddDroppedProjects,
       handlePickProjectPath,
+      handleDropProjectPath,
       projectDialog,
       projectName,
       projectPath,
