@@ -5164,11 +5164,11 @@ body.side-chat-resizing {
 
 /* 思考过程与工具日志标题共用固定 icon slot，避免不同 SVG 本体造成视觉错位。 */
 .thinking-toggle .activity-log-summary-icon.thinking-icon {
-  color: var(--text-faint);
-  opacity: 0.72;
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
+  opacity: 0.82;
 }
 .thinking-toggle:hover .activity-log-summary-icon.thinking-icon {
-  color: var(--text-faint);
+  color: var(--text);
   opacity: 1;
 }
 
@@ -5255,7 +5255,7 @@ body.side-chat-resizing {
 .tool-log-section-md,
 .tool-log-section-md.md-surface p,
 .tool-log-section-md.md-surface li {
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-muted) 88%, var(--text) 12%);
 }
 
 .thinking-content.md-surface h1,
@@ -5272,7 +5272,7 @@ body.side-chat-resizing {
 .tool-log-section-md.md-surface h5,
 .tool-log-section-md.md-surface h6,
 .tool-log-section-md.md-surface strong {
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-muted) 88%, var(--text) 12%);
 }
 
 .thinking-content.md-surface code,
@@ -5282,7 +5282,7 @@ body.side-chat-resizing {
 .tool-log-section-md .md-code,
 .tool-log-section-md .md-code-highlighted .shiki {
   font-size: var(--font-sm);
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-muted) 88%, var(--text) 12%);
 }
 
 /* 代码还原点入口按钮：开启态用 accent 着色 + 右上角小圆点，未开启保持默认灰。 */

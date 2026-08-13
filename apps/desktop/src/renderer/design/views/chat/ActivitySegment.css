@@ -1,7 +1,7 @@
 .chat-activity-segment {
   min-width: 0;
   margin: 8px 0 12px;
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
 }
 
 .chat-activity-segment-single {
@@ -33,7 +33,7 @@
 
 .chat-activity-segment-toggle:hover,
 .chat-activity-segment-toggle:focus-visible {
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 .chat-activity-segment-toggle:focus-visible {
