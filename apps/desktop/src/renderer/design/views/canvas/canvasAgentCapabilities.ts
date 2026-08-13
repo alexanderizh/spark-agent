@@ -130,7 +130,8 @@ function recommendedFlowActions(node: CanvasNode): CanvasAgentAvailableAction[] 
         description: '把当前文本按冲突、悬念和目标时长拆成多集剧本。',
         operation: 'text_generate',
         outputPipelineRole: 'screenplay',
-        guidance: '每集应有集号、标题、开场钩子、主要冲突、结尾悬念和完整剧本正文。',
+        guidance:
+          '要求结构化 JSON 数组输出（{"episodes":[...]},每集含集号、标题、开场钩子、主要冲突、结尾悬念和完整场次正文）；任务完成后每集落一个独立剧本节点。',
       },
     ])
   }

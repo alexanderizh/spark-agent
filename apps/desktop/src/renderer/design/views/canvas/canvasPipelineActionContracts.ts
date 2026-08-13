@@ -110,11 +110,11 @@ export function buildCanvasPipelineOperationDraft(
       return {
         operation: 'text_generate',
         title: '按剧情分集',
-        systemPrompt: `请把下面的长剧本按剧情冲突、悬念节奏和合理时长完成分集。每集必须包含集号、标题、开场钩子、主要冲突、结尾悬念，并使用现有场次剧本格式输出完整正文；每场首行使用「第1场｜内景｜地点｜时间」「场1 内景 地点 时间」或「INT. 地点 - 时间」等场次标题，未知字段保留空值；不要只给剧情摘要。\n\n${input.sourceText}`,
+        systemPrompt: `【任务】把下面的长剧本按剧情冲突、悬念节奏和合理时长完成分集，并以 JSON 数组结构输出。\n\n要求：\n1. 只输出一个 JSON 对象，不要输出 Markdown 表格、解释文字或 JSON 以外的任何内容。\n2. JSON 结构固定为 {"episodes": [...]}；episodes 内每个元素代表一集，按集号升序排列。\n3. 每集对象包含字段：episodeNo（整数集号）、title（本集标题）、openingHook（开场钩子）、mainConflict（主要冲突）、endingSuspense（结尾悬念）、script（本集完整场次剧本正文）。\n4. script 不要只给剧情摘要，必须输出完整场次剧本正文；每场首行使用「第1场｜内景｜地点｜时间」「场1 内景 地点 时间」或「INT. 地点 - 时间」等场次标题，未知字段保留空值，保持场次剧本格式。\n5. script 内换行使用 \\n 转义。\n\n【剧本】\n${input.sourceText}`,
         message: '确认分集 Prompt、Agent 与模型后点击开始任务',
         taskPipelineRole: 'screenplay',
         outputPipelineRole: 'screenplay',
-        modelParams: { workflow: 'split_episodes' },
+        modelParams: { workflow: 'split_episodes', responseFormat: 'json' },
       }
     case 'shot.to_keyframes':
     case 'screenplay.storyboard_grid':

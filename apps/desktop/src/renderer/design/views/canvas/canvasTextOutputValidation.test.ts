@@ -61,6 +61,36 @@ describe('canvas semantic text output validation', () => {
     })
   })
 
+  it('splits episode-array output for the split_episodes workflow', () => {
+    const result = validateCanvasSemanticTextOutput(
+      'screenplay',
+      JSON.stringify({
+        episodes: [
+          { episodeNo: 1, title: '风起', script: '林岚进门，环顾茶馆。' },
+          { episodeNo: 2, title: '暗涌', script: '第1场｜内景｜茶馆｜日\n\n老板擦杯子。' },
+        ],
+      }),
+      { workflow: 'split_episodes' },
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) return
+    expect(result.episodes).toHaveLength(2)
+    // 每集正文单独做场次标题规范化，缺标题的补空场，不影响其他集。
+    expect(result.episodes?.[0]?.script).toBe('第1场｜｜｜\n\n林岚进门，环顾茶馆。')
+    expect(result.episodes?.[1]?.script).toContain('第1场｜内景｜茶馆｜日')
+  })
+
+  it('keeps whole-text output when the split_episodes workflow cannot be parsed', () => {
+    const result = validateCanvasSemanticTextOutput(
+      'screenplay',
+      '这是一个没有分集结构的故事梗概。',
+      { workflow: 'split_episodes' },
+    )
+
+    expect(result).toEqual({ ok: true, text: '第1场｜｜｜\n\n这是一个没有分集结构的故事梗概。' })
+  })
+
   it('accepts the existing scene screenplay markdown format', () => {
     const result = validateCanvasSemanticTextOutput(
       'screenplay',

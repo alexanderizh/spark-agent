@@ -88,7 +88,7 @@ const CANVAS_PIPELINE_MODEL_PARAM_DEFAULTS: Partial<
   'screenplay.extract_scenes': { workflow: 'extract_scene', responseFormat: 'json' },
   'screenplay.extract_props': { workflow: 'extract_prop', responseFormat: 'json' },
   'screenplay.extract_effects': { workflow: 'extract_effect', responseFormat: 'json' },
-  'screenplay.split_episodes': { workflow: 'split_episodes' },
+  'screenplay.split_episodes': { workflow: 'split_episodes', responseFormat: 'json' },
 }
 
 const CANVAS_PIPELINE_CONTROL_PARAM_NAMES = new Set([

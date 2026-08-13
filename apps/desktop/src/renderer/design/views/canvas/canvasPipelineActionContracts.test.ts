@@ -115,8 +115,10 @@ describe('canvas pipeline action contracts', () => {
       operation: 'text_generate',
       taskPipelineRole: 'screenplay',
       outputPipelineRole: 'screenplay',
+      modelParams: { workflow: 'split_episodes', responseFormat: 'json' },
     })
     expect(draft.systemPrompt).toContain('分集')
+    expect(draft.systemPrompt).toContain('{"episodes": [...]}')
     expect(draft.systemPrompt).toContain('场次剧本格式')
     expect(draft.systemPrompt).toContain('第1场｜内景｜地点｜时间')
   })

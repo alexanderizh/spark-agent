@@ -74,6 +74,7 @@ import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import { materializeStoryboardRows } from './canvasStoryboardMaterialization'
 import { materializeCanvasTextTaskFallbackOutput } from './canvasTextTaskFallbackOutput'
 import { validateCanvasSemanticTextOutput } from './canvasTextOutputValidation'
+import { materializeSplitEpisodeOutputs } from './canvasEpisodeSplitOutput'
 import { placeAutoNodeToRight, stackAutoNodesToRight } from './canvasAutoPlacement'
 import { planGroupLayout } from './canvasGroupLayout'
 import { resolveCollisionFreeNodePosition } from './canvasCollisionPlacement'
@@ -6504,8 +6505,11 @@ export const canvasApi = {
     }
 
     const outputRole = task.outputPipelineRole ?? taskNode.data.outputPipelineRole
+    const taskWorkflowParam = task.modelParams?.workflow
+    const taskWorkflow = typeof taskWorkflowParam === 'string' ? taskWorkflowParam : null
     const semanticValidation = validateCanvasSemanticTextOutput(outputRole, response.text, {
       shotScriptConfig: task.shotScriptConfig ?? taskNode.data.shotScriptConfig ?? null,
+      ...(taskWorkflow ? { workflow: taskWorkflow } : {}),
     })
     if (!semanticValidation.ok) {
       const at = now()
@@ -6575,6 +6579,54 @@ export const canvasApi = {
     }
 
     const at = now()
+    // 分集任务（workflow=split_episodes）解析出 episodes 数组时：每集物化为一个
+    // 独立剧本节点（数组输出）；一个都没落成时继续走下方单节点路径兜底。
+    const splitEpisodeCount = semanticValidation.episodes?.length
+      ? materializeSplitEpisodeOutputs({
+          db,
+          projectId,
+          userId: USER_ID,
+          task,
+          taskNode,
+          response,
+          episodes: semanticValidation.episodes,
+          pipelineRole: outputRole,
+          at,
+          uid,
+          createNode: createNodeBase,
+        })
+      : 0
+    if (splitEpisodeCount > 0) {
+      task.status = 'completed'
+      task.progress = 100
+      task.completedAt = at
+      task.updatedAt = at
+      task.providerProfileId = response.providerProfileId || task.providerProfileId || null
+      task.provider = response.provider || task.provider || null
+      task.modelId = response.model || task.modelId || null
+      task.requestCall = response.requestCall ?? task.requestCall ?? null
+      task.modelOutputText = response.text
+      appendCanvasTaskModelOutputEvent(task, at, response.text)
+      if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
+      appendCanvasTaskRuntimeEvent(task, {
+        at,
+        kind: 'completed',
+        label: `文本生成与业务解析完成，已按 ${splitEpisodeCount} 集拆分为独立剧本节点`,
+      })
+      if (patchTaskNode) {
+        taskNode.data = {
+          ...taskNode.data,
+          status: 'completed',
+          progress: 100,
+          message: `已按 ${splitEpisodeCount} 集拆分输出`,
+        }
+        syncCanvasTaskRuntimeToNode(task, taskNode.data)
+        taskNode.updatedAt = at
+      }
+      updateProjectCounts(db, projectId)
+      writeDb(db)
+      return this.openSnapshot(projectId, task.boardId)
+    }
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
       projectId,

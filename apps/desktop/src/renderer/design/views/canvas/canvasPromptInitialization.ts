@@ -12,7 +12,8 @@ export function stripCanvasFunctionalPromptInput(prompt: string, presetTargetId:
         : presetTargetId === 'screenplay.extract_characters' ||
             presetTargetId === 'screenplay.extract_scenes' ||
             presetTargetId === 'screenplay.extract_props' ||
-            presetTargetId === 'screenplay.extract_effects'
+            presetTargetId === 'screenplay.extract_effects' ||
+            presetTargetId === 'screenplay.split_episodes'
           ? '【剧本】'
           : ''
   if (!marker) return prompt.trim()
@@ -38,7 +39,10 @@ const FUNCTIONAL_PROMPT_START_MARKERS: Record<string, readonly string[]> = {
   'screenplay.extract_effects': [
     '【任务】你是资深影视美术/设定师。通读下面的剧本，抽取其中出现的全部特效',
   ],
-  'screenplay.split_episodes': ['请把下面的长剧本按剧情冲突、悬念节奏和合理时长完成分集'],
+  'screenplay.split_episodes': [
+    '【任务】把下面的长剧本按剧情冲突、悬念节奏和合理时长完成分集',
+    '请把下面的长剧本按剧情冲突、悬念节奏和合理时长完成分集',
+  ],
 }
 
 /**
