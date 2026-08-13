@@ -63,6 +63,14 @@ const PALETTE = {
   },
 } as const
 
+// Lobe UI injects its own global `body` and component font rules at runtime.
+// Keep those rules connected to the appearance CSS variables so changing the
+// font in Settings updates the whole renderer, not only our native CSS layer.
+const APPEARANCE_FONT_TOKENS = {
+  fontFamily: 'var(--font-sans)',
+  fontFamilyCode: 'var(--font-mono)',
+} as const
+
 /**
  * Wraps @lobehub/ui ThemeProvider so lobe-ui + antd v6 components read the
  * same `theme` / `primary` source as the rest of the app.
@@ -89,6 +97,8 @@ export function LobeThemeProvider({
   // "black download buttons" in dark mode.
   const token = React.useMemo(
     () => ({
+      fontFamily: APPEARANCE_FONT_TOKENS.fontFamily,
+      fontFamilyCode: APPEARANCE_FONT_TOKENS.fontFamilyCode,
       colorPrimary: primary,
       colorInfo: primary,
       colorLink: primary,
