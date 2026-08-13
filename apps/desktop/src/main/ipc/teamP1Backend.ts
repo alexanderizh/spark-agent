@@ -54,7 +54,9 @@ export class TeamP1Backend {
           case 'accept': service.accept(input); break
           case 'request_clarification': service.requestClarification(input); break
           case 'reject': service.reject(input); break
-          case 'complete': service.complete({ ...input, artifactRefs: request.artifactRefs, evidenceRefs: request.evidenceRefs }); break
+          case 'complete': service.complete({ ...input,
+            ...(request.artifactRefs !== undefined ? { artifactRefs: request.artifactRefs } : {}),
+            ...(request.evidenceRefs !== undefined ? { evidenceRefs: request.evidenceRefs } : {}) }); break
           case 'cancel': service.cancel(input); break
         }
       }

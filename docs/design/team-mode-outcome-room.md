@@ -1,6 +1,6 @@
 # Team Mode Outcome Room / Living Team Ledger
 
-> 状态: 实施中 | 最后核对: 2026-08-13
+> 状态: 已落地 | 最后核对: 2026-08-14
 
 ## 当前已落地范围（P0）
 
@@ -40,6 +40,7 @@
 - agent 写入边界限制 logicalKey/sourceRefs 与 JSON value 的深度、节点数、循环引用和近似序列化字节数；摘要把 Ledger 明确标为不可信数据，转义控制字符并使用有界序列化，避免把内容当作指令或无界展开。
 - @ 成员直答路径固定为 `agent-inferred`；host/system 仅记录 `system-observed`，不会伪称 `user-confirmed`。成员工具面只暴露读取和 proposal/fact 增量，治理工具仅对可信 host/system context 可见。
 - session 删除事务同步清理确定性 `team-room:{sessionId}` 的 Ledger events 和 records，避免跨会话残留。
+- Task Graph、结构化 Deliberation、Evidence/Cost、Replay/Playbook 四类 runtime adapter 均绑定可信 session/discussion/actor capability；同一组 `TeamToolDefinition` 同时供 Claude in-process MCP 与 Codex HTTP bridge 使用。session 清理同步删除四类 session-owned 数据，避免已删除会话残留。
 
 ### Outcome Room IPC/UI（已落地 P0 垂直切片）
 
@@ -49,4 +50,6 @@
 - 数据经 IPC 初次读取，窗口重新聚焦或页面重新可见时立即刷新；可见页面每 2 秒低频读取一次 Storage 权威投影，隐藏、卸载和 session 切换时暂停/清理。选择受控轮询是因为 Agent/MCP 写入发生在 `agent-runtime`，不应反向依赖 Electron 主进程广播；该路径能统一覆盖 UI、成员 MCP 和恢复写入。旧 session 的 refresh/mutation 响应受 generation 守卫，不能覆盖新 session。
 - UI 覆盖 loading、无 discussion、空 Ledger、部分刷新错误和 CAS conflict，使用 Lucide 图标、语义文字+颜色双编码、键盘 focus、reduced motion，以及 375/768/1024/1440 宽度下不横向溢出的响应式布局。
 
-P0/P1 垂直切片仍不包含 Deliberation（结构化审议）、Runtime DAG、Evidence/Replay/Cost 和 Playbook；这些仍属于后续批次。本批不宣称完成 Outcome Room 全链路。
+- Outcome Room 容器现挂载 Evidence/Cost、Task Graph/Deliberation、Replay/Playbook 三类面板；Replay/Playbook 使用当前 Outcome Room discussion scope，discussion 不存在时不发起读取。
+
+TaskGraph、结构化 Deliberation、Evidence/Cost、Replay/Playbook 已完成本批最小 runtime/UI 接线，并通过对应聚焦门禁；真实 Electron 端到端验收尚未完成，当前未作通过声明。

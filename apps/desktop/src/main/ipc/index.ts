@@ -13,6 +13,7 @@
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { registerOutcomeRoomIpc } from './registerOutcomeRoomIpc.js'
 import { registerTeamP1Ipc } from './registerTeamP1Ipc.js'
+import { registerTeamOutcomeIpc } from './registerTeamOutcomeIpc.js'
 import { createWorkspaceInfoMapper } from './workspace-info.js'
 import {
   buildCanvasMediaProviderPrompt,
@@ -3137,6 +3138,7 @@ export function registerAllIpcHandlers(): void {
   registerOptionalCapabilityIpc()
   registerOutcomeRoomIpc()
   registerTeamP1Ipc()
+  registerTeamOutcomeIpc()
   // 初始化文件日志：app.getPath('logs') 在 app.whenReady() 后才可用，
   // 而 registerAllIpcHandlers 恰在 ready 后被调用（见 main/index.ts），故此处安全。
   // 此后所有 createLogger 产出的日志会同时落盘到 <logs>/main.log，设置页可查看。
