@@ -13,7 +13,11 @@ import type { FilmReference, FilmReferenceKind } from './canvasFilmTypes'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot } from './canvas.types'
 import { readLastPromptCategory, saveLastPromptCategory } from './canvasPromptLibraryCategories'
 import { encodeToSafeFileUrl, readFileAsDataUrl } from './canvas-safe-file'
-import { isPromptCoverAsset, isPromptCoverNode } from './canvasPromptLibraryCover'
+import {
+  isPromptCoverAsset,
+  isPromptCoverNode,
+  resolveNodeOutputAsset,
+} from './canvasPromptLibraryCover'
 import { isPromptTextNode, readPromptLibraryText } from './canvasPromptLibraryData'
 
 /**
@@ -573,37 +577,4 @@ function guessDescription(node: CanvasNode, snapshot: CanvasSnapshot): string {
   const linked = resolveNodeOutputAsset(node, snapshot)
   if (linked) return readPromptLibraryText(linked)
   return ''
-}
-
-function resolveNodeOutputAsset(
-  node: CanvasNode | null,
-  snapshot: CanvasSnapshot,
-): CanvasAsset | null {
-  if (!node) return null
-  if (node.assetId) return snapshot.assets.find((asset) => asset.id === node.assetId) ?? null
-  if (!node.taskId) return null
-  const task = snapshot.tasks.find((item) => item.id === node.taskId)
-  if (!task) return null
-
-  const primaryOutputId = node.data?.primaryOutputId
-  if (primaryOutputId) {
-    const primaryAsset = snapshot.assets.find((asset) => asset.id === primaryOutputId)
-    if (primaryAsset) return primaryAsset
-    const primaryNode = snapshot.nodes.find((item) => item.id === primaryOutputId)
-    if (primaryNode?.assetId) {
-      return snapshot.assets.find((asset) => asset.id === primaryNode.assetId) ?? null
-    }
-  }
-
-  const outputNode = task.outputNodeIds
-    .map((nodeId) => snapshot.nodes.find((item) => item.id === nodeId))
-    .find((item) => Boolean(item?.assetId))
-  if (outputNode?.assetId) {
-    return snapshot.assets.find((asset) => asset.id === outputNode.assetId) ?? null
-  }
-
-  const outputAssetId = task.outputAssetIds[0]
-  return outputAssetId
-    ? (snapshot.assets.find((asset) => asset.id === outputAssetId) ?? null)
-    : null
 }
