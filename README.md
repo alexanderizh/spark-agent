@@ -78,13 +78,14 @@ graph TB
     Core --> Team["团队 Agent 协作"]
     Core --> Runtime["双内核与平台治理"]
     Core --> Canvas["无限画布内容创作"]
+    Core --> Cross["跨会话协同 (Fork / Reference)"]
 
     Workflow --> W1["可视化节点 / 连线 / Inspector"]
     Workflow --> W2["input / plan / agent / approval / verify / review / artifact"]
     Workflow --> W3["workflow_run 真实执行 / workflow_runs 快照"]
     Workflow --> W4["失败恢复 / 审批暂停 / 工具能力收窄"]
 
-    Dev --> D1["侧边聊天 / 内置终端 / 文件目录"]
+    Dev --> D1["应用内编辑器 / 终端 / 文件预览"]
     Dev --> D2["Git Review / HunkDiff / 代码还原点"]
     Dev --> D3["Debug 模式 / 浏览器自动化"]
     Dev --> D4["Worktree 隔离 / 远程连接"]
@@ -93,19 +94,23 @@ graph TB
     Team --> T2["成员级模型 / MCP / Skills"]
     Team --> T3["群聊式过程 / 预算 / 超时"]
 
+    Cross --> X1["会话分叉 / 血缘 lineage / 一键派生"]
+    Cross --> X2["会话引用 / 只读快照 / 按需检索"]
+
     Runtime --> R1["Claude SDK + Codex 双内核"]
-    Runtime --> R2["Provider / MCP / Skill 商店"]
+    Runtime --> R2["自定义 Agent / 多渠道 Provider / MCP / Skill"]
     Runtime --> R3["权限审批 / 用量账本 / Hooks / 审计"]
     Runtime --> R4["任务面板 / 定时任务 / 上下文可视化"]
 
-    Canvas --> C1["无限画布 / 资产中心"]
-    Canvas --> C2["3D 导演台 / 360 场景预览 / Prompt Library"]
-    Canvas --> C3["图片 / 视频 / 语音 AI 操作节点"]
-    Canvas --> C4["血缘派生 / 画布专属助手"]
+    Canvas --> C1["多功能节点 / 影视分镜节点 / 资产中心"]
+    Canvas --> C2["角色库 / 3D 导演台 / 360 全景"]
+    Canvas --> C3["图片 / 视频 / 语音 AI 操作"]
+    Canvas --> C4["画布 Agent 模式 / 血缘派生"]
 ```
 
-### 代码开发与调试
+### 代码开发与应用内全功能开发
 
+- **应用内即可完成「结对开发 → 改完即看」全闭环**，无需切到外部 IDE：内置 Monaco 代码编辑器（只读 / 可编辑切换、跳转行高亮、Cmd/Ctrl+S 保存、自建中文右键菜单）、行级 Diff 查看器（解析 unified diff、连续上下文行可折叠展开）、node-pty 内置终端（多 tab、切 tab 不杀进程）、文件预览（Markdown / HTML / 图片 / 文本 / Office 文档）；
 - 在你的真实项目里与 Agent 结对：读取 / 修改文件、执行命令、生成补丁、解释与重构代码、补齐测试；
 - Debug 模式围绕“假设 → 插桩 → 运行 → 读日志 → 修复”闭环，配合 `spark_debug`、内置终端与持久日志定位问题；
 - 右侧 Git Review 以 HunkDiff 逐块查看改动，可接受、拒绝、回滚，并在提交前验证；
@@ -121,9 +126,20 @@ graph TB
 - 支持 claude / codex 异构 adapter 混编（codex 成员经 HTTP 桥接获得等价工具面）；
 - 支持全局已启用 MCP 工具、嵌套调用（`allowNesting` + `maxDepth`，最大 3），单 turn dispatch 预算（10）、peer call 独立预算（20/turn）、讨论消息总量上限（40）、超时（默认 120s）与取消传播。
 
+### 跨会话协同（Cross-Session）
+
+> 与「团队模式」正交：团队是**同一会话内**多 Agent 协同，跨会话协同是**多个会话之间**共享 / 引用上下文。
+
+- **会话分叉（Fork）**：从任一已完成轮次切出独立新会话（物化事件快照、源会话不受影响），自带来源血缘 lineage，可跳回源会话定位分叉点；子会话强制 fresh runtime，不复用父会话底层 Provider resume 状态，避免两个会话并发续接同一底层会话；
+- **会话引用（Reference）**：经「+」菜单或侧边栏拖拽把其他会话挂为只读参考资源，固定快照边界、可审计、可撤销授权；模型通过内置只读工具 `referenced_session_search / read / list` 按需分页检索，不一次性注入完整历史；
+- **快速协作会话**：侧边栏右键从最新已完成轮次一键分叉，开启新探索方向而不丢既有上下文；
+- 隐私边界明确：只读、不递归授权其他被引用会话、工具结果脱敏、源会话删除后引用自动转 unavailable 且当前会话继续正常工作。
+
 ### 双内核运行时与平台治理
 
 - 双内核：Claude Agent SDK 与 Codex（CLI / OpenAI）可按会话、Agent 或任务切换执行路径；
+- **自定义 Agent**：可视化创建 / 复制自己的 Agent，逐一配置适配器（claude-sdk / codex）、Provider 与模型、权限模式、推理强度、系统 Prompt、Skills、Rules、Hooks 与关联工作流，内置 / 自建统一管理；
+- **多媒体多渠道自适应**：内置 13+ 渠道适配（OpenAI / xAI / Google / 百炼 / 火山方舟 ARK 与语音 / 腾讯 TokenHub / Omni / 可灵 / Agnes / Midjourney / MiniMax-Hailuo / APIMart 等），由 manifest 声明能力与参数别名，**换渠道后模型能力与参数自动匹配**；并提供可视化自定义 Provider 编辑器，按官方文档接入任意新渠道；
 - Provider / MCP / Skill 商店，Skill 采用渐进式披露，仅在需要时加载说明与脚本，避免上下文膨胀；
 - 治理面：权限审批、用量账本、Rules、Hooks、审计事件与上下文可视化，便于复盘与管控；
 - 任务面板（BoardView）聚合进行中 / 已完成 / 失败任务，6 个状态列（todo / in-progress / bug-fix / done / accepted / closed），支持拖拽、内联编辑、回收站软删除与 MCP 自动化；
@@ -136,7 +152,7 @@ graph TB
 - **后台独立 LLM 抽取**（与 OpenAI Memory、Mem0 同款架构）：主对话不被"该不该记"打断，对话用强模型、记忆抽取走便宜小模型，成本最优且抽取故障不影响主流程；未配置抽取模型时自动回退到当前会话对话模型；
 - 混合检索 + 会话自动注入：FTS5 关键词 + sqlite-vec 语义（RRF 融合 + 时间衰减），会话开始时把相关记忆摘要注入 system prompt，Agent 不调工具也能拿到历史上下文；
 - 会进化：整合 job 把重复记忆自动合并（MERGE）、把零散反馈升华为通用模式（ELEVATE），越用越精炼而非越积越乱；
-- Agent 按需深挖工具 `mcp__spark_memory__search_memory` / `recall_memory`（Claude SDK / Codex CLI / Claude CLI 路径注册）；
+- **Claude + Codex 双内核记忆共生**：无论会话走 Claude SDK 还是 Codex（CLI / OpenAI）路径，记忆的写入、读取、排序与降级语义**完全一致** —— Claude SDK 走进程内 MCP，Codex / Claude CLI 子进程经 `spark_memory` stdio 桥接，共享同一套抽取 / 检索 / Reader 服务，两套内核看到的记忆范围与行为不串味；Agent 按需深挖 `mcp__spark_memory__search_memory` / `recall_memory`；
 - 敏感词闸门 + bi-temporal 失效链；项目级正文 markdown 跟随项目代码目录存储。
 
 ### 可执行工作流编排（Visual Workflow Editor）
@@ -152,11 +168,12 @@ graph TB
 
 ### 无限画布内容创作
 
-- 多画布、多节点、多任务队列：文本、Prompt、图片、视频与素材在画布上编排、连接与派生；
-- 资产中心沉淀剧本、角色、场景、道具、分镜、提示词库与生成产物；
-- 3D 导演台配置角色、相机、视角、运动与构图，并转换为可生成的镜头描述；360° 预览多角度检查一致性；
-- 内置 AI 操作节点：文生图、图生图、图片编辑、多图合成、文生视频、图生视频、语音合成；
-- 画布专属助手：在画布上下文内拆解任务、创建节点、调度模型、检查结果并继续派生。
+- **多功能节点**：6 类基础节点（文本 / Prompt / 图片 / 视频 / 音频 / 分组）+ 18 类 AI 操作节点（文生图、图生图、图片编辑、多图合成、文生视频、图生视频、视频编辑 / 扩展、语音合成与转写、提示词反推等）+ 十余种流水线角色（剧本 / 章节 / 角色 / 场景 / 道具 / 特效 / 镜头 / 分镜 / 关键帧 …），节点间可编排、连接与血缘派生；
+- **影视创作专用节点**：分镜板（景别 / 角度 / 运镜 / 焦段 / 构图 / 对白 / 首尾帧 / 时长）、镜头表与剧本编辑器、关键帧与视频片段时间线、剧集与场景库；
+- **角色库**：独立角色库面板管理角色设定（外貌 / 五官 / 服饰 / 标志特征 / 气质 / 声线 / 参考图），多子视图编辑与跨画布复用；
+- **3D 导演台 + 360 全景**：在 3D 场景里配置角色、相机、视角、运动与构图，支持 Mixamo / UE4 / Mannequin 骨骼与姿态 / IK / 道具，转换为可生成的镜头描述；360° 全景预览多角度检查一致性；
+- **画布 Agent 模式**：内置画布助手（30+ `canvas_*` 工具）自动拆解任务、读取选中节点上下文、创建 / 连接 / 批量操作节点，按影视生产阶段（剧本 → 分镜 → 资产 → 关键帧 → 成片）推进并可直接跑工作流；
+- 多画布、多任务队列，资产中心沉淀剧本、角色、场景、道具、分镜、提示词库与生成产物。
 
 ### 内置 14 个 Skill 与在线交付
 
@@ -316,6 +333,7 @@ graph LR
 - [Desktop Agent Development Guide](docs/desktop-agent-development-guide.md)
 - [Agents Workflows](docs/agents-workflows.md)
 - [团队模式开发（Team Agent Mode）](docs/团队模式开发.md)
+- [跨会话协同（Cross-Session Collaboration）](docs/design/cross-session-collaboration.md)
 - [AI 无限画布 MVP](docs/ai-infinite-canvas-mvp.md)
 - [多媒体模型 Provider](docs/multimedia-model-providers.md)
 - [图片生成 Provider](docs/image-generation-providers.md)
