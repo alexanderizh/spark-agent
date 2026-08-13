@@ -24,6 +24,11 @@ import {
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
 import { SessionQuestionGate } from '../../services/session-question-gate.js'
 import { CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor } from '../../sdk/index.js'
+import {
+  TEAM_DISPATCH_AUTO_CONTINUATION_PRESENTATION,
+  TEAM_DISPATCH_AUTO_CONTINUATION_PROMPT,
+  TeamDispatchAutoContinuationTracker,
+} from '../../services/team-dispatch-auto-continuation.js'
 
 describe('runtime log setting', () => {
   it('reads the toggle from telemetry data shared with the inspector panel', () => {
@@ -146,6 +151,8 @@ describe('SessionService recovery helpers', () => {
       pendingTurns: Map<string, unknown[]>
       teamDispatchService: { cancelAllAndWait: () => Promise<void> }
       teamMcpHandlesByTurn: Map<string, unknown>
+      teamDispatchBudgetExhaustedTurns: Map<string, string>
+      teamDispatchAutoContinuationTracker: { clear: () => void; reset: (sessionId: string) => void }
     }
     service.activeExecutionPromises = new Map([
       [execution, { sessionId: 'session-1', promise: executionDone }],
@@ -163,6 +170,8 @@ describe('SessionService recovery helpers', () => {
     service.pendingTurns = new Map()
     service.teamDispatchService = { cancelAllAndWait: vi.fn(() => teamDispatchDone) }
     service.teamMcpHandlesByTurn = new Map()
+    service.teamDispatchBudgetExhaustedTurns = new Map()
+    service.teamDispatchAutoContinuationTracker = { clear: vi.fn(), reset: vi.fn() }
 
     let disposed = false
     const disposePromise = service.dispose().then(() => {
@@ -569,6 +578,94 @@ describe('SessionService recovery helpers', () => {
   })
 })
 
+describe('SessionService team dispatch auto-continuation', () => {
+  it('starts a hidden continuation turn only after the exhausted turn is marked', async () => {
+    const startTurn = vi.fn(async (..._args: unknown[]) => undefined)
+    const continueGoalOrQueue = vi.fn(async () => undefined)
+    const service = Object.create(SessionService.prototype) as {
+      disposing: boolean
+      pendingTurns: Map<string, unknown[]>
+      pendingPlanApprovals: Set<string>
+      pendingUserQuestionGate: SessionQuestionGate
+      teamDispatchBudgetExhaustedTurns: Map<string, string>
+      teamDispatchAutoContinuationTracker: TeamDispatchAutoContinuationTracker
+      startTurn: (...args: unknown[]) => Promise<void>
+      continueGoalOrQueue: (sessionId: string) => Promise<void>
+      hasActiveSessionExecution: (sessionId: string) => boolean
+      continueAfterTeamDispatchBudget: (sessionId: string, turnId: string) => Promise<void>
+    }
+    service.disposing = false
+    service.pendingTurns = new Map()
+    service.pendingPlanApprovals = new Set()
+    service.pendingUserQuestionGate = new SessionQuestionGate()
+    service.teamDispatchBudgetExhaustedTurns = new Map([['session-1', 'turn-1']])
+    service.teamDispatchAutoContinuationTracker = new TeamDispatchAutoContinuationTracker()
+    service.startTurn = startTurn
+    service.continueGoalOrQueue = continueGoalOrQueue
+    service.hasActiveSessionExecution = () => false
+
+    await service.continueAfterTeamDispatchBudget('session-1', 'turn-1')
+
+    expect(startTurn).toHaveBeenCalledOnce()
+    expect(startTurn.mock.calls[0]?.[0]).toBe('session-1')
+    expect(startTurn.mock.calls[0]?.[1]).not.toBe('turn-1')
+    expect(startTurn.mock.calls[0]?.[2]).toBe(TEAM_DISPATCH_AUTO_CONTINUATION_PROMPT)
+    expect(startTurn.mock.calls[0]?.[3]).toEqual(TEAM_DISPATCH_AUTO_CONTINUATION_PRESENTATION)
+    expect(continueGoalOrQueue).not.toHaveBeenCalled()
+  })
+
+  it('stops automatic continuation when the Host is waiting for user approval', async () => {
+    const startTurn = vi.fn(async (..._args: unknown[]) => undefined)
+    const service = Object.create(SessionService.prototype) as {
+      disposing: boolean
+      pendingTurns: Map<string, unknown[]>
+      pendingPlanApprovals: Set<string>
+      pendingUserQuestionGate: SessionQuestionGate
+      teamDispatchBudgetExhaustedTurns: Map<string, string>
+      teamDispatchAutoContinuationTracker: TeamDispatchAutoContinuationTracker
+      startTurn: (...args: unknown[]) => Promise<void>
+      continueAfterTeamDispatchBudget: (sessionId: string, turnId: string) => Promise<void>
+      emitQueueChanged: (sessionId: string) => void
+    }
+    service.disposing = false
+    service.pendingTurns = new Map()
+    service.pendingPlanApprovals = new Set(['session-1'])
+    service.pendingUserQuestionGate = new SessionQuestionGate()
+    service.teamDispatchBudgetExhaustedTurns = new Map([['session-1', 'turn-1']])
+    service.teamDispatchAutoContinuationTracker = new TeamDispatchAutoContinuationTracker()
+    service.startTurn = startTurn
+    service.emitQueueChanged = vi.fn()
+
+    await service.continueAfterTeamDispatchBudget('session-1', 'turn-1')
+
+    expect(startTurn).not.toHaveBeenCalled()
+    expect(service.emitQueueChanged).toHaveBeenCalledWith('session-1')
+  })
+
+  it('removes queued team continuations when a visible user turn arrives', () => {
+    const service = Object.create(SessionService.prototype) as {
+      pendingTurns: Map<string, Array<{ turnId: string; isTeamDispatchAutoContinuation?: boolean }>>
+      removeQueuedTeamDispatchAutoContinuations: (sessionId: string) => void
+      emitQueueChanged: (sessionId: string) => void
+    }
+    service.pendingTurns = new Map([
+      [
+        'session-1',
+        [
+          { turnId: 'hidden-continuation', isTeamDispatchAutoContinuation: true },
+          { turnId: 'visible-user-turn' },
+        ],
+      ],
+    ])
+    service.emitQueueChanged = vi.fn()
+
+    service.removeQueuedTeamDispatchAutoContinuations('session-1')
+
+    expect(service.pendingTurns.get('session-1')).toEqual([{ turnId: 'visible-user-turn' }])
+    expect(service.emitQueueChanged).toHaveBeenCalledWith('session-1')
+  })
+})
+
 describe('SessionService.clearSessionMemory (删除/清空会话的执行器回收)', () => {
   type ClearSessionMemoryInternals = {
     activeLoops: Map<string, { cancel: () => void }>
@@ -585,6 +682,8 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     runningTurnIds: Map<string, string>
     cancelledTurnIds: Set<string>
     teamDispatchService: { cancelBySession: (sessionId: string) => number }
+    teamDispatchBudgetExhaustedTurns: Map<string, string>
+    teamDispatchAutoContinuationTracker: { clear: () => void; reset: (sessionId: string) => void }
   }
 
   function makeService(
@@ -605,6 +704,8 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     service.runningTurnIds = new Map()
     service.cancelledTurnIds = new Set()
     service.teamDispatchService = { cancelBySession: vi.fn(() => 0) }
+    service.teamDispatchBudgetExhaustedTurns = new Map()
+    service.teamDispatchAutoContinuationTracker = { clear: vi.fn(), reset: vi.fn() }
     return service
   }
 
@@ -880,6 +981,8 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
       undefined,
       undefined,
       presentation,
+      undefined,
+      false,
     )
   })
 

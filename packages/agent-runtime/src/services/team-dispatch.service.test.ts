@@ -617,14 +617,21 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
 	    }
 	  })
 
-	  it('peer call 独立预算不挤占 host dispatch 预算', async () => {
-	    const budgeted = new TeamDispatchService(makeRepo() as never, 0, discussionRepo as never, 20, 2)
-	    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'peer ok' }))
-	    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember })
+  it('peer call 独立预算不挤占 host dispatch 预算', async () => {
+    const budgeted = new TeamDispatchService(makeRepo() as never, 0, discussionRepo as never, 20, 2)
+    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'peer ok' }))
+    const onDispatchBudgetExceeded = vi.fn()
+    const { ctx } = makeCtx({
+      discussionId: 'd1',
+      roundIndex: 0,
+      executeMember,
+      onDispatchBudgetExceeded,
+    })
 
-	    const hostDispatch = await budgeted.run(makeTask('reviewer'), ctx)
-	    expect(hostDispatch.state).toBe('failed')
-	    expect(hostDispatch.error?.message).toContain('Dispatch budget exceeded')
+    const hostDispatch = await budgeted.run(makeTask('reviewer'), ctx)
+    expect(hostDispatch.state).toBe('failed')
+    expect(hostDispatch.error?.message).toContain('Dispatch budget exceeded')
+    expect(onDispatchBudgetExceeded).toHaveBeenCalledTimes(1)
 
 	    const firstPeer = await budgeted.recordPeerMessage(
 	      { content: 'peer 1', senderAgentId: 'reviewer', targetAgentId: 'rust-coder', discussionId: 'd1', roundIndex: 0 },
