@@ -262,13 +262,11 @@
 }
 
 .chat-main-empty[data-empty-theme] .empty-hero-theme-trigger {
-  background: color-mix(in srgb, var(--eh-surface-strong) 38%, transparent);
   color: var(--eh-muted);
 }
 
 .chat-main-empty[data-empty-theme] .empty-hero-theme-trigger:hover,
 .chat-main-empty[data-empty-theme] .empty-hero-theme-trigger[aria-expanded='true'] {
-  background: color-mix(in srgb, var(--eh-accent) 10%, var(--eh-surface-strong));
   color: var(--eh-accent);
 }
 
@@ -706,74 +704,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
-/* Moss morning */
-.chat-main-empty[data-empty-theme='moss'] {
-  --eh-accent: #647d59;
-  --eh-accent-2: #9caf88;
-  --eh-ink: #263026;
-  --eh-muted: #697263;
-  --eh-surface: rgba(250, 250, 244, 0.82);
-  --eh-surface-strong: rgba(252, 252, 247, 0.95);
-  --eh-line: rgba(86, 112, 76, 0.2);
-  --eh-shadow: rgba(63, 79, 55, 0.13);
-  background:
-    radial-gradient(circle at 7% 18%, rgba(242, 194, 155, 0.28), transparent 25%),
-    radial-gradient(circle at 91% 73%, rgba(140, 168, 122, 0.15), transparent 31%), #f7f7f1;
-}
-
-.chat-main-empty[data-empty-theme='moss'] .chat-hero-grid {
-  opacity: 0.42;
-  background-image: repeating-radial-gradient(
-    ellipse at 16% 36%,
-    transparent 0 26px,
-    rgba(88, 109, 75, 0.13) 27px 28px,
-    transparent 29px 48px
-  );
-}
-
-.chat-main-empty[data-empty-theme='moss'] .single-empty-heading {
-  grid-template-columns: 0.8fr 1.2fr;
-}
-
-.chat-main-empty[data-empty-theme='moss'] .single-empty-copy {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-.chat-main-empty[data-empty-theme='moss'] .single-empty-art {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.chat-main-empty[data-empty-theme='moss'] .single-empty-art-orb {
-  top: 38px;
-  left: 47%;
-  width: 100px;
-  height: 62px;
-  border: 0;
-  border-radius: 50%;
-  background: linear-gradient(150deg, #d9d6c8, #aaa899);
-  box-shadow:
-    -76px 12px 0 -9px #c5c2b4,
-    58px 10px 0 -17px #879d6e,
-    0 18px 30px rgba(77, 90, 67, 0.15);
-}
-
-.chat-main-empty[data-empty-theme='moss'] .single-empty-art-ring,
-.chat-main-empty[data-empty-theme='moss'] .single-empty-art-spark,
-.chat-main-empty[data-empty-theme='moss'] .single-empty-art-dot {
-  display: none;
-}
-
-.chat-main-empty[data-empty-theme='moss'] .single-empty-action {
-  border-radius: 24px 12px 24px 12px;
-}
-
-.chat-main-empty[data-empty-theme='moss'] .single-empty-action:nth-child(2),
-.chat-main-empty[data-empty-theme='moss'] .single-empty-action:nth-child(4) {
-  margin-top: -8px;
-}
-
 /* Geometric engine */
 .chat-main-empty[data-empty-theme='geometry'] {
   --eh-accent: #3155e7;
@@ -870,7 +800,6 @@
 .chat-main-empty[data-empty-theme='studio'] .single-empty-heading,
 .chat-main-empty[data-empty-theme='geometry'] .single-empty-heading {
   min-height: 108px;
-  grid-template-columns: minmax(0, 1fr) minmax(160px, 240px);
   background: transparent;
 }
 
@@ -1083,23 +1012,6 @@
   background: rgba(66, 126, 108, 0.25);
 }
 
-.app.theme-dark .chat-main-empty[data-empty-theme='moss'] {
-  --eh-accent: #9ab78b;
-  --eh-accent-2: #6f9166;
-  background:
-    radial-gradient(circle at 7% 18%, rgba(184, 125, 86, 0.18), transparent 27%),
-    radial-gradient(circle at 91% 73%, rgba(100, 133, 83, 0.18), transparent 33%),
-    linear-gradient(150deg, #121712, #182017 58%, #111914);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='moss'] .single-empty-art-orb {
-  background: linear-gradient(150deg, #85877d, #575c55);
-  box-shadow:
-    -76px 12px 0 -9px #71756d,
-    58px 10px 0 -17px #617653,
-    0 18px 30px rgba(0, 0, 0, 0.22);
-}
-
 .app.theme-dark .chat-main-empty[data-empty-theme='geometry'] {
   --eh-accent: #6380ff;
   --eh-accent-2: #9578f0;
@@ -1159,8 +1071,7 @@
     min-height: 82px;
   }
 
-  .chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(n),
-  .chat-main-empty[data-empty-theme='moss'] .single-empty-action:nth-child(n) {
+  .chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(n) {
     margin-top: 0;
   }
 }

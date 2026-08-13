@@ -2557,7 +2557,7 @@ export function ChatView({
             <ChatTitlebarEnd />
           </div>
         )}
-        {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
+        {/* {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />} */}
         {showEmptyHero && (
           <EmptySessionModeLauncher
             agents={agents}
