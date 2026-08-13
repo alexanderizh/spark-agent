@@ -38,10 +38,14 @@ describe('canvas video presentation lifecycle', () => {
     expect(runs).toContain('node?.data.mediaHeight')
   })
 
-  it('keeps the native fullscreen control in the operation output preview', () => {
+  it('uses the custom fullscreen control in the operation output preview', () => {
     const preview = readSource('./CanvasOperationOutputPreview.tsx')
+    const player = readSource('./videoPlayer/CanvasVideoPlayer.tsx')
+    const controls = readSource('./videoPlayer/CanvasVideoPlayerControls.tsx')
 
-    expect(preview).toContain('controlsList="noremoteplayback"')
-    expect(preview).not.toContain('controlsList="nofullscreen noremoteplayback"')
+    expect(preview).toContain("import { CanvasVideoPlayer } from './videoPlayer/CanvasVideoPlayer'")
+    expect(player).toContain('controlsList="noremoteplayback"')
+    expect(player).not.toContain('controls=""')
+    expect(controls).toContain("aria-label={fullscreen ? '退出全屏' : '全屏'}")
   })
 })

@@ -67,6 +67,7 @@ import {
   CanvasAudioNodePresentation,
   type CanvasAudioNodePresentationHandle,
 } from './audioNode/CanvasAudioNodePresentation'
+import { CanvasVideoPlayer } from './videoPlayer/CanvasVideoPlayer'
 import { CanvasShotScriptTable } from './CanvasShotScriptTable'
 import {
   CanvasNodeSelectionToolbar,
@@ -1737,17 +1738,10 @@ export const CanvasNode = memo(function CanvasNode({
                     )
                   ) : node.type === 'video' ? (
                     node.data.url ? (
-                      <video
+                      <CanvasVideoPlayer
                         className="canvas-node-image"
                         src={normalizedVideoSrc}
-                        controls
-                        controlsList="nofullscreen noremoteplayback"
-                        disablePictureInPicture
-                        playsInline
-                        preload="metadata"
-                        onLoadedMetadata={(event) => {
-                          const mediaWidth = event.currentTarget.videoWidth
-                          const mediaHeight = event.currentTarget.videoHeight
+                        onVideoMetadata={({ width: mediaWidth, height: mediaHeight }) => {
                           if (
                             mediaWidth > 0 &&
                             mediaHeight > 0 &&
@@ -1757,20 +1751,7 @@ export const CanvasNode = memo(function CanvasNode({
                             actions.updateNodeData?.(node.id, { mediaWidth, mediaHeight })
                           }
                         }}
-                        onClickCapture={(event) => {
-                          if (event.detail < 2) return
-                          event.preventDefault()
-                          event.stopPropagation()
-                          actions.editNode(node.id)
-                        }}
-                        onDoubleClickCapture={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                        }}
-                        onContextMenu={(e) => {
-                          // 阻止 <video> 原生右键菜单，让事件冒泡到外层 Dropdown 的 contextMenu trigger
-                          e.preventDefault()
-                        }}
+                        onDoubleClickEdit={() => actions.editNode(node.id)}
                       />
                     ) : (
                       <div className="canvas-node-image-placeholder">

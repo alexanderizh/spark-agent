@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { encodeToSafeFileUrl } from './canvas-safe-file'
+import { CanvasVideoPlayer } from './videoPlayer/CanvasVideoPlayer'
 import './CanvasNodeMediaPreview.less'
 
 export type CanvasNodeMediaType = 'image' | 'video'
@@ -16,13 +17,7 @@ export function resolveCanvasNodeMediaUrl(value: string): string {
   return ''
 }
 
-export function CanvasNodeMediaPreview({
-  type,
-  url,
-}: {
-  type: CanvasNodeMediaType
-  url: string
-}) {
+export function CanvasNodeMediaPreview({ type, url }: { type: CanvasNodeMediaType; url: string }) {
   const previewUrl = useMemo(() => resolveCanvasNodeMediaUrl(url), [url])
   const [loadedUrl, setLoadedUrl] = useState('')
   const [failedUrl, setFailedUrl] = useState('')
@@ -76,17 +71,11 @@ export function CanvasNodeMediaPreview({
             onError={handleError}
           />
         ) : (
-          <video
-            key={previewUrl}
-            className={`${mediaClassName} nodrag nopan`}
+          <CanvasVideoPlayer
+            className={mediaClassName}
             src={previewUrl}
-            controls
-            controlsList="noremoteplayback"
-            disablePictureInPicture
-            playsInline
-            preload="metadata"
-            onLoadedData={handleLoaded}
-            onError={handleError}
+            onVideoLoadedData={handleLoaded}
+            onVideoError={handleError}
           />
         )}
       </div>

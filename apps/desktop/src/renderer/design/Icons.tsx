@@ -436,6 +436,44 @@ export const Icons = {
       <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none" />
     </IconBase>
   ),
+  /** 有声 — 喇叭 + 两条声波（画布视频播放器） */
+  Volume2: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M11 5L6 9H2v6h4l5 4V5z" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M18.9 5.1a9.5 9.5 0 0 1 0 13.8" />
+    </IconBase>
+  ),
+  /** 静音 — 喇叭 + 叉（画布视频播放器） */
+  VolumeX: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M11 5L6 9H2v6h4l5 4V5z" />
+      <path d="M22 9l-6 6M16 9l6 6" />
+    </IconBase>
+  ),
+  /** 循环播放 — 双向循环箭头（画布视频播放器） */
+  Repeat: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="m17 2 4 4-4 4" />
+      <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+      <path d="m7 22-4-4 4-4" />
+      <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+    </IconBase>
+  ),
+  /** 上一帧 — 左尖角 + 竖线（画布视频播放器逐帧步进） */
+  StepBack: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="m17 18-6-6 6-6" />
+      <path d="M7 6v12" />
+    </IconBase>
+  ),
+  /** 下一帧 — 右尖角 + 竖线（画布视频播放器逐帧步进） */
+  StepForward: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="m7 18 6-6-6-6" />
+      <path d="M17 6v12" />
+    </IconBase>
+  ),
   Stop: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="5" y="5" width="14" height="14" rx="1.5" fill="currentColor" stroke="none" />
