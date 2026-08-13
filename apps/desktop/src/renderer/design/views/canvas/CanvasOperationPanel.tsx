@@ -74,6 +74,7 @@ import {
   normalizeModelParamsForSubmit,
   operationSuggestedFields,
   isModelParamCoveredByFields,
+  readModelParamDraftValue,
   resolveInitialModelParamDraftValue,
   schemaFields,
   updateCustomParam,
@@ -127,9 +128,16 @@ import {
 } from './canvasMediaInputMode'
 import {
   mergeSeededModelParamDraft,
+  isModelParamDraftValueCompatible,
   sameCustomParamDrafts,
   sameModelParamDraft,
 } from './canvasModelParamDraftState'
+import {
+  canvasModelMatchesPersistedIdentity,
+  canvasModelParameterPreferenceKey,
+  readCanvasModelParameterPreferences,
+  writeCanvasModelParameterPreferences,
+} from './canvasModelParameterPreferences'
 import type {
   CanvasInputTransport,
   CanvasNode,
@@ -859,6 +867,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [maxClipPreset, setMaxClipPreset] = useState<number | 'custom'>('custom')
   const [maxClipCustom, setMaxClipCustom] = useState('')
   const modelParamDraftEditedRef = useRef(false)
+  const modelSelectionTouchedRef = useRef(false)
+  const initializedModelPreferenceKeyRef = useRef<string | null>(null)
   const customParamsEditedRef = useRef(false)
   const configurationTouchedRef = useRef(false)
   const markDraftDirty = useCallback(() => setDraftRevision((revision) => revision + 1), [])
@@ -911,6 +921,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
   useEffect(() => {
     modelParamDraftEditedRef.current = false
+    modelSelectionTouchedRef.current = false
+    initializedModelPreferenceKeyRef.current = null
     customParamsEditedRef.current = false
     setPrompt(initialPrompt)
     setPromptDocument(initialPromptDocument)
@@ -1364,6 +1376,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     () => allParameterFields.filter((field) => !HIDDEN_MODEL_PARAM_NAMES.has(field.name)),
     [allParameterFields],
   )
+  const modelParameterPreferenceKey = useMemo(
+    () => (selectedModel ? canvasModelParameterPreferenceKey(selectedModel) : undefined),
+    [selectedModel],
+  )
 
   useEffect(() => {
     if (supportedMediaModels.length === 0) {
@@ -1408,23 +1424,46 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     const defaults = selectedCapability?.defaults ?? {}
     const existing = node.data.modelParams ?? task?.modelParams ?? {}
     const seeded = { ...modelScopedOperationPreset.modelParams, ...existing }
+    const cached = readCanvasModelParameterPreferences(modelParameterPreferenceKey, parameterFields)
+    const selectedModelMatchesTask = selectedModel
+      ? canvasModelMatchesPersistedIdentity(selectedModel, {
+          providerProfileId:
+            node.data.providerProfileId ??
+            task?.providerProfileId ??
+            operationPreset.providerProfileId,
+          manifestId: node.data.manifestId ?? task?.manifestId ?? operationPreset.manifestId,
+          modelId: node.data.modelId ?? task?.modelId ?? operationPreset.modelId,
+        })
+      : false
+    const preferPersistedTaskParams = !modelSelectionTouchedRef.current && selectedModelMatchesTask
     const next: Record<string, string> = {}
     const fieldNames = new Set(allParameterFields.map((field) => field.name))
     for (const field of parameterFields) {
-      next[field.name] =
-        resolveInitialModelParamDraftValue({
-          operation,
-          field,
-          fieldName: field.name,
-          presetParams: modelScopedOperationPreset.modelParams,
-          existingParams: existing,
-          defaultParams: defaults,
-        }) ?? ''
+      const initialValue = resolveInitialModelParamDraftValue({
+        operation,
+        field,
+        fieldName: field.name,
+        presetParams: modelScopedOperationPreset.modelParams,
+        existingParams: preferPersistedTaskParams ? existing : {},
+        defaultParams: defaults,
+      })
+      const persistedValue = readModelParamDraftValue(existing, field.name)
+      const hasCompatiblePersistedValue =
+        preferPersistedTaskParams &&
+        persistedValue != null &&
+        isModelParamDraftValueCompatible(field, persistedValue)
+      next[field.name] = hasCompatiblePersistedValue
+        ? initialValue
+        : (cached[field.name] ?? initialValue ?? '')
     }
     setModelParamDraft((prev) => {
-      const candidate = modelParamDraftEditedRef.current
-        ? mergeSeededModelParamDraft(prev, next, parameterFields)
-        : next
+      const modelChanged =
+        initializedModelPreferenceKeyRef.current !== (modelParameterPreferenceKey ?? null)
+      initializedModelPreferenceKeyRef.current = modelParameterPreferenceKey ?? null
+      const candidate =
+        modelParamDraftEditedRef.current && !modelChanged
+          ? mergeSeededModelParamDraft(prev, next, parameterFields)
+          : next
       if (sameModelParamDraft(prev, candidate)) {
         return prev
       }
@@ -1451,12 +1490,23 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     })
   }, [
     node.data.modelParams,
+    node.data.manifestId,
+    node.data.modelId,
+    node.data.providerProfileId,
     allParameterFields,
     modelScopedOperationPreset.modelParams,
+    modelParameterPreferenceKey,
     operation,
+    operationPreset.manifestId,
+    operationPreset.modelId,
+    operationPreset.providerProfileId,
     parameterFields,
     selectedCapability,
+    selectedModel,
+    task?.manifestId,
+    task?.modelId,
     task?.modelParams,
+    task?.providerProfileId,
   ])
 
   const buildCurrentModelParams = useCallback(() => {
@@ -1515,6 +1565,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const handleSelectedModelChange = useCallback(
     (modelKey: string) => {
       markConfigurationTouched()
+      modelSelectionTouchedRef.current = true
+      modelParamDraftEditedRef.current = false
       setSelectedModelKey(modelKey)
     },
     [markConfigurationTouched],
@@ -1540,9 +1592,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     (fieldName: string, value: string) => {
       markConfigurationTouched()
       modelParamDraftEditedRef.current = true
-      setModelParamDraft((prev) => updateModelParamDraftValue(prev, fieldName, value))
+      const next = updateModelParamDraftValue(modelParamDraft, fieldName, value)
+      setModelParamDraft(next)
+      writeCanvasModelParameterPreferences(modelParameterPreferenceKey, parameterFields, next)
     },
-    [markConfigurationTouched],
+    [markConfigurationTouched, modelParamDraft, modelParameterPreferenceKey, parameterFields],
   )
 
   const handleCustomParamPatch = useCallback(
