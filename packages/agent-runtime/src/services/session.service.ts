@@ -52,6 +52,7 @@ import type {
   CliSparkOverride,
   SessionCancelQueuedTurnResponse,
   SessionClearQueuedTurnsResponse,
+  SessionReorderQueuedTurnsResponse,
   SessionSendQueuedTurnNowResponse,
   SessionCreateResponse,
   SessionGetQueueResponse,
@@ -7974,6 +7975,48 @@ export class SessionService {
       cancelledCount: queue.length,
       queuedTurns: this.queueSnapshot(params.sessionId).queuedTurns,
     }
+  }
+
+  /**
+   * Reorders only turns that are still pending. The active executor is not part of pendingTurns,
+   * so changing this order cannot interrupt or replace the currently running turn.
+   */
+  reorderQueuedTurns(params: {
+    sessionId: string
+    turnIds: string[]
+  }): SessionReorderQueuedTurnsResponse {
+    const queue = this.pendingTurns.get(params.sessionId) ?? []
+    const currentIds = queue.map((turn) => turn.turnId)
+    const requestedIds = params.turnIds
+    const currentIdSet = new Set(currentIds)
+    const requestedIdSet = new Set(requestedIds)
+    const isValidOrder =
+      requestedIds.length === currentIds.length &&
+      requestedIdSet.size === currentIdSet.size &&
+      requestedIds.every((turnId) => currentIdSet.has(turnId))
+
+    if (!isValidOrder) {
+      const snapshot = this.queueSnapshot(params.sessionId)
+      return {
+        changed: false,
+        running: snapshot.running,
+        queuedTurns: snapshot.queuedTurns,
+      }
+    }
+
+    const changed = requestedIds.some((turnId, index) => turnId !== currentIds[index])
+    if (changed) {
+      const turnsById = new Map(queue.map((turn) => [turn.turnId, turn]))
+      const reorderedQueue = requestedIds.flatMap((turnId) => {
+        const turn = turnsById.get(turnId)
+        return turn == null ? [] : [turn]
+      })
+      this.pendingTurns.set(params.sessionId, reorderedQueue)
+      this.emitQueueChanged(params.sessionId)
+    }
+
+    const snapshot = this.queueSnapshot(params.sessionId)
+    return { changed, running: snapshot.running, queuedTurns: snapshot.queuedTurns }
   }
 
   /**

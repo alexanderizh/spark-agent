@@ -641,6 +641,16 @@ export const Icons = {
       <path d="M3 6h18M3 12h18M3 18h18" />
     </IconBase>
   ),
+  GripVertical: (p: IconProps) => (
+    <IconBase {...p}>
+      <circle cx="8" cy="6" r="1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="6" r="1" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="18" r="1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="18" r="1" fill="currentColor" stroke="none" />
+    </IconBase>
+  ),
   PanelLeft: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="3" y="4" width="18" height="16" rx="2" />
