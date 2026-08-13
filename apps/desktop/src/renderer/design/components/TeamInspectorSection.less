@@ -320,37 +320,10 @@
     }
   }
 
-  // ── 邀请成员：主行动按钮（虚线 → hover 实色）+ 弹出浮层 ──
+  // ── 邀请成员：主行动按钮（沿用组件库 Button 默认外观）+ 弹出浮层 ──
   &-invite-wrap {
     position: relative;
     margin: 6px 4px 2px;
-  }
-  &-invite-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    width: 100%;
-    padding: 8px;
-    border: 1px dashed var(--border-soft);
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--text-muted);
-    font-size: var(--font-sm);
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-
-    &:hover:not(:disabled) {
-      border-color: @accent;
-      border-style: solid;
-      color: @accent;
-      background: var(--primary-soft, color-mix(in srgb, @accent 8%, transparent));
-    }
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
   }
   &-invite-pop {
     position: absolute;
@@ -436,6 +409,7 @@
       .ant-select {
         flex: 0 0 auto;
         width: 88px;
+        margin-left: auto; // 推到行尾，与右侧容器边缘对齐
       }
     }
   }
