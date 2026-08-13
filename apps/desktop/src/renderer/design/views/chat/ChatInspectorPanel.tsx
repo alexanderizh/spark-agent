@@ -11,7 +11,6 @@ import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { clamp, formatTokenCount } from './ChatViewUtils'
 import {
-  extractInspectorFileChanges,
   extractInspectorSubagents,
   isRecord,
   type InspectorTask,
@@ -546,7 +545,6 @@ export function ChatInspector({
   const subagents = extractInspectorSubagents(messages)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const projectContextSources = projectContext?.sources ?? []
-  const fileChangeSummaries = extractInspectorFileChanges(messages)
   // 每来一条 usage_update 就重取一次累计值，保证面板打开期间跟着当前轮实时长
   const ledgerUsage = useSessionLedgerUsage(session?.id, usageData.turns.length)
 
@@ -767,31 +765,6 @@ export function ChatInspector({
             ) : (
               <div className="inspector-muted">本轮未发现项目级规则、skills 或 agents。</div>
             )}
-          </div>
-        )}
-
-        {fileChangeSummaries.length > 0 && (
-          <div className="inspector-section">
-            <h4>
-              Change Review
-              <span className="inspector-count">{fileChangeSummaries.length}</span>
-            </h4>
-            <div className="runtime-skill-list">
-              {fileChangeSummaries.map((change) => (
-                <div className="runtime-skill-row" key={change.id}>
-                  <div className="runtime-skill-main min-w-0">
-                    <div className="runtime-skill-name truncate">{change.path}</div>
-                    <div className="runtime-skill-desc truncate">
-                      {change.changeType} · +{change.adds} -{change.dels}
-                      {!change.hasDiff ? ' · no diff' : ''}
-                      {change.checkpointIds.length > 0
-                        ? ` · checkpoint ${change.checkpointIds.join(', ')}`
-                        : ''}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         )}
 

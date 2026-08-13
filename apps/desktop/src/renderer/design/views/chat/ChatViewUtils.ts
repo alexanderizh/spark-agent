@@ -36,18 +36,6 @@ export function formatRelativeTime(value: string): string {
   return `${Math.floor(diffMs / week)} 周`
 }
 
-export function countDiffLines(diff: string | undefined): { adds: number; dels: number } {
-  if (diff == null || diff.trim().length === 0) return { adds: 0, dels: 0 }
-  let adds = 0
-  let dels = 0
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('+++') || line.startsWith('---')) continue
-    if (line.startsWith('+')) adds += 1
-    if (line.startsWith('-')) dels += 1
-  }
-  return { adds, dels }
-}
-
 export function formatTokenCount(value: number): string {
   if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`
   if (value >= 1_000) return `${Math.round(value / 100) / 10}K`

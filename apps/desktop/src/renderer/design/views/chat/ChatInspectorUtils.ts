@@ -1,5 +1,4 @@
 import type { UIMessage } from '../../services/event-mapper'
-import { countDiffLines } from './ChatViewUtils'
 
 export type PlanItemStatus = 'done' | 'running' | 'pending'
 
@@ -27,16 +26,6 @@ export type ParsedTodo = {
   content: string
   status: 'pending' | 'in_progress' | 'completed'
   activeForm?: string
-}
-
-export type InspectorFileChange = {
-  id: string
-  path: string
-  changeType: string
-  adds: number
-  dels: number
-  hasDiff: boolean
-  checkpointIds: string[]
 }
 
 export interface InspectorSubagent {
@@ -166,45 +155,6 @@ function normalizeTodo(value: unknown): ParsedTodo | null {
   }
 
   return null
-}
-
-export function formatCheckpointReference(checkpointId: string): string {
-  return checkpointId.length > 8 ? checkpointId.slice(-6) : checkpointId
-}
-
-export function extractInspectorFileChanges(messages: UIMessage[]): InspectorFileChange[] {
-  const checkpointsByPath = new Map<string, string[]>()
-
-  for (const message of messages) {
-    for (const block of message.blocks) {
-      if (block.kind !== 'checkpoint') continue
-      for (const filePath of block.filePaths ?? []) {
-        const checkpointIds = checkpointsByPath.get(filePath) ?? []
-        const shortId = formatCheckpointReference(block.checkpointId)
-        if (!checkpointIds.includes(shortId)) checkpointIds.push(shortId)
-        checkpointsByPath.set(filePath, checkpointIds)
-      }
-    }
-  }
-
-  const changes = new Map<string, InspectorFileChange>()
-  for (const message of messages) {
-    for (const block of message.blocks) {
-      if (block.kind !== 'file_change') continue
-      const counts = countDiffLines(block.diff)
-      changes.set(block.path, {
-        id: `${message.id}:${block.path}`,
-        path: block.path,
-        changeType: block.changeType,
-        adds: counts.adds,
-        dels: counts.dels,
-        hasDiff: block.diff != null && block.diff.trim().length > 0,
-        checkpointIds: checkpointsByPath.get(block.path) ?? [],
-      })
-    }
-  }
-
-  return Array.from(changes.values()).slice(-12).reverse()
 }
 
 export function extractInspectorSubagents(messages: UIMessage[]): InspectorSubagent[] {

@@ -158,7 +158,6 @@ import {
   getLatestInputTokens,
 } from './chat/ChatViewUtils'
 import {
-  extractInspectorFileChanges,
   extractInspectorSubagents,
   extractSessionProgressTasks,
   isRecord,
