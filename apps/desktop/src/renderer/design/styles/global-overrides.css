@@ -24,7 +24,7 @@
 
 input::selection,
 textarea::selection,
-[contenteditable="true"]::selection,
+[contenteditable='true']::selection,
 .ant-input::selection,
 .ant-input-affix-wrapper input::selection,
 .ant-select-selection-search-input::selection {
@@ -34,7 +34,7 @@ textarea::selection,
 
 input::-moz-selection,
 textarea::-moz-selection,
-[contenteditable="true"]::-moz-selection,
+[contenteditable='true']::-moz-selection,
 .ant-input::-moz-selection,
 .ant-input-affix-wrapper input::-moz-selection,
 .ant-select-selection-search-input::-moz-selection {
@@ -42,6 +42,13 @@ textarea::-moz-selection,
   color: var(--text, #20201d) !important;
 }
 
+/* Ant Design focus rings are intentionally neutralized globally; pages that
+   need a visible focus treatment add it in their own scoped stylesheet. */
+.ant-select-focused,
+.ant-select-open,
+.ant-input-outlined {
+  box-shadow: none !important;
+}
 
 .ant-input-sm,
 .ant-input-affix-wrapper-sm,
@@ -57,7 +64,6 @@ textarea::-moz-selection,
 .ant-select.ant-select-sm .ant-select-selection-placeholder {
   line-height: calc(var(--control-h-sm) - 2px);
 }
-
 
 /* Configuration forms use one field rhythm. Toolbar/list buttons may stay small. */
 .form-grid,
@@ -100,7 +106,6 @@ textarea::-moz-selection,
   padding-block: 0;
   line-height: calc(var(--form-control-h) - 2px);
 }
-
 
 .form-grid .ant-select .ant-select-selection-item,
 .form-grid .ant-select .ant-select-selection-placeholder,

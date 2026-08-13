@@ -148,21 +148,26 @@
 .md-code-semantic-line--error {
   background: var(--danger-bg);
   color: var(--danger);
+  border-left-color: var(--danger);
 }
 .md-code-semantic-line--warning {
   background: var(--warning-bg);
   color: var(--warning);
+  border-left-color: var(--warning);
 }
 .md-code-semantic-line--info {
   background: var(--info-bg);
   color: var(--info);
+  border-left-color: var(--info);
 }
 .md-code-semantic-line--success {
   background: var(--success-bg);
   color: var(--success);
+  border-left-color: var(--success);
 }
 .md-code-semantic-line--debug {
   color: var(--text-faint);
+  border-left-color: var(--text-faint);
 }
 
 /* ---- log ---- */
@@ -173,22 +178,6 @@
 .md-code-log-line {
   padding-inline: 12px 0;
   border-left: 2px solid transparent;
-}
-.md-code-semantic-line--error {
-  border-left-color: var(--danger);
-}
-.md-code-semantic-line--warning {
-  border-left-color: var(--warning);
-}
-.md-code-semantic-line--info {
-  border-left-color: var(--info);
-}
-.md-code-semantic-line--success {
-  border-left-color: var(--success);
-}
-.md-code-semantic-line--debug {
-  border-left-color: var(--text-faint);
-  color: var(--text-faint);
 }
 .md-code-semantic-line--neutral {
   border-left-color: transparent;

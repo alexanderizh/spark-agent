@@ -1,0 +1,507 @@
+/* SettingsView-owned feedback surface. Keep it out of the global view layer. */
+.alert-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-md);
+  margin-bottom: var(--pad-lg);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+  border-radius: var(--r-md);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+
+.settings-content .alert-banner {
+  border: none;
+}
+
+/* Settings-only utility classes. Keep these out of the global view layer. */
+.range-value {
+  width: 42px;
+  text-align: right;
+}
+
+.select-sm {
+  width: 120px;
+  height: 26px;
+  padding: 0 8px;
+}
+
+.select-sm .spark-select,
+.spark-select.sm {
+  min-height: 28px;
+  font-size: var(--font-xs);
+}
+
+.font-size-input {
+  width: 140px;
+}
+
+/* InputNumber suffix units (px / %). */
+.settings-content .ant-input-number.font-size-input,
+.settings-content .ant-input-number.ui-zoom-input {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.input-suffix-addon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: auto;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid transparent !important;
+  border-left-color: transparent !important;
+  border-radius: 0 var(--r-md) var(--r-md) 0 !important;
+  background: var(--bg-sunken) !important;
+  color: var(--text-muted) !important;
+  font-size: 12px;
+  font-weight: 400;
+  cursor: default;
+  pointer-events: none;
+}
+
+.text-xs-12 {
+  font-size: 12px;
+}
+
+.section-wider {
+  max-width: 820px;
+}
+
+.row-mb-sm {
+  margin-bottom: 12px;
+}
+
+.select-full {
+  width: 100%;
+}
+
+.select-full .spark-select,
+.spark-select.full {
+  width: 100%;
+}
+
+/* Settings detail surfaces. These used to be duplicated in views.css and
+   interactions.css; this page owns their layout now. */
+.slide-panel-backdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  z-index: 95;
+  background: rgb(0 0 0 / 30%);
+  animation: fadeIn 0.15s;
+}
+
+.slide-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 92vw);
+  height: 100%;
+  background: var(--panel);
+  border-left: none;
+  box-shadow: var(--shadow-lg);
+  animation: slideRight 0.2s;
+}
+
+@media (min-width: 1600px) {
+  .slide-panel {
+    width: min(1120px, 80vw);
+  }
+}
+
+@keyframes slideRight {
+  from {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.slide-panel-h {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-md);
+  padding: 14px 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+}
+
+.slide-panel-h .h-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.slide-panel-h .h-title {
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.slide-panel-h .h-sub {
+  margin-top: 1px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.slide-panel-body {
+  flex: 1;
+  overflow: auto;
+  padding: 22px 28px;
+}
+
+.slide-panel-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm);
+  padding: 12px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+  background: var(--bg-soft);
+}
+
+.subsec-h {
+  margin: 20px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.subsec-h:first-child {
+  margin-top: 0;
+}
+
+.rule-layer {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin-bottom: 12px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+}
+
+.rule-layer-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--bg-soft);
+  font-size: var(--font-sm);
+}
+
+.rule-layer-h .badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.rule-layer-h .name {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.rule-layer-h .desc {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.rule-layer-body {
+  padding: 4px;
+}
+
+.rule-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--font-sm);
+}
+
+.rule-line:hover {
+  background: var(--hover);
+}
+
+.rule-line .src {
+  width: 140px;
+  flex-shrink: 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-line .txt {
+  flex: 1;
+  color: var(--text);
+}
+
+.rule-line.conflict {
+  background: var(--warning-bg);
+}
+
+.rule-line.conflict .txt {
+  color: var(--text-strong);
+}
+
+.rule-line.overridden {
+  opacity: 0.55;
+}
+
+.rule-line.overridden .txt {
+  text-decoration: line-through;
+}
+
+.rule-line .marker {
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rule-line .marker.win {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.rule-line .marker.lose {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.perm-rule {
+  display: grid;
+  grid-template-columns: 24px 1fr 110px 110px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--divider);
+  font-size: var(--font-sm);
+}
+
+.perm-rule:last-child {
+  border-bottom: none;
+}
+
+.perm-rule .ico {
+  color: var(--text-muted);
+}
+
+.perm-rule .desc .name {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.perm-rule .desc .hint {
+  margin-top: 1px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.perm-rule .select-full {
+  width: 110px;
+}
+
+.keymap {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+}
+
+.keymap .km-h {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.keymap .km-row {
+  display: contents;
+}
+
+.keymap .km-action,
+.keymap .km-keys {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.keymap .km-action {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.keymap .km-row:last-child .km-action,
+.keymap .km-row:last-child .km-keys {
+  border-bottom: none;
+}
+
+.keymap .km-keys {
+  justify-content: flex-end;
+  gap: var(--component-control-gap);
+}
+
+.keymap .km-row:hover .km-action,
+.keymap .km-row:hover .km-keys {
+  background: var(--hover);
+}
+
+.shortcut-key-input {
+  width: 72px;
+}
+
+.shortcut-key-input input {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+/* Settings-only flat surfaces and control treatment. */
+.settings-content .card {
+  border: none;
+  background: var(--bg-sunken);
+}
+
+.settings-content .card-header {
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+}
+
+.settings-content .btn,
+.settings-content .btn:hover,
+.settings-content .badge {
+  border-color: transparent;
+}
+
+.settings-content .ant-input,
+.settings-content .ant-input-affix-wrapper,
+.settings-content .ant-input-number,
+.settings-content .ant-select .ant-select-selector {
+  border-color: transparent !important;
+  border-radius: var(--r-md) !important;
+  background: var(--bg-sunken) !important;
+  box-shadow: none !important;
+}
+
+.settings-content .ant-input:hover,
+.settings-content .ant-input-affix-wrapper:hover,
+.settings-content .ant-input-number:hover,
+.settings-content
+  .ant-select:not(.ant-select-disabled):not(.ant-select-customize-input):hover
+  .ant-select-selector {
+  border-color: transparent !important;
+  background: color-mix(in srgb, var(--bg-sunken) 82%, var(--hover)) !important;
+}
+
+.settings-content .ant-input:focus,
+.settings-content .ant-input-focused,
+.settings-content .ant-input-affix-wrapper-focused,
+.settings-content .ant-input-number-focused,
+.settings-content .ant-select-focused .ant-select-selector {
+  border-color: transparent !important;
+  background: var(--bg-sunken) !important;
+}
+
+.settings-content .ant-segmented {
+  padding: 2px;
+  background: var(--bg-sunken);
+}
+
+.settings-content .ant-segmented .ant-segmented-item {
+  border-radius: var(--r-xs);
+}
+
+.settings-content .ant-segmented .ant-segmented-item-selected {
+  background: var(--panel);
+}
+
+.settings-content .ant-tag,
+.settings-content .kbd {
+  border-color: transparent;
+}
+
+.settings-content .kbd {
+  border: none;
+}
+
+/* System prompt editor: a single flat surface with a focused inner ring. */
+.settings-content .prompt-textarea,
+.settings-content .prompt-textarea textarea {
+  min-height: 240px;
+  padding: 14px 16px;
+  border: none !important;
+  border-radius: var(--r-md) var(--r-md) 0 0 !important;
+  outline: none !important;
+  background: var(--bg-sunken) !important;
+  box-shadow: none !important;
+  color: var(--text);
+  font-family: var(--font-mono, 'Geist Mono', 'SF Mono', 'Menlo', monospace);
+  font-size: 13px;
+  line-height: 1.7;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+
+.settings-content .prompt-textarea:hover,
+.settings-content .prompt-textarea:hover textarea {
+  background: color-mix(in srgb, var(--bg-sunken) 82%, var(--hover)) !important;
+}
+
+.settings-content .prompt-textarea:focus,
+.settings-content .prompt-textarea:focus-within,
+.settings-content .prompt-textarea textarea:focus {
+  background: var(--bg-sunken) !important;
+  box-shadow: inset 0 0 0 1.5px var(--primary) !important;
+}
+
+.settings-content .prompt-textarea::placeholder,
+.settings-content .prompt-textarea textarea::placeholder {
+  color: var(--text-faint);
+  line-height: 1.7;
+}
+
+.settings-content .prompt-editor-footer {
+  padding: 10px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  background: var(--bg-sunken);
+}
