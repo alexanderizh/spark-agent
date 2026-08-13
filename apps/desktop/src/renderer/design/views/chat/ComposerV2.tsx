@@ -127,6 +127,7 @@ import { formatTokenCount } from './ChatViewUtils'
 import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
 import { resolvePendingQuickReplies } from '../../services/quick-reply-suggestions'
 import { useAppControlComposerPrefill } from './composerAppControl'
+import { useInsertToComposer, formatCodeReferenceLine, type CodeReference } from '../../components/code-viewer/composerInsert'
 import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
@@ -1110,6 +1111,26 @@ export function ComposerV2({
   const value = draftState.value
   const attachments = draftState.attachments
   const manualExpanded = draftState.manualExpanded
+  // 代码位置引用（编辑器右键「添加选中代码」产生）：纯渲染层 state，不进 draft / protocol，
+  // 切会话会丢失（第一版不持久化，与并行改动零冲突）。发送时转为「路径:行号」文本交给模型。
+  const [codeReferences, setCodeReferences] = useState<CodeReference[]>([])
+  const appendCodeReferences = useCallback((incoming: CodeReference[]) => {
+    let added = 0
+    setCodeReferences((current) => {
+      const byKey = new Map(current.map((ref) => [codeRefKey(ref), ref]))
+      for (const ref of incoming) {
+        const key = codeRefKey(ref)
+        if (byKey.has(key)) continue
+        byKey.set(key, ref)
+        added += 1
+      }
+      return Array.from(byKey.values())
+    })
+    return added
+  }, [])
+  const handleRemoveCodeReference = useCallback((key: string) => {
+    setCodeReferences((current) => current.filter((ref) => codeRefKey(ref) !== key))
+  }, [])
   const pendingQuickReplies = useMemo(() => resolvePendingQuickReplies(messages), [messages])
   const [dismissedQuickReplyKey, setDismissedQuickReplyKey] = useState<string | null>(null)
   useEffect(() => setDismissedQuickReplyKey(null), [session?.id])
@@ -1134,7 +1155,7 @@ export function ComposerV2({
   // 真正发送时再做详细校验（toast 提示）
   const needsTeamSelection = isNewSessionComposer && teamConfig.enabled && teamConfig.teamId == null
   const canSubmit =
-    (value.trim().length > 0 || attachments.length > 0) &&
+    (value.trim().length > 0 || attachments.length > 0 || codeReferences.length > 0) &&
     selectedProvider != null &&
     effectiveModelId.length > 0 &&
     !needsTeamSelection
@@ -1899,6 +1920,19 @@ export function ComposerV2({
     [setAttachments, toast],
   )
 
+  const focusComposer = useCallback(() => {
+    textareaRef.current?.focus()
+  }, [])
+
+  // 代码查看器右键「添加到会话」：追加文本 / 累加附件（复用 appendAttachments 的去重与 20 上限）
+  useInsertToComposer({
+    sessionId: session?.id ?? null,
+    setValue,
+    appendAttachments,
+    appendCodeReferences,
+    focus: focusComposer,
+  })
+
   const handleAddAttachments = useCallback(async () => {
     try {
       const selected = await openFileDialog({
@@ -2098,6 +2132,16 @@ export function ComposerV2({
       const who = replySnapshot.role === 'assistant' ? (replySnapshot.agentName ?? 'Agent') : 'You'
       text = `[回复 ${who}: ${quotedLine}]\n${rawText}`
     }
+    // 代码位置引用：拼到正文末尾（每行一个 路径:行号）。用户未输入正文时用引用替换
+    // fallback 占位「请查看附件。」（含 reply 包裹的场景也一并替换）。
+    if (codeReferences.length > 0) {
+      const refText = codeReferences.map(formatCodeReferenceLine).join('\n')
+      if (value.trim().length === 0) {
+        text = text.replace('请查看附件。', refText)
+      } else {
+        text = `${text}\n${refText}`
+      }
+    }
     // Record to input history (deduplicate consecutive identical entries)
     const history = sentHistoryRef.current
     if (rawText !== history[history.length - 1]) {
@@ -2107,6 +2151,7 @@ export function ComposerV2({
     historyDraftRef.current = ''
     setValue('')
     setAttachments([])
+    setCodeReferences([])
     // 发送后清除 pending mention（避免下一条消息误带）；dispatchMessage 内已通过 text 计算用过
     setPendingMention(null)
     if (replySnapshot != null) onClearReply?.()
@@ -3395,10 +3440,41 @@ export function ComposerV2({
             </div>
           )}
 
-          {(imageAttachments.length > 0 ||
+          {(codeReferences.length > 0 ||
+            imageAttachments.length > 0 ||
             fileAttachments.length > 0 ||
             directoryAttachments.length > 0) && (
             <div className="composer-attachments-inside">
+              {codeReferences.length > 0 && (
+                <div className="composer-attachment-strip composer-code-ref-strip">
+                  {codeReferences.map((ref) => {
+                    const refKey = codeRefKey(ref)
+                    return (
+                      <div
+                        key={refKey}
+                        className="composer-attachment-chip composer-code-ref-chip"
+                        title={formatCodeReferenceLine(ref)}
+                      >
+                        <FileChipIcon path={ref.path} size={13} />
+                        <div className="composer-code-ref-text">
+                          <span className="composer-code-ref-name">{ref.name}</span>
+                          <span className="composer-code-ref-loc">
+                            {formatCodeReferenceLine(ref)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          title="移除引用"
+                          aria-label={`移除 ${ref.name} 引用`}
+                          onClick={() => handleRemoveCodeReference(refKey)}
+                        >
+                          <Icons.X size={12} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               {imageAttachments.length > 0 && (
                 <div className="composer-attachment-gallery">
                   {imageAttachments.map((attachment) => (
@@ -5487,6 +5563,11 @@ function toSessionAttachments(attachments: ComposerAttachment[]): SessionAttachm
     type: attachment.type,
     path: attachment.path,
   }))
+}
+
+/** 代码位置引用的去重 key：同文件同行号区间视为重复。 */
+function codeRefKey(ref: CodeReference): string {
+  return `${ref.path}:${ref.startLine}-${ref.endLine}`
 }
 
 function getPermissionModeOptions(
