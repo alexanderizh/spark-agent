@@ -9033,6 +9033,8 @@ export function CanvasWorkspaceView({
         title="画布有未保存的改动"
         closable={false}
         mask={{ closable: false }}
+        centered
+        width={440}
         footer={[
           <Button key="discard" danger onClick={onLeaveDiscard}>
             不保存
