@@ -16,7 +16,7 @@
  * 合并后清掉旧 key，迁移是自然发生的、无需显式步骤。
  */
 
-import type { ComposerDraftSnapshot } from './ChatComposerTypes'
+import type { ComposerDraftSnapshot, ComposerSessionReference } from './ChatComposerTypes'
 
 /** 旧的全量 key，仅用于读侧迁移；新写入不再用它 */
 export const COMPOSER_DRAFTS_LEGACY_KEY = 'spark-agent:composer-drafts'
@@ -38,7 +38,11 @@ export type ComposerDraftMap = Record<string, ComposerDraftSnapshot>
 
 export function isEmptyDraft(draft: ComposerDraftSnapshot | undefined): boolean {
   if (draft == null) return true
-  return draft.value.trim().length === 0 && draft.attachments.length === 0
+  return (
+    draft.value.trim().length === 0 &&
+    draft.attachments.length === 0 &&
+    draft.sessionReferences.length === 0
+  )
 }
 
 function bucketStorageKey(bucket: string): string {
@@ -51,9 +55,38 @@ function sanitizeDraft(value: unknown): ComposerDraftSnapshot | null {
   const candidate = value as Partial<ComposerDraftSnapshot>
   if (typeof candidate.value !== 'string') return null
   if (!Array.isArray(candidate.attachments)) return null
+  const sessionReferences: ComposerSessionReference[] = Array.isArray(candidate.sessionReferences)
+    ? candidate.sessionReferences.flatMap((item) => {
+        if (item == null || typeof item !== 'object') return []
+        const reference = item as Partial<ComposerSessionReference>
+        if (
+          typeof reference.sourceSessionId !== 'string' ||
+          typeof reference.title !== 'string' ||
+          reference.sourceSessionId.trim() === ''
+        ) {
+          return []
+        }
+        return [
+          {
+            ...(typeof reference.referenceId === 'string' ? { referenceId: reference.referenceId } : {}),
+            sourceSessionId: reference.sourceSessionId,
+            title: reference.title.slice(0, 200),
+            ...(Number.isInteger(reference.snapshotSeq) && reference.snapshotSeq! >= 0
+              ? { snapshotSeq: reference.snapshotSeq }
+              : {}),
+            ...(typeof reference.projectId === 'string' ? { projectId: reference.projectId } : {}),
+            ...(Number.isInteger(reference.turnCount) && reference.turnCount! >= 0
+              ? { turnCount: reference.turnCount }
+              : {}),
+            ...(typeof reference.status === 'string' ? { status: reference.status } : {}),
+          },
+        ]
+      })
+    : []
   return {
     value: candidate.value,
     attachments: candidate.attachments,
+    sessionReferences,
     manualExpanded: candidate.manualExpanded === true,
   }
 }

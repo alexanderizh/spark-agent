@@ -4,6 +4,41 @@
   position: relative;
 }
 
+.session-fork-after-turn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 6px 0 2px 42px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 140ms ease, color 140ms ease, background 140ms ease;
+}
+
+[role='listitem']:hover .session-fork-after-turn,
+.session-fork-after-turn:focus-visible {
+  opacity: 1;
+}
+
+.session-fork-after-turn:hover,
+.session-fork-after-turn:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-soft));
+  color: var(--primary);
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-fork-after-turn {
+    transition: none;
+  }
+}
+
 .git-session-widget {
   position: relative;
   -webkit-app-region: no-drag;
@@ -2334,6 +2369,48 @@ body.git-review-tree-resizing {
     color: var(--text-muted);
     font-size: var(--font-sm);
   }
+}
+
+.composer-session-ref-drop-overlay {
+  position: fixed;
+  inset: 0 0 0 var(--sidebar-offset, 210px);
+  z-index: calc(var(--z-modal, 1000) + 21);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: color-mix(in srgb, #b06dff 15%, rgba(247, 250, 253, 0.62));
+  -webkit-backdrop-filter: blur(16px) saturate(1.16);
+  backdrop-filter: blur(16px) saturate(1.16);
+  pointer-events: none;
+  animation: composer-file-drop-fade 160ms ease-out;
+}
+
+.composer-session-ref-drop-target {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 24px 30px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--panel) 42%, transparent);
+  color: var(--text);
+  box-shadow: 0 18px 50px color-mix(in srgb, #b06dff 14%, transparent);
+  text-align: center;
+  animation: composer-file-drop-rise 160ms ease-out;
+
+  svg { color: #9856e7; }
+  strong { margin-top: 5px; font-size: 18px; font-weight: 650; }
+  span { color: var(--text-muted); font-size: var(--font-sm); }
+}
+
+.composer.is-session-reference-drop-active {
+  box-shadow: 0 0 0 2px color-mix(in srgb, #b06dff 60%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-session-ref-drop-overlay,
+  .composer-session-ref-drop-target { animation: none; }
 }
 
 .composer-file-drop-icon {

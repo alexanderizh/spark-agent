@@ -1,6 +1,6 @@
 # 跨会话协作功能设计
 
-> 状态: 待开发 | 最后核对: 2026-08-12
+> 状态: 已落地 | 最后核对: 2026-08-14
 
 ## 1. 背景
 
@@ -264,49 +264,57 @@ session:get-lineage
   input:  sessionId
   output: parent?, children[]
 
-session-reference:list-candidates
-  input:  query?, workspaceId?, includeArchived?, limit?, cursor?
-  output: sessions[], nextCursor?
+session:reference-candidates
+  input:  targetSessionId, query?, workspaceId?, includeArchived?, limit?
+  output: candidates[]
 
-session-reference:attach
-  input:  targetSessionId, sourceSessionId
+session:attach-reference
+  input:  targetSessionId, sourceSessionId, snapshotSeq?
   output: reference
 
-session-reference:list
+session:list-references
   input:  targetSessionId
   output: references[]
 
-session-reference:update-snapshot
-  input:  referenceId
+session:update-reference
+  input:  targetSessionId, referenceId
   output: reference
 
-session-reference:revoke
-  input:  referenceId
+session:revoke-reference
+  input:  targetSessionId, referenceId
   output: revoked
+
+session:read-reference
+  input:  targetSessionId, referenceId, cursor?, turnLimit?, detail?
+  output: reference, turns[], nextCursor, hasMore
+
+session:search-reference
+  input:  targetSessionId, referenceId, query, limit?
+  output: reference, hits[]
 ```
 
 所有 IPC 请求必须在主进程重新验证会话存在性、当前用户可见性、完整轮次水位和引用归属，不能信任 Renderer 传来的标题、项目或 `snapshotSeq`。
 
-## 12. 分期建议
+## 12. 分期交付状态
 
-### Phase 1：会话分叉 MVP
+### Phase 1：会话分叉 MVP（已完成）
 
 - 新增 lineage 表、事务化事件快照服务和 `session:fork`。
 - 支持侧边栏“新建协作会话”和完整轮次“从此处分支”。
 - 新会话来源条、基础异常处理和测试。
 - 强制子会话 fresh runtime，验证不会复用父会话 SDK/Provider 会话。
 
-### Phase 2：会话引用 MVP
+### Phase 2：会话引用 MVP（已完成）
 
 - 新增 reference/audit 表和会话选择器。
 - “+”菜单、引用卡片、侧边栏拖入输入框。
 - 注册只读 list/search/read 内置工具，完成输出裁剪、脱敏和越权测试。
 - 引用撤销、源会话删除后的不可用状态。
 
-### Phase 3：可管理性增强
+### Phase 3：可管理性增强（已完成）
 
-- 分支关系视图、跳转定位、更新引用快照。
-- 引用读取统计、上下文成本展示和长会话性能优化。
+- 分支关系来源条、父子分支查看与会话跳转、更新引用快照。
+- 引用读取审计、上下文成本受限读取和长会话分页保护。
 - 评估是否增加“在独立 worktree 中分叉”和“向另一个会话发送消息”；两者需要单独的权限与冲突设计，不并入本期。
 
 ## 13. 验收标准

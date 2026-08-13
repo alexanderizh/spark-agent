@@ -23,6 +23,7 @@ import type {
   SessionChatMode,
   SessionPermissionMode,
   SessionReasoningEffort,
+  TurnId,
   AgentEvent,
   AgentStatusValue,
   TeamModeConfig,
@@ -350,6 +351,11 @@ type SessionSidebarCtx = {
     workspaceId?: string | null,
     options?: Record<string, unknown>,
   ) => Promise<SessionId | null>
+  handleForkSession: (
+    sourceSessionId: SessionId,
+    anchorTurnId?: TurnId,
+    title?: string,
+  ) => Promise<SessionId | null>
   handleToggleSessionPinned: (session: SessionSummary) => Promise<void>
   commitSessionTitle: (session: SessionSummary, title: string) => Promise<void>
   handleRenameSession: (session: SessionSummary) => Promise<void>
@@ -533,6 +539,7 @@ export function SessionSidebarProvider({
   const { invoke: listActiveTerminals } = useIpcInvoke('terminal:list-active')
   const { invoke: searchSessionsRpc } = useIpcInvoke('session:search')
   const { invoke: updateSession } = useIpcInvoke('session:update')
+  const { invoke: forkSession } = useIpcInvoke('session:fork')
   const { invoke: deleteSession } = useIpcInvoke('session:delete')
   const { invoke: persistTeamConfig } = useIpcInvoke('team:update')
   const { invoke: createWorktree } = useIpcInvoke('workspace:create-worktree')
@@ -1191,6 +1198,40 @@ export function SessionSidebarProvider({
       updateSessionInList,
       upsertSessionInList,
     ],
+  )
+
+  const handleForkSession = useCallback(
+    async (
+      sourceSessionId: SessionId,
+      anchorTurnId?: TurnId,
+      title?: string,
+    ): Promise<SessionId | null> => {
+      try {
+        const result = await forkSession({
+          sourceSessionId,
+          ...(anchorTurnId != null ? { anchorTurnId } : {}),
+          ...(title?.trim() ? { title: title.trim() } : {}),
+        })
+        upsertSessionInList(result.session)
+        justCreatedSessionRef.current = result.sessionId
+        setActive(result.sessionId)
+        const childWorkspaceId = result.session.workspaceIds[0] ?? null
+        setActiveWorkspace(childWorkspaceId)
+        if (result.sourceWasRunning) {
+          toast.info('源会话仍在运行；协作会话只复制到最近一个已完成轮次。')
+        }
+        window.dispatchEvent(
+          new CustomEvent('spark:composer:reset-draft', {
+            detail: { sessionId: result.sessionId },
+          }),
+        )
+        return result.sessionId
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '创建协作会话失败')
+        return null
+      }
+    },
+    [forkSession, setActive, setActiveWorkspace, toast, upsertSessionInList],
   )
 
   // 用户从系统托盘菜单触发「新建会话」：走 renderer 标准新建流程（含 worktree 复用 / 草稿清空等）。
@@ -1929,6 +1970,7 @@ export function SessionSidebarProvider({
       updateSessionInList,
       bumpSessionMessageCount,
       handleNewSession,
+      handleForkSession,
       handleToggleSessionPinned,
       commitSessionTitle,
       handleRenameSession,

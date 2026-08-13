@@ -55,6 +55,7 @@ export type QueuedMessage = {
   content: string
   enqueuedAt: string
   attachments: ComposerAttachment[]
+  sessionReferences: ComposerSessionReference[]
   /** Internal queued prompts stay controllable but cannot be copied into the user composer. */
   editable: boolean
 }
@@ -66,15 +67,27 @@ export type ComposerAttachment = SessionAttachment & {
   previewUrl?: string
 }
 
+export type ComposerSessionReference = {
+  referenceId?: string
+  sourceSessionId: string
+  title: string
+  snapshotSeq?: number
+  projectId?: string | null
+  turnCount?: number
+  status?: 'active' | 'revoked' | 'unavailable' | string
+}
+
 export type ComposerDraftSnapshot = {
   value: string
   attachments: ComposerAttachment[]
+  sessionReferences: ComposerSessionReference[]
   manualExpanded: boolean
 }
 
 export const EMPTY_COMPOSER_DRAFT: ComposerDraftSnapshot = {
   value: '',
   attachments: [],
+  sessionReferences: [],
   manualExpanded: false,
 }
 

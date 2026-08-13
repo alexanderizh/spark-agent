@@ -38,6 +38,7 @@ import {
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { Icons } from './Icons'
+import { writeSessionReferenceDragPayload } from './views/chat/session-reference-dnd'
 import {
   useSessionSidebar,
   buildProjectGroups,
@@ -767,6 +768,7 @@ function ChatListItem({
   onTogglePinned,
   onArchive,
   onDelete,
+  onCollaborate,
   dragActivatorProps,
   revealSessionId,
   onRevealed,
@@ -783,6 +785,7 @@ function ChatListItem({
   onTogglePinned?: (session: SessionSummary) => void
   onArchive?: (session: SessionSummary) => void
   onDelete?: (session: SessionSummary) => void
+  onCollaborate?: (session: SessionSummary) => void
   dragActivatorProps?: React.HTMLAttributes<HTMLDivElement> | undefined
   // When this id matches the session, scroll it into view (set by the command
   // palette via SessionSidebarContext.revealSession). Cleared via onRevealed.
@@ -886,6 +889,17 @@ function ChatListItem({
           e.stopPropagation()
           setContextOpen(true)
           setMenuOpen(true)
+        }}
+        draggable
+        onDragStart={(event) => {
+          // dnd-kit owns sortable drag handles; a native payload is only
+          // useful when the row is dragged outside the sidebar.
+          writeSessionReferenceDragPayload(event.dataTransfer, {
+            sessionId: s.id,
+            title: s.title || t('sidebar.newSession'),
+            projectId: s.projectId,
+            updatedAt: s.updatedAt,
+          })
         }}
       >
         <div className="chat-item-row">
@@ -1008,6 +1022,11 @@ function ChatListItem({
                         },
                       },
                       {
+                        icon: <Icons.MessageSquarePlus size={14} />,
+                        label: '新建协作会话',
+                        onClick: () => onCollaborate?.(s),
+                      },
+                      {
                         icon: <Icons.Trash size={14} />,
                         label: t('sidebar.session.delete'),
                         danger: true,
@@ -1063,6 +1082,7 @@ export function ProjectSessionGroup({
   onToggleSessionPinned,
   onArchiveSession,
   onDeleteSession,
+  onCollaborate,
   projectDragActivatorProps,
   sessionSortProjectId,
   revealSessionId,
@@ -1089,6 +1109,7 @@ export function ProjectSessionGroup({
   onToggleSessionPinned: (session: SessionSummary) => void
   onArchiveSession: (session: SessionSummary) => void
   onDeleteSession: (session: SessionSummary) => void
+  onCollaborate?: (session: SessionSummary) => void
   projectDragActivatorProps?: React.HTMLAttributes<HTMLDivElement> | undefined
   sessionSortProjectId?: string
   revealSessionId?: SessionId | null | undefined
@@ -1323,6 +1344,7 @@ export function ProjectSessionGroup({
                         onTogglePinned={onToggleSessionPinned}
                         onArchive={onArchiveSession}
                         onDelete={onDeleteSession}
+                        {...(onCollaborate != null ? { onCollaborate } : {})}
                         dragActivatorProps={dragActivatorProps}
                       />
                     </React.Fragment>
@@ -1380,6 +1402,7 @@ type FlatGroupActions = {
   onToggleSessionPinned: (session: SessionSummary) => Promise<void>
   onArchiveSession: (session: SessionSummary) => Promise<void>
   onDeleteSession: (session: SessionSummary) => Promise<void>
+  onCollaborate?: (session: SessionSummary) => void
 }
 
 export function FlatGroup({
@@ -1572,6 +1595,7 @@ export function FlatGroup({
                   onTogglePinned={actions.onToggleSessionPinned}
                   onArchive={actions.onArchiveSession}
                   onDelete={actions.onDeleteSession}
+                  {...(actions.onCollaborate != null ? { onCollaborate: actions.onCollaborate } : {})}
                   dragActivatorProps={dragActivatorProps}
                 />
               )
@@ -1951,6 +1975,14 @@ export function SidebarSessionList() {
       setIsStartingEmptySession(false)
     }
   }, [handleNewSession, isStartingEmptySession, setTweak])
+
+  const handleCollaborateSession = useCallback(
+    async (session: SessionSummary) => {
+      const id = await ctx.handleForkSession(session.id)
+      if (id != null) setTweak('view', 'chat')
+    },
+    [ctx.handleForkSession, setTweak],
+  )
 
   // Sidebar global filter (status / project / lastActivity / groupBy)
   const [filter, setFilter] = useState<SidebarFilterState>(() => readSidebarFilter())
@@ -2521,6 +2553,7 @@ export function SidebarSessionList() {
                               onToggleSessionPinned={ctx.handleToggleSessionPinned}
                               onArchiveSession={ctx.handleArchiveSession}
                               onDeleteSession={ctx.handleDeleteSession}
+                              onCollaborate={handleCollaborateSession}
                               projectDragActivatorProps={projectDragActivatorProps}
                               {...(canReorderSessions
                                 ? { sessionSortProjectId: workspace.id }
@@ -2631,6 +2664,7 @@ export function SidebarSessionList() {
                           onToggleSessionPinned: ctx.handleToggleSessionPinned,
                           onArchiveSession: ctx.handleArchiveSession,
                           onDeleteSession: ctx.handleDeleteSession,
+                          onCollaborate: handleCollaborateSession,
                         }}
                         {...(canReorderSessions &&
                         group.id === 'project:no-project' &&

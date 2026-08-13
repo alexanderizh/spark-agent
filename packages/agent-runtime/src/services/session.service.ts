@@ -26,6 +26,7 @@ import {
   SessionSummaryRepository,
   ScheduledTaskRepository,
   TaskExecutionRepository,
+  SessionCollaborationRepository,
 } from '@spark/storage'
 import type {
   AgentItem,
@@ -35,6 +36,7 @@ import type {
   GoalStatus,
   TeamThreadMessageRow,
   ProviderProfileRow,
+  ReferencedSessionTurn as StoredReferencedSessionTurn,
 } from '@spark/storage'
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
@@ -70,6 +72,10 @@ import type {
   TeamA2ATask,
   HistoryImportSource,
   ProposedGoalContract,
+  SessionReference,
+  SessionReferenceCandidate,
+  SessionLineage,
+  ReferencedSessionTurn,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import {
@@ -447,6 +453,7 @@ type PendingTurn = UserMessagePresentation & {
   message: string
   enqueuedAt: string
   attachments?: SessionAttachment[]
+  sessionReferences?: Array<{ sourceSessionId: string; snapshotSeq?: number }>
   runtimePatch?: SessionRuntimePatch
   skillId?: string
   skillParams?: Record<string, unknown>
@@ -469,6 +476,7 @@ type SendTurnParams = UserMessagePresentation & {
   skillId?: string
   skillParams?: Record<string, unknown>
   attachments?: SessionAttachment[]
+  sessionReferences?: Array<{ sourceSessionId: string; snapshotSeq?: number }>
   teamConfig?: TeamModeConfig
   mentionAgentId?: string
   interruptActive?: boolean
@@ -1876,6 +1884,118 @@ export class SessionService {
     return this.dispatchTurn(params, false)
   }
 
+  /** Create an independent materialized child session from a completed turn. */
+  async forkSession(params: {
+    sourceSessionId: string
+    anchorTurnId?: string
+    title?: string
+  }): Promise<import('@spark/protocol').SessionForkResponse> {
+    const collaboration = new SessionCollaborationRepository(this.db)
+    const result = collaboration.forkSession(params)
+    const session = await this.updateSession({ sessionId: result.child.id })
+    return {
+      sessionId: result.child.id as SessionId,
+      session: session.session,
+      lineage: toProtocolLineage(result.lineage)!,
+      copiedTurnCount: result.copiedTurnCount,
+      sourceWasRunning: result.sourceWasRunning,
+    }
+  }
+
+  async getSessionLineage(
+    sessionId: string,
+  ): Promise<import('@spark/protocol').SessionLineageResponse> {
+    const collaboration = new SessionCollaborationRepository(this.db)
+    return {
+      lineage: toProtocolLineage(collaboration.getLineage(sessionId)),
+      children: collaboration.listChildren(sessionId).map((row) => toProtocolLineage(row)!),
+    }
+  }
+
+  async listSessionReferenceCandidates(params: {
+    targetSessionId: string
+    workspaceId?: string
+    query?: string
+    includeArchived?: boolean
+    limit?: number
+  }): Promise<{ candidates: SessionReferenceCandidate[] }> {
+    return {
+      candidates: new SessionCollaborationRepository(this.db).listCandidates(params).map(toProtocolCandidate),
+    }
+  }
+
+  async attachSessionReference(params: {
+    targetSessionId: string
+    sourceSessionId: string
+    snapshotSeq?: number
+  }): Promise<{ reference: SessionReference }> {
+    return {
+      reference: toProtocolReference(
+        new SessionCollaborationRepository(this.db).attachReference(params),
+      ),
+    }
+  }
+
+  async listSessionReferences(sessionId: string): Promise<{ references: SessionReference[] }> {
+    return {
+      references: new SessionCollaborationRepository(this.db).listReferences(sessionId).map(toProtocolReference),
+    }
+  }
+
+  async listActiveSessionReferences(sessionId: string): Promise<{ references: SessionReference[] }> {
+    const result = await this.listSessionReferences(sessionId)
+    return { references: result.references.filter((reference) => reference.status === 'active') }
+  }
+
+  async updateSessionReference(params: {
+    targetSessionId: string
+    referenceId: string
+  }): Promise<{ reference: SessionReference }> {
+    return {
+      reference: toProtocolReference(
+        new SessionCollaborationRepository(this.db).updateReferenceSnapshot(params),
+      ),
+    }
+  }
+
+  async revokeSessionReference(params: {
+    targetSessionId: string
+    referenceId: string
+  }): Promise<{ revoked: boolean }> {
+    return { revoked: new SessionCollaborationRepository(this.db).revokeReference(params) }
+  }
+
+  async readReferencedSession(params: {
+    targetSessionId: string
+    referenceId: string
+    cursor?: number
+    turnLimit?: number
+    detail?: 'transcript' | 'user_visible_activity'
+    actor?: 'user' | 'agent' | 'system'
+  }): Promise<import('@spark/protocol').SessionReadReferenceResponse> {
+    const result = new SessionCollaborationRepository(this.db).readReference(params)
+    return {
+      reference: toProtocolReference(result.reference),
+      turns: result.turns.map(toProtocolReferenceTurn),
+      nextCursor: result.nextCursor,
+      hasMore: result.hasMore,
+    }
+  }
+
+  async searchReferencedSession(params: {
+    targetSessionId: string
+    referenceId: string
+    query: string
+    limit?: number
+    actor?: 'user' | 'agent' | 'system'
+  }): Promise<import('@spark/protocol').SessionSearchReferenceResponse> {
+    const result = new SessionCollaborationRepository(this.db).searchReference(params)
+    return {
+      reference: toProtocolReference(result.reference),
+      hits: result.hits.map((hit) => ({ ...hit, turnId: hit.turnId as import('@spark/protocol').TurnId })),
+    }
+  }
+
   async submitTurn(
     params: SendTurnParams,
     options: { startAfter?: Promise<unknown> } = {},
@@ -1895,6 +2015,17 @@ export class SessionService {
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
+    if (params.sessionReferences != null && params.sessionReferences.length > 0) {
+      const collaboration = new SessionCollaborationRepository(this.db)
+      for (const reference of params.sessionReferences.slice(0, 10)) {
+        collaboration.attachReference({
+          targetSessionId: sessionId,
+          sourceSessionId: reference.sourceSessionId,
+          ...(reference.snapshotSeq !== undefined ? { snapshotSeq: reference.snapshotSeq } : {}),
+          actor: 'user',
+        })
+      }
+    }
     // __SPARK_DEBUG_START__
     log.info('[BUG-DEBUG] dispatchTurn received', {
       sessionId,
@@ -1928,6 +2059,7 @@ export class SessionService {
       attachments,
       mentionAgentId,
       userMessagePresentation,
+      params.sessionReferences,
     )
     if (durable) {
       new TurnRequestRepository(this.db).create({
@@ -7774,12 +7906,14 @@ export class SessionService {
     attachments?: SessionAttachment[],
     mentionAgentId?: string,
     userMessagePresentation?: UserMessagePresentation,
+    sessionReferences?: Array<{ sourceSessionId: string; snapshotSeq?: number }>,
   ): PendingTurn {
     return {
       turnId,
       message,
       enqueuedAt: new Date().toISOString(),
       ...(attachments != null && attachments.length > 0 ? { attachments } : {}),
+      ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
       ...(runtimePatch != null ? { runtimePatch } : {}),
       ...(skillId != null ? { skillId } : {}),
       ...(skillParams != null ? { skillParams } : {}),
@@ -8020,6 +8154,16 @@ export class SessionService {
       message: turn.message,
       enqueuedAt: turn.enqueuedAt,
       ...(turn.attachments != null ? { attachments: turn.attachments } : {}),
+      ...(turn.sessionReferences != null
+        ? {
+            sessionReferences: turn.sessionReferences.map((reference) => ({
+              sourceSessionId: reference.sourceSessionId as SessionId,
+              ...(reference.snapshotSeq !== undefined
+                ? { snapshotSeq: reference.snapshotSeq }
+                : {}),
+            })),
+          }
+        : {}),
       ...pickUserMessagePresentation(turn),
     }))
   }
@@ -10821,6 +10965,69 @@ function trimHistoryEvent(event: AgentEvent): AgentEvent {
   })
   if (!trimmedAny) return event
   return { ...event, systemPromptSections: trimmedSections }
+}
+
+function toProtocolLineage(
+  row: import('@spark/storage').SessionLineageRow | null,
+): SessionLineage | null {
+  if (row == null) return null
+  return {
+    childSessionId: row.child_session_id as SessionId,
+    parentSessionId: row.parent_session_id as SessionId,
+    forkAnchorTurnId: row.fork_anchor_turn_id as import('@spark/protocol').TurnId | null,
+    forkCutoffSeq: row.fork_cutoff_seq,
+    sourceTitleSnapshot: row.source_title_snapshot,
+    ...(row.child_title != null ? { childTitle: row.child_title } : {}),
+    createdAt: row.created_at,
+  }
+}
+
+function toProtocolCandidate(
+  row: import('@spark/storage').SessionReferenceCandidate,
+): SessionReferenceCandidate {
+  return {
+    sessionId: row.sessionId as SessionId,
+    title: row.title,
+    projectId: row.projectId,
+    workspaceIds: row.workspaceIds,
+    status: row.status,
+    archived: row.archived,
+    updatedAt: row.updatedAt,
+    latestCompletedSeq: row.latestCompletedSeq,
+    latestCompletedTurnId: row.latestCompletedTurnId as import('@spark/protocol').TurnId | null,
+    turnCount: row.turnCount,
+  }
+}
+
+function toProtocolReference(
+  row: import('@spark/storage').SessionReferenceView,
+): SessionReference {
+  return {
+    id: row.id,
+    targetSessionId: row.targetSessionId as SessionId,
+    sourceSessionId: row.sourceSessionId as SessionId,
+    title: row.title,
+    sourceTitleSnapshot: row.sourceTitleSnapshot,
+    projectId: row.projectId,
+    snapshotSeq: row.snapshotSeq,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    turnCount: row.turnCount,
+  }
+}
+
+function toProtocolReferenceTurn(
+  row: StoredReferencedSessionTurn,
+): import('@spark/protocol').ReferencedSessionTurn {
+  return {
+    turnId: row.turnId as import('@spark/protocol').TurnId,
+    userMessage: row.userMessage,
+    assistantMessages: row.assistantMessages,
+    activities: row.activities,
+    firstSeq: row.firstSeq,
+    lastSeq: row.lastSeq,
+  }
 }
 
 function normalizeCustomCommandConfig(value: unknown): CustomCommandConfig | null {

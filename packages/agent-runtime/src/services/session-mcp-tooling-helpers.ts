@@ -421,6 +421,10 @@ export const PLATFORM_TOOL_NAMES: string[] = [
   'mcp__spark_platform__sessions_switch_mode',
   'mcp__spark_platform__sessions_switch_permission',
   'mcp__spark_platform__sessions_switch_reasoning_effort',
+  // Read-only references explicitly authorized by the current session.
+  'mcp__spark_platform__referenced_sessions_list',
+  'mcp__spark_platform__referenced_session_read',
+  'mcp__spark_platform__referenced_session_search',
   // Session Scheduled Tasks (current session only)
   'mcp__spark_platform__session_schedule_list',
   'mcp__spark_platform__session_schedule_get',
@@ -672,6 +676,7 @@ export const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   '- **Install Artifacts**: list, resolve (Spark self-hosted skill/runtime/dependency packages)',
   '- **Settings**: get, set, get_category, get_all',
   '- **Sessions (self)**: get, switch_model, switch_provider, switch_mode, switch_permission, switch_reasoning_effort',
+  '- **Referenced Sessions (read-only)**: referenced_sessions_list, referenced_session_search, referenced_session_read. These tools only access references explicitly attached to the current session; never ask for or invent a session ID.',
   '- **Session Scheduled Tasks**: list, get, create, update, delete (always limited to the current session)',
   '- **Board Tasks**: list, get, create, update, delete, batch_create, batch_update, batch_delete, restore, permanent_delete',
   '',

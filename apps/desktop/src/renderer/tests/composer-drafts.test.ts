@@ -15,7 +15,7 @@ import type { ComposerDraftSnapshot } from '../design/views/chat/ChatComposerTyp
 const DRAFT_KEY_PREFIX = 'spark-agent:composer-draft:'
 
 function draft(value: string): ComposerDraftSnapshot {
-  return { value, attachments: [], manualExpanded: false }
+  return { value, attachments: [], sessionReferences: [], manualExpanded: false }
 }
 
 /** 清掉 per-bucket key + 旧全量 key，保证每个用例独立 */
