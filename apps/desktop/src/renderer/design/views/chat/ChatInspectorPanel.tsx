@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import './ChatInspectorPanel.less'
 import { CheckCircle, Save } from 'lucide-react'
 import { Popover } from '@lobehub/ui'
 import { Switch } from 'antd'

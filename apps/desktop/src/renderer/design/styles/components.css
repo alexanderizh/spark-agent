@@ -638,6 +638,111 @@
    visual contract lives here instead of leaking into a page stylesheet.
    ============================================================ */
 
+/* Shared fallback avatar surface. Avatar-specific layout stays with the
+   AvatarPicker/consumer component; this visual contract is shared by every
+   AvatarImage fallback. */
+.spark-avatar-fallback {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1;
+  user-select: none;
+}
+
+.account-profile-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.spark-textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 9px 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.spark-textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  outline: none;
+}
+
+/* Shared modal surfaces used by Settings and the permission overlay. */
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s;
+}
+.modal {
+  width: min(520px, 90vw);
+  background: var(--panel);
+  border: none;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.modal-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+}
+.modal-h-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-md);
+  background: var(--warning-bg);
+  color: var(--warning);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-h .modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.modal-h .modal-subtitle {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.modal-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-md);
+}
+.modal-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+.modal-foot .spacer {
+  flex: 1;
+}
+
+
 .provider-logo {
   position: relative;
   display: inline-flex;
@@ -875,4 +980,101 @@
 
 .chip-list-compact .chip-list-input {
   height: 26px;
+}
+
+/* Shared model-picker row behavior. Chat and Canvas use the same menu markup. */
+.composer-model-menu .composer-model-item,
+.composer-cli-model-submenu .composer-model-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+}
+
+.composer-model-menu .composer-model-item .composer-menu-item,
+.composer-cli-model-submenu .composer-model-item .composer-menu-item {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 8px;
+}
+
+.composer-model-menu .composer-model-item .composer-menu-item,
+.composer-model-menu .composer-model-item .composer-menu-item:hover,
+.composer-model-menu .composer-model-item .composer-menu-item.active,
+.composer-cli-model-submenu .composer-model-item .composer-menu-item,
+.composer-cli-model-submenu .composer-model-item .composer-menu-item:hover,
+.composer-cli-model-submenu .composer-model-item .composer-menu-item.active {
+  background: transparent;
+}
+
+.composer-model-menu .composer-model-item:hover,
+.composer-model-menu .composer-model-item:focus-within,
+.composer-model-menu .composer-model-item.is-active,
+.composer-cli-model-submenu .composer-model-item:hover,
+.composer-cli-model-submenu .composer-model-item:focus-within,
+.composer-cli-model-submenu .composer-model-item.is-active {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.composer-cli-model-trigger .composer-model-item,
+.composer-cli-model-trigger .composer-model-item:hover,
+.composer-cli-model-trigger .composer-model-item:focus-within,
+.composer-cli-model-trigger .composer-model-item.is-active {
+  background: transparent;
+}
+
+.composer-model-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Shared composer picker controls. Chat and Canvas render the same markup. */
+.composer-model-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  flex-shrink: 0;
+  margin: 0 0 4px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--text-faint);
+}
+
+.composer-model-search input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  outline: none;
+}
+
+.composer-model-list {
+  overflow: auto;
+  flex: 1 1 auto;
+}
+
+.composer-agent-picker .composer-select-icon .composer-agent-picker-avatar,
+.composer-agent-picker .composer-select-icon .spark-avatar-fallback {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.composer-menu-item-label .composer-menu-avatar,
+.composer-menu-item-label .spark-avatar-fallback {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
 }

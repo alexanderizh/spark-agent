@@ -32,6 +32,7 @@ import type {
 } from '@spark/protocol'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { PermissionRequestDetails } from '../components/PermissionRequestDetails'
+import './Overlays.less'
 
 /* ============================================================
    Types

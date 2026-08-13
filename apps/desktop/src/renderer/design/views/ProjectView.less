@@ -1,0 +1,115 @@
+/* ProjectView-owned workspace explorer and diff surfaces. */
+
+/* ── ProjectView helpers ── */
+.project-split {
+  display: flex;
+  min-height: 0;
+}
+.project-explorer-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+.project-agent-pane {
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+}
+.branch-info {
+  color: var(--info);
+}
+.explorer-toolbar {
+  padding: 6px 10px;
+  gap: 4px;
+  border-bottom: 1px solid var(--divider);
+}
+.explorer-btn-sm {
+  width: 24px;
+  height: 24px;
+}
+.explorer-btn-sm.active {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.explorer-change-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-md);
+  background: var(--warning);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.project-bottombar .seg-changes {
+  color: var(--warning);
+  font-weight: 500;
+}
+.tree-row.is-created .nm {
+  color: var(--success);
+}
+.tree-row.is-modified .nm {
+  color: var(--warning);
+}
+.tree-row.is-deleted .nm {
+  color: var(--danger);
+  text-decoration: line-through;
+}
+.tree-row.is-created {
+  background: color-mix(in srgb, var(--success) 6%, transparent);
+}
+.tree-row.is-modified {
+  background: color-mix(in srgb, var(--warning) 6%, transparent);
+}
+.tree-row.is-deleted {
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+.error-icon {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.error-desc {
+  color: var(--danger);
+}
+.file-ext-ts {
+  color: #3178c6;
+  font-size: 9px;
+  font-weight: 700;
+}
+.file-ext-md {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.file-ext-json {
+  font-size: 9px;
+  font-weight: 700;
+  color: #f59e0b;
+}
+.tree-indent {
+  width: 12px;
+  display: inline-block;
+}
+.diff-line-count {
+  font-size: 11px;
+}
+.diff-unsaved-badge {
+  margin-left: 8px;
+}
+.diff-container {
+  border: none;
+  border-radius: 0;
+  margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.diff-body-fill {
+  max-height: none;
+  flex: 1;
+}

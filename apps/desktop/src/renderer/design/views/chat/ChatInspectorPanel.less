@@ -1,0 +1,187 @@
+/* ChatInspectorPanel-owned runtime inspection surfaces. */
+
+/* ─── Animation ─── */
+.runtime-skill-list {
+  display: grid;
+  gap: 6px;
+}
+.runtime-skill-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+}
+.runtime-skill-main {
+  min-width: 0;
+}
+.runtime-skill-name {
+  font-size: 12px;
+  font-weight: 650;
+}
+.runtime-skill-desc {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.mini-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+.mini-check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.mini-check.on {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.mini-check.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.runtime-prompt-block {
+  display: grid;
+  gap: 6px;
+}
+.runtime-prompt-block + .runtime-prompt-block {
+  margin-top: 12px;
+}
+.runtime-prompt-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+.inspector-textarea {
+  min-height: 72px;
+  max-height: 160px;
+  font-size: 12px;
+}
+.runtime-save-btn {
+  justify-self: end;
+  font-weight: 600;
+}
+.runtime-env-hint,
+.runtime-env-empty {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.runtime-env-hint {
+  margin-bottom: 8px;
+}
+.runtime-env-empty {
+  padding: 2px 0;
+  opacity: 0.8;
+}
+.runtime-env-row {
+  display: grid;
+  grid-template-columns: minmax(56px, 1fr) minmax(56px, 1.4fr) minmax(56px, 1.4fr) auto;
+  align-items: start;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-soft);
+  border: 0;
+  border-radius: var(--r-md);
+}
+/* EnvVarRow 内 input 默认 width:100% / flex-basis:100% 在窄面板下无法 shrink，
+   显式 min-width:0 让 grid 列宽真正生效，避免右侧溢出截断。 */
+.runtime-env-row > .form-input {
+  min-width: 0;
+}
+.runtime-env-fields {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.runtime-env-kv {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.runtime-env-key {
+  flex: 0 0 38%;
+  min-width: 0;
+}
+.runtime-env-value-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.runtime-env-value {
+  width: 100%;
+  padding-right: 30px;
+}
+.runtime-env-toggle {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px;
+  height: 22px;
+  width: 22px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+}
+.runtime-env-toggle:hover {
+  color: var(--primary);
+}
+.runtime-env-desc {
+  width: 100%;
+}
+.runtime-env-input {
+  height: 28px;
+  width: 100%;
+  padding: 0 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg-elevated, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.runtime-env-input::placeholder {
+  color: var(--text-faint);
+}
+.runtime-env-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.runtime-env-remove {
+  flex: none;
+  padding: 4px;
+  height: 28px;
+  color: var(--text-muted);
+}
+.runtime-env-remove:hover {
+  color: var(--danger, #e5484d);
+}
+.runtime-env-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.runtime-env-add {
+  color: var(--primary);
+}

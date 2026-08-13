@@ -1,8 +1,7 @@
 /**
  * AgentsView 外壳样式：仅 Agents / Teams Tab 切换条。
  *
- * Agents 列表屏的卡片样式（`.agents-card*`、`.agents-home*` 等）已迁到本文件。
- * Agents 编辑器（`.agents-detail*`、`.agent-editor-*` 等）仍在 views.css，未在本次迁移范围。
+ * Agents 列表屏与编辑器的页面样式均归属于本文件；仅跨页面的 Team 时间线等样式继续留在历史兼容层。
  */
 
 .agents-view {
@@ -810,4 +809,765 @@
 
 .agents-loading-desc {
   font-size: 12px;
+}
+
+/* Agents detail editor migrated out of views.css. */
+/* ── Agents detail (config editor) ── */
+.agents-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  background: var(--bg-soft);
+}
+.agents-detail-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--panel);
+  min-height: 48px;
+  flex-shrink: 0;
+}
+.agents-detail-title {
+  font-weight: 650;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agents-detail-spacer {
+  flex: 1;
+}
+.agents-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.agents-detail-grid .agent-config-panel {
+  border-width: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg-sunken);
+  margin: 0;
+}
+
+/* ── Shared agent editor classes ── */
+.agent-editor-title,
+.agents-empty-mini {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.agent-editor-title {
+  font-weight: 650;
+  color: var(--text);
+}
+.agent-editor-subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.agent-editor-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+}
+.agent-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.agent-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.agent-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.agent-field-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+.agent-field.wide {
+  grid-column: 1 / -1;
+}
+/* 控件宽度填满 Field —— 不覆盖任何视觉属性，让 lobe-ui Input / Select / TextArea
+   的 variants 自己接管 border / background / hover / focus。 */
+.agent-field .ant-input,
+.agent-field .ant-input-affix-wrapper,
+.agent-field .ant-input-textarea,
+.agent-field .ant-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.agent-config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  overflow: auto;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--bg-soft) 55%, var(--panel));
+}
+.agent-config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-xs);
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.agent-config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+  font-weight: 650;
+}
+.agent-pick-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.agent-pick-item,
+.tool-chip.active {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.agent-pick-item {
+  border: 1px solid transparent;
+  background: var(--bg-sunken);
+  color: var(--text);
+  border-radius: var(--r-md);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.agent-pick-item.active,
+.tool-chip.active {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+  background: var(--primary-soft);
+}
+/* 禁用 Skills 面板：active 项用 danger 配色，区别于启用面板的主题色 */
+.agent-pick-item.tone-danger.active {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: var(--danger-bg, color-mix(in srgb, var(--danger) 12%, transparent));
+}
+/* 已在互斥列表中配置的项：灰色不可点 */
+.agent-pick-item.blocked {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+.agent-pick-item.blocked:hover {
+  background: var(--panel);
+}
+.agent-skills-select,
+.agent-skills-select .spark-select {
+  width: 100%;
+}
+.agent-skills-select .ant-select-selector {
+  min-height: 32px;
+}
+.agent-skills-select .ant-select-selection-overflow {
+  max-height: 88px;
+  overflow-y: auto;
+}
+/* ConfigSection 下方的语义说明文字 */
+.agent-config-desc {
+  margin: 0;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+.agent-workflow-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: var(--r-md);
+  padding: 10px;
+  background: var(--panel);
+}
+.agent-workflow-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.agent-hook-editor {
+  display: grid;
+  gap: 8px;
+}
+.agent-toggle-row,
+.agent-hook-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+.agent-toggle-row {
+  color: var(--text);
+  font-weight: 600;
+}
+.agent-hook-row {
+  justify-content: space-between;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  padding: 7px 8px;
+  background: var(--bg-sunken);
+}
+.agent-hook-row > span {
+  min-width: 72px;
+  color: var(--text);
+}
+.agent-hook-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Skills picker trigger button & preview ── */
+.skill-picker-trigger {
+  width: 100%;
+  justify-content: center;
+  background: var(--bg-soft);
+  border-color: var(--border);
+}
+.skill-picker-trigger:hover {
+  background: var(--hover);
+}
+.skill-selected-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: var(--font-xs);
+  font-weight: 500;
+}
+.skill-chip.more {
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+}
+
+/* ── Hooks settings node cards ── */
+.hook-nodes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hook-node-card {
+  background: var(--bg-sunken);
+  border: none;
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.hook-node-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--hover);
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+}
+.hook-node-icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.hook-node-meta {
+  /* inherits flex1 min-w-0 */
+}
+.hook-node-label {
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+.hook-node-desc {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.hook-node-toggles {
+  display: flex;
+  flex-direction: column;
+}
+.hook-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-md);
+  padding: 8px 14px;
+}
+.hook-toggle-row + .hook-toggle-row {
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+}
+.hook-toggle-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.hook-toggle-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.hook-toggle-label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.hook-toggle-hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hook-node-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 14px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 40%, transparent);
+  background: color-mix(in srgb, var(--bg-soft) 40%, transparent);
+}
+
+
+/* Keep the agent editor responsive after the workflow page styles move. */
+@media (max-width: 980px) {
+  .agents-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .agent-config-panel {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+  }
+}
+
+/* Agent editor field, prompt, and side-panel details migrated out of views.css. */
+/* ============================================================
+   Agent editor — refactored layout
+   - Section header (基本信息 / 执行配置)
+   - Field label row with required asterisk + character counter + optional badge
+   - Helper text under the control
+   - Status toggle (Switch + inline label)
+   - Prompt editor with line numbers and 模板/优化/全屏 toolbar
+   - Side panel: 5 distinct cards (Skills / MCP / 规则 / Hook / 高级设置)
+   - All colors come from theme variables — auto-adapts to light/dark/density.
+   ============================================================ */
+
+/* Section header */
+.agent-section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.agent-section-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-strong);
+  line-height: 1.3;
+}
+.agent-section-desc {
+  margin: 0;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.agent-section-divider {
+  height: 1px;
+  background: var(--divider);
+  margin: 24px 0 18px;
+}
+
+/* Field — refactored label row */
+.agent-field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+}
+.agent-field-required {
+  color: var(--danger, #ef4444);
+  margin-left: 2px;
+  font-weight: 600;
+  line-height: 1;
+}
+.agent-field-counter {
+  margin-left: auto;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+.agent-field-counter.over {
+  color: var(--danger, #ef4444);
+}
+.agent-field-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  font-size: 10px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+  border: none;
+  line-height: 1.4;
+}
+.agent-field-hint {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+/* Soft badge used inside the field label (e.g. 推荐 next to 执行器) */
+.agent-badge-soft {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  font-size: 10px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+  border: none;
+  line-height: 1.4;
+}
+
+/* Basic info grid: avatar (left) | name | status / description wide */
+.agent-info-grid {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px 18px;
+  align-items: start;
+}
+.agent-info-avatar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  grid-row: span 2;
+}
+.agent-info-avatar .avatar-picker {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  border: none;
+  background: transparent;
+  gap: 0;
+}
+.agent-info-avatar .avatar-picker-preview {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 1px solid var(--divider);
+  background: var(--bg-soft);
+  overflow: hidden;
+  margin: 0 auto;
+  box-shadow: var(--shadow-xs);
+  transition:
+    box-shadow 0.12s ease,
+    border-color 0.12s ease;
+}
+.agent-info-avatar .avatar-picker:hover .avatar-picker-preview {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+.agent-info-avatar .avatar-picker-preview .spark-avatar-img,
+.agent-info-avatar .avatar-picker-preview .spark-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.agent-info-avatar .avatar-picker-main {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.agent-info-avatar .avatar-picker-actions {
+  justify-content: center;
+  flex-wrap: nowrap;
+}
+.agent-info-avatar-hint {
+  text-align: center;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  line-height: 1.55;
+}
+
+/* Status switch row (status field + default agent field) */
+.agent-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.agent-status-text {
+  font-size: var(--font-sm);
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Execution config grid: 2 cols, prompt editor spans full width */
+.agent-form-grid-wide {
+  grid-column: 1 / -1;
+}
+
+/* Prompt editor — line numbers + monospace textarea + toolbar */
+.agent-prompt-editor {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background: var(--code-bg);
+  overflow: hidden;
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+.agent-prompt-editor:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 50%, transparent);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.agent-prompt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: none;
+  background: color-mix(in srgb, var(--bg-soft) 70%, var(--panel));
+}
+.agent-prompt-toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.agent-prompt-toolbar-title > span:first-child {
+  color: var(--text-strong);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.agent-prompt-toolbar-sub {
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+  font-weight: 500;
+}
+.agent-prompt-toolbar-actions {
+  display: flex;
+  gap: 4px;
+}
+.agent-prompt-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.agent-prompt-toolbar-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+  border-color: var(--border);
+}
+.agent-prompt-body {
+  display: flex;
+  min-height: 240px;
+  max-height: 520px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--code-fg);
+}
+.agent-prompt-gutter {
+  user-select: none;
+  flex-shrink: 0;
+  padding: 12px 8px 12px 12px;
+  text-align: right;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--bg-sunken) 70%, var(--code-bg));
+  border-right: none;
+  overflow: hidden;
+  min-width: 38px;
+}
+.agent-prompt-line-no {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+.agent-prompt-textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+.agent-prompt-textarea::placeholder {
+  color: var(--text-faint);
+  opacity: 0.7;
+  white-space: pre-wrap;
+}
+
+/* Prompt editor — fullscreen overlay */
+.agent-prompt-editor.is-fullscreen {
+  position: fixed;
+  inset: 24px;
+  z-index: 200;
+  max-height: none;
+  height: calc(100vh - 48px);
+  box-shadow: var(--shadow-lg);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+}
+.agent-prompt-editor.is-fullscreen .agent-prompt-body {
+  max-height: none;
+  flex: 1;
+}
+
+/* Side panel cards (Skills / MCP / 规则 / Hook / 高级设置) */
+.agent-config-section.is-interactive {
+  cursor: pointer;
+  user-select: none;
+}
+.agent-config-section.is-interactive:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+.agent-config-section.is-interactive:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.agent-config-title {
+  color: var(--text-strong);
+  font-size: var(--font-base);
+  font-weight: 650;
+}
+.agent-config-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--hover);
+  border: none;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+.agent-config-footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+  margin-top: 4px;
+}
+.agent-config-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs);
+  color: var(--primary);
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  width: 100%;
+  justify-content: center;
+}
+.agent-config-link:hover {
+  background: var(--primary-soft);
+}
+.agent-config-empty {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  padding: 6px 0;
+}
+.agent-config-advanced {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--text-faint);
+  padding-top: 2px;
+}
+.agent-config-section.is-interactive:hover .agent-config-advanced {
+  color: var(--primary);
 }
