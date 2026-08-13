@@ -24,6 +24,7 @@ import {
 } from '@spark/protocol'
 
 const log = createLogger('scheduled-task:service')
+const SESSION_TASK_RETRY_DELAY_MS = 60_000
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,8 @@ export interface ScheduledTaskItem {
   scope: TaskScope
   sessionId: string | null
   pausedByArchive: boolean
+  skipIfSessionRunning: boolean
+  continueOnError: boolean
   triggerType: TriggerType
   intervalSeconds: number | null
   cronExpression: string | null
@@ -128,11 +131,26 @@ export type TaskExecutorFn = (params: {
   onSessionCreated?: (sessionId: string) => void
 }) => Promise<{ sessionId?: string; output?: string; error?: string; tokenUsage?: unknown }>
 
+export interface SessionTaskRuntimeState {
+  /** True while the session has an active or queued turn. */
+  running: boolean
+  /** Persisted session status, including `error` after a failed turn. */
+  status: string
+}
+
+export type SessionTaskStateReadResult =
+  | (SessionTaskRuntimeState & { kind: 'available' })
+  | { kind: 'missing' }
+  | { kind: 'unavailable'; error: string }
+
+export type SessionTaskStateReader = (sessionId: string) => SessionTaskStateReadResult
+
 // ─── Service ────────────────────────────────────────────────────────────────
 
 export class ScheduledTaskService {
   private schedulerTimer: ReturnType<typeof setInterval> | null = null
   private executorFn: TaskExecutorFn | null = null
+  private sessionTaskStateReader: SessionTaskStateReader | null = null
   /**
    * runNow 用：executionId → 等待 sessionId 的 resolver。
    * 当 executor 通过 onSessionCreated 回调上报 sessionId 时触发。
@@ -149,6 +167,33 @@ export class ScheduledTaskService {
    */
   setExecutor(fn: TaskExecutorFn): void {
     this.executorFn = fn
+  }
+
+  /**
+   * Inject the live session state reader used by session-scoped schedules.
+   * Keeping this callback at the desktop boundary avoids coupling the scheduler
+   * to SessionService while still allowing it to see queued turns, not only task
+   * execution records.
+   */
+  setSessionTaskStateReader(reader: SessionTaskStateReader | null): void {
+    this.sessionTaskStateReader = reader
+  }
+
+  /**
+   * Pause enabled session tasks as soon as the bound session reports a failed
+   * turn. The scheduler tick keeps the persisted-status fallback for errors
+   * that happened before the service was initialized or while it was offline.
+   */
+  handleSessionError(sessionId: string, errorMessage?: string): void {
+    for (const task of this.taskRepo.listAll({
+      scope: 'session',
+      sessionId,
+      enabled: true,
+    })) {
+      if (task.continue_on_error === 0) {
+        this.pauseSessionTaskAfterError(task, errorMessage)
+      }
+    }
   }
 
   // ─── CRUD ──────────────────────────────────────────────────────────────────
@@ -311,6 +356,8 @@ export class ScheduledTaskService {
           scope: 'global',
           session_id: null,
           paused_by_archive: 0,
+          skip_if_session_running: 1,
+          continue_on_error: 1,
           trigger_type: task.triggerType,
           interval_seconds: task.intervalSeconds,
           cron_expression: task.cronExpression,
@@ -497,6 +544,26 @@ export class ScheduledTaskService {
     const dueTasks = this.taskRepo.findDueTasks()
     for (const task of dueTasks) {
       try {
+        if (task.scope === 'session' && task.session_id != null) {
+          const sessionState = this.readSessionTaskState(task.session_id)
+          if (sessionState.kind === 'missing') {
+            this.disableMissingSessionTask(task)
+            continue
+          }
+          if (sessionState.kind === 'unavailable') {
+            this.rescheduleUnreadableSessionTask(task, sessionState.error)
+            continue
+          }
+          if (sessionState.running && task.skip_if_session_running !== 0) {
+            this.rescheduleSkippedSessionTask(task, 'session is running')
+            continue
+          }
+          if (sessionState.status === 'error' && task.continue_on_error === 0) {
+            this.pauseSessionTaskAfterError(task)
+            continue
+          }
+        }
+
         // Check concurrency
         const runningExecutions = this.executionRepo.findRunningByTaskId(task.id)
         if (runningExecutions.length > 0) {
@@ -634,6 +701,10 @@ export class ScheduledTaskService {
       this.taskRepo.incrementExecutionCount(task.id, false)
       this.taskRepo.setLastError(task.id, errorMessage)
 
+      if (task.scope === 'session' && task.continue_on_error === 0) {
+        this.pauseSessionTaskAfterError(task, errorMessage)
+      }
+
       // Send failure notifications
       await this.sendNotifications(task, {
         status: isTimeout ? 'timeout' : 'failed',
@@ -728,6 +799,70 @@ export class ScheduledTaskService {
       default:
         return base
     }
+  }
+
+  private readSessionTaskState(sessionId: string): SessionTaskStateReadResult {
+    if (this.sessionTaskStateReader == null) {
+      return { kind: 'unavailable', error: 'Session state reader is not configured' }
+    }
+    try {
+      return this.sessionTaskStateReader(sessionId)
+    } catch (error) {
+      const message = String(error)
+      log.warn(`Failed to read session state for scheduled task session ${sessionId}: ${message}`)
+      return { kind: 'unavailable', error: message }
+    }
+  }
+
+  private disableMissingSessionTask(task: ScheduledTaskRow): void {
+    this.taskRepo.update(task.id, {
+      enabled: false,
+      status: 'disabled',
+      next_run_at: null,
+      last_error: 'Bound session no longer exists',
+    } as any)
+    log.info(`Disabled session scheduled task ${task.id}: bound session no longer exists`)
+  }
+
+  private rescheduleUnreadableSessionTask(task: ScheduledTaskRow, error: string): void {
+    const retryAt =
+      this.calculateSkippedSessionNextRunAt(task) ??
+      toSQLiteUtc(new Date(Date.now() + SESSION_TASK_RETRY_DELAY_MS))
+    this.taskRepo.update(task.id, {
+      next_run_at: retryAt,
+      last_error: `Unable to read bound session state: ${error}`,
+    } as any)
+    log.warn(`Skipped session scheduled task ${task.id}: unable to read session state (${error})`)
+  }
+
+  private rescheduleSkippedSessionTask(task: ScheduledTaskRow, reason: string): void {
+    const nextRunAt = this.calculateSkippedSessionNextRunAt(task)
+    this.taskRepo.update(task.id, {
+      next_run_at: nextRunAt,
+      ...(task.trigger_type === 'once' && nextRunAt == null
+        ? { enabled: false, status: 'disabled' }
+        : {}),
+    } as any)
+    log.info(`Skipped session scheduled task ${task.id}: ${reason}`)
+  }
+
+  private calculateSkippedSessionNextRunAt(task: ScheduledTaskRow): string | null {
+    if (task.trigger_type !== 'once') return this.calculateNextRunAt(task)
+
+    const retryAt = new Date(Date.now() + SESSION_TASK_RETRY_DELAY_MS)
+    if (task.end_at && new Date(task.end_at) <= retryAt) return null
+    if (task.max_executions > 0 && task.execution_count >= task.max_executions) return null
+    return toSQLiteUtc(retryAt)
+  }
+
+  private pauseSessionTaskAfterError(task: ScheduledTaskRow, errorMessage?: string): void {
+    this.taskRepo.update(task.id, {
+      enabled: false,
+      status: 'disabled',
+      next_run_at: null,
+      last_error: errorMessage ?? task.last_error ?? 'Session is in error; scheduled task paused',
+    } as any)
+    log.info(`Paused session scheduled task ${task.id} after session error`)
   }
 
   private async executeWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -944,6 +1079,8 @@ function toTaskItem(row: ScheduledTaskRow): ScheduledTaskItem {
     scope: row.scope,
     sessionId: row.session_id,
     pausedByArchive: row.paused_by_archive === 1,
+    skipIfSessionRunning: row.skip_if_session_running !== 0,
+    continueOnError: row.continue_on_error !== 0,
     triggerType: row.trigger_type,
     intervalSeconds: row.interval_seconds,
     cronExpression: row.cron_expression,

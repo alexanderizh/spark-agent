@@ -117,9 +117,62 @@ describe('SessionSchedulePanel', () => {
         scope: 'session',
         sessionId: 'session-1',
         triggerType: 'interval',
+        skipIfSessionRunning: true,
+        continueOnError: true,
       }),
     )
     expect(onTasksChange).toHaveBeenCalledOnce()
+  })
+
+  it('allows disabling the session running and error continuation guards', async () => {
+    await act(async () => {
+      root.render(
+        <SessionSchedulePanel
+          open
+          session={{ id: 'session-1', title: '代理巡检' }}
+          onClose={() => undefined}
+        />,
+      )
+    })
+
+    const addButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('新增任务'),
+    )
+    if (addButton == null) throw new Error('Missing add task button')
+    act(() => addButton.click())
+
+    const name = container.querySelector<HTMLInputElement>('input[name="schedule-name"]')
+    const prompt = container.querySelector<HTMLTextAreaElement>('textarea[name="schedule-prompt"]')
+    if (name == null || prompt == null) throw new Error('Missing task form fields')
+    act(() => {
+      setInputValue(name, '不重叠任务')
+      setInputValue(prompt, '检查状态')
+    })
+
+    const runningGuard = container.querySelector<HTMLButtonElement>('[aria-label="会话运行中跳过"]')
+    const errorGuard = container.querySelector<HTMLButtonElement>('[aria-label="报错后继续执行"]')
+    if (runningGuard == null || errorGuard == null)
+      throw new Error('Missing session guard switches')
+    expect(runningGuard.getAttribute('aria-checked')).toBe('true')
+    expect(errorGuard.getAttribute('aria-checked')).toBe('true')
+    act(() => {
+      runningGuard.click()
+      errorGuard.click()
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('创建任务'),
+    )
+    if (saveButton == null) throw new Error('Missing create task button')
+    await act(async () => saveButton.click())
+
+    expect(invoke).toHaveBeenCalledWith(
+      'scheduled-task:create',
+      expect.objectContaining({
+        skipIfSessionRunning: false,
+        continueOnError: false,
+      }),
+    )
   })
 
   it('shows an existing one-time execution in local wall-clock time when editing', async () => {
@@ -160,5 +213,36 @@ describe('SessionSchedulePanel', () => {
     const pad = (value: number) => String(value).padStart(2, '0')
     const expected = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
     expect(runAtInput.value).toBe(expected)
+  })
+
+  it('shows why a task was automatically paused after an error', async () => {
+    const pausedTask = {
+      id: 'task-paused',
+      name: '失败后暂停',
+      promptTemplate: '检查服务',
+      triggerType: 'interval',
+      intervalSeconds: 300,
+      cronExpression: null,
+      runAt: null,
+      enabled: false,
+      lastError: 'Provider request failed',
+      nextRunAt: null,
+    } as ScheduledTaskItem
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'scheduled-task:list') return { tasks: [pausedTask] }
+      return {}
+    })
+
+    await act(async () => {
+      root.render(
+        <SessionSchedulePanel
+          open
+          session={{ id: 'session-1', title: '代理巡检' }}
+          onClose={() => undefined}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('已暂停：Provider request failed')
   })
 })

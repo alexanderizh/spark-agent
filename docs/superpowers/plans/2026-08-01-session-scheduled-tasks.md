@@ -1,6 +1,6 @@
 # 会话级计划任务实施计划
 
-> 状态: 已落地 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-14
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -9,6 +9,8 @@
 **Architecture:** 通过 migration 扩展 `scheduled_tasks`，由现有 `ScheduledTaskService` 继续负责所有调度计算。主进程执行器根据 `sessionId` 选择“提交到原会话”或“创建全局任务会话”，渲染端用独立的紧凑浮层管理当前会话任务。
 
 **Tech Stack:** SQLite migrations、TypeScript、Vitest、Electron typed IPC、React 19、Ant Design/Lobe UI、Less。
+
+**2026-08-14 增量：** 会话计划任务新增 `skipIfSessionRunning` 与 `continueOnError` 两个默认开启的开关。调度器通过主进程注入的会话状态读取器同时识别活动 turn 和已排队 turn；关闭错误继续时，真实 `agent_status=error` 事件会立即暂停该任务，调度 tick 仍保留持久化状态兜底。运行中跳过的一次性任务会保留并延后 60 秒重试，无法读取会话状态时不会投递新 turn。对应迁移、协议、Agent 工具、面板和回归测试已纳入本次落地。
 
 ---
 
@@ -303,7 +305,7 @@ pnpm build
 验证完成后把设计与计划文档状态更新为：
 
 ```text
-> 状态: 已落地 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-14
 ```
 
 - [x] **Step 5：刷新 GitNexus 索引**
@@ -313,6 +315,24 @@ pnpm build
 若 CLI 因数据库版本或环境问题失败，按项目降级规则记录原因，不阻塞交付。
 
 本次不自动创建 Git commit，保留工作区变更供用户审阅。
+
+### Task 10：会话执行保护开关
+
+- [x] **Step 1：扩展 migration、仓储、协议和 Agent 工具字段**
+
+增加 `skip_if_session_running` 与 `continue_on_error`，数据库默认值为 `1`；创建、更新、查询和 Agent 自主管理工具均保持字段映射一致。
+
+- [x] **Step 2：调度器读取会话活动状态**
+
+在 `ScheduledTaskService` 注入会话状态读取器，将活动 execution、启动中的 turn 和持久化排队 turn 都视为忙碌；运行中保护开启时推进下一次时间，不创建新的 execution。一次性任务保留原定时点并延后 60 秒重试，状态读取失败时同样只重试、不投递。
+
+- [x] **Step 3：处理会话错误策略**
+
+错误继续开启时保留后续调度；关闭时由主进程在真实 `agent_status=error` 事件到达时立即暂停任务并写入错误信息，调度 tick 继续覆盖应用启动前或调度器离线期间的错误；同时覆盖提交阶段异常。
+
+- [x] **Step 4：面板开关和回归测试**
+
+会话计划任务新增两个默认开启的 switch，覆盖创建、编辑、禁用和保存请求；storage、agent-runtime、desktop 面板定向测试通过。
 
 ### Task 8：修复深浅主题和空状态层级
 

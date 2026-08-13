@@ -10,6 +10,8 @@ const SessionScheduleCreateInputSchema = z
     name: z.string().trim().min(1).max(200),
     description: z.string().max(2_000).optional(),
     enabled: z.boolean().optional(),
+    skipIfSessionRunning: z.boolean().optional(),
+    continueOnError: z.boolean().optional(),
     triggerType: z.enum(['interval', 'cron', 'once']),
     intervalSeconds: z.number().int().min(10).max(31_536_000).nullable().optional(),
     cronExpression: z.string().trim().min(1).max(200).nullable().optional(),
@@ -75,6 +77,8 @@ export class SessionScheduleAgentTools {
       scope: 'session',
       session_id: currentSessionId,
       paused_by_archive: false,
+      skip_if_session_running: parsed.skipIfSessionRunning !== false,
+      continue_on_error: parsed.continueOnError !== false,
       trigger_type: parsed.triggerType,
       interval_seconds: parsed.intervalSeconds ?? null,
       cron_expression: parsed.cronExpression ?? null,
@@ -110,6 +114,8 @@ export class SessionScheduleAgentTools {
     const fields: Record<string, unknown> = {}
     copyDefined(fields, 'name', parsed.name)
     copyDefined(fields, 'description', parsed.description)
+    copyDefined(fields, 'skip_if_session_running', parsed.skipIfSessionRunning)
+    copyDefined(fields, 'continue_on_error', parsed.continueOnError)
     copyDefined(fields, 'trigger_type', parsed.triggerType)
     copyDefined(fields, 'interval_seconds', parsed.intervalSeconds)
     copyDefined(fields, 'cron_expression', parsed.cronExpression)
@@ -183,6 +189,7 @@ export const SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT = [
   'You can manage durable scheduled wake-ups for the current session only with the `mcp__spark_platform__session_schedule_*` tools.',
   'Use them when useful work must resume later, such as polling a long-running third-party job. Do not use them merely to continue work you can finish in the current turn.',
   'Scheduling fields: `interval` requires `intervalSeconds` of at least 10 (prefer 60 or more for polling); `cron` requires a valid five-field `cronExpression` and may include `timezone`; `once` requires a future ISO-8601 `runAt`.',
+  'Session safety fields default to enabled: `skipIfSessionRunning` skips a trigger while this session has a running or queued turn; `continueOnError` keeps future triggers active after the session reports an error. Disable the latter to pause the task after an error.',
   '',
   'Lifecycle:',
   '1. Call `session_schedule_list` first when a similar wake-up may already exist; avoid duplicate pollers.',
