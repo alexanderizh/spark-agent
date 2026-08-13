@@ -65,6 +65,31 @@ describe('optimistic user messages', () => {
     })
   })
 
+  it('carries session references into the optimistic user bubble', () => {
+    const optimistic = createOptimisticUserMessage({
+      clientId: 'client-reference',
+      sessionId: 'session-1',
+      content: '这个会话是说什么的',
+      createdAt: '2026-08-14T00:00:00.000Z',
+      attachments: [],
+      sessionReferences: [
+        {
+          sourceSessionId: 'source-session',
+          title: '每个成员发一个 js 排序算法给我',
+          snapshotSeq: 42,
+        },
+      ],
+    })
+
+    expect(optimistic.message.sessionReferences).toEqual([
+      {
+        sourceSessionId: 'source-session',
+        title: '每个成员发一个 js 排序算法给我',
+        snapshotSeq: 42,
+      },
+    ])
+  })
+
   it('associates the optimistic message with the returned turn id', () => {
     const optimistic = createOptimisticUserMessage({
       clientId: 'client-1',

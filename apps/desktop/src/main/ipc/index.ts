@@ -7028,6 +7028,7 @@ export function registerAllIpcHandlers(): void {
     const cmdResult = await getSessionService().executeCommandAsEvents({
       sessionId: req.sessionId,
       message: req.message,
+      ...(req.sessionReferences != null ? { sessionReferences: req.sessionReferences } : {}),
     })
     if (!cmdResult.isCommand) {
       return { success: false, forwardToAgent: false }

@@ -1,11 +1,12 @@
 import type { UIMessage } from '../../services/event-mapper'
-import type { ComposerAttachment } from './ChatComposerTypes'
+import type { ComposerAttachment, ComposerSessionReference } from './ChatComposerTypes'
 
 export interface OptimisticUserMessageDraft {
   clientId: string
   sessionId: string
   content: string
   attachments: ComposerAttachment[]
+  sessionReferences?: ComposerSessionReference[]
   createdAt: string
   mentionAgentId?: string
   hiddenUntilStarted?: boolean
@@ -147,6 +148,17 @@ export function createOptimisticUserMessage(
               ...(name != null ? { name } : {}),
               ...(previewPath != null ? { previewPath } : {}),
               ...(previewUrl != null ? { previewUrl } : {}),
+            })),
+          }
+        : {}),
+      ...(draft.sessionReferences != null && draft.sessionReferences.length > 0
+        ? {
+            sessionReferences: draft.sessionReferences.map((reference) => ({
+              sourceSessionId: reference.sourceSessionId,
+              title: reference.title,
+              ...(reference.snapshotSeq !== undefined
+                ? { snapshotSeq: reference.snapshotSeq }
+                : {}),
             })),
           }
         : {}),

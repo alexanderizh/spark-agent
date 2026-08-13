@@ -394,12 +394,428 @@ describe('SessionCollaborationRepository', () => {
         query: 'unfinished',
       }).hits,
     ).toEqual([])
+    expect(
+      collaboration.listCandidates({
+        targetSessionId: 'incomplete-target',
+        query: 'unfinished',
+      }),
+    ).toEqual([])
     expect(collaboration.listCandidates({ targetSessionId: 'incomplete-target' })).toEqual([
       expect.objectContaining({
         sessionId: 'incomplete-source',
         latestCompletedSeq: 0,
         latestCompletedTurnId: null,
         turnCount: 0,
+      }),
+    ])
+  })
+
+  it('attaches reference batches atomically when a later source is invalid', () => {
+    sessions.create({
+      id: 'batch-target',
+      kind: 'chat',
+      title: 'Batch target',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    sessions.create({
+      id: 'batch-source',
+      kind: 'chat',
+      title: 'Batch source',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    addEvent(events, {
+      id: 'batch-user',
+      sessionId: 'batch-source',
+      runId: 'batch-run',
+      turnId: 'batch-turn',
+      seq: 0,
+      type: 'user_message',
+      content: 'valid source',
+    })
+    addEvent(events, {
+      id: 'batch-status',
+      sessionId: 'batch-source',
+      runId: 'batch-run',
+      turnId: 'batch-turn',
+      seq: 1,
+      type: 'agent_status',
+      status: 'completed',
+    })
+
+    expect(() =>
+      collaboration.attachReferences({
+        references: [
+          { targetSessionId: 'batch-target', sourceSessionId: 'batch-source' },
+          { targetSessionId: 'batch-target', sourceSessionId: 'missing-source' },
+        ],
+      }),
+    ).toThrow('目标会话或参考会话不存在')
+    expect(collaboration.listReferences('batch-target')).toEqual([])
+    expect(
+      db.raw.prepare('SELECT COUNT(*) AS count FROM session_reference_audit').get() as {
+        count: number
+      },
+    ).toEqual({ count: 0 })
+  })
+
+  it('finds reference candidates by visible transcript content and escapes LIKE wildcards', () => {
+    sessions.create({
+      id: 'content-target',
+      kind: 'chat',
+      title: 'Target',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    sessions.create({
+      id: 'content-source',
+      kind: 'chat',
+      title: 'Unrelated title',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    addEvent(events, {
+      id: 'content-user',
+      sessionId: 'content-source',
+      runId: 'content-run',
+      turnId: 'content-turn',
+      seq: 0,
+      type: 'user_message',
+      content: 'Please investigate the collaboration boundary',
+    })
+    addEvent(events, {
+      id: 'content-assistant',
+      sessionId: 'content-source',
+      runId: 'content-run',
+      turnId: 'content-turn',
+      seq: 1,
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'The boundary is enforced by an opaque reference id',
+    })
+    addEvent(events, {
+      id: 'content-team-member',
+      sessionId: 'content-source',
+      runId: 'content-run',
+      turnId: 'content-turn',
+      seq: 2,
+      type: 'team_member_message',
+      mode: 'complete',
+      content: 'The member-only conclusion is searchable too',
+    })
+    addEvent(events, {
+      id: 'content-status',
+      sessionId: 'content-source',
+      runId: 'content-run',
+      turnId: 'content-turn',
+      seq: 3,
+      type: 'agent_status',
+      status: 'completed',
+    })
+    sessions.create({
+      id: 'hidden-content-source',
+      kind: 'chat',
+      title: 'Hidden continuation',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    addEvent(events, {
+      id: 'hidden-content-user',
+      sessionId: 'hidden-content-source',
+      runId: 'hidden-content-run',
+      turnId: 'hidden-content-turn',
+      seq: 0,
+      type: 'user_message',
+      content: 'internal continuation',
+      userMessageVisibility: 'hidden',
+    })
+    addEvent(events, {
+      id: 'hidden-content-assistant',
+      sessionId: 'hidden-content-source',
+      runId: 'hidden-content-run',
+      turnId: 'hidden-content-turn',
+      seq: 1,
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'secret continuation result',
+    })
+    addEvent(events, {
+      id: 'hidden-content-status',
+      sessionId: 'hidden-content-source',
+      runId: 'hidden-content-run',
+      turnId: 'hidden-content-turn',
+      seq: 2,
+      type: 'agent_status',
+      status: 'completed',
+    })
+
+    expect(
+      collaboration
+        .listCandidates({
+          targetSessionId: 'content-target',
+          query: 'opaque reference id',
+        })
+        .map((candidate) => candidate.sessionId),
+    ).toEqual(['content-source'])
+    expect(
+      collaboration.listCandidates({
+        targetSessionId: 'content-target',
+        query: '%opaque%',
+      }),
+    ).toEqual([])
+    expect(
+      collaboration.listCandidates({
+        targetSessionId: 'content-target',
+        query: 'secret continuation result',
+      }),
+    ).toEqual([])
+    expect(
+      collaboration
+        .listCandidates({
+          targetSessionId: 'content-target',
+          query: 'member-only conclusion',
+        })
+        .map((candidate) => candidate.sessionId),
+    ).toEqual(['content-source'])
+  })
+
+  it('paginates dense reference turns without splitting a turn across pages', () => {
+    sessions.create({
+      id: 'dense-target',
+      kind: 'chat',
+      title: 'Target',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    sessions.create({
+      id: 'dense-source',
+      kind: 'chat',
+      title: 'Dense source',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    addEvent(events, {
+      id: 'dense-turn-1-user',
+      sessionId: 'dense-source',
+      runId: 'dense-run-1',
+      turnId: 'dense-turn-1',
+      seq: 0,
+      type: 'user_message',
+      content: 'first dense turn',
+    })
+    for (let index = 1; index <= 96; index += 1) {
+      addEvent(events, {
+        id: `dense-turn-1-activity-${index}`,
+        sessionId: 'dense-source',
+        runId: 'dense-run-1',
+        turnId: 'dense-turn-1',
+        seq: index,
+        type: 'tool_result',
+        content: `activity ${index}`,
+      })
+    }
+    addEvent(events, {
+      id: 'dense-turn-1-assistant',
+      sessionId: 'dense-source',
+      runId: 'dense-run-1',
+      turnId: 'dense-turn-1',
+      seq: 97,
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'first answer',
+    })
+    addEvent(events, {
+      id: 'dense-turn-1-status',
+      sessionId: 'dense-source',
+      runId: 'dense-run-1',
+      turnId: 'dense-turn-1',
+      seq: 98,
+      type: 'agent_status',
+      status: 'completed',
+    })
+    addEvent(events, {
+      id: 'dense-turn-2-user',
+      sessionId: 'dense-source',
+      runId: 'dense-run-2',
+      turnId: 'dense-turn-2',
+      seq: 99,
+      type: 'user_message',
+      content: 'second dense turn',
+    })
+    addEvent(events, {
+      id: 'dense-turn-2-assistant',
+      sessionId: 'dense-source',
+      runId: 'dense-run-2',
+      turnId: 'dense-turn-2',
+      seq: 100,
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'second answer',
+    })
+    addEvent(events, {
+      id: 'dense-turn-2-status',
+      sessionId: 'dense-source',
+      runId: 'dense-run-2',
+      turnId: 'dense-turn-2',
+      seq: 101,
+      type: 'agent_status',
+      status: 'completed',
+    })
+
+    const reference = collaboration.attachReference({
+      targetSessionId: 'dense-target',
+      sourceSessionId: 'dense-source',
+    })
+    const firstPage = collaboration.readReference({
+      targetSessionId: 'dense-target',
+      referenceId: reference.id,
+      turnLimit: 1,
+      detail: 'user_visible_activity',
+    })
+    expect(firstPage.turns.map((turn) => turn.turnId)).toEqual(['dense-turn-1'])
+    expect(firstPage.turns[0]?.assistantMessages).toEqual(['first answer'])
+    expect(firstPage.turns[0]?.activities.at(-1)).toEqual(
+      expect.objectContaining({ type: 'agent_status', status: 'completed' }),
+    )
+    expect(firstPage.turns[0]?.activities).toHaveLength(32)
+    expect(firstPage.nextCursor).toBe(98)
+    expect(firstPage.hasMore).toBe(true)
+
+    const secondPage = collaboration.readReference({
+      targetSessionId: 'dense-target',
+      referenceId: reference.id,
+      cursor: firstPage.nextCursor ?? -1,
+      turnLimit: 1,
+    })
+    expect(secondPage.turns.map((turn) => turn.turnId)).toEqual(['dense-turn-2'])
+    expect(secondPage.hasMore).toBe(false)
+  })
+
+  it('keeps the terminal activity visible when transcript text reaches the output budget', () => {
+    sessions.create({
+      id: 'budget-target',
+      kind: 'chat',
+      title: 'Target',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    sessions.create({
+      id: 'budget-source',
+      kind: 'chat',
+      title: 'Budget source',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    addEvent(events, {
+      id: 'budget-user',
+      sessionId: 'budget-source',
+      runId: 'budget-run',
+      turnId: 'budget-turn',
+      seq: 0,
+      type: 'user_message',
+      content: 'budget request',
+    })
+    for (let index = 0; index < 4; index += 1) {
+      addEvent(events, {
+        id: `budget-assistant-${index}`,
+        sessionId: 'budget-source',
+        runId: 'budget-run',
+        turnId: 'budget-turn',
+        seq: index + 1,
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'x'.repeat(8_000),
+      })
+    }
+    addEvent(events, {
+      id: 'budget-status',
+      sessionId: 'budget-source',
+      runId: 'budget-run',
+      turnId: 'budget-turn',
+      seq: 5,
+      type: 'agent_status',
+      status: 'completed',
+    })
+
+    const reference = collaboration.attachReference({
+      targetSessionId: 'budget-target',
+      sourceSessionId: 'budget-source',
+    })
+    const read = collaboration.readReference({
+      targetSessionId: 'budget-target',
+      referenceId: reference.id,
+      detail: 'user_visible_activity',
+    })
+
+    expect(read.turns).toHaveLength(1)
+    expect(read.turns[0]?.activities).toEqual([
+      expect.objectContaining({ type: 'agent_status', status: 'completed' }),
+    ])
+    expect(read.nextCursor).toBe(5)
+    expect(read.hasMore).toBe(false)
+  })
+
+  it('searches past the old fixed event window', () => {
+    sessions.create({
+      id: 'search-target',
+      kind: 'chat',
+      title: 'Search target',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    sessions.create({
+      id: 'search-source',
+      kind: 'chat',
+      title: 'Long search source',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    addEvent(events, {
+      id: 'long-search-user',
+      sessionId: 'search-source',
+      runId: 'long-search-run',
+      turnId: 'long-search-turn',
+      seq: 0,
+      type: 'user_message',
+      content: 'long search request',
+    })
+    for (let index = 0; index <= 5_000; index += 1) {
+      addEvent(events, {
+        id: `long-search-assistant-${index}`,
+        sessionId: 'search-source',
+        runId: 'long-search-run',
+        turnId: 'long-search-turn',
+        seq: index + 1,
+        type: 'assistant_message',
+        mode: 'complete',
+        content: index === 5_000 ? 'needle after the search window' : `ordinary answer ${index}`,
+      })
+    }
+    addEvent(events, {
+      id: 'long-search-status',
+      sessionId: 'search-source',
+      runId: 'long-search-run',
+      turnId: 'long-search-turn',
+      seq: 5_002,
+      type: 'agent_status',
+      status: 'completed',
+    })
+
+    const reference = collaboration.attachReference({
+      targetSessionId: 'search-target',
+      sourceSessionId: 'search-source',
+    })
+    expect(
+      collaboration.searchReference({
+        targetSessionId: 'search-target',
+        referenceId: reference.id,
+        query: 'needle after the search window',
+      }).hits,
+    ).toEqual([
+      expect.objectContaining({
+        turnId: 'long-search-turn',
+        role: 'assistant',
       }),
     ])
   })

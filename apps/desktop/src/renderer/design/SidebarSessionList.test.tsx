@@ -13,6 +13,7 @@ import {
   SidebarProjectToolbar,
 } from './SidebarSessionList'
 import { DEFAULT_SIDEBAR_FILTER } from './SidebarFilterMenu'
+import { readSessionReferenceDragPayload } from './views/chat/session-reference-dnd'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const sidebarMock = vi.hoisted(() => ({
@@ -63,6 +64,20 @@ function createSessions(count: number): SessionSummary[] {
     updatedAt: '2026-07-29T08:00:00.000Z',
     workspaceIds: ['workspace-1'],
   })) as SessionSummary[]
+}
+
+function createDataTransfer(): DataTransfer {
+  const values = new Map<string, string>()
+  return {
+    effectAllowed: 'none',
+    getData: (format: string) => values.get(format) ?? '',
+    setData: (format: string, value: string) => {
+      values.set(format, value)
+    },
+    get types() {
+      return Array.from(values.keys())
+    },
+  } as unknown as DataTransfer
 }
 
 describe('ProjectSessionGroup pagination', () => {
@@ -221,6 +236,113 @@ describe('ProjectSessionGroup pagination', () => {
     expect(document.querySelector('.action-menu')).toBeNull()
   })
 
+  it('uses the session row as a reference drag source when sorting is disabled', () => {
+    const sessions = createSessions(1)
+    const session = sessions[0]
+    if (session == null) throw new Error('Missing session fixture')
+    session.turnCount = 7
+    const workspace: WorkspaceInfo = {
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      id: 'workspace-1',
+      name: 'Spark-Agent',
+      pinnedAt: null,
+      rootPath: '/tmp/spark-agent',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      worktreeMeta: null,
+    }
+
+    act(() => {
+      root.render(
+        <ProjectSessionGroup
+          group={{ workspace, sessions }}
+          activeSessionId={null}
+          activeWorkspaceId={workspace.id}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={{}}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          onSelectWorkspace={async () => undefined}
+          onSelectSession={() => undefined}
+          onNewSession={() => undefined}
+          onRenameProject={() => undefined}
+          onToggleProjectPinned={() => undefined}
+          onArchiveProject={() => undefined}
+          onDeleteProject={() => undefined}
+          onOpenProjectFolder={() => undefined}
+          onRenameSession={() => undefined}
+          onCommitSessionTitle={async () => undefined}
+          onToggleSessionPinned={() => undefined}
+          onArchiveSession={() => undefined}
+          onDeleteSession={() => undefined}
+        />,
+      )
+    })
+
+    const row = container.querySelector<HTMLElement>('.proj-session')
+    if (row == null) throw new Error('Missing session reference drag source')
+    expect(row.getAttribute('draggable')).toBe('true')
+
+    const dataTransfer = createDataTransfer()
+    const dragStart = new Event('dragstart', { bubbles: true })
+    Object.defineProperty(dragStart, 'dataTransfer', { value: dataTransfer })
+    act(() => row.dispatchEvent(dragStart))
+
+    expect(readSessionReferenceDragPayload(dataTransfer)).toMatchObject({
+      sessionId: session.id,
+      title: session.title,
+      turnCount: 7,
+    })
+  })
+
+  it('keeps native reference dragging disabled while session sorting is enabled', () => {
+    const sessions = createSessions(1)
+    const workspace: WorkspaceInfo = {
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      id: 'workspace-1',
+      name: 'Spark-Agent',
+      pinnedAt: null,
+      rootPath: '/tmp/spark-agent',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      worktreeMeta: null,
+    }
+
+    act(() => {
+      root.render(
+        <ProjectSessionGroup
+          group={{ workspace, sessions }}
+          activeSessionId={null}
+          activeWorkspaceId={workspace.id}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={{}}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          onSelectWorkspace={async () => undefined}
+          onSelectSession={() => undefined}
+          onNewSession={() => undefined}
+          onRenameProject={() => undefined}
+          onToggleProjectPinned={() => undefined}
+          onArchiveProject={() => undefined}
+          onDeleteProject={() => undefined}
+          onOpenProjectFolder={() => undefined}
+          onRenameSession={() => undefined}
+          onCommitSessionTitle={async () => undefined}
+          onToggleSessionPinned={() => undefined}
+          onArchiveSession={() => undefined}
+          onDeleteSession={() => undefined}
+          sessionSortProjectId={workspace.id}
+        />,
+      )
+    })
+
+    const row = container.querySelector<HTMLElement>('.proj-session')
+    if (row == null) throw new Error('Missing sortable session row')
+    expect(row.getAttribute('draggable')).toBeNull()
+  })
+
   it('copies the project path from the project actions menu', async () => {
     const workspace: WorkspaceInfo = {
       archivedAt: null,
@@ -351,6 +473,7 @@ describe('ProjectSessionGroup pagination', () => {
   it('opens session schedules from the session actions menu', async () => {
     const sessions = createSessions(1)
     const onSelectSession = vi.fn()
+    const onAddToConversation = vi.fn()
     const workspace: WorkspaceInfo = {
       archivedAt: null,
       createdAt: '2026-07-29T08:00:00.000Z',
@@ -386,6 +509,7 @@ describe('ProjectSessionGroup pagination', () => {
           onToggleSessionPinned={() => undefined}
           onArchiveSession={() => undefined}
           onDeleteSession={() => undefined}
+          onAddToConversation={onAddToConversation}
         />,
       )
     })
@@ -396,6 +520,22 @@ describe('ProjectSessionGroup pagination', () => {
     if (moreButton == null) throw new Error('Missing session actions button')
     await act(async () => moreButton.click())
 
+    const copySessionButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.action-menu-item'),
+    ).find((button) => button.textContent?.includes('复制会话'))
+    expect(copySessionButton).not.toBeUndefined()
+
+    const addToConversationButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.action-menu-item'),
+    ).find((button) => button.textContent?.includes('添加到对话'))
+    if (addToConversationButton == null) throw new Error('Missing add to conversation menu item')
+    await act(async () => {
+      addToConversationButton.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(onAddToConversation).toHaveBeenCalledWith(sessions[0])
+
+    await act(async () => moreButton.click())
     const scheduleButton = Array.from(
       document.querySelectorAll<HTMLButtonElement>('.action-menu-item'),
     ).find((button) => button.textContent?.includes('计划任务'))

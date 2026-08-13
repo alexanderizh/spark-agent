@@ -89,6 +89,7 @@ import type {
   SessionReferenceCandidatesRequest,
   SessionReferenceCandidatesResponse,
   SessionReferenceIdRequest,
+  SessionReferenceInput,
   SessionSearchReferenceRequest,
   SessionSearchReferenceResponse,
   SessionUpdateReferenceResponse,
@@ -3709,6 +3710,7 @@ export interface CommandPaletteMeta {
 export interface CommandExecuteRequest {
   sessionId: string
   message: string
+  sessionReferences?: SessionReferenceInput[]
 }
 
 export interface CommandExecuteResponse {

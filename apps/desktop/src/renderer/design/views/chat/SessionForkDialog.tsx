@@ -50,7 +50,7 @@ export function SessionForkDialog({
             <Icons.GitBranch size={18} />
           </span>
           <div>
-            <strong>创建一个独立协作会话</strong>
+            <strong>创建一个独立会话副本</strong>
             <p>
               将复制《{sourceTitle || '未命名会话'}》从开始到
               {turnOrdinal != null ? `第 ${turnOrdinal} 轮` : '此处'}的已完成历史。
@@ -94,7 +94,7 @@ export function SessionForkDialog({
             onClick={() => void submit()}
           >
             {submitting ? <Icons.Spinner size={13} /> : <Icons.GitBranch size={13} />}
-            创建协作会话
+            复制会话
           </button>
         </div>
       </div>

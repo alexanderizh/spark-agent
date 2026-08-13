@@ -6,6 +6,7 @@ export interface SessionReferenceDragPayload {
   title: string
   projectId?: string
   updatedAt?: string
+  turnCount?: number
 }
 
 export function writeSessionReferenceDragPayload(
@@ -32,6 +33,11 @@ export function readSessionReferenceDragPayload(
       title: value.title,
       ...(typeof value.projectId === 'string' ? { projectId: value.projectId } : {}),
       ...(typeof value.updatedAt === 'string' ? { updatedAt: value.updatedAt } : {}),
+      ...(typeof value.turnCount === 'number' &&
+      Number.isInteger(value.turnCount) &&
+      value.turnCount >= 0
+        ? { turnCount: value.turnCount }
+        : {}),
     }
   } catch {
     return null

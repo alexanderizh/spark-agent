@@ -24,6 +24,7 @@
 
 import { z } from 'zod'
 import type { UserMessagePresentation } from '../turn-message-presentation.js'
+import type { SessionReferenceInput } from '../cross-session-collaboration.js'
 export type {
   TurnSource,
   UserMessagePresentation,
@@ -76,6 +77,8 @@ export interface UserMessageEvent extends BaseEvent, UserMessagePresentation {
     name?: string
     mimeType?: string
   }>
+  /** 当前 turn 发送时附带的只读会话参考。 */
+  sessionReferences?: SessionReferenceInput[]
   /** 团队模式：用户通过 @ 指定的直接处理 Agent ID（未填 → 走 Host 主循环） */
   mentionAgentId?: string
 }

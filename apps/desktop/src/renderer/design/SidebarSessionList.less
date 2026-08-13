@@ -424,6 +424,15 @@
   color: var(--text);
 }
 
+.chat-item-compact.is-reference-draggable {
+  touch-action: auto;
+  cursor: grab;
+}
+
+.chat-item-compact.is-reference-draggable:active {
+  cursor: grabbing;
+}
+
 .session-item-actions .item-menu-btn {
   opacity: 1;
 }

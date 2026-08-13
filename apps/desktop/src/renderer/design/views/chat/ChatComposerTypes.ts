@@ -104,6 +104,7 @@ export type MessageAttachment = {
 export type ComposerPrefillPayload = {
   text: string
   attachments: MessageAttachment[]
+  sessionReferences?: ComposerSessionReference[]
   agentId?: string
 }
 

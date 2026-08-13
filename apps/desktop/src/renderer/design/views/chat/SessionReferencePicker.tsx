@@ -5,6 +5,7 @@ import { useIpcInvoke } from '../../hooks/useIpc'
 import { useToast } from '../../components/Toast'
 import type { SessionId, SessionReferenceCandidate } from '@spark/protocol'
 import type { ComposerSessionReference } from './ChatComposerTypes'
+import { classNames } from '../../utils/class-names'
 import './SessionReferencePicker.less'
 
 interface SessionReferencePickerProps {
@@ -31,21 +32,60 @@ export function SessionReferencePicker({
   const [loading, setLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const loadRequestRef = useRef(0)
   const { invoke: listCandidates } = useIpcInvoke('session:reference-candidates')
+  const { invoke: searchSessions } = useIpcInvoke('session:search')
   const { toast } = useToast()
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestRef.current
+    const isCurrentRequest = () => loadRequestRef.current === requestId
     if (!open) return
     if (targetSessionId == null) {
       const normalizedQuery = query.trim().toLocaleLowerCase()
-      setCandidates(
-        fallbackCandidates.filter(
-          (candidate) =>
-            normalizedQuery.length === 0 ||
-            candidate.title.toLocaleLowerCase().includes(normalizedQuery),
-        ),
-      )
-      setActiveIndex(0)
+      if (normalizedQuery.length === 0) {
+        setCandidates(fallbackCandidates)
+        setActiveIndex(0)
+        setLoading(false)
+        return
+      }
+      setLoading(true)
+      try {
+        const result = await searchSessions({
+          query: query.trim(),
+          ...(workspaceId != null ? { workspaceId } : {}),
+          limit: 30,
+        })
+        const fallbackById = new Map(
+          fallbackCandidates.map((candidate) => [candidate.sessionId, candidate]),
+        )
+        if (isCurrentRequest()) {
+          setCandidates(
+            result.results.map(
+              (match) =>
+                fallbackById.get(match.sessionId) ?? {
+                  sessionId: match.sessionId,
+                  title: match.title,
+                  projectId: '',
+                  workspaceIds: workspaceId != null ? [workspaceId] : [],
+                  status: 'idle',
+                  archived: false,
+                  updatedAt: match.updatedAt,
+                  latestCompletedSeq: -1,
+                  latestCompletedTurnId: null,
+                  turnCount: 0,
+                },
+            ),
+          )
+          setActiveIndex(0)
+        }
+      } catch (error) {
+        if (isCurrentRequest()) {
+          toast.error(error instanceof Error ? error.message : '搜索参考会话失败')
+        }
+      } finally {
+        if (isCurrentRequest()) setLoading(false)
+      }
       return
     }
     setLoading(true)
@@ -56,16 +96,32 @@ export function SessionReferencePicker({
         ...(query.trim() ? { query: query.trim() } : {}),
         limit: 30,
       })
-      setCandidates(result.candidates)
-      setActiveIndex(0)
+      if (isCurrentRequest()) {
+        setCandidates(result.candidates)
+        setActiveIndex(0)
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '加载参考会话失败')
+      if (isCurrentRequest()) {
+        toast.error(error instanceof Error ? error.message : '加载参考会话失败')
+      }
     } finally {
-      setLoading(false)
+      if (isCurrentRequest()) setLoading(false)
     }
-  }, [fallbackCandidates, listCandidates, open, query, targetSessionId, toast, workspaceId])
+  }, [
+    fallbackCandidates,
+    listCandidates,
+    open,
+    query,
+    searchSessions,
+    targetSessionId,
+    toast,
+    workspaceId,
+  ])
 
   useEffect(() => {
+    // Invalidate the previous request immediately when the query or target
+    // changes; otherwise an old response can win during the debounce window.
+    loadRequestRef.current += 1
     if (!open) return
     const timer = window.setTimeout(() => void load(), query ? 160 : 0)
     return () => window.clearTimeout(timer)
@@ -112,7 +168,7 @@ export function SessionReferencePicker({
           <input
             ref={inputRef}
             value={query}
-            placeholder="搜索会话标题…"
+            placeholder="搜索会话标题或内容…"
             aria-label="搜索参考会话"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -143,7 +199,10 @@ export function SessionReferencePicker({
                 role="option"
                 aria-selected={selectedIds.has(candidate.sessionId)}
                 key={candidate.sessionId}
-                className={`session-reference-picker-item${index === activeIndex ? ' is-selected' : ''}`}
+                className={classNames(
+                  'session-reference-picker-item',
+                  index === activeIndex && 'is-selected',
+                )}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => choose(candidate)}
               >
