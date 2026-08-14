@@ -289,7 +289,6 @@ export function SingleAgentEmptyHero({
               ))}
             </h1>
           </div>
-          <p className="single-empty-body">{theme.body}</p>
         </div>
       </div>
       {!hideActions && (

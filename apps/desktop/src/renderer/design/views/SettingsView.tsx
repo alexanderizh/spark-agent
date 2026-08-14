@@ -1801,16 +1801,6 @@ function AppearanceSection() {
           }
         />
         <SettingsRow
-          title="行内显示 token 计数"
-          right={
-            <Switch
-              size="middle"
-              checked={a.inlineTokenCount}
-              onChange={(v) => setA({ inlineTokenCount: v })}
-            />
-          }
-        />
-        <SettingsRow
           title="语法高亮代码块"
           right={
             <Switch
