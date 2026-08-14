@@ -586,13 +586,12 @@ function InstalledTab({
             </div>
           </div>
           <div className="skill-store-actions">
-            <Input
-              size="small"
+            <SearchBar
               placeholder="搜索技能"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              prefix={<Icons.Search size={14} />}
+              onInputChange={(value) => setSearch(value)}
               allowClear
+              className="skill-store-header-search"
             />
             {/* 创建入口：搜索框右侧的主题色按钮 */}
             <Button size="small" type="primary" onClick={onCreate} icon={<Icons.Plus size={14} />}>
