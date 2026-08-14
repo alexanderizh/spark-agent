@@ -2209,6 +2209,9 @@ function getSessionService(): SessionService {
     const onApproval: ApprovalHandler = async (sessionId, toolName, toolInput, sdkContext) => {
       let selectedDecision: PermissionApprovalDecision | undefined
       const permissionContext = getSessionPermissionContext(sessionId)
+      // 注意不要传 forcePrompt：SDK 升级到审批回调时，需要先经过当前权限 profile
+      // 的规则判定（allow 自动放行 / deny 自动拦截），只有 ask/ask-twice 才弹卡。
+      // 早期这里固定 forcePrompt:true，导致设置页改的规则从不生效。
       const allowed = await getPermissionService().requestApproval(
         sessionId,
         toolName,
@@ -2217,7 +2220,6 @@ function getSessionService(): SessionService {
           pushStreamEvent('stream:permission:approval-request', req)
         },
         {
-          forcePrompt: true,
           ...permissionContext,
           sdkRequestId: sdkContext.requestId,
           onDecision: (decision) => {
@@ -6155,11 +6157,6 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('permission:delete-profile', async (req) => {
     const success = getPermissionService().deleteProfile(req.id)
     return { success }
-  })
-
-  typedIpcHandle('permission:update-sandbox', async (req) => {
-    const profile = getPermissionService().updateSandbox(req.profileId, req.sandboxLevel)
-    return { profile }
   })
 
   typedIpcHandle('permission:update-rule', async (req) => {

@@ -26,34 +26,81 @@ const BUILTIN_PROFILES = [
   { id: 'trusted', name: 'trusted', sandboxLevel: 3 },
 ]
 
-const DEFAULT_RULES: Array<{
+interface RuleSeed {
   action: string
   scope: string
   mode: PermissionMode
-  sortOrder: number
-}> = [
-  { action: 'file_read', scope: 'workspace', mode: 'allow', sortOrder: 0 },
-  { action: 'file_write', scope: 'workspace', mode: 'allow', sortOrder: 1 },
-  { action: 'file_read', scope: 'any', mode: 'ask', sortOrder: 2 },
-  { action: 'command_exec', scope: 'session', mode: 'ask', sortOrder: 3 },
-  { action: 'command_dangerous', scope: 'any', mode: 'ask-twice', sortOrder: 4 },
-  { action: 'git_push', scope: 'any', mode: 'ask', sortOrder: 5 },
-  { action: 'network_known', scope: 'whitelist', mode: 'allow', sortOrder: 6 },
-  { action: 'network_unknown', scope: 'any', mode: 'ask', sortOrder: 7 },
-  { action: 'mcp_tool', scope: 'server', mode: 'allow', sortOrder: 8 },
-  { action: 'secret_read', scope: 'profile', mode: 'ask', sortOrder: 9 },
-  { action: 'long_task', scope: 'session', mode: 'allow', sortOrder: 10 },
-  { action: 'computer_observe', scope: 'session', mode: 'allow', sortOrder: 11 },
-  { action: 'computer_task_start', scope: 'session', mode: 'ask', sortOrder: 12 },
-  { action: 'computer_pause', scope: 'session', mode: 'allow', sortOrder: 13 },
-  { action: 'computer_resume', scope: 'session', mode: 'ask', sortOrder: 14 },
-  { action: 'computer_stop', scope: 'session', mode: 'allow', sortOrder: 15 },
-  { action: 'computer_takeover', scope: 'session', mode: 'allow', sortOrder: 16 },
-  { action: 'computer_direct_action', scope: 'any', mode: 'deny', sortOrder: 17 },
-  { action: 'computer_unknown', scope: 'any', mode: 'deny', sortOrder: 18 },
+}
+
+/**
+ * 计算机使用（Computer Use）管控规则，所有 profile 共用。
+ * 动作名来自 resolveComputerPermissionAction（computer-permission-action.ts）。
+ */
+const COMPUTER_RULES: RuleSeed[] = [
+  { action: 'computer_observe', scope: 'session', mode: 'allow' },
+  { action: 'computer_task_start', scope: 'session', mode: 'ask' },
+  { action: 'computer_pause', scope: 'session', mode: 'allow' },
+  { action: 'computer_resume', scope: 'session', mode: 'ask' },
+  { action: 'computer_stop', scope: 'session', mode: 'allow' },
+  { action: 'computer_takeover', scope: 'session', mode: 'allow' },
+  { action: 'computer_direct_action', scope: 'any', mode: 'deny' },
+  { action: 'computer_unknown', scope: 'any', mode: 'deny' },
 ]
 
+/**
+ * 各内置 profile 的差异化默认规则。必须与设置页 PermissionsSection 的
+ * PROFILE_META 描述保持一致（strict 一切都问 / project-standard 写入自动 /
+ * trusted 大多数自动），否则切换 profile 就是在撒谎。
+ */
+const STRICT_RULES: RuleSeed[] = [
+  { action: 'file_read', scope: 'workspace', mode: 'ask' },
+  { action: 'file_write', scope: 'workspace', mode: 'ask' },
+  { action: 'command_exec', scope: 'session', mode: 'ask' },
+  { action: 'command_dangerous', scope: 'any', mode: 'ask-twice' },
+  { action: 'network_known', scope: 'whitelist', mode: 'ask' },
+  { action: 'network_unknown', scope: 'any', mode: 'ask' },
+  { action: 'mcp_tool', scope: 'server', mode: 'ask' },
+  ...COMPUTER_RULES,
+]
+
+const PROJECT_STANDARD_RULES: RuleSeed[] = [
+  { action: 'file_read', scope: 'workspace', mode: 'allow' },
+  { action: 'file_write', scope: 'workspace', mode: 'allow' },
+  { action: 'command_exec', scope: 'session', mode: 'ask' },
+  { action: 'command_dangerous', scope: 'any', mode: 'ask-twice' },
+  { action: 'network_known', scope: 'whitelist', mode: 'allow' },
+  { action: 'network_unknown', scope: 'any', mode: 'ask' },
+  { action: 'mcp_tool', scope: 'server', mode: 'allow' },
+  ...COMPUTER_RULES,
+]
+
+const TRUSTED_RULES: RuleSeed[] = [
+  { action: 'file_read', scope: 'workspace', mode: 'allow' },
+  { action: 'file_write', scope: 'workspace', mode: 'allow' },
+  { action: 'command_exec', scope: 'session', mode: 'allow' },
+  { action: 'command_dangerous', scope: 'any', mode: 'ask' },
+  { action: 'network_known', scope: 'whitelist', mode: 'allow' },
+  { action: 'network_unknown', scope: 'any', mode: 'allow' },
+  { action: 'mcp_tool', scope: 'server', mode: 'allow' },
+  ...COMPUTER_RULES,
+]
+
+const BUILTIN_PROFILE_RULES: Record<string, RuleSeed[]> = {
+  strict: STRICT_RULES,
+  'project-standard': PROJECT_STANDARD_RULES,
+  trusted: TRUSTED_RULES,
+}
+
 const ACTIVE_PROFILE_KEY = 'permission:active-profile'
+
+/**
+ * 内置 profile 规则版本号。旧版本给三个内置 profile 种子了完全相同的规则
+ * （差异只剩从未生效的 sandboxLevel），此版本起按描述差异化。
+ * 升级时用一次性迁移重建内置 profile 的规则；用户在旧版里改过的内置规则会被
+ * 覆盖——那些规则当时被 forcePrompt 绕过、从未生效，不存在值得保留的定制。
+ */
+const BUILTIN_RULES_VERSION_KEY = 'permission:builtin-rules-version'
+const BUILTIN_RULES_VERSION = '2'
 
 // Maps built-in tool names to permission action keys
 const TOOL_ACTION_MAP: Record<string, string> = {
@@ -204,15 +251,42 @@ export class PermissionService {
   constructor(private readonly repo: PermissionProfileRepository) {
     this.repo.ensureSchema()
     this.seedBuiltins()
+    this.migrateBuiltinRules()
   }
 
   private seedBuiltins(): void {
     if (this.repo.hasProfiles()) return
     for (const p of BUILTIN_PROFILES) {
       this.repo.createProfile({ ...p, isBuiltin: true })
-      for (const r of DEFAULT_RULES) {
-        this.repo.upsertRule({ id: randomUUID(), profileId: p.id, ...r })
-      }
+      this.seedRules(p.id, BUILTIN_PROFILE_RULES[p.id] ?? PROJECT_STANDARD_RULES)
+    }
+    this.repo.setSetting(BUILTIN_RULES_VERSION_KEY, BUILTIN_RULES_VERSION)
+  }
+
+  /**
+   * 一次性迁移：把旧版「三个内置 profile 规则完全相同」的库重建为差异化规则。
+   * 版本标记写入后不再执行；非内置 profile 不受影响。
+   */
+  private migrateBuiltinRules(): void {
+    if (this.repo.getSetting(BUILTIN_RULES_VERSION_KEY) === BUILTIN_RULES_VERSION) return
+    for (const p of BUILTIN_PROFILES) {
+      if (this.repo.getProfile(p.id) == null) continue
+      this.repo.deleteRulesByProfile(p.id)
+      this.seedRules(p.id, BUILTIN_PROFILE_RULES[p.id] ?? PROJECT_STANDARD_RULES)
+    }
+    this.repo.setSetting(BUILTIN_RULES_VERSION_KEY, BUILTIN_RULES_VERSION)
+  }
+
+  private seedRules(profileId: string, rules: RuleSeed[]): void {
+    for (const [index, rule] of rules.entries()) {
+      this.repo.upsertRule({
+        id: randomUUID(),
+        profileId,
+        action: rule.action,
+        scope: rule.scope,
+        mode: rule.mode,
+        sortOrder: index,
+      })
     }
   }
 
@@ -230,10 +304,8 @@ export class PermissionService {
       name: params.name,
       sandboxLevel: params.sandboxLevel ?? 2,
     })
-    // seed default rules for new profile
-    for (const r of DEFAULT_RULES) {
-      this.repo.upsertRule({ id: randomUUID(), profileId: id, ...r })
-    }
+    // 自定义 profile 以 project-standard 规则为起点，用户可再逐条调整
+    this.seedRules(id, PROJECT_STANDARD_RULES)
     return this.toProfileItem(row)
   }
 
@@ -241,12 +313,6 @@ export class PermissionService {
     const row = this.repo.getProfile(id)
     if (row?.is_builtin) throw new Error('Cannot delete builtin profile')
     return this.repo.deleteProfile(id)
-  }
-
-  updateSandbox(profileId: string, sandboxLevel: number): PermissionProfileItem {
-    const row = this.repo.updateProfile(profileId, { sandboxLevel })
-    if (!row) throw new Error(`Profile not found: ${profileId}`)
-    return this.toProfileItem(row)
   }
 
   updateRule(profileId: string, action: string, mode: PermissionMode): PermissionRuleItem {

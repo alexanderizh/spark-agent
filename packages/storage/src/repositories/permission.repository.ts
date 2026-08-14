@@ -88,13 +88,6 @@ export class PermissionProfileRepository extends BaseRepository {
     return this.getProfile(params.id)!
   }
 
-  updateProfile(id: string, fields: { sandboxLevel?: number }): PermissionProfileRow | null {
-    if (fields.sandboxLevel !== undefined) {
-      this.raw.prepare(`UPDATE permission_profiles SET sandbox_level = ? WHERE id = ?`).run(fields.sandboxLevel, id)
-    }
-    return this.getProfile(id)
-  }
-
   deleteProfile(id: string): boolean {
     return this.deleteById(id)
   }
@@ -116,6 +109,11 @@ export class PermissionProfileRepository extends BaseRepository {
 
   updateRuleMode(id: string, mode: string): void {
     this.raw.prepare(`UPDATE permission_rules SET mode = ? WHERE id = ?`).run(mode, id)
+  }
+
+  /** 清空指定 profile 的全部规则（内置 profile 规则版本迁移时使用） */
+  deleteRulesByProfile(profileId: string): void {
+    this.raw.prepare(`DELETE FROM permission_rules WHERE profile_id = ?`).run(profileId)
   }
 
   getSetting(key: string): string | null {

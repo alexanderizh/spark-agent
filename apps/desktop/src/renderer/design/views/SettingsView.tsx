@@ -95,7 +95,6 @@ import type {
   RemoteRuntimeStatusResponse,
 } from '@spark/protocol'
 
-const SANDBOX_LEVEL_KEY = 'spark-sandbox-level'
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
@@ -3713,7 +3712,6 @@ export function PermissionsSection() {
   const { toast } = useToast()
 
   const { invoke: listProfiles } = useIpcInvoke('permission:list-profiles')
-  const { invoke: updateSandbox } = useIpcInvoke('permission:update-sandbox')
   const { invoke: updateRule } = useIpcInvoke('permission:update-rule')
   const { invoke: setActiveProfile } = useIpcInvoke('permission:set-active-profile')
   const { invoke: getSetting } = useIpcInvoke('settings:get')
@@ -3768,11 +3766,6 @@ export function PermissionsSection() {
       .then((res) => setActiveProfileId(res.activeProfileId))
       .then(refresh)
       .catch(console.error)
-  }
-
-  const handleSandboxChange = (level: number) => {
-    if (!activeProfile) return
-    void updateSandbox({ profileId: activeProfile.id, sandboxLevel: level }).then(refresh)
   }
 
   const handleRuleChange = (action: string, mode: PermissionMode) => {
@@ -3834,84 +3827,48 @@ export function PermissionsSection() {
     icon: ReactNode
     name: string
     hint: string
-    scope: string
   }> = [
     {
       action: 'file_read',
       icon: <Icons.File />,
-      name: '读取工作区文件',
-      hint: '允许 · 不弹窗',
-      scope: '工作区内',
+      name: '读取文件',
+      hint: 'Read / Glob / Grep 等读取类工具',
     },
     {
       action: 'file_write',
       icon: <Icons.Edit />,
-      name: '编辑工作区文件',
-      hint: '自动写入，记录到 checkpoint',
-      scope: '工作区内',
-    },
-    {
-      action: 'file_read_any',
-      icon: <Icons.File />,
-      name: '访问工作区外文件',
-      hint: '读取或写入 ~/ 之外路径',
-      scope: '任意',
+      name: '编辑文件',
+      hint: 'Write / Edit 等写入类工具',
     },
     {
       action: 'command_exec',
       icon: <Icons.Terminal />,
       name: '执行 shell 命令',
       hint: '非破坏性命令',
-      scope: '本会话',
     },
     {
       action: 'command_dangerous',
       icon: <Icons.AlertTriangle />,
       name: '高风险命令',
-      hint: 'rm -rf、curl | sh、密钥导出',
-      scope: '任意',
-    },
-    {
-      action: 'git_push',
-      icon: <Icons.GitBranch />,
-      name: 'Git 推送',
-      hint: '包含 --force / --force-with-lease',
-      scope: '任意',
+      hint: 'rm -rf、git reset --hard、sudo 等',
     },
     {
       action: 'network_known',
       icon: <Icons.Globe />,
-      name: '网络访问',
-      hint: 'HTTP/HTTPS 请求',
-      scope: '域名白名单',
+      name: '搜索网络',
+      hint: 'WebSearch 等已知安全入口',
     },
     {
       action: 'network_unknown',
       icon: <Icons.Globe />,
-      name: '访问陌生域名',
-      hint: '未在白名单中的域名',
-      scope: '任意',
+      name: '访问任意网页',
+      hint: 'WebFetch 抓取任意 URL',
     },
     {
       action: 'mcp_tool',
       icon: <Icons.MCP />,
       name: '调用 MCP 工具',
-      hint: '按 server allowlist',
-      scope: '按 server',
-    },
-    {
-      action: 'secret_read',
-      icon: <Icons.Lock />,
-      name: '读取 secret',
-      hint: '通过 secret reference 注入',
-      scope: 'profile 内',
-    },
-    {
-      action: 'long_task',
-      icon: <Icons.Clock />,
-      name: '长任务后台运行',
-      hint: '≥ 30s 的任务',
-      scope: '本会话',
+      hint: '所有 mcp__ 前缀的第三方工具',
     },
   ]
 
@@ -3925,7 +3882,8 @@ export function PermissionsSection() {
     <div className="settings-section">
       <h2>权限策略</h2>
       <div className="lede">
-        控制 Agent 能做什么、何时需要审批。沙箱等级配合策略一起决定运行时风险。
+        控制 Agent 能做什么、何时需要审批。会话权限模式决定 SDK
+        层门槛；下方 Profile 规则决定工具升级审批时自动放行还是拦截。
       </div>
 
       <div className="subsec-h">SDK 执行默认策略</div>
@@ -3995,7 +3953,7 @@ export function PermissionsSection() {
                 onClick={() => handleProfileChange(p.id)}
                 icon={meta?.icon ?? <Icons.Shield />}
                 name={p.name}
-                desc={meta?.desc ?? `沙箱 L${p.sandboxLevel}`}
+                desc={meta?.desc ?? p.name}
               />
             )
           })}
@@ -4006,7 +3964,7 @@ export function PermissionsSection() {
         <>
           <div className="subsec-h">具体权限 · {activeProfile.name}</div>
           <div className="card">
-            {RULE_META.map(({ action, icon, name, hint, scope }) => {
+            {RULE_META.map(({ action, icon, name, hint }) => {
               const rule = activeProfile.rules.find((r) => r.action === action)
               const mode = (rule?.mode ?? 'ask') as PermissionMode
               return (
@@ -4015,41 +3973,11 @@ export function PermissionsSection() {
                   icon={icon}
                   name={name}
                   hint={hint}
-                  scope={scope}
                   mode={mode}
                   onModeChange={(m) => handleRuleChange(action, m)}
                 />
               )
             })}
-          </div>
-
-          <div className="subsec-h">沙箱等级</div>
-          <div className="card">
-            {(
-              [
-                [0, 'L0 · 仅聊天', '完全禁用工具调用', false],
-                [1, 'L1 · 只读工作区', '可读文件，不可写、不可执行命令', false],
-                [2, 'L2 · 受控写入', '可写工作区文件，命令需审批 — 推荐', false],
-                [3, 'L3 · 完全自动化', '工作区内大多数操作免审批；高风险仍审批', false],
-                [4, 'L4 · 隔离沙箱', 'microVM 内执行 (实验性)', true],
-              ] as [number, string, string, boolean][]
-            ).map(([level, title, desc, disabled]) => (
-              <SettingsRow
-                key={level}
-                title={title}
-                desc={desc}
-                right={
-                  <Input
-                    type="radio"
-                    className="spark-radio"
-                    name={`sb-${activeProfile.id}`}
-                    checked={activeProfile.sandboxLevel === level}
-                    onChange={() => handleSandboxChange(level)}
-                    disabled={disabled}
-                  />
-                }
-              />
-            ))}
           </div>
         </>
       )}
@@ -4085,14 +4013,12 @@ function PermRule({
   icon,
   name,
   hint,
-  scope,
   mode,
   onModeChange,
 }: {
   icon: ReactNode
   name: string
   hint: string
-  scope: string
   mode: PermissionMode
   onModeChange?: (m: PermissionMode) => void
 }) {
@@ -4102,20 +4028,6 @@ function PermRule({
       <div className="desc">
         <div className="name">{name}</div>
         <div className="hint">{hint}</div>
-      </div>
-      <div className="select-full">
-        <Select
-          defaultValue={scope}
-          options={[
-            { label: '工作区内', value: '工作区内' },
-            { label: '本会话', value: '本会话' },
-            { label: '本项目', value: '本项目' },
-            { label: '任意', value: '任意' },
-            { label: 'profile 内', value: 'profile 内' },
-            { label: '按 server', value: '按 server' },
-            { label: '域名白名单', value: '域名白名单' },
-          ]}
-        />
       </div>
       <div className="select-full">
         <Select
