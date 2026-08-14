@@ -733,6 +733,15 @@ body.floating-sidebar-resizing * {
   min-width: 0;
   flex: 1;
 }
+.floating-sidebar-brand-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+  user-select: none;
+}
 .sidebar-logo {
   width: 24px;
   height: 24px;
