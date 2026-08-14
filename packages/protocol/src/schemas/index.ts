@@ -503,7 +503,8 @@ export const SessionGetGoalRequestSchema = z.object({
 
 export const SessionGoalControlRequestSchema = z.object({
   sessionId: SessionIdSchema,
-  action: z.enum(['pause', 'resume', 'clear', 'complete']),
+  // confirm/reject：pending_contract 契约的确认与拒绝（渲染端内联契约卡片使用）。
+  action: z.enum(['pause', 'resume', 'clear', 'complete', 'confirm', 'reject']),
   summary: z.string().max(4000).optional(),
 })
 

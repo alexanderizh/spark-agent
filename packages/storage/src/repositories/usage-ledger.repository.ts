@@ -133,6 +133,26 @@ export class UsageLedgerRepository extends BaseRepository {
   }
 
   /**
+   * Get aggregated usage for a session since a given ISO timestamp (inclusive).
+   * Used for scoped budget accounting (e.g. a goal's own spend, excluding prior chat).
+   */
+  getSessionUsageSince(sessionId: string, sinceIso: string): UsageSummary {
+    const stmt = this.raw.prepare(`
+      SELECT
+        COALESCE(SUM(input_tokens), 0)       AS totalInputTokens,
+        COALESCE(SUM(output_tokens), 0)      AS totalOutputTokens,
+        COALESCE(SUM(reasoning_output_tokens), 0) AS totalReasoningOutputTokens,
+        COALESCE(SUM(cache_read_tokens), 0)  AS totalCacheReadTokens,
+        COALESCE(SUM(cache_write_tokens), 0) AS totalCacheWriteTokens,
+        COALESCE(SUM(cost_usd), 0)           AS totalCostUsd,
+        COUNT(*)                              AS recordCount
+      FROM ${this.tableName}
+      WHERE session_id = ? AND request_timestamp >= ?
+    `)
+    return stmt.get(sessionId, sinceIso) as UsageSummary
+  }
+
+  /**
    * Get aggregated usage for a date range (inclusive).
    * Dates should be ISO 8601 strings (e.g., '2024-01-01T00:00:00Z').
    */
