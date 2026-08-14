@@ -633,6 +633,15 @@ function registerSdkCommands(registry: CommandRegistry): void {
       const objective = cmd.args.join(' ').trim()
       if (!objective) return { success: false, message: '用法：/goal <objective>' }
       const goal = await deps.setGoal(ctx.sessionId, objective)
+      // 未显式给验收标准时走契约门控：先起草、停在 pending_contract 等确认，不能宣称"开始执行"。
+      if ((goal as { status?: string } | null)?.status === 'pending_contract') {
+        return {
+          success: true,
+          message:
+            'Goal 已创建，正在起草验收契约——完成后请在聊天中的契约卡片点「确认」，或输入 `/goal confirm` 启动执行。',
+          data: { goal },
+        }
+      }
       return { success: true, message: 'Goal 已创建并开始执行。', data: { goal } }
     },
   })

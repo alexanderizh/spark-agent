@@ -590,14 +590,28 @@ function toProtocolGoal(goal: StoredSessionGoal | null): SessionGoalResponse['go
   return { ...goal, sessionId: goal.sessionId as SessionId } as SessionGoalResponse['goal']
 }
 
-function buildGoalIterationPrompt(goal: StoredSessionGoal): string {
+/**
+ * 单条排队用户消息注入迭代 prompt 的长度上限与一次迭代最多注入的条数。
+ * 防止超长排队内容把迭代 prompt 撑爆（上下文预算保护），超出部分留待下一轮。
+ */
+const GOAL_SUPPLEMENTARY_MESSAGE_MAX_CHARS = 2000
+const GOAL_SUPPLEMENTARY_MESSAGE_MAX_COUNT = 8
+
+function truncateGoalSupplementaryMessage(message: string): string {
+  const trimmed = message.trim()
+  if (trimmed.length <= GOAL_SUPPLEMENTARY_MESSAGE_MAX_CHARS) return trimmed
+  return `${trimmed.slice(0, GOAL_SUPPLEMENTARY_MESSAGE_MAX_CHARS)}…[truncated]`
+}
+
+function buildGoalIterationPrompt(goal: StoredSessionGoal, supplementaryUserMessages: string[] = []): string {
   const progress =
     goal.progressLog
       .slice(-8)
-      .map(
-        (entry) =>
-          `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`,
-      )
+      .map((entry) => {
+        const evidence =
+          entry.evidence != null && entry.evidence.length > 0 ? ` (evidence: ${entry.evidence.join('; ')})` : ''
+        return `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${evidence}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`
+      })
       .join('\n') || '- No prior progress.'
   const criteria =
     goal.successCriteria.length > 0
@@ -610,6 +624,22 @@ function buildGoalIterationPrompt(goal: StoredSessionGoal): string {
   const commands = goal.validation.commands?.length
     ? goal.validation.commands.map((item) => `- ${item}`).join('\n')
     : '- Choose the narrowest safe validation command(s) available; if none can run, explain why.'
+  const maxIterations = goal.budget.maxIterations ?? 12
+  const iterationHeader = `Recent progress (iteration ${goal.progressLog.length + 1} of ${maxIterations}):`
+  const lastError =
+    goal.lastError != null && goal.lastError.length > 0
+      ? ['', `Last recorded error (already accounted for, do not repeat it):\n${goal.lastError}`]
+      : []
+  // goal 运行期间用户插话不再无限排队：排队消息作为「补充指令」注入本轮迭代。
+  // 语义上它们是对目标的补充/修正/追问，不重置 objective，冲突时以更新的消息为准。
+  const supplementary =
+    supplementaryUserMessages.length > 0
+      ? [
+          '',
+          'User supplementary instructions received since the last iteration (newest last; treat as updates to the objective, not a reset):',
+          ...supplementaryUserMessages.map((message) => `- ${message}`),
+        ]
+      : []
   return [
     'You are executing a managed persistent Goal. Work in a bounded Review → Act → Validate loop for this iteration only.',
     '',
@@ -621,7 +651,9 @@ function buildGoalIterationPrompt(goal: StoredSessionGoal): string {
     '',
     `Validation plan:\n${commands}`,
     '',
-    `Recent progress:\n${progress}`,
+    `${iterationHeader}\n${progress}`,
+    ...lastError,
+    ...supplementary,
     '',
     'This iteration requirements:',
     '1. Review current state and identify the smallest useful next step.',
@@ -2235,7 +2267,12 @@ export class SessionService {
       else persistTurn()
     }
     const currentGoal = new GoalRepository(this.db).getCurrent(sessionId)
-    if (currentGoal?.status === 'active' || this.pendingUserQuestionGate.isBlocked(sessionId)) {
+    // spark-loop 目标活跃时用户消息入队，由下一轮迭代排空注入（drainQueuedUserTurnsForGoalIteration）。
+    // codex-native 目标由 codex 侧自驱循环，Spark 不泵迭代——用户消息按普通流程执行
+    // （若恰有 turn 在跑会落入下方 hasActiveSessionExecution 的常规排队，turn 结束即排空）。
+    const goalOwnsDispatch =
+      currentGoal?.status === 'active' && currentGoal.mode === 'spark-loop'
+    if (goalOwnsDispatch || this.pendingUserQuestionGate.isBlocked(sessionId)) {
       this.enqueueTurn(sessionId, pendingTurn)
       return { turnId, started: false }
     }
@@ -3402,16 +3439,26 @@ export class SessionService {
     }
 
     const activeGoalForTurn = new GoalRepository(this.db).getCurrent(sessionId)
-    const goalConfig =
-      activeGoalForTurn?.status === 'active'
-        ? {
-            id: activeGoalForTurn.id,
-            objective: activeGoalForTurn.objective,
-            mode: activeGoalForTurn.mode,
-            successCriteria: activeGoalForTurn.successCriteria,
-            progressLog: activeGoalForTurn.progressLog,
-          }
-        : undefined
+    // goal 包装策略：
+    // - spark-loop：迭代 turn 的 prompt 已自包含完整契约（buildGoalIterationPrompt），
+    //   不再叠加执行器侧的 Goal Contract 包装（避免双份 prompt）；普通用户 turn 在
+    //   goal 活跃期间执行（典型：sendQueuedTurnNow 打断迭代）时仍包装，驱动其输出
+    //   spark-goal-status 块供循环解析续跑。
+    // - codex-native：只有迭代 turn（startGoalLoop 派发）才翻译为 /goal <objective>；
+    //   普通用户消息保持原文，避免每条消息都重述一遍目标。
+    const isGoalIterationTurn = userMessagePresentation?.turnSource === 'goal_iteration'
+    const shouldAttachGoalConfig =
+      activeGoalForTurn?.status === 'active' &&
+      (activeGoalForTurn.mode === 'codex-native' ? isGoalIterationTurn : !isGoalIterationTurn)
+    const goalConfig = shouldAttachGoalConfig
+      ? {
+          id: activeGoalForTurn.id,
+          objective: activeGoalForTurn.objective,
+          mode: activeGoalForTurn.mode,
+          successCriteria: activeGoalForTurn.successCriteria,
+          progressLog: activeGoalForTurn.progressLog,
+        }
+      : undefined
 
     if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
       const iterationOverride = this.iterationOverrides.get(sessionId)
@@ -8582,8 +8629,14 @@ export class SessionService {
     if (this.disposing) return
     const goal = new GoalRepository(this.db).getCurrent(sessionId)
     if (goal?.status === 'active') {
-      await this.startGoalLoop(sessionId)
-      return
+      // 仅 spark-loop 由 Spark 泵迭代。codex-native 的目标循环由 codex 侧自驱
+      // （features.goals=true），Spark 若每轮 turn 结束都再派发一次 /goal <objective>，
+      // 会无限重复派发（codex 不产出 spark-goal-status 块，goal 永远停在 active）。
+      // codex-native：单次派发后不再自动续跑，用户消息按普通队列排空。
+      if (goal.mode === 'spark-loop') {
+        await this.startGoalLoop(sessionId)
+        return
+      }
     }
     this.startNextQueuedTurn(sessionId)
     // 全局并发上限可能让其他 session 的队列被阻塞；本 turn 结束腾出一个槽位，
@@ -8749,6 +8802,7 @@ export class SessionService {
         draftTurnId,
         buildGoalContractDraftPrompt(pending.objective),
         GOAL_CONTRACT_DRAFT_TURN_PRESENTATION,
+        this.goalSyntheticTurnRuntimePatch(params.sessionId),
       )
       return { goal: toProtocolGoal(repo.getCurrent(params.sessionId)) }
     }
@@ -8819,12 +8873,19 @@ export class SessionService {
 
   async controlGoal(params: {
     sessionId: string
-    action: 'pause' | 'resume' | 'clear' | 'complete'
+    action: 'pause' | 'resume' | 'clear' | 'complete' | 'confirm' | 'reject'
     summary?: string
   }): Promise<SessionGoalResponse> {
     const repo = new GoalRepository(this.db)
     const goal = repo.getCurrent(params.sessionId)
     if (goal == null) return { goal: null }
+    // 契约确认/拒绝复用 goal-control 通道，渲染端内联契约卡片按钮直接调用。
+    if (params.action === 'confirm') {
+      return this.confirmGoalContract({ sessionId: params.sessionId })
+    }
+    if (params.action === 'reject') {
+      return this.rejectGoalContract({ sessionId: params.sessionId })
+    }
     if (params.action === 'pause') {
       const updated = repo.updateStatus(goal.id, 'paused')
       this.emitGoalEvent(
@@ -8871,6 +8932,48 @@ export class SessionService {
     return { goal: toProtocolGoal(updated) }
   }
 
+  /**
+   * 累计目标暂停时长（ms）：按 goal_paused → goal_resumed 事件配对求和。
+   * 未闭合的暂停（当前仍处于 paused）计到当前时刻。事件按 goalId 过滤，
+   * 同会话旧目标的暂停不计入新目标。
+   */
+  private computeGoalPausedMs(sessionId: string, goal: StoredSessionGoal): number {
+    try {
+      const eventRepo = new EventRepository(this.db)
+      const collectTimestamps = (eventType: string): number[] =>
+        eventRepo
+          .queryBySession({ sessionId, eventType, limit: 1000 })
+          .events.flatMap((row) => {
+            try {
+              const parsed = JSON.parse(row.event_json) as { goalId?: unknown; timestamp?: unknown }
+              if (parsed.goalId !== goal.id || typeof parsed.timestamp !== 'string') return []
+              const ts = Date.parse(parsed.timestamp)
+              return Number.isFinite(ts) ? [ts] : []
+            } catch {
+              return []
+            }
+          })
+          .sort((a, b) => a - b)
+      const pauses = collectTimestamps('goal_paused')
+      if (pauses.length === 0) return 0
+      const resumes = collectTimestamps('goal_resumed')
+      let pausedMs = 0
+      for (const pauseTs of pauses) {
+        const resumeIdx = resumes.findIndex((resumeTs) => resumeTs >= pauseTs)
+        if (resumeIdx === -1) {
+          pausedMs += Date.now() - pauseTs
+          break
+        }
+        pausedMs += resumes[resumeIdx]! - pauseTs
+        resumes.splice(resumeIdx, 1)
+      }
+      return Math.max(0, pausedMs)
+    } catch {
+      // 事件查询失败（旧测试 double 等）按无暂停处理，保持向后兼容。
+      return 0
+    }
+  }
+
   private getGoalLoopBudgetStopSummary(sessionId: string, goal: StoredSessionGoal): string | null {
     const budget = goal.budget ?? {}
     const maxIterations = budget.maxIterations ?? 12
@@ -8880,7 +8983,12 @@ export class SessionService {
 
     if (budget.maxBudgetUsd != null && Number.isFinite(budget.maxBudgetUsd)) {
       try {
-        const usage = new UsageLedgerRepository(this.db).getSessionUsage(sessionId)
+        // 预算只统计目标自身的消耗（goal 创建时刻起），不含目标开始前的会话聊天。
+        const ledger = new UsageLedgerRepository(this.db)
+        const usage =
+          typeof ledger.getSessionUsageSince === 'function'
+            ? ledger.getSessionUsageSince(sessionId, goal.createdAt)
+            : ledger.getSessionUsage(sessionId)
         if (usage.totalCostUsd >= budget.maxBudgetUsd) {
           return `Goal stopped after reaching budget limit: $${usage.totalCostUsd.toFixed(4)} >= $${budget.maxBudgetUsd.toFixed(4)}.`
         }
@@ -8892,9 +9000,15 @@ export class SessionService {
     if (budget.maxRuntimeMinutes != null && Number.isFinite(budget.maxRuntimeMinutes)) {
       const createdAtMs = Date.parse(goal.createdAt)
       if (Number.isFinite(createdAtMs)) {
-        const elapsedMinutes = (Date.now() - createdAtMs) / 60_000
-        if (elapsedMinutes >= budget.maxRuntimeMinutes) {
-          return `Goal stopped after reaching runtime limit: ${elapsedMinutes.toFixed(1)} minutes >= ${budget.maxRuntimeMinutes} minutes.`
+        // 运行时长排除暂停时段：goal_paused → goal_resumed 的间隔不计入，
+        // 否则暂停一小时会直接吃掉 maxRuntimeMinutes 的全部额度。
+        const pausedMs = this.computeGoalPausedMs(sessionId, goal)
+        const activeMinutes = (Date.now() - createdAtMs - pausedMs) / 60_000
+        if (activeMinutes >= budget.maxRuntimeMinutes) {
+          const pausedMinutes = pausedMs / 60_000
+          const pausedNote =
+            pausedMinutes >= 0.05 ? ` (excludes ${pausedMinutes.toFixed(1)} minutes paused)` : ''
+          return `Goal stopped after reaching runtime limit: ${activeMinutes.toFixed(1)} active minutes${pausedNote} >= ${budget.maxRuntimeMinutes} minutes.`
         }
       }
     }
@@ -8964,6 +9078,107 @@ export class SessionService {
     this.emitGoalEvent(sessionId, stopped, 'goal_budget_stopped', 'stopped_by_budget', summary)
   }
 
+  /**
+   * 排空 goal 运行期间排队的用户插话，注入下一轮迭代 prompt（P0-2 反饥饿）。
+   *
+   * 只内联「纯文本用户消息」：不带附件/skill/会话参考/mention 的 turn。runtimePatch
+   * 仅含 provider/model 时视为纯文本等价（渲染端每条消息都携带当前选择，若要求
+   * patch 为空则永远无法排空），并在排空时把该选择持久化到会话运行时，让用户
+   * 插话时的模型切换对下一轮迭代生效。patch 含其他字段（agent/权限/模式等）的
+   * turn 无法以文本注入等价表达，保留在队列里等目标结束后按普通 turn 执行。
+   * 被内联的 turn：emit user_message 保留时间线可见性 + turn_requests 标记 completed。
+   */
+  private drainQueuedUserTurnsForGoalIteration(sessionId: string): string[] {
+    const queue = this.pendingTurns.get(sessionId)
+    if (queue == null || queue.length === 0) return []
+    const requestRepo = new TurnRequestRepository(this.db)
+    const eventRepo = new EventRepository(this.db)
+    const remaining: PendingTurn[] = []
+    const drainedMessages: string[] = []
+    let drainedCount = 0
+    let latestRuntimeSelection: { providerProfileId?: string; modelId?: string } | null = null
+    for (const turn of queue) {
+      const runtimeOnlyPatch = pickGoalDrainableRuntimeSelection(turn.runtimePatch)
+      const isPlainUserTurn =
+        turn.isTeamDispatchAutoContinuation !== true &&
+        turn.userMessageVisibility !== 'hidden' &&
+        (turn.attachments == null || turn.attachments.length === 0) &&
+        turn.skillId == null &&
+        runtimeOnlyPatch !== false &&
+        (turn.sessionReferences == null || turn.sessionReferences.length === 0) &&
+        turn.mentionAgentId == null &&
+        turn.message.trim().length > 0
+      // 超出单轮注入上限的纯文本消息留在队列（下一轮迭代再排空），避免撑爆迭代 prompt。
+      if (!isPlainUserTurn || drainedCount >= GOAL_SUPPLEMENTARY_MESSAGE_MAX_COUNT) {
+        remaining.push(turn)
+        continue
+      }
+      drainedCount += 1
+      if (runtimeOnlyPatch != null) latestRuntimeSelection = runtimeOnlyPatch
+      drainedMessages.push(truncateGoalSupplementaryMessage(turn.message))
+      // 时间线上仍要呈现用户发过这条消息：以原 turnId emit user_message，
+      // 紧随其后的 goal 迭代 turn 会给出回应，不会留下无终态的悬挂 turn 预期。
+      this.emitAndPersist(
+        sessionId,
+        turn.turnId,
+        {
+          id: crypto.randomUUID(),
+          type: 'user_message',
+          sessionId,
+          turnId: turn.turnId,
+          timestamp: new Date().toISOString(),
+          seq: 0,
+          content: turn.message,
+        },
+        eventRepo,
+      )
+      // 消息已被迭代消费，持久化请求闭环为 completed（durable=true 才有对应行，
+      // cancel/markCompleted 都是无则 no-op）。
+      try {
+        requestRepo.markCompleted(turn.turnId)
+      } catch {
+        // 测试 double 或旧库可能没有对应行；闭环失败不影响迭代注入。
+      }
+    }
+    if (drainedCount === 0) return []
+    if (remaining.length === 0) this.pendingTurns.delete(sessionId)
+    else this.pendingTurns.set(sessionId, remaining)
+    // 用户在插话里切换了 provider/model：以最后一条为准写入会话运行时，
+    // 让紧随其后的迭代 turn（goalSyntheticTurnRuntimePatch 读会话快照）真正用上新选择。
+    if (latestRuntimeSelection != null) {
+      new SessionRepository(this.db).updateRuntime(sessionId, latestRuntimeSelection)
+    }
+    this.emitQueueChanged(sessionId)
+    log.info('goal loop: drained queued user messages into iteration', {
+      sessionId,
+      drainedCount,
+      remainingQueued: remaining.length,
+    })
+    return drainedMessages
+  }
+
+  /**
+   * goal 合成 turn（契约起草/迭代）由服务端自发派发，不像普通 turn 那样携带
+   * 渲染端 runtimePatch，provider 解析会落到 Agent 自身绑定——出现「UI 选了 A，
+   * goal turn 却跑 Agent 绑定的 B」（codex 会话绑到 anthropic 端点时直接 404 失败）。
+   * 这里显式继承会话当前运行时选择（= 用户最近一次 UI 选择，由普通 turn 的
+   * runtimePatch / updateSession 持久化），与普通 turn 的 explicit patch 语义对齐。
+   * 团队会话例外：Host Agent 配置是既定路由语义，不继承会话快照。
+   */
+  private goalSyntheticTurnRuntimePatch(sessionId: string): SessionRuntimePatch | undefined {
+    const session = new SessionRepository(this.db).get(sessionId)
+    if (session == null) return undefined
+    if (readSessionTeamConfig(session)?.enabled === true) return undefined
+    const providerProfileId = session.provider_profile_id?.trim()
+    const modelId = session.model_id?.trim()
+    const patch: SessionRuntimePatch = {}
+    if (providerProfileId != null && providerProfileId.length > 0) {
+      patch.providerProfileId = providerProfileId
+    }
+    if (modelId != null && modelId.length > 0) patch.modelId = modelId
+    return Object.keys(patch).length > 0 ? patch : undefined
+  }
+
   private async startGoalLoop(sessionId: string): Promise<void> {
     const repo = new GoalRepository(this.db)
     const goal = repo.getCurrent(sessionId)
@@ -8977,18 +9192,27 @@ export class SessionService {
     }
     log.info('goal loop: iteration', { sessionId, iteration: goal.progressLog.length + 1 })
     const turnId = crypto.randomUUID()
-    const prompt = buildGoalIterationPrompt(goal)
-    repo.appendProgress(goal.id, {
-      iteration: goal.progressLog.length + 1,
-      phase: 'review',
-      status: 'continue',
-      summary: 'Started review/act/validate iteration.',
-      nextStep: 'Agent is working on the next verifiable step.',
-    })
-    this.emitGoalEvent(sessionId, goal, 'goal_progress', 'active', 'Started next Goal iteration', {
-      phase: 'review',
-    })
-    await this.startTurn(sessionId, turnId, prompt, GOAL_ITERATION_TURN_PRESENTATION)
+    const supplementaryUserMessages = this.drainQueuedUserTurnsForGoalIteration(sessionId)
+    const prompt = buildGoalIterationPrompt(goal, supplementaryUserMessages)
+    // 启动只发事件、不写 progressLog：真实进度条目唯一来源是 turn 结束时解析的
+    // spark-goal-status 块。此前每轮先 append 一条固定 nextStep 的"启动占位条目"，
+    // 导致 progressLog 每轮 +2——迭代计数双倍（maxIterations 减半生效）、
+    // noProgress 检测被占位文案隔断而几乎永远不触发、迭代 prompt 的进度摘要混入噪音。
+    this.emitGoalEvent(
+      sessionId,
+      goal,
+      'goal_progress',
+      'active',
+      `Started iteration ${goal.progressLog.length + 1}`,
+      { phase: 'review', iteration: goal.progressLog.length + 1 },
+    )
+    await this.startTurn(
+      sessionId,
+      turnId,
+      prompt,
+      GOAL_ITERATION_TURN_PRESENTATION,
+      this.goalSyntheticTurnRuntimePatch(sessionId),
+    )
   }
 
   private emitGoalEvent(
@@ -9025,7 +9249,7 @@ export class SessionService {
         goalId: goal.id,
         objective: goal.objective,
         status,
-        iteration: goal.progressLog.length,
+        ...(extra.iteration != null ? { iteration: extra.iteration } : { iteration: goal.progressLog.length }),
         summary,
         ...(extra.phase != null ? { phase: extra.phase } : {}),
         ...(extra.evidence != null ? { evidence: extra.evidence } : {}),
@@ -10936,6 +11160,30 @@ function getAutomationMetadata(metadataJson: string | null | undefined): {
   } catch {
     return { unattended: false, source: null }
   }
+}
+
+/**
+ * 判断排队 turn 的 runtimePatch 是否只携带 provider/model 选择（文本注入等价）。
+ * - 返回 false：patch 含 agent/权限/模式/skill 等其他字段，turn 不能被迭代内联消费；
+ * - 返回 null：可以内联，且没有需要持久化的运行时选择；
+ * - 返回对象：可以内联，并把该选择持久化到会话运行时（用户插话时切了模型）。
+ * 渲染端每条消息都携带当前 provider/model，若把「带 patch」一律视为不可排空，
+ * goal 插话注入将永远无法触发。
+ */
+function pickGoalDrainableRuntimeSelection(
+  patch: SessionRuntimePatch | undefined,
+): { providerProfileId?: string; modelId?: string } | null | false {
+  if (patch == null) return null
+  const isRuntimeOnly = Object.keys(patch).every(
+    (key) => key === 'providerProfileId' || key === 'modelId',
+  )
+  if (!isRuntimeOnly) return false
+  const selection: { providerProfileId?: string; modelId?: string } = {}
+  if (patch.providerProfileId != null && patch.providerProfileId.trim().length > 0) {
+    selection.providerProfileId = patch.providerProfileId
+  }
+  if (patch.modelId != null && patch.modelId.trim().length > 0) selection.modelId = patch.modelId
+  return Object.keys(selection).length > 0 ? selection : null
 }
 
 function getRuntimePatch(params: SessionRuntimePatch): SessionRuntimePatch | undefined {
