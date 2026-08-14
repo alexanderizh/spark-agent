@@ -1794,10 +1794,14 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
 .chat-layout .tabbar-actions .git-session-trigger.active {
   color: var(--text-muted);
 }
-.chat-layout .chat-sidebar-topbar-actions .icon-btn,
-.chat-layout .chat-sidebar-topbar-actions .icon-btn:hover,
+.chat-layout .chat-sidebar-topbar-actions .icon-btn {
+  color: var(--text-muted);
+}
+.chat-layout .chat-sidebar-topbar-actions .icon-btn:hover {
+  color: var(--text);
+}
 .chat-layout .chat-sidebar-topbar-actions .icon-btn.active {
-  color: var(--sidebar-text, var(--text));
+  color: var(--text-muted);
 }
 .chat-layout
   :is(
