@@ -45,6 +45,9 @@ export interface CodeViewerPanelProps {
   onExplorerWidthChange: (width: number) => void
   onExplorerExpandedChange: (next: Set<string>) => void
   onOpenFileFromExplorer: (relativePath: string) => void
+  // 文件树右键菜单的显式「预览 / 编辑」入口（可选：不传则菜单不显示对应项）
+  onPreviewFileFromExplorer?: ((relativePath: string) => void) | undefined
+  onEditFileFromExplorer?: ((relativePath: string) => void) | undefined
 }
 
 function basename(p: string): string {
@@ -70,6 +73,8 @@ export function CodeViewerPanel({
   onExplorerWidthChange,
   onExplorerExpandedChange,
   onOpenFileFromExplorer,
+  onPreviewFileFromExplorer,
+  onEditFileFromExplorer,
 }: CodeViewerPanelProps) {
   const resolvedTheme = useResolvedTheme()
   const theme: 'dark' | 'light' = resolvedTheme === 'light' ? 'light' : 'dark'
@@ -214,6 +219,8 @@ export function CodeViewerPanel({
                 expandedDirs={explorerExpandedDirs}
                 onExpandedChange={onExplorerExpandedChange}
                 onOpenFile={onOpenFileFromExplorer}
+                onPreviewFile={onPreviewFileFromExplorer}
+                onEditFile={onEditFileFromExplorer}
               />
             </div>
             <div className="cv-explorer-resize" onPointerDown={handleResizeStart} />

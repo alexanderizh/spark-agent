@@ -48,12 +48,11 @@ describe('FilePreviewPanel', () => {
     vi.unstubAllGlobals()
   })
 
-  // HTML 文件不再走应用内预览：getPreviewFileType 对 .html/.htm 返回 null，
-  // 各调用点（ClickableFilePath / SessionFileOpenPicker / DocumentOutputCard）会
-  // 回退到 file:open → shell.openPath，由 OS 默认浏览器打开。
-  it('classifies .html/.htm as non-previewable so they open in the system browser', () => {
-    expect(getPreviewFileType('/tmp/preview.html')).toBeNull()
-    expect(getPreviewFileType('/tmp/preview.htm')).toBeNull()
+  // HTML 恢复应用内预览：getPreviewFileType 对 .html/.htm 返回 'html'，
+  // 由 FilePreviewPanel 的 sandbox iframe 分支渲染（buildHtmlPreviewDocument）。
+  it('classifies .html/.htm as html preview type', () => {
+    expect(getPreviewFileType('/tmp/preview.html')).toBe('html')
+    expect(getPreviewFileType('/tmp/preview.htm')).toBe('html')
   })
 
   it('still previews markdown files inside the panel', async () => {
@@ -69,6 +68,35 @@ describe('FilePreviewPanel', () => {
 
     await vi.waitFor(() => {
       expect(container.querySelector('.file-preview-markdown')).not.toBeNull()
+    })
+  })
+
+  it('previews html files in a sandboxed iframe', async () => {
+    invoke = vi.fn(async (channel: string) => {
+      if (channel === 'file:read') return { content: '<h1>hello</h1>' }
+      if (channel === 'file:open') return { opened: true }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <FilePreviewPanel filePath="/tmp/page.html" fileType="html" onClose={vi.fn()} />
+        </ToastProvider>,
+      )
+      await Promise.resolve()
+    })
+
+    await vi.waitFor(() => {
+      const iframe = container.querySelector('iframe.file-preview-html')
+      expect(iframe).not.toBeNull()
+      expect(iframe?.getAttribute('sandbox')).toBe('allow-popups allow-popups-to-escape-sandbox')
+      expect(iframe?.getAttribute('srcdoc')).toContain('hello')
     })
   })
 })

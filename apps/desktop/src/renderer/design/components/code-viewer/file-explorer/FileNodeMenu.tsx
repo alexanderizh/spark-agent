@@ -12,11 +12,15 @@
 
 import type { ReactNode } from 'react'
 import { Icons } from '../../../Icons'
+import { canOpenInEditor, canOpenPreview } from '../../fileOpenRouting'
 import type { FileClipboardEntry, FileExplorerNode } from './fileExplorerTypes'
 
 /** 文件树菜单触发的全部动作（由 FileExplorerPanel 实现） */
 export interface FileMenuActions {
   onOpenFile: (path: string) => void
+  // 显式「预览 / 编辑」入口（可选：不传则菜单不显示对应项）
+  onPreviewFile?: (path: string) => void
+  onEditFile?: (path: string) => void
   onCopyPath: (path: string) => void
   onCopy: (path: string) => void
   onCut: (path: string) => void
@@ -59,6 +63,14 @@ export function buildNodeMenuItems(
   const items: NodeMenuItem[] = []
   if (!isDir) {
     items.push(item(<Icons.ExternalLink size={14} />, '打开', () => actions.onOpenFile(node.path)))
+    // 可预览（md/html/office/图片等）显示「预览」；Monaco 可编辑的显示「编辑」，
+    // 供用户显式选择打开方式（单击默认按统一路由预览优先分流）
+    if (actions.onPreviewFile != null && canOpenPreview(node.path)) {
+      items.push(item(<Icons.Eye size={14} />, '预览', () => actions.onPreviewFile?.(node.path)))
+    }
+    if (actions.onEditFile != null && canOpenInEditor(node.path)) {
+      items.push(item(<Icons.Edit size={14} />, '编辑', () => actions.onEditFile?.(node.path)))
+    }
   }
   items.push(item(<Icons.Copy size={14} />, '复制路径', () => actions.onCopyPath(node.path)))
   items.push(item(<Icons.Copy size={14} />, '复制', () => actions.onCopy(node.path)))

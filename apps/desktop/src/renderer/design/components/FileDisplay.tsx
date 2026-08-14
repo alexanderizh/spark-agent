@@ -500,8 +500,7 @@ export function getFileExtension(filePath: string): string {
 export function getPreviewFileType(filePath: string): PreviewFileType | null {
   const ext = getFileExtension(filePath).toLowerCase()
   if (ext === '.md' || ext === '.markdown' || ext === '.mdx') return 'markdown'
-  // HTML 文件不再走应用内预览，统一交给 OS 默认浏览器打开（file:open → shell.openPath）。
-  // 详见各调用点的「不可预览 → 用默认应用打开」回退分支。
+  if (ext === '.html' || ext === '.htm') return 'html'
   if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'].includes(ext)) {
     return 'image'
   }

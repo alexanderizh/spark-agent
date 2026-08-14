@@ -5,8 +5,8 @@
  *   1. 绝对路径：/Users/xxx/file.ts、C:\Users\xxx\file.ts
  *   2. 相对路径：src/foo/bar.ts、./file.ts、../file.ts
  *   3. 点击打开文件（调用 file:open IPC）
- *   4. 对于 md/html/图片文件，触发预览回调
- *   5. 右键菜单：复制路径 / 在文件夹中显示（file:reveal IPC）
+ *   4. 对于 md/html/图片文件，触发预览回调（统一路由预览优先）
+ *   5. 右键菜单：预览 / 编辑 / 复制路径 / 用默认应用打开 / 在文件夹中显示
  *
  * 同文件还导出 ClickableUrl（用于裸 URL/mailto）和文本切分工具
  * extractFilePaths / extractUrlsAndEmails，供 ChatView 使用。
@@ -27,6 +27,7 @@ import {
   stripTrailingFilePunctuation,
   type PreviewFileType,
 } from './FileDisplay'
+import { canOpenInEditor, canOpenPreview, type FileOpenHandler } from './fileOpenRouting'
 import './ClickableFilePath.less'
 
 type Props = {
@@ -34,8 +35,8 @@ type Props = {
   path: string
   /** 展示文本；不传时展示规范化后的路径 */
   label?: ReactNode
-  /** 点击预览时的回调（用于内置侧拉框预览） */
-  onPreview?: (filePath: string, fileType: PreviewFileType) => void
+  /** 点击/右键打开时的回调（预览优先路由；opts.mode 可显式指定预览或编辑） */
+  onPreview?: FileOpenHandler
 }
 
 export type { PreviewFileType } from './FileDisplay'
@@ -106,6 +107,38 @@ export function ClickableFilePath({ path, label, onPreview }: Props): ReactNode 
 
   const menu = {
     items: [
+      // 可预览（md/html/office/图片等）提供显式「预览」；Monaco 可编辑的提供「编辑」
+      ...(onPreview != null && canOpenPreview(normalizedPath)
+        ? [
+            {
+              key: 'preview',
+              label: (
+                <span className="clickable-file-menu-item">
+                  <Icons.Eye size={14} /> 预览
+                </span>
+              ),
+              onClick: () =>
+                onPreview(
+                  normalizedPath,
+                  fileType ?? 'text',
+                  { mode: 'preview' } as const,
+                ),
+            },
+          ]
+        : []),
+      ...(onPreview != null && canOpenInEditor(normalizedPath)
+        ? [
+            {
+              key: 'edit',
+              label: (
+                <span className="clickable-file-menu-item">
+                  <Icons.Edit size={14} /> 编辑
+                </span>
+              ),
+              onClick: () => onPreview(normalizedPath, 'text', { mode: 'edit' } as const),
+            },
+          ]
+        : []),
       {
         key: 'copy',
         label: (

@@ -13,10 +13,10 @@ import {
   FileTypeIcon,
   getFileTypeBadge,
   type FileTypeBadge,
-  type PreviewFileType,
 } from './components/FileDisplay'
 import { SessionFileOpenPicker } from './components/SessionFileOpenPicker'
 import { FilePathContextMenu } from './components/FilePathContextMenu'
+import type { FileOpenHandler, FileOpenMode } from './components/fileOpenRouting'
 import { MarkdownText } from './views/ChatView'
 import type { TurnFileSummaryGeneratedGroup } from './services/turn-file-summary'
 
@@ -409,7 +409,7 @@ export function TurnFileSummaryCard({
   workspaceRootPath?: string | null
   onUndo?: () => Promise<void> | void
   onReapply?: () => Promise<void> | void
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  onFilePreview?: FileOpenHandler
 }) {
   const { t } = useI18n()
   const [expanded, setExpanded] = useState(true)
@@ -586,6 +586,12 @@ export function TurnFileSummaryCard({
               x={fileContextMenu.x}
               y={fileContextMenu.y}
               onClose={() => setFileContextMenu(null)}
+              {...(onFilePreview != null
+                ? {
+                    onOpenWithMode: (mode: FileOpenMode) =>
+                      onFilePreview(fileContextMenu.filePath, 'text', { mode }),
+                  }
+                : {})}
             />
           )}
           {hasHiddenFiles && (

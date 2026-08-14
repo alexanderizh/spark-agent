@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Icons } from '../Icons'
+import { canOpenInEditor, canOpenPreview, type FileOpenMode } from './fileOpenRouting'
 
 async function copyFilePath(filePath: string): Promise<void> {
   try {
@@ -14,11 +15,14 @@ export function FilePathContextMenu({
   x,
   y,
   onClose,
+  onOpenWithMode,
 }: {
   filePath: string
   x: number
   y: number
   onClose: () => void
+  /** 显式选择打开方式（预览/编辑）；不传则不显示对应菜单项 */
+  onOpenWithMode?: (mode: FileOpenMode) => void
 }) {
   const ref = useRef<HTMLDivElement | null>(null)
 
@@ -37,6 +41,9 @@ export function FilePathContextMenu({
     }
   }, [onClose])
 
+  const showPreview = onOpenWithMode != null && canOpenPreview(filePath)
+  const showEdit = onOpenWithMode != null && canOpenInEditor(filePath)
+
   return (
     <div
       ref={ref}
@@ -45,6 +52,32 @@ export function FilePathContextMenu({
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
+      {showPreview && (
+        <button
+          type="button"
+          className="action-menu-item"
+          onClick={() => {
+            onClose()
+            onOpenWithMode?.('preview')
+          }}
+        >
+          <Icons.Eye size={14} />
+          <span>预览</span>
+        </button>
+      )}
+      {showEdit && (
+        <button
+          type="button"
+          className="action-menu-item"
+          onClick={() => {
+            onClose()
+            onOpenWithMode?.('edit')
+          }}
+        >
+          <Icons.Edit size={14} />
+          <span>编辑</span>
+        </button>
+      )}
       <button
         type="button"
         className="action-menu-item"

@@ -8,8 +8,8 @@ import {
   ClickableUrl,
   extractFilePaths,
   extractUrlsAndEmails,
-  type PreviewFileType,
 } from '../../components/ClickableFilePath'
+import type { FileOpenHandler } from '../../components/fileOpenRouting'
 import {
   isLocalFileReference,
   isPreviewableFileReference,
@@ -40,7 +40,7 @@ export const MarkdownText = React.memo(function MarkdownText({
   isStreaming?: boolean
   agents?: { id: string; name: string }[] | undefined
   onMentionClick?: ((agentId: string) => void) | undefined
-  onFilePreview?: ((filePath: string, fileType: PreviewFileType) => void) | undefined
+  onFilePreview?: FileOpenHandler | undefined
 }) {
   const { stableBlocks, tailBlocks } = useMemo(() => {
     if (!isStreaming) {
@@ -115,7 +115,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
   syntaxHighlight: boolean
   agents?: { id: string; name: string }[] | undefined
   onMentionClick?: ((agentId: string) => void) | undefined
-  onFilePreview?: ((filePath: string, fileType: PreviewFileType) => void) | undefined
+  onFilePreview?: FileOpenHandler | undefined
   initialDocumentKeys?: string[]
 }) {
   const seenDocumentKeys = new Set(initialDocumentKeys)
@@ -248,7 +248,7 @@ function highlightMentions(
   text: string,
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void,
+  onFilePreview?: FileOpenHandler | undefined,
   offset: number = 0,
 ): ReactNode[] {
   const mentionPattern = /(^|\s)(@[\p{L}\p{N}_\-.]+)/gu
@@ -304,7 +304,7 @@ function highlightMentions(
 /** 识别文本中的文件路径并渲染为可点击链接；非路径段交给 highlightUrls 处理裸 URL/mailto */
 function highlightFilePaths(
   text: string,
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void,
+  onFilePreview?: FileOpenHandler | undefined,
   keyPrefix: string = 'fp',
 ): ReactNode[] {
   const pathParts = extractFilePaths(text)
@@ -349,7 +349,7 @@ function renderInlineMarkdown(
   text: string,
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void,
+  onFilePreview?: FileOpenHandler | undefined,
 ): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern =

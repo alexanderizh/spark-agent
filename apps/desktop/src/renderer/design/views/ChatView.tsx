@@ -170,6 +170,11 @@ import {
 } from '../components/code-viewer/file-explorer/fileExplorerVisibility'
 import type { OpenCodeFile, CodeViewMode } from '../components/code-viewer/types'
 import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
+import {
+  shouldPreviewFirst,
+  type FileOpenModeOpts,
+  type FileOpenHandler,
+} from '../components/fileOpenRouting'
 import type { HtmlOpenMode } from '../services/render-html'
 import {
   clamp,
@@ -1468,14 +1473,20 @@ export function ChatView({
     [closeUnifiedSidePanel],
   )
 
-  const handleFilePreview = useCallback(
-    (filePath: string, fileType: PreviewFileType) => {
-      if (isCodeLikeFile(filePath)) {
-        // 代码 / 配置 / 文本类 → 进「代码」tab（Monaco 查看 + 编辑）
+  const handleFilePreview = useCallback<FileOpenHandler>(
+    (filePath, fileType, opts) => {
+      if (opts?.mode === 'edit') {
         openInCodeTab(filePath)
         return
       }
-      // 其余（md/html/image/音视频/office）仍走文件预览面板，保持向后兼容
+      // 预览优先：md/html/office/图片/音视频等富预览类型进预览面板；
+      // txt/log/csv 等纯文本与代码类仍进「代码」tab（Monaco 查看 + 编辑）。
+      // opts.mode === 'preview' 为右键菜单的显式预览入口。
+      if (opts?.mode !== 'preview' && !shouldPreviewFirst(filePath) && isCodeLikeFile(filePath)) {
+        openInCodeTab(filePath)
+        return
+      }
+      // 预览类型以扩展名判定为准（调用方传入的 fileType 可能是 'text' 兜底值）
       setShowInspector(false)
       setShowConfigPanel(false)
       setShowGitReviewPanel(false)
@@ -1484,7 +1495,7 @@ export function ChatView({
       setUnifiedPanelOpen(false)
       clearHtmlPresentation()
       setShowCheckpointTimeline(false)
-      setFilePreview({ filePath, fileType })
+      setFilePreview({ filePath, fileType: getPreviewFileType(filePath) ?? fileType })
     },
     [clearHtmlPresentation, openInCodeTab],
   )
@@ -3063,7 +3074,9 @@ export function ChatView({
               onExplorerVisibleChange={setCodeExplorerVisible}
               onExplorerWidthChange={setCodeExplorerWidth}
               onExplorerExpandedChange={setCodeExplorerExpandedDirs}
-              onOpenFileFromExplorer={(rel) => openInCodeTab(rel)}
+              onOpenFileFromExplorer={(rel) => handleFilePreview(rel, 'text')}
+              onPreviewFileFromExplorer={(rel) => handleFilePreview(rel, 'text', { mode: 'preview' })}
+              onEditFileFromExplorer={(rel) => openInCodeTab(rel)}
             />
           ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
             <GitReviewPanel
@@ -3319,7 +3332,7 @@ function ChatStream({
     content: string
     selectedText?: string
   }) => void
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  onFilePreview?: FileOpenHandler
   /** 重发：用户消息上"重发"按钮触发，把 blocks+attachments 重新塞回输入区 */
   onResendMessage?: (payload: ComposerPrefillPayload) => void
   /**
@@ -4909,7 +4922,7 @@ function renderBlocks(
     sessionId?: SessionId
     workspaceRootPath?: string | null
     autoCollapseTools?: boolean
-    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+    onFilePreview?: FileOpenHandler
   } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
@@ -5244,7 +5257,7 @@ function renderBlocksGrouped(
     sessionId?: SessionId
     workspaceRootPath?: string | null
     autoCollapseTools?: boolean
-    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+    onFilePreview?: FileOpenHandler
   } = {},
 ): ReactNode {
   const autoCollapseEnabled = readAppearance().autoCollapseTools
@@ -5274,7 +5287,7 @@ function renderActivityBlocks(
     sessionId?: SessionId
     workspaceRootPath?: string | null
     autoCollapseTools?: boolean
-    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+    onFilePreview?: FileOpenHandler
   },
 ): ReactNode {
   const surface = options.surface ?? 'main'
@@ -5410,7 +5423,7 @@ function TeamMemberMessageBlockView({
   onFilePreview,
 }: {
   block: Extract<UIBlock, { kind: 'team_member_message' }>
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  onFilePreview?: FileOpenHandler
 }) {
   const { agents } = useSessionSidebar()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -5592,7 +5605,7 @@ function TeamMemberActivityBlockView({
   blocks: UIBlock[]
   running: boolean
   sessionId: SessionId
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  onFilePreview?: FileOpenHandler
   onReplyToMember?: (args: {
     memberAgentId: string
     memberName: string
@@ -5685,7 +5698,7 @@ function renderTeamMemberActivityBlocks(
   blocks: UIBlock[],
   options: {
     sessionId: SessionId
-    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+    onFilePreview?: FileOpenHandler
   },
   showActivityLogs: boolean,
 ): ReactNode {
@@ -7067,7 +7080,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   onDelete?: () => void
   onFork?: () => void
   onReply?: (selectedText?: string) => void
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  onFilePreview?: FileOpenHandler
   sessionRunning?: boolean
   messageId: string
   onReplyToMember?: (args: {
@@ -7369,7 +7382,7 @@ const AgentMsg = React.memo(function AgentMsg({
   onDelete?: () => void
   onFork?: () => void
   onReply?: (selectedText?: string) => void
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  onFilePreview?: FileOpenHandler
   selectionMode?: boolean
   selected?: boolean
   onToggleSelected?: () => void
