@@ -173,6 +173,8 @@ import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
 import type { HtmlOpenMode } from '../services/render-html'
 import {
   clamp,
+  createEmptySessionUsageData,
+  eventsAfterLastHistoryReset,
   formatRelativeTime,
   formatTokenCount,
   getBasename,
@@ -1149,6 +1151,26 @@ export function ChatView({
     null,
   )
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
+  const previousDerivedSessionIdRef = useRef<SessionId | null>(active)
+
+  // 会话派生状态属于当前 active session，不能等 ChatStream 的异步历史加载 effect 才清空。
+  // 否则切换到空会话时，首帧仍会把上一个会话的上下文账本传给 Composer，表现为「消息为空但
+  // 对话历史仍有 token」。ChatStream 完成回放后会再次写入目标会话的真实值。
+  useLayoutEffect(() => {
+    if (previousDerivedSessionIdRef.current === active) return
+    previousDerivedSessionIdRef.current = active
+    setAgentStatus('')
+    setContextInputTokens(0)
+    setSessionUsageData(createEmptySessionUsageData())
+    setContextUsage(null)
+    setContextLedger(null)
+    setProjectContext(null)
+    setActiveSessionGoal(null)
+    setActiveSessionOrchestration(null)
+    setProposedPlan(null)
+    setTurnPromptSnapshots([])
+  }, [active])
+
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   // 分支刷新触发器：窗口重新聚焦（用户可能在终端/IDE 里切了分支）或会话从 running 回到
   // idle（agent 自己切了分支）时 bump，让下方 listBranches effect 重新拉取最新分支。
@@ -3708,8 +3730,12 @@ function ChatStream({
       }
       if (!deriveMeta) return nextMessages
 
-      callbacks.onUsageChange(getLatestInputTokens(events))
-      const historyUsage = buildUsageDataFromEvents(events)
+      // 上下文/用量派生与消息回放使用同一窗口：session_history_reset 标记之后的事件。
+      // 否则清空后未发新轮次的会话重进时，最新 ledger/usage 会取到标记之前的旧值。
+      const eventsSinceReset = eventsAfterLastHistoryReset(events)
+
+      callbacks.onUsageChange(getLatestInputTokens(eventsSinceReset))
+      const historyUsage = buildUsageDataFromEvents(eventsSinceReset)
       usageRef.current = historyUsage
       callbacks.onUsageDataChange(historyUsage)
       const latestStatus = getLatestAgentStatus(
@@ -3726,7 +3752,7 @@ function ChatStream({
           hasRunningTeamMemberActivity(nextMessages, getBlockTeamMemberContext),
         )
       }
-      const latestContext = getLatestContextUsageEvent(events)
+      const latestContext = getLatestContextUsageEvent(eventsSinceReset)
       callbacks.onContextUsageChange(
         latestContext != null
           ? {
@@ -3737,11 +3763,11 @@ function ChatStream({
             }
           : null,
       )
-      const latestLedger = getLatestContextLedgerEvent(events)
+      const latestLedger = getLatestContextLedgerEvent(eventsSinceReset)
       callbacks.onContextLedgerChange(
         latestLedger != null ? toContextLedgerState(latestLedger) : null,
       )
-      callbacks.onProjectContextChange(getLatestProjectContextEvent(events))
+      callbacks.onProjectContextChange(getLatestProjectContextEvent(eventsSinceReset))
       callbacks.onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
       // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
       // （例如 APP_RESTARTED 期间用户没有审批），重新弹出审批弹窗。
