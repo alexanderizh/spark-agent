@@ -1,4 +1,5 @@
 import type { AgentEvent } from '@spark/protocol'
+import type { SessionUsageData } from './ChatUsageTypes'
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -10,6 +11,35 @@ export function getLatestInputTokens(events: AgentEvent[]): number {
     if (event?.type === 'usage_update' && event.inputTokens > 0) return event.inputTokens
   }
   return 0
+}
+
+export function createEmptySessionUsageData(): SessionUsageData {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+    cacheHitTokens: 0,
+    cacheWriteTokens: 0,
+    estimatedCostUsd: 0,
+    contextWindow: 0,
+    turns: [],
+  }
+}
+
+/**
+ * 历史回放派生「最新状态」的窗口：截取最后一个 session_history_reset 标记之后的事件。
+ *
+ * /clear 等清空命令先删旧事件再写入 reset 标记，MessageBuilder 回放遇到标记会丢弃
+ * 此前累积的消息。回放侧的 context_ledger / context_usage / project_context / usage
+ * 派生必须与消息使用同一窗口——否则清空后未发新轮次的会话，重进时会把标记之前的
+ * 旧账本当作最新状态展示，出现「消息已空但上下文用量仍挂着旧对话历史」的错位。
+ * 无标记时原样返回（绝大多数会话路径零开销）。
+ */
+export function eventsAfterLastHistoryReset(events: AgentEvent[]): AgentEvent[] {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index]?.type === 'session_history_reset') return events.slice(index + 1)
+  }
+  return events
 }
 
 export function getBasename(value: string): string {
