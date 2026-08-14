@@ -13,7 +13,6 @@ export type EmptyHeroTheme = {
   id: EmptyHeroThemeId
   name: string
   eyebrow: string
-  body: string
 }
 
 export const DEFAULT_EMPTY_HERO_THEME: EmptyHeroThemeId = 'celestial'
@@ -23,7 +22,6 @@ export const EMPTY_HERO_THEMES: readonly EmptyHeroTheme[] = [
     id: 'celestial',
     name: '星图工作台',
     eyebrow: 'SPARK WORKSPACE',
-    body: '把想法交给 Agent，剩下的交给我们。',
   },
 ] as const
 
