@@ -1,15 +1,14 @@
 import { Segmented, Tooltip } from '@lobehub/ui'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   buildUsageHeatmapWeeks,
+  formatUsageDayLabel,
   formatUsageTokens,
-  getUsageHeatmapRange,
   getUsageLevel,
+  summarizeUsageHeatmap,
 } from './usageHeatmap.utils'
-import type {
-  UsageHeatmapDailyGroup,
-  UsageHeatmapRange,
-} from './usageHeatmap.utils'
+import type { UsageHeatmapRange } from './usageHeatmap.utils'
+import { useUsageHeatmapData } from './useUsageHeatmapData'
 
 const RANGE_OPTIONS: Array<{ label: string; value: UsageHeatmapRange }> = [
   { label: '12 周', value: '12w' },
@@ -19,62 +18,15 @@ const RANGE_OPTIONS: Array<{ label: string; value: UsageHeatmapRange }> = [
 
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六']
 
-function formatDate(dateKey: string): string {
-  const [year, month, day] = dateKey.split('-')
-  return `${year}年${Number(month)}月${Number(day)}日`
-}
-
-function formatDayLabel(
-  date: string,
-  tokens: number,
-  recordCount: number,
-): string {
-  const usage = tokens > 0 ? `${formatUsageTokens(tokens)} tokens` : '无 token 用量'
-  return `${formatDate(date)}：${usage}，${recordCount} 次请求`
-}
-
 export function UsageHeatmap() {
   const [range, setRange] = useState<UsageHeatmapRange>('1y')
-  const [dailyGroups, setDailyGroups] = useState<UsageHeatmapDailyGroup[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const requestId = useRef(0)
-
-  const loadUsage = useCallback(async () => {
-    const currentRequestId = ++requestId.current
-    setLoading(true)
-    setError(null)
-    try {
-      const { startDate, endDate } = getUsageHeatmapRange(range)
-      const response = await window.spark.invoke('usage:get-by-date-range', {
-        startDate,
-        endDate,
-      })
-      if (currentRequestId !== requestId.current) return
-      setDailyGroups(response.dailyGroups)
-    } catch (err) {
-      if (currentRequestId !== requestId.current) return
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      if (currentRequestId === requestId.current) setLoading(false)
-    }
-  }, [range])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadUsage(), 0)
-    return () => window.clearTimeout(timer)
-  }, [loadUsage])
+  const { dailyGroups, loading, error, reload } = useUsageHeatmapData(range)
 
   const weeks = useMemo(
     () => buildUsageHeatmapWeeks(range, dailyGroups),
     [dailyGroups, range],
   )
-  const activeDays = useMemo(
-    () => weeks.flatMap((week) => week.days).filter((day) => day.inRange),
-    [weeks],
-  )
-  const maxTokens = Math.max(0, ...activeDays.map((day) => day.tokens))
-  const totalTokens = activeDays.reduce((total, day) => total + day.tokens, 0)
+  const { totalTokens, maxTokens } = useMemo(() => summarizeUsageHeatmap(weeks), [weeks])
 
   return (
     <div className="settings-card usage-heatmap-card">
@@ -96,7 +48,7 @@ export function UsageHeatmap() {
       {error ? (
         <div className="usage-heatmap-error" role="alert">
           <span>用量数据加载失败：{error}</span>
-          <button type="button" onClick={() => void loadUsage()}>
+          <button type="button" onClick={() => void reload()}>
             重试
           </button>
         </div>
@@ -116,7 +68,7 @@ export function UsageHeatmap() {
           <div className="usage-heatmap-scroll" tabIndex={0}>
             <div
               className="usage-heatmap-months"
-              style={{ gridTemplateColumns: `repeat(${weeks.length}, 14px)` }}
+              style={{ gridTemplateColumns: `repeat(${weeks.length}, var(--uh-cell, 14px))` }}
               aria-hidden="true"
             >
               {weeks.map((week, index) => (
@@ -128,7 +80,7 @@ export function UsageHeatmap() {
                 <div className="usage-heatmap-week" key={weekIndex}>
                   {week.days.map((day) => {
                     const dayLabel = day.inRange
-                      ? formatDayLabel(day.date, day.tokens, day.recordCount)
+                      ? formatUsageDayLabel(day.date, day.tokens, day.recordCount)
                       : undefined
                     const cell = (
                       <span

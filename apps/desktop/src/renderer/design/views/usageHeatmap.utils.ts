@@ -1,4 +1,4 @@
-export type UsageHeatmapRange = '12w' | '6m' | '1y'
+export type UsageHeatmapRange = '12w' | '16w' | '6m' | '1y'
 
 export interface UsageHeatmapDailyGroup {
   date: string
@@ -23,6 +23,7 @@ export interface UsageHeatmapWeek {
 
 const RANGE_DAYS: Record<UsageHeatmapRange, number> = {
   '12w': 12 * 7,
+  '16w': 16 * 7,
   '6m': 180,
   '1y': 365,
 }
@@ -110,6 +111,31 @@ export function buildUsageHeatmapWeeks(
   return weeks
 }
 
+export interface UsageHeatmapSummary {
+  /** 时间范围内所有 inRange 日的 token 总量。 */
+  totalTokens: number
+  /** 单日最高 token 用量。 */
+  maxTokens: number
+  /** token > 0 的天数。 */
+  activeDays: number
+}
+
+/** 汇总热力图周网格的总量 / 峰值 / 活跃天数，供设置页与空会话 hero 复用。 */
+export function summarizeUsageHeatmap(weeks: UsageHeatmapWeek[]): UsageHeatmapSummary {
+  let totalTokens = 0
+  let maxTokens = 0
+  let activeDays = 0
+  for (const week of weeks) {
+    for (const day of week.days) {
+      if (!day.inRange) continue
+      totalTokens += day.tokens
+      if (day.tokens > maxTokens) maxTokens = day.tokens
+      if (day.tokens > 0) activeDays += 1
+    }
+  }
+  return { totalTokens, maxTokens, activeDays }
+}
+
 export function getUsageLevel(tokens: number, maxTokens: number): 0 | 1 | 2 | 3 | 4 {
   if (tokens <= 0 || maxTokens <= 0) return 0
   const ratio = tokens / maxTokens
@@ -123,4 +149,16 @@ export function formatUsageTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M`
   if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`
   return String(tokens)
+}
+
+/** 单元格 hover / aria 标签文案，设置页与空会话 hero 共用。 */
+export function formatUsageDayLabel(
+  date: string,
+  tokens: number,
+  recordCount: number,
+): string {
+  const [year, month, day] = date.split('-')
+  if (year == null || month == null || day == null) return date
+  const usage = tokens > 0 ? `${formatUsageTokens(tokens)} tokens` : '无 token 用量'
+  return `${year}年${Number(month)}月${Number(day)}日：${usage}，${recordCount} 次请求`
 }

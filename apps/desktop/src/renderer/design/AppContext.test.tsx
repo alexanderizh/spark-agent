@@ -148,8 +148,10 @@ describe('AppContext visual tweak persistence', () => {
       await Promise.resolve()
     })
 
+    // emptyHeroTheme: 'geometry' 是已下线主题：守卫拒绝后状态回退默认星图（celestial），
+    // 但本地存储的原始记录仍按数据透传保留旧值。
     expect(container.querySelector('[data-testid="visual-tweaks"]')?.textContent).toBe(
-      'dark:geometry:#10b981:compact',
+      'dark:celestial:#10b981:compact',
     )
     expect(JSON.parse(localStorage.getItem('spark-settings-appearance') ?? '{}')).toMatchObject({
       theme: 'dark',
@@ -242,58 +244,6 @@ describe('AppContext visual tweak persistence', () => {
         font: 'inter',
         fontSize: 16,
       }),
-    })
-  })
-
-  it('persists the empty conversation theme as an appearance setting', async () => {
-    const invoke = vi.fn(async (channel: string) => {
-      if (channel === 'settings:get') return { value: null }
-      return { ok: true }
-    })
-    vi.stubGlobal('spark', {
-      invoke,
-      on: vi.fn(() => vi.fn()),
-    })
-
-    function EmptyHeroThemeHarness() {
-      const { t, setTweak } = useApp()
-      return (
-        <>
-          <button type="button" onClick={() => setTweak('emptyHeroTheme', 'midnight')}>
-            Midnight hero
-          </button>
-          <span data-testid="empty-hero-theme">{t.emptyHeroTheme}</span>
-        </>
-      )
-    }
-
-    await act(async () => {
-      root = createRoot(container)
-      root.render(
-        <AppProvider>
-          <EmptyHeroThemeHarness />
-        </AppProvider>,
-      )
-      await Promise.resolve()
-    })
-
-    await act(async () => {
-      const button = container.querySelector('button')
-      if (button == null) throw new Error('Button missing')
-      click(button)
-      await Promise.resolve()
-    })
-
-    expect(container.querySelector('[data-testid="empty-hero-theme"]')?.textContent).toBe(
-      'midnight',
-    )
-    expect(JSON.parse(localStorage.getItem('spark-settings-appearance') ?? '{}')).toMatchObject({
-      emptyHeroTheme: 'midnight',
-    })
-    expect(invoke).toHaveBeenCalledWith('settings:set', {
-      category: 'appearance',
-      key: 'data',
-      value: expect.objectContaining({ emptyHeroTheme: 'midnight' }),
     })
   })
 })

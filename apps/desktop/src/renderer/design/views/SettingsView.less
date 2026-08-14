@@ -500,6 +500,9 @@
 }
 
 /* ── Settings: Usage Dashboard ── */
+/* 格子 / 星期 / 月份 / 图例等共享基础样式抽到 usageHeatmap.base.less（与空会话 hero 共用）。 */
+@import './usageHeatmap.base.less';
+
 .usage-heatmap-card {
   box-sizing: border-box;
   margin-bottom: var(--pad-lg);
@@ -528,89 +531,12 @@
   gap: 8px;
   min-width: 0;
 }
-.usage-heatmap-weekdays {
-  display: grid;
-  flex: 0 0 14px;
-  grid-template-rows: repeat(7, 14px);
-  gap: 3px;
-  padding-top: 21px;
-  color: var(--text-faint);
-  font-size: 9px;
-  line-height: 14px;
-  text-align: center;
-}
 .usage-heatmap-scroll {
   flex: 1 1 0;
   min-width: 0;
   overflow-x: auto;
   padding-bottom: 3px;
   scrollbar-width: thin;
-}
-.usage-heatmap-months,
-.usage-heatmap-grid {
-  display: grid;
-  gap: 3px;
-  min-width: max-content;
-}
-.usage-heatmap-months {
-  height: 18px;
-  color: var(--text-faint);
-  font-size: 9px;
-  line-height: 14px;
-}
-.usage-heatmap-months span {
-  overflow: visible;
-  white-space: nowrap;
-}
-.usage-heatmap-grid {
-  display: flex;
-}
-.usage-heatmap-week {
-  display: grid;
-  grid-template-rows: repeat(7, 14px);
-  gap: 3px;
-}
-.usage-heatmap-cell {
-  display: block;
-  position: relative;
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  background: var(--bg-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--divider) 18%, transparent);
-}
-.usage-heatmap-cell--interactive {
-  cursor: default;
-  transition:
-    transform 120ms ease,
-    box-shadow 120ms ease,
-    filter 120ms ease;
-}
-.usage-heatmap-cell--interactive:hover,
-.usage-heatmap-cell--interactive:focus-visible {
-  z-index: 1;
-  transform: scale(1.18);
-  filter: brightness(1.12);
-  outline: none;
-  box-shadow:
-    0 0 0 2px var(--bg-sunken),
-    0 0 0 3px color-mix(in srgb, var(--primary) 72%, transparent);
-}
-.usage-heatmap-cell--level-1 {
-  background: color-mix(in srgb, var(--primary) 22%, var(--bg-soft));
-}
-.usage-heatmap-cell--level-2 {
-  background: color-mix(in srgb, var(--primary) 42%, var(--bg-soft));
-}
-.usage-heatmap-cell--level-3 {
-  background: color-mix(in srgb, var(--primary) 66%, var(--bg-soft));
-}
-.usage-heatmap-cell--level-4 {
-  background: var(--primary);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 70%, var(--text-strong));
-}
-.usage-heatmap-cell.is-outside {
-  opacity: 0.28;
 }
 .usage-heatmap-footer {
   display: flex;
@@ -620,16 +546,6 @@
   margin-top: 14px;
   color: var(--text-faint);
   font-size: var(--font-xs);
-}
-.usage-heatmap-legend {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.usage-heatmap-legend .usage-heatmap-cell {
-  width: 11px;
-  height: 11px;
-  border-radius: 3px;
 }
 .usage-heatmap-loading {
   display: grid;
@@ -1422,6 +1338,10 @@
 .keymap .km-action {
   flex-direction: column;
   align-items: flex-start;
+  .km-action-desc{
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+  }
 }
 
 .keymap .km-row:last-child .km-action,

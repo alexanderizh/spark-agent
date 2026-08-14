@@ -1,17 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import type { ManagedAgent } from '@spark/protocol'
-import { Dropdown } from 'antd'
 import { Icons } from '../../Icons'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../../avatar'
 import { AvatarImage } from '../../components/AvatarImage'
 import { formatShortcut } from '../../hooks/useKeyboard'
-import {
-  EMPTY_HERO_THEMES,
-  getClassicEmptyHeroTitle,
-  getEmptyHeroTheme,
-  getEmptyHeroTitleLines,
-  type EmptyHeroThemeId,
-} from './emptyHeroThemes'
+import { getEmptyHeroTheme, getEmptyHeroTitleLines, type EmptyHeroThemeId } from './emptyHeroThemes'
 
 export function resolveAgentDisplay(agents: ManagedAgent[], agentId: string | null | undefined) {
   if (agentId == null || agentId.length === 0) return null
@@ -87,14 +80,6 @@ const SINGLE_AGENT_HERO_ACTIONS = [
 const SINGLE_AGENT_HERO_VISIBLE_COUNT = 4
 /** 轮换间隔，参考底部 hero-tips 节奏（5s）。 */
 const SINGLE_AGENT_HERO_ROTATE_MS = 5000
-
-const EMPTY_HERO_THEME_SHORT_LABELS: Record<EmptyHeroThemeId, string> = {
-  none: '经典',
-  celestial: '星图',
-  studio: '灵感',
-  midnight: '午夜',
-  geometry: '几何',
-}
 
 /* 空会话底部：纵向轮播的功能 / 快捷键 / 小技巧提示（淡色，5s 切换，悬停暂停）。 */
 type HeroTipKind = 'shortcut' | 'feature' | 'tip'
@@ -194,102 +179,32 @@ export function HeroTipsTicker() {
   )
 }
 
-function EmptyHeroThemeSwitcher({
-  themeId,
-  onSelectTheme,
-}: {
-  themeId: EmptyHeroThemeId
-  onSelectTheme: (themeId: EmptyHeroThemeId) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const theme = getEmptyHeroTheme(themeId)
-
-  return (
-    <Dropdown
-      menu={{ items: [] }}
-      open={open}
-      trigger={['click']}
-      placement="bottomLeft"
-      autoAdjustOverflow
-      onOpenChange={setOpen}
-      overlayClassName="empty-hero-theme-dropdown"
-      getPopupContainer={(triggerNode) =>
-        triggerNode.closest<HTMLElement>('.chat-main-empty') ?? document.body
-      }
-      popupRender={() => (
-        <div className="empty-hero-theme-menu" role="menu" aria-label="选择会话主题">
-          {EMPTY_HERO_THEMES.map((option) => {
-            const selected = option.id === theme.id
-            return (
-              <button
-                key={option.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected}
-                className={selected ? 'is-active' : ''}
-                onClick={() => {
-                  setOpen(false)
-                  if (!selected) onSelectTheme(option.id)
-                }}
-              >
-                <span
-                  className="empty-hero-theme-swatch"
-                  style={{ background: option.preview }}
-                  aria-hidden="true"
-                />
-                <span className="empty-hero-theme-option-copy">
-                  <strong>{option.name}</strong>
-                  <span>{option.description}</span>
-                </span>
-                {selected && <Icons.Check size={13} aria-hidden="true" />}
-              </button>
-            )
-          })}
-        </div>
-      )}
-    >
-      <button
-        type="button"
-        className="empty-hero-theme-trigger"
-        aria-label={`切换会话主题，当前为${theme.name}`}
-        aria-expanded={open}
-      >
-        <span>{EMPTY_HERO_THEME_SHORT_LABELS[theme.id]}</span>
-        <Icons.ChevronDown size={11} aria-hidden="true" />
-      </button>
-    </Dropdown>
-  )
-}
-
 export function SingleAgentEmptyHero({
   themeId,
   onSelectPrompt,
-  onSelectTheme,
+  hideActions = false,
 }: {
   themeId: EmptyHeroThemeId
   onSelectPrompt: (prompt: string) => void
-  onSelectTheme: (themeId: EmptyHeroThemeId) => void
+  /** 热力图模式下隐藏快捷卡片，仅保留问候 banner。 */
+  hideActions?: boolean
 }) {
   const theme = getEmptyHeroTheme(themeId)
-  const isClassicTheme = theme.id === 'none'
   const [localHour, setLocalHour] = useState(() => new Date().getHours())
 
   useEffect(() => {
-    if (theme.id !== 'celestial' && !isClassicTheme) return
     const timer = window.setInterval(() => setLocalHour(new Date().getHours()), 60_000)
     return () => window.clearInterval(timer)
-  }, [isClassicTheme, theme.id])
+  }, [])
 
-  const titleLines = getEmptyHeroTitleLines(theme, localHour)
+  const titleLines = getEmptyHeroTitleLines(localHour)
 
   // 推荐卡片按窗口宽度决定每页展示几张；移动端 grid 会塌成单列（见 .less），
   // 用 matchMedia 跟 grid 列数同步：宽屏 4 列、中等窗口 2 列、窄屏 1 列。
   // 双层 cross-fade 用一个 phase state 描述：activePage 是当前渲染页；
   // outgoingPage 是正在淡出的旧页（动画完成前为非 null）。
   // 用 setState callback 在 setInterval 回调里推进，避免 effect 同步 setState。
-  const [visibleCount, setVisibleCount] = useState(
-    isClassicTheme ? 3 : SINGLE_AGENT_HERO_VISIBLE_COUNT,
-  )
+  const [visibleCount, setVisibleCount] = useState(SINGLE_AGENT_HERO_VISIBLE_COUNT)
   const [paused, setPaused] = useState(false)
   const [phase, setPhase] = useState<{ activePage: number; outgoingPage: number | null }>({
     activePage: 0,
@@ -303,13 +218,7 @@ export function SingleAgentEmptyHero({
     const apply = () => {
       // 列数变化时同步重置 phase（避免越界）。回调里 setState 是合法的。
       setVisibleCount(
-        narrowMql.matches
-          ? 1
-          : isClassicTheme
-            ? 3
-            : mediumMql.matches
-              ? 2
-              : SINGLE_AGENT_HERO_VISIBLE_COUNT,
+        narrowMql.matches ? 1 : mediumMql.matches ? 2 : SINGLE_AGENT_HERO_VISIBLE_COUNT,
       )
       setPhase({ activePage: 0, outgoingPage: null })
     }
@@ -329,13 +238,13 @@ export function SingleAgentEmptyHero({
       narrowMql.removeListener(apply)
       mediumMql.removeListener(apply)
     }
-  }, [isClassicTheme])
+  }, [])
 
   const totalActions = SINGLE_AGENT_HERO_ACTIONS.length
   const pageCount = Math.max(1, Math.ceil(totalActions / visibleCount))
 
   useEffect(() => {
-    if (paused || pageCount <= 1) return
+    if (hideActions || paused || pageCount <= 1) return
     const timer = window.setInterval(() => {
       setPhase((prev) => {
         const next = (prev.activePage + 1) % pageCount
@@ -344,7 +253,7 @@ export function SingleAgentEmptyHero({
       })
     }, SINGLE_AGENT_HERO_ROTATE_MS)
     return () => window.clearInterval(timer)
-  }, [paused, pageCount])
+  }, [hideActions, paused, pageCount])
 
   // 切换完成后清理 outgoingPage（动画 ~280ms，留余量到 600ms）
   useEffect(() => {
@@ -364,37 +273,26 @@ export function SingleAgentEmptyHero({
 
   return (
     <section
-      className={
-        isClassicTheme ? 'single-empty-hero' : `single-empty-hero single-empty-hero-${theme.id}`
-      }
-      data-empty-theme={isClassicTheme ? undefined : theme.id}
-      aria-label={isClassicTheme ? '空会话欢迎提示' : `${theme.name}空会话欢迎提示`}
+      className={`single-empty-hero single-empty-hero-${theme.id}${
+        hideActions ? ' single-empty-hero--banner' : ''
+      }`}
+      data-empty-theme={theme.id}
+      aria-label={`${theme.name}空会话欢迎提示`}
     >
-      {isClassicTheme ? (
+      <div className="single-empty-heading">
         <div className="single-empty-copy">
+          <span className="single-empty-eyebrow">{theme.eyebrow}</span>
           <div className="single-empty-title-row">
             <h1 className="chat-hero-title single-empty-title">
-              {getClassicEmptyHeroTitle(localHour)}
+              {titleLines.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
             </h1>
-            <EmptyHeroThemeSwitcher themeId={theme.id} onSelectTheme={onSelectTheme} />
           </div>
+          <p className="single-empty-body">{theme.body}</p>
         </div>
-      ) : (
-        <div className="single-empty-heading">
-          <div className="single-empty-copy">
-            <span className="single-empty-eyebrow">{theme.eyebrow}</span>
-            <div className="single-empty-title-row">
-              <h1 className="chat-hero-title single-empty-title">
-                {titleLines.map((line) => (
-                  <span key={line}>{line}</span>
-                ))}
-              </h1>
-              <EmptyHeroThemeSwitcher themeId={theme.id} onSelectTheme={onSelectTheme} />
-            </div>
-            <p className="single-empty-body">{theme.body}</p>
-          </div>
-        </div>
-      )}
+      </div>
+      {!hideActions && (
       <div
         className="single-empty-actions"
         onMouseEnter={() => setPaused(true)}
@@ -444,15 +342,14 @@ export function SingleAgentEmptyHero({
                 <strong>{title}</strong>
                 <span>{desc}</span>
               </span>
-              {!isClassicTheme && (
-                <span className="single-empty-action-arrow" aria-hidden="true">
-                  →
-                </span>
-              )}
+              <span className="single-empty-action-arrow" aria-hidden="true">
+                →
+              </span>
             </button>
           ))}
         </div>
       </div>
+      )}
     </section>
   )
 }
