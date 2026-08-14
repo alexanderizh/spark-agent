@@ -3819,6 +3819,8 @@ body.sidebar-resizing {
 }
 .composer-submit-picks .composer-select-trigger span {
   max-width: 120px;
+  line-height: 1.5;
+
 }
 /* has-workspace-picks：发送区只露一行（无展开按钮），收紧右侧/底部留白。 */
 .composer-v2.has-workspace-picks .composer-input-shell {
@@ -4055,7 +4057,7 @@ body.sidebar-resizing {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1;
+  line-height: 1.5;
 }
 .composer-select-trigger svg {
   flex-shrink: 0;
@@ -4543,6 +4545,8 @@ body.sidebar-resizing {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.5;
+
 }
 .composer-project-menu {
   display: flex;
