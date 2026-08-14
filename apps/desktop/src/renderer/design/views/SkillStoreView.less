@@ -97,6 +97,12 @@
   .spark-input-wrap {
     flex: 1;
   }
+
+  // SearchBar 根节点撑满剩余宽度；内层 antd Input(affix-wrapper) 自带 width:100% 会随之撑开
+  .skill-store-header-search {
+    flex: 1;
+    max-width: 100%;
+  }
 }
 
 // ── Create page: back-to-installed bar ──
