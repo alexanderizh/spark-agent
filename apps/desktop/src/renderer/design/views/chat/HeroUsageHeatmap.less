@@ -29,8 +29,8 @@
 }
 
 .hero-usage-heatmap {
-  --uh-cell: 14px;
-  --uh-gap: 4px;
+  --uh-cell: 17px;
+  --uh-gap: 5px;
   --uh-months-h: 16px;
   --uh-empty-bg: color-mix(in srgb, var(--bg-soft) 72%, transparent);
 
@@ -44,14 +44,14 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px 16px 10px;
-  border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
   border-radius: 12px;
   /* 面板底色掺入少量 ink（--eh-ink 浅色为深墨 #171923、暗色为近白 #f4f3f8）：
    浅色模式下比近白星图背景深一档、暗色模式下比深底亮一档，两个方向都与背景拉开。
    先混出实色再统一降到半透明，保留轻微通透的卡片质感。 */
   background: color-mix(
     in srgb,
-    color-mix(in srgb, var(--panel) 96%, var(--eh-ink, var(--text-strong))) 75%,
+    color-mix(in srgb, var(--panel) 98%, var(--eh-ink, var(--text-strong))) 68%,
     transparent
   );
   backdrop-filter: blur(6px);
@@ -125,9 +125,22 @@
   font-size: 10px;
 }
 
+/* 图例格子跟随放大，避免与 17px 主格子比例失衡（base 固定 11px） */
+.hero-usage-heatmap .usage-heatmap-legend .usage-heatmap-cell {
+  width: 13px;
+  height: 13px;
+}
+
 @media (max-width: 720px) {
+  /* 放大后网格最小宽度 ~380px，窄容器回落原尺寸避免横向溢出 */
   .hero-usage-heatmap {
+    --uh-cell: 14px;
+    --uh-gap: 4px;
     padding: 8px 10px;
+  }
+  .hero-usage-heatmap .usage-heatmap-legend .usage-heatmap-cell {
+    width: 11px;
+    height: 11px;
   }
   .hero-usage-summary {
     white-space: normal;
