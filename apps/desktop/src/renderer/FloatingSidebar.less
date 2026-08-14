@@ -179,6 +179,13 @@
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
+// light 下 flat 侧栏底色 rgb(242,242,242) 与 --bg-sunken(#f2f2f2) 同值、
+// floating 侧栏(#fafafa) 也只差 8 个灰阶，切换器会隐没在侧栏里。
+// 浅色主题在 sunken 基础上再压暗一档，让盒子与菜单栏拉开层次；dark 对比充足不覆盖。
+html[data-theme='light'] .sidebar-mode-switcher,
+.app.theme-light .sidebar-mode-switcher {
+  background: #e8e8e8;
+}
 .mode-switcher-btn {
   flex: 1;
   display: flex;
