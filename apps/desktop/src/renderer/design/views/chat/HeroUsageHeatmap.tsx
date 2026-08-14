@@ -55,7 +55,7 @@ export function HeroUsageHeatmap({
         <div className="hero-usage-field">
           <div
             className="usage-heatmap-months"
-            style={{ gridTemplateColumns: `repeat(${weeks.length}, var(--uh-cell, 12px))` }}
+            style={{ gridTemplateColumns: `repeat(${weeks.length}, var(--uh-cell, 17px))` }}
             aria-hidden="true"
           >
             {weeks.map((week, index) => (

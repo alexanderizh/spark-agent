@@ -2921,8 +2921,8 @@ export function ChatView({
 
         {showEmptyHero ? (
           <div className="chat-empty-composer-dock">
-            {/* 团队模式保留原快捷提示轮播；单 Agent 的使用足迹热力图已上移到内容区。 */}
-            {teamConfig.enabled ? <HeroTipsTicker /> : null}
+            {/* 团队模式与热力图形态显示快捷提示轮播；快捷卡片形态由卡片自身承担引导。 */}
+            {teamConfig.enabled || heroUsage.mode === 'heatmap' ? <HeroTipsTicker /> : null}
             {composerNode}
           </div>
         ) : (
