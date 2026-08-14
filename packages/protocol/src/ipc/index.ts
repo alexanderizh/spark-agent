@@ -179,7 +179,14 @@ export type GoalStatus =
   | 'cleared'
   | 'stopped_by_budget'
 export type GoalLoopPhase = 'review' | 'act' | 'validate'
-export type GoalControlAction = 'pause' | 'resume' | 'clear' | 'complete'
+/** confirm/reject：pending_contract 契约的确认与拒绝（内联契约卡片 / GitEnv 浮窗使用）。 */
+export type GoalControlAction =
+  | 'pause'
+  | 'resume'
+  | 'clear'
+  | 'complete'
+  | 'confirm'
+  | 'reject'
 
 export interface SessionGoalBudget {
   maxIterations?: number

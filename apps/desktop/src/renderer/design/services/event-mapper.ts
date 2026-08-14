@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   GoalEventStatus,
+  ProposedGoalContract,
   TeamA2ATask,
   TeamA2AReply,
   TeamMemberEventContext,
@@ -192,6 +193,15 @@ export type UIBlock =
       teamMemberContext?: TeamMemberEventContext
     }
   | { kind: 'plan_proposed'; plan: string }
+  | {
+      /** goal 契约门控：起草完成的验收契约，等待用户确认/拒绝（GoalContractCard）。 */
+      kind: 'goal_contract'
+      goalId: string
+      objective: string
+      contract: ProposedGoalContract
+      /** pending：等待确认；confirmed/rejected：已被 goal_started/goal_cleared 解决（历史回放保持终态）。 */
+      state: 'pending' | 'confirmed' | 'rejected'
+    }
   | {
       kind: 'permission_request'
       requestId: string
@@ -1329,6 +1339,10 @@ export class MessageBuilder {
       case 'goal_progress':
       case 'goal_resumed':
       case 'goal_paused': {
+        // 契约被确认（confirm → goal_started）后，内联契约卡片转「已确认」终态。
+        if (event.type === 'goal_started') {
+          this.resolveGoalContractBlocks(event.goalId, 'confirmed')
+        }
         const budget = (event.budget ?? {}) as { maxIterations?: unknown }
         const maxIterations =
           typeof budget.maxIterations === 'number' ? budget.maxIterations : undefined
@@ -1345,10 +1359,46 @@ export class MessageBuilder {
         break
       }
 
+      case 'goal_contract_drafting':
+      case 'goal_contract_proposed': {
+        // 契约门控：目标停在 pending_contract。drafting 只刷新浮窗快照；
+        // proposed 额外在起草 turn 的消息里落一张内联审批卡片，
+        // 确认/拒绝由 GoalContractCard 走 session:goal-control，不再依赖用户知道 /goal confirm。
+        this.activeGoal = {
+          goalId: event.goalId,
+          objective: event.objective,
+          status: event.status,
+          iteration: event.iteration,
+          summary: event.summary,
+        }
+        if (event.type === 'goal_contract_proposed' && event.proposedContract != null) {
+          const msg = this.getOrCreateAssistant(event.id, event.timestamp, {
+            turnId: event.turnId,
+          })
+          msg.blocks.push({
+            kind: 'goal_contract',
+            goalId: event.goalId,
+            objective: event.objective,
+            contract: event.proposedContract,
+            state: 'pending',
+          })
+          // 该事件由编排层在起草 turn 收尾后发出（携带独立 turnId），若上面新建了消息，
+          // 不会再有 agent_status 终态来收尾——直接置 completed，避免永久停在 streaming。
+          if (msg.status === 'streaming' && msg.blocks.every((b) => b.kind === 'goal_contract')) {
+            msg.status = 'completed'
+          }
+        }
+        break
+      }
+
       case 'goal_completed':
       case 'goal_failed':
       case 'goal_cleared':
       case 'goal_budget_stopped': {
+        // 契约被拒绝（reject → goal_cleared）后，内联契约卡片转「已拒绝」终态。
+        if (event.type === 'goal_cleared') {
+          this.resolveGoalContractBlocks(event.goalId, 'rejected')
+        }
         this.activeGoal = null
         break
       }
@@ -1581,6 +1631,17 @@ export class MessageBuilder {
           }
         }
         break
+      }
+    }
+  }
+
+  /** 契约被确认（goal_started）或拒绝（goal_cleared）后，把同 goal 的内联契约卡片转成终态。 */
+  private resolveGoalContractBlocks(goalId: string, state: 'confirmed' | 'rejected'): void {
+    for (const msg of this.messages) {
+      for (const block of msg.blocks) {
+        if (block.kind === 'goal_contract' && block.goalId === goalId && block.state === 'pending') {
+          block.state = state
+        }
       }
     }
   }

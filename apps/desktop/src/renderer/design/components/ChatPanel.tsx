@@ -21,6 +21,7 @@ import {
 } from '../services/event-mapper'
 import { StreamingErrorCard } from '../views/chat/StreamingErrorCard'
 import { RuntimeSignalCard } from '../views/chat/RuntimeSignalCard'
+import { GoalContractCard } from '../views/chat/GoalContractCard'
 import { projectVisibleChatMessages } from '../views/chat/internal-turn-message-visibility'
 import { CancellationNotice } from '../views/chat/CancellationNotice'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
@@ -1218,6 +1219,9 @@ function BlockView({
       )
     case 'runtime_signal':
       return <RuntimeSignalCard block={block} />
+    case 'goal_contract':
+      // 契约确认是关键决策点，modal（画布 Agent）场景同样要能直接确认/拒绝。
+      return <GoalContractCard block={block} sessionId={sessionId} />
     case 'cancelled':
       return <CancellationNotice message={block.message} />
     default:

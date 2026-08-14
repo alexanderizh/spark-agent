@@ -80,6 +80,7 @@ import { PresentedMediaList, filterMediaPresentedFiles } from './chat/PresentedM
 import { MarkdownText } from './chat/ChatMarkdown'
 import { PlanSidePanel } from './chat/PlanSidePanel'
 import { PlanSummary } from './chat/PlanSummary'
+import { GoalContractCard } from './chat/GoalContractCard'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
 import {
@@ -1337,7 +1338,7 @@ export function ChatView({
 
   // Goal 控制：UI 触发后只调 IPC，goal_* 事件回流时由 onGoalChange 同步更新状态。
   const handleGoalControl = useCallback(
-    (action: 'pause' | 'resume' | 'clear' | 'complete') => {
+    (action: 'pause' | 'resume' | 'clear' | 'complete' | 'confirm' | 'reject') => {
       if (!active) return
       controlGoal({ sessionId: active, action }).catch(console.error)
     },
@@ -3598,7 +3599,9 @@ function ChatStream({
         event.type === 'goal_completed' ||
         event.type === 'goal_failed' ||
         event.type === 'goal_cleared' ||
-        event.type === 'goal_budget_stopped'
+        event.type === 'goal_budget_stopped' ||
+        event.type === 'goal_contract_drafting' ||
+        event.type === 'goal_contract_proposed'
       ) {
         callbacks.onGoalChange?.(builderRef.current.getActiveGoal())
       }
@@ -5034,6 +5037,13 @@ function renderBlocks(
               }}
               renderMarkdown={MarkdownText}
             />
+          </div>
+        )
+      }
+      case 'goal_contract': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <GoalContractCard block={block} sessionId={options.sessionId ?? null} />
           </div>
         )
       }

@@ -274,7 +274,7 @@ describe('SessionService goal loop budget enforcement', () => {
     expect(startTurn).not.toHaveBeenCalled()
   })
 
-  it('starts another turn and appends progress when all budgets are below limit', async () => {
+  it('starts another turn without appending a placeholder progress entry when all budgets are below limit', async () => {
     seedGoal({
       budget: {
         maxIterations: 3,
@@ -289,16 +289,23 @@ describe('SessionService goal loop budget enforcement', () => {
       ],
     })
     state.usageBySession.set('session-1', { totalCostUsd: 0.5, recordCount: 1 })
-    const { startGoalLoop, startTurn } = createService()
+    const { startGoalLoop, startTurn, emitted } = createService()
 
     await startGoalLoop('session-1')
 
     expect(state.goals.get('goal-1')?.status).toBe('active')
-    expect(state.goals.get('goal-1')?.progressLog).toHaveLength(2)
+    // 启动阶段只发事件、不写占位进度：progressLog 仍只含真实条目，迭代计数不再双倍。
+    expect(state.goals.get('goal-1')?.progressLog).toHaveLength(1)
     expect(startTurn).toHaveBeenCalledTimes(1)
     expect(startTurn).toHaveBeenCalledWith('session-1', expect.any(String), expect.any(String), {
       turnSource: 'goal_iteration',
       userMessageVisibility: 'hidden',
-    })
+    }, undefined)
+    // 启动事件应携带即将开始的轮次号（已完成 1 轮 → 第 2 轮）。
+    expect(emitted).toContainEqual(expect.objectContaining({
+      type: 'goal_progress',
+      status: 'active',
+      iteration: 2,
+    }))
   })
 })

@@ -91,7 +91,7 @@ export function GitEnvPanel({
   onOpenTerminal: () => void
   tasks: InspectorTask[]
   goal: GoalSnapshot | null
-  onGoalControl: (action: 'pause' | 'resume' | 'clear' | 'complete') => void
+  onGoalControl: (action: 'pause' | 'resume' | 'clear' | 'complete' | 'confirm' | 'reject') => void
 }) {
   const isGitRepo = status?.isGitRepo === true
   const currentBranch = resolveDisplayedGitBranch({
@@ -167,7 +167,7 @@ function GitGoalSection({
   onGoalControl,
 }: {
   goal: GoalSnapshot | null
-  onGoalControl: (action: 'pause' | 'resume' | 'clear' | 'complete') => void
+  onGoalControl: (action: 'pause' | 'resume' | 'clear' | 'complete' | 'confirm' | 'reject') => void
 }) {
   if (goal == null) return null
   const statusLabel = goalStatusLabel(goal.status)
@@ -176,6 +176,7 @@ function GitGoalSection({
     goal.maxIterations != null ? `${goal.iteration}/${goal.maxIterations}` : `${goal.iteration}`
   const isPaused = goal.status === 'paused'
   const isActive = goal.status === 'active'
+  const isPendingContract = goal.status === 'pending_contract'
 
   return (
     <div className="git-goal-section">
@@ -203,42 +204,66 @@ function GitGoalSection({
         </div>
       )}
       <div className="git-goal-actions">
-        {isActive && (
-          <button
-            type="button"
-            className="git-goal-action"
-            onClick={() => onGoalControl('pause')}
-            title="暂停目标循环"
-          >
-            <Icons.Pause size={12} /> 暂停
-          </button>
+        {isPendingContract ? (
+          // 契约门控期：只提供确认/拒绝，与聊天流中的 GoalContractCard 一致。
+          <>
+            <button
+              type="button"
+              className="git-goal-action"
+              onClick={() => onGoalControl('confirm')}
+              title="确认验收契约并开始执行"
+            >
+              <Icons.Check size={12} /> 确认契约
+            </button>
+            <button
+              type="button"
+              className="git-goal-action danger"
+              onClick={() => onGoalControl('reject')}
+              title="拒绝契约并清除目标"
+            >
+              <Icons.X size={12} /> 拒绝
+            </button>
+          </>
+        ) : (
+          <>
+            {isActive && (
+              <button
+                type="button"
+                className="git-goal-action"
+                onClick={() => onGoalControl('pause')}
+                title="暂停目标循环"
+              >
+                <Icons.Pause size={12} /> 暂停
+              </button>
+            )}
+            {isPaused && (
+              <button
+                type="button"
+                className="git-goal-action"
+                onClick={() => onGoalControl('resume')}
+                title="恢复目标循环"
+              >
+                <Icons.Play size={12} /> 恢复
+              </button>
+            )}
+            <button
+              type="button"
+              className="git-goal-action"
+              onClick={() => onGoalControl('complete')}
+              title="标记目标完成"
+            >
+              <Icons.Check size={12} /> 完成
+            </button>
+            <button
+              type="button"
+              className="git-goal-action danger"
+              onClick={() => onGoalControl('clear')}
+              title="清除当前目标"
+            >
+              <Icons.X size={12} /> 清除
+            </button>
+          </>
         )}
-        {isPaused && (
-          <button
-            type="button"
-            className="git-goal-action"
-            onClick={() => onGoalControl('resume')}
-            title="恢复目标循环"
-          >
-            <Icons.Play size={12} /> 恢复
-          </button>
-        )}
-        <button
-          type="button"
-          className="git-goal-action"
-          onClick={() => onGoalControl('complete')}
-          title="标记目标完成"
-        >
-          <Icons.Check size={12} /> 完成
-        </button>
-        <button
-          type="button"
-          className="git-goal-action danger"
-          onClick={() => onGoalControl('clear')}
-          title="清除当前目标"
-        >
-          <Icons.X size={12} /> 清除
-        </button>
       </div>
     </div>
   )

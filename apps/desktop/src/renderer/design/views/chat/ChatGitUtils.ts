@@ -84,6 +84,8 @@ export function goalStatusLabel(status: GoalSnapshot['status']): string {
       return '进行中'
     case 'paused':
       return '已暂停'
+    case 'pending_contract':
+      return '待确认契约'
     case 'completed':
       return '已完成'
     case 'failed':
