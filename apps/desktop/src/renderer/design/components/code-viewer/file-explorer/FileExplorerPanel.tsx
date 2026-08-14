@@ -38,6 +38,9 @@ export interface FileExplorerPanelProps {
   expandedDirs: Set<string>
   onExpandedChange: (next: Set<string>) => void
   onOpenFile: (relativePath: string) => void
+  // 右键菜单的显式「预览 / 编辑」入口（可选：不传则菜单不显示对应项）
+  onPreviewFile?: ((relativePath: string) => void) | undefined
+  onEditFile?: ((relativePath: string) => void) | undefined
 }
 
 export function FileExplorerPanel({
@@ -46,6 +49,8 @@ export function FileExplorerPanel({
   expandedDirs,
   onExpandedChange,
   onOpenFile,
+  onPreviewFile,
+  onEditFile,
 }: FileExplorerPanelProps): ReactNode {
   const { toast } = useToast()
   const clipboard = useFileClipboard()
@@ -84,6 +89,8 @@ export function FileExplorerPanel({
   // ── FileMenuActions ──
   const menuActions: FileMenuActions = {
     onOpenFile: (p) => openAndSelect(p),
+    ...(onPreviewFile != null ? { onPreviewFile: (p: string) => onPreviewFile(p) } : {}),
+    ...(onEditFile != null ? { onEditFile: (p: string) => onEditFile(p) } : {}),
     onCopyPath: async (p) => {
       try {
         await writeClipboardText(joinAbs(p))

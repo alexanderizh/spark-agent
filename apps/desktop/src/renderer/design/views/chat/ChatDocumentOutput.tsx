@@ -1,6 +1,6 @@
 import { useCallback, useState, type ReactNode } from 'react'
-import type { PreviewFileType } from '../../components/ClickableFilePath'
 import { FilePathContextMenu } from '../../components/FilePathContextMenu'
+import type { FileOpenHandler, FileOpenMode } from '../../components/fileOpenRouting'
 import {
   FileTypeIcon,
   getFileTypeBadge,
@@ -110,7 +110,7 @@ export function DocumentOutputCard({
 }: {
   filePath: string
   label?: string
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  onFilePreview?: FileOpenHandler
 }) {
   const normalizedPath = normalizeFileReference(filePath)
   const previewType = getPreviewFileType(normalizedPath)
@@ -172,6 +172,12 @@ export function DocumentOutputCard({
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
+          {...(onFilePreview != null
+            ? {
+                onOpenWithMode: (mode: FileOpenMode) =>
+                  onFilePreview(normalizedPath, 'text', { mode }),
+              }
+            : {})}
         />
       )}
     </>
@@ -181,7 +187,7 @@ export function DocumentOutputCard({
 export function renderDocumentOutputParagraph(
   text: string,
   seenDocumentKeys: Set<string>,
-  onFilePreview: ((filePath: string, fileType: PreviewFileType) => void) | undefined,
+  onFilePreview: FileOpenHandler | undefined,
   keyPrefix: string,
 ): ReactNode | null {
   const lines = text
