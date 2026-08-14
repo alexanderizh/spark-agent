@@ -2751,6 +2751,8 @@ body.sidebar-resizing {
   min-height: 0;
   flex: 1 1 auto;
   align-items: center;
+  /* 内容超出剩余高度时改为贴顶对齐，避免居中导致上下双向溢出、banner/热力图贴边 */
+  align-items: safe center;
   justify-content: center;
   padding: 18px 0;
 }

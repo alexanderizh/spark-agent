@@ -62,7 +62,13 @@ import {
 import { FileChipIcon } from './chat/ChatFileIcon'
 import { GitReviewPanel } from './chat/ChatGitReview'
 import { useLiveWorkspaceGitStatus } from './chat/useLiveWorkspaceGitStatus'
-import { HeroTipsTicker, SingleAgentEmptyHero, TeamModeEmptyHero } from './chat/ChatHero'
+import {
+  HeroTipsTicker,
+  SingleAgentEmptyHero,
+  TeamModeEmptyHero,
+} from './chat/ChatHero'
+import { HeroUsageHeatmap } from './chat/HeroUsageHeatmap'
+import { useEmptyHeroUsage } from './chat/useEmptyHeroUsage'
 import { ChatTabbar } from './chat/ChatTabbar'
 import { SessionSchedulePanel } from './chat/SessionSchedulePanel'
 import {
@@ -1624,6 +1630,9 @@ export function ChatView({
       !activeSessionLoading &&
       activeSession?.status !== 'running' &&
       !composerDispatching)
+  // 空会话用量感知：12 周内活跃超过 HERO_USAGE_MIN_ACTIVE_DAYS 天（不要求连续）的
+  // 老用户用使用足迹热力图替换快捷卡片，二者互斥；其余情况渲染完整快捷卡片。
+  const heroUsage = useEmptyHeroUsage(showEmptyHero && !teamConfig.enabled)
   const gitWorkspace = resolveComposerGitWorkspace({
     showEmptyHero,
     activeWorkspace,
@@ -2603,9 +2612,7 @@ export function ChatView({
         className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}${
           !showEmptyHero && showGitEnvPanel ? ' git-env-panel-open' : ''
         }`}
-        data-empty-theme={
-          showEmptyHero && t.emptyHeroTheme !== 'none' ? t.emptyHeroTheme : undefined
-        }
+        data-empty-theme={showEmptyHero ? t.emptyHeroTheme : undefined}
         ref={chatAreaRef}
       >
         {showEmptyHero && (
@@ -2710,11 +2717,20 @@ export function ChatView({
                 onOpenTeamInspector={openInspector}
               />
             ) : (
-              <SingleAgentEmptyHero
-                themeId={t.emptyHeroTheme}
-                onSelectPrompt={handleHeroPromptSelect}
-                onSelectTheme={(themeId) => setTweak('emptyHeroTheme', themeId)}
-              />
+              <div className="chat-empty-hero-stack">
+                <SingleAgentEmptyHero
+                  themeId={t.emptyHeroTheme}
+                  hideActions={heroUsage.mode === 'heatmap'}
+                  onSelectPrompt={handleHeroPromptSelect}
+                />
+                {/* 活跃天数达标的老用户：热力图替换快捷卡片（互斥展示，点击跳设置页）。 */}
+                {heroUsage.mode === 'heatmap' ? (
+                  <HeroUsageHeatmap
+                    dailyGroups={heroUsage.dailyGroups}
+                    onOpenStats={() => setTweak('view', 'settings')}
+                  />
+                ) : null}
+              </div>
             )}
           </div>
         )}
@@ -2904,7 +2920,8 @@ export function ChatView({
 
         {showEmptyHero ? (
           <div className="chat-empty-composer-dock">
-            <HeroTipsTicker />
+            {/* 团队模式保留原快捷提示轮播；单 Agent 的使用足迹热力图已上移到内容区。 */}
+            {teamConfig.enabled ? <HeroTipsTicker /> : null}
             {composerNode}
           </div>
         ) : (

@@ -1,0 +1,95 @@
+/* 用量热力图共享基础样式：设置页 UsageHeatmap 与空会话 HeroUsageHeatmap 共用。
+   通过 --uh-* 变量参数化尺寸 / 主色，两个消费方各自在自己的组件级 LESS 里覆盖：
+   - --uh-cell:   单元格边长（默认 14px，hero 精简变体 12px）
+   - --uh-gap:    格间距（默认 3px）
+   - --uh-months-h: 月份行高度（默认 18px）
+   - --uh-primary: 强度色（默认跟随全局 --primary，空会话主题已覆盖该变量）
+   - --uh-empty-bg: 空格子底色（默认 --bg-soft） */
+
+.usage-heatmap-weekdays {
+  display: grid;
+  flex: 0 0 var(--uh-cell, 14px);
+  grid-template-rows: repeat(7, var(--uh-cell, 14px));
+  gap: var(--uh-gap, 3px);
+  padding-top: calc(var(--uh-months-h, 18px) + var(--uh-gap, 3px));
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: var(--uh-cell, 14px);
+  text-align: center;
+}
+.usage-heatmap-months,
+.usage-heatmap-grid {
+  display: grid;
+  gap: var(--uh-gap, 3px);
+  min-width: max-content;
+}
+.usage-heatmap-months {
+  height: var(--uh-months-h, 18px);
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: var(--uh-cell, 14px);
+}
+.usage-heatmap-months span {
+  overflow: visible;
+  white-space: nowrap;
+}
+.usage-heatmap-grid {
+  display: flex;
+}
+.usage-heatmap-week {
+  display: grid;
+  grid-template-rows: repeat(7, var(--uh-cell, 14px));
+  gap: var(--uh-gap, 3px);
+}
+.usage-heatmap-cell {
+  display: block;
+  position: relative;
+  width: var(--uh-cell, 14px);
+  height: var(--uh-cell, 14px);
+  border-radius: calc(var(--uh-cell, 14px) * 0.28);
+  background: var(--uh-empty-bg, var(--bg-soft));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--divider) 18%, transparent);
+}
+.usage-heatmap-cell--interactive {
+  cursor: default;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease;
+}
+.usage-heatmap-cell--interactive:hover,
+.usage-heatmap-cell--interactive:focus-visible {
+  z-index: 1;
+  transform: scale(1.18);
+  filter: brightness(1.12);
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-sunken),
+    0 0 0 3px color-mix(in srgb, var(--uh-primary, var(--primary)) 72%, transparent);
+}
+.usage-heatmap-cell--level-1 {
+  background: color-mix(in srgb, var(--uh-primary, var(--primary)) 22%, var(--uh-empty-bg, var(--bg-soft)));
+}
+.usage-heatmap-cell--level-2 {
+  background: color-mix(in srgb, var(--uh-primary, var(--primary)) 42%, var(--uh-empty-bg, var(--bg-soft)));
+}
+.usage-heatmap-cell--level-3 {
+  background: color-mix(in srgb, var(--uh-primary, var(--primary)) 66%, var(--uh-empty-bg, var(--bg-soft)));
+}
+.usage-heatmap-cell--level-4 {
+  background: var(--uh-primary, var(--primary));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--uh-primary, var(--primary)) 70%, var(--text-strong));
+}
+.usage-heatmap-cell.is-outside {
+  opacity: 0.28;
+}
+.usage-heatmap-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.usage-heatmap-legend .usage-heatmap-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+}

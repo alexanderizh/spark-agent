@@ -1,8 +1,9 @@
 /*
- * Empty conversation themes
+ * Empty conversation theme — 星图工作台（唯一空会话主题）
  *
- * Kept separate from the already-large ChatView.less. Every theme owns only the
- * empty-state surface; conversation views and composer behavior remain shared.
+ * Kept separate from the already-large ChatView.less. 配色跟随全局「主题色」
+ * （--primary，由 AppContext 注入 documentElement）联动；结构与 composer
+ * 行为保持共享。历史多主题已下线，仅保留星图。
  */
 
 .single-empty-title-row {
@@ -14,117 +15,6 @@
   gap: 6px 10px;
 }
 
-.empty-hero-theme-trigger {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 2px;
-  padding: 3px 5px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 520;
-  letter-spacing: 0.01em;
-  line-height: 1.2;
-  opacity: 0.72;
-  cursor: pointer;
-  transition:
-    color 160ms ease,
-    background 160ms ease,
-    opacity 160ms ease;
-}
-
-.empty-hero-theme-trigger:hover,
-.empty-hero-theme-trigger[aria-expanded='true'] {
-  background: var(--primary-soft);
-  color: var(--primary);
-  opacity: 1;
-}
-
-.empty-hero-theme-trigger:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--primary) 52%, transparent);
-  outline-offset: 2px;
-}
-
-.empty-hero-theme-trigger-separator {
-  opacity: 0.48;
-}
-
-.empty-hero-theme-menu {
-  width: min(230px, calc(100vw - 24px));
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--panel-elev);
-  box-shadow: var(--shadow-lg);
-}
-
-.empty-hero-theme-menu button {
-  display: grid;
-  width: 100%;
-  min-height: 44px;
-  grid-template-columns: 24px minmax(0, 1fr) 14px;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.empty-hero-theme-menu button:hover,
-.empty-hero-theme-menu button.is-active {
-  background: var(--hover);
-}
-
-.empty-hero-theme-menu button:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--primary) 42%, transparent);
-  outline-offset: -2px;
-}
-
-.empty-hero-theme-swatch {
-  width: 24px;
-  height: 24px;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 7px;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 42%, transparent);
-}
-
-.empty-hero-theme-option-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.empty-hero-theme-option-copy strong,
-.empty-hero-theme-option-copy > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.empty-hero-theme-option-copy strong {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.empty-hero-theme-option-copy > span {
-  color: var(--text-muted);
-  font-size: 10px;
-}
-
-.empty-hero-theme-menu button > svg {
-  color: var(--primary);
-}
-
 /*
  * Empty-session atmosphere belongs to the application shell, not to the chat
  * pane. Keeping the full backdrop here lets the floating sidebar, its outer
@@ -132,69 +22,29 @@
  */
 .app:has(.chat-main-empty[data-empty-theme='celestial']) {
   --empty-session-backdrop:
-    radial-gradient(circle at 74% 18%, rgba(141, 119, 255, 0.18), transparent 28%),
-    radial-gradient(circle at 20% 82%, rgba(91, 178, 255, 0.1), transparent 30%), #fbfaff;
+    radial-gradient(circle at 74% 18%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 28%),
+    radial-gradient(circle at 20% 82%, rgba(91, 178, 255, 0.1), transparent 30%),
+    color-mix(in srgb, var(--primary) 3%, #fbfaff);
 }
-
-.app:has(.chat-main-empty[data-empty-theme='studio']) {
-  --empty-session-backdrop:
-    radial-gradient(ellipse at 72% 20%, rgba(255, 159, 129, 0.18), transparent 29%),
-    radial-gradient(ellipse at 83% 38%, rgba(169, 139, 242, 0.13), transparent 24%), #fbf7ef;
-}
-
-.app:has(.chat-main-empty[data-empty-theme='midnight']) {
-  --empty-session-backdrop:
-    radial-gradient(circle at 73% 17%, rgba(112, 99, 220, 0.2), transparent 29%),
-    radial-gradient(circle at 28% 58%, rgba(89, 144, 190, 0.12), transparent 32%),
-    linear-gradient(160deg, #f7f8ff, #eef1fb 58%, #f4f7ff);
-}
-
-.app:has(.chat-main-empty[data-empty-theme='geometry']) {
-  --empty-session-backdrop: #faf8f2;
-}
-
-// .app:has(.chat-main-empty[data-empty-theme]) {
-//   background: var(--empty-session-backdrop, var(--bg));
-// }
 
 .app.theme-dark:has(.chat-main-empty[data-empty-theme='celestial']) {
   --empty-session-backdrop:
-    radial-gradient(circle at 74% 18%, rgba(130, 105, 255, 0.22), transparent 30%),
+    radial-gradient(circle at 74% 18%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 30%),
     radial-gradient(circle at 20% 82%, rgba(70, 151, 225, 0.12), transparent 32%),
     linear-gradient(150deg, #11111c, #151426 56%, #101522);
 }
 
-.app.theme-dark:has(.chat-main-empty[data-empty-theme='studio']) {
-  --empty-session-backdrop:
-    radial-gradient(ellipse at 72% 20%, rgba(204, 103, 79, 0.18), transparent 31%),
-    radial-gradient(ellipse at 83% 38%, rgba(142, 112, 209, 0.14), transparent 26%),
-    linear-gradient(150deg, #181411, #201915 56%, #171419);
-}
-
-.app.theme-dark:has(.chat-main-empty[data-empty-theme='midnight']) {
-  --empty-session-backdrop:
-    radial-gradient(circle at 73% 17%, rgba(101, 88, 238, 0.2), transparent 29%),
-    radial-gradient(circle at 28% 58%, rgba(40, 105, 151, 0.13), transparent 32%),
-    linear-gradient(105deg, #242426 0%, #171a25 13%, #0a1022 52%, #07101f);
-}
-
-.app.theme-dark:has(.chat-main-empty[data-empty-theme='geometry']) {
-  --empty-session-backdrop: #151515;
-}
-
 .chat-main-empty[data-empty-theme] {
-  --eh-accent: #7568f8;
-  --eh-accent-2: #526cff;
+  /* 星图强调色直接取用户设置的主题色；accent-2 向冷蓝偏移，保留星图渐变气质。 */
+  --eh-accent: var(--primary);
+  --eh-accent-2: color-mix(in srgb, var(--primary) 62%, #2563eb);
   --eh-ink: #171923;
   --eh-muted: #686b78;
   --eh-surface: rgba(255, 255, 255, 0.78);
   --eh-surface-strong: rgba(255, 255, 255, 0.94);
   --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 3%, #fff);
-  --eh-line: rgba(91, 82, 175, 0.18);
-  --eh-shadow: rgba(54, 45, 115, 0.12);
-  --primary: var(--eh-accent);
-  --primary-hover: color-mix(in srgb, var(--eh-accent) 82%, #111);
-  --primary-soft: color-mix(in srgb, var(--eh-accent) 13%, transparent);
+  --eh-line: color-mix(in srgb, var(--primary) 18%, transparent);
+  --eh-shadow: color-mix(in srgb, var(--primary) 18%, rgba(18, 18, 40, 0.12));
   --text: var(--eh-ink);
   --text-strong: var(--eh-ink);
   --text-muted: var(--eh-muted);
@@ -251,6 +101,12 @@
   padding-inline: 0;
 }
 
+/* 热力图互斥模式：hero 只剩 banner（无快捷卡片），去掉 heading 的最小高度预留，
+   让 banner 与下方热力图靠紧（高度不足时内容居中不再上下溢出贴边）。 */
+.chat-main-empty[data-empty-theme] .single-empty-hero--banner .single-empty-heading {
+  min-height: 0;
+}
+
 .chat-main-empty[data-empty-theme] .single-empty-copy {
   align-items: flex-start;
   gap: 9px;
@@ -259,21 +115,6 @@
 .chat-main-empty[data-empty-theme] .single-empty-title-row {
   align-items: flex-end;
   justify-content: flex-start;
-}
-
-.chat-main-empty[data-empty-theme] .empty-hero-theme-trigger {
-  color: var(--eh-muted);
-}
-
-.chat-main-empty[data-empty-theme] .empty-hero-theme-trigger:hover,
-.chat-main-empty[data-empty-theme] .empty-hero-theme-trigger[aria-expanded='true'] {
-  color: var(--eh-accent);
-}
-
-.chat-main-empty[data-empty-theme] .empty-hero-theme-menu {
-  border-color: var(--eh-line);
-  background: var(--eh-popup-surface);
-  box-shadow: 0 18px 48px color-mix(in srgb, var(--eh-shadow) 92%, transparent);
 }
 
 .single-empty-eyebrow {
@@ -409,7 +250,7 @@
   transform: translateX(3px);
 }
 
-/* Composer surface stays functionally shared while each empty theme can tune its material. */
+/* Composer surface stays functionally shared while the empty theme can tune its material. */
 .chat-main-empty[data-empty-theme] .composer-wrap {
   position: relative;
   z-index: 4;
@@ -420,9 +261,10 @@
   border: 1px solid color-mix(in srgb, var(--eh-accent) 19%, var(--eh-line));
   border-radius: 14px;
   background: color-mix(in srgb, var(--eh-surface-strong) 94%, transparent);
+  /* 输入区阴影保持中性灰发散，不随主题色染色（与暗色基线一致）。 */
   box-shadow:
-    0 14px 42px color-mix(in srgb, var(--eh-shadow) 80%, transparent),
-    0 2px 8px color-mix(in srgb, var(--eh-shadow) 58%, transparent),
+    0 14px 42px rgba(18, 18, 40, 0.1),
+    0 2px 8px rgba(18, 18, 40, 0.07),
     inset 0 1px 0 color-mix(in srgb, #fff 62%, transparent);
   backdrop-filter: blur(16px) saturate(1.04);
 }
@@ -570,17 +412,14 @@
   box-shadow: 0 8px 20px color-mix(in srgb, var(--eh-accent) 30%, transparent);
 }
 
-/* Celestial workspace */
+/* Celestial workspace — 星图唯一的页面材质：背景光晕与网格随主题色联动。 */
 .chat-main-empty[data-empty-theme='celestial'] {
-  --eh-accent: #826df6;
-  --eh-accent-2: #526cff;
   --eh-ink: #171826;
   --eh-muted: #6b6b7b;
-  --eh-line: rgba(111, 89, 226, 0.18);
-  --eh-shadow: rgba(91, 73, 170, 0.12);
   background:
-    radial-gradient(circle at 74% 18%, rgba(141, 119, 255, 0.18), transparent 28%),
-    radial-gradient(circle at 20% 82%, rgba(91, 178, 255, 0.1), transparent 30%), #fbfaff;
+    radial-gradient(circle at 74% 18%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 28%),
+    radial-gradient(circle at 20% 82%, rgba(91, 178, 255, 0.1), transparent 30%),
+    color-mix(in srgb, var(--primary) 3%, #fbfaff);
 }
 
 /* 星图的提示条融入底部留白，不再额外生成一枚浮动胶囊背景。 */
@@ -590,8 +429,8 @@
 
 .chat-main-empty[data-empty-theme='celestial'] .chat-hero-grid {
   background-image:
-    linear-gradient(rgba(97, 87, 154, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(97, 87, 154, 0.055) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--primary) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--primary) 6%, transparent) 1px, transparent 1px);
   background-size: 38px 38px;
   mask-image: radial-gradient(ellipse 78% 74% at 52% 51%, #000 15%, transparent 84%);
   -webkit-mask-image: radial-gradient(ellipse 78% 74% at 52% 51%, #000 15%, transparent 84%);
@@ -600,219 +439,18 @@
 .chat-main-empty[data-empty-theme='celestial'] .chat-hero-grid::before {
   inset: 20% 8% auto 12%;
   height: 42%;
-  border: 1px solid rgba(126, 104, 246, 0.16);
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, transparent);
   border-radius: 50%;
   transform: rotate(-7deg);
 }
 
-/* Creative desk */
-.chat-main-empty[data-empty-theme='studio'] {
-  --eh-accent: #ea745f;
-  --eh-accent-2: #a184e8;
-  --eh-ink: #25211e;
-  --eh-muted: #746a61;
-  --eh-surface: rgba(255, 251, 244, 0.86);
-  --eh-surface-strong: rgba(255, 253, 248, 0.96);
-  --eh-line: rgba(145, 106, 77, 0.2);
-  --eh-shadow: rgba(105, 73, 50, 0.13);
-  background:
-    radial-gradient(ellipse at 72% 20%, rgba(255, 159, 129, 0.18), transparent 29%),
-    radial-gradient(ellipse at 83% 38%, rgba(169, 139, 242, 0.13), transparent 24%), #fbf7ef;
-}
-
-.chat-main-empty[data-empty-theme='studio'] .chat-hero-grid {
-  opacity: 0.42;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.14'/%3E%3C/svg%3E");
-}
-
-.chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(1) {
-  min-height: 106px;
-  background: rgba(255, 132, 108, 0.2);
-}
-
-.chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(2) {
-  margin-top: 7px;
-  background: rgba(173, 146, 238, 0.16);
-}
-
-.chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(3) {
-  margin-top: 14px;
-  background: rgba(248, 200, 88, 0.2);
-}
-
-.chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(4) {
-  margin-top: 5px;
-  background: rgba(131, 203, 180, 0.16);
-}
-
-/* Midnight harbor */
-.chat-main-empty[data-empty-theme='midnight'] {
-  --eh-accent: #7468dd;
-  --eh-accent-2: #5871dc;
-  --eh-ink: #1e2239;
-  --eh-muted: #697087;
-  --eh-surface: rgba(249, 250, 255, 0.82);
-  --eh-surface-strong: rgba(252, 252, 255, 0.96);
-  --eh-line: rgba(92, 89, 165, 0.2);
-  --eh-shadow: rgba(57, 63, 116, 0.14);
-  background:
-    radial-gradient(circle at 73% 17%, rgba(112, 99, 220, 0.2), transparent 29%),
-    radial-gradient(circle at 28% 58%, rgba(89, 144, 190, 0.12), transparent 32%),
-    linear-gradient(160deg, #f7f8ff, #eef1fb 58%, #f4f7ff);
-}
-
-.chat-main-empty[data-empty-theme='midnight'] .chat-hero-grid {
-  background-image:
-    radial-gradient(circle at 18% 21%, rgba(91, 91, 158, 0.54) 0 1px, transparent 1.5px),
-    radial-gradient(circle at 66% 12%, rgba(91, 91, 158, 0.42) 0 1px, transparent 1.5px),
-    radial-gradient(circle at 82% 31%, rgba(91, 91, 158, 0.38) 0 1px, transparent 1.5px),
-    linear-gradient(rgba(91, 91, 158, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(91, 91, 158, 0.045) 1px, transparent 1px);
-  background-size:
-    auto,
-    auto,
-    auto,
-    44px 44px,
-    44px 44px;
-}
-
-.chat-main-empty[data-empty-theme='midnight'] .chat-hero-grid::after {
-  right: 0;
-  bottom: -25%;
-  width: 50%;
-  height: 50%;
-  border-radius: 50%;
-  background: rgba(98, 137, 189, 0.12);
-  filter: blur(28px);
-}
-
-.chat-main-empty[data-empty-theme='midnight'] .single-empty-title.chat-hero-title {
-  text-shadow: 0 0 32px rgba(118, 106, 255, 0.22);
-}
-
-.chat-main-empty[data-empty-theme='midnight'] .single-empty-action {
-  box-shadow:
-    0 16px 36px rgba(57, 63, 116, 0.11),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
-}
-
-.chat-main-empty[data-empty-theme='midnight'] .composer.composer-v2 {
-  background: rgba(250, 251, 255, 0.94);
-  box-shadow:
-    0 26px 72px rgba(57, 63, 116, 0.16),
-    0 0 0 1px rgba(117, 102, 255, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82);
-}
-
-/* Geometric engine */
-.chat-main-empty[data-empty-theme='geometry'] {
-  --eh-accent: #3155e7;
-  --eh-accent-2: #7357de;
-  --eh-ink: #171717;
-  --eh-muted: #5f5d58;
-  --eh-line: rgba(23, 23, 23, 0.22);
-  --eh-shadow: rgba(49, 85, 231, 0.15);
-  background: #faf8f2;
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .chat-hero-grid {
-  background:
-    radial-gradient(circle at -2% 28%, #3155e7 0 112px, transparent 114px),
-    radial-gradient(circle at 100% 2%, transparent 0 115px, #f05a47 117px 170px, transparent 172px),
-    radial-gradient(ellipse at 96% 72%, #8b70e8 0 42px, transparent 44px),
-    linear-gradient(90deg, transparent 49.6%, rgba(23, 23, 23, 0.04) 50%, transparent 50.4%);
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .chat-hero-grid::before {
-  right: 8%;
-  bottom: 8%;
-  width: 80px;
-  height: 80px;
-  background-image: radial-gradient(#171717 1.5px, transparent 1.5px);
-  background-size: 14px 14px;
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-title.chat-hero-title {
-  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-size: clamp(34px, 4vw, 54px);
-  font-weight: 900;
-  letter-spacing: -0.075em;
-  line-height: 0.98;
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-actions-layer {
-  grid-template-columns: 1.05fr 1.35fr 1fr 1.2fr;
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-action {
-  border-color: rgba(23, 23, 23, 0.42);
-  border-radius: 3px;
-  box-shadow: 5px 6px 0 color-mix(in srgb, var(--eh-accent) 72%, transparent);
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-action:nth-child(1) {
-  background: #3155e7;
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-action:nth-child(1) strong,
-.chat-main-empty[data-empty-theme='geometry']
-  .single-empty-action:nth-child(1)
-  .single-empty-action-copy
-  span,
-.chat-main-empty[data-empty-theme='geometry']
-  .single-empty-action:nth-child(1)
-  .single-empty-action-arrow {
-  color: #fff;
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-action:nth-child(3) {
-  border-color: #f05a47;
-  box-shadow: 5px 6px 0 rgba(240, 90, 71, 0.55);
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-action:nth-child(4) {
-  border-radius: 48px;
-  background: #8b70e8;
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-action:nth-child(4) strong,
-.chat-main-empty[data-empty-theme='geometry']
-  .single-empty-action:nth-child(4)
-  .single-empty-action-copy
-  span,
-.chat-main-empty[data-empty-theme='geometry']
-  .single-empty-action:nth-child(4)
-  .single-empty-action-arrow {
-  color: #fff;
-}
-
-.chat-main-empty[data-empty-theme='geometry'] .composer.composer-v2 {
-  border-color: #171717;
-  border-radius: 6px;
-  box-shadow: 7px 8px 0 #3155e7;
-}
-
-/*
- * Shared restraint layer: themes keep their palette and illustration language,
- * while the information hierarchy stays consistent with the application shell.
- */
-.chat-main-empty[data-empty-theme] .single-empty-heading,
-.chat-main-empty[data-empty-theme='studio'] .single-empty-heading,
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-heading {
+/* 信息层级与应用外壳保持一致的克制层。 */
+.chat-main-empty[data-empty-theme] .single-empty-heading {
   min-height: 108px;
   background: transparent;
 }
 
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-title.chat-hero-title {
-  font-family: var(--font-sans);
-  font-size: clamp(28px, 2.75vw, 38px);
-  font-weight: 680;
-  letter-spacing: -0.04em;
-  line-height: 1.1;
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-actions-layer,
-.chat-main-empty[data-empty-theme='geometry'] .single-empty-actions-layer {
+.chat-main-empty[data-empty-theme] .single-empty-actions-layer {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -823,20 +461,11 @@
   box-shadow: 0 8px 24px color-mix(in srgb, var(--eh-shadow) 72%, transparent);
 }
 
-.chat-main-empty[data-empty-theme='geometry'] .composer.composer-v2 {
-  border-color: color-mix(in srgb, var(--eh-accent) 26%, var(--eh-line));
-  border-radius: 14px;
-  box-shadow:
-    0 14px 42px color-mix(in srgb, var(--eh-shadow) 80%, transparent),
-    0 2px 8px color-mix(in srgb, var(--eh-shadow) 58%, transparent);
-}
-
 /*
  * Global dark-mode adaptations.
- * The selected conversation theme keeps its personality, while foundational
- * surfaces and text follow the application's resolved dark appearance.
+ * 星图保留自己的页面性格，基础表面与文字跟随应用暗色外观。
  */
-.app.theme-dark .chat-main-empty[data-empty-theme]:not([data-empty-theme='midnight']) {
+.app.theme-dark .chat-main-empty[data-empty-theme] {
   --eh-ink: #f4f3f8;
   --eh-muted: #a9a7b3;
   --eh-surface: rgba(22, 23, 31, 0.78);
@@ -849,60 +478,15 @@
   color-scheme: dark;
 }
 
-.app.theme-dark .chat-main-empty[data-empty-theme='midnight'] {
-  --eh-accent: #8d7cff;
-  --eh-accent-2: #4f68ff;
-  --eh-ink: #f4f2ff;
-  --eh-muted: #a7acc4;
-  --eh-surface: rgba(15, 21, 43, 0.78);
-  --eh-surface-strong: rgba(12, 18, 37, 0.94);
-  --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 5%, #0c1225);
-  --eh-line: rgba(147, 135, 255, 0.24);
-  --eh-shadow: rgba(0, 0, 0, 0.38);
-  --bg-soft: #11182e;
-  --hover: rgba(141, 124, 255, 0.16);
-  color-scheme: dark;
-  background:
-    radial-gradient(circle at 73% 17%, rgba(101, 88, 238, 0.2), transparent 29%),
-    radial-gradient(circle at 28% 58%, rgba(40, 105, 151, 0.13), transparent 32%),
-    linear-gradient(105deg, #242426 0%, #171a25 13%, #0a1022 52%, #07101f);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='midnight'] .chat-hero-grid {
-  background-image:
-    radial-gradient(circle at 18% 21%, rgba(179, 187, 255, 0.9) 0 1px, transparent 1.5px),
-    radial-gradient(circle at 66% 12%, rgba(179, 187, 255, 0.7) 0 1px, transparent 1.5px),
-    radial-gradient(circle at 82% 31%, rgba(179, 187, 255, 0.6) 0 1px, transparent 1.5px),
-    linear-gradient(rgba(110, 119, 186, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(110, 119, 186, 0.035) 1px, transparent 1px);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='midnight'] .chat-hero-grid::after {
-  background: rgba(22, 54, 91, 0.18);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='midnight'] .single-empty-action {
-  box-shadow:
-    0 16px 36px rgba(0, 0, 0, 0.26),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='midnight'] .composer.composer-v2 {
-  background: rgba(10, 16, 34, 0.9);
-  box-shadow:
-    0 26px 72px rgba(0, 0, 0, 0.42),
-    0 0 0 1px rgba(117, 102, 255, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
 .app.theme-dark .chat-main-empty[data-empty-theme='celestial'] {
-  --eh-accent: #a895ff;
-  --eh-accent-2: #6f88ff;
+  /* 暗底下强调色向白提亮，保持星图的通透感；冷蓝副色同源派生。 */
+  --eh-accent: color-mix(in srgb, var(--primary) 72%, #fff);
+  --eh-accent-2: color-mix(in srgb, var(--primary) 55%, #8ab4ff);
   /* 输入区回到无主题时的通用暗色 token，不再叠加星图材质。 */
   --eh-surface-strong: #303030;
   --composer-toolbar-bg: #3d3d3d;
   background:
-    radial-gradient(circle at 74% 18%, rgba(130, 105, 255, 0.22), transparent 30%),
+    radial-gradient(circle at 74% 18%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 30%),
     radial-gradient(circle at 20% 82%, rgba(70, 151, 225, 0.12), transparent 32%),
     linear-gradient(150deg, #11111c, #151426 56%, #101522);
 }
@@ -983,60 +567,8 @@
 
 .app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .chat-hero-grid {
   background-image:
-    linear-gradient(rgba(199, 191, 255, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(199, 191, 255, 0.055) 1px, transparent 1px);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='studio'] {
-  --eh-accent: #ff8d75;
-  --eh-accent-2: #b49af7;
-  background:
-    radial-gradient(ellipse at 72% 20%, rgba(204, 103, 79, 0.18), transparent 31%),
-    radial-gradient(ellipse at 83% 38%, rgba(142, 112, 209, 0.14), transparent 26%),
-    linear-gradient(150deg, #181411, #201915 56%, #171419);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(1) {
-  background: rgba(151, 69, 54, 0.32);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(2) {
-  background: rgba(112, 91, 168, 0.28);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(3) {
-  background: rgba(153, 118, 45, 0.28);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(4) {
-  background: rgba(66, 126, 108, 0.25);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='geometry'] {
-  --eh-accent: #6380ff;
-  --eh-accent-2: #9578f0;
-  background: #151515;
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='geometry'] .chat-hero-grid {
-  background:
-    radial-gradient(circle at -2% 28%, #3859d8 0 112px, transparent 114px),
-    radial-gradient(circle at 100% 2%, transparent 0 115px, #d95747 117px 170px, transparent 172px),
-    radial-gradient(ellipse at 96% 72%, #765fc4 0 42px, transparent 44px),
-    linear-gradient(90deg, transparent 49.6%, rgba(255, 255, 255, 0.04) 50%, transparent 50.4%);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='geometry'] .chat-hero-grid::before {
-  background-image: radial-gradient(#f4f3f8 1.5px, transparent 1.5px);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='geometry'] .single-empty-action {
-  border-color: rgba(245, 243, 255, 0.28);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='geometry'] .composer.composer-v2 {
-  border-color: rgba(245, 243, 255, 0.72);
-  box-shadow: 7px 8px 0 #4967e7;
+    linear-gradient(color-mix(in srgb, var(--eh-accent) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--eh-accent) 6%, transparent) 1px, transparent 1px);
 }
 
 /*
@@ -1070,10 +602,6 @@
   .chat-main-empty[data-empty-theme] .single-empty-action {
     min-height: 82px;
   }
-
-  .chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(n) {
-    margin-top: 0;
-  }
 }
 
 @media (max-width: 720px) {
@@ -1092,9 +620,7 @@
     gap: 14px;
   }
 
-  .single-empty-heading,
-  .chat-main-empty[data-empty-theme='studio'] .single-empty-heading,
-  .chat-main-empty[data-empty-theme='geometry'] .single-empty-heading {
+  .single-empty-heading {
     min-height: 0;
     grid-template-columns: 1fr;
     padding: 0 8px;
