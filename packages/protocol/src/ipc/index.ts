@@ -1654,14 +1654,6 @@ export interface PermissionDeleteProfileResponse {
   success: boolean
 }
 
-export interface PermissionUpdateSandboxRequest {
-  profileId: string
-  sandboxLevel: number
-}
-export interface PermissionUpdateSandboxResponse {
-  profile: PermissionProfileItem
-}
-
 export interface PermissionUpdateRuleRequest {
   profileId: string
   action: string
@@ -5870,7 +5862,6 @@ export interface IpcChannelMap
   'permission:list-profiles': [PermissionListProfilesRequest, PermissionListProfilesResponse]
   'permission:create-profile': [PermissionCreateProfileRequest, PermissionCreateProfileResponse]
   'permission:delete-profile': [PermissionDeleteProfileRequest, PermissionDeleteProfileResponse]
-  'permission:update-sandbox': [PermissionUpdateSandboxRequest, PermissionUpdateSandboxResponse]
   'permission:update-rule': [PermissionUpdateRuleRequest, PermissionUpdateRuleResponse]
   'permission:set-active-profile': [
     PermissionSetActiveProfileRequest,

@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { PermissionProfileRepository, PermissionRuleRow } from '@spark/storage'
+import type { PermissionProfileItem } from '@spark/protocol'
 import { PermissionService } from '../../services/permission.service.js'
 
 /** 最小 in-memory 实现，足以驱动 PermissionService 的所有路径 */
@@ -56,9 +57,13 @@ function makeMockRepo(
       profiles.push(row)
       return row
     }),
-    updateProfile: vi.fn(() => null),
     deleteProfile: vi.fn(() => true),
-    listRules: vi.fn((_profileId: string) => rules.slice()),
+    listRules: vi.fn((profileId: string) => rules.filter((r) => r.profile_id === profileId)),
+    deleteRulesByProfile: vi.fn((profileId: string) => {
+      for (let i = rules.length - 1; i >= 0; i--) {
+        if (rules[i]?.profile_id === profileId) rules.splice(i, 1)
+      }
+    }),
     upsertRule: vi.fn((params) => {
       const row: PermissionRuleRow = {
         id: params.id,
@@ -130,6 +135,61 @@ describe('PermissionService', () => {
   })
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  describe('内置 profile 差异化规则', () => {
+    it('三个内置 profile 按各自描述获得不同的默认规则', () => {
+      const repo = makeMockRepo()
+      const svc = new PermissionService(repo)
+      const { profiles } = svc.listProfiles()
+      const find = (id: string): PermissionProfileItem => {
+        const profile = profiles.find((p) => p.id === id)
+        expect(profile).toBeDefined()
+        return profile!
+      }
+      const modeOf = (profile: PermissionProfileItem, action: string) =>
+        profile.rules.find((r) => r.action === action)?.mode
+
+      // strict：一切都问
+      expect(modeOf(find('strict'), 'file_read')).toBe('ask')
+      expect(modeOf(find('strict'), 'file_write')).toBe('ask')
+      expect(modeOf(find('strict'), 'command_exec')).toBe('ask')
+      expect(modeOf(find('strict'), 'command_dangerous')).toBe('ask-twice')
+      // project-standard：写入自动允许，命令仍询问
+      expect(modeOf(find('project-standard'), 'file_read')).toBe('allow')
+      expect(modeOf(find('project-standard'), 'file_write')).toBe('allow')
+      expect(modeOf(find('project-standard'), 'command_exec')).toBe('ask')
+      // trusted：大多数自动，高风险命令仍询问
+      expect(modeOf(find('trusted'), 'command_exec')).toBe('allow')
+      expect(modeOf(find('trusted'), 'command_dangerous')).toBe('ask')
+      // computer 管控规则全 profile 一致
+      expect(modeOf(find('trusted'), 'computer_direct_action')).toBe('deny')
+    })
+
+    it('旧版同质规则的库会被一次性迁移，且迁移后用户改动不被覆盖', () => {
+      // 模拟旧库：内置 profile 已存在（跳过 seedBuiltins），规则是旧版同质数据
+      const repo = makeMockRepo([
+        { action: 'file_write', profile_id: 'strict', mode: 'allow' },
+      ])
+      repo.createProfile({ id: 'strict', name: 'strict', sandboxLevel: 0, isBuiltin: true })
+      repo.createProfile({
+        id: 'project-standard',
+        name: 'project-standard',
+        sandboxLevel: 2,
+        isBuiltin: true,
+      })
+
+      const svc = new PermissionService(repo) // 构造时执行迁移
+      const strict = svc.listProfiles().profiles.find((p) => p.id === 'strict')!
+      // 旧的 allow 被差异化规则覆盖为 ask
+      expect(strict.rules.find((r) => r.action === 'file_write')?.mode).toBe('ask')
+
+      // 迁移只执行一次：之后的用户改动在重建 service 时保留
+      svc.updateRule('strict', 'file_write', 'deny')
+      const svc2 = new PermissionService(repo)
+      const strict2 = svc2.listProfiles().profiles.find((p) => p.id === 'strict')!
+      expect(strict2.rules.find((r) => r.action === 'file_write')?.mode).toBe('deny')
+    })
   })
 
   describe('TOOL_ACTION_MAP coverage (Bug 1)', () => {

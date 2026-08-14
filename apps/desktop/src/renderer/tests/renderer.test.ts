@@ -635,7 +635,6 @@ describe('Renderer Smoke Tests', () => {
       }
       if (channel === 'permission:set-active-profile')
         return { activeProfileId: 'project-standard' }
-      if (channel === 'permission:update-sandbox') return {}
       if (channel === 'permission:update-rule') return {}
       if (channel === 'settings:get') return { value: null }
       if (channel === 'settings:set') return { ok: true }
