@@ -135,6 +135,17 @@ import { ResumeGateManager, type AgentAdapterKind } from './session-resume-gate.
 export { isSdkResumeSafe, makeSdkRuntimeSessionId } from './session-resume-gate.js'
 export type { AgentAdapterKind } from './session-resume-gate.js'
 
+// ─── P1-W1-D4 引擎归一化（迁出至 ./session/engine-kinds.ts）───
+import {
+  getAgentAdapterFromSession,
+  getPermissionModeFromSession,
+  isCodexPermissionMode,
+  normalizeAgentAdapter,
+  normalizePermissionMode,
+  resolveEngineKind,
+} from './session/engine-kinds.js'
+export { getAgentAdapterFromSession, getPermissionModeFromSession } from './session/engine-kinds.js'
+
 import {
   createUserCancelledTurnEvent,
   createInterruptedTurnEvents,
@@ -2726,8 +2737,7 @@ export class SessionService {
       session.chat_mode,
       provider.provider_type,
     )
-    const adapterKind =
-      agentAdapter === 'claude-sdk' || agentAdapter === 'claude' ? 'claude-sdk' : 'codex'
+    const adapterKind = resolveEngineKind(agentAdapter)
     const resumeProviderProfileId =
       activeCliSparkOverride != null
         ? `${cliProvider.id}::${effectiveRuntimeProviderProfileId}`
@@ -2965,7 +2975,7 @@ export class SessionService {
     const workflowExecutionMode =
       workflowGraph == null || !workflowCanUseManagedExecutor || isMentionTurn
         ? 'guided'
-        : agentAdapter === 'claude-sdk' || agentAdapter === 'claude'
+        : resolveEngineKind(agentAdapter) === 'claude-sdk'
           ? 'workflow_run'
           : 'codex_guided'
     const managedAgentPrompt = buildManagedAgentSystemPrompt(
@@ -3049,7 +3059,7 @@ export class SessionService {
             hostPermissionMode: permissionMode,
             consumerAdapter: agentAdapter,
             codexConsumerIsOpenAi: isOpenAiOnlyCodexConsumer({
-              isCodex: agentAdapter !== 'claude' && agentAdapter !== 'claude-sdk',
+              isCodex: resolveEngineKind(agentAdapter) === 'codex',
               isLocalCli,
               providerType: provider.provider_type,
               codexApiKind: config.codexApiKind,
@@ -3170,7 +3180,7 @@ export class SessionService {
               hostPermissionMode: permissionMode,
               consumerAdapter: agentAdapter,
               codexConsumerIsOpenAi: isOpenAiOnlyCodexConsumer({
-                isCodex: agentAdapter !== 'claude' && agentAdapter !== 'claude-sdk',
+                isCodex: resolveEngineKind(agentAdapter) === 'codex',
                 isLocalCli,
                 providerType: provider.provider_type,
                 codexApiKind: config.codexApiKind,
@@ -3201,7 +3211,7 @@ export class SessionService {
       buildWorktreeSessionSystemPrompt(workspaceInfo),
       // Task 子代理是 Claude Agent SDK 的原生能力，Codex CLI 路径没有对应工具，
       // 引导语只在 claude-sdk/claude adapter 下注入，避免对 Codex 会话产生误导。
-      agentAdapter === 'claude-sdk' || agentAdapter === 'claude'
+      resolveEngineKind(agentAdapter) === 'claude-sdk'
         ? SUBAGENT_USAGE_HINT_SYSTEM_PROMPT
         : undefined,
       automation.unattended ? UNATTENDED_AUTOMATION_SYSTEM_PROMPT : undefined,
@@ -3300,7 +3310,7 @@ export class SessionService {
           charCount: composedSystemPrompt.length,
         })
       }
-      if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
+      if (resolveEngineKind(agentAdapter) === 'claude-sdk') {
         promptSections.push({
           label: 'Claude Code 预设',
           content: '(SDK 内置系统提示词，约 15,000~20,000 字符，运行时由 Claude Code 注入)',
@@ -3384,9 +3394,7 @@ export class SessionService {
           sdkSessionId,
           ...userMessagePresentation,
           ...(runtimeLogEnabled ? { runtimeLoadStatus } : {}),
-          ...(agentAdapter === 'claude-sdk' || agentAdapter === 'claude'
-            ? { sdkPreset: 'claude_code' }
-            : {}),
+          ...(resolveEngineKind(agentAdapter) === 'claude-sdk' ? { sdkPreset: 'claude_code' } : {}),
         },
         eventRepo,
       )
@@ -3461,7 +3469,7 @@ export class SessionService {
         }
       : undefined
 
-    if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
+    if (resolveEngineKind(agentAdapter) === 'claude-sdk') {
       const iterationOverride = this.iterationOverrides.get(sessionId)
       const sdkConfig: SDKExecutorConfig = {
         apiKey,
@@ -3612,7 +3620,9 @@ export class SessionService {
       apiKey,
       ...(automation.unattended ? { unattended: true } : {}),
       ...(isLocalCli ? { useLocalConfig: true } : {}),
-      ...(isLocalCli && agentAdapter === 'codex' ? { disableCodexNativeSkills: true } : {}),
+      ...(isLocalCli && resolveEngineKind(agentAdapter) === 'codex'
+        ? { disableCodexNativeSkills: true }
+        : {}),
       model,
       workspaceRootPath,
       permissionMode,
@@ -5906,9 +5916,7 @@ export class SessionService {
     // FR-0b：目标消费者是 codex 时用 HTTP 桥接（codex 子进程无法回调主进程 in-process sdk server）；
     // claude 消费者走 in-process（现状）。两形态共用下方 tool 定义，避免实现漂移。
     const isCodexConsumer =
-      ctx.consumerAdapter != null &&
-      ctx.consumerAdapter !== 'claude' &&
-      ctx.consumerAdapter !== 'claude-sdk'
+      ctx.consumerAdapter != null && resolveEngineKind(ctx.consumerAdapter) === 'codex'
     const discussionId = ctx.discussionId
     const discussionRepo = discussionId != null ? this.getTeamDiscussionRepository() : null
     const ledgerAdapter =
@@ -8611,7 +8619,7 @@ export class SessionService {
    */
   private applyApprovalToggle(sessionId: string, enabled: boolean): void {
     const sessionRepo = new SessionRepository(this.db)
-    const isCodex = (sessionRepo.get(sessionId)?.permission_mode ?? '').startsWith('codex-')
+    const isCodex = isCodexPermissionMode(sessionRepo.get(sessionId)?.permission_mode)
     const mode: SessionPermissionMode = enabled
       ? isCodex
         ? 'codex-default'
@@ -10451,49 +10459,8 @@ function truncateTitle(title: string): string {
     .trimEnd()}...`
 }
 
-export function getAgentAdapterFromSession(
-  value: string | null | undefined,
-  legacyChatMode: string | null | undefined,
-  providerType: string | null,
-): AgentAdapterKind {
-  if (value === 'claude-sdk' || value === 'codex') return value
-  if (value === 'claude') return 'claude-sdk'
-  if (legacyChatMode === 'claude-sdk' || legacyChatMode === 'codex') return legacyChatMode
-  if (legacyChatMode === 'claude') return 'claude-sdk'
-  // Default: Anthropic providers use claude-sdk. Direct Anthropic API is not a
-  // supported execution path for the core code agent.
-  return providerType === 'anthropic' ? 'claude-sdk' : 'codex'
-}
-
-export function getPermissionModeFromSession(
-  value: string | null | undefined,
-  adapter: AgentAdapterKind,
-): SessionPermissionMode {
-  if (
-    value === 'claude-ask' ||
-    value === 'claude-auto-edits' ||
-    value === 'claude-plan' ||
-    value === 'claude-auto' ||
-    value === 'claude-bypass' ||
-    value === 'codex-default' ||
-    value === 'codex-auto-review' ||
-    value === 'codex-full-access'
-  ) {
-    return value
-  }
-  return adapter === 'codex' ? 'codex-default' : 'claude-ask'
-}
-
-function normalizeAgentAdapter(value: string | null | undefined): AgentAdapterKind {
-  if (value === 'claude' || value === 'claude-sdk') return 'claude-sdk'
-  if (value === 'codex') return 'codex'
-  return 'claude-sdk'
-}
-
-function normalizePermissionMode(value: string | null | undefined): SessionPermissionMode {
-  const adapter = value?.startsWith('codex-') ? 'codex' : 'claude-sdk'
-  return getPermissionModeFromSession(value, adapter)
-}
+// getAgentAdapterFromSession / getPermissionModeFromSession / normalizeAgentAdapter /
+// normalizePermissionMode 已迁出至 ./session/engine-kinds.ts（P1-W1-D4 引擎归一化）
 
 function normalizeReasoningEffort(value: string | null | undefined): SparkReasoningEffort {
   return normalizeSparkReasoningEffort(value)
@@ -11346,7 +11313,7 @@ export function resolveCodexMemberExecutionProfile(args: {
     codexCliProvider?: SDKExecutorConfig['codexCliProvider']
   }
 } {
-  const isCodexMember = args.memberAdapter !== 'claude' && args.memberAdapter !== 'claude-sdk'
+  const isCodexMember = resolveEngineKind(args.memberAdapter) === 'codex'
   const permissionMode: SDKExecutorConfig['permissionMode'] = isCodexMember
     ? 'codex-auto-review'
     : 'claude-auto'

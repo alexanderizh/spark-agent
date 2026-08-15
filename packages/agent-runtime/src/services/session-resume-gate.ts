@@ -7,8 +7,10 @@
  */
 
 import crypto from 'node:crypto'
+import type { SessionAgentAdapter } from '@spark/protocol'
 
-export type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
+// P1-W1-D4：原 3 值逐字复制版收敛为 protocol 定义的别名（类型完全一致，零行为变化）。
+export type AgentAdapterKind = SessionAgentAdapter
 
 export interface ResumeSafeParams {
   providerType: string
