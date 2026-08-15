@@ -19,7 +19,7 @@
   "apps/desktop/src/renderer/design/views/canvas/CanvasStage.tsx": 3056,
   "apps/desktop/src/renderer/design/views/canvas/CanvasWorkspaceView.tsx": 9076,
   "apps/desktop/src/renderer/design/views/chat/ComposerV2.tsx": 6333,
-  "apps/desktop/src/renderer/design/views/ChatView.tsx": 8219,
+  "apps/desktop/src/renderer/design/views/ChatView.tsx": 8258,
   "apps/desktop/src/renderer/design/views/ProvidersView.tsx": 5078,
   "apps/desktop/src/renderer/design/views/SettingsView.tsx": 6277,
   "apps/desktop/src/renderer/design/views/SkillStoreView.tsx": 2495,
