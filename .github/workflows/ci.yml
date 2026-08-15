@@ -1,10 +1,12 @@
 name: CI
 
-# PR/push 质量门禁（工程化还债方案 Phase 0.1）。
-# 现状约束（逐步收紧）：
-# - desktop test:unit 首版非阻塞：601 个测试文件的 ubuntu 兼容性清单未知，
-#   先跑起来收集失败清单（job 标注 ⚠️），清零后移除 continue-on-error 转阻塞。
-# - website 暂不入矩阵：无 typecheck/lint 脚本（Phase 0.5 补齐后加入）。
+# 质量安全网（工程化还债方案 Phase 0.1；2026-08-15 按单人开发定位调整）：
+# - 阻塞项：typecheck / lint / file-size ratchet —— 快、确定性、跨平台一致，
+#   挡住并行 agent 的低级回归。
+# - 咨询项：全部单测 continue-on-error —— 单测多按 Windows/macOS 行为编写
+#   （shell 探测、路径处理等），ubuntu 上存在平台敏感失败，不构成真实回归
+#   信号；失败在 job 步骤中可见但不阻塞。
+# - 文档类改动不触发 CI（paths-ignore），支持 workflow_dispatch 手动触发。
 # - 原生依赖：CI 环境下 scripts/sqlite-abi.sh 会跳过 vendor 切换（vendor 二进制
 #   为 macOS arm64），Linux 直接使用 prebuild-install 下载的平台预编译。
 
@@ -13,6 +15,10 @@ on:
     branches: [master]
   push:
     branches: [master]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -43,22 +49,16 @@ jobs:
         include:
           - label: protocol
             package: '@spark/protocol'
-            test-blocking: true
           - label: shared
             package: '@spark/shared'
-            test-blocking: true
           - label: storage
             package: '@spark/storage'
-            test-blocking: true
           - label: agent-runtime
             package: '@spark/agent-runtime'
-            test-blocking: true
           - label: plugin-sdk
             package: '@spark/plugin-sdk'
-            test-blocking: true
           - label: desktop
             package: '@spark/desktop'
-            test-blocking: false
           - label: website
             package: '@spark/website'
             test-blocking: false
@@ -93,4 +93,5 @@ jobs:
       - name: Unit tests
         if: matrix.skip-tests != true
         run: pnpm --filter ${{ matrix.package }} run test:unit
-        continue-on-error: ${{ matrix.test-blocking == false }}
+        # 单人开发定位：单测为咨询项（失败在步骤内可见，不阻塞 job），见头部注释
+        continue-on-error: true

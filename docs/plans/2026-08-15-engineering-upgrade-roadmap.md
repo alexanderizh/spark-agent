@@ -108,6 +108,8 @@
 ### Phase 0 — 止血与门禁（约 1 周，最高优先）
 
 > **落地记录（2026-08-15）**：0.1~0.5 已完成（红基线实测 27 错全部清零：desktop typecheck 绿、protocol lint 0 errors；ratchet 基线 38 文件入册三分支逻辑实测通过；钩子装好并验证 commitlint 拦截/中文 conventional 通过；根 test 脚本修复）。0.6 已删除零风险 worktree 2 个（canvas-unified-image + stage3d-panorama-fix，回收约 5.7GB，分支保留），其余 3 个含未提交文件经用户确认暂留。@vitest/coverage-v8 审计修正：实测无包声明亦无引用，无需安装。CI 首跑验证待代码推送 GitHub 后进行（当日网络不通）。
+>
+> **CI 策略调整（2026-08-15，单人开发定位）**：代码经 SSH-443 推送后 CI 首跑完成，lint/typecheck 红基线再清 10 errors（desktop 7 + agent-runtime 3）后 7/8 job 绿；agent-runtime 单测在 ubuntu 暴露 19 个平台敏感失败（测试按 Windows/macOS 行为编写，如硬编码 `/bin/zsh` 探测结果），不构成真实回归信号。经用户确认按单人开发节奏调整：**CI 单测全量转咨询性（continue-on-error），阻塞项收敛为 typecheck + lint + file-size ratchet**；文档类改动 paths-ignore 不触发。本地钩子（commitlint/lint-staged/ratchet）保留——它们防的是用户自己的并行 agent。
 
 原则：**先立栅栏再动手术**。没有门禁，在多 agent 并行下重构巨石等于高空作业无保护。
 
