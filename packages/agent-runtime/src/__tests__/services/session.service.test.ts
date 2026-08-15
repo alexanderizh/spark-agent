@@ -761,6 +761,8 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     onApprovalCancel: (sessionId: string) => void
     onQueueChanged?: () => void
     pendingPlanApprovals: Set<string>
+    // 与类字段同名（标题精炼重试上下文）；裸实例上缺它会让 .delete() 抛 TypeError。
+    pendingTitleRefinements: Map<string, unknown>
     pendingTurns: Map<string, unknown[]>
     pendingUserQuestionGate: SessionQuestionGate
     startingSessions: Set<string>
@@ -787,6 +789,7 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     // emitQueueChanged 会走 onQueueChanged?.(queueSnapshot(...))，这里只关心不抛错
     service.onQueueChanged = vi.fn()
     service.pendingPlanApprovals = new Set()
+    service.pendingTitleRefinements = new Map()
     service.pendingTurns = new Map()
     service.pendingUserQuestionGate = new SessionQuestionGate()
     service.startingSessions = new Set()
