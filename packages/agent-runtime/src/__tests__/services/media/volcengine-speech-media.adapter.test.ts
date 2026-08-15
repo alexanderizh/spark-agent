@@ -88,10 +88,7 @@ describe('VolcengineSpeechMediaAdapter', () => {
   let tmpDir: string
 
   beforeEach(() => {
-    tmpDir = path.join(
-      os.tmpdir(),
-      `volcengine-speech-test-${Math.random().toString(36).slice(2)}`,
-    )
+    tmpDir = path.join(os.tmpdir(), `volcengine-speech-test-${Math.random().toString(36).slice(2)}`)
     mkdirSync(tmpDir, { recursive: true })
   })
 
@@ -145,7 +142,7 @@ describe('VolcengineSpeechMediaAdapter', () => {
     expect((out.rawResponse as Record<string, unknown>)?.usage).toMatchObject({ text_words: 4 })
 
     // 鉴权三头（X-Api-Key + X-Api-Resource-Id + X-Api-Request-Id）
-    const init = fetchImpl.mock.calls[0]?.[1]!
+    const init = fetchImpl.mock.calls[0]![1] as RequestInit
     const headers = init.headers as Record<string, string>
     expect(headers['X-Api-Key']).toBe('sk-test')
     expect(headers['X-Api-Resource-Id']).toBe('seed-tts-2.0')

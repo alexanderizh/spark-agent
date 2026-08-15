@@ -159,7 +159,6 @@ vi.mock('./canvas.api', () => ({
 }))
 
 import { CanvasProjectDetail } from './CanvasProjectDetail'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const baseProject: CanvasProject = {
@@ -293,7 +292,9 @@ describe('CanvasProjectDetail multi-select and batch delete', () => {
     for (const id of ['a-1', 'a-2', 'a-3', 'a-4']) {
       expect(findTile(id)?.className).toContain('is-selected')
     }
-    expect(container.querySelector('.canvas-detail-asset-batchbar')?.textContent).toContain('已选 4')
+    expect(container.querySelector('.canvas-detail-asset-batchbar')?.textContent).toContain(
+      '已选 4',
+    )
 
     // 按钮文案应变成「取消全选」
     const clearAllBtn = Array.from(
@@ -338,15 +339,18 @@ describe('CanvasProjectDetail multi-select and batch delete', () => {
 
     // 逐个点中前 20 个
     for (let i = 0; i < 20; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       await clickCheckbox(`big-${i + 1}`)
     }
-    expect(container.querySelector('.canvas-detail-asset-batchbar')?.textContent).toContain('已选 20')
+    expect(container.querySelector('.canvas-detail-asset-batchbar')?.textContent).toContain(
+      '已选 20',
+    )
 
     // 第 21 个：toggleSelect 内 message.warning + 维持原 set
     await clickCheckbox('big-21')
     expect(mocks.messageWarning).toHaveBeenCalled()
-    expect(container.querySelector('.canvas-detail-asset-batchbar')?.textContent).toContain('已选 20')
+    expect(container.querySelector('.canvas-detail-asset-batchbar')?.textContent).toContain(
+      '已选 20',
+    )
   })
 
   it('opens a confirm dialog with the right title and calls deleteFilmAsset per id', async () => {
@@ -363,13 +367,12 @@ describe('CanvasProjectDetail multi-select and batch delete', () => {
     ).find((btn) => btn.textContent?.trim().startsWith('批量删除'))
     expect(batchBtn).toBeDefined()
 
-    let confirmOnOk: (() => Promise<void>) | undefined
     await act(async () => {
       batchBtn!.click()
     })
     const confirmConfig = mocks.confirmConfig.current
     expect(confirmConfig).not.toBeNull()
-    confirmOnOk = confirmConfig?.onOk as () => Promise<void>
+    const confirmOnOk = confirmConfig?.onOk as (() => Promise<void>) | undefined
     expect(confirmOnOk).toBeDefined()
     expect(confirmConfig?.title).toContain('删除 2 个资源')
 
@@ -411,7 +414,6 @@ describe('CanvasProjectDetail multi-select and batch delete', () => {
     await clickCheckbox('a-2')
     await clickCheckbox('a-3')
 
-    let confirmOnOk: (() => Promise<void>) | undefined
     const batchBtn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('.canvas-detail-asset-batchbar button'),
     ).find((btn) => btn.textContent?.trim().startsWith('批量删除'))
@@ -419,7 +421,7 @@ describe('CanvasProjectDetail multi-select and batch delete', () => {
     await act(async () => {
       batchBtn!.click()
     })
-    confirmOnOk = mocks.confirmConfig.current?.onOk as () => Promise<void>
+    const confirmOnOk = mocks.confirmConfig.current?.onOk as (() => Promise<void>) | undefined
 
     await act(async () => {
       await confirmOnOk!()

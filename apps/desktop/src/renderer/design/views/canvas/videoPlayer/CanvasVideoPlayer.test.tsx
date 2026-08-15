@@ -60,7 +60,7 @@ describe('CanvasVideoPlayer', () => {
     expect(html).toContain('canvas-video-player-overlay')
     expect(html).toContain('data-tier=')
     expect(html).toContain('nodrag nopan')
-    expect(html).toMatch(/<div class="canvas-video-player(?: |\")/)
+    expect(html).toMatch(/<div class="canvas-video-player(?: |")/)
     expect(html).toContain('canvas-video-player-center-btn nodrag nopan')
   })
 

@@ -65,7 +65,7 @@ export class AppControlBridge {
         timer,
         removeAbortListener: () => input.signal.removeEventListener('abort', abort),
       })
-      let sent = false
+      let sent: boolean
       try {
         sent = this.transport.send(request)
       } catch {

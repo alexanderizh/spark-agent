@@ -74,7 +74,8 @@ export function insertToComposer(
 
 /** 把 CodeReference 格式化为「路径:行号」文本（单行 :N，多行 :S-E）。 */
 export function formatCodeReferenceLine(ref: CodeReference): string {
-  const range = ref.startLine === ref.endLine ? `${ref.startLine}` : `${ref.startLine}-${ref.endLine}`
+  const range =
+    ref.startLine === ref.endLine ? `${ref.startLine}` : `${ref.startLine}-${ref.endLine}`
   return `${ref.path}:${range}`
 }
 
@@ -101,7 +102,6 @@ export function useInsertToComposer(input: {
 
       if (detail.text != null && detail.text.length > 0) {
         const incoming = detail.text
-        // eslint-disable-next-line react-hooks/exhaustive-deps
         setValue((prev) => (prev.length > 0 ? `${prev}\n\n${incoming}` : incoming))
       }
 

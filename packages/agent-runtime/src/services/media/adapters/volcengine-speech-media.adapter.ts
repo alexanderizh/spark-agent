@@ -297,7 +297,7 @@ interface SpeechParams {
 
 function readMusicParams(input: MediaGenerateInput, ctx: MediaProviderContext): MusicParams {
   const m = (input.modelParams ?? {}) as Record<string, unknown>
-  const audio = ((ctx.mediaDefaults?.audio as Record<string, unknown>) ?? {}) ?? {}
+  const audio = (ctx.mediaDefaults?.audio ?? {}) as Record<string, unknown>
   return {
     speaker: readStr(m.speaker) ?? readStr(audio.voice),
     format: readStr(m.format) ?? readStr(audio.format) ?? 'wav',
@@ -311,7 +311,7 @@ function readMusicParams(input: MediaGenerateInput, ctx: MediaProviderContext): 
 
 function readSpeechParams(input: MediaGenerateInput, ctx: MediaProviderContext): SpeechParams {
   const m = (input.modelParams ?? {}) as Record<string, unknown>
-  const audio = ((ctx.mediaDefaults?.audio as Record<string, unknown>) ?? {}) ?? {}
+  const audio = (ctx.mediaDefaults?.audio ?? {}) as Record<string, unknown>
   return {
     speaker: readStr(m.speaker) ?? readStr(audio.voice),
     format: readStr(m.format) ?? readStr(audio.format) ?? 'mp3',

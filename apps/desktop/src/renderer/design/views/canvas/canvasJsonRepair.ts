@@ -55,7 +55,7 @@ export function repairCanvasJsonText(text: string): string {
 function appendParsedValue(value: unknown, values: unknown[], depth: number): void {
   // 适配层偶尔把完整 JSON 再序列化一次。优先加入内层对象，避免调用方拿到
   // 外层 JSON 字符串后误判为“不是结构化结果”。
-  if (typeof value === 'string' && depth < 2 && /^[\[{]/.test(value.trim())) {
+  if (typeof value === 'string' && depth < 2 && /^[[{]/.test(value.trim())) {
     const nestedText = value.trim()
     const nestedCandidates = [nestedText, repairCanvasJsonText(nestedText)]
     for (const nestedCandidate of nestedCandidates) {
