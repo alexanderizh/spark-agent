@@ -53,13 +53,14 @@ export default tseslint.config(
   // Node 22 ESM tool servers run outside the browser. ESLint's base JavaScript
   // config does not infer those runtime globals for .mjs files.
   {
-    files: ['packages/agent-runtime/src/tools/**/*.mjs'],
+    files: ['packages/agent-runtime/src/tools/**/*.mjs', 'scripts/**/*.mjs'],
     languageOptions: {
       globals: {
         AbortController: 'readonly',
         Buffer: 'readonly',
         URLSearchParams: 'readonly',
         clearTimeout: 'readonly',
+        console: 'readonly',
         fetch: 'readonly',
         process: 'readonly',
         setTimeout: 'readonly',
