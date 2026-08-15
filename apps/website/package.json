@@ -8,7 +8,8 @@
     "prebuild": "node scripts/fetch-downloads.mjs",
     "build": "node scripts/fetch-downloads.mjs && tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "fetch-downloads": "node scripts/fetch-downloads.mjs"
+    "fetch-downloads": "node scripts/fetch-downloads.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@lobehub/icons": "^5.10.0",

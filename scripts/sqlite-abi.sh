@@ -8,6 +8,13 @@
 # is upgraded (see README in that directory).
 set -euo pipefail
 
+# CI（Linux）上不做 vendor 切换：vendor/prebuilds 只checkin了 macOS arm64 二进制，
+# Linux 用 prebuild-install 在 install 时自动下载的平台预编译即可直接跑。
+if [ "${CI:-}" != "" ]; then
+  echo "[sqlite-abi] CI environment detected — keeping prebuild-install binary, skip vendor switch"
+  exit 0
+fi
+
 TARGET="${1:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
