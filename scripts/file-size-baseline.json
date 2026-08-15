@@ -32,7 +32,7 @@
   "packages/agent-runtime/src/sdk/event-mapper.ts": 2133,
   "packages/agent-runtime/src/services/platform-bridge.service.ts": 2013,
   "packages/agent-runtime/src/services/provider.service.ts": 2017,
-  "packages/agent-runtime/src/services/session.service.ts": 11685,
+  "packages/agent-runtime/src/services/session.service.ts": 11689,
   "packages/agent-runtime/src/tools/media-generation-mcp-server.mjs": 3681,
   "packages/protocol/src/ipc/index.ts": 6818,
   "packages/protocol/src/media-model-manifest.ts": 3865,

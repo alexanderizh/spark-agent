@@ -603,13 +603,18 @@ function truncateGoalSupplementaryMessage(message: string): string {
   return `${trimmed.slice(0, GOAL_SUPPLEMENTARY_MESSAGE_MAX_CHARS)}…[truncated]`
 }
 
-function buildGoalIterationPrompt(goal: StoredSessionGoal, supplementaryUserMessages: string[] = []): string {
+function buildGoalIterationPrompt(
+  goal: StoredSessionGoal,
+  supplementaryUserMessages: string[] = [],
+): string {
   const progress =
     goal.progressLog
       .slice(-8)
       .map((entry) => {
         const evidence =
-          entry.evidence != null && entry.evidence.length > 0 ? ` (evidence: ${entry.evidence.join('; ')})` : ''
+          entry.evidence != null && entry.evidence.length > 0
+            ? ` (evidence: ${entry.evidence.join('; ')})`
+            : ''
         return `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${evidence}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`
       })
       .join('\n') || '- No prior progress.'
@@ -2270,8 +2275,7 @@ export class SessionService {
     // spark-loop 目标活跃时用户消息入队，由下一轮迭代排空注入（drainQueuedUserTurnsForGoalIteration）。
     // codex-native 目标由 codex 侧自驱循环，Spark 不泵迭代——用户消息按普通流程执行
     // （若恰有 turn 在跑会落入下方 hasActiveSessionExecution 的常规排队，turn 结束即排空）。
-    const goalOwnsDispatch =
-      currentGoal?.status === 'active' && currentGoal.mode === 'spark-loop'
+    const goalOwnsDispatch = currentGoal?.status === 'active' && currentGoal.mode === 'spark-loop'
     if (goalOwnsDispatch || this.pendingUserQuestionGate.isBlocked(sessionId)) {
       this.enqueueTurn(sessionId, pendingTurn)
       return { turnId, started: false }
@@ -4999,13 +5003,11 @@ export class SessionService {
     const pending = this.pendingTitleRefinements.get(sessionId)
     if (pending == null) return
     pending.retries += 1
-    void this.refineSessionTitleAsync(sessionId, sessionRepo, pending.ctx).then(
-      (retryWorthy) => {
-        if (!retryWorthy || pending.retries >= TITLE_REFINEMENT_MAX_RETRIES) {
-          this.pendingTitleRefinements.delete(sessionId)
-        }
-      },
-    )
+    void this.refineSessionTitleAsync(sessionId, sessionRepo, pending.ctx).then((retryWorthy) => {
+      if (!retryWorthy || pending.retries >= TITLE_REFINEMENT_MAX_RETRIES) {
+        this.pendingTitleRefinements.delete(sessionId)
+      }
+    })
   }
 
   /**
@@ -9249,7 +9251,9 @@ export class SessionService {
         goalId: goal.id,
         objective: goal.objective,
         status,
-        ...(extra.iteration != null ? { iteration: extra.iteration } : { iteration: goal.progressLog.length }),
+        ...(extra.iteration != null
+          ? { iteration: extra.iteration }
+          : { iteration: goal.progressLog.length }),
         summary,
         ...(extra.phase != null ? { phase: extra.phase } : {}),
         ...(extra.evidence != null ? { evidence: extra.evidence } : {}),
