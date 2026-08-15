@@ -287,6 +287,7 @@ import type {
   SDKQuestionRequestContext,
   SDKTurnAttachment,
 } from '../sdk/index.js'
+import type { ActiveExecution } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import type { CanvasToolSchema } from './canvas-mcp-server.js'
 import {
@@ -386,11 +387,7 @@ export type QuestionHandler = (
   context: SDKQuestionRequestContext,
 ) => Promise<Record<string, unknown>>
 // AgentAdapterKind 类型定义迁出至 ./session-resume.ts（D-13 拆分）
-type ActiveExecution = {
-  cancel(): void
-  /** Hot-swap the permission mode for the currently executing turn. */
-  setPermissionMode?(mode: SessionPermissionMode): void | Promise<void>
-}
+// ActiveExecution 类型定义迁出至 ../sdk/engine-executor.ts（P1-W1 引擎接口化）
 
 export function createCodexExecutorForConfig(
   config: Pick<SDKExecutorConfig, 'useLocalConfig' | 'codexApiKind' | 'codexCliProvider'>,

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import OpenAI from 'openai'
 import type { AgentEvent } from '@spark/protocol'
 import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
+import type { EngineExecutor } from './engine-executor.js'
 import type { SDKExecutorConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -15,7 +16,9 @@ type EventBase = { id: string; sessionId: string; turnId: string; timestamp: str
  * providers continue to use CodexSdkExecutor and retain the full Codex tool
  * runtime.
  */
-export class CodexOpenAIExecutor {
+export class CodexOpenAIExecutor implements EngineExecutor {
+  readonly engine = 'codex' as const
+
   private listeners = new Set<Listener>()
   private abortController: AbortController | null = null
 

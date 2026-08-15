@@ -1,5 +1,22 @@
-export { ClaudeSDKExecutor, isSDKAvailable, resetSDKLoadState, SDKNotAvailableError, getResumeCircuitBreaker, loadSdkMcpFactory } from './claude-sdk-executor.js'
+export {
+  ClaudeSDKExecutor,
+  isSDKAvailable,
+  resetSDKLoadState,
+  SDKNotAvailableError,
+  getResumeCircuitBreaker,
+  loadSdkMcpFactory,
+} from './claude-sdk-executor.js'
 export { CodexCliExecutor } from './codex-cli-executor.js'
+export { isPermissionModeAware, isRewindCapable } from './engine-executor.js'
+export type {
+  ActiveExecution,
+  EngineExecutor,
+  EngineKind,
+  PermissionModeAwareExecutor,
+  RewindCapableExecutor,
+  RewindFilesParams,
+  RewindFilesResult,
+} from './engine-executor.js'
 export {
   CodexSdkExecutor,
   isCodexSDKAvailable,

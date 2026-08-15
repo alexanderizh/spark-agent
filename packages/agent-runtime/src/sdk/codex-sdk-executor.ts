@@ -17,6 +17,7 @@ import { extractCodexCompactionEvent } from './codex-compaction-event.js'
 import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import { toCodexReasoningEffort } from './reasoning-effort.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
+import type { EngineExecutor } from './engine-executor.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 import { codexTargetTriple, resolveManagedCodexCli } from './codex-runtime.js'
 
@@ -83,7 +84,9 @@ async function loadCodexSdk(): Promise<CodexSdkModule> {
   return codexSdkLoadPromise
 }
 
-export class CodexSdkExecutor {
+export class CodexSdkExecutor implements EngineExecutor {
+  readonly engine = 'codex' as const
+
   private listeners = new Set<Listener>()
   private abortController: AbortController | null = null
   private thread: CodexThread | null = null

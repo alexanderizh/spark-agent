@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
+import type { EngineExecutor } from '../../sdk/engine-executor.js'
 import type { SDKExecutorConfig } from '../../sdk/types.js'
 
 /**
@@ -73,7 +74,9 @@ export function fakeEngineCalls(): FakeExecuteTurnRecord[] {
   return state.instances.flatMap((instance) => (instance.record != null ? [instance.record] : []))
 }
 
-export class FakeEngineExecutor {
+export class FakeEngineExecutor implements EngineExecutor {
+  readonly engine = 'claude-sdk' as const
+
   private readonly script: FakeEngineScript
   private readonly handlers = new Set<EventHandler>()
   private releaseOnCancel: (() => void) | null = null

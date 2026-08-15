@@ -9,6 +9,7 @@ import { extractCodexCompactionEvent } from './codex-compaction-event.js'
 import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import { toCodexReasoningEffort, type CodexReasoningEffort } from './reasoning-effort.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
+import type { EngineExecutor } from './engine-executor.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -47,7 +48,9 @@ type CodexStreamState = {
   activeCommandOutputById: Map<string, string>
 }
 
-export class CodexCliExecutor {
+export class CodexCliExecutor implements EngineExecutor {
+  readonly engine = 'codex' as const
+
   private listeners = new Set<Listener>()
   private child: ChildProcessWithoutNullStreams | null = null
   private streamTerminalizer: StreamTerminalizer | null = null

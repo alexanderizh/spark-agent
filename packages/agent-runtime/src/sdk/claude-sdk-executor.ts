@@ -42,6 +42,12 @@ import {
   resolveSoftContextLimitForWindow,
 } from '@spark/shared'
 import { AgentEventEmitter } from '../core/event-emitter.js'
+import type {
+  PermissionModeAwareExecutor,
+  RewindCapableExecutor,
+  RewindFilesParams,
+  RewindFilesResult,
+} from './engine-executor.js'
 import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
@@ -349,7 +355,9 @@ export async function loadSdkMcpFactory(): Promise<{
   return { createSdkMcpServer: sdk.createSdkMcpServer, tool: sdk.tool }
 }
 
-export class ClaudeSDKExecutor {
+export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCapableExecutor {
+  readonly engine = 'claude-sdk' as const
+
   private emitter = new AgentEventEmitter()
   private abortController: AbortController | null = null
   private cancelRequested = false
@@ -423,21 +431,7 @@ export class ClaudeSDKExecutor {
    * against a live SDK session (no API key locally). The happy path (resume →
    * rewindFiles → dispose) cannot be exercised in CI / this environment.
    */
-  async rewindFiles(params: {
-    apiKey: string
-    model: string
-    workspaceRootPath: string
-    sdkSessionId: string
-    apiEndpoint?: string
-    userMessageId: string
-    dryRun?: boolean
-  }): Promise<{
-    canRewind: boolean
-    error?: string
-    filesChanged?: string[]
-    insertions?: number
-    deletions?: number
-  }> {
+  async rewindFiles(params: RewindFilesParams): Promise<RewindFilesResult> {
     log.info('rewindFiles: attempt', {
       sdkSessionId: params.sdkSessionId,
       userMessageId: params.userMessageId,
@@ -817,8 +811,7 @@ export class ClaudeSDKExecutor {
                           toolUseId: callbackOptions.toolUseID,
                           signalAborted: callbackOptions.signal?.aborted ?? null,
                           errorName: error instanceof Error ? error.name : undefined,
-                          errorMessage:
-                            error instanceof Error ? error.message : String(error),
+                          errorMessage: error instanceof Error ? error.message : String(error),
                           stack: error instanceof Error ? error.stack : undefined,
                         })
                         throw error
@@ -902,8 +895,7 @@ export class ClaudeSDKExecutor {
                     toolUseId: callbackOptions.toolUseID,
                     signalAborted: callbackOptions.signal?.aborted ?? null,
                     errorName: error instanceof Error ? error.name : undefined,
-                    errorMessage:
-                      error instanceof Error ? error.message : String(error),
+                    errorMessage: error instanceof Error ? error.message : String(error),
                     stack: error instanceof Error ? error.stack : undefined,
                   })
                   return denyTool('Permission check failed', callbackOptions.toolUseID)
