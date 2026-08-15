@@ -1,6 +1,6 @@
 # Spark Agent 工程化还债与演进升级方案
 
-> 状态: 实施中（Phase 0 已开工） | 最后核对: 2026-08-15
+> 状态: 实施中（Phase 0 已收官；Phase 1 W1 已落地，W2 待启动） | 最后核对: 2026-08-16
 
 ## 1. 背景与定位
 
@@ -125,6 +125,8 @@
 ### Phase 1 — 引擎分派接口化 + session.service 拆分（2~3 周）
 
 > 细化实施计划（行号级现状基线 + 接口设计 + 周计划 + 风险登记册）：`docs/plans/2026-08-15-phase1-engine-dispatch-refactoring.md`
+>
+> **落地记录（2026-08-16）**：W1 全部落地并验收收官。W0 贯穿基线测试先行（a4199cd8：fake-engine-executor + 3 断言 × 双引擎，真实 SQLite 落库）；D3 `EngineExecutor` 显式接口 + 能力接口 + conformance 5/5（4541fd91）；D4 `engine-kinds` 单点归一，12 处手写归并替换、`startsWith('codex-')` 嗅探改 8 字面量查表（df0c031b）；D5 引擎注册表上线，两 descriptor + 三创建点改经 registry，codex 载具三选一收编为引擎内部细节（4e2b3565）。**第三引擎接入目标达成：新增引擎 = 1 个 descriptor + 1 次 register，不碰 session.service**。每步均通过贯穿基线 6/6 行为锁验证；CI 8/8 全绿（含 desktop）。并行开发遗留的 `pendingTitleRefinements` 测试 fixture 缺字段 ×5 已修（5e027c45）。验收复验（2026-08-16）：全包 typecheck/lint 绿、行为锁 100/100、session-runtime-config 既存失败 10 不变、Electron ABI 三模块可加载。W2（TurnRegistry 所有权收编 + 管道统一）为最高风险区，待启动。
 
 还架构债 #1（引擎无接口），是「高可扩展」的核心。须在 worktree 物理隔离 + 独占窗口下进行（协调见 §7）。
 
