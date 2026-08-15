@@ -1,6 +1,6 @@
 # Phase 1 实施计划：引擎分派接口化 + session.service 拆分
 
-> 状态: 待开发 | 最后核对: 2026-08-15
+> 状态: 实施中（W1 D1-2 已落地） | 最后核对: 2026-08-15
 
 母方案：`docs/plans/2026-08-15-engineering-upgrade-roadmap.md` §5 Phase 1。
 本计划基于 2026-08-15 三路行号级调研（executor 层 / session.service 结构地图 / 测试基建），所有行号为当日实测。
@@ -273,6 +273,12 @@ services/session/
 ## 3. 周计划（3 周，W2/W3 含伸缩标注）
 
 ### W1 — 测试基座 + 接口与注册表（零行为变化）
+
+> **落地记录（2026-08-15，D1-2 完成，commit `a4199cd8`）**：
+>
+> - `__tests__/sdk/fake-engine-executor.ts`：脚本化 stub 落地（事件注入/holdUntilCancel/迟到事件记录/executeTurn 调用记录），harness 队列机制就位，W2 起可复用为 echo-executor 自测工具。
+> - `__tests__/services/turn-pipeline-baseline.test.ts`：3 条贯穿基线 × claude/codex 双引擎参数化 = **6/6 全绿**。与计划的差异：mock 面采用「真实 SQLite（临时目录 + runMigrations）+ 只 mock sdk barrel/keystore/debug-log-server」，落库断言为真实存储行为（优于原计划设想的 mock storage）；终态补发、闸门丢迟到事件、stableSdkSessionId 跨 turn 稳定（claude）/逐 turn 演进（codex）均已锁入断言。
+> - 环境备注：Windows 本机跑 agent-runtime 测试需 better-sqlite3 为 node ABI（`node_modules/better-sqlite3 && npx prebuild-install -r node`），跑完必须 `apps/desktop && pnpm rebuild:native` 恢复 Electron ABI（vendor/prebuilds 只有 macOS arm64 二进制，`sqlite-abi.sh` 在 Windows 不可用）。既有 15 个 Windows 平台敏感失败（session-runtime-config ×10、session.service.test ×5）与本改动无关（移走新文件重跑对照验证），已按「先可观测后强制」记录。
 
 | 日   | 任务                                                                                                                                                                                                                                                                                                                      | 产出/提交                                       |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
