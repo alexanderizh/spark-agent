@@ -1,6 +1,6 @@
 # Phase 1 实施计划：引擎分派接口化 + session.service 拆分
 
-> 状态: 实施中（W1 D1-2 已落地） | 最后核对: 2026-08-15
+> 状态: 实施中（W1 D1-3 已落地） | 最后核对: 2026-08-15
 
 母方案：`docs/plans/2026-08-15-engineering-upgrade-roadmap.md` §5 Phase 1。
 本计划基于 2026-08-15 三路行号级调研（executor 层 / session.service 结构地图 / 测试基建），所有行号为当日实测。
@@ -279,6 +279,13 @@ services/session/
 > - `__tests__/sdk/fake-engine-executor.ts`：脚本化 stub 落地（事件注入/holdUntilCancel/迟到事件记录/executeTurn 调用记录），harness 队列机制就位，W2 起可复用为 echo-executor 自测工具。
 > - `__tests__/services/turn-pipeline-baseline.test.ts`：3 条贯穿基线 × claude/codex 双引擎参数化 = **6/6 全绿**。与计划的差异：mock 面采用「真实 SQLite（临时目录 + runMigrations）+ 只 mock sdk barrel/keystore/debug-log-server」，落库断言为真实存储行为（优于原计划设想的 mock storage）；终态补发、闸门丢迟到事件、stableSdkSessionId 跨 turn 稳定（claude）/逐 turn 演进（codex）均已锁入断言。
 > - 环境备注：Windows 本机跑 agent-runtime 测试需 better-sqlite3 为 node ABI（`node_modules/better-sqlite3 && npx prebuild-install -r node`），跑完必须 `apps/desktop && pnpm rebuild:native` 恢复 Electron ABI（vendor/prebuilds 只有 macOS arm64 二进制，`sqlite-abi.sh` 在 Windows 不可用）。既有 15 个 Windows 平台敏感失败（session-runtime-config ×10、session.service.test ×5）与本改动无关（移走新文件重跑对照验证），已按「先可观测后强制」记录。
+
+> **落地记录（2026-08-15，D3 完成）**：
+>
+> - `sdk/engine-executor.ts`：EngineKind（对齐 adapterKind 持久化值域）+ EngineExecutor（含三条契约注释：终态只经事件流/实例身份即闸门/turnId 语义）+ PermissionModeAwareExecutor / RewindCapableExecutor 能力接口 + isPermissionModeAware / isRewindCapable 守卫 + RewindFilesParams/Result 具名类型（迁自 Claude 内联签名）+ ActiveExecution 迁入（`Pick<EngineExecutor,'cancel'>` 结构视图）。
+> - 4 执行器 `implements` 就位（Claude 同时实现两个能力接口），各新增 `readonly engine` 字段（唯一运行时面变化：实例上多一个字符串字段，零行为影响）；FakeEngineExecutor 同步挂接口（第 5 个实现者，W2 基座）。
+> - `__tests__/sdk/engine-executor-conformance.test.ts`：5 条断言全绿 = 编译期赋值窄化（4 执行器 × 接口/能力类型）+ 运行期 cancel→cancelled 终态冒烟 ×4（transport mock 复用各执行器既有测试模式）。
+> - 验证：agent-runtime typecheck 0 错、touched-files lint 0 错、四执行器既有测试 110/110、贯穿基线 6/6、session-runtime-config 的 10 个失败经 stash 对照归因为既存（与本改动无关）。barrel 新增 re-export 均为增量，desktop 消费面不受影响。
 
 | 日   | 任务                                                                                                                                                                                                                                                                                                                      | 产出/提交                                       |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
