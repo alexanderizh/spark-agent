@@ -287,6 +287,16 @@ services/session/
 > - `__tests__/sdk/engine-executor-conformance.test.ts`：5 条断言全绿 = 编译期赋值窄化（4 执行器 × 接口/能力类型）+ 运行期 cancel→cancelled 终态冒烟 ×4（transport mock 复用各执行器既有测试模式）。
 > - 验证：agent-runtime typecheck 0 错、touched-files lint 0 错、四执行器既有测试 110/110、贯穿基线 6/6、session-runtime-config 的 10 个失败经 stash 对照归因为既存（与本改动无关）。barrel 新增 re-export 均为增量，desktop 消费面不受影响。
 
+> **落地记录（2026-08-15，D4 完成，commit `df0c031b`）**：
+>
+> - `services/session/engine-kinds.ts`（`services/session/` 子目录首个文件，W3 拆分目标布局就位）：resolveEngineKind 穷尽 switch + 四个归一化纯函数迁入；session.service import + re-export（外部 import 面不变，provider-model-resolution.test 33/33 免改通过）。
+> - 手写归并替换 **12 处**（比计划清单多 1 处：`:3615` 的单值 `=== 'codex'` 判断，resolveEngineKind 化后口径一致）：adapterKind 快照、workflow 执行模式、isCodex ×2、subagent 提示注入、Claude 预设段、sdkPreset、主 turn 分叉、disableCodexNativeSkills、team consumer 判定、成员档 isCodexMember、applyApprovalToggle。验收 grep：`'claude-sdk' ||` 归并与 `startsWith('codex-')` 嗅探在 session.service 内归零。
+> - 已知行为边界（有意为之并写入测试锁定）：`normalizePermissionMode`/`isCodexPermissionMode` 查表后，非法 `'codex-*'` 脏字符串从「归为 codex」改为「回落 claude 侧」（更保守；全仓 grep 确认无写入方可产生该类值，8 个合法值行为逐字一致）。
+> - 顺手还 P2 枚举收敛债：`AgentAdapterKind`（session-resume-gate 逐字复制版）收敛为 protocol `SessionAgentAdapter` 别名（类型层零变化）。
+> - 新增 `__tests__/services/session/engine-kinds.test.ts` 9 条断言（穷尽映射/查表边界/迁移函数回归锁定）。
+> - 验证：typecheck 0 错、lint 0 errors、贯穿基线 6/6 全绿；session-runtime-config ×10 与 session.service.test ×5 失败经 stash 对照归因为既存 Windows 平台问题（其中 session.service.test 的 5 处为并行开发新增 `pendingTitleRefinements` 字段后测试构造路径未跟上，**遗留待修**，非本改动引入）。
+> - ABI 备忘修正：node ABI 切换正确姿势为「进 `node_modules/better-sqlite3` 目录内执行 `npx prebuild-install -r node`」（`-d` 是布尔 download flag 不是目录参数）；恢复用 `apps/desktop && NATIVE_MODULES=better-sqlite3 pnpm rebuild:native`（根目录无此脚本），本次已恢复并经 `pnpm native:verify` 三模块验证。
+
 | 日   | 任务                                                                                                                                                                                                                                                                                                                      | 产出/提交                                       |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | D1-2 | **测试基座先行**：`__tests__/sdk/fake-engine-executor.ts`（脚本化事件注入的 stub，复用 plan-mode-e2e 的 async-generator 模式）；为**现状** turn 管道写 3 条贯穿基线测试：①完整 turn 事件顺序+终态+落库 ②cancel 路径（cancel→cancelled 终态→五件套摘除）③resume id 生成与 adapterKind 快照匹配。这组测试是整个 P1 的行为锁 | `test(session): turn 管道贯穿基线`              |
