@@ -146,6 +146,11 @@ import {
 } from './session/engine-kinds.js'
 export { getAgentAdapterFromSession, getPermissionModeFromSession } from './session/engine-kinds.js'
 
+// ─── P1-W1-D5 引擎注册表（迁出至 ./session/engine-registry.ts）───
+import { createDefaultEngineRegistry } from './session/engine-registry.js'
+// 原 codex 载具工厂整体迁入 codex descriptor；re-export 保持既有 import 面。
+export { createCodexExecutorForConfig } from './session/engine-registry.js'
+
 import {
   createUserCancelledTurnEvent,
   createInterruptedTurnEvents,
@@ -282,13 +287,7 @@ import {
 } from './workflow-executor.js'
 import { CheckpointGitService } from './checkpoint-git.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
-import {
-  ClaudeSDKExecutor,
-  CodexCliExecutor,
-  CodexOpenAIExecutor,
-  CodexSdkExecutor,
-  isSDKAvailable,
-} from '../sdk/index.js'
+import { ClaudeSDKExecutor, isSDKAvailable } from '../sdk/index.js'
 import type {
   SDKApprovalResult,
   SDKExecutorConfig,
@@ -399,19 +398,7 @@ export type QuestionHandler = (
 ) => Promise<Record<string, unknown>>
 // AgentAdapterKind 类型定义迁出至 ./session-resume.ts（D-13 拆分）
 // ActiveExecution 类型定义迁出至 ../sdk/engine-executor.ts（P1-W1 引擎接口化）
-
-export function createCodexExecutorForConfig(
-  config: Pick<SDKExecutorConfig, 'useLocalConfig' | 'codexApiKind' | 'codexCliProvider'>,
-): CodexCliExecutor | CodexOpenAIExecutor | CodexSdkExecutor {
-  if (config.useLocalConfig === true) return new CodexCliExecutor()
-  if (config.codexApiKind === 'chat') {
-    return new CodexOpenAIExecutor()
-  }
-  if (config.codexApiKind == null && config.codexCliProvider?.wireApi === 'chat') {
-    return new CodexOpenAIExecutor()
-  }
-  return new CodexSdkExecutor()
-}
+// createCodexExecutorForConfig 迁出至 ./session/engine-registry.ts（P1-W1-D5 引擎注册表）
 
 /** Chat-only Codex consumers use direct HTTP and cannot consume local MCP bridges. */
 export function isOpenAiOnlyCodexConsumer(args: {
@@ -851,6 +838,8 @@ export class SessionService {
    * 成功、用户手动改名、达到重试上限或会话删除时清除。
    */
   private readonly pendingTitleRefinements = new Map<string, PendingTitleRefinement>()
+  /** 引擎注册表（P1-W1-D5）：kind → 执行器构造 + 能力声明；第三引擎接入只需 register。 */
+  private readonly engineRegistry = createDefaultEngineRegistry()
   private usageLedgerLastByTurn = new Map<
     string,
     {
@@ -3984,7 +3973,7 @@ export class SessionService {
     }
 
     if (this.cancelledTurnIds.has(turnId)) return
-    const executor = new ClaudeSDKExecutor()
+    const executor = this.engineRegistry.get('claude-sdk').createExecutor(config)
     const changedFiles = new Set<string>()
     const workspaceRootPath = config.workspaceRootPath
     const observedFileChangeKeys = this.getTurnFileChangeKeys(sessionId, turnId)
@@ -4610,7 +4599,7 @@ export class SessionService {
 
     const useCodexCli = config.useLocalConfig === true || config.codexCliProvider != null
     if (this.cancelledTurnIds.has(turnId)) return
-    const executor = createCodexExecutorForConfig(config)
+    const executor = this.engineRegistry.get('codex').createExecutor(config)
     const completeAssistantEvents: AssistantMessageEvent[] = []
     const mentionAgentId = options.mentionAgentId
     const mentionMemberContext =
@@ -7694,12 +7683,9 @@ export class SessionService {
         : {}),
     }
 
-    // FR-0a：按成员 adapter 选择执行器——claude 走 ClaudeSDKExecutor，codex 复用 Host 路径
-    // 同款工厂 createCodexExecutorForConfig（按 useLocalConfig/codexCliProvider/codexApiKind 选
-    // CodexCli/CodexSdk）。四执行器 onEvent/cancel/executeTurn 签名一致，监听复用。
-    const executor = isCodexMember
-      ? createCodexExecutorForConfig(sdkConfig)
-      : new ClaudeSDKExecutor()
+    // FR-0a：按成员 adapter 经引擎注册表解析执行器（P1-W1-D5；codex 载具三选一
+    // 收敛在 codex descriptor 内）。四执行器 onEvent/cancel/executeTurn 签名一致，监听复用。
+    const executor = this.engineRegistry.resolveExecutor(memberAdapter, sdkConfig)
 
     // 按 segment 收集 member 多段正文（被工具调用分隔的每段文本）。
     // 给 Host 的最终 content 拼接所有段，避免最后一段 result 覆盖前面段。
