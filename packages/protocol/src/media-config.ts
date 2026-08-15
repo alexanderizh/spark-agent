@@ -322,11 +322,11 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
     case 'text_rewrite':
     case 'prompt_optimize':
     case 'image_prompt_reverse':
-    // 深度视频走本地 ONNX 推理，不经过云端 media adapter。
+    // 深度视频走本地 ONNX 推理，不经过云端 media adapter。falls through
     case 'video_depth_map':
-    // 分离音频走本地 ffmpeg，不经过云端 media adapter。
+    // 分离音频走本地 ffmpeg，不经过云端 media adapter。falls through
     case 'extract_audio':
-    // 提取首尾帧走本地 ffmpeg，不经过云端 media adapter。
+    // 提取首尾帧走本地 ffmpeg，不经过云端 media adapter。falls through
     case 'extract_first_last_frames':
       return []
     default:

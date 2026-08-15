@@ -13,14 +13,19 @@ describe('hasRunningTeamMemberActivity', () => {
       {
         id: 'assistant-1',
         role: 'assistant',
-        content: '',
         blocks: [
           {
             kind: 'team_dispatch',
             dispatchId: 'dispatch-1',
             hostAgentId: 'host-1',
             memberAgentId: 'member-1',
-            task: { taskId: 'task-1', memberAgentId: 'member-1', instruction: 'Review' },
+            task: {
+              taskId: 'task-1',
+              hostAgentId: 'host-1',
+              memberAgentId: 'member-1',
+              rootTurnId: 'turn-1',
+              instruction: 'Review',
+            },
             state: 'completed',
           },
           {
@@ -31,6 +36,7 @@ describe('hasRunningTeamMemberActivity', () => {
           },
         ],
         eventIds: [],
+        usage: null,
         timestamp: '2026-08-12T00:00:00.000Z',
         status: 'completed',
       },

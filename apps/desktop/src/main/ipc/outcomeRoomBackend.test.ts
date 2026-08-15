@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { SessionId } from '@spark/protocol'
+import type { TeamDiscussionRow } from '@spark/storage'
 import { OutcomeRoomBackend } from './outcomeRoomBackend.js'
 
-const sessionId = '11111111-1111-4111-8111-111111111111'
+const sessionId = '11111111-1111-4111-8111-111111111111' as SessionId
 
 function createHarness() {
   const records = [
@@ -43,14 +45,14 @@ function createHarness() {
       supersedes: 'old',
       reason: 'verified',
     },
-  ] as const
+  ]
   const sessionRepository = {
     get: vi.fn(() => ({ id: sessionId })),
     getMetadata: vi.fn(() => ({ team: { enabled: true } })),
   }
   const discussionRepository = {
-    findActiveBySession: vi.fn(() => null),
-    listBySession: vi.fn(() => [
+    findActiveBySession: vi.fn((_sessionId: string): TeamDiscussionRow | null => null),
+    listBySession: vi.fn((_sessionId: string): TeamDiscussionRow[] => [
       {
         id: 'discussion-1',
         session_id: sessionId,
@@ -65,7 +67,11 @@ function createHarness() {
     ]),
   }
   const ledger = {
-    getCurrentProjection: vi.fn((_roomId: string, discussionId: string, limit: number) => records.filter((record) => record.status !== 'superseded' && record.discussionId === discussionId).slice(0, limit)),
+    getCurrentProjection: vi.fn((_roomId: string, discussionId: string, limit: number) =>
+      records
+        .filter((record) => record.status !== 'superseded' && record.discussionId === discussionId)
+        .slice(0, limit),
+    ),
     confirm: vi.fn(() => records[1]),
     reject: vi.fn(),
     correct: vi.fn(),
@@ -87,7 +93,11 @@ describe('OutcomeRoomBackend', () => {
     const { backend, ledger } = createHarness()
     const snapshot = await backend.getSnapshot(sessionId)
 
-    expect(ledger.getCurrentProjection).toHaveBeenCalledWith(`team-room:${sessionId}`, 'discussion-1', 100)
+    expect(ledger.getCurrentProjection).toHaveBeenCalledWith(
+      `team-room:${sessionId}`,
+      'discussion-1',
+      100,
+    )
     expect(snapshot.discussion?.id).toBe('discussion-1')
     expect(snapshot.records).toHaveLength(1)
     expect(snapshot.records[0]).toMatchObject({ id: 'current', version: 2 })
@@ -160,30 +170,34 @@ describe('OutcomeRoomBackend', () => {
       expectedVersion: 3,
     })
 
-    expect(ledger.restore).toHaveBeenCalledWith(expect.objectContaining({
-      discussionId: 'discussion-1',
-      logicalKey: 'temporary',
-      expiresAt: null,
-    }))
+    expect(ledger.restore).toHaveBeenCalledWith(
+      expect.objectContaining({
+        discussionId: 'discussion-1',
+        logicalKey: 'temporary',
+        expiresAt: null,
+      }),
+    )
   })
 
   it('rejects a stale card when the active discussion changed before mutation', async () => {
     const { backend, discussionRepository, ledger } = createHarness()
     discussionRepository.findActiveBySession.mockReturnValue({
-      ...discussionRepository.listBySession()[0],
+      ...discussionRepository.listBySession(sessionId)[0]!,
       id: 'discussion-2',
       state: 'active',
       ended_at: null,
     })
 
-    await expect(backend.mutate({
-      sessionId,
-      expectedDiscussionId: 'discussion-1',
-      expectedRecordId: 'current',
-      action: 'confirm',
-      logicalKey: 'goal',
-      expectedVersion: 2,
-    })).rejects.toMatchObject({ code: 'CONFLICT' })
+    await expect(
+      backend.mutate({
+        sessionId,
+        expectedDiscussionId: 'discussion-1',
+        expectedRecordId: 'current',
+        action: 'confirm',
+        logicalKey: 'goal',
+        expectedVersion: 2,
+      }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' })
     expect(ledger.confirm).not.toHaveBeenCalled()
   })
 })

@@ -24,14 +24,15 @@ import { insertToComposer, type CodeReference } from './composerInsert'
 type MonacoEditor = Monaco.editor.IStandaloneCodeEditor
 type MonacoNS = typeof Monaco
 
-export interface EditorMenuItem {
-  key: string
-  label: string
-  /** 分隔线：仅渲染分隔，label/onSelect 无意义 */
-  separator?: boolean
-  disabled?: boolean
-  onSelect?: () => void
-}
+/**
+ * 选区类工具的最小依赖接口：addAction 的 run 回调只给 ICodeEditor，
+ * 这里实际只用 getSelection()，取窄于 IStandaloneCodeEditor 的类型以兼容两种调用方。
+ */
+type MonacoCodeEditor = Monaco.editor.ICodeEditor
+
+export type EditorMenuItem =
+  | { key: string; label: string; separator?: false; disabled?: boolean; onSelect?: () => void }
+  | { key: string; separator: true; label?: string; disabled?: boolean; onSelect?: () => void }
 
 /**
  * Monaco 原生右键项的中文名 + 是否仅编辑态（只读时禁用）。按组组织，组间自动插分隔线。
@@ -44,7 +45,10 @@ const NATIVE_ACTION_GROUPS: Array<{ id: string; label: string; editOnly?: boolea
     { id: 'editor.action.clipboardPasteAction', label: '粘贴', editOnly: true },
     { id: 'editor.action.selectAll', label: '全选' },
   ],
-  [{ id: 'actions.find', label: '查找' }, { id: 'editor.action.startFindReplaceAction', label: '替换' }],
+  [
+    { id: 'actions.find', label: '查找' },
+    { id: 'editor.action.startFindReplaceAction', label: '替换' },
+  ],
   [
     { id: 'editor.action.formatDocument', label: '格式化文档', editOnly: true },
     { id: 'editor.action.formatSelection', label: '格式化选定内容', editOnly: true },
@@ -62,13 +66,16 @@ function basename(p: string): string {
 }
 
 /** 当前是否有非空选区。 */
-export function editorHasSelection(editor: MonacoEditor): boolean {
+export function editorHasSelection(editor: MonacoCodeEditor): boolean {
   const sel = editor.getSelection()
   return sel != null && !sel.isEmpty()
 }
 
 /** 取当前选区的代码位置引用；无选区 / 无文件路径时返回 null。 */
-export function getSelectionCodeReference(editor: MonacoEditor, filePath: string): CodeReference | null {
+export function getSelectionCodeReference(
+  editor: MonacoCodeEditor,
+  filePath: string,
+): CodeReference | null {
   if (filePath.length === 0) return null
   const selection = editor.getSelection()
   if (selection == null || selection.isEmpty()) return null
@@ -81,7 +88,7 @@ export function getSelectionCodeReference(editor: MonacoEditor, filePath: string
 }
 
 /** 添加选中代码到会话（以 CodeReference chip 形式）。 */
-export function addSelectionToComposer(editor: MonacoEditor, filePath: string): void {
+export function addSelectionToComposer(editor: MonacoCodeEditor, filePath: string): void {
   const ref = getSelectionCodeReference(editor, filePath)
   if (ref == null) return
   void insertToComposer({ codeReferences: [ref] })
@@ -90,7 +97,9 @@ export function addSelectionToComposer(editor: MonacoEditor, filePath: string): 
 /** 添加当前文件到会话（作为 file 附件，语义同拖文件进输入框）。 */
 export function addFileToComposer(filePath: string): void {
   if (filePath.length === 0) return
-  void insertToComposer({ attachments: [{ type: 'file', path: filePath, name: basename(filePath) }] })
+  void insertToComposer({
+    attachments: [{ type: 'file', path: filePath, name: basename(filePath) }],
+  })
 }
 
 /**
