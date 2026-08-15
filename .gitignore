@@ -138,6 +138,7 @@ test-preview.*
 model-api-doc/
 minio/
 .worktrees/
+.claude/worktrees/
 .zcode/
 .superpowers/
 .spark-agent/

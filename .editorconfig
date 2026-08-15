@@ -1,0 +1,18 @@
+# EditorConfig — 跨编辑器的基础格式约定（工程化还债方案 Phase 0.5）
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = true
+
+[*.md]
+# Markdown 行尾双空格是换行语义，不裁剪
+trim_trailing_whitespace = false
+
+[*.{cmd,bat}]
+# Windows 脚本保留 CRLF
+end_of_line = crlf

@@ -19,19 +19,38 @@
     "artifacts:audit": "node scripts/audit-artifact-repository.mjs",
     "artifacts:publish-codex": "node scripts/publish-codex-runtime-to-minio.mjs",
     "artifacts:publish-depth-model": "node scripts/publish-depth-model-to-minio.mjs",
-    "test": "pnpm -r run test",
+    "test": "pnpm run test:unit",
     "test:unit": "pnpm -r run test:unit",
     "test:e2e": "pnpm --filter @spark/desktop test:e2e",
+    "check:file-size": "node scripts/check-file-size.mjs",
     "validate:skills": "node scripts/validate-builtin-skills.mjs",
     "lint": "pnpm -r run lint",
     "typecheck": "pnpm -r run typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\" --ignore-path .gitignore",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\" --ignore-path .gitignore",
-    "clean": "pnpm -r run clean && rm -rf node_modules"
+    "clean": "pnpm -r run clean && rm -rf node_modules",
+    "postinstall": "simple-git-hooks"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec lint-staged && node scripts/check-file-size.mjs",
+    "commit-msg": "pnpm exec commitlint --edit $1"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,less,css}": [
+      "prettier --write"
+    ]
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
     "aws4": "1.13.2",
+    "lint-staged": "^17.3.0",
     "prettier": "^3.3.0",
+    "simple-git-hooks": "^2.13.1",
     "typescript": "^5.5.0"
   }
 }

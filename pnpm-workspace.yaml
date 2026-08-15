@@ -53,6 +53,7 @@ allowBuilds:
   onnxruntime-node: true
   protobufjs: true
   sharp: true
+  simple-git-hooks: true
 minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk'
   - '@anthropic-ai/claude-agent-sdk-darwin-arm64'
