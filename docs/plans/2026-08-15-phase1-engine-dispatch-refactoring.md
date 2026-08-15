@@ -1,6 +1,6 @@
 # Phase 1 实施计划：引擎分派接口化 + session.service 拆分
 
-> 状态: 实施中（W1 D1-3 已落地） | 最后核对: 2026-08-15
+> 状态: 实施中（W1 全部落地，W2 待启动） | 最后核对: 2026-08-16
 
 母方案：`docs/plans/2026-08-15-engineering-upgrade-roadmap.md` §5 Phase 1。
 本计划基于 2026-08-15 三路行号级调研（executor 层 / session.service 结构地图 / 测试基建），所有行号为当日实测。
@@ -296,6 +296,15 @@ services/session/
 > - 新增 `__tests__/services/session/engine-kinds.test.ts` 9 条断言（穷尽映射/查表边界/迁移函数回归锁定）。
 > - 验证：typecheck 0 错、lint 0 errors、贯穿基线 6/6 全绿；session-runtime-config ×10 与 session.service.test ×5 失败经 stash 对照归因为既存 Windows 平台问题（其中 session.service.test 的 5 处为并行开发新增 `pendingTitleRefinements` 字段后测试构造路径未跟上，**遗留待修**，非本改动引入）。
 > - ABI 备忘修正：node ABI 切换正确姿势为「进 `node_modules/better-sqlite3` 目录内执行 `npx prebuild-install -r node`」（`-d` 是布尔 download flag 不是目录参数）；恢复用 `apps/desktop && NATIVE_MODULES=better-sqlite3 pnpm rebuild:native`（根目录无此脚本），本次已恢复并经 `pnpm native:verify` 三模块验证。
+
+> **落地记录（2026-08-16，D5 完成，commit `4e2b3565`）**：
+>
+> - `services/session/engine-registry.ts`：EngineCapabilities（nativeResume/permissionHotSwitch/checkpointRewind/subagentTool 四能力）+ EngineDescriptor（createExecutor/capabilities/checkAvailability）+ EngineRegistry（register/get fail-loud/resolveExecutor）+ createDefaultEngineRegistry 两 descriptor 默认注册。
+> - `createCodexExecutorForConfig` 整体迁入 codex descriptor 的 createExecutor（载具三选一降为引擎内部细节）；session.service re-export 保持 import 面（既有工厂测试免改）。claude descriptor 的 checkAvailability 镜像现行 `isSDKAvailable()` 检查；codex 如实声明恒可用（现状无二进制预检）。capabilities/checkAvailability 本阶段只声明，W2-D5 能力探测接入消费。
+> - 三处创建点改经 registry（先只换解析，后续流程不动）：claude 主路径 `get('claude-sdk').createExecutor(config)`、codex 主路径 `get('codex').createExecutor(config)`、成员分叉三元归并改 `resolveExecutor(memberAdapter, sdkConfig)`。三个 executor import（CodexCli/OpenAI/Sdk）随之清理。
+> - 新增 `__tests__/services/session/engine-registry.test.ts` 11 条断言（get fail-loud、descriptor 覆盖注入点、resolveExecutor adapter→载具三段解析 ×4、工厂优先级遮蔽 ×2、能力声明、availability 契约）。
+> - 验证：typecheck 0 错、lint 0 errors、贯穿基线 6/6（双引擎 turn 路径穿过新创建点，行为锁确认等价）、conformance 5/5、session.service 69/69、engine-kinds 9/9；runtime-config 既存 10 失败数不变（零新增）。Electron ABI 已恢复并经 native:verify 三模块验证。
+> - 遗留清偿：D4 记录的 session.service.test ×5（`pendingTitleRefinements` fixture 缺字段）已修复（commit `5e027c45`，69/69 全过）。
 
 | 日   | 任务                                                                                                                                                                                                                                                                                                                      | 产出/提交                                       |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
