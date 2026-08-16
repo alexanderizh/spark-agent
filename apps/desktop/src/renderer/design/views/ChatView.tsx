@@ -287,7 +287,7 @@ import {
   isLocalCopySlashCommand,
   serializeMessagesToMarkdown,
 } from './chat-copy'
-import { hasVisibleTeamMemberActivityBlocks } from './chat-team-visibility'
+import { hasVisibleAgentBlocks, hasVisibleTeamMemberActivityBlocks } from './chat-team-visibility'
 import { shouldShowAssistantIdentity } from './chat/chat-message-avatar'
 import { getLatestAgentStatus, isRunningAgentStatus } from './chat-session-status'
 import {
@@ -4680,6 +4680,7 @@ function ChatStream({
                           identity.id,
                           assistantAgentId,
                         )}
+                        teamModeActive={teamConfig.enabled}
                         {...(onFilePreview != null ? { onFilePreview } : {})}
                         {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
                         {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
@@ -7047,6 +7048,7 @@ type AssistantRowCompareProps = {
   running?: boolean
   selectionMode?: boolean
   selected?: boolean
+  teamModeActive?: boolean
   onRetry?: () => void
   onFork?: () => void
 }
@@ -7070,6 +7072,7 @@ function assistantRowsPropsAreEqual(
     prev.timestamp === next.timestamp &&
     prev.selectionMode === next.selectionMode &&
     prev.selected === next.selected &&
+    prev.teamModeActive === next.teamModeActive &&
     (prev.onRetry != null) === (next.onRetry != null) &&
     (prev.onFork != null) === (next.onFork != null)
   )
@@ -7100,6 +7103,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   onToggleSelected,
   onStartMultiSelect,
   onRetry,
+  teamModeActive = false,
 }: {
   sessionId: SessionId
   workspaceRootPath: string | null
@@ -7131,8 +7135,12 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   onToggleSelected?: () => void
   onStartMultiSelect?: () => void
   onRetry?: () => void
+  // 团队模式开关：关闭「显示思考与执行日志」时配合 CSS 在 React 侧剔除 host 的纯过程段，
+  // 避免气泡内内容全被隐藏后只剩下头像+名称的空气泡。
+  teamModeActive?: boolean
 }) {
   const showTeamActivityLogs = useTeamActivityLogsVisible()
+  const hideTeamHostProcessLogs = teamModeActive && !showTeamActivityLogs
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
   const lastAgentSegmentIndex = segments.reduce(
@@ -7207,6 +7215,10 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
           )
         }
         const segmentStreaming = segmentIsLatest && status === 'running'
+        // 团队模式关闭过程日志时，host 的纯过程段（只有思考/工具调用等，会被 CSS 整体隐藏）
+        // 不再渲染；流式段保留，让「执行任务中」运行标识可见。有正文/错误/结果卡片的段不受影响。
+        if (hideTeamHostProcessLogs && !segmentStreaming && !hasVisibleAgentBlocks(segment.blocks))
+          return null
         return (
           <AgentMsg
             key={`agent-${index}`}
