@@ -109,7 +109,6 @@ import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
 import { ChatTurnNavigator } from './chat/ChatTurnNavigator'
 import { buildChatTurnNavItems, type ChatTurnNavItem } from './chat/chat-turn-navigation'
 import { SessionForkDialog } from './chat/SessionForkDialog'
-import { SessionLineageBar } from './chat/SessionLineageBar'
 import { MessageHoverBar } from './chat/MessageHoverBar'
 import {
   UserMessageSessionReferences,
@@ -1712,7 +1711,13 @@ export function ChatView({
 
   const isGitRepo = gitStatus?.isGitRepo === true
   // 右上角环境面板（git / 进程 / 目标）只要三者其一有内容即可展示，不再强依赖 git 仓库。
-  const hasEnvPanelContent = isGitRepo || activeSessionTasks.length > 0 || activeSessionGoal != null
+  const hasSessionCollaboration =
+    lineageSessionId === active && (activeLineage != null || activeChildLineages.length > 0)
+  const hasEnvPanelContent =
+    isGitRepo ||
+    activeSessionTasks.length > 0 ||
+    activeSessionGoal != null ||
+    hasSessionCollaboration
 
   const readGitEnvPanelRightGutter = useCallback((): number | null => {
     const chatArea = chatAreaRef.current
@@ -2766,21 +2771,6 @@ export function ChatView({
         )}
         {active != null && (
           <Fragment key="active-session-content">
-            {lineageSessionId === active &&
-              (activeLineage != null || activeChildLineages.length > 0) && (
-                <SessionLineageBar
-                  {...(activeLineage != null
-                    ? {
-                        sourceTitle: activeLineage.sourceTitleSnapshot,
-                        sourceAvailable: lineageSource != null,
-                        hasParent: true,
-                        ...(lineageSource != null ? { onOpenSource: handleOpenLineageSource } : {}),
-                      }
-                    : { hasParent: false })}
-                  childLineages={activeChildLineages}
-                  onOpenChild={handleOpenLineageChild}
-                />
-              )}
             {!showEmptyHero && (
               <ChatTabbar
                 key="chat-tabbar"
@@ -2945,6 +2935,18 @@ export function ChatView({
             tasks={activeSessionTasks}
             goal={activeSessionGoal}
             onGoalControl={handleGoalControl}
+            collaboration={
+              hasSessionCollaboration
+                ? {
+                    lineage: activeLineage,
+                    sourceTitle: lineageSource?.title ?? activeLineage?.sourceTitleSnapshot ?? null,
+                    sourceAvailable: lineageSource != null,
+                    childLineages: activeChildLineages,
+                    ...(lineageSource != null ? { onOpenSource: handleOpenLineageSource } : {}),
+                    onOpenChild: handleOpenLineageChild,
+                  }
+                : null
+            }
           />
         )}
 
@@ -7425,10 +7427,6 @@ const AgentMsg = React.memo(function AgentMsg({
   const errorBlocks = blocks.filter((b) => b.kind === 'error')
   const isStreaming = status === 'running'
   const hasContent = leadingThinkingBlocks.length > 0 || contentBlocks.length > 0
-  // Count active (pending/running) tool calls for parallel indicator
-  const activeToolCount = toolCallBlocks.filter(
-    (b) => b.status === 'pending' || b.status === 'running',
-  ).length
   const isCancelled = messageStatus === 'cancelled' && !isStreaming
   // Pure error: no content, only error blocks
   const isPureError =
@@ -7643,12 +7641,6 @@ const AgentMsg = React.memo(function AgentMsg({
           )}
           {leadingThinkingBlocks.length > 0 && (
             <ThinkingSection blocks={leadingThinkingBlocks} streaming={isStreaming} />
-          )}
-          {isStreaming && (
-            <div className={`parallel-tools-indicator${activeToolCount > 1 ? ' is-visible' : ''}`}>
-              <Icons.Layers size={11} />
-              <span>{activeToolCount} 个工具并行执行</span>
-            </div>
           )}
           {timelineGroups.length > 0 && (isLatest || contentBlocks.length === 0) && (
             <div

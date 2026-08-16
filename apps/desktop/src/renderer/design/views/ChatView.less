@@ -308,6 +308,12 @@
   background: var(--selected);
 }
 
+.session-collaboration-entry-status {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+}
+
 .git-env-icon {
   display: inline-flex;
   width: 16px;
@@ -2351,9 +2357,18 @@ body.git-review-tree-resizing {
   text-align: center;
   animation: composer-file-drop-rise 160ms ease-out;
 
-  svg { color: #9856e7; }
-  strong { margin-top: 5px; font-size: 18px; font-weight: 650; }
-  span { color: var(--text-muted); font-size: var(--font-sm); }
+  svg {
+    color: #9856e7;
+  }
+  strong {
+    margin-top: 5px;
+    font-size: 18px;
+    font-weight: 650;
+  }
+  span {
+    color: var(--text-muted);
+    font-size: var(--font-sm);
+  }
 }
 
 .composer.is-session-reference-drop-active {
@@ -2362,7 +2377,9 @@ body.git-review-tree-resizing {
 
 @media (prefers-reduced-motion: reduce) {
   .composer-session-ref-drop-overlay,
-  .composer-session-ref-drop-target { animation: none; }
+  .composer-session-ref-drop-target {
+    animation: none;
+  }
 }
 
 .composer-file-drop-icon {
