@@ -67,6 +67,24 @@ export interface RewindCapableExecutor extends EngineExecutor {
 }
 
 /**
+ * 能力接口：turn 中追加输入（steer）——app-server 载具经 `turn/steer` 将
+ * 用户补充要求注入进行中的 turn（P2-2 载具级能力；会话层消费属跨引擎
+ * 产品决策，见方案文档 Phase 2 记录，当前未接线）。
+ */
+export interface SteerCapableExecutor extends EngineExecutor {
+  steer(input: string): Promise<void>
+}
+
+/**
+ * 能力接口：主动触发上下文压缩——app-server 载具经 `thread/compact/start`
+ * 请求 codex 立即压缩（P2-2 载具级能力；Spark 当前无跨引擎主动压缩策略，
+ * 被动感知（thread/compacted → context_compaction）已在载具事件映射内）。
+ */
+export interface CompactCapableExecutor extends EngineExecutor {
+  compact(): Promise<void>
+}
+
+/**
  * 能力守卫的参数取 EngineExecutor 的结构超集：turnRegistry 持有的 ActiveExecution
  * （Pick<EngineExecutor,'cancel'> + 可选能力）同样可判 —— 会话层无需持有完整执行器。
  * 可选能力显式带 | undefined：exactOptionalPropertyTypes 下 ActiveExecution 的
@@ -78,6 +96,8 @@ type CapabilityProbe = Pick<EngineExecutor, 'cancel'> & {
     | ((mode: SDKExecutorConfig['permissionMode']) => void | Promise<void>)
     | undefined
   rewindFiles?: RewindCapableExecutor['rewindFiles'] | undefined
+  steer?: SteerCapableExecutor['steer'] | undefined
+  compact?: CompactCapableExecutor['compact'] | undefined
 }
 
 export const isPermissionModeAware = (
@@ -87,6 +107,14 @@ export const isPermissionModeAware = (
 
 export const isRewindCapable = (e: CapabilityProbe): e is CapabilityProbe & RewindCapableExecutor =>
   typeof (e as Partial<RewindCapableExecutor>).rewindFiles === 'function'
+
+export const isSteerCapable = (e: CapabilityProbe): e is CapabilityProbe & SteerCapableExecutor =>
+  typeof (e as Partial<SteerCapableExecutor>).steer === 'function'
+
+export const isCompactCapable = (
+  e: CapabilityProbe,
+): e is CapabilityProbe & CompactCapableExecutor =>
+  typeof (e as Partial<CompactCapableExecutor>).compact === 'function'
 
 /**
  * session 层对活跃执行体的最小结构视图（迁自 session.service）。

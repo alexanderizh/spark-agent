@@ -2,11 +2,12 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
 import { CodexAppServerExecutor } from '../../sdk/codex-app-server/codex-app-server-executor.js'
 import type { CodexAppServerExecutorOptions } from '../../sdk/codex-app-server/codex-app-server-executor.js'
 import type { EngineExecutor } from '../../sdk/engine-executor.js'
+import { isCompactCapable, isSteerCapable } from '../../sdk/engine-executor.js'
 import type { SDKExecutorConfig, SDKTurnAttachment } from '../../sdk/types.js'
 import { FakeEngineExecutor, resetFakeEngineHarness } from './fake-engine-executor.js'
 
@@ -532,6 +533,196 @@ describe('CodexAppServerExecutor', () => {
       outputTokens: 50,
       cacheHitTokens: 20,
       reasoningOutputTokens: 10,
+    })
+  })
+
+  describe('交互审批回路（P2-1）', () => {
+    const approvalScenario = {
+      serverRequests: [
+        {
+          method: 'item/commandExecution/requestApproval',
+          params: { threadId: THREAD_ID, turnId: 'server-turn-1', command: 'rm -rf /tmp/x' },
+        },
+      ],
+      steps: [agentMessageCompletedStep('after approval')],
+    }
+
+    it('approvalCallback 放行 → accept；回调收到 bash 入参；状态含 waiting_permission→thinking', async () => {
+      const callback = vi.fn(
+        async (
+          _sid: string,
+          _toolName: string,
+          _toolInput: Record<string, unknown>,
+          _context: unknown,
+        ) => true,
+      )
+      const { journal, events, error } = await runScenario(approvalScenario, {
+        config: { approvalCallback: callback },
+      })
+      expect(error).toBeNull()
+      expect(callback).toHaveBeenCalledTimes(1)
+      expect(callback.mock.calls[0]?.[1]).toBe('bash')
+      expect(callback.mock.calls[0]?.[2]).toEqual({ command: 'rm -rf /tmp/x' })
+      const clientResponse = journal.find((e) => e.kind === 'clientResponse')
+      expect((clientResponse?.result as { decision?: string })?.decision).toBe('accept')
+      const statuses = eventsOf(events, 'agent_status').map((e) => (e as { status: string }).status)
+      expect(statuses).toContain('waiting_permission')
+      expect(statuses.at(-1)).toBe('completed')
+    })
+
+    it('scope=session → acceptForSession', async () => {
+      const callback = vi.fn(async () => ({ allowed: true, scope: 'session' as const }))
+      const { journal } = await runScenario(approvalScenario, {
+        config: { approvalCallback: callback },
+      })
+      const clientResponse = journal.find((e) => e.kind === 'clientResponse')
+      expect((clientResponse?.result as { decision?: string })?.decision).toBe('acceptForSession')
+    })
+
+    it('回调拒绝 → deny，turn 正常完成', async () => {
+      const callback = vi.fn(async () => ({ allowed: false }))
+      const { journal, events, error } = await runScenario(approvalScenario, {
+        config: { approvalCallback: callback },
+      })
+      expect(error).toBeNull()
+      const clientResponse = journal.find((e) => e.kind === 'clientResponse')
+      expect((clientResponse?.result as { decision?: string })?.decision).toBe('deny')
+      expect(eventsOf(events, 'agent_status').at(-1)).toMatchObject({ status: 'completed' })
+    })
+
+    it('回调抛错 → 确定性 deny 兜底，turn 不挂起', async () => {
+      const callback = vi.fn(async () => {
+        throw new Error('approval UI crashed')
+      })
+      const { journal, events, error } = await runScenario(approvalScenario, {
+        config: { approvalCallback: callback },
+      })
+      expect(error).toBeNull()
+      const clientResponse = journal.find((e) => e.kind === 'clientResponse')
+      expect((clientResponse?.result as { decision?: string })?.decision).toBe('deny')
+      expect(eventsOf(events, 'agent_status').at(-1)).toMatchObject({ status: 'completed' })
+    })
+
+    it('unattended → 不调用回调，确定性 deny', async () => {
+      const callback = vi.fn(async () => true)
+      const { journal } = await runScenario(approvalScenario, {
+        config: { approvalCallback: callback, unattended: true },
+      })
+      expect(callback).not.toHaveBeenCalled()
+      const clientResponse = journal.find((e) => e.kind === 'clientResponse')
+      expect((clientResponse?.result as { decision?: string })?.decision).toBe('deny')
+    })
+
+    it('审批挂起中 cancel → signal abort 释放回调，turn 走 cancelled 收尾', async () => {
+      let observedAbort = false
+      const callback = vi.fn(
+        (
+          _sid: string,
+          _tool: string,
+          _input: Record<string, unknown>,
+          context: { signal: AbortSignal },
+        ) =>
+          new Promise<boolean>((_, reject) => {
+            // AbortSignal 对已中止的信号不再派发事件：先查 aborted 再挂监听。
+            if (context.signal.aborted) {
+              observedAbort = true
+              reject(new Error('aborted'))
+              return
+            }
+            context.signal.addEventListener('abort', () => {
+              observedAbort = true
+              reject(new Error('aborted'))
+            })
+          }),
+      )
+      const { events, journal, error } = await runScenario(
+        {
+          serverRequests: approvalScenario.serverRequests,
+          steps: [{ kind: 'waitInterrupt' }],
+        },
+        {
+          config: { approvalCallback: callback },
+          onEvent: (event, executor) => {
+            if (event.type === 'agent_status' && event.status === 'waiting_permission') {
+              // 回调尚未完成调用（emit 同步先行）：延后一个宏任务再取消，
+              // 保证 abort 监听器已挂上——对应真实「用户看到审批卡后点取消」时序。
+              setTimeout(() => executor.cancel(), 20)
+            }
+          },
+        },
+      )
+      expect(error).toBeNull()
+      expect(observedAbort).toBe(true)
+      const clientResponse = journal.find((e) => e.kind === 'clientResponse')
+      expect((clientResponse?.result as { decision?: string })?.decision).toBe('deny')
+      expect(eventsOf(events, 'agent_status').at(-1)).toMatchObject({ status: 'cancelled' })
+    })
+  })
+
+  describe('载具能力：steer / compact（P2-2，载具级、未接线会话层）', () => {
+    it('能力守卫：app-server 载具具备 steer/compact，其他 codex 载具不具备', () => {
+      expect(isSteerCapable(new CodexAppServerExecutor())).toBe(true)
+      expect(isCompactCapable(new CodexAppServerExecutor())).toBe(true)
+      expect(isSteerCapable({ cancel: () => undefined } as EngineExecutor)).toBe(false)
+      expect(isCompactCapable({ cancel: () => undefined } as EngineExecutor)).toBe(false)
+    })
+
+    it('steer：turn 进行中发 turn/steer（input 数组 + expectedTurnId）', async () => {
+      const { journal, error } = await runScenario(
+        { steps: [agentMessageDeltaStep('partial'), { kind: 'waitInterrupt' }] },
+        {
+          onEvent: (event, executor) => {
+            if (event.type === 'assistant_message' && event.mode === 'delta') {
+              void executor
+                .steer('补充要求：改用中文回答')
+                .then(() => {
+                  executor.cancel()
+                })
+                .catch(() => {
+                  executor.cancel()
+                })
+            }
+          },
+        },
+      )
+      expect(error).toBeNull()
+      const steerRequest = journal.find((e) => e.kind === 'request' && e.method === 'turn/steer')
+      expect(steerRequest?.params).toMatchObject({
+        input: [{ type: 'text', text: '补充要求：改用中文回答' }],
+      })
+      expect((steerRequest?.params as { expectedTurnId?: string })?.expectedTurnId).toBe(
+        'fake-turn-1',
+      )
+    })
+
+    it('compact：turn 进行中发 thread/compact/start', async () => {
+      const { journal, error } = await runScenario(
+        { steps: [agentMessageDeltaStep('partial'), { kind: 'waitInterrupt' }] },
+        {
+          onEvent: (event, executor) => {
+            if (event.type === 'assistant_message' && event.mode === 'delta') {
+              void executor
+                .compact()
+                .then(() => {
+                  executor.cancel()
+                })
+                .catch(() => {
+                  executor.cancel()
+                })
+            }
+          },
+        },
+      )
+      expect(error).toBeNull()
+      expect(journal.some((e) => e.kind === 'request' && e.method === 'thread/compact/start')).toBe(
+        true,
+      )
+    })
+
+    it('无活动 turn 时 steer/compact 抛出描述性错误', async () => {
+      const executor = new CodexAppServerExecutor()
+      await expect(executor.steer('x')).rejects.toThrow('no active codex app-server turn')
+      await expect(executor.compact()).rejects.toThrow('no active codex app-server thread')
     })
   })
 })

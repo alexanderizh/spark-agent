@@ -3668,6 +3668,19 @@ export class SessionService {
       continueSession: canResumeSdkSession,
       ...(goalConfig != null ? { goal: goalConfig } : {}),
       ...(invocationObserver != null ? { invocationObserver } : {}),
+      // app-server 载具的交互审批回路（P2-1）：codex 原生审批请求（命令/文件变更）
+      // 经 approvalCallback 走用户审批卡；载具侧负责 waiting_permission 状态与
+      // 确定性兜底（无回调/unattended/回调异常 → deny，杜绝上游 turn 挂起）。
+      ...(this.onApproval != null
+        ? {
+            approvalCallback: async (
+              sid: string,
+              toolName: string,
+              toolInput: Record<string, unknown>,
+              context: SDKPermissionRequestContext,
+            ) => this.onApproval!(sid, toolName, toolInput, context),
+          }
+        : {}),
     }
     const codexTurnOptions: TryStartSDKTurnOptions = {
       ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
@@ -5088,7 +5101,10 @@ export class SessionService {
           ? new ProviderProfileRepository(this.db).get(session.provider_profile_id)
           : null
       if (provider == null || provider.keystore_ref == null) return
-      const config = JSON.parse(provider.config_json) as { apiEndpoint?: string; defaultModel?: string }
+      const config = JSON.parse(provider.config_json) as {
+        apiEndpoint?: string
+        defaultModel?: string
+      }
       const model = session.model_id?.trim() || config.defaultModel?.trim() || ''
       if (model.length === 0) return
       const apiKey = await resolveProviderApiKey(provider)

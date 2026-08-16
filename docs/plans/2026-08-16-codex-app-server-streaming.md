@@ -1,6 +1,6 @@
 # Codex 引擎流式输出修复：app-server 传输替换方案
 
-> 状态: 待开发 | 最后核对: 2026-08-16
+> 状态: 已落地 | 最后核对: 2026-08-16
 
 ## 一、现象
 
@@ -128,3 +128,45 @@ segmentId 沿用 `codex-sdk-{turnId}-text-{N}` 约定（renderer 累加逻辑零
 - codex-rs 源码：`event_processor_with_jsonl_output.rs`（0.144.5 与 main 对照）、`event_mapping.rs`、`cli.rs`
 - 二进制方法名探测：0.144.5 win32-x64 codex.exe 字符串表
 - **运行时 A/B 实验**（证据 4）：mock Responses SSE 服务器 + 时间戳 runner，`%TEMP%/codex-stream-test/`（mock-server.js / runner.js / as-probe.js，可复现）
+
+## 六、落地记录（2026-08-16，Phase 1 + Phase 2 全部完成）
+
+### 交付物
+
+- `packages/agent-runtime/src/sdk/codex-app-server/`：协议类型子集（app-server-protocol.ts，
+  带再生成指引）、NDJSON JSON-RPC 客户端（codex-app-server-client.ts，跨平台：无 shell spawn、
+  CRLF/BOM 防御、进程树终止对齐 CodexCliExecutor）、执行器（codex-app-server-executor.ts）。
+- 载具选择：`createCodexExecutorForConfig` responses 分支默认 AppServer 载具；
+  `CodexSdkExecutor` 降级为回退兜底（握手失败/图片附件自动回退，事件 raw bridge 转发）。
+- 跨平台：受管二进制解析复用 `resolveBundledCodexCli`（win32 `codex.exe` / 其余 `codex`）；
+  测试经 `executablePath`/`args` 注入点用 node 替身，Windows 实测通过。
+
+### 验证
+
+- 替身测试 25 用例全绿（流式/segmentId 约定/工具生命周期/思考流/mcp+fileChange+webSearch/
+  interrupt 取消/resume 静默回退/审批 accept·deny·scope·异常·unattended·取消竞态/
+  steer·compact·守卫/载具回退/图片回退/崩溃/failed 语义/实时用量）。
+- **真实二进制冒烟**（`SPARK_CODEX_APPSERVER_SMOKE=1` 门控，随仓库保留为运行时升级验收工具）：
+  0.144.5 端到端通过，delta ≥8 条且时间跨度 ≥1.5s（真流式证明）。
+- 行为锁 105/105（baseline/lifecycle/session.service/goal-queue），runtime-config 既存
+  失败基线不变；Electron ABI 全程恢复（native-verify 三模块通过）。
+
+### Phase 2 决策记录（诚实边界）
+
+- **交互审批回路（已接线）**：命令/文件变更类审批经 `config.approvalCallback` 走用户审批卡
+  （session.service codexConfig 已接 `onApproval`）；`SDKApprovalResult` 映射
+  accept/acceptForSession/deny。取消经 AbortSignal 释放回调（含「abort 先于回调调用」的
+  已中止预检）。权限画像（item/permissions/requestApproval）与问卷类保持确定性兜底。
+- **turn/steer 与 thread/compact/start（载具级能力，未接线会话层）**：已实现
+  `SteerCapableExecutor`/`CompactCapableExecutor` 能力接口 + 守卫 + 执行器方法与测试；
+  **未接入 session.service**——排队语义 vs 注入运行中 turn、跨引擎主动压缩策略属产品决策
+  （claude/codex 行为一致性），超出本次流式修复的爆炸半径，列为后续独立工作项。
+- goal 原生 API（thread/goal/set）：未采用——Spark 的 codex-native goal 语义
+  （/goal 文本 + fenced 状态块解析）已在 W2-D3 统一，换原生 API 属语义迁移，非传输问题。
+
+### 遗留观察项
+
+- app-server 为 experimental 接口：版本钉死策略与现有一致（SPARK_CODEX_SDK_VERSION 校验），
+  升级运行时后跑真实冒烟 + `codex app-server generate-json-schema` 核对协议类型子集。
+- 每 turn 一个 app-server 进程（保守形态）：冷启动 ~200-400ms 已被 prepare 前置于事件
+  发射吸收；跨 turn 进程复用属后续优化（需与会话生命周期对齐，暂不做）。

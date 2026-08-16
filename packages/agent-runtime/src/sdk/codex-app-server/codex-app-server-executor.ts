@@ -5,7 +5,11 @@ import { extractCodexCompactionEvent } from '../codex-compaction-event.js'
 import { resolveCodexPermissionPolicy } from '../codex-permission-policy.js'
 import { toCodexReasoningEffort } from '../reasoning-effort.js'
 import { StreamTerminalizer } from '../stream-terminalizer.js'
-import type { EngineExecutor } from '../engine-executor.js'
+import type {
+  CompactCapableExecutor,
+  EngineExecutor,
+  SteerCapableExecutor,
+} from '../engine-executor.js'
 import {
   CodexRuntimeNotInstalledError,
   CodexSdkExecutor,
@@ -19,7 +23,12 @@ import {
   resolveBundledCodexCli,
   stringifyEnv,
 } from '../codex-sdk-executor.js'
-import type { SDKExecutorConfig, SDKTurnAttachment } from '../types.js'
+import type {
+  SDKApprovalResult,
+  SDKExecutorConfig,
+  SDKPermissionRequestContext,
+  SDKTurnAttachment,
+} from '../types.js'
 import type {
   AppServerThreadParamsBase,
   AppServerTurnStartParams,
@@ -79,7 +88,9 @@ type AppServerStreamState = {
 const INTERRUPT_WATCHDOG_MS = 8_000
 const APP_SERVER_CLIENT_INFO = { name: 'spark-agent', version: '1' }
 
-export class CodexAppServerExecutor implements EngineExecutor {
+export class CodexAppServerExecutor
+  implements EngineExecutor, SteerCapableExecutor, CompactCapableExecutor
+{
   readonly engine = 'codex' as const
 
   private readonly listeners = new Set<Listener>()
@@ -100,6 +111,8 @@ export class CodexAppServerExecutor implements EngineExecutor {
   private lastThreadParams: AppServerThreadParamsBase | null = null
   private cancelRequested = false
   private interruptWatchdog: NodeJS.Timeout | null = null
+  /** 交互审批中挂起的 AbortController（cancel/dispose 时统一 abort，杜绝回调悬挂）。 */
+  private readonly pendingApprovals = new Set<AbortController>()
 
   constructor(options: CodexAppServerExecutorOptions = {}) {
     this.options = options
@@ -115,6 +128,8 @@ export class CodexAppServerExecutor implements EngineExecutor {
 
   cancel(): void {
     this.cancelRequested = true
+    // 挂起的交互审批统一 abort：审批实现经 signal 感知取消并释放，回退 deny 响应。
+    for (const controller of this.pendingApprovals) controller.abort()
     // 回退路径：转发给底层载具，保证 cancel 语义不因回退而丢失。
     if (this.activeClient == null) {
       this.fallbackExecutor?.cancel()
@@ -140,6 +155,40 @@ export class CodexAppServerExecutor implements EngineExecutor {
       }, INTERRUPT_WATCHDOG_MS)
       this.interruptWatchdog.unref()
     }
+  }
+
+  /**
+   * 能力：turn 中追加输入（`turn/steer`，P2-2 载具级能力）。
+   * 仅在 turn 进行中可用；expectedTurnId 取 turn/start 返回的服务端 turnId，
+   * 与协议的前置条件校验对齐（turn 已结束/被中断时请求会被上游拒绝）。
+   * 会话层消费（排队语义 vs 注入运行中 turn）属跨引擎产品决策，当前未接线。
+   */
+  async steer(input: string): Promise<void> {
+    const client = this.activeClient
+    const threadId = this.activeThreadId
+    const expectedTurnId = this.activeServerTurnId
+    if (client == null || threadId == null || expectedTurnId == null) {
+      throw new Error('no active codex app-server turn to steer')
+    }
+    await client.request('turn/steer', {
+      threadId,
+      expectedTurnId,
+      input: [{ type: 'text', text: input }],
+    })
+  }
+
+  /**
+   * 能力：主动触发上下文压缩（`thread/compact/start`，P2-2 载具级能力）。
+   * 压缩完成经 `thread/compacted` 通知回流（已在通知分发映射为 context_compaction
+   * 事件）；Spark 当前无跨引擎主动压缩策略，消费属后续产品决策。
+   */
+  async compact(): Promise<void> {
+    const client = this.activeClient
+    const threadId = this.activeThreadId
+    if (client == null || threadId == null) {
+      throw new Error('no active codex app-server thread to compact')
+    }
+    await client.request('thread/compact/start', { threadId })
   }
 
   async executeTurn(
@@ -360,6 +409,7 @@ export class CodexAppServerExecutor implements EngineExecutor {
         clearTimeout(this.interruptWatchdog)
         this.interruptWatchdog = null
       }
+      for (const controller of this.pendingApprovals) controller.abort()
       this.turnResolver = null
       this.processFailureResolver = null
       this.activeConfig = null
@@ -400,7 +450,7 @@ export class CodexAppServerExecutor implements EngineExecutor {
         this.dispatchNotification(method, params)
       },
       onServerRequest: (method, params, respond, reject) => {
-        respondToServerRequest(method, params, respond, reject, config)
+        this.handleServerRequest(method, params, respond, reject, config)
       },
       onExit: (code, signal, stderrTail) => {
         this.processFailureResolver?.(
@@ -755,6 +805,80 @@ export class CodexAppServerExecutor implements EngineExecutor {
     })
   }
 
+  /**
+   * server→client 审批请求的分流（P2-1 交互审批回路）：
+   * - 命令/文件变更类审批且宿主提供 approvalCallback 且非 unattended → 交互回路，
+   *   用户决策映射 accept / acceptForSession / deny；
+   * - 其余（无回调 / unattended / 权限画像类 / 未知方法）→ 确定性响应兜底，
+   *   任何路径都保证 respond 被调用，杜绝上游 turn 挂起。
+   */
+  private handleServerRequest(
+    method: string,
+    params: unknown,
+    respond: (result: unknown) => void,
+    reject: (error: JsonRpcErrorShape) => void,
+    config: SDKExecutorConfig,
+  ): void {
+    const interactive = classifyInteractiveApproval(method, params)
+    if (interactive != null && config.approvalCallback != null && config.unattended !== true) {
+      void this.resolveInteractiveApproval(interactive, method, params, config)
+        .then((decision) => {
+          respond({ decision })
+        })
+        .catch(() => {
+          respond({ decision: 'deny' })
+        })
+      return
+    }
+    respondToServerRequest(method, params, respond, reject, config)
+  }
+
+  private async resolveInteractiveApproval(
+    approval: { toolName: string; toolInput: Record<string, unknown> },
+    method: string,
+    params: unknown,
+    config: SDKExecutorConfig,
+  ): Promise<'accept' | 'acceptForSession' | 'deny'> {
+    const record = (params ?? {}) as Record<string, unknown>
+    const controller = new AbortController()
+    this.pendingApprovals.add(controller)
+    // cancel 可能先于回调调用到达（如 waiting_permission 事件同步触发宿主取消）：
+    // 已中止则不再打扰审批 UI，直接确定性拒绝。
+    if (controller.signal.aborted) return 'deny'
+    this.emit({
+      type: 'agent_status',
+      status: 'waiting_permission',
+      message: `Waiting for approval: ${approval.toolName}`,
+      ...this.makeCurrentBase(),
+    })
+    try {
+      const context: SDKPermissionRequestContext = {
+        signal: controller.signal,
+        toolUseID: typeof record.itemId === 'string' ? record.itemId : '',
+        requestId: `${method}:${randomUUID()}`,
+      }
+      const raw: boolean | SDKApprovalResult = await config.approvalCallback!(
+        this.activeSessionId ?? '',
+        approval.toolName,
+        approval.toolInput,
+        context,
+      )
+      if (raw === true) return 'accept'
+      if (typeof raw === 'object' && raw.allowed === true) {
+        return raw.scope != null && raw.scope !== 'once' ? 'acceptForSession' : 'accept'
+      }
+      return 'deny'
+    } finally {
+      this.pendingApprovals.delete(controller)
+      this.emit({
+        type: 'agent_status',
+        status: 'thinking',
+        message: 'Resuming after approval',
+        ...this.makeCurrentBase(),
+      })
+    }
+  }
+
   private emitToolCallOnce(
     state: AppServerStreamState,
     toolCallId: string,
@@ -864,8 +988,9 @@ function sanitizeThreadParamsForDiagnostics(params: AppServerThreadParamsBase | 
 /**
  * Phase 1 审批兜底：无交互 UI，全部确定性响应，杜绝挂起。
  * - bypassPermissions / codex-full-access：用户已显式选择放行 → accept。
- * - 其余（含 unattended）：deny——与 exec 载具「无客户端时升级请求不通过」的
- *   可观测效果等价（操作被拒、agent 收到反馈继续），Phase 2 接交互审批回路。
+ * - 其余（含 unattended、无 approvalCallback）：deny——与 exec 载具「无客户端时
+ *   升级请求不通过」的可观测效果等价（操作被拒、agent 收到反馈继续）。
+ *   交互路径（approvalCallback 可用且非 unattended）在 handleServerRequest 分流。
  */
 function respondToServerRequest(
   method: string,
@@ -903,6 +1028,36 @@ function respondToServerRequest(
 
 function turnHasImageAttachments(attachments: SDKTurnAttachment[] | undefined): boolean {
   return (attachments ?? []).some((attachment) => attachment.type === 'image')
+}
+
+/**
+ * 可路由到宿主 approvalCallback 的交互审批（工具语义明确的命令/文件变更类）。
+ * 权限画像（item/permissions/requestApproval）与问卷类不在此列，走确定性兜底。
+ */
+function classifyInteractiveApproval(
+  method: string,
+  params: unknown,
+): { toolName: string; toolInput: Record<string, unknown> } | null {
+  const record = (params ?? {}) as Record<string, unknown>
+  switch (method) {
+    case 'item/commandExecution/requestApproval':
+    case 'execCommandApproval':
+      return {
+        toolName: 'bash',
+        toolInput: { command: typeof record.command === 'string' ? record.command : '' },
+      }
+    case 'item/fileChange/requestApproval':
+    case 'applyPatchApproval':
+      return {
+        toolName: 'apply_patch',
+        toolInput: {
+          ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
+          ...(typeof record.itemId === 'string' ? { itemId: record.itemId } : {}),
+        },
+      }
+    default:
+      return null
+  }
 }
 
 function nextTextSegmentId(state: AppServerStreamState, turnId: string): string {

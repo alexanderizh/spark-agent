@@ -119,22 +119,29 @@ function handleClientRequest(message) {
       respond(id, { turn: { id: TURN_ID } })
       void runScript()
       return
+    case 'turn/steer':
+      respond(id, {})
+      return
+    case 'thread/compact/start':
+      respond(id, {})
+      return
     case 'turn/interrupt':
       journal({ kind: 'interrupt' })
-      if (waitInterruptResolve != null) {
-        waitInterruptResolve()
-        waitInterruptResolve = null
+      void (async () => {
+        // 真实 codex 中断会作废挂起的审批：先放行屏障给客户端响应让路，
+        // 再补 interrupted 终态（与取消竞态下响应仍可被记录/送达）。
+        for (const release of approvalBarriers.splice(0)) release()
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        if (waitInterruptResolve != null) {
+          waitInterruptResolve()
+          waitInterruptResolve = null
+        }
         notify('turn/completed', {
           threadId: THREAD_ID,
           turn: { id: TURN_ID, status: 'interrupted' },
         })
-      } else {
-        notify('turn/completed', {
-          threadId: THREAD_ID,
-          turn: { id: TURN_ID, status: 'interrupted' },
-        })
-      }
-      respond(id, {})
+        respond(id, {})
+      })()
       return
     default:
       respondError(id, -32601, `fake server does not implement ${method}`)
