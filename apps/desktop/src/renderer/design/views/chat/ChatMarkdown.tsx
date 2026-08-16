@@ -15,15 +15,8 @@ import {
   isPreviewableFileReference,
   normalizeFileReference,
 } from '../../components/FileDisplay'
-import {
-  collectDocumentOutputKeys,
-  renderDocumentOutputParagraph,
-} from './ChatDocumentOutput'
-import {
-  findStableMarkdownPrefixEnd,
-  parseMarkdown,
-  type MarkdownBlock,
-} from './ChatMarkdownUtils'
+import { collectDocumentOutputKeys, renderDocumentOutputParagraph } from './ChatDocumentOutput'
+import { findStableMarkdownPrefixEnd, parseMarkdown, type MarkdownBlock } from './ChatMarkdownUtils'
 
 const EMPTY_MARKDOWN_BLOCKS: MarkdownBlock[] = []
 const STREAMING_STABLE_BLOCK_CACHE_LIMIT = 64
@@ -35,12 +28,14 @@ export const MarkdownText = React.memo(function MarkdownText({
   agents,
   onMentionClick,
   onFilePreview,
+  workspaceRootPath,
 }: {
   content: string
   isStreaming?: boolean
   agents?: { id: string; name: string }[] | undefined
   onMentionClick?: ((agentId: string) => void) | undefined
   onFilePreview?: FileOpenHandler | undefined
+  workspaceRootPath?: string | null | undefined
 }) {
   const { stableBlocks, tailBlocks } = useMemo(() => {
     if (!isStreaming) {
@@ -52,16 +47,18 @@ export const MarkdownText = React.memo(function MarkdownText({
     const nextStableBlocks = getCachedStableMarkdownBlocks(stablePrefix)
     return {
       stableBlocks: nextStableBlocks,
-      tailBlocks: content.length === stableEnd
-        ? EMPTY_MARKDOWN_BLOCKS
-        : parseMarkdown(content.slice(stableEnd)),
+      tailBlocks:
+        content.length === stableEnd
+          ? EMPTY_MARKDOWN_BLOCKS
+          : parseMarkdown(content.slice(stableEnd)),
     }
   }, [content, isStreaming])
   const { syntaxHighlight } = useAppearanceSettings()
   const stableDocumentKeys = useMemo(
-    () => stableBlocks.flatMap((block) => block.kind === 'paragraph'
-      ? collectDocumentOutputKeys(block.text)
-      : []),
+    () =>
+      stableBlocks.flatMap((block) =>
+        block.kind === 'paragraph' ? collectDocumentOutputKeys(block.text) : [],
+      ),
     [stableBlocks],
   )
 
@@ -74,6 +71,7 @@ export const MarkdownText = React.memo(function MarkdownText({
         agents={agents}
         onMentionClick={onMentionClick}
         onFilePreview={onFilePreview}
+        workspaceRootPath={workspaceRootPath}
       />
       <MarkdownBlocks
         blocks={tailBlocks}
@@ -82,6 +80,7 @@ export const MarkdownText = React.memo(function MarkdownText({
         agents={agents}
         onMentionClick={onMentionClick}
         onFilePreview={onFilePreview}
+        workspaceRootPath={workspaceRootPath}
         initialDocumentKeys={stableDocumentKeys}
       />
     </>
@@ -108,6 +107,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
   agents,
   onMentionClick,
   onFilePreview,
+  workspaceRootPath,
   initialDocumentKeys = [],
 }: {
   blocks: MarkdownBlock[]
@@ -116,6 +116,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
   agents?: { id: string; name: string }[] | undefined
   onMentionClick?: ((agentId: string) => void) | undefined
   onFilePreview?: FileOpenHandler | undefined
+  workspaceRootPath?: string | null | undefined
   initialDocumentKeys?: string[]
 }) {
   const seenDocumentKeys = new Set(initialDocumentKeys)
@@ -130,7 +131,13 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
             return React.createElement(
               tagName,
               { key: index },
-              renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview),
+              renderInlineMarkdown(
+                block.text,
+                agents,
+                onMentionClick,
+                onFilePreview,
+                workspaceRootPath,
+              ),
             )
           }
           case 'paragraph': {
@@ -143,7 +150,13 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
             if (documentCards != null) return documentCards
             return (
               <p key={index}>
-                {renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}
+                {renderInlineMarkdown(
+                  block.text,
+                  agents,
+                  onMentionClick,
+                  onFilePreview,
+                  workspaceRootPath,
+                )}
               </p>
             )
           }
@@ -169,7 +182,13 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
           case 'quote':
             return (
               <blockquote key={index}>
-                {renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}
+                {renderInlineMarkdown(
+                  block.text,
+                  agents,
+                  onMentionClick,
+                  onFilePreview,
+                  workspaceRootPath,
+                )}
               </blockquote>
             )
           case 'list': {
@@ -186,7 +205,13 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                     <input type="checkbox" checked={item.checked} readOnly />
                   )}
                   <span>
-                    {renderInlineMarkdown(item.text, agents, onMentionClick, onFilePreview)}
+                    {renderInlineMarkdown(
+                      item.text,
+                      agents,
+                      onMentionClick,
+                      onFilePreview,
+                      workspaceRootPath,
+                    )}
                   </span>
                 </li>
               )),
@@ -200,7 +225,13 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                     <tr>
                       {block.headers.map((header, headerIndex) => (
                         <th key={headerIndex}>
-                          {renderInlineMarkdown(header, agents, onMentionClick, onFilePreview)}
+                          {renderInlineMarkdown(
+                            header,
+                            agents,
+                            onMentionClick,
+                            onFilePreview,
+                            workspaceRootPath,
+                          )}
                         </th>
                       ))}
                     </tr>
@@ -215,6 +246,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                               agents,
                               onMentionClick,
                               onFilePreview,
+                              workspaceRootPath,
                             )}
                           </td>
                         ))}
@@ -249,6 +281,7 @@ function highlightMentions(
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
   onFilePreview?: FileOpenHandler | undefined,
+  workspaceRootPath?: string | null,
   offset: number = 0,
 ): ReactNode[] {
   const mentionPattern = /(^|\s)(@[\p{L}\p{N}_\-.]+)/gu
@@ -265,6 +298,7 @@ function highlightMentions(
         ...highlightFilePaths(
           text.slice(cursor, mentionStart),
           onFilePreview,
+          workspaceRootPath,
           `fp-${offset + cursor}`,
         ),
       )
@@ -297,7 +331,14 @@ function highlightMentions(
     cursor = mentionStart + mention.length
   }
   if (cursor < text.length)
-    parts.push(...highlightFilePaths(text.slice(cursor), onFilePreview, `fp-${offset + cursor}`))
+    parts.push(
+      ...highlightFilePaths(
+        text.slice(cursor),
+        onFilePreview,
+        workspaceRootPath,
+        `fp-${offset + cursor}`,
+      ),
+    )
   return parts.length > 0 ? parts : [text]
 }
 
@@ -305,6 +346,7 @@ function highlightMentions(
 function highlightFilePaths(
   text: string,
   onFilePreview?: FileOpenHandler | undefined,
+  workspaceRootPath?: string | null,
   keyPrefix: string = 'fp',
 ): ReactNode[] {
   const pathParts = extractFilePaths(text)
@@ -324,6 +366,7 @@ function highlightFilePaths(
       <ClickableFilePath
         key={`${keyPrefix}-${index}`}
         path={part.text}
+        workspaceRootPath={workspaceRootPath}
         {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
       />,
     )
@@ -350,6 +393,7 @@ function renderInlineMarkdown(
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
   onFilePreview?: FileOpenHandler | undefined,
+  workspaceRootPath?: string | null,
 ): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern =
@@ -365,6 +409,7 @@ function renderInlineMarkdown(
           agents,
           onMentionClick,
           onFilePreview,
+          workspaceRootPath,
           cursor,
         ),
       )
@@ -385,6 +430,7 @@ function renderInlineMarkdown(
               key={key}
               path={normalizedHref}
               label={link[2] ?? normalizedHref}
+              workspaceRootPath={workspaceRootPath}
               {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
             />,
           )
@@ -406,7 +452,14 @@ function renderInlineMarkdown(
 
   if (cursor < text.length)
     nodes.push(
-      ...highlightMentions(text.slice(cursor), agents, onMentionClick, onFilePreview, cursor),
+      ...highlightMentions(
+        text.slice(cursor),
+        agents,
+        onMentionClick,
+        onFilePreview,
+        workspaceRootPath,
+        cursor,
+      ),
     )
   const rendered: ReactNode[] = []
   nodes.forEach((node, index) => {

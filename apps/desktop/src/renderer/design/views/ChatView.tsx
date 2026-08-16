@@ -62,11 +62,7 @@ import {
 import { FileChipIcon } from './chat/ChatFileIcon'
 import { GitReviewPanel } from './chat/ChatGitReview'
 import { useLiveWorkspaceGitStatus } from './chat/useLiveWorkspaceGitStatus'
-import {
-  HeroTipsTicker,
-  SingleAgentEmptyHero,
-  TeamModeEmptyHero,
-} from './chat/ChatHero'
+import { HeroTipsTicker, SingleAgentEmptyHero, TeamModeEmptyHero } from './chat/ChatHero'
 import { HeroUsageHeatmap } from './chat/HeroUsageHeatmap'
 import { useEmptyHeroUsage } from './chat/useEmptyHeroUsage'
 import { ChatTabbar } from './chat/ChatTabbar'
@@ -3075,7 +3071,9 @@ export function ChatView({
               onExplorerWidthChange={setCodeExplorerWidth}
               onExplorerExpandedChange={setCodeExplorerExpandedDirs}
               onOpenFileFromExplorer={(rel) => handleFilePreview(rel, 'text')}
-              onPreviewFileFromExplorer={(rel) => handleFilePreview(rel, 'text', { mode: 'preview' })}
+              onPreviewFileFromExplorer={(rel) =>
+                handleFilePreview(rel, 'text', { mode: 'preview' })
+              }
               onEditFileFromExplorer={(rel) => openInCodeTab(rel)}
             />
           ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
@@ -4621,7 +4619,10 @@ function ChatStream({
                         }
                       : {})}
                   >
-                    {renderBlocks(msg.blocks, onFilePreview != null ? { onFilePreview } : {})}
+                    {renderBlocks(msg.blocks, {
+                      ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
+                      ...(onFilePreview != null ? { onFilePreview } : {}),
+                    })}
                   </UserMsg>
                 ) : (
                   (() => {
@@ -4934,6 +4935,7 @@ function renderBlocks(
             <MarkdownText
               content={block.content}
               isStreaming={block.isStreaming}
+              workspaceRootPath={options.workspaceRootPath}
               {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
             />
           </div>

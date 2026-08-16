@@ -35,35 +35,72 @@ type Props = {
   path: string
   /** 展示文本；不传时展示规范化后的路径 */
   label?: ReactNode
+  workspaceRootPath?: string | null | undefined
   /** 点击/右键打开时的回调（预览优先路由；opts.mode 可显式指定预览或编辑） */
   onPreview?: FileOpenHandler
 }
 
 export type { PreviewFileType } from './FileDisplay'
 
-export function ClickableFilePath({ path, label, onPreview }: Props): ReactNode {
+export function ClickableFilePath({ path, label, workspaceRootPath, onPreview }: Props): ReactNode {
   const { invoke: openFile } = useIpcInvoke('file:open')
   const { invoke: revealFile } = useIpcInvoke('file:reveal')
+  const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
   const { toast } = useToast()
 
   const normalizedPath = useMemo(() => normalizeFileReference(path), [path])
-  const isPreviewable = useMemo(() => getPreviewFileType(normalizedPath) !== null, [normalizedPath])
-  const fileType = useMemo(() => getPreviewFileType(normalizedPath), [normalizedPath])
+  const resolvedPath = useMemo(
+    () => resolveFileReferencePath(normalizedPath, workspaceRootPath),
+    [normalizedPath, workspaceRootPath],
+  )
+  const [fileStatus, setFileStatus] = useState<{ path: string; isFile: boolean } | null>(null)
+  const isOpenable =
+    resolvedPath != null && fileStatus?.path === resolvedPath ? fileStatus.isFile : null
+  const isPreviewable = useMemo(
+    () => getPreviewFileType(resolvedPath ?? normalizedPath) !== null,
+    [normalizedPath, resolvedPath],
+  )
+  const fileType = useMemo(
+    () => getPreviewFileType(resolvedPath ?? normalizedPath),
+    [normalizedPath, resolvedPath],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    if (resolvedPath == null) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    void statFileKind({ path: resolvedPath })
+      .then((result) => {
+        if (!cancelled) setFileStatus({ path: resolvedPath, isFile: result.kind === 'file' })
+      })
+      .catch(() => {
+        if (!cancelled) setFileStatus({ path: resolvedPath, isFile: false })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [resolvedPath, statFileKind])
 
   const handleClick = useCallback(
     async (e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
+      if (resolvedPath == null || isOpenable !== true) return
 
       // 如果是可预览文件且有预览回调，触发预览
       if (isPreviewable && onPreview && fileType) {
-        onPreview(normalizedPath, fileType)
+        onPreview(resolvedPath, fileType)
         return
       }
 
       // 否则打开文件
       try {
-        const res = await openFile({ filePath: normalizedPath })
+        const res = await openFile({ filePath: resolvedPath })
         if (!res.opened) {
           toast.error(res.error ?? '无法打开文件')
         }
@@ -71,44 +108,50 @@ export function ClickableFilePath({ path, label, onPreview }: Props): ReactNode 
         toast.error(err instanceof Error ? err.message : '打开文件失败')
       }
     },
-    [normalizedPath, isPreviewable, fileType, onPreview, openFile, toast],
+    [resolvedPath, isOpenable, isPreviewable, fileType, onPreview, openFile, toast],
   )
 
   const handleCopyPath = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(normalizedPath)
+      await navigator.clipboard.writeText(resolvedPath ?? normalizedPath)
       toast.success('已复制路径')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '复制失败')
     }
-  }, [normalizedPath, toast])
+  }, [normalizedPath, resolvedPath, toast])
 
   const handleOpenWithDefault = useCallback(async () => {
     try {
-      const res = await openFile({ filePath: normalizedPath })
+      if (resolvedPath == null || isOpenable !== true) return
+      const res = await openFile({ filePath: resolvedPath })
       if (!res.opened) {
         toast.error(res.error ?? '无法打开文件')
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '打开文件失败')
     }
-  }, [normalizedPath, openFile, toast])
+  }, [resolvedPath, isOpenable, openFile, toast])
 
   const handleReveal = useCallback(async () => {
     try {
-      const res = await revealFile({ filePath: normalizedPath })
+      if (resolvedPath == null || isOpenable !== true) return
+      const res = await revealFile({ filePath: resolvedPath })
       if (!res.revealed) {
         toast.error(res.error ?? '无法定位文件')
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '定位文件失败')
     }
-  }, [normalizedPath, revealFile, toast])
+  }, [resolvedPath, isOpenable, revealFile, toast])
+
+  if (resolvedPath == null || isOpenable !== true) {
+    return <span>{label ?? normalizedPath}</span>
+  }
 
   const menu = {
     items: [
       // 可预览（md/html/office/图片等）提供显式「预览」；Monaco 可编辑的提供「编辑」
-      ...(onPreview != null && canOpenPreview(normalizedPath)
+      ...(onPreview != null && canOpenPreview(resolvedPath)
         ? [
             {
               key: 'preview',
@@ -118,15 +161,11 @@ export function ClickableFilePath({ path, label, onPreview }: Props): ReactNode 
                 </span>
               ),
               onClick: () =>
-                onPreview(
-                  normalizedPath,
-                  fileType ?? 'text',
-                  { mode: 'preview' } as const,
-                ),
+                onPreview(resolvedPath, fileType ?? 'text', { mode: 'preview' } as const),
             },
           ]
         : []),
-      ...(onPreview != null && canOpenInEditor(normalizedPath)
+      ...(onPreview != null && canOpenInEditor(resolvedPath)
         ? [
             {
               key: 'edit',
@@ -135,7 +174,7 @@ export function ClickableFilePath({ path, label, onPreview }: Props): ReactNode 
                   <Icons.Edit size={14} /> 编辑
                 </span>
               ),
-              onClick: () => onPreview(normalizedPath, 'text', { mode: 'edit' } as const),
+              onClick: () => onPreview(resolvedPath, 'text', { mode: 'edit' } as const),
             },
           ]
         : []),
@@ -180,6 +219,35 @@ export function ClickableFilePath({ path, label, onPreview }: Props): ReactNode 
       </span>
     </Dropdown>
   )
+}
+
+function isAbsoluteLocalPath(value: string): boolean {
+  return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
+}
+
+function resolveFileReferencePath(
+  filePath: string,
+  workspaceRootPath?: string | null,
+): string | null {
+  if (isAbsoluteLocalPath(filePath)) return filePath
+
+  const root = workspaceRootPath?.trim()
+  if (root == null || root.length === 0) return null
+
+  const separator = root.includes('\\') ? '\\' : '/'
+  const rootPath = root.replace(/[\\/]+$/, '')
+  const segments: string[] = []
+  for (const segment of filePath.replace(/\\/g, '/').split('/')) {
+    if (segment.length === 0 || segment === '.') continue
+    if (segment === '..') {
+      if (segments.length === 0) return null
+      segments.pop()
+      continue
+    }
+    segments.push(segment)
+  }
+  if (segments.length === 0) return null
+  return `${rootPath}${separator}${segments.join(separator)}`
 }
 
 type UrlContextMenuPosition = {

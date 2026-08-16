@@ -28,6 +28,13 @@ describe('SparkWork application foundation prompt', () => {
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('distinct from assistant proposals')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('Lead with the outcome')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('Format responses for readability')
+    expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('file link')
+    expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain(
+      'absolute path or a resolvable workspace-relative path',
+    )
+    expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain(
+      'do not format it as a clickable Markdown file link',
+    )
   })
 
   it('stays compact and does not impersonate a model provider', () => {
