@@ -1,5 +1,5 @@
 import type { AgentEvent } from '@spark/protocol'
-import type { SessionUsageData } from './ChatUsageTypes'
+import type { SessionUsageData, UsageSnapshot } from './ChatUsageTypes'
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -20,9 +20,97 @@ export function createEmptySessionUsageData(): SessionUsageData {
     reasoningOutputTokens: 0,
     cacheHitTokens: 0,
     cacheWriteTokens: 0,
+    cacheHitRate: null,
     estimatedCostUsd: 0,
     contextWindow: 0,
     turns: [],
+  }
+}
+
+/**
+ * 缓存命中率 = cache_read / 输入总量。provider 计量口径不同：
+ *   - claude（Anthropic）：inputTokens 是未命中余量，总量 = input + cacheHit + cacheWrite
+ *   - codex（OpenAI/Codex）：inputTokens 已包含 cached，总量 = input
+ * 缓存字段缺省（undefined，该轮未度量）或分母非正时返回 null（不展示）；
+ * 已度量的 0 命中（字段存在且为 0）如实返回 0，区别于未度量。
+ * 调用方必须传**同一事件**的完整元组——禁止用跨轮/跨 provider 的粘滞值拼凑分子分母。
+ */
+export function computeCacheHitRate(params: {
+  provider: string | undefined
+  inputTokens: number
+  cacheHitTokens?: number | undefined
+  cacheWriteTokens?: number | undefined
+}): number | null {
+  const { provider, inputTokens } = params
+  const cacheHitTokens = params.cacheHitTokens
+  const cacheWriteTokens = params.cacheWriteTokens
+  if (cacheHitTokens == null && cacheWriteTokens == null) return null
+  const hitTokens = cacheHitTokens ?? 0
+  const writeTokens = cacheWriteTokens ?? 0
+  const denominator = provider === 'claude' ? inputTokens + hitTokens + writeTokens : inputTokens
+  if (denominator <= 0) return null
+  return clamp(hitTokens / denominator, 0, 1)
+}
+
+/**
+ * 从事件流重建用量数据。
+ *
+ * ⚠️ 口径：token 字段是**最后一条 usage_update 的值**（即最近一轮；缓存计数在
+ * 最近一条未上报时沿用上一次已知值），`cacheHitRate` 取**最近一次上报了缓存字段
+ * 的轮次**（未度量 ≠ 0%），`estimatedCostUsd` 是传入 events 范围内的累加。由于
+ * ChatView 的历史是按轮次窗口化加载的，这里的累加**不等于会话累计** —— 会话累计
+ * 必须走 `usage:get-session` 读 usage_ledger。面板上这两种口径要分开展示，不要混。
+ */
+export function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData {
+  let inputTokens = 0
+  let outputTokens = 0
+  let reasoningOutputTokens = 0
+  let cacheHitTokens = 0
+  let cacheWriteTokens = 0
+  let estimatedCostUsd = 0
+  // 命中率只从「同一事件」的完整元组计算（未度量的事件不更新），杜绝粘滞分子配
+  // 新分母——provider 切换后会捏造出 >100% 的假命中率。计数字段仍为粘滞语义。
+  let cacheHitRate: number | null = null
+  const turns: UsageSnapshot[] = []
+
+  for (const event of events) {
+    if (event.type !== 'usage_update') continue
+    inputTokens = event.inputTokens
+    outputTokens = event.outputTokens
+    reasoningOutputTokens = event.reasoningOutputTokens ?? 0
+    if (event.cacheHitTokens != null) cacheHitTokens = event.cacheHitTokens
+    if (event.cacheWriteTokens != null) cacheWriteTokens = event.cacheWriteTokens
+    if (event.estimatedCostUsd != null) estimatedCostUsd += event.estimatedCostUsd
+    if (event.cacheHitTokens != null || event.cacheWriteTokens != null) {
+      cacheHitRate = computeCacheHitRate({
+        provider: event.provider,
+        inputTokens: event.inputTokens,
+        cacheHitTokens: event.cacheHitTokens,
+        cacheWriteTokens: event.cacheWriteTokens,
+      })
+    }
+    turns.push({
+      turnId: event.turnId,
+      inputTokens: event.inputTokens,
+      outputTokens: event.outputTokens,
+      reasoningOutputTokens: event.reasoningOutputTokens ?? 0,
+      cacheHitTokens: event.cacheHitTokens ?? 0,
+      cacheWriteTokens: event.cacheWriteTokens ?? 0,
+      estimatedCostUsd: event.estimatedCostUsd ?? 0,
+      timestamp: event.timestamp,
+    })
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    reasoningOutputTokens,
+    cacheHitTokens,
+    cacheWriteTokens,
+    cacheHitRate,
+    estimatedCostUsd,
+    contextWindow: 0,
+    turns,
   }
 }
 

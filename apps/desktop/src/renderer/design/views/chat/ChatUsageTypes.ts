@@ -17,6 +17,8 @@ export type SessionUsageData = {
   reasoningOutputTokens: number
   cacheHitTokens: number
   cacheWriteTokens: number
+  /** 最近一轮缓存命中率（cache_read / 输入总量，provider 口径见 computeCacheHitRate）；无缓存数据时为 null */
+  cacheHitRate: number | null
   estimatedCostUsd: number
   contextWindow: number
   turns: UsageSnapshot[]

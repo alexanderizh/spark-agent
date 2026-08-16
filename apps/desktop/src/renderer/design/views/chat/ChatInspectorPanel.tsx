@@ -9,12 +9,13 @@ import { OutcomeRoomContainer } from '../../outcome-room/OutcomeRoomContainer'
 import { WorktreePanel } from '../../components/WorktreePanel'
 import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
-import { clamp, formatTokenCount } from './ChatViewUtils'
 import {
-  extractInspectorSubagents,
-  isRecord,
-  type InspectorTask,
-} from './ChatInspectorUtils'
+  buildUsageDataFromEvents,
+  clamp,
+  computeCacheHitRate,
+  formatTokenCount,
+} from './ChatViewUtils'
+import { extractInspectorSubagents, isRecord, type InspectorTask } from './ChatInspectorUtils'
 import type {
   AgentEvent,
   EnvConfigGetResponse,
@@ -32,10 +33,7 @@ import type {
 } from '@spark/protocol'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '@spark/protocol'
 import { hasChatConfigScope } from './chat-config-panel-state'
-import {
-  setTeamActivityLogsVisible,
-  useTeamActivityLogsVisible,
-} from './team-log-visibility'
+import { setTeamActivityLogsVisible, useTeamActivityLogsVisible } from './team-log-visibility'
 import type { SessionSummary } from '../../SessionSidebarContext'
 import type {
   ContextLedgerState,
@@ -185,10 +183,7 @@ export function ChatConfigPanel({
       ...(sessionId != null ? { sessionId } : {}),
       ...(agentId != null ? { agentId } : {}),
     }
-    const [promptsRes, envRes] = await Promise.all([
-      getPromptConfig(req),
-      getEnvConfig(req),
-    ])
+    const [promptsRes, envRes] = await Promise.all([getPromptConfig(req), getEnvConfig(req)])
     const normalizedPrompts = normalizePromptConfig(promptsRes)
     const normalizedEnv = normalizeEnvConfig(envRes)
     setPromptConfig(normalizedPrompts)
@@ -346,7 +341,11 @@ export function ChatConfigPanel({
 
   return (
     <div
-      className={embedded ? 'inspector-frame embedded config-panel-frame' : 'inspector-frame config-panel-frame'}
+      className={
+        embedded
+          ? 'inspector-frame embedded config-panel-frame'
+          : 'inspector-frame config-panel-frame'
+      }
       style={{ '--inspector-width': `${width}px` } as React.CSSProperties}
     >
       {!embedded && (
@@ -396,7 +395,6 @@ export function ChatConfigPanel({
             )}
           </div>
         )}
-
 
         {/* 提示词 */}
         {hasChatConfigScope(sessionId, workspaceId) && promptConfig != null && (
@@ -616,30 +614,30 @@ export function ChatInspector({
             </div>
 
             <TeamInspectorSection
-            config={teamConfig}
-            fallbackProviderProfileId={session?.providerProfileId ?? null}
-            fallbackModelId={session?.modelId ?? null}
-            agents={agents.map((a) => ({
-              id: a.id,
-              name: a.name,
-              description: a.description,
-              builtIn: a.builtIn,
-              providerProfileId: a.providerProfileId ?? null,
-              modelId: a.modelId ?? null,
-              agentAdapter: a.agentAdapter,
-              skillCount: a.skillIds.length,
-              mcpCount: a.mcpServerIds.length,
-              metadata: a.metadata,
-            }))}
-            runningAgentIds={runningTeamAgentIds}
-            onToggleMember={(agentId, enabled) =>
-              onChangeTeamConfig({
-                memberAgentIds: enabled
-                  ? [...teamConfig.memberAgentIds, agentId]
-                  : teamConfig.memberAgentIds.filter((id) => id !== agentId),
-              })
-            }
-            onChangeConfig={onChangeTeamConfig}
+              config={teamConfig}
+              fallbackProviderProfileId={session?.providerProfileId ?? null}
+              fallbackModelId={session?.modelId ?? null}
+              agents={agents.map((a) => ({
+                id: a.id,
+                name: a.name,
+                description: a.description,
+                builtIn: a.builtIn,
+                providerProfileId: a.providerProfileId ?? null,
+                modelId: a.modelId ?? null,
+                agentAdapter: a.agentAdapter,
+                skillCount: a.skillIds.length,
+                mcpCount: a.mcpServerIds.length,
+                metadata: a.metadata,
+              }))}
+              runningAgentIds={runningTeamAgentIds}
+              onToggleMember={(agentId, enabled) =>
+                onChangeTeamConfig({
+                  memberAgentIds: enabled
+                    ? [...teamConfig.memberAgentIds, agentId]
+                    : teamConfig.memberAgentIds.filter((id) => id !== agentId),
+                })
+              }
+              onChangeConfig={onChangeTeamConfig}
             />
             <OutcomeRoomContainer
               sessionId={session?.id}
@@ -836,6 +834,7 @@ export function ChatInspector({
               usageData.inputTokens + usageData.outputTokens + usageData.reasoningOutputTokens
             }
             cacheHitTokens={usageData.cacheHitTokens}
+            cacheHitRate={usageData.cacheHitRate}
             cacheWriteTokens={usageData.cacheWriteTokens}
             estimatedCostUsd={usageData.estimatedCostUsd}
             sessionTotal={ledgerUsage}
@@ -1204,6 +1203,7 @@ function TokenUsagePanel({
   reasoningOutputTokens,
   totalTokens,
   cacheHitTokens,
+  cacheHitRate,
   cacheWriteTokens,
   estimatedCostUsd,
   sessionTotal,
@@ -1213,6 +1213,8 @@ function TokenUsagePanel({
   reasoningOutputTokens: number
   totalTokens: number
   cacheHitTokens: number
+  /** 最近一轮缓存命中率（cache_read / 输入总量，provider 口径）；null = 未度量 */
+  cacheHitRate: number | null
   cacheWriteTokens: number
   estimatedCostUsd: number
   /** 会话累计（usage_ledger）。取不到时回落为仅展示本轮口径。 */
@@ -1248,6 +1250,12 @@ function TokenUsagePanel({
         <div className="token-usage-row">
           <span className="token-row-label">缓存命中</span>
           <span className="token-row-value">{formatTokenCount(cacheHitTokens)}</span>
+        </div>
+      )}
+      {cacheHitRate != null && (
+        <div className="token-usage-row">
+          <span className="token-row-label">缓存命中率</span>
+          <span className="token-row-value">{(cacheHitRate * 100).toFixed(1)}%</span>
         </div>
       )}
       {reasoningOutputTokens > 0 && (
@@ -1412,50 +1420,6 @@ function TurnUsageChart({ turns }: { turns: UsageSnapshot[] }) {
 }
 
 /**
- * 从事件流重建用量数据。
- *
- * ⚠️ 口径：token 字段是**最后一条 usage_update 的值**（即最近一轮），
- * `estimatedCostUsd` 是传入 events 范围内的累加。由于 ChatView 的历史是按轮次
- * 窗口化加载的，这里的累加**不等于会话累计** —— 会话累计必须走 `usage:get-session`
- * 读 usage_ledger。面板上这两种口径要分开展示，不要混。
+ * 从事件流重建用量数据的实现在 ./ChatViewUtils（buildUsageDataFromEvents，
+ * 纯函数便于单测）；此处仅按需消费，口径说明见该函数的 doc 注释。
  */
-export function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData {
-  let inputTokens = 0
-  let outputTokens = 0
-  let reasoningOutputTokens = 0
-  let cacheHitTokens = 0
-  let cacheWriteTokens = 0
-  let estimatedCostUsd = 0
-  const turns: UsageSnapshot[] = []
-
-  for (const event of events) {
-    if (event.type !== 'usage_update') continue
-    inputTokens = event.inputTokens
-    outputTokens = event.outputTokens
-    reasoningOutputTokens = event.reasoningOutputTokens ?? 0
-    if (event.cacheHitTokens != null) cacheHitTokens = event.cacheHitTokens
-    if (event.cacheWriteTokens != null) cacheWriteTokens = event.cacheWriteTokens
-    if (event.estimatedCostUsd != null) estimatedCostUsd += event.estimatedCostUsd
-    turns.push({
-      turnId: event.turnId,
-      inputTokens: event.inputTokens,
-      outputTokens: event.outputTokens,
-      reasoningOutputTokens: event.reasoningOutputTokens ?? 0,
-      cacheHitTokens: event.cacheHitTokens ?? 0,
-      cacheWriteTokens: event.cacheWriteTokens ?? 0,
-      estimatedCostUsd: event.estimatedCostUsd ?? 0,
-      timestamp: event.timestamp,
-    })
-  }
-
-  return {
-    inputTokens,
-    outputTokens,
-    reasoningOutputTokens,
-    cacheHitTokens,
-    cacheWriteTokens,
-    estimatedCostUsd,
-    contextWindow: 0,
-    turns,
-  }
-}

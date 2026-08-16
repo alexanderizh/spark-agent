@@ -172,7 +172,9 @@ import {
 } from '../components/fileOpenRouting'
 import type { HtmlOpenMode } from '../services/render-html'
 import {
+  buildUsageDataFromEvents,
   clamp,
+  computeCacheHitRate,
   createEmptySessionUsageData,
   eventsAfterLastHistoryReset,
   formatRelativeTime,
@@ -220,7 +222,7 @@ import {
   useCloseOnOutside,
   writeComposerPrefs,
 } from './chat/ComposerV2'
-import { buildUsageDataFromEvents, ChatConfigPanel, ChatInspector } from './chat/ChatInspectorPanel'
+import { ChatConfigPanel, ChatInspector } from './chat/ChatInspectorPanel'
 import {
   extractRunningTeamAgentIds,
   extractRunningTeamMemberIds,
@@ -1139,6 +1141,7 @@ export function ChatView({
     reasoningOutputTokens: 0,
     cacheHitTokens: 0,
     cacheWriteTokens: 0,
+    cacheHitRate: null,
     estimatedCostUsd: 0,
     contextWindow: 0,
     turns: [],
@@ -3421,6 +3424,7 @@ function ChatStream({
     reasoningOutputTokens: 0,
     cacheHitTokens: 0,
     cacheWriteTokens: 0,
+    cacheHitRate: null,
     estimatedCostUsd: 0,
     contextWindow: 0,
     turns: [],
@@ -3516,6 +3520,7 @@ function ChatStream({
           reasoningOutputTokens: 0,
           cacheHitTokens: 0,
           cacheWriteTokens: 0,
+          cacheHitRate: null,
           estimatedCostUsd: 0,
           contextWindow: 0,
           turns: [],
@@ -3580,12 +3585,26 @@ function ChatStream({
           timestamp: event.timestamp,
         }
         const prev = usageRef.current
+        // 计数字段沿用既有粘滞语义（最近已知值，供 token 面板展示）；命中率绝不
+        // 能拿粘滞分子配当前轮分母——provider 切换后会捏造出 >100% 的假命中，
+        // 只从「同一事件」的完整元组计算，事件未上报缓存字段时沿用上一次已度量值。
+        const cacheHitTokens = event.cacheHitTokens ?? prev.cacheHitTokens
+        const cacheWriteTokens = event.cacheWriteTokens ?? prev.cacheWriteTokens
         const next: SessionUsageData = {
           inputTokens: event.inputTokens,
           outputTokens: event.outputTokens,
           reasoningOutputTokens: event.reasoningOutputTokens ?? prev.reasoningOutputTokens,
-          cacheHitTokens: event.cacheHitTokens ?? prev.cacheHitTokens,
-          cacheWriteTokens: event.cacheWriteTokens ?? prev.cacheWriteTokens,
+          cacheHitTokens,
+          cacheWriteTokens,
+          cacheHitRate:
+            event.cacheHitTokens != null || event.cacheWriteTokens != null
+              ? computeCacheHitRate({
+                  provider: event.provider,
+                  inputTokens: event.inputTokens,
+                  cacheHitTokens: event.cacheHitTokens,
+                  cacheWriteTokens: event.cacheWriteTokens,
+                })
+              : prev.cacheHitRate,
           estimatedCostUsd: prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0),
           contextWindow: prev.contextWindow,
           turns: [...prev.turns, snapshot],
@@ -3992,6 +4011,7 @@ function ChatStream({
       reasoningOutputTokens: 0,
       cacheHitTokens: 0,
       cacheWriteTokens: 0,
+      cacheHitRate: null,
       estimatedCostUsd: 0,
       contextWindow: 0,
       turns: [],
