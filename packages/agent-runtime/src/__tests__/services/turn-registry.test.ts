@@ -112,4 +112,45 @@ describe('TurnRegistry（W2-D1 所有权收编）', () => {
     expect(registry.isTurnCancelled('t1')).toBe(false)
     expect(registry.isActiveExecutor('s1', executor)).toBe(true)
   })
+
+  // ── 覆盖缺口补测（W2 整体审查发现）：三个此前无直接断言的方法 ──────────────
+
+  it('finishStartingForce：无条件摘 startingSessions，startingTurnIds 仍带 turnId 守卫', () => {
+    const registry = new TurnRegistry()
+    registry.beginStarting('s1', 't1')
+    registry.beginStarting('s1', 't2') // 同会话新起跑覆盖旧登记
+    registry.markTurnCancelled('t1')
+    registry.finishStartingForce('s1', 't1')
+    // 现状语义（防御性双保险）：sessions 集合无条件摘除，turnId 登记守卫保留。
+    expect(registry.isSessionStarting('s1')).toBe(false)
+    expect(registry.getStartingTurnId('s1')).toBe('t2')
+    // 取消标记按 turnId 解除（turn 到此终结）。
+    expect(registry.isTurnCancelled('t1')).toBe(false)
+    expect(registry.inflightSessionCount()).toBe(0)
+  })
+
+  it('clearStartingEntries：无条件摘该会话全部 starting 登记，不影响他与会取消标记', () => {
+    const registry = new TurnRegistry()
+    registry.beginStarting('s1', 't1')
+    registry.beginStarting('s2', 't2')
+    registry.markTurnCancelled('t1')
+    registry.clearStartingEntries('s1')
+    expect(registry.isSessionStarting('s1')).toBe(false)
+    expect(registry.getStartingTurnId('s1')).toBeUndefined()
+    // 他会话登记不受影响。
+    expect(registry.isSessionStarting('s2')).toBe(true)
+    expect(registry.getStartingTurnId('s2')).toBe('t2')
+    // 取消标记不属于 starting 范畴（由 forgetTurnCancelled 负责清理）。
+    expect(registry.isTurnCancelled('t1')).toBe(true)
+  })
+
+  it('forgetTurnCancelled：仅解除指定 turn 的取消标记，防止集合无限增长', () => {
+    const registry = new TurnRegistry()
+    registry.markTurnCancelled('t1')
+    registry.markTurnCancelled('t2')
+    registry.forgetTurnCancelled('t1')
+    expect(registry.isTurnCancelled('t1')).toBe(false)
+    expect(registry.isTurnCancelled('t2')).toBe(true)
+    expect(registry.cancelledTurns.has('t2')).toBe(true)
+  })
 })
