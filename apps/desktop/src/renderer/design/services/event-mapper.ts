@@ -616,11 +616,9 @@ export class MessageBuilder {
 
         if (event.mode === 'complete') {
           if (event.isFinal) {
-            // 最终 result 文本：通常与最后一段 complete 内容一致，仅做去重收尾，
-            // 不再清空全部 text block（那会吃掉多段正文，见 segmentId 注释）。
-            // isFinal 只表示最终文本到达；整轮终态必须等 agent_status，避免后续工具/文件事件
-            // 仍在追加时提前把气泡标为 completed 并触发日志折叠。
+            // 最终 result 文本只做去重收尾；整轮终态仍需等 agent_status，避免后续事件被提前折叠。
             this.reconcileFinalText(msg, event.content)
+            if (event.provider === 'spark') msg.status = 'completed'
             break
           }
           this.applySegmentComplete(msg.blocks, 'text', event.content, event.segmentId)
@@ -1639,7 +1637,8 @@ export class MessageBuilder {
   private resolveGoalContractBlocks(goalId: string, state: 'confirmed' | 'rejected'): void {
     for (const msg of this.messages) {
       for (const block of msg.blocks) {
-        if (block.kind === 'goal_contract' && block.goalId === goalId && block.state === 'pending') {
+        if (block.kind === 'goal_contract' && block.goalId === goalId) {
+          if (block.state !== 'pending') continue
           block.state = state
         }
       }

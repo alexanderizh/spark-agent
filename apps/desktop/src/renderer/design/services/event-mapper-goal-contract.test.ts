@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MessageBuilder } from './event-mapper'
-import type { GoalEvent } from '@spark/protocol'
+import type { AgentEvent, GoalEvent } from '@spark/protocol'
 
 function goalEvent(patch: Partial<GoalEvent> & Pick<GoalEvent, 'id' | 'type'>): GoalEvent {
   return {
@@ -46,9 +46,9 @@ describe('MessageBuilder goal contract gating', () => {
     })
     expect(builder.getActiveGoal()?.status).toBe('pending_contract')
     // 事件在起草 turn 收尾后发出（独立 turnId → 新建消息）：消息不能停在 streaming。
-    const host = builder.getAllMessages().find((m) =>
-      m.blocks.some((b) => b.kind === 'goal_contract'),
-    )
+    const host = builder
+      .getAllMessages()
+      .find((m) => m.blocks.some((b) => b.kind === 'goal_contract'))
     expect(host?.status).toBe('completed')
   })
 
@@ -60,6 +60,73 @@ describe('MessageBuilder goal contract gating', () => {
     const blocks = builder.getAllMessages().flatMap((m) => m.blocks)
     expect(blocks.some((b) => b.kind === 'goal_contract')).toBe(false)
     expect(builder.getActiveGoal()?.status).toBe('pending_contract')
+  })
+
+  it('does not keep the completed /goal command running beside its hidden draft turn', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      id: 'command-user',
+      type: 'user_message',
+      sessionId: 'session-1',
+      turnId: 'command-turn',
+      timestamp: '2026-08-14T00:00:00.000Z',
+      seq: 1,
+      content: '/goal ship the goal',
+    } as AgentEvent)
+    builder.processEvent({
+      id: 'command-result',
+      type: 'assistant_message',
+      sessionId: 'session-1',
+      turnId: 'command-turn',
+      timestamp: '2026-08-14T00:00:00.000Z',
+      seq: 2,
+      mode: 'complete',
+      content: 'Goal 已创建，正在起草验收契约。',
+      provider: 'spark',
+      isFinal: true,
+    } as AgentEvent)
+    builder.processEvent({
+      id: 'draft-user',
+      type: 'user_message',
+      sessionId: 'session-1',
+      turnId: 'draft-turn',
+      timestamp: '2026-08-14T00:00:00.000Z',
+      seq: 3,
+      content: 'draft contract',
+      turnSource: 'goal_contract_draft',
+      userMessageVisibility: 'hidden',
+    } as AgentEvent)
+    builder.processEvent({
+      id: 'draft-thinking',
+      type: 'agent_thinking',
+      sessionId: 'session-1',
+      turnId: 'draft-turn',
+      timestamp: '2026-08-14T00:00:00.000Z',
+      seq: 4,
+      mode: 'delta',
+      content: 'drafting',
+    } as AgentEvent)
+
+    const running = builder.getAllMessages().filter((message) => message.status === 'streaming')
+    expect(running).toHaveLength(1)
+    expect(
+      builder.getAllMessages().find((message) => message.turnId === 'command-turn')?.status,
+    ).toBe('completed')
+
+    builder.processEvent({
+      id: 'draft-cancelled',
+      type: 'agent_status',
+      sessionId: 'session-1',
+      turnId: 'draft-turn',
+      timestamp: '2026-08-14T00:00:00.000Z',
+      seq: 5,
+      status: 'cancelled',
+      message: 'cancelled',
+    } as AgentEvent)
+    expect(
+      builder.getAllMessages().filter((message) => message.status === 'streaming'),
+    ).toHaveLength(0)
   })
 
   it('resolves the pending card to confirmed on goal_started and rejected on goal_cleared', () => {
