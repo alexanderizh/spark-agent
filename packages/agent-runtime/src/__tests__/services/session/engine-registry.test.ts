@@ -5,6 +5,7 @@ import {
   CodexCliExecutor,
   CodexOpenAIExecutor,
   CodexSdkExecutor,
+  CodexAppServerExecutor,
 } from '../../../sdk/index.js'
 import {
   createCodexExecutorForConfig,
@@ -73,9 +74,9 @@ describe('resolveExecutor（adapter → 引擎 → 执行器）', () => {
     ).toBeInstanceOf(CodexOpenAIExecutor)
   })
 
-  it('codex 载具三选一：默认 responses → CodexSdk', () => {
+  it('codex 载具三选一：默认 responses → CodexAppServer（内部带回退）', () => {
     const registry = createDefaultEngineRegistry()
-    expect(registry.resolveExecutor('codex', anyConfig)).toBeInstanceOf(CodexSdkExecutor)
+    expect(registry.resolveExecutor('codex', anyConfig)).toBeInstanceOf(CodexAppServerExecutor)
   })
 })
 
@@ -92,7 +93,7 @@ describe('createCodexExecutorForConfig（原 session.service 工厂等价迁移�
         codexApiKind: 'responses',
         codexCliProvider: { id: 'p1', wireApi: 'chat' },
       }),
-    ).toBeInstanceOf(CodexSdkExecutor)
+    ).toBeInstanceOf(CodexAppServerExecutor)
   })
 })
 

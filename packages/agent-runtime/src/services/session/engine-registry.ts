@@ -1,9 +1,9 @@
 import type { SessionAgentAdapter } from '@spark/protocol'
 import {
   ClaudeSDKExecutor,
+  CodexAppServerExecutor,
   CodexCliExecutor,
   CodexOpenAIExecutor,
-  CodexSdkExecutor,
   isSDKAvailable,
 } from '../../sdk/index.js'
 import type { SDKExecutorConfig } from '../../sdk/index.js'
@@ -73,11 +73,15 @@ export class EngineRegistry {
 /**
  * codex 载具三选一（原 session.service 模块级工厂整体迁入）：
  * 按 useLocalConfig/codexApiKind/codexCliProvider.wireApi 选
- * CodexCli / CodexOpenAI / CodexSdk——载具差异降为 codex 引擎内部细节。
+ * CodexCli / CodexOpenAI / CodexAppServer——载具差异降为 codex 引擎内部细节。
+ *
+ * responses 路径默认 app-server 载具（token 级流式 + 思考流 + 优雅取消，
+ * 见 docs/plans/2026-08-16-codex-app-server-streaming.md）；载具内部在
+ * 握手失败/图片附件等场景自动回退 CodexSdkExecutor，最坏情况等于旧行为。
  */
 export function createCodexExecutorForConfig(
   config: Pick<SDKExecutorConfig, 'useLocalConfig' | 'codexApiKind' | 'codexCliProvider'>,
-): CodexCliExecutor | CodexOpenAIExecutor | CodexSdkExecutor {
+): CodexCliExecutor | CodexOpenAIExecutor | CodexAppServerExecutor {
   if (config.useLocalConfig === true) return new CodexCliExecutor()
   if (config.codexApiKind === 'chat') {
     return new CodexOpenAIExecutor()
@@ -85,7 +89,7 @@ export function createCodexExecutorForConfig(
   if (config.codexApiKind == null && config.codexCliProvider?.wireApi === 'chat') {
     return new CodexOpenAIExecutor()
   }
-  return new CodexSdkExecutor()
+  return new CodexAppServerExecutor()
 }
 
 const claudeEngineDescriptor: EngineDescriptor = {

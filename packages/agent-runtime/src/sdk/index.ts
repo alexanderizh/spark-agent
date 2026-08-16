@@ -31,6 +31,12 @@ export {
   readManagedCodexRuntimeState,
 } from './codex-runtime.js'
 export { CodexOpenAIExecutor } from './codex-openai-executor.js'
+export { CodexAppServerExecutor } from './codex-app-server/codex-app-server-executor.js'
+export type { CodexAppServerExecutorOptions } from './codex-app-server/codex-app-server-executor.js'
+export {
+  CodexAppServerClient,
+  CodexAppServerProcessExitedError,
+} from './codex-app-server/codex-app-server-client.js'
 export type { SdkMcpToolResult } from './claude-sdk-executor.js'
 export { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
 export type { SDKPermissionConfig } from './permission-mapper.js'

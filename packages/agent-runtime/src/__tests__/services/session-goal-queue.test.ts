@@ -2,7 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
 import { SessionService } from '../../services/session.service.js'
 
-type GoalStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget' | 'pending_contract'
+type GoalStatus =
+  | 'active'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cleared'
+  | 'stopped_by_budget'
+  | 'pending_contract'
 type ProgressStatus = GoalStatus | 'continue' | 'blocked'
 type GoalProgressEntry = {
   iteration: number
@@ -169,7 +176,10 @@ vi.mock('@spark/storage', () => {
     nextSeqBySession(): number {
       return state.events.reduce((max, event) => Math.max(max, event.seq), -1) + 1
     }
-    queryBySession(params: { eventType?: string }): { events: Array<{ event_json: string }>; hasMore: boolean } {
+    queryBySession(params: { eventType?: string }): {
+      events: Array<{ event_json: string }>
+      hasMore: boolean
+    } {
       const rows = state.events
         .filter((event) => params.eventType == null || event.type === params.eventType)
         .map((event) => ({ event_json: JSON.stringify(event) }))
@@ -276,6 +286,7 @@ vi.mock('../../sdk/index.js', () => ({
   CodexCliExecutor: class {},
   CodexOpenAIExecutor: class {},
   CodexSdkExecutor: class {},
+  CodexAppServerExecutor: class {},
 }))
 
 class TestSessionService extends SessionService {
@@ -349,7 +360,15 @@ function createService() {
     }
   ).dispatchTurn.bind(service)
   const pendingTurns = (service as unknown as { pendingTurns: Map<string, unknown[]> }).pendingTurns
-  return { service, emitted, startTurn, startGoalLoop, continueGoalOrQueue, dispatchTurn, pendingTurns }
+  return {
+    service,
+    emitted,
+    startTurn,
+    startGoalLoop,
+    continueGoalOrQueue,
+    dispatchTurn,
+    pendingTurns,
+  }
 }
 
 describe('SessionService goal queue semantics (P0-2 / P2)', () => {
@@ -385,9 +404,7 @@ describe('SessionService goal queue semantics (P0-2 / P2)', () => {
     )
     expect(prompt).not.toContain('Skip the DB migration')
     // 带附件的 turn 留在队列
-    expect(pendingTurns.get('session-1')).toEqual([
-      expect.objectContaining({ turnId: 'turn-b' }),
-    ])
+    expect(pendingTurns.get('session-1')).toEqual([expect.objectContaining({ turnId: 'turn-b' })])
     // 被消费的消息在时间线上仍可见，且持久化请求闭环
     expect(emitted).toContainEqual(
       expect.objectContaining({ type: 'user_message', turnId: 'turn-a' }),
@@ -452,7 +469,9 @@ describe('SessionService goal queue semantics (P0-2 / P2)', () => {
 
     expect(result.started).toBe(false)
     expect(startTurn).not.toHaveBeenCalled()
-    expect(pendingTurns.get('session-1')).toEqual([expect.objectContaining({ message: 'a mid-goal note' })])
+    expect(pendingTurns.get('session-1')).toEqual([
+      expect.objectContaining({ message: 'a mid-goal note' }),
+    ])
   })
 })
 
@@ -682,9 +701,7 @@ describe('SessionService goal synthetic turn runtime inheritance', () => {
 
     const prompt = startTurn.mock.calls[0]![2] as string
     expect(prompt).not.toContain('route this to the reviewer agent')
-    expect(pendingTurns.get('session-1')).toEqual([
-      expect.objectContaining({ turnId: 'turn-a' }),
-    ])
+    expect(pendingTurns.get('session-1')).toEqual([expect.objectContaining({ turnId: 'turn-a' })])
     expect(state.runtimeUpdates).toEqual([])
     expect(startTurn.mock.calls[0]![4]).toEqual({
       providerProfileId: 'provider-a',

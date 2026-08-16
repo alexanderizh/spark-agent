@@ -1222,6 +1222,7 @@ vi.mock('../../sdk/index.js', () => {
     CodexSdkExecutor: MockTurnExecutor,
     CodexCliExecutor: MockTurnExecutor,
     CodexOpenAIExecutor: MockTurnExecutor,
+    CodexAppServerExecutor: MockTurnExecutor,
   }
 })
 

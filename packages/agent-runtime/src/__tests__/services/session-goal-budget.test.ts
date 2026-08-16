@@ -2,7 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
 import { SessionService } from '../../services/session.service.js'
 
-type GoalStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget' | 'pending_contract'
+type GoalStatus =
+  | 'active'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cleared'
+  | 'stopped_by_budget'
+  | 'pending_contract'
 type ProgressStatus = GoalStatus | 'continue' | 'blocked'
 type GoalProgressEntry = {
   iteration: number
@@ -61,9 +68,10 @@ vi.mock('@spark/storage', () => {
 
   class GoalRepository {
     getCurrent(sessionId: string): StoredGoal | null {
-      const goal = Array.from(state.goals.values()).find((item) =>
-        item.sessionId === sessionId &&
-        ['active', 'paused', 'stopped_by_budget', 'pending_contract'].includes(item.status),
+      const goal = Array.from(state.goals.values()).find(
+        (item) =>
+          item.sessionId === sessionId &&
+          ['active', 'paused', 'stopped_by_budget', 'pending_contract'].includes(item.status),
       )
       return goal == null ? null : cloneGoal(goal)
     }
@@ -76,7 +84,10 @@ vi.mock('@spark/storage', () => {
       return cloneGoal(goal)
     }
 
-    appendProgress(id: string, entry: Omit<GoalProgressEntry, 'createdAt'> & { createdAt?: string }): StoredGoal | null {
+    appendProgress(
+      id: string,
+      entry: Omit<GoalProgressEntry, 'createdAt'> & { createdAt?: string },
+    ): StoredGoal | null {
       const goal = state.goals.get(id)
       if (goal == null) return null
       goal.progressLog.push({ ...entry, createdAt: entry.createdAt ?? '2026-06-30T10:00:00.000Z' })
@@ -103,25 +114,51 @@ vi.mock('@spark/storage', () => {
       state.events.push(JSON.parse(params.eventJson) as AgentEvent)
     }
 
-    countBySession(): number { return 0 }
+    countBySession(): number {
+      return 0
+    }
     nextSeqBySession(): number {
       return state.events.reduce((max, event) => Math.max(max, event.seq), -1) + 1
     }
-    queryBySession(): { events: unknown[]; hasMore: boolean } { return { events: [], hasMore: false } }
-    queryStreamEventsByTurn(): unknown[] { return [] }
-    queryDialogueEvents(): unknown[] { return [] }
-    queryDialogueEventsAfterSeq(): unknown[] { return [] }
-    countDialogueEventsAfterSeq(): number { return 0 }
-    getLatestByTypeAndJsonValue(): null { return null }
-    deleteOrphanedSessionEventsBatch(): number { return 0 }
+    queryBySession(): { events: unknown[]; hasMore: boolean } {
+      return { events: [], hasMore: false }
+    }
+    queryStreamEventsByTurn(): unknown[] {
+      return []
+    }
+    queryDialogueEvents(): unknown[] {
+      return []
+    }
+    queryDialogueEventsAfterSeq(): unknown[] {
+      return []
+    }
+    countDialogueEventsAfterSeq(): number {
+      return 0
+    }
+    getLatestByTypeAndJsonValue(): null {
+      return null
+    }
+    deleteOrphanedSessionEventsBatch(): number {
+      return 0
+    }
   }
 
   class EmptyRepository {
-    list(): unknown[] { return [] }
-    listAll(): unknown[] { return [] }
-    findByScope(): unknown[] { return [] }
-    get(): null { return null }
-    markStaleAsFailed(): number { return 0 }
+    list(): unknown[] {
+      return []
+    }
+    listAll(): unknown[] {
+      return []
+    }
+    findByScope(): unknown[] {
+      return []
+    }
+    get(): null {
+      return null
+    }
+    markStaleAsFailed(): number {
+      return 0
+    }
   }
 
   class SessionRepository extends EmptyRepository {
@@ -142,7 +179,9 @@ vi.mock('@spark/storage', () => {
     WorkflowRepository: EmptyRepository,
     TeamDispatchRepository: EmptyRepository,
     TurnRequestRepository: class {
-      listRecoverable(): unknown[] { return [] }
+      listRecoverable(): unknown[] {
+        return []
+      }
     },
     TeamDefinitionRepository: EmptyRepository,
     MediaModelManifestRepository: EmptyRepository,
@@ -156,11 +195,16 @@ vi.mock('@spark/storage', () => {
 vi.mock('../../sdk/index.js', () => ({
   loadSdkMcpFactory: vi.fn(async () => null),
   isSDKAvailable: vi.fn(async () => true),
-  getResumeCircuitBreaker: vi.fn(() => ({ canAttempt: () => true, recordFailure: vi.fn(), recordSuccess: vi.fn() })),
+  getResumeCircuitBreaker: vi.fn(() => ({
+    canAttempt: () => true,
+    recordFailure: vi.fn(),
+    recordSuccess: vi.fn(),
+  })),
   ClaudeSDKExecutor: class {},
   CodexCliExecutor: class {},
   CodexOpenAIExecutor: class {},
   CodexSdkExecutor: class {},
+  CodexAppServerExecutor: class {},
 }))
 
 class TestSessionService extends SessionService {
@@ -193,7 +237,9 @@ function createService() {
   const service = new TestSessionService({} as never, (event) => emitted.push(event))
   const startTurn = vi.fn(async () => undefined)
   ;(service as unknown as { startTurn: typeof startTurn }).startTurn = startTurn
-  const startGoalLoop = (service as unknown as { startGoalLoop(sessionId: string): Promise<void> }).startGoalLoop.bind(service)
+  const startGoalLoop = (
+    service as unknown as { startGoalLoop(sessionId: string): Promise<void> }
+  ).startGoalLoop.bind(service)
   return { service, emitted, startTurn, startGoalLoop }
 }
 
@@ -215,11 +261,13 @@ describe('SessionService goal loop budget enforcement', () => {
     expect(state.goals.get('goal-1')?.status).toBe('stopped_by_budget')
     expect(state.goals.get('goal-1')?.progressLog).toHaveLength(0)
     expect(startTurn).not.toHaveBeenCalled()
-    expect(state.events).toContainEqual(expect.objectContaining({
-      type: 'goal_budget_stopped',
-      status: 'stopped_by_budget',
-      summary: expect.stringContaining('budget'),
-    }))
+    expect(state.events).toContainEqual(
+      expect.objectContaining({
+        type: 'goal_budget_stopped',
+        status: 'stopped_by_budget',
+        summary: expect.stringContaining('budget'),
+      }),
+    )
   })
 
   it('stops before another turn when elapsed runtime reaches maxRuntimeMinutes', async () => {
@@ -242,9 +290,27 @@ describe('SessionService goal loop budget enforcement', () => {
     seedGoal({
       budget: { maxConsecutiveFailures: 2 },
       progressLog: [
-        { iteration: 1, phase: 'validate', status: 'continue', summary: 'Earlier progress', createdAt: '2026-06-30T10:00:00.000Z' },
-        { iteration: 2, phase: 'validate', status: 'failed', summary: 'Validation failed', createdAt: '2026-06-30T10:01:00.000Z' },
-        { iteration: 3, phase: 'validate', status: 'blocked', summary: 'Paused by blocker', createdAt: '2026-06-30T10:02:00.000Z' },
+        {
+          iteration: 1,
+          phase: 'validate',
+          status: 'continue',
+          summary: 'Earlier progress',
+          createdAt: '2026-06-30T10:00:00.000Z',
+        },
+        {
+          iteration: 2,
+          phase: 'validate',
+          status: 'failed',
+          summary: 'Validation failed',
+          createdAt: '2026-06-30T10:01:00.000Z',
+        },
+        {
+          iteration: 3,
+          phase: 'validate',
+          status: 'blocked',
+          summary: 'Paused by blocker',
+          createdAt: '2026-06-30T10:02:00.000Z',
+        },
       ],
     })
     const { startGoalLoop, startTurn } = createService()
@@ -260,9 +326,31 @@ describe('SessionService goal loop budget enforcement', () => {
     seedGoal({
       budget: { noProgressLimit: 2 },
       progressLog: [
-        { iteration: 1, phase: 'act', status: 'continue', summary: 'Made a change', evidence: ['file.ts'], nextStep: 'Run tests', createdAt: '2026-06-30T10:00:00.000Z' },
-        { iteration: 2, phase: 'review', status: 'continue', summary: 'Still reviewing', nextStep: 'Run tests', createdAt: '2026-06-30T10:01:00.000Z' },
-        { iteration: 3, phase: 'review', status: 'continue', summary: 'Still reviewing', nextStep: 'Run tests', createdAt: '2026-06-30T10:02:00.000Z' },
+        {
+          iteration: 1,
+          phase: 'act',
+          status: 'continue',
+          summary: 'Made a change',
+          evidence: ['file.ts'],
+          nextStep: 'Run tests',
+          createdAt: '2026-06-30T10:00:00.000Z',
+        },
+        {
+          iteration: 2,
+          phase: 'review',
+          status: 'continue',
+          summary: 'Still reviewing',
+          nextStep: 'Run tests',
+          createdAt: '2026-06-30T10:01:00.000Z',
+        },
+        {
+          iteration: 3,
+          phase: 'review',
+          status: 'continue',
+          summary: 'Still reviewing',
+          nextStep: 'Run tests',
+          createdAt: '2026-06-30T10:02:00.000Z',
+        },
       ],
     })
     const { startGoalLoop, startTurn } = createService()
@@ -285,7 +373,15 @@ describe('SessionService goal loop budget enforcement', () => {
       },
       createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
       progressLog: [
-        { iteration: 1, phase: 'validate', status: 'continue', summary: 'Found next work', evidence: ['test'], nextStep: 'Implement', createdAt: '2026-06-30T10:00:00.000Z' },
+        {
+          iteration: 1,
+          phase: 'validate',
+          status: 'continue',
+          summary: 'Found next work',
+          evidence: ['test'],
+          nextStep: 'Implement',
+          createdAt: '2026-06-30T10:00:00.000Z',
+        },
       ],
     })
     state.usageBySession.set('session-1', { totalCostUsd: 0.5, recordCount: 1 })
@@ -297,15 +393,23 @@ describe('SessionService goal loop budget enforcement', () => {
     // 启动阶段只发事件、不写占位进度：progressLog 仍只含真实条目，迭代计数不再双倍。
     expect(state.goals.get('goal-1')?.progressLog).toHaveLength(1)
     expect(startTurn).toHaveBeenCalledTimes(1)
-    expect(startTurn).toHaveBeenCalledWith('session-1', expect.any(String), expect.any(String), {
-      turnSource: 'goal_iteration',
-      userMessageVisibility: 'hidden',
-    }, undefined)
+    expect(startTurn).toHaveBeenCalledWith(
+      'session-1',
+      expect.any(String),
+      expect.any(String),
+      {
+        turnSource: 'goal_iteration',
+        userMessageVisibility: 'hidden',
+      },
+      undefined,
+    )
     // 启动事件应携带即将开始的轮次号（已完成 1 轮 → 第 2 轮）。
-    expect(emitted).toContainEqual(expect.objectContaining({
-      type: 'goal_progress',
-      status: 'active',
-      iteration: 2,
-    }))
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        type: 'goal_progress',
+        status: 'active',
+        iteration: 2,
+      }),
+    )
   })
 })

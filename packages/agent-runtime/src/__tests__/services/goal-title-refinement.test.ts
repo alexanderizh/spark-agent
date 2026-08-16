@@ -53,6 +53,7 @@ vi.mock('../../sdk/index.js', async () => {
     CodexSdkExecutor: FakeEngineExecutor,
     CodexCliExecutor: FakeEngineExecutor,
     CodexOpenAIExecutor: FakeEngineExecutor,
+    CodexAppServerExecutor: FakeEngineExecutor,
   }
 })
 

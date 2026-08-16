@@ -24,7 +24,7 @@ import {
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
 import { SessionQuestionGate } from '../../services/session-question-gate.js'
 import { TurnRegistry } from '../../services/session/turn-registry.js'
-import { CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor } from '../../sdk/index.js'
+import { CodexAppServerExecutor, CodexCliExecutor, CodexOpenAIExecutor } from '../../sdk/index.js'
 import {
   TEAM_DISPATCH_AUTO_CONTINUATION_PRESENTATION,
   TEAM_DISPATCH_AUTO_CONTINUATION_PROMPT,
@@ -254,9 +254,9 @@ describe('SessionService recovery helpers', () => {
 
   it('keeps Codex Responses providers on the Codex SDK executor', () => {
     expect(createCodexExecutorForConfig({ codexApiKind: 'responses' })).toBeInstanceOf(
-      CodexSdkExecutor,
+      CodexAppServerExecutor,
     )
-    expect(createCodexExecutorForConfig({})).toBeInstanceOf(CodexSdkExecutor)
+    expect(createCodexExecutorForConfig({})).toBeInstanceOf(CodexAppServerExecutor)
   })
 
   it('gives an explicit Responses selection precedence over stale Chat provider metadata', () => {
@@ -269,7 +269,7 @@ describe('SessionService recovery helpers', () => {
           envKey: 'SPARK_CODEX_API_KEY_TEST',
         },
       }),
-    ).toBeInstanceOf(CodexSdkExecutor)
+    ).toBeInstanceOf(CodexAppServerExecutor)
   })
 
   it('keeps local Codex CLI providers on the CLI executor', () => {
@@ -1416,7 +1416,9 @@ describe('resolveCodexMemberExecutionProfile (FR-0a codex member executor routin
       apiKey: 'sk-x',
       codexApiKind: 'responses',
     })
-    expect(createCodexExecutorForConfig(remoteProfile.extras)).toBeInstanceOf(CodexSdkExecutor)
+    expect(createCodexExecutorForConfig(remoteProfile.extras)).toBeInstanceOf(
+      CodexAppServerExecutor,
+    )
   })
 })
 

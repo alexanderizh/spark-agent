@@ -26,8 +26,8 @@ type EventBase = { id: string; sessionId: string; turnId: string; timestamp: str
 type CodexSdkModule = typeof import('@openai/codex-sdk')
 type CodexThread = Thread
 type CodexClient = Codex
-type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexConfigObject
-type CodexConfigObject = { [key: string]: CodexConfigValue }
+export type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexConfigObject
+export type CodexConfigObject = { [key: string]: CodexConfigValue }
 type BundledCodexCli = { executablePath: string; pathDirs: string[] }
 type StreamState = {
   textByItemId: Map<string, string>
@@ -738,7 +738,7 @@ function buildThreadOptions(config: SDKExecutorConfig): ThreadOptions {
   return options
 }
 
-function buildCodexConfig(config: SDKExecutorConfig): CodexConfigObject {
+export function buildCodexConfig(config: SDKExecutorConfig): CodexConfigObject {
   const policy = resolveCodexPermissionPolicy(config.permissionMode, config.unattended === true)
   return {
     model_reasoning_summary: 'concise',
@@ -749,7 +749,7 @@ function buildCodexConfig(config: SDKExecutorConfig): CodexConfigObject {
   }
 }
 
-function buildCodexModelProviderConfig(config: SDKExecutorConfig): CodexConfigObject {
+export function buildCodexModelProviderConfig(config: SDKExecutorConfig): CodexConfigObject {
   const provider = config.codexCliProvider
   if (provider == null) return {}
   const id = sanitizeConfigKey(provider.id)
@@ -773,7 +773,7 @@ function buildCodexModelProviderConfig(config: SDKExecutorConfig): CodexConfigOb
   }
 }
 
-function buildCodexMcpConfig(
+export function buildCodexMcpConfig(
   mcpServers: Record<string, SDKMcpServerConfig> | undefined,
 ): CodexConfigObject {
   const servers: Record<string, CodexConfigObject> = {}
@@ -808,7 +808,7 @@ function codexDefaultToolsApprovalMode(rawName: string): 'approve' | null {
   return rawName.startsWith('spark_') ? 'approve' : null
 }
 
-function buildCodexMcpEnv(
+export function buildCodexMcpEnv(
   mcpServers: Record<string, SDKMcpServerConfig> | undefined,
 ): Record<string, string> {
   const env: Record<string, string> = {}
@@ -857,7 +857,7 @@ function codexBearerTokenEnvVar(rawName: string): string {
   return `SPARK_MCP_${suffix.length > 0 ? suffix : 'SERVER'}_BEARER_TOKEN`
 }
 
-function buildCodexSdkPrompt(userMessage: string, config: SDKExecutorConfig): string {
+export function buildCodexSdkPrompt(userMessage: string, config: SDKExecutorConfig): string {
   const sections = [
     config.skillSystemPrompt != null && config.skillSystemPrompt.trim().length > 0
       ? `# Spark Skills\n${config.skillSystemPrompt}`
@@ -871,7 +871,10 @@ function buildCodexSdkPrompt(userMessage: string, config: SDKExecutorConfig): st
   return sections.join('\n\n')
 }
 
-function buildCodexSdkInput(prompt: string, attachments: SDKTurnAttachment[] | undefined): Input {
+export function buildCodexSdkInput(
+  prompt: string,
+  attachments: SDKTurnAttachment[] | undefined,
+): Input {
   const images = (attachments ?? []).filter((attachment) => attachment.type === 'image')
   if (images.length === 0) return prompt
   return [
@@ -917,7 +920,7 @@ function buildMcpPrompt(mcpServers: Record<string, SDKMcpServerConfig> | undefin
   ].join('\n')
 }
 
-function buildCodexGoalPrompt(userMessage: string, config: SDKExecutorConfig): string {
+export function buildCodexGoalPrompt(userMessage: string, config: SDKExecutorConfig): string {
   const goal = config.goal
   if (goal == null) return userMessage
   if (goal.mode === 'codex-native') {
@@ -947,13 +950,13 @@ function buildCodexGoalPrompt(userMessage: string, config: SDKExecutorConfig): s
   ].join('\n')
 }
 
-function computeDelta(next: string, prev: string): string {
+export function computeDelta(next: string, prev: string): string {
   if (next.length === 0) return ''
   if (next.startsWith(prev)) return next.slice(prev.length)
   return next
 }
 
-function isBenignCodexSdkError(message: string): boolean {
+export function isBenignCodexSdkError(message: string): boolean {
   const normalizedMessage = message.toLowerCase()
   const isUnsupportedResponsesWebSocket =
     normalizedMessage.includes('unexpected status 404') &&
@@ -1060,7 +1063,7 @@ function toAsarUnpackedPath(filePath: string): string {
   return filePath.replace(/(^|[/\\])app\.asar(?=[/\\]|$)/, '$1app.asar.unpacked')
 }
 
-function prependPathDirs(env: Record<string, string>, pathDirs: string[]): void {
+export function prependPathDirs(env: Record<string, string>, pathDirs: string[]): void {
   if (pathDirs.length === 0) return
   const pathKey = pathEnvKey(env)
   if (process.platform === 'win32') {
@@ -1074,13 +1077,13 @@ function prependPathDirs(env: Record<string, string>, pathDirs: string[]): void 
   env[pathKey] = [...pathDirs, ...existingEntries].join(delimiter)
 }
 
-function pathEnvKey(env: Record<string, string>): string {
+export function pathEnvKey(env: Record<string, string>): string {
   if (process.platform !== 'win32') return 'PATH'
   const matchingKeys = Object.keys(env).filter((key) => key.toLowerCase() === 'path')
   return matchingKeys.includes('Path') ? 'Path' : (matchingKeys.at(-1) ?? 'PATH')
 }
 
-function stringifyEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+export function stringifyEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   const result: Record<string, string> = {}
   for (const [key, value] of Object.entries(env)) {
     if (typeof value === 'string') result[key] = value
