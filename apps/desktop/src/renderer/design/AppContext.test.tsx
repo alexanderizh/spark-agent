@@ -5,7 +5,6 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, DEFAULT_TWEAKS, useApp } from './AppContext'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('./components/ConfirmDialog', () => ({
@@ -62,7 +61,7 @@ describe('AppContext visual tweak persistence', () => {
     expect(DEFAULT_TWEAKS.floatingSidebarWidth).toBe(288)
   })
 
-  it('uses the floating sidebar by default on desktop platforms', async () => {
+  it('uses the flat sidebar by default on desktop platforms', async () => {
     vi.stubGlobal('spark', {
       platform: 'darwin',
       invoke: vi.fn(async () => ({ value: null })),
@@ -84,7 +83,7 @@ describe('AppContext visual tweak persistence', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="sidebar-style"]')?.textContent).toBe('floating')
+    expect(container.querySelector('[data-testid="sidebar-style"]')?.textContent).toBe('flat')
   })
 
   it('follows the system theme by default when no theme has been persisted', async () => {

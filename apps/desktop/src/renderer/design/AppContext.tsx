@@ -125,7 +125,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   browserPanelWidth: 380,
   floatingSidebarWidth: 288,
   sidebarHidden: false,
-  sidebarStyle: 'floating',
+  sidebarStyle: 'flat',
   workspaceMode: 'workbench',
   canvasCreateSignal: 0,
 }
@@ -290,7 +290,7 @@ function readInitialTweaks(): Tweaks {
 
   // Sidebar panel appearance: floating vs flat.
   // If the user has explicitly switched, honor the saved value; otherwise keep
-  // DEFAULT_TWEAKS.floating so every platform starts with the same glass panel.
+  // DEFAULT_TWEAKS.flat so every platform starts with the same flat panel.
   const savedSidebarStyle = window.localStorage.getItem(SIDEBAR_STYLE_KEY)
   if (savedSidebarStyle === 'floating' || savedSidebarStyle === 'flat') {
     tweaks = { ...tweaks, sidebarStyle: savedSidebarStyle }
