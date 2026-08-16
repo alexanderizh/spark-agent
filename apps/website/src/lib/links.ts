@@ -1,3 +1,11 @@
+/**
+ * 开源可见性总开关：项目暂时转为闭源，官网所有指向源码仓库的开源入口
+ * （导航/页脚 GitHub、/open-source、联系页反馈卡片、文档 GitHub 源链、
+ * 下载「历史版本」GitHub Releases 入口、SEO codeRepository）均以此开关控制。
+ * 恢复开源时改回 true 即可整体还原（个别文案与 sitemap/llms 静态文件需手动找回）。
+ */
+export const OPEN_SOURCE_ENABLED = false
+
 export const GITHUB_URL = 'https://github.com/alexanderizh/spark-agent'
 export const RELEASES_URL = `${GITHUB_URL}/releases`
 /**

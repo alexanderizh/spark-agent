@@ -11,7 +11,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
-import { GITHUB_URL } from '../lib/links'
+import { GITHUB_URL, OPEN_SOURCE_ENABLED } from '../lib/links'
 import { GithubIcon } from './GithubIcon'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
@@ -74,10 +74,12 @@ export function Layout({ children, currentPath = '/' }: { children: React.ReactN
             )
           })}
           <ThemeToggle />
-          <a className="nav-github" href={GITHUB_URL} target="_blank" rel="noreferrer">
-            <GithubIcon size={15} />
-            <span>GitHub</span>
-          </a>
+          {OPEN_SOURCE_ENABLED && (
+            <a className="nav-github" href={GITHUB_URL} target="_blank" rel="noreferrer">
+              <GithubIcon size={15} />
+              <span>GitHub</span>
+            </a>
+          )}
         </nav>
         <button
           type="button"
@@ -113,16 +115,18 @@ export function Layout({ children, currentPath = '/' }: { children: React.ReactN
           })}
           <div className="nav-drawer-row">
             <ThemeToggle />
-            <a
-              className="nav-drawer-github"
-              href={GITHUB_URL}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => setMenuOpen(false)}
-            >
-              <GithubIcon size={16} />
-              <span>GitHub</span>
-            </a>
+            {OPEN_SOURCE_ENABLED && (
+              <a
+                className="nav-drawer-github"
+                href={GITHUB_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setMenuOpen(false)}
+              >
+                <GithubIcon size={16} />
+                <span>GitHub</span>
+              </a>
+            )}
           </div>
         </div>
       </div>
@@ -145,12 +149,14 @@ function Footer() {
       <div className="footer-links">
         <a href="/docs">使用文档</a>
         <a href="/download">下载</a>
-        <a href="/open-source">开源</a>
+        {OPEN_SOURCE_ENABLED && <a href="/open-source">开源</a>}
         <a href="/llms.txt">llms.txt</a>
         <a href="/sitemap.xml">Sitemap</a>
-        <a href={GITHUB_URL} target="_blank" rel="noreferrer">
-          GitHub
-        </a>
+        {OPEN_SOURCE_ENABLED && (
+          <a href={GITHUB_URL} target="_blank" rel="noreferrer">
+            GitHub
+          </a>
+        )}
       </div>
     </footer>
   )

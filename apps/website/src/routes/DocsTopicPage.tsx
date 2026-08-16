@@ -4,6 +4,7 @@ import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
 import { DocsBreadcrumbs, DocsSidebar } from '../components/DocsSidebar'
 import { findDocsTopic, relatedDocsTopics } from '../content/docs'
+import { OPEN_SOURCE_ENABLED } from '../lib/links'
 import type { DocsPageContent } from '../content/docs-pages/_shared'
 
 /**
@@ -145,7 +146,7 @@ function DocsTopicBody({ content, slug }: DocsTopicBodyProps) {
 
           <nav className="docs-topic-pager" aria-label="主题翻页">
             <Link href="/docs">← 文档首页</Link>
-            {findDocsTopic(slug)?.githubSource ? (
+            {OPEN_SOURCE_ENABLED && findDocsTopic(slug)?.githubSource ? (
               <a
                 href={`https://github.com/alexanderizh/spark-agent/blob/main/${findDocsTopic(slug)?.githubSource}`}
                 target="_blank"
