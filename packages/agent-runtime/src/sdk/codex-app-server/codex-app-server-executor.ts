@@ -72,6 +72,8 @@ export interface CodexAppServerExecutorOptions {
   createFallback?: (() => EngineExecutor) | undefined
   /** initialize / thread 握手超时（默认 15s）。 */
   handshakeTimeoutMs?: number | undefined
+  /** stdout 解析 / 通知处理链异常的兜底出口（不致命，但不应静默）。 */
+  onProtocolError?: ((error: Error) => void) | undefined
 }
 
 /** 单个 turn 的流式累积状态（delta 原生，无需前缀切片推断）。 */
@@ -446,6 +448,7 @@ export class CodexAppServerExecutor
       executablePath,
       args: this.options.args,
       env,
+      onProtocolError: this.options.onProtocolError,
       onNotification: (method, params) => {
         this.dispatchNotification(method, params)
       },
@@ -519,6 +522,10 @@ export class CodexAppServerExecutor
   // ── 通知分发（app-server v2 → AgentEvent） ───────────────────────────────
 
   private dispatchNotification(method: string, params: unknown): void {
+    // 无主通知守卫：prepare 阶段（turn 尚未开始）与 turn 收尾后（dispose 有
+    // 2s 超时竞态，进程可能仍短暂存活并吐出迟到行）一律丢弃——否则会以
+    // 空 sessionId/turnId 产出脏事件（落库 + 迟到 agent_error 干扰会话状态）。
+    if (this.activeSessionId == null || this.currentState == null) return
     const record = (params ?? {}) as Record<string, unknown>
     switch (method) {
       case 'item/agentMessage/delta': {
@@ -663,26 +670,33 @@ export class CodexAppServerExecutor
           error?: { message?: string } | null
           changes?: Array<{ kind?: string; path?: string }>
           query?: string
+          items?: unknown
+          message?: string
         }
       | undefined
     if (item == null || typeof item.type !== 'string' || typeof item.id !== 'string') return
-    const base = this.makeCurrentBase()
+    // 注意：每个 emit 独立 makeCurrentBase()——事件 id 是 agent_events 主键，
+    // 一次生成多事件复用会触发 UNIQUE constraint failed（生产 0.10.13 崩溃事故）。
     switch (item.type) {
       case 'agentMessage': {
         // completed 的 text 是该条目全文；delta 路径已流式投递过，
         // 这里补 complete（复用当前 raw 段；无 delta 到达时防御性新开段）。
         if (!completed || typeof item.text !== 'string') return
         const activeSegmentId = state.rawTextSegmentId
+        // 空完成文本防御：completed text 为空但 delta 已累积时保留流式内容，
+        // 否则该段会被空文本覆盖并丢段（final 汇总与渲染 complete 双丢）。
+        if (item.text.length === 0 && activeSegmentId == null) return
         const segmentId = activeSegmentId ?? nextTextSegmentId(state, this.requireTurnId())
-        recordCompletedSegment(state, segmentId, item.text)
+        const content = item.text.length > 0 ? item.text : state.rawText
+        recordCompletedSegment(state, segmentId, content)
         this.emit({
           type: 'assistant_message',
           mode: 'complete',
-          content: item.text,
+          content,
           provider: 'codex',
           isFinal: false,
           segmentId,
-          ...base,
+          ...this.makeCurrentBase(),
         })
         state.rawText = ''
         state.rawTextSegmentId = null
@@ -700,7 +714,7 @@ export class CodexAppServerExecutor
           data: '',
           isFinal: true,
           exitCode: item.exitCode ?? (item.status === 'completed' ? 0 : 1),
-          ...base,
+          ...this.makeCurrentBase(),
         })
         this.emit({
           type: 'tool_result',
@@ -709,7 +723,7 @@ export class CodexAppServerExecutor
           status: item.status === 'completed' ? 'success' : 'error',
           output: aggregated,
           ...(item.status !== 'completed' ? { error: aggregated || 'Command failed' } : {}),
-          ...base,
+          ...this.makeCurrentBase(),
         })
         return
       }
@@ -732,20 +746,22 @@ export class CodexAppServerExecutor
           status: item.status === 'completed' ? 'success' : 'error',
           ...(item.status === 'completed' ? { output: item.result ?? null } : {}),
           ...(item.status === 'failed' ? { error: item.error?.message ?? 'MCP tool failed' } : {}),
-          ...base,
+          ...this.makeCurrentBase(),
         })
         return
       }
       case 'fileChange': {
         state.toolCalledSinceText = true
-        if (!completed || item.status !== 'completed' || item.changes == null) return
+        // changes 非数组（server 端形状异常）直接丢弃：for...of 对不可迭代
+        // 值会抛 TypeError 并沿通知链穿透成主进程崩溃。
+        if (!completed || item.status !== 'completed' || !Array.isArray(item.changes)) return
         for (const change of item.changes) {
           if (change.kind == null || change.path == null) continue
           this.emit({
             type: 'file_change',
             changeType: mapPatchKind(change.kind as 'add' | 'delete' | 'update'),
             path: change.path,
-            ...base,
+            ...this.makeCurrentBase(),
           })
         }
         return
@@ -761,7 +777,38 @@ export class CodexAppServerExecutor
           toolName: 'web_search',
           status: 'success',
           output: { query },
-          ...base,
+          ...this.makeCurrentBase(),
+        })
+        return
+      }
+      case 'todoList': {
+        // 对齐 Sdk 载具与方案映射表：todo 更新映射 todo_write 工具对。
+        // 每次 todo 版本（started/completed）都带 tool_result（tool_call 去重），
+        // 渲染层按 toolCallId 关联最新版本。
+        state.toolCalledSinceText = true
+        const todos = Array.isArray(item.items) ? item.items : []
+        this.emitToolCallOnce(state, item.id, 'todo_write', { todos }, 'builtin')
+        this.emit({
+          type: 'tool_result',
+          toolCallId: item.id,
+          toolName: 'todo_write',
+          status: 'success',
+          output: { todos },
+          ...this.makeCurrentBase(),
+        })
+        return
+      }
+      case 'error': {
+        // 条目级错误（对齐 Sdk 载具 CODEX_SDK_ITEM_ERROR）；良性错误静默。
+        const message = typeof item.message === 'string' ? item.message : ''
+        if (message.length === 0 || isBenignCodexSdkError(message)) return
+        this.emit({
+          type: 'agent_error',
+          code: 'CODEX_SDK_ITEM_ERROR',
+          message,
+          retryable: true,
+          rawError: message,
+          ...this.makeCurrentBase(),
         })
         return
       }
@@ -770,7 +817,7 @@ export class CodexAppServerExecutor
         const compactEvent = extractCodexCompactionEvent(
           { type: 'contextCompaction' },
           'codex_sdk',
-          base,
+          this.makeCurrentBase(),
         )
         if (compactEvent != null) this.emit(compactEvent)
         return
@@ -819,6 +866,12 @@ export class CodexAppServerExecutor
     reject: (error: JsonRpcErrorShape) => void,
     config: SDKExecutorConfig,
   ): void {
+    // 迟到的审批请求（turn 已收尾 / 握手期到达）：不再打扰审批 UI——
+    // 对已死 turn 弹出的审批卡必然作废，直接走确定性响应兜底。
+    if (this.activeSessionId == null || this.turnResolver == null) {
+      respondToServerRequest(method, params, respond, reject, config)
+      return
+    }
     const interactive = classifyInteractiveApproval(method, params)
     if (interactive != null && config.approvalCallback != null && config.unattended !== true) {
       void this.resolveInteractiveApproval(interactive, method, params, config)
@@ -889,7 +942,6 @@ export class CodexAppServerExecutor
   ): void {
     if (state.emittedToolCalls.has(toolCallId)) return
     state.emittedToolCalls.add(toolCallId)
-    const base = this.makeCurrentBase()
     this.emit({
       type: 'tool_call',
       toolCallId,
@@ -897,13 +949,13 @@ export class CodexAppServerExecutor
       toolInput,
       source,
       ...(mcpServerId != null ? { mcpServerId } : {}),
-      ...base,
+      ...this.makeCurrentBase(),
     })
     this.emit({
       type: 'agent_status',
       status: 'calling_tool',
       message: `Calling ${toolName}`,
-      ...base,
+      ...this.makeCurrentBase(),
     })
   }
 

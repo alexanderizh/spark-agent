@@ -28,6 +28,8 @@ type Scenario = {
   resumeFails?: boolean
   serverRequests?: Array<{ method: string; params?: Record<string, unknown> }>
   steps?: Array<Record<string, unknown>>
+  /** turn/completed 之后替身继续投递的迟到通知（模拟进程关闭期 flush 竞态）。 */
+  postTurnSteps?: Array<Record<string, unknown>>
   finalStatus?: 'completed' | 'interrupted' | 'failed'
   failureMessage?: string
 }
@@ -243,6 +245,12 @@ describe('CodexAppServerExecutor', () => {
     // 工具后的文本段落必须新开 segment（渲染分段约定）。
     const deltas = assistantEvents(events, 'delta')
     expect((deltas[0] as { segmentId?: string }).segmentId).toBe(`codex-sdk-${TURN_ID}-text-1`)
+    // 事件 id 是 agent_events 主键：会持久化的事件必须两两不同，
+    // 否则落库触发 UNIQUE constraint failed（生产 0.10.13 主进程崩溃事故）。
+    const persistentIds = events
+      .filter((event) => !(event.type === 'assistant_message' && event.mode === 'delta'))
+      .map((event) => event.id)
+    expect(new Set(persistentIds).size).toBe(persistentIds.length)
   })
 
   it('思考流：reasoning/textDelta 映射 agent_thinking，segmentId 按 itemId', async () => {
@@ -340,6 +348,11 @@ describe('CodexAppServerExecutor', () => {
       toolName: 'web_search',
       status: 'success',
     })
+    // 持久化事件 id 两两不同：同 id 落库触发主键冲突（含多 fileChange 循环场景）。
+    const persistentIds = events
+      .filter((event) => !(event.type === 'assistant_message' && event.mode === 'delta'))
+      .map((event) => event.id)
+    expect(new Set(persistentIds).size).toBe(persistentIds.length)
   })
 
   it('取消：cancel() 发 turn/interrupt，interrupted 终态走 cancelled 收尾且不抛错', async () => {
@@ -533,6 +546,231 @@ describe('CodexAppServerExecutor', () => {
       outputTokens: 50,
       cacheHitTokens: 20,
       reasoningOutputTokens: 10,
+    })
+  })
+
+  describe('健壮性加固（迟到通知 / 畸形形状 / 异常兜底）', () => {
+    it('迟到通知守卫：turn 收尾后到达的通知全部丢弃，不产生空主键脏事件', async () => {
+      const { events, error } = await runScenario({
+        steps: [agentMessageDeltaStep('正文'), agentMessageCompletedStep('正文')],
+        postTurnSteps: [
+          { kind: 'delay', ms: 80 },
+          {
+            kind: 'notify',
+            method: 'error',
+            params: {
+              threadId: THREAD_ID,
+              turnId: 'server-turn-1',
+              error: { message: 'late stream error' },
+              willRetry: false,
+            },
+          },
+          {
+            kind: 'notify',
+            method: 'turn/started',
+            params: { threadId: THREAD_ID, turn: { id: 'late-turn', status: 'inProgress' } },
+          },
+          {
+            kind: 'notify',
+            method: 'item/agentMessage/delta',
+            params: { threadId: THREAD_ID, turnId: 'server-turn-1', itemId: 'late', delta: '迟到' },
+          },
+        ],
+      })
+      expect(error).toBeNull()
+      // 不产生空 sessionId/turnId 的脏事件（会以空主键落库 + 干扰会话状态）。
+      expect(
+        events.every((event) => event.sessionId === SESSION_ID && event.turnId === TURN_ID),
+      ).toBe(true)
+      expect(eventsOf(events, 'agent_error')).toHaveLength(0)
+      expect(
+        assistantEvents(events, 'delta').map((e) => (e as { content: string }).content),
+      ).toEqual(['正文'])
+      expect(eventsOf(events, 'agent_status').at(-1)).toMatchObject({ status: 'completed' })
+    })
+
+    it('迟到审批守卫：turn 收尾后的审批请求走确定性 deny，不触发 approvalCallback', async () => {
+      const callback = vi.fn(async () => true)
+      const { journal, events, error } = await runScenario(
+        {
+          steps: [agentMessageCompletedStep('done')],
+          postTurnSteps: [
+            { kind: 'delay', ms: 80 },
+            {
+              kind: 'serverRequest',
+              method: 'item/commandExecution/requestApproval',
+              params: { threadId: THREAD_ID, turnId: 'server-turn-1', command: 'rm -rf /tmp/late' },
+            },
+            { kind: 'delay', ms: 80 },
+          ],
+        },
+        { config: { approvalCallback: callback } },
+      )
+      expect(error).toBeNull()
+      expect(callback).not.toHaveBeenCalled()
+      const lateResponse = journal
+        .filter((entry) => entry.kind === 'clientResponse')
+        .find((entry) => (entry.result as { decision?: string } | null)?.decision != null)
+      expect((lateResponse?.result as { decision?: string })?.decision).toBe('deny')
+      expect(eventsOf(events, 'agent_status').at(-1)).toMatchObject({ status: 'completed' })
+    })
+
+    it('todoList 映射：todo 更新映射 todo_write 工具对（对齐 Sdk 载具与方案映射表）', async () => {
+      const todoItem = (items: unknown[]) => ({ type: 'todoList', id: 'todo-1', items })
+      const { events, error } = await runScenario({
+        steps: [
+          {
+            kind: 'notify',
+            method: 'item/started',
+            params: {
+              threadId: THREAD_ID,
+              turnId: 'server-turn-1',
+              item: todoItem([{ content: 'a', status: 'pending' }]),
+            },
+          },
+          {
+            kind: 'notify',
+            method: 'item/completed',
+            params: {
+              threadId: THREAD_ID,
+              turnId: 'server-turn-1',
+              item: todoItem([
+                { content: 'a', status: 'completed' },
+                { content: 'b', status: 'in_progress' },
+              ]),
+            },
+          },
+          agentMessageCompletedStep('done'),
+        ],
+      })
+      expect(error).toBeNull()
+      const toolCalls = eventsOf(events, 'tool_call')
+      expect(toolCalls).toHaveLength(1)
+      expect(toolCalls[0]).toMatchObject({
+        toolCallId: 'todo-1',
+        toolName: 'todo_write',
+        source: 'builtin',
+      })
+      const toolResults = eventsOf(events, 'tool_result')
+      expect(toolResults.at(-1)).toMatchObject({
+        toolCallId: 'todo-1',
+        toolName: 'todo_write',
+        status: 'success',
+        output: {
+          todos: [
+            { content: 'a', status: 'completed' },
+            { content: 'b', status: 'in_progress' },
+          ],
+        },
+      })
+    })
+
+    it('error item 映射：条目级错误 emit CODEX_SDK_ITEM_ERROR（对齐 Sdk 载具）', async () => {
+      const { events, error } = await runScenario({
+        steps: [
+          {
+            kind: 'notify',
+            method: 'item/completed',
+            params: {
+              threadId: THREAD_ID,
+              turnId: 'server-turn-1',
+              item: { type: 'error', id: 'err-1', message: 'tool exploded' },
+            },
+          },
+          agentMessageCompletedStep('recovered'),
+        ],
+      })
+      expect(error).toBeNull()
+      expect(eventsOf(events, 'agent_error')[0]).toMatchObject({
+        code: 'CODEX_SDK_ITEM_ERROR',
+        message: 'tool exploded',
+        retryable: true,
+      })
+    })
+
+    it('畸形形状防御：fileChange.changes 不可迭代时不崩溃，turn 正常完成', async () => {
+      const { events, error } = await runScenario({
+        steps: [
+          {
+            kind: 'notify',
+            method: 'item/completed',
+            params: {
+              threadId: THREAD_ID,
+              turnId: 'server-turn-1',
+              item: { type: 'fileChange', id: 'fc-bad', status: 'completed', changes: 42 },
+            },
+          },
+          agentMessageCompletedStep('survived'),
+        ],
+      })
+      expect(error).toBeNull()
+      expect(eventsOf(events, 'file_change')).toHaveLength(0)
+      expect(eventsOf(events, 'agent_status').at(-1)).toMatchObject({ status: 'completed' })
+    })
+
+    it('agentMessage 空完成文本：保留已流式累积的内容，不丢段', async () => {
+      const { events, error } = await runScenario({
+        steps: [agentMessageDeltaStep('重要结论'), agentMessageCompletedStep('')],
+      })
+      expect(error).toBeNull()
+      const completes = assistantEvents(events, 'complete')
+      expect((completes[0] as { content: string }).content).toBe('重要结论')
+      const finalMessage = completes.at(-1)
+      expect((finalMessage as { content: string }).content).toBe('重要结论')
+      expect((finalMessage as { isFinal?: boolean }).isFinal).toBe(true)
+    })
+
+    it('通知处理链异常兜底：监听方抛错不穿透成进程崩溃，后续通知继续处理', async () => {
+      const protocolErrors: string[] = []
+      const { events, error } = await runScenario(
+        {
+          steps: [
+            {
+              kind: 'notify',
+              method: 'thread/tokenUsage/updated',
+              params: {
+                threadId: THREAD_ID,
+                turnId: 'server-turn-1',
+                tokenUsage: {
+                  last: {
+                    inputTokens: 1,
+                    outputTokens: 1,
+                    cachedInputTokens: 0,
+                    reasoningOutputTokens: 0,
+                    totalTokens: 2,
+                  },
+                  total: {
+                    inputTokens: 10,
+                    outputTokens: 5,
+                    cachedInputTokens: 0,
+                    reasoningOutputTokens: 0,
+                    totalTokens: 15,
+                  },
+                },
+              },
+            },
+            agentMessageDeltaStep('after failure'),
+            agentMessageCompletedStep('after failure'),
+          ],
+        },
+        {
+          executor: {
+            onProtocolError: (err) => protocolErrors.push(err.message),
+          },
+          onEvent: (event) => {
+            // 模拟会话层持久化抛错（生产 0.10.13 主键冲突即此形态）。
+            if (event.type === 'usage_update') throw new Error('persist failed')
+          },
+        },
+      )
+      expect(error).toBeNull()
+      expect(protocolErrors.length).toBeGreaterThan(0)
+      expect(protocolErrors[0]).toContain('notification handler failed')
+      // 异常被隔离后，同轮后续通知（delta/complete/终态）不受影响。
+      expect(
+        assistantEvents(events, 'delta').map((e) => (e as { content: string }).content),
+      ).toEqual(['after failure'])
+      expect(eventsOf(events, 'agent_status').at(-1)).toMatchObject({ status: 'completed' })
     })
   })
 

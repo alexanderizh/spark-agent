@@ -279,7 +279,24 @@ export class CodexAppServerClient {
       return
     }
     if (typeof frame.method === 'string') {
-      this.options.onNotification(frame.method, frame.params)
+      this.invokeNotification(frame.method, frame.params)
+    }
+  }
+
+  /**
+   * 通知处理链（executor 事件映射 → 会话层持久化/发布）的异常不得穿透
+   * readline 回调——否则成为主进程 uncaught exception（与 handleServerRequest
+   * 的守卫对称；生产 0.10.13 的 agent_events 主键冲突崩溃即经此路径放大）。
+   */
+  private invokeNotification(method: string, params: unknown): void {
+    try {
+      this.options.onNotification(method, params)
+    } catch (err) {
+      this.options.onProtocolError?.(
+        new Error(
+          `codex app-server notification handler failed for ${method}: ${(err as Error).message}`,
+        ),
+      )
     }
   }
 
