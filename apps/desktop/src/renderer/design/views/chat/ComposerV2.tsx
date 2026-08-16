@@ -155,6 +155,11 @@ import { SessionReferencePicker } from './SessionReferencePicker'
 import { QueuedTaskList } from './QueuedTaskList'
 import { ComposerLexicalInput, type ComposerLexicalInputHandle } from './ComposerLexicalInput'
 import {
+  getSlashCommandContext,
+  isComposerCommandSelectionKey,
+  shouldMoveComposerCaretToEndOnArrowDown,
+} from './composer-input-keyboard'
+import {
   hasSessionReferenceDrag,
   isSessionReferenceDropTarget,
   readSessionReferenceDragPayload,
@@ -900,6 +905,7 @@ export function ComposerV2({
   const [slashOpen, setSlashOpen] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
   const slashListRef = useRef<HTMLDivElement | null>(null)
+  const slashContextRef = useRef<ReturnType<typeof getSlashCommandContext>>(null)
   // 用户置顶的命令 id 列表（持久化到 settings；顺序即展示顺序）
   const [pinnedCmdIds, setPinnedCmdIds] = useState<string[]>([])
   const pinnedLoadedRef = useRef(false)
@@ -2682,21 +2688,29 @@ export function ComposerV2({
 
   const flatSlashList = groupedSlashCmds.flatMap((g) => g.cmds)
 
-  const openSlashPopup = useCallback(async () => {
+  const refreshSlashCommands = useCallback(async () => {
     try {
       const res = await window.spark.invoke('command:list', {})
       setSlashCmds(res.commands ?? [])
     } catch {
       // keep the previous command cache if refresh fails
     }
+  }, [])
+
+  // 弹窗开关状态必须与击键同拍置位：若先 await 命令列表 IPC 再 setSlashOpen(true)，
+  // 输入 `/` 后立刻回车的 keydown 会落在 slashOpen 仍为 false 的窗口里，
+  // 弹窗分支被跳过、Enter 直接走发送逻辑（表现为“弹窗开着回车仍发送”）。
+  const openSlashPopup = useCallback(() => {
     setSlashOpen(true)
     setSlashIndex(0)
-  }, [])
+    void refreshSlashCommands()
+  }, [refreshSlashCommands])
 
   const closeSlashPopup = useCallback(() => {
     setSlashOpen(false)
     setSlashFilter('')
     setSlashIndex(0)
+    slashContextRef.current = null
   }, [])
 
   /** 选中命令：替换当前 /<filter> 片段；无法匹配时在当前选区插入。 */
@@ -2708,11 +2722,13 @@ export function ComposerV2({
       const selectionStart = selection?.start ?? currentValue.length
       const selectionEnd = selection?.end ?? selectionStart
       const inserted = `/${cmd.name} `
-      const filterText = `/${slashFilter}`
-      const filterStart = currentValue.lastIndexOf(filterText, selectionStart)
+      const slashContext = slashContextRef.current
       const canReplaceFilter =
-        filterStart >= 0 && filterStart + filterText.length === selectionStart
-      const replaceStart = canReplaceFilter ? filterStart : selectionStart
+        slashContext != null &&
+        slashContext.end === selectionStart &&
+        currentValue.slice(slashContext.start, selectionStart) === `/${slashContext.query}`
+      const replaceStart =
+        canReplaceFilter && slashContext != null ? slashContext.start : selectionStart
       const nextValue =
         currentValue.slice(0, replaceStart) + inserted + currentValue.slice(selectionEnd)
       const newCaret = replaceStart + inserted.length
@@ -2726,7 +2742,7 @@ export function ComposerV2({
         textarea.setSelectionRange(newCaret, newCaret)
       })
     },
-    [closeSlashPopup, setValue, slashFilter, value],
+    [closeSlashPopup, setValue, value],
   )
 
   // 持久化置顶命令 id 列表（settings IPC → SQLite）
@@ -2916,13 +2932,20 @@ export function ComposerV2({
       setValue(next)
       // Reset history browsing when user types manually
       historyIndexRef.current = -1
-      // 团队模式：`@` 留给 Agent mention；非团队模式：`@` 与 `/` 等价，都触发命令菜单
-      const hasSlashLead = next.startsWith('/')
+      // 团队模式：`@` 留给 Agent mention；斜杠命令则按光标前最近的片段触发。
+      const caret = textareaRef.current?.getSelection().start ?? next.length
+      const slashContext = getSlashCommandContext(next, caret)
       const hasAtLead = next.startsWith('@')
-      if (hasSlashLead || (hasAtLead && !teamConfig.enabled)) {
+      if (slashContext != null) {
+        slashContextRef.current = slashContext
+        setSlashFilter(slashContext.query)
+        void openSlashPopup()
+      } else if (hasAtLead && !teamConfig.enabled) {
+        slashContextRef.current = null
         setSlashFilter(next.slice(1))
         void openSlashPopup()
       } else {
+        slashContextRef.current = null
         if (slashOpen) closeSlashPopup()
       }
 
@@ -2931,10 +2954,9 @@ export function ComposerV2({
         if (mentionOpen) closeMentionPopup()
         return
       }
+      // 从光标向前找最近的 `@`：输入 `@` 即触发，不再要求前面是行首/空白；中间不能含空白
       const el = textareaRef.current
       if (el == null) return
-      const caret = el.getSelection().start
-      // 从光标向前找最近的 `@`：输入 `@` 即触发，不再要求前面是行首/空白；中间不能含空白
       const upto = next.slice(0, caret)
       const match = upto.match(/@([^\s@]*)$/)
       if (match == null) {
@@ -3095,7 +3117,7 @@ export function ComposerV2({
         closeMentionPopup()
         return
       }
-      if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
+      if (isComposerCommandSelectionKey(event.key, event.shiftKey)) {
         if (filteredMentionCandidates.length > 0) {
           event.preventDefault()
           const candidate = filteredMentionCandidates[mentionIndex] ?? filteredMentionCandidates[0]
@@ -3124,10 +3146,11 @@ export function ComposerV2({
         closeSlashPopup()
         return
       }
-      if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
+      if (isComposerCommandSelectionKey(event.key, event.shiftKey)) {
         event.preventDefault()
         if (flatSlashList.length > 0) {
-          const cmd = flatSlashList[slashIndex]
+          // 过滤条件变化期间索引可能越界，回落到第一项，避免回车看似无响应
+          const cmd = flatSlashList[slashIndex] ?? flatSlashList[0]
           if (cmd != null) selectSlashCmd(cmd)
           return
         }
@@ -3159,9 +3182,6 @@ export function ComposerV2({
       !event.ctrlKey &&
       !event.metaKey
     ) {
-      const history = sentHistoryRef.current
-      if (history.length === 0) return // let native cursor movement work
-
       const el = textareaRef.current
       const selection = el?.getSelection()
       const atStart = selection?.start === 0 && selection.end === 0
@@ -3169,6 +3189,37 @@ export function ComposerV2({
         el != null &&
         selection?.start === el.getValue().length &&
         selection.end === el.getValue().length
+
+      if (event.key === 'ArrowDown') {
+        const currentIdx = historyIndexRef.current
+        if (atEnd && currentIdx !== -1) {
+          const history = sentHistoryRef.current
+          event.preventDefault()
+          const prevIdx = currentIdx - 1
+          if (prevIdx >= 0) {
+            historyIndexRef.current = prevIdx
+            setValue(history[history.length - 1 - prevIdx] ?? '')
+          } else {
+            // Restored to bottom — show the saved draft (or empty)
+            historyIndexRef.current = -1
+            setValue(historyDraftRef.current)
+          }
+          return
+        }
+
+        if (
+          el != null &&
+          shouldMoveComposerCaretToEndOnArrowDown(selection, el.getValue().length)
+        ) {
+          event.preventDefault()
+          const end = el.getValue().length
+          el.setSelectionRange(end, end)
+        }
+        return
+      }
+
+      const history = sentHistoryRef.current
+      if (history.length === 0) return // let native cursor movement work
 
       if (event.key === 'ArrowUp' && atStart) {
         event.preventDefault()
@@ -3181,22 +3232,6 @@ export function ComposerV2({
         if (nextIdx < history.length) {
           historyIndexRef.current = nextIdx
           setValue(history[history.length - 1 - nextIdx] ?? '')
-        }
-        return
-      }
-
-      if (event.key === 'ArrowDown' && atEnd) {
-        const currentIdx = historyIndexRef.current
-        if (currentIdx === -1) return // not browsing history, let native work
-        event.preventDefault()
-        const prevIdx = currentIdx - 1
-        if (prevIdx >= 0) {
-          historyIndexRef.current = prevIdx
-          setValue(history[history.length - 1 - prevIdx] ?? '')
-        } else {
-          // Restored to bottom — show the saved draft (or empty)
-          historyIndexRef.current = -1
-          setValue(historyDraftRef.current)
         }
         return
       }
@@ -4132,6 +4167,7 @@ export function ComposerV2({
               // 弹窗以全量列表呈现；选中命令后由 selectSlashCmd 在当前光标处增量插入。
               // 需按字符筛选时，直接在输入框键入 `/xxx`（走 inline 触发路径）。
               setSlashFilter('')
+              slashContextRef.current = null
               void openSlashPopup()
               requestAnimationFrame(() => {
                 const el = textareaRef.current
