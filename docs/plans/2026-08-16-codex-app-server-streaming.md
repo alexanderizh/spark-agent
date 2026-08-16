@@ -43,6 +43,22 @@ codex 内部 app-server 协议层将核心事件一一映射为 token 级通知�
 
 请求侧（同样已确认）：`initialize`、`thread/start`、`thread/resume`、`turn/start`、**`turn/interrupt`（优雅取消）**、**`turn/steer`**、`item/permissions/requestApproval`（交互审批）、`item/commandExecution/requestApproval`、`thread/compact/start` 等。启动命令：`codex app-server`（0.144.5 已带，experimental 标记）。**这是 codex IDE 扩展使用的传输，流式、取消、审批齐全。**
 
+### 证据 4 · 运行时 A/B 实验（决定性，2026-08-16 实测）
+
+用本地 mock Responses 服务器（SSE 逐 token 推流，10 个 delta × 300ms 间隔）分别驱动两种传输，同一二进制（受管 0.144.5）、同一 CODEX_HOME 配置：
+
+| 传输                                  | 生成期间 stdout 输出                                                                                                                                               | 结果                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `codex exec --experimental-json`      | **0 个字节**（mock 确认收到完整 SSE 流），`+3907ms` 一次性输出 `item.completed` 全文                                                                               | 上游流式也被丢弃，根因坐实；同时排除「网关不流式」竞争假设 |
+| `codex app-server`（NDJSON JSON-RPC） | **`item/agentMessage/delta` × 10，每 300ms 一条，与 mock 推流节奏一一对应**（+729/1041/1352/…ms），随后 `item/completed` + `tokenUsage/updated` + `turn/completed` | 修复落点实测有效，逐 token 流式可拿到                      |
+
+实验同时确认的协议事实（Phase 1 实现直接引用）：
+
+- **帧格式是 NDJSON**（每行一个 JSON-RPC 消息）——LSP `Content-Length` 帧被 transport 层拒绝反序列化
+- 握手序列：`initialize`（params `{clientInfo:{name,version}}`）→ `thread/start`（params 含 `cwd`）→ `turn/start`
+- `turn/start` 的 `input` 是**数组**：`[{type:'text', text:'…'}]`（`UserInput` oneOf，传字符串报 `-32600`）
+- 协议 schema 可由二进制直接生成：`codex app-server generate-json-schema --out <dir>`（v1/v2 全量 JSON Schema，516 个定义）——类型层可机器校验，无需手抄
+
 ### 排除项（已验证）
 
 - **renderer/IPC 链路健康**：逐事件 `webContents.send`（`typed-ipc.ts:178`），delta 免落库直发（`session-event-sequencer.ts:58-76`），ChatView 仅做 rAF 合帧（`live-agent-event-buffer.ts`），MessageBuilder 按 segmentId 累加、引擎无关。claude 会话经同管道逐 token 流畅。
@@ -99,13 +115,16 @@ segmentId 沿用 `codex-sdk-{turnId}-text-{N}` 约定（renderer 累加逻辑零
 
 ## 四、风险与开放项（实现期核对）
 
-1. **请求体精确形状**：`initialize` / `thread/start` / `turn/start` 参数（model、cwd、sandbox、permissions、input items）需从 `codex-rs/app-server-protocol/src/protocol/v2/` 对应 tag 源码核对，以实际二进制行为为准。
-2. **MCP 服务器配置传递**：app-server 模式下 MCP 配置走 initialize 参数还是 config 覆盖，需核对；现 exec 路径走 `--config mcp_servers=...`。
-3. **experimental 标记**：`codex app-server` 在 0.144.5 标记 experimental，接口可能随版本变；版本钉死策略与现有 codex 运行时管理一致（`SPARK_CODEX_SDK_VERSION` 校验已存在）。
-4. **回退开关**：握手失败/超时自动降级 `CodexSdkExecutor` 并上报遥测，保证不比现状差。
+1. ~~**请求体精确形状**~~：**已由运行时实验确认**（NDJSON 帧、`initialize`/`thread/start`/`turn/start` 形状、`input` 数组、schema 可由 `generate-json-schema` 机器生成，见证据 4）。
+2. **审批语义必须显式钉死**（实验后新增，最重要的 gotcha）：app-server 模式下审批请求是 **server→client 请求**（`item/permissions/requestApproval` 等），若不响应会挂起 turn。而现状 exec 路径是 unattended（自动拒绝/按 sandbox 策略走）。Phase 1 必须在 `thread/start`/`turn/start` 显式传 `approvalPolicy`（对齐现有 unattended 语义），并对所有 `*requestApproval` 请求返回确定性响应（accept/deny 按现有权限模式映射），杜绝挂起。**Phase 1 不做交互审批 UI，但必须做防挂起兜底。**
+3. **MCP 服务器配置传递**：app-server 模式下 MCP 配置走 initialize 参数还是 config 覆盖，需核对；现 exec 路径走 `--config mcp_servers=...`。
+4. **experimental 标记**：`codex app-server` 在 0.144.5 标记 experimental，接口可能随版本变；版本钉死策略与现有 codex 运行时管理一致（`SPARK_CODEX_SDK_VERSION` 校验已存在）。
+5. **回退开关**：握手失败/超时自动降级 `CodexSdkExecutor` 并上报遥测，保证不比现状差。
+6. **进程生命周期差异**：exec 是「每 turn 一进程」，app-server 是「长驻服务进程」——需要崩溃检测、重启、空闲回收策略。Phase 1 采用最保守形态：每 executor 实例独占一个 app-server 进程（对齐现有每实例进程模型），不做跨会话共享。
 
 ## 五、证据存档
 
 - 根因统计脚本与查询：见本文档第二节（prod 库只读查询）
 - codex-rs 源码：`event_processor_with_jsonl_output.rs`（0.144.5 与 main 对照）、`event_mapping.rs`、`cli.rs`
 - 二进制方法名探测：0.144.5 win32-x64 codex.exe 字符串表
+- **运行时 A/B 实验**（证据 4）：mock Responses SSE 服务器 + 时间戳 runner，`%TEMP%/codex-stream-test/`（mock-server.js / runner.js / as-probe.js，可复现）
