@@ -195,7 +195,9 @@ export class EngineRegistry {
 
 ### 2.4 TurnRegistry（新文件 `services/session/turn-registry.ts`）
 
-封装「turn 所有权五件套 + per-turn 回收三联 + mcpVersion 计数器」：
+> **2026-08-16 修订**：经行号级复核，本节原始口径（五件套 + 回收三联 + mcpVersion）已收窄为**精确 6 个集合**（五件套 + activeExecutionPromises）；回收三联、mcpVersion、usageLedgerLastByTurn 明确不迁（理由见 §3「W2.0 范围修订」）。下述方法签名按此口径理解。
+
+封装「turn 所有权协议」：
 
 ```ts
 export class TurnRegistry {
@@ -324,6 +326,73 @@ services/session/
 | D5   | 成员路径与侧门收编：:7693 成员执行器、:10005 checkpoint rewind（改 `isRewindCapable` 探测）、:9683 权限热切换（改 `isPermissionModeAware`）；SUBAGENT_USAGE_HINT 注入与 checkpoint 可用性两处改读 capabilities                                                                                                                                                        | `refactor(session): 能力探测取代硬编码分叉`      |
 
 **W2 验证**：同 W1 + 基线测试 3 条全绿 + resume-recovery.test 全绿 + 手动冒烟（dev 起应用各跑一条 claude/codex 会话含取消与审批）。
+
+### W2 精细化执行计划（v2，2026-08-16 行号级复核后）
+
+> 依据 2026-08-16 对 session.service.ts 的逐字段复核（7 个所有权字段 × 70 个读写点全部钉到当前行号）修订。
+> 核心目标：**每一步可独立验证、可独立回滚；先补齐行为锁再动刀；范围只缩不扩。**
+
+#### W2.0 范围修订（只缩不扩——四项明确出栈）
+
+原 §2.4/§2.5 设想的部分内容经复核后**明确不做**（W2 拒绝扩面，缩小爆炸半径）：
+
+| 出栈项                                                                                           | 原设想            | 修订理由                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcpVersion`/`lastBuiltMcpVersion` 计数器                                                        | 迁入 TurnRegistry | 它是 MCP 装配关注点而非 turn 所有权协议（仅 4 个读写点：:896-897 声明、:3970/:4595 双执行体读、:1069/:9643 bump）。迁移零收益、纯增 diff 风险。原地不动。                                                                                                                        |
+| per-turn 回收三联（teamMcpHandlesByTurn / pluginRuntimeMcpHandlesByTurn / fileChangeKeysByTurn） | 迁入 TurnRegistry | 消费方是 closeTeamMcpHandlesForTurn 等其他子系统；统一 finally 本就对称调用它们，不需要搬进注册表。原地不动。                                                                                                                                                                    |
+| MCP 载具组装统一（descriptor.buildTurnConfig 钩子）                                              | W2-D3 的一部分    | 两执行体头部差异是**本质性的**（claude：in-process MCP + allowedTools 十二路累积 ~55 行 + spark_verify 内联工具；codex：stdio MCP + CLI 兼容过滤 + canvas fail-closed）。参数化它们 = 参数对象汤，零去重收益。**W2 的 Runner 从「executor 已创建」边界开始**，头部保持引擎私有。 |
+| `usageLedgerLastByTurn`                                                                          | 迁入 TurnRegistry | 与所有权协议无关，原地不动。                                                                                                                                                                                                                                                     |
+
+**TurnRegistry 最终口径 = 精确 6 个集合**（activeLoops / runningTurnIds / startingSessions / startingTurnIds / cancelledTurnIds / activeExecutionPromises）——这就是「turn 所有权协议」的完整外延。
+
+#### W2 复核发现（改写计划的四个事实）
+
+1. **两个 finally（:4400-4421 / :4848-4867）逐字节对称**——最高风险的生命周期释放区反而是最干净的提炼对象。
+2. **then 处理器差异恰为 4 处**（claude 独有：resume 熔断 :4339、标题精炼链 :4341-4356、goal 块解析 :4357-4360；外加 continuity/memory 相对终态发出的顺序两引擎相反——claude 先后台任务后发终态、codex 先发终态后后台任务，事件日志可观测序等价但按引擎原样保留）。
+3. **事件处理器差异恰为 3 处**（claude 独有：changedFiles 追踪 :4129-4133 + plan_proposed 闸门 :4215-4219；user_message mention 改写的 spread 源不同 :4161 vs :4697-4704）。
+4. **starting 释放序列有两套**（startTurn finally :2457-2463 有 ownsStartingTurn 守卫，队列 finally :8420-8426 无守卫直删 startingSessions）——两套语义不同是有意的（队列路径必然 add 过，startTurn 路径可能只是复用既有 starting turn），TurnRegistry 必须原样保留两种释放。
+
+#### W2 不变式清单（I1~I10，每步重构后逐条对照）
+
+| #   | 不变式                                                                                                                                                                                                    | 现状锚点                             | 行为锁                                             |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | -------------------------------------------------- |
+| I1  | 事件闸门：executor 事件被接受 ⟺ turn 未取消 **且** activeLoops.get(sid)===executor（引用相等）                                                                                                            | :520-529                             | 基线② + shouldAccept 单测 :95-118                  |
+| I2  | 注册先于执行：onEvent 接线 → activeLoops.set+runningTurnIds.set → executeTurn，此顺序不可换                                                                                                               | :4109/:4229/:4319、:4646/:4760/:4795 | 基线①（前置事件被接受且落库）                      |
+| I3  | 终态扣留：terminal agent_status 存 pendingTerminalStatus，executeTurn settle 后才经 emitPendingTerminalStatus 补发落库                                                                                    | :4092-4100/:4125、:4636-4644/:4662   | 基线①事件序 + D0 新锁⑤                             |
+| I4  | finally 释放序：promises.delete → cancelledTurnIds.delete → shouldAutoContinue 读 → teamDispatch.clearTurn → fileChangeKeys 清 → mcpHandles 关 →（所有权仍持有时）五件套摘除 → reconcile → continue/queue | :4400-4421、:4848-4867               | 基线①② + D0 新锁①                                  |
+| I5  | 取消三段：先 markCancelled 再 loop.cancel，同步摘所有权，补 user_cancelled 事件 + idle 状态；此后迟到事件被 I1 拦                                                                                         | :9287-9323、:8253-8272               | 基线② + D0 新锁③                                   |
+| I6  | starting 双释放语义：startTurn 路径有条件释放（ownsStartingTurn + turnId 匹配），队列路径无条件释放 startingSessions；释放后才推进队列                                                                    | :2457-2463、:8420-8426               | 单测 :988-1010/:1111-1119 + D0 新锁②               |
+| I7  | 并发计数恒等式：inflight = activeLoops.size + startingSessions.size（三处一致，startTurn 处含 owns-existing 抵扣项）                                                                                      | :2398-2399、:8365、:8665             | 单测 :972-1010                                     |
+| I8  | dispose：从 promises+loops 并集收集执行器 → 逐个 cancel → 清空全部集合 → 等待 tracked promises                                                                                                            | :8052-8078                           | 既有 dispose 单测 + D0 新锁④                       |
+| I9  | 事件写入唯一漏斗：一切事件仍经 emitAndPersist（seq 单调、取消后不落事件不被绕开）                                                                                                                         | emitAndPersist 漏斗                  | 基线①② + session-event-sequencer 测试              |
+| I10 | 引擎收尾差异保留：claude 独有 resume 熔断/标题精炼/goal 解析/plan_proposed 闸门；continuity/memory 顺序按引擎原样                                                                                         | :4339-4376 vs :4814-4837             | D0 新锁⑥ + 既有标题/goal 测试（D0 时核对，缺则补） |
+
+#### W2 细化步骤（每格一提交，提交前验证矩阵全绿）
+
+| 步                                            | 内容                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 验证门                                                                    |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **D0 安全网补齐**（新增，动刀前硬门）         | 用 FakeEngineExecutor 给 W2 将触碰但当前无锁的面补 6 条贯穿断言：①队列推进（A 跑时入队 B，A 终态后 B 自动起跑）②全局并发上限（N+1 会话只有 N 在跑，第 N+1 入队）③starting 窗口取消（loop==null 且 startingTurnId!=null → user_cancelled + idle）④dispose 等待在途 executionPromise⑤终态扣留时序（executor 先发终态后 resolve，终态事件落库在 resolve 之后）⑥plan_proposed 阻断队列（claude 引擎专属行为）。**在未改动代码上先跑：任何一条在现状就红 → 停下来报告（发现活 bug），不带误解重构**                                                                                                           | 新锁 6 条在现状全绿 + 既有全量锁绿                                        |
+| **D1 TurnRegistry 机械迁移**（拆 3 个子提交） | 1a 新建 turn-registry.ts（6 集合 + 方法逐行镜像现状操作序列：beginStarting/registerExecutor/releaseExecutor/markCancelled/isCancelled/isActiveExecutor/accepts/cancelActive/clearAll/concurrencySnapshot）；1b session.service 加 readonly 字段 + **同名 live 引用 getter**（返回 registry 内部同一可变实例，测试的 .add()/.set() 站点零改动），执行体注册/回收点、取消五现场（:8253/:9287/:9440/:2285/:4112 闸门参数）、dispose、队列三处计数全部改走 registry——**按现场分 3 批替换，每批独立绿**；1c 迁移 session.service.test 中 ~6 处整map赋值 fixture（`.add()` 型零改动，赋值型改 clear+populate） | typecheck + lint + 全部行为锁 + session.service.test 69                   |
+| **D2 生命周期壳提炼**（对称部分，最高把握）   | 提炼「注册后所有权复查+提前返回清理（:4305-4316/:4782-4793）+ executeTurn + promise 追踪 + then/catch/finally 壳」。引擎差异经两钩子：`afterTurnSucceeds(ctx)`（claude=resume+标题+goal+continuity+memory；codex=空）与 `afterTerminalEmitted(ctx)`（claude=空；codex=continuity+memory）——**两引擎收尾顺序逐字节保留**。finally 单份实现（本就逐字节对称）                                                                                                                                                                                                                                              | 同上 + 事件序逐字节比对（diff 落库事件 id 序列，重构前后必须完全一致）    |
+| **D3 事件管道提炼**                           | onEvent 处理器公共体提炼（闸门/终态扣留/媒体收集/mention 改写/上报文件变更/展示文件），3 处引擎差异经钩子：`trackObservedFileChange`（claude 额外 changedFiles.add）、`onPlanProposed`（claude 闸门）、user_message mention spread 变体（按引擎保留原实现）。两 tryStart\* 退化为「引擎私有头部（MCP 组装，不动）+ 调 Runner」                                                                                                                                                                                                                                                                           | 同上 + D0 新锁⑥（plan 闸门）+ mention 事件形状（D0 核对已有覆盖，缺则补） |
+| **D4 侧门能力化**                             | checkpoint rewind 调用点改 `isRewindCapable(executor)` 探测；权限热切换 :9679 改 `isPermissionModeAware` 显式探测（现为 `?.` 鸭子调用，行为不变、意图显式化）；SUBAGENT_USAGE_HINT 注入与 checkpoint 可用性改读 descriptor capabilities。成员执行器创建已在 W1-D5 收编，本步无成员路径改动                                                                                                                                                                                                                                                                                                               | 同上 + conformance 5                                                      |
+| **D5 终验 + 手动冒烟**                        | 全量回归（node ABI 跑完恢复 Electron ABI）+ ratchet 基线核对 + 手动冒烟清单（见下）+ 行为差异清单核对（必须为空）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | 全绿 + 冒烟通过                                                           |
+
+#### W2 手动冒烟清单（D5，dev 应用，claude 与 codex 各一遍）
+
+流式输出正常渲染 / 工具卡出现且可展开 / **turn 中途取消立即停且状态回 idle** / 审批弹窗出现且批准后继续 / plan 模式递交计划后队列不抢跑、批准后恢复 / 第二条消息在首条运行中发送会入队并在首条结束后自动执行 / 连开多个会话不超过并发上限 / 关闭应用（dispose）不挂起。
+
+#### W2 回滚预案
+
+每步一提交、提交间无向前依赖 → 任何一步出问题 `git revert <commit>` 单步回退；D1 的 3 个子提交可单独回退（getter 兼容层保证 1b 任意一批可撤）。若 D2/D3 中段发现等价性无法证明 → 触发降级决策点（保留已完成的 TurnRegistry 与生命周期壳，双执行体停止进一步统一——已提炼部分仍然成立，因为它们本身已验证等价）。
+
+#### W2 降级判据（从「感觉差异大」量化为可判定）
+
+对 then/事件处理器的每一段差异先做「参数化三问」：① 差异是否可表达为无状态钩子？② 钩子签名是否 ≤3 个参数？③ 统一后两引擎是否各自只剩 ≤10 行引擎专属代码？——**任一问答否即该段保留引擎私有，累计 3 段答否即触发整体降级**（ClaudeTurnRunner/CodexTurnRunner + 共享 TurnRunnerContract）。已预判：then 差异 4 处中 3 处可钩子化（resume/标题/goal 同属 afterTurnSucceeds 前缀），事件差异 3 处中 2 处可钩子化；按此判据预计**不触发降级**，但判据先行、到时按数据说话。
+
+#### W2 并行协调（当前工作区已有并行改动）
+
+当前工作树存在 voice 采集相关并行改动（voiceCaptureWorklet.test + voice-capture-processor.js 移动）——非本任务文件，不触碰。W2 期间 session.service.ts 与 services/session/\* 为独占文件；提交前 `git pull --rebase` 复核基线（上轮 ChatView 8219→8258 的教训）。另：startNextQueuedTurn 内存有 `__SPARK_DEBUG_START__` 插桩日志（:8371-8394，他人 spark-debug 流程遗留），W2 不动它，仅记录。
 
 ### W3 — session.service 拆分（strangler，每步独立可合并）
 
