@@ -30,9 +30,6 @@ export function SessionCollaborationDetails({
   return (
     <div className="session-collaboration-details">
       <div className="session-collaboration-summary">
-        <span className="session-collaboration-summary-icon" aria-hidden="true">
-          <Icons.MessageSquare size={15} />
-        </span>
         <div>
           <strong>{hasParent ? '独立会话' : '协作起点'}</strong>
           <p>{collaborationSummary}</p>
