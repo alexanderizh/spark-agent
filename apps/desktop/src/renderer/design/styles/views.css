@@ -3759,6 +3759,9 @@ body.sidebar-resizing {
   color: var(--text);
   caret-color: var(--text);
 }
+.composer-v2 .composer-input-shell .composer-input-paragraph {
+  margin: 0;
+}
 .composer-v2 .composer-input-shell .composer-input-placeholder {
   position: absolute;
   z-index: 0;

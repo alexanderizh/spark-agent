@@ -30,11 +30,13 @@ async function dismissOnboarding(page: Page): Promise<void> {
 
 async function dismissOptionalCapabilityPrompt(page: Page): Promise<void> {
   const modal = page.locator('.optional-capability-modal')
+  const close = modal.locator('.ant-modal-close')
   const later = modal.locator('.ant-modal-footer button').first()
 
   try {
-    await later.waitFor({ state: 'visible', timeout: 1_000 })
-    await later.click()
+    await modal.waitFor({ state: 'visible', timeout: 1_000 })
+    if (await close.isVisible().catch(() => false)) await close.click()
+    else await later.click()
     await expect(modal).toBeHidden()
   } catch {
     // The prompt is optional and may be disabled by persisted app state.
@@ -92,5 +94,16 @@ test.describe('Composer Lexical input', () => {
     await expect(editor.locator('.composer-input-token.is-command')).toHaveCount(1)
     await expect(editor).toContainText(/^\/[^\s]+\s$/)
     await expect(page.locator('.composer-input-highlights')).toHaveCount(0)
+  })
+
+  test('keeps the empty editor caret aligned with the first input line', async () => {
+    await dismissOnboarding(page)
+    await dismissOptionalCapabilityPrompt(page)
+
+    const editor = page.locator('.composer-v2 .composer-input[contenteditable="true"]')
+    const paragraph = editor.locator('.composer-input-paragraph')
+    await expect(editor).toBeVisible()
+    await expect(paragraph).toHaveCSS('margin-top', '0px')
+    await expect(paragraph).toHaveCSS('margin-bottom', '0px')
   })
 })
