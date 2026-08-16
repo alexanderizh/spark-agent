@@ -260,6 +260,9 @@ vi.mock('@spark/storage', () => {
       listRecoverable(): unknown[] {
         return []
       }
+      get(): null {
+        return null
+      }
       markCompleted(id: string): boolean {
         state.completedTurnRequests.push(id)
         return true
@@ -461,9 +464,14 @@ describe('SessionService goal queue semantics (P0-2 / P2)', () => {
     expect(pendingTurns.get('session-1') ?? []).toHaveLength(0)
   })
 
-  it('still queues user messages behind an active spark-loop goal for iteration drain', async () => {
+  it('still queues user messages behind a running spark-loop iteration for iteration drain', async () => {
     seedGoal({ mode: 'spark-loop' })
-    const { dispatchTurn, startTurn, pendingTurns } = createService()
+    const { service, dispatchTurn, startTurn, pendingTurns } = createService()
+    // 迭代 turn 正在跑：插话只入队，由该迭代结束时的泵排空注入下一轮
+    vi.spyOn(
+      service as unknown as { hasActiveSessionExecution(s: string): boolean },
+      'hasActiveSessionExecution',
+    ).mockReturnValue(true)
 
     const result = await dispatchTurn({ sessionId: 'session-1', message: 'a mid-goal note' })
 
@@ -472,6 +480,21 @@ describe('SessionService goal queue semantics (P0-2 / P2)', () => {
     expect(pendingTurns.get('session-1')).toEqual([
       expect.objectContaining({ message: 'a mid-goal note' }),
     ])
+  })
+
+  it('revives the spark-loop iteration with the queued message when the loop was interrupted', async () => {
+    seedGoal({ mode: 'spark-loop' })
+    const { dispatchTurn, startTurn, pendingTurns } = createService()
+
+    // 中断后：goal 仍 active 但会话已无任何执行在跑（cancelTurn 不改 goal 状态）。
+    // 用户消息入队后必须补泵恢复迭代，否则消息永久滞留队列（中断后发"继续"无响应）。
+    const result = await dispatchTurn({ sessionId: 'session-1', message: '继续吧' })
+
+    expect(result.started).toBe(false)
+    expect(startTurn).toHaveBeenCalledTimes(1)
+    const prompt = startTurn.mock.calls[0]![2] as string
+    expect(prompt).toContain('继续吧')
+    expect(pendingTurns.get('session-1') ?? []).toHaveLength(0)
   })
 })
 
@@ -599,6 +622,32 @@ describe('SessionService goal budget scoping (P1-3)', () => {
         summary: expect.stringContaining('excludes 2.0 minutes paused'),
       }),
     )
+    vi.useRealTimers()
+  })
+
+  it('drains leftover queued messages as normal turns when the goal stops by budget', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-30T10:40:00.000Z'))
+    seedGoal({
+      id: 'goal-budget',
+      createdAt: '2026-06-30T10:00:00.000Z',
+      budget: { maxRuntimeMinutes: 30 },
+    })
+    // goal 运行期间排队的用户消息：预算停止后必须按普通 turn 排空起跑，而不是永久滞留
+    const { startGoalLoop, startTurn, pendingTurns } = createService()
+    pendingTurns.set('session-1', [makeQueuedTurn('turn-left', '继续处理剩下的部分')])
+
+    await startGoalLoop('session-1')
+
+    expect(state.goals.get('goal-budget')?.status).toBe('stopped_by_budget')
+    expect(startTurn).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(startTurn).toHaveBeenCalledTimes(1)
+    expect(startTurn.mock.calls[0]![1]).toBe('turn-left')
+    expect(startTurn.mock.calls[0]![2]).toBe('继续处理剩下的部分')
+    expect(pendingTurns.get('session-1') ?? []).toHaveLength(0)
     vi.useRealTimers()
   })
 })

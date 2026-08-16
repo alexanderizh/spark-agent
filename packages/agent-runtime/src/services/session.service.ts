@@ -2310,6 +2310,19 @@ export class SessionService {
     const goalOwnsDispatch = currentGoal?.status === 'active' && currentGoal.mode === 'spark-loop'
     if (goalOwnsDispatch || this.pendingUserQuestionGate.isBlocked(sessionId)) {
       this.enqueueTurn(sessionId, pendingTurn)
+      // goal 仍 active 但会话已无任何执行在跑（中断/异常释放后）：迭代 turn 这个
+      // 排水泵已不存在，入队消息会永久滞留（表现为中断后发"继续"无响应）。
+      // 入队后补一次泵：spark-loop 由 startGoalLoop 把刚入队的消息注入下一轮迭代；
+      // goal 已失效时 continueGoalOrQueue 退化为普通队列排空。仅 goal 分支需要——
+      // question gate 的解除路径自带起跑；starting 过渡态由 startTurn 收尾链接续。
+      if (
+        goalOwnsDispatch &&
+        !this.pendingUserQuestionGate.isBlocked(sessionId) &&
+        !this.hasActiveSessionExecution(sessionId) &&
+        !this.turnRegistry.isSessionStarting(sessionId)
+      ) {
+        void this.continueGoalOrQueue(sessionId)
+      }
       return { turnId, started: false }
     }
 
@@ -9412,6 +9425,10 @@ export class SessionService {
   ): void {
     const stopped = repo.updateStatus(goal.id, 'stopped_by_budget') ?? goal
     this.emitGoalEvent(sessionId, stopped, 'goal_budget_stopped', 'stopped_by_budget', summary)
+    // 预算停止发生在 startGoalLoop 内（continueGoalOrQueue 派发它后直接 return），
+    // 若队列还压着 goal 运行期间排队的用户消息，没有任何后续泵会来排空——
+    // 补一次常规起跑让遗留消息按普通 turn 执行（startNextQueuedTurn 自带全部门闩）。
+    setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
   }
 
   /**
