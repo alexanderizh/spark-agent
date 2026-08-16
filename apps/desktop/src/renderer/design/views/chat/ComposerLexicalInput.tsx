@@ -32,6 +32,7 @@ import {
   $setSelection,
   type EditorConfig,
   type EditorState,
+  type LexicalEditor,
   type LexicalNode,
   type NodeKey,
   type SerializedTextNode,
@@ -408,7 +409,11 @@ const ComposerLexicalInputController = forwardRef<
       <HistoryPlugin />
       <OnChangePlugin
         ignoreSelectionChange
-        onChange={(editorState: EditorState) => {
+        onChange={(editorState: EditorState, _editor: LexicalEditor, tags: Set<string>) => {
+          // 外部程序同步（选命令插入 / 历史导航 / prefill 等 setValue）不是用户输入：
+          // 同步时光标仍停在旧位置，若照常上报 onChange，handleValueChange 会按旧光标
+          // 重新识别出斜杠片段，把 selectSlashCmd 刚关闭的命令弹窗再次打开。
+          if (tags.has('composer-external-sync')) return
           onChange(editorState.read(() => $readComposerValue()))
         }}
       />

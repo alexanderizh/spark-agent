@@ -320,6 +320,28 @@ describe('ComposerLexicalInput', () => {
     expect(changes.at(-1)).toBe('hello 你')
   })
 
+  it('does not fire onChange when the value prop is synced programmatically', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createReactRoot(container)
+    const inputRef = createRef<ComposerLexicalInputHandle>()
+    const onChange = vi.fn()
+    mountedRoots.push({ root, container })
+
+    await act(async () => {
+      root.render(<ComposerLexicalInput ref={inputRef} value="/he" onChange={onChange} />)
+    })
+    expect(inputRef.current?.getValue()).toBe('/he')
+
+    // 模拟 selectSlashCmd 的程序化 setValue：外部同步不允许上报 onChange，
+    // 否则 handleValueChange 会按旧光标把刚关闭的斜杠弹窗重新打开
+    await act(async () => {
+      root.render(<ComposerLexicalInput ref={inputRef} value="/help " onChange={onChange} />)
+    })
+    expect(inputRef.current?.getValue()).toBe('/help ')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   it('deletes a token atomically with Backspace and supports keyboard undo and redo', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
