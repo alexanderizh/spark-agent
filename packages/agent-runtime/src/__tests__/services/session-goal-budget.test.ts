@@ -401,6 +401,11 @@ describe('SessionService goal loop budget enforcement', () => {
         turnSource: 'goal_iteration',
         userMessageVisibility: 'hidden',
       },
+      // runtimePatch：mock SessionRepository.get() 返回 null → undefined
+      undefined,
+      undefined,
+      undefined,
+      // goalAttachments：startGoalLoop 未传入且事件存储无 /goal 源消息
       undefined,
     )
     // 启动事件应携带即将开始的轮次号（已完成 1 轮 → 第 2 轮）。
