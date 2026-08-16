@@ -1,6 +1,6 @@
 # Spark Work full product summary
 
-Spark Work is an open-source, local-first AI Agent workbench. It is designed for users who want AI assistance to operate inside real projects while keeping context, permissions, file changes, model usage, assets, and audit records visible in one desktop app.
+Spark Work is a local-first AI Agent workbench. It is designed for users who want AI assistance to operate inside real projects while keeping context, permissions, file changes, model usage, assets, and audit records visible in one desktop app.
 
 ## What Spark Work does
 Spark Work helps users develop code, debug failures, review AI-generated changes, isolate risky work, coordinate multiple agents, configure models and tools, and organize multimedia production workflows. It also supports writing documentation, drafting plans and PRDs, preparing presentation outlines, generating web content, and processing local files.
@@ -47,8 +47,7 @@ The website documents all of the above. Documentation is treated as first-class 
 - /docs links to repository documentation and organizes quick start, coding, team, canvas, and ecosystem workflows. 20 topic pages are individually browseable.
 - /docs/search provides full-text search across all topics.
 - /roadmap explains current, next, and future development focus.
-- /open-source links to GitHub, README, docs, and license.
-- /contact links to GitHub Issues, Discussions, private security reporting, plus email (open@yiqibyte.com) and QQ discussion group (1041461465).
+- /contact links to email (open@yiqibyte.com) and QQ discussion group (1041461465).
 
 ## FAQ
 Q: Is Spark Work local-first? A: Yes, project data and runtime state are designed around local desktop storage.

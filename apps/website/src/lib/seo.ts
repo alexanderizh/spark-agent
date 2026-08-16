@@ -1,4 +1,4 @@
-import { SITE_URL, GITHUB_URL } from './links'
+import { SITE_URL, GITHUB_URL, OPEN_SOURCE_ENABLED } from './links'
 
 export interface PageSeo {
   title: string
@@ -10,7 +10,7 @@ export interface PageSeo {
 export const defaultSeo: PageSeo = {
   title: 'Spark Work - 本地优先的 AI 内容创作工作台',
   description:
-    'Spark Work 是一个开源、本地优先的 AI 内容创作工作台，支持写代码、写文档、做 PPT、网页、文件处理、多 Agent 协作与影视无限画布创作。',
+    'Spark Work 是一个本地优先的 AI 内容创作工作台，支持写代码、写文档、做 PPT、网页、文件处理、多 Agent 协作与影视无限画布创作。',
   path: '/',
   keywords: [
     'AI 内容创作工作台',
@@ -38,7 +38,8 @@ export function softwareJsonLd() {
     applicationCategory: 'ProductivityApplication',
     operatingSystem: 'macOS, Windows',
     description: defaultSeo.description,
-    codeRepository: GITHUB_URL,
+    // 闭源期间不对外暴露源码仓库地址
+    ...(OPEN_SOURCE_ENABLED ? { codeRepository: GITHUB_URL } : {}),
     softwareHelp: absoluteUrl('/docs'),
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
   }

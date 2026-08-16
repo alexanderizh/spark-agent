@@ -13,6 +13,7 @@ import { HomePage } from './routes/HomePage'
 import { OpenSourcePage } from './routes/OpenSourcePage'
 import { RoadmapPage } from './routes/RoadmapPage'
 import { APP_NAVIGATE_EVENT } from './lib/router'
+import { OPEN_SOURCE_ENABLED } from './lib/links'
 import { docsTopics } from './content/docs'
 
 interface RouteMatch {
@@ -49,8 +50,10 @@ function matchRoute(pathname: string): RouteMatch {
       return { Page: DocsSearchPage }
     case '/roadmap':
       return { Page: RoadmapPage }
+    // 闭源期间不注册 /open-source，访问时回落到下方默认首页
     case '/open-source':
-      return { Page: OpenSourcePage }
+      if (OPEN_SOURCE_ENABLED) return { Page: OpenSourcePage }
+      break
     case '/contact':
       return { Page: ContactPage }
   }
