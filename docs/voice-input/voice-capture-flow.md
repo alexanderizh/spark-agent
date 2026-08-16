@@ -1,6 +1,6 @@
 # 语音采集启动与错误处理
 
-> 状态: 已落地 | 最后核对: 2026-07-20
+> 状态: 已落地 | 最后核对: 2026-08-16
 
 语音包就绪后，渲染进程必须按以下顺序启动采集，避免在麦克风不可用时提前创建 native 识别会话：
 
@@ -13,6 +13,8 @@
 启动任一步失败都必须释放已取得的音轨、AudioContext、Worklet 节点、事件订阅和主进程会话。浏览器原始异常不直接展示：无设备、权限拒绝、设备被占用、系统中止和约束不支持分别转换为可操作的中文提示。录音期间还要监听音轨断开、AudioWorklet 处理异常和消息传输异常，并自动结束失效会话。
 
 用户手动停止时先关闭本地采集，再调用 `voice:stop`，但必须等主进程完成尾部解码并推送最后一个 `final` 后才能取消识别事件订阅，否则最后一段文本会丢失。
+
+掉字防护（2026-08）：采集约束关闭浏览器降噪（`noiseSuppression: false`，保留回声消除与自动增益），Chromium 降噪会削掉字头轻辅音；AudioWorklet 在 48kHz→16kHz 抽取前先过约 7.2kHz 的 4 阶低通，抑制高频混叠。主进程在 VAD endpoint 触发时先补约 0.64s 静音再解码一轮，把在线模型滞留的尾部 token 逼出来后才 reset（Paraformer 在线版有数百毫秒发射延迟，直接 reset 会吞掉句尾字）；手动停止的尾部 padding 为 0.75s；解码线程数为 2。
 
 macOS 打包产物必须在 `Info.plist` 包含 `NSMicrophoneUsageDescription`，并在 Hardened Runtime 签名 entitlement 中包含 `com.apple.security.device.audio-input=true`；缺少后者时 TCC 会直接拒绝请求，既不弹授权框，也不会在麦克风权限列表中展示应用。开发模式的系统权限项可能显示为 Electron，正式安装包显示为 SparkWork；用户在系统设置中修改已拒绝的权限后需要重启应用。
 

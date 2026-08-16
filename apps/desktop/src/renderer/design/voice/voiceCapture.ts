@@ -20,7 +20,8 @@ export class VoiceCaptureError extends Error {
 
 const PREFERRED_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: { ideal: true },
-  noiseSuppression: { ideal: true },
+  // Chromium 降噪（RNNoise 类）会削掉字头轻辅音，ASR 直接消费接近原始的人声更准确。
+  noiseSuppression: { exact: false },
   autoGainControl: { ideal: true },
   channelCount: { ideal: 1 },
 }
@@ -43,11 +44,7 @@ function toVoiceCaptureError(error: unknown): VoiceCaptureError {
       { cause: error },
     )
   }
-  if (
-    name === 'NotAllowedError' ||
-    name === 'PermissionDeniedError' ||
-    name === 'SecurityError'
-  ) {
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
     return new VoiceCaptureError(
       'permission-denied',
       '麦克风访问被拒绝，请在系统隐私设置中允许 SparkWork 使用麦克风后重试。',
@@ -141,9 +138,7 @@ function deviceConstraints(deviceId?: string): MediaStreamConstraints {
  * 获取真实可读的音频流。先使用系统默认设备；若底层驱动以 AbortError/NotReadableError
  * 拒绝默认设备，再逐个尝试枚举到的其他输入设备（常见于蓝牙设备切换过程中）。
  */
-export async function acquireVoiceMediaStream(
-  devices: MediaDeviceInfo[],
-): Promise<MediaStream> {
+export async function acquireVoiceMediaStream(devices: MediaDeviceInfo[]): Promise<MediaStream> {
   const mediaDevices = getMediaDevices()
   const alternateDeviceIds = Array.from(
     new Set(

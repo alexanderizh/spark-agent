@@ -107,7 +107,7 @@ export interface VoiceStartRequest {
   language?: VoiceLanguage
   /** 是否启用 VAD 端点检测（句尾静音自动切段，默认 true） */
   enableVad?: boolean
-  /** VAD 句尾静音阈值（ms），缺省 600 */
+  /** VAD 句尾静音阈值（ms），缺省 800 */
   vadSilenceMs?: number
 }
 

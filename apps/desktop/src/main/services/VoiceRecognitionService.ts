@@ -77,7 +77,14 @@ let cachedRecognizer: { recognizer: SherpaOnlineRecognizer; configKey: string } 
 let sessionCounter = 0
 const sessions = new Map<string, VoiceSession>()
 
+/** 供单元测试注入 mock native 模块，避免依赖真实语音包。 */
+let moduleOverride: SherpaModule | null = null
+export function setVoiceModuleForTests(mod: SherpaModule | null): void {
+  moduleOverride = mod
+}
+
 function loadSherpaModule(): SherpaModule {
+  if (moduleOverride) return moduleOverride
   if (cachedModule) return cachedModule
   const paths = resolveVoiceModelPaths()
   if (!paths) {
@@ -131,24 +138,32 @@ function readModelDescriptor(modelDir: string): VoiceModelDescriptor {
   }
 }
 
+// Paraformer 在线模型的尾部 token 发射有数百毫秒延迟；endpoint 触发时直接 reset 会把
+// 还滞留在解码管线里的句尾字吞掉（短句场景每个短句必掉尾字）。
+const ENDPOINT_FLUSH_SILENCE_SECONDS = 0.64
+// 手动停止时的尾部静音 padding，同样需要覆盖发射延迟，否则最后几个字丢失。
+const STOP_TAIL_PADDING_SECONDS = 0.75
+
 function buildRecognizerConfig(
   params: VoiceStartRequest,
   descriptor: VoiceModelDescriptor,
 ): { config: SherpaOnlineRecognizerConfig; key: string } {
   const sampleRate = params.sampleRate ?? 16000
-  const vadSilenceMs = params.vadSilenceMs ?? 600
+  const vadSilenceMs = params.vadSilenceMs ?? 800
   const config: SherpaOnlineRecognizerConfig = {
     featConfig: { sampleRate, featureDim: 80 },
     modelConfig: {
       paraformer: { encoder: descriptor.encoder, decoder: descriptor.decoder },
       tokens: descriptor.tokens,
-      numThreads: 1,
+      // 2 线程解码降低积压，partial 吐字更快；单线程在连续语音下容易滞后于实时。
+      numThreads: 2,
       debug: false,
       provider: 'cpu',
     },
     decodingMethod: 'greedy_search',
     enableEndpoint: params.enableVad ?? true,
     // rule1: 说话中的句尾静音；rule2: 一直没说话的静音。单位秒。
+    // 800ms：0.6s 会把正常换气停顿切段，且切段后模型需要重新热身，段首字容易糊。
     rule1MinTrailingSilence: vadSilenceMs / 1000,
     rule2MinTrailingSilence: (vadSilenceMs / 1000) * 2,
     rule3MinUtteranceLength: 20,
@@ -181,6 +196,26 @@ function int16ToFloat32(samples: Int16Array): Float32Array {
     out[i] = (samples[i] ?? 0) / 32768
   }
   return out
+}
+
+/**
+ * endpoint 触发时补一段静音并再解码一轮，把在线模型滞留的尾部 token 逼出来。
+ * 必须在 reset 之前调用，否则句尾字丢失。
+ */
+function flushTailTokens(session: VoiceSession): string {
+  try {
+    const silence = new Float32Array(
+      Math.floor(session.sampleRate * ENDPOINT_FLUSH_SILENCE_SECONDS),
+    )
+    session.stream.acceptWaveform({ samples: silence, sampleRate: session.sampleRate })
+    while (session.recognizer.isReady(session.stream)) {
+      session.recognizer.decode(session.stream)
+    }
+    return (session.recognizer.getResult(session.stream).text ?? '').trim()
+  } catch {
+    // flush 失败时退回最后已知 partial，不能因 flush 阻断 final
+    return session.lastPartial
+  }
 }
 
 export interface VoiceSessionHandle {
@@ -234,10 +269,11 @@ export function feedVoiceAudio(sessionId: string, samples: Int16Array, ownerId: 
       session.lastPartial = text
       emitPending({ type: 'partial', sessionId, text }, session.ownerId)
     }
-    // 句尾：endpoint 触发，锁定 final 并 reset stream
+    // 句尾：endpoint 触发，先补静音解码逼出滞留的尾部 token，再锁定 final 并 reset stream
     if (session.recognizer.isEndpoint(session.stream)) {
-      if (text) {
-        emitPending({ type: 'final', sessionId, text }, session.ownerId)
+      const finalText = flushTailTokens(session)
+      if (finalText) {
+        emitPending({ type: 'final', sessionId, text: finalText }, session.ownerId)
       }
       session.recognizer.reset(session.stream)
       session.lastPartial = ''
@@ -277,7 +313,7 @@ export function stopVoiceSession(sessionId?: string, ownerId?: number): void {
   if (ownerId != null && session.ownerId !== ownerId) return
   try {
     // 尾部 padding + 最终解码，争取最后一段 partial 落地为 final
-    const tail = new Float32Array(Math.floor(session.sampleRate * 0.4))
+    const tail = new Float32Array(Math.floor(session.sampleRate * STOP_TAIL_PADDING_SECONDS))
     session.stream.acceptWaveform({ samples: tail, sampleRate: session.sampleRate })
     while (session.recognizer.isReady(session.stream)) {
       session.recognizer.decode(session.stream)
@@ -290,7 +326,9 @@ export function stopVoiceSession(sessionId?: string, ownerId?: number): void {
     const text = (result.text ?? '').trim()
     if (text) emitPending({ type: 'final', sessionId, text }, session.ownerId)
   } catch (err) {
-    log.warn(`Voice stop cleanup error (${sessionId}): ${err instanceof Error ? err.message : String(err)}`)
+    log.warn(
+      `Voice stop cleanup error (${sessionId}): ${err instanceof Error ? err.message : String(err)}`,
+    )
   }
   sessions.delete(sessionId)
   emitPending({ type: 'session-stopped', sessionId, text: '' }, session.ownerId)
