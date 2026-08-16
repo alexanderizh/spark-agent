@@ -3750,6 +3750,103 @@ export class SessionService {
     params.sessionRepo.updateStatus(params.sessionId, 'error')
   }
 
+  // ─── W2-D2 turn 收尾提炼：两引擎执行体逐字节对称的生命周期段 ────────────────
+  // 以下四个方法从 tryStartSDKTurn / tryStartCodexCliTurn 的 promise 收尾链提炼，
+  // 提炼前两引擎各自逐字节相同；then 成功分支的后处理差异（resume 熔断 / 标题精炼 /
+  // goal 解析 / 收尾顺序）留在调用点，待 W2-D3 统一管道时显式处理。
+
+  /**
+   * 无后处理收尾（shouldRunTurnPostProcessing=false 的 then 分支）：
+   * 媒体兜底 → computer-use 回收 → 终态补发（仍持有所有权时）。
+   */
+  private settleTurnWithoutPostProcessing(args: {
+    sessionId: string
+    executor: ActiveExecution
+    sessionRepo: SessionRepository
+    emitUnpresentedMedia: () => void
+    emitPendingTerminalStatus: () => AgentStatusEvent['status'] | null
+  }): void {
+    args.emitUnpresentedMedia()
+    this.revokeComputerUseSession(args.sessionId)
+    const ownsSession = this.turnRegistry.isActiveExecutor(args.sessionId, args.executor)
+    const terminalStatus = ownsSession ? args.emitPendingTerminalStatus() : null
+    if (
+      ownsSession &&
+      (terminalStatus == null || terminalStatus === 'completed' || terminalStatus === 'cancelled')
+    ) {
+      this.updateStatusAfterHostTerminal(args.sessionRepo, args.sessionId, 'completed')
+    }
+  }
+
+  /**
+   * 成功分支的收尾尾段（后处理跑完后的终态补发）。
+   * claude 路径在后处理（标题/goal/continuity/memory）之后调用；
+   * codex 路径在后处理（continuity/memory）之前调用 —— 顺序差异待 W2-D3 统一。
+   */
+  private settleTurnSuccessTail(args: {
+    sessionId: string
+    executor: ActiveExecution
+    sessionRepo: SessionRepository
+    emitUnpresentedMedia: () => void
+    emitPendingTerminalStatus: () => AgentStatusEvent['status'] | null
+  }): void {
+    args.emitUnpresentedMedia()
+    this.revokeComputerUseSession(args.sessionId)
+    const ownsSession = this.turnRegistry.isActiveExecutor(args.sessionId, args.executor)
+    const terminalStatus = ownsSession ? args.emitPendingTerminalStatus() : null
+    if (
+      ownsSession &&
+      (terminalStatus == null || terminalStatus === 'completed' || terminalStatus === 'cancelled')
+    ) {
+      this.updateStatusAfterHostTerminal(args.sessionRepo, args.sessionId, 'completed')
+    }
+  }
+
+  /** 异常收尾（catch 分支）：非 completed/cancelled 终态时会话标错。 */
+  private settleTurnFailure(args: {
+    sessionId: string
+    executor: ActiveExecution
+    sessionRepo: SessionRepository
+    emitUnpresentedMedia: () => void
+    emitPendingTerminalStatus: () => AgentStatusEvent['status'] | null
+  }): void {
+    args.emitUnpresentedMedia()
+    this.revokeComputerUseSession(args.sessionId)
+    const ownsSession = this.turnRegistry.isActiveExecutor(args.sessionId, args.executor)
+    const terminalStatus = ownsSession ? args.emitPendingTerminalStatus() : null
+    if (ownsSession && terminalStatus !== 'completed' && terminalStatus !== 'cancelled') {
+      this.updateStatusAfterHostTerminal(args.sessionRepo, args.sessionId, 'error')
+    }
+  }
+
+  /**
+   * turn 终结回收（finally 分支）：解除执行追踪与取消标记 → 团队/文件键/桥接
+   * 句柄回收 → 守恒释放所有权 → 状态归并 → 队列/续跑推进。
+   */
+  private settleTurnFinally(args: {
+    sessionId: string
+    turnId: string
+    executor: ActiveExecution
+  }): void {
+    const { sessionId, turnId, executor } = args
+    this.turnRegistry.untrackExecution(executor)
+    this.turnRegistry.forgetTurnCancelled(turnId)
+    const shouldAutoContinue = this.teamDispatchBudgetExhaustedTurns.get(sessionId) === turnId
+    this.teamDispatchService?.clearTurn(turnId)
+    this.clearTurnFileChangeKeys(sessionId, turnId)
+    this.closeTeamMcpHandlesForTurn(turnId)
+    if (this.turnRegistry.isActiveExecutor(sessionId, executor)) {
+      this.turnRegistry.releaseExecutorIfOwned(sessionId, turnId, executor)
+      this.reconcileSessionExecutionStatus(sessionId)
+      if (shouldAutoContinue) {
+        void this.continueAfterTeamDispatchBudget(sessionId, turnId)
+      } else {
+        this.resetTeamDispatchAutoContinuation(sessionId)
+        void this.continueGoalOrQueue(sessionId)
+      }
+    }
+  }
+
   private async tryStartSDKTurn(
     sessionId: string,
     turnId: string,
@@ -4312,18 +4409,13 @@ export class SessionService {
     executionPromise
       .then(async () => {
         if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
-          emitUnpresentedMedia()
-          this.revokeComputerUseSession(sessionId)
-          const ownsSession = this.turnRegistry.isActiveExecutor(sessionId, executor)
-          const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
-          if (
-            ownsSession &&
-            (terminalStatus == null ||
-              terminalStatus === 'completed' ||
-              terminalStatus === 'cancelled')
-          ) {
-            this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'completed')
-          }
+          this.settleTurnWithoutPostProcessing({
+            sessionId,
+            executor,
+            sessionRepo,
+            emitUnpresentedMedia,
+            emitPendingTerminalStatus,
+          })
           return
         }
         // Reset resume circuit breaker on successful turn completion
@@ -4366,48 +4458,25 @@ export class SessionService {
           /* swallow — never affect main flow */
         })
 
-        emitUnpresentedMedia()
-        this.revokeComputerUseSession(sessionId)
-        const ownsSession = this.turnRegistry.isActiveExecutor(sessionId, executor)
-        const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
-        if (
-          ownsSession &&
-          (terminalStatus == null ||
-            terminalStatus === 'completed' ||
-            terminalStatus === 'cancelled')
-        ) {
-          this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'completed')
-        }
+        this.settleTurnSuccessTail({
+          sessionId,
+          executor,
+          sessionRepo,
+          emitUnpresentedMedia,
+          emitPendingTerminalStatus,
+        })
       })
       .catch(() => {
-        emitUnpresentedMedia()
-        this.revokeComputerUseSession(sessionId)
-        const ownsSession = this.turnRegistry.isActiveExecutor(sessionId, executor)
-        const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
-        if (ownsSession && terminalStatus !== 'completed' && terminalStatus !== 'cancelled') {
-          this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'error')
-        }
+        this.settleTurnFailure({
+          sessionId,
+          executor,
+          sessionRepo,
+          emitUnpresentedMedia,
+          emitPendingTerminalStatus,
+        })
       })
       .finally(() => {
-        this.turnRegistry.untrackExecution(executor)
-        this.turnRegistry.forgetTurnCancelled(turnId)
-        const shouldAutoContinue = this.teamDispatchBudgetExhaustedTurns.get(sessionId) === turnId
-        // 清理本 turn 的 dispatch 预算计数，避免长生命周期进程内存增长
-        this.teamDispatchService?.clearTurn(turnId)
-        this.clearTurnFileChangeKeys(sessionId, turnId)
-        // FR-0b：claude Host 本身不用桥接，但本 turn 内 dispatch 的 codex 成员
-        // （嵌套/peer messaging）会创建桥接 handle，这里与 codex 路径对称回收。
-        this.closeTeamMcpHandlesForTurn(turnId)
-        if (this.turnRegistry.isActiveExecutor(sessionId, executor)) {
-          this.turnRegistry.releaseExecutorIfOwned(sessionId, turnId, executor)
-          this.reconcileSessionExecutionStatus(sessionId)
-          if (shouldAutoContinue) {
-            void this.continueAfterTeamDispatchBudget(sessionId, turnId)
-          } else {
-            this.resetTeamDispatchAutoContinuation(sessionId)
-            void this.continueGoalOrQueue(sessionId)
-          }
-        }
+        this.settleTurnFinally({ sessionId, turnId, executor })
       })
   }
 
@@ -4795,33 +4864,25 @@ export class SessionService {
     executionPromise
       .then(async () => {
         if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
-          emitUnpresentedMedia()
-          this.revokeComputerUseSession(sessionId)
-          const ownsSession = this.turnRegistry.isActiveExecutor(sessionId, executor)
-          const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
-          if (
-            ownsSession &&
-            (terminalStatus == null ||
-              terminalStatus === 'completed' ||
-              terminalStatus === 'cancelled')
-          ) {
-            this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'completed')
-          }
+          this.settleTurnWithoutPostProcessing({
+            sessionId,
+            executor,
+            sessionRepo,
+            emitUnpresentedMedia,
+            emitPendingTerminalStatus,
+          })
           return
         }
-        emitUnpresentedMedia()
-        this.revokeComputerUseSession(sessionId)
+        // codex 现状：先终态补发，再 continuity/memory（与 claude 的顺序相反，
+        // W2-D3 统一管道时按 claude 顺序归一）。
+        this.settleTurnSuccessTail({
+          sessionId,
+          executor,
+          sessionRepo,
+          emitUnpresentedMedia,
+          emitPendingTerminalStatus,
+        })
         const assistantTurnText = collectCompleteAssistantTurnText(completeAssistantEvents)
-        const ownsSession = this.turnRegistry.isActiveExecutor(sessionId, executor)
-        const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
-        if (
-          ownsSession &&
-          (terminalStatus == null ||
-            terminalStatus === 'completed' ||
-            terminalStatus === 'cancelled')
-        ) {
-          this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'completed')
-        }
         this.continuityCoordinator.schedule(sessionId, turnId, config.model)
         void this.maybeWriteMemoryFromTurn(
           sessionId,
@@ -4835,32 +4896,16 @@ export class SessionService {
         })
       })
       .catch(() => {
-        emitUnpresentedMedia()
-        this.revokeComputerUseSession(sessionId)
-        const ownsSession = this.turnRegistry.isActiveExecutor(sessionId, executor)
-        const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
-        if (ownsSession && terminalStatus !== 'completed' && terminalStatus !== 'cancelled') {
-          this.updateStatusAfterHostTerminal(sessionRepo, sessionId, 'error')
-        }
+        this.settleTurnFailure({
+          sessionId,
+          executor,
+          sessionRepo,
+          emitUnpresentedMedia,
+          emitPendingTerminalStatus,
+        })
       })
       .finally(() => {
-        this.turnRegistry.untrackExecution(executor)
-        this.turnRegistry.forgetTurnCancelled(turnId)
-        const shouldAutoContinue = this.teamDispatchBudgetExhaustedTurns.get(sessionId) === turnId
-        this.teamDispatchService?.clearTurn(turnId)
-        this.clearTurnFileChangeKeys(sessionId, turnId)
-        // FR-0b 修复（审查 B-1）：回收本 turn 创建的 codex HTTP 桥接 handle（Host 主循环路径）。
-        this.closeTeamMcpHandlesForTurn(turnId)
-        if (this.turnRegistry.isActiveExecutor(sessionId, executor)) {
-          this.turnRegistry.releaseExecutorIfOwned(sessionId, turnId, executor)
-          this.reconcileSessionExecutionStatus(sessionId)
-          if (shouldAutoContinue) {
-            void this.continueAfterTeamDispatchBudget(sessionId, turnId)
-          } else {
-            this.resetTeamDispatchAutoContinuation(sessionId)
-            void this.continueGoalOrQueue(sessionId)
-          }
-        }
+        this.settleTurnFinally({ sessionId, turnId, executor })
       })
   }
 
