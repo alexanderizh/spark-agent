@@ -3078,7 +3078,9 @@ export function ChatView({
               onExplorerVisibleChange={setCodeExplorerVisible}
               onExplorerWidthChange={setCodeExplorerWidth}
               onExplorerExpandedChange={setCodeExplorerExpandedDirs}
-              onOpenFileFromExplorer={(rel) => handleFilePreview(rel, 'text')}
+              onOpenFileFromExplorer={(rel) =>
+                isCodeLikeFile(rel) ? openInCodeTab(rel) : handleFilePreview(rel, 'text')
+              }
               onPreviewFileFromExplorer={(rel) =>
                 handleFilePreview(rel, 'text', { mode: 'preview' })
               }
