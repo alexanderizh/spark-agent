@@ -842,9 +842,9 @@ export class CodexAppServerExecutor
     const record = (params ?? {}) as Record<string, unknown>
     const controller = new AbortController()
     this.pendingApprovals.add(controller)
-    // cancel 可能先于回调调用到达（如 waiting_permission 事件同步触发宿主取消）：
-    // 已中止则不再打扰审批 UI，直接确定性拒绝。
-    if (controller.signal.aborted) return 'deny'
+    // cancel 后迟到到达的审批请求：不再打扰审批 UI（turn 即将收尾），
+    // 直接确定性拒绝，避免用户看到一张必然作废的审批卡。
+    if (this.cancelRequested) return 'deny'
     this.emit({
       type: 'agent_status',
       status: 'waiting_permission',
