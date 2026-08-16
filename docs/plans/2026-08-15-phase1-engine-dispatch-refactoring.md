@@ -1,6 +1,6 @@
 # Phase 1 实施计划：引擎分派接口化 + session.service 拆分
 
-> 状态: 实施中（W1 全部落地，W2 待启动） | 最后核对: 2026-08-16
+> 状态: 实施中（W1/W2 已落地，W3 待启动） | 最后核对: 2026-08-16
 
 母方案：`docs/plans/2026-08-15-engineering-upgrade-roadmap.md` §5 Phase 1。
 本计划基于 2026-08-15 三路行号级调研（executor 层 / session.service 结构地图 / 测试基建），所有行号为当日实测。
@@ -326,6 +326,19 @@ services/session/
 | D5   | 成员路径与侧门收编：:7693 成员执行器、:10005 checkpoint rewind（改 `isRewindCapable` 探测）、:9683 权限热切换（改 `isPermissionModeAware`）；SUBAGENT_USAGE_HINT 注入与 checkpoint 可用性两处改读 capabilities                                                                                                                                                        | `refactor(session): 能力探测取代硬编码分叉`      |
 
 **W2 验证**：同 W1 + 基线测试 3 条全绿 + resume-recovery.test 全绿 + 手动冒烟（dev 起应用各跑一条 claude/codex 会话含取消与审批）。
+
+#### W2 落地记录（2026-08-16，全部完成）
+
+| 步骤          | 提交       | 内容                                                                                                                                                                                                                                                                                                             |
+| ------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D0 安全网     | `ddeabe61` | turn-pipeline-lifecycle 行为锁 6 条 × 双引擎（队列推进/并发上限/终态扣留/dispose 等待/plan 闸门/error 收场）；FakeEngineExecutor 增 holdForRelease / holdAfterEvents 分段注入能力。**附带抓获并修复 codex plan 审批闸门缺失**（`d2e4330c`，与 claude 路径对称补齐）                                              |
+| D1 收编       | `15671f38` | `turn-registry.ts` 六集合收编（111 处读写点全量替换，tsc 编译器兜底穷尽）；三种 starting 收尾语义（守卫式/无条件式/全清式）各自成方法；并发计数恒等式收敛；行为锁 94/94                                                                                                                                          |
+| D2 壳提炼     | `0239bbcc` | settleTurnWithoutPostProcessing / settleTurnSuccessTail / settleTurnFailure / settleTurnFinally 四方法承接两引擎逐字节对称的收尾链                                                                                                                                                                               |
+| D3 统一+补齐  | `9f3c55e2` | **行为补齐（用户确认做漏）**：codex 补齐首轮标题精炼与 goal 块解析（goal 循环在 codex 此前功能性坏死）；收尾顺序归一为 claude 顺序；runTurnPostProcessing 统一两引擎成功分支（resume 熔断为 claude 专属钩子）。行为锁新增 ⑩（goal 推进双引擎）。session.service 基线 11689→11710（功能补齐净成本，外迁属 W3-S6） |
+| D4 侧门能力化 | `c981716c` | 权限热切换改 isPermissionModeAware 守卫（能力守卫参数放宽为 CapabilityProbe 结构超集）；删除 restoreCheckpointViaRewind 死代码（git 方案替代后无调用方，其 new ClaudeSDKExecutor() 为侧门遗留）；SUBAGENT_USAGE_HINT 复核后保持 engine-kinds 条件（已非硬编码）                                                  |
+
+**验证汇总**：W2 六套件 151/160（9 失败为 runtime-config 既存批，stash 对照实证与 W2 零相关）；四执行器既有测试 103/103；agent-runtime/protocol/storage/desktop typecheck 全 0 错；ratchet 通过；Electron ABI 恢复并 native:verify 三模块通过。**降级决策点未触发**（差异全部参数化成功，无双 Runner 需求）。
+**遗留**：手动冒烟清单（8 项，dev 应用实测）待用户执行——流式渲染/工具卡/取消/审批弹窗/plan 队列/排队消息/并发上限/关闭应用，claude 与 codex 各过一遍。
 
 ### W2 精细化执行计划（v2，2026-08-16 行号级复核后）
 
