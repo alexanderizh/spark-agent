@@ -158,6 +158,18 @@ export interface PlatformBridgeDeps {
       error?: string
     }>
     /**
+     * 会话 worktree 状态桥（codex / claude CLI 的 stdio spark_session MCP 子进程
+     * 走这条路径回到主进程，复用 setSessionRuntimeWorktree 的校验与持久化）。
+     */
+    setSessionRuntimeWorktree(
+      sessionId: string,
+      input: { action: 'enter' | 'exit'; path?: string; branch?: string },
+    ): Promise<{
+      ok: boolean
+      worktree: { path: string; branch: string; updatedAt: string } | null
+      error?: string
+    }>
+    /**
      * 画布工具桥（codex CLI / claude CLI 的 stdio spark_canvas MCP 子进程走这条
      * 路径回到主进程，再由 CanvasHostBridge 转发到已 attach 的画布 renderer）。
      */
@@ -442,6 +454,9 @@ export class PlatformBridgeService {
       // ── Sessions ──
       case 'sessions.get':
         return this.sessionGet(d, params)
+      // spark_session stdio 子进程（codex / claude CLI）上报会话 worktree 状态
+      case 'session.set_worktree_state':
+        return this.sessionSetWorktreeState(d, params)
       case 'sessions.switch_model':
         return this.sessionSwitchModel(d, params)
       case 'sessions.switch_provider':
@@ -1480,6 +1495,23 @@ export class PlatformBridgeService {
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!id) throw new Error('Missing parameter: id')
     return d.sessionService.bridgeMemoryRecall({ sessionId, id })
+  }
+
+  /** session.set_worktree_state：stdio spark_session 子进程上报会话 worktree 状态 */
+  private async sessionSetWorktreeState(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    const action = params.action === 'exit' ? 'exit' : params.action === 'enter' ? 'enter' : null
+    if (action == null) throw new Error('Invalid parameter: action must be "enter" or "exit"')
+    const path =
+      typeof params.path === 'string' && params.path.trim() !== '' ? params.path : undefined
+    const branch =
+      typeof params.branch === 'string' && params.branch.trim() !== '' ? params.branch : undefined
+    return d.sessionService.setSessionRuntimeWorktree(sessionId, {
+      action,
+      ...(path != null ? { path } : {}),
+      ...(branch != null ? { branch } : {}),
+    })
   }
 
   private async canvasCallTool(d: PlatformBridgeDeps, params: Record<string, unknown>) {

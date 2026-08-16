@@ -92,6 +92,26 @@ describe('chat session routing', () => {
     ).toBe('develop')
   })
 
+  it('overrides workspace branches with the agent-reported runtime worktree branch', () => {
+    expect(
+      resolveDisplayedGitBranch({
+        branchStateCurrentBranch: 'master',
+        statusCurrentBranch: 'master',
+        runtimeWorktreeBranch: 'codex/composer-lexical-token-input',
+      }),
+    ).toBe('codex/composer-lexical-token-input')
+  })
+
+  it('ignores an empty runtime worktree branch (detached HEAD) and falls back', () => {
+    expect(
+      resolveDisplayedGitBranch({
+        branchStateCurrentBranch: null,
+        statusCurrentBranch: 'develop',
+        runtimeWorktreeBranch: '',
+      }),
+    ).toBe('develop')
+  })
+
   it('keeps the worktree toggle visible for a brand-new session', () => {
     expect(
       canShowComposerWorktreeToggle({

@@ -41,6 +41,12 @@ import type {
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 import {
+  SessionWorktreeStateService,
+  readSessionRuntimeWorktree,
+  type SessionRuntimeWorktreeState,
+  type SessionWorktreeStateInput,
+} from './session-worktree-state.js'
+import {
   buildComputerDecisionModelConfig,
   type ComputerDecisionModelConfig,
 } from '../computer-use/computer-decision-model.js'
@@ -205,6 +211,7 @@ import {
   resolveQuickRepliesMcpServer,
   resolveSparkCanvasMcpServerPath,
   resolveSparkMemoryMcpServerPath,
+  resolveSparkSessionMcpServerPath,
   resolveWebSearchMcpServerPath,
 } from './session-mcp-tooling-helpers.js'
 
@@ -788,6 +795,12 @@ export class SessionService {
   private orphanEventCleanupPending = false
   /** 画布 Agent MCP server 提供器（由主进程注入） */
   private canvasMcpProvider: CanvasMcpProvider | null = null
+  /** 会话引擎级 worktree 状态变化回调（主进程注入，用于 UI 推流） */
+  private sessionWorktreeChangedHandler?:
+    | ((sessionId: string, worktree: SessionRuntimeWorktreeState | null) => void)
+    | undefined
+  /** 惰性创建的会话 worktree 状态服务（读写 metadata + git 校验） */
+  private worktreeStateService: SessionWorktreeStateService | null = null
   /** 应用内可见浏览器 MCP server 提供器（由桌面主进程注入） */
   private browserAutomationMcpProvider: BrowserAutomationMcpProvider | null = null
   /** 受治理的 Computer Use MCP server 提供器（由桌面主进程注入） */
@@ -1034,6 +1047,14 @@ export class SessionService {
     return this.memorySearchRepo!
   }
 
+  /** 惰性创建的会话 worktree 状态服务（供 spark_session 工具与运行时检测共用）。 */
+  private getWorktreeStateService(): SessionWorktreeStateService {
+    if (this.worktreeStateService == null) {
+      this.worktreeStateService = new SessionWorktreeStateService(this.db)
+    }
+    return this.worktreeStateService
+  }
+
   constructor(
     private readonly db: SparkDatabase,
     private readonly onEvent: SessionEventHandler,
@@ -1073,6 +1094,16 @@ export class SessionService {
   /** 注入画布 Agent MCP provider（主进程持有画布桥后调用一次） */
   setCanvasMcpProvider(provider: CanvasMcpProvider | null): void {
     this.canvasMcpProvider = provider
+  }
+
+  /**
+   * 注入会话引擎级 worktree 状态变化回调（主进程接 UI 推流：
+   * pushStreamEvent('stream:session:worktree-changed')）。
+   */
+  setSessionWorktreeChangedHandler(
+    handler: ((sessionId: string, worktree: SessionRuntimeWorktreeState | null) => void) | null,
+  ): void {
+    this.sessionWorktreeChangedHandler = handler ?? undefined
   }
 
   /** 注入应用内可见浏览器 MCP provider（主进程持有 BrowserWindow 桥后调用一次） */
@@ -3202,6 +3233,7 @@ export class SessionService {
       teamRosterPrompt,
       teamInstructionsPrompt,
       buildWorktreeSessionSystemPrompt(workspaceInfo),
+      SESSION_WORKTREE_STATE_SYSTEM_PROMPT,
       // Task 子代理是 Claude Agent SDK 的原生能力，Codex CLI 路径没有对应工具，
       // 引导语只在 claude-sdk/claude adapter 下注入，避免对 Codex 会话产生误导。
       resolveEngineKind(agentAdapter) === 'claude-sdk'
@@ -4288,6 +4320,9 @@ export class SessionService {
       mcpServers,
     )
 
+    // spark_session（in-process 版）—— agent 上报引擎级 worktree 状态的工具
+    await this.attachSparkSessionMcpServer(sessionId, mcpServers)
+
     const completeAssistantEvents: AssistantMessageEvent[] = []
     // 标题精炼、目标契约/进度解析、记忆抽取都依赖完整 assistant 正文。
     // Codex SDK 现会先发各 segment 的 complete，再发整 turn 的 isFinal 汇总 complete；
@@ -4721,6 +4756,19 @@ export class SessionService {
     } catch (err) {
       log.warn(
         `spark_memory stdio MCP setup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+
+    // spark_session（CLI 路径专用）—— agent 上报引擎级 worktree 状态的工具，
+    // stdio 子进程经 PlatformBridgeService RPC 回到 setSessionRuntimeWorktree。
+    try {
+      const sessionServer = await this.resolveSparkSessionMcpServer(sessionId)
+      if (sessionServer != null) mcpServers.spark_session = sessionServer
+    } catch (err) {
+      log.warn(
+        `spark_session stdio MCP setup failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       )
     }
 
@@ -5312,6 +5360,104 @@ export class SessionService {
           err instanceof Error ? err.message : String(err)
         }`,
       )
+    }
+  }
+
+  /**
+   * spark_session（in-process 版，claude SDK 路径）：agent 可调用的
+   * set_worktree_state 工具，用于上报引擎级 worktree 状态（进入/退出）。
+   * 与 stdio 版（resolveSparkSessionMcpServer）同名同语义。
+   */
+  private async attachSparkSessionMcpServer(
+    sessionId: string,
+    mcpServers: Record<string, SDKMcpServerConfig>,
+  ): Promise<void> {
+    try {
+      const factory = await loadSdkMcpFactory()
+      if (factory == null) return
+      const { createSdkMcpServer, tool } = factory
+      const setWorktreeStateTool = tool(
+        'set_worktree_state',
+        SPARK_SESSION_WORKTREE_TOOL_DESCRIPTION,
+        {
+          action: z
+            .enum(['enter', 'exit'])
+            .describe('enter=进入/已在 worktree 开发；exit=退出 worktree 回到主仓库。'),
+          path: z
+            .string()
+            .describe('worktree 根目录的绝对路径（action=enter 时必填）。')
+            .optional(),
+          branch: z
+            .string()
+            .describe('可选分支名；缺省由应用从 path 解析，仅在 detached HEAD 时用于展示。')
+            .optional(),
+        } as Record<string, unknown>,
+        async (args: Record<string, unknown>) => {
+          const action = args.action === 'exit' ? 'exit' : args.action === 'enter' ? 'enter' : null
+          if (action == null) {
+            return {
+              content: [{ type: 'text' as const, text: 'action 必须是 "enter" 或 "exit"。' }],
+              isError: true,
+            }
+          }
+          const r = await this.setSessionRuntimeWorktree(sessionId, {
+            action,
+            ...(typeof args.path === 'string' && args.path !== '' ? { path: args.path } : {}),
+            ...(typeof args.branch === 'string' && args.branch !== ''
+              ? { branch: args.branch }
+              : {}),
+          })
+          const text = !r.ok
+            ? `更新失败：${r.error ?? '未知原因'}。请确认 path 是存在的 git worktree 目录绝对路径后重试。`
+            : r.worktree == null
+              ? '已清除会话 worktree 状态。'
+              : `会话 worktree 状态已更新：${r.worktree.path}${r.worktree.branch ? `（分支 ${r.worktree.branch}）` : ''}`
+          return { content: [{ type: 'text' as const, text }], isError: !r.ok }
+        },
+      )
+      mcpServers.spark_session = createSdkMcpServer({
+        name: 'spark_session',
+        version: '1.0.0',
+        tools: [setWorktreeStateTool],
+      })
+    } catch (err) {
+      log.warn(
+        `spark_session MCP server setup failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
+  }
+
+  /**
+   * 解析 stdio 版 spark_session MCP server（codex / claude CLI 路径）。
+   * 子进程通过 PlatformBridgeService HTTP RPC 回调 setSessionRuntimeWorktree，
+   * 与 in-process 版语义一致。
+   */
+  private async resolveSparkSessionMcpServer(
+    sessionId: string,
+  ): Promise<SDKMcpServerConfig | null> {
+    const serverPath = resolveSparkSessionMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Spark session MCP server script not found')
+      return null
+    }
+    try {
+      const port = await this.ensurePlatformBridge()
+      return {
+        type: 'stdio',
+        command: resolveMcpNodeRuntimeExecutable(),
+        args: [serverPath],
+        env: {
+          SPARK_PLATFORM_BRIDGE_PORT: String(port),
+          SPARK_SESSION_SID: sessionId,
+        },
+      }
+    } catch (err) {
+      log.warn(
+        `Failed to start spark_session MCP server: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return null
     }
   }
 
@@ -7696,6 +7842,22 @@ export class SessionService {
         memberMcpServers,
       )
     }
+    // 成员同样可以进入 worktree 开发：挂载 worktree 状态上报工具
+    // （Codex/CLI 走 stdio，Claude SDK 走 in-process）。
+    if (isCodexMember) {
+      try {
+        const memberSessionServer = await this.resolveSparkSessionMcpServer(sessionId)
+        if (memberSessionServer != null) memberMcpServers.spark_session = memberSessionServer
+      } catch (err) {
+        log.warn(
+          `member spark_session MCP setup failed (non-fatal): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+      }
+    } else {
+      await this.attachSparkSessionMcpServer(sessionId, memberMcpServers)
+    }
     // 成员的 spark_team 工具面，三个独立触发条件（满足其一即注入 server）：
     //  - 嵌套派发（agent_dispatch/agent_dispatch_batch）：allowNesting && memberDepth < maxDepth；
     //  - 对等消息（agent_message）：enablePeerMessaging && 真实讨论存在（memberCanPeerMessage）；
@@ -9758,6 +9920,7 @@ export class SessionService {
         ? { importedFrom: getImportedFromMetadata(row.metadata_json)! }
         : {}),
       debugMode: getDebugModeFromMetadata(row.metadata_json),
+      runtimeWorktree: readSessionRuntimeWorktree(row.metadata_json),
       cliSparkOverride: getCliSparkOverrideFromMetadata(row.metadata_json),
     }))
     return { sessions, total }
@@ -9942,9 +10105,56 @@ export class SessionService {
         logicalMessageCount: row.logical_message_count,
         messageCount: row.logical_message_count,
         debugMode: getDebugModeFromMetadata(row.metadata_json),
+        runtimeWorktree: readSessionRuntimeWorktree(row.metadata_json),
         cliSparkOverride: getCliSparkOverrideFromMetadata(row.metadata_json),
       },
     }
+  }
+
+  /**
+   * 设置会话的引擎级 worktree 状态（agent 工具上报 / 运行时检测共用入口）。
+   *
+   * 校验 + 持久化由 SessionWorktreeStateService 负责；发生变化时通过
+   * sessionWorktreeChangedHandler 通知主进程推流 stream:session:worktree-changed。
+   */
+  async setSessionRuntimeWorktree(
+    sessionId: string,
+    input: SessionWorktreeStateInput,
+  ): Promise<{ ok: boolean; worktree: SessionRuntimeWorktreeState | null; error?: string }> {
+    let result: Awaited<ReturnType<SessionWorktreeStateService['apply']>>
+    try {
+      result = await this.getWorktreeStateService().apply(sessionId, input)
+    } catch (err) {
+      log.warn(
+        `set session runtime worktree failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return {
+        ok: false,
+        worktree: null,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+    if (result.changed) {
+      try {
+        this.sessionWorktreeChangedHandler?.(sessionId, result.worktree)
+      } catch (err) {
+        log.warn(
+          `session worktree changed handler failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+      }
+    }
+    return {
+      ok: result.ok,
+      worktree: result.worktree,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
+  /** 读取会话当前引擎级 worktree 状态（无则 null）。 */
+  getSessionRuntimeWorktree(sessionId: string): SessionRuntimeWorktreeState | null {
+    return this.getWorktreeStateService().get(sessionId)
   }
 
   async getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>> {
@@ -10549,6 +10759,28 @@ function parseWorktreePromptMeta(raw: string): WorktreePromptMeta | null {
     return null
   }
 }
+
+/**
+ * 会话 worktree 状态上报引导（静态文本，全 adapter 注入）。
+ * 告知 agent 在进入/退出 worktree 开发时必须调用 set_worktree_state 工具，
+ * 否则应用 UI 会继续显示主仓库分支，误导用户。
+ */
+const SESSION_WORKTREE_STATE_SYSTEM_PROMPT = [
+  '[Session Worktree State]',
+  "The app UI shows this session's git branch based on the session worktree state reported through the `mcp__spark_session__set_worktree_state` tool (engine-level worktrees are invisible to the app otherwise).",
+  'Rule: whenever you start developing inside a git worktree during this session — via the EnterWorktree tool, `git worktree add`, or a worktree created by your engine — you MUST call `mcp__spark_session__set_worktree_state` with action="enter" and the worktree\'s absolute root path right after entering it; call it with action="exit" when you leave the worktree and return to the main checkout.',
+  'This does not change any git state; it only keeps the branch indicator and the worktree badge in the app accurate for the user.',
+].join('\n')
+
+/** spark_session.set_worktree_state 工具描述（in-process 与 stdio 版本共用文案） */
+const SPARK_SESSION_WORKTREE_TOOL_DESCRIPTION = [
+  '更新当前会话的 worktree 运行状态，应用界面据此显示会话的真实分支并点亮 worktree 标记。',
+  '调用时机（务必遵守）：',
+  '1) 通过 EnterWorktree 等工具进入 worktree、或手动执行 git worktree add 创建 worktree 后，立即以 action="enter" 调用，path 传 worktree 根目录绝对路径；',
+  '2) 后续所有开发都在该 worktree 中进行期间无需重复调用；',
+  '3) 退出或删除 worktree、回到主仓库开发时，以 action="exit" 调用清除状态。',
+  '注意：本工具不改变任何 git 状态，只是向应用上报展示信息；分支名会由应用从该路径自动解析，branch 参数仅在 detached HEAD 时作展示兜底。',
+].join(' ')
 
 function buildWorktreeSessionSystemPrompt(
   workspaceInfo:

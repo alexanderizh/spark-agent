@@ -14,6 +14,7 @@ import type {
   SessionId,
   CliSparkOverride,
   SessionListResponse,
+  SessionRuntimeWorktree,
   SessionSearchResult,
   SessionGetQueueResponse,
   WorkspaceInfo,
@@ -773,6 +774,23 @@ export function SessionSidebarProvider({
           setSessions((prev) =>
             prev.map((item) =>
               item.id === payload.sessionId ? { ...item, title: payload.title } : item,
+            ),
+          )
+        },
+      ) ?? (() => {})
+    )
+  }, [])
+
+  // Real-time session worktree state updates (agent-reported engine-level worktree):
+  // 更新列表内会话的 runtimeWorktree，驱动侧栏 worktree 徽标与环境信息面板分支覆盖。
+  useEffect(() => {
+    return (
+      window.spark?.on?.(
+        'stream:session:worktree-changed',
+        (payload: { sessionId: string; worktree: SessionRuntimeWorktree | null }) => {
+          setSessions((prev) =>
+            prev.map((item) =>
+              item.id === payload.sessionId ? { ...item, runtimeWorktree: payload.worktree } : item,
             ),
           )
         },

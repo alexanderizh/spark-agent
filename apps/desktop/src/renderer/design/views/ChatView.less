@@ -43,6 +43,19 @@
   color: var(--text);
 }
 
+/* 引擎级 worktree 会话：分支名前缀主色小图标（与侧栏 worktree 徽标同语义） */
+.git-session-branch.is-worktree::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--color-primary-6, #4a8cff);
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
 .git-session-counts {
   display: inline-flex;
   gap: 3px;
@@ -321,6 +334,23 @@
   align-items: center;
   justify-content: center;
   color: currentColor;
+}
+
+/* 环境信息面板：分支行 worktree 态（图标点亮 + 轻量标签） */
+.git-env-icon.is-worktree {
+  color: var(--color-primary-6, #4a8cff);
+}
+
+.git-env-worktree-tag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary-6, #4a8cff) 14%, transparent);
+  color: var(--color-primary-6, #4a8cff);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
 }
 
 .git-env-spacer {

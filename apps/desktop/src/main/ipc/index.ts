@@ -2316,6 +2316,10 @@ function getSessionService(): SessionService {
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())
     _sessionService.setBrowserAutomationMcpProvider(browserAutomationMcpProvider)
     _sessionService.setComputerUseMcpProvider(computerUseMcpProvider)
+    // 会话引擎级 worktree 状态变化（agent 工具上报）→ 推流渲染层更新分支显示与徽标
+    _sessionService.setSessionWorktreeChangedHandler((sessionId, worktree) => {
+      pushStreamEvent('stream:session:worktree-changed', { sessionId, worktree })
+    })
   }
   return _sessionService
 }

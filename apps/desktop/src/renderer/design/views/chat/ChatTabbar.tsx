@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
   ManagedAgent,
+  SessionRuntimeWorktree,
   TeamModeConfig,
   WorkspaceGitStatusResponse,
   WorkspaceInfo,
@@ -42,6 +43,7 @@ export function ChatTabbar({
   stopTrigger,
   branchState,
   gitStatus,
+  runtimeWorktree = null,
   isGitRepo,
   taskCount,
   taskCompletedCount,
@@ -77,6 +79,8 @@ export function ChatTabbar({
   stopTrigger?: number
   branchState: BranchState
   gitStatus: WorkspaceGitStatusResponse | null
+  /** 引擎级 worktree 状态（agent 上报）：分支以其为准并点亮 worktree 图标 */
+  runtimeWorktree?: SessionRuntimeWorktree | null
   isGitRepo: boolean
   taskCount: number
   taskCompletedCount: number
@@ -238,7 +242,13 @@ export function ChatTabbar({
             currentBranch={resolveDisplayedGitBranch({
               branchStateCurrentBranch: branchState.currentBranch,
               statusCurrentBranch: gitStatus?.currentBranch,
+              runtimeWorktreeBranch: runtimeWorktree?.branch ?? null,
             })}
+            worktreeHint={
+              runtimeWorktree != null
+                ? `运行在隔离 worktree${runtimeWorktree.branch ? ` · ${runtimeWorktree.branch}` : ''}`
+                : null
+            }
             additions={gitStatus?.additions ?? 0}
             deletions={gitStatus?.deletions ?? 0}
             taskCount={taskCount}

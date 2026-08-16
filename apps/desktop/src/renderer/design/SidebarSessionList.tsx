@@ -822,8 +822,10 @@ function ChatListItem({
     const wsId = s.workspaceIds[0]
     return wsId == null ? undefined : workspaces.find((w) => w.id === wsId)
   }, [s.workspaceIds, workspaces])
-  // 该会话若运行在隔离 worktree 中，取其分支名用于显示分支图标指示符
-  const worktreeBranch = sessionWorkspace?.worktreeMeta?.branch
+  // 该会话若运行在隔离 worktree 中，取其分支名用于显示分支图标指示符。
+  // 应用自建 worktree 走 workspace.worktreeMeta；引擎级 worktree（agent 自行
+  // 进入/创建）走 session.runtimeWorktree（agent 工具上报）。
+  const worktreeBranch = sessionWorkspace?.worktreeMeta?.branch ?? s.runtimeWorktree?.branch
   const displayStatus = useMemo(
     () => getSessionDisplayStatus(s.status, agentStatus),
     [s.status, agentStatus],

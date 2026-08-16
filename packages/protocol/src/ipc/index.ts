@@ -630,6 +630,22 @@ export interface SessionSearchResponse {
   results: SessionSearchResult[]
 }
 
+/**
+ * 引擎级 worktree 状态（agent 通过 spark_session 工具上报，或运行时检测推断）。
+ *
+ * 与 workspace.worktreeMeta（应用自建 worktree，路径①）互补：这里记录的是 agent 在
+ * 会话内自行进入/创建的 worktree（Claude EnterWorktree 工具、手动 git worktree add 等，
+ * 路径②③），会话绑定的 workspace 未变，仅用于 UI 分支显示与 worktree 标记。
+ */
+export interface SessionRuntimeWorktree {
+  /** worktree 绝对路径（主进程已校验存在于 git worktree list） */
+  path: string
+  /** worktree 检出分支（由 git 解析；detached HEAD 时为空串） */
+  branch: string
+  /** 状态最后更新时间（ISO 8601） */
+  updatedAt: string
+}
+
 export interface SessionListResponse {
   sessions: Array<{
     id: SessionId
@@ -658,6 +674,8 @@ export interface SessionListResponse {
     importedFrom?: HistoryImportSource
     /** 调试模式（per-session 能力开关）：与权限模式正交，开启后挂载 spark_debug + 显示快捷回复 */
     debugMode?: boolean
+    /** 引擎级 worktree 状态（agent 上报/运行时检测）；null 表示不在 worktree 中 */
+    runtimeWorktree?: SessionRuntimeWorktree | null
     /** Spark provider/model override for a local CLI provider. */
     cliSparkOverride?: CliSparkOverride | null
   }>
@@ -6410,6 +6428,11 @@ export interface IpcStreamChannelMap {
   'stream:session:queue-changed': SessionGetQueueResponse
   /** Session 标题被异步重命名（首轮完成后 LLM 总结）*/
   'stream:session:renamed': { sessionId: string; title: string }
+  /** Session 的引擎级 worktree 状态变化（agent 工具上报或运行时检测）；worktree 为 null 表示已退出 */
+  'stream:session:worktree-changed': {
+    sessionId: string
+    worktree: SessionRuntimeWorktree | null
+  }
   /** Session created outside the renderer session sidebar flow */
   'stream:session:created': {
     sessionId: string

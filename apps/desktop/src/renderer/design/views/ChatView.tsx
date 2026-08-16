@@ -2783,6 +2783,7 @@ export function ChatView({
                 stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
                 branchState={branchState}
                 gitStatus={gitStatus}
+                runtimeWorktree={activeSession?.runtimeWorktree ?? null}
                 isGitRepo={isGitRepo}
                 taskCount={activeSessionTasks.length}
                 taskCompletedCount={
@@ -2924,6 +2925,7 @@ export function ChatView({
           <GitEnvPanel
             status={gitStatus}
             branchState={branchState}
+            runtimeWorktree={activeSession?.runtimeWorktree ?? null}
             onClose={() => {
               // 用户手动关闭面板，本会话内不再自动展开。
               gitPanelUserInteractedRef.current = true

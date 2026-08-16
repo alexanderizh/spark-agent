@@ -1,5 +1,9 @@
 import { Popover, Tooltip } from '@lobehub/ui'
-import type { SessionLineage, WorkspaceGitStatusResponse } from '@spark/protocol'
+import type {
+  SessionLineage,
+  SessionRuntimeWorktree,
+  WorkspaceGitStatusResponse,
+} from '@spark/protocol'
 import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Icons } from '../../Icons'
@@ -23,6 +27,7 @@ export function GitSessionTrigger({
   open,
   isGitRepo,
   currentBranch,
+  worktreeHint,
   additions,
   deletions,
   taskCount,
@@ -33,6 +38,8 @@ export function GitSessionTrigger({
   open: boolean
   isGitRepo: boolean
   currentBranch: string | null
+  /** 引擎级 worktree 提示（title 文案）；存在即视为会话运行在 worktree 中，点亮图标 */
+  worktreeHint?: string | null
   additions: number
   deletions: number
   taskCount: number
@@ -40,6 +47,7 @@ export function GitSessionTrigger({
   hasGoal: boolean
   onToggle: () => void
 }) {
+  const inWorktree = worktreeHint != null && worktreeHint !== ''
   // git 仓库优先展示分支与增删；非 git 会话退化为目标 / 进程的精简标签。
   let icon = <Icons.GitBranch size={14} />
   let label = currentBranch ?? 'Git'
@@ -71,7 +79,12 @@ export function GitSessionTrigger({
           onClick={onToggle}
         >
           {icon}
-          <span className="git-session-branch truncate">{label}</span>
+          <span
+            className={`git-session-branch truncate${inWorktree ? ' is-worktree' : ''}`}
+            {...(inWorktree ? { title: worktreeHint ?? undefined } : {})}
+          >
+            {label}
+          </span>
           {counts}
         </button>
       </div>
@@ -82,6 +95,7 @@ export function GitSessionTrigger({
 export function GitEnvPanel({
   status,
   branchState,
+  runtimeWorktree = null,
   onClose,
   onOpenCreateBranch,
   onOpenCommit,
@@ -95,6 +109,8 @@ export function GitEnvPanel({
 }: {
   status: WorkspaceGitStatusResponse | null
   branchState: BranchState
+  /** 引擎级 worktree 状态（agent 上报）：存在时分支以其为准并点亮 worktree 图标 */
+  runtimeWorktree?: SessionRuntimeWorktree | null
   onClose: () => void
   onOpenCreateBranch: () => void
   onOpenCommit: () => void
@@ -108,9 +124,14 @@ export function GitEnvPanel({
 }) {
   const [collaborationDetailsKey, setCollaborationDetailsKey] = useState<string | null>(null)
   const isGitRepo = status?.isGitRepo === true
+  const inWorktree = runtimeWorktree != null
+  const worktreeHint = inWorktree
+    ? `运行在隔离 worktree${runtimeWorktree.branch ? ` · ${runtimeWorktree.branch}` : ''}\n${runtimeWorktree.path}`
+    : null
   const currentBranch = resolveDisplayedGitBranch({
     branchStateCurrentBranch: branchState.currentBranch,
     statusCurrentBranch: status?.currentBranch,
+    runtimeWorktreeBranch: runtimeWorktree?.branch ?? null,
   })
   const additions = status?.additions ?? 0
   const deletions = status?.deletions ?? 0
@@ -156,11 +177,20 @@ export function GitEnvPanel({
               <span className="git-add">+{formatSignedNumber(additions)}</span>
               <span className="git-del">-{formatSignedNumber(deletions)}</span>
             </button>
-            <button type="button" className="git-env-row" onClick={onOpenBranches}>
-              <span className="git-env-icon">
+            <button
+              type="button"
+              className="git-env-row"
+              onClick={onOpenBranches}
+              {...(inWorktree ? { title: worktreeHint ?? undefined } : {})}
+            >
+              <span
+                className={`git-env-icon${inWorktree ? ' is-worktree' : ''}`}
+                aria-hidden="true"
+              >
                 <Icons.GitBranch size={14} />
               </span>
               <span className="truncate">{currentBranch ?? '未检测到分支'}</span>
+              {inWorktree && <span className="git-env-worktree-tag">worktree</span>}
               <Icons.ChevronDown size={13} />
             </button>
             <button type="button" className="git-env-row" onClick={onOpenCommit}>
