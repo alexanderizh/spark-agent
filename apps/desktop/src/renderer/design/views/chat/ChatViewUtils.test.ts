@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
+import type { UsageSnapshot } from './ChatUsageTypes'
 import {
+  buildTurnUsageRows,
   buildUsageDataFromEvents,
   computeCacheHitRate,
   createEmptySessionUsageData,
@@ -178,6 +180,61 @@ describe('ChatViewUtils', () => {
         usageEvent({ seq: 1, provider: 'codex', inputTokens: 2_000 }),
       ])
       expect(data.cacheHitRate).toBeNull()
+    })
+  })
+
+  describe('buildTurnUsageRows', () => {
+    const snap = (turnId: string, over: Partial<UsageSnapshot>): UsageSnapshot => ({
+      turnId,
+      inputTokens: 0,
+      outputTokens: 0,
+      reasoningOutputTokens: 0,
+      cacheHitTokens: 0,
+      cacheWriteTokens: 0,
+      estimatedCostUsd: 0,
+      timestamp: '2026-08-17T00:00:00.000Z',
+      ...over,
+    })
+
+    it('merges same-turn snapshots into one row taking the last non-zero terminal value', () => {
+      // 回归：同一轮先报 message_start 空快照、再报终值——旧行为渲染成两行（一行 0）。
+      const { totalTurns, rows } = buildTurnUsageRows([
+        snap('t1', { inputTokens: 0, outputTokens: 0 }),
+        snap('t1', { inputTokens: 1_200, outputTokens: 340, estimatedCostUsd: 0.02 }),
+        // 轮末再来一条零值快照，不应把已见终值回退成 0
+        snap('t1', { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0.01 }),
+      ])
+      expect(totalTurns).toBe(1)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.turnNumber).toBe(1)
+      expect(rows[0]?.snapshot.inputTokens).toBe(1_200)
+      expect(rows[0]?.snapshot.outputTokens).toBe(340)
+      // estimatedCostUsd 轮内累加，与顶部累计口径一致
+      expect(rows[0]?.snapshot.estimatedCostUsd).toBeCloseTo(0.03)
+    })
+
+    it('drops turns whose every snapshot is zero and keeps real turn numbers', () => {
+      const { totalTurns, rows } = buildTurnUsageRows([
+        snap('t1', { inputTokens: 900, outputTokens: 100 }),
+        snap('t2', {}),
+        snap('t2', { inputTokens: 0, outputTokens: 0 }),
+        snap('t3', { inputTokens: 500, outputTokens: 50 }),
+      ])
+      // t2 全程 0 用量：不占行，但计入 totalTurns
+      expect(totalTurns).toBe(3)
+      expect(rows.map((r) => r.turnNumber)).toEqual([1, 3])
+    })
+
+    it('keeps only the most recent 20 turns with usage, in ascending order', () => {
+      const snaps: UsageSnapshot[] = []
+      for (let i = 1; i <= 30; i += 1) {
+        snaps.push(snap(`t${i}`, { inputTokens: i * 100 }))
+      }
+      const { totalTurns, rows } = buildTurnUsageRows(snaps)
+      expect(totalTurns).toBe(30)
+      expect(rows).toHaveLength(20)
+      expect(rows[0]?.turnNumber).toBe(11)
+      expect(rows[19]?.turnNumber).toBe(30)
     })
   })
 })

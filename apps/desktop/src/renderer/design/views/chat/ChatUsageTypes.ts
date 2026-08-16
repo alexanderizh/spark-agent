@@ -11,6 +11,14 @@ export type UsageSnapshot = {
   timestamp: string
 }
 
+/** 「轮次用量」面板单行：一轮一行（buildTurnUsageRows 输出） */
+export type TurnUsageRow = {
+  /** 真实轮次序号（1-based，按该轮首条上报的出现顺序计） */
+  turnNumber: number
+  /** 该轮终值快照：token/缓存取轮内最后一个非零值，成本为轮内累加 */
+  snapshot: UsageSnapshot
+}
+
 export type SessionUsageData = {
   inputTokens: number
   outputTokens: number

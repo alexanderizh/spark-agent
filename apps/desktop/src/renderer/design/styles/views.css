@@ -5054,7 +5054,7 @@ body.sidebar-resizing {
 .turn-usage-index {
   font-size: 10px;
   color: var(--text-faint);
-  width: 16px;
+  min-width: 24px;
   text-align: right;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;

@@ -10,6 +10,7 @@ import { WorktreePanel } from '../../components/WorktreePanel'
 import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import {
+  buildTurnUsageRows,
   buildUsageDataFromEvents,
   clamp,
   computeCacheHitRate,
@@ -40,7 +41,7 @@ import type {
   ContextUsageState,
   ProjectContextState,
   SessionUsageData,
-  UsageSnapshot,
+  TurnUsageRow,
 } from './ChatUsageTypes'
 import type { UIMessage } from '../../services/event-mapper'
 import { getVisibleTurnPromptSnapshotUserMessage } from './internal-turn-message-visibility'
@@ -546,6 +547,8 @@ export function ChatInspector({
   const projectContextSources = projectContext?.sources ?? []
   // 每来一条 usage_update 就重取一次累计值，保证面板打开期间跟着当前轮实时长
   const ledgerUsage = useSessionLedgerUsage(session?.id, usageData.turns.length)
+  // 轮次用量图表：一轮一行、剔除全程无用量轮次，只展示有用量的最近 20 轮
+  const turnUsage = useMemo(() => buildTurnUsageRows(usageData.turns), [usageData.turns])
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
@@ -863,14 +866,14 @@ export function ChatInspector({
           </div>
         )}
 
-        {/* Per-Turn Token Chart */}
-        {usageData.turns.length > 0 && (
+        {/* Per-Turn Token Chart — 一轮一行，只展示有用量的最近 20 轮 */}
+        {turnUsage.rows.length > 0 && (
           <div className="inspector-section">
             <h4>
               <Icons.Activity size={11} /> 轮次用量
-              <span className="inspector-count">{usageData.turns.length} 轮</span>
+              <span className="inspector-count">{turnUsage.totalTurns} 轮</span>
             </h4>
-            <TurnUsageChart turns={usageData.turns.slice(-20)} />
+            <TurnUsageChart rows={turnUsage.rows} />
           </div>
         )}
 
@@ -1375,28 +1378,31 @@ function ContextWindowVisualization({
   )
 }
 
-function TurnUsageChart({ turns }: { turns: UsageSnapshot[] }) {
-  if (turns.length === 0) return null
+function TurnUsageChart({ rows }: { rows: TurnUsageRow[] }) {
+  if (rows.length === 0) return null
 
   const maxTokens = Math.max(
-    ...turns.map((t) => t.inputTokens + t.outputTokens + t.reasoningOutputTokens),
+    ...rows.map(
+      (row) =>
+        row.snapshot.inputTokens + row.snapshot.outputTokens + row.snapshot.reasoningOutputTokens,
+    ),
     1,
   )
 
   return (
     <div className="turn-usage-chart">
-      {turns.map((turn, index) => {
-        const total = turn.inputTokens + turn.outputTokens + turn.reasoningOutputTokens
-        const inputPct = (turn.inputTokens / maxTokens) * 100
-        const outputPct = (turn.outputTokens / maxTokens) * 100
-        const reasoningPct = (turn.reasoningOutputTokens / maxTokens) * 100
+      {rows.map(({ turnNumber, snapshot }) => {
+        const total = snapshot.inputTokens + snapshot.outputTokens + snapshot.reasoningOutputTokens
+        const inputPct = (snapshot.inputTokens / maxTokens) * 100
+        const outputPct = (snapshot.outputTokens / maxTokens) * 100
+        const reasoningPct = (snapshot.reasoningOutputTokens / maxTokens) * 100
         return (
           <div
-            key={`${turn.turnId}-${index}`}
+            key={snapshot.turnId}
             className="turn-usage-bar-group"
-            title={`第 ${index + 1} 轮: 输入 ${formatTokenCount(turn.inputTokens)}, 输出 ${formatTokenCount(turn.outputTokens)}, 推理 ${formatTokenCount(turn.reasoningOutputTokens)}`}
+            title={`第 ${turnNumber} 轮: 输入 ${formatTokenCount(snapshot.inputTokens)}, 输出 ${formatTokenCount(snapshot.outputTokens)}, 推理 ${formatTokenCount(snapshot.reasoningOutputTokens)}`}
           >
-            <span className="turn-usage-index">{index + 1}</span>
+            <span className="turn-usage-index">{turnNumber}</span>
             <div className="turn-usage-bar-track">
               <div
                 className="turn-usage-bar-input"

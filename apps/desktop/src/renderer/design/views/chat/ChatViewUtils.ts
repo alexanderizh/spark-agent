@@ -1,5 +1,5 @@
 import type { AgentEvent } from '@spark/protocol'
-import type { SessionUsageData, UsageSnapshot } from './ChatUsageTypes'
+import type { SessionUsageData, TurnUsageRow, UsageSnapshot } from './ChatUsageTypes'
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -111,6 +111,56 @@ export function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData
     estimatedCostUsd,
     contextWindow: 0,
     turns,
+  }
+}
+
+/**
+ * 面板「轮次用量」图表数据：把逐事件的 usage 快照收敛成「一轮一行」。
+ *
+ * 同一轮（同 turnId）可能产生多条 usage_update（message_start 空快照、逐消息
+ * 用量、result 终值……），轮内 token/缓存字段取「最后一个非零值」（零值快照不
+ * 回退已见终值），estimatedCostUsd 轮内累加（与顶部累计口径一致），timestamp
+ * 取轮内最后一条。全程零用量的轮次不占行；rows 只保留有用量的最近 maxRows 轮
+ * （时间升序）。turnNumber 是按首现顺序计的真实轮次序号；totalTurns 是去重后
+ * 的轮次总数（含无用量轮，供「N 轮」计数）。
+ */
+export function buildTurnUsageRows(
+  turns: UsageSnapshot[],
+  maxRows = 20,
+): { totalTurns: number; rows: TurnUsageRow[] } {
+  const byTurnId = new Map<string, UsageSnapshot>()
+  for (const snap of turns) {
+    const prev = byTurnId.get(snap.turnId)
+    if (prev == null) {
+      byTurnId.set(snap.turnId, { ...snap })
+      continue
+    }
+    byTurnId.set(snap.turnId, {
+      ...snap,
+      inputTokens: snap.inputTokens > 0 ? snap.inputTokens : prev.inputTokens,
+      outputTokens: snap.outputTokens > 0 ? snap.outputTokens : prev.outputTokens,
+      reasoningOutputTokens:
+        snap.reasoningOutputTokens > 0 ? snap.reasoningOutputTokens : prev.reasoningOutputTokens,
+      cacheHitTokens: snap.cacheHitTokens > 0 ? snap.cacheHitTokens : prev.cacheHitTokens,
+      cacheWriteTokens: snap.cacheWriteTokens > 0 ? snap.cacheWriteTokens : prev.cacheWriteTokens,
+      estimatedCostUsd: prev.estimatedCostUsd + snap.estimatedCostUsd,
+    })
+  }
+  const collapsed = Array.from(byTurnId.values(), (snapshot, index) => ({
+    turnNumber: index + 1,
+    snapshot,
+  }))
+  return {
+    totalTurns: collapsed.length,
+    rows: collapsed
+      .filter(
+        (row) =>
+          row.snapshot.inputTokens +
+            row.snapshot.outputTokens +
+            row.snapshot.reasoningOutputTokens >
+          0,
+      )
+      .slice(-maxRows),
   }
 }
 
