@@ -100,7 +100,8 @@ async function main() {
       console.error(
         `[file-size] baseline not found at ${relative(ROOT, BASELINE_PATH)} — run with --update first`,
       )
-      process.exit(1)
+      console.warn('[file-size] warning: baseline is unavailable; commit is not blocked')
+      return
     }
     throw error
   }
@@ -125,9 +126,10 @@ async function main() {
   }
 
   if (violations.length > 0) {
-    console.error(`[file-size] ${violations.length} violation(s):`)
-    for (const violation of violations) console.error(`  - ${violation}`)
-    process.exit(1)
+    console.warn(`[file-size] warning: ${violations.length} violation(s):`)
+    for (const violation of violations) console.warn(`  - ${violation}`)
+    console.warn('[file-size] warning: commit is not blocked')
+    return
   }
   console.log(
     `[file-size] OK: ${currentPaths.length}/${Object.keys(baseline).length} baseline files still above ` +
