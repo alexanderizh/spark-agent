@@ -1130,7 +1130,8 @@ h3 {
     align-content: center;
     align-items: start;
     gap: clamp(1.5rem, 3vw, 2.6rem);
-    max-width: 1440px;
+    width: 100%;
+    max-width: 1600px;
     margin-inline: auto;
     padding-top: clamp(1.1rem, 2.8vw, 2rem);
     padding-bottom: clamp(0.8rem, 2.2vw, 1.6rem);
@@ -1143,7 +1144,7 @@ h3 {
   .enhanced-hero .hero-text {
     align-self: start;
     max-width: 34rem;
-    margin-inline: 0;
+    margin-inline: 50px 0;
   }
   .enhanced-hero .hero-subtitle {
     max-width: 34rem;
@@ -1159,7 +1160,7 @@ h3 {
     width: 100%;
     /* 720px 是 HeroAppMockup 内部等比缩放层的设计原宽（SCALE_BASE），
        容器到此宽度时 scale=1 全尺寸最清晰；高度由 16:9 推导，内容区够高时自然放大。 */
-    max-width: min(720px, 100%);
+    max-width: min(840px, 100%);
   }
   .hero-text {
     margin-inline: 0;
