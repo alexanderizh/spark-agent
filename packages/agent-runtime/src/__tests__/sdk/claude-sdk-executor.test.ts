@@ -13,6 +13,7 @@ const {
   resetSDKLoadState,
   getResumeCircuitBreaker,
   INTERACTIVE_PROMPT_CLOSE_GRACE_MS,
+  buildCompositeSystemPrompt,
 } = await import('../../sdk/claude-sdk-executor.js')
 
 function baseConfig() {
@@ -2040,6 +2041,56 @@ describe('ClaudeSDKExecutor', () => {
       // Circuit breaker should be reset
       expect(breaker.getFailureCount('sess-recover')).toBe(0)
       expect(breaker.isResumeAllowed('sess-recover')).toBe(true)
+    })
+  })
+
+  describe('buildCompositeSystemPrompt', () => {
+    it('places the stable main system prompt before the volatile skill segment', () => {
+      const composed = buildCompositeSystemPrompt({
+        ...baseConfig(),
+        systemPrompt: 'IDENTITY_AND_RULES',
+        skillSystemPrompt: 'SKILL_CATALOG',
+      })
+
+      // 段序：host tool rules → 主 system → skill 段。skill 段（技能目录/媒体路由，
+      // 随配置变化）必须排在主 system 之后，变化时只废其后前缀。
+      expect(composed).toBeDefined()
+      const mainIndex = composed?.indexOf('IDENTITY_AND_RULES') ?? -1
+      const skillIndex = composed?.indexOf('SKILL_CATALOG') ?? -1
+      expect(mainIndex).toBeGreaterThan(0)
+      expect(skillIndex).toBeGreaterThan(mainIndex)
+    })
+
+    it('preserves every segment verbatim regardless of ordering (no prompt content loss)', () => {
+      const segments = {
+        systemPrompt: 'MAIN_SYSTEM_SEGMENT',
+        skillSystemPrompt: 'SKILL_SEGMENT',
+        resumeFallbackSystemPrompt: 'RESUME_FALLBACK_SEGMENT',
+      }
+      const composed = buildCompositeSystemPrompt(
+        { ...baseConfig(), ...segments },
+        { includeResumeFallback: true },
+      )
+
+      // 内容不变性：所有段逐字保留（仅允许段序变化，不允许丢段/改写）
+      for (const value of Object.values(segments)) {
+        expect(composed).toContain(value)
+      }
+    })
+
+    it('keeps plan mode instructions ahead of the main system prompt', () => {
+      const composed = buildCompositeSystemPrompt({
+        ...baseConfig(),
+        permissionMode: 'claude-plan',
+        systemPrompt: 'MAIN_SYSTEM_SEGMENT',
+      })
+
+      // plan 模式告知保持在前：只读模式认知需要先于其余上下文建立
+      expect(composed).toBeDefined()
+      const planIndex = composed?.indexOf('PLAN MODE (read-only)') ?? -1
+      const mainIndex = composed?.indexOf('MAIN_SYSTEM_SEGMENT') ?? -1
+      expect(planIndex).toBeGreaterThanOrEqual(0)
+      expect(planIndex).toBeLessThan(mainIndex)
     })
   })
 })

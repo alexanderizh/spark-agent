@@ -859,11 +859,13 @@ function codexBearerTokenEnvVar(rawName: string): string {
 
 export function buildCodexSdkPrompt(userMessage: string, config: SDKExecutorConfig): string {
   const sections = [
-    config.skillSystemPrompt != null && config.skillSystemPrompt.trim().length > 0
-      ? `# Spark Skills\n${config.skillSystemPrompt}`
-      : '',
+    // 段序（缓存命中 P1-1，与 codex-openai/codex-cli 同步）：稳定的 Runtime Context
+    // 在前，可能随技能/provider 变化的 Skills 段后移，避免其变化废掉主上下文前缀。
     config.systemPrompt != null && config.systemPrompt.trim().length > 0
       ? `# Spark Runtime Context\n${config.systemPrompt}`
+      : '',
+    config.skillSystemPrompt != null && config.skillSystemPrompt.trim().length > 0
+      ? `# Spark Skills\n${config.skillSystemPrompt}`
       : '',
     buildMcpPrompt(config.mcpServers),
     buildPromptWithAttachments(userMessage, config.attachments),

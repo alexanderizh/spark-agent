@@ -582,12 +582,14 @@ function buildCodexPermissionArgs(config: SDKExecutorConfig): string[] {
 }
 
 function buildCodexPrompt(userMessage: string, config: SDKExecutorConfig): string {
+  // 段序与 buildCompositeSystemPrompt 同原则：稳定段在前、易变段在后（skill 段
+  // 随用户配置变化，排在 runtime 主上下文之后，变化时只废其后前缀）。
   const sections = [
-    config.skillSystemPrompt != null && config.skillSystemPrompt.trim().length > 0
-      ? `# Spark Skills\n${config.skillSystemPrompt}`
-      : '',
     config.systemPrompt != null && config.systemPrompt.trim().length > 0
       ? `# Spark Runtime Context\n${config.systemPrompt}`
+      : '',
+    config.skillSystemPrompt != null && config.skillSystemPrompt.trim().length > 0
+      ? `# Spark Skills\n${config.skillSystemPrompt}`
       : '',
     buildMcpPrompt(config.mcpServers),
     buildPromptWithAttachments(userMessage, config.attachments),

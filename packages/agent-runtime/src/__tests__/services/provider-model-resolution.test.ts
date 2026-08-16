@@ -112,9 +112,26 @@ describe('Provider/Model resolution regression', () => {
     })
 
     it('produces unique IDs per turn when turnId differs', () => {
-      const stable = makeSdkRuntimeSessionId('sess-1', 'provider-1', 'claude-sonnet-4-5', 'claude-sdk')
-      const turn1 = makeSdkRuntimeSessionId('sess-1', 'provider-1', 'claude-sonnet-4-5', 'claude-sdk', 'turn-1')
-      const turn2 = makeSdkRuntimeSessionId('sess-1', 'provider-1', 'claude-sonnet-4-5', 'claude-sdk', 'turn-2')
+      const stable = makeSdkRuntimeSessionId(
+        'sess-1',
+        'provider-1',
+        'claude-sonnet-4-5',
+        'claude-sdk',
+      )
+      const turn1 = makeSdkRuntimeSessionId(
+        'sess-1',
+        'provider-1',
+        'claude-sonnet-4-5',
+        'claude-sdk',
+        'turn-1',
+      )
+      const turn2 = makeSdkRuntimeSessionId(
+        'sess-1',
+        'provider-1',
+        'claude-sonnet-4-5',
+        'claude-sdk',
+        'turn-2',
+      )
       expect(turn1).not.toBe(stable)
       expect(turn2).not.toBe(stable)
       expect(turn1).not.toBe(turn2)
@@ -145,8 +162,18 @@ describe('Provider/Model resolution regression', () => {
 
     it('same-adapter provider switch produces different SDK session ID', () => {
       // Switching from one anthropic profile to another changes the SDK session
-      const anthropicProfileA = makeSdkRuntimeSessionId('sess-1', 'anthropic-a', 'claude-sonnet-4-5', 'claude-sdk')
-      const anthropicProfileB = makeSdkRuntimeSessionId('sess-1', 'anthropic-b', 'claude-sonnet-4-5', 'claude-sdk')
+      const anthropicProfileA = makeSdkRuntimeSessionId(
+        'sess-1',
+        'anthropic-a',
+        'claude-sonnet-4-5',
+        'claude-sdk',
+      )
+      const anthropicProfileB = makeSdkRuntimeSessionId(
+        'sess-1',
+        'anthropic-b',
+        'claude-sonnet-4-5',
+        'claude-sdk',
+      )
       expect(anthropicProfileA).not.toBe(anthropicProfileB)
     })
   })
@@ -224,14 +251,149 @@ describe('Provider/Model resolution regression', () => {
         }),
       ).toBe(true)
     })
+
+    // ── provider 级灰度开关 sdkResumeOptIn（P0-1）────────────────────────
+
+    it('returns false for third-party endpoints when providerOptIn is absent (status quo)', () => {
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: 'https://newapi.example.com/v1',
+          model: 'claude-sonnet-4-5',
+          agentAdapter: 'claude-sdk',
+        }),
+      ).toBe(false)
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: 'https://newapi.example.com/v1',
+          model: 'claude-sonnet-4-5',
+          agentAdapter: 'claude-sdk',
+          providerOptIn: false,
+        }),
+      ).toBe(false)
+    })
+
+    it('returns true for third-party Anthropic-compatible endpoints when providerOptIn is set', () => {
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: 'https://newapi.example.com/v1',
+          model: 'claude-sonnet-4-5',
+          agentAdapter: 'claude-sdk',
+          providerOptIn: true,
+        }),
+      ).toBe(true)
+    })
+
+    it('providerOptIn does not bypass adapter/model/providerType gates', () => {
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: 'https://newapi.example.com/v1',
+          model: 'claude-sonnet-4-5',
+          agentAdapter: 'codex',
+          providerOptIn: true,
+        }),
+      ).toBe(false)
+      expect(
+        isSdkResumeSafe({
+          providerType: 'openai',
+          apiEndpoint: 'https://newapi.example.com/v1',
+          model: 'gpt-4o',
+          agentAdapter: 'claude-sdk',
+          providerOptIn: true,
+        }),
+      ).toBe(false)
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: 'https://newapi.example.com/v1',
+          model: 'glm-5',
+          agentAdapter: 'claude-sdk',
+          providerOptIn: true,
+        }),
+      ).toBe(false)
+    })
+
+    it('providerOptIn does not rescue malformed endpoints', () => {
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: 'not a url',
+          model: 'claude-sonnet-4-5',
+          agentAdapter: 'claude-sdk',
+          providerOptIn: true,
+        }),
+      ).toBe(false)
+    })
+
+    it('providerOptIn requires a regular http(s) endpoint with a hostname', () => {
+      // 可解析但非 http(s) scheme 的 URL 不放行（旧白名单隐式约束了 scheme，
+      // opt-in 放行 hostname 时必须显式保留这层约束）。
+      for (const endpoint of ['file:///etc/passwd', 'ftp://x/y', 'localhost:3003']) {
+        expect(
+          isSdkResumeSafe({
+            providerType: 'anthropic',
+            apiEndpoint: endpoint,
+            model: 'claude-sonnet-4-5',
+            agentAdapter: 'claude-sdk',
+            providerOptIn: true,
+          }),
+        ).toBe(false)
+      }
+    })
+
+    it('empty endpoint (local CLI) is unaffected by providerOptIn', () => {
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: '',
+          model: 'claude-sonnet-4-5',
+          agentAdapter: 'claude-sdk',
+          providerOptIn: true,
+        }),
+      ).toBe(true)
+    })
+
+    it('official endpoint stays safe regardless of providerOptIn', () => {
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: 'https://api.anthropic.com',
+          model: 'claude-sonnet-4-5',
+          agentAdapter: 'claude-sdk',
+          providerOptIn: true,
+        }),
+      ).toBe(true)
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: 'https://api.anthropic.com',
+          model: 'claude-sonnet-4-5',
+          agentAdapter: 'claude-sdk',
+          providerOptIn: false,
+        }),
+      ).toBe(true)
+    })
   })
 
   // ── Cross-adapter switch scenarios ─────────────────────────────────────
 
   describe('cross-adapter switch scenarios', () => {
     it('switching from claude-sdk to codex changes adapter and SDK session ID', () => {
-      const claudeSession = makeSdkRuntimeSessionId('sess-1', 'provider-1', 'claude-sonnet-4-5', 'claude-sdk')
-      const codexSession = makeSdkRuntimeSessionId('sess-1', 'provider-1', 'claude-sonnet-4-5', 'codex')
+      const claudeSession = makeSdkRuntimeSessionId(
+        'sess-1',
+        'provider-1',
+        'claude-sonnet-4-5',
+        'claude-sdk',
+      )
+      const codexSession = makeSdkRuntimeSessionId(
+        'sess-1',
+        'provider-1',
+        'claude-sonnet-4-5',
+        'codex',
+      )
 
       expect(claudeSession).not.toBe(codexSession)
     })

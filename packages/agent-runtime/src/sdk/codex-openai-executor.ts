@@ -177,6 +177,9 @@ export class CodexOpenAIExecutor implements EngineExecutor {
         })
       }
       if (chunk.usage != null) {
+        // OpenAI 口径：prompt_tokens 已包含 cached_tokens（cached 是其子集）。
+        // cacheHitTokens 直接透传，命中率由展示层按 provider 口径计算。
+        const cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens
         this.emit({
           ...makeBase(),
           type: 'usage_update',
@@ -184,6 +187,7 @@ export class CodexOpenAIExecutor implements EngineExecutor {
           model: config.model,
           inputTokens: chunk.usage.prompt_tokens ?? 0,
           outputTokens: chunk.usage.completion_tokens ?? 0,
+          ...(cachedTokens != null ? { cacheHitTokens: cachedTokens } : {}),
         })
       }
     }
@@ -196,12 +200,15 @@ export class CodexOpenAIExecutor implements EngineExecutor {
 }
 
 function buildCodexChatPrompt(userMessage: string, config: SDKExecutorConfig): string {
+  // 段序与 buildCompositeSystemPrompt 同原则：稳定段在前、易变段在后。
+  // skill 段（技能目录/媒体路由，随配置变化）排在 runtime 主上下文之后，
+  // 变化时只废其后前缀，不废其前。
   const sections = [
-    config.skillSystemPrompt != null && config.skillSystemPrompt.trim().length > 0
-      ? `# Spark Skills\n${config.skillSystemPrompt}`
-      : '',
     config.systemPrompt != null && config.systemPrompt.trim().length > 0
       ? `# Spark Runtime Context\n${config.systemPrompt}`
+      : '',
+    config.skillSystemPrompt != null && config.skillSystemPrompt.trim().length > 0
+      ? `# Spark Skills\n${config.skillSystemPrompt}`
       : '',
     buildMcpNotice(config.mcpServers),
     buildPromptWithAttachments(userMessage, config.attachments),

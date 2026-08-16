@@ -1263,7 +1263,7 @@ function sanitizeClaudeQueryOptions(
   }
 }
 
-function buildCompositeSystemPrompt(
+export function buildCompositeSystemPrompt(
   config: SDKExecutorConfig,
   options: { includeResumeFallback?: boolean } = {},
 ): string | undefined {
@@ -1276,12 +1276,16 @@ function buildCompositeSystemPrompt(
     sections.push(SDK_PLAN_MODE_INSTRUCTIONS)
   }
 
-  if (config.skillSystemPrompt?.trim()) {
-    sections.push(config.skillSystemPrompt)
-  }
-
+  // 段序按「稳定在前、易变在后」排列以保住上游前缀缓存：
+  //   host tool rules → 主 system prompt（identity/规则/记忆等，会话内稳定）
+  //   → skill 段（技能目录/媒体路由，随用户配置变化）→ resume 回退段（仅 fresh 时有）。
+  // skill 段一旦变化，只废其后前缀而不是其前的全部主上下文。
   if (config.systemPrompt?.trim()) {
     sections.push(config.systemPrompt)
+  }
+
+  if (config.skillSystemPrompt?.trim()) {
+    sections.push(config.skillSystemPrompt)
   }
 
   if (options.includeResumeFallback === true && config.resumeFallbackSystemPrompt?.trim()) {

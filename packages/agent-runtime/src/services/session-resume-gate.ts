@@ -17,6 +17,12 @@ export interface ResumeSafeParams {
   apiEndpoint?: string
   model: string
   agentAdapter: AgentAdapterKind
+  /**
+   * Provider 级 resume 灰度开关（默认关闭）：来自 provider config_json 的 sdkResumeOptIn。
+   * 显式开启时放行第三方 Anthropic 兼容端点的 hostname 校验；adapter/model/providerType
+   * 门槛不变，endpoint 仍须是可解析 URL。官方端点行为不受影响。
+   */
+  providerOptIn?: boolean
 }
 
 export interface ResumeGateConfig {
@@ -64,6 +70,11 @@ export class ResumeGateManager {
 
     try {
       const url = new URL(params.apiEndpoint)
+      // sdkResumeOptIn 灰度放行：仅跳过 hostname 白名单，但仍要求是常规 http(s) 端点
+      // （可解析但空 hostname 或 file:/ftp: 等 scheme 的 URL 不放行），其余门槛保持。
+      if (params.providerOptIn === true) {
+        return (url.protocol === 'https:' || url.protocol === 'http:') && url.hostname.length > 0
+      }
       return this.allowedHostnames.has(url.hostname)
     } catch {
       return false

@@ -33,7 +33,12 @@ const HISTORY_CONTEXT_MAX_TOKENS = 8_000
 /** 单条 entry 的 token 上限，超过则头尾保留截断（替换旧的 4000 字符粗暴截断 D-01）。 */
 const HISTORY_CONTEXT_ENTRY_TOKEN_BUDGET = 1_500
 
-export type DialogueEntry = { role: 'User' | 'Assistant'; content: string }
+export type DialogueEntry = {
+  role: 'User' | 'Assistant'
+  content: string
+  /** 整轮块标识：同 turnId 的连续条目构成一个裁剪单元，保证转写头部只落在整轮边界。 */
+  turnId?: string
+}
 
 export interface ConversationHistoryPromptOptions {
   agentNameById?: Record<string, string>
@@ -186,10 +191,12 @@ export function buildDialogueEntries(
     if (rawUserContent.length > 0) {
       const mentionPrefix =
         turn.userMentionAgentId != null ? `(@${resolveName(turn.userMentionAgentId)}) ` : ''
-      entries.push({ role: 'User', content: `${mentionPrefix}${rawUserContent}` })
+      entries.push({ role: 'User', content: `${mentionPrefix}${rawUserContent}`, turnId })
     }
     const assistantContent = resolveSegmentText(turn.assistant)
-    if (assistantContent.length > 0) entries.push({ role: 'Assistant', content: assistantContent })
+    if (assistantContent.length > 0) {
+      entries.push({ role: 'Assistant', content: assistantContent, turnId })
+    }
     const dispatches = Array.from(turn.memberByDispatch.values()).sort(
       (left, right) => left.order - right.order,
     )
@@ -199,6 +206,7 @@ export function buildDialogueEntries(
       entries.push({
         role: 'Assistant',
         content: `[${resolveName(dispatch.memberAgentId)}] ${text}`,
+        turnId,
       })
     }
   }
@@ -210,8 +218,20 @@ export function joinHistoryParts(parts: string[]): string {
 }
 
 /**
- * 单一历史裁剪实现：先裁每条 entry，再按总 token 预算从最新记录向前选择。
- * 这样超长的最新 entry 会保留头尾，不会因为原始长度超预算而被整条移除。
+ * 锚定量子步长：被丢弃侧的前缀 token 水位按预算的 25% 量化，头部锚定在量子边界
+ * 所在的整轮块上。水位在量子区间内增长时头部字节不动（前缀缓存跨轮命中）；越过
+ * 边界时一次性跳到新锚点。块尺寸显著小于量子时跳幅 ≥2 块；单块 ≈ 量子的极端
+ * 轮次退化为逐块移动，属可接受边界（详见 formatDialogueEntriesWithinTokenBudget）。
+ */
+const HISTORY_SHRINK_HYSTERESIS_FRACTION = 0.25
+
+/**
+ * 单一历史裁剪实现：先裁每条 entry，再按总 token 预算选择最新窗口。
+ * 超长的最新 entry 会保留头尾，不会因为原始长度超预算而被整条移除。
+ *
+ * 缓存友好（P1-3）：条目按整轮 turnId 分块，裁剪只发生在整轮边界；头部锚定在
+ * 被丢弃侧前缀水位的量子边界上——无压力时全部保留，有压力时多丢弃不足一个量子
+ * 的历史换取跨轮字节稳定。硬预算以真实拼接串的精确测量兜底（含块间分隔符开销）。
  */
 export function formatDialogueEntriesWithinTokenBudget(
   entries: DialogueEntry[],
@@ -220,6 +240,7 @@ export function formatDialogueEntriesWithinTokenBudget(
     'historyTokenBudget' | 'entryTokenBudget' | 'entryLimit'
   > = {},
 ): string {
+  if (entries.length === 0) return ''
   const historyTokenBudget = Math.max(
     1,
     Math.floor(options.historyTokenBudget ?? HISTORY_CONTEXT_MAX_TOKENS),
@@ -229,26 +250,95 @@ export function formatDialogueEntriesWithinTokenBudget(
     Math.floor(options.entryTokenBudget ?? HISTORY_CONTEXT_ENTRY_TOKEN_BUDGET),
   )
   const entryLimit = Math.max(1, Math.floor(options.entryLimit ?? HISTORY_CONTEXT_ENTRY_LIMIT))
-  const formatted = entries.slice(-entryLimit).map((entry) => {
-    const content = clipTextHeadTail(entry.content.trim(), entryTokenBudget)
-    return `${entry.role}: ${content}`
-  })
 
-  const selected: string[] = []
-  for (let index = formatted.length - 1; index >= 0; index -= 1) {
-    const entry = formatted[index]
-    if (entry == null) continue
-    const candidate = [entry, ...selected].join('\n\n')
-    if (estimateTokens(candidate) <= historyTokenBudget) {
-      selected.unshift(entry)
-      continue
+  type HistoryBlock = { turnId?: string; texts: string[] }
+  const formatted = entries.map((entry) => ({
+    turnId: entry.turnId,
+    text: `${entry.role}: ${clipTextHeadTail(entry.content.trim(), entryTokenBudget)}`,
+  }))
+  // 整轮分块：同 turnId 的连续条目构成一个收缩单元；无 turnId 的旧数据按单条目成块。
+  const blocks: HistoryBlock[] = []
+  for (const item of formatted) {
+    const current = blocks[blocks.length - 1]
+    if (item.turnId != null && current != null && current.turnId === item.turnId) {
+      current.texts.push(item.text)
+    } else {
+      blocks.push({ texts: [item.text], ...(item.turnId != null ? { turnId: item.turnId } : {}) })
     }
-    if (selected.length === 0) {
-      selected.push(clipTextHeadTail(entry, historyTokenBudget))
-    }
-    break
   }
-  return selected.join('\n\n')
+  const blockCount = blocks.length
+
+  const blockTokens = blocks.map((block) => estimateTokens(block.texts.join('\n\n')))
+  // 后缀和（近似口径：未计块间 '\n\n' 分隔符，最终以真实拼接串的精确测量复核）。
+  const suffixTokens = new Array<number>(blockCount + 1).fill(0)
+  const suffixEntries = new Array<number>(blockCount + 1).fill(0)
+  for (let index = blockCount - 1; index >= 0; index -= 1) {
+    suffixTokens[index] = (suffixTokens[index + 1] ?? 0) + (blockTokens[index] ?? 0)
+    suffixEntries[index] = (suffixEntries[index + 1] ?? 0) + (blocks[index]?.texts.length ?? 0)
+  }
+  // 前缀和：P[i] = 前 i 块累计 token（被丢弃侧水位）。append-only 会话内 P[i] 对
+  // 固定 i 恒定——与后缀和不同（后缀随新增轮次增长），是跨轮稳定的锚点来源。
+  const prefixTokens = new Array<number>(blockCount + 1).fill(0)
+  for (let index = 0; index < blockCount; index += 1) {
+    prefixTokens[index + 1] = (prefixTokens[index] ?? 0) + (blockTokens[index] ?? 0)
+  }
+
+  // 最小可行头 F：其后全部条目同时满足 token 预算与条目数上限（硬约束）。
+  let feasibleHead = 0
+  while (
+    feasibleHead < blockCount &&
+    ((suffixTokens[feasibleHead] ?? 0) > historyTokenBudget ||
+      (suffixEntries[feasibleHead] ?? 0) > entryLimit)
+  ) {
+    feasibleHead += 1
+  }
+  if (feasibleHead >= blockCount) {
+    // 退化：最新单块即超限 → 硬裁剪最新块（与旧行为一致，至少保留最新内容）。
+    const newest = blocks[blockCount - 1]
+    if (newest == null) return ''
+    return clipTextHeadTail(newest.texts.slice(-entryLimit).join('\n\n'), historyTokenBudget)
+  }
+
+  // 前缀水位量子锚定：把可行头的水位 P[F] 向上取整到下一个量子倍数 T，头部落在
+  // T 所在的整轮块上。T 只依赖被丢弃侧的累计量、与新增轮次无关，因此 P[F] 在
+  // 量子区间内缓慢增长时头部字节完全不动；越过边界时一次性跳到新锚点（常规块尺寸
+  // << 量子时跳幅 >= 2 个整轮块；块 ≈ 量子的极端轮次退化为逐块移动，属可接受边界）。
+  // 代价：多丢弃不足一个量子的历史换取跨轮稳定。两个安全阀：
+  //   - 无压力（F = 0）时不锚定，全部保留——头部 = 0 本就最稳定；
+  //   - 会话总量不足一个量子时无锚点可用，退化为最小可行头（该区间转写总量
+  //     < 25% 预算，滑动的绝对代价很小，且与旧行为一致）。
+  const quantum = Math.max(1, Math.floor(historyTokenBudget * HISTORY_SHRINK_HYSTERESIS_FRACTION))
+  const anchorTarget = (Math.floor((prefixTokens[feasibleHead] ?? 0) / quantum) + 1) * quantum
+  let head = feasibleHead
+  if (feasibleHead > 0 && anchorTarget <= (prefixTokens[blockCount] ?? 0)) {
+    while (head < blockCount - 1 && (prefixTokens[head] ?? 0) < anchorTarget) head += 1
+  }
+
+  // 精确复核：块间分隔符未计入近似和、tokenizer 对拼接非可加，用真实拼接串的
+  // 整体测量逐块推进，保证硬预算（含分隔符）绝不超出。
+  const joinFrom = (from: number): string =>
+    blocks
+      .slice(from)
+      .map((block) => block.texts.join('\n\n'))
+      .join('\n\n')
+  let result = joinFrom(head)
+  while (estimateTokens(result) > historyTokenBudget && head < blockCount - 1) {
+    head += 1
+    result = joinFrom(head)
+  }
+  // 兜底一：仅剩最新块仍超预算 → 硬裁剪（对齐旧行为，至少保留最新内容）。
+  if (estimateTokens(result) > historyTokenBudget) {
+    return clipTextHeadTail(result, historyTokenBudget)
+  }
+  // 兜底二：最新块自身条目数超限（head 无法再前进）→ 保留最新 entryLimit 条。
+  if ((suffixEntries[head] ?? 0) > entryLimit) {
+    const keptEntries = blocks
+      .slice(head)
+      .flatMap((block) => block.texts)
+      .slice(-entryLimit)
+    return clipTextHeadTail(keptEntries.join('\n\n'), historyTokenBudget)
+  }
+  return result
 }
 
 /**

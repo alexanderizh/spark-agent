@@ -644,9 +644,9 @@ export interface UsageUpdateEvent extends BaseEvent {
   outputTokens: number
   /** 累计推理输出 token（当前 Turn，Codex reasoning token）*/
   reasoningOutputTokens?: number
-  /** 缓存命中 token（Anthropic 特有，cache_read）*/
+  /** 缓存命中 token（claude: Anthropic cache_read；codex: OpenAI prompt_tokens_details.cached_tokens）*/
   cacheHitTokens?: number
-  /** 缓存写入 token（Anthropic 特有，cache_creation）*/
+  /** 缓存写入 token（Anthropic cache_creation，claude 特有）*/
   cacheWriteTokens?: number
   /** 预估成本（USD）*/
   estimatedCostUsd?: number

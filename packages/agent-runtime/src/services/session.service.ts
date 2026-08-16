@@ -2596,6 +2596,8 @@ export class SessionService {
       haikuModel?: string
       sonnetModel?: string
       opusModel?: string
+      /** SDK resume 灰度开关（默认关）：显式 true 时允许第三方 Anthropic 兼容端点续会话。 */
+      sdkResumeOptIn?: boolean
     }
     let model: string
 
@@ -2745,6 +2747,7 @@ export class SessionService {
       providerType: provider.provider_type,
       model,
       agentAdapter,
+      ...(config.sdkResumeOptIn === true ? { providerOptIn: true } : {}),
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
     })
     const previousPromptSnapshot = getLatestMatchingTurnPromptSnapshot(eventRepo, sessionId, {
@@ -3199,11 +3202,6 @@ export class SessionService {
         : undefined,
       automation.unattended ? UNATTENDED_AUTOMATION_SYSTEM_PROMPT : undefined,
       runtimeRulesPrompt,
-      memoryBlock,
-      // 记忆行为引导紧跟 memoryBlock：先让 agent 看到具体记忆摘要，再说明两套记忆的
-      // 区别与"记住"路由规则。无条件注入（所有 adapter 都挂载了应用记忆工具）。
-      MEMORY_BEHAVIOR_SYSTEM_PROMPT,
-      MEMORY_PROVENANCE_SYSTEM_PROMPT,
       runtimeContext.systemPrompt,
       runtimeContext.envSystemPrompt,
     ]
@@ -3213,6 +3211,15 @@ export class SessionService {
     const composedSystemPrompt = joinPromptSections(
       ...systemPromptSections,
       projectContext.systemPrompt,
+      // 记忆三段紧邻对话历史（内容不变，仅段序调整）：memoryBlock 每轮可能因记忆
+      // 抽取/更新而变化，原先排在项目上下文之前会连带废掉其后（可能很大的）
+      // CLAUDE.md/AGENTS.md 段的前缀缓存；挪到项目上下文之后，变化只影响对话历史
+      // 等本就逐轮变化的尾部段。记忆行为引导紧跟 memoryBlock：先让 agent 看到具体
+      // 记忆摘要，再说明两套记忆的区别与"记住"路由规则。无条件注入（所有 adapter
+      // 都挂载了应用记忆工具）。
+      memoryBlock,
+      MEMORY_BEHAVIOR_SYSTEM_PROMPT,
+      MEMORY_PROVENANCE_SYSTEM_PROMPT,
       conversationHistoryPrompt,
       ...trailingSystemPromptSections,
     )
@@ -3220,6 +3227,11 @@ export class SessionService {
     // 这里只为账本把项目上下文和对话历史从 System Prompt 分类中排除。
     const contextLedgerSystemPrompt = joinPromptSections(
       ...systemPromptSections,
+      // 记忆三段实际渲染在项目上下文之后（见 composedSystemPrompt），账本计量
+      // 仍归入 System Prompt 分类——各段按类别字符串独立计 token，与顺序无关。
+      memoryBlock,
+      MEMORY_BEHAVIOR_SYSTEM_PROMPT,
+      MEMORY_PROVENANCE_SYSTEM_PROMPT,
       ...trailingSystemPromptSections,
     )
     const composedSkillSystemPrompt = joinPromptSections(
@@ -7356,6 +7368,8 @@ export class SessionService {
       apiEndpoint?: string
       /** 'chat' (chat.completions) or 'responses' (OpenAI Responses API; Codex models) */
       codexApiKind?: 'chat' | 'responses'
+      /** SDK resume 灰度开关（默认关）：显式 true 时允许第三方 Anthropic 兼容端点续会话。 */
+      sdkResumeOptIn?: boolean
       haikuModel?: string
       sonnetModel?: string
       opusModel?: string
@@ -7548,30 +7562,47 @@ export class SessionService {
     // peer messaging 关着时成员也必须知道团队里有谁；agent_message 工具（能力）按开关。
     const memberTeamPrompt =
       discussionId != null
-        ? `${buildTeamRosterPrompt(hostAgentForPrompt, members, teamConfig, {
+        ? buildTeamRosterPrompt(hostAgentForPrompt, members, teamConfig, {
             perspective: 'member',
             viewingMember: member,
             enablePeerMessaging: memberCanPeerMessage,
-            threadSnippet: this.getTeamDiscussionRepository().renderThreadForPrompt(
+          })
+        : undefined
+    // P1-2（缓存命中）：讨论线程快照与 ledger 摘要随讨论增长逐轮变化，原先拼进 member
+    // system prompt，会让 canContinueDiscussionSession 续上的 SDK session 前缀每轮整体
+    // 作废（continuity key 的设计意图被自身抵消）。现改为 per-dispatch 载荷——追加到发
+    // 给执行器的 user message 尾部，内容逐字保留仅位置后移：member system 收敛为
+    // (member, teamConfig, roster) 级稳定（member 记忆块已后置到段尾，记忆更新只影响
+    // 尾部）。刻意不并入 memberRouteMessage：auto-router 分类（见上）与 memory 抽取
+    // （见 maybeWriteMemoryFromTurn）只看任务本身，不看讨论上下文。
+    const memberThreadContext =
+      discussionId != null
+        ? buildMemberDispatchThreadContext(
+            this.getTeamDiscussionRepository().renderThreadForPrompt(
               discussionId,
               teamConfig.threadContextTokenBudget,
               member.id,
             ),
-          })}\n\n${new TeamLedgerRuntimeAdapter(this.db, {
-            sessionId,
-            discussionId,
-            actorId: member.id,
-            actorAuthority: 'agent-inferred',
-            ...(teamConfig.threadContextTokenBudget != null
-              ? { maxChars: Math.min(6000, teamConfig.threadContextTokenBudget * 4) }
-              : {}),
-          }).renderActiveSummary()}`
+            new TeamLedgerRuntimeAdapter(this.db, {
+              sessionId,
+              discussionId,
+              actorId: member.id,
+              actorAuthority: 'agent-inferred',
+              ...(teamConfig.threadContextTokenBudget != null
+                ? { maxChars: Math.min(6000, teamConfig.threadContextTokenBudget * 4) }
+                : {}),
+            }).renderActiveSummary(),
+          )
         : undefined
-    const userMessage = memberRouteMessage
+    const userMessage =
+      memberThreadContext != null
+        ? `${memberRouteMessage}\n\n${memberThreadContext}`
+        : memberRouteMessage
     const canContinueDiscussionSession =
       discussionId != null &&
       !isCodexMember &&
       this.resumeGate.isSafe({
+        ...(providerConfig.sdkResumeOptIn === true ? { providerOptIn: true } : {}),
         providerType: provider.provider_type,
         model,
         agentAdapter: memberAdapter,
@@ -7706,13 +7737,16 @@ export class SessionService {
         buildManagedAgentSystemPrompt(member, null),
         memberTeamPrompt,
         memberEnvPrompt || undefined,
-        memberMemoryBlock,
-        memberMcpServers.spark_memory != null ? MEMORY_BEHAVIOR_SYSTEM_PROMPT : undefined,
-        memberMcpServers.spark_memory != null ? MEMORY_PROVENANCE_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_files != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_platform != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_platform != null ? SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_debug != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
+        // 记忆三段后置到段尾（与 host 路径同构，内容不变仅段序）：member 记忆在
+        // dispatch 完成后可能被抽取更新，放中段会让 member system 从中部开始前缀
+        // 作废、抵消续会话收益；后置后记忆变化只影响尾部。
+        memberMemoryBlock,
+        memberMcpServers.spark_memory != null ? MEMORY_BEHAVIOR_SYSTEM_PROMPT : undefined,
+        memberMcpServers.spark_memory != null ? MEMORY_PROVENANCE_SYSTEM_PROMPT : undefined,
       ) ?? ''
 
     const sdkConfig: SDKExecutorConfig = {
@@ -10867,7 +10901,9 @@ function buildMemberRosterPrompt(
   lines.push(
     '',
     '[Reading the group chat]',
-    '- The "[Discussion So Far]" above is a TRUNCATED preview: long messages are cut with 〔省略 …〕 and older ones may be dropped. It is NOT the full log.',
+    // 位置中立表述：dispatch 路径的快照在 user message 尾部，mention 直答路径的
+    // 快照在本 roster 内手册上方——不写死方位，两条路径都成立。
+    '- The "[Discussion So Far]" preview is TRUNCATED: long messages are cut with 〔省略 …〕 and older ones may be dropped. It is NOT the full log.',
     '- To read more, use `mcp__spark_team__team_thread_read` (read-only, notifies nobody):',
     '    • A teammate says they posted something but you only see a short line, or a message is cut with 〔省略 …〕 → call team_thread_read({ messageId: "<the id shown>" }) for the full text.',
     '    • You need earlier history or a specific round → browse: team_thread_read({ round: N }) or team_thread_read({ fromAgentId: "<teammate>", limit, offset }).',
@@ -10922,6 +10958,25 @@ export function buildMemberUserMessage(task: TeamA2ATask): string {
     parts.push('', `[Expected output] ${task.expectedOutput}`)
   }
   return parts.join('\n')
+}
+
+/**
+ * P1-2（缓存命中优化）：member 的讨论线程快照 + ledger 摘要是随讨论增长的可变内容，
+ * 按字节原样从 member system prompt 摘出拼成 per-dispatch 载荷块（只改位置不改写）。
+ * 快照为空时省略 [Discussion So Far] 头（对齐 buildMemberRosterPrompt 里 threadSnippet
+ * 的旧注入条件）；ledger 摘要恒非空（无记录时 renderActiveSummary 也有占位文案）。
+ */
+export function buildMemberDispatchThreadContext(
+  threadSnippet: string,
+  ledgerSummary: string,
+): string | undefined {
+  const blocks: string[] = []
+  const snippet = threadSnippet.trim()
+  if (snippet.length > 0) blocks.push(`[Discussion So Far]\n${snippet}`)
+  const summary = ledgerSummary.trim()
+  if (summary.length > 0) blocks.push(summary)
+  if (blocks.length === 0) return undefined
+  return blocks.join('\n\n')
 }
 
 /** team_thread_read 浏览模式：单条消息在列表里的最大正文字符数（超出提示用 messageId 读全文）。 */

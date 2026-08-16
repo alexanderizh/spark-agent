@@ -93,6 +93,74 @@ describe('CodexOpenAIExecutor', () => {
     expect(usage).toEqual([{ inputTokens: 12, outputTokens: 4 }])
   })
 
+  it('reports cached prompt tokens as cacheHitTokens when prompt_tokens_details is present', async () => {
+    chatCreate.mockResolvedValue(
+      streamFrom([
+        {
+          choices: [],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 5,
+            prompt_tokens_details: { cached_tokens: 80 },
+          },
+        },
+      ]),
+    )
+
+    const usage: Array<{ inputTokens: number; cacheHitTokens?: number }> = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'usage_update') {
+        usage.push({
+          inputTokens: event.inputTokens,
+          ...(event.cacheHitTokens != null ? { cacheHitTokens: event.cacheHitTokens } : {}),
+        })
+      }
+    })
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    // OpenAI 口径：cached_tokens 是 prompt_tokens 的子集，直接透传为 cacheHitTokens
+    expect(usage).toEqual([{ inputTokens: 100, cacheHitTokens: 80 }])
+  })
+
+  it('omits cacheHitTokens when prompt_tokens_details is absent (unmeasured, not zero)', async () => {
+    chatCreate.mockResolvedValue(
+      streamFrom([
+        {
+          choices: [],
+          usage: { prompt_tokens: 30, completion_tokens: 2 },
+        },
+      ]),
+    )
+
+    const usage: Array<{ inputTokens: number; hasCacheField: boolean }> = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'usage_update') {
+        usage.push({ inputTokens: event.inputTokens, hasCacheField: event.cacheHitTokens != null })
+      }
+    })
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    // 缺省（未度量）与 0（已度量零命中）必须在事件负载层可区分，展示层才能区分。
+    expect(usage).toEqual([{ inputTokens: 30, hasCacheField: false }])
+  })
+
+  it('places the stable runtime context before the volatile skill catalog in the prompt', async () => {
+    chatCreate.mockResolvedValue(streamFrom([{ choices: [{ delta: { content: 'OK' } }] }]))
+
+    await new CodexOpenAIExecutor().executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    const body = chatCreate.mock.calls[0]?.[0] as
+      | { messages: Array<{ content: string }> }
+      | undefined
+    const prompt = body?.messages[0]?.content ?? ''
+    // 内容逐字保留，仅段序调整：稳定段在前、易变 skill 段在后（缓存前缀稳定性）
+    expect(prompt).toContain('# Spark Runtime Context\nSystem context')
+    expect(prompt).toContain('# Spark Skills\nSkill catalog')
+    expect(prompt.indexOf('# Spark Runtime Context')).toBeLessThan(prompt.indexOf('# Spark Skills'))
+  })
+
   it('captures a redacted direct-chat invocation for diagnostics', async () => {
     chatCreate.mockResolvedValue(streamFrom([{ choices: [{ delta: { content: 'OK' } }] }]))
     const invocationObserver = vi.fn()
@@ -142,13 +210,11 @@ describe('CodexOpenAIExecutor', () => {
   })
 
   it('cancels the direct Chat request without emitting an uncaught error', async () => {
-    chatCreate.mockImplementation(
-      async (_body: unknown, options: { signal: AbortSignal }) => {
-        await new Promise((_resolve, reject) => {
-          options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
-        })
-      },
-    )
+    chatCreate.mockImplementation(async (_body: unknown, options: { signal: AbortSignal }) => {
+      await new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+      })
+    })
 
     const statuses: string[] = []
     const executor = new CodexOpenAIExecutor()

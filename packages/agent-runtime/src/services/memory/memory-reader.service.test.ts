@@ -40,14 +40,10 @@ describe('MemoryReaderService', () => {
     store = new MemoryStoreService(testDir, join(testDir, 'workspace'))
     settings = { memory: { enabled: true } }
 
-    reader = new MemoryReaderService(
-      repo,
-      store,
-      (cat: string, key: string) => {
-        const catObj = settings[cat]
-        return catObj?.[key] ?? null
-      },
-    )
+    reader = new MemoryReaderService(repo, store, (cat: string, key: string) => {
+      const catObj = settings[cat]
+      return catObj?.[key] ?? null
+    })
   })
 
   afterEach(() => {
@@ -68,17 +64,37 @@ describe('MemoryReaderService', () => {
 
     await store.writeFile({
       meta: {
-        id, scope, scopeRef, type, name, description,
-        confidence: 0.9, createdAt: Date.now(), updatedAt: Date.now(),
-        hitCount: 0, lastHitAt: null, sourceSessionId: null, links: [], archived: false,
+        id,
+        scope,
+        scopeRef,
+        type,
+        name,
+        description,
+        confidence: 0.9,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        hitCount: 0,
+        lastHitAt: null,
+        sourceSessionId: null,
+        links: [],
+        archived: false,
       },
       body: `Body for ${name}`,
     })
 
     repo.insert({
-      id, scope, scope_ref: scopeRef, type, name, description, file_path: filePath,
-      confidence: 0.9, hit_count: 0, last_hit_at: null,
-      source_session_id: null, archived: 0,
+      id,
+      scope,
+      scope_ref: scopeRef,
+      type,
+      name,
+      description,
+      file_path: filePath,
+      confidence: 0.9,
+      hit_count: 0,
+      last_hit_at: null,
+      source_session_id: null,
+      archived: 0,
     })
 
     return id
@@ -128,7 +144,13 @@ describe('MemoryReaderService', () => {
       settings.memory!.maxInjectTokens = 80 // 大约只能容纳 1-2 条
 
       // 按 type 插入多类型记忆
-      await seedMemory('user', null, 'reference', 'ref-mem', 'Reference memory with some longer description text')
+      await seedMemory(
+        'user',
+        null,
+        'reference',
+        'ref-mem',
+        'Reference memory with some longer description text',
+      )
       await seedMemory('user', null, 'project', 'proj-mem', 'Project memory description')
       await seedMemory('user', null, 'user', 'user-mem', 'User memory description')
       await seedMemory('user', null, 'feedback', 'fb-mem', 'Feedback memory desc')
@@ -144,25 +166,33 @@ describe('MemoryReaderService', () => {
       expect(result.droppedCount).toBeGreaterThan(0)
     })
 
-    it('should sort by hit_count within same type', async () => {
-      // 两条同 type，不同 hit_count
-      const id1 = await seedMemory('user', null, 'feedback', 'low-hit', 'Low hit')
-      const id2 = await seedMemory('user', null, 'feedback', 'high-hit', 'High hit')
+    it('should sort by updated_at (not hit_count) and stay byte-stable across bumpHit', async () => {
+      // 缓存前缀稳定性：feedback 排序只依赖 updated_at（bumpHit 不刷 updated_at），
+      // agent 调 recall_memory 命中计数变化不得引起下一轮注入 block 字节漂移。
+      const id1 = await seedMemory('user', null, 'feedback', 'older-rule', 'Older rule')
+      const id2 = await seedMemory('user', null, 'feedback', 'newer-rule', 'Newer rule')
 
-      // 手动 bump high-hit
-      repo.bumpHit(id2)
-      repo.bumpHit(id2)
-      repo.bumpHit(id2)
+      // 强制 id1 的 updated_at 晚于 id2（update 总是刷新 updated_at），保证断言确定性
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      repo.update(id1, { confidence: 0.95 })
 
-      const result = await reader.loadForSession({
+      const first = await reader.loadForSession({
         workspaceId: 'ws-1',
         agentId: 'agent-1',
       })
 
-      // high-hit 应排在 low-hit 前面
-      const idx1 = result.injectedIds.indexOf(id1)
-      const idx2 = result.injectedIds.indexOf(id2)
-      expect(idx2).toBeLessThan(idx1)
+      // updated_at 新的（id1）排前，与 hit_count 无关
+      expect(first.injectedIds[0]).toBe(id1)
+
+      // bumpHit（recall_memory 副作用）后渲染逐字节不变、顺序不变
+      repo.bumpHit(id2)
+      repo.bumpHit(id2)
+      const second = await reader.loadForSession({
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+      })
+      expect(second.block).toBe(first.block)
+      expect(second.injectedIds).toEqual(first.injectedIds)
     })
   })
 

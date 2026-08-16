@@ -60,7 +60,7 @@ export class MemoryReaderService {
   /**
    * 为一次会话加载三层记忆并拼装注入 block
    *
-   * @param input.seedQuery 会话种子查询（agent 名 + 描述 + workspace 名 + 近期摘要），
+   * @param input.seedQuery 会话种子查询（agent 名 + 描述 + workspace 名，会话内稳定），
    *   用于驱动非 feedback 记忆的相关性检索；为空时非 feedback 走 V1 优先级排序。
    */
   async loadForSession(input: {
@@ -72,7 +72,7 @@ export class MemoryReaderService {
     // 日志"，需区分：enabled 禁用 / 三层 scope 空 / 注入 0 条 / 注入 N 条 四种情况。
     log.info(
       `【记忆注入】开始加载：workspaceId=${input.workspaceId || '(无)'} ` +
-      `agentId=${input.agentId || '(无)'} seedQuery=${input.seedQuery?.length ?? 0}字符`,
+        `agentId=${input.agentId || '(无)'} seedQuery=${input.seedQuery?.length ?? 0}字符`,
     )
     // 检查是否启用
     const enabled = this.settingsGet('memory', 'enabled')
@@ -84,15 +84,18 @@ export class MemoryReaderService {
     const scopes = this.buildScopes(input.workspaceId, input.agentId)
     log.info(
       `【记忆注入】scope 集合：` +
-      scopes.map((s) => `${s.scope}/${s.scopeRef ?? 'global'}`).join(' | ') || '（空）',
+        scopes.map((s) => `${s.scope}/${s.scopeRef ?? 'global'}`).join(' | ') || '（空）',
     )
 
     // feedback 始终全量注入（直接从 DB 取，绝不依赖召回——行为守则不能靠运气）
     const feedbackEntries = scopes.flatMap((s) =>
       this.memoryRepo.listByScope(s.scope, s.scopeRef, { type: 'feedback' }),
     )
-    // feedback 内部按 hit_count desc → updated_at desc（高频守则靠前）
-    feedbackEntries.sort((a, b) => b.hit_count - a.hit_count || b.updated_at - a.updated_at)
+    // feedback 内部按 updated_at desc 固定序。刻意不参与 hit_count：
+    // recall_memory 的 bumpHit 只改 hit_count，若排序依赖它，agent 每读一次记忆
+    // 下一轮 system prompt 字节就变，前缀缓存全部作废。bumpHit 本身也不刷
+    // updated_at（见 MemoryRepository.bumpHit 注释），因此本排序在 recall 后稳定。
+    feedbackEntries.sort((a, b) => b.updated_at - a.updated_at)
 
     // 非 feedback：优先 seed 检索取相关子集；不可用/无结果回退 V1 全量优先级排序
     // （搜索只在找到东西时改善选择，找不到时退回 V1，保证绝不比 V1 差）
@@ -104,9 +107,7 @@ export class MemoryReaderService {
         const hits = await this.searchService.search(seed, { scopes, limit: 30 })
         if (hits != null && hits.length > 0) {
           const feedbackIds = new Set(feedbackEntries.map((e) => e.id))
-          otherEntries = hits
-            .map((h) => h.entry)
-            .filter((e) => !feedbackIds.has(e.id))
+          otherEntries = hits.map((h) => h.entry).filter((e) => !feedbackIds.has(e.id))
           searchUsed = true
         } else {
           otherEntries = this.loadOthersFallback(scopes)
@@ -130,7 +131,9 @@ export class MemoryReaderService {
     const allEntries = [...feedbackEntries, ...otherEntries]
     if (allEntries.length === 0) {
       // 显式 info：让"scope 内无记忆"可见（区别于"禁用"和"注入成功"）
-      log.info('【记忆注入】三层 scope 内无有效记忆，不注入（检查记忆是否写入到匹配的 scope/scopeRef）')
+      log.info(
+        '【记忆注入】三层 scope 内无有效记忆，不注入（检查记忆是否写入到匹配的 scope/scopeRef）',
+      )
       return { block: '', injectedIds: [], droppedCount: 0 }
     }
 
@@ -188,7 +191,9 @@ export class MemoryReaderService {
       log.info(`【recall_memory】已归档拒绝：id=${id} (${entry.name})`)
       return { content: '', error: `Memory archived: ${id}` }
     }
-    log.info(`【recall_memory】命中读取：id=${id} (${entry.name}) [${entry.scope}/${entry.type}] → hitCount+1`)
+    log.info(
+      `【recall_memory】命中读取：id=${id} (${entry.name}) [${entry.scope}/${entry.type}] → hitCount+1`,
+    )
 
     try {
       const markdown = await this.storeService.readFile(entry.file_path)
@@ -271,20 +276,23 @@ function renderMemoryBlock(entries: MemoryEntryRow[], workspaceId: string): stri
  * `<user-memory>` 等结构标签。仅处理 < >（换行已由单行拼接隐含约束）。
  */
 function sanitizeInline(text: string): string {
-  return text.replace(/</g, '‹').replace(/>/g, '›').replace(/[\r\n]+/g, ' ')
+  return text
+    .replace(/</g, '‹')
+    .replace(/>/g, '›')
+    .replace(/[\r\n]+/g, ' ')
 }
 
 // ─── V1 Priority Comparator ─────────────────────────────────────────────
 
 /**
- * V1 优先级排序：type 优先级（feedback>user>project>reference）→ hit_count desc → updated_at desc。
+ * V1 优先级排序：type 优先级（feedback>user>project>reference）→ updated_at desc。
+ * 与 feedback 排序同理不依赖 hit_count（bumpHit 不改变排序，保证渲染字节稳定）。
  * 仅用于 searchService 不可用 / 无 seed / 搜索无结果时的非 feedback 回退路径。
  */
 function byV1Priority(a: MemoryEntryRow, b: MemoryEntryRow): number {
   const pa = TYPE_PRIORITY[a.type] ?? 99
   const pb = TYPE_PRIORITY[b.type] ?? 99
   if (pa !== pb) return pa - pb
-  if (a.hit_count !== b.hit_count) return b.hit_count - a.hit_count
   return b.updated_at - a.updated_at
 }
 

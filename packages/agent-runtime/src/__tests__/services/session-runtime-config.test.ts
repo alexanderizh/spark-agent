@@ -275,6 +275,139 @@ vi.mock('@spark/storage', () => {
     }
   }
 
+  // P1-2 取证修复：team deliberation 工具面（team_deliberation_*）在
+  // createTeamMcpServer 时就会实例化 TeamDeliberationRuntimeAdapter（构造即引用
+  // DeliberationService.forSystem 等），此前 mock 缺该导出导致整批团队用例在
+  // startTurn 阶段就抛错（预存在基线失败）——补齐后团队 dispatch 用例才可运行。
+  class DeliberationService {
+    static forAgent() {
+      return new DeliberationService()
+    }
+    static forSystem() {
+      return new DeliberationService()
+    }
+    static forUser() {
+      return new DeliberationService()
+    }
+    static deleteBySession() {
+      return 0
+    }
+    create(input: Record<string, unknown>) {
+      return input
+    }
+    addEvidence(input: Record<string, unknown>) {
+      return input
+    }
+    addAlternative(input: Record<string, unknown>) {
+      return input
+    }
+    addRisk(input: Record<string, unknown>) {
+      return input
+    }
+    decide(input: Record<string, unknown>) {
+      return input
+    }
+    resolve(input: Record<string, unknown>) {
+      return input
+    }
+    snapshot(): {
+      sessionId: string
+      discussionId: string
+      records: unknown[]
+      conflicts: unknown[]
+      syncedAt: string
+    } {
+      return { sessionId: '', discussionId: '', records: [], conflicts: [], syncedAt: now() }
+    }
+  }
+
+  class EvidenceCostService {
+    static forAgent() {
+      return new EvidenceCostService()
+    }
+    static forSystem() {
+      return new EvidenceCostService()
+    }
+    static forUser() {
+      return new EvidenceCostService()
+    }
+    static deleteBySession() {
+      return 0
+    }
+    aggregate() {
+      return []
+    }
+    budget() {
+      return null
+    }
+    listCosts() {
+      return []
+    }
+    listEvidence() {
+      return []
+    }
+    setBudget(input: Record<string, unknown>) {
+      return input
+    }
+    addEvidence(input: Record<string, unknown>) {
+      return input
+    }
+    verifyEvidence(input: Record<string, unknown>) {
+      return input
+    }
+    invalidateEvidence(input: Record<string, unknown>) {
+      return input
+    }
+    recordUsage(input: Record<string, unknown>) {
+      return input
+    }
+  }
+
+  class ReplayPlaybookService {
+    static forAgent() {
+      return new ReplayPlaybookService()
+    }
+    static forSystem() {
+      return new ReplayPlaybookService()
+    }
+    static forUser() {
+      return new ReplayPlaybookService()
+    }
+    static deleteBySession() {
+      return 0
+    }
+    timeline(input: Record<string, unknown>) {
+      return input
+    }
+    diff(input: Record<string, unknown>) {
+      return input
+    }
+    fork(input: Record<string, unknown>) {
+      return input
+    }
+    current() {
+      return null
+    }
+    listVersions() {
+      return []
+    }
+    listApplications() {
+      return []
+    }
+    propose(input: Record<string, unknown>) {
+      return input
+    }
+    publish(input: Record<string, unknown>) {
+      return input
+    }
+    apply(input: Record<string, unknown>) {
+      return input
+    }
+    archive(input: Record<string, unknown>) {
+      return input
+    }
+  }
+
   class TaskGraphService {
     static forAgent() {
       return new TaskGraphService()
@@ -734,8 +867,27 @@ vi.mock('@spark/storage', () => {
       return { events: rows.slice(0, limit), hasMore: rows.length > limit }
     }
 
-    queryDialogueEvents(_sessionId: string, _limit: number): EventRow[] {
-      return []
+    queryDialogueEvents(sessionId: string, limit: number): EventRow[] {
+      // 镜像真实 SQL：user_message / turn_prompt_snapshot 全量 +
+      // assistant_message / team_member_message 仅 mode='complete'（排除 delta 行）
+      const rows = mockState.events
+        .filter((row) => row.session_id === sessionId)
+        .filter((row) => {
+          if (row.event_type === 'user_message' || row.event_type === 'turn_prompt_snapshot') {
+            return true
+          }
+          if (row.event_type === 'assistant_message' || row.event_type === 'team_member_message') {
+            try {
+              return (JSON.parse(row.event_json) as { mode?: string }).mode === 'complete'
+            } catch {
+              return false
+            }
+          }
+          return false
+        })
+        .slice()
+        .sort((left, right) => left.seq - right.seq)
+      return rows.slice(Math.max(0, rows.length - limit))
     }
 
     queryDialogueEventsAfterSeq(_sessionId: string, _afterSeq: number, _limit: number): EventRow[] {
@@ -1141,6 +1293,9 @@ vi.mock('@spark/storage', () => {
     TaskExecutionRepository,
     TurnRequestRepository,
     RoomLedgerService,
+    DeliberationService,
+    EvidenceCostService,
+    ReplayPlaybookService,
     TaskGraphService,
   }
 })
@@ -1930,6 +2085,81 @@ describe('SessionService runtime provider/model resolution', () => {
       agent_adapter: 'claude-sdk',
       permission_mode: 'claude-plan',
     })
+  })
+
+  it('fresh 会话第 2 轮 prompt 携带第 1 轮对话且头部字节稳定（多轮可引用早轮内容）', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Fresh multi-turn continuity',
+    })
+
+    mockState.nextSdkTurnEvents.push([
+      {
+        id: 'fresh-turn-1-user',
+        sessionId,
+        turnId: 'placeholder-turn',
+        timestamp: '2026-05-28T00:00:00.000Z',
+        seq: 0,
+        type: 'user_message',
+        content: 'first question about indexing',
+      },
+      {
+        id: 'fresh-turn-1-answer',
+        sessionId,
+        turnId: 'placeholder-turn',
+        timestamp: '2026-05-28T00:00:00.000Z',
+        seq: 0,
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'First answer about cache prefixes',
+        provider: 'claude',
+        isFinal: true,
+      },
+    ])
+    await service.sendTurn({ sessionId, message: 'first question about indexing' })
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+      expect(
+        events.some(
+          (event) =>
+            event.type === 'assistant_message' &&
+            event.content === 'First answer about cache prefixes',
+        ),
+      ).toBe(true)
+    })
+
+    await service.sendTurn({ sessionId, message: 'second question about vitest' })
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(2)
+    })
+
+    const first = mockState.sdkConfigs[0]
+    const second = mockState.sdkConfigs[1]
+    // 第三方端点（未显式开启 sdkResumeOptIn）保持 fresh：每轮独立 SDK 会话
+    expect(second?.continueSession).toBe(false)
+
+    const prompt1 = String(first?.systemPrompt ?? '')
+    const prompt2 = String(second?.systemPrompt ?? '')
+    // 第 2 轮可引用早轮内容：第 1 轮的用户输入与模型回答都进入转写
+    expect(prompt2).toContain('first question about indexing')
+    expect(prompt2).toContain('First answer about cache prefixes')
+    // 当前轮输入不重复注入历史（它作为本轮 live message 交给执行器）
+    expect(prompt2).not.toContain('second question about vitest')
+
+    // 头部字节稳定：预算内转写只做尾部追加，历史段之前的全部字节两轮一致——
+    // 这正是上游前缀缓存能够跨轮命中的字节级条件。第 1 轮自身无历史段，
+    // 因此断言「第 2 轮历史段标记之前的内容」恰好是第 1 轮 prompt 的前缀。
+    const historyMarker = '[Session History]'
+    const historyStart = prompt2.indexOf(historyMarker)
+    expect(historyStart).toBeGreaterThan(0)
+    expect(prompt2.indexOf('First answer about cache prefixes')).toBeGreaterThan(historyStart)
+    // 第 1 轮自身无历史段（prompt1 终止于记忆来源段），因此最强形式成立且最贴近
+    // 真实缓存行为：prompt2 恰好等于 prompt1 + 分隔符 + 追加的历史段——除尾部追加外
+    // 两轮 prompt 无任何字节漂移。
+    expect(prompt2.startsWith(prompt1)).toBe(true)
   })
 
   it('injects spark_media for an Agnes multimodal provider with explicit image/video manifests', async () => {
@@ -3356,8 +3586,20 @@ describe('SessionService runtime provider/model resolution', () => {
 
     expect(mockState.sdkConfigs).toHaveLength(3)
     expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain('a MEMBER of Host')
-    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain('[Discussion So Far]')
-    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain('first pass')
+    // P1-2（缓存命中）：讨论快照/ledger 摘要移出 member system prompt → per-dispatch 载荷。
+    // 注意 roster 静态手册段（[Reading the group chat]）本就提及 "[Discussion So Far]"
+    // 字样，故断言用动态内容（线程正文/ledger 标记）判位，而非该字面串。
+    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).not.toContain('first pass')
+    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).not.toContain(
+      '[Living Team Ledger]',
+    )
+    expect(String(mockState.sdkTurns[1]?.message ?? '')).toContain('first pass')
+    expect(String(mockState.sdkTurns[1]?.message ?? '')).toContain('[Discussion So Far]')
+    expect(String(mockState.sdkTurns[1]?.message ?? '')).toContain('[Living Team Ledger]')
+    // 同 member 两次 dispatch：system 逐字节一致（缓存前缀稳定），讨论增长只落在 user message
+    expect(mockState.sdkConfigs[2]?.systemPrompt).toBe(mockState.sdkConfigs[1]?.systemPrompt)
+    expect(String(mockState.sdkTurns[2]?.message ?? '')).toContain('second pass')
+    expect(String(mockState.sdkTurns[2]?.message ?? '')).toContain('[Discussion So Far]')
     const expectedResumeSafety = isSdkResumeSafe({
       providerType: 'anthropic',
       apiEndpoint: 'https://api.anthropic.com',
@@ -3557,7 +3799,12 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(memberConfig?.mcpServers).toHaveProperty('member_search')
     const memberPrompt = String(memberConfig?.systemPrompt ?? '')
     expect(memberPrompt).toContain('a MEMBER of Host')
-    expect(memberPrompt).toContain('[Discussion So Far]')
+    // P1-2（缓存命中）：讨论快照移出 system，改挂 per-dispatch user message 尾部
+    // （roster 静态手册段含 "[Discussion So Far]" 字样，故用线程正文判位）
+    expect(memberPrompt).not.toContain('first pass')
+    expect(memberPrompt).not.toContain('[Living Team Ledger]')
+    expect(String(mockState.sdkTurns[1]?.message ?? '')).toContain('[Discussion So Far]')
+    expect(String(mockState.sdkTurns[1]?.message ?? '')).toContain('first pass')
     // peer messaging 与嵌套解耦：enablePeerMessaging=true 时成员必须拿到 agent_message
     // 工具 + 对应使用说明（旧实现误把这两者绑在 allowNesting 上 → 假 A2A：成员只能
     // 把话带回 Host 转发）。
