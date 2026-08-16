@@ -66,10 +66,26 @@ export interface RewindCapableExecutor extends EngineExecutor {
   rewindFiles(params: RewindFilesParams): Promise<RewindFilesResult>
 }
 
-export const isPermissionModeAware = (e: EngineExecutor): e is PermissionModeAwareExecutor =>
+/**
+ * 能力守卫的参数取 EngineExecutor 的结构超集：turnRegistry 持有的 ActiveExecution
+ * （Pick<EngineExecutor,'cancel'> + 可选能力）同样可判 —— 会话层无需持有完整执行器。
+ * 可选能力显式带 | undefined：exactOptionalPropertyTypes 下 ActiveExecution 的
+ * 可选成员允许显式 undefined。
+ */
+type CapabilityProbe = Pick<EngineExecutor, 'cancel'> & {
+  /** 取 ActiveExecution 的宽签名（void | Promise<void>），任意执行器天然可判。 */
+  setPermissionMode?:
+    | ((mode: SDKExecutorConfig['permissionMode']) => void | Promise<void>)
+    | undefined
+  rewindFiles?: RewindCapableExecutor['rewindFiles'] | undefined
+}
+
+export const isPermissionModeAware = (
+  e: CapabilityProbe,
+): e is CapabilityProbe & PermissionModeAwareExecutor =>
   typeof (e as Partial<PermissionModeAwareExecutor>).setPermissionMode === 'function'
 
-export const isRewindCapable = (e: EngineExecutor): e is RewindCapableExecutor =>
+export const isRewindCapable = (e: CapabilityProbe): e is CapabilityProbe & RewindCapableExecutor =>
   typeof (e as Partial<RewindCapableExecutor>).rewindFiles === 'function'
 
 /**

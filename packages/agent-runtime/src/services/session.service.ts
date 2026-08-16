@@ -290,7 +290,7 @@ import {
 } from './workflow-executor.js'
 import { CheckpointGitService } from './checkpoint-git.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
-import { ClaudeSDKExecutor, isSDKAvailable } from '../sdk/index.js'
+import { isSDKAvailable } from '../sdk/index.js'
 import type {
   SDKApprovalResult,
   SDKExecutorConfig,
@@ -302,6 +302,7 @@ import type {
 } from '../sdk/index.js'
 import type { ActiveExecution } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
+import { isPermissionModeAware } from '../sdk/index.js'
 import type { CanvasToolSchema } from './canvas-mcp-server.js'
 import {
   normalizeSparkReasoningEffort,
@@ -9746,9 +9747,13 @@ export class SessionService {
 
     // Hot-swap: propagate permission-mode change to the running executor so it
     // takes effect on the very next tool call within the current turn.
+    // 经能力接口判定（W2-D4）：只有声明了热切换能力的执行器（claude）才会被调用，
+    // 第三引擎带该能力即自动获得热切换，无需改这里。
     if (params.permissionMode !== undefined) {
       const active = this.turnRegistry.executorFor(params.sessionId)
-      void active?.setPermissionMode?.(params.permissionMode)
+      if (active != null && isPermissionModeAware(active)) {
+        void active.setPermissionMode(params.permissionMode)
+      }
     }
 
     if (
@@ -10008,98 +10013,10 @@ export class SessionService {
     return listSessionCheckpointsFromEvents(eventRepo, sessionId)
   }
 
-  /**
-   * 还原代码检查点：用 checkpoint 锚点（SDK user-message uuid + sdkSessionId）resume
-   * 出 SDK 会话并调用 `Query.rewindFiles(checkpointId)` 把被追踪文件回退到那一轮的状态。
-   *
-   * 这取代了早期自研的「按 path 拷贝快照」逻辑——后者依赖一份磁盘快照目录，实际从未由
-   * 当前写入路径生成，是死代码。现在还原走 SDK 的真实模型（与 /rewind 同源）。
-   *
-   * 安全降级：缺会话锚点（sdkSessionId 为空）、找不到 checkpoint、rewindFiles 返回
-   * canRewind=false、或任何异常，都抛出明确错误而不是崩溃或假装成功。M6 前端据此隐藏
-   * 不可还原的入口。
-   *
-   * NOTE: happy-path（resume → rewindFiles → dispose）需在运行中的桌面会话里做运行时
-   * 验证——本地无 API key / 活动 SDK 会话，无法在 CI 中跑通。
-   */
-  private async restoreCheckpointViaRewind(
-    sessionId: string,
-    checkpointRef: string,
-  ): Promise<CheckpointRestoreResult> {
-    log.info('checkpoint restore: attempt', { sessionId, checkpointRef })
-    const eventRepo = new EventRepository(this.db)
-    const checkpoints = listSessionCheckpointsFromEvents(eventRepo, sessionId)
-    const checkpoint = checkpoints.find(
-      (item) => item.checkpointId === checkpointRef || item.checkpointId.endsWith(checkpointRef),
-    )
-    if (checkpoint == null) {
-      throw new Error(`Checkpoint not found: ${checkpointRef}`)
-    }
-    if (checkpoint.sdkSessionId == null) {
-      log.warn('checkpoint restore: unsupported (no anchor)', { sessionId, checkpointRef })
-      throw new Error(
-        '该还原点不支持还原（缺少会话锚点；仅宿主会话且开启 checkpoint 的轮次可还原）。',
-      )
-    }
-
-    // 解析 workspace + provider 配置，沿用 executeMemberTurn 的取数方式。
-    const sessionRepo = new SessionRepository(this.db)
-    const providerRepo = new ProviderProfileRepository(this.db)
-    const session = sessionRepo.findByIdOrFail(sessionId)
-
-    let workspaceRootPath = process.cwd()
-    const workspaceIds = sessionRepo.getWorkspaceIds(sessionId)
-    if (workspaceIds.length > 0) {
-      const ws = new WorkspaceRepository(this.db).get(workspaceIds[0] ?? '')
-      if (ws != null) workspaceRootPath = ws.root_path
-    }
-
-    const providerProfileId = session.provider_profile_id
-    if (providerProfileId == null) throw new Error('会话未配置 provider，无法还原 checkpoint。')
-    const provider = providerRepo.get(providerProfileId)
-    if (provider?.keystore_ref == null) throw new Error('Provider 缺少 keystore ref，无法还原。')
-    const apiKey = await resolveProviderApiKey(provider)
-    if (!apiKey) throw new Error('未找到 Provider 的 API key，无法还原。')
-    const providerConfig = JSON.parse(provider.config_json) as {
-      defaultModel?: string
-      model?: string
-      apiEndpoint?: string
-    }
-    const model = (providerConfig.defaultModel ?? providerConfig.model ?? '').trim()
-    if (!model) throw new Error('Provider 未解析出模型，无法还原。')
-
-    const result = await new ClaudeSDKExecutor().rewindFiles({
-      apiKey,
-      model,
-      workspaceRootPath,
-      sdkSessionId: checkpoint.sdkSessionId,
-      ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
-      userMessageId: checkpoint.checkpointId,
-      dryRun: false,
-    })
-
-    if (!result.canRewind) {
-      log.warn('checkpoint restore: cannot rewind', {
-        sessionId,
-        checkpointRef,
-        error: result.error,
-      })
-      throw new Error(result.error ?? '无法还原该 checkpoint（rewindFiles 返回 canRewind=false）。')
-    }
-
-    log.info('checkpoint restore: done', {
-      sessionId,
-      checkpointId: checkpoint.checkpointId,
-      files: result.filesChanged?.length ?? 0,
-    })
-    return {
-      checkpointId: checkpoint.checkpointId,
-      restoredFiles: result.filesChanged ?? [],
-      missingFiles: [],
-    }
-  }
-
   // ── Checkpoint（git 方案：尊重 .gitignore、还原非破坏性，替代失效的 SDK rewindFiles）──
+  // （原 restoreCheckpointViaRewind —— resume + Query.rewindFiles 的 SDK 还原路径 —— 已被
+  //   git 方案整体替代且无任何调用方，W2-D4 清理删除；其 new ClaudeSDKExecutor() 的
+  //   硬编码正是绕过 engineRegistry 的侧门遗留。）
 
   private getCheckpointGitService(): CheckpointGitService {
     if (this.checkpointGitService == null) this.checkpointGitService = new CheckpointGitService()
