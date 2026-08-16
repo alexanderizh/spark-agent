@@ -4748,6 +4748,16 @@ export class SessionService {
           )
         }
       }
+      // Plan 模式：与 claude 路径（tryStartSDKTurn）对称 —— agent 递交计划后标记本
+      // session 处于"等待计划审批"状态，由 startNextQueuedTurn 的 pendingPlanApprovals
+      // 拦截分支阻断自动起跑；排队的 turn 等审批通过或被拒绝后再决定执行/丢弃。
+      // （此前仅 claude 路径有此检查：codex 会话递交计划后，排队 turn 会跨越审批
+      // 弹窗自动执行 —— W2-D0 行为锁 ⑧ 抓到的引擎不对称缺口。）
+      if (event.type === 'plan_proposed') {
+        const justBlocked = !this.pendingPlanApprovals.has(sessionId)
+        this.pendingPlanApprovals.add(sessionId)
+        if (justBlocked) this.emitQueueChanged(sessionId)
+      }
       if (
         event.type === 'assistant_message' &&
         event.mode === 'complete' &&
