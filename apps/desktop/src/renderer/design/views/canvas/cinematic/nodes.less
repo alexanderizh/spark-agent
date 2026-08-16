@@ -9,7 +9,9 @@
     border: 1px solid var(--canvas-cinema-border);
     border-radius: var(--canvas-cinema-radius-md);
     background: var(--canvas-cinema-surface-2);
-    transition: border-color var(--canvas-cinema-motion-fast) ease;
+    transition:
+      border-color var(--canvas-cinema-motion-fast) ease,
+      box-shadow var(--canvas-cinema-motion-fast) ease;
   }
 
   .canvas-node:hover {
@@ -394,6 +396,12 @@
     box-sizing: border-box;
     border: 2px solid var(--canvas-cinema-surface-2);
     background: #69727d;
+    // hover / 牵线吸附的放大与复原都走平滑过渡。
+    transition:
+      transform var(--canvas-cinema-motion-fast) ease,
+      width var(--canvas-cinema-motion-fast) ease,
+      height var(--canvas-cinema-motion-fast) ease,
+      background-color var(--canvas-cinema-motion-fast) ease;
   }
 
   .canvas-node-handle::after {
@@ -425,6 +433,34 @@
   .canvas-node-handle.connectingto.valid {
     --canvas-node-handle-scale: 1.35;
     background: var(--canvas-cinema-accent-bright);
+  }
+
+  // 牵线靠近节点：候选节点轻微偏转 + 光晕，锚点同步放大高亮。
+  // 只用 transform / box-shadow 表达，不引发布局位移。
+  .react-flow__node.canvas-connection-candidate {
+    .canvas-node {
+      border-color: var(--canvas-cinema-accent-bright);
+      box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--canvas-cinema-accent-bright) 36%, transparent),
+        0 12px 28px color-mix(in srgb, var(--canvas-cinema-accent-bright) 20%, transparent);
+      animation: canvas-connection-nudge 0.9s ease-in-out infinite;
+    }
+
+    .canvas-node-handle {
+      width: 20px;
+      height: 20px;
+      --canvas-node-handle-scale: 1.8;
+      background: var(--canvas-cinema-accent-bright);
+    }
+  }
+
+  // 无效目标（重复边 / 隐藏节点等）：不偏转、不放大锚点，仅以危险色描边区分，
+  // 松手不会创建连线。
+  .react-flow__node.canvas-connection-invalid {
+    .canvas-node {
+      border-color: var(--canvas-cinema-danger);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--canvas-cinema-danger) 30%, transparent);
+    }
   }
 
   .canvas-floating-toolbar-shell {
@@ -518,10 +554,26 @@
   }
 }
 
+// 牵线候选节点的轻微偏转 + 浮起（幅度很小，仅作"可在此落线"的待链接提示）。
+@keyframes canvas-connection-nudge {
+  0%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-1.2deg) translateY(-2px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .canvas-workspace.canvas-cinematic {
     .canvas-node.canvas-node-task-running::before,
     .canvas-node.canvas-node-task-running::after {
+      animation: none;
+    }
+
+    // 减少动态效果时保留静态高亮（描边 + 放大锚点），不做偏转动画。
+    .react-flow__node.canvas-connection-candidate .canvas-node {
       animation: none;
     }
   }

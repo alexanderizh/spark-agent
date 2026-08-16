@@ -37,6 +37,8 @@ import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
 import { CanvasZoomControls } from './CanvasZoomControls'
 import type { CanvasNodeData } from './canvas.types'
 import { mergeFlowNodes } from './canvasStageNodeSync'
+import { useCanvasConnectionAssist } from './useCanvasConnectionAssist'
+import type { ConnectionAssistRules } from './canvasConnectionAssist'
 import { computeCanvasAlignmentGuides, type CanvasAlignmentGuide } from './canvasAlignmentGuides'
 import {
   arrangeCanvasNodes,
@@ -1117,6 +1119,18 @@ function CanvasStageInner({
   const viewportInteractingRef = useRef(false)
   const pendingConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const suppressNextPaneClickRef = useRef(false)
+  // 连线吸附辅助：接近反馈与卡片级投放预检共用的最新规则快照（节点索引 + 现有边）。
+  const connectionRules = useMemo<ConnectionAssistRules>(
+    () => ({
+      nodeById: new Map(snapshot.nodes.map((node) => [node.id, node])),
+      edges: snapshot.edges,
+    }),
+    [snapshot.edges, snapshot.nodes],
+  )
+  const { beginConnectionDrag, endConnectionDrag } = useCanvasConnectionAssist({
+    stageRef,
+    getRules: () => connectionRules,
+  })
   const nodeDragStateRef = useRef<{ nodeId: string | null; dragging: boolean; endedAt: number }>({
     nodeId: null,
     dragging: false,
@@ -2168,23 +2182,40 @@ function CanvasStageInner({
     ) => {
       const sourceNodeId = params.handleType === 'source' ? params.nodeId : null
       pendingConnectionRef.current = sourceNodeId ? { sourceNodeId } : null
+      beginConnectionDrag(
+        params.nodeId && params.handleType
+          ? { nodeId: params.nodeId, handleType: params.handleType }
+          : null,
+      )
       if (sourceNodeId) onSelectionChange([])
     },
-    [onSelectionChange],
+    [beginConnectionDrag, onSelectionChange],
   )
 
   const handleConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
       const pendingConnection = pendingConnectionRef.current
       pendingConnectionRef.current = null
-      if (!pendingConnection || connectionState.isValid || connectionState.toNode) return
+      // 无论是否命中都要先结束吸附辅助（清理监听与候选反馈类名）。
+      const drop = endConnectionDrag(event)
+      if (connectionState.isValid || connectionState.toNode) return
       const point = getClientPoint(event)
       if (!point) return
+      // 卡片级投放（source/target 两个方向都支持）：松手落在节点卡片上时直接按
+      // 预检结果连接；无效卡片不弹任何菜单。
+      if (drop?.connect) {
+        event.preventDefault()
+        suppressNextPaneClickRef.current = true
+        void onConnectNodes(drop.connect)
+        return
+      }
+      if (drop?.droppedOnNode) return
+      if (!pendingConnection) return
       event.preventDefault()
       suppressNextPaneClickRef.current = true
       openPaneContextMenuAt(point, pendingConnection)
     },
-    [openPaneContextMenuAt],
+    [endConnectionDrag, onConnectNodes, openPaneContextMenuAt],
   )
 
   const clearAlignmentGuides = useCallback(() => {
