@@ -37,6 +37,22 @@ export interface FakeEngineScript {
   cancelTerminal?: 'completed' | 'cancelled' | 'error' | null
   /** executeTurn 以异常收场（在注入完 events 后抛出）。 */
   rejectWith?: Error
+  /**
+   * 事件与终态全部注入完毕后挂起 executeTurn，直到外部调用 release() 或 cancel()。
+   * 与 holdUntilCancel 的差异：终态事件已经 emit（session 层会扣住它），但
+   * executeTurn 的 promise 尚未 resolve —— 用于锁定「终态扣留」（pendingTerminalStatus）
+   * 与队列推进（finally 在 promise settle 后才跑）的时序基线。
+   */
+  holdForRelease?: boolean
+  /**
+   * events 注入完即挂起（终态**尚未** emit），release() 放行后先注入
+   * postReleaseEvents、再 emit 终态并 resolve。用于构造「排队 turn 先于
+   * 关键事件（如 plan_proposed）入队」的时序 —— 关键事件在放行后才出现。
+   * cancel() 释放时与 holdUntilCancel 同语义（cancelEvents + cancelTerminal）。
+   */
+  holdAfterEvents?: boolean
+  /** holdAfterEvents 被 release() 放行后、终态前注入的事件。 */
+  postReleaseEvents?: ScriptedEvent[]
 }
 
 export interface FakeExecuteTurnRecord {
@@ -80,7 +96,8 @@ export class FakeEngineExecutor implements EngineExecutor {
   private readonly script: FakeEngineScript
   private readonly handlers = new Set<EventHandler>()
   private releaseOnCancel: (() => void) | null = null
-  /** executeTurn 已被调用且正挂在 holdUntilCancel 上。 */
+  private releaseExternal: (() => void) | null = null
+  /** executeTurn 已被调用且正挂在 holdUntilCancel / holdForRelease 上。 */
   holding = false
   /** cancel() 已被调用。 */
   cancelRequested = false
@@ -106,6 +123,11 @@ export class FakeEngineExecutor implements EngineExecutor {
     this.releaseOnCancel?.()
   }
 
+  /** 手动放行 holdForRelease（与 cancel 放行的区别：不注入 cancelEvents/cancelTerminal）。 */
+  release(): void {
+    this.releaseExternal?.()
+  }
+
   async executeTurn(
     sessionId: string,
     turnId: string,
@@ -129,6 +151,33 @@ export class FakeEngineExecutor implements EngineExecutor {
     for (const event of this.script.events ?? []) emit(event)
     if (this.script.rejectWith != null) throw this.script.rejectWith
 
+    if (this.script.holdAfterEvents === true) {
+      // 终态未发：外部安排好需要的入队/状态后再 release()，补第二段事件 + 终态。
+      this.holding = true
+      let viaCancel = false
+      await new Promise<void>((resolve) => {
+        this.releaseOnCancel = () => {
+          viaCancel = true
+          resolve()
+        }
+        this.releaseExternal = resolve
+      })
+      this.holding = false
+      this.releaseOnCancel = null
+      this.releaseExternal = null
+      if (viaCancel) {
+        for (const event of this.script.cancelEvents ?? []) emit(event)
+        const cancelTerminal = this.script.cancelTerminal ?? 'cancelled'
+        if (cancelTerminal != null) emit({ type: 'agent_status', status: cancelTerminal })
+        return
+      }
+      for (const event of this.script.postReleaseEvents ?? []) emit(event)
+      const terminal =
+        this.script.terminalStatus === undefined ? 'completed' : this.script.terminalStatus
+      if (terminal != null) emit({ type: 'agent_status', status: terminal })
+      return
+    }
+
     if (this.script.holdUntilCancel === true) {
       this.holding = true
       await new Promise<void>((resolve) => {
@@ -144,5 +193,27 @@ export class FakeEngineExecutor implements EngineExecutor {
     const terminal =
       this.script.terminalStatus === undefined ? 'completed' : this.script.terminalStatus
     if (terminal != null) emit({ type: 'agent_status', status: terminal })
+
+    if (this.script.holdForRelease === true) {
+      // 终态已 emit（session 层扣住不落库），executeTurn 继续挂起：
+      // release() 正常放行；cancel() 视为取消收场（补 cancelEvents + cancelTerminal）。
+      this.holding = true
+      let viaCancel = false
+      await new Promise<void>((resolve) => {
+        this.releaseOnCancel = () => {
+          viaCancel = true
+          resolve()
+        }
+        this.releaseExternal = resolve
+      })
+      this.holding = false
+      this.releaseOnCancel = null
+      this.releaseExternal = null
+      if (viaCancel) {
+        for (const event of this.script.cancelEvents ?? []) emit(event)
+        const cancelTerminal = this.script.cancelTerminal ?? 'cancelled'
+        if (cancelTerminal != null) emit({ type: 'agent_status', status: cancelTerminal })
+      }
+    }
   }
 }
