@@ -22,6 +22,27 @@ describe('parseMarkdown', () => {
     ])
   })
 
+  it('renders a table that directly follows a paragraph without a blank line', () => {
+    expect(
+      parseMarkdown(
+        '本轮修复汇总：\n|修复点|源码位置 (今日核实)|\n|---|---|\n|client onNotification 兜底| codex-app-server-client.ts:294 |',
+      ),
+    ).toEqual([
+      { kind: 'paragraph', text: '本轮修复汇总：' },
+      {
+        kind: 'table',
+        headers: ['修复点', '源码位置 (今日核实)'],
+        rows: [['client onNotification 兜底', 'codex-app-server-client.ts:294']],
+      },
+    ])
+  })
+
+  it('keeps delimiter-like text inside a paragraph when the previous line has no pipe', () => {
+    expect(parseMarkdown('普通文本\n下一行没有竖线\n| --- | --- |')).toEqual([
+      { kind: 'paragraph', text: '普通文本\n下一行没有竖线\n| --- | --- |' },
+    ])
+  })
+
   it('keeps an unfinished fence visible during streaming', () => {
     expect(parseMarkdown('```tsx\nconst pending = true')).toEqual([
       { kind: 'incomplete_code', lang: 'tsx', code: 'const pending = true' },
@@ -53,9 +74,7 @@ describe('parseMarkdown', () => {
     const content = '第一段\n\n```ts\nconst a = 1\n\nconst b = 2\n```\n\n正在生成'
     const stableEnd = findStableMarkdownPrefixEnd(content)
 
-    expect(content.slice(0, stableEnd)).toBe(
-      '第一段\n\n```ts\nconst a = 1\n\nconst b = 2\n```\n\n',
-    )
+    expect(content.slice(0, stableEnd)).toBe('第一段\n\n```ts\nconst a = 1\n\nconst b = 2\n```\n\n')
     expect(content.slice(stableEnd)).toBe('正在生成')
   })
 

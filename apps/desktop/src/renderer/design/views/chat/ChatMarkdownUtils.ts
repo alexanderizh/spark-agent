@@ -110,7 +110,7 @@ export function parseMarkdown(content: string): MarkdownBlock[] {
     if (
       line.includes('|') &&
       index + 1 < lines.length &&
-      /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1] ?? '')
+      isTableDelimiterRow(lines[index + 1] ?? '')
     ) {
       const headers = splitTableRow(line)
       const rows: string[][] = []
@@ -129,16 +129,26 @@ export function parseMarkdown(content: string): MarkdownBlock[] {
 
     const paragraphLines = [line]
     index += 1
-    while (
-      index < lines.length &&
-      (lines[index] ?? '').trim() &&
-      !/^```/.test(lines[index] ?? '') &&
-      !/^(#{1,6})\s+/.test(lines[index] ?? '') &&
-      !/^(\s*)([-*+]|\d+[.)])\s+/.test(lines[index] ?? '') &&
-      !/^>\s?/.test(lines[index] ?? '') &&
-      !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[index] ?? '')
-    ) {
-      paragraphLines.push(lines[index] ?? '')
+    while (index < lines.length) {
+      const current = lines[index] ?? ''
+      if (
+        !current.trim() ||
+        /^```/.test(current) ||
+        /^(#{1,6})\s+/.test(current) ||
+        /^(\s*)([-*+]|\d+[.)])\s+/.test(current) ||
+        /^>\s?/.test(current) ||
+        /^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(current)
+      ) {
+        break
+      }
+      // 表格紧跟段落（无空行）时，把已吞入段落的表头行交还给外层表格分支，避免 | 源码被当正文渲染
+      const previousLine = paragraphLines[paragraphLines.length - 1] ?? ''
+      if (isTableDelimiterRow(current) && previousLine.includes('|')) {
+        paragraphLines.pop()
+        index -= 1
+        break
+      }
+      paragraphLines.push(current)
       index += 1
     }
     blocks.push({ kind: 'paragraph', text: paragraphLines.join('\n') })
@@ -197,6 +207,10 @@ function getListKind(line: string): 'ordered' | 'unordered' | null {
   const match = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/)
   if (!match) return null
   return /\d+[.)]/.test(match[2] ?? '') ? 'ordered' : 'unordered'
+}
+
+function isTableDelimiterRow(line: string): boolean {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)
 }
 
 function splitTableRow(line: string): string[] {
