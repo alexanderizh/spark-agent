@@ -7,7 +7,7 @@
  * 依赖真实 git 与临时目录（与 git-worktree.service.test.ts 同策略）。
  */
 import { execFile } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -58,25 +58,29 @@ describe('SessionWorktreeStateService', () => {
   it('persists enter state with the branch resolved from git and reports changed', async () => {
     const { worktree } = await createRepoWithWorktree('feat-x')
     const sessionId = 'sess-wt-1'
-    db.prepare(
-      `INSERT INTO sessions (id, kind, title, project_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      sessionId,
-      'chat',
-      'T',
-      'proj',
-      'idle',
-      new Date().toISOString(),
-      new Date().toISOString(),
-    )
+    db.raw
+      .prepare(
+        `INSERT INTO sessions (id, kind, title, project_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        sessionId,
+        'chat',
+        'T',
+        'proj',
+        'idle',
+        new Date().toISOString(),
+        new Date().toISOString(),
+      )
 
     const r = await service.apply(sessionId, { action: 'enter', path: worktree })
     expect(r.ok).toBe(true)
     expect(r.changed).toBe(true)
-    expect(r.worktree).toMatchObject({ path: worktree, branch: 'feat-x' })
+    // service 会 realpath 归一；macOS 上 tmpdir 的 /var 是 /private/var 的符号链接
+    const realWorktree = realpathSync(worktree)
+    expect(r.worktree).toMatchObject({ path: realWorktree, branch: 'feat-x' })
 
     // 持久化可回读
-    expect(service.get(sessionId)).toMatchObject({ path: worktree, branch: 'feat-x' })
+    expect(service.get(sessionId)).toMatchObject({ path: realWorktree, branch: 'feat-x' })
 
     // 相同 path + branch 的重复 enter 是 no-op
     const again = await service.apply(sessionId, { action: 'enter', path: worktree })
@@ -86,17 +90,19 @@ describe('SessionWorktreeStateService', () => {
   it('clears state on exit and treats exit-without-state as no-op', async () => {
     const { worktree } = await createRepoWithWorktree('feat-y')
     const sessionId = 'sess-wt-2'
-    db.prepare(
-      `INSERT INTO sessions (id, kind, title, project_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      sessionId,
-      'chat',
-      'T',
-      'proj',
-      'idle',
-      new Date().toISOString(),
-      new Date().toISOString(),
-    )
+    db.raw
+      .prepare(
+        `INSERT INTO sessions (id, kind, title, project_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        sessionId,
+        'chat',
+        'T',
+        'proj',
+        'idle',
+        new Date().toISOString(),
+        new Date().toISOString(),
+      )
 
     const noOp = await service.apply(sessionId, { action: 'exit' })
     expect(noOp).toEqual({ ok: true, worktree: null, changed: false })
@@ -110,17 +116,19 @@ describe('SessionWorktreeStateService', () => {
   it('rejects the main checkout path and missing paths', async () => {
     const { repo } = await createRepoWithWorktree('feat-z')
     const sessionId = 'sess-wt-3'
-    db.prepare(
-      `INSERT INTO sessions (id, kind, title, project_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      sessionId,
-      'chat',
-      'T',
-      'proj',
-      'idle',
-      new Date().toISOString(),
-      new Date().toISOString(),
-    )
+    db.raw
+      .prepare(
+        `INSERT INTO sessions (id, kind, title, project_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        sessionId,
+        'chat',
+        'T',
+        'proj',
+        'idle',
+        new Date().toISOString(),
+        new Date().toISOString(),
+      )
 
     const main = await service.apply(sessionId, { action: 'enter', path: repo })
     expect(main.ok).toBe(false)
@@ -143,17 +151,19 @@ describe('SessionWorktreeStateService', () => {
     // 把 worktree 切成 detached HEAD，模拟无法从 git 解析分支的场景
     await git(worktree, ['checkout', '--detach'])
     const sessionId = 'sess-wt-4'
-    db.prepare(
-      `INSERT INTO sessions (id, kind, title, project_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      sessionId,
-      'chat',
-      'T',
-      'proj',
-      'idle',
-      new Date().toISOString(),
-      new Date().toISOString(),
-    )
+    db.raw
+      .prepare(
+        `INSERT INTO sessions (id, kind, title, project_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        sessionId,
+        'chat',
+        'T',
+        'proj',
+        'idle',
+        new Date().toISOString(),
+        new Date().toISOString(),
+      )
 
     const r = await service.apply(sessionId, { action: 'enter', path: worktree, branch: 'manual' })
     expect(r.ok).toBe(true)
