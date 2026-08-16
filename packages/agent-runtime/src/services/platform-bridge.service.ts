@@ -24,19 +24,32 @@ import {
   resolveArtifactUrl,
   type SparkInstallArtifact,
 } from './skill-registry/artifact-manifest.js'
-import type { SkillItem } from '@spark/protocol'
+import type { SkillItem, ProviderIconConfig, ProviderProfile } from '@spark/protocol'
+import {
+  isMediaApiType,
+  isMediaCapabilityId,
+  isMediaProviderKind,
+  ProviderMediaDefaultsSchema,
+  ProviderMediaModelRefSchema,
+  type MediaApiType,
+  type MediaCapabilityId,
+  type MediaProviderKind,
+  type ProviderMediaDefaults,
+  type ProviderMediaModelRef,
+} from '@spark/protocol'
 import type { McpService } from './mcp-server.service.js'
 import type { McpServerRepository } from '@spark/storage'
 import type { ProviderProfileRepository } from '@spark/storage'
 import type { WorkflowRepository } from '@spark/storage'
 import type { UpdateWorkflowParams } from '@spark/storage'
 import type { AgentRepository } from '@spark/storage'
-import type { UpdateAgentParams, CreateProviderParams } from '@spark/storage'
+import type { UpdateAgentParams } from '@spark/storage'
 import type { SettingsRepository } from '@spark/storage'
 import type { TeamDefinitionRepository } from '@spark/storage'
 import type { GitHubConnectorService } from './github-connector.service.js'
 import type { PluginManager } from './plugins/plugin-manager.service.js'
 import { ProviderService } from './provider.service.js'
+import * as keystore from '@spark/shared/keystore'
 import {
   CustomMediaProviderConfiguratorService,
   type CustomMediaProviderDiagnosticInput,
@@ -79,6 +92,250 @@ function requireText(params: Record<string, unknown>, key: string, maxLength: nu
   if (!value) throw new Error(`Missing parameter: ${key}`)
   if (value.length > maxLength) throw new Error(`${key} exceeds maximum length ${maxLength}`)
   return value
+}
+
+type ProviderCreateParams = Parameters<ProviderService['createProvider']>[0]
+type ProviderUpdateParams = Parameters<ProviderService['updateProvider']>[0]
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function mergedProviderValue(
+  params: Record<string, unknown>,
+  config: Record<string, unknown>,
+  key: string,
+): unknown {
+  return Object.hasOwn(params, key) ? params[key] : config[key]
+}
+
+function providerOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function requiredString(value: unknown, key: string): string {
+  const result = providerOptionalString(value)?.trim() ?? ''
+  if (!result) throw new Error(`Missing parameter: ${key}`)
+  return result
+}
+
+function optionalStringArray(value: unknown, key: string): string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new Error(`${key} must be an array of strings`)
+  }
+  return value.map((item) => item.trim()).filter((item) => item.length > 0)
+}
+
+function optionalBoolean(value: unknown, key: string): boolean | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'boolean') throw new Error(`${key} must be a boolean`)
+  return value
+}
+
+function optionalNumber(value: unknown, key: string): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${key} must be a finite number`)
+  }
+  return value
+}
+
+function optionalProviderIcon(
+  value: unknown,
+  key: string,
+  allowNull: boolean,
+): ProviderIconConfig | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null && allowNull) return null
+  const icon = asRecord(value)
+  const id = providerOptionalString(icon.id)?.trim().toLowerCase() ?? ''
+  if (!id || (icon.style !== 'avatar' && icon.style !== 'mono')) {
+    throw new Error(`${key} must contain a valid id and style`)
+  }
+  return { id, style: icon.style }
+}
+
+function optionalMediaProvider(value: unknown, key: string): MediaProviderKind | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (!isMediaProviderKind(value)) throw new Error(`${key} is not a supported media provider`)
+  return value
+}
+
+function optionalMediaApiType(value: unknown, key: string): MediaApiType | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (!isMediaApiType(value)) throw new Error(`${key} is not a supported media API type`)
+  return value
+}
+
+function optionalMediaCapabilities(value: unknown, key: string): MediaCapabilityId[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.some((item) => !isMediaCapabilityId(item))) {
+    throw new Error(`${key} contains an unsupported capability`)
+  }
+  return [...new Set(value)]
+}
+
+function optionalMediaDefaults(value: unknown, key: string): ProviderMediaDefaults | undefined {
+  if (value === undefined) return undefined
+  try {
+    return ProviderMediaDefaultsSchema.parse(value)
+  } catch {
+    throw new Error(`${key} is invalid`)
+  }
+}
+
+function optionalMediaModelRefs(value: unknown, key: string): ProviderMediaModelRef[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new Error(`${key} must be an array`)
+  try {
+    return value.map((item) => ProviderMediaModelRefSchema.parse(item))
+  } catch {
+    throw new Error(`${key} contains an invalid model reference`)
+  }
+}
+
+function addProviderConfigFields<T extends ProviderCreateParams | ProviderUpdateParams>(
+  target: T,
+  params: Record<string, unknown>,
+  config: Record<string, unknown>,
+): T {
+  const read = (key: string): unknown => mergedProviderValue(params, config, key)
+  const model =
+    providerOptionalString(read('defaultModel')) ?? providerOptionalString(read('model'))
+  const modelIds = optionalStringArray(read('modelIds'), 'modelIds')
+  const apiEndpoint = read('apiEndpoint')
+  const codexApiKind = read('codexApiKind')
+  const supportsMillionContext = optionalBoolean(
+    read('supportsMillionContext'),
+    'supportsMillionContext',
+  )
+  const contextWindow = optionalNumber(read('contextWindow'), 'contextWindow')
+  const maxTokens = optionalNumber(read('maxTokens'), 'maxTokens')
+  const imageProvider = read('imageProvider')
+  const imageApiType = read('imageApiType')
+  const mediaProvider = optionalMediaProvider(read('mediaProvider'), 'mediaProvider')
+  const mediaApiType = optionalMediaApiType(read('mediaApiType'), 'mediaApiType')
+  const mediaCapabilities = optionalMediaCapabilities(
+    read('mediaCapabilities'),
+    'mediaCapabilities',
+  )
+  const mediaDefaults = optionalMediaDefaults(read('mediaDefaults'), 'mediaDefaults')
+  const mediaModelRefs = optionalMediaModelRefs(read('mediaModelRefs'), 'mediaModelRefs')
+
+  if (model !== undefined) target.defaultModel = model
+  if (modelIds !== undefined) target.modelIds = modelIds
+  if (typeof apiEndpoint === 'string' || (apiEndpoint === null && 'id' in target)) {
+    target.apiEndpoint = apiEndpoint
+  }
+  if (codexApiKind !== undefined) {
+    if (codexApiKind !== 'chat' && codexApiKind !== 'responses' && codexApiKind !== 'embedding') {
+      throw new Error('codexApiKind is invalid')
+    }
+    target.codexApiKind = codexApiKind
+  }
+  if (supportsMillionContext !== undefined) target.supportsMillionContext = supportsMillionContext
+  if (contextWindow !== undefined) target.contextWindow = contextWindow
+  if (maxTokens !== undefined) target.maxTokens = maxTokens
+
+  for (const key of ['haikuModel', 'sonnetModel', 'opusModel'] as const) {
+    const value = read(key)
+    if (value !== undefined && (typeof value === 'string' || value === null)) {
+      target[key] = value
+    }
+  }
+
+  const providerIcon = optionalProviderIcon(read('providerIcon'), 'providerIcon', 'id' in target)
+  if (providerIcon !== undefined) {
+    target.providerIcon = providerIcon
+  }
+  const modelType = read('modelType')
+  if (modelType !== undefined && typeof modelType === 'string') target.modelType = modelType
+  if (
+    imageProvider !== undefined &&
+    (typeof imageProvider === 'string' || imageProvider === null)
+  ) {
+    target.imageProvider = imageProvider
+  }
+  if (imageApiType !== undefined) {
+    if (
+      imageApiType !== null &&
+      imageApiType !== 'sync' &&
+      imageApiType !== 'async' &&
+      imageApiType !== 'auto'
+    ) {
+      throw new Error('imageApiType is invalid')
+    }
+    target.imageApiType = imageApiType
+  }
+  if (mediaProvider !== undefined) target.mediaProvider = mediaProvider
+  if (mediaApiType !== undefined) target.mediaApiType = mediaApiType
+  if (mediaCapabilities !== undefined) target.mediaCapabilities = mediaCapabilities
+  if (mediaDefaults !== undefined) target.mediaDefaults = mediaDefaults
+  if (mediaModelRefs !== undefined) target.mediaModelRefs = mediaModelRefs
+  return target
+}
+
+async function resolveLegacyApiKey(
+  params: Record<string, unknown>,
+  required: boolean,
+): Promise<string | undefined> {
+  if (Object.hasOwn(params, 'apiKey')) {
+    if (typeof params.apiKey !== 'string') throw new Error('apiKey must be a string')
+    return params.apiKey
+  }
+  if (!Object.hasOwn(params, 'keystoreRef')) return required ? '' : undefined
+  if (typeof params.keystoreRef !== 'string') throw new Error('keystoreRef must be a string')
+  const ref = params.keystoreRef.trim()
+  if (!ref) return ''
+  return (await keystore.getSecret(ref as keystore.KeystoreRef)) ?? undefined
+}
+
+function providerToolPayload(profile: ProviderProfile): Record<string, unknown> {
+  const { keystoreRef: _keystoreRef, ...safeProfile } = profile
+  return {
+    ...safeProfile,
+    providerType: profile.provider,
+    hasApiKey: profile.keystoreRef.length > 0,
+    config: {
+      defaultModel: profile.defaultModel,
+      modelIds: profile.modelIds,
+      ...(profile.apiEndpoint !== undefined ? { apiEndpoint: profile.apiEndpoint } : {}),
+      ...(profile.mediaApiEndpoint !== undefined
+        ? { mediaApiEndpoint: profile.mediaApiEndpoint }
+        : {}),
+      ...(profile.codexApiKind !== undefined ? { codexApiKind: profile.codexApiKind } : {}),
+      ...(profile.maxTokens !== undefined ? { maxTokens: profile.maxTokens } : {}),
+      ...(profile.modelType !== undefined ? { modelType: profile.modelType } : {}),
+      ...(profile.imageProvider !== undefined ? { imageProvider: profile.imageProvider } : {}),
+      ...(profile.imageApiType !== undefined ? { imageApiType: profile.imageApiType } : {}),
+      ...(profile.providerIcon !== undefined ? { providerIcon: profile.providerIcon } : {}),
+      ...(profile.availableModelIds !== undefined
+        ? { availableModelIds: profile.availableModelIds }
+        : {}),
+      ...(profile.supportsMillionContext !== undefined
+        ? { supportsMillionContext: profile.supportsMillionContext }
+        : {}),
+      ...(profile.contextWindow !== undefined ? { contextWindow: profile.contextWindow } : {}),
+      ...(profile.modelContextWindows !== undefined
+        ? { modelContextWindows: profile.modelContextWindows }
+        : {}),
+      ...(profile.haikuModel !== undefined ? { haikuModel: profile.haikuModel } : {}),
+      ...(profile.sonnetModel !== undefined ? { sonnetModel: profile.sonnetModel } : {}),
+      ...(profile.opusModel !== undefined ? { opusModel: profile.opusModel } : {}),
+      ...(profile.mediaProvider !== undefined ? { mediaProvider: profile.mediaProvider } : {}),
+      ...(profile.mediaApiType !== undefined ? { mediaApiType: profile.mediaApiType } : {}),
+      ...(profile.mediaCapabilities !== undefined
+        ? { mediaCapabilities: profile.mediaCapabilities }
+        : {}),
+      ...(profile.mediaDefaults !== undefined ? { mediaDefaults: profile.mediaDefaults } : {}),
+      ...(profile.mediaModelRefs !== undefined ? { mediaModelRefs: profile.mediaModelRefs } : {}),
+    },
+  }
 }
 
 /**
@@ -816,144 +1073,114 @@ export class PlatformBridgeService {
 
   // ── Provider handlers ──
 
-  private providerList(d: PlatformBridgeDeps, _params: Record<string, unknown>) {
-    const rows = d.providerRepo.listAll()
-    return {
-      providers: rows.map((r) => {
-        const config = JSON.parse(r.config_json) as Record<string, unknown>
-        return {
-          id: r.id,
-          name: r.name,
-          providerType: r.provider_type,
-          enabled: r.enabled === 1,
-          isDefault: r.is_default === 1,
-          defaultModel: (config as { defaultModel?: string }).defaultModel ?? '',
-          apiEndpoint: (config as { apiEndpoint?: string }).apiEndpoint ?? '',
-          // mask keystore ref
-          hasApiKey: r.keystore_ref != null && r.keystore_ref.length > 0,
-        }
-      }),
-    }
+  private providerService(d: PlatformBridgeDeps): ProviderService {
+    return new ProviderService(d.providerRepo)
   }
 
-  private providerCreate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
-    const id = String(params.id ?? `provider-${Date.now()}`)
-    const name = String(params.name ?? '')
-    const providerType = String(params.providerType ?? 'anthropic')
-    const config = (params.config ?? { defaultModel: '' }) as Record<string, unknown>
-    const keystoreRef = String(params.keystoreRef ?? '')
-    const isDefault = Boolean(params.isDefault)
-    const row = d.providerRepo.create({
-      id,
-      providerType,
-      name,
-      config: config as CreateProviderParams['config'],
-      keystoreRef,
-      isDefault,
+  private async providerList(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const service = this.providerService(d)
+    if (await service.isLocalCliAvailable()) await service.ensureLocalCliProvider()
+    if (await service.isLocalCodexCliAvailable()) await service.ensureLocalCodexCliProvider()
+    const profiles = await service.listProviders({
+      includeDisabled: params.includeDisabled !== false,
     })
-    d.onConfigChanged?.('provider', 'create', row.id)
+    return { providers: profiles.map(providerToolPayload) }
+  }
+
+  private async providerCreate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const config = asRecord(params.config)
+    const provider = requiredString(
+      params.provider ??
+        params.providerType ??
+        config.provider ??
+        config.providerType ??
+        'anthropic',
+      'provider',
+    )
+    const name = requiredString(params.name, 'name')
+    const input = addProviderConfigFields<ProviderCreateParams>(
+      { name, provider, apiKey: (await resolveLegacyApiKey(params, true)) ?? '' },
+      params,
+      config,
+    )
+    const isDefault = optionalBoolean(params.isDefault, 'isDefault')
+    if (isDefault !== undefined) input.isDefault = isDefault
+    const profile = await this.providerService(d).createProvider(input)
+    d.onConfigChanged?.('provider', 'create', profile.id)
+    return { provider: providerToolPayload(profile), profile: providerToolPayload(profile) }
+  }
+
+  private async providerUpdate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = requiredString(params.id, 'id')
+    const config = asRecord(params.config)
+    const input = addProviderConfigFields<ProviderUpdateParams>({ id }, params, config)
+    const providerValue = Object.hasOwn(params, 'provider')
+      ? params.provider
+      : Object.hasOwn(params, 'providerType')
+        ? params.providerType
+        : (config.provider ?? config.providerType)
+    if (providerValue !== undefined) input.provider = requiredString(providerValue, 'provider')
+    if (params.name !== undefined) input.name = requiredString(params.name, 'name')
+    const apiKey = await resolveLegacyApiKey(params, false)
+    if (apiKey !== undefined) input.apiKey = apiKey
+    const enabled = optionalBoolean(params.enabled, 'enabled')
+    const isDefault = optionalBoolean(params.isDefault, 'isDefault')
+    if (enabled !== undefined) input.enabled = enabled
+    if (isDefault !== undefined) input.isDefault = isDefault
+
+    const profile = await this.providerService(d).updateProvider(input)
+    d.onConfigChanged?.('provider', 'update', profile.id)
+    return { provider: providerToolPayload(profile), profile: providerToolPayload(profile) }
+  }
+
+  private async providerDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = requiredString(params.id, 'id')
+    await this.providerService(d).deleteProvider(id)
+    d.onConfigChanged?.('provider', 'delete', id)
+    return { success: true, deleted: true }
+  }
+
+  private async providerHealthCheck(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = requiredString(params.id, 'id')
+    const row = d.providerRepo.get(id)
+    if (!row) throw new Error(`Provider not found: ${id}`)
+    const result = await this.providerService(d).healthCheck(id)
+    return { ...result, providerId: id, name: row.name }
+  }
+
+  private async providerGet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = requiredString(params.id, 'id')
+    const profile = (await this.providerService(d).listProviders({ includeDisabled: true })).find(
+      (item) => item.id === id,
+    )
+    if (!profile) throw new Error(`Provider not found: ${id}`)
+    const payload = providerToolPayload(profile)
+    return { provider: payload, profile: payload }
+  }
+
+  private async providerSetDefault(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = requiredString(params.id, 'id')
+    const profile = await this.providerService(d).updateProvider({ id, isDefault: true })
+    d.onConfigChanged?.('provider', 'update', id)
     return {
-      provider: {
-        id: row.id,
-        name: row.name,
-        providerType: row.provider_type,
-        enabled: row.enabled === 1,
-      },
+      success: true,
+      providerId: id,
+      name: profile.name,
+      profile: providerToolPayload(profile),
     }
   }
 
-  private providerUpdate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
-    const id = String(params.id ?? '')
-    const fields: Partial<{
-      name: string
-      config: Record<string, unknown>
-      enabled: boolean
-      keystoreRef: string
-    }> = {}
-    if (params.name != null) fields.name = String(params.name)
-    if (params.config != null) fields.config = params.config as Record<string, unknown>
-    if (params.enabled != null) fields.enabled = Boolean(params.enabled)
-    if (params.keystoreRef != null) fields.keystoreRef = String(params.keystoreRef)
-    d.providerRepo.update(id, fields)
-    const row = d.providerRepo.get(id)
-    if (!row) throw new Error(`Provider not found: ${id}`)
+  private async providerSetDefaultModel(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = requiredString(params.id, 'id')
+    const model = requiredString(params.model, 'model')
+    const profile = await this.providerService(d).updateProvider({ id, defaultModel: model })
     d.onConfigChanged?.('provider', 'update', id)
     return {
-      provider: {
-        id: row.id,
-        name: row.name,
-        providerType: row.provider_type,
-        enabled: row.enabled === 1,
-      },
+      success: true,
+      providerId: id,
+      defaultModel: profile.defaultModel,
+      profile: providerToolPayload(profile),
     }
-  }
-
-  private providerDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
-    const id = String(params.id ?? '')
-    const ok = d.providerRepo.delete(id)
-    if (ok) d.onConfigChanged?.('provider', 'delete', id)
-    return { success: ok }
-  }
-
-  private providerHealthCheck(d: PlatformBridgeDeps, params: Record<string, unknown>) {
-    // Basic health check — verify provider exists and has API key configured
-    const id = String(params.id ?? '')
-    const row = d.providerRepo.get(id)
-    if (!row) throw new Error(`Provider not found: ${id}`)
-    const hasApiKey = row.keystore_ref != null && row.keystore_ref.length > 0
-    return { healthy: hasApiKey, providerId: id, name: row.name }
-  }
-
-  private providerGet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
-    const id = String(params.id ?? '')
-    const row = d.providerRepo.get(id)
-    if (!row) throw new Error(`Provider not found: ${id}`)
-    const config = JSON.parse(row.config_json) as Record<string, unknown>
-    return {
-      provider: {
-        id: row.id,
-        name: row.name,
-        providerType: row.provider_type,
-        enabled: row.enabled === 1,
-        isDefault: row.is_default === 1,
-        config: {
-          defaultModel: config.defaultModel ?? '',
-          modelIds: (config.modelIds as string[]) ?? [],
-          apiEndpoint: config.apiEndpoint ?? '',
-          maxTokens: config.maxTokens,
-          temperature: config.temperature,
-          modelType: config.modelType ?? '',
-          supportsMillionContext: config.supportsMillionContext,
-          contextWindow: config.contextWindow,
-          modelContextWindows: config.modelContextWindows,
-        },
-        hasApiKey: row.keystore_ref != null && row.keystore_ref.length > 0,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      },
-    }
-  }
-
-  private providerSetDefault(d: PlatformBridgeDeps, params: Record<string, unknown>) {
-    const id = String(params.id ?? '')
-    const row = d.providerRepo.get(id)
-    if (!row) throw new Error(`Provider not found: ${id}`)
-    d.providerRepo.setDefault(id)
-    d.onConfigChanged?.('provider', 'update', id)
-    return { success: true, providerId: id, name: row.name }
-  }
-
-  private providerSetDefaultModel(d: PlatformBridgeDeps, params: Record<string, unknown>) {
-    const id = String(params.id ?? '')
-    const model = String(params.model ?? '')
-    if (!model) throw new Error('Missing parameter: model')
-    const row = d.providerRepo.get(id)
-    if (!row) throw new Error(`Provider not found: ${id}`)
-    const config = JSON.parse(row.config_json) as Record<string, unknown>
-    config.defaultModel = model
-    d.providerRepo.update(id, { config })
-    d.onConfigChanged?.('provider', 'update', id)
-    return { success: true, providerId: id, defaultModel: model }
   }
 
   private providerMediaGuide(

@@ -401,44 +401,96 @@ function toolDefinitions() {
         '列出所有 Provider（AI 模型供应商）配置。返回名称、类型、默认模型、是否有 API Key 等信息。注意：不会返回 API Key 明文。',
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: {
+          includeDisabled: {
+            type: 'boolean',
+            description: '是否包含已停用 Provider，默认包含以便与 Provider 管理页面一致。',
+          },
+        },
       },
     },
     {
       name: 'providers_create',
-      description: '创建一个新的 Provider 配置。需要指定名称、类型、模型配置和 API Key 引用。',
+      description:
+        '创建一个新的 Provider 配置。Provider ID 由平台生成；API Key 如提供会写入系统 Keychain，不会出现在返回值中。',
       inputSchema: {
         type: 'object',
         required: ['name'],
         properties: {
-          id: { type: 'string', description: '可选的自定义 ID' },
           name: { type: 'string', description: 'Provider 名称，如 "OpenAI"' },
+          provider: {
+            type: 'string',
+            description: 'API 协议类型：anthropic 或 openai。优先使用此字段。',
+            enum: ['anthropic', 'openai'],
+          },
           providerType: {
             type: 'string',
-            description: 'API 协议类型：anthropic 或 openai',
+            description: '旧版兼容字段，等价于 provider。',
             enum: ['anthropic', 'openai'],
+          },
+          defaultModel: { type: 'string', description: '默认模型 ID' },
+          model: { type: 'string', description: '旧版兼容字段，等价于 defaultModel。' },
+          modelIds: { type: 'array', items: { type: 'string' }, description: '可用模型 ID 列表' },
+          apiEndpoint: { type: 'string', description: '可选 API Endpoint' },
+          apiKey: {
+            type: 'string',
+            description: '可选 API Key；仅用于保存到系统 Keychain，返回值和日志不会包含明文。',
           },
           config: {
             type: 'object',
-            description: '模型配置，包含 defaultModel、apiEndpoint 等',
+            description: '旧版兼容配置对象；其中字段会映射到当前 ProviderService 契约。',
             additionalProperties: true,
           },
-          keystoreRef: { type: 'string', description: 'Keychain 中存储 API Key 的引用' },
+          keystoreRef: {
+            type: 'string',
+            description: '旧版兼容字段：读取已有 Keychain 引用并迁移到新 Provider 凭据引用。',
+          },
           isDefault: { type: 'boolean', description: '是否设为默认 Provider' },
         },
       },
     },
     {
       name: 'providers_update',
-      description: '更新 Provider 配置。可修改名称、模型配置和启用状态。',
+      description:
+        '更新 Provider 配置。使用当前 ProviderService 归一化配置并管理 Keychain；config/providerType/keystoreRef 仅为旧版兼容字段。',
       inputSchema: {
         type: 'object',
         required: ['id'],
         properties: {
           id: { type: 'string', description: 'Provider ID' },
+          provider: {
+            type: 'string',
+            description: 'API 协议类型：anthropic 或 openai。',
+            enum: ['anthropic', 'openai'],
+          },
+          providerType: {
+            type: 'string',
+            description: '旧版兼容字段，等价于 provider。',
+            enum: ['anthropic', 'openai'],
+          },
           name: { type: 'string', description: '新名称' },
-          config: { type: 'object', description: '新的模型配置', additionalProperties: true },
+          defaultModel: { type: 'string', description: '默认模型 ID' },
+          model: { type: 'string', description: '旧版兼容字段，等价于 defaultModel。' },
+          modelIds: { type: 'array', items: { type: 'string' }, description: '可用模型 ID 列表' },
+          apiEndpoint: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            description: '新的 API Endpoint；null 清除。',
+          },
+          apiKey: {
+            type: 'string',
+            description: '可选新 API Key；仅写入系统 Keychain，不会出现在返回值和日志中。',
+          },
+          config: {
+            type: 'object',
+            description: '旧版兼容模型配置对象',
+            additionalProperties: true,
+          },
+          keystoreRef: {
+            type: 'string',
+            description: '旧版兼容字段：读取已有 Keychain 引用并更新当前 Provider 凭据。',
+          },
           enabled: { type: 'boolean', description: '是否启用' },
+          isDefault: { type: 'boolean', description: '是否设为默认 Provider' },
         },
       },
     },
@@ -1667,7 +1719,10 @@ function toolDefinitions() {
         type: 'object',
         required: ['referenceId', 'query'],
         properties: {
-          referenceId: { type: 'string', description: '来自 referenced_sessions_list 的 opaque referenceId' },
+          referenceId: {
+            type: 'string',
+            description: '来自 referenced_sessions_list 的 opaque referenceId',
+          },
           query: { type: 'string', minLength: 1, maxLength: 200, description: '搜索关键词' },
           limit: { type: 'integer', minimum: 1, maximum: 20, description: '结果数量上限，默认 10' },
         },
@@ -1681,10 +1736,22 @@ function toolDefinitions() {
         type: 'object',
         required: ['referenceId'],
         properties: {
-          referenceId: { type: 'string', description: '来自 referenced_sessions_list 的 opaque referenceId' },
+          referenceId: {
+            type: 'string',
+            description: '来自 referenced_sessions_list 的 opaque referenceId',
+          },
           cursor: { type: 'integer', minimum: 0, description: '上一次返回的 nextCursor' },
-          turnLimit: { type: 'integer', minimum: 1, maximum: 8, description: '最多读取的完整轮次数' },
-          detail: { type: 'string', enum: ['transcript', 'user_visible_activity'], default: 'transcript' },
+          turnLimit: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 8,
+            description: '最多读取的完整轮次数',
+          },
+          detail: {
+            type: 'string',
+            enum: ['transcript', 'user_visible_activity'],
+            default: 'transcript',
+          },
         },
       },
     },

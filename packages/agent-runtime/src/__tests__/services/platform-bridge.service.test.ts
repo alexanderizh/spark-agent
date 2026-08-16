@@ -18,11 +18,25 @@ import { join } from 'node:path'
 import { mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
-import { AgentRepository, SparkDatabase, TeamDefinitionRepository } from '@spark/storage'
+vi.mock('@spark/shared/keystore', () => ({
+  makeKeystoreRef: (provider: string, id: string) => `${provider}-${id}`,
+  setSecret: vi.fn(),
+  getSecret: vi.fn(async () => null),
+  deleteSecret: vi.fn(async () => true),
+  maskSecret: (value: string) => `${value.slice(0, 4)}****`,
+}))
+
+import {
+  AgentRepository,
+  ProviderProfileRepository,
+  SparkDatabase,
+  TeamDefinitionRepository,
+} from '@spark/storage'
 import {
   PlatformBridgeService,
   type PlatformBridgeDeps,
 } from '../../services/platform-bridge.service.js'
+import * as keystore from '@spark/shared/keystore'
 
 type ConfigChange = {
   scope: 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt'
@@ -312,6 +326,140 @@ describe('PlatformBridgeService referenced sessions payload privacy', () => {
       query: 'Answer',
       actor: 'agent',
     })
+  })
+})
+
+describe('PlatformBridgeService Provider CRUD', () => {
+  let db: SparkDatabase
+  let testDir: string
+  let providerRepo: ProviderProfileRepository
+  let service: PlatformBridgeService
+  let port = 0
+  const changes: ConfigChange[] = []
+
+  beforeEach(async () => {
+    testDir = join(
+      tmpdir(),
+      `spark-provider-bridge-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
+    mkdirSync(testDir, { recursive: true })
+    db = new SparkDatabase(join(testDir, 'test.db'))
+    db.runMigrations(join(process.cwd(), '..', 'storage', 'migrations'))
+    providerRepo = new ProviderProfileRepository(db)
+    changes.length = 0
+
+    service = new PlatformBridgeService()
+    port = await service.start({
+      providerRepo,
+      onConfigChanged: (
+        scope: ConfigChange['scope'],
+        action: ConfigChange['action'],
+        id?: string,
+      ) => changes.push({ scope, action, id }),
+    } as unknown as PlatformBridgeDeps)
+  })
+
+  afterEach(async () => {
+    await service.stop()
+    db.close()
+    rmSync(testDir, { recursive: true, force: true })
+  })
+
+  it('uses ProviderService for legacy-shaped create/update/get/list/health/delete calls', async () => {
+    const created = await callBridgeRpc(port, 'providers.create', {
+      id: 'provider-legacy-timestamp-id',
+      name: 'Legacy OpenAI',
+      providerType: 'openai',
+      config: {
+        defaultModel: 'gpt-5',
+        modelIds: ['gpt-5', 'gpt-4o-mini'],
+        apiEndpoint: 'https://api.example.com/v1',
+      },
+      keystoreRef: '',
+    })
+
+    expect(created.ok).toBe(true)
+    const createdData = created.data as { provider: { id: string; providerType: string } }
+    expect(createdData.provider.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    )
+    expect(createdData.provider.providerType).toBe('openai')
+    expect(providerRepo.get('provider-legacy-timestamp-id')).toBeNull()
+    expect(providerRepo.get(createdData.provider.id)).not.toBeNull()
+
+    const fetched = await callBridgeRpc(port, 'providers.get', { id: createdData.provider.id })
+    expect(fetched).toMatchObject({
+      ok: true,
+      data: {
+        provider: {
+          id: createdData.provider.id,
+          providerType: 'openai',
+          config: {
+            defaultModel: 'gpt-5',
+            modelIds: ['gpt-5', 'gpt-4o-mini'],
+            apiEndpoint: 'https://api.example.com/v1',
+          },
+        },
+      },
+    })
+
+    const updated = await callBridgeRpc(port, 'providers.update', {
+      id: createdData.provider.id,
+      config: { defaultModel: 'gpt-5.1', modelIds: ['gpt-5.1'] },
+      enabled: false,
+    })
+    expect(updated).toMatchObject({
+      ok: true,
+      data: { provider: { id: createdData.provider.id, enabled: false } },
+    })
+
+    const listed = await callBridgeRpc(port, 'providers.list', {})
+    expect(listed.ok).toBe(true)
+    const listedProviders = (listed.data as { providers: Array<{ id: string; enabled: boolean }> })
+      .providers
+    expect(listedProviders).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: createdData.provider.id, enabled: false }),
+      ]),
+    )
+
+    const health = await callBridgeRpc(port, 'providers.health_check', {
+      id: createdData.provider.id,
+    })
+    expect(health).toMatchObject({
+      ok: true,
+      data: { healthy: false, providerId: createdData.provider.id },
+    })
+
+    const deleted = await callBridgeRpc(port, 'providers.delete', { id: createdData.provider.id })
+    expect(deleted).toMatchObject({ ok: true, data: { success: true, deleted: true } })
+    expect(providerRepo.get(createdData.provider.id)).toBeNull()
+    expect(changes).toEqual([
+      { scope: 'provider', action: 'create', id: createdData.provider.id },
+      { scope: 'provider', action: 'update', id: createdData.provider.id },
+      { scope: 'provider', action: 'delete', id: createdData.provider.id },
+    ])
+  })
+
+  it('passes API keys to ProviderService and keeps them out of SQLite and RPC responses', async () => {
+    vi.mocked(keystore.setSecret).mockClear()
+    const created = await callBridgeRpc(port, 'providers.create', {
+      name: 'Keychain Provider',
+      provider: 'openai',
+      defaultModel: 'gpt-5',
+      apiKey: 'sk-bridge-secret',
+    })
+
+    expect(created.ok).toBe(true)
+    const createdData = created.data as { provider: { id: string } }
+    expect(keystore.setSecret).toHaveBeenCalledWith(
+      `openai-${createdData.provider.id}`,
+      'sk-bridge-secret',
+    )
+    const row = providerRepo.get(createdData.provider.id)
+    expect(row?.keystore_ref).toBe(`openai-${createdData.provider.id}`)
+    expect(row?.config_json).not.toContain('sk-bridge-secret')
+    expect(JSON.stringify(created)).not.toContain('sk-bridge-secret')
   })
 })
 

@@ -82,10 +82,10 @@ tags:
 
 ### 3. Provider 管理（13）
 
-- **providers_list** — 列出所有 Provider（不返回 API Key，仅返回 `hasApiKey` 标志）
+- **providers_list**（includeDisabled?）— 列出所有 Provider（不返回 API Key，仅返回 `hasApiKey` 标志；默认包含停用项，与 Provider 管理页面一致）
 - **providers_get**（id）— 获取单个 Provider 完整详情（默认模型、可用模型列表、API 端点、是否为默认供应商等）
-- **providers_create**（name, providerType: 'anthropic'|'openai', config, keystoreRef, isDefault?, id?）— 创建 Provider；config 包含 defaultModel / apiEndpoint 等
-- **providers_update**（id, name?, config?, enabled?, keystoreRef?）— 更新 Provider
+- **providers_create**（name, provider?/providerType?, defaultModel?/model?, modelIds?, apiEndpoint?, apiKey?, config?, isDefault?）— 创建 Provider；ID 由平台生成，API Key 仅写入系统 Keychain，`providerType/config/keystoreRef` 保留为旧版兼容字段
+- **providers_update**（id, provider?/providerType?, name?, defaultModel?/model?, modelIds?, apiEndpoint?, apiKey?, config?, enabled?, isDefault?）— 更新 Provider；配置归一化与凭据管理复用 ProviderService
 - **providers_delete**（id）— 删除 Provider ⚠️ 破坏性操作
 - **providers_health_check**（id）— 测试 Provider 连接
 - **providers_set_default**（id）— 将指定 Provider 设为默认供应商
