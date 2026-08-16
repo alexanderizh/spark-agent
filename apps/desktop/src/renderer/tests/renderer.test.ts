@@ -211,6 +211,56 @@ describe('Renderer Smoke Tests', () => {
   let root: Root | null = null
   const { ToastProvider } = ToastModule
 
+  function getComposerEditor() {
+    return container.querySelector<HTMLElement>('.composer-input[contenteditable="true"]')
+  }
+
+  function getComposerValue() {
+    return getComposerEditor()?.textContent ?? null
+  }
+
+  function setComposerValue(value: string) {
+    const editor = getComposerEditor()
+    expect(editor).not.toBeNull()
+    if (editor == null) throw new Error('Composer editor unavailable')
+
+    editor.focus()
+    const selection = window.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(editor)
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    editor.dispatchEvent(
+      new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        data: value,
+        inputType: 'insertText',
+      }),
+    )
+    editor.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        data: value,
+        inputType: 'insertText',
+      }),
+    )
+  }
+
+  function expectComposerCaretAtEnd() {
+    const editor = getComposerEditor()
+    expect(editor).not.toBeNull()
+    const selection = window.getSelection()
+    expect(selection?.rangeCount).toBeGreaterThan(0)
+    expect(selection?.isCollapsed).toBe(true)
+    if (editor == null || selection == null || selection.rangeCount === 0) return
+
+    const tail = document.createRange()
+    tail.selectNodeContents(editor)
+    tail.setStart(selection.focusNode!, selection.focusOffset)
+    expect(tail.toString()).toBe('')
+  }
+
   function expectRunningTaskTag() {
     const runningTag = container.querySelector('.agent-task-running-tag')
     expect(runningTag).not.toBeNull()
@@ -648,13 +698,7 @@ describe('Renderer Smoke Tests', () => {
     const { PermissionsSection } = await import('../design/views/SettingsView')
     act(() => {
       root = createRoot(container)
-      root.render(
-        React.createElement(
-          ToastProvider,
-          null,
-          React.createElement(PermissionsSection),
-        ),
-      )
+      root.render(React.createElement(ToastProvider, null, React.createElement(PermissionsSection)))
     })
 
     await act(async () => {
@@ -1119,11 +1163,7 @@ describe('Renderer Smoke Tests', () => {
         React.createElement(
           ToastProvider,
           null,
-          React.createElement(
-            SessionSidebarProvider,
-            null,
-            chatSurface,
-          ),
+          React.createElement(SessionSidebarProvider, null, chatSurface),
         ),
       )
     })
@@ -1630,9 +1670,10 @@ describe('Renderer Smoke Tests', () => {
 
     let thinkingToggle: HTMLButtonElement | null = null
     await vi.waitFor(() => {
-      thinkingToggle = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-        (button) => button.textContent?.includes('思考过程'),
-      ) ?? null
+      thinkingToggle =
+        Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+          button.textContent?.includes('思考过程'),
+        ) ?? null
       expect(thinkingToggle).not.toBeNull()
     })
     act(() => thinkingToggle?.click())
@@ -1818,11 +1859,7 @@ describe('Renderer Smoke Tests', () => {
         React.createElement(
           ToastProvider,
           null,
-          React.createElement(
-            SessionSidebarProvider,
-            null,
-            chatSurface,
-          ),
+          React.createElement(SessionSidebarProvider, null, chatSurface),
         ),
       )
     })
@@ -2103,7 +2140,11 @@ describe('Renderer Smoke Tests', () => {
         React.createElement(
           LocalToastProvider,
           null,
-          React.createElement(SessionSidebarProvider, null, React.createElement(SidebarSessionList)),
+          React.createElement(
+            SessionSidebarProvider,
+            null,
+            React.createElement(SidebarSessionList),
+          ),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 20))
@@ -2225,7 +2266,11 @@ describe('Renderer Smoke Tests', () => {
         React.createElement(
           LocalToastProvider,
           null,
-          React.createElement(SessionSidebarProvider, null, React.createElement(SidebarSessionList)),
+          React.createElement(
+            SessionSidebarProvider,
+            null,
+            React.createElement(SidebarSessionList),
+          ),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 20))
@@ -2627,22 +2672,15 @@ describe('Renderer Smoke Tests', () => {
           React.createElement(
             LocalToastProvider,
             null,
-            React.createElement(
-              SessionSidebarProvider,
-              null,
-              chatSurface,
-            ),
+            React.createElement(SessionSidebarProvider, null, chatSurface),
           ),
         ),
       )
     })
 
     await vi.waitFor(() => {
-      const textarea = container.querySelector<HTMLTextAreaElement>('.composer-input')
-      expect(textarea).not.toBeNull()
-      expect(textarea?.value).toBe(commandDraft)
-      expect(textarea?.selectionStart).toBe(commandDraft.length)
-      expect(textarea?.selectionEnd).toBe(commandDraft.length)
+      expect(getComposerValue()).toBe(commandDraft)
+      expectComposerCaretAtEnd()
       expect(container.querySelector('.composer-input-highlights')).toBeNull()
       expect(container.querySelector('.composer-input-shell')?.classList).not.toContain(
         'has-input-highlights',
@@ -2980,24 +3018,13 @@ describe('Renderer Smoke Tests', () => {
       root.render(React.createElement(App))
     })
 
-    const setTextareaValue = (element: HTMLTextAreaElement | null, value: string) => {
-      expect(element).not.toBeNull()
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-      expect(setter).toBeDefined()
-      if (setter == null || element == null) throw new Error('textarea setter unavailable')
-      setter.call(element, value)
-      element.dispatchEvent(new Event('input', { bubbles: true }))
-    }
-
-    const composerInput = () => container.querySelector<HTMLTextAreaElement>('.composer-input')
-
     await vi.waitFor(() => {
-      expect(composerInput()).not.toBeNull()
+      expect(getComposerEditor()).not.toBeNull()
       expect(container.textContent).toContain('Draft session two')
     })
 
     act(() => {
-      setTextareaValue(composerInput(), 'draft for session one')
+      setComposerValue('draft for session one')
     })
 
     const sessionTwoItem = Array.from(
@@ -3010,11 +3037,11 @@ describe('Renderer Smoke Tests', () => {
     })
 
     await vi.waitFor(() => {
-      expect(composerInput()?.value).toBe('')
+      expect(getComposerValue()).toBe('')
     })
 
     act(() => {
-      setTextareaValue(composerInput(), 'draft for session two')
+      setComposerValue('draft for session two')
     })
 
     const sessionOneItem = Array.from(
@@ -3027,7 +3054,7 @@ describe('Renderer Smoke Tests', () => {
     })
 
     await vi.waitFor(() => {
-      expect(composerInput()?.value).toBe('draft for session one')
+      expect(getComposerValue()).toBe('draft for session one')
     })
 
     act(() => {
@@ -3037,7 +3064,7 @@ describe('Renderer Smoke Tests', () => {
     })
 
     await vi.waitFor(() => {
-      expect(composerInput()?.value).toBe('draft for session two')
+      expect(getComposerValue()).toBe('draft for session two')
     })
   })
 
@@ -3411,15 +3438,13 @@ describe('Renderer Smoke Tests', () => {
     expect(pickerIcon?.querySelector('[data-lobe-icon="TencentCloud"]')).not.toBeNull()
     expect(pickerIcon?.querySelector('[data-lobe-icon="XiaomiMiMo"]')).toBeNull()
 
-    const textarea = container.querySelector<HTMLTextAreaElement>('textarea')
+    const editor = getComposerEditor()
     const sendButton = container.querySelector<HTMLButtonElement>('.composer-send-round')
-    expect(textarea).not.toBeNull()
+    expect(editor).not.toBeNull()
     expect(sendButton).not.toBeNull()
 
     act(() => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-      setter?.call(textarea, 'hello from old session')
-      textarea?.dispatchEvent(new Event('input', { bubbles: true }))
+      setComposerValue('hello from old session')
     })
 
     act(() => {
@@ -3575,15 +3600,13 @@ describe('Renderer Smoke Tests', () => {
     })
     expect(container.textContent).not.toContain('mimo-v2.5-pro')
 
-    const textarea = container.querySelector<HTMLTextAreaElement>('textarea')
+    const editor = getComposerEditor()
     const sendButton = container.querySelector<HTMLButtonElement>('.composer-send-round')
-    expect(textarea).not.toBeNull()
+    expect(editor).not.toBeNull()
     expect(sendButton).not.toBeNull()
 
     act(() => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-      setter?.call(textarea, 'hello with recovered provider')
-      textarea?.dispatchEvent(new Event('input', { bubbles: true }))
+      setComposerValue('hello with recovered provider')
     })
 
     act(() => {
@@ -4038,11 +4061,7 @@ describe('Renderer Smoke Tests', () => {
           React.createElement(
             ToastProvider,
             null,
-            React.createElement(
-              SessionSidebarProvider,
-              null,
-              chatSurface,
-            ),
+            React.createElement(SessionSidebarProvider, null, chatSurface),
           ),
         )
       })
@@ -4181,11 +4200,7 @@ describe('Renderer Smoke Tests', () => {
         React.createElement(
           ToastProvider,
           null,
-          React.createElement(
-            SessionSidebarProvider,
-            null,
-            chatSurface,
-          ),
+          React.createElement(SessionSidebarProvider, null, chatSurface),
         ),
       )
     })
@@ -4330,11 +4345,7 @@ describe('Renderer Smoke Tests', () => {
         React.createElement(
           ToastProvider,
           null,
-          React.createElement(
-            SessionSidebarProvider,
-            null,
-            chatSurface,
-          ),
+          React.createElement(SessionSidebarProvider, null, chatSurface),
         ),
       )
     })
@@ -4356,27 +4367,27 @@ describe('Renderer Smoke Tests', () => {
 
     for (const streamHandler of streamHandlers) {
       streamHandler({
-          id: 'todo-2',
-          type: 'tool_call',
-          sessionId: 'session-1',
-          turnId: 'turn-1',
-          timestamp: '2026-05-27T00:00:02.000Z',
-          seq: 3,
-          provider: 'claude',
-          toolCallId: 'todo-2',
-          toolName: 'todo_write',
-          toolInput: {
-            todos: [
-              { id: 'locate', content: '定位文件变更展示链路', status: 'completed' },
-              {
-                id: 'fix',
-                content: '实施修复',
-                activeForm: '正在实施修复',
-                status: 'in_progress',
-              },
-            ],
-          },
-          source: 'builtin',
+        id: 'todo-2',
+        type: 'tool_call',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        timestamp: '2026-05-27T00:00:02.000Z',
+        seq: 3,
+        provider: 'claude',
+        toolCallId: 'todo-2',
+        toolName: 'todo_write',
+        toolInput: {
+          todos: [
+            { id: 'locate', content: '定位文件变更展示链路', status: 'completed' },
+            {
+              id: 'fix',
+              content: '实施修复',
+              activeForm: '正在实施修复',
+              status: 'in_progress',
+            },
+          ],
+        },
+        source: 'builtin',
       })
     }
 
