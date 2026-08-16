@@ -25,6 +25,7 @@ const streamingStableBlockCache = new Map<string, MarkdownBlock[]>()
 export const MarkdownText = React.memo(function MarkdownText({
   content,
   isStreaming = false,
+  detectDocumentOutput = true,
   agents,
   onMentionClick,
   onFilePreview,
@@ -32,6 +33,7 @@ export const MarkdownText = React.memo(function MarkdownText({
 }: {
   content: string
   isStreaming?: boolean
+  detectDocumentOutput?: boolean
   agents?: { id: string; name: string }[] | undefined
   onMentionClick?: ((agentId: string) => void) | undefined
   onFilePreview?: FileOpenHandler | undefined
@@ -56,10 +58,12 @@ export const MarkdownText = React.memo(function MarkdownText({
   const { syntaxHighlight } = useAppearanceSettings()
   const stableDocumentKeys = useMemo(
     () =>
-      stableBlocks.flatMap((block) =>
-        block.kind === 'paragraph' ? collectDocumentOutputKeys(block.text) : [],
-      ),
-    [stableBlocks],
+      detectDocumentOutput
+        ? stableBlocks.flatMap((block) =>
+            block.kind === 'paragraph' ? collectDocumentOutputKeys(block.text) : [],
+          )
+        : [],
+    [detectDocumentOutput, stableBlocks],
   )
 
   return (
@@ -72,6 +76,7 @@ export const MarkdownText = React.memo(function MarkdownText({
         onMentionClick={onMentionClick}
         onFilePreview={onFilePreview}
         workspaceRootPath={workspaceRootPath}
+        detectDocumentOutput={detectDocumentOutput}
       />
       <MarkdownBlocks
         blocks={tailBlocks}
@@ -81,6 +86,7 @@ export const MarkdownText = React.memo(function MarkdownText({
         onMentionClick={onMentionClick}
         onFilePreview={onFilePreview}
         workspaceRootPath={workspaceRootPath}
+        detectDocumentOutput={detectDocumentOutput}
         initialDocumentKeys={stableDocumentKeys}
       />
     </>
@@ -108,6 +114,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
   onMentionClick,
   onFilePreview,
   workspaceRootPath,
+  detectDocumentOutput,
   initialDocumentKeys = [],
 }: {
   blocks: MarkdownBlock[]
@@ -117,6 +124,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
   onMentionClick?: ((agentId: string) => void) | undefined
   onFilePreview?: FileOpenHandler | undefined
   workspaceRootPath?: string | null | undefined
+  detectDocumentOutput: boolean
   initialDocumentKeys?: string[]
 }) {
   const seenDocumentKeys = new Set(initialDocumentKeys)
@@ -141,12 +149,14 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
             )
           }
           case 'paragraph': {
-            const documentCards = renderDocumentOutputParagraph(
-              block.text,
-              seenDocumentKeys,
-              onFilePreview,
-              `doc-card-${index}`,
-            )
+            const documentCards = detectDocumentOutput
+              ? renderDocumentOutputParagraph(
+                  block.text,
+                  seenDocumentKeys,
+                  onFilePreview,
+                  `doc-card-${index}`,
+                )
+              : null
             if (documentCards != null) return documentCards
             return (
               <p key={index}>

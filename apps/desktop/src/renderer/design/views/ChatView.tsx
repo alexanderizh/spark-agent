@@ -4622,6 +4622,7 @@ function ChatStream({
                       : {})}
                   >
                     {renderBlocks(msg.blocks, {
+                      detectDocumentOutput: false,
                       ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
                       ...(onFilePreview != null ? { onFilePreview } : {}),
                     })}
@@ -4926,6 +4927,7 @@ function renderBlocks(
     workspaceRootPath?: string | null
     autoCollapseTools?: boolean
     onFilePreview?: FileOpenHandler
+    detectDocumentOutput?: boolean
   } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
@@ -4937,6 +4939,7 @@ function renderBlocks(
             <MarkdownText
               content={block.content}
               isStreaming={block.isStreaming}
+              detectDocumentOutput={options.detectDocumentOutput ?? true}
               workspaceRootPath={options.workspaceRootPath}
               {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
             />

@@ -20,6 +20,10 @@ const markdownMocks = vi.hoisted(() => ({
   ]),
 }))
 
+const documentOutputMocks = vi.hoisted(() => ({
+  renderDocumentOutputParagraph: vi.fn(() => null),
+}))
+
 vi.mock('./ChatMarkdownUtils', () => ({
   parseMarkdown: markdownMocks.parseMarkdown,
   findStableMarkdownPrefixEnd: (content: string) => {
@@ -58,7 +62,7 @@ vi.mock('../../components/FileDisplay', () => ({
 
 vi.mock('./ChatDocumentOutput', () => ({
   collectDocumentOutputKeys: () => [],
-  renderDocumentOutputParagraph: () => null,
+  renderDocumentOutputParagraph: documentOutputMocks.renderDocumentOutputParagraph,
 }))
 
 import { MarkdownText } from './ChatMarkdown'
@@ -70,6 +74,7 @@ describe('MarkdownText', () => {
 
   beforeEach(() => {
     markdownMocks.parseMarkdown.mockClear()
+    documentOutputMocks.renderDocumentOutputParagraph.mockClear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -105,7 +110,9 @@ describe('MarkdownText', () => {
 
   it('keeps completed streaming paragraphs parsed while only reparsing the live tail', () => {
     act(() => root.render(<MarkdownText content={'stable paragraph\n\npartial'} isStreaming />))
-    act(() => root.render(<MarkdownText content={'stable paragraph\n\npartial response'} isStreaming />))
+    act(() =>
+      root.render(<MarkdownText content={'stable paragraph\n\npartial response'} isStreaming />),
+    )
 
     expect(markdownMocks.parseMarkdown).toHaveBeenCalledTimes(3)
     expect(markdownMocks.parseMarkdown.mock.calls.map(([content]) => content)).toEqual([
@@ -129,5 +136,25 @@ describe('MarkdownText', () => {
     act(() => root.render(<MarkdownText content="2. second item" />))
 
     expect(container.querySelector('ol')?.getAttribute('start')).toBe('2')
+  })
+
+  it('keeps user text ending in a document extension as plain markdown', () => {
+    act(() =>
+      root.render(
+        <MarkdownText
+          content="符合一下方案真实性，就叫缓存命中优化.md"
+          detectDocumentOutput={false}
+        />,
+      ),
+    )
+
+    expect(documentOutputMocks.renderDocumentOutputParagraph).not.toHaveBeenCalled()
+    expect(container.textContent).toBe('符合一下方案真实性，就叫缓存命中优化.md')
+  })
+
+  it('detects document output by default for agent content', () => {
+    act(() => root.render(<MarkdownText content="todo/缓存命中优化.md" />))
+
+    expect(documentOutputMocks.renderDocumentOutputParagraph).toHaveBeenCalledTimes(1)
   })
 })

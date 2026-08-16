@@ -1076,6 +1076,7 @@ function MessageView({
                 <MarkdownText
                   content={message.role === 'user' ? sanitizeUserDisplayText(content) : content}
                   isStreaming={item.blocks.some((block) => block.isStreaming)}
+                  detectDocumentOutput={message.role !== 'user'}
                 />
                 {item.blocks.some((block) => block.isStreaming) && (
                   <span className="chat-panel-cursor">▋</span>
@@ -1124,6 +1125,7 @@ function BlockView({
         <div className="chat-panel-text md-surface">
           <MarkdownText
             content={role === 'user' ? sanitizeUserDisplayText(block.content) : block.content}
+            detectDocumentOutput={role !== 'user'}
           />
           {block.isStreaming && <span className="chat-panel-cursor">▋</span>}
         </div>
@@ -1617,7 +1619,7 @@ function PendingUserMessageView({
         )}
         {attachments.length > 0 && <MessageAttachmentsView attachments={attachments} />}
         <div className="chat-panel-text md-surface">
-          <MarkdownText content={text} />
+          <MarkdownText content={text} detectDocumentOutput={false} />
         </div>
       </div>
     </div>
