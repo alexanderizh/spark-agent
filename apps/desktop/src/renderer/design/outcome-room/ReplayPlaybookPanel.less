@@ -13,7 +13,7 @@
   overflow: hidden;
   color: var(--replay-panel-text);
   background: var(--replay-panel-bg);
-  border: 1px solid var(--replay-panel-border);
+  border-top: 1px solid var(--replay-panel-border);
   border-radius: 12px;
 
   *,
@@ -27,7 +27,7 @@
     font: inherit;
   }
 
-  button {
+  button:not(.ant-btn) {
     min-height: 32px;
     padding: 5px 12px;
     color: inherit;
@@ -37,17 +37,17 @@
     cursor: pointer;
   }
 
-  button:hover:not(:disabled) {
+  button:not(.ant-btn):hover:not(:disabled) {
     color: var(--replay-panel-accent);
     border-color: var(--replay-panel-accent);
   }
 
-  button:disabled {
+  button:not(.ant-btn):disabled {
     cursor: not-allowed;
     opacity: 0.55;
   }
 
-  button:focus-visible,
+  button:not(.ant-btn):focus-visible,
   input:focus-visible {
     outline: 2px solid var(--replay-panel-accent);
     outline-offset: 2px;
@@ -71,16 +71,25 @@
     margin: 0;
   }
 
+  /* 面板标题对齐侧栏统一小节标题（.inspector-section h4 / .config-panel-header） */
   h2 {
-    font-size: 17px;
+    color: var(--text-faint);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
   }
 
   h3 {
-    font-size: 15px;
+    color: var(--replay-panel-text, var(--text));
+    font-size: 11px;
+    font-weight: 650;
   }
 
   h4 {
-    font-size: 14px;
+    color: var(--replay-panel-text, var(--text));
+    font-size: 11px;
+    font-weight: 650;
   }
 
   > p[role='status'],
@@ -245,10 +254,6 @@
     &__section-heading {
       align-items: flex-start;
       flex-direction: column;
-    }
-
-    &__header button {
-      width: 100%;
     }
 
     &__section-heading span {

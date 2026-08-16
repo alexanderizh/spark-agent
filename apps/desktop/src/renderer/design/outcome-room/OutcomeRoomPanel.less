@@ -24,10 +24,14 @@
   min-width: 0;
 
   h3 {
+    // 对齐侧栏统一小节标题（.inspector-section h4 / .config-panel-header）
     margin: 2px 0 3px;
-    font-size: 16px;
+    color: var(--text-faint);
+    font-size: 10px;
+    font-weight: 600;
     line-height: 1.35;
-    letter-spacing: -0.01em;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
     overflow-wrap: anywhere;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -63,7 +67,10 @@
   border-radius: var(--r-md);
   background: var(--bg-soft);
   cursor: pointer;
-  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
 
   &:hover:not(:disabled) {
     color: var(--primary);
@@ -134,8 +141,12 @@
   border-left: 3px solid var(--primary);
   background: var(--bg-soft);
 
-  &.at-risk { border-left-color: var(--warning); }
-  &.blocked { border-left-color: var(--danger); }
+  &.at-risk {
+    border-left-color: var(--warning);
+  }
+  &.blocked {
+    border-left-color: var(--danger);
+  }
 
   small {
     display: block;
@@ -177,7 +188,9 @@
 
   h4 {
     margin: 0;
-    font-size: 13px;
+    color: var(--text-strong);
+    font-size: 11px;
+    font-weight: 650;
   }
 
   div > span,
@@ -208,11 +221,15 @@
   border-radius: var(--r-md);
   background: var(--bg-soft);
 
-  &.status-proposed { border-color: color-mix(in srgb, var(--warning) 42%, var(--border)); }
+  &.status-proposed {
+    border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
+  }
   &.status-invalid,
   &.status-rejected,
   &.status-expired,
-  &.status-deleted { opacity: 0.86; }
+  &.status-deleted {
+    opacity: 0.86;
+  }
 }
 
 .outcome-room-version-track {
@@ -275,7 +292,9 @@
     border-color: color-mix(in srgb, var(--warning) 38%, var(--border));
   }
 
-  .status.active { color: var(--primary); }
+  .status.active {
+    color: var(--primary);
+  }
 }
 
 .outcome-room-record pre {
@@ -326,7 +345,10 @@
     background: var(--panel);
     cursor: pointer;
     font-size: 10px;
-    transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+    transition:
+      color 160ms ease,
+      border-color 160ms ease,
+      background 160ms ease;
 
     &:hover:not(:disabled),
     &.primary {
@@ -360,11 +382,22 @@
   border-radius: var(--r-md);
   background: var(--bg-soft);
 
-  &.compact { min-height: 84px; }
-  &.error { color: var(--danger); }
+  &.compact {
+    min-height: 84px;
+  }
+  &.error {
+    color: var(--danger);
+  }
 
-  strong { color: var(--text-strong); font-size: 12px; }
-  p { margin: 0; font-size: 11px; line-height: 1.55; }
+  strong {
+    color: var(--text-strong);
+    font-size: 12px;
+  }
+  p {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.55;
+  }
 }
 
 .outcome-room-inline-error {
@@ -385,7 +418,9 @@
   background: var(--border);
   animation: outcome-room-pulse 1.2s ease-in-out infinite alternate;
 
-  &.wide { width: 82%; }
+  &.wide {
+    width: 82%;
+  }
 }
 
 .outcome-room-secondary {
@@ -427,8 +462,12 @@
 }
 
 @keyframes outcome-room-pulse {
-  from { opacity: 0.42; }
-  to { opacity: 0.82; }
+  from {
+    opacity: 0.42;
+  }
+  to {
+    opacity: 0.82;
+  }
 }
 
 @media (max-width: 1024px) {

@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { SessionId } from '@spark/protocol'
+import { RefreshCw } from 'lucide-react'
+import { Button } from '@lobehub/ui'
 import {
   useTeamReplayPlaybook,
   type ReplayEvent,
@@ -46,14 +48,15 @@ export function ReplayPlaybookPanel({
     <section className="replay-playbook-panel" aria-busy={replay.loading}>
       <div className="replay-playbook-panel__header">
         <h2>Replay 与 Playbook</h2>
-        <button
-          type="button"
+        <Button
+          type="text"
+          size="small"
           aria-label="重新加载 Replay 与 Playbook"
           onClick={() => void replay.refresh()}
           disabled={replay.loading}
         >
-          重新加载
-        </button>
+          <RefreshCw size={15} aria-hidden />
+        </Button>
       </div>
 
       {replay.loading && <p role="status">正在加载 Replay 与 Playbook…</p>}
@@ -67,14 +70,18 @@ export function ReplayPlaybookPanel({
       <div className="replay-playbook-panel__replay" data-replay-timeline>
         <div className="replay-playbook-panel__section-heading">
           <h3>Replay 时间线</h3>
-          <span>数据状态：{timelineStatus === 'unknown' ? '未知数据' : '部分数据（可能存在未同步字段）'}</span>
+          <span>
+            数据状态：{timelineStatus === 'unknown' ? '未知数据' : '部分数据（可能存在未同步字段）'}
+          </span>
         </div>
 
         {showEmptyTimeline ? (
           <p className="replay-playbook-panel__empty">暂无 Replay 事件</p>
         ) : (
           <ol className="replay-playbook-panel__timeline">
-            {timelineEvents.map((event) => <ReplayEventRow key={event.id} event={event} />)}
+            {timelineEvents.map((event) => (
+              <ReplayEventRow key={event.id} event={event} />
+            ))}
           </ol>
         )}
 
@@ -108,7 +115,13 @@ export function ReplayPlaybookPanel({
           </label>
           <button
             type="button"
-            onClick={() => void replay.fork({ branchId, sourceSeq: branchSourceSeq, reason: 'Manual branch from Replay timeline' })}
+            onClick={() =>
+              void replay.fork({
+                branchId,
+                sourceSeq: branchSourceSeq,
+                reason: 'Manual branch from Replay timeline',
+              })
+            }
             disabled={sessionId == null || discussionId == null || !branchId.trim()}
           >
             创建分支
@@ -145,7 +158,11 @@ export function ReplayPlaybookPanel({
           </button>
         </div>
         {replay.branch && <p>当前分支：{replay.branch.id}</p>}
-        {replay.diff && <p>Diff：序号 {replay.diff.fromSeq}–{replay.diff.toSeq}，{replay.diff.events.length} 个事件</p>}
+        {replay.diff && (
+          <p>
+            Diff：序号 {replay.diff.fromSeq}–{replay.diff.toSeq}，{replay.diff.events.length} 个事件
+          </p>
+        )}
       </div>
 
       <div className="replay-playbook-panel__playbook" data-playbook-list>
@@ -159,42 +176,65 @@ export function ReplayPlaybookPanel({
         ) : (
           <article className="replay-playbook-panel__card">
             <h4>{currentPlaybook.name}</h4>
-            <p>版本 {currentPlaybook.version} · 状态：{currentPlaybook.status}</p>
+            <p>
+              版本 {currentPlaybook.version} · 状态：{currentPlaybook.status}
+            </p>
             <div className="replay-playbook-panel__actions">
               <button
                 type="button"
                 disabled={!canPropose || replay.mutatingKey != null}
-                onClick={() => void runMutation({
-                  action: 'propose',
-                  id: currentPlaybook.id,
-                  name: currentPlaybook.name,
-                  graph: currentPlaybook.graph,
-                  roles: currentPlaybook.roles,
-                  handoffRules: currentPlaybook.handoffRules,
-                  gateRules: currentPlaybook.gateRules,
-                  deliberationRules: currentPlaybook.deliberationRules,
-                })}
+                onClick={() =>
+                  void runMutation({
+                    action: 'propose',
+                    id: currentPlaybook.id,
+                    name: currentPlaybook.name,
+                    graph: currentPlaybook.graph,
+                    roles: currentPlaybook.roles,
+                    handoffRules: currentPlaybook.handoffRules,
+                    gateRules: currentPlaybook.gateRules,
+                    deliberationRules: currentPlaybook.deliberationRules,
+                  })
+                }
               >
                 提议
               </button>
               <button
                 type="button"
                 disabled={!canMutate || replay.mutatingKey != null}
-                onClick={() => void runMutation({ action: 'publish', id: currentPlaybook.id, expectedVersion: currentPlaybook.version })}
+                onClick={() =>
+                  void runMutation({
+                    action: 'publish',
+                    id: currentPlaybook.id,
+                    expectedVersion: currentPlaybook.version,
+                  })
+                }
               >
                 发布
               </button>
               <button
                 type="button"
                 disabled={!canMutate || replay.mutatingKey != null}
-                onClick={() => void runMutation({ action: 'apply', id: currentPlaybook.id, expectedVersion: currentPlaybook.version, targetDiscussionId: discussionId ?? '' })}
+                onClick={() =>
+                  void runMutation({
+                    action: 'apply',
+                    id: currentPlaybook.id,
+                    expectedVersion: currentPlaybook.version,
+                    targetDiscussionId: discussionId ?? '',
+                  })
+                }
               >
                 应用
               </button>
               <button
                 type="button"
                 disabled={!canMutate || replay.mutatingKey != null}
-                onClick={() => void runMutation({ action: 'archive', id: currentPlaybook.id, expectedVersion: currentPlaybook.version })}
+                onClick={() =>
+                  void runMutation({
+                    action: 'archive',
+                    id: currentPlaybook.id,
+                    expectedVersion: currentPlaybook.version,
+                  })
+                }
               >
                 归档
               </button>
@@ -204,7 +244,11 @@ export function ReplayPlaybookPanel({
 
         {replay.playbooks.length > 1 && (
           <ul>
-            {replay.playbooks.map((item) => <li key={`${item.id}-${item.version}`}>{item.name} · v{item.version} · {item.status}</li>)}
+            {replay.playbooks.map((item) => (
+              <li key={`${item.id}-${item.version}`}>
+                {item.name} · v{item.version} · {item.status}
+              </li>
+            ))}
           </ul>
         )}
         {replay.applications.length > 0 && <p>已应用记录：{replay.applications.length}</p>}

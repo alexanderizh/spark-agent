@@ -4,7 +4,6 @@ import { Button } from '@lobehub/ui'
 import './TeamP1Panel.less'
 import { RefreshCw } from 'lucide-react'
 
-
 export function TeamP1Panel({ sessionId }: { sessionId: SessionId | undefined }) {
   const { snapshot, loading, error, refresh, mutate } = useTeamP1(sessionId)
   const activeSnapshot = snapshot?.discussionId == null ? null : snapshot
@@ -16,9 +15,10 @@ export function TeamP1Panel({ sessionId }: { sessionId: SessionId | undefined })
         <strong>交接与 Steering Gate</strong>
         <Button
           type="text"
-          size='small'
+          size="small"
           aria-label="重新加载交接与 Steering Gate"
           onClick={() => void refresh()}
+          disabled={loading}
         >
           <RefreshCw size={15} aria-hidden />
         </Button>
@@ -32,7 +32,7 @@ export function TeamP1Panel({ sessionId }: { sessionId: SessionId | undefined })
       {activeSnapshot != null &&
         activeSnapshot.handoffs.length === 0 &&
         activeSnapshot.gates.length === 0 &&
-        !loading && <p className='team-p1-panel-no-content'>暂无交接或 Steering Gate。</p>}
+        !loading && <p className="team-p1-panel-no-content">暂无交接或 Steering Gate。</p>}
       {activeSnapshot != null && discussionId != null && (
         <div className="team-p1-panel__columns">
           <div>

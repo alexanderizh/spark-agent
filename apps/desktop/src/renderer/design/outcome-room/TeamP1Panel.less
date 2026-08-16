@@ -2,6 +2,13 @@
   padding: 4px 14px;
   border-bottom: 1px solid var(--border);
 
+  // 状态提示（加载/错误/空态）对齐侧栏 .inspector-muted
+  > p {
+    margin: 4px 0;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
   .team-p1-panel-no-content {
     text-align: center;
     font-size: 12px;
@@ -15,10 +22,22 @@
   align-items: center;
   h4 {
     margin: 4px 0;
+    color: var(--text-strong);
+    font-size: 11px;
+    font-weight: 650;
   }
 }
 .team-p1-panel header {
   justify-content: space-between;
+
+  // 面板标题对齐侧栏统一小节标题（.inspector-section h4）
+  strong {
+    color: var(--text-faint);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
 }
 .team-p1-panel__columns {
   align-items: flex-start;
@@ -32,6 +51,11 @@
   flex-wrap: wrap;
   padding: 8px 0;
   border-top: 1px solid var(--border);
+}
+.team-p1-panel article strong {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 650;
 }
 .team-p1-panel article span {
   flex: 1 1 100%;
