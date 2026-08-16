@@ -7027,6 +7027,7 @@ export function registerAllIpcHandlers(): void {
     const cmdResult = await getSessionService().executeCommandAsEvents({
       sessionId: req.sessionId,
       message: req.message,
+      ...(req.attachments != null ? { attachments: req.attachments } : {}),
       ...(req.sessionReferences != null ? { sessionReferences: req.sessionReferences } : {}),
     })
     if (!cmdResult.isCommand) {

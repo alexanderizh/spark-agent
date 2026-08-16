@@ -1666,6 +1666,7 @@ export class SessionService {
           await this.setGoal({
             sessionId: id,
             objective,
+            ...(options?.attachments != null ? { attachments: options.attachments } : {}),
             ...(options?.successCriteria != null
               ? { successCriteria: options.successCriteria }
               : {}),
@@ -1710,6 +1711,7 @@ export class SessionService {
   async executeCommandAsEvents(params: {
     sessionId: string
     message: string
+    attachments?: SessionAttachment[]
     sessionReferences?: SessionReferenceInput[]
   }): Promise<{ isCommand: boolean; forwardToAgent?: boolean; started?: boolean }> {
     if (!isCommand(params.message)) return { isCommand: false }
@@ -1719,6 +1721,7 @@ export class SessionService {
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
     const eventRepo = new EventRepository(this.db)
+    const commandAttachments = normalizeTurnAttachments(params.attachments)
     const session = sessionRepo.get(params.sessionId)
 
     let workspacePath: string | null = null
@@ -1857,6 +1860,7 @@ export class SessionService {
           await this.setGoal({
             sessionId: id,
             objective,
+            ...(options?.attachments != null ? { attachments: options.attachments } : {}),
             ...(options?.successCriteria != null
               ? { successCriteria: options.successCriteria }
               : {}),
@@ -1883,6 +1887,7 @@ export class SessionService {
 
     const ctx = {
       sessionId: params.sessionId,
+      ...(commandAttachments != null ? { attachments: commandAttachments } : {}),
       ...(workspacePath != null ? { workspaceId: workspacePath } : {}),
       ...(session?.provider_profile_id != null ? { providerId: session.provider_profile_id } : {}),
       ...(session?.model_id != null ? { model: session.model_id } : {}),
@@ -1951,6 +1956,7 @@ export class SessionService {
       timestamp: new Date().toISOString(),
       seq: seq0 + seqOffset,
       content: params.message,
+      ...(commandAttachments != null ? { attachments: commandAttachments } : {}),
       ...(sessionReferences.length > 0 ? { sessionReferences } : {}),
     }
     seqOffset += 1
@@ -2005,6 +2011,7 @@ export class SessionService {
       const sendResult = await this.sendTurn({
         sessionId: params.sessionId,
         message: followUpPrompt,
+        ...(commandAttachments != null ? { attachments: commandAttachments } : {}),
         ...(result.followUpSkillId != null ? { skillId: result.followUpSkillId } : {}),
         ...(result.followUpSkillParams != null ? { skillParams: result.followUpSkillParams } : {}),
       })
@@ -8912,6 +8919,7 @@ export class SessionService {
   async setGoal(params: {
     sessionId: string
     objective: string
+    attachments?: SessionAttachment[]
     successCriteria?: string[]
     constraints?: string[]
     validation?: { commands?: string[]; checklist?: string[] }
@@ -8925,6 +8933,7 @@ export class SessionService {
     mode?: 'spark-loop' | 'codex-native' | 'auto'
   }): Promise<SessionGoalResponse> {
     const repo = new GoalRepository(this.db)
+    const goalAttachments = normalizeTurnAttachments(params.attachments)
     const session = new SessionRepository(this.db).get(params.sessionId)
     const mode =
       params.mode === 'codex-native' ||
@@ -8965,11 +8974,14 @@ export class SessionService {
         buildGoalContractDraftPrompt(pending.objective),
         GOAL_CONTRACT_DRAFT_TURN_PRESENTATION,
         this.goalSyntheticTurnRuntimePatch(params.sessionId),
+        undefined,
+        undefined,
+        goalAttachments,
       )
       return { goal: toProtocolGoal(repo.getCurrent(params.sessionId)) }
     }
     this.emitGoalEvent(params.sessionId, goal, 'goal_started', 'active', 'Goal started')
-    await this.startGoalLoop(params.sessionId)
+    await this.startGoalLoop(params.sessionId, goalAttachments)
     return { goal: toProtocolGoal(goal) }
   }
 
@@ -9341,7 +9353,7 @@ export class SessionService {
     return Object.keys(patch).length > 0 ? patch : undefined
   }
 
-  private async startGoalLoop(sessionId: string): Promise<void> {
+  private async startGoalLoop(sessionId: string, attachments?: SessionAttachment[]): Promise<void> {
     const repo = new GoalRepository(this.db)
     const goal = repo.getCurrent(sessionId)
     if (goal == null || goal.status !== 'active') return
@@ -9354,6 +9366,7 @@ export class SessionService {
     }
     log.info('goal loop: iteration', { sessionId, iteration: goal.progressLog.length + 1 })
     const turnId = crypto.randomUUID()
+    const goalAttachments = attachments ?? this.findGoalSourceAttachments(sessionId, goal.objective)
     const supplementaryUserMessages = this.drainQueuedUserTurnsForGoalIteration(sessionId)
     const prompt = buildGoalIterationPrompt(goal, supplementaryUserMessages)
     // 启动只发事件、不写 progressLog：真实进度条目唯一来源是 turn 结束时解析的
@@ -9374,7 +9387,35 @@ export class SessionService {
       prompt,
       GOAL_ITERATION_TURN_PRESENTATION,
       this.goalSyntheticTurnRuntimePatch(sessionId),
+      undefined,
+      undefined,
+      goalAttachments,
     )
+  }
+
+  private findGoalSourceAttachments(
+    sessionId: string,
+    objective: string,
+  ): SessionAttachment[] | undefined {
+    try {
+      const rows = new EventRepository(this.db).queryBySession({
+        sessionId,
+        eventType: 'user_message',
+        limit: 200,
+      }).events
+      const expectedMessage = `/goal ${objective}`
+      for (const row of rows) {
+        const event = JSON.parse(row.event_json) as {
+          content?: unknown
+          attachments?: SessionAttachment[]
+        }
+        if (event.content !== expectedMessage || event.attachments == null) continue
+        return normalizeTurnAttachments(event.attachments)
+      }
+    } catch {
+      // Historical sessions and old test doubles may not expose command attachments.
+    }
+    return undefined
   }
 
   private emitGoalEvent(

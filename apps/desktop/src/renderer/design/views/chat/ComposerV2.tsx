@@ -1869,6 +1869,7 @@ export function ComposerV2({
         setSending(true)
         let optimisticSend: OptimisticUserSendLifecycle | null = null
         try {
+          const requestAttachments = await prepareRequestAttachments()
           // 如果没有活跃 session，先创建一个（命令需要 session 上下文）。
           // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
           let sessionId = createWorktree || !canReuseCurrentSession ? null : (session?.id ?? null)
@@ -1906,6 +1907,7 @@ export function ComposerV2({
           const res = await window.spark.invoke('command:execute', {
             sessionId,
             message: text,
+            ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
             ...(sessionReferences.length > 0
               ? {
                   sessionReferences: sessionReferences.map((reference) => ({
@@ -1937,7 +1939,6 @@ export function ComposerV2({
               },
               optimisticUserSendCallbacks,
             )
-            const requestAttachments = await prepareRequestAttachments()
             setSending(false)
             await flushPendingRuntimePatch()
             const sendRes = await sendTurn({

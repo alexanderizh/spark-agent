@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { clipTextHeadTail } from '@spark/shared'
+import type { SessionAttachment } from '@spark/protocol'
 import type { ParsedCommand } from './command-parser.js'
 
 /* ============================================================
@@ -57,6 +58,7 @@ export interface CommandContext {
   workspaceId?: string
   providerId?: string
   model?: string
+  attachments?: SessionAttachment[]
 }
 
 /** 命令执行结果 */
@@ -127,7 +129,17 @@ export interface CommandDefinition {
 
 /** 命令执行所需的外部依赖（由 SessionService 注入） */
 export interface CommandDeps {
-  getSession: (id: string) => { title: string; status: string; modelId: string | null; providerProfileId: string; agentAdapter?: string; permissionMode?: string; agentId?: string | null } | null
+  getSession: (
+    id: string,
+  ) => {
+    title: string
+    status: string
+    modelId: string | null
+    providerProfileId: string
+    agentAdapter?: string
+    permissionMode?: string
+    agentId?: string | null
+  } | null
   updateSession: (id: string, fields: { modelId?: string | null; title?: string }) => Promise<void>
   clearSessionEvents: (id: string) => Promise<void>
   getProviderName: (id: string) => string | null
@@ -136,28 +148,77 @@ export interface CommandDeps {
   /** 获取 workspace 文件路径 */
   getWorkspacePath?: () => string | null
   /** 执行 shell 命令 */
-  execShell?: (command: string, cwd?: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
+  execShell?: (
+    command: string,
+    cwd?: string,
+  ) => Promise<{ stdout: string; stderr: string; exitCode: number }>
   /** 获取会话事件数量 */
   getSessionEventCount?: (id: string) => number
   /** 获取当前 session 的 usage 统计 */
-  getSessionUsage?: (id: string) => { totalInputTokens: number; totalOutputTokens: number; totalCost: number } | null
+  getSessionUsage?: (
+    id: string,
+  ) => { totalInputTokens: number; totalOutputTokens: number; totalCost: number } | null
   listSessionCheckpoints?: (id: string) => CheckpointSnapshot[]
   restoreCheckpoint?: (sessionId: string, checkpointRef: string) => Promise<CheckpointRestoreResult>
   getCheckpointEnabled?: (sessionId: string) => boolean
   setCheckpointEnabled?: (sessionId: string, enabled: boolean) => boolean
-  listSkills?: (query?: string) => Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }>
-  getSessionRuntimeInfo?: (sessionId: string) => { providerProfileId?: string | null; providerName?: string | null; modelId?: string | null; agentAdapter?: string | null; permissionMode?: string | null } | null
-  checkSdkAvailability?: () => Promise<{ claudeSdk: boolean; codexCli: boolean; openaiSdk: boolean }>
-  checkWorkspaceShell?: (cwd?: string | null) => Promise<{ available: boolean; shell?: string; error?: string }>
-  getMcpStatusSummary?: () => Array<{ id: string; name: string; enabled: boolean; connected: boolean; toolCount: number; error?: string }>
-  getCurrentAgentSummary?: (sessionId: string) => { id: string; name: string; exists: boolean; enabled: boolean; hasModelConfig: boolean; providerProfileId?: string | null; modelId?: string | null } | null
-  setGoal?: (sessionId: string, objective: string, options?: { successCriteria?: string[]; validationCommands?: string[] }) => Promise<Record<string, unknown>>
+  listSkills?: (
+    query?: string,
+  ) => Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }>
+  getSessionRuntimeInfo?: (
+    sessionId: string,
+  ) => {
+    providerProfileId?: string | null
+    providerName?: string | null
+    modelId?: string | null
+    agentAdapter?: string | null
+    permissionMode?: string | null
+  } | null
+  checkSdkAvailability?: () => Promise<{
+    claudeSdk: boolean
+    codexCli: boolean
+    openaiSdk: boolean
+  }>
+  checkWorkspaceShell?: (
+    cwd?: string | null,
+  ) => Promise<{ available: boolean; shell?: string; error?: string }>
+  getMcpStatusSummary?: () => Array<{
+    id: string
+    name: string
+    enabled: boolean
+    connected: boolean
+    toolCount: number
+    error?: string
+  }>
+  getCurrentAgentSummary?: (
+    sessionId: string,
+  ) => {
+    id: string
+    name: string
+    exists: boolean
+    enabled: boolean
+    hasModelConfig: boolean
+    providerProfileId?: string | null
+    modelId?: string | null
+  } | null
+  setGoal?: (
+    sessionId: string,
+    objective: string,
+    options?: {
+      successCriteria?: string[]
+      validationCommands?: string[]
+      attachments?: SessionAttachment[]
+    },
+  ) => Promise<Record<string, unknown>>
   getGoal?: (sessionId: string) => Record<string, unknown> | null
-  controlGoal?: (sessionId: string, action: 'pause' | 'resume' | 'clear' | 'complete', summary?: string) => Promise<Record<string, unknown> | null>
+  controlGoal?: (
+    sessionId: string,
+    action: 'pause' | 'resume' | 'clear' | 'complete',
+    summary?: string,
+  ) => Promise<Record<string, unknown> | null>
   confirmGoalContract?: (sessionId: string) => Promise<Record<string, unknown> | null>
   rejectGoalContract?: (sessionId: string) => Promise<Record<string, unknown> | null>
 }
-
 
 /** 命令面板展示用的轻量类型 */
 export interface CommandListItem {
@@ -234,12 +295,7 @@ function clipCommandSectionOutput(output: string, maxTokens = 1500): string {
    ============================================================ */
 
 /** 支持子命令的命令集合 */
-const SUBCOMMAND_COMMANDS = new Set([
-  'skill',
-  'checkpoint',
-  'git',
-  'goal',
-])
+const SUBCOMMAND_COMMANDS = new Set(['skill', 'checkpoint', 'git', 'goal'])
 
 function forwardToAgent(message = ''): CommandResult {
   return { success: true, message, forwardToAgent: true }
@@ -247,7 +303,7 @@ function forwardToAgent(message = ''): CommandResult {
 
 export class CommandRegistry {
   private commands = new Map<string, CommandDefinition>()
-  private aliasIndex = new Map<string, string>()  // alias → command name
+  private aliasIndex = new Map<string, string>() // alias → command name
 
   register(def: CommandDefinition): void {
     this.commands.set(def.name, def)
@@ -304,7 +360,9 @@ export class CommandRegistry {
    * Register enabled skills as individual Layer 3 commands.
    * Each skill becomes `/<skill-name>` with `forwardToAgent` and `followUpSkillId`.
    */
-  registerSkillCommands(skills: Array<{ id: string; name: string; description: string; tags: string[] }>): void {
+  registerSkillCommands(
+    skills: Array<{ id: string; name: string; description: string; tags: string[] }>,
+  ): void {
     this.clearSkillCommands()
     for (const skill of skills) {
       // Derive command name from skill name (slugified), not from ID which can be numeric
@@ -324,9 +382,8 @@ export class CommandRegistry {
         risk: 'none' as const,
         handler: async (cmd, _ctx, _deps) => {
           const task = cmd.freeText || cmd.args.join(' ').trim()
-          const followUpPrompt = task.length > 0
-            ? task
-            : `Use the selected skill ${skillId} for the current task.`
+          const followUpPrompt =
+            task.length > 0 ? task : `Use the selected skill ${skillId} for the current task.`
           return {
             success: true,
             message: `已选择 Skill \`${skillId}\`。下一轮将强制加载该 Skill 的完整指令。`,
@@ -387,7 +444,11 @@ export class CommandRegistry {
     return SUBCOMMAND_COMMANDS.has(name)
   }
 
-  async execute(cmd: ParsedCommand, ctx: CommandContext, deps: CommandDeps): Promise<CommandResult> {
+  async execute(
+    cmd: ParsedCommand,
+    ctx: CommandContext,
+    deps: CommandDeps,
+  ): Promise<CommandResult> {
     const def = this.get(cmd.name)
     if (def == null) {
       return {
@@ -421,7 +482,10 @@ async function runCustomCommand(
     const ext = custom.scriptLanguage === 'python' ? 'py' : 'js'
     const runner = custom.scriptLanguage === 'python' ? 'python3' : 'node'
     const safeId = custom.id.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64) || 'command'
-    const filePath = path.join(tmpdir(), `spark-custom-command-${safeId}-${crypto.randomUUID()}.${ext}`)
+    const filePath = path.join(
+      tmpdir(),
+      `spark-custom-command-${safeId}-${crypto.randomUUID()}.${ext}`,
+    )
     await writeFile(filePath, custom.script, 'utf8')
     try {
       const result = await deps.execShell(
@@ -489,7 +553,10 @@ function registerSdkCommands(registry: CommandRegistry): void {
       if (targetCmd) {
         const def = registry.get(targetCmd)
         if (def == null) {
-          return { success: false, message: `未知命令 /${targetCmd}。输入 /help 查看所有可用命令。` }
+          return {
+            success: false,
+            message: `未知命令 /${targetCmd}。输入 /help 查看所有可用命令。`,
+          }
         }
         const lines = [
           `**/${def.name}**`,
@@ -500,7 +567,9 @@ function registerSdkCommands(registry: CommandRegistry): void {
           `- 作用域：${def.scope}`,
           `- 风险：${def.risk}`,
           ...(def.usage != null ? [`- 用法：\`${def.usage}\``] : []),
-          ...(def.aliases.length > 0 ? [`- 别名：${def.aliases.map((alias) => `\`/${alias}\``).join('、')}`] : []),
+          ...(def.aliases.length > 0
+            ? [`- 别名：${def.aliases.map((alias) => `\`/${alias}\``).join('、')}`]
+            : []),
           `- 执行方式：${isAgentForwardedCommand(def) ? '交给 Agent 处理' : 'Spark 内部处理'}`,
         ]
         return {
@@ -561,7 +630,8 @@ function registerSdkCommands(registry: CommandRegistry): void {
       if (session == null) {
         return { success: false, message: '会话不存在' }
       }
-      const providerName = deps.getProviderName(session.providerProfileId) ?? session.providerProfileId
+      const providerName =
+        deps.getProviderName(session.providerProfileId) ?? session.providerProfileId
       const eventCount = deps.getSessionEventCount?.(ctx.sessionId) ?? 0
       const usage = deps.getSessionUsage?.(ctx.sessionId)
       const lines = [
@@ -603,18 +673,33 @@ function registerSdkCommands(registry: CommandRegistry): void {
       const isControl = action != null && ['pause', 'resume', 'clear', 'complete'].includes(action)
       if (isControl) {
         if (!deps.controlGoal) return { success: false, message: '当前运行时不支持 Goal 控制。' }
-        const goal = await deps.controlGoal(ctx.sessionId, action as 'pause' | 'resume' | 'clear' | 'complete', cmd.args.slice(1).join(' '))
-        return { success: true, message: `Goal 已${action === 'pause' ? '暂停' : action === 'resume' ? '恢复' : action === 'clear' ? '清除' : '完成'}。`, data: { goal } }
+        const goal = await deps.controlGoal(
+          ctx.sessionId,
+          action as 'pause' | 'resume' | 'clear' | 'complete',
+          cmd.args.slice(1).join(' '),
+        )
+        return {
+          success: true,
+          message: `Goal 已${action === 'pause' ? '暂停' : action === 'resume' ? '恢复' : action === 'clear' ? '清除' : '完成'}。`,
+          data: { goal },
+        }
       }
       if (action === 'confirm') {
-        if (!deps.confirmGoalContract) return { success: false, message: '当前运行时不支持 Goal 契约确认。' }
+        if (!deps.confirmGoalContract)
+          return { success: false, message: '当前运行时不支持 Goal 契约确认。' }
         const goal = await deps.confirmGoalContract(ctx.sessionId)
         const status = (goal as { status?: string } | null)?.status
-        if (status === 'active') return { success: true, message: 'Goal 契约已确认，开始执行。', data: { goal } }
-        return { success: false, message: '没有待确认的契约，或契约缺少验收标准，无法启动。', data: { goal } }
+        if (status === 'active')
+          return { success: true, message: 'Goal 契约已确认，开始执行。', data: { goal } }
+        return {
+          success: false,
+          message: '没有待确认的契约，或契约缺少验收标准，无法启动。',
+          data: { goal },
+        }
       }
       if (action === 'reject') {
-        if (!deps.rejectGoalContract) return { success: false, message: '当前运行时不支持 Goal 契约拒绝。' }
+        if (!deps.rejectGoalContract)
+          return { success: false, message: '当前运行时不支持 Goal 契约拒绝。' }
         const goal = await deps.rejectGoalContract(ctx.sessionId)
         return { success: true, message: 'Goal 契约已拒绝，目标已清除。', data: { goal } }
       }
@@ -625,14 +710,21 @@ function registerSdkCommands(registry: CommandRegistry): void {
         if (pendingStatus === 'pending_contract') {
           const sc = (goal as { successCriteria?: string[] }).successCriteria ?? []
           const lines = sc.length > 0 ? sc.map((c) => `- ${c}`).join('\n') : '（契约起草中…）'
-          return { success: true, message: `待确认验收契约：\n${lines}\n\n\`/goal confirm\` 启动 · \`/goal reject\` 取消`, data: { goal } }
+          return {
+            success: true,
+            message: `待确认验收契约：\n${lines}\n\n\`/goal confirm\` 启动 · \`/goal reject\` 取消`,
+            data: { goal },
+          }
         }
         return { success: true, message: '当前 Goal 状态如下。', data: { goal } }
       }
       if (!deps.setGoal) return { success: false, message: '当前运行时不支持 Goal。' }
       const objective = cmd.args.join(' ').trim()
       if (!objective) return { success: false, message: '用法：/goal <objective>' }
-      const goal = await deps.setGoal(ctx.sessionId, objective)
+      const goal =
+        ctx.attachments == null
+          ? await deps.setGoal(ctx.sessionId, objective)
+          : await deps.setGoal(ctx.sessionId, objective, { attachments: ctx.attachments })
       // 未显式给验收标准时走契约门控：先起草、停在 pending_contract 等确认，不能宣称"开始执行"。
       if ((goal as { status?: string } | null)?.status === 'pending_contract') {
         return {
@@ -689,8 +781,10 @@ function registerSdkCommands(registry: CommandRegistry): void {
     handler: async (_cmd, ctx, deps) => {
       const session = deps.getSession(ctx.sessionId)
       const runtime = deps.getSessionRuntimeInfo?.(ctx.sessionId) ?? null
-      const providerId = runtime?.providerProfileId ?? session?.providerProfileId ?? ctx.providerId ?? null
-      const providerName = runtime?.providerName ?? (providerId ? deps.getProviderName(providerId) : null)
+      const providerId =
+        runtime?.providerProfileId ?? session?.providerProfileId ?? ctx.providerId ?? null
+      const providerName =
+        runtime?.providerName ?? (providerId ? deps.getProviderName(providerId) : null)
       const modelId = runtime?.modelId ?? session?.modelId ?? ctx.model ?? null
       const agentAdapter = runtime?.agentAdapter ?? session?.agentAdapter ?? null
       const permissionMode = runtime?.permissionMode ?? session?.permissionMode ?? null
@@ -704,9 +798,11 @@ function registerSdkCommands(registry: CommandRegistry): void {
 
       if (session == null) issues.push('当前 session 不存在，请重新打开或创建会话。')
       if (!workspacePath) issues.push('未打开 workspace，Git、验证脚本和本地 shell 能力受限。')
-      if (!shell.available) issues.push(`workspace shell 不可执行${shell.error ? `：${shell.error}` : '。'}`)
+      if (!shell.available)
+        issues.push(`workspace shell 不可执行${shell.error ? `：${shell.error}` : '。'}`)
       if (!providerId) issues.push('当前 session 缺少 provider 配置。')
-      if (!modelId) issues.push('当前 session 未显式设置 model，将依赖 provider 或 agent 默认模型。')
+      if (!modelId)
+        issues.push('当前 session 未显式设置 model，将依赖 provider 或 agent 默认模型。')
       if (!agentAdapter) issues.push('当前 session 缺少 agent adapter 配置。')
       if (agent != null) {
         if (!agent.exists) issues.push(`当前 Agent 不存在：${agent.id}`)
@@ -715,15 +811,19 @@ function registerSdkCommands(registry: CommandRegistry): void {
       } else {
         issues.push('无法读取当前 Agent 配置摘要。')
       }
-      if (!sdk.claudeSdk && agentAdapter === 'claude-sdk') issues.push('Claude SDK 不可用，但当前 adapter 为 claude-sdk。')
-      if (!sdk.codexCli && agentAdapter === 'codex') issues.push('Codex CLI 不可用，本地 Codex adapter 可能无法运行。')
+      if (!sdk.claudeSdk && agentAdapter === 'claude-sdk')
+        issues.push('Claude SDK 不可用，但当前 adapter 为 claude-sdk。')
+      if (!sdk.codexCli && agentAdapter === 'codex')
+        issues.push('Codex CLI 不可用，本地 Codex adapter 可能无法运行。')
       if (!sdk.openaiSdk) issues.push('OpenAI SDK 不可用，OpenAI Responses adapter 可能无法运行。')
 
       const lines = [
         '**环境诊断**',
         '',
         '## Session',
-        session == null ? '- ❌ Session: 不存在' : `- ✅ Session: ${ctx.sessionId} (${session.status})`,
+        session == null
+          ? '- ❌ Session: 不存在'
+          : `- ✅ Session: ${ctx.sessionId} (${session.status})`,
         `- Workspace: ${workspacePath ? `✅ ${workspacePath}` : '⚠️ 未打开'}`,
         `- Permission Mode: ${permissionMode ? `✅ ${permissionMode}` : '⚠️ 未配置'}`,
         '',
@@ -739,7 +839,9 @@ function registerSdkCommands(registry: CommandRegistry): void {
         agent == null
           ? '- Agent: ⚠️ 未提供摘要'
           : `- Agent: ${agent.exists ? (agent.enabled ? '✅' : '⚠️') : '❌'} ${agent.name} (${agent.id})`,
-        agent == null ? '- Agent Model Config: ⚠️ 未知' : `- Agent Model Config: ${agent.hasModelConfig ? '✅ 已配置' : '⚠️ 缺失'}`,
+        agent == null
+          ? '- Agent Model Config: ⚠️ 未知'
+          : `- Agent Model Config: ${agent.hasModelConfig ? '✅ 已配置' : '⚠️ 缺失'}`,
         '',
         '## Shell/Git',
         `- Shell: ${shell.available ? `✅ 可执行${shell.shell ? ` (${shell.shell})` : ''}` : `❌ 不可用${shell.error ? `：${shell.error}` : ''}`}`,
@@ -755,7 +857,20 @@ function registerSdkCommands(registry: CommandRegistry): void {
       return {
         success: true,
         message: lines.join('\n'),
-        data: { session: session != null, workspacePath, providerId, modelId, agentAdapter, permissionMode, sdk, shell, git, mcpServers, agent, issues },
+        data: {
+          session: session != null,
+          workspacePath,
+          providerId,
+          modelId,
+          agentAdapter,
+          permissionMode,
+          sdk,
+          shell,
+          git,
+          mcpServers,
+          agent,
+          issues,
+        },
       }
     },
   })
@@ -802,7 +917,10 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
       const title = cmd.args.join(' ') || cmd.freeText
       if (!title) {
         const session = deps.getSession(ctx.sessionId)
-        return { success: true, message: `当前标题：${session?.title ?? '未知'}\n用法：/rename <新标题>` }
+        return {
+          success: true,
+          message: `当前标题：${session?.title ?? '未知'}\n用法：/rename <新标题>`,
+        }
       }
       await deps.updateSession(ctx.sessionId, { title })
       return { success: true, message: `会话已重命名为「${title}」` }
@@ -823,31 +941,43 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
     handler: async (cmd, ctx, deps) => {
       const action = cmd.args[0]?.toLowerCase() ?? 'list'
       if (action === 'on' || action === 'off') {
-        if (deps.setCheckpointEnabled == null) return { success: false, message: '当前运行时不支持 checkpoint 开关。' }
+        if (deps.setCheckpointEnabled == null)
+          return { success: false, message: '当前运行时不支持 checkpoint 开关。' }
         const ok = deps.setCheckpointEnabled(ctx.sessionId, action === 'on')
         if (!ok) return { success: false, message: '会话不存在，无法切换 checkpoint。' }
-        return { success: true, message: action === 'on'
-          ? '已开启代码还原点：之后每当工作区发生文件变更，会在改动前自动快照（仅变更时）。'
-          : '已关闭代码还原点（不再新建快照；已有快照保留）。' }
+        return {
+          success: true,
+          message:
+            action === 'on'
+              ? '已开启代码还原点：之后每当工作区发生文件变更，会在改动前自动快照（仅变更时）。'
+              : '已关闭代码还原点（不再新建快照；已有快照保留）。',
+        }
       }
       if (action === 'status') {
         const enabled = deps.getCheckpointEnabled?.(ctx.sessionId) ?? false
         const count = deps.listSessionCheckpoints?.(ctx.sessionId)?.length ?? 0
-        return { success: true, message: `代码还原点：${enabled ? '已开启' : '未开启'}；当前 ${count} 个快照。${enabled ? '' : '\n用 `/checkpoint on` 开启。'}` }
+        return {
+          success: true,
+          message: `代码还原点：${enabled ? '已开启' : '未开启'}；当前 ${count} 个快照。${enabled ? '' : '\n用 `/checkpoint on` 开启。'}`,
+        }
       }
       if (action === 'list') {
         const checkpoints = deps.listSessionCheckpoints?.(ctx.sessionId) ?? []
         if (checkpoints.length === 0) {
           return { success: true, message: '当前会话还没有可用 checkpoint。' }
         }
-        const lines = checkpoints.slice(-10).reverse().map((checkpoint) => {
-          const files = checkpoint.filePaths?.length ?? 0
-          const filePreview = checkpoint.filePaths?.slice(0, 3).join(', ')
-          const label = checkpoint.label != null ? ` ${checkpoint.label}` : ''
-          const source = checkpoint.path != null ? ` · ${checkpoint.path}` : ''
-          const fileText = filePreview != null && filePreview.length > 0 ? ` · ${filePreview}` : ''
-          return `- \`${checkpoint.checkpointId}\`${label} · ${files} files${fileText}${source}`
-        })
+        const lines = checkpoints
+          .slice(-10)
+          .reverse()
+          .map((checkpoint) => {
+            const files = checkpoint.filePaths?.length ?? 0
+            const filePreview = checkpoint.filePaths?.slice(0, 3).join(', ')
+            const label = checkpoint.label != null ? ` ${checkpoint.label}` : ''
+            const source = checkpoint.path != null ? ` · ${checkpoint.path}` : ''
+            const fileText =
+              filePreview != null && filePreview.length > 0 ? ` · ${filePreview}` : ''
+            return `- \`${checkpoint.checkpointId}\`${label} · ${files} files${fileText}${source}`
+          })
         return { success: true, message: ['**Checkpoints**', '', ...lines].join('\n') }
       }
 
@@ -864,12 +994,14 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
       }
 
       const result = await deps.restoreCheckpoint(ctx.sessionId, checkpointRef)
-      const restored = result.restoredFiles.length > 0
-        ? result.restoredFiles.map((file) => `- ${file}`).join('\n')
-        : '- none'
-      const missing = result.missingFiles.length > 0
-        ? `\n\nMissing files:\n${result.missingFiles.map((file) => `- ${file}`).join('\n')}`
-        : ''
+      const restored =
+        result.restoredFiles.length > 0
+          ? result.restoredFiles.map((file) => `- ${file}`).join('\n')
+          : '- none'
+      const missing =
+        result.missingFiles.length > 0
+          ? `\n\nMissing files:\n${result.missingFiles.map((file) => `- ${file}`).join('\n')}`
+          : ''
       return {
         success: result.missingFiles.length === 0,
         message: `Restored checkpoint \`${result.checkpointId}\`:\n${restored}${missing}`,
@@ -905,7 +1037,10 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
           message: [
             '**可用 Skills**',
             '',
-            ...skills.map((skill) => `- \`${skill.id}\` — ${skill.name}${skill.description ? `：${skill.description}` : ''}`),
+            ...skills.map(
+              (skill) =>
+                `- \`${skill.id}\` — ${skill.name}${skill.description ? `：${skill.description}` : ''}`,
+            ),
           ].join('\n'),
           data: { skills },
         }
@@ -915,13 +1050,17 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
         const skills = deps.listSkills?.(query) ?? []
         return {
           success: true,
-          message: skills.length > 0
-            ? [
-                `**Skill 搜索结果** ${query ? `\`${query}\`` : ''}`,
-                '',
-                ...skills.map((skill) => `- \`${skill.id}\` — ${skill.name}${skill.description ? `：${skill.description}` : ''}`),
-              ].join('\n')
-            : `没有找到匹配的 Skill：\`${query}\``,
+          message:
+            skills.length > 0
+              ? [
+                  `**Skill 搜索结果** ${query ? `\`${query}\`` : ''}`,
+                  '',
+                  ...skills.map(
+                    (skill) =>
+                      `- \`${skill.id}\` — ${skill.name}${skill.description ? `：${skill.description}` : ''}`,
+                  ),
+                ].join('\n')
+              : `没有找到匹配的 Skill：\`${query}\``,
           data: { skills },
         }
       }
@@ -929,8 +1068,11 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
         const skillId = cmd.args[1]
         if (!skillId) return { success: false, message: '用法：/skill run <skill-id> [task]' }
         const skill = deps.listSkills?.().find((item) => item.id === skillId)
-        if (skill == null) return { success: false, message: `Skill 不可用或不存在：\`${skillId}\`` }
-        const followUpPrompt = cmd.args.slice(2).join(' ').trim() || `Use the selected skill ${skillId} for the current task.`
+        if (skill == null)
+          return { success: false, message: `Skill 不可用或不存在：\`${skillId}\`` }
+        const followUpPrompt =
+          cmd.args.slice(2).join(' ').trim() ||
+          `Use the selected skill ${skillId} for the current task.`
         return {
           success: true,
           message: `已选择 Skill \`${skillId}\`。下一轮将强制加载该 Skill 的完整指令。`,
@@ -941,7 +1083,8 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
       }
       return {
         success: true,
-        message: '**Skill 管理**\n\n用法：\n- `/skill list` — 查看技能\n- `/skill search <query>` — 搜索\n- `/skill run <id>` — 运行',
+        message:
+          '**Skill 管理**\n\n用法：\n- `/skill list` — 查看技能\n- `/skill search <query>` — 搜索\n- `/skill run <id>` — 运行',
       }
     },
   })
@@ -949,7 +1092,19 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
   // ── Git ──
 
   /** 需要 AI Agent 执行的 git 子命令 */
-  const GIT_AGENT_SUBCOMMANDS = new Set(['add', 'commit', 'push', 'pull', 'merge', 'rebase', 'checkout', 'fetch', 'reset', 'revert', 'cherry-pick'])
+  const GIT_AGENT_SUBCOMMANDS = new Set([
+    'add',
+    'commit',
+    'push',
+    'pull',
+    'merge',
+    'rebase',
+    'checkout',
+    'fetch',
+    'reset',
+    'revert',
+    'cherry-pick',
+  ])
 
   registry.register({
     id: 'builtin:git',
@@ -980,7 +1135,10 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
       try {
         if (subcommand === 'status') {
           const { stdout } = await deps.execShell('git status --short', cwd)
-          return { success: true, message: stdout.trim() ? `\`\`\`\n${stdout}\n\`\`\`` : '工作区干净，无变更。' }
+          return {
+            success: true,
+            message: stdout.trim() ? `\`\`\`\n${stdout}\n\`\`\`` : '工作区干净，无变更。',
+          }
         }
         if (subcommand === 'log') {
           const limit = parseGitLogLimit(cmd.args[1])
@@ -992,7 +1150,10 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
         }
         if (subcommand === 'stash') {
           const { stdout } = await deps.execShell('git stash list', cwd)
-          return { success: true, message: stdout.trim() ? `\`\`\`\n${stdout}\n\`\`\`` : '无暂存变更。' }
+          return {
+            success: true,
+            message: stdout.trim() ? `\`\`\`\n${stdout}\n\`\`\`` : '无暂存变更。',
+          }
         }
         if (subcommand === 'branch') {
           const { stdout } = await deps.execShell('git branch -a --list', cwd)
@@ -1024,14 +1185,18 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
           ].join('\n'),
         }
       } catch (err) {
-        return { success: false, message: `Git 操作失败：${err instanceof Error ? err.message : String(err)}` }
+        return {
+          success: false,
+          message: `Git 操作失败：${err instanceof Error ? err.message : String(err)}`,
+        }
       }
     },
   })
-
 }
 
-async function resolveSdkAvailability(deps: CommandDeps): Promise<{ claudeSdk: boolean; codexCli: boolean; openaiSdk: boolean }> {
+async function resolveSdkAvailability(
+  deps: CommandDeps,
+): Promise<{ claudeSdk: boolean; codexCli: boolean; openaiSdk: boolean }> {
   if (deps.checkSdkAvailability) return deps.checkSdkAvailability()
   return {
     claudeSdk: false,
@@ -1064,7 +1229,10 @@ async function resolveGitVersion(
   if (!deps.execShell) return { available: false, error: 'Shell dependency is not registered' }
   try {
     const result = await deps.execShell('git --version', cwd ?? undefined)
-    const output = [result.stdout, result.stderr].filter((part) => part.trim().length > 0).join('\n').trim()
+    const output = [result.stdout, result.stderr]
+      .filter((part) => part.trim().length > 0)
+      .join('\n')
+      .trim()
     return result.exitCode === 0
       ? { available: true, version: output || 'git available' }
       : { available: false, error: output || `exit ${result.exitCode}` }
@@ -1074,14 +1242,27 @@ async function resolveGitVersion(
 }
 
 function formatMcpStatus(
-  servers: Array<{ id: string; name: string; enabled: boolean; connected: boolean; toolCount: number; error?: string }>,
+  servers: Array<{
+    id: string
+    name: string
+    enabled: boolean
+    connected: boolean
+    toolCount: number
+    error?: string
+  }>,
 ): string[] {
   if (servers.length === 0) return ['- ⚠️ 未配置 MCP server，或当前运行时未提供 MCP 摘要。']
   const enabled = servers.filter((server) => server.enabled)
   const connected = enabled.filter((server) => server.connected)
-  const lines = [`- Summary: ${connected.length}/${enabled.length} enabled servers connected (${servers.length} total)`]
+  const lines = [
+    `- Summary: ${connected.length}/${enabled.length} enabled servers connected (${servers.length} total)`,
+  ]
   for (const server of servers) {
-    const state = server.enabled ? (server.connected ? '✅ connected' : '❌ disconnected') : '⚠️ disabled'
+    const state = server.enabled
+      ? server.connected
+        ? '✅ connected'
+        : '❌ disconnected'
+      : '⚠️ disabled'
     const error = server.error ? ` — ${server.error}` : ''
     lines.push(`- ${state}: ${server.name} (${server.toolCount} tools)${error}`)
   }

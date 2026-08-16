@@ -58,7 +58,7 @@ vi.mock('../../sdk/index.js', async () => {
 })
 
 const { SessionService } = await import('../../services/session.service.js')
-const { queueFakeEngineScript, resetFakeEngineHarness } =
+const { fakeEngineCalls, queueFakeEngineScript, resetFakeEngineHarness } =
   await import('../sdk/fake-engine-executor.js')
 
 async function waitUntil(predicate: () => boolean, timeoutMs: number, what: string): Promise<void> {
@@ -168,5 +168,39 @@ describe('goal 会话标题精炼（/goal 命令路径）', () => {
     await new Promise((resolve) => setTimeout(resolve, 300))
 
     expect(generateTitleMock).not.toHaveBeenCalled()
+  })
+
+  it('preserves /goal command attachments and passes them to the contract draft turn', async () => {
+    const attachmentPath = path.join(testDir, 'goal-reference.txt')
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile(attachmentPath, 'reference')
+    queueFakeEngineScript({
+      events: [{ type: 'assistant_message', content: 'draft contract', isFinal: true }],
+      terminalStatus: 'completed',
+    })
+
+    const result = await service.executeCommandAsEvents({
+      sessionId,
+      message: '/goal use the attached reference',
+      attachments: [{ type: 'file', path: attachmentPath }],
+    })
+
+    expect(result.isCommand).toBe(true)
+    await waitUntil(() => fakeEngineCalls().length > 0, 5000, 'goal contract draft turn')
+
+    const calls = fakeEngineCalls()
+    expect(calls[0]?.config.attachments).toEqual([
+      expect.objectContaining({ type: 'file', path: attachmentPath }),
+    ])
+    const history = await service.getHistory({ sessionId, limit: 20 })
+    const commandUserMessage = history.events.find(
+      (event) =>
+        event.type === 'user_message' && event.content === '/goal use the attached reference',
+    )
+    expect(commandUserMessage).toEqual(
+      expect.objectContaining({
+        attachments: [{ type: 'file', path: attachmentPath }],
+      }),
+    )
   })
 })
