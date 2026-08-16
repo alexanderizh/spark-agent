@@ -77,6 +77,7 @@ import { MarkdownText } from './chat/ChatMarkdown'
 import { PlanSidePanel } from './chat/PlanSidePanel'
 import { PlanSummary } from './chat/PlanSummary'
 import { GoalContractCard } from './chat/GoalContractCard'
+import { GoalIterationDivider } from './chat/GoalIterationDivider'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
 import {
@@ -5114,6 +5115,9 @@ function renderBlocks(
             <GoalContractCard block={block} sessionId={options.sessionId ?? null} />
           </div>
         )
+      }
+      case 'goal_iteration_divider': {
+        return <GoalIterationDivider key={i} block={block} />
       }
       case 'permission_request': {
         return (

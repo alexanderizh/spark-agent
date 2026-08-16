@@ -8217,6 +8217,79 @@ body.inspector-resizing {
   font-weight: 650;
   letter-spacing: 0.01em;
 }
+/* ── 目标模式迭代分割线（goal_iteration_divider）── 与 team-round-divider 同风格 */
+.goal-iteration-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 10px;
+}
+.goal-iteration-divider-row {
+  display: grid;
+  grid-template-columns: minmax(20px, 1fr) auto minmax(20px, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.goal-iteration-divider-line {
+  height: 1px;
+  background: color-mix(in srgb, var(--divider) 75%, transparent);
+}
+.goal-iteration-divider-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 9%, var(--panel));
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+.goal-iteration-spinner {
+  color: var(--primary);
+}
+.goal-iteration-divider-state {
+  display: inline-flex;
+  align-items: center;
+  padding-left: 6px;
+}
+.goal-iteration-divider.completed .goal-iteration-divider-label {
+  background: color-mix(in srgb, var(--c-ok) 12%, var(--panel));
+  color: var(--c-ok);
+}
+.goal-iteration-divider.failed .goal-iteration-divider-label {
+  background: color-mix(in srgb, var(--c-err) 12%, var(--panel));
+  color: var(--c-err);
+}
+.goal-iteration-divider.stopped .goal-iteration-divider-label {
+  background: color-mix(in srgb, #f59e0b 12%, var(--panel));
+  color: #f59e0b;
+}
+.goal-iteration-divider-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  max-width: min(100%, 720px);
+  padding: 0 12px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}
+.goal-iteration-divider-summary-text,
+.goal-iteration-divider-next {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goal-iteration-divider-next {
+  color: color-mix(in srgb, var(--text-muted) 75%, transparent);
+}
 .team-discussion-status {
   display: inline-flex;
   align-items: center;

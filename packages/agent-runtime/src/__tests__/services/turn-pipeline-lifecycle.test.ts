@@ -459,5 +459,10 @@ describe.each(ENGINES)('turn 管道生命周期基线（$adapter 引擎）', (en
       .map((entry) => entry.type)
     expect(goalEventTypes).toContain('goal_progress')
     expect(goalEventTypes).toContain('goal_completed')
+    // 轮末 goal_progress 带 progressKind=iteration_result：渲染端据此回填轮次分割线小结。
+    const progressKinds = loadPersistedEvents()
+      .filter((entry) => entry.type === 'goal_progress')
+      .map((entry) => (entry.event as { progressKind?: string }).progressKind)
+    expect(progressKinds).toContain('iteration_result')
   })
 })

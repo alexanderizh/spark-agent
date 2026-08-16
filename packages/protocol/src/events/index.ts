@@ -629,6 +629,13 @@ export interface GoalEvent extends BaseEvent {
   budget?: Record<string, unknown>
   /** 仅 goal_contract_proposed 事件携带：编排者起草的待确认验收契约。 */
   proposedContract?: ProposedGoalContract
+  /**
+   * goal_progress 的细分标记：
+   *   - iteration_start：迭代轮启动（服务端派发迭代 turn 前发出）
+   *   - iteration_result：迭代轮收尾（turn 结束解析 spark-goal-status 后发出，携带 agent 自报 summary）
+   * 老事件无此字段；渲染端按 `Started iteration` 前缀启发式回退识别 iteration_start。
+   */
+  progressKind?: 'iteration_start' | 'iteration_result'
 }
 
 // ─── 资源使用类事件 ──────────────────────────────────────────────────────────

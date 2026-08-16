@@ -416,6 +416,14 @@ describe('SessionService goal queue semantics (P0-2 / P2)', () => {
       expect.objectContaining({ type: 'user_message', turnId: 'turn-c' }),
     )
     expect(state.completedTurnRequests).toEqual(['turn-a', 'turn-c'])
+    // 迭代启动事件带 progressKind=iteration_start：渲染端据此在消息流落轮次分割线。
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        type: 'goal_progress',
+        progressKind: 'iteration_start',
+        iteration: 1,
+      }),
+    )
   })
 
   it('caps injected messages per iteration and leaves the overflow queued', async () => {

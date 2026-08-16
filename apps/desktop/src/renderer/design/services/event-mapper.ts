@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  GoalEvent,
   GoalEventStatus,
   ProposedGoalContract,
   TeamA2ATask,
@@ -201,6 +202,20 @@ export type UIBlock =
       contract: ProposedGoalContract
       /** pending：等待确认；confirmed/rejected：已被 goal_started/goal_cleared 解决（历史回放保持终态）。 */
       state: 'pending' | 'confirmed' | 'rejected'
+    }
+  | {
+      /** 目标模式：迭代轮次分割线。iteration_start 型 goal_progress 落块；
+       *  轮末 iteration_result 回填 agent 自报小结；goal 终态事件置 completed/failed/stopped_by_budget。 */
+      kind: 'goal_iteration_divider'
+      goalId: string
+      iteration: number
+      maxIterations?: number
+      phase?: 'review' | 'act' | 'validate'
+      /** running：迭代进行中；result：本轮收尾（含小结）；completed/failed/stopped_by_budget：目标终态。 */
+      state: 'running' | 'result' | 'completed' | 'failed' | 'stopped_by_budget'
+      /** 轮末 agent 自报小结（iteration_result / 预算停止原因回填）。 */
+      resultSummary?: string
+      resultNextStep?: string
     }
   | {
       kind: 'permission_request'
@@ -1354,6 +1369,18 @@ export class MessageBuilder {
           summary: event.summary,
           ...(event.nextStep != null ? { nextStep: event.nextStep } : {}),
         }
+        // 迭代分割线：iteration_start 落块（resume 重跑同轮时复用重置）；
+        // iteration_result 回填轮末小结。老事件无 progressKind，按 summary 前缀回退识别。
+        if (event.type === 'goal_progress') {
+          const progressKind =
+            event.progressKind ??
+            (event.summary.startsWith('Started iteration') ? 'iteration_start' : 'iteration_result')
+          if (progressKind === 'iteration_start') {
+            this.upsertGoalIterationDivider(event, maxIterations)
+          } else {
+            this.backfillGoalIterationResult(event)
+          }
+        }
         break
       }
 
@@ -1396,6 +1423,25 @@ export class MessageBuilder {
         // 契约被拒绝（reject → goal_cleared）后，内联契约卡片转「已拒绝」终态。
         if (event.type === 'goal_cleared') {
           this.resolveGoalContractBlocks(event.goalId, 'rejected')
+        }
+        if (event.type === 'goal_completed' || event.type === 'goal_failed') {
+          this.finalizeGoalIterationDividers(
+            event.goalId,
+            event.type === 'goal_completed' ? 'completed' : 'failed',
+            event.id,
+          )
+        } else if (event.type === 'goal_budget_stopped') {
+          // 预算停止发生在新迭代启动前：最后一条 divider 可能仍是 running 态，回填停止原因。
+          this.finalizeGoalIterationDividers(
+            event.goalId,
+            'stopped_by_budget',
+            event.id,
+            event.summary,
+          )
+        } else {
+          // goal_cleared：目标被显式清除，把悬挂的 running divider 收敛为 result（无小结），
+          // 避免 spinner 永久旋转。
+          this.finalizeGoalIterationDividers(event.goalId, 'result', event.id)
         }
         this.activeGoal = null
         break
@@ -1641,6 +1687,88 @@ export class MessageBuilder {
           if (block.state !== 'pending') continue
           block.state = state
         }
+      }
+    }
+  }
+
+  /** 迭代启动型 goal_progress → 落轮次分割线（同 goal 同轮已存在时复用并重置 running 态）。 */
+  private upsertGoalIterationDivider(event: GoalEvent, maxIterations: number | undefined): void {
+    for (const msg of this.messages) {
+      for (const block of msg.blocks) {
+        if (
+          block.kind === 'goal_iteration_divider' &&
+          block.goalId === event.goalId &&
+          block.iteration === event.iteration
+        ) {
+          // resume 重跑同轮：复用既有分割线，清掉上一轮残留小结。
+          block.state = 'running'
+          if (event.phase != null) block.phase = event.phase
+          else delete block.phase
+          delete block.resultSummary
+          delete block.resultNextStep
+          if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+          return
+        }
+      }
+    }
+    const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+    if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+    msg.blocks.push({
+      kind: 'goal_iteration_divider',
+      goalId: event.goalId,
+      iteration: event.iteration,
+      ...(maxIterations != null ? { maxIterations } : {}),
+      ...(event.phase != null ? { phase: event.phase } : {}),
+      state: 'running',
+    })
+    // 该事件由编排层在迭代 turn 之前发出（携带独立 turnId），新建消息不会再有
+    // agent_status 终态来收尾——直接置 completed，避免永久停在 streaming。
+    if (
+      msg.status === 'streaming' &&
+      msg.blocks.every((b) => b.kind === 'goal_iteration_divider')
+    ) {
+      msg.status = 'completed'
+    }
+  }
+
+  /** 轮末型 goal_progress → 按 goalId + iteration 回填 agent 自报小结到既有分割线。 */
+  private backfillGoalIterationResult(event: GoalEvent): void {
+    for (const msg of this.messages) {
+      for (const block of msg.blocks) {
+        if (
+          block.kind === 'goal_iteration_divider' &&
+          block.goalId === event.goalId &&
+          block.iteration === event.iteration
+        ) {
+          block.state = 'result'
+          if (event.phase != null) block.phase = event.phase
+          if (event.summary.length > 0) block.resultSummary = event.summary
+          if (event.nextStep != null) block.resultNextStep = event.nextStep
+          if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+          return
+        }
+      }
+    }
+  }
+
+  /** 目标终态 → 把该 goal 最后一条分割线置终态；budget 停止时回填停止原因。 */
+  private finalizeGoalIterationDividers(
+    goalId: string,
+    state: 'result' | 'completed' | 'failed' | 'stopped_by_budget',
+    eventId: string,
+    summary?: string,
+  ): void {
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const msg = this.messages[i]!
+      for (let j = msg.blocks.length - 1; j >= 0; j--) {
+        const block = msg.blocks[j]!
+        if (block.kind !== 'goal_iteration_divider' || block.goalId !== goalId) continue
+        if (state === 'stopped_by_budget' && block.resultSummary == null && summary != null) {
+          block.resultSummary = summary
+        }
+        block.state = state
+        if (!msg.eventIds.includes(eventId)) msg.eventIds.push(eventId)
+        return
       }
     }
   }

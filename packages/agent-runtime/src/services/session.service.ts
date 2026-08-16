@@ -9038,11 +9038,20 @@ export class SessionService {
       ...(parsed.nextStep != null ? { nextStep: parsed.nextStep } : {}),
     }
     const updated = repo.appendProgress(goal.id, progressPatch) ?? goal
-    this.emitGoalEvent(sessionId, updated, 'goal_progress', 'active', parsed.summary, {
-      phase: parsed.phase,
-      ...(parsed.evidence != null ? { evidence: parsed.evidence } : {}),
-      ...(parsed.nextStep != null ? { nextStep: parsed.nextStep } : {}),
-    })
+    this.emitGoalEvent(
+      sessionId,
+      updated,
+      'goal_progress',
+      'active',
+      parsed.summary,
+      {
+        phase: parsed.phase,
+        ...(parsed.evidence != null ? { evidence: parsed.evidence } : {}),
+        ...(parsed.nextStep != null ? { nextStep: parsed.nextStep } : {}),
+      },
+      undefined,
+      'iteration_result',
+    )
     if (parsed.status === 'completed') {
       const done = repo.updateStatus(goal.id, 'completed') ?? updated
       this.emitGoalEvent(sessionId, done, 'goal_completed', 'completed', parsed.summary)
@@ -9559,6 +9568,8 @@ export class SessionService {
       'active',
       `Started iteration ${goal.progressLog.length + 1}`,
       { phase: 'review', iteration: goal.progressLog.length + 1 },
+      undefined,
+      'iteration_start',
     )
     await this.startTurn(
       sessionId,
@@ -9615,6 +9626,7 @@ export class SessionService {
     summary: string,
     extra: Partial<GoalProgressEntry> = {},
     proposedContract?: ProposedGoalContract,
+    progressKind?: 'iteration_start' | 'iteration_result',
   ): void {
     const eventRepo = new EventRepository(this.db)
     const turnId = crypto.randomUUID()
@@ -9640,6 +9652,7 @@ export class SessionService {
         ...(extra.nextStep != null ? { nextStep: extra.nextStep } : {}),
         ...(extra.validation != null ? { validation: extra.validation } : {}),
         ...(proposedContract != null ? { proposedContract } : {}),
+        ...(progressKind != null ? { progressKind } : {}),
         budget: goal.budget as Record<string, unknown>,
       },
       eventRepo,
