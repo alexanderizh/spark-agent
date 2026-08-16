@@ -1,5 +1,4 @@
 import type { ApiArch, ApiPlatform, LatestRelease } from '../lib/releases'
-import { RELEASES_URL } from '../lib/links'
 
 /** UI 渲染用：展示文案 + 后端拉到的下载元数据 */
 export interface DownloadItem {
@@ -75,9 +74,10 @@ const COPY: DownloadCopy[] = [
 
 /**
  * 当某个平台/架构在后端还没有 release 时的兜底链接。
- * 兜回历史版本聚合页（自建版本中心），用户至少不会撞死链。
+ * 闭源期间不再兜回 GitHub Releases（仓库转私有后页面 404），
+ * 改为兜回下载页自身，用户至少不会撞死链。
  */
-const FALLBACK_HREF = RELEASES_URL
+const FALLBACK_HREF = '/download'
 
 /** 合并接口数据与手写文案：UI 真正消费的入口 */
 export function buildDownloadItems(releases: LatestRelease[]): DownloadItem[] {

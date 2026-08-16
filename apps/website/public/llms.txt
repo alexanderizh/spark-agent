@@ -11,9 +11,7 @@ Spark Work is a local-first AI Agent workbench for people who want AI to work in
 - Docs index: /docs
 - Docs search: /docs/search
 - Roadmap: /roadmap
-- Open source: /open-source
 - Contact: /contact
-- GitHub: https://github.com/alexanderizh/spark-agent
 
 ## Documentation topics (按主题)
 Each topic page is self-contained with TOC, FAQ, HowTo structured data, and JSON-LD TechArticle metadata. Pages lazy-load their content as a separate chunk.
