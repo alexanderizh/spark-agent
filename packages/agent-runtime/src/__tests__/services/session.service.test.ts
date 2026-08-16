@@ -23,6 +23,7 @@ import {
 } from '../../services/session.service.js'
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
 import { SessionQuestionGate } from '../../services/session-question-gate.js'
+import { TurnRegistry } from '../../services/session/turn-registry.js'
 import { CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor } from '../../sdk/index.js'
 import {
   TEAM_DISPATCH_AUTO_CONTINUATION_PRESENTATION,
@@ -136,13 +137,8 @@ describe('SessionService recovery helpers', () => {
     const onApprovalCancel = vi.fn()
     const platformStop = vi.fn(async () => undefined)
     const service = Object.create(SessionService.prototype) as {
-      activeExecutionPromises: Map<typeof execution, { sessionId: string; promise: Promise<void> }>
-      activeLoops: Map<string, typeof execution>
+      turnRegistry: TurnRegistry
       dispose: () => Promise<void>
-      startingSessions: Set<string>
-      startingTurnIds: Map<string, string>
-      runningTurnIds: Map<string, string>
-      cancelledTurnIds: Set<string>
       disposing: boolean
       onApprovalCancel: (sessionId: string) => void
       platformBridge: { stop: () => Promise<void> }
@@ -154,14 +150,12 @@ describe('SessionService recovery helpers', () => {
       teamDispatchBudgetExhaustedTurns: Map<string, string>
       teamDispatchAutoContinuationTracker: { clear: () => void; reset: (sessionId: string) => void }
     }
-    service.activeExecutionPromises = new Map([
-      [execution, { sessionId: 'session-1', promise: executionDone }],
-    ])
-    service.activeLoops = new Map([['session-1', execution]])
-    service.startingSessions = new Set()
-    service.startingTurnIds = new Map()
-    service.runningTurnIds = new Map()
-    service.cancelledTurnIds = new Set()
+    service.turnRegistry = new TurnRegistry()
+    service.turnRegistry.registerExecutor('session-1', 'turn-dispose', execution)
+    service.turnRegistry.trackExecution(execution, {
+      sessionId: 'session-1',
+      promise: executionDone,
+    })
     service.disposing = false
     service.onApprovalCancel = onApprovalCancel
     service.platformBridge = { stop: platformStop }
@@ -197,20 +191,18 @@ describe('SessionService recovery helpers', () => {
   it('does not start queued work after shutdown begins', () => {
     const queuedTurn = { turnId: 'turn-1' }
     const service = Object.create(SessionService.prototype) as {
-      activeLoops: Map<string, unknown>
+      turnRegistry: TurnRegistry
       disposing: boolean
       pendingPlanApprovals: Set<string>
       pendingUserQuestionGate: SessionQuestionGate
       pendingTurns: Map<string, unknown[]>
-      startingSessions: Set<string>
       startNextQueuedTurn: (sessionId: string) => void
     }
-    service.activeLoops = new Map()
+    service.turnRegistry = new TurnRegistry()
     service.disposing = true
     service.pendingPlanApprovals = new Set()
     service.pendingUserQuestionGate = new SessionQuestionGate()
     service.pendingTurns = new Map([['session-1', [queuedTurn]]])
-    service.startingSessions = new Set()
 
     service.startNextQueuedTurn('session-1')
 
@@ -222,20 +214,18 @@ describe('SessionService recovery helpers', () => {
     const gate = new SessionQuestionGate()
     gate.enter('session-1')
     const service = Object.create(SessionService.prototype) as {
-      activeLoops: Map<string, unknown>
+      turnRegistry: TurnRegistry
       disposing: boolean
       pendingPlanApprovals: Set<string>
       pendingUserQuestionGate: SessionQuestionGate
       pendingTurns: Map<string, unknown[]>
-      startingSessions: Set<string>
       startNextQueuedTurn: (sessionId: string) => void
     }
-    service.activeLoops = new Map()
+    service.turnRegistry = new TurnRegistry()
     service.disposing = false
     service.pendingPlanApprovals = new Set()
     service.pendingUserQuestionGate = gate
     service.pendingTurns = new Map([['session-1', [queuedTurn]]])
-    service.startingSessions = new Set()
 
     service.startNextQueuedTurn('session-1')
 
@@ -669,10 +659,9 @@ describe('SessionService team dispatch auto-continuation', () => {
     const activeExecution = { cancel: vi.fn() }
     const prepare = vi.fn(() => ({ run: vi.fn(() => ({ changes: 1 })) }))
     const service = Object.create(SessionService.prototype) as {
-      activeLoops: Map<string, { cancel: () => void }>
+      turnRegistry: TurnRegistry
       db: { raw: { prepare: typeof prepare } }
       pendingTurns: Map<string, Array<{ turnId: string; message: string; enqueuedAt: string }>>
-      startingSessions: Set<string>
       resetTeamDispatchAutoContinuation: (sessionId: string) => void
       emitQueueChanged: (sessionId: string) => void
       clearQueuedTurns: (params: { sessionId: string }) => {
@@ -680,7 +669,8 @@ describe('SessionService team dispatch auto-continuation', () => {
         queuedTurns: unknown[]
       }
     }
-    service.activeLoops = new Map([['session-1', activeExecution]])
+    service.turnRegistry = new TurnRegistry()
+    service.turnRegistry.registerExecutor('session-1', 'turn-clear', activeExecution)
     service.db = { raw: { prepare } }
     service.pendingTurns = new Map([
       [
@@ -691,7 +681,6 @@ describe('SessionService team dispatch auto-continuation', () => {
         ],
       ],
     ])
-    service.startingSessions = new Set()
     service.resetTeamDispatchAutoContinuation = vi.fn()
     service.emitQueueChanged = vi.fn()
 
@@ -709,8 +698,7 @@ describe('SessionService team dispatch auto-continuation', () => {
   it('reorders only pending turns and rejects incomplete order payloads', () => {
     const activeExecution = { cancel: vi.fn() }
     const service = Object.create(SessionService.prototype) as {
-      activeLoops: Map<string, { cancel: () => void }>
-      startingSessions: Set<string>
+      turnRegistry: TurnRegistry
       pendingTurns: Map<string, Array<{ turnId: string; message: string; enqueuedAt: string }>>
       emitQueueChanged: (sessionId: string) => void
       reorderQueuedTurns: (params: { sessionId: string; turnIds: string[] }) => {
@@ -719,8 +707,8 @@ describe('SessionService team dispatch auto-continuation', () => {
         queuedTurns: Array<{ turnId: string }>
       }
     }
-    service.activeLoops = new Map([['session-1', activeExecution]])
-    service.startingSessions = new Set()
+    service.turnRegistry = new TurnRegistry()
+    service.turnRegistry.registerExecutor('session-1', 'turn-reorder', activeExecution)
     service.pendingTurns = new Map([
       [
         'session-1',
@@ -754,7 +742,7 @@ describe('SessionService team dispatch auto-continuation', () => {
 
 describe('SessionService.clearSessionMemory (删除/清空会话的执行器回收)', () => {
   type ClearSessionMemoryInternals = {
-    activeLoops: Map<string, { cancel: () => void }>
+    turnRegistry: TurnRegistry
     clearSessionMemory: (sessionId: string) => boolean
     eventSequencer: { clear: (sessionId: string) => void }
     iterationOverrides: Map<string, number>
@@ -765,10 +753,6 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     pendingTitleRefinements: Map<string, unknown>
     pendingTurns: Map<string, unknown[]>
     pendingUserQuestionGate: SessionQuestionGate
-    startingSessions: Set<string>
-    startingTurnIds: Map<string, string>
-    runningTurnIds: Map<string, string>
-    cancelledTurnIds: Set<string>
     db: unknown
     teamDispatchService: {
       cancelBySession: (sessionId: string) => number
@@ -782,7 +766,10 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     activeLoops: Array<[string, { cancel: () => void }]> = [],
   ): ClearSessionMemoryInternals {
     const service = Object.create(SessionService.prototype) as ClearSessionMemoryInternals
-    service.activeLoops = new Map(activeLoops)
+    service.turnRegistry = new TurnRegistry()
+    for (const [sessionId, executor] of activeLoops) {
+      service.turnRegistry.registerExecutor(sessionId, `turn-${sessionId}`, executor)
+    }
     service.eventSequencer = { clear: vi.fn() }
     service.iterationOverrides = new Map()
     service.onApprovalCancel = vi.fn()
@@ -792,10 +779,6 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     service.pendingTitleRefinements = new Map()
     service.pendingTurns = new Map()
     service.pendingUserQuestionGate = new SessionQuestionGate()
-    service.startingSessions = new Set()
-    service.startingTurnIds = new Map()
-    service.runningTurnIds = new Map()
-    service.cancelledTurnIds = new Set()
     service.db = {
       raw: {
         transaction: (work: () => number) => () => work(),
@@ -817,17 +800,17 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     const service = makeService([['session-1', execution]])
     service.pendingTurns.set('session-1', [{ turnId: 'turn-2' }])
     service.pendingPlanApprovals.add('session-1')
-    service.startingSessions.add('session-1')
+    service.turnRegistry.beginStarting('session-1', 'turn-starting')
     service.iterationOverrides.set('session-1', 12)
 
     const wasRunning = service.clearSessionMemory('session-1')
 
     expect(execution.cancel).toHaveBeenCalledOnce()
     expect(wasRunning).toBe(true)
-    expect(service.activeLoops.has('session-1')).toBe(false)
+    expect(service.turnRegistry.hasActiveSession('session-1')).toBe(false)
     expect(service.pendingTurns.has('session-1')).toBe(false)
     expect(service.pendingPlanApprovals.has('session-1')).toBe(false)
-    expect(service.startingSessions.has('session-1')).toBe(false)
+    expect(service.turnRegistry.isSessionStarting('session-1')).toBe(false)
     expect(service.iterationOverrides.has('session-1')).toBe(false)
     expect(service.onApprovalCancel).toHaveBeenCalledWith('session-1')
   })
@@ -866,7 +849,7 @@ describe('SessionService.clearSessionMemory (删除/清空会话的执行器回�
     const service = makeService([['session-1', execution]])
 
     expect(() => service.clearSessionMemory('session-1')).not.toThrow()
-    expect(service.activeLoops.has('session-1')).toBe(false)
+    expect(service.turnRegistry.hasActiveSession('session-1')).toBe(false)
   })
 })
 
@@ -915,30 +898,27 @@ describe('buildMemberUserMessage (agent_dispatch / workflow_run inputs delivery)
 
 describe('SessionService.startNextQueuedTurn (全局并发上限)', () => {
   type ConcurrencyInternals = {
-    activeLoops: Map<string, { cancel: () => void }>
+    turnRegistry: TurnRegistry
     disposing: boolean
     maxConcurrentSessions: number
     pendingPlanApprovals: Set<string>
     pendingTurns: Map<string, unknown[]>
     pendingUserQuestionGate: SessionQuestionGate
-    startingSessions: Set<string>
     startNextQueuedTurn: (sessionId: string) => void
     emitQueueChanged: (sessionId: string) => void
   }
 
   function makeService(maxConcurrent: number, activeCount: number): ConcurrencyInternals {
-    const activeLoops = new Map<string, { cancel: () => void }>()
-    for (let i = 0; i < activeCount; i++) {
-      activeLoops.set(`active-${i}`, { cancel: vi.fn() })
-    }
     const service = Object.create(SessionService.prototype) as ConcurrencyInternals
-    service.activeLoops = activeLoops
+    service.turnRegistry = new TurnRegistry()
+    for (let i = 0; i < activeCount; i++) {
+      service.turnRegistry.registerExecutor(`active-${i}`, `turn-active-${i}`, { cancel: vi.fn() })
+    }
     service.disposing = false
     service.maxConcurrentSessions = maxConcurrent
     service.pendingPlanApprovals = new Set()
     service.pendingTurns = new Map()
     service.pendingUserQuestionGate = new SessionQuestionGate()
-    service.startingSessions = new Set()
     service.emitQueueChanged = vi.fn()
     return service
   }
@@ -954,12 +934,12 @@ describe('SessionService.startNextQueuedTurn (全局并发上限)', () => {
 
     // 队列没被消费——turn 留在里面等槽位释放
     expect(service.pendingTurns.get('session-new')).toHaveLength(1)
-    expect(service.activeLoops.has('session-new')).toBe(false)
+    expect(service.turnRegistry.hasActiveSession('session-new')).toBe(false)
   })
 
   it('同一 session 已在跑时即使全局未满也不重复起跑', () => {
     const service = makeService(6, 1)
-    service.activeLoops.set('session-a', { cancel: vi.fn() })
+    service.turnRegistry.registerExecutor('session-a', 'turn-a', { cancel: vi.fn() })
     service.pendingTurns.set('session-a', [
       { turnId: 'turn-2', message: 'second', enqueuedAt: '2026-07-26T00:00:00.000Z' },
     ])
@@ -973,8 +953,8 @@ describe('SessionService.startNextQueuedTurn (全局并发上限)', () => {
     // 关键不变量：全局上限只压跨 session 并行度，不破坏单 session 的串行语义
     const service = makeService(1, 1) // 上限=1，已有一个在跑
     // 那个在跑的就是 session-a 自己；它的队列不应被全局上限二次阻挡
-    service.activeLoops.clear()
-    service.activeLoops.set('session-a', { cancel: vi.fn() })
+    service.turnRegistry.forceRelease('active-0', 'turn-active-0')
+    service.turnRegistry.registerExecutor('session-a', 'turn-a', { cancel: vi.fn() })
     service.pendingTurns.set('session-a', [
       { turnId: 'turn-2', message: 'next', enqueuedAt: '2026-07-26T00:00:00.000Z' },
     ])
@@ -992,8 +972,8 @@ describe('SessionService.startNextQueuedTurn (全局并发上限)', () => {
     // 这条用例锁住 startingSessions 必须纳入计数。
     const service = makeService(3, 1) // 上限 3，1 个已在 activeLoops
     // 再模拟 2 个已进入 startingSessions（刚 startNextQueuedTurn 还没注册 activeLoops）
-    service.startingSessions.add('starting-1')
-    service.startingSessions.add('starting-2')
+    service.turnRegistry.beginStarting('starting-1', 'turn-starting-1')
+    service.turnRegistry.beginStarting('starting-2', 'turn-starting-2')
     // 此时 inflight = activeLoops(1) + startingSessions(2) = 3 = 上限
     service.pendingTurns.set('session-new', [
       { turnId: 'turn-1', message: 'hi', enqueuedAt: '2026-07-26T00:00:00.000Z' },
@@ -1008,16 +988,13 @@ describe('SessionService.startNextQueuedTurn (全局并发上限)', () => {
 
 describe('SessionService.startTurn (入口全局上限兜底)', () => {
   type StartTurnInternals = {
-    activeLoops: Map<string, { cancel: () => void }>
+    turnRegistry: TurnRegistry
     enqueueTurn: (sessionId: string, turn: unknown) => void
     makePendingTurn: (
       turnId: string,
       message: string,
     ) => { turnId: string; message: string; enqueuedAt: string }
     maxConcurrentSessions: number
-    startingSessions: Set<string>
-    startingTurnIds: Map<string, string>
-    cancelledTurnIds: Set<string>
     startNextQueuedTurn: (sessionId: string) => void
     startTurn: (
       sessionId: string,
@@ -1031,16 +1008,12 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
   }
 
   function makeStartTurnService(maxConcurrent: number, activeCount: number): StartTurnInternals {
-    const activeLoops = new Map<string, { cancel: () => void }>()
-    for (let i = 0; i < activeCount; i++) {
-      activeLoops.set(`active-${i}`, { cancel: vi.fn() })
-    }
     const service = Object.create(SessionService.prototype) as StartTurnInternals
-    service.activeLoops = activeLoops
+    service.turnRegistry = new TurnRegistry()
+    for (let i = 0; i < activeCount; i++) {
+      service.turnRegistry.registerExecutor(`active-${i}`, `turn-active-${i}`, { cancel: vi.fn() })
+    }
     service.maxConcurrentSessions = maxConcurrent
-    service.startingSessions = new Set()
-    service.startingTurnIds = new Map()
-    service.cancelledTurnIds = new Set()
     service.startNextQueuedTurn = vi.fn()
     service.enqueueTurn = vi.fn()
     service.makePendingTurn = vi.fn((turnId: string, message: string) => ({
@@ -1060,7 +1033,7 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
     await service.startTurn('session-new', 'turn-1', 'hi')
 
     // 没注册成 activeLoop，而是被入队
-    expect(service.activeLoops.has('session-new')).toBe(false)
+    expect(service.turnRegistry.hasActiveSession('session-new')).toBe(false)
     expect(enqueueTurn).toHaveBeenCalledOnce()
     expect(enqueueTurn.mock.calls[0]![0]).toBe('session-new')
   })
@@ -1108,15 +1081,14 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
       // Minimal test double has no database; the assertion is about guard cleanup.
     })
 
-    expect(service.startingSessions.has('session-new')).toBe(false)
-    expect(service.startingTurnIds.has('session-new')).toBe(false)
-    expect(service.cancelledTurnIds.has('turn-1')).toBe(false)
+    expect(service.turnRegistry.isSessionStarting('session-new')).toBe(false)
+    expect(service.turnRegistry.getStartingTurnId('session-new')).toBeUndefined()
+    expect(service.turnRegistry.isTurnCancelled('turn-1')).toBe(false)
   })
 
   it('does not count its own queued preflight slot against the concurrency limit', async () => {
     const service = makeStartTurnService(1, 0)
-    service.startingSessions.add('session-new')
-    service.startingTurnIds.set('session-new', 'turn-1')
+    service.turnRegistry.beginStarting('session-new', 'turn-1')
     const enqueueTurn = service.enqueueTurn as unknown as ReturnType<typeof vi.fn>
 
     await service.startTurn('session-new', 'turn-1', 'hi').catch(() => {
