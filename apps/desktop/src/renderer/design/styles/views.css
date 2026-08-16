@@ -6593,6 +6593,14 @@ body.inspector-resizing {
   background: var(--primary-soft);
   border-radius: var(--r-full);
   font-weight: 500;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.parallel-tools-indicator.is-visible {
+  visibility: visible;
+  opacity: 1;
 }
 
 /* --- Tool call progress bar (pending state) --- */

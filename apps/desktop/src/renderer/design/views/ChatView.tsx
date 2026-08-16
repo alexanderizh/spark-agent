@@ -7642,8 +7642,8 @@ const AgentMsg = React.memo(function AgentMsg({
           {leadingThinkingBlocks.length > 0 && (
             <ThinkingSection blocks={leadingThinkingBlocks} streaming={isStreaming} />
           )}
-          {activeToolCount > 1 && (
-            <div className="parallel-tools-indicator">
+          {isStreaming && (
+            <div className={`parallel-tools-indicator${activeToolCount > 1 ? ' is-visible' : ''}`}>
               <Icons.Layers size={11} />
               <span>{activeToolCount} 个工具并行执行</span>
             </div>
