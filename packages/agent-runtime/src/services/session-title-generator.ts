@@ -47,7 +47,9 @@ export async function generateSessionTitle(params: GenerateTitleParams): Promise
     const title = sanitizeTitle(raw)
     return title.length === 0 ? null : title
   } catch (err) {
-    log.warn(`Failed to generate session title: ${err instanceof Error ? err.message : String(err)}`)
+    log.warn(
+      `Failed to generate session title: ${err instanceof Error ? err.message : String(err)}`,
+    )
     return null
   }
 }
@@ -57,9 +59,8 @@ function isAnthropic(providerType: string): boolean {
 }
 
 function buildPrompt(userMessage: string, assistantMessage: string): string {
-  const assistantPart = assistantMessage.length > 0
-    ? `\n\n[Assistant 回复]\n${assistantMessage}`
-    : ''
+  const assistantPart =
+    assistantMessage.length > 0 ? `\n\n[Assistant 回复]\n${assistantMessage}` : ''
   return [
     '为下面这段对话生成一个尽量简短、能体现主题的中文标题。',
     '要求：',
@@ -94,38 +95,86 @@ async function callAnthropic(params: GenerateTitleParams, prompt: string): Promi
     const text = data.content?.find((item) => item.type === 'text')?.text
     return typeof text === 'string' ? text : null
   } catch (err) {
-    if (err instanceof HttpError) log.debug(`Anthropic title request failed: HTTP ${err.statusCode}`)
-    else log.debug(`Anthropic title request failed: ${err instanceof Error ? err.message : String(err)}`)
+    if (err instanceof HttpError) {
+      log.warn(`Anthropic title request failed: HTTP ${err.statusCode} ${describeTarget(url)}`)
+    } else {
+      log.warn(
+        `Anthropic title request failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
     return null
   }
 }
 
-async function callOpenAICompatible(params: GenerateTitleParams, prompt: string): Promise<string | null> {
+async function callOpenAICompatible(
+  params: GenerateTitleParams,
+  prompt: string,
+): Promise<string | null> {
   const endpoint = normalizeEndpoint(params.apiEndpoint, OPENAI_DEFAULT_ENDPOINT)
   const url = `${endpoint}/chat/completions`
-  const body = {
+  const baseBody = {
     model: params.model,
-    max_tokens: TITLE_MAX_OUTPUT_TOKENS,
     temperature: 0.3,
     messages: [{ role: 'user', content: prompt }],
   }
-  try {
-    const data = await fetchJson<{ choices?: Array<{ message?: { content?: string } }> }>(url, {
+  // 大多数 OpenAI 兼容网关只认 max_tokens；但 OpenAI 官方对 reasoning 模型
+  // （gpt-5*/o 系）强制要求 max_completion_tokens，传 max_tokens 直接 400。
+  // 先按兼容面最广的 max_tokens 发，仅在 400 且服务端明确提示时换参重发一次。
+  const request = async (tokenField: 'max_tokens' | 'max_completion_tokens') =>
+    fetchJson<{ choices?: Array<{ message?: { content?: string } }> }>(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${params.apiKey}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...baseBody, [tokenField]: TITLE_MAX_OUTPUT_TOKENS }),
       timeoutMs: REQUEST_TIMEOUT_MS,
       maxRetries: 1,
     })
+  try {
+    let data: { choices?: Array<{ message?: { content?: string } }> }
+    try {
+      data = await request('max_tokens')
+    } catch (err) {
+      if (
+        err instanceof HttpError &&
+        err.statusCode === 400 &&
+        /max_completion_tokens/i.test(err.message)
+      ) {
+        log.warn(`Title request retrying with max_completion_tokens: ${describeTarget(url)}`)
+        data = await request('max_completion_tokens')
+      } else {
+        throw err
+      }
+    }
     const text = data.choices?.[0]?.message?.content
-    return typeof text === 'string' ? text : null
+    if (typeof text !== 'string' || text.length === 0) {
+      log.warn(
+        `Title response had no usable content (model may have spent the token budget on reasoning): ${describeTarget(url)}`,
+      )
+      return null
+    }
+    return text
   } catch (err) {
-    if (err instanceof HttpError) log.debug(`OpenAI-compatible title request failed: HTTP ${err.statusCode}`)
-    else log.debug(`OpenAI-compatible title request failed: ${err instanceof Error ? err.message : String(err)}`)
+    if (err instanceof HttpError) {
+      log.warn(
+        `OpenAI-compatible title request failed: HTTP ${err.statusCode} ${describeTarget(url)}`,
+      )
+    } else {
+      log.warn(
+        `OpenAI-compatible title request failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
     return null
+  }
+}
+
+function describeTarget(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return parsed.host
+  } catch {
+    return 'provider'
   }
 }
 
@@ -141,10 +190,11 @@ function clip(value: string, maxChars: number): string {
 }
 
 function sanitizeTitle(raw: string): string {
-  const firstLine = raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0) ?? ''
+  const firstLine =
+    raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? ''
   const stripped = firstLine
     .replace(/^[\s"'“”‘’`【「《]+/, '')
     .replace(/[\s"'“”‘’`】」》。.!?！？]+$/, '')

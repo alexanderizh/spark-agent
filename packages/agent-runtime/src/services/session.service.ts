@@ -5045,7 +5045,11 @@ export class SessionService {
       if (current == null) return false
       // Skip if user has manually renamed the session in the meantime
       const derivedFromFirst = deriveSessionTitle(ctx.userMessage)
-      if (current.title !== derivedFromFirst && !shouldDeriveSessionTitle(current.title)) {
+      if (
+        current.title !== derivedFromFirst &&
+        !isTitlePrefixOfMessage(current.title, ctx.userMessage) &&
+        !shouldDeriveSessionTitle(current.title)
+      ) {
         return false
       }
       const refined = await generateSessionTitle({
@@ -5066,6 +5070,43 @@ export class SessionService {
         `refineSessionTitleAsync failed: ${err instanceof Error ? err.message : String(err)}`,
       )
       return true
+    }
+  }
+
+  /**
+   * goal 会话的标题精炼入口：用 goal objective 作为首条用户消息构造精炼上下文。
+   * provider/apiKey 按会话当前配置解析；local CLI（无 keystore_ref）与配置缺失时静默跳过。
+   */
+  private async refineGoalSessionTitleAsync(sessionId: string, objective: string): Promise<void> {
+    try {
+      if (objective.trim().length === 0) return
+      const sessionRepo = new SessionRepository(this.db)
+      const session = sessionRepo.get(sessionId)
+      if (session == null) return
+      const provider =
+        session.provider_profile_id != null
+          ? new ProviderProfileRepository(this.db).get(session.provider_profile_id)
+          : null
+      if (provider == null || provider.keystore_ref == null) return
+      const config = JSON.parse(provider.config_json) as { apiEndpoint?: string; defaultModel?: string }
+      const model = session.model_id?.trim() || config.defaultModel?.trim() || ''
+      if (model.length === 0) return
+      const apiKey = await resolveProviderApiKey(provider)
+      if (apiKey.length === 0) return
+      await this.refineSessionTitleAsync(sessionId, sessionRepo, {
+        providerType: provider.provider_type,
+        apiKey,
+        ...(config.apiEndpoint != null && config.apiEndpoint.length > 0
+          ? { apiEndpoint: config.apiEndpoint }
+          : {}),
+        model,
+        userMessage: objective,
+        assistantMessage: '',
+      })
+    } catch (err) {
+      log.warn(
+        `refineGoalSessionTitleAsync failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
@@ -8849,6 +8890,10 @@ export class SessionService {
       budget: params.budget ?? { maxIterations: 12, maxConsecutiveFailures: 3, noProgressLimit: 3 },
       mode,
     })
+    // /goal 命令走 executeCommandAsEvents，不经过 dispatchTurn 的首轮标题派生与
+    // firstTurnTitleContext 捕获——goal 会话的 LLM 标题精炼在此主动补挂一次
+    //（fire-and-forget；标题已被手动改名时由 refineSessionTitleAsync 内部守卫拦截）。
+    void this.refineGoalSessionTitleAsync(params.sessionId, goal.objective)
     // 验收门槛（Gate）：spark-loop 且未显式提供验收标准时，先起草一份待确认契约，
     // 不直接起跑——目标进入 pending_contract，跑一次起草 turn 产出 spark-goal-contract 块，
     // 由 updateGoalContractFromAssistantBlock 解析并 emit goal_contract_proposed，等待用户 /goal confirm。
@@ -10196,6 +10241,20 @@ export class SessionService {
 function shouldDeriveSessionTitle(title: string | null | undefined): boolean {
   const normalized = title?.trim() ?? ''
   return DEFAULT_SESSION_TITLES.has(normalized) || normalized.endsWith(' 会话')
+}
+
+/**
+ * 标题是否为首条消息的前缀截断（视为派生态，允许精炼覆盖）。
+ * 覆盖 dispatchTurn 派生之外的命名来源：renderer 对 /goal 等命令会话用
+ * objective 文本直接命名（截断规则与 truncateTitle 不一致），以及前端
+ * 首条消息命名。只认短前缀，用户手改的长标题不会被误判为派生态。
+ */
+function isTitlePrefixOfMessage(title: string | null | undefined, message: string): boolean {
+  const normalized = title?.trim() ?? ''
+  if (normalized.length === 0 || normalized.length > SESSION_TITLE_MAX_LENGTH + 3) return false
+  const stripped = normalized.replace(/\.{3}$/, '').replace(/…$/, '')
+  if (stripped.length === 0) return false
+  return message.includes(stripped)
 }
 
 function getLatestAgentStatusFromEvents(
