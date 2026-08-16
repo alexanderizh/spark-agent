@@ -3668,6 +3668,25 @@ export class SessionService {
       ...(goalConfig != null ? { goal: goalConfig } : {}),
       ...(invocationObserver != null ? { invocationObserver } : {}),
     }
+    const codexTurnOptions: TryStartSDKTurnOptions = {
+      ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
+      primaryWorkspaceId: primaryWorkspaceId ?? '',
+      agentId: agent.id,
+      workspaceRootPath,
+      ...userMessagePresentation,
+      ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
+    }
+    // 与 claude 分支同款首轮标题精炼上下文（W2-D3 行为补齐：此前仅 claude 路径
+    // 携带，codex 会话首轮永远拿不到 LLM 精炼标题）。
+    if (shouldGenerateSessionTitle && !isLocalCli && !isMentionTurn) {
+      codexTurnOptions.firstTurnTitleContext = {
+        providerType: provider.provider_type,
+        apiKey,
+        model,
+        ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+        userMessage: message,
+      }
+    }
     await this.tryStartCodexCliTurn(
       sessionId,
       turnId,
@@ -3675,14 +3694,7 @@ export class SessionService {
       eventRepo,
       sessionRepo,
       codexConfig,
-      {
-        ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
-        primaryWorkspaceId: primaryWorkspaceId ?? '',
-        agentId: agent.id,
-        workspaceRootPath,
-        ...userMessagePresentation,
-        ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
-      },
+      codexTurnOptions,
     )
   }
 
@@ -3754,6 +3766,74 @@ export class SessionService {
   // 以下四个方法从 tryStartSDKTurn / tryStartCodexCliTurn 的 promise 收尾链提炼，
   // 提炼前两引擎各自逐字节相同；then 成功分支的后处理差异（resume 熔断 / 标题精炼 /
   // goal 解析 / 收尾顺序）留在调用点，待 W2-D3 统一管道时显式处理。
+
+  /**
+   * 成功分支的统一后处理（W2-D3 归一后两引擎完全一致）：
+   * 引擎前置钩子（claude：resume 熔断重置）→ 完整正文归并 → 首轮标题精炼/重试
+   * → goal 状态与契约块解析 → continuity 胶囊 → 记忆写入 → 成功尾段收尾。
+   */
+  private runTurnPostProcessing(args: {
+    sessionId: string
+    turnId: string
+    executor: ActiveExecution
+    sessionRepo: SessionRepository
+    config: SDKExecutorConfig
+    options: TryStartSDKTurnOptions
+    message: string
+    completeAssistantEvents: AssistantMessageEvent[]
+    emitUnpresentedMedia: () => void
+    emitPendingTerminalStatus: () => AgentStatusEvent['status'] | null
+    /** claude 路径传：成功完成后重置 SDK resume 熔断器。 */
+    onTurnSucceeded?: () => void
+  }): void {
+    args.onTurnSucceeded?.()
+    const { sessionId, turnId } = args
+    const assistantTurnText = collectCompleteAssistantTurnText(args.completeAssistantEvents)
+    const titleCtx = args.options.firstTurnTitleContext
+    if (titleCtx != null) {
+      void this.refineSessionTitleAsync(sessionId, args.sessionRepo, {
+        ...titleCtx,
+        assistantMessage: assistantTurnText,
+      }).then((retryWorthy) => {
+        if (retryWorthy) {
+          this.pendingTitleRefinements.set(sessionId, {
+            ctx: { ...titleCtx, assistantMessage: assistantTurnText },
+            retries: 0,
+          })
+        }
+      })
+    } else {
+      this.maybeRetrySessionTitleRefinement(sessionId, args.sessionRepo)
+    }
+    if (assistantTurnText.length > 0) {
+      this.updateGoalFromAssistantBlock(sessionId, assistantTurnText)
+      this.updateGoalContractFromAssistantBlock(sessionId, assistantTurnText)
+    }
+
+    // Context Architecture V2：异步推进结构化会话胶囊。成功 resume 不读取它，
+    // 但 Provider 切换、fresh 路径或 resume 失败恢复时可用；失败不影响主 turn。
+    this.continuityCoordinator.schedule(sessionId, turnId, args.config.model)
+
+    // ── Memory System：turn 完成后异步写入记忆（fire-and-forget） ──
+    void this.maybeWriteMemoryFromTurn(
+      sessionId,
+      args.options.primaryWorkspaceId ?? '',
+      args.options.agentId ?? '',
+      args.options.workspaceRootPath,
+      args.message,
+      assistantTurnText,
+    ).catch(() => {
+      /* swallow — never affect main flow */
+    })
+
+    this.settleTurnSuccessTail({
+      sessionId,
+      executor: args.executor,
+      sessionRepo: args.sessionRepo,
+      emitUnpresentedMedia: args.emitUnpresentedMedia,
+      emitPendingTerminalStatus: args.emitPendingTerminalStatus,
+    })
+  }
 
   /**
    * 无后处理收尾（shouldRunTurnPostProcessing=false 的 then 分支）：
@@ -4418,52 +4498,19 @@ export class SessionService {
           })
           return
         }
-        // Reset resume circuit breaker on successful turn completion
-        getResumeCircuitBreaker().recordSuccess(sessionId)
-        const assistantTurnText = collectCompleteAssistantTurnText(completeAssistantEvents)
-        const titleCtx = options.firstTurnTitleContext
-        if (titleCtx != null) {
-          void this.refineSessionTitleAsync(sessionId, sessionRepo, {
-            ...titleCtx,
-            assistantMessage: assistantTurnText,
-          }).then((retryWorthy) => {
-            if (retryWorthy) {
-              this.pendingTitleRefinements.set(sessionId, {
-                ctx: { ...titleCtx, assistantMessage: assistantTurnText },
-                retries: 0,
-              })
-            }
-          })
-        } else {
-          this.maybeRetrySessionTitleRefinement(sessionId, sessionRepo)
-        }
-        if (assistantTurnText.length > 0) {
-          this.updateGoalFromAssistantBlock(sessionId, assistantTurnText)
-          this.updateGoalContractFromAssistantBlock(sessionId, assistantTurnText)
-        }
-
-        // Context Architecture V2：异步推进结构化会话胶囊。成功 resume 不读取它，
-        // 但 Provider 切换、fresh 路径或 resume 失败恢复时可用；失败不影响主 turn。
-        this.continuityCoordinator.schedule(sessionId, turnId, config.model)
-
-        // ── Memory System：turn 完成后异步写入记忆（fire-and-forget） ──
-        void this.maybeWriteMemoryFromTurn(
+        this.runTurnPostProcessing({
           sessionId,
-          options.primaryWorkspaceId ?? '',
-          options.agentId ?? '',
-          options.workspaceRootPath,
-          message,
-          assistantTurnText,
-        ).catch(() => {
-          /* swallow — never affect main flow */
-        })
-
-        this.settleTurnSuccessTail({
-          sessionId,
+          turnId,
           executor,
           sessionRepo,
+          config,
+          options,
+          message,
+          completeAssistantEvents,
           emitUnpresentedMedia,
           emitPendingTerminalStatus,
+          // Reset resume circuit breaker on successful turn completion（claude 专属）
+          onTurnSucceeded: () => getResumeCircuitBreaker().recordSuccess(sessionId),
         })
       })
       .catch(() => {
@@ -4873,26 +4920,18 @@ export class SessionService {
           })
           return
         }
-        // codex 现状：先终态补发，再 continuity/memory（与 claude 的顺序相反，
-        // W2-D3 统一管道时按 claude 顺序归一）。
-        this.settleTurnSuccessTail({
+        // W2-D3：与 claude 路径共用统一后处理（含此前缺失的标题精炼与 goal 解析）。
+        this.runTurnPostProcessing({
           sessionId,
+          turnId,
           executor,
           sessionRepo,
+          config,
+          options,
+          message,
+          completeAssistantEvents,
           emitUnpresentedMedia,
           emitPendingTerminalStatus,
-        })
-        const assistantTurnText = collectCompleteAssistantTurnText(completeAssistantEvents)
-        this.continuityCoordinator.schedule(sessionId, turnId, config.model)
-        void this.maybeWriteMemoryFromTurn(
-          sessionId,
-          options.primaryWorkspaceId ?? '',
-          options.agentId ?? '',
-          options.workspaceRootPath,
-          message,
-          assistantTurnText,
-        ).catch(() => {
-          /* swallow — never affect main flow */
         })
       })
       .catch(() => {

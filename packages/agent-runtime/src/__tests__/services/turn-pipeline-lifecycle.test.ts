@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
 import {
   EventRepository,
+  GoalRepository,
   ProviderProfileRepository,
   SessionRepository,
   SparkDatabase,
@@ -422,5 +423,40 @@ describe.each(ENGINES)('turn 管道生命周期基线（$adapter 引擎）', (en
     expect(next.started).toBe(true)
     const nextTerminal = await waitForTurnTerminal(5000, next.turnId)
     expect((nextTerminal.event as { status?: unknown }).status).toBe('completed')
+  })
+
+  it('⑩ goal 块解析：assistant 输出 spark-goal-status 后 goal 循环推进（双引擎）', async () => {
+    // W2-D3 行为补齐的行为锁：goalConfig 对两引擎同样注入，assistant 会输出
+    // spark-goal-status 块；此前仅 claude 路径解析 —— codex 会话的 goal 永远
+    // 停在 active。本条断言两引擎的 goal 循环都能推进到 completed。
+    // mode 用 codex-native：spark-loop 会被 goalOwnsDispatch 拦截（用户消息入队
+    // 等 goal 泵排空，本测试无泵会超时）；codex-native 走普通 dispatch，
+    // 而 updateGoalFromAssistantBlock 只看 status==='active'，解析路径相同。
+    const goalId = new GoalRepository(db).createOrReplaceActiveGoal({
+      sessionId,
+      objective: 'finish the task',
+      mode: 'codex-native',
+    }).id
+    const goalBlock =
+      'working on it\n\n```spark-goal-status\nstatus: completed\nphase: validate\nsummary: objective met\n```'
+    queueFakeEngineScript({
+      events: [{ type: 'assistant_message', content: goalBlock, isFinal: true, mode: 'complete' }],
+      terminalStatus: 'completed',
+    })
+    const { turnId } = await service.sendTurn({ sessionId, message: 'run the goal' })
+    await waitForTurnTerminal(5000, turnId)
+
+    // getCurrent 只查活跃状态集合（completed 后返回 null），按创建时的 id 直取。
+    const goal = new GoalRepository(db).get(goalId)
+    expect(goal?.status).toBe('completed')
+    expect(goal?.progressLog.length).toBeGreaterThan(0)
+    expect(goal?.progressLog[0]?.summary).toBe('objective met')
+
+    // goal 事件按设计挂独立 turnId（不挂在触发它的对话 turn 下），全会话范围断言。
+    const goalEventTypes = loadPersistedEvents()
+      .filter((entry) => entry.type.startsWith('goal_'))
+      .map((entry) => entry.type)
+    expect(goalEventTypes).toContain('goal_progress')
+    expect(goalEventTypes).toContain('goal_completed')
   })
 })
