@@ -22,14 +22,22 @@
  */
 .app:has(.chat-main-empty[data-empty-theme='celestial']) {
   --empty-session-backdrop:
-    radial-gradient(circle at 74% 18%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 28%),
+    radial-gradient(
+      circle at 74% 18%,
+      color-mix(in srgb, var(--primary) 18%, transparent),
+      transparent 28%
+    ),
     radial-gradient(circle at 20% 82%, rgba(91, 178, 255, 0.1), transparent 30%),
     color-mix(in srgb, var(--primary) 3%, #fbfaff);
 }
 
 .app.theme-dark:has(.chat-main-empty[data-empty-theme='celestial']) {
   --empty-session-backdrop:
-    radial-gradient(circle at 74% 18%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 30%),
+    radial-gradient(
+      circle at 74% 18%,
+      color-mix(in srgb, var(--primary) 22%, transparent),
+      transparent 30%
+    ),
     radial-gradient(circle at 20% 82%, rgba(70, 151, 225, 0.12), transparent 32%),
     linear-gradient(150deg, #11111c, #151426 56%, #101522);
 }
@@ -263,11 +271,12 @@
 }
 
 .chat-main-empty[data-empty-theme] .composer-input,
+.chat-main-empty[data-empty-theme] .composer-input-placeholder,
 .chat-main-empty[data-empty-theme] .composer-input-highlights {
   color: var(--eh-ink);
 }
 
-.chat-main-empty[data-empty-theme] .composer-input::placeholder {
+.chat-main-empty[data-empty-theme] .composer-input-placeholder {
   color: color-mix(in srgb, var(--eh-muted) 72%, transparent);
 }
 
@@ -410,7 +419,11 @@
   --eh-ink: #171826;
   --eh-muted: #6b6b7b;
   background:
-    radial-gradient(circle at 74% 18%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 28%),
+    radial-gradient(
+      circle at 74% 18%,
+      color-mix(in srgb, var(--primary) 18%, transparent),
+      transparent 28%
+    ),
     radial-gradient(circle at 20% 82%, rgba(91, 178, 255, 0.1), transparent 30%),
     color-mix(in srgb, var(--primary) 3%, #fbfaff);
 }
@@ -479,7 +492,11 @@
   --eh-surface-strong: #303030;
   --composer-toolbar-bg: #3d3d3d;
   background:
-    radial-gradient(circle at 74% 18%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 30%),
+    radial-gradient(
+      circle at 74% 18%,
+      color-mix(in srgb, var(--primary) 22%, transparent),
+      transparent 30%
+    ),
     radial-gradient(circle at 20% 82%, rgba(70, 151, 225, 0.12), transparent 32%),
     linear-gradient(150deg, #11111c, #151426 56%, #101522);
 }
@@ -527,11 +544,17 @@
 }
 
 /* 无主题基线由外层 composer 绘制底色，input-shell 保持透明，避免圆角处溢出。 */
-.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer.composer-v2 .composer-input-shell {
+.app.theme-dark
+  .chat-main-empty[data-empty-theme='celestial']
+  .composer.composer-v2
+  .composer-input-shell {
   background: transparent;
 }
 
-.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer.composer-v2 .composer-submit-row {
+.app.theme-dark
+  .chat-main-empty[data-empty-theme='celestial']
+  .composer.composer-v2
+  .composer-submit-row {
   background: var(--panel);
 }
 
@@ -561,7 +584,11 @@
 .app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .chat-hero-grid {
   background-image:
     linear-gradient(color-mix(in srgb, var(--eh-accent) 6%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--eh-accent) 6%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--eh-accent) 6%, transparent) 1px,
+      transparent 1px
+    );
 }
 
 /*

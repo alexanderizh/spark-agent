@@ -108,6 +108,21 @@ export type ComposerPrefillPayload = {
   agentId?: string
 }
 
+export type ComposerInputSelection = {
+  start: number
+  end: number
+}
+
+export type ComposerInputHandle = {
+  focus(): void
+  getValue(): string
+  getSelection(): ComposerInputSelection
+  setSelectionRange(start: number, end: number): void
+  select(): void
+  replaceSelection(text: string): void
+  getElement(): HTMLElement | null
+}
+
 export type ContextMenuItem = {
   key: string
   label: string
@@ -128,7 +143,7 @@ export type ReplyToState = {
 export type TextEditMenuState = {
   x: number
   y: number
-  target: HTMLTextAreaElement | HTMLInputElement
+  target: ComposerInputHandle
   hasSelection: boolean
   isEditable: boolean
 }

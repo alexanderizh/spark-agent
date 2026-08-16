@@ -1,5 +1,5 @@
 export type ComputeCaretViewportPosition = (
-  textarea: HTMLTextAreaElement,
+  textarea: HTMLElement,
   charIndex: number,
 ) => { left: number; top: number }
 
@@ -9,12 +9,19 @@ export type ComputeCaretViewportPosition = (
  * utility stays independent from the composer's mention/highlight logic.
  */
 export function scrollTextareaCaretIntoView(
-  textarea: HTMLTextAreaElement,
+  textarea: HTMLElement,
   computeCaretViewportPosition: ComputeCaretViewportPosition,
+  getSelection: () => { start: number; end: number } = () => {
+    const element = textarea as HTMLTextAreaElement
+    return {
+      start: element.selectionStart ?? element.value.length,
+      end: element.selectionEnd ?? element.selectionStart ?? element.value.length,
+    }
+  },
 ): void {
   if (textarea.clientHeight <= 0 || textarea.scrollHeight <= textarea.clientHeight) return
 
-  const charIndex = textarea.selectionStart ?? textarea.value.length
+  const charIndex = getSelection().start
   const textareaRect = textarea.getBoundingClientRect()
   const style = window.getComputedStyle(textarea)
   const paddingTop = Number.parseFloat(style.paddingTop) || 0

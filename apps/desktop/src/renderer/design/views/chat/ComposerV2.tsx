@@ -153,6 +153,7 @@ import {
 } from '../../utils/cli-spark-override-cache'
 import { SessionReferencePicker } from './SessionReferencePicker'
 import { QueuedTaskList } from './QueuedTaskList'
+import { ComposerLexicalInput, type ComposerLexicalInputHandle } from './ComposerLexicalInput'
 import {
   hasSessionReferenceDrag,
   isSessionReferenceDropTarget,
@@ -269,29 +270,20 @@ function InlineContextMenu({
 }
 
 async function editTextSelection(
-  target: HTMLTextAreaElement | HTMLInputElement,
+  target: ComposerLexicalInputHandle,
   action: 'cut' | 'copy' | 'paste',
 ): Promise<void> {
   target.focus()
   if (action === 'paste') {
     try {
       const text = await navigator.clipboard.readText()
-      insertTextIntoControl(target, text)
+      target.replaceSelection(text)
     } catch {
       document.execCommand('paste')
     }
     return
   }
   document.execCommand(action)
-}
-
-function insertTextIntoControl(target: HTMLTextAreaElement | HTMLInputElement, text: string): void {
-  const start = target.selectionStart ?? target.value.length
-  const end = target.selectionEnd ?? start
-  target.setRangeText(text, start, end, 'end')
-  target.dispatchEvent(
-    new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }),
-  )
 }
 
 function TextEditContextMenu({ menu, onClose }: { menu: TextEditMenuState; onClose: () => void }) {
@@ -935,7 +927,8 @@ export function ComposerV2({
   const [draftDebugMode, setDraftDebugMode] = useState<boolean>(false)
   const [previewAttachment, setPreviewAttachment] = useState<ComposerAttachment | null>(null)
   const [textEditMenu, setTextEditMenu] = useState<TextEditMenuState | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const textareaRef = useRef<ComposerLexicalInputHandle | null>(null)
+  const [knownSkillNames, setKnownSkillNames] = useState<string[]>([])
   const composerParamBarRef = useRef<HTMLDivElement | null>(null)
   useResponsiveComposerParamVisibility(composerParamBarRef)
   const composingRef = useRef(false)
@@ -1786,7 +1779,7 @@ export function ComposerV2({
   }, [draftModelId, selectedProvider])
 
   useEffect(() => {
-    const el = textareaRef.current
+    const el = textareaRef.current?.getElement()
     if (!el) return
     // 高度范围：折叠态 76-280px（hero 状态下 padding 上下会撑出更大的视觉高度），
     // 展开态 240-520px —— 展开后给足空间，长 prompt 能直接看完，不必依赖滚动。
@@ -1830,7 +1823,7 @@ export function ComposerV2({
 
     requestAnimationFrame(() => {
       el.focus()
-      const end = el.value.length
+      const end = el.getValue().length
       el.setSelectionRange(end, end)
     })
   }, [draftBucketKey])
@@ -2360,7 +2353,7 @@ export function ComposerV2({
   }, [handleDropFilePaths, handleDropSessionReference, sending, toast])
 
   const handlePaste = useCallback(
-    async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    async (event: React.ClipboardEvent<HTMLElement>) => {
       const items = Array.from(event.clipboardData?.items ?? [])
       const imageItems = items.filter((item) => item.type.startsWith('image/'))
       if (imageItems.length === 0) return
@@ -2485,12 +2478,16 @@ export function ComposerV2({
     (skill: { name: string }) => {
       const el = textareaRef.current
       const current = value
-      const caret = el?.selectionStart ?? current.length
-      const end = el?.selectionEnd ?? caret
+      const selection = el?.getSelection()
+      const caret = selection?.start ?? current.length
+      const end = selection?.end ?? caret
       const insertText = `@${skill.name} `
       const before = current.slice(0, caret)
       const after = current.slice(end)
       const nextValue = `${before}${insertText}${after}`
+      setKnownSkillNames((currentNames) =>
+        currentNames.includes(skill.name) ? currentNames : [...currentNames, skill.name],
+      )
       setValue(nextValue)
       setTextEditMenu(null)
       // 把光标移到 mention 后
@@ -2581,7 +2578,7 @@ export function ComposerV2({
       const el = textareaRef.current
       if (el == null) return
       el.focus()
-      const end = el.value.length
+      const end = el.getValue().length
       el.setSelectionRange(end, end)
     })
   }
@@ -2706,8 +2703,9 @@ export function ComposerV2({
     (cmd: CommandListItem) => {
       const currentValue = value
       const el = textareaRef.current
-      const selectionStart = el?.selectionStart ?? currentValue.length
-      const selectionEnd = el?.selectionEnd ?? selectionStart
+      const selection = el?.getSelection()
+      const selectionStart = selection?.start ?? currentValue.length
+      const selectionEnd = selection?.end ?? selectionStart
       const inserted = `/${cmd.name} `
       const filterText = `/${slashFilter}`
       const filterStart = currentValue.lastIndexOf(filterText, selectionStart)
@@ -2835,9 +2833,10 @@ export function ComposerV2({
    * 用一个不可见的镜像 div 复刻 textarea 的字体/边距/换行，把字符放进 <span>，取其 rect。
    */
   const computeCaretViewportPosition = useCallback(
-    (textarea: HTMLTextAreaElement, charIndex: number): { left: number; top: number } => {
+    (textarea: HTMLElement, charIndex: number): { left: number; top: number } => {
       const taRect = textarea.getBoundingClientRect()
       const style = window.getComputedStyle(textarea)
+      const currentValue = textareaRef.current?.getValue() ?? textarea.textContent ?? ''
       const mirror = document.createElement('div')
       const props = [
         'boxSizing',
@@ -2875,12 +2874,12 @@ export function ComposerV2({
       mirror.style.overflow = 'hidden'
       mirror.style.height = 'auto'
 
-      const before = textarea.value.slice(0, charIndex)
+      const before = currentValue.slice(0, charIndex)
       const marker = document.createElement('span')
       marker.textContent = '​'
       mirror.appendChild(document.createTextNode(before))
       mirror.appendChild(marker)
-      mirror.appendChild(document.createTextNode(textarea.value.slice(charIndex) || ' '))
+      mirror.appendChild(document.createTextNode(currentValue.slice(charIndex) || ' '))
       document.body.appendChild(mirror)
 
       const markerRect = marker.getBoundingClientRect()
@@ -2898,10 +2897,14 @@ export function ComposerV2({
 
   // 高度调整完成后再校正滚动位置，确保换行后的新光标行立即可见。
   useEffect(() => {
-    const el = textareaRef.current
+    const el = textareaRef.current?.getElement()
     if (el == null) return
     const frame = requestAnimationFrame(() =>
-      scrollTextareaCaretIntoView(el, computeCaretViewportPosition),
+      scrollTextareaCaretIntoView(
+        el,
+        computeCaretViewportPosition,
+        () => textareaRef.current?.getSelection() ?? { start: 0, end: 0 },
+      ),
     )
     return () => cancelAnimationFrame(frame)
   }, [manualExpanded, value, computeCaretViewportPosition])
@@ -2929,7 +2932,7 @@ export function ComposerV2({
       }
       const el = textareaRef.current
       if (el == null) return
-      const caret = el.selectionStart ?? next.length
+      const caret = el.getSelection().start
       // 从光标向前找最近的 `@`：输入 `@` 即触发，不再要求前面是行首/空白；中间不能含空白
       const upto = next.slice(0, caret)
       const match = upto.match(/@([^\s@]*)$/)
@@ -2945,11 +2948,14 @@ export function ComposerV2({
       setMentionIndex(0)
       // 计算 caret 坐标并打开浮层
       try {
-        const pos = computeCaretViewportPosition(el, atIndex)
+        const element = el.getElement()
+        if (element == null) return
+        const pos = computeCaretViewportPosition(element, atIndex)
         setMentionAnchor(pos)
       } catch {
         // 镜像 div 偶发失败时退化为 textarea 左下角
-        const r = el.getBoundingClientRect()
+        const r = el.getElement()?.getBoundingClientRect()
+        if (r == null) return
         setMentionAnchor({ left: r.left, top: r.bottom + 4 })
       }
       setMentionOpen(true)
@@ -3044,17 +3050,19 @@ export function ComposerV2({
     [value, mentionQuery, setValue, closeMentionPopup],
   )
 
-  const handleTextContextMenu = useCallback((event: React.MouseEvent<HTMLTextAreaElement>) => {
+  const handleTextContextMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
     event.preventDefault()
-    const target = event.currentTarget
-    const start = target.selectionStart ?? 0
-    const end = target.selectionEnd ?? start
+    const target = textareaRef.current
+    if (target == null) return
+    const selection = target.getSelection()
+    const start = selection.start
+    const end = selection.end
     setTextEditMenu({
       x: event.clientX,
       y: event.clientY,
       target,
       hasSelection: end > start,
-      isEditable: !target.disabled && !target.readOnly,
+      isEditable: true,
     })
   }, [])
 
@@ -3154,9 +3162,12 @@ export function ComposerV2({
       if (history.length === 0) return // let native cursor movement work
 
       const el = textareaRef.current
-      const atStart = el != null && el.selectionStart === 0 && el.selectionEnd === 0
+      const selection = el?.getSelection()
+      const atStart = selection?.start === 0 && selection.end === 0
       const atEnd =
-        el != null && el.selectionStart === el.value.length && el.selectionEnd === el.value.length
+        el != null &&
+        selection?.start === el.getValue().length &&
+        selection.end === el.getValue().length
 
       if (event.key === 'ArrowUp' && atStart) {
         event.preventDefault()
@@ -3232,8 +3243,9 @@ export function ComposerV2({
     const { commandText } = paletteCommandRequest
     const el = textareaRef.current
     // 读取当前选区；如果 textarea 不在 DOM 中，则退化为追加到末尾
-    const selectionStart = el?.selectionStart ?? value.length
-    const selectionEnd = el?.selectionEnd ?? selectionStart
+    const selection = el?.getSelection()
+    const selectionStart = selection?.start ?? value.length
+    const selectionEnd = selection?.end ?? selectionStart
     const currentValue = value
     const next =
       currentValue.slice(0, selectionStart) + commandText + currentValue.slice(selectionEnd)
@@ -3518,7 +3530,7 @@ export function ComposerV2({
     }
 
     // 文本立即写入（用户能马上看到效果）
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+
     setValue(payload.text)
     setSessionReferences(payload.sessionReferences ?? [])
 
@@ -3989,14 +4001,14 @@ export function ComposerV2({
             </div>
           )}
           <div className="composer-input-shell">
-            <textarea
-              className="composer-input"
+            <ComposerLexicalInput
               ref={textareaRef}
-              rows={1}
-              placeholder={composerPlaceholder}
               value={voiceDisplayValue}
-              onChange={(event) => handleValueChange(event.target.value)}
+              commandNames={slashCmds.map((command) => command.name)}
+              skillNames={knownSkillNames}
+              placeholder={composerPlaceholder}
               readOnly={voiceInputActive}
+              onChange={handleValueChange}
               onCompositionStart={() => {
                 composingRef.current = true
               }}
@@ -4125,8 +4137,9 @@ export function ComposerV2({
                 if (el == null) return
                 el.focus()
                 // 无选区时光标移到末尾，便于随后增量插入命令；有选区时保持，选中命令时替换选区。
-                if (el.selectionStart === el.selectionEnd) {
-                  const end = el.value.length
+                const selection = el.getSelection()
+                if (selection.start === selection.end) {
+                  const end = el.getValue().length
                   el.setSelectionRange(end, end)
                 }
               })

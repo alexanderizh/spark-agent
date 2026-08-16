@@ -3724,7 +3724,12 @@ body.sidebar-resizing {
   --cp-min-height: 76px;
   --cp-max-height: 320px;
 }
-.composer-v2 .composer-input-shell textarea.composer-input {
+.composer-v2 .composer-input-shell .composer-input-lexical {
+  position: relative;
+  width: 100%;
+  min-height: var(--cp-min-height);
+}
+.composer-v2 .composer-input-shell .composer-input {
   position: relative;
   z-index: 1;
   width: 100%;
@@ -3754,9 +3759,39 @@ body.sidebar-resizing {
   color: var(--text);
   caret-color: var(--text);
 }
-.composer-v2 .composer-input-shell textarea.composer-input::placeholder {
+.composer-v2 .composer-input-shell .composer-input-placeholder {
+  position: absolute;
+  z-index: 0;
+  top: var(--cp-pad-top);
+  right: var(--cp-pad-right);
+  left: var(--cp-pad-left);
+  overflow: hidden;
   color: var(--text-faint);
-  -webkit-text-fill-color: var(--text-faint);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--cp-font-family);
+  font-size: var(--cp-font-size);
+  font-style: var(--cp-font-style);
+  font-weight: var(--cp-font-weight);
+  letter-spacing: var(--cp-letter-spacing);
+  line-height: var(--cp-line-height);
+}
+.composer-v2 .composer-input-shell .composer-input-token {
+  border-radius: var(--r-sm, 4px);
+  padding: 1px 4px;
+  font-weight: 550;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.composer-v2 .composer-input-shell .composer-input-token.is-command {
+  color: var(--purple-600, #7c3aed);
+  background: color-mix(in srgb, var(--purple-500, #8b5cf6) 16%, transparent);
+}
+.composer-v2 .composer-input-shell .composer-input-token.is-skill {
+  color: var(--blue-600, #2563eb);
+  background: color-mix(in srgb, var(--blue-500, #3b82f6) 16%, transparent);
 }
 /* 展开态：放宽 max-height，让 JS 里的 520px 能真正生效（默认 320px 会反向 cap 住） */
 .composer.composer-v2.expanded .composer-input-shell {
@@ -3820,7 +3855,6 @@ body.sidebar-resizing {
 .composer-submit-picks .composer-select-trigger span {
   max-width: 120px;
   line-height: 1.5;
-
 }
 /* has-workspace-picks：发送区只露一行（无展开按钮），收紧右侧/底部留白。 */
 .composer-v2.has-workspace-picks .composer-input-shell {
@@ -4546,7 +4580,6 @@ body.sidebar-resizing {
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.5;
-
 }
 .composer-project-menu {
   display: flex;
@@ -6711,7 +6744,6 @@ body.inspector-resizing {
   box-shadow: var(--shadow-xs);
 }
 
-
 /* ============================================================
    MCP / SKILLS / SETTINGS
    ============================================================ */
@@ -7604,7 +7636,6 @@ body.inspector-resizing {
   margin-bottom: 14px;
 }
 
-
 /* ===== Plan approval (sidebar panel) ===== */
 .plan-approval {
   display: flex;
@@ -7748,7 +7779,6 @@ body.inspector-resizing {
 }
 
 /* ── Agents card list ── Migrated to apps/desktop/src/renderer/design/views/AgentsView.less. */
-
 
 /* ─────────────────────────────────────────────────────────────────────────
    Team Mode（团队模式）群聊式时间线 + Inspector 团队成员
@@ -8450,7 +8480,6 @@ body.inspector-resizing {
 .xterm-scrollable-element {
   background-color: transparent !important;
 }
-
 
 /* ─── Custom commands settings ───────────────────────────────────────────── */
 .custom-command-toolbar {
