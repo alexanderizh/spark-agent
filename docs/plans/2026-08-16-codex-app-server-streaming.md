@@ -1,0 +1,111 @@
+# Codex 引擎流式输出修复：app-server 传输替换方案
+
+> 状态: 待开发 | 最后核对: 2026-08-16
+
+## 一、现象
+
+codex 会话的流式输出不是逐词流畅出现，而是「一坨一片一段」：生成期间界面无任何文字，整段文字在生成完成后一次性出现；长会话（文本↔工具交替）表现为逐段跳变。claude 会话同界面逐 token 流畅，对照明显。
+
+## 二、根因（三层证据链，全部实证）
+
+### 证据 1 · 落库数据：codex 会话 delta 事件数量恒为 0
+
+对 prod 库（`@spark/desktop/spark.db`）全部 30 个 codex 会话（2026-08-04 ~ 08-16，gpt-5.6-luna/sol/terra、deepseek-v4-flash、glm-5.2）统计：**`assistant_message` 且 `mode='delta'` 的事件总计 0 条**。每个 turn 只有两条 `complete`（`item.completed` 落一条 + executor 收尾补一条 `isFinal`）。
+
+例（session d5b246d9，turn 738ca68a）：10:28:22 turn started → 生成期间无任何文字事件 → 10:28:26 整段 49 字符一次性出现。
+
+**这不是回归——该传输路径从未流式过。** executor 里的 delta 处理代码（`dispatchRawDeltaEvent`、`computeDelta` 前缀切片）是为「上游会发增量事件」的预期写的，但实际传输从未投递过这些事件。
+
+### 证据 2 · 传输层：`codex exec --experimental-json` 在协议层面不流式 agent 文本
+
+codex 引擎（responses wire 载具）链路：`CodexSdkExecutor` → `@openai/codex-sdk`（0.146.0）`runStreamed()` → spawn `codex exec --experimental-json` → 逐行读 stdout JSONL。
+
+codex-rs 0.144.5 源码 `codex-rs/exec/src/event_processor_with_jsonl_output.rs`（**main 分支行为相同，升级运行时无解**）：
+
+- `map_started_item()` 对 `ThreadItem::AgentMessage` 返回 `None`——不发 `item.started`
+- 整个通知 match 中 **`ItemUpdated` 只对 TodoList 发射**，没有 `AgentMessageDelta` / `ReasoningTextDelta` / `CommandExecutionOutputDelta` 的分支——这些通知全部落入 `_ => CodexStatus::Running` 被静默丢弃
+- agent 文本只在 `item.completed` 出现一次（全文）
+
+另：0.144.5 的 cli.rs 中 `--json` 的 alias 就是 `experimental-json`，两 flag 同一实现——`CodexCliExecutor`（useLocalConfig 路径）同样不流式。
+
+### 证据 3 · app-server 传输有完整流式（修复的落点）
+
+codex 内部 app-server 协议层将核心事件一一映射为 token 级通知（`codex-rs/app-server-protocol/src/protocol/event_mapping.rs`）：
+
+| 核心事件                                             | v2 通知（已从 0.144.5 二进制字符串表确认存在）                 |
+| ---------------------------------------------------- | -------------------------------------------------------------- |
+| `AgentMessageContentDelta`                           | `item/agentMessage/delta`                                      |
+| `ReasoningContentDelta` / `ReasoningRawContentDelta` | `item/reasoning/summaryTextDelta` / `item/reasoning/textDelta` |
+| `ExecCommandOutputDelta`                             | `item/commandExecution/outputDelta`                            |
+| item 生命周期                                        | `item/started` / `item/updated` / `item/completed`             |
+| turn 生命周期                                        | `turn/started` / `turn/completed`                              |
+| 实时用量                                             | `thread/tokenUsage/updated`                                    |
+
+请求侧（同样已确认）：`initialize`、`thread/start`、`thread/resume`、`turn/start`、**`turn/interrupt`（优雅取消）**、**`turn/steer`**、`item/permissions/requestApproval`（交互审批）、`item/commandExecution/requestApproval`、`thread/compact/start` 等。启动命令：`codex app-server`（0.144.5 已带，experimental 标记）。**这是 codex IDE 扩展使用的传输，流式、取消、审批齐全。**
+
+### 排除项（已验证）
+
+- **renderer/IPC 链路健康**：逐事件 `webContents.send`（`typed-ipc.ts:178`），delta 免落库直发（`session-event-sequencer.ts:58-76`），ChatView 仅做 rAF 合帧（`live-agent-event-buffer.ts`），MessageBuilder 按 segmentId 累加、引擎无关。claude 会话经同管道逐 token 流畅。
+- **升级运行时/SDK 无解**：main 分支的 exec JSONL 处理器行为一致；main 的 TS SDK 仍 spawn `exec --experimental-json`。
+- **provider 切 chat wire 不可接受**：`CodexOpenAIExecutor` 是纯 Chat Completions 客户端（真流式），但丢失 codex 全部工具运行时（bash/文件/apply_patch/MCP）。
+- **renderer 打字机特效**：只会在「长静默后的一次性全文」上做假动画，治标且加虚假延迟，否决。
+
+## 三、修复方案：`CodexAppServerExecutor`（codex 引擎新增载具）
+
+### 架构
+
+```
+session.service ─→ EngineRegistry(codex descriptor)
+                      └─ createCodexExecutorForConfig()
+                            ├─ chat wire      → CodexOpenAIExecutor（不变）
+                            ├─ responses wire → CodexAppServerExecutor（新，默认）
+                            │                    └─ CodexAppServerClient
+                            │                         · spawn codex app-server
+                            │                         · JSON-RPC over stdio（请求关联+通知分发）
+                            │                         · initialize → thread/start → turn/start
+                            └─ useLocalConfig → CodexCliExecutor（不变）
+```
+
+`CodexSdkExecutor` 保留为回退（app-server 握手失败时降级，兼容无 app-server 的旧运行时）。
+
+### 事件映射（v2 通知 → AgentEvent）
+
+| v2 通知                                                                        | AgentEvent                                  | 说明                             |
+| ------------------------------------------------------------------------------ | ------------------------------------------- | -------------------------------- |
+| `item/agentMessage/delta`                                                      | `assistant_message` mode=delta              | **token 级流式，本方案核心收益** |
+| `item/reasoning/textDelta` / `summaryTextDelta`                                | `agent_thinking` mode=delta                 | codex 首次获得思考流             |
+| `item/commandExecution/outputDelta`                                            | `terminal_output`                           | 命令输出实时流                   |
+| `item/started` / `item/completed`（command/mcp/fileChange/webSearch/todoList） | `tool_call` / `tool_result` / `file_change` | 复用现有 dispatchItemEvent 逻辑  |
+| `turn/started` / `turn/completed`                                              | `agent_status` / `usage_update`             |                                  |
+| `thread/tokenUsage/updated`                                                    | `usage_update`                              | 实时用量                         |
+| `turn/completed`（status=interrupted/failed）                                  | 终态事件                                    | 对齐现有终态语义                 |
+
+segmentId 沿用 `codex-sdk-{turnId}-text-{N}` 约定（renderer 累加逻辑零改动）。
+
+### 取消语义升级
+
+现状：`cancel()` = abort signal = 杀子进程（粗暴，session 状态可能停在半途）。新载具：`turn/interrupt` 优雅中断，turn 以 interrupted 终态正常收尾后关闭进程。
+
+### 分期
+
+- **Phase 1（本次，约 1 周聚焦工作量）**：JSON-RPC 客户端 + AppServerExecutor（流式/工具/取消/resume）+ 回退逻辑 + 测试。
+- **Phase 2（后置，按需）**：交互审批回路（`item/permissions/requestApproval` server→client 请求，取代 unattended 兜底）、`turn/steer`、`thread/compact/start`（主动压缩）、goal 原生 API。
+
+### 测试策略
+
+- mock app-server harness：脚本化 JSON-RPC 通知注入（对齐 W1 FakeEngineExecutor 模式），锁事件序列/顺序/终态。
+- conformance 测试补 AppServerExecutor（cancel → interrupted 终态 + turn resolve）。
+- 真机验收：用户在 dev 应用跑 codex 会话，确认逐 token 流式、思考流、取消、工具卡、resume。
+
+## 四、风险与开放项（实现期核对）
+
+1. **请求体精确形状**：`initialize` / `thread/start` / `turn/start` 参数（model、cwd、sandbox、permissions、input items）需从 `codex-rs/app-server-protocol/src/protocol/v2/` 对应 tag 源码核对，以实际二进制行为为准。
+2. **MCP 服务器配置传递**：app-server 模式下 MCP 配置走 initialize 参数还是 config 覆盖，需核对；现 exec 路径走 `--config mcp_servers=...`。
+3. **experimental 标记**：`codex app-server` 在 0.144.5 标记 experimental，接口可能随版本变；版本钉死策略与现有 codex 运行时管理一致（`SPARK_CODEX_SDK_VERSION` 校验已存在）。
+4. **回退开关**：握手失败/超时自动降级 `CodexSdkExecutor` 并上报遥测，保证不比现状差。
+
+## 五、证据存档
+
+- 根因统计脚本与查询：见本文档第二节（prod 库只读查询）
+- codex-rs 源码：`event_processor_with_jsonl_output.rs`（0.144.5 与 main 对照）、`event_mapping.rs`、`cli.rs`
+- 二进制方法名探测：0.144.5 win32-x64 codex.exe 字符串表
