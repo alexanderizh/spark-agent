@@ -134,6 +134,11 @@ const DATA_PERSISTENCE_GUIDE = [
   '不要把 localStorage、sessionStorage、IndexedDB、内存数组或 URL 参数作为唯一数据源；它们不能替代 SparkWork 应用数据持久化。',
 ].join(' ')
 
+const DESIGN_PREVIEW_WORKFLOW_GUIDE = [
+  '开发流程（设计先行）：创建新应用或大幅改版时，必须先产出界面设计预览给用户确认（用会话内可用的预览手段，如 render_html 渲染静态界面效果图或低仿真原型），根据用户反馈不断迭代调整设计；用户明确确认界面方案后，才开发完整实现写入草稿。',
+  '用户确认设计之前不要直接开发落地，更不要未经确认就发布。',
+].join(' ')
+
 function toolDefinitions() {
   return [
     // ── 应用生命周期 ──
@@ -142,6 +147,7 @@ function toolDefinitions() {
       description: [
         '创建一个新的自定义子应用。创建后处于草稿态（draft、未启用），需要先发布（spark_app_publish）才会出现在应用入口。',
         '何时调用：用户想要一个新的小工具/小组件/桌面宠物等自包含 HTML 应用时。',
+        DESIGN_PREVIEW_WORKFLOW_GUIDE,
         THEME_INTEGRATION_GUIDE,
         DATA_PERSISTENCE_GUIDE,
         '返回完整详情，其中的 draft.revision 是后续修改草稿要用的 CAS 基线。',
@@ -223,6 +229,7 @@ function toolDefinitions() {
       name: 'spark_app_update_draft',
       description: [
         '修改子应用草稿。可更新源码（draftHtml）、名称、描述、权限、展示面、图标、入口中的任意字段。',
+        '涉及界面大改版时同样遵循设计先行：先出界面设计预览给用户确认，再写入完整实现。',
         THEME_INTEGRATION_GUIDE,
         DATA_PERSISTENCE_GUIDE,
         'CAS 语义：必须传 spark_app_get 拿到的当前 expectedRevision；若期间草稿已被其他操作更新会返回冲突（SUBAPP_CONFLICT），此时应重新 get 拿新 revision 再重试，不要盲目覆盖。',
@@ -270,7 +277,7 @@ function toolDefinitions() {
       name: 'spark_app_publish',
       description: [
         '把当前草稿发布为新版本：生成一条不可变的发布快照（版本号自增），应用转为 published 态。',
-        '何时调用：草稿改完、用户确认要上线时。发布后应用才可被启用并出现在应用入口。',
+        '何时调用：草稿改完、界面设计已经用户预览确认、且用户明确同意上线时。发布后应用才可被启用并出现在应用入口。',
         '同样受 CAS 约束：传 spark_app_get 拿到的当前 revision；冲突时重新 get 再试。',
         '注意：版本记录保存的是发布时刻的完整草稿快照，暂不支持附加 changelog 文案；如需变更说明可写进应用 description。',
       ].join(' '),
