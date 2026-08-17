@@ -1426,6 +1426,11 @@ export interface DialogSaveFileResponse {
 export interface FileWriteTextRequest {
   path: string
   content: string
+  /**
+   * 写入编码（可选）。传 file:read 返回的 encoding 可按原编码写回，避免保存后
+   * 非 UTF-8 文件（如 GBK/GB18030）被静默转码；缺省按 utf-8 写入（旧行为）。
+   */
+  encoding?: string
 }
 
 export interface FileWriteTextResponse {
@@ -4197,8 +4202,10 @@ export interface FileReadRequest {
 }
 
 export interface FileReadResponse {
-  /** File content as UTF-8 string. */
+  /** File content decoded to UTF-8 string (BOM stripped). */
   content?: string
+  /** Detected source encoding ('utf-8' | 'utf-8-bom' | 'utf-16le' | 'utf-16be' | 'gb18030'). Pass back to file:write-text to preserve it on save. */
+  encoding?: string
   /** Populated with the error message when the read failed. */
   error?: string
 }

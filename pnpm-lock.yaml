@@ -73,6 +73,9 @@ importers:
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
+      iconv-lite:
+        specifier: ^0.6.3
+        version: 0.6.3
       js-yaml:
         specifier: ^4.1.1
         version: 4.3.0

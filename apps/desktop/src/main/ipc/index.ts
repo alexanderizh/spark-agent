@@ -60,6 +60,11 @@ import {
 } from './user-question-recovery.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
+import {
+  decodeTextFileBuffer,
+  encodeTextFileContent,
+  parseTextFileEncoding,
+} from '../services/TextFileEncoding.js'
 import { openHtmlInExternalBrowser, openHtmlViewerWindow } from '../services/HtmlViewerService.js'
 import { fetchLinkMetadata } from '../services/LinkMetadataService.js'
 import {
@@ -5838,7 +5843,12 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('file:write-text', async (req) => {
-    await fs.writeFile(req.path, req.content, 'utf-8')
+    // encoding 缺省时保持旧行为（utf-8）；传入 file:read 返回的 encoding 则按原编码写回，
+    // 避免保存后文件编码被静默改变
+    await fs.writeFile(
+      req.path,
+      encodeTextFileContent(req.content, parseTextFileEncoding(req.encoding)),
+    )
     return { success: true }
   })
 
@@ -8346,8 +8356,11 @@ export function registerAllIpcHandlers(): void {
 
     try {
       const fs = await import('node:fs/promises')
-      const content = await fs.readFile(filePath, 'utf-8')
-      return { content }
+      // 按字节读入后自动识别编码（BOM → 严格 UTF-8 → GB18030），
+      // 避免 GBK 等非 UTF-8 文件（中文 Windows 常见）被解码成不可逆乱码
+      const buf = await fs.readFile(filePath)
+      const decoded = decodeTextFileBuffer(buf)
+      return { content: decoded.content, encoding: decoded.encoding }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.warn(`file:read failed, path=${filePath}, error=${message}`)

@@ -37,7 +37,7 @@ export class CodeFileExternalChangeError extends Error {
   }
 }
 
-type FileReadResp = { content?: string; error?: string }
+type FileReadResp = { content?: string; encoding?: string; error?: string }
 type FileWriteResp = { success: boolean }
 
 export interface UseCodeViewerFilesResult {
@@ -76,9 +76,10 @@ export function useCodeViewerFiles(
         }))
       } else {
         const content = res.content ?? ''
+        const encoding = res.encoding ?? 'utf-8'
         setRuntimes((prev) => ({
           ...prev,
-          [absPath]: { content, savedContent: content, state: 'ready' },
+          [absPath]: { content, savedContent: content, state: 'ready', encoding },
         }))
       }
     } catch (err) {
@@ -115,17 +116,27 @@ export function useCodeViewerFiles(
     [activeAbsPath],
   )
 
-  const writeBack = useCallback(async (absPath: string, content: string) => {
-    const res = (await window.spark.invoke('file:write-text', {
-      path: absPath,
-      content,
-    })) as FileWriteResp
-    if (!res.success) throw new Error('写入失败')
-    setRuntimes((prev) => ({
-      ...prev,
-      [absPath]: { ...(prev[absPath] ?? EMPTY_RUNTIME), savedContent: content, externalChanged: false },
-    }))
-  }, [])
+  const writeBack = useCallback(
+    async (absPath: string, content: string) => {
+      // encoding 来自读取时识别的源编码，按原编码写回避免保存后文件被静默转码
+      const encoding = runtimes[absPath]?.encoding
+      const res = (await window.spark.invoke('file:write-text', {
+        path: absPath,
+        content,
+        ...(encoding != null ? { encoding } : {}),
+      })) as FileWriteResp
+      if (!res.success) throw new Error('写入失败')
+      setRuntimes((prev) => ({
+        ...prev,
+        [absPath]: {
+          ...(prev[absPath] ?? EMPTY_RUNTIME),
+          savedContent: content,
+          externalChanged: false,
+        },
+      }))
+    },
+    [runtimes],
+  )
 
   const saveActive = useCallback(async () => {
     if (activeAbsPath == null) return

@@ -53,4 +53,6 @@ export interface CodeFileRuntime {
   state: CodeFileLoadState
   /** 磁盘文件在外部被修改（保存前 mtime 校验检测到） */
   externalChanged?: boolean | undefined
+  /** file:read 识别出的源编码；保存时原样传回 file:write-text 以保持文件编码不变 */
+  encoding?: string | undefined
 }
