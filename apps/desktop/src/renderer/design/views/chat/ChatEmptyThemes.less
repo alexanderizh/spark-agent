@@ -361,7 +361,6 @@
 
 /* Inline composer menus must form the top interaction layer of the empty page. */
 .chat-main-empty[data-empty-theme] .composer-menu,
-.chat-main-empty[data-empty-theme] .composer-dropdown-menu,
 .chat-main-empty[data-empty-theme] .composer-actions-popup,
 .chat-main-empty[data-empty-theme] .composer-actions-sub {
   z-index: 60;
@@ -369,6 +368,15 @@
   background: var(--eh-popup-surface);
   box-shadow: 0 14px 42px color-mix(in srgb, var(--eh-shadow) 94%, transparent);
   color: var(--eh-ink);
+}
+
+/* 模型选择弹窗统一到 --panel-elev + --border，与会话栏其他 antd Select dropdown
+ * 颜色一致：暗色默认空会话主题下 --eh-popup-surface 会带主色调偏色
+ * （color-mix(in srgb, var(--eh-accent) 4%, #15161d)），与其他参数选择弹窗
+ * 颜色明显不同。把 .composer-dropdown-menu 从上方共享规则中拆出来单独覆盖。 */
+.chat-main-empty[data-empty-theme] .composer-dropdown-menu {
+  border-color: var(--border);
+  background: var(--panel-elev);
 }
 
 .chat-main-empty[data-empty-theme] .composer-menu-item,
