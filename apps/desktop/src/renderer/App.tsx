@@ -1961,11 +1961,16 @@ function Shell() {
                 {/* macOS: unified drag strip atop the content area while the sidebar
                   is visible. When the sidebar is hidden, the shell-titlebar above
                   takes over. 画布工作区自带 canvas-workspace-header，此处不再渲染以免重叠。
-                  canvas/canvas-workflows view 自带 header 承担拖拽，跳过公用拖拽条。 */}
+                  canvas/canvas-workflows view 自带 header 承担拖拽，跳过公用拖拽条。
+                  sub-apps 管理页头部（sa-header）与 sub-app 运行页头部（sar-header）
+                  自带拖拽与双击最大化，跳过公用拖拽条以省高度；sub-app 运行页在
+                  「已发布 content」无 header 模式下自行渲染拖拽条兜底。 */}
                 {!useIntegratedTitlebar &&
                   isPlatformDarwin &&
                   !sidebarHidden &&
                   !canvasOwnHeader &&
+                  t.view !== 'sub-apps' &&
+                  t.view !== 'sub-app' &&
                   !(t.view === 'canvas' && canvasWorkspaceActive) && <MacWindowDragHeader />}
 
                 {t.view === 'chat' ? (

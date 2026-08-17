@@ -411,6 +411,21 @@
   }
 }
 
+/* ─── macOS 窗口拖拽 ───────────────────────────────────────────────────────── */
+
+/* App.tsx 对 sub-apps 视图跳过公用 MacWindowDragHeader，由本页头部整条承担
+   系统窗口拖拽与双击最大化，省出一条 30px 的独立拖拽条。
+   app-region 不按继承生效：可交互元素必须显式 no-drag，否则点击被拖拽吞掉。 */
+.platform-darwin .sub-apps-view .sa-header {
+  -webkit-app-region: drag;
+
+  .sa-search,
+  .sa-archived-toggle,
+  button {
+    -webkit-app-region: no-drag;
+  }
+}
+
 /* ─── 响应式：窄面板 ─────────────────────────────────────────────────────── */
 
 @media (width <= 760px) {

@@ -324,7 +324,14 @@ export function SubAppsView(): React.ReactElement {
 
   return (
     <div className="sub-apps-view" data-testid="sub-apps-view">
-      <header className="sa-header">
+      {/* macOS 下头部整条承担系统窗口拖拽（见 SubAppsView.less），双击触发最大化，
+          与 App.tsx 跳过公用 MacWindowDragHeader 的逻辑配套。 */}
+      <header
+        className="sa-header"
+        onDoubleClick={() => {
+          window.spark?.invoke('window:maximize', {}).catch(() => {})
+        }}
+      >
         <div className="sa-header-left">
           <h2>{tr('nav.subApps')}</h2>
           {!loading && errorMessage == null ? <span className="sa-count">{total}</span> : null}

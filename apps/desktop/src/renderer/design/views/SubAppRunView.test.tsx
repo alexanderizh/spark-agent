@@ -139,6 +139,8 @@ describe('SubAppRunView', () => {
     mocks.publish.mockReset()
     mocks.setEnabled.mockReset()
     mocks.runnerProps = []
+    // macOS 环境：App.tsx 对 sub-app 视图跳过公用拖拽条，由本页自管
+    ;(window as unknown as { spark?: { platform?: string } }).spark = { platform: 'darwin' }
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -172,8 +174,8 @@ describe('SubAppRunView', () => {
     expect((mocks.runnerProps[0] as { release?: { version?: number } }).release?.version).toBe(3)
     expect(container?.querySelector('.sar-header')).toBeNull()
     expect(container?.querySelector('.is-published-content')).not.toBeNull()
-    // 拖拽条由 App.tsx 公用 MacWindowDragHeader 统一渲染，本页不重复渲染
-    expect(container?.querySelector('.mac-window-drag-header')).toBeNull()
+    // 无 header 的全幅内容模式下，本页自渲染 MacWindowDragHeader 兜底拖拽
+    expect(container?.querySelector('.mac-window-drag-header')).not.toBeNull()
   })
 
   it('未发布过的应用自动回退草稿模式', async () => {
@@ -186,6 +188,8 @@ describe('SubAppRunView', () => {
       source: '<html>draft-body</html>',
     })
     expect(container?.querySelector('.sar-header')).not.toBeNull()
+    // 有 sar-header 时由 header 承担拖拽，不再渲染独立拖拽条
+    expect(container?.querySelector('.mac-window-drag-header')).toBeNull()
   })
 
   it('源码为空时显示可修复提示，不渲染空白 runner', async () => {

@@ -15,9 +15,10 @@
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
-  /* 与 WorkflowView wf-toolbar 紧凑工具栏统一：8px 上下 padding + 48px 最小高度 */
   padding: 8px 12px;
-  min-height: 48px;
+  /* 52px：整条承担 macOS 窗口拖拽 + 双击最大化（App.tsx 跳过公用拖拽条），
+   * 拖拽热区与内容留白都比原 48px 更从容 */
+  min-height: 52px;
   border-bottom: 1px solid var(--divider, var(--border));
 }
 
@@ -118,6 +119,23 @@
 .sar-error-actions {
   display: flex;
   gap: 8px;
+}
+
+/* ─── macOS 窗口拖拽 ───────────────────────────────────────────────────────── */
+
+/* App.tsx 对 sub-app 视图跳过公用 MacWindowDragHeader，由本页头部整条承担
+   系统窗口拖拽与双击最大化，省出一条 30px 的独立拖拽条。
+   app-region 不按继承生效：可交互元素必须显式 no-drag，否则点击被拖拽吞掉。
+   Segmented 内部是 label+radio 而非 button，Switch 是 button.ant-switch，
+   都要单独点名。 */
+.platform-darwin .sub-app-run-view .sar-header {
+  -webkit-app-region: drag;
+
+  button,
+  .ant-segmented,
+  .ant-switch {
+    -webkit-app-region: no-drag;
+  }
 }
 
 .sar-missing {

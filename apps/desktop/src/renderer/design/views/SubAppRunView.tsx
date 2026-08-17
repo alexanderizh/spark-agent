@@ -14,6 +14,7 @@ import { subAppClient } from '../sub-app/subAppClient'
 import { SubAppRunner } from '../sub-app/SubAppRunner'
 import { notifySubAppDirectoryChanged } from '../sub-app/subAppEvents'
 import { SubAppIcon } from '../sub-app/SubAppIcon'
+import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useApp } from '../AppContext'
 import { Icons } from '../Icons'
 import './SubAppRunView.less'
@@ -116,15 +117,25 @@ export function SubAppRunView(): React.ReactElement {
   // 工具栏；草稿预览仍保留工具栏，方便切换版本、发布和重载。
   const isPublishedContent = mode === 'published' && hasPublished && details?.surface === 'content'
   const showRuntimeHeader = !isPublishedContent
+  // 「已发布 content」模式下本页不渲染 sar-header，macOS 需要自备拖拽条兜底；
+  // 渲染期求值（SettingsView 同款写法），避免模块加载早于 spark 注入。
+  const isPlatformDarwin = typeof window !== 'undefined' && window.spark?.platform === 'darwin'
 
   return (
     <div
       className={`sub-app-run-view${isPublishedContent ? ' is-published-content' : ''}`}
       data-testid="sub-app-run-view"
     >
-      {/* 窗口拖拽条由 App.tsx 的公用 MacWindowDragHeader 统一渲染。 */}
+      {/* App.tsx 对 sub-app 视图跳过公用 MacWindowDragHeader，由本页 sar-header 承担
+       * 拖拽与双击最大化（macOS）。「已发布 content」模式无 header，自渲染拖拽条兜底。 */}
+      {isPublishedContent && isPlatformDarwin ? <MacWindowDragHeader /> : null}
       {showRuntimeHeader ? (
-        <header className="sar-header">
+        <header
+          className="sar-header"
+          onDoubleClick={() => {
+            window.spark?.invoke('window:maximize', {}).catch(() => {})
+          }}
+        >
           <div className="sar-header-left">
             <Button
               size="small"
