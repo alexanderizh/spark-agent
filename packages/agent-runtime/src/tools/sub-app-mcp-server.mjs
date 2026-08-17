@@ -124,7 +124,7 @@ const PERMISSIONS_DESCRIPTION =
   '权限声明列表（能力名，如 runtime/theme/ui/data/clipboard/notifications），应用运行时按声明获得对应宿主能力'
 
 const THEME_INTEGRATION_GUIDE =
-  '界面必须适配 SparkWork 宿主主题：使用 sparkApp.theme.get()/onChange 或 --spark-* CSS 变量（如 --spark-color-bg-container、--spark-color-text、--spark-color-primary），不要把深浅色背景和文字颜色硬编码为固定值。除非用户明确要求独立背景或特殊视觉效果，默认不要给应用根容器、页面或主布局设置 background/background-color/background-image，让 SparkWork 主应用自带的背景自然透出；确需自定义背景时也必须使用宿主主题 token。运行时会自动把宿主 token 同步为这些 CSS 变量。'
+  '界面必须适配 SparkWork 宿主主题：使用 sparkApp.theme.get()/onChange 或 --spark-* CSS 变量（如 --spark-color-bg-container、--spark-color-text、--spark-color-primary），不要把深浅色背景和文字颜色硬编码为固定值。除非用户明确要求独立背景或特殊视觉效果，默认不要给应用根容器、页面或主布局设置 background/background-color/background-image，让 SparkWork 主应用自带的背景自然透出；确需自定义背景时也必须使用宿主主题 token。例外：surface=overlay 的悬浮窗应用，其悬浮弹窗容器背景是透明的，必须给应用根容器（弹窗容器本体）显式设置宿主主题背景色（如 background: var(--spark-color-bg-container)），否则界面会呈透明悬浮、文字与背后内容叠透。运行时会自动把宿主 token 同步为这些 CSS 变量。'
 
 const DATA_PERSISTENCE_GUIDE = [
   '数据持久化契约：凡是用户创建、编辑、删除后还应在重新打开或重启 SparkWork 后保留的数据，必须使用 sparkApp.data.get/list/upsert/delete 写入应用专属持久化库。',
