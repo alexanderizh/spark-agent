@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { buildAppRuntimeDocument, MAX_SUB_APP_SOURCE_LENGTH } from './appRuntimeDocument'
+import { buildAppRuntimeDocument, SUB_APP_SOURCE_HARD_LIMIT } from './appRuntimeDocument'
 
 const baseConfig = {
   appId: '0b6f6c46-63f5-4a1e-8f74-9a92d68e6a11',
@@ -20,8 +20,9 @@ describe('buildAppRuntimeDocument', () => {
     expect(doc).toContain('<!doctype html>')
     expect(doc).toContain('data-spark-theme="dark"')
     expect(doc).toContain('http-equiv="Content-Security-Policy"')
-    // connect-src 关闭：数据只能走 bridge
-    expect(doc).toContain("connect-src 'none'")
+    // 默认（设置全放行）：connect-src 允许外部 https/http，script-src 带 unsafe-eval
+    expect(doc).toContain('connect-src https: http:')
+    expect(doc).toContain("script-src 'unsafe-inline' 'unsafe-eval' https: http:")
     // bootstrap 先于用户源码注入
     expect(doc.indexOf('window.sparkApp')).toBeLessThan(doc.indexOf('id="app"'))
     // app/ready 心跳存在于 bootstrap
@@ -73,14 +74,40 @@ describe('buildAppRuntimeDocument', () => {
     expect(doc).not.toContain('"></script>')
   })
 
-  it('超过长度上限的源码直接拒绝构建', () => {
+  it('默认不限源码长度；显式设置上限后超限拒绝构建', () => {
+    // 默认 sourceLengthLimit=0：不再抛错
     expect(() =>
       buildAppRuntimeDocument({
-        source: 'a'.repeat(MAX_SUB_APP_SOURCE_LENGTH + 1),
+        source: 'a'.repeat(200_001),
         theme: 'light',
         config: baseConfig,
       }),
-    ).toThrow(/上限/)
+    ).not.toThrow()
+    // 设置上限后：超限抛错并指向设置入口
+    expect(() =>
+      buildAppRuntimeDocument({
+        source: 'a'.repeat(200_001),
+        theme: 'light',
+        config: baseConfig,
+        security: { sourceLengthLimit: 200_000 },
+      }),
+    ).toThrow(/设置的限制/)
+    // 5MB 硬上限不随设置放开
+    expect(SUB_APP_SOURCE_HARD_LIMIT).toBeGreaterThan(200_000)
+  })
+
+  it('安全开关收紧时 CSP 相应收紧', () => {
+    const doc = buildAppRuntimeDocument({
+      source: '<div>x</div>',
+      theme: 'light',
+      config: baseConfig,
+      security: { allowNetworkAccess: false, allowUnsafeEval: false },
+    })
+    // 关闭网络：数据只能走 bridge
+    expect(doc).toContain("connect-src 'none'")
+    // 关闭 unsafe-eval：script-src 不含 eval 指令
+    expect(doc).toContain("script-src 'unsafe-inline' https: http:")
+    expect(doc).not.toContain("'unsafe-eval'")
   })
 
   it('小窗口 surface 注入铺满兜底样式，且位于应用源码之后', () => {

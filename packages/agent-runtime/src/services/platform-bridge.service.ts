@@ -25,7 +25,7 @@ import {
   type SparkInstallArtifact,
 } from './skill-registry/artifact-manifest.js'
 import type { SkillItem, ProviderIconConfig, ProviderProfile } from '@spark/protocol'
-import { SUB_APP_SURFACES, type SubAppSurface } from '@spark/protocol'
+import { SUB_APP_SOURCE_HARD_LIMIT, SUB_APP_SURFACES, type SubAppSurface } from '@spark/protocol'
 import type { SubAppDraftPatch, SubAppListRequest } from '@spark/protocol'
 import {
   isMediaApiType,
@@ -2282,7 +2282,7 @@ export class PlatformBridgeService {
     const description = optionalSubAppText(params.description, 'description', 400)
     const surface = optionalSubAppSurface(params.surface)
     const permissions = optionalSubAppPermissions(params.permissions)
-    const source = optionalSubAppText(params.source, 'source', 200_000)
+    const source = optionalSubAppText(params.source, 'source', SUB_APP_SOURCE_HARD_LIMIT)
     const icon = params.icon
     if (icon !== undefined && icon !== null && typeof icon !== 'string') {
       throw new Error('icon must be a string or null')
@@ -2595,7 +2595,7 @@ function parseSubAppDraftPatch(value: unknown): SubAppDraftPatch {
   if (surface !== undefined) patch.surface = surface
   const permissions = optionalSubAppPermissions(input.permissions)
   if (permissions !== undefined) patch.permissions = permissions
-  const source = optionalSubAppText(input.source, 'source', 200_000)
+  const source = optionalSubAppText(input.source, 'source', SUB_APP_SOURCE_HARD_LIMIT)
   if (source !== undefined) patch.source = source
   if (input.config !== undefined) {
     if (input.config == null || typeof input.config !== 'object' || Array.isArray(input.config)) {

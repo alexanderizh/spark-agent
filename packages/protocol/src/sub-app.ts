@@ -1,6 +1,16 @@
 import { z } from 'zod'
 
 export const SUB_APP_PROTOCOL_VERSION = 1
+
+/**
+ * 子应用源码的进程间硬安全上限（5 MB）。
+ *
+ * 历史值 200_000 已按「用户自担风险」模型放开：实际生效的长度限制由设置
+ * sub-app.sourceLengthLimit 控制（0 = 不限制），仅在 IPC / 存储边界保留此
+ * 硬上限，防止单条记录无限膨胀拖垮 SQLite 与结构化克隆传输。
+ */
+export const SUB_APP_SOURCE_HARD_LIMIT = 5_000_000
+
 export const SUB_APP_SURFACES = [
   'content',
   'panel',
@@ -490,7 +500,7 @@ const appDraftPatch = z
     entry: text(240).optional(),
     surface: surface.optional(),
     permissions: permissions.optional(),
-    source: z.string().max(200_000).optional(),
+    source: z.string().max(SUB_APP_SOURCE_HARD_LIMIT).optional(),
     config: config.optional(),
   })
   .strict()
@@ -517,7 +527,7 @@ export const SubAppIpcSchemaRegistry = {
       entry: text(240).optional(),
       surface: surface.optional(),
       permissions: permissions.optional(),
-      source: z.string().max(200_000).optional(),
+      source: z.string().max(SUB_APP_SOURCE_HARD_LIMIT).optional(),
       config: config.optional(),
     })
     .strict(),

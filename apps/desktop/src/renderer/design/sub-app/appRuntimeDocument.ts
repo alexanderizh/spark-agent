@@ -1,20 +1,65 @@
 import type { HtmlRenderTheme } from '@spark/shared'
-import { SUB_APP_PROTOCOL_VERSION, type SubAppSurface } from '@spark/protocol'
+import {
+  SUB_APP_PROTOCOL_VERSION,
+  SUB_APP_SOURCE_HARD_LIMIT,
+  type SubAppSurface,
+} from '@spark/protocol'
 
-export const MAX_SUB_APP_SOURCE_LENGTH = 200_000
+/** 进程间硬安全上限（协议包统一定义，此处再导出便于渲染层引用）。 */
+export { SUB_APP_SOURCE_HARD_LIMIT }
+
+/**
+ * 子应用运行时安全选项（来源：设置「子应用」分类，默认全部放行）。
+ *
+ * 本地优先 + 用户自担风险模型下默认不设防；每项都可由用户在设置里收紧：
+ *   - allowNetworkAccess：false 时 connect-src 'none'，应用只能经 Spark App
+ *     Bridge 与外界交换数据（含防外发约束：应用数据无法直接提交到任意外部地址）；
+ *   - allowUnsafeEval：false 时 CSP 不带 'unsafe-eval'，babel-standalone 等
+ *     运行时编译器会失效；
+ *   - sourceLengthLimit：> 0 时运行文档拒绝超限源码（0 = 不限制）。
+ */
+export interface SubAppRuntimeSecurityOptions {
+  allowNetworkAccess?: boolean
+  allowUnsafeEval?: boolean
+  sourceLengthLimit?: number
+}
+
+/** 与设置 UI 的默认值保持一致：本地应用默认放行全部能力。 */
+export const DEFAULT_SUB_APP_RUNTIME_SECURITY: Required<SubAppRuntimeSecurityOptions> = {
+  allowNetworkAccess: true,
+  allowUnsafeEval: true,
+  sourceLengthLimit: 0,
+}
 
 /**
  * 功能型子应用运行文档 CSP。
  *
- * 与 HTML viewer 的差异（更严格）：
- *   - connect-src 'none'：应用不得自行 fetch/XHR 外部数据；
- *     数据交换只能走 Spark App Bridge（postMessage → 宿主 IPC），
- *     这是应用数据审计和权限控制的前提。
- *   - frame-src / object-src / base-uri / form-action 全部 'none'。
- * 后续“网络访问”作为独立权限能力放开时，再按 manifest 显式放宽。
+ * frame-src / object-src / base-uri / form-action 固定 'none'（无场景需要）；
+ * script / connect 按安全选项拼接，其余指令保持放行外部 HTTPS/HTTP 资源。
  */
-const SUB_APP_RUNTIME_CSP =
-  "default-src 'none'; script-src 'unsafe-inline' https: http:; style-src 'unsafe-inline' https: http:; img-src data: blob: https: http:; media-src data: blob: https: http:; font-src data: https: http:; connect-src 'none'; worker-src blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+function buildSubAppRuntimeCsp(security: Required<SubAppRuntimeSecurityOptions>): string {
+  const scriptSrc = [
+    "'unsafe-inline'",
+    ...(security.allowUnsafeEval ? ["'unsafe-eval'"] : []),
+    'https:',
+    'http:',
+  ].join(' ')
+  const connectSrc = security.allowNetworkAccess ? 'https: http:' : "'none'"
+  return [
+    "default-src 'none'",
+    `script-src ${scriptSrc}`,
+    "style-src 'unsafe-inline' https: http:",
+    'img-src data: blob: https: http:',
+    'media-src data: blob: https: http:',
+    'font-src data: https: http:',
+    `connect-src ${connectSrc}`,
+    'worker-src blob:',
+    "frame-src 'none'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ')
+}
 
 export interface SubAppBootstrapConfig {
   appId: string
@@ -28,6 +73,8 @@ export interface BuildAppRuntimeDocumentInput {
   source: string
   theme: HtmlRenderTheme
   config: SubAppBootstrapConfig
+  /** 运行时安全选项；缺省按 DEFAULT_SUB_APP_RUNTIME_SECURITY 全放行。 */
+  security?: SubAppRuntimeSecurityOptions
 }
 
 /**
@@ -74,12 +121,18 @@ function appendBeforeBodyEnd(doc: string, snippet: string): string {
  */
 export function buildAppRuntimeDocument(input: BuildAppRuntimeDocumentInput): string {
   const { source, theme, config } = input
-  if (source.length > MAX_SUB_APP_SOURCE_LENGTH) {
-    throw new Error(`子应用源码超过 ${MAX_SUB_APP_SOURCE_LENGTH} 字符上限，请精简后再运行。`)
+  const security = { ...DEFAULT_SUB_APP_RUNTIME_SECURITY, ...input.security }
+  if (source.length > SUB_APP_SOURCE_HARD_LIMIT) {
+    throw new Error(`子应用源码超过 ${SUB_APP_SOURCE_HARD_LIMIT} 字符硬上限，请精简后再运行。`)
+  }
+  if (security.sourceLengthLimit > 0 && source.length > security.sourceLengthLimit) {
+    throw new Error(
+      `子应用源码超过设置的限制（${security.sourceLengthLimit} 字符），请在设置「子应用」中调整或精简源码。`,
+    )
   }
 
   const head = [
-    `<meta http-equiv="Content-Security-Policy" content="${SUB_APP_RUNTIME_CSP}">`,
+    `<meta http-equiv="Content-Security-Policy" content="${buildSubAppRuntimeCsp(security)}">`,
     `<meta name="color-scheme" content="${theme}">`,
     `<meta name="spark-app-mode" content="${config.mode}">`,
     // html 锁定视口高度后 body 的 min-height:100% 才能解析（否则标准模式下按 auto 处理）

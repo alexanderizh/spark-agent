@@ -4,6 +4,11 @@ import type { SessionId, SubAppManifest, SubAppRelease } from '@spark/protocol'
 import { useApp, type ViewId } from '../AppContext'
 import { useResolvedTheme } from '../hooks/useResolvedTheme'
 import { buildAppRuntimeDocument } from './appRuntimeDocument'
+import {
+  fetchSubAppRuntimeSettings,
+  readCachedSubAppRuntimeSettings,
+  type SubAppRuntimeSettings,
+} from './subAppRuntimeSettings'
 import { SubAppBridgeHost } from './bridgeHost'
 import { subAppClient } from './subAppClient'
 import { buildThemeState } from './themeTokens'
@@ -51,6 +56,17 @@ async function resolveAgentSession(newSession: boolean): Promise<SessionId> {
 
 /** 应用就绪心跳超时：超时进入错误态并给出可执行提示。 */
 const SUB_APP_READY_TIMEOUT_MS = 15_000
+
+/** 设置更新事件里属于子应用分区的 detail.key（与 SubAppRuntimeSettingsCard 广播一致）。 */
+const SUB_APP_SETTINGS_UPDATED_KEY = 'sub-app'
+
+function sameRuntimeSettings(a: SubAppRuntimeSettings, b: SubAppRuntimeSettings): boolean {
+  return (
+    a.allowNetworkAccess === b.allowNetworkAccess &&
+    a.allowUnsafeEval === b.allowUnsafeEval &&
+    a.sourceLengthLimit === b.sourceLengthLimit
+  )
+}
 
 export interface SubAppRunnerProps {
   appId: string
@@ -129,15 +145,42 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
   )
   const versionId = release?.id ?? `draft-${appId}`
 
+  // 运行时安全选项：localStorage 同步首屏 + IPC 权威值；设置页改动经
+  // spark-settings-updated 事件热更新（文档重建 -> iframe 随版本号重载）。
+  const [runtimeSecurity, setRuntimeSecurity] = React.useState<SubAppRuntimeSettings>(
+    readCachedSubAppRuntimeSettings,
+  )
+  React.useEffect(() => {
+    let cancelled = false
+    void fetchSubAppRuntimeSettings().then((value) => {
+      if (!cancelled)
+        setRuntimeSecurity((prev) => (sameRuntimeSettings(prev, value) ? prev : value))
+    })
+    const onSettingsUpdated = (event: Event): void => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail
+      if (detail?.key !== SUB_APP_SETTINGS_UPDATED_KEY) return
+      setRuntimeSecurity((prev) => {
+        const next = readCachedSubAppRuntimeSettings()
+        return sameRuntimeSettings(prev, next) ? prev : next
+      })
+    }
+    window.addEventListener('spark-settings-updated', onSettingsUpdated)
+    return () => {
+      cancelled = true
+      window.removeEventListener('spark-settings-updated', onSettingsUpdated)
+    }
+  }, [])
+
   const sandboxDocument = React.useMemo(
     () =>
       buildAppRuntimeDocument({
         source,
         theme: resolvedThemeRef.current,
         config: { appId, versionId, instanceId, mode, surface: manifest.surface },
+        security: runtimeSecurity,
       }),
-    // 文档只随源码/实例/surface 变化重建；主题走 postMessage 热推送。
-    [source, instanceId, appId, versionId, mode, manifest.surface],
+    // 文档只随源码/实例/surface/安全设置变化重建；主题走 postMessage 热推送。
+    [source, instanceId, appId, versionId, mode, manifest.surface, runtimeSecurity],
   )
 
   const [frameSrc, setFrameSrc] = React.useState<string | null>(null)

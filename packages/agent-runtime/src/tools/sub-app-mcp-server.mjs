@@ -200,6 +200,14 @@ const DESIGN_PREVIEW_WORKFLOW_GUIDE = [
   '用户确认设计之前不要直接开发落地，更不要未经确认就发布。',
 ].join(' ')
 
+const LIBRARY_DEV_GUIDE = [
+  '外部库与框架开发指引：应用沙箱默认放行外部网络与 unsafe-eval，可直接使用 React/Vue 等框架和组件库开发。',
+  '推荐引入方式：UMD（<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script> + react-dom）或 ESM（<script type="module"> + import ... from "https://esm.sh/react@18"）。',
+  '可使用 babel-standalone（<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script> + <script type="text/babel">）直接写 JSX；组件库优先选有 UMD/ESM 构建的（如 antd、echarts）。',
+  '应用内可直接 fetch/XHR 任意 https/http 接口（无需经宿主），但需要持久化的数据仍必须走 sparkApp.data。',
+  '离线或 CDN 不可用时外部依赖会加载失败，重要依赖可考虑内联；源码无长度限制（5 MB 硬上限内）。',
+].join(' ')
+
 function toolDefinitions() {
   return [
     // ── 应用生命周期 ──
@@ -211,6 +219,7 @@ function toolDefinitions() {
         DESIGN_PREVIEW_WORKFLOW_GUIDE,
         THEME_INTEGRATION_GUIDE,
         DATA_PERSISTENCE_GUIDE,
+        LIBRARY_DEV_GUIDE,
         '返回完整详情，其中的 draft.revision 是后续修改草稿要用的 CAS 基线。',
       ].join(' '),
       inputSchema: {
@@ -221,9 +230,8 @@ function toolDefinitions() {
           description: { type: 'string', maxLength: 400, description: '应用描述（可选）' },
           draftHtml: {
             type: 'string',
-            maxLength: 200_000,
             description:
-              '初始草稿源码：完整的自包含 HTML 文档（内联 CSS/JS，不引外部本地文件）。可选，之后可用 spark_app_update_draft 替换。',
+              '初始草稿源码：完整的自包含 HTML 文档（内联 CSS/JS，或经 CDN 引入外部库；不引外部本地文件）。可选，之后可用 spark_app_update_draft 替换。',
           },
           permissions: {
             type: 'array',
@@ -292,6 +300,7 @@ function toolDefinitions() {
         '涉及界面大改版时同样遵循设计先行：先出界面设计预览给用户确认，再写入完整实现。',
         THEME_INTEGRATION_GUIDE,
         DATA_PERSISTENCE_GUIDE,
+        LIBRARY_DEV_GUIDE,
         'CAS 语义：必须传 spark_app_get 拿到的当前 expectedRevision；若期间草稿已被其他操作更新会返回冲突（SUBAPP_CONFLICT），此时应重新 get 拿新 revision 再重试，不要盲目覆盖。',
         'draftHtml 是整篇替换：传入新的完整 HTML 文档，而非增量补丁。成功后 revision +1。',
       ].join(' '),
@@ -307,8 +316,7 @@ function toolDefinitions() {
           },
           draftHtml: {
             type: 'string',
-            maxLength: 200_000,
-            description: '新的完整草稿源码（自包含 HTML 文档）',
+            description: '新的完整草稿源码（自包含 HTML 文档，可经 CDN 引入外部库）',
           },
           name: { type: 'string', minLength: 1, maxLength: 120, description: '新名称' },
           description: { type: 'string', maxLength: 400, description: '新描述' },

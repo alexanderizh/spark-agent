@@ -65,6 +65,7 @@ import wechatLogo from '../../assets/remote-channels/wechat.svg'
 export { ProviderEditPanel } from './ProvidersView'
 import { MemoryPanel } from './MemoryPanel'
 import { SettingsLogViewer } from './SettingsLogViewer'
+import { SubAppRuntimeSettingsCard } from '../sub-app/SubAppRuntimeSettingsCard'
 import { UsageHeatmap } from './UsageHeatmap'
 import { needsSdkInstallAction } from './sdkIntegrityPresentation'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
@@ -422,6 +423,12 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           label: '系统提示词',
           keywords: ['身份', 'prompt', '提示词', '人设'],
         },
+        {
+          id: 'sub-app',
+          icon: <Icons.Sparkles size={13} />,
+          label: '子应用',
+          keywords: ['sub-app', '子应用', '沙箱', 'CSP', '外部网络', 'eval', '小工具'],
+        },
       ],
     },
     {
@@ -509,6 +516,8 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     // 'mcp-settings': McpSection,
     'remote-connections': RemoteConnectionsSection,
     'system-prompt': SystemPromptSection,
+    // 直接引用模块级组件，不要包箭头函数（同 MemoryPanel 的教训）
+    'sub-app': SubAppRuntimeSettingsCard,
     integrity: IntegritySection,
     playwright: PlaywrightStatusCard,
     telemetry: TelemetrySection,
