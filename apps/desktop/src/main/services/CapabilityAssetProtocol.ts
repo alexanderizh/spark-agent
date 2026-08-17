@@ -4,6 +4,7 @@ import { lstat, realpath } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { getOptionalCapabilityManager } from '../ipc/registerOptionalCapabilityIpc.js'
 import { createSafeFileResponse } from './SafeFileProtocol.js'
+import { SUB_APP_RUNTIME_HOST, takeSubAppRuntimeDoc } from './SubAppRuntimeDocs.js'
 
 export const CAPABILITY_ASSET_SCHEME = 'capability-asset'
 const log = createLogger('capability-assets')
@@ -32,7 +33,13 @@ export async function resolveCapabilityAssetPath(
   const encodedSegments = rawPathSegments(requestUrl)
   const segments = encodedSegments.map((segment) => {
     const decoded = decodeURIComponent(segment)
-    if (!decoded || decoded === '.' || decoded === '..' || decoded.includes('/') || decoded.includes('\\')) {
+    if (
+      !decoded ||
+      decoded === '.' ||
+      decoded === '..' ||
+      decoded.includes('/') ||
+      decoded.includes('\\')
+    ) {
       throw new Error('Capability asset path traversal is forbidden')
     }
     return decoded
@@ -60,6 +67,20 @@ export async function resolveCapabilityAssetPath(
 export function registerCapabilityAssetProtocol(): void {
   protocol.handle(CAPABILITY_ASSET_SCHEME, async (request) => {
     try {
+      const url = new URL(request.url)
+      // 子应用沙箱文档：内存登记、按 token 提供（见 SubAppRuntimeDocs）。
+      if (url.hostname === SUB_APP_RUNTIME_HOST) {
+        const token = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
+        const html = takeSubAppRuntimeDoc(token)
+        if (html == null) return new Response('Not Found', { status: 404 })
+        return new Response(html, {
+          status: 200,
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'cache-control': 'no-store',
+          },
+        })
+      }
       const filePath = await resolveCapabilityAssetPath(request.url, async () =>
         getOptionalCapabilityManager().getArtifactDirectory(
           'office-viewer',
@@ -69,7 +90,8 @@ export function registerCapabilityAssetProtocol(): void {
       return createSafeFileResponse(filePath, request)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      const missing = message.includes('not installed') || (error as NodeJS.ErrnoException).code === 'ENOENT'
+      const missing =
+        message.includes('not installed') || (error as NodeJS.ErrnoException).code === 'ENOENT'
       if (!missing) log.warn(`Rejected capability asset request: ${message}`)
       return new Response(missing ? 'Not Found' : 'Forbidden', { status: missing ? 404 : 403 })
     }

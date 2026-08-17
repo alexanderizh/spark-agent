@@ -317,6 +317,12 @@ function readErrorCode(error: unknown): string {
     const code = (error as { code: unknown }).code
     if (typeof code === 'string' && code.length > 0) return code
   }
+  // contextBridge 克隆会丢自定义属性，但 name 保留——preload 把 IPC 错误码
+  // 编码为 `SparkIpcError:<code>`，从这里恢复。
+  if (error instanceof Error) {
+    const match = /^SparkIpcError:([A-Z_]+)$/.exec(error.name)
+    if (match != null) return match[1] ?? 'UNKNOWN'
+  }
   return 'UNKNOWN'
 }
 

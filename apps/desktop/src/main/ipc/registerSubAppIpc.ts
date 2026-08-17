@@ -80,4 +80,14 @@ export function registerSubAppIpc(options: RegisterSubAppIpcOptions = {}): void 
     assertTrusted(event)
     return backend.dataDelete(request)
   })
+
+  typedIpcHandle('sub-app:runtime:put-doc', async (request, event) => {
+    assertTrusted(event)
+    return backend.putRuntimeDoc(request)
+  })
+
+  typedIpcHandle('sub-app:runtime:release-doc', async (request, event) => {
+    assertTrusted(event)
+    return backend.releaseRuntimeDoc(request)
+  })
 }

@@ -21,10 +21,7 @@ import type {
   IpcStreamChannel,
   IpcStreamPayload,
 } from '@spark/protocol'
-import {
-  VOICE_AUDIO_CHUNK_CHANNEL,
-  type VoiceAudioChunkPayload,
-} from '@spark/protocol/voice'
+import { VOICE_AUDIO_CHUNK_CHANNEL, type VoiceAudioChunkPayload } from '@spark/protocol/voice'
 
 /**
  * IPC 调用结果格式（与主进程 typed-ipc.ts 中的 IpcResult 匹配）
@@ -118,7 +115,9 @@ export class SparkIpcError extends Error {
 
   constructor(code: string, message: string) {
     super(message)
-    this.name = 'SparkIpcError'
+    // contextBridge 结构化克隆只保留 message/name/stack，自定义属性（code）会丢。
+    // 把 code 编进 name（`SparkIpcError:<code>`），渲染进程可从 name 恢复错误码。
+    this.name = `SparkIpcError:${code}`
     this.code = code
   }
 }

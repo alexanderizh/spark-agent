@@ -25,6 +25,9 @@ import type {
   SubAppRollbackResponse,
   SubAppSetEnabledRequest,
   SubAppSetEnabledResponse,
+  SubAppRuntimeDocPutRequest,
+  SubAppRuntimeDocAck,
+  SubAppRuntimeDocReleaseRequest,
   SubAppUpdateDraftRequest,
   SubAppUpdateDraftResponse,
 } from '@spark/protocol'
@@ -39,6 +42,7 @@ import {
   SubAppStateError,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
+import { putSubAppRuntimeDoc, releaseSubAppRuntimeDoc } from '../services/SubAppRuntimeDocs.js'
 
 export class SubAppBackend {
   private readonly repository: SubAppRepository
@@ -189,6 +193,22 @@ export class SubAppBackend {
         request.expectedRevision,
       )
       return { deleted: true, appId: request.appId, namespace: request.namespace, key: request.key }
+    } catch (error) {
+      throw this.mapError(error)
+    }
+  }
+
+  putRuntimeDoc(request: SubAppRuntimeDocPutRequest): SubAppRuntimeDocAck {
+    try {
+      return putSubAppRuntimeDoc(request)
+    } catch (error) {
+      throw this.mapError(error)
+    }
+  }
+
+  releaseRuntimeDoc(request: SubAppRuntimeDocReleaseRequest): SubAppRuntimeDocAck {
+    try {
+      return releaseSubAppRuntimeDoc(request)
     } catch (error) {
       throw this.mapError(error)
     }

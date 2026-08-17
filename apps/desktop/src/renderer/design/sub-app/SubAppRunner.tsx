@@ -17,7 +17,7 @@ export function SubAppRunner(props: SubAppRunnerProps): React.ReactElement {
         ref={runner.frameRef}
         title={props.manifest.name || '子应用'}
         sandbox="allow-scripts"
-        srcDoc={runner.document}
+        src={runner.frameSrc ?? undefined}
         style={{
           display: 'block',
           width: '100%',

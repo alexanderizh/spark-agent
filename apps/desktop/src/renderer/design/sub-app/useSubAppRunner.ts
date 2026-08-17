@@ -4,7 +4,18 @@ import { useApp } from '../AppContext'
 import { useResolvedTheme } from '../hooks/useResolvedTheme'
 import { buildAppRuntimeDocument } from './appRuntimeDocument'
 import { SubAppBridgeHost } from './bridgeHost'
+import { subAppClient } from './subAppClient'
 import { buildThemeState } from './themeTokens'
+
+/**
+ * 子应用沙箱文档的加载地址协议：
+ * 文档由 renderer 合成后登记到主进程（`sub-app:runtime:put-doc`），再以
+ * capability-asset://subapp-runtime/<token> 导航。srcdoc 会继承 renderer
+ * CSP（禁内联脚本），自定义 scheme 文档不继承——这是子应用能运行的前提。
+ */
+export function subAppRuntimeDocUrl(token: string, version: number): string {
+  return `capability-asset://subapp-runtime/${token}?v=${version}`
+}
 
 /** 应用就绪心跳超时：超时进入错误态并给出可执行提示。 */
 const SUB_APP_READY_TIMEOUT_MS = 15_000
@@ -26,8 +37,8 @@ export interface SubAppRunnerState {
   status: SubAppRunnerStatus
   errorMessage: string | null
   reload: () => void
-  /** 沙箱 iframe 的 srcdoc（memo 化，只随源码/实例变化重建）。 */
-  document: string
+  /** 沙箱 iframe 导航地址；文档登记完成后置位（见 subAppRuntimeDocUrl）。 */
+  frameSrc: string | null
   instanceId: string
   frameRef: React.RefObject<HTMLIFrameElement | null>
 }
@@ -72,9 +83,37 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
         theme: resolvedThemeRef.current,
         config: { appId, versionId, instanceId, mode },
       }),
-    // srcdoc 只随源码/实例变化重建；主题走 postMessage 热推送。
+    // 文档只随源码/实例变化重建；主题走 postMessage 热推送。
     [source, instanceId, appId, versionId, mode],
   )
+
+  const [frameSrc, setFrameSrc] = React.useState<string | null>(null)
+  const docVersionRef = React.useRef(0)
+
+  // 合成文档 → 主进程登记 → capability-asset 导航地址。
+  // 源码变化时复用 token 覆盖登记，并用递增 version 强制 iframe 重新加载。
+  React.useEffect(() => {
+    let cancelled = false
+    const token = instanceId
+    docVersionRef.current += 1
+    const version = docVersionRef.current
+    void subAppClient
+      .putRuntimeDoc({ token, document: sandboxDocument })
+      .then(() => {
+        if (!cancelled) setFrameSrc(subAppRuntimeDocUrl(token, version))
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setStatus('error')
+        setErrorMessage(
+          `子应用运行文档登记失败：${err instanceof Error ? err.message : String(err)}`,
+        )
+      })
+    return () => {
+      cancelled = true
+      void subAppClient.releaseRuntimeDoc({ token }).catch(() => {})
+    }
+  }, [sandboxDocument, instanceId])
 
   React.useEffect(() => {
     setStatus('loading')
@@ -129,5 +168,5 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
 
   const reload = React.useCallback(() => setReloadCounter((n) => n + 1), [])
 
-  return { status, errorMessage, reload, document: sandboxDocument, instanceId, frameRef }
+  return { status, errorMessage, reload, frameSrc, instanceId, frameRef }
 }

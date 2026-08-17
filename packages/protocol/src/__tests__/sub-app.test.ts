@@ -66,6 +66,36 @@ describe('SubApp IPC schemas', () => {
       }),
     ).toMatchObject({ expectedRevision: 3 })
   })
+
+  it('runtime doc registration uses capped tokens and bounded documents', () => {
+    expect(
+      SubAppIpcSchemaRegistry['sub-app:runtime:put-doc'].parse({
+        token: '0123456789abcdef',
+        document: '<!doctype html><html></html>',
+      }),
+    ).toMatchObject({ token: '0123456789abcdef' })
+    // token 格式（长度、字符集）非法必须拒绝
+    expect(() =>
+      SubAppIpcSchemaRegistry['sub-app:runtime:put-doc'].parse({
+        token: 'short',
+        document: '<html></html>',
+      }),
+    ).toThrow()
+    expect(() =>
+      SubAppIpcSchemaRegistry['sub-app:runtime:put-doc'].parse({
+        token: '0123456789abcdef',
+        document: 'x'.repeat(260_001),
+      }),
+    ).toThrow()
+    expect(
+      SubAppIpcSchemaRegistry['sub-app:runtime:release-doc'].parse({
+        token: '0123456789abcdef',
+      }),
+    ).toMatchObject({ token: '0123456789abcdef' })
+    expect(() =>
+      SubAppIpcSchemaRegistry['sub-app:runtime:release-doc'].parse({ token: '../escape' }),
+    ).toThrow()
+  })
 })
 
 describe('Spark App Bridge inbound schema', () => {

@@ -24,6 +24,9 @@ import type {
   SubAppPublishResponse,
   SubAppRollbackRequest,
   SubAppRollbackResponse,
+  SubAppRuntimeDocAck,
+  SubAppRuntimeDocPutRequest,
+  SubAppRuntimeDocReleaseRequest,
   SubAppSetEnabledRequest,
   SubAppSetEnabledResponse,
   SubAppUpdateDraftRequest,
@@ -79,6 +82,12 @@ export const subAppClient = {
 
   dataDelete: (request: SubAppDataDeleteRequest): Promise<SubAppDataDeleteResponse> =>
     window.spark.invoke('sub-app:data:delete', request),
+
+  putRuntimeDoc: (request: SubAppRuntimeDocPutRequest): Promise<SubAppRuntimeDocAck> =>
+    window.spark.invoke('sub-app:runtime:put-doc', request),
+
+  releaseRuntimeDoc: (request: SubAppRuntimeDocReleaseRequest): Promise<SubAppRuntimeDocAck> =>
+    window.spark.invoke('sub-app:runtime:release-doc', request),
 } as const
 
 export type SubAppDetailsLike = SubAppDetails

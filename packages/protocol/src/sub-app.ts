@@ -226,6 +226,25 @@ export interface SubAppDataDeleteResponse {
   key: string
 }
 
+/**
+ * 子应用沙箱文档的内存登记协议。
+ *
+ * srcdoc 文档会继承 renderer CSP（script-src 'self' capability-asset:）导致
+ * 子应用内联脚本被拦；改为 renderer 把合成文档登记到主进程，再以
+ * `capability-asset://subapp-runtime/<token>` 导航加载（自定义 scheme 文档
+ * 不继承父策略容器）。put 在挂载/重载时调用，release 在卸载时调用。
+ */
+export interface SubAppRuntimeDocPutRequest {
+  token: string
+  document: string
+}
+export interface SubAppRuntimeDocReleaseRequest {
+  token: string
+}
+export interface SubAppRuntimeDocAck {
+  ok: true
+}
+
 export interface SubAppIpcChannelMap {
   'sub-app:list': [SubAppListRequest, SubAppListResponse]
   'sub-app:get': [SubAppGetRequest, SubAppGetResponse]
@@ -241,6 +260,8 @@ export interface SubAppIpcChannelMap {
   'sub-app:data:list': [SubAppDataListRequest, SubAppDataListResponse]
   'sub-app:data:upsert': [SubAppDataUpsertRequest, SubAppDataUpsertResponse]
   'sub-app:data:delete': [SubAppDataDeleteRequest, SubAppDataDeleteResponse]
+  'sub-app:runtime:put-doc': [SubAppRuntimeDocPutRequest, SubAppRuntimeDocAck]
+  'sub-app:runtime:release-doc': [SubAppRuntimeDocReleaseRequest, SubAppRuntimeDocAck]
 }
 
 export interface SparkAppBridgeRequest {
@@ -403,7 +424,8 @@ export const SubAppIpcSchemaRegistry = {
       query: z.string().max(120).optional(),
       includeArchived: z.boolean().optional(),
       menuOnly: z.boolean().optional(),
-      limit: z.number().int().min(1).max(100).optional(),
+      // 管理面板一次拉全（无分页），上限与视图请求对齐；只放宽不收紧，向后兼容。
+      limit: z.number().int().min(1).max(200).optional(),
       offset: z.number().int().min(0).max(100_000).optional(),
     })
     .strict(),
@@ -475,5 +497,15 @@ export const SubAppIpcSchemaRegistry = {
       key: text(240),
       expectedRevision: z.number().int().positive(),
     })
+    .strict(),
+  'sub-app:runtime:put-doc': z
+    .object({
+      token: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$/),
+      // 合成文档 = 源码（≤200KB）+ bootstrap/CSP 头部，留足余量。
+      document: z.string().min(1).max(260_000),
+    })
+    .strict(),
+  'sub-app:runtime:release-doc': z
+    .object({ token: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$/) })
     .strict(),
 } as const
