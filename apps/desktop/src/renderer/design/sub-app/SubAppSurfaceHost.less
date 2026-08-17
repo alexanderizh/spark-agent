@@ -11,53 +11,39 @@
   z-index: 900;
 }
 
-// ── overlay：屏幕居中的独立卡片、可拖拽、可收起、右下角可拉伸 ──
-// 定位锚点是屏幕中心（left/top 50%），transform 由组件内联写入
-// （-50% 自身回撤 + 用户偏移）；宽高同样由内联样式控制。
+// ── overlay：带公用头部的自由浮窗 ────────────────────────────
+// 窗口矩形（left/top/width/height）由组件按持久化几何内联写入；头部是
+// 宿主提供的公用条（应用标识 + 关闭 + 拖动把手），应用本体（iframe）铺满
+// 头部之下。容器只负责边界裁切与悬浮层级辨识（阴影自带 1px 描边环）；
+// 圆角跟随主题设置（--r-lg 由 useAppearance 动态覆盖）。
 .subapp-overlay-card {
   pointer-events: auto;
   position: absolute;
-  left: 50%;
-  top: 50%;
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--bg-container, rgba(30, 30, 34, 0.98));
-  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.1));
-  box-shadow:
-    0 8px 28px rgba(0, 0, 0, 0.35),
-    0 2px 8px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--r-lg, 12px);
+  box-shadow: var(--shadow-lg);
 }
 
-.subapp-overlay-titlebar {
+// 公用头部：不展示应用名/图标（应用自带标题，避免重复），仅承载关闭
+// 按钮并兼任窗口拖动把手（grab 光标），扁平态无分隔线
+.subapp-overlay-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 6px;
+  background: var(--panel, #303030);
+  color: var(--text, #e4e4e7);
   cursor: grab;
-  user-select: none;
   touch-action: none;
-  border-bottom: 1px solid var(--border-soft, rgba(255, 255, 255, 0.08));
+  user-select: none;
 
   &:active {
     cursor: grabbing;
   }
-}
-
-.subapp-overlay-name {
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.subapp-overlay-actions {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
 
   button {
     border: 0;
@@ -78,57 +64,114 @@
   }
 }
 
-// body 跟随卡片高度（卡片总高由内联 size.h 控制）
-.subapp-overlay-body {
+.subapp-overlay-runner {
   flex: 1;
   min-height: 0;
-}
-
-.subapp-overlay-runner {
+  width: 100%;
   height: 100%;
 }
 
-// 右下角尺寸拉伸手柄：对角线双杠样式，hover/拖拽时高亮主色
+// 三向拉伸手柄：右缘加宽、下缘加高、右下角同时改宽高。
+// 边缘手柄 hover 高亮主色细线；角手柄是对角双杠图标，hover 应用时浮现。
 .subapp-overlay-resize {
   position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 16px;
-  height: 16px;
-  cursor: nwse-resize;
   touch-action: none;
-  z-index: 1;
+  z-index: 2;
 
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    width: 8px;
-    height: 2px;
-    border-radius: 1px;
-    background: currentColor;
-    opacity: 0.45;
-    transition: opacity 0.15s ease;
+  &[data-dir='e'] {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: ew-resize;
+
+    &::after {
+      content: '';
+      position: absolute;
+      right: 2px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: transparent;
+      transition: background 0.15s ease;
+    }
+
+    &:hover::after,
+    &:active::after {
+      background: var(--primary, #6366f1);
+    }
   }
 
-  &::before {
-    right: 3px;
-    bottom: 5px;
-    transform: rotate(-45deg);
+  &[data-dir='s'] {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 6px;
+    cursor: ns-resize;
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 2px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: transparent;
+      transition: background 0.15s ease;
+    }
+
+    &:hover::after,
+    &:active::after {
+      background: var(--primary, #6366f1);
+    }
   }
 
-  &::after {
-    right: 3px;
-    bottom: 2px;
-    transform: rotate(-45deg);
-  }
+  &[data-dir='se'] {
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
 
-  &:hover,
-  &:active {
     &::before,
     &::after {
-      opacity: 0.95;
-      background: var(--primary, rgba(22, 119, 255, 0.9));
+      content: '';
+      position: absolute;
+      width: 9px;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--text-muted, #9ca3af);
+      opacity: 0;
+      transition:
+        opacity 0.15s ease,
+        background 0.15s ease;
+    }
+
+    &::before {
+      right: 3px;
+      bottom: 6px;
+      transform: rotate(-45deg);
+    }
+
+    &::after {
+      right: 3px;
+      bottom: 3px;
+      transform: rotate(-45deg);
+    }
+
+    .subapp-overlay-card:hover &,
+    &:active {
+      &::before,
+      &::after {
+        opacity: 0.9;
+      }
+    }
+
+    &:active {
+      &::before,
+      &::after {
+        background: var(--primary, #6366f1);
+      }
     }
   }
 }
@@ -143,9 +186,8 @@
   width: 340px;
   display: flex;
   flex-direction: column;
-  background: var(--bg-container, rgba(24, 24, 28, 0.98));
-  border-left: 1px solid var(--border-soft, rgba(255, 255, 255, 0.1));
-  box-shadow: -6px 0 20px rgba(0, 0, 0, 0.25);
+  background: var(--panel, #303030);
+  border-left: 1px solid var(--border, #3d3d3d);
 }
 
 // 左缘宽度拖拽条：hover/拖拽时高亮，拖拽期间禁用文本选择
@@ -174,7 +216,7 @@
   &:hover,
   &:active {
     &::after {
-      background: var(--primary, rgba(22, 119, 255, 0.8));
+      background: var(--primary, #6366f1);
     }
   }
 }
@@ -185,7 +227,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border-soft, rgba(255, 255, 255, 0.08));
+  border-bottom: 1px solid var(--divider, #efede8);
 
   button {
     border: 0;
@@ -251,7 +293,7 @@
   display: flex;
   gap: 4px;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--border-soft, rgba(255, 255, 255, 0.08));
+  border-bottom: 1px solid var(--divider, #efede8);
   overflow-x: auto;
   scrollbar-width: thin;
 }
@@ -281,7 +323,7 @@
 
   &.is-active {
     opacity: 1;
-    border-color: var(--primary, rgba(22, 119, 255, 0.55));
+    border-color: var(--primary, #6366f1);
     background: var(--primary-soft, rgba(99, 102, 241, 0.12));
   }
 
@@ -298,6 +340,8 @@
 }
 
 // ── 右下角胶囊启动器：浮层/侧板应用的统一全局入口 ────────────
+// 默认锚定右下角；用户拖动后由组件内联写 right/bottom（同为右下锚定，
+// 面板展开向上生长时胶囊保持不动），位置持久化到 localStorage。
 .subapp-surface-launcher {
   position: absolute;
   right: 20px;
@@ -315,26 +359,23 @@
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.12));
-  background: var(--bg-container, rgba(30, 30, 34, 0.98));
-  color: inherit;
+  border: 0;
+  background: var(--panel, #303030);
+  color: var(--text, #e4e4e7);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow:
-    0 6px 20px rgba(0, 0, 0, 0.3),
-    0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-md);
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease,
     background 0.15s ease;
+  touch-action: none;
 
   &:hover {
     transform: translateY(-1px);
-    box-shadow:
-      0 8px 24px rgba(0, 0, 0, 0.35),
-      0 2px 8px rgba(0, 0, 0, 0.22);
+    box-shadow: var(--shadow-lg);
   }
 
   &:active {
@@ -350,7 +391,7 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--primary, rgba(22, 119, 255, 0.95));
+  background: var(--primary, #6366f1);
   color: #fff;
   font-size: 10px;
   font-weight: 600;
@@ -364,19 +405,18 @@
   max-height: 320px;
   overflow-y: auto;
   scrollbar-width: thin;
-  border-radius: 12px;
-  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.1));
-  background: var(--bg-container, rgba(30, 30, 34, 0.98));
-  box-shadow:
-    0 8px 28px rgba(0, 0, 0, 0.35),
-    0 2px 8px rgba(0, 0, 0, 0.25);
+  border-radius: var(--r-lg, 12px);
+  border: 0;
+  background: var(--panel, #303030);
+  color: var(--text, #e4e4e7);
+  box-shadow: var(--shadow-lg);
   padding: 6px;
 }
 
 .subapp-launcher-group + .subapp-launcher-group {
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid var(--border-soft, rgba(255, 255, 255, 0.08));
+  border-top: 1px solid var(--divider, #efede8);
 }
 
 .subapp-launcher-group-title {
@@ -393,7 +433,7 @@
   width: 100%;
   padding: 7px 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md, 8px);
   background: transparent;
   color: inherit;
   font-size: 13px;
@@ -422,7 +462,7 @@
   flex-shrink: 0;
   font-size: 11px;
   opacity: 0.5;
-  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.14));
+  border: 1px solid var(--border-strong, #4a4a4a);
   border-radius: 4px;
   padding: 0 4px;
   user-select: none;
@@ -433,5 +473,5 @@
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: var(--primary, rgba(22, 119, 255, 0.95));
+  background: var(--primary, #6366f1);
 }

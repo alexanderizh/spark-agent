@@ -51,6 +51,10 @@ describe('SubAppSurfaceProvider 目录加载', () => {
 
   beforeEach(() => {
     mocks.list.mockReset()
+    // 清理浮窗几何持久化，避免用例间位置串扰
+    Object.keys(window.localStorage)
+      .filter((key) => key.startsWith('spark-agent:subapp-overlay-geometry'))
+      .forEach((key) => window.localStorage.removeItem(key))
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -250,5 +254,211 @@ describe('SubAppSurfaceProvider 目录加载', () => {
       container.querySelector<HTMLButtonElement>('.subapp-launcher-item')?.click()
     })
     expect(container.querySelector('[data-testid="subapp-panel-dock"]')).not.toBeNull()
+  })
+
+  const overlayDetails = (id: string, name: string) => ({
+    id,
+    name,
+    description: '',
+    icon: 'builtin:list-todo',
+    surface: 'overlay' as const,
+    publicationStatus: 'published' as const,
+    enabled: true,
+    draftRevision: 1,
+    publishedVersion: 1,
+    createdAt: '2026-08-18T00:00:00.000Z',
+    updatedAt: '2026-08-18T00:00:00.000Z',
+    draft: {
+      revision: 1,
+      source: '<html></html>',
+      manifest: { version: 1, surface: 'overlay' as const, permissions: [] },
+    },
+    publishedRelease: null,
+  })
+
+  /** 通过胶囊启动器打开第 index 个应用（0 起） */
+  const openViaLauncher = async (index: number): Promise<void> => {
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.subapp-launcher-capsule')?.click()
+    })
+    await act(async () => {
+      container.querySelectorAll<HTMLButtonElement>('.subapp-launcher-item')[index]?.click()
+    })
+  }
+
+  /** jsdom 无 PointerEvent capture；用 MouseEvent 派发 pointer* 类型即可触发 React 合成事件 */
+  const firePointer = (el: Element, type: string, x: number, y: number): void => {
+    el.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }),
+    )
+  }
+
+  it('浮窗带公用头部：应用标识+关闭入口，头部拖动、三向拉伸；关闭销毁可经胶囊重开', async () => {
+    mocks.list.mockResolvedValue({
+      items: [makeApp({ id: 'o1', name: '浮层应用', surface: 'overlay' })],
+      total: 1,
+    })
+    mocks.get.mockResolvedValue(overlayDetails('o1', '浮层应用'))
+    renderProvider()
+    await act(async () => {})
+    await openViaLauncher(0)
+
+    const card = container.querySelector<HTMLElement>('[data-testid="subapp-overlay-card"]')
+    expect(card).not.toBeNull()
+    // 公用头部：仅关闭入口，不重复展示应用名/图标（应用自带标题），无收起入口
+    const header = card?.querySelector<HTMLElement>('.subapp-overlay-header')
+    expect(header).not.toBeNull()
+    expect(header?.textContent).not.toContain('浮层应用')
+    expect(header?.querySelector('[aria-label="关闭浮层"]')).not.toBeNull()
+    expect(card?.querySelector('[aria-label="收起浮层"]')).toBeNull()
+    // 应用本体（runner）直接是卡片的子元素，铺满头部之下
+    const runner = card?.querySelector('[data-testid="subapp-runner"]')
+    expect(runner?.parentElement).toBe(card)
+    // 自由浮窗手势件：三向拉伸手柄
+    const dirs = [...(card?.querySelectorAll('.subapp-overlay-resize') ?? [])].map((el) =>
+      el.getAttribute('data-dir'),
+    )
+    expect(dirs).toEqual(['e', 's', 'se'])
+    // 窗口有独立几何（默认内容区 85%），不是铺满视口
+    expect(card?.style.left).not.toBe('')
+    expect(card?.style.width).not.toBe('')
+
+    // 关闭即销毁（无收起态）；重新打开走胶囊启动器菜单
+    await act(async () => {
+      header?.querySelector<HTMLButtonElement>('[aria-label="关闭浮层"]')?.click()
+    })
+    expect(container.querySelector('[data-testid="subapp-overlay-card"]')).toBeNull()
+    expect(container.querySelector('[data-testid="subapp-runner"]')).toBeNull()
+    await openViaLauncher(0)
+    expect(container.querySelector('[data-testid="subapp-overlay-card"]')).not.toBeNull()
+  })
+
+  it('浮窗默认几何取内容区 85% 居中，持久化几何恢复时优先', async () => {
+    // 模拟主窗口内容区节点（.main-content-area > .main），固定视口矩形
+    const area = document.createElement('div')
+    area.className = 'main-content-area'
+    const main = document.createElement('div')
+    main.className = 'main'
+    main.getBoundingClientRect = () => ({ left: 100, top: 50, width: 800, height: 600 }) as DOMRect
+    area.appendChild(main)
+    document.body.appendChild(area)
+    try {
+      mocks.list.mockResolvedValue({
+        items: [makeApp({ id: 'o1', name: '浮层应用', surface: 'overlay' })],
+        total: 1,
+      })
+      mocks.get.mockResolvedValue(overlayDetails('o1', '浮层应用'))
+
+      // 已有持久化几何：恢复优先于默认值
+      window.localStorage.setItem(
+        'spark-agent:subapp-overlay-geometry-v3:o1',
+        JSON.stringify({ left: 40, top: 60, width: 500, height: 400 }),
+      )
+      renderProvider()
+      await act(async () => {})
+      await openViaLauncher(0)
+      let card = container.querySelector<HTMLElement>('[data-testid="subapp-overlay-card"]')
+      expect(card?.style.left).toBe('40px')
+      expect(card?.style.top).toBe('60px')
+      expect(card?.style.width).toBe('500px')
+      expect(card?.style.height).toBe('400px')
+      act(() => root.unmount())
+      window.localStorage.removeItem('spark-agent:subapp-overlay-geometry-v3:o1')
+
+      // 无持久化：默认 85% 内容区居中（680x510，中心对齐 left=160/top=95）
+      root = createRoot(container)
+      renderProvider()
+      await act(async () => {})
+      await openViaLauncher(0)
+      card = container.querySelector<HTMLElement>('[data-testid="subapp-overlay-card"]')
+      expect(card?.style.width).toBe('680px')
+      expect(card?.style.height).toBe('510px')
+      expect(card?.style.left).toBe('160px')
+      expect(card?.style.top).toBe('95px')
+    } finally {
+      area.remove()
+    }
+  })
+
+  it('拖动浮窗移动位置并持久化；三向拉伸改宽高', async () => {
+    mocks.list.mockResolvedValue({
+      items: [makeApp({ id: 'o1', name: '浮层应用', surface: 'overlay' })],
+      total: 1,
+    })
+    mocks.get.mockResolvedValue(overlayDetails('o1', '浮层应用'))
+    renderProvider()
+    await act(async () => {})
+    await openViaLauncher(0)
+
+    const card = () => container.querySelector<HTMLElement>('[data-testid="subapp-overlay-card"]')
+    const before = {
+      left: Number.parseInt(card()?.style.left ?? '0', 10),
+      top: Number.parseInt(card()?.style.top ?? '0', 10),
+      width: Number.parseInt(card()?.style.width ?? '0', 10),
+      height: Number.parseInt(card()?.style.height ?? '0', 10),
+    }
+
+    // 拖动公用头部：窗口平移
+    await act(async () => {
+      const header = card()?.querySelector<HTMLElement>('.subapp-overlay-header')
+      expect(header).not.toBeNull()
+      firePointer(header as Element, 'pointerdown', 400, 300)
+      firePointer(header as Element, 'pointermove', 460, 340)
+      firePointer(header as Element, 'pointerup', 460, 340)
+    })
+    expect(Number.parseInt(card()?.style.left ?? '0', 10)).toBe(before.left + 60)
+    expect(Number.parseInt(card()?.style.top ?? '0', 10)).toBe(before.top + 40)
+
+    // 右下角拉伸：宽高同增
+    await act(async () => {
+      const se = card()?.querySelector<HTMLElement>('.subapp-overlay-resize[data-dir="se"]')
+      expect(se).not.toBeNull()
+      firePointer(se as Element, 'pointerdown', 700, 500)
+      firePointer(se as Element, 'pointermove', 740, 530)
+      firePointer(se as Element, 'pointerup', 740, 530)
+    })
+    expect(Number.parseInt(card()?.style.width ?? '0', 10)).toBe(before.width + 40)
+    expect(Number.parseInt(card()?.style.height ?? '0', 10)).toBe(before.height + 30)
+
+    // 几何持久化：卸载重挂后恢复拖拽后的位置
+    const savedLeft = Number.parseInt(card()?.style.left ?? '0', 10)
+    act(() => root.unmount())
+    root = createRoot(container)
+    renderProvider()
+    await act(async () => {})
+    await openViaLauncher(0)
+    expect(Number.parseInt(card()?.style.left ?? '0', 10)).toBe(savedLeft)
+  })
+
+  it('多浮层同开：各自独立浮窗按序级联偏移，互不收起', async () => {
+    mocks.list.mockResolvedValue({
+      items: [
+        makeApp({ id: 'o1', name: '浮层一', surface: 'overlay' }),
+        makeApp({ id: 'o2', name: '浮层二', surface: 'overlay' }),
+      ],
+      total: 2,
+    })
+    mocks.get.mockImplementation(async (args: { appId: string }) =>
+      overlayDetails(args.appId, args.appId === 'o1' ? '浮层一' : '浮层二'),
+    )
+    renderProvider()
+    await act(async () => {})
+
+    await openViaLauncher(0)
+    await openViaLauncher(1)
+    const cards = container.querySelectorAll<HTMLElement>('[data-testid="subapp-overlay-card"]')
+    expect(cards).toHaveLength(2)
+    // 级联偏移：第二个浮窗相对第一个偏移 OVERLAY_CASCADE_STEP(32px)
+    const first = cards[0]
+    const second = cards[1]
+    if (first == null || second == null) throw new Error('浮窗卡片缺失')
+    const left1 = Number.parseInt(first.style.left ?? '0', 10)
+    const top1 = Number.parseInt(first.style.top ?? '0', 10)
+    const left2 = Number.parseInt(second.style.left ?? '0', 10)
+    const top2 = Number.parseInt(second.style.top ?? '0', 10)
+    expect(left2 - left1).toBe(32)
+    expect(top2 - top1).toBe(32)
+    // 两个浮窗并存，互不收起/销毁
+    expect(container.querySelectorAll('[data-testid="subapp-overlay-card"]')).toHaveLength(2)
   })
 })

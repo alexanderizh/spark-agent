@@ -14,84 +14,29 @@ import './SubAppSurfaceHost.less'
  * 低于 antd Modal/Message（≥1000）、Git 面板（1200+）、语音 UI（10000）。
  * 应用不得自行写更大 z-index 抢占平台弹层；这是宿主对浮层的唯一层级出口。
  *
- * 实例约束：overlay 最多 3 个（超出替换最旧），panel 最多 1 个（后开替换）；
- * 关闭浮层只销毁该实例的 SubAppRunner（iframe + bridge host 随组件卸载），
- * 不影响其他实例与运行页。
+ * 实例约束：overlay 最多 3 个（超出替换最旧），panel 最多 1 个（后开替换）。
+ * overlay 是带公用头部的自由浮窗：头部（应用图标/名称 + 关闭）兼任拖动把手，
+ * 应用本体（iframe）铺满头部之下的窗口区域；可三向拉伸（右/下/右下角），
+ * 几何按 appId 持久化，多开时级联偏移。浮窗无收起态——关闭即销毁实例，
+ * 重新打开走右下角胶囊启动器菜单；关闭只销毁该实例的 SubAppRunner
+ * （iframe + bridge host 随组件卸载），不影响其他实例与运行页。
  */
 
 const MAX_OVERLAY_INSTANCES = 3
 const MAX_PANEL_INSTANCES = 1
 
-/**
- * overlay 位置/尺寸按 appId 记忆（下次打开恢复），panel 宽度全局记忆。
- * 位置 key 带 v2：锚点从右下角堆叠改为屏幕居中后旧偏移语义失效，直接弃用旧值。
- */
-const OVERLAY_POS_KEY_PREFIX = 'spark-agent:subapp-overlay-pos:v2:'
-const OVERLAY_SIZE_KEY_PREFIX = 'spark-agent:subapp-overlay-size:v1:'
-const OVERLAY_SIZE_DEFAULT = { w: 440, h: 560 }
-const OVERLAY_SIZE_MIN = { w: 300, h: 240 }
+/** 浮层窗口几何记忆（left/top 视口坐标 + width/height），按 appId 存储 */
+const OVERLAY_GEOMETRY_PREFIX = 'spark-agent:subapp-overlay-geometry-v3'
+const OVERLAY_MIN_WIDTH = 320
+const OVERLAY_MIN_HEIGHT = 240
+const OVERLAY_CASCADE_STEP = 32
+const OVERLAY_VIEWPORT_MARGIN = 8
+
+/** panel dock 宽度全局记忆。 */
 const PANEL_WIDTH_KEY = 'spark-agent:subapp-panel-width'
 const PANEL_WIDTH_MIN = 280
 const PANEL_WIDTH_MAX = 560
 const PANEL_WIDTH_DEFAULT = 360
-
-function readOverlayOffset(appId: string): { x: number; y: number } | null {
-  try {
-    const raw = window.localStorage.getItem(OVERLAY_POS_KEY_PREFIX + appId)
-    if (raw == null) return null
-    const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown }
-    if (
-      typeof parsed.x !== 'number' ||
-      typeof parsed.y !== 'number' ||
-      !Number.isFinite(parsed.x) ||
-      !Number.isFinite(parsed.y) ||
-      Math.abs(parsed.x) > 8192 ||
-      Math.abs(parsed.y) > 8192
-    ) {
-      return null
-    }
-    return { x: parsed.x, y: parsed.y }
-  } catch {
-    return null
-  }
-}
-
-function persistOverlayOffset(appId: string, offset: { x: number; y: number }): void {
-  try {
-    window.localStorage.setItem(OVERLAY_POS_KEY_PREFIX + appId, JSON.stringify(offset))
-  } catch {
-    // 存储满/隐私模式时静默降级为不记忆
-  }
-}
-
-function readOverlaySize(appId: string): { w: number; h: number } | null {
-  try {
-    const raw = window.localStorage.getItem(OVERLAY_SIZE_KEY_PREFIX + appId)
-    if (raw == null) return null
-    const parsed = JSON.parse(raw) as { w?: unknown; h?: unknown }
-    if (
-      typeof parsed.w !== 'number' ||
-      typeof parsed.h !== 'number' ||
-      !Number.isFinite(parsed.w) ||
-      !Number.isFinite(parsed.h) ||
-      parsed.w < OVERLAY_SIZE_MIN.w ||
-      parsed.h < OVERLAY_SIZE_MIN.h
-    ) {
-      return null
-    }
-    return { w: parsed.w, h: parsed.h }
-  } catch {
-    return null
-  }
-}
-
-function persistOverlaySize(appId: string, size: { w: number; h: number }): void {
-  try {
-    window.localStorage.setItem(OVERLAY_SIZE_KEY_PREFIX + appId, JSON.stringify(size))
-  } catch {
-    // 存储不可用时静默降级为不记忆
-  }
-}
 
 function readPanelWidth(): number {
   const raw = Number(window.localStorage.getItem(PANEL_WIDTH_KEY))
@@ -101,14 +46,88 @@ function readPanelWidth(): number {
   return raw
 }
 
+interface OverlayGeometry {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+/** 几何整体钳制在当前视口内：尺寸不越上下限，位置保证窗口完全可见。 */
+function clampOverlayGeometry(geo: OverlayGeometry): OverlayGeometry {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const maxWidth = Math.max(OVERLAY_MIN_WIDTH, vw - OVERLAY_VIEWPORT_MARGIN * 2)
+  const maxHeight = Math.max(OVERLAY_MIN_HEIGHT, vh - OVERLAY_VIEWPORT_MARGIN * 2)
+  const width = Math.min(Math.max(geo.width, OVERLAY_MIN_WIDTH), maxWidth)
+  const height = Math.min(Math.max(geo.height, OVERLAY_MIN_HEIGHT), maxHeight)
+  const left = Math.min(
+    Math.max(geo.left, OVERLAY_VIEWPORT_MARGIN),
+    Math.max(OVERLAY_VIEWPORT_MARGIN, vw - OVERLAY_VIEWPORT_MARGIN - width),
+  )
+  const top = Math.min(
+    Math.max(geo.top, OVERLAY_VIEWPORT_MARGIN),
+    Math.max(OVERLAY_VIEWPORT_MARGIN, vh - OVERLAY_VIEWPORT_MARGIN - height),
+  )
+  return { left, top, width, height }
+}
+
+function readOverlayGeometry(appId: string): OverlayGeometry | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(window.localStorage.getItem(`${OVERLAY_GEOMETRY_PREFIX}:${appId}`) ?? '')
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed == null) return null
+  const geo = parsed as Partial<Record<keyof OverlayGeometry, unknown>>
+  const values = [geo.left, geo.top, geo.width, geo.height]
+  if (values.some((value) => typeof value !== 'number' || !Number.isFinite(value))) return null
+  // 持久化时的视口可能比当前大（窗口缩小/换了显示器）：恢复时重新钳制
+  return clampOverlayGeometry({
+    left: geo.left as number,
+    top: geo.top as number,
+    width: geo.width as number,
+    height: geo.height as number,
+  })
+}
+
+function writeOverlayGeometry(appId: string, geo: OverlayGeometry): void {
+  try {
+    window.localStorage.setItem(`${OVERLAY_GEOMETRY_PREFIX}:${appId}`, JSON.stringify(geo))
+  } catch {
+    // 存储不可用时静默降级（本次会话内几何仍生效）
+  }
+}
+
+/** 首次打开的默认几何：内容区（.main）的 85% 居中，多开按序级联偏移。 */
+function defaultOverlayGeometry(cascadeIndex: number): OverlayGeometry {
+  const area = document
+    .querySelector<HTMLElement>('.main-content-area .main')
+    ?.getBoundingClientRect()
+  const baseLeft = area?.left ?? 0
+  const baseTop = area?.top ?? 0
+  const baseWidth = area?.width ?? window.innerWidth
+  const baseHeight = area?.height ?? window.innerHeight
+  const width = Math.max(OVERLAY_MIN_WIDTH, Math.round(baseWidth * 0.85))
+  const height = Math.max(OVERLAY_MIN_HEIGHT, Math.round(baseHeight * 0.85))
+  const offset = (cascadeIndex % 5) * OVERLAY_CASCADE_STEP
+  return clampOverlayGeometry({
+    left: Math.round(baseLeft + (baseWidth - width) / 2) + offset,
+    top: Math.round(baseTop + (baseHeight - height) / 2) + offset,
+    width,
+    height,
+  })
+}
+
 interface SurfaceInstance {
   key: string
   kind: 'overlay' | 'panel'
   appId: string
   name: string
+  icon: string | null
   manifest: SubAppManifest
   source: string
-  collapsed: boolean
 }
 
 export interface SubAppSurfaceController {
@@ -120,7 +139,6 @@ export interface SubAppSurfaceController {
   /** 按应用 manifest 的 surface 打开 overlay/panel 实例；已在跑则不重复开。 */
   open: (appId: string) => Promise<void>
   close: (key: string) => void
-  toggleCollapse: (key: string) => void
   /**
    * panel 应用改由统一侧面板承载（ChatView 挂载时注册处理器）：
    * open() 遇 panel surface 优先转发；未注册（如画布模式）回落到 dock 渲染。
@@ -205,15 +223,17 @@ export function SubAppSurfaceProvider({
       }
     }
     setInstances((prev) => {
-      if (prev.some((item) => item.appId === appId)) return prev
+      const existing = prev.find((item) => item.appId === appId)
+      // 已在跑的不重复开；浮窗关闭即销毁，重开走胶囊启动器菜单
+      if (existing != null) return prev
       const instance: SurfaceInstance = {
         key: `${kind}-${appId}-${Date.now()}`,
         kind,
         appId,
         name: details.name,
+        icon: details.icon,
         manifest: details.draft.manifest,
         source: details.draft.source,
-        collapsed: false,
       }
       const cap = kind === 'overlay' ? MAX_OVERLAY_INSTANCES : MAX_PANEL_INSTANCES
       const sameKind = prev.filter((item) => item.kind === kind)
@@ -227,12 +247,6 @@ export function SubAppSurfaceProvider({
     setInstances((prev) => prev.filter((item) => item.key !== key))
   }, [])
 
-  const toggleCollapse = useCallback((key: string): void => {
-    setInstances((prev) =>
-      prev.map((item) => (item.key === key ? { ...item, collapsed: !item.collapsed } : item)),
-    )
-  }, [])
-
   const controller = useMemo<SubAppSurfaceController>(
     () => ({
       instances,
@@ -240,10 +254,9 @@ export function SubAppSurfaceProvider({
       directoryLoaded,
       open,
       close,
-      toggleCollapse,
       setPanelOpenHandler,
     }),
-    [instances, directory, directoryLoaded, open, close, toggleCollapse, setPanelOpenHandler],
+    [instances, directory, directoryLoaded, open, close, setPanelOpenHandler],
   )
 
   return (
@@ -261,16 +274,21 @@ function SubAppSurfaceLayer({
   controller: SubAppSurfaceController
 }): React.ReactElement {
   const { instances } = controller
-  const overlays = instances.filter((item) => item.kind === 'overlay')
   const panels = instances.filter((item) => item.kind === 'panel')
+  const overlays = instances.filter((item) => item.kind === 'overlay')
   return (
     <div className="subapp-surface-layer" aria-label="子应用浮层">
       {panels.map((item) => (
         <SubAppPanelDock key={item.key} instance={item} controller={controller} />
       ))}
-      {/* overlay 卡片各自独立定位（默认居中+级联偏移），不再堆叠在右下角胶囊启动器上方 */}
+      {/* 浮层：带公用头部的自由浮窗，多开按序级联偏移 */}
       {overlays.map((item, index) => (
-        <SubAppOverlayCard key={item.key} instance={item} controller={controller} cascade={index} />
+        <SubAppOverlayCard
+          key={item.key}
+          instance={item}
+          controller={controller}
+          cascadeIndex={index}
+        />
       ))}
       {/* 胶囊启动器常驻右下角：无实例时也要能随时打开浮层/侧板应用 */}
       <SubAppSurfaceLauncher controller={controller} />
@@ -278,170 +296,152 @@ function SubAppSurfaceLayer({
   )
 }
 
+type ResizeDir = 'e' | 's' | 'se'
+
+/**
+ * 浮层：带公用头部的自由浮窗。头部（应用图标/名称 + 关闭按钮）兼任窗口
+ * 拖动把手——iframe 隔离鼠标事件，宿主必须提供移动入口；应用本体
+ * （runner iframe）铺满头部之下的窗口区域。窗口有独立几何（默认取内容区
+ * 85% 居中，多开级联偏移），可三向拉伸（右缘/下缘/右下角），几何按 appId
+ * 持久化并在恢复/拖拽/拉伸时整体钳制在视口内。无收起态：关闭即销毁实例。
+ */
 function SubAppOverlayCard({
   instance,
   controller,
-  cascade,
+  cascadeIndex,
 }: {
   instance: SurfaceInstance
   controller: SubAppSurfaceController
-  /** 同屏第几个 overlay（0 起）：无位置记忆时按此做级联偏移，避免多卡片重叠 */
-  cascade: number
+  cascadeIndex: number
 }): React.ReactElement {
-  // 无记忆位置时默认居中（offset 0,0 = 屏幕中心），多实例级联错开
-  const [offset, setOffset] = useState<{ x: number; y: number }>(
-    () => readOverlayOffset(instance.appId) ?? { x: cascade * 32, y: cascade * 32 },
+  const [geometry, setGeometry] = useState<OverlayGeometry>(
+    // 惰性初始化只取一次：级联偏移按打开序固定，重渲染不重算
+    () => readOverlayGeometry(instance.appId) ?? defaultOverlayGeometry(cascadeIndex),
   )
-  const [size, setSize] = useState<{ w: number; h: number }>(
-    () => readOverlaySize(instance.appId) ?? OVERLAY_SIZE_DEFAULT,
-  )
-  const dragState = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(
-    null,
-  )
-  const resizeState = useRef<{
+  // 拖拽/拉伸共享的指针会话：dir 为 null 表示移动窗口；latest 记录手势内
+  // 最新几何（pointerup 时 state 可能尚未 flush，持久化必须读它而不是 ref）
+  const dragState = useRef<{
+    dir: ResizeDir | null
     startX: number
     startY: number
-    baseW: number
-    baseH: number
+    base: OverlayGeometry
+    latest: OverlayGeometry
   } | null>(null)
 
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
-    if (event.button !== 0) return
-    // 操作按钮区不进入拖拽：pointer capture 会把后续 click 的 target 改写为
-    // 标题栏本身，导致收起/关闭按钮的 onClick 丢失。
-    if ((event.target as HTMLElement).closest('.subapp-overlay-actions') != null) return
-    dragState.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      baseX: offset.x,
-      baseY: offset.y,
-    }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
-    const drag = dragState.current
-    if (drag == null) return
-    setOffset({
-      x: drag.baseX + event.clientX - drag.startX,
-      y: drag.baseY + event.clientY - drag.startY,
-    })
-  }
-  const onPointerUp = (event: React.PointerEvent<HTMLDivElement>): void => {
-    const drag = dragState.current
-    dragState.current = null
-    if (drag != null) {
-      // 拖拽结束才持久化，避免 move 高频写 localStorage
-      setOffset((current) => {
-        persistOverlayOffset(instance.appId, current)
-        return current
-      })
-    }
-    try {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    } catch {
-      // pointer capture 可能已释放（点掉标题栏的一瞬），忽略
-    }
-  }
-
-  const onResizeDown = (event: React.PointerEvent<HTMLDivElement>): void => {
-    if (event.button !== 0) return
-    resizeState.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      baseW: size.w,
-      baseH: size.h,
-    }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-  const onResizeMove = (event: React.PointerEvent<HTMLDivElement>): void => {
-    const drag = resizeState.current
-    if (drag == null) return
-    // 上限留出窗口边距，下限保证 iframe 内容仍可用
-    const maxW = Math.max(OVERLAY_SIZE_MIN.w, window.innerWidth - 48)
-    const maxH = Math.max(OVERLAY_SIZE_MIN.h, window.innerHeight - 48)
-    setSize({
-      w: Math.min(maxW, Math.max(OVERLAY_SIZE_MIN.w, drag.baseW + event.clientX - drag.startX)),
-      h: Math.min(maxH, Math.max(OVERLAY_SIZE_MIN.h, drag.baseH + event.clientY - drag.startY)),
-    })
-  }
-  const onResizeUp = (event: React.PointerEvent<HTMLDivElement>): void => {
-    if (resizeState.current != null) {
-      setSize((current) => {
-        persistOverlaySize(instance.appId, current)
-        return current
-      })
-    }
-    resizeState.current = null
-    try {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    } catch {
-      // capture 已释放时忽略
-    }
-  }
-
-  // 锚定屏幕中心（left/top 50%），transform 先回撤自身一半再叠加用户偏移
-  const cardStyle = useMemo<React.CSSProperties>(
-    () => ({
-      transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
-      width: size.w,
-      height: instance.collapsed ? undefined : size.h,
-    }),
-    [offset, size, instance.collapsed],
+  const beginGesture = useCallback(
+    (dir: ResizeDir | null) =>
+      (event: React.PointerEvent<HTMLElement>): void => {
+        if (event.button !== 0) return
+        dragState.current = {
+          dir,
+          startX: event.clientX,
+          startY: event.clientY,
+          base: geometry,
+          latest: geometry,
+        }
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId)
+        } catch {
+          // jsdom 等无 capture 环境忽略
+        }
+      },
+    [geometry],
   )
+
+  const moveGesture = useCallback((event: React.PointerEvent<HTMLElement>): void => {
+    const drag = dragState.current
+    if (drag == null) return
+    const dx = event.clientX - drag.startX
+    const dy = event.clientY - drag.startY
+    const base = drag.base
+    let next: OverlayGeometry
+    if (drag.dir == null) {
+      // 移动窗口：整体平移，钳制保证标题抓手始终可达
+      next = clampOverlayGeometry({ ...base, left: base.left + dx, top: base.top + dy })
+    } else {
+      next = { ...base }
+      if (drag.dir === 'e' || drag.dir === 'se') next.width = base.width + dx
+      if (drag.dir === 's' || drag.dir === 'se') next.height = base.height + dy
+      // 拉伸只改右/下边界：left/top 不动，钳制会截断越界尺寸（尺寸顶到
+      // 视口边缘时左/上边界被反推，窗口始终保持完全可见）
+      next = clampOverlayGeometry(next)
+    }
+    drag.latest = next
+    setGeometry(next)
+  }, [])
+
+  const endGesture = useCallback(
+    (event: React.PointerEvent<HTMLElement>): void => {
+      if (dragState.current != null) {
+        writeOverlayGeometry(instance.appId, dragState.current.latest)
+        dragState.current = null
+      }
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        // capture 已释放时忽略
+      }
+    },
+    [instance.appId],
+  )
+
+  // 窗口尺寸变化后把记忆几何重新钳回视口（用户缩小窗口时浮窗不悬空）
+  useEffect(() => {
+    const onResize = (): void => {
+      setGeometry((prev) => clampOverlayGeometry(prev))
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   return (
     <section
-      className={`subapp-overlay-card${instance.collapsed ? ' is-collapsed' : ''}`}
-      style={cardStyle}
+      className="subapp-overlay-card"
+      style={{
+        left: geometry.left,
+        top: geometry.top,
+        width: geometry.width,
+        height: geometry.height,
+      }}
       data-testid="subapp-overlay-card"
     >
+      {/* 公用头部：仅关闭入口（应用自带标题/图标，宿主不重复展示），
+          兼任窗口拖动把手（iframe 会吃指针，宿主提供移动入口）；
+          头部内按钮不吃拖拽，click 正常触发 */}
       <header
-        className="subapp-overlay-titlebar"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
+        className="subapp-overlay-header"
+        onPointerDown={(event) => {
+          if ((event.target as HTMLElement).closest('button') != null) return
+          beginGesture(null)(event)
+        }}
+        onPointerMove={moveGesture}
+        onPointerUp={endGesture}
       >
-        <span className="subapp-overlay-name" title={instance.name}>
-          {instance.name}
-        </span>
-        <div className="subapp-overlay-actions">
-          <button
-            type="button"
-            aria-label={instance.collapsed ? '展开浮层' : '收起浮层'}
-            onClick={() => controller.toggleCollapse(instance.key)}
-          >
-            {instance.collapsed ? '▴' : '▾'}
-          </button>
-          <button
-            type="button"
-            aria-label="关闭浮层"
-            onClick={() => controller.close(instance.key)}
-          >
-            ✕
-          </button>
-        </div>
+        <button type="button" aria-label="关闭浮层" onClick={() => controller.close(instance.key)}>
+          ✕
+        </button>
       </header>
-      {instance.collapsed ? null : (
-        <div className="subapp-overlay-body">
-          <SubAppRunner
-            appId={instance.appId}
-            manifest={instance.manifest}
-            source={instance.source}
-            mode="draft"
-            className="subapp-overlay-runner"
-          />
-        </div>
-      )}
-      {instance.collapsed ? null : (
+      {/* 应用本体：iframe 铺满头部之下的窗口区域，容器只负责边界与裁切 */}
+      <SubAppRunner
+        appId={instance.appId}
+        manifest={instance.manifest}
+        source={instance.source}
+        mode="draft"
+        className="subapp-overlay-runner"
+      />
+      {/* 三向拉伸手柄：右缘加宽、下缘加高、右下角同时改宽高 */}
+      {(['e', 's', 'se'] as const).map((dir) => (
         <div
+          key={dir}
           className="subapp-overlay-resize"
+          data-dir={dir}
           role="separator"
-          aria-label="调整浮层大小"
-          onPointerDown={onResizeDown}
-          onPointerMove={onResizeMove}
-          onPointerUp={onResizeUp}
+          aria-label="拉伸浮窗"
+          onPointerDown={beginGesture(dir)}
+          onPointerMove={moveGesture}
+          onPointerUp={endGesture}
         />
-      )}
+      ))}
     </section>
   )
 }

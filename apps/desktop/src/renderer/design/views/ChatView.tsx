@@ -3089,200 +3089,205 @@ export function ChatView({
         />
       )}
 
-      {unifiedPanelOpen && (active != null || activeWorkspace != null) && (
-        <UnifiedSessionSidePanel
-          tabs={unifiedSideTabs}
-          activeTab={
-            activeUnifiedSideTab != null ? activeUnifiedSideTab : (unifiedSideTabs[0] ?? null)
-          }
-          width={sideChatWidth}
-          panelApps={panelApps}
-          onWidthChange={setSideChatWidth}
-          onSelect={setActiveUnifiedSideTab}
-          onOpen={openUnifiedSidePanel}
-          onCloseTab={closeUnifiedSidePanel}
-        >
-          {activeUnifiedSideTab === 'code' ? (
-            <CodeViewerPanel
-              files={codeFiles}
-              activeAbsPath={activeCodePath}
-              viewMode={codeViewMode}
-              onSelectActive={setActiveCodePath}
-              onCloseFile={closeCodeFile}
-              onCloseFiles={closeCodeFiles}
-              onViewModeChange={setCodeViewMode}
-              workspaceId={gitWorkspaceId ?? null}
-              explorerVisible={codeExplorerVisible}
-              explorerWidth={codeExplorerWidth}
-              explorerExpandedDirs={codeExplorerExpandedDirs}
-              workspaceRootPath={gitWorkspace?.rootPath ?? null}
-              onExplorerVisibleChange={setCodeExplorerVisible}
-              onExplorerWidthChange={setCodeExplorerWidth}
-              onExplorerExpandedChange={setCodeExplorerExpandedDirs}
-              onOpenFileFromExplorer={(rel) =>
-                isCodeLikeFile(rel) ? openInCodeTab(rel) : handleFilePreview(rel, 'text')
-              }
-              onPreviewFileFromExplorer={(rel) =>
-                handleFilePreview(rel, 'text', { mode: 'preview' })
-              }
-              onEditFileFromExplorer={(rel) => openInCodeTab(rel)}
-            />
-          ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
-            <GitReviewPanel
-              workspaceId={gitWorkspaceId}
-              workspaceRootPath={gitWorkspace?.rootPath ?? null}
-              status={gitStatus}
-              width={sideChatWidth}
-              onWidthChange={setSideChatWidth}
-              onRefresh={refreshGitStatus}
-              onClose={() => closeUnifiedSidePanel('review')}
-            />
-          ) : activeUnifiedSideTab === 'html' && activeHtmlPanelBlock != null ? (
-            <HtmlRenderProvider value={htmlRenderContext}>
-              <RenderHtmlBlock block={activeHtmlPanelBlock} variant="side-panel" />
-            </HtmlRenderProvider>
-          ) : activeUnifiedSideTab === 'plan' ? (
-            <PlanSidePanel
-              session={activeSession}
-              messages={activeVisibleMessages}
-              proposedPlan={
-                proposedPlan != null && active != null && proposedPlan.sessionId === active
-                  ? proposedPlan
-                  : null
-              }
-              onClose={() => closeUnifiedSidePanel('plan')}
-              onClearProposedPlan={() => setProposedPlan(null)}
-              onPlanApproved={(sessionId) => {
-                sessionCtx.updateSessionInList(sessionId, { permissionMode: 'claude-auto-edits' })
-              }}
-            />
-          ) : activeUnifiedSideTab === 'terminal' && showTerminalPanel ? (
-            (() => {
-              const terminalSessionId = active != null ? active : EMPTY_HERO_TERMINAL_SESSION_ID
-              return (
-                <BuiltInTerminalPanel
-                  sessionId={terminalSessionId}
-                  workspace={activeSessionWorkspace ?? activeWorkspace}
-                  onClose={() => closeUnifiedSidePanel('terminal')}
-                />
-              )
-            })()
-          ) : activeUnifiedSideTab === 'side-chat' && showSideChatPanel ? (
-            <SideChatPanel
-              workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? '当前项目'}
-              agentStatus={sideChatAgentStatus}
-              creating={sideChatCreating}
-              width={sideChatWidth}
-              onWidthChange={setSideChatWidth}
-              onClose={() => closeUnifiedSidePanel('side-chat')}
-              onNew={() => {
-                void openSideChatPanel({ replace: true })
-              }}
-              sessions={sideChatSessionCandidates}
-              currentSessionId={sideChatSessionId}
-              disabledSessionId={disabledSideChatSessionId}
-              onSelectSession={switchSideChatSession}
-              embedded
-            >
-              {sideChatSessionId != null &&
-              sideChatSession != null &&
-              sideChatMatchesActiveWorkspace ? (
-                <>
-                  <HtmlRenderProvider value={htmlRenderContext}>
-                    <ChatStream
-                      key={`side-chat-stream-${sideChatSessionId}`}
-                      sessionId={sideChatSessionId}
-                      optimisticMessages={optimisticUserMessages}
-                      workspaceId={sideChatWorkspace?.id ?? null}
-                      workspaceRootPath={sideChatWorkspace?.rootPath ?? null}
-                      onStatusChange={setSideChatAgentStatus}
-                      onUsageChange={setSideChatContextInputTokens}
-                      onUsageDataChange={() => {}}
-                      onMessagesChange={handleSideChatMessagesChange}
-                      onOptimisticSessionReset={handleOptimisticSessionReset}
-                      onSessionStatusChange={(status) =>
-                        setSessionStatus(sideChatSessionId, status)
-                      }
-                      persistedSessionStatus={sideChatSession?.status ?? null}
-                      onContextUsageChange={setSideChatContextUsage}
-                      onContextLedgerChange={setSideChatContextLedger}
-                      onProjectContextChange={() => {}}
-                      onPlanProposed={() => {}}
-                      onTurnPromptSnapshotsChange={() => {}}
-                      stopTrigger={sessionStopTriggers[sideChatSessionId] ?? 0}
-                      scrollToBottomTrigger={sideChatScrollToBottomTrigger}
-                      teamConfig={teamConfig}
-                      onFilePreview={handleFilePreview}
-                      onLoadingChange={() => {}}
-                      onReplyTo={handleReplyTo}
-                      onReplyToMember={handleReplyToMember}
-                    />
-                  </HtmlRenderProvider>
-                  <ComposerV2
-                    session={sideChatSession}
-                    workspace={sideChatWorkspace}
-                    providers={providers}
-                    agents={agents}
-                    selectedProviderId={selectedProviderId}
-                    setSelectedProviderId={setSelectedProviderId}
-                    branchState={branchState}
-                    contextInputTokens={sideChatContextInputTokens}
-                    contextUsage={sideChatContextUsage}
-                    contextLedger={sideChatContextLedger}
-                    isWorking={isComposerSessionWorking(sideChatSession.status)}
-                    messages={sideChatVisibleMessages}
-                    approvalRequest={null}
-                    onCreateSession={(options) =>
-                      createSideChatSession(options as Record<string, unknown>)
-                    }
-                    onUpdateSession={async (patch) => {
-                      await updateSession({ sessionId: sideChatSessionId, ...patch })
-                      await sessionCtx.refreshData()
-                    }}
-                    onCommandComplete={(summary) => {
-                      sessionCtx.updateSessionInList(summary.id, summary)
-                    }}
-                    onSwitchBranch={handleComposerSwitchBranch}
-                    onRefreshBranches={refreshBranches}
-                    onFetchBranches={handleFetchBranches}
-                    onCreateBranch={handleCreateBranch}
-                    onCancelSession={handleCancelSession}
-                    onSent={handleSideChatSent}
-                    showProjectPicker={false}
-                    workspaces={workspaces}
-                    activeWorkspaceId={sideChatWorkspace?.id ?? activeWorkspaceId}
-                    onPickProject={pickProjectFolder}
-                    onUseNoProject={() => {}}
-                    onSwitchWorkspace={switchToWorkspace}
-                    teamConfig={teamConfig}
-                    activeTeamName={activeTeamName}
-                    effectiveHostAgentId={effectiveHostAgentId}
-                    onChangeTeamConfig={updateTeamConfig}
-                    onOpenTeamInspector={openInspector}
-                    runningTeamAgentIds={[]}
-                    onOpenSkillStore={openSkillStore}
-                    hideBranchSelect={hideComposerBranchSelect}
-                    replyTo={null}
-                    optimisticUserSendCallbacks={optimisticUserSendCallbacks}
-                    onOptimisticQueueStateChange={handleOptimisticQueueState}
-                    onOptimisticQueueTurnCancelled={handleOptimisticQueueTurnCancelled}
+      {/* 空会话（无活动会话且未选项目）时终端/审查等 tab 缺少工作区上下文不渲染；
+          subapp tab 不依赖工作区——胶囊启动器在空会话也要能打开侧板应用 */}
+      {unifiedPanelOpen &&
+        (active != null ||
+          activeWorkspace != null ||
+          (activeUnifiedSideTab ?? unifiedSideTabs[0] ?? '').startsWith('subapp:')) && (
+          <UnifiedSessionSidePanel
+            tabs={unifiedSideTabs}
+            activeTab={
+              activeUnifiedSideTab != null ? activeUnifiedSideTab : (unifiedSideTabs[0] ?? null)
+            }
+            width={sideChatWidth}
+            panelApps={panelApps}
+            onWidthChange={setSideChatWidth}
+            onSelect={setActiveUnifiedSideTab}
+            onOpen={openUnifiedSidePanel}
+            onCloseTab={closeUnifiedSidePanel}
+          >
+            {activeUnifiedSideTab === 'code' ? (
+              <CodeViewerPanel
+                files={codeFiles}
+                activeAbsPath={activeCodePath}
+                viewMode={codeViewMode}
+                onSelectActive={setActiveCodePath}
+                onCloseFile={closeCodeFile}
+                onCloseFiles={closeCodeFiles}
+                onViewModeChange={setCodeViewMode}
+                workspaceId={gitWorkspaceId ?? null}
+                explorerVisible={codeExplorerVisible}
+                explorerWidth={codeExplorerWidth}
+                explorerExpandedDirs={codeExplorerExpandedDirs}
+                workspaceRootPath={gitWorkspace?.rootPath ?? null}
+                onExplorerVisibleChange={setCodeExplorerVisible}
+                onExplorerWidthChange={setCodeExplorerWidth}
+                onExplorerExpandedChange={setCodeExplorerExpandedDirs}
+                onOpenFileFromExplorer={(rel) =>
+                  isCodeLikeFile(rel) ? openInCodeTab(rel) : handleFilePreview(rel, 'text')
+                }
+                onPreviewFileFromExplorer={(rel) =>
+                  handleFilePreview(rel, 'text', { mode: 'preview' })
+                }
+                onEditFileFromExplorer={(rel) => openInCodeTab(rel)}
+              />
+            ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
+              <GitReviewPanel
+                workspaceId={gitWorkspaceId}
+                workspaceRootPath={gitWorkspace?.rootPath ?? null}
+                status={gitStatus}
+                width={sideChatWidth}
+                onWidthChange={setSideChatWidth}
+                onRefresh={refreshGitStatus}
+                onClose={() => closeUnifiedSidePanel('review')}
+              />
+            ) : activeUnifiedSideTab === 'html' && activeHtmlPanelBlock != null ? (
+              <HtmlRenderProvider value={htmlRenderContext}>
+                <RenderHtmlBlock block={activeHtmlPanelBlock} variant="side-panel" />
+              </HtmlRenderProvider>
+            ) : activeUnifiedSideTab === 'plan' ? (
+              <PlanSidePanel
+                session={activeSession}
+                messages={activeVisibleMessages}
+                proposedPlan={
+                  proposedPlan != null && active != null && proposedPlan.sessionId === active
+                    ? proposedPlan
+                    : null
+                }
+                onClose={() => closeUnifiedSidePanel('plan')}
+                onClearProposedPlan={() => setProposedPlan(null)}
+                onPlanApproved={(sessionId) => {
+                  sessionCtx.updateSessionInList(sessionId, { permissionMode: 'claude-auto-edits' })
+                }}
+              />
+            ) : activeUnifiedSideTab === 'terminal' && showTerminalPanel ? (
+              (() => {
+                const terminalSessionId = active != null ? active : EMPTY_HERO_TERMINAL_SESSION_ID
+                return (
+                  <BuiltInTerminalPanel
+                    sessionId={terminalSessionId}
+                    workspace={activeSessionWorkspace ?? activeWorkspace}
+                    onClose={() => closeUnifiedSidePanel('terminal')}
                   />
-                </>
-              ) : (
-                <div className="side-chat-panel-loading">
-                  <Icons.Spinner size={22} className="side-chat-panel-loading-spin" />
-                </div>
-              )}
-            </SideChatPanel>
-          ) : activeUnifiedSideTab != null &&
-            activeUnifiedSideTab.startsWith('subapp:') &&
-            appIdOfSubAppPanelKind(activeUnifiedSideTab) != null ? (
-            <UnifiedSubAppPanel appId={appIdOfSubAppPanelKind(activeUnifiedSideTab)!} />
-          ) : (
-            <UnifiedSidePanelPicker onOpen={openUnifiedSidePanel} panelApps={panelApps} />
-          )}
-        </UnifiedSessionSidePanel>
-      )}
+                )
+              })()
+            ) : activeUnifiedSideTab === 'side-chat' && showSideChatPanel ? (
+              <SideChatPanel
+                workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? '当前项目'}
+                agentStatus={sideChatAgentStatus}
+                creating={sideChatCreating}
+                width={sideChatWidth}
+                onWidthChange={setSideChatWidth}
+                onClose={() => closeUnifiedSidePanel('side-chat')}
+                onNew={() => {
+                  void openSideChatPanel({ replace: true })
+                }}
+                sessions={sideChatSessionCandidates}
+                currentSessionId={sideChatSessionId}
+                disabledSessionId={disabledSideChatSessionId}
+                onSelectSession={switchSideChatSession}
+                embedded
+              >
+                {sideChatSessionId != null &&
+                sideChatSession != null &&
+                sideChatMatchesActiveWorkspace ? (
+                  <>
+                    <HtmlRenderProvider value={htmlRenderContext}>
+                      <ChatStream
+                        key={`side-chat-stream-${sideChatSessionId}`}
+                        sessionId={sideChatSessionId}
+                        optimisticMessages={optimisticUserMessages}
+                        workspaceId={sideChatWorkspace?.id ?? null}
+                        workspaceRootPath={sideChatWorkspace?.rootPath ?? null}
+                        onStatusChange={setSideChatAgentStatus}
+                        onUsageChange={setSideChatContextInputTokens}
+                        onUsageDataChange={() => {}}
+                        onMessagesChange={handleSideChatMessagesChange}
+                        onOptimisticSessionReset={handleOptimisticSessionReset}
+                        onSessionStatusChange={(status) =>
+                          setSessionStatus(sideChatSessionId, status)
+                        }
+                        persistedSessionStatus={sideChatSession?.status ?? null}
+                        onContextUsageChange={setSideChatContextUsage}
+                        onContextLedgerChange={setSideChatContextLedger}
+                        onProjectContextChange={() => {}}
+                        onPlanProposed={() => {}}
+                        onTurnPromptSnapshotsChange={() => {}}
+                        stopTrigger={sessionStopTriggers[sideChatSessionId] ?? 0}
+                        scrollToBottomTrigger={sideChatScrollToBottomTrigger}
+                        teamConfig={teamConfig}
+                        onFilePreview={handleFilePreview}
+                        onLoadingChange={() => {}}
+                        onReplyTo={handleReplyTo}
+                        onReplyToMember={handleReplyToMember}
+                      />
+                    </HtmlRenderProvider>
+                    <ComposerV2
+                      session={sideChatSession}
+                      workspace={sideChatWorkspace}
+                      providers={providers}
+                      agents={agents}
+                      selectedProviderId={selectedProviderId}
+                      setSelectedProviderId={setSelectedProviderId}
+                      branchState={branchState}
+                      contextInputTokens={sideChatContextInputTokens}
+                      contextUsage={sideChatContextUsage}
+                      contextLedger={sideChatContextLedger}
+                      isWorking={isComposerSessionWorking(sideChatSession.status)}
+                      messages={sideChatVisibleMessages}
+                      approvalRequest={null}
+                      onCreateSession={(options) =>
+                        createSideChatSession(options as Record<string, unknown>)
+                      }
+                      onUpdateSession={async (patch) => {
+                        await updateSession({ sessionId: sideChatSessionId, ...patch })
+                        await sessionCtx.refreshData()
+                      }}
+                      onCommandComplete={(summary) => {
+                        sessionCtx.updateSessionInList(summary.id, summary)
+                      }}
+                      onSwitchBranch={handleComposerSwitchBranch}
+                      onRefreshBranches={refreshBranches}
+                      onFetchBranches={handleFetchBranches}
+                      onCreateBranch={handleCreateBranch}
+                      onCancelSession={handleCancelSession}
+                      onSent={handleSideChatSent}
+                      showProjectPicker={false}
+                      workspaces={workspaces}
+                      activeWorkspaceId={sideChatWorkspace?.id ?? activeWorkspaceId}
+                      onPickProject={pickProjectFolder}
+                      onUseNoProject={() => {}}
+                      onSwitchWorkspace={switchToWorkspace}
+                      teamConfig={teamConfig}
+                      activeTeamName={activeTeamName}
+                      effectiveHostAgentId={effectiveHostAgentId}
+                      onChangeTeamConfig={updateTeamConfig}
+                      onOpenTeamInspector={openInspector}
+                      runningTeamAgentIds={[]}
+                      onOpenSkillStore={openSkillStore}
+                      hideBranchSelect={hideComposerBranchSelect}
+                      replyTo={null}
+                      optimisticUserSendCallbacks={optimisticUserSendCallbacks}
+                      onOptimisticQueueStateChange={handleOptimisticQueueState}
+                      onOptimisticQueueTurnCancelled={handleOptimisticQueueTurnCancelled}
+                    />
+                  </>
+                ) : (
+                  <div className="side-chat-panel-loading">
+                    <Icons.Spinner size={22} className="side-chat-panel-loading-spin" />
+                  </div>
+                )}
+              </SideChatPanel>
+            ) : activeUnifiedSideTab != null &&
+              activeUnifiedSideTab.startsWith('subapp:') &&
+              appIdOfSubAppPanelKind(activeUnifiedSideTab) != null ? (
+              <UnifiedSubAppPanel appId={appIdOfSubAppPanelKind(activeUnifiedSideTab)!} />
+            ) : (
+              <UnifiedSidePanelPicker onOpen={openUnifiedSidePanel} panelApps={panelApps} />
+            )}
+          </UnifiedSessionSidePanel>
+        )}
 
       {filePreview != null && (
         <FilePreviewPanel
