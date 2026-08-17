@@ -9,7 +9,7 @@
 
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **spark-agent** (59810 symbols, 108753 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **spark-agent** (68252 symbols, 123167 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
