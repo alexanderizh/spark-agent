@@ -11,6 +11,17 @@
   z-index: 900;
 }
 
+// dock/浮窗卡片/胶囊都悬浮在内容区之上，可能压住 macOS 系统拖拽条
+// （MacWindowDragHeader、统一侧板 tab 栏等，均 -webkit-app-region: drag）。
+// app-region 只认显式声明、视觉覆盖不会自动抵消拖拽区：不整体 no-drag 的话
+// dock 头部关闭按钮的点击会被系统窗口拖拽吞掉，双击还会触发窗口最大化；
+// 浮窗头部是卡片自身的拖动把手，被劫持成窗口拖拽同样会失效。
+.subapp-panel-dock,
+.subapp-overlay-card,
+.subapp-surface-launcher {
+  -webkit-app-region: no-drag;
+}
+
 // ── overlay：带公用头部的自由浮窗 ────────────────────────────
 // 窗口矩形（left/top/width/height）由组件按持久化几何内联写入；头部是
 // 宿主提供的公用条（应用标识 + 关闭 + 拖动把手），应用本体（iframe）铺满
@@ -180,7 +191,7 @@
 .subapp-panel-dock {
   pointer-events: auto;
   position: absolute;
-  top: 48px;
+  top: 0;
   right: 0;
   bottom: 0;
   width: 340px;
@@ -188,15 +199,20 @@
   flex-direction: column;
   background: var(--panel, #303030);
   border-left: 1px solid var(--border, #3d3d3d);
+  box-shadow:
+    -12px 0 24px -12px rgba(0, 0, 0, 0.35),
+    -2px 0 8px -4px rgba(0, 0, 0, 0.2);
 }
 
-// 左缘宽度拖拽条：hover/拖拽时高亮，拖拽期间禁用文本选择
+// 左缘宽度拖拽条：hover/拖拽时高亮，拖拽期间禁用文本选择。
+// 拖拽条左移 3px 跨在边框上，命中区一半在面板外、一半在内，
+// 高亮线贴住面板左缘（覆盖 border-left）
 .subapp-panel-resize {
   position: absolute;
-  left: 0;
+  left: -3px;
   top: 0;
   bottom: 0;
-  width: 6px;
+  width: 8px;
   cursor: col-resize;
   touch-action: none;
   z-index: 1;
@@ -205,7 +221,7 @@
   &::after {
     content: '';
     position: absolute;
-    left: 2px;
+    left: 3px;
     top: 0;
     bottom: 0;
     width: 2px;
@@ -227,7 +243,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--divider, #efede8);
+  // border-bottom: 1px solid var(--divider, #efede8);
 
   button {
     border: 0;

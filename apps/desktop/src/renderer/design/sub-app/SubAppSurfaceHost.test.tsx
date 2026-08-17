@@ -256,6 +256,40 @@ describe('SubAppSurfaceProvider 目录加载', () => {
     expect(container.querySelector('[data-testid="subapp-panel-dock"]')).not.toBeNull()
   })
 
+  it('dock 打开时 ESC 关闭；宿主 antd 弹窗开着时 ESC 不连坐关闭侧板', async () => {
+    mocks.list.mockResolvedValue({
+      items: [makeApp({ id: 'p1', name: '侧板应用', surface: 'panel' })],
+      total: 1,
+    })
+    mocks.get.mockResolvedValue(panelDetails('p1', '侧板应用'))
+    renderProvider()
+    await act(async () => {})
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.subapp-launcher-capsule')?.click()
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.subapp-launcher-item')?.click()
+    })
+    expect(container.querySelector('[data-testid="subapp-panel-dock"]')).not.toBeNull()
+
+    // 宿主弹窗（Modal/Drawer）开着：ESC 只归弹窗，dock 不关
+    const modalWrap = document.createElement('div')
+    modalWrap.className = 'ant-modal-wrap'
+    document.body.appendChild(modalWrap)
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    expect(container.querySelector('[data-testid="subapp-panel-dock"]')).not.toBeNull()
+
+    // 弹窗关闭后：ESC 关闭 dock
+    modalWrap.remove()
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    expect(container.querySelector('[data-testid="subapp-panel-dock"]')).toBeNull()
+  })
+
   const overlayDetails = (id: string, name: string) => ({
     id,
     name,

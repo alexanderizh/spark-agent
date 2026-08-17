@@ -35,7 +35,7 @@ const OVERLAY_VIEWPORT_MARGIN = 8
 /** panel dock 宽度全局记忆。 */
 const PANEL_WIDTH_KEY = 'spark-agent:subapp-panel-width'
 const PANEL_WIDTH_MIN = 280
-const PANEL_WIDTH_MAX = 560
+const PANEL_WIDTH_MAX = 960
 const PANEL_WIDTH_DEFAULT = 360
 
 function readPanelWidth(): number {
@@ -43,7 +43,9 @@ function readPanelWidth(): number {
   if (!Number.isFinite(raw) || raw < PANEL_WIDTH_MIN || raw > PANEL_WIDTH_MAX) {
     return PANEL_WIDTH_DEFAULT
   }
-  return raw
+  // 已存宽度仍需受当前视口约束：小窗口下不超视口的 80%，且不跌破最小宽
+  const viewportCap = Math.max(PANEL_WIDTH_MIN, Math.round(window.innerWidth * 0.8))
+  return Math.min(raw, viewportCap)
 }
 
 interface OverlayGeometry {
@@ -464,9 +466,10 @@ function SubAppPanelDock({
   const onResizeMove = (event: React.PointerEvent<HTMLDivElement>): void => {
     const drag = resizeState.current
     if (drag == null) return
-    // 右侧 dock：向左拖（clientX 减小）加宽
+    // 右侧 dock：向左拖（clientX 减小）加宽；上限取常量与视口 80% 的较小者
+    const viewportCap = Math.max(PANEL_WIDTH_MIN, Math.round(window.innerWidth * 0.8))
     const next = drag.baseWidth + (drag.startX - event.clientX)
-    setWidth(Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, next)))
+    setWidth(Math.min(Math.min(PANEL_WIDTH_MAX, viewportCap), Math.max(PANEL_WIDTH_MIN, next)))
   }
   const onResizeUp = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (resizeState.current != null) {
@@ -483,6 +486,22 @@ function SubAppPanelDock({
       // capture 已释放时忽略
     }
   }
+
+  // ESC 关闭：dock 是常驻右侧的浮层，键盘关闭与头部 ✕ 等价。
+  // 限制：焦点在子应用 iframe 内时按键不冒泡到宿主文档，ESC 不生效；
+  // isComposing 时是输入法取消候选词，不当作关闭。
+  // 宿主 antd 弹窗（Modal/Drawer）开着时让 ESC 只关弹窗，不连坐关闭侧板
+  // （弹窗默认按需挂载，关闭后节点即卸载，存在即视为打开）。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.isComposing) return
+      const hostOverlayOpen = document.querySelector('.ant-modal-wrap, .ant-drawer-content') != null
+      if (hostOverlayOpen) return
+      controller.close(instance.key)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [controller, instance.key])
 
   // 统一侧面板菜单：dock 头部列出所有已启用的侧板应用，点击切换
   // （panel 容量 1，后开替换当前实例）。
