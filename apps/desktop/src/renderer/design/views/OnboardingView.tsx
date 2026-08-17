@@ -267,8 +267,8 @@ const visualByStep: Record<
   },
   'model-source': {
     kicker: 'Model',
-    title: '一个账号，直接开始',
-    caption: '登录后即可使用 Spark 模型。',
+    title: '填好 API Key，直接开始',
+    caption: '使用已有第三方模型密钥，安全保存在本机。',
     stat: '',
     points: [],
   },
@@ -935,28 +935,30 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
   return (
     <>
       <h1>选择你的 AI 模型</h1>
-      <p className="lead">推荐使用 Spark 账号，也可以接入已有模型。</p>
+      <p className="lead">
+        推荐使用已有的第三方模型 API Key，也可以登录 Spark 账号或连接本机工具。
+      </p>
       <div className="source-list source-list-minimal">
         <div className="source-primary">
-          <Icons.User size={22} />
+          <Icons.Server size={22} />
           <div className="source-primary-copy">
             <div className="source-primary-title">
-              <strong>Spark 账号</strong>
+              <strong>第三方模型</strong>
               <em>推荐</em>
             </div>
-            <span>登录即可使用，无需配置</span>
+            <span>使用已有 API Key，密钥只保存在本机</span>
           </div>
           <Button
             type="primary"
             onClick={() =>
               dispatch({
                 type: 'set-model-source',
-                modelSource: 'spark-account',
-                step: 'spark-account',
+                modelSource: 'third-party-provider',
+                step: 'third-party-provider',
               })
             }
           >
-            登录并继续
+            填写 API Key
           </Button>
         </div>
         <button
@@ -965,15 +967,15 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
           onClick={() =>
             dispatch({
               type: 'set-model-source',
-              modelSource: 'third-party-provider',
-              step: 'third-party-provider',
+              modelSource: 'spark-account',
+              step: 'spark-account',
             })
           }
         >
-          <Icons.Server size={22} />
+          <Icons.User size={22} />
           <div>
-            <strong>第三方模型</strong>
-            <span>使用已有 API Key</span>
+            <strong>Spark 账号</strong>
+            <span>登录即可使用，无需配置</span>
           </div>
           <span className="source-row-arrow" aria-hidden="true">
             ›
