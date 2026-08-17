@@ -4616,7 +4616,9 @@ body.sidebar-resizing {
   flex: 0 0 auto;
   margin-top: 4px;
   padding-top: 4px;
-  background: var(--panel);
+  /* 不单独设背景：跟随弹窗主体（.composer-menu）的底色。
+   * 显式 background: var(--panel) 在 --panel 为半透明的场景（如空状态首页主题）
+   * 会在主体之上再叠一层半透明色，形成"底部更暗"的色块。 */
 }
 .composer-project-group-header {
   padding: 8px 12px 4px;
