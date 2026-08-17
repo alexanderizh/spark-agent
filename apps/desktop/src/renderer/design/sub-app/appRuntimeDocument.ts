@@ -1,5 +1,5 @@
 import type { HtmlRenderTheme } from '@spark/shared'
-import { SUB_APP_PROTOCOL_VERSION } from '@spark/protocol'
+import { SUB_APP_PROTOCOL_VERSION, type SubAppSurface } from '@spark/protocol'
 
 export const MAX_SUB_APP_SOURCE_LENGTH = 200_000
 
@@ -21,12 +21,34 @@ export interface SubAppBootstrapConfig {
   versionId: string
   instanceId: string
   mode: 'draft' | 'published'
+  surface: SubAppSurface
 }
 
 export interface BuildAppRuntimeDocumentInput {
   source: string
   theme: HtmlRenderTheme
   config: SubAppBootstrapConfig
+}
+
+/**
+ * 小窗口 surface（panel / overlay / global-window / desktop-pet）的铺满兜底。
+ *
+ * 应用源码普遍不写「铺满容器」样式（根容器 max-width 居中、body 不设高度），
+ * 在固定尺寸的浮窗/侧板里会出现应用主体比容器小一圈的观感。宿主在应用源码
+ * 之后注入以下带 !important 的样式强制铺满：
+ *   - html 锁定视口高度，body 至少铺满（保留内容超高的文档流滚动）；
+ *   - body 的首个元素级子节点（应用根容器）横向铺满、去 max-width 与外边距、
+ *     最小高度铺满——只兜底「没写铺满」的应用，不锁死固定高度，长内容仍可滚动。
+ * content surface（全屏内容区）不注入：居中窄栏是全屏下的合理排版。
+ */
+const SURFACE_FILL_STYLE =
+  '<style>html{height:100%!important}body{width:100%!important;min-height:100%!important;margin:0!important}body>*:first-child{width:100%!important;max-width:none!important;min-height:100%!important;margin:0!important}</style>'
+
+/** 在 `</body>` 前追加片段；无 body 闭合标签时追加到文档末尾。 */
+function appendBeforeBodyEnd(doc: string, snippet: string): string {
+  const bodyClose = doc.toLowerCase().lastIndexOf('</body>')
+  if (bodyClose >= 0) return `${doc.slice(0, bodyClose)}${snippet}${doc.slice(bodyClose)}`
+  return `${doc}${snippet}`
 }
 
 /**
@@ -47,11 +69,13 @@ export function buildAppRuntimeDocument(input: BuildAppRuntimeDocumentInput): st
     `<meta http-equiv="Content-Security-Policy" content="${SUB_APP_RUNTIME_CSP}">`,
     `<meta name="color-scheme" content="${theme}">`,
     `<meta name="spark-app-mode" content="${config.mode}">`,
-    `<style>html,body{min-height:100%;margin:0}html{color-scheme:${theme}}body{box-sizing:border-box;overflow:auto;background:transparent}</style>`,
+    // html 锁定视口高度后 body 的 min-height:100% 才能解析（否则标准模式下按 auto 处理）
+    `<style>html{height:100%}body{min-height:100%;margin:0}html{color-scheme:${theme}}body{box-sizing:border-box;overflow:auto;background:transparent}</style>`,
     `<script>${buildBootstrapScript(config)}</script>`,
   ].join('')
 
   const documentMatch = source.match(/<html(?:\s[^>]*)?>/i)
+  let doc: string
   if (documentMatch != null) {
     const documentIndex = documentMatch.index ?? 0
     const htmlTag = documentMatch[0].includes('data-spark-theme=')
@@ -61,14 +85,18 @@ export function buildAppRuntimeDocument(input: BuildAppRuntimeDocumentInput): st
     const headMatch = themed.match(/<head(?:\s[^>]*)?>/i)
     if (headMatch?.index != null) {
       const insertAt = headMatch.index + headMatch[0].length
-      return `${themed.slice(0, insertAt)}${head}${themed.slice(insertAt)}`
+      doc = `${themed.slice(0, insertAt)}${head}${themed.slice(insertAt)}`
+    } else {
+      const themedTag = themed.match(/<html(?:\s[^>]*)?>/i)
+      const insertAt =
+        themedTag?.index != null ? themedTag.index + themedTag[0].length : documentIndex
+      doc = `${themed.slice(0, insertAt)}<head>${head}</head>${themed.slice(insertAt)}`
     }
-    const themedTag = themed.match(/<html(?:\s[^>]*)?>/i)
-    const insertAt =
-      themedTag?.index != null ? themedTag.index + themedTag[0].length : documentIndex
-    return `${themed.slice(0, insertAt)}<head>${head}</head>${themed.slice(insertAt)}`
+  } else {
+    doc = `<!doctype html><html data-spark-theme="${theme}"><head>${head}</head><body>${source}</body></html>`
   }
-  return `<!doctype html><html data-spark-theme="${theme}"><head>${head}</head><body>${source}</body></html>`
+  // 小窗口 surface 的铺满兜底放在应用源码之后：!important 需后置于应用声明才能稳定生效
+  return config.surface === 'content' ? doc : appendBeforeBodyEnd(doc, SURFACE_FILL_STYLE)
 }
 
 /**

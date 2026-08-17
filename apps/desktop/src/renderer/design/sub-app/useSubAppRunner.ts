@@ -134,10 +134,10 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
       buildAppRuntimeDocument({
         source,
         theme: resolvedThemeRef.current,
-        config: { appId, versionId, instanceId, mode },
+        config: { appId, versionId, instanceId, mode, surface: manifest.surface },
       }),
-    // 文档只随源码/实例变化重建；主题走 postMessage 热推送。
-    [source, instanceId, appId, versionId, mode],
+    // 文档只随源码/实例/surface 变化重建；主题走 postMessage 热推送。
+    [source, instanceId, appId, versionId, mode, manifest.surface],
   )
 
   const [frameSrc, setFrameSrc] = React.useState<string | null>(null)

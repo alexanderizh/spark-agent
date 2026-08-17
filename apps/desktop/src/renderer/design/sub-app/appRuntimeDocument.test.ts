@@ -7,6 +7,7 @@ const baseConfig = {
   versionId: 'draft-0b6f6c46',
   instanceId: 'inst-0001',
   mode: 'draft' as const,
+  surface: 'content' as const,
 }
 
 describe('buildAppRuntimeDocument', () => {
@@ -80,5 +81,40 @@ describe('buildAppRuntimeDocument', () => {
         config: baseConfig,
       }),
     ).toThrow(/上限/)
+  })
+
+  it('小窗口 surface 注入铺满兜底样式，且位于应用源码之后', () => {
+    const source =
+      '<!doctype html><html><head><style>#app{max-width:480px;margin:0 auto}</style></head><body><div id="app">x</div></body></html>'
+    const doc = buildAppRuntimeDocument({
+      source,
+      theme: 'dark',
+      config: { ...baseConfig, surface: 'overlay' },
+    })
+    // 铺满兜底：html/body 铺满 + 应用根容器去 max-width、最小高度铺满
+    expect(doc).toContain('body>*:first-child{width:100%!important;max-width:none!important')
+    expect(doc).toContain('html{height:100%!important}')
+    // 注入在应用源码之后（!important 后置才能稳定覆盖应用声明）
+    expect(doc.indexOf('max-width:none!important')).toBeGreaterThan(doc.indexOf('max-width:480px'))
+    // 注入到 </body> 之前，不破坏文档结构
+    expect(doc.indexOf('body>*:first-child')).toBeLessThan(doc.toLowerCase().lastIndexOf('</body>'))
+  })
+
+  it('content surface 不注入铺满兜底（全屏下居中排版合法）', () => {
+    const doc = buildAppRuntimeDocument({
+      source: '<div id="app">x</div>',
+      theme: 'dark',
+      config: baseConfig,
+    })
+    expect(doc).not.toContain('max-width:none!important')
+  })
+
+  it('片段源码在小窗口 surface 同样注入铺满兜底', () => {
+    const doc = buildAppRuntimeDocument({
+      source: '<div id="app">x</div>',
+      theme: 'light',
+      config: { ...baseConfig, surface: 'panel' },
+    })
+    expect(doc).toContain('body>*:first-child{width:100%!important')
   })
 })
