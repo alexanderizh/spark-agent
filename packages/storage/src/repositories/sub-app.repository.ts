@@ -282,10 +282,12 @@ export class SubAppRepository extends BaseRepository {
           current.icon,
           now,
         )
+      // 发布即启用：菜单只显示「已发布 + 已启用」，若发布后仍为禁用，
+      // 用户还得再手动开一次开关才可见——不符合直觉。禁用可随时再关。
       const updateResult = this.raw
         .prepare(
           `UPDATE sub_apps
-           SET publication_status = 'published', published_release_id = ?, updated_at = ?
+           SET publication_status = 'published', published_release_id = ?, enabled = 1, updated_at = ?
            WHERE id = ? AND draft_revision = ?`,
         )
         .run(releaseId, now, id, expectedDraftRevision)
@@ -300,9 +302,9 @@ export class SubAppRepository extends BaseRepository {
     if (current.publication_status === 'archived' && enabled) {
       throw new SubAppStateError('已归档的子应用不能直接启用，请先恢复到草稿或发布状态。')
     }
-    if (enabled && current.publication_status !== 'published') {
-      throw new SubAppStateError('只有已发布的子应用才能启用。')
-    }
+    // 菜单可见性由 list({menuOnly}) 的 published+enabled 双条件保证，
+    // 这里不再限制「仅已发布可启用」——否则草稿态应用一旦禁用就无法恢复，
+    // 形成状态死角。
     this.raw
       .prepare('UPDATE sub_apps SET enabled = ?, updated_at = ? WHERE id = ?')
       .run(enabled ? 1 : 0, new Date().toISOString(), id)

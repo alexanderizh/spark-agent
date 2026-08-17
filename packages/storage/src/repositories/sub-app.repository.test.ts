@@ -72,9 +72,13 @@ describe('SubAppRepository', () => {
     const app = repository.create({ name: '菜单应用' })
     expect(repository.list({ menuOnly: true }).items).toHaveLength(0)
 
+    // 发布即启用：菜单立即可见，无需再手动开启用开关
     repository.publish(app.id, 1)
-    expect(repository.list({ menuOnly: true }).items).toHaveLength(0)
+    expect(repository.list({ menuOnly: true }).items.map((item) => item.id)).toEqual([app.id])
 
+    // 禁用后从菜单隐藏，重新启用恢复
+    repository.setEnabled(app.id, false)
+    expect(repository.list({ menuOnly: true }).items).toHaveLength(0)
     repository.setEnabled(app.id, true)
     expect(repository.list({ menuOnly: true }).items.map((item) => item.id)).toEqual([app.id])
 
