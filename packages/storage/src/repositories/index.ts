@@ -157,6 +157,22 @@ export type {
 } from './plugin.repository.js'
 export { SettingsRepository } from './settings.repository.js'
 export type { SettingsRow } from './settings.repository.js'
+export {
+  SubAppRepository,
+  SubAppConflictError,
+  SubAppDataConflictError,
+  SubAppDataValidationError,
+  SubAppNotFoundError,
+  SubAppReleaseNotFoundError,
+  SubAppStateError,
+} from './sub-app.repository.js'
+export type {
+  CreateSubAppParams,
+  SubAppDataRow,
+  SubAppListPage,
+  SubAppReleaseRow,
+  SubAppRow,
+} from './sub-app.repository.js'
 export { UsageLedgerRepository } from './usage-ledger.repository.js'
 export type {
   UsageLedgerRow,

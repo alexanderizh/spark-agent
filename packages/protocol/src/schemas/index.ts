@@ -41,6 +41,7 @@ import { DeliberationIpcSchemaRegistry } from '../deliberation.js'
 import { CrossSessionCollaborationIpcSchemaRegistry } from '../cross-session-collaboration.js'
 import { EvidenceCostIpcSchemaRegistry } from '../evidence-cost.js'
 import { ReplayIpcSchemaRegistry } from '../replay-playbook.js'
+import { SubAppIpcSchemaRegistry } from '../sub-app.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -279,7 +280,9 @@ export const SessionSendTurnRequestSchema = z.object({
     )
     .max(10)
     .superRefine((references, context) => {
-      if (new Set(references.map((reference) => reference.sourceSessionId)).size !== references.length) {
+      if (
+        new Set(references.map((reference) => reference.sourceSessionId)).size !== references.length
+      ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'sessionReferences must not contain duplicate source sessions',
@@ -971,6 +974,7 @@ export const IpcSchemaRegistry = {
   ...CrossSessionCollaborationIpcSchemaRegistry,
   ...EvidenceCostIpcSchemaRegistry,
   ...ReplayIpcSchemaRegistry,
+  ...SubAppIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,
@@ -979,10 +983,9 @@ export const IpcSchemaRegistry = {
     modelIds: z.array(z.string().min(1).max(200)).min(1).max(200),
     defaultModel: z.string().min(1).max(200),
     contextWindow: z.number().int().min(0).max(10_000_000).optional(),
-    modelContextWindows: z.record(
-      z.string().min(1).max(200),
-      z.number().int().min(1_024).max(10_000_000),
-    ).optional(),
+    modelContextWindows: z
+      .record(z.string().min(1).max(200), z.number().int().min(1_024).max(10_000_000))
+      .optional(),
   }),
   'platform-model:refresh-catalog': z.object({
     force: z.boolean().optional(),

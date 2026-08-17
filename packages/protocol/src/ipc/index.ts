@@ -98,6 +98,7 @@ import type {
   ApplicationSnapshotIpcChannelMap,
   ComputerUseIpcChannelMap,
 } from '../computer-use/ipc.js'
+import type { SubAppIpcChannelMap } from '../sub-app.js'
 import type { ComputerUseEvent } from '../computer-use/events.js'
 import type { AppControlCommandRequest } from '../computer-use/action.js'
 import type {
@@ -5715,7 +5716,8 @@ export interface IpcChannelMap
     TaskGraphIpcChannelMap,
     DeliberationIpcChannelMap,
     EvidenceCostIpcChannelMap,
-    ReplayPlaybookIpcChannelMap {
+    ReplayPlaybookIpcChannelMap,
+    SubAppIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]

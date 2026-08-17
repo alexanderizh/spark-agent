@@ -321,6 +321,7 @@ import type {
 } from './remote-command-utils.js'
 import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
 import { registerPluginRuntimeIpc } from '../services/PluginRuntime/registerPluginRuntimeIpc.js'
+import { registerSubAppIpc } from './registerSubAppIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { getWindowForIpcSender } from './window-controls.js'
@@ -9037,6 +9038,7 @@ export function registerAllIpcHandlers(): void {
   registerApplicationSnapshotIpc()
   registerSidebarOrderIpc()
   registerPluginIpc()
+  registerSubAppIpc()
 
   log.info('All IPC handlers registered')
 }
