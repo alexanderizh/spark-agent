@@ -129,9 +129,7 @@ export interface CommandDefinition {
 
 /** 命令执行所需的外部依赖（由 SessionService 注入） */
 export interface CommandDeps {
-  getSession: (
-    id: string,
-  ) => {
+  getSession: (id: string) => {
     title: string
     status: string
     modelId: string | null
@@ -165,9 +163,7 @@ export interface CommandDeps {
   listSkills?: (
     query?: string,
   ) => Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }>
-  getSessionRuntimeInfo?: (
-    sessionId: string,
-  ) => {
+  getSessionRuntimeInfo?: (sessionId: string) => {
     providerProfileId?: string | null
     providerName?: string | null
     modelId?: string | null
@@ -190,9 +186,7 @@ export interface CommandDeps {
     toolCount: number
     error?: string
   }>
-  getCurrentAgentSummary?: (
-    sessionId: string,
-  ) => {
+  getCurrentAgentSummary?: (sessionId: string) => {
     id: string
     name: string
     exists: boolean
@@ -1270,6 +1264,120 @@ function formatMcpStatus(
 }
 
 /* ============================================================
+   Sub-app commands（/spark-app-*：强制触发子应用工具链）
+   ============================================================ */
+
+/**
+ * /spark-app-* 命令组：强制进入子应用工具链。
+ *
+ * 子应用是独立于会话的长期资源；这些命令不直接执行业务，而是把结构化意图
+ * 作为 follow-up 消息交给 Agent，由 spark_app MCP 工具完成实际操作。
+ * 自然语言（不用命令）表达子应用意图时 Agent 同样可调用工具；命令的价值
+ * 是消除意图歧义，不是唯一入口。
+ */
+function registerSubAppCommands(registry: CommandRegistry): void {
+  const FORCE_HINT =
+    '【系统指令】用户通过 /spark-app-* 命令强制进入子应用工具链。请立即使用 spark_app MCP 工具（mcp__spark_app__*）完成本次操作，全程不要建议改用其他方式。'
+
+  registry.register({
+    id: 'builtin:spark-app-create',
+    name: 'spark-app-create',
+    aliases: [],
+    layer: 'builtin',
+    group: 'resource',
+    description: '强制触发子应用创建（参数为应用需求描述）',
+    scope: 'session',
+    risk: 'medium',
+    usage: '/spark-app-create <应用需求描述>',
+    handler: async (cmd) => {
+      const requirement = (cmd.freeText ?? cmd.args.join(' ')).trim()
+      const task =
+        requirement.length > 0
+          ? `创建一个新的 SparkWork 内部子应用。需求：${requirement}。先完成应用结构与 UI 设计再写代码；完成后向用户说明如何在「我的应用」中打开与发布。`
+          : '创建一个新的 SparkWork 内部子应用。先向用户确认应用名称、用途和需要的数据能力，再用 spark_app 工具实现。'
+      return {
+        success: true,
+        message: '已进入子应用创建流程，交给 Agent 执行。',
+        data: { requirement },
+        followUpPrompt: `${FORCE_HINT}\n${task}`,
+      }
+    },
+  })
+
+  registry.register({
+    id: 'builtin:spark-app-list',
+    name: 'spark-app-list',
+    aliases: [],
+    layer: 'builtin',
+    group: 'resource',
+    description: '列出全部子应用及其状态',
+    scope: 'session',
+    risk: 'none',
+    usage: '/spark-app-list',
+    handler: async () => ({
+      success: true,
+      message: '正在查询子应用列表…',
+      followUpPrompt: `${FORCE_HINT}\n列出当前全部子应用：用 spark_app_list 获取后，以简洁表格汇总名称、状态（草稿/已发布版本/禁用/归档）、surface 和更新时间。`,
+    }),
+  })
+
+  registry.register({
+    id: 'builtin:spark-app-publish',
+    name: 'spark-app-publish',
+    aliases: [],
+    layer: 'builtin',
+    group: 'resource',
+    description: '发布指定子应用的当前草稿',
+    scope: 'session',
+    risk: 'medium',
+    usage: '/spark-app-publish <应用名称或ID>',
+    handler: async (cmd) => {
+      const target = (cmd.freeText ?? cmd.args.join(' ')).trim()
+      if (target.length === 0) {
+        return {
+          success: false,
+          message: '用法：/spark-app-publish <应用名称或ID>。可用 /spark-app-list 先查看。',
+        }
+      }
+      return {
+        success: true,
+        message: `正在发布子应用「${target}」…`,
+        data: { target },
+        followUpPrompt: `${FORCE_HINT}\n发布子应用「${target}」的当前草稿：先解析目标是名称还是 appId（必要时用 spark_app_list 匹配，多个同名应用时向用户确认），确认草稿状态后执行发布，并汇报新版本号。`,
+      }
+    },
+  })
+
+  registry.register({
+    id: 'builtin:spark-app',
+    name: 'spark-app',
+    aliases: ['app'],
+    layer: 'builtin',
+    group: 'resource',
+    description: '子应用通用入口：修改/回滚/禁用/删除/数据操作等，参数为自然语言指令',
+    scope: 'session',
+    risk: 'medium',
+    usage: '/spark-app <自然语言指令>',
+    handler: async (cmd) => {
+      const instruction = (cmd.freeText ?? cmd.args.join(' ')).trim()
+      if (instruction.length === 0) {
+        return {
+          success: false,
+          message:
+            '用法：/spark-app <指令>。例如：/spark-app 修改记账应用增加月度统计；/spark-app 禁用项目看板。也可用 /spark-app-create、/spark-app-list、/spark-app-publish。',
+        }
+      }
+      return {
+        success: true,
+        message: '已进入子应用工具链，交给 Agent 执行。',
+        data: { instruction },
+        followUpPrompt: `${FORCE_HINT}\n${instruction}`,
+      }
+    },
+  })
+}
+
+/* ============================================================
    Registry Factory
    ============================================================ */
 
@@ -1278,5 +1386,6 @@ export function createBuiltinRegistry(): CommandRegistry {
   const registry = new CommandRegistry()
   registerSdkCommands(registry)
   registerBuiltinCommands(registry)
+  registerSubAppCommands(registry)
   return registry
 }

@@ -5,7 +5,7 @@
  * - buildImageGenerationSystemPrompt：图片生成 system prompt 模板
  * - mergeUniqueStrings：去重合并（通用工具）
  * - extractPresentedFiles / parsePresentedFilesPayload：从 present_files 工具结果里提取文件
- * - resolve*McpServerPath：8 个内置 MCP server 路径解析（image / media / platform / web / memory / canvas / debug）
+ * - resolve*McpServerPath：9 个内置 MCP server 路径解析（image / media / platform / web / memory / canvas / debug / sub-app）
  * - resolvePresentFilesMcpServer：present_files MCP server 配置（返回 SDKMcpServerConfig）
  * - *_TOOL_NAMES：SDK 命名空间的工具白名单（platform / search / present_files / validation / debug）
  * - *_SYSTEM_PROMPT / *_TOOL_DESCRIPTION：相关 system prompt 片段
@@ -460,6 +460,10 @@ export function resolveSparkSessionMcpServerPath(): string | null {
   return resolveRuntimeToolPath('spark-session-mcp-server.mjs')
 }
 
+export function resolveSubAppMcpServerPath(): string | null {
+  return resolveRuntimeToolPath('sub-app-mcp-server.mjs')
+}
+
 export function resolveSparkCanvasMcpServerPath(): string | null {
   return resolveRuntimeToolPath('spark-canvas-mcp-server.mjs')
 }
@@ -503,6 +507,33 @@ export function resolveDebugMcpServerPath(): string | null {
 export const SEARCH_TOOL_NAMES: string[] = [
   'mcp__spark_search__web_search',
   'mcp__spark_search__fetch_url',
+]
+
+/**
+ * All sub app management tool names (SDK namespace: mcp__spark_app__).
+ *
+ * The spark_app MCP server (`packages/agent-runtime/src/tools/sub-app-mcp-server.mjs`)
+ * exposes this set; if you add a new tool to `toolDefinitions()` in that file,
+ * also append its SDK-namespaced name here, otherwise Claude SDK will refuse
+ * to dispatch the tool call (it filters by the `allowedTools` allow-list).
+ */
+export const SUB_APP_TOOL_NAMES: string[] = [
+  // 应用生命周期
+  'mcp__spark_app__spark_app_create',
+  'mcp__spark_app__spark_app_list',
+  'mcp__spark_app__spark_app_get',
+  'mcp__spark_app__spark_app_update_draft',
+  'mcp__spark_app__spark_app_publish',
+  'mcp__spark_app__spark_app_list_releases',
+  'mcp__spark_app__spark_app_rollback',
+  'mcp__spark_app__spark_app_set_enabled',
+  'mcp__spark_app__spark_app_archive',
+  'mcp__spark_app__spark_app_delete',
+  // 应用数据命名空间
+  'mcp__spark_app__spark_app_data_get',
+  'mcp__spark_app__spark_app_data_list',
+  'mcp__spark_app__spark_app_data_set',
+  'mcp__spark_app__spark_app_data_delete',
 ]
 
 export const PRESENT_FILES_TOOL_NAMES = [

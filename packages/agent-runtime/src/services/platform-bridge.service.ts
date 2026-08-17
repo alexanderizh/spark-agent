@@ -25,6 +25,8 @@ import {
   type SparkInstallArtifact,
 } from './skill-registry/artifact-manifest.js'
 import type { SkillItem, ProviderIconConfig, ProviderProfile } from '@spark/protocol'
+import { SUB_APP_SURFACES, type SubAppSurface } from '@spark/protocol'
+import type { SubAppDraftPatch, SubAppListRequest } from '@spark/protocol'
 import {
   isMediaApiType,
   isMediaCapabilityId,
@@ -45,7 +47,16 @@ import type { UpdateWorkflowParams } from '@spark/storage'
 import type { AgentRepository } from '@spark/storage'
 import type { UpdateAgentParams } from '@spark/storage'
 import type { SettingsRepository } from '@spark/storage'
+import type { SubAppRepository } from '@spark/storage'
 import type { TeamDefinitionRepository } from '@spark/storage'
+import {
+  SubAppConflictError,
+  SubAppDataConflictError,
+  SubAppDataValidationError,
+  SubAppNotFoundError,
+  SubAppReleaseNotFoundError,
+  SubAppStateError,
+} from '@spark/storage'
 import type { GitHubConnectorService } from './github-connector.service.js'
 import type { PluginManager } from './plugins/plugin-manager.service.js'
 import { ProviderService } from './provider.service.js'
@@ -377,6 +388,8 @@ export interface PlatformBridgeDeps {
   agentRepo: AgentRepository
   teamRepo: TeamDefinitionRepository
   settingsRepo: SettingsRepository
+  /** 自定义子应用仓库（spark_app MCP 桥的 subapp.* RPC 直访）。 */
+  subAppRepo: SubAppRepository
   pluginManager: PluginManager
   githubConnectorService: GitHubConnectorService
   sessionScheduleTools: SessionScheduleAgentTools
@@ -829,6 +842,36 @@ export class PlatformBridgeService {
         return this.boardRestore(params)
       case 'board.permanent_delete':
         return this.boardPermanentDelete(params)
+
+      // ── Sub apps（spark_app stdio MCP 子进程走这条路径）──
+      case 'subapp.list':
+        return this.subAppList(d, params)
+      case 'subapp.get':
+        return this.subAppGet(d, params)
+      case 'subapp.create':
+        return this.subAppCreate(d, params)
+      case 'subapp.update_draft':
+        return this.subAppUpdateDraft(d, params)
+      case 'subapp.publish':
+        return this.subAppPublish(d, params)
+      case 'subapp.list_releases':
+        return this.subAppListReleases(d, params)
+      case 'subapp.rollback':
+        return this.subAppRollback(d, params)
+      case 'subapp.set_enabled':
+        return this.subAppSetEnabled(d, params)
+      case 'subapp.archive':
+        return this.subAppArchive(d, params)
+      case 'subapp.delete':
+        return this.subAppDelete(d, params)
+      case 'subapp.data_get':
+        return this.subAppDataGet(d, params)
+      case 'subapp.data_list':
+        return this.subAppDataList(d, params)
+      case 'subapp.data_set':
+        return this.subAppDataSet(d, params)
+      case 'subapp.data_delete':
+        return this.subAppDataDelete(d, params)
 
       default:
         throw new Error(`Unknown method: ${method}`)
@@ -2205,6 +2248,347 @@ export class PlatformBridgeService {
     this.writeBoardTasks(filtered)
     return { success: true }
   }
+
+  // ── Sub app (spark_app) handlers ──
+  //
+  // spark_app stdio MCP 子进程的工具面：直访 SubAppRepository，与桌面端
+  // subAppBackend（apps/desktop/src/main/ipc/subAppBackend.ts）共享同一套草稿
+  // CAS / 数据乐观锁 / 领域错误语义。领域错误统一映射为 SUBAPP_* 前缀后抛出，
+  // stdio 侧据此提示 agent 先 get 再重试，而不是盲目覆盖。
+
+  private subAppList(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return d.subAppRepo.list(parseSubAppListRequest(params))
+  }
+
+  private subAppGet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    const releaseVersion = optionalSubAppInt(params.releaseVersion, 'releaseVersion', 1)
+    try {
+      const details = d.subAppRepo.get(appId, releaseVersion)
+      if (details == null) throw new SubAppNotFoundError()
+      if (releaseVersion !== undefined && details.publishedRelease == null) {
+        throw new SubAppReleaseNotFoundError()
+      }
+      return details
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppCreate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const name = requireText(params, 'name', 120)
+    const description = optionalSubAppText(params.description, 'description', 400)
+    const surface = optionalSubAppSurface(params.surface)
+    const permissions = optionalSubAppPermissions(params.permissions)
+    const source = optionalSubAppText(params.source, 'source', 200_000)
+    const icon = params.icon
+    if (icon !== undefined && icon !== null && typeof icon !== 'string') {
+      throw new Error('icon must be a string or null')
+    }
+    const entry = optionalSubAppText(params.entry, 'entry', 240)
+    try {
+      return d.subAppRepo.create({
+        name,
+        ...(description !== undefined ? { description } : {}),
+        ...(icon !== undefined ? { icon } : {}),
+        ...(entry !== undefined && entry.trim().length > 0 ? { entry } : {}),
+        ...(surface !== undefined ? { surface } : {}),
+        ...(permissions !== undefined ? { permissions } : {}),
+        ...(source !== undefined ? { source } : {}),
+      })
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppUpdateDraft(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    const expectedDraftRevision = requireSubAppRevision(params, 'expectedDraftRevision')
+    const patch = parseSubAppDraftPatch(params.patch)
+    try {
+      const details = d.subAppRepo.updateDraft(appId, expectedDraftRevision, patch)
+      if (details == null) throw new SubAppNotFoundError()
+      return details
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppPublish(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    const expectedDraftRevision = requireSubAppRevision(params, 'expectedDraftRevision')
+    try {
+      const details = d.subAppRepo.publish(appId, expectedDraftRevision)
+      if (details == null) throw new SubAppNotFoundError()
+      return details
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppListReleases(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    const limit = optionalSubAppInt(params.limit, 'limit', 1)
+    const offset = optionalSubAppInt(params.offset, 'offset', 0)
+    try {
+      const page = d.subAppRepo.listReleases(appId, {
+        ...(limit != null ? { limit } : {}),
+        ...(offset != null ? { offset } : {}),
+      })
+      if (page == null) throw new SubAppNotFoundError()
+      return page
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppRollback(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    const releaseVersion = optionalSubAppInt(params.releaseVersion, 'releaseVersion', 1)
+    if (releaseVersion == null) throw new Error('Missing parameter: releaseVersion')
+    const expectedDraftRevision = requireSubAppRevision(params, 'expectedDraftRevision')
+    try {
+      const details = d.subAppRepo.rollbackDraft(appId, releaseVersion, expectedDraftRevision)
+      if (details == null) throw new SubAppNotFoundError()
+      return details
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppSetEnabled(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    if (typeof params.enabled !== 'boolean') throw new Error('Missing parameter: enabled')
+    try {
+      const summary = d.subAppRepo.setEnabled(appId, params.enabled)
+      if (summary == null) throw new SubAppNotFoundError()
+      return summary
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppArchive(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    try {
+      const summary = d.subAppRepo.archive(appId)
+      if (summary == null) throw new SubAppNotFoundError()
+      return summary
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  /**
+   * 删除是破坏性操作（应用 + 全部发布版本 + 应用数据，硬删除）。
+   * 桥接层做幂等收口：应用已不存在时返回 deleted=false 的空操作结果，
+   * 不重复报错——stdio 侧的工具描述已要求 agent 先向用户确认。
+   */
+  private subAppDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    try {
+      const deleted = d.subAppRepo.delete(appId)
+      return deleted
+        ? { deleted: true, appId }
+        : { deleted: false, appId, note: '应用不存在（可能已被删除），本次为幂等空操作。' }
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppDataGet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    const namespace = parseSubAppNamespace(params)
+    const key = requireText(params, 'key', 240)
+    try {
+      return d.subAppRepo.getData(appId, namespace, key)
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppDataList(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    const namespace = parseSubAppNamespace(params)
+    const prefix = optionalSubAppText(params.prefix, 'prefix', 240)
+    const limit = optionalSubAppInt(params.limit, 'limit', 1)
+    const offset = optionalSubAppInt(params.offset, 'offset', 0)
+    try {
+      return d.subAppRepo.listData(appId, namespace, {
+        ...(prefix != null && prefix.length > 0 ? { prefix } : {}),
+        ...(limit != null ? { limit } : {}),
+        ...(offset != null ? { offset } : {}),
+      })
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppDataSet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    const namespace = parseSubAppNamespace(params)
+    const key = requireText(params, 'key', 240)
+    if (!Object.hasOwn(params, 'value')) throw new Error('Missing parameter: value')
+    const expectedRevision = optionalSubAppInt(params.expectedRevision, 'expectedRevision', 1)
+    try {
+      return d.subAppRepo.upsertData(appId, namespace, key, params.value, expectedRevision)
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppDataDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    const namespace = parseSubAppNamespace(params)
+    const key = requireText(params, 'key', 240)
+    const expectedRevision = requireSubAppRevision(params, 'expectedRevision')
+    try {
+      d.subAppRepo.deleteData(appId, namespace, key, expectedRevision)
+      return { deleted: true, appId, namespace, key }
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+}
+
+// ─── Sub app (spark_app) 参数解析与错误映射 ────────────────────────────
+
+/**
+ * 把 SubAppRepository 的领域错误映射为带稳定前缀的 Error（走 bridge 既有
+ * `{ ok:false, error }` 返回约定），stdio 侧与 agent 依据前缀区分：
+ * 未找到（重新核对 appId）/ 冲突（先 get 拿新 revision 再重试）/ 非法（修参数）。
+ */
+function subAppBridgeError(error: unknown): Error {
+  if (error instanceof SubAppNotFoundError || error instanceof SubAppReleaseNotFoundError) {
+    return new Error(`SUBAPP_NOT_FOUND: ${error.message}`)
+  }
+  if (error instanceof SubAppConflictError || error instanceof SubAppDataConflictError) {
+    return new Error(`SUBAPP_CONFLICT: ${error.message}`)
+  }
+  if (error instanceof SubAppStateError || error instanceof SubAppDataValidationError) {
+    return new Error(`SUBAPP_INVALID: ${error.message}`)
+  }
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+/** 可选整数参数：出现但非法时报错（而不是静默丢弃，避免 agent 误以为已生效）。 */
+function optionalSubAppInt(value: unknown, key: string, minimum: number): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < minimum) {
+    throw new Error(`${key} must be an integer >= ${minimum}`)
+  }
+  return value
+}
+
+function requireSubAppRevision(params: Record<string, unknown>, key: string): number {
+  const revision = optionalSubAppInt(params[key], key, 1)
+  if (revision == null) throw new Error(`Missing parameter: ${key}`)
+  return revision
+}
+
+function optionalSubAppText(value: unknown, key: string, maxLength: number): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string') throw new Error(`${key} must be a string`)
+  if (value.length > maxLength) throw new Error(`${key} exceeds maximum length ${maxLength}`)
+  return value
+}
+
+function optionalSubAppSurface(value: unknown): SubAppSurface | undefined {
+  if (value === undefined) return undefined
+  const surface = SUB_APP_SURFACES.find((item) => item === value)
+  if (surface == null) throw new Error(`surface must be one of: ${SUB_APP_SURFACES.join('/')}`)
+  return surface
+}
+
+function optionalSubAppPermissions(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new Error('permissions must be an array of strings')
+  const permissions: string[] = []
+  for (const item of value) {
+    if (typeof item !== 'string') throw new Error('permissions must be an array of strings')
+    if (item.length === 0 || item.length > 80) {
+      throw new Error('each permission must be 1-80 characters')
+    }
+    permissions.push(item)
+  }
+  if (permissions.length > 64) throw new Error('permissions exceeds maximum size 64')
+  return permissions
+}
+
+/** 应用数据命名空间：应用运行时自带 namespace，agent 侧缺省落到 'app'。 */
+function parseSubAppNamespace(params: Record<string, unknown>): string {
+  const namespace = optionalSubAppText(params.namespace, 'namespace', 120)?.trim()
+  return namespace != null && namespace.length > 0 ? namespace : 'app'
+}
+
+function parseSubAppListRequest(params: Record<string, unknown>): SubAppListRequest {
+  const limit = optionalSubAppInt(params.limit, 'limit', 1)
+  const offset = optionalSubAppInt(params.offset, 'offset', 0)
+  const query = optionalSubAppText(params.query, 'query', 120)
+  return {
+    ...(query != null && query.trim().length > 0 ? { query } : {}),
+    ...(params.includeArchived === true ? { includeArchived: true } : {}),
+    ...(params.menuOnly === true ? { menuOnly: true } : {}),
+    ...(limit != null ? { limit } : {}),
+    ...(offset != null ? { offset } : {}),
+  }
+}
+
+/** 草稿 patch 只接受领域已知字段，未知字段直接报错，避免 agent 拼错键名被静默忽略。 */
+function parseSubAppDraftPatch(value: unknown): SubAppDraftPatch {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('patch must be an object')
+  }
+  const input = value as Record<string, unknown>
+  const knownFields = new Set<string>([
+    'name',
+    'description',
+    'icon',
+    'entry',
+    'surface',
+    'permissions',
+    'source',
+    'config',
+  ])
+  for (const key of Object.keys(input)) {
+    if (!knownFields.has(key)) throw new Error(`Unknown patch field: ${key}`)
+  }
+
+  const patch: SubAppDraftPatch = {}
+  const name = optionalSubAppText(input.name, 'name', 120)
+  if (name != null) {
+    if (name.trim().length === 0) throw new Error('name must not be blank')
+    patch.name = name
+  }
+  const description = optionalSubAppText(input.description, 'description', 400)
+  if (description !== undefined) patch.description = description
+  if (input.icon !== undefined) {
+    if (input.icon !== null && typeof input.icon !== 'string') {
+      throw new Error('icon must be a string or null')
+    }
+    if (typeof input.icon === 'string' && input.icon.length > 240) {
+      throw new Error('icon exceeds maximum length 240')
+    }
+    patch.icon = input.icon
+  }
+  const entry = optionalSubAppText(input.entry, 'entry', 240)
+  if (entry != null) {
+    if (entry.trim().length === 0) throw new Error('entry must not be blank')
+    patch.entry = entry
+  }
+  const surface = optionalSubAppSurface(input.surface)
+  if (surface !== undefined) patch.surface = surface
+  const permissions = optionalSubAppPermissions(input.permissions)
+  if (permissions !== undefined) patch.permissions = permissions
+  const source = optionalSubAppText(input.source, 'source', 200_000)
+  if (source !== undefined) patch.source = source
+  if (input.config !== undefined) {
+    if (input.config == null || typeof input.config !== 'object' || Array.isArray(input.config)) {
+      throw new Error('config must be an object')
+    }
+    patch.config = asRecord(input.config)
+  }
+  return patch
 }
 
 /** 截断文本到指定长度，超出加省略号 */

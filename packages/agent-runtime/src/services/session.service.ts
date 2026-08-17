@@ -27,6 +27,7 @@ import {
   ScheduledTaskRepository,
   TaskExecutionRepository,
   SessionCollaborationRepository,
+  SubAppRepository,
 } from '@spark/storage'
 import type {
   AgentItem,
@@ -186,6 +187,7 @@ import {
   DEBUG_TOOL_NAMES,
   DEBUG_MODE_SYSTEM_PROMPT,
   SEARCH_TOOL_NAMES,
+  SUB_APP_TOOL_NAMES,
   PRESENT_FILES_TOOL_NAMES,
   PRESENT_FILES_SYSTEM_PROMPT,
   QUICK_REPLIES_TOOL_NAMES,
@@ -213,6 +215,7 @@ import {
   resolveSparkCanvasMcpServerPath,
   resolveSparkMemoryMcpServerPath,
   resolveSparkSessionMcpServerPath,
+  resolveSubAppMcpServerPath,
   resolveWebSearchMcpServerPath,
 } from './session-mcp-tooling-helpers.js'
 
@@ -2979,6 +2982,7 @@ export class SessionService {
     const platformMcpServer = await this.resolvePlatformManagementMcpServer(sessionId)
     const pluginRuntimeMcp = await this.resolvePluginRuntimeMcpServer(turnId)
     const webSearchMcpServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
+    const subAppMcpServer = await this.resolveSubAppMcpServer(sessionId)
     const presentFilesMcpServer = resolvePresentFilesMcpServer(workspaceRootPath)
     const quickRepliesMcpServer = resolveQuickRepliesMcpServer(workspaceRootPath)
     // 调试模式（per-session 能力开关）：开启时挂载 spark_debug + 注入状态机 prompt。
@@ -3559,6 +3563,7 @@ export class SessionService {
             }
           : {}),
         ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
+        ...(subAppMcpServer != null ? { subAppMcpServer } : {}),
         ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
         ...(quickRepliesMcpServer != null ? { quickRepliesMcpServer } : {}),
         ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
@@ -3710,6 +3715,7 @@ export class SessionService {
           }
         : {}),
       ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
+      ...(subAppMcpServer != null ? { subAppMcpServer } : {}),
       ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
       ...(quickRepliesMcpServer != null ? { quickRepliesMcpServer } : {}),
       ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
@@ -4149,6 +4155,10 @@ export class SessionService {
     if (config.webSearchMcpServer != null) {
       mcpServers.spark_search = config.webSearchMcpServer
     }
+    // Built-in sub app management MCP server (spark_app) — auto-registered for all sessions
+    if (config.subAppMcpServer != null) {
+      mcpServers.spark_app = config.subAppMcpServer
+    }
     if (config.presentFilesMcpServer != null) {
       mcpServers.spark_files = config.presentFilesMcpServer
     }
@@ -4508,6 +4518,9 @@ export class SessionService {
     if (config.webSearchMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, SEARCH_TOOL_NAMES)
     }
+    if (config.subAppMcpServer != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, SUB_APP_TOOL_NAMES)
+    }
     if (config.presentFilesMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PRESENT_FILES_TOOL_NAMES)
     }
@@ -4694,6 +4707,10 @@ export class SessionService {
     }
     if (config.webSearchMcpServer != null) {
       mcpServers.spark_search = config.webSearchMcpServer
+    }
+    // Built-in sub app management MCP server (spark_app) — auto-registered for all sessions
+    if (config.subAppMcpServer != null) {
+      mcpServers.spark_app = config.subAppMcpServer
     }
     if (config.presentFilesMcpServer != null) {
       mcpServers.spark_files = config.presentFilesMcpServer
@@ -5747,6 +5764,8 @@ export class SessionService {
       agentRepo: new AgentRepository(this.db),
       teamRepo: new TeamDefinitionRepository(this.db),
       settingsRepo,
+      // spark_app MCP 桥（subapp.* RPC）直访子应用仓库
+      subAppRepo: new SubAppRepository(this.db),
       pluginManager,
       sessionScheduleTools: new SessionScheduleAgentTools(
         new ScheduledTaskService(
@@ -5795,6 +5814,40 @@ export class SessionService {
     } catch (err) {
       log.warn(
         `Failed to start platform bridge: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return null
+    }
+  }
+
+  /**
+   * 解析自定义子应用 MCP server（spark_app），对所有 session 默认挂载。
+   *
+   * agent 通过它创建/管理/发布自定义子应用（草稿 CAS、发布版本、应用数据）。
+   * stdio 子进程经 PlatformBridgeService 的 subapp.* RPC 回到主进程直访
+   * SubAppRepository，与桌面端 subAppBackend IPC 路径共享同一套语义；
+   * bridge 端口与会话 id 通过环境变量注入（照抄 platform-management 模式）。
+   */
+  private async resolveSubAppMcpServer(sessionId: string): Promise<SDKMcpServerConfig | null> {
+    const serverPath = resolveSubAppMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Sub app MCP server script not found')
+      return null
+    }
+
+    try {
+      const port = await this.ensurePlatformBridge()
+      return {
+        type: 'stdio',
+        command: resolveMcpNodeRuntimeExecutable(),
+        args: [serverPath],
+        env: {
+          SPARK_PLATFORM_BRIDGE_PORT: String(port),
+          SPARK_SESSION_ID: sessionId,
+        },
+      }
+    } catch (err) {
+      log.warn(
+        `Failed to start spark_app MCP server: ${err instanceof Error ? err.message : String(err)}`,
       )
       return null
     }

@@ -743,6 +743,8 @@ export interface SDKExecutorConfig {
   pluginRuntimeToolNames?: string[] | undefined
   /** Built-in web search MCP server (spark_search) — auto-injected for all sessions */
   webSearchMcpServer?: SDKMcpServerConfig | undefined
+  /** Built-in sub app management MCP server (spark_app) — auto-injected for all sessions */
+  subAppMcpServer?: SDKMcpServerConfig | undefined
   /** Built-in user-facing file presentation MCP server (spark_files). */
   presentFilesMcpServer?: SDKMcpServerConfig | undefined
   /** Optional user-facing quick reply MCP server (spark_ui). */

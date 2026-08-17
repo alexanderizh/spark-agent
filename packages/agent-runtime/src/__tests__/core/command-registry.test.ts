@@ -5,7 +5,12 @@ import { parseCommand } from '../../core/command-parser.js'
 
 function makeDeps(overrides: Partial<CommandDeps> = {}): CommandDeps {
   return {
-    getSession: vi.fn(() => ({ title: 'Test', status: 'idle', modelId: null, providerProfileId: 'p1' })),
+    getSession: vi.fn(() => ({
+      title: 'Test',
+      status: 'idle',
+      modelId: null,
+      providerProfileId: 'p1',
+    })),
     updateSession: vi.fn(async () => {}),
     clearSessionEvents: vi.fn(async () => {}),
     getProviderName: vi.fn(() => 'Anthropic'),
@@ -70,7 +75,9 @@ describe('CommandRegistry', () => {
   it('marks compatibility commands as hidden from the command palette', () => {
     const registry = createBuiltinRegistry()
     const items = registry.listItems()
-    const hiddenNames = items.filter((item) => item.palette?.hidden === true).map((item) => item.name)
+    const hiddenNames = items
+      .filter((item) => item.palette?.hidden === true)
+      .map((item) => item.name)
     expect(hiddenNames).toEqual(expect.arrayContaining(['help', 'compact', 'review']))
     expect(items.find((item) => item.name === 'status')?.palette?.hidden).not.toBe(true)
   })
@@ -79,7 +86,12 @@ describe('CommandRegistry', () => {
     const registry = createBuiltinRegistry()
     const beforeCount = registry.list().length
     registry.registerSkillCommands([
-      { id: 'builtin:code-review', name: 'Code Review', description: 'Review code quality', tags: ['review'] },
+      {
+        id: 'builtin:code-review',
+        name: 'Code Review',
+        description: 'Review code quality',
+        tags: ['review'],
+      },
       { id: 'builtin:translate', name: 'Translate', description: 'Translate text', tags: ['i18n'] },
     ])
     const afterCount = registry.list().length
@@ -144,7 +156,12 @@ describe('CommandRegistry', () => {
   it('skill command handler returns followUpSkillId', async () => {
     const registry = createBuiltinRegistry()
     registry.registerSkillCommands([
-      { id: 'builtin:code-review', name: 'Code Review', description: 'Review code', tags: ['review'] },
+      {
+        id: 'builtin:code-review',
+        name: 'Code Review',
+        description: 'Review code',
+        tags: ['review'],
+      },
     ])
     const cmd = registry.get('code-review')!
     const result = await cmd.handler(
@@ -160,11 +177,22 @@ describe('CommandRegistry', () => {
   it('skill command handler uses freeText as followUpPrompt', async () => {
     const registry = createBuiltinRegistry()
     registry.registerSkillCommands([
-      { id: 'builtin:code-review', name: 'Code Review', description: 'Review code', tags: ['review'] },
+      {
+        id: 'builtin:code-review',
+        name: 'Code Review',
+        description: 'Review code',
+        tags: ['review'],
+      },
     ])
     const cmd = registry.get('code-review')!
     const result = await cmd.handler(
-      { name: 'code-review', args: [], flags: {}, targets: [], freeText: 'check the auth module for security issues' } as any,
+      {
+        name: 'code-review',
+        args: [],
+        flags: {},
+        targets: [],
+        freeText: 'check the auth module for security issues',
+      } as any,
       { sessionId: 'sess-1' },
       makeDeps(),
     )
@@ -176,9 +204,33 @@ describe('CommandRegistry', () => {
   it('registerCustomCommands adds valid enabled commands and skips invalid entries', () => {
     const registry = createBuiltinRegistry()
     registry.registerCustomCommands([
-      { id: 'plan', name: '/custom-plan', description: 'Plan work', prompt: 'Create a plan', script: '', scriptLanguage: 'javascript', enabled: true },
-      { id: 'bad', name: '/1-invalid', description: 'Invalid', prompt: 'No-op', script: '', scriptLanguage: 'python', enabled: true },
-      { id: 'disabled', name: '/disabled-command', description: 'Disabled', prompt: 'No-op', script: '', scriptLanguage: 'python', enabled: false },
+      {
+        id: 'plan',
+        name: '/custom-plan',
+        description: 'Plan work',
+        prompt: 'Create a plan',
+        script: '',
+        scriptLanguage: 'javascript',
+        enabled: true,
+      },
+      {
+        id: 'bad',
+        name: '/1-invalid',
+        description: 'Invalid',
+        prompt: 'No-op',
+        script: '',
+        scriptLanguage: 'python',
+        enabled: true,
+      },
+      {
+        id: 'disabled',
+        name: '/disabled-command',
+        description: 'Disabled',
+        prompt: 'No-op',
+        script: '',
+        scriptLanguage: 'python',
+        enabled: false,
+      },
     ])
 
     expect(registry.get('custom-plan')?.layer).toBe('custom')
@@ -190,7 +242,15 @@ describe('CommandRegistry', () => {
   it('custom prompt command returns followUpPrompt with arguments', async () => {
     const registry = createBuiltinRegistry()
     registry.registerCustomCommands([
-      { id: 'plan', name: '/custom-plan', description: 'Plan work', prompt: 'Create a plan', script: '', scriptLanguage: 'javascript', enabled: true },
+      {
+        id: 'plan',
+        name: '/custom-plan',
+        description: 'Plan work',
+        prompt: 'Create a plan',
+        script: '',
+        scriptLanguage: 'javascript',
+        enabled: true,
+      },
     ])
 
     const result = await registry.execute(parse('/custom-plan auth refactor'), ctx, makeDeps())
@@ -203,10 +263,22 @@ describe('CommandRegistry', () => {
     const execShell = vi.fn(async () => ({ stdout: 'ok', stderr: '', exitCode: 0 }))
     const registry = createBuiltinRegistry()
     registry.registerCustomCommands([
-      { id: 'script', name: '/custom-script', description: 'Run script', prompt: '', script: 'console.log(process.argv[2])', scriptLanguage: 'javascript', enabled: true },
+      {
+        id: 'script',
+        name: '/custom-script',
+        description: 'Run script',
+        prompt: '',
+        script: 'console.log(process.argv[2])',
+        scriptLanguage: 'javascript',
+        enabled: true,
+      },
     ])
 
-    const result = await registry.execute(parse('/custom-script hello'), ctx, makeDeps({ execShell }))
+    const result = await registry.execute(
+      parse('/custom-script hello'),
+      ctx,
+      makeDeps({ execShell }),
+    )
     expect(result.success).toBe(true)
     expect(result.message).toContain('stdout')
     expect(execShell).toHaveBeenCalledWith(expect.stringContaining('node'), undefined)
@@ -302,7 +374,11 @@ describe('Built-in commands', () => {
 
   it('/goal status surfaces a pending acceptance contract', async () => {
     const deps = makeDeps({
-      getGoal: vi.fn(() => ({ id: 'goal-1', status: 'pending_contract', successCriteria: ['builds pass', 'tests green'] })),
+      getGoal: vi.fn(() => ({
+        id: 'goal-1',
+        status: 'pending_contract',
+        successCriteria: ['builds pass', 'tests green'],
+      })),
     })
     const result = await registry.execute(parse('/goal status'), ctx, deps)
     expect(result.success).toBe(true)
@@ -382,24 +458,32 @@ describe('Built-in commands', () => {
   })
 
   it('/doctor reports missing workspace', async () => {
-    const result = await registry.execute(parse('/doctor'), ctx, makeDeps({
-      getWorkspacePath: () => null,
-      execShell: vi.fn(async (command: string) => ({
-        stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
-        stderr: '',
-        exitCode: 0,
-      })),
-      checkSdkAvailability: vi.fn(async () => ({ claudeSdk: true, codexCli: true, openaiSdk: true })),
-      checkWorkspaceShell: vi.fn(async () => ({ available: true, shell: '/bin/bash' })),
-      getCurrentAgentSummary: vi.fn(() => ({
-        id: 'agent-1',
-        name: 'Agent',
-        exists: true,
-        enabled: true,
-        hasModelConfig: true,
-      })),
-      getMcpStatusSummary: vi.fn(() => []),
-    }))
+    const result = await registry.execute(
+      parse('/doctor'),
+      ctx,
+      makeDeps({
+        getWorkspacePath: () => null,
+        execShell: vi.fn(async (command: string) => ({
+          stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
+          stderr: '',
+          exitCode: 0,
+        })),
+        checkSdkAvailability: vi.fn(async () => ({
+          claudeSdk: true,
+          codexCli: true,
+          openaiSdk: true,
+        })),
+        checkWorkspaceShell: vi.fn(async () => ({ available: true, shell: '/bin/bash' })),
+        getCurrentAgentSummary: vi.fn(() => ({
+          id: 'agent-1',
+          name: 'Agent',
+          exists: true,
+          enabled: true,
+          hasModelConfig: true,
+        })),
+        getMcpStatusSummary: vi.fn(() => []),
+      }),
+    )
 
     expect(result.success).toBe(true)
     expect(result.message).toContain('## Session')
@@ -408,19 +492,27 @@ describe('Built-in commands', () => {
   })
 
   it('/doctor reports missing shell', async () => {
-    const result = await registry.execute(parse('/doctor'), ctx, makeDeps({
-      getWorkspacePath: () => '/workspace/app',
-      checkSdkAvailability: vi.fn(async () => ({ claudeSdk: true, codexCli: true, openaiSdk: true })),
-      checkWorkspaceShell: vi.fn(async () => ({ available: false, error: 'ENOENT' })),
-      getCurrentAgentSummary: vi.fn(() => ({
-        id: 'agent-1',
-        name: 'Agent',
-        exists: true,
-        enabled: true,
-        hasModelConfig: true,
-      })),
-      getMcpStatusSummary: vi.fn(() => []),
-    }))
+    const result = await registry.execute(
+      parse('/doctor'),
+      ctx,
+      makeDeps({
+        getWorkspacePath: () => '/workspace/app',
+        checkSdkAvailability: vi.fn(async () => ({
+          claudeSdk: true,
+          codexCli: true,
+          openaiSdk: true,
+        })),
+        checkWorkspaceShell: vi.fn(async () => ({ available: false, error: 'ENOENT' })),
+        getCurrentAgentSummary: vi.fn(() => ({
+          id: 'agent-1',
+          name: 'Agent',
+          exists: true,
+          enabled: true,
+          hasModelConfig: true,
+        })),
+        getMcpStatusSummary: vi.fn(() => []),
+      }),
+    )
 
     expect(result.success).toBe(true)
     expect(result.message).toContain('Shell: ❌ 不可用：ENOENT')
@@ -428,26 +520,39 @@ describe('Built-in commands', () => {
   })
 
   it('/doctor reports missing provider and model', async () => {
-    const result = await registry.execute(parse('/doctor'), ctx, makeDeps({
-      getSession: vi.fn(() => ({ title: 'Test', status: 'idle', modelId: null, providerProfileId: '' })),
-      getProviderName: vi.fn(() => null),
-      getWorkspacePath: () => '/workspace/app',
-      execShell: vi.fn(async (command: string) => ({
-        stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
-        stderr: '',
-        exitCode: 0,
-      })),
-      checkSdkAvailability: vi.fn(async () => ({ claudeSdk: true, codexCli: true, openaiSdk: true })),
-      checkWorkspaceShell: vi.fn(async () => ({ available: true, shell: '/bin/bash' })),
-      getCurrentAgentSummary: vi.fn(() => ({
-        id: 'agent-1',
-        name: 'Agent',
-        exists: true,
-        enabled: true,
-        hasModelConfig: false,
-      })),
-      getMcpStatusSummary: vi.fn(() => []),
-    }))
+    const result = await registry.execute(
+      parse('/doctor'),
+      ctx,
+      makeDeps({
+        getSession: vi.fn(() => ({
+          title: 'Test',
+          status: 'idle',
+          modelId: null,
+          providerProfileId: '',
+        })),
+        getProviderName: vi.fn(() => null),
+        getWorkspacePath: () => '/workspace/app',
+        execShell: vi.fn(async (command: string) => ({
+          stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
+          stderr: '',
+          exitCode: 0,
+        })),
+        checkSdkAvailability: vi.fn(async () => ({
+          claudeSdk: true,
+          codexCli: true,
+          openaiSdk: true,
+        })),
+        checkWorkspaceShell: vi.fn(async () => ({ available: true, shell: '/bin/bash' })),
+        getCurrentAgentSummary: vi.fn(() => ({
+          id: 'agent-1',
+          name: 'Agent',
+          exists: true,
+          enabled: true,
+          hasModelConfig: false,
+        })),
+        getMcpStatusSummary: vi.fn(() => []),
+      }),
+    )
 
     expect(result.success).toBe(true)
     expect(result.message).toContain('Provider: ❌ 未配置')
@@ -456,44 +561,61 @@ describe('Built-in commands', () => {
   })
 
   it('/doctor reports all healthy sections', async () => {
-    const result = await registry.execute(parse('/doctor'), ctx, makeDeps({
-      getSession: vi.fn(() => ({
-        title: 'Test',
-        status: 'idle',
-        modelId: 'gpt-4.1',
-        providerProfileId: 'p1',
-        agentAdapter: 'codex',
-        permissionMode: 'codex-default',
-        agentId: 'agent-1',
-      })),
-      getWorkspacePath: () => '/workspace/app',
-      execShell: vi.fn(async (command: string) => ({
-        stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
-        stderr: '',
-        exitCode: 0,
-      })),
-      checkSdkAvailability: vi.fn(async () => ({ claudeSdk: true, codexCli: true, openaiSdk: true })),
-      checkWorkspaceShell: vi.fn(async () => ({ available: true, shell: '/bin/bash' })),
-      getCurrentAgentSummary: vi.fn(() => ({
-        id: 'agent-1',
-        name: 'Agent',
-        exists: true,
-        enabled: true,
-        hasModelConfig: true,
-        providerProfileId: 'p1',
-        modelId: 'gpt-4.1',
-      })),
-      getMcpStatusSummary: vi.fn(() => [{
-        id: 'mcp-1',
-        name: 'Local MCP',
-        enabled: true,
-        connected: true,
-        toolCount: 3,
-      }]),
-    }))
+    const result = await registry.execute(
+      parse('/doctor'),
+      ctx,
+      makeDeps({
+        getSession: vi.fn(() => ({
+          title: 'Test',
+          status: 'idle',
+          modelId: 'gpt-4.1',
+          providerProfileId: 'p1',
+          agentAdapter: 'codex',
+          permissionMode: 'codex-default',
+          agentId: 'agent-1',
+        })),
+        getWorkspacePath: () => '/workspace/app',
+        execShell: vi.fn(async (command: string) => ({
+          stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
+          stderr: '',
+          exitCode: 0,
+        })),
+        checkSdkAvailability: vi.fn(async () => ({
+          claudeSdk: true,
+          codexCli: true,
+          openaiSdk: true,
+        })),
+        checkWorkspaceShell: vi.fn(async () => ({ available: true, shell: '/bin/bash' })),
+        getCurrentAgentSummary: vi.fn(() => ({
+          id: 'agent-1',
+          name: 'Agent',
+          exists: true,
+          enabled: true,
+          hasModelConfig: true,
+          providerProfileId: 'p1',
+          modelId: 'gpt-4.1',
+        })),
+        getMcpStatusSummary: vi.fn(() => [
+          {
+            id: 'mcp-1',
+            name: 'Local MCP',
+            enabled: true,
+            connected: true,
+            toolCount: 3,
+          },
+        ]),
+      }),
+    )
 
     expect(result.success).toBe(true)
-    for (const section of ['## Session', '## Provider/Model', '## Agent Adapter', '## Shell/Git', '## MCP', '## Known Issues / Suggestions']) {
+    for (const section of [
+      '## Session',
+      '## Provider/Model',
+      '## Agent Adapter',
+      '## Shell/Git',
+      '## MCP',
+      '## Known Issues / Suggestions',
+    ]) {
       expect(result.message).toContain(section)
     }
     expect(result.message).toContain('✅ 未发现明显问题')
@@ -533,15 +655,21 @@ describe('Built-in commands', () => {
   })
 
   it('/skill run selects a skill for the follow-up turn', async () => {
-    const result = await registry.execute(parse('/skill run skill:review inspect changes'), ctx, makeDeps({
-      listSkills: () => [{
-        id: 'skill:review',
-        name: 'Review',
-        description: 'Review changes',
-        tags: ['review'],
-        enabled: true,
-      }],
-    }))
+    const result = await registry.execute(
+      parse('/skill run skill:review inspect changes'),
+      ctx,
+      makeDeps({
+        listSkills: () => [
+          {
+            id: 'skill:review',
+            name: 'Review',
+            description: 'Review changes',
+            tags: ['review'],
+            enabled: true,
+          },
+        ],
+      }),
+    )
 
     expect(result.success).toBe(true)
     expect(result.followUpSkillId).toBe('skill:review')
@@ -550,12 +678,14 @@ describe('Built-in commands', () => {
 
   it('/checkpoint list shows session checkpoints', async () => {
     const deps = makeDeps({
-      listSessionCheckpoints: vi.fn(() => [{
-        checkpointId: 'chk_123456',
-        label: 'before edit',
-        path: '.spark/checkpoints/chk_123456',
-        filePaths: ['src/app.ts'],
-      }]),
+      listSessionCheckpoints: vi.fn(() => [
+        {
+          checkpointId: 'chk_123456',
+          label: 'before edit',
+          path: '.spark/checkpoints/chk_123456',
+          filePaths: ['src/app.ts'],
+        },
+      ]),
     })
     const result = await registry.execute(parse('/checkpoint list'), ctx, deps)
     expect(result.success).toBe(true)
@@ -615,5 +745,53 @@ describe('Command Parser', () => {
     const cmd = registry.get('cp')
     expect(cmd).toBeDefined()
     expect(cmd?.name).toBe('checkpoint')
+  })
+})
+
+describe('spark-app commands（强制触发子应用工具链）', () => {
+  it('registers spark-app command family', () => {
+    const registry = createBuiltinRegistry()
+    for (const name of ['spark-app', 'spark-app-create', 'spark-app-list', 'spark-app-publish']) {
+      const cmd = registry.get(name)
+      expect(cmd, name).toBeDefined()
+      expect(cmd?.layer).toBe('builtin')
+    }
+    // 通用入口别名
+    expect(registry.get('app')?.name).toBe('spark-app')
+  })
+
+  it('spark-app-create without args asks agent to clarify requirements', async () => {
+    const registry = createBuiltinRegistry()
+    const result = await registry.execute(parse('/spark-app-create'), ctx, makeDeps())
+    expect(result.success).toBe(true)
+    expect(result.followUpPrompt).toContain('spark_app')
+    expect(result.followUpPrompt).toContain('确认')
+  })
+
+  it('spark-app-create forwards requirement text to agent', async () => {
+    const registry = createBuiltinRegistry()
+    const result = await registry.execute(
+      parse('/spark-app-create 记账工具 月度统计'),
+      ctx,
+      makeDeps(),
+    )
+    expect(result.success).toBe(true)
+    expect(result.followUpPrompt).toContain('记账工具')
+    expect(result.followUpPrompt).toContain('月度统计')
+    expect(result.followUpPrompt).toContain('/spark-app-*')
+  })
+
+  it('spark-app-publish requires a target', async () => {
+    const registry = createBuiltinRegistry()
+    const result = await registry.execute(parse('/spark-app-publish'), ctx, makeDeps())
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('用法')
+  })
+
+  it('spark-app generic entry forwards instruction', async () => {
+    const registry = createBuiltinRegistry()
+    const result = await registry.execute(parse('/spark-app 禁用项目看板'), ctx, makeDeps())
+    expect(result.success).toBe(true)
+    expect(result.followUpPrompt).toContain('禁用项目看板')
   })
 })
