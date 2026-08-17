@@ -32,10 +32,10 @@ function sparkOf(page: Page): SparkInvoke {
  *   - data-expect-deny：调用 data.get 应被权限拒绝，错误码回显到 DOM
  *   - 有 data 权限时：主题监听把收到的 theme 写入 data('e2e','theme')
  */
-function makeAppSource(marker: string, expectDeny = false): string {
+function makeAppSource(marker: string, expectDeny = false, useToast = false): string {
   return `<!doctype html>
 <html>
-<body data-marker="${marker}" data-expect-deny="${expectDeny ? '1' : '0'}">
+<body data-marker="${marker}" data-expect-deny="${expectDeny ? '1' : '0'}" data-use-toast="${useToast ? '1' : '0'}">
 <div id="root" data-state="boot">booting</div>
 <script>
 (function () {
@@ -64,6 +64,9 @@ function makeAppSource(marker: string, expectDeny = false): string {
     return put('e2e', 'boot', { marker: marker, mode: info.mode }).then(function (rec) {
       root.dataset.revision = String(rec.revision)
       set('READY marker=' + marker + ' mode=' + info.mode, 'ready')
+      if (document.body.getAttribute('data-use-toast') === '1') {
+        window.sparkApp.ui.toast('E2E-TOAST-OK', 'success').catch(function () {})
+      }
       return info
     })
   }).catch(function (err) {
@@ -369,7 +372,8 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
       await openSubAppsView(page)
       const permitted = await createApp(page, {
         name: 'E2E 主题工具',
-        source: makeAppSource('theme'),
+        source: makeAppSource('theme', false, true),
+        permissions: ['data', 'ui'],
       })
       await createApp(page, {
         name: 'E2E 无权限工具',
@@ -409,6 +413,10 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
       const themeFrame = page.frameLocator('iframe[title="E2E 主题工具"]')
       await expect(themeFrame.locator('#root')).toHaveText(/READY marker=theme/, {
         timeout: 15_000,
+      })
+      // ui 域：应用 toast 在宿主以 antd message 展示（带应用名前缀归因）
+      await expect(page.getByText('E2E-TOAST-OK', { exact: false })).toBeVisible({
+        timeout: 10_000,
       })
       await page.emulateMedia({ colorScheme: 'dark' })
       await expect(themeFrame.locator('#root')).toHaveAttribute('data-theme-seen', 'dark', {

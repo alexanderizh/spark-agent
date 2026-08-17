@@ -183,6 +183,17 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
         return call('data', 'delete', { namespace: namespace, key: key })
       },
     },
+    ui: {
+      toast: function (content, type) {
+        var payload = { content: content }
+        if (type !== undefined) payload.type = type
+        return call('ui', 'toast', payload)
+      },
+    },
+    navigation: {
+      openApp: function (appId) { return call('navigation', 'openApp', { appId: appId }) },
+      openView: function (view) { return call('navigation', 'openView', { view: view }) },
+    },
   }
 
   post({ type: 'app/ready', instanceId: cfg.instanceId, protocolVersion: cfg.protocolVersion })

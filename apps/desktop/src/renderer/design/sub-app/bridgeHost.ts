@@ -59,6 +59,13 @@ export interface SubAppBridgeHostOptions {
   invoke: SubAppBridgeInvoke
   /** 当前主题状态；app/ready 与 theme/get 时读取。 */
   getThemeState: () => SparkAppThemeState
+  /** ui 域：宿主内展示 toast。未提供时该域返回 CAPABILITY_NOT_IMPLEMENTED。 */
+  notify?: (message: { type: 'info' | 'success' | 'warning' | 'error'; content: string }) => void
+  /**
+   * navigation 域：宿主导航。返回 false 表示目标被宿主拒绝（如视图不在白名单）。
+   * 未提供时该域返回 CAPABILITY_NOT_IMPLEMENTED。
+   */
+  navigate?: (target: { kind: 'app' | 'view'; id: string }) => boolean
 }
 
 export interface SubAppBridgeAuditEntry {
@@ -69,20 +76,30 @@ export interface SubAppBridgeAuditEntry {
   errorCode?: string
 }
 
+/** 单实例并发在途请求上限：防失序/失控应用以请求洪水拖垮宿主或 IPC。 */
+const BRIDGE_MAX_IN_FLIGHT = 8
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
  * 单个沙箱 iframe 实例的 Spark App Bridge 宿主。
  *
  * 安全顺序（不可调换）：
  *   1. event.source 必须是本实例的 iframe contentWindow；
  *   2. zod envelope 校验（instanceId/appId/versionId/protocolVersion 必须与宿主裁决一致）；
- *   3. 能力权限检查（runtime/theme 只读默认放行；data 需 manifest 声明 'data'）；
- *   4. 操作路由；appId 强制取 runtimeInfo，payload 只提供 namespace/key/value 等。
+ *   3. 能力权限检查（runtime/theme 只读默认放行；其余能力需 manifest 声明）；
+ *   4. 并发限流（RATE_LIMITED，可重试）；
+ *   5. 操作路由；appId 强制取 runtimeInfo，payload 只提供 namespace/key/value 等。
+ *
+ * 审计只记录 capability/operation/ok/errorCode，不记录 payload——
+ * 应用数据可能包含敏感内容，审计环不落明文。
  */
 export class SubAppBridgeHost {
   private readonly options: SubAppBridgeHostOptions
   private readonly audit: SubAppBridgeAuditEntry[] = []
   private ready = false
   private detached = false
+  private inFlight = 0
 
   constructor(options: SubAppBridgeHostOptions) {
     this.options = options
@@ -165,6 +182,17 @@ export class SubAppBridgeHost {
       return
     }
 
+    if (this.inFlight >= BRIDGE_MAX_IN_FLIGHT) {
+      const error: BridgeError = {
+        code: 'RATE_LIMITED',
+        message: `并发请求超过 ${BRIDGE_MAX_IN_FLIGHT} 条上限，请等待在途请求完成后再试。`,
+      }
+      this.auditCall(request, false, error.code)
+      this.respond(request.instanceId, this.failure(request.requestId, error))
+      return
+    }
+
+    this.inFlight += 1
     try {
       const data = await this.route(request)
       this.auditCall(request, true)
@@ -185,6 +213,8 @@ export class SubAppBridgeHost {
           message: error instanceof Error ? error.message : 'Spark App Bridge 调用失败。',
         }),
       )
+    } finally {
+      this.inFlight -= 1
     }
   }
 
@@ -263,6 +293,37 @@ export class SubAppBridgeHost {
       }
       throw new BridgeRouteError('UNSUPPORTED_OPERATION')
     }
+    if (request.capability === 'ui') {
+      const notify = this.options.notify
+      if (notify == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+      if (request.operation !== 'toast') throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+      const payload = asRecord(request.payload)
+      const content = readString(payload.content, 'content')
+      const type = readToastType(payload.type)
+      notify({ type, content })
+      return null
+    }
+    if (request.capability === 'navigation') {
+      const navigate = this.options.navigate
+      if (navigate == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+      const payload = asRecord(request.payload)
+      if (request.operation === 'openApp') {
+        const appId = readString(payload.appId, 'appId')
+        if (!UUID_PATTERN.test(appId)) throw new BridgeRouteError('INVALID_PAYLOAD:appId')
+        if (!navigate({ kind: 'app', id: appId })) {
+          throw new BridgeRouteError('NAVIGATION_REJECTED')
+        }
+        return null
+      }
+      if (request.operation === 'openView') {
+        const view = readString(payload.view, 'view')
+        if (!navigate({ kind: 'view', id: view })) {
+          throw new BridgeRouteError('NAVIGATION_REJECTED')
+        }
+        return null
+      }
+      throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+    }
     // 已过权限检查但宿主尚未实现的能力域。
     throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
   }
@@ -279,7 +340,9 @@ export class SubAppBridgeHost {
       protocolVersion: SUB_APP_PROTOCOL_VERSION,
       requestId,
       ok: false,
-      retryable: error.code === 'UNKNOWN',
+      // UNKNOWN（宿主瞬时故障）与 RATE_LIMITED（并发限流）值得应用侧重试；
+      // 权限/身份/协议/参数类错误重试无意义。
+      retryable: error.code === 'UNKNOWN' || error.code === 'RATE_LIMITED',
       error: { code: error.code, message: error.message },
     }
   }
@@ -346,4 +409,14 @@ function readOptionalNumber(value: unknown): number | undefined {
     throw new BridgeRouteError('INVALID_PAYLOAD')
   }
   return value
+}
+
+const TOAST_TYPES = new Set(['info', 'success', 'warning', 'error'])
+
+function readToastType(value: unknown): 'info' | 'success' | 'warning' | 'error' {
+  if (value === undefined || value === null) return 'info'
+  if (typeof value !== 'string' || !TOAST_TYPES.has(value)) {
+    throw new BridgeRouteError('INVALID_PAYLOAD:type')
+  }
+  return value as 'info' | 'success' | 'warning' | 'error'
 }

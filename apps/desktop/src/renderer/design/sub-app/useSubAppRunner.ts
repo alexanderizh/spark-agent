@@ -1,11 +1,24 @@
 import React from 'react'
+import { message as antdMessage } from 'antd'
 import type { SubAppManifest, SubAppRelease } from '@spark/protocol'
-import { useApp } from '../AppContext'
+import { useApp, type ViewId } from '../AppContext'
 import { useResolvedTheme } from '../hooks/useResolvedTheme'
 import { buildAppRuntimeDocument } from './appRuntimeDocument'
 import { SubAppBridgeHost } from './bridgeHost'
 import { subAppClient } from './subAppClient'
 import { buildThemeState } from './themeTokens'
+
+/**
+ * navigation 域 openView 的宿主白名单：子应用能把主窗口带到哪些视图。
+ * chat 不在内——会话是用户的主工作区，应用不应抢焦点。
+ */
+const SUB_APP_NAVIGABLE_VIEWS: readonly ViewId[] = [
+  'canvas',
+  'board',
+  'workflows',
+  'scheduled-tasks',
+  'sub-apps',
+]
 
 /**
  * 子应用沙箱文档的加载地址协议：
@@ -57,7 +70,8 @@ export interface SubAppRunnerState {
 export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
   const { appId, manifest, source, mode, release } = props
   const resolvedTheme = useResolvedTheme()
-  const primary = useApp().t.primary
+  const { t, setTweak } = useApp()
+  const primary = t.primary
   const [reloadCounter, setReloadCounter] = React.useState(0)
   const [status, setStatus] = React.useState<SubAppRunnerStatus>('loading')
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
@@ -133,6 +147,25 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
       getFrameWindow: () => frameRef.current?.contentWindow ?? null,
       invoke: (channel, request) => window.spark.invoke(channel, request),
       getThemeState: () => buildThemeState(resolvedThemeRef.current, primaryRef.current),
+      // ui 域：应用 toast 在宿主以 antd message 展示（带应用名前缀便于归因）
+      notify: ({ type, content }) => {
+        const text = `[${manifest.name}] ${content}`
+        if (type === 'success') antdMessage.success(text)
+        else if (type === 'error') antdMessage.error(text)
+        else if (type === 'warning') antdMessage.warning(text)
+        else antdMessage.info(text)
+      },
+      // navigation 域：openApp 走运行页；openView 只放行白名单视图
+      navigate: ({ kind, id }) => {
+        if (kind === 'app') {
+          setTweak('subAppOpenId', id)
+          setTweak('view', 'sub-app')
+          return true
+        }
+        if (!SUB_APP_NAVIGABLE_VIEWS.includes(id as ViewId)) return false
+        setTweak('view', id as ViewId)
+        return true
+      },
     })
     hostRef.current = host
     host.attach()

@@ -25,7 +25,10 @@ interface Harness {
   flush: () => Promise<void>
 }
 
-function createHarness(permissions: string[] = ['data']): Harness {
+function createHarness(
+  permissions: string[] = ['data'],
+  extra?: Partial<ConstructorParameters<typeof SubAppBridgeHost>[0]>,
+): Harness {
   const frame = { postMessage: vi.fn() }
   const invoke = vi.fn()
   const host = new SubAppBridgeHost({
@@ -43,6 +46,7 @@ function createHarness(permissions: string[] = ['data']): Harness {
     getFrameWindow: () => frame as unknown as Window,
     invoke: invoke as never,
     getThemeState: () => themeState,
+    ...extra,
   })
   host.attach(window)
   const send = (data: unknown, source: unknown = frame): void => {
@@ -315,5 +319,130 @@ describe('SubAppBridgeHost 生命周期', () => {
       ok: false,
       errorCode: 'UNSUPPORTED_OPERATION',
     })
+  })
+})
+
+describe('SubAppBridgeHost ui / navigation / 限流', () => {
+  it('ui/toast 需要 ui 权限并在宿主展示 toast', async () => {
+    const notify = vi.fn()
+    const local = createHarness(['ui', 'data'], { notify })
+    local.send(
+      requestMessage({
+        capability: 'ui',
+        operation: 'toast',
+        payload: { content: '保存成功', type: 'success' },
+      }),
+    )
+    await local.flush()
+    expect(notify).toHaveBeenCalledWith({ type: 'success', content: '保存成功' })
+    expect(outboundAt(local.frame).response?.ok).toBe(true)
+    local.host.detach(window)
+  })
+
+  it('ui/toast 未声明 ui 权限时拒绝且不触发宿主 toast', async () => {
+    const notify = vi.fn()
+    const local = createHarness(['data'], { notify })
+    local.send(requestMessage({ capability: 'ui', operation: 'toast', payload: { content: 'x' } }))
+    await local.flush()
+    expect(notify).not.toHaveBeenCalled()
+    expect(outboundAt(local.frame).response?.error?.code).toBe('PERMISSION_DENIED')
+    local.host.detach(window)
+  })
+
+  it('ui/toast 非法 type 返回 INVALID_PAYLOAD', async () => {
+    const local = createHarness(['ui'], { notify: vi.fn() })
+    local.send(
+      requestMessage({
+        capability: 'ui',
+        operation: 'toast',
+        payload: { content: 'x', type: 'loud' },
+      }),
+    )
+    await local.flush()
+    expect(outboundAt(local.frame).response?.error?.code).toContain('INVALID_PAYLOAD')
+    local.host.detach(window)
+  })
+
+  it('navigation/openApp 转发宿主导航并要求合法 uuid', async () => {
+    const navigate = vi.fn(() => true)
+    const local = createHarness(['navigation'], { navigate })
+    local.send(
+      requestMessage({ capability: 'navigation', operation: 'openApp', payload: { appId } }),
+    )
+    await local.flush()
+    expect(navigate).toHaveBeenCalledWith({ kind: 'app', id: appId })
+    expect(outboundAt(local.frame).response?.ok).toBe(true)
+
+    local.send(
+      requestMessage({
+        capability: 'navigation',
+        operation: 'openApp',
+        payload: { appId: 'not-a-uuid' },
+      }),
+    )
+    await local.flush()
+    expect(outboundAt(local.frame, 1).response?.error?.code).toContain('INVALID_PAYLOAD')
+    local.host.detach(window)
+  })
+
+  it('navigation/openView 被宿主拒绝时返回 NAVIGATION_REJECTED', async () => {
+    const navigate = vi.fn(() => false)
+    const local = createHarness(['navigation'], { navigate })
+    local.send(
+      requestMessage({
+        capability: 'navigation',
+        operation: 'openView',
+        payload: { view: 'chat' },
+      }),
+    )
+    await local.flush()
+    expect(outboundAt(local.frame).response?.error?.code).toBe('NAVIGATION_REJECTED')
+    local.host.detach(window)
+  })
+
+  it('宿主未提供回调时 ui/navigation 返回 CAPABILITY_NOT_IMPLEMENTED', async () => {
+    const local = createHarness(['ui', 'navigation'])
+    local.send(requestMessage({ capability: 'ui', operation: 'toast', payload: { content: 'x' } }))
+    await local.flush()
+    expect(outboundAt(local.frame).response?.error?.code).toBe('CAPABILITY_NOT_IMPLEMENTED')
+    local.send(
+      requestMessage({
+        capability: 'navigation',
+        operation: 'openView',
+        payload: { view: 'board' },
+      }),
+    )
+    await local.flush()
+    expect(outboundAt(local.frame, 1).response?.error?.code).toBe('CAPABILITY_NOT_IMPLEMENTED')
+    local.host.detach(window)
+  })
+
+  it('并发超过上限返回可重试的 RATE_LIMITED', async () => {
+    let releaseInvoke: (() => void) | null = null
+    const invoke = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          releaseInvoke = () => resolve(null)
+        }),
+    )
+    const local = createHarness(['data'], { invoke: invoke as never })
+    // 占满 8 条在途
+    for (let i = 0; i < 8; i += 1) {
+      local.send(requestMessage({ requestId: `hold-${i}` }))
+    }
+    await local.flush()
+    // 第 9 条应被限流——前 8 条 invoke 未决、宿主尚未回发，所以这是第一条出站消息
+    local.send(requestMessage({ requestId: 'over' }))
+    await local.flush()
+    const limited = outboundAt(local.frame, 0).response
+    expect(limited?.ok).toBe(false)
+    expect(limited?.error?.code).toBe('RATE_LIMITED')
+    // failure 响应带 retryable=true
+    expect(
+      (local.frame.postMessage.mock.calls[0]?.[0] as { response?: { retryable?: boolean } })
+        .response?.retryable,
+    ).toBe(true)
+    releaseInvoke?.()
+    local.host.detach(window)
   })
 })
