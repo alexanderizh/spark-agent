@@ -5174,7 +5174,8 @@ body.side-chat-resizing {
 }
 
 .unified-side-panel-menu.compact .unified-side-panel-menu-item .chat-view-icon,
-.unified-side-panel-menu.compact .unified-side-panel-menu-item > svg {
+.unified-side-panel-menu.compact .unified-side-panel-menu-item > svg,
+.unified-side-panel-menu.compact .unified-side-panel-menu-item > span[role='img'] {
   width: 22px;
   height: 22px;
   flex: 0 0 auto;
@@ -5190,6 +5191,18 @@ body.side-chat-resizing {
 
 .unified-side-panel-menu-item:hover {
   background: color-mix(in srgb, var(--text) 9%, transparent);
+}
+
+// panel 子应用动态项与内置项之间的分隔线（紧凑与非紧凑菜单共用）
+.unified-side-panel-menu-divider {
+  height: 1px;
+  flex-shrink: 0;
+  margin: 2px 0;
+  background: var(--border);
+}
+
+.unified-side-panel-menu.compact .unified-side-panel-menu-divider {
+  margin: 4px 2px;
 }
 
 .unified-side-panel-menu.compact .unified-side-panel-menu-item:hover {

@@ -26,7 +26,7 @@ vi.mock('./SubAppRunner', async () => {
   }
 })
 
-const { SubAppSurfaceProvider } = await import('./SubAppSurfaceHost')
+const { SubAppSurfaceProvider, useSubAppSurfaces } = await import('./SubAppSurfaceHost')
 
 function makeApp(over: Partial<SubAppSummary>): SubAppSummary {
   return {
@@ -68,6 +68,38 @@ describe('SubAppSurfaceProvider 目录加载', () => {
       )
     })
   }
+
+  // 注册 panel 打开处理器的探针组件：记录转发调用
+  function PanelHandlerProbe({ onOpen }: { onOpen: (appId: string) => void }): React.ReactElement {
+    const surfaces = useSubAppSurfaces()
+    React.useEffect(() => {
+      surfaces.setPanelOpenHandler(onOpen)
+      return () => {
+        surfaces.setPanelOpenHandler(null)
+      }
+    }, [surfaces.setPanelOpenHandler, onOpen])
+    return React.createElement('div', null, 'probe')
+  }
+
+  const panelDetails = (id: string, name: string) => ({
+    id,
+    name,
+    description: '',
+    icon: null,
+    surface: 'panel',
+    publicationStatus: 'published',
+    enabled: true,
+    draftRevision: 1,
+    publishedVersion: 1,
+    createdAt: '2026-08-18T00:00:00.000Z',
+    updatedAt: '2026-08-18T00:00:00.000Z',
+    draft: {
+      revision: 1,
+      source: '<html></html>',
+      manifest: { version: 1, surface: 'panel', permissions: [] },
+    },
+    publishedRelease: null,
+  })
 
   it('目录只保留浮层/侧板应用；内容区应用不进胶囊', async () => {
     mocks.list.mockResolvedValue({
@@ -167,5 +199,56 @@ describe('SubAppSurfaceProvider 目录加载', () => {
       tabs.find((tab) => tab.textContent?.includes('侧板待办'))?.click()
     })
     expect(mocks.get).toHaveBeenCalledWith({ appId: 'p2' })
+  })
+
+  it('注册 panel 处理器后 open 转发给处理器，不再创建 dock 实例', async () => {
+    mocks.list.mockResolvedValue({
+      items: [makeApp({ id: 'p1', name: '侧板应用', surface: 'panel' })],
+      total: 1,
+    })
+    mocks.get.mockResolvedValue(panelDetails('p1', '侧板应用'))
+    const forwarded: string[] = []
+    const handler = (appId: string): void => {
+      forwarded.push(appId)
+    }
+    act(() => {
+      root.render(
+        React.createElement(
+          SubAppSurfaceProvider,
+          null,
+          React.createElement(PanelHandlerProbe, { onOpen: handler }),
+        ),
+      )
+    })
+    await act(async () => {})
+
+    // 胶囊启动 panel 应用：应转发给 handler，而非渲染 dock
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.subapp-launcher-capsule')?.click()
+    })
+    const item = container.querySelector<HTMLButtonElement>('.subapp-launcher-item')
+    await act(async () => {
+      item?.click()
+    })
+    expect(forwarded).toEqual(['p1'])
+    expect(container.querySelector('[data-testid="subapp-panel-dock"]')).toBeNull()
+  })
+
+  it('未注册处理器时 panel 应用回落 dock 渲染（画布等无统一面板场景）', async () => {
+    mocks.list.mockResolvedValue({
+      items: [makeApp({ id: 'p1', name: '侧板应用', surface: 'panel' })],
+      total: 1,
+    })
+    mocks.get.mockResolvedValue(panelDetails('p1', '侧板应用'))
+    renderProvider()
+    await act(async () => {})
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.subapp-launcher-capsule')?.click()
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.subapp-launcher-item')?.click()
+    })
+    expect(container.querySelector('[data-testid="subapp-panel-dock"]')).not.toBeNull()
   })
 })

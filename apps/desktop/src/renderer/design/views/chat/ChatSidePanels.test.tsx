@@ -1,7 +1,29 @@
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import type { SubAppSummary } from '@spark/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { UnifiedSessionSidePanel, type UnifiedSidePanelKind } from './ChatSidePanels'
+import {
+  UnifiedSessionSidePanel,
+  subAppPanelKind,
+  type UnifiedSidePanelKind,
+} from './ChatSidePanels'
+
+function makePanelApp(over: Partial<SubAppSummary>): SubAppSummary {
+  return {
+    id: 'p1',
+    name: '待办清单',
+    description: '',
+    icon: 'list-todo',
+    surface: 'panel',
+    publicationStatus: 'published',
+    enabled: true,
+    draftRevision: 1,
+    publishedVersion: 1,
+    createdAt: '2026-08-18T00:00:00.000Z',
+    updatedAt: '2026-08-18T00:00:00.000Z',
+    ...over,
+  }
+}
 
 describe('UnifiedSessionSidePanel', () => {
   it('renders every opened panel as a distinct tab while keeping one active tab', () => {
@@ -67,5 +89,43 @@ describe('UnifiedSessionSidePanel', () => {
     expect(markup).toContain('HTML')
     expect(markup).toContain('html panel content')
     expect(markup).toContain('class="unified-side-panel"')
+  })
+
+  it('panel 子应用以应用名渲染 tab，并出现在空状态快捷卡片中', () => {
+    const app = makePanelApp({ id: 'p_todo', name: '待办清单' })
+    const markup = renderToStaticMarkup(
+      <UnifiedSessionSidePanel
+        tabs={['terminal', subAppPanelKind('p_todo')]}
+        activeTab={subAppPanelKind('p_todo')}
+        width={560}
+        panelApps={[app]}
+        onWidthChange={vi.fn()}
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        onCloseTab={vi.fn()}
+      >
+        <div>app runner</div>
+      </UnifiedSessionSidePanel>,
+    )
+    expect(markup).toContain('data-tab-kind="subapp:p_todo"')
+    expect(markup).toContain('待办清单')
+
+    // 空状态（无任何 tab）时快捷卡片也应列出 panel 应用
+    const emptyMarkup = renderToStaticMarkup(
+      <UnifiedSessionSidePanel
+        tabs={[]}
+        activeTab={null}
+        width={560}
+        panelApps={[app]}
+        onWidthChange={vi.fn()}
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        onCloseTab={vi.fn()}
+      >
+        <div>ignored</div>
+      </UnifiedSessionSidePanel>,
+    )
+    expect(emptyMarkup).toContain('快捷打开')
+    expect(emptyMarkup).toContain('待办清单')
   })
 })

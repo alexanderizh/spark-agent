@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Dropdown } from 'antd'
+import type { SubAppSummary } from '@spark/protocol'
 import { Icons } from '../../Icons'
+import { SubAppIcon } from '../../sub-app/SubAppIcon'
 
 // 侧边聊天头部下拉用的最小会话投影：解耦 SideChatPanel 与完整 Session 类型，
 // 由 ChatView 把 sessions 投影成该结构后注入。id 用 string 而非 SessionId brand，
@@ -22,6 +24,21 @@ export type UnifiedSidePanelKind =
   | 'plan'
   | 'html'
   | 'code'
+  // 已发布+启用的 panel 子应用：kind 编码 appId，随应用目录动态增减
+  | `subapp:${string}`
+
+/** `subapp:${appId}` 前缀，供宿主视图构造/解析动态 tab kind。 */
+export const SUBAPP_PANEL_KIND_PREFIX = 'subapp:'
+
+export function subAppPanelKind(appId: string): UnifiedSidePanelKind {
+  return `subapp:${appId}`
+}
+
+export function appIdOfSubAppPanelKind(kind: UnifiedSidePanelKind): string | null {
+  if (!kind.startsWith(SUBAPP_PANEL_KIND_PREFIX)) return null
+  const appId = kind.slice(SUBAPP_PANEL_KIND_PREFIX.length)
+  return appId.length > 0 ? appId : null
+}
 
 // 配置入口已上移到会话头部按钮组；统一面板只保留终端/侧聊/审查/计划 4 个 tab。
 const UNIFIED_SIDE_PANEL_QUICK_ITEMS: UnifiedSidePanelKind[] = [
@@ -32,9 +49,14 @@ const UNIFIED_SIDE_PANEL_QUICK_ITEMS: UnifiedSidePanelKind[] = [
   'plan',
 ]
 
-const getUnifiedSidePanelMeta = (
-  kind: UnifiedSidePanelKind,
-): { label: string; title: string; icon: ReactNode; shortcutLabel: string } => {
+type UnifiedSidePanelItemMeta = {
+  label: string
+  title: string
+  icon: ReactNode
+  shortcutLabel: string
+}
+
+const getUnifiedSidePanelMeta = (kind: UnifiedSidePanelKind): UnifiedSidePanelItemMeta => {
   if (kind === 'config')
     return {
       label: '配置',
@@ -85,6 +107,32 @@ const getUnifiedSidePanelMeta = (
   }
 }
 
+// 动态项 meta：subapp tab 从应用目录取名/图标；目录尚未刷新到（或刚被移除）时给占位。
+const getUnifiedSidePanelItemMeta = (
+  kind: UnifiedSidePanelKind,
+  panelApps: SubAppSummary[],
+): UnifiedSidePanelItemMeta => {
+  if (kind.startsWith(SUBAPP_PANEL_KIND_PREFIX)) {
+    const appId = kind.slice(SUBAPP_PANEL_KIND_PREFIX.length)
+    const app = panelApps.find((item) => item.id === appId)
+    if (app != null) {
+      return {
+        label: app.name,
+        title: app.name,
+        shortcutLabel: `打开${app.name}`,
+        icon: <SubAppIcon icon={app.icon} size={14} />,
+      }
+    }
+    return {
+      label: '应用',
+      title: '子应用',
+      shortcutLabel: '打开子应用',
+      icon: <Icons.Layers size={14} />,
+    }
+  }
+  return getUnifiedSidePanelMeta(kind)
+}
+
 function clampPanelWidth(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
@@ -113,6 +161,7 @@ export function UnifiedSessionSidePanel({
   tabs,
   activeTab,
   width,
+  panelApps = [],
   onWidthChange,
   onSelect,
   onOpen,
@@ -122,6 +171,8 @@ export function UnifiedSessionSidePanel({
   tabs: UnifiedSidePanelKind[]
   activeTab: UnifiedSidePanelKind | null
   width: number
+  /** 已发布+启用的 panel 子应用：追加到快捷入口/菜单，作为动态 tab 打开 */
+  panelApps?: SubAppSummary[]
   onWidthChange: (width: number) => void
   onSelect: (kind: UnifiedSidePanelKind) => void
   onOpen: (kind: UnifiedSidePanelKind) => void
@@ -154,6 +205,11 @@ export function UnifiedSessionSidePanel({
   const openedTabs = Array.from(new Set(tabs))
   const selectedTab =
     activeTab != null && openedTabs.includes(activeTab) ? activeTab : (openedTabs[0] ?? null)
+  // 快捷入口 = 内置 5 项 + panel 子应用动态项
+  const quickItems: UnifiedSidePanelKind[] = [
+    ...UNIFIED_SIDE_PANEL_QUICK_ITEMS,
+    ...panelApps.map((app) => subAppPanelKind(app.id)),
+  ]
   const openKind = (kind: UnifiedSidePanelKind) => {
     if (openedTabs.includes(kind)) onSelect(kind)
     else onOpen(kind)
@@ -193,7 +249,7 @@ export function UnifiedSessionSidePanel({
           aria-label="unified side panel tabs"
         >
           {openedTabs.map((kind) => {
-            const meta = getUnifiedSidePanelMeta(kind)
+            const meta = getUnifiedSidePanelItemMeta(kind, panelApps)
             const active = kind === selectedTab
             return (
               <button
@@ -232,8 +288,8 @@ export function UnifiedSessionSidePanel({
           })}
         </div>
         <div className="unified-side-panel-shortcuts" aria-label="侧边面板快捷入口">
-          {UNIFIED_SIDE_PANEL_QUICK_ITEMS.map((kind) => {
-            const meta = getUnifiedSidePanelMeta(kind)
+          {quickItems.map((kind) => {
+            const meta = getUnifiedSidePanelItemMeta(kind, panelApps)
             const opened = openedTabs.includes(kind)
             const active = kind === selectedTab
             return (
@@ -265,6 +321,7 @@ export function UnifiedSessionSidePanel({
               onOpen={openKind}
               onSelect={onSelect}
               openedTabs={openedTabs}
+              panelApps={panelApps}
               compact
             />
           )}
@@ -275,8 +332,8 @@ export function UnifiedSessionSidePanel({
           <div className="unified-side-panel-empty" role="status" aria-live="polite">
             <div className="unified-side-panel-empty-title">快捷打开</div>
             <div className="unified-side-panel-empty-cards">
-              {UNIFIED_SIDE_PANEL_QUICK_ITEMS.map((kind) => {
-                const meta = getUnifiedSidePanelMeta(kind)
+              {quickItems.map((kind) => {
+                const meta = getUnifiedSidePanelItemMeta(kind, panelApps)
                 const opened = openedTabs.includes(kind)
                 return (
                   <button
@@ -313,12 +370,14 @@ export function UnifiedSessionSidePanel({
 
 export function UnifiedSidePanelPicker({
   onOpen,
+  panelApps = [],
 }: {
   onOpen: (kind: UnifiedSidePanelKind) => void
+  panelApps?: SubAppSummary[]
 }) {
   return (
     <div className="unified-side-panel-picker">
-      <UnifiedSidePanelMenu onOpen={onOpen} />
+      <UnifiedSidePanelMenu onOpen={onOpen} panelApps={panelApps} />
     </div>
   )
 }
@@ -327,32 +386,42 @@ function UnifiedSidePanelMenu({
   onOpen,
   onSelect,
   openedTabs = [],
+  panelApps = [],
   compact = false,
 }: {
   onOpen: (kind: UnifiedSidePanelKind) => void
   onSelect?: (kind: UnifiedSidePanelKind) => void
   openedTabs?: UnifiedSidePanelKind[]
+  panelApps?: SubAppSummary[]
   compact?: boolean
 }) {
-  const items = UNIFIED_SIDE_PANEL_QUICK_ITEMS
+  const items: UnifiedSidePanelKind[] = [
+    ...UNIFIED_SIDE_PANEL_QUICK_ITEMS,
+    ...panelApps.map((app) => subAppPanelKind(app.id)),
+  ]
   return (
     <div className={`unified-side-panel-menu ${compact ? 'compact' : ''}`}>
-      {items.map((kind) => {
-        const meta = getUnifiedSidePanelMeta(kind)
+      {items.map((kind, index) => {
+        const meta = getUnifiedSidePanelItemMeta(kind, panelApps)
         const opened = openedTabs.includes(kind)
+        const isSubApp = kind.startsWith(SUBAPP_PANEL_KIND_PREFIX)
         return (
-          <button
-            key={kind}
-            type="button"
-            className="unified-side-panel-menu-item"
-            onClick={() => {
-              if (opened) onSelect?.(kind)
-              else onOpen(kind)
-            }}
-          >
-            {meta.icon}
-            <span>{meta.label}</span>
-          </button>
+          <React.Fragment key={kind}>
+            {isSubApp && !items[index - 1]?.startsWith(SUBAPP_PANEL_KIND_PREFIX) ? (
+              <div className="unified-side-panel-menu-divider" />
+            ) : null}
+            <button
+              type="button"
+              className="unified-side-panel-menu-item"
+              onClick={() => {
+                if (opened) onSelect?.(kind)
+                else onOpen(kind)
+              }}
+            >
+              {meta.icon}
+              <span>{meta.label}</span>
+            </button>
+          </React.Fragment>
         )
       })}
     </div>

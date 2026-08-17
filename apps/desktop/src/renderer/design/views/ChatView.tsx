@@ -143,14 +143,18 @@ import {
 
 export { MarkdownText } from './chat/ChatMarkdown'
 import {
+  appIdOfSubAppPanelKind,
   defaultUnifiedSidePanelWidth,
   maxSideChatWidthForViewport,
   SideChatPanel,
   type SideChatSessionOption,
+  subAppPanelKind,
   UnifiedSessionSidePanel,
   UnifiedSidePanelPicker,
   type UnifiedSidePanelKind,
 } from './chat/ChatSidePanels'
+import { useSubAppSurfaces } from '../sub-app/SubAppSurfaceHost'
+import { UnifiedSubAppPanel } from '../sub-app/UnifiedSubAppPanel'
 import {
   HtmlRenderProvider,
   RenderHtmlBlock,
@@ -478,6 +482,12 @@ export function ChatView({
   // 统一面板是否展开（独立于 tabs 数组：tabs 记录"已打开过哪些 tab"，unifiedPanelOpen 只控制容器显隐）
   // 入口按钮只 toggle 此状态；首次打开 tabs 为空 → 显示空状态，用户在 tabbar 内再选要打开哪个 tab
   const [unifiedPanelOpen, setUnifiedPanelOpen] = useState(false)
+  // panel 子应用收敛进统一侧面板：目录来自 SubAppSurfaceProvider（已发布+启用）
+  const subAppSurfaces = useSubAppSurfaces()
+  const panelApps = useMemo(
+    () => subAppSurfaces.directory.filter((app) => app.surface === 'panel'),
+    [subAppSurfaces.directory],
+  )
   const [showGitEnvPanel, setShowGitEnvPanel] = useState(false)
   // 自动展开 git+任务悬浮面板用：用户手动 toggle/关闭过后，本会话不再自动展开。
   const gitPanelUserInteractedRef = useRef(false)
@@ -646,6 +656,29 @@ export function ChatView({
     if (kind === 'side-chat') setShowSideChatPanel(false)
     if (kind === 'html') setActiveHtmlPanelBlockId(null)
   }, [])
+
+  // panel 子应用宿主转发：胶囊启动器/管理页「打开」panel 应用 → 统一侧面板开 tab。
+  // ChatView 挂载期间注册；卸载（如切画布）后 SubAppSurfaceHost 回落 dock 渲染。
+  // 依赖仅取稳定方法，避免 directory/instances 刷新时反复注册注销。
+  const { setPanelOpenHandler } = subAppSurfaces
+  useEffect(() => {
+    setPanelOpenHandler((appId) => openUnifiedSidePanel(subAppPanelKind(appId)))
+    return () => {
+      setPanelOpenHandler(null)
+    }
+  }, [setPanelOpenHandler, openUnifiedSidePanel])
+
+  // 应用目录变化（禁用/删除）时关闭已失效的 subapp tab，避免残留占位 tab。
+  // 目录首载完成前不清理：会话切换恢复的 subapp tab 不能因目录未就绪被误关。
+  const directoryLoaded = subAppSurfaces.directoryLoaded
+  useEffect(() => {
+    if (!directoryLoaded) return
+    const panelIds = new Set(panelApps.map((app) => app.id))
+    const stale = unifiedSideTabs.filter(
+      (tab) => tab.startsWith('subapp:') && !panelIds.has(appIdOfSubAppPanelKind(tab) ?? ''),
+    )
+    for (const tab of stale) closeUnifiedSidePanel(tab)
+  }, [directoryLoaded, panelApps, unifiedSideTabs, closeUnifiedSidePanel])
 
   // 头部「配置面板」按钮：打开独立的 ChatConfigPanel 侧栏（不再嵌入统一面板容器）。
   // 与 inspector / 统一面板 / 文件预览互斥。
@@ -3063,6 +3096,7 @@ export function ChatView({
             activeUnifiedSideTab != null ? activeUnifiedSideTab : (unifiedSideTabs[0] ?? null)
           }
           width={sideChatWidth}
+          panelApps={panelApps}
           onWidthChange={setSideChatWidth}
           onSelect={setActiveUnifiedSideTab}
           onOpen={openUnifiedSidePanel}
@@ -3240,8 +3274,12 @@ export function ChatView({
                 </div>
               )}
             </SideChatPanel>
+          ) : activeUnifiedSideTab != null &&
+            activeUnifiedSideTab.startsWith('subapp:') &&
+            appIdOfSubAppPanelKind(activeUnifiedSideTab) != null ? (
+            <UnifiedSubAppPanel appId={appIdOfSubAppPanelKind(activeUnifiedSideTab)!} />
           ) : (
-            <UnifiedSidePanelPicker onOpen={openUnifiedSidePanel} />
+            <UnifiedSidePanelPicker onOpen={openUnifiedSidePanel} panelApps={panelApps} />
           )}
         </UnifiedSessionSidePanel>
       )}

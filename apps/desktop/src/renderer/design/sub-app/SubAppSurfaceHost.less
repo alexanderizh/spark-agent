@@ -11,22 +11,14 @@
   z-index: 900;
 }
 
-// ── overlay：右下角堆叠、可拖拽、可收起 ─────────────────────
-// bottom 抬高避让常驻胶囊启动器（44px 高 + 20px 底距 + 12px 间距）
-.subapp-overlay-stack {
-  position: absolute;
-  right: 20px;
-  bottom: 76px;
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 12px;
-  align-items: flex-end;
-  max-width: 380px;
-}
-
+// ── overlay：屏幕居中的独立卡片、可拖拽、可收起、右下角可拉伸 ──
+// 定位锚点是屏幕中心（left/top 50%），transform 由组件内联写入
+// （-50% 自身回撤 + 用户偏移）；宽高同样由内联样式控制。
 .subapp-overlay-card {
   pointer-events: auto;
-  width: 340px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
   border-radius: 12px;
   overflow: hidden;
   background: var(--bg-container, rgba(30, 30, 34, 0.98));
@@ -36,12 +28,6 @@
     0 2px 8px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
-
-  &.is-collapsed {
-    .subapp-overlay-body {
-      display: none;
-    }
-  }
 }
 
 .subapp-overlay-titlebar {
@@ -92,13 +78,59 @@
   }
 }
 
+// body 跟随卡片高度（卡片总高由内联 size.h 控制）
 .subapp-overlay-body {
-  height: 400px;
+  flex: 1;
   min-height: 0;
 }
 
 .subapp-overlay-runner {
   height: 100%;
+}
+
+// 右下角尺寸拉伸手柄：对角线双杠样式，hover/拖拽时高亮主色
+.subapp-overlay-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  touch-action: none;
+  z-index: 1;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    width: 8px;
+    height: 2px;
+    border-radius: 1px;
+    background: currentColor;
+    opacity: 0.45;
+    transition: opacity 0.15s ease;
+  }
+
+  &::before {
+    right: 3px;
+    bottom: 5px;
+    transform: rotate(-45deg);
+  }
+
+  &::after {
+    right: 3px;
+    bottom: 2px;
+    transform: rotate(-45deg);
+  }
+
+  &:hover,
+  &:active {
+    &::before,
+    &::after {
+      opacity: 0.95;
+      background: var(--primary, rgba(22, 119, 255, 0.9));
+    }
+  }
 }
 
 // ── panel：主内容区右侧 dock ───────────────────────────────
@@ -188,6 +220,30 @@
 
 .subapp-panel-runner {
   height: 100%;
+}
+
+// ── 统一侧面板内的 panel 子应用内容（UnifiedSubAppPanel）───────────
+.subapp-unified-runner {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.subapp-unified-panel-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  font-size: 13px;
+  color: var(--text-muted, var(--text));
+  text-align: center;
+  overflow: auto;
+}
+
+.subapp-unified-panel-state.is-error {
+  color: var(--danger, #e5484d);
+  word-break: break-all;
 }
 
 // ── 统一侧面板菜单：dock 头部 tab 切换侧板应用 ───────────────

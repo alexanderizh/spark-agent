@@ -30,9 +30,11 @@ function makeController(over: Partial<SubAppSurfaceController>): SubAppSurfaceCo
   return {
     instances: [],
     directory: [],
+    directoryLoaded: true,
     open: vi.fn(),
     close: vi.fn(),
     toggleCollapse: vi.fn(),
+    setPanelOpenHandler: vi.fn(),
     ...over,
   }
 }
