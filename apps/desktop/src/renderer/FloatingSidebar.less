@@ -16,7 +16,10 @@
   color: var(--sidebar-text, var(--text));
   opacity: 0;
   cursor: pointer;
-  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
 }
 .nav-item:hover .nav-pin-btn {
   opacity: 1;
@@ -49,7 +52,9 @@
   width: 100%;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
   -webkit-app-region: no-drag;
 }
 .nav-more-trigger:hover,
@@ -202,7 +207,10 @@ html[data-theme='light'] .sidebar-mode-switcher,
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
 }
 .mode-switcher-btn:hover:not(.active) {
   background: var(--hover);
@@ -212,7 +220,8 @@ html[data-theme='light'] .sidebar-mode-switcher,
   background: var(--panel-elev);
   color: var(--sidebar-text, var(--text));
   // light 下 shadow 提供浮起感；inset border 用 color-mix 让 dark 下也可见
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08),
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
     inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
 }
 .mode-switcher-btn:focus-visible {
@@ -240,6 +249,8 @@ html[data-theme='light'] .sidebar-mode-switcher,
   gap: 2px;
   padding: 2px 8px 0px 8px;
   // border-top: 1px solid var(--divider);
+  // 顶部浅阴影：让常驻底部的资源条从侧栏中轻微浮起（负 y 偏移向上投影）
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
@@ -256,8 +267,10 @@ html[data-theme='light'] .sidebar-mode-switcher,
   border-radius: var(--r-sm);
   color: var(--sidebar-text, var(--text));
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-  .shared-resource-btn-label{
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+  .shared-resource-btn-label {
     color: var(--sidebar-text, var(--text));
     font-size: 8px;
     white-space: nowrap;
@@ -307,7 +320,9 @@ html[data-theme='light'] .sidebar-mode-switcher,
   width: 100%;
   text-align: left;
   position: relative;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
   -webkit-app-region: no-drag;
 }
 .canvas-sidebar-item:hover {
@@ -395,7 +410,9 @@ html[data-theme='light'] .sidebar-mode-switcher,
   animation: canvas-sidebar-spin 0.9s linear infinite;
 }
 @keyframes canvas-sidebar-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .canvas-sidebar-list-loading,
 .canvas-sidebar-list-empty {
