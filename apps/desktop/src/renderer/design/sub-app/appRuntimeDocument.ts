@@ -44,6 +44,19 @@ export interface BuildAppRuntimeDocumentInput {
 const SURFACE_FILL_STYLE =
   '<style>html{height:100%!important}body{width:100%!important;min-height:100%!important;margin:0!important}body>*:first-child{width:100%!important;max-width:none!important;min-height:100%!important;margin:0!important}</style>'
 
+/**
+ * panel surface 的贴顶补充。
+ *
+ * 统一侧面板顶部已有 44px tab 栏（面板导航，所有面板 tab 共用），应用根容器
+ * 普遍再自带 16px 级别的顶部 padding，两者叠加后 tab 栏与应用首行内容之间
+ * 会出现一条「无主」的空白带（像素级复现确认：宿主链路本身 0 间距，空白全部
+ * 来自应用自身 padding + 标题行高）。侧板场景额外清零 body padding 与根容器
+ * 顶部 padding，让应用内容贴着 tab 栏开始；overlay / global-window /
+ * desktop-pet 维持已认可的独立窗口观感，不做此覆盖。
+ */
+const PANEL_FLUSH_TOP_STYLE =
+  '<style>body{padding:0!important}body>*:first-child{padding-top:0!important}</style>'
+
 /** 在 `</body>` 前追加片段；无 body 闭合标签时追加到文档末尾。 */
 function appendBeforeBodyEnd(doc: string, snippet: string): string {
   const bodyClose = doc.toLowerCase().lastIndexOf('</body>')
@@ -96,7 +109,10 @@ export function buildAppRuntimeDocument(input: BuildAppRuntimeDocumentInput): st
     doc = `<!doctype html><html data-spark-theme="${theme}"><head>${head}</head><body>${source}</body></html>`
   }
   // 小窗口 surface 的铺满兜底放在应用源码之后：!important 需后置于应用声明才能稳定生效
-  return config.surface === 'content' ? doc : appendBeforeBodyEnd(doc, SURFACE_FILL_STYLE)
+  if (config.surface === 'content') return doc
+  const fill =
+    config.surface === 'panel' ? SURFACE_FILL_STYLE + PANEL_FLUSH_TOP_STYLE : SURFACE_FILL_STYLE
+  return appendBeforeBodyEnd(doc, fill)
 }
 
 /**

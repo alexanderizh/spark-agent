@@ -117,4 +117,29 @@ describe('buildAppRuntimeDocument', () => {
     })
     expect(doc).toContain('body>*:first-child{width:100%!important')
   })
+
+  it('panel surface 额外注入贴顶兜底（清零 body 与根容器顶部 padding）', () => {
+    const source =
+      '<!doctype html><html><head><style>.app{padding:16px}</style></head><body><div class="app">x</div></body></html>'
+    const doc = buildAppRuntimeDocument({
+      source,
+      theme: 'dark',
+      config: { ...baseConfig, surface: 'panel' },
+    })
+    expect(doc).toContain('body{padding:0!important}')
+    expect(doc).toContain('body>*:first-child{padding-top:0!important}')
+    // 贴顶兜底同样后置于应用源码
+    expect(doc.indexOf('padding-top:0!important')).toBeGreaterThan(
+      doc.indexOf('.app{padding:16px}'),
+    )
+  })
+
+  it('overlay 等独立窗口 surface 不注入贴顶兜底（维持应用自身留白）', () => {
+    const doc = buildAppRuntimeDocument({
+      source: '<div class="app">x</div>',
+      theme: 'dark',
+      config: { ...baseConfig, surface: 'overlay' },
+    })
+    expect(doc).not.toContain('padding-top:0!important')
+  })
 })
