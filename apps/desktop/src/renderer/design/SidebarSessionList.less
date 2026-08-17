@@ -337,27 +337,9 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(3px);
-  transition:
-    opacity 0.14s ease,
-    transform 0.14s ease;
-}
-
-.sidebar-project-toolbar:hover .sidebar-project-toolbar-actions,
-.sidebar-project-toolbar:focus-within .sidebar-project-toolbar-actions,
-.sidebar-project-toolbar:has(.sidebar-filter-btn.is-open) .sidebar-project-toolbar-actions,
-.sidebar-project-toolbar:has(.sidebar-filter-btn.is-active) .sidebar-project-toolbar-actions {
   opacity: 1;
   pointer-events: auto;
-  transform: translateX(0);
-}
-
-.sidebar-project-toolbar:has(.sidebar-filter-btn.is-active):not(:hover):not(:focus-within)
-  .sidebar-project-toolbar-btn {
-  visibility: hidden;
-  pointer-events: none;
+  transform: none;
 }
 
 .sidebar-project-toolbar-btn,
@@ -809,6 +791,7 @@
   }
 
   .ant-modal-header {
+    justify-content: flex-start;
     margin-bottom: 0;
     padding: var(--pad-xl) var(--pad-xl) var(--pad-md);
     background: var(--panel);
@@ -846,8 +829,10 @@
   display: flex;
   align-items: center;
   gap: var(--pad-md);
+  justify-content: flex-start;
   min-width: 0;
   padding-inline-end: calc(var(--pad-xl) * 2);
+  text-align: left;
 }
 
 .project-create-modal-title-icon {
