@@ -711,20 +711,24 @@ body.sidebar-resizing {
 .platform-win32.titlebar-integrated .chat-titlebar-end {
   width: var(--integrated-titlebar-right-reserve, 138px);
   margin-left: 0;
+  padding-right: 10px;
+  box-sizing: border-box;
 }
 .platform-win32.titlebar-integrated .chat-titlebar-end:empty {
   display: none;
 }
 .platform-win32.titlebar-integrated .chat-titlebar-end .window-controls {
-  height: 100%;
-  align-items: stretch;
+  width: auto;
+  height: auto;
+  align-items: center;
+  gap: var(--component-control-gap);
   justify-content: flex-end;
 }
 .platform-win32.titlebar-integrated .chat-titlebar-end .win-ctrl-btn {
-  width: 46px;
-  height: 45px;
-  min-height: 45px;
-  border-radius: 0;
+  width: var(--component-icon-button-size);
+  height: var(--component-icon-button-size);
+  min-height: 0;
+  border-radius: var(--r-sm);
 }
 .chat-tabbar button,
 .chat-tabbar .tabbar-actions,

@@ -1550,7 +1550,7 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
 .platform-win32 .win-titlebar {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   height: 45px;
   flex-shrink: 0;
   padding: 0 0 0 8px;
@@ -1572,21 +1572,24 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
 .platform-win32 .win-titlebar-controls {
   margin-left: auto;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   height: 100%;
   gap: 0;
+  padding-right: 10px;
   -webkit-app-region: no-drag;
 }
 .platform-win32 .win-titlebar-controls .window-controls {
   padding: 0;
   width: auto;
-  height: 100%;
-  align-items: stretch;
+  height: auto;
+  align-items: center;
+  gap: var(--component-control-gap);
 }
 .platform-win32 .win-titlebar-controls .win-ctrl-btn {
-  width: 46px;
-  min-height: 45px;
-  border-radius: 0;
+  width: var(--component-icon-button-size);
+  height: var(--component-icon-button-size);
+  min-height: 0;
+  border-radius: var(--r-sm);
 }
 .titlebar-integrated {
   --integrated-titlebar-height: 44px;
@@ -1595,7 +1598,7 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
 }
 .platform-win32.titlebar-integrated {
   --integrated-titlebar-height: 45px;
-  --integrated-titlebar-right-reserve: 138px;
+  --integrated-titlebar-right-reserve: 112px;
 }
 .platform-darwin.titlebar-integrated {
   --integrated-titlebar-height: var(--window-titlebar-height);
