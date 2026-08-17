@@ -25,13 +25,45 @@ export { segmentCjk, buildFtsMatchQuery } from './segment-cjk.js'
 export { BaseRepository } from './repository.js'
 export { RoomLedgerService, RoomLedgerConflictError } from './room-ledger.service.js'
 export type { RoomLedgerMutationInput } from './room-ledger.service.js'
-export { TeamHandoffService, TeamHandoffConflictError, TEAM_HANDOFF_MAX_PER_DISCUSSION } from './team-handoff.service.js'
-export type { TeamHandoffRecord, TeamHandoffEvent, TeamHandoffStatus, TeamHandoffSensitivity, TeamHandoffOperation } from './team-handoff.service.js'
-export { SteeringGateService, SteeringGateConflictError, STEERING_GATE_MAX_PER_DISCUSSION } from './steering-gate.service.js'
-export type { SteeringGateRecord, SteeringGateEvent, SteeringGateStatus, SteeringGateImpact, SteeringTargetType, SteeringGateOperation, SteeringCapability } from './steering-gate.service.js'
+export {
+  TeamHandoffService,
+  TeamHandoffConflictError,
+  TEAM_HANDOFF_MAX_PER_DISCUSSION,
+} from './team-handoff.service.js'
+export type {
+  TeamHandoffRecord,
+  TeamHandoffEvent,
+  TeamHandoffStatus,
+  TeamHandoffSensitivity,
+  TeamHandoffOperation,
+} from './team-handoff.service.js'
+export {
+  SteeringGateService,
+  SteeringGateConflictError,
+  SteeringGateBlockedError,
+  STEERING_GATE_MAX_PER_DISCUSSION,
+} from './steering-gate.service.js'
+export type {
+  SteeringGateRecord,
+  SteeringGateEvent,
+  SteeringGateStatus,
+  SteeringGateImpact,
+  SteeringTargetType,
+  SteeringGateOperation,
+  SteeringCapability,
+} from './steering-gate.service.js'
 export { TaskGraphService, TaskGraphConflictError } from './task-graph.service.js'
-export type { TaskGraphScope, TaskGraphEvent, TaskGraphCapability, TaskEdgeRecord } from './task-graph.service.js'
-export { DeliberationService, DeliberationConflictError, DELIBERATION_MAX_PER_DISCUSSION } from './deliberation.service.js'
+export type {
+  TaskGraphScope,
+  TaskGraphEvent,
+  TaskGraphCapability,
+  TaskEdgeRecord,
+} from './task-graph.service.js'
+export {
+  DeliberationService,
+  DeliberationConflictError,
+  DELIBERATION_MAX_PER_DISCUSSION,
+} from './deliberation.service.js'
 export type { DeliberationScope, DeliberationLedgerWriter } from './deliberation.service.js'
 export { EvidenceCostService, EvidenceCostConflictError } from './evidence-cost.service.js'
 export type { EvidenceCostScope, EvidenceCostCapability } from './evidence-cost.service.js'
@@ -100,6 +132,13 @@ export {
   ComputerApprovalRepository,
   ComputerVerificationRepository,
   ComputerActuatorLeaseRepository,
+  SubAppRepository,
+  SubAppConflictError,
+  SubAppDataConflictError,
+  SubAppDataValidationError,
+  SubAppNotFoundError,
+  SubAppReleaseNotFoundError,
+  SubAppStateError,
 } from './repositories/index.js'
 
 export type {
@@ -261,4 +300,9 @@ export type {
   CreatePendingComputerApprovalParams,
   ComputerVerificationRow,
   ComputerActuatorLeaseRow,
+  CreateSubAppParams,
+  SubAppDataRow,
+  SubAppListPage,
+  SubAppReleaseRow,
+  SubAppRow,
 } from './repositories/index.js'
