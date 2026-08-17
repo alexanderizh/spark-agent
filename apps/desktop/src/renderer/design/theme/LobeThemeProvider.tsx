@@ -63,6 +63,12 @@ const PALETTE = {
   },
 } as const
 
+/**
+ * 子应用主题 bridge 复用同一份调色板：宿主下发 token 与 antd/lobe 使用的
+ * token 保持单一事实来源，避免两处色值漂移。
+ */
+export const THEME_PALETTE = PALETTE
+
 // Lobe UI injects its own global `body` and component font rules at runtime.
 // Keep those rules connected to the appearance CSS variables so changing the
 // font in Settings updates the whole renderer, not only our native CSS layer.
