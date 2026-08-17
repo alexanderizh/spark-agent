@@ -89,6 +89,7 @@ import type {
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import {
+  COMMAND_FOLLOW_UP_TURN_PRESENTATION,
   GOAL_CONTRACT_DRAFT_TURN_PRESENTATION,
   GOAL_ITERATION_TURN_PRESENTATION,
   LOCAL_CLI_DEFAULT_MODEL,
@@ -1758,6 +1759,7 @@ export class SessionService {
     const eventRepo = new EventRepository(this.db)
     const commandAttachments = normalizeTurnAttachments(params.attachments)
     const session = sessionRepo.get(params.sessionId)
+    const hadNoEventsBeforeCommand = eventRepo.countBySession(params.sessionId) === 0
 
     let workspacePath: string | null = null
     try {
@@ -1938,6 +1940,20 @@ export class SessionService {
     const result = await this.commandRegistry.execute(parsed, ctx, deps)
 
     if (result.forwardToAgent) return { isCommand: true, forwardToAgent: true }
+    // 创建命令会先写入“命令结果”事件，再启动 follow-up Agent turn；
+    // 因此后续 turn 已不再满足 existingEventCount === 0，常规首轮标题派生会被跳过。
+    // 直接使用用户在命令中提供的应用需求命名，避免新会话永久停留在“新会话”。
+    if (
+      parsed.name === 'spark-app-create' &&
+      result.success &&
+      hadNoEventsBeforeCommand &&
+      session != null &&
+      shouldDeriveSessionTitle(session.title)
+    ) {
+      const title = deriveSubAppCreateSessionTitle(parsed.args.join(' '))
+      sessionRepo.updateTitle(params.sessionId, title)
+      this.onSessionRenamed?.(params.sessionId, title)
+    }
     const sessionReferences = params.sessionReferences?.slice(0, 10) ?? []
     if (sessionReferences.length > 0) {
       new SessionCollaborationRepository(this.db).attachReferencesInTransaction({
@@ -2044,6 +2060,7 @@ export class SessionService {
 
     if (hasFollowUpPrompt) {
       const sendResult = await this.sendTurn({
+        ...COMMAND_FOLLOW_UP_TURN_PRESENTATION,
         sessionId: params.sessionId,
         message: followUpPrompt,
         ...(commandAttachments != null ? { attachments: commandAttachments } : {}),
@@ -10832,6 +10849,11 @@ function deriveSessionTitle(message: string): string {
 
   if (normalized == null || normalized.length === 0) return '新会话'
   return truncateTitle(normalized)
+}
+
+/** 创建子应用命令的会话标题直接取用户提供的应用需求，而不是内部 follow-up 提示。 */
+export function deriveSubAppCreateSessionTitle(requirement: string): string {
+  return deriveSessionTitle(requirement.trim() || '创建子应用')
 }
 
 function parseWorktreePromptMeta(raw: string): WorktreePromptMeta | null {

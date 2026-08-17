@@ -2619,6 +2619,7 @@ export function ComposerV2({
   })
 
   const SLASH_GROUP_LABELS: Record<string, string> = {
+    app: '子应用',
     session: '会话',
     model: '模型',
     context: '上下文',
@@ -2634,6 +2635,7 @@ export function ComposerV2({
     system: '系统',
   }
   const SLASH_GROUP_ORDER = [
+    'app',
     'session',
     'model',
     'context',

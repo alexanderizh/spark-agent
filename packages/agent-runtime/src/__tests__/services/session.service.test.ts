@@ -11,6 +11,7 @@ import {
   createCodexExecutorForConfig,
   createInterruptedTurnEvents,
   createUserCancelledTurnEvent,
+  deriveSubAppCreateSessionTitle,
   hasWorkflowExecutableNodes,
   isSdkResumeSafe,
   makeSdkRuntimeSessionId,
@@ -1499,5 +1500,17 @@ describe('isOpenAiOnlyCodexConsumer direct Chat routing', () => {
         codexApiKind: 'chat',
       }),
     ).toBe(false)
+  })
+})
+
+describe('deriveSubAppCreateSessionTitle (/spark-app-create 标题提取)', () => {
+  it('derives the title from the user requirement, not the internal follow-up prompt', () => {
+    expect(deriveSubAppCreateSessionTitle('开发一个悬浮面板应用，管理临时事项')).toBe(
+      '开发一个悬浮面板应用，管理临时事项',
+    )
+    // Markdown 装饰符不进入标题
+    expect(deriveSubAppCreateSessionTitle('  ## 记账 **工具**  ')).toBe('记账 工具')
+    // 空需求回退到固定标题，避免会话停留在「新会话」
+    expect(deriveSubAppCreateSessionTitle('   ')).toBe('创建子应用')
   })
 })

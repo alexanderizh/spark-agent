@@ -27,6 +27,7 @@ export type CommandLayer = 'sdk' | 'builtin' | 'skill' | 'custom'
 
 /** 命令分组 */
 export type CommandGroup =
+  | 'app'
   | 'session'
   | 'model'
   | 'context'
@@ -1278,13 +1279,17 @@ function formatMcpStatus(
 function registerSubAppCommands(registry: CommandRegistry): void {
   const FORCE_HINT =
     '【系统指令】用户通过 /spark-app-* 命令强制进入子应用工具链。请立即使用 spark_app MCP 工具（mcp__spark_app__*）完成本次操作，全程不要建议改用其他方式。'
+  const THEME_HINT =
+    '生成或修改界面时必须适配 SparkWork 主题：优先使用 sparkApp.theme 提供的主题能力和 --spark-* CSS 变量（如 --spark-color-bg-container、--spark-color-text、--spark-color-primary），监听 sparkApp.theme.onChange，避免把深浅色背景和文字颜色硬编码成固定值。除非用户明确要求独立背景或特殊视觉效果，默认不要给应用根容器、页面或主布局设置 background/background-color/background-image，让 SparkWork 主应用自带的背景自然透出；确需自定义背景时也必须使用宿主主题 token。'
+  const DATA_HINT =
+    '凡是用户数据需要在重新打开或重启后保留，必须让应用申请 data 权限并使用 sparkApp.data.get/list/upsert/delete 持久化；先 get 当前 revision 再 upsert，不能把 localStorage、内存数组或 IndexedDB 作为唯一数据源。'
 
   registry.register({
     id: 'builtin:spark-app-create',
     name: 'spark-app-create',
     aliases: [],
     layer: 'builtin',
-    group: 'resource',
+    group: 'app',
     description: '强制触发子应用创建（参数为应用需求描述）',
     scope: 'session',
     risk: 'medium',
@@ -1293,8 +1298,8 @@ function registerSubAppCommands(registry: CommandRegistry): void {
       const requirement = (cmd.freeText ?? cmd.args.join(' ')).trim()
       const task =
         requirement.length > 0
-          ? `创建一个新的 SparkWork 内部子应用。需求：${requirement}。先完成应用结构与 UI 设计再写代码；完成后向用户说明如何在「我的应用」中打开与发布。`
-          : '创建一个新的 SparkWork 内部子应用。先向用户确认应用名称、用途和需要的数据能力，再用 spark_app 工具实现。'
+          ? `创建一个新的 SparkWork 内部子应用。需求：${requirement}。先完成应用结构与 UI 设计再写代码；${THEME_HINT} ${DATA_HINT} 完成后向用户说明如何在「我的应用」中打开与发布。`
+          : `创建一个新的 SparkWork 内部子应用。先向用户确认应用名称、用途和需要的数据能力，再用 spark_app 工具实现。${THEME_HINT} ${DATA_HINT}`
       return {
         success: true,
         message: '已进入子应用创建流程，交给 Agent 执行。',
@@ -1309,7 +1314,7 @@ function registerSubAppCommands(registry: CommandRegistry): void {
     name: 'spark-app-list',
     aliases: [],
     layer: 'builtin',
-    group: 'resource',
+    group: 'app',
     description: '列出全部子应用及其状态',
     scope: 'session',
     risk: 'none',
@@ -1326,7 +1331,7 @@ function registerSubAppCommands(registry: CommandRegistry): void {
     name: 'spark-app-publish',
     aliases: [],
     layer: 'builtin',
-    group: 'resource',
+    group: 'app',
     description: '发布指定子应用的当前草稿',
     scope: 'session',
     risk: 'medium',
@@ -1353,7 +1358,7 @@ function registerSubAppCommands(registry: CommandRegistry): void {
     name: 'spark-app',
     aliases: ['app'],
     layer: 'builtin',
-    group: 'resource',
+    group: 'app',
     description: '子应用通用入口：修改/回滚/禁用/删除/数据操作等，参数为自然语言指令',
     scope: 'session',
     risk: 'medium',
@@ -1371,7 +1376,7 @@ function registerSubAppCommands(registry: CommandRegistry): void {
         success: true,
         message: '已进入子应用工具链，交给 Agent 执行。',
         data: { instruction },
-        followUpPrompt: `${FORCE_HINT}\n${instruction}`,
+        followUpPrompt: `${FORCE_HINT}\n${THEME_HINT}\n${DATA_HINT}\n${instruction}`,
       }
     },
   })

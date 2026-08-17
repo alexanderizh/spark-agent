@@ -93,6 +93,49 @@ describe('projectVisibleChatMessages', () => {
     ])
   })
 
+  it('command follow-up turns render as hidden with a command label, never the built-in prompt', () => {
+    const logicalMessages: UIMessage[] = [
+      message({
+        id: 'command-echo',
+        turnId: 'turn-cmd',
+        role: 'user',
+        blocks: [{ kind: 'text', content: '/spark-app-create 记账工具', isStreaming: false }],
+      }),
+      message({
+        id: 'command-follow-up',
+        turnId: 'turn-follow',
+        role: 'user',
+        blocks: [
+          {
+            kind: 'text',
+            content: '强制进入子应用工具链 {"requirement":"记账工具"}',
+            isStreaming: false,
+          },
+        ],
+        turnSource: 'command_follow_up',
+        userMessageVisibility: 'hidden',
+      }),
+      message({ id: 'assistant-work', turnId: 'turn-follow', role: 'assistant' }),
+    ]
+
+    const visible = projectVisibleChatMessages(logicalMessages)
+
+    // 内置 follow-up 提示词气泡被隐藏，只剩命令回显与 Agent 回复
+    expect(visible.map((item) => item.id)).toEqual(['command-echo', 'assistant-work'])
+    // 排队展示也不泄漏提示词正文
+    expect(
+      projectQueuedTurnsForDisplay([
+        {
+          turnId: 'turn-follow',
+          message: '强制进入子应用工具链 {"requirement":"记账工具"}',
+          enqueuedAt: '2026-08-17T00:00:00.000Z',
+          turnSource: 'command_follow_up',
+          userMessageVisibility: 'hidden',
+        },
+      ]),
+    ).toEqual([expect.objectContaining({ turnId: 'turn-follow', message: '命令自动执行' })])
+  })
+
   it('redacts hidden user text in prompt-inspector snapshots', () => {
     expect(
       getVisibleTurnPromptSnapshotUserMessage({

@@ -779,6 +779,10 @@ describe('spark-app commands（强制触发子应用工具链）', () => {
     expect(result.followUpPrompt).toContain('记账工具')
     expect(result.followUpPrompt).toContain('月度统计')
     expect(result.followUpPrompt).toContain('/spark-app-*')
+    expect(result.followUpPrompt).toContain('--spark-color-primary')
+    expect(result.followUpPrompt).toContain('sparkApp.data')
+    expect(result.followUpPrompt).toContain('localStorage')
+    expect(result.followUpPrompt).toContain('默认不要给应用根容器')
   })
 
   it('spark-app-publish requires a target', async () => {

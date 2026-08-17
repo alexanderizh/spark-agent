@@ -38,6 +38,8 @@ function getInternalTurnDisplayLabel(turnSource: SessionQueuedTurn['turnSource']
       return '目标模式：生成验收标准'
     case 'goal_iteration':
       return '目标模式自动执行'
+    case 'command_follow_up':
+      return '命令自动执行'
     default:
       return '内部任务自动执行'
   }
