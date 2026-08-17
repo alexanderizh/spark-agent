@@ -1992,6 +1992,7 @@ body.sidebar-resizing {
   opacity: 0.82;
   line-height: 1;
   transition: opacity 0.12s;
+  margin-top: -2px;
 }
 .activity-log-summary-icon svg {
   display: block;
