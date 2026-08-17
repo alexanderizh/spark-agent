@@ -17,6 +17,7 @@ import type {
   SubAppSummary,
 } from '@spark/protocol'
 import { subAppClient } from '../sub-app/subAppClient'
+import { useSubAppSurfaces } from '../sub-app/SubAppSurfaceHost'
 import { useApp } from '../AppContext'
 import { useI18n } from '../i18n'
 import { Icons } from '../Icons'
@@ -122,6 +123,18 @@ export function SubAppsView(): React.ReactElement {
       setTweak('view', 'sub-app')
     },
     [setTweak],
+  )
+
+  const surfaces = useSubAppSurfaces()
+  const openSurface = useCallback(
+    async (app: SubAppSummary): Promise<void> => {
+      try {
+        await surfaces.open(app.id)
+      } catch (err) {
+        antdMessage.error(`启动失败：${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [surfaces],
   )
 
   const goChatForAgent = useCallback((): void => {
@@ -355,6 +368,19 @@ export function SubAppsView(): React.ReactElement {
                     >
                       打开
                     </Button>
+                    {app.surface === 'overlay' || app.surface === 'panel' ? (
+                      <Tooltip
+                        title={
+                          app.surface === 'overlay'
+                            ? '在主窗口右下角以浮层运行'
+                            : '在主内容区右侧以侧栏运行'
+                        }
+                      >
+                        <Button size="small" disabled={busy} onClick={() => void openSurface(app)}>
+                          {app.surface === 'overlay' ? '浮层' : '侧栏'}
+                        </Button>
+                      </Tooltip>
+                    ) : null}
                     <Popconfirm
                       title="发布当前草稿？"
                       description={`将以草稿 revision ${app.draftRevision} 生成新版本，发布后不可修改。`}

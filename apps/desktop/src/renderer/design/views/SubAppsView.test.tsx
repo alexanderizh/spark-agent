@@ -145,7 +145,10 @@ describe('SubAppsView', () => {
 
   async function renderView(): Promise<void> {
     await act(async () => {
-      root?.render(React.createElement(SubAppsView))
+      const { SubAppSurfaceProvider } = await import('../sub-app/SubAppSurfaceHost')
+      root?.render(
+        React.createElement(SubAppSurfaceProvider, null, React.createElement(SubAppsView)),
+      )
     })
   }
 

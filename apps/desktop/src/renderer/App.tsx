@@ -12,6 +12,7 @@ import {
 } from './design/AppContext'
 import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSidebarContext'
 import { CanvasProjectSelectionProvider } from './design/views/canvas/CanvasProjectSelectionContext'
+import { SubAppSurfaceProvider } from './design/sub-app/SubAppSurfaceHost'
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { AvatarImage } from './design/components/AvatarImage'
@@ -1820,78 +1821,94 @@ function Shell() {
 
   return (
     <ErrorBoundary level="global" name="Shell">
-      <div
-        ref={scaleRef}
-        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}${usesSettingsTitlebarSurface ? ' titlebar-surface-settings' : ''}${usesAuthTitlebarSurface ? ' titlebar-surface-auth' : ''}${contentFocused && t.sidebarStyle === 'floating' && !sidebarHidden ? ' content-focused' : ''}`}
-        style={
-          {
-            '--primary': primary,
-            '--primary-hover': info?.hover ?? primary,
-            '--primary-soft': info?.soft ?? 'rgba(99,102,241,0.12)',
-            '--sidebar-offset': `${sidebarOffset}px`,
-          } as React.CSSProperties
-        }
-      >
-        {/* Onboarding is a full-screen takeover — it renders its own two-column
+      <SubAppSurfaceProvider>
+        <div
+          ref={scaleRef}
+          className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}${usesSettingsTitlebarSurface ? ' titlebar-surface-settings' : ''}${usesAuthTitlebarSurface ? ' titlebar-surface-auth' : ''}${contentFocused && t.sidebarStyle === 'floating' && !sidebarHidden ? ' content-focused' : ''}`}
+          style={
+            {
+              '--primary': primary,
+              '--primary-hover': info?.hover ?? primary,
+              '--primary-soft': info?.soft ?? 'rgba(99,102,241,0.12)',
+              '--sidebar-offset': `${sidebarOffset}px`,
+            } as React.CSSProperties
+          }
+        >
+          {/* Onboarding is a full-screen takeover — it renders its own two-column
             layout and must be independent of the app's FloatingSidebar +
             main-content-area shell. Render it directly so it covers the whole
             window instead of being inset inside the right content pane. */}
-        {t.view === 'onboarding' ? (
-          <React.Suspense fallback={<ViewLoadingFallback />}>
-            <OnboardingView />
-          </React.Suspense>
-        ) : (
-          <>
-            {!isSettingsWorkspace && <FloatingSidebar onNewTask={handleNewBlankSession} />}
-            {/* macOS / Linux: unified shell title bar when sidebar is hidden.
+          {t.view === 'onboarding' ? (
+            <React.Suspense fallback={<ViewLoadingFallback />}>
+              <OnboardingView />
+            </React.Suspense>
+          ) : (
+            <>
+              {!isSettingsWorkspace && <FloatingSidebar onNewTask={handleNewBlankSession} />}
+              {/* macOS / Linux: unified shell title bar when sidebar is hidden.
                   Mirrors win-titlebar so every view (including chat) gets the expand
                   button; on macOS the left padding reserves space for traffic lights.
                   画布工作区自带 canvas-workspace-header，且已把 expand 按钮并入其中，
                   此处不再渲染以免两个头重叠。 */}
-            {!useIntegratedTitlebar &&
-              !isPlatformWin32 &&
-              sidebarHidden &&
-              !canvasOwnHeader &&
-              !(t.view === 'canvas' && canvasWorkspaceActive) && (
-                <div
-                  className={`shell-titlebar${isPlatformDarwin ? ' shell-titlebar-darwin' : ''}`}
-                  onDoubleClick={() => {
-                    window.spark?.invoke('window:maximize', {}).catch(() => {})
-                  }}
-                >
-                  {t.sidebarHidden && <SidebarExpandButton onExpand={handleExpandSidebar} />}
-                </div>
-              )}
-            <div
-              ref={mainContentRef}
-              className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
-            >
-              {/* Windows: custom title bar spanning full width with drag region.
+              {!useIntegratedTitlebar &&
+                !isPlatformWin32 &&
+                sidebarHidden &&
+                !canvasOwnHeader &&
+                !(t.view === 'canvas' && canvasWorkspaceActive) && (
+                  <div
+                    className={`shell-titlebar${isPlatformDarwin ? ' shell-titlebar-darwin' : ''}`}
+                    onDoubleClick={() => {
+                      window.spark?.invoke('window:maximize', {}).catch(() => {})
+                    }}
+                  >
+                    {t.sidebarHidden && <SidebarExpandButton onExpand={handleExpandSidebar} />}
+                  </div>
+                )}
+              <div
+                ref={mainContentRef}
+                className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
+              >
+                {/* Windows: custom title bar spanning full width with drag region.
                   画布工作区自带 canvas-workspace-header，且已把 expand 按钮并入其中，
                   此处不再渲染 expand 按钮以免出现两个展开菜单按钮（仅 Windows 旧逻辑漏判）。 */}
-              {!useIntegratedTitlebar && isPlatformWin32 && (
-                <div className="win-titlebar">
-                  {t.sidebarHidden && !(t.view === 'canvas' && canvasWorkspaceActive) && (
-                    <SidebarExpandButton onExpand={handleExpandSidebar} />
-                  )}
-                  <div className="win-titlebar-controls">
-                    <WindowControls />
+                {!useIntegratedTitlebar && isPlatformWin32 && (
+                  <div className="win-titlebar">
+                    {t.sidebarHidden && !(t.view === 'canvas' && canvasWorkspaceActive) && (
+                      <SidebarExpandButton onExpand={handleExpandSidebar} />
+                    )}
+                    <div className="win-titlebar-controls">
+                      <WindowControls />
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* macOS: unified drag strip atop the content area while the sidebar
+                {/* macOS: unified drag strip atop the content area while the sidebar
                   is visible. When the sidebar is hidden, the shell-titlebar above
                   takes over. 画布工作区自带 canvas-workspace-header，此处不再渲染以免重叠。
                   canvas/canvas-workflows view 自带 header 承担拖拽，跳过公用拖拽条。 */}
-              {!useIntegratedTitlebar &&
-                isPlatformDarwin &&
-                !sidebarHidden &&
-                !canvasOwnHeader &&
-                !(t.view === 'canvas' && canvasWorkspaceActive) && <MacWindowDragHeader />}
+                {!useIntegratedTitlebar &&
+                  isPlatformDarwin &&
+                  !sidebarHidden &&
+                  !canvasOwnHeader &&
+                  !(t.view === 'canvas' && canvasWorkspaceActive) && <MacWindowDragHeader />}
 
-              {t.view === 'chat' ? (
-                <div className="main-with-browser">
+                {t.view === 'chat' ? (
+                  <div className="main-with-browser">
+                    <div className="main">
+                      <div
+                        className="view-body"
+                        style={{ display: 'flex', flexDirection: 'column' }}
+                      >
+                        <React.Suspense fallback={<ViewLoadingFallback />}>
+                          {viewElement}
+                        </React.Suspense>
+                      </div>
+                    </div>
+                    <React.Suspense fallback={null}>
+                      <BrowserPanelView />
+                    </React.Suspense>
+                  </div>
+                ) : (
                   <div className="main">
                     <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
                       <React.Suspense fallback={<ViewLoadingFallback />}>
@@ -1899,111 +1916,100 @@ function Shell() {
                       </React.Suspense>
                     </div>
                   </div>
-                  <React.Suspense fallback={null}>
-                    <BrowserPanelView />
-                  </React.Suspense>
-                </div>
-              ) : (
-                <div className="main">
-                  <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
-                    <React.Suspense fallback={<ViewLoadingFallback />}>
-                      {viewElement}
-                    </React.Suspense>
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* Overlays */}
-        {quickTaskOpen && (
-          <React.Suspense fallback={null}>
-            <GlobalQuickTaskModal open onClose={() => setQuickTaskOpen(false)} />
-          </React.Suspense>
-        )}
-        {sessionCtx.historyImportOpen && (
-          <React.Suspense fallback={null}>
-            <HistoryImportModal />
-          </React.Suspense>
-        )}
-        {quotaGuideReason != null && (
-          <React.Suspense fallback={null}>
-            <PlatformQuotaGuideModal
-              open
-              reason={quotaGuideReason}
-              onClose={() => setQuotaGuideReason(null)}
-              onOpenAccount={() => {
-                setQuotaGuideReason(null)
-                setTweak('view', 'account-center')
-              }}
-              onConfigureProviders={() => {
-                setQuotaGuideReason(null)
-                setTweak('view', 'providers')
-              }}
-            />
-          </React.Suspense>
-        )}
-        {t.showPalette && (
-          <React.Suspense fallback={null}>
-            <CommandPalette
-              onClose={() => setTweak('showPalette', false)}
-              onNavigate={handleNavigate}
-              onNewSession={handleNewBlankSession}
-              onQuickTask={handleQuickTask}
-              sessionContext={t.view === 'chat'}
-              onInsertCommand={(commandText) => {
-                setPaletteCommandRequest({ id: Date.now(), commandText })
-              }}
-              mode={t.paletteMode}
-              menuItems={paletteMenuItems}
-            />
-          </React.Suspense>
-        )}
-        {t.showPerm && (
-          <React.Suspense fallback={null}>
-            <PermissionModal
-              request={{
-                requestId: 'preview',
-                sessionId: 'preview-session',
-                toolName: 'write_file',
-                action: 'file_write',
-                toolInput: {},
-                riskLevel: 'medium',
-                persistentScopes: ['global'],
-              }}
-              onClose={() => setTweak('showPerm', false)}
-            />
-          </React.Suspense>
-        )}
-
-        <Modal
-          open={errorDetails != null}
-          title={errorDetails?.title ?? '错误详情'}
-          onCancel={() => setErrorDetails(null)}
-          destroyOnHidden
-          className="spark-error-details-modal"
-          width={560}
-          footer={[
-            <Button key="copy" onClick={() => void copyErrorDetails()}>
-              复制详情
-            </Button>,
-            <Button key="close" type="primary" onClick={() => setErrorDetails(null)}>
-              知道了
-            </Button>,
-          ]}
-        >
-          {errorDetails != null && (
-            <div className="spark-error-details">
-              <p>{errorDetails.summary}</p>
-              <pre>{errorDetails.detail}</pre>
-            </div>
+                )}
+              </div>
+            </>
           )}
-        </Modal>
 
-        {t.view !== 'onboarding' && <OptionalCapabilityCenter />}
-        <ToastContainer />
-      </div>
+          {/* Overlays */}
+          {quickTaskOpen && (
+            <React.Suspense fallback={null}>
+              <GlobalQuickTaskModal open onClose={() => setQuickTaskOpen(false)} />
+            </React.Suspense>
+          )}
+          {sessionCtx.historyImportOpen && (
+            <React.Suspense fallback={null}>
+              <HistoryImportModal />
+            </React.Suspense>
+          )}
+          {quotaGuideReason != null && (
+            <React.Suspense fallback={null}>
+              <PlatformQuotaGuideModal
+                open
+                reason={quotaGuideReason}
+                onClose={() => setQuotaGuideReason(null)}
+                onOpenAccount={() => {
+                  setQuotaGuideReason(null)
+                  setTweak('view', 'account-center')
+                }}
+                onConfigureProviders={() => {
+                  setQuotaGuideReason(null)
+                  setTweak('view', 'providers')
+                }}
+              />
+            </React.Suspense>
+          )}
+          {t.showPalette && (
+            <React.Suspense fallback={null}>
+              <CommandPalette
+                onClose={() => setTweak('showPalette', false)}
+                onNavigate={handleNavigate}
+                onNewSession={handleNewBlankSession}
+                onQuickTask={handleQuickTask}
+                sessionContext={t.view === 'chat'}
+                onInsertCommand={(commandText) => {
+                  setPaletteCommandRequest({ id: Date.now(), commandText })
+                }}
+                mode={t.paletteMode}
+                menuItems={paletteMenuItems}
+              />
+            </React.Suspense>
+          )}
+          {t.showPerm && (
+            <React.Suspense fallback={null}>
+              <PermissionModal
+                request={{
+                  requestId: 'preview',
+                  sessionId: 'preview-session',
+                  toolName: 'write_file',
+                  action: 'file_write',
+                  toolInput: {},
+                  riskLevel: 'medium',
+                  persistentScopes: ['global'],
+                }}
+                onClose={() => setTweak('showPerm', false)}
+              />
+            </React.Suspense>
+          )}
+
+          <Modal
+            open={errorDetails != null}
+            title={errorDetails?.title ?? '错误详情'}
+            onCancel={() => setErrorDetails(null)}
+            destroyOnHidden
+            className="spark-error-details-modal"
+            width={560}
+            footer={[
+              <Button key="copy" onClick={() => void copyErrorDetails()}>
+                复制详情
+              </Button>,
+              <Button key="close" type="primary" onClick={() => setErrorDetails(null)}>
+                知道了
+              </Button>,
+            ]}
+          >
+            {errorDetails != null && (
+              <div className="spark-error-details">
+                <p>{errorDetails.summary}</p>
+                <pre>{errorDetails.detail}</pre>
+              </div>
+            )}
+          </Modal>
+
+          {t.view !== 'onboarding' && <OptionalCapabilityCenter />}
+          <ToastContainer />
+        </div>
+      </SubAppSurfaceProvider>
     </ErrorBoundary>
   )
 }

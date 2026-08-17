@@ -183,12 +183,12 @@ async function openSubAppsView(page: Page, expectEmpty = true): Promise<void> {
 
 async function createApp(
   page: Page,
-  input: { name: string; source: string; permissions?: string[] },
+  input: { name: string; source: string; permissions?: string[]; surface?: string },
 ): Promise<{ id: string }> {
   const created = (await sparkOf(page)('sub-app:create', {
     name: input.name,
     description: `E2E ${input.name}`,
-    surface: 'content',
+    surface: input.surface ?? 'content',
     permissions: input.permissions ?? ['data'],
     source: input.source,
   })) as { id: string }
@@ -515,6 +515,39 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
       )
       // 删除后 get 应以 NOT_FOUND 拒绝（错误消息为中文文案）
       expect(gone).toContain('不存在')
+
+      // overlay surface：右下角浮层启动 → 沙箱运行 → 关闭浮层不影响应用本体
+      const overlayApp = await createApp(page, {
+        name: 'E2E 浮层工具',
+        source: makeAppSource('overlay'),
+        surface: 'overlay',
+      })
+      // 上一步的鼠标路径可能让 lobe Tooltip 的 portal 弹层停在刷新按钮上
+      // 拦截点击——先移开鼠标等 tooltip 关闭。
+      await page.mouse.move(5, 5)
+      await page.waitForTimeout(400)
+      await page.locator('.sa-header').getByRole('button', { name: '刷新', exact: true }).click()
+      await expect(page.getByTestId('sub-app-card')).toHaveCount(2, { timeout: 10_000 })
+      await page
+        .locator('[data-testid="sub-app-card"]', { hasText: 'E2E 浮层工具' })
+        .getByRole('button', { name: /浮\s*层/ })
+        .click()
+      const overlayCard = page.getByTestId('subapp-overlay-card')
+      await expect(overlayCard).toBeVisible({ timeout: 10_000 })
+      const overlayFrame = page.frameLocator('iframe[title="E2E 浮层工具"]')
+      await expect(overlayFrame.locator('#root')).toHaveText(/READY marker=overlay mode=draft/, {
+        timeout: 15_000,
+      })
+      const overlayBoot = (await sparkOf(page)('sub-app:data:get', {
+        appId: overlayApp.id,
+        namespace: 'e2e',
+        key: 'boot',
+      })) as { value: { marker: string } } | null
+      expect(overlayBoot?.value.marker).toBe('overlay')
+      // 关闭浮层：实例销毁，应用仍在列表
+      await overlayCard.getByRole('button', { name: '关闭浮层' }).click()
+      await expect(overlayCard).toHaveCount(0)
+      await expect(page.locator('.sa-card-name', { hasText: 'E2E 浮层工具' })).toBeVisible()
     } finally {
       await electronApp.close().catch(() => {})
       await rm(userDataPath, { recursive: true, force: true })

@@ -1,0 +1,159 @@
+// 子应用多 surface 宿主（overlay / panel）
+//
+// 层级治理：应用浮层固定 z-index 900——高于内容区普通流，
+// 低于 antd Modal/Message（≥1000）、Git 面板（1200+）、语音 UI（10000）。
+// 禁止在卡片内部再写更大 z-index。
+.subapp-surface-layer {
+  position: fixed;
+  inset: 0;
+  // 容器不吃事件，事件归各浮层/面板自己
+  pointer-events: none;
+  z-index: 900;
+}
+
+// ── overlay：右下角堆叠、可拖拽、可收起 ─────────────────────
+.subapp-overlay-stack {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 12px;
+  align-items: flex-end;
+  max-width: 380px;
+}
+
+.subapp-overlay-card {
+  pointer-events: auto;
+  width: 340px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg-container, rgba(30, 30, 34, 0.98));
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.1));
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+
+  &.is-collapsed {
+    .subapp-overlay-body {
+      display: none;
+    }
+  }
+}
+
+.subapp-overlay-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  border-bottom: 1px solid var(--border-soft, rgba(255, 255, 255, 0.08));
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.subapp-overlay-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subapp-overlay-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+
+  button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    opacity: 0.7;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+
+    &:hover {
+      opacity: 1;
+      background: rgba(128, 128, 128, 0.18);
+    }
+  }
+}
+
+.subapp-overlay-body {
+  height: 400px;
+  min-height: 0;
+}
+
+.subapp-overlay-runner {
+  height: 100%;
+}
+
+// ── panel：主内容区右侧 dock ───────────────────────────────
+.subapp-panel-dock {
+  pointer-events: auto;
+  position: absolute;
+  top: 48px;
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-container, rgba(24, 24, 28, 0.98));
+  border-left: 1px solid var(--border-soft, rgba(255, 255, 255, 0.1));
+  box-shadow: -6px 0 20px rgba(0, 0, 0, 0.25);
+}
+
+.subapp-panel-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft, rgba(255, 255, 255, 0.08));
+
+  button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    opacity: 0.7;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+
+    &:hover {
+      opacity: 1;
+      background: rgba(128, 128, 128, 0.18);
+    }
+  }
+}
+
+.subapp-panel-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subapp-panel-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.subapp-panel-runner {
+  height: 100%;
+}

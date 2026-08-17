@@ -442,7 +442,8 @@ describe('SubAppBridgeHost ui / navigation / 限流', () => {
       (local.frame.postMessage.mock.calls[0]?.[0] as { response?: { retryable?: boolean } })
         .response?.retryable,
     ).toBe(true)
-    releaseInvoke?.()
+    // TS 看不到 mock 回调内的赋值，收窄回可空调用
+    ;(releaseInvoke as (() => void) | null)?.()
     local.host.detach(window)
   })
 })
