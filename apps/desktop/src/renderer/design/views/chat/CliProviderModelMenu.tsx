@@ -117,11 +117,11 @@ export function CliProviderModelMenu({
         open={open}
         placement={CLI_SUBMENU_PLACEMENTS[placement]}
         disabled={disabled}
-        // 显式锁定 z-index，避免 antd v6 useZIndex 沿主弹窗的 ZIndexContext 把
-        // 子弹窗累加成 100（< 主弹窗 antd CSS 默认 1050），从而被主弹窗盖住。
-        // 3500 高于会话栏其他叠层（message 3400 / submenu-popup 3401 / 旧 :has
-        // 兜底 3402），保证子弹窗始终浮在主选择弹窗之上。
-        zIndex={3500}
+        // 层级由 styles.css 的 `.ant-dropdown:has(.composer-cli-model-submenu)`
+        // 规则强制 z-index: 3500 !important——antd v6 Dropdown 无 zIndex prop，
+        // 且 useZIndex 会沿主弹窗 ZIndexContext 把子弹窗累加成 100 而被主弹窗
+        // 盖住，必须用 !important CSS 压过内联值。3500 高于会话栏其他叠层
+        // （message 3400 / submenu-popup 3401），保证子弹窗始终浮在主弹窗之上。
         align={{ offset: [4, 0], overflow: { shiftX: true, adjustY: true } }}
         getPopupContainer={() => document.body}
         onOpenChange={(nextOpen) => {
