@@ -4230,6 +4230,12 @@ body.sidebar-resizing {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel-elev);
+  /* 末位 z-index 兜底：即使未来 antd / rc-trigger 在 .ant-dropdown 之外再包一层
+   * 容器（建立新的堆叠上下文），让子弹窗内容元素本身直接坐到 3500，仍然能
+   * 浮在主选择弹窗的 antd CSS 默认 1050 之上。和 .ant-dropdown:has() 兜底 +
+   * CliProviderModelMenu 的 zIndex={3500} prop 形成三道防线。 */
+  position: relative;
+  z-index: 3500;
 }
 .composer-cli-model-submenu-search {
   display: flex;

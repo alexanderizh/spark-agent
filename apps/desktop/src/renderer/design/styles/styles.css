@@ -1319,7 +1319,7 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
 }
 .ant-dropdown:has(.composer-cli-model-submenu) {
   -webkit-app-region: no-drag;
-  z-index: 3402 !important;
+  z-index: 3500 !important;
 }
 /* antd renders each submenu in an independent rc-trigger portal. The popup
    class scopes the user-menu treatment to that portal without changing its

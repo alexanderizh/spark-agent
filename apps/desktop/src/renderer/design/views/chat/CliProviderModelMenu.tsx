@@ -117,6 +117,11 @@ export function CliProviderModelMenu({
         open={open}
         placement={CLI_SUBMENU_PLACEMENTS[placement]}
         disabled={disabled}
+        // 显式锁定 z-index，避免 antd v6 useZIndex 沿主弹窗的 ZIndexContext 把
+        // 子弹窗累加成 100（< 主弹窗 antd CSS 默认 1050），从而被主弹窗盖住。
+        // 3500 高于会话栏其他叠层（message 3400 / submenu-popup 3401 / 旧 :has
+        // 兜底 3402），保证子弹窗始终浮在主选择弹窗之上。
+        zIndex={3500}
         align={{ offset: [4, 0], overflow: { shiftX: true, adjustY: true } }}
         getPopupContainer={() => document.body}
         onOpenChange={(nextOpen) => {
