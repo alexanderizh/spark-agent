@@ -13,7 +13,8 @@ export function writeSessionReferenceDragPayload(
   dataTransfer: DataTransfer,
   payload: SessionReferenceDragPayload,
 ): void {
-  dataTransfer.effectAllowed = 'copy'
+  // copyMove：允许 drop 目标声明 move，避免拖拽悬停时光标变成「带加号的复制」形态
+  dataTransfer.effectAllowed = 'copyMove'
   dataTransfer.setData(SESSION_REFERENCE_MIME, JSON.stringify(payload))
   dataTransfer.setData('text/plain', payload.title)
 }

@@ -2275,6 +2275,8 @@ export function ComposerV2({
         isSessionReferenceDropTarget(event.target)
       ) {
         event.preventDefault()
+        // move：保持普通箭头光标，不显示「复制 +」形态
+        if (event.dataTransfer != null) event.dataTransfer.dropEffect = 'move'
         sessionDragDepthRef.current += 1
         setSessionReferenceDropActive(true)
         return
@@ -2294,7 +2296,8 @@ export function ComposerV2({
         isSessionReferenceDropTarget(event.target)
       ) {
         event.preventDefault()
-        if (event.dataTransfer != null) event.dataTransfer.dropEffect = 'copy'
+        // move：保持普通箭头光标，不显示「复制 +」形态
+        if (event.dataTransfer != null) event.dataTransfer.dropEffect = 'move'
         setSessionReferenceDropActive(true)
         return
       }
