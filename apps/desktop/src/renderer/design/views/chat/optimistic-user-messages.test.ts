@@ -7,6 +7,7 @@ import {
   commitOptimisticUserMessage,
   createOptimisticUserMessage,
   failOptimisticUserMessage,
+  finalizeCancelledOptimisticUserMessage,
   removeQueuedOptimisticUserMessages,
   settleOptimisticUserSend,
   settleOptimisticImageSend,
@@ -288,6 +289,44 @@ describe('optimistic user messages', () => {
       },
     ])
     expect(pruneAcknowledgedOptimisticUserMessages(optimistic, [real], 'session-1')).toEqual([])
+  })
+
+  it('keeps a pre-start cancelled user bubble before the persisted cancellation terminal', () => {
+    const optimistic = commitOptimisticUserMessage(
+      [
+        createOptimisticUserMessage({
+          clientId: 'client-cancelled',
+          sessionId: 'session-1',
+          content: '中止前尚未落库',
+          createdAt: '2026-08-02T10:00:00.000Z',
+          attachments: [],
+        }),
+      ],
+      'client-cancelled',
+      'turn-cancelled',
+    )
+    const cancelled = finalizeCancelledOptimisticUserMessage(
+      optimistic,
+      'session-1',
+      'turn-cancelled',
+    )
+    const terminal: UIMessage = {
+      id: 'cancel-terminal',
+      turnId: 'turn-cancelled',
+      role: 'assistant',
+      status: 'cancelled',
+      blocks: [],
+      usage: null,
+      eventIds: ['cancel-terminal'],
+    }
+
+    const merged = mergeOptimisticUserMessages([terminal], cancelled, 'session-1')
+
+    expect(merged.map((message) => message.id)).toEqual([
+      'optimistic-client-cancelled',
+      'cancel-terminal',
+    ])
+    expect(merged[0]?.deliveryState).toBe('cancelled')
   })
 
   it('isolates sessions and preserves pending message order', () => {

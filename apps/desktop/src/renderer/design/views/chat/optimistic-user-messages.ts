@@ -234,6 +234,24 @@ export function cancelOptimisticUserMessageByTurnId(
   return messages.filter((item) => !(item.sessionId === sessionId && item.turnId === turnId))
 }
 
+export function finalizeCancelledOptimisticUserMessage(
+  messages: OptimisticUserMessage[],
+  sessionId: string,
+  turnId: string,
+): OptimisticUserMessage[] {
+  return messages.map((item) => {
+    if (item.sessionId !== sessionId || item.turnId !== turnId) return item
+    const { hiddenUntilStarted: _hiddenUntilStarted, ...visibleItem } = item
+    return {
+      ...visibleItem,
+      message: {
+        ...item.message,
+        deliveryState: 'cancelled',
+      },
+    }
+  })
+}
+
 export function clearOptimisticUserMessagesForSession(
   messages: OptimisticUserMessage[],
   sessionId: string,
@@ -296,11 +314,35 @@ export function mergeOptimisticUserMessages(
         (item.turnId == null || !persistedUserTurnIds.has(item.turnId)),
     )
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    .map((item) => item.message)
 
-  return pending.length === 0
-    ? persistedWithImmediatePreviews
-    : [...persistedWithImmediatePreviews, ...pending]
+  if (pending.length === 0) return persistedWithImmediatePreviews
+
+  const pendingByTurnId = new Map<string, OptimisticUserMessage[]>()
+  for (const item of pending) {
+    if (item.turnId == null) continue
+    const sameTurn = pendingByTurnId.get(item.turnId) ?? []
+    sameTurn.push(item)
+    pendingByTurnId.set(item.turnId, sameTurn)
+  }
+
+  const insertedTurnIds = new Set<string>()
+  const merged: UIMessage[] = []
+  for (const message of persistedWithImmediatePreviews) {
+    if (message.turnId != null && !insertedTurnIds.has(message.turnId)) {
+      const sameTurn = pendingByTurnId.get(message.turnId)
+      if (sameTurn != null) {
+        merged.push(...sameTurn.map((item) => item.message))
+        insertedTurnIds.add(message.turnId)
+      }
+    }
+    merged.push(message)
+  }
+  for (const item of pending) {
+    if (item.turnId == null || !insertedTurnIds.has(item.turnId)) {
+      merged.push(item.message)
+    }
+  }
+  return merged
 }
 
 export function pruneAcknowledgedOptimisticUserMessages(

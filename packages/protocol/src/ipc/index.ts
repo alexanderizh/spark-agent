@@ -405,6 +405,7 @@ export interface SessionCancelRequest {
 
 export interface SessionCancelResponse {
   cancelled: boolean
+  turnId?: string
 }
 
 /** 用户拒绝当前会话的待审批计划（plan_proposed）。 */

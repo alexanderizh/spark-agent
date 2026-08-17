@@ -133,6 +133,7 @@ import {
   commitOptimisticUserMessage,
   createOptimisticUserMessage,
   failOptimisticUserMessage,
+  finalizeCancelledOptimisticUserMessage,
   mergeOptimisticUserMessages,
   pruneAcknowledgedOptimisticUserMessages,
   removeQueuedOptimisticUserMessages,
@@ -1532,6 +1533,12 @@ export function ChatView({
     async (sessionId: SessionId) => {
       try {
         const res = await cancelSessionTurn({ sessionId })
+        if (res.cancelled && res.turnId != null) {
+          const cancelledTurnId = res.turnId
+          setOptimisticUserMessages((current) =>
+            finalizeCancelledOptimisticUserMessage(current, sessionId, cancelledTurnId),
+          )
+        }
         setSessionStopTriggers((prev) => ({
           ...prev,
           [sessionId]: (prev[sessionId] ?? 0) + 1,

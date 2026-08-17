@@ -9675,7 +9675,7 @@ export class SessionService {
     this.iterationOverrides.set(sessionId, Math.floor(max))
   }
 
-  async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
+  async cancelTurn(sessionId: string): Promise<{ cancelled: boolean; turnId?: string }> {
     this.resetTeamDispatchAutoContinuation(sessionId)
     const removedQueuedContinuation = this.removeQueuedTeamDispatchAutoContinuations(sessionId)
     const loop = this.turnRegistry.executorFor(sessionId)
@@ -9687,7 +9687,11 @@ export class SessionService {
           getLatestTurnIdFromEvents(eventRepo, sessionId))
         : null
     const cancelledTurnId = activeTurnId ?? startingTurnId
-    if (cancelledTurnId != null) this.turnRegistry.markTurnCancelled(cancelledTurnId)
+    const wasAlreadyCancelled =
+      cancelledTurnId != null && this.turnRegistry.isTurnCancelled(cancelledTurnId)
+    if (cancelledTurnId != null && !wasAlreadyCancelled) {
+      this.turnRegistry.markTurnCancelled(cancelledTurnId)
+    }
     this.stopComputerUseSession(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
     // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
@@ -9697,15 +9701,17 @@ export class SessionService {
     const cancelledTeamDispatches = this.teamDispatchService?.cancelBySession(sessionId) ?? 0
     if (loop == null) {
       if (startingTurnId != null) {
-        this.emitAndPersist(
-          sessionId,
-          startingTurnId,
-          createUserCancelledTurnEvent(sessionId, startingTurnId),
-          eventRepo,
-        )
+        if (!wasAlreadyCancelled) {
+          this.emitAndPersist(
+            sessionId,
+            startingTurnId,
+            createUserCancelledTurnEvent(sessionId, startingTurnId),
+            eventRepo,
+          )
+        }
         new SessionRepository(this.db).updateStatus(sessionId, 'idle')
         this.emitQueueChanged(sessionId)
-        return { cancelled: true }
+        return { cancelled: true, turnId: startingTurnId }
       }
       if (cancelledTeamDispatches > 0) {
         new SessionRepository(this.db).updateStatus(sessionId, 'idle')
@@ -9733,7 +9739,7 @@ export class SessionService {
     sessionRepo.updateStatus(sessionId, 'idle')
     // 终止当前任务后，自动执行队列中的下一个任务
     this.startNextQueuedTurn(sessionId)
-    return { cancelled: true }
+    return { cancelled: true, turnId }
   }
 
   /**

@@ -244,7 +244,7 @@ describe.each(ENGINES)('turn 管道贯穿基线（$adapter 引擎）', (engine) 
     await waitUntil(() => executor.holding, 5000, 'executor to enter hold')
 
     const result = await service.cancelTurn(sessionId)
-    expect(result.cancelled).toBe(true)
+    expect(result).toEqual({ cancelled: true, turnId })
 
     const terminal = await waitForTurnTerminal()
     expect(terminal.turnId).toBe(turnId)
@@ -282,6 +282,27 @@ describe.each(ENGINES)('turn 管道贯穿基线（$adapter 引擎）', (engine) 
     const secondTerminal = await waitForTurnTerminal(5000, second.turnId)
     expect((secondTerminal.event as { status?: unknown }).status).toBe('completed')
     expect(secondTerminal.turnId).toBe(second.turnId)
+  })
+
+  it('预启动阶段连续取消只持久化一条终态并返回准确 turnId', async () => {
+    const turnId = 'turn-pre-start-cancel'
+    const registry = (
+      service as unknown as {
+        turnRegistry: { beginStarting: (sessionId: string, turnId: string) => void }
+      }
+    ).turnRegistry
+    registry.beginStarting(sessionId, turnId)
+
+    const first = await service.cancelTurn(sessionId)
+    const second = await service.cancelTurn(sessionId)
+
+    expect(first).toEqual({ cancelled: true, turnId })
+    expect(second).toEqual({ cancelled: true, turnId })
+    expect(
+      loadPersistedEvents().filter(
+        (entry) => entry.turnId === turnId && entry.type === 'agent_status',
+      ),
+    ).toHaveLength(1)
   })
 
   it('③ resume：sdkSessionId 稳定性与 adapterKind 快照', async () => {
