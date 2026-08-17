@@ -6,7 +6,9 @@ import type {
   TeamA2ATask,
   TeamA2AReply,
   TeamMemberEventContext,
+  ToolSchemaTokenObservation,
   TurnPromptSnapshotEvent,
+  TurnRuntimeMetrics,
   TurnSource,
   UserMessageVisibility,
   RuntimeEventOrigin,
@@ -477,6 +479,47 @@ function isCancellationErrorCode(code: string): boolean {
   return CANCELLATION_ERROR_CODES.has(code.trim().toUpperCase())
 }
 
+function mergeTurnRuntimeMetrics(
+  current: TurnRuntimeMetrics | undefined,
+  patch: TurnRuntimeMetrics | undefined,
+): TurnRuntimeMetrics | undefined {
+  if (current == null) return patch
+  if (patch == null) return current
+
+  const currentSchemas = current.toolSchemas
+  const patchSchemas = patch.toolSchemas
+  const mergedDeferred = mergeToolSchemaObservation(
+    currentSchemas?.deferred,
+    patchSchemas?.deferred,
+  )
+  const mergedLoaded = mergeToolSchemaObservation(currentSchemas?.loaded, patchSchemas?.loaded)
+  const mergedSchemas =
+    patchSchemas == null
+      ? currentSchemas
+      : {
+          declared:
+            mergeToolSchemaObservation(currentSchemas?.declared, patchSchemas.declared) ??
+            patchSchemas.declared,
+          ...(mergedDeferred != null ? { deferred: mergedDeferred } : {}),
+          ...(mergedLoaded != null ? { loaded: mergedLoaded } : {}),
+        }
+
+  return {
+    ...current,
+    ...patch,
+    ...(mergedSchemas != null ? { toolSchemas: mergedSchemas } : {}),
+  }
+}
+
+function mergeToolSchemaObservation(
+  current: ToolSchemaTokenObservation | undefined,
+  patch: ToolSchemaTokenObservation | undefined,
+): ToolSchemaTokenObservation | undefined {
+  if (current == null) return patch
+  if (patch == null) return current
+  return { ...current, ...patch }
+}
+
 export class MessageBuilder {
   private messages: UIMessage[] = []
   private processedEventIds = new Set<string>()
@@ -486,6 +529,7 @@ export class MessageBuilder {
   private activeGoal: GoalSnapshot | null = null
   private orchestrationStatus: OrchestrationSnapshot | null = null
   private turnPromptSnapshots: TurnPromptSnapshotEvent[] = []
+  private turnRuntimeMetrics = new Map<string, TurnRuntimeMetrics>()
   /** 追踪当前 turn 的文件变更，用于生成汇总 */
   private currentTurnFileChanges: FileChangeSummary[] = []
   /** 当前 turn 内最近一次 checkpoint id，用于「撤销」 */
@@ -498,7 +542,9 @@ export class MessageBuilder {
   }
 
   getTurnPromptSnapshots(): TurnPromptSnapshotEvent[] {
-    return this.turnPromptSnapshots
+    // React state consumers need a fresh array when incremental metrics update
+    // an existing snapshot; returning the mutable backing array would be Object.is-equal.
+    return [...this.turnPromptSnapshots]
   }
 
   consumePlanProposed(): string | null {
@@ -1309,7 +1355,31 @@ export class MessageBuilder {
       }
 
       case 'turn_prompt_snapshot': {
-        this.turnPromptSnapshots.push(event)
+        const runtimeMetrics = mergeTurnRuntimeMetrics(
+          event.runtimeMetrics,
+          this.turnRuntimeMetrics.get(event.turnId),
+        )
+        this.turnPromptSnapshots.push(runtimeMetrics != null ? { ...event, runtimeMetrics } : event)
+        break
+      }
+
+      case 'turn_runtime_metrics': {
+        const runtimeMetrics = mergeTurnRuntimeMetrics(
+          this.turnRuntimeMetrics.get(event.turnId),
+          event.metrics,
+        )
+        if (runtimeMetrics != null) {
+          this.turnRuntimeMetrics.set(event.turnId, runtimeMetrics)
+          const snapshotIndex = this.turnPromptSnapshots.findIndex(
+            (snapshot) => snapshot.turnId === event.turnId,
+          )
+          if (snapshotIndex >= 0) {
+            const snapshot = this.turnPromptSnapshots[snapshotIndex]
+            if (snapshot != null) {
+              this.turnPromptSnapshots[snapshotIndex] = { ...snapshot, runtimeMetrics }
+            }
+          }
+        }
         break
       }
 
@@ -1911,6 +1981,7 @@ export class MessageBuilder {
     this.processedEventIds.clear()
     this.currentAssistantId = null
     this.turnPromptSnapshots = []
+    this.turnRuntimeMetrics.clear()
     this.activeGoal = null
     this.orchestrationStatus = null
     this.currentTurnFileChanges = []

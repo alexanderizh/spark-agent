@@ -1850,4 +1850,85 @@ describe('MessageBuilder', () => {
       tokens: '480',
     })
   })
+
+  it('merges runtime metrics that arrive before the prompt snapshot', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('turn_runtime_metrics'),
+      id: 'runtime-before-snapshot',
+      type: 'turn_runtime_metrics',
+      metrics: { sparkPromptEstimatedTokens: 3210 },
+    })
+    builder.processEvent({
+      ...baseEvent('turn_prompt_snapshot'),
+      id: 'prompt-snapshot-after-runtime',
+      type: 'turn_prompt_snapshot',
+      userMessage: '',
+      systemPromptSections: [],
+      model: 'test-model',
+      adapterKind: 'claude-sdk',
+      permissionMode: 'default',
+      toolCount: 12,
+    })
+
+    expect(builder.getTurnPromptSnapshots()).toEqual([
+      expect.objectContaining({ runtimeMetrics: { sparkPromptEstimatedTokens: 3210 } }),
+    ])
+  })
+
+  it('updates snapshots incrementally without losing measured schema coverage', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('turn_prompt_snapshot'),
+      id: 'prompt-snapshot-before-runtime',
+      type: 'turn_prompt_snapshot',
+      userMessage: '',
+      systemPromptSections: [],
+      model: 'test-model',
+      adapterKind: 'codex',
+      permissionMode: 'default',
+      toolCount: 12,
+    })
+    const snapshotsBeforeMetrics = builder.getTurnPromptSnapshots()
+    builder.processEvent({
+      ...baseEvent('turn_runtime_metrics'),
+      id: 'runtime-schema',
+      type: 'turn_runtime_metrics',
+      metrics: {
+        mcpServerCount: 4,
+        toolSchemas: {
+          declared: {
+            serverCount: 4,
+            measuredServerCount: 2,
+            toolCount: 20,
+            estimatedTokens: 1700,
+            coverage: 'partial',
+          },
+        },
+      },
+    })
+    builder.processEvent({
+      ...baseEvent('turn_runtime_metrics'),
+      id: 'runtime-usage',
+      type: 'turn_runtime_metrics',
+      metrics: { providerInputTokens: 9000, cacheReadTokens: 7000 },
+    })
+
+    const snapshotsAfterMetrics = builder.getTurnPromptSnapshots()
+    expect(snapshotsAfterMetrics).not.toBe(snapshotsBeforeMetrics)
+    expect(snapshotsAfterMetrics[0]?.runtimeMetrics).toEqual({
+      mcpServerCount: 4,
+      providerInputTokens: 9000,
+      cacheReadTokens: 7000,
+      toolSchemas: {
+        declared: {
+          serverCount: 4,
+          measuredServerCount: 2,
+          toolCount: 20,
+          estimatedTokens: 1700,
+          coverage: 'partial',
+        },
+      },
+    })
+  })
 })

@@ -1,6 +1,6 @@
 # 工作台长会话上下文架构 V2
 
-> 状态: 实施中 | 最后核对: 2026-07-26
+> 状态: 实施中 | 最后核对: 2026-08-18
 
 ## 1. 背景与目标
 
@@ -104,6 +104,39 @@ Context Ledger 需要区分：
 - `Recovery Context (standby)`：resume 时只展示待命预算，不计入当前实际 prompt。
 
 Provider 上报的 compaction 事件仍只做事实记录，Spark 不伪造 compaction 成功。
+
+2026-08-18 起，Prompt Inspector 通过每轮 `turn_runtime_metrics` 增量事件补充以下白盒指标：
+
+- `Spark Prompt 估算`：只统计 Spark 实际装配的 system / skill / project / history / 当前输入，
+  不包含 Claude Code preset 和未观测的工具 schema。
+- `Provider 输入`、`缓存读取`、`缓存写入`：直接采用 adapter 的 usage 回报，与 Spark 估算分栏展示，
+  不拿估算值冒充 Provider 实际计费口径。
+- `MCP 配置耗时`、`请求 → MCP ready`、`请求 → 首输出`：前者覆盖本轮 MCP 解析与挂载，
+  后两者从 executor 真正提交请求的边界开始计时；首输出可以是正文或 reasoning 的首个 delta，
+  adapter 只给 complete 时以首个 complete 为降级观测点。
+- `工具 schema`：仅对已连接且能读取真实 `tools/list` 缓存的 server 估算 token，并同时记录
+  `measuredServerCount / serverCount` 与 `complete / partial / unavailable`。未观测 server、延迟 schema
+  和实际载入 schema 不显示为零；adapter 未回报时明确标记为不可观测。请求前取得的数值先在
+  turn 内缓冲，schema token 估算与指标事件持久化均延后到首个可观测模型输出之后调度，
+  不进入 prompt 组装、请求发送或请求到首输出的热路径。
+
+运行时日志开关只控制提示词正文、当前用户消息和加载详情的持久化与展示。即使关闭正文日志，
+上述数值指标仍会保留，因此简单请求也可以比较 Spark 估算、Provider 实际输入、缓存和 TTFT。
+
+### 6.1 精确去重边界
+
+当前阶段只做可以机械证明的去重，不做语义近似合并：
+
+- Host system / skill prompt 拼装保留第一次出现的完整段落，后续只有正文完全相同时才跳过；
+  比较时允许 CRLF / 行尾空格差异，但保留段仍按旧组装器行为输出原始内部字节和原顺序。
+- 项目规则文件正文完全相同，或后出现文件被前一个规则按完整换行边界包含时跳过；普通 token
+  内部的子字符串、Markdown 代码围栏内的示例都不属于包含关系。显式 pinned 文件始终注入，
+  不参与被包含或重复跳过。
+
+`[Managed Agent]` 内的 Agent 指令与后续 runtime Agent Prompt layer 虽可能正文相同，但两者位置和
+标签不同；当前阶段不去重，避免为节省 token 改变既有指令位置或优先级。
+
+这组规则不改写文案、不推断两段话是否“意思相近”，也不改变能力开关或 Skill 渐进加载语义。
 
 ## 7. 安全与质量约束
 

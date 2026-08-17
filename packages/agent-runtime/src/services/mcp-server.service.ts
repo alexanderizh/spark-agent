@@ -12,7 +12,7 @@ import type { McpServerRepository, McpServerRow } from '@spark/storage'
 import type { McpServerItem } from '@spark/protocol'
 import { EventEmitter } from 'node:events'
 import { McpClient, resolveMcpConfig, validateMcpConfigJson } from '../mcp/index.js'
-import type { McpTransportConfig } from '../mcp/index.js'
+import type { McpToolDefinition, McpTransportConfig } from '../mcp/index.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('mcp:service')
@@ -275,6 +275,18 @@ export class McpService {
     }
 
     return result
+  }
+
+  /**
+   * Return the real tools/list payload already cached by connected MCP clients.
+   * This is read-only observability data: disconnected or SDK-managed servers are
+   * intentionally absent so callers can report partial coverage instead of a fake zero.
+   */
+  getConnectedToolCatalogs(): Array<{ serverName: string; tools: McpToolDefinition[] }> {
+    return Array.from(this.clients.values(), (client) => ({
+      serverName: client.getServerName(),
+      tools: client.listTools(),
+    }))
   }
 
   // ─── Status ──────────────────────────────────────────────────────────────

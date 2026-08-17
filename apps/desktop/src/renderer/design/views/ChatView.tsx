@@ -3718,7 +3718,7 @@ function ChatStream({
         callbacks.onPlanProposed(null)
       }
 
-      if (event.type === 'turn_prompt_snapshot') {
+      if (event.type === 'turn_prompt_snapshot' || event.type === 'turn_runtime_metrics') {
         callbacks.onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
       }
 

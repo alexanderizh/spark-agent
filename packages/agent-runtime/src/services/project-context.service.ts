@@ -360,6 +360,13 @@ function applyContextBudget(
   }
 
   for (const doc of ruleDocs) {
+    // Pinning is an explicit inclusion decision and therefore takes precedence over dedupe.
+    if (pinnedPaths.has(doc.relativePath)) {
+      const selected = consume('rule', doc)
+      selectedRules.push(selected)
+      seenRuleBodies.set(normalizeInstructionBody(selected.body), doc.relativePath)
+      continue
+    }
     const bodyKey = normalizeInstructionBody(doc.body)
     const duplicateOf = seenRuleBodies.get(bodyKey)
     if (duplicateOf != null) {
@@ -374,9 +381,26 @@ function applyContextBudget(
       })
       continue
     }
-    seenRuleBodies.set(bodyKey, doc.relativePath)
+    const containingRule = Array.from(seenRuleBodies.entries()).find(([seenBody]) =>
+      containsCompleteInstructionBody(excludeMarkdownFencedCodeBlocks(seenBody), bodyKey),
+    )
+    if (containingRule != null) {
+      sources.push({
+        kind: 'rule',
+        name: doc.name,
+        path: doc.relativePath,
+        estimatedTokens: doc.estimatedTokens,
+        included: false,
+        reason: `contained_in:${containingRule[1]}`,
+        ...(doc.truncated ? { truncated: true } : {}),
+      })
+      continue
+    }
     const selected = consume('rule', doc)
-    if (selected.included) selectedRules.push(selected)
+    if (selected.included) {
+      selectedRules.push(selected)
+      seenRuleBodies.set(normalizeInstructionBody(selected.body), doc.relativePath)
+    }
   }
   for (const doc of agentDocs) {
     const selected = consume('agent', doc)
@@ -470,6 +494,50 @@ function normalizeInstructionBody(text: string): string {
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+$/gm, '')
     .trim()
+}
+
+function containsCompleteInstructionBody(container: string, candidate: string): boolean {
+  if (candidate.length === 0 || container.length <= candidate.length) return false
+  let start = container.indexOf(candidate)
+  while (start !== -1) {
+    const before = start === 0 ? '\n' : container[start - 1]
+    const end = start + candidate.length
+    const after = end === container.length ? '\n' : container[end]
+    if (before === '\n' && after === '\n') return true
+    start = container.indexOf(candidate, start + 1)
+  }
+  return false
+}
+
+function excludeMarkdownFencedCodeBlocks(text: string): string {
+  let fence: { marker: '`' | '~'; length: number } | null = null
+  return text
+    .split('\n')
+    .map((line) => {
+      const match = line.match(/^[ \t]{0,3}(`{3,}|~{3,})(.*)$/)
+      if (fence == null) {
+        if (match == null) return line
+        const token = match[1] ?? ''
+        const rest = match[2] ?? ''
+        if (token.startsWith('`') && rest.includes('`')) return line
+        fence = { marker: token[0] as '`' | '~', length: token.length }
+        return ''
+      }
+
+      if (match != null) {
+        const token = match[1] ?? ''
+        const rest = match[2] ?? ''
+        if (
+          token[0] === fence.marker &&
+          token.length >= fence.length &&
+          rest.trim().length === 0
+        ) {
+          fence = null
+        }
+      }
+      return ''
+    })
+    .join('\n')
 }
 
 function clampPrompt(text: string): string {

@@ -3,6 +3,34 @@ import { mapSDKMessageToEvents } from './event-mapper.js'
 import type { SDKAssistantMessage, SDKResultMessage, SDKUserMessage } from './types.js'
 
 describe('mapSDKMessageToEvents', () => {
+  it('preserves Claude init tool counts for runtime observability', () => {
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'system',
+        subtype: 'init',
+        uuid: 'init-1',
+        session_id: 'sdk-session',
+        tools: ['Read', 'Write', 'mcp__spark_search__web_search'],
+        model: 'claude-test',
+        permissionMode: 'default',
+        mcp_servers: [
+          { name: 'spark_search', status: 'connected' },
+          { name: 'spark_files', status: 'connected' },
+        ],
+        cwd: '/workspace',
+        skills: [],
+      },
+      { sessionId: 'session-1', turnId: 'turn-1' },
+    )
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'agent_status',
+        runtimeInitialization: { availableToolCount: 3, mcpServerCount: 2 },
+      }),
+    )
+  })
+
   it.each([
     ['authentication_failed', 'CLAUDE_AUTHENTICATION_FAILED', false],
     ['oauth_org_not_allowed', 'CLAUDE_OAUTH_ORG_NOT_ALLOWED', false],

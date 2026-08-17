@@ -123,6 +123,8 @@ import {
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
 import { buildWorkflowBindingAuthorityPrompt } from './workflow-system-prompt.js'
 import { buildContextLedger } from './context-ledger.js'
+import { joinDistinctPromptSections } from './prompt-deduplication.js'
+import { TurnRuntimeMetricsTracker } from './turn-runtime-metrics.js'
 import { createCanvasMcpUnavailableEvents } from './canvas-mcp-startup-events.js'
 import type { PluginManager } from './plugins/plugin-manager.service.js'
 import {
@@ -464,6 +466,8 @@ interface TryStartSDKTurnOptions extends UserMessagePresentation {
   workspaceRootPath?: string
   /** 当前 turn 附带的只读会话参考，沿执行链传给 user_message 事件。 */
   sessionReferences?: SessionReferenceInput[]
+  /** 当前 Host turn 的 prompt / MCP / cache / TTFT 增量观测器。 */
+  runtimeMetrics?: TurnRuntimeMetricsTracker
 }
 type SessionRuntimePatch = {
   providerProfileId?: string
@@ -2546,6 +2550,24 @@ export class SessionService {
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
     const eventRepo = new EventRepository(this.db)
+    const runtimeMetrics = new TurnRuntimeMetricsTracker({
+      emit: (metrics) => {
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            id: crypto.randomUUID(),
+            type: 'turn_runtime_metrics',
+            sessionId,
+            turnId,
+            timestamp: new Date().toISOString(),
+            seq: 0,
+            metrics,
+          },
+          eventRepo,
+        )
+      },
+    })
 
     if (runtimePatch != null) {
       sessionRepo.updateRuntime(sessionId, runtimePatch)
@@ -2991,6 +3013,7 @@ export class SessionService {
         ...(runtimePatch?.skillIds !== undefined ? { replaceAgentSkills: true } : {}),
       },
     )
+    runtimeMetrics.markMcpConfigurationStarted()
     const mediaGenerationContext = await this.resolveMediaGenerationContext(workspaceRootPath)
     const imageGenerationContext =
       mediaGenerationContext == null
@@ -3026,6 +3049,7 @@ export class SessionService {
         )
       }
     }
+    runtimeMetrics.pauseMcpConfiguration()
     const sparkWebToolEnabled =
       runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
     const workflowCanUseManagedExecutor =
@@ -3282,7 +3306,7 @@ export class SessionService {
     const trailingSystemPromptSections = [
       workflow != null ? buildWorkflowBindingAuthorityPrompt(workflow) : undefined,
     ]
-    const composedSystemPrompt = joinPromptSections(
+    const composedSystemPrompt = joinDistinctPromptSections(
       ...systemPromptSections,
       projectContext.systemPrompt,
       // 记忆三段紧邻对话历史（内容不变，仅段序调整）：memoryBlock 每轮可能因记忆
@@ -3299,7 +3323,7 @@ export class SessionService {
     )
     // context_ledger 的各段必须互斥。实际运行 prompt 仍保持上面的原始顺序，
     // 这里只为账本把项目上下文和对话历史从 System Prompt 分类中排除。
-    const contextLedgerSystemPrompt = joinPromptSections(
+    const contextLedgerSystemPrompt = joinDistinctPromptSections(
       ...systemPromptSections,
       // 记忆三段实际渲染在项目上下文之后（见 composedSystemPrompt），账本计量
       // 仍归入 System Prompt 分类——各段按类别字符串独立计 token，与顺序无关。
@@ -3308,7 +3332,7 @@ export class SessionService {
       MEMORY_PROVENANCE_SYSTEM_PROMPT,
       ...trailingSystemPromptSections,
     )
-    const composedSkillSystemPrompt = joinPromptSections(
+    const composedSkillSystemPrompt = joinDistinctPromptSections(
       runtimeContext.skillSystemPrompt,
       projectContext.skillSystemPrompt,
       imageGenerationContext?.systemPrompt,
@@ -3492,6 +3516,7 @@ export class SessionService {
         userMessage: message,
         attachmentPrompt: attachmentPromptLedger,
       })
+      runtimeMetrics.recordPromptEstimate(totalEstimatedTokens)
 
       this.emitAndPersist(
         sessionId,
@@ -3540,6 +3565,10 @@ export class SessionService {
 
     if (resolveEngineKind(agentAdapter) === 'claude-sdk') {
       const iterationOverride = this.iterationOverrides.get(sessionId)
+      const observedInvocation = (snapshot: SDKInvocationSnapshot): void => {
+        runtimeMetrics.markRequestSent()
+        invocationObserver?.(snapshot)
+      }
       const sdkConfig: SDKExecutorConfig = {
         apiKey,
         ...(automation.unattended ? { unattended: true } : {}),
@@ -3652,7 +3681,7 @@ export class SessionService {
             }
           : {}),
         ...(goalConfig != null ? { goal: goalConfig } : {}),
-        ...(invocationObserver != null ? { invocationObserver } : {}),
+        invocationObserver: observedInvocation,
       }
       const turnOptions: TryStartSDKTurnOptions = {
         ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
@@ -3660,6 +3689,7 @@ export class SessionService {
         agentId: agent.id,
         workspaceRootPath,
         ...userMessagePresentation,
+        runtimeMetrics,
         ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
       }
       // Local CLI 走宿主 OAuth，没有可直发的 apiKey；跳过远程标题精炼，
@@ -3686,6 +3716,10 @@ export class SessionService {
       return
     }
 
+    const observedInvocation = (snapshot: SDKInvocationSnapshot): void => {
+      runtimeMetrics.markRequestSent()
+      invocationObserver?.(snapshot)
+    }
     const codexConfig: SDKExecutorConfig = {
       apiKey,
       ...(automation.unattended ? { unattended: true } : {}),
@@ -3755,7 +3789,7 @@ export class SessionService {
       sdkSessionId,
       continueSession: canResumeSdkSession,
       ...(goalConfig != null ? { goal: goalConfig } : {}),
-      ...(invocationObserver != null ? { invocationObserver } : {}),
+      invocationObserver: observedInvocation,
       // app-server 载具的交互审批回路（P2-1）：codex 原生审批请求（命令/文件变更）
       // 经 approvalCallback 走用户审批卡；载具侧负责 waiting_permission 状态与
       // 确定性兜底（无回调/unattended/回调异常 → deny，杜绝上游 turn 挂起）。
@@ -3776,6 +3810,7 @@ export class SessionService {
       agentId: agent.id,
       workspaceRootPath,
       ...userMessagePresentation,
+      runtimeMetrics,
       ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
     }
     // 与 claude 分支同款首轮标题精炼上下文（W2-D3 行为补齐：此前仅 claude 路径
@@ -4149,6 +4184,7 @@ export class SessionService {
     }
 
     // Build MCP server config from our McpService for the SDK
+    options.runtimeMetrics?.markMcpConfigurationStarted()
     const mcpServers = await this.buildMcpServersForSDK()
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
@@ -4363,6 +4399,7 @@ export class SessionService {
 
     // spark_session（in-process 版）—— agent 上报引擎级 worktree 状态的工具
     await this.attachSparkSessionMcpServer(sessionId, mcpServers)
+    options.runtimeMetrics?.pauseMcpConfiguration()
 
     const completeAssistantEvents: AssistantMessageEvent[] = []
     // 标题精炼、目标契约/进度解析、记忆抽取都依赖完整 assistant 正文。
@@ -4397,6 +4434,7 @@ export class SessionService {
       ) {
         return
       }
+      options.runtimeMetrics?.observe(event)
       if (
         event.type === 'agent_status' &&
         (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
@@ -4576,6 +4614,11 @@ export class SessionService {
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
       ...(sdkAllowedTools != null ? { allowedTools: sdkAllowedTools } : {}),
     }
+    options.runtimeMetrics?.markMcpConfigurationStarted()
+    options.runtimeMetrics?.recordMcpConfiguration(
+      Object.keys(mcpServers),
+      this.mcpService.getConnectedToolCatalogs(),
+    )
 
     // Checkpoint（会话开启时）：在 agent 改动文件前捕获本轮起始状态作为可还原点，
     // 仅当工作区相对上个 checkpoint 有实际变更时才真正快照（gating 见 maybeCaptureCheckpoint）。
@@ -4704,6 +4747,7 @@ export class SessionService {
       return
     }
 
+    options.runtimeMetrics?.markMcpConfigurationStarted()
     const mcpServers = await this.buildMcpServersForSDK()
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
@@ -4824,6 +4868,7 @@ export class SessionService {
     if (config.debugMcpServer != null) {
       mcpServers.spark_debug = config.debugMcpServer
     }
+    options.runtimeMetrics?.pauseMcpConfiguration()
 
     // MCP hot-reload: same as Claude SDK path — force a fresh session if the MCP
     // set changed since the last build.
@@ -4890,6 +4935,7 @@ export class SessionService {
       ) {
         return
       }
+      options.runtimeMetrics?.observe(event)
       if (
         event.type === 'agent_status' &&
         (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
@@ -5006,7 +5052,12 @@ export class SessionService {
     sessionRepo.updateStatus(sessionId, 'running')
     this.emitQueueChanged(sessionId)
 
+    options.runtimeMetrics?.markMcpConfigurationStarted()
     const cliMcpServers = useCodexCli ? filterCliCompatibleMcpServers(mcpServers) : mcpServers
+    options.runtimeMetrics?.recordMcpConfiguration(
+      Object.keys(cliMcpServers),
+      this.mcpService.getConnectedToolCatalogs(),
+    )
     const cliConfig: SDKExecutorConfig = {
       ...config,
       ...(Object.keys(cliMcpServers).length > 0 ? { mcpServers: cliMcpServers } : {}),

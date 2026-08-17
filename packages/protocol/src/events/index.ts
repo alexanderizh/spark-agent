@@ -554,6 +554,11 @@ export interface AgentStatusEvent extends BaseEvent {
   status: AgentStatusValue
   /** 状态描述（显示在 Agent Card 上）*/
   message?: string
+  /** Claude SDK init 阶段回报的实际运行时工具清单摘要；其他 adapter 可省略。 */
+  runtimeInitialization?: {
+    availableToolCount: number
+    mcpServerCount: number
+  }
   agentId?: string
   agentName?: string
 }
@@ -718,6 +723,51 @@ export interface ContextLedgerEvent extends BaseEvent {
   contextWindowTokens: number
   /** Percentage of soft limit used */
   usagePercent: number
+}
+
+export interface ToolSchemaTokenObservation {
+  /** 当前请求声明的 MCP server 总数。 */
+  serverCount: number
+  /** 成功取得真实 tools/list schema 的 server 数；未测量不冒充为 0 token。 */
+  measuredServerCount: number
+  /** 已测量 server 中的工具数。 */
+  toolCount?: number
+  /** 对已测量工具 name/description/inputSchema 的 token 估算。 */
+  estimatedTokens?: number
+  coverage: 'complete' | 'partial' | 'unavailable'
+}
+
+/** 单个 turn 的增量运行时观测值；后续事件按字段覆盖同 turn 的旧值。 */
+export interface TurnRuntimeMetrics {
+  /** Spark 自己装配的 prompt 估算，不包含供应商内置 preset 和未观测 schema。 */
+  sparkPromptEstimatedTokens?: number
+  /** Provider usage 回报的真实输入 token。 */
+  providerInputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  /** Spark 为当前 turn 解析/挂载 MCP 配置的耗时。 */
+  mcpConfigurationMs?: number
+  /** 请求提交到 SDK 回报 MCP/tool 初始化完成的耗时。 */
+  requestToMcpReadyMs?: number
+  /** 请求提交到首个正文或 reasoning 输出的耗时。 */
+  requestToFirstOutputMs?: number
+  firstOutputKind?: 'delta' | 'complete'
+  /** SDK init 回报的可用工具总数（含内置工具，不等同于 schema token）。 */
+  availableToolCount?: number
+  mcpServerCount?: number
+  toolSchemas?: {
+    declared: ToolSchemaTokenObservation
+    /** 仅当 adapter 能可靠观测延迟 schema 时设置。 */
+    deferred?: ToolSchemaTokenObservation
+    /** 仅当 adapter 能可靠观测实际载入 schema 时设置。 */
+    loaded?: ToolSchemaTokenObservation
+  }
+}
+
+/** Prompt / MCP / cache / TTFT 的增量白盒观测事件。 */
+export interface TurnRuntimeMetricsEvent extends BaseEvent {
+  type: 'turn_runtime_metrics'
+  metrics: TurnRuntimeMetrics
 }
 
 /** Emitted when the Context Governor summarizes older turns */
@@ -942,6 +992,8 @@ export interface TurnPromptSnapshotEvent extends BaseEvent, UserMessagePresentat
     charCount: number
     itemCount?: number
   }>
+  /** Renderer 将同 turn 的 turn_runtime_metrics 增量合并到这里，便于审计面板展示。 */
+  runtimeMetrics?: TurnRuntimeMetrics
 }
 
 // ─── AgentEvent 联合类型 ──────────────────────────────────────────────────────
@@ -979,6 +1031,7 @@ export type AgentEvent =
   | ContextUsageEvent
   | ProjectContextLoadedEvent
   | TurnPromptSnapshotEvent
+  | TurnRuntimeMetricsEvent
   | ContextLedgerEvent
   | ContextSummarizedEvent
   | ContextCompactionEvent

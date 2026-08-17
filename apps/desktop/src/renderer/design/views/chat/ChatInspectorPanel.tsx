@@ -29,6 +29,7 @@ import type {
   SessionId,
   TeamModeConfig,
   TurnPromptSnapshotEvent,
+  TurnRuntimeMetrics,
   UsageGetSessionResponse,
   WorkspaceInfo,
 } from '@spark/protocol'
@@ -972,17 +973,7 @@ function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEv
         />
         <span className="inspector-count">{snapshots.length} 轮</span>
       </h4>
-      {runtimeLogEnabled ? (
-        <div className="prompt-snapshot-list">
-          {[...snapshots].reverse().map((snapshot, idx) => (
-            <TurnPromptRow
-              key={snapshot.turnId}
-              snapshot={snapshot}
-              turnNumber={snapshots.length - idx}
-            />
-          ))}
-        </div>
-      ) : (
+      {!runtimeLogEnabled && (
         <div
           style={{
             fontSize: 11,
@@ -991,9 +982,19 @@ function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEv
             lineHeight: 1.5,
           }}
         >
-          运行时日志已关闭，仅保留会话续接所需元数据。开启后才会记录每轮提示词快照。
+          运行时日志已关闭：仍记录 token、缓存与延迟指标，但不保存或展示提示词正文。
         </div>
       )}
+      <div className="prompt-snapshot-list">
+        {[...snapshots].reverse().map((snapshot, idx) => (
+          <TurnPromptRow
+            key={snapshot.turnId}
+            snapshot={snapshot}
+            turnNumber={snapshots.length - idx}
+            showPromptText={runtimeLogEnabled}
+          />
+        ))}
+      </div>
     </div>
   )
 }
@@ -1002,12 +1003,14 @@ function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEv
 const TurnPromptRow = React.memo(function TurnPromptRow({
   snapshot,
   turnNumber,
+  showPromptText,
 }: {
   snapshot: TurnPromptSnapshotEvent
   turnNumber: number
+  showPromptText: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
-  const visibleUserMessage = getVisibleTurnPromptSnapshotUserMessage(snapshot)
+  const visibleUserMessage = showPromptText ? getVisibleTurnPromptSnapshotUserMessage(snapshot) : ''
   const userPreview = useMemo(() => truncateText(visibleUserMessage, 80), [visibleUserMessage])
   const totalPromptChars = useMemo(
     () => snapshot.systemPromptSections.reduce((sum, s) => sum + s.charCount, 0),
@@ -1023,6 +1026,10 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
     if (n >= 10_000) return `${Math.round(n / 1000)}K`
     return `${n}`
   }
+  const promptSummary =
+    snapshot.runtimeMetrics?.sparkPromptEstimatedTokens != null
+      ? `Spark Prompt ≈ ${formatTokenCount(snapshot.runtimeMetrics.sparkPromptEstimatedTokens)} tokens`
+      : `${snapshot.systemPromptSections.length} 段 · ${formatCharCount(totalPromptChars)} 字符`
 
   return (
     <div className={`prompt-turn-row ${expanded ? 'expanded' : ''}`}>
@@ -1047,12 +1054,10 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
         <span className="prompt-turn-time">{relativeTime(snapshot.timestamp)}</span>
       </div>
       <div className="prompt-turn-summary">
-        <span className="prompt-turn-user" title={visibleUserMessage}>
-          {userPreview}
+        <span className="prompt-turn-user" title={visibleUserMessage || undefined}>
+          {userPreview || '提示词正文未记录'}
         </span>
-        <span className="prompt-turn-meta">
-          {snapshot.systemPromptSections.length} 段 · {formatCharCount(totalPromptChars)} 字符
-        </span>
+        <span className="prompt-turn-meta">{promptSummary}</span>
       </div>
       {expanded && (
         <div className="prompt-turn-detail">
@@ -1066,21 +1071,96 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
             <span className="prompt-config-tag">Tools: {snapshot.toolCount}</span>
           </div>
 
-          {/* 用户消息 */}
-          <div className="prompt-section-block">
-            <div className="prompt-section-label">用户消息</div>
-            <pre className="prompt-section-content">{visibleUserMessage}</pre>
-          </div>
+          <TurnRuntimeMetricsBlock metrics={snapshot.runtimeMetrics} />
 
-          {/* 系统提示词各段落 */}
-          {snapshot.systemPromptSections.map((section, sIdx) => (
-            <PromptSectionBlock key={sIdx} section={section} />
-          ))}
+          {showPromptText && (
+            <>
+              {/* 用户消息 */}
+              <div className="prompt-section-block">
+                <div className="prompt-section-label">用户消息</div>
+                <pre className="prompt-section-content">{visibleUserMessage}</pre>
+              </div>
+
+              {/* 系统提示词各段落 */}
+              {snapshot.systemPromptSections.map((section, sIdx) => (
+                <PromptSectionBlock key={sIdx} section={section} />
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
   )
 })
+
+function TurnRuntimeMetricsBlock({ metrics }: { metrics: TurnRuntimeMetrics | undefined }) {
+  const rows: Array<{ label: string; value: string }> = []
+  const addTokens = (label: string, value: number | undefined): void => {
+    if (value != null) rows.push({ label, value: `${formatTokenCount(value)} tokens` })
+  }
+  const addDuration = (label: string, value: number | undefined): void => {
+    if (value != null) rows.push({ label, value: `${value.toLocaleString()} ms` })
+  }
+
+  addTokens('Spark Prompt 估算', metrics?.sparkPromptEstimatedTokens)
+  addTokens('Provider 输入', metrics?.providerInputTokens)
+  addTokens('缓存读取', metrics?.cacheReadTokens)
+  addTokens('缓存写入', metrics?.cacheWriteTokens)
+  addDuration('MCP 配置', metrics?.mcpConfigurationMs)
+  addDuration('请求 → MCP ready', metrics?.requestToMcpReadyMs)
+  addDuration('请求 → 首输出', metrics?.requestToFirstOutputMs)
+  if (metrics?.mcpServerCount != null) {
+    rows.push({ label: 'MCP servers', value: String(metrics.mcpServerCount) })
+  }
+  if (metrics?.availableToolCount != null) {
+    rows.push({ label: '运行时可用工具', value: String(metrics.availableToolCount) })
+  }
+
+  const declared = metrics?.toolSchemas?.declared
+  if (declared != null) {
+    const coverageLabel =
+      declared.coverage === 'complete'
+        ? '完整'
+        : declared.coverage === 'partial'
+          ? '部分'
+          : '不可观测'
+    const measuredParts = [
+      `${coverageLabel} · ${declared.measuredServerCount}/${declared.serverCount} servers`,
+    ]
+    if (declared.toolCount != null) measuredParts.push(`${declared.toolCount} tools`)
+    if (declared.estimatedTokens != null) {
+      measuredParts.push(`≈ ${formatTokenCount(declared.estimatedTokens)} tokens`)
+    }
+    rows.push({ label: '声明 schema', value: measuredParts.join(' · ') })
+  }
+  if (metrics?.toolSchemas != null) {
+    rows.push({
+      label: '延迟 / 实际载入 schema',
+      value:
+        metrics.toolSchemas.deferred == null && metrics.toolSchemas.loaded == null
+          ? '当前 adapter 未回报'
+          : '已由 adapter 回报',
+    })
+  }
+
+  return (
+    <div className="prompt-runtime-metrics">
+      <div className="prompt-runtime-metrics-title">运行时观测</div>
+      {rows.length > 0 ? (
+        <dl>
+          {rows.map((row) => (
+            <React.Fragment key={row.label}>
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+      ) : (
+        <div className="prompt-runtime-metrics-empty">当前轮次暂无可观测指标</div>
+      )}
+    </div>
+  )
+}
 
 /** 单个提示词段落的展示，支持独立折叠 */
 const PromptSectionBlock = React.memo(function PromptSectionBlock({

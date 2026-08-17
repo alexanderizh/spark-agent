@@ -959,6 +959,10 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
       type: 'agent_status',
       status: 'thinking',
       message: `Initialized with model ${msg.model}, ${msg.tools.length} tools, ${msg.mcp_servers.length} MCP servers`,
+      runtimeInitialization: {
+        availableToolCount: msg.tools.length,
+        mcpServerCount: msg.mcp_servers.length,
+      },
     },
   ]
 }

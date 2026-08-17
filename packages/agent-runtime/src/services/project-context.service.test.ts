@@ -80,6 +80,91 @@ describe('ProjectContextService', () => {
     expect(result.budget).toMatchObject({ truncated: false })
   })
 
+  it('skips a lower-priority rule file wholly contained in an earlier instruction file', () => {
+    const root = mkdtempSync(join(tmpdir(), 'spark-project-context-contained-'))
+    roots.push(root)
+    const shared = '# Shared rules\nAlways run tests.\nKeep strict types.'
+    writeFileSync(join(root, 'AGENTS.md'), `# Repository preface\nUse local tools.\n\n${shared}\n\n# Tail\nVerify changes.`)
+    writeFileSync(join(root, 'CLAUDE.md'), shared)
+
+    const result = new ProjectContextService().discover(root)
+
+    expect(result.systemPrompt?.match(/Always run tests\./g)).toHaveLength(1)
+    expect(result.systemPrompt).toContain('Repository preface')
+    expect(result.systemPrompt).toContain('Verify changes.')
+    expect(result.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
+      expect.objectContaining({
+        kind: 'rule',
+        path: 'CLAUDE.md',
+        included: false,
+        reason: 'contained_in:AGENTS.md',
+      }),
+    ]))
+  })
+
+  it('does not dedupe a rule that only matches a substring inside a larger token', () => {
+    const root = mkdtempSync(join(tmpdir(), 'spark-project-context-boundary-'))
+    roots.push(root)
+    writeFileSync(join(root, 'AGENTS.md'), 'prefixAlways run tests.suffix')
+    writeFileSync(join(root, 'CLAUDE.md'), 'Always run tests.')
+
+    const result = new ProjectContextService().discover(root)
+
+    expect(result.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
+      expect.objectContaining({ kind: 'rule', path: 'CLAUDE.md', included: true }),
+    ]))
+  })
+
+  it('does not claim containment in an earlier rule that was excluded by budget', () => {
+    const root = mkdtempSync(join(tmpdir(), 'spark-project-context-contained-budget-'))
+    roots.push(root)
+    writeFileSync(join(root, 'AGENTS.md'), 'Header\n\nShared rule.\n\nTail')
+    writeFileSync(join(root, 'CLAUDE.md'), 'Shared rule.')
+
+    const result = new ProjectContextService().discover(root, { budgetTokens: 0 })
+
+    expect(result.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'AGENTS.md', reason: 'excluded_by_context_budget' }),
+      expect.objectContaining({ path: 'CLAUDE.md', reason: 'excluded_by_context_budget' }),
+    ]))
+    expect(result.sources).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'CLAUDE.md', reason: 'contained_in:AGENTS.md' }),
+    ]))
+  })
+
+  it('always includes an explicitly pinned rule even when an earlier rule contains it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'spark-project-context-pinned-contained-'))
+    roots.push(root)
+    writeFileSync(join(root, 'AGENTS.md'), 'Header\n\nPinned rule.\n\nTail')
+    writeFileSync(join(root, 'CLAUDE.md'), 'Pinned rule.')
+
+    const result = new ProjectContextService().discover(root, {
+      pinnedPaths: new Set(['CLAUDE.md']),
+    })
+
+    expect(result.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'AGENTS.md', included: true }),
+      expect.objectContaining({ path: 'CLAUDE.md', included: true, reason: 'pinned' }),
+    ]))
+    expect(result.systemPrompt?.match(/Pinned rule\./g)).toHaveLength(2)
+  })
+
+  it('does not treat an instruction quoted inside a fenced code block as active containment', () => {
+    const root = mkdtempSync(join(tmpdir(), 'spark-project-context-fenced-example-'))
+    roots.push(root)
+    writeFileSync(join(root, 'AGENTS.md'), '# Example\n\n```md\nQuoted rule.\n```')
+    writeFileSync(join(root, 'CLAUDE.md'), 'Quoted rule.')
+
+    const result = new ProjectContextService().discover(root)
+
+    expect(result.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'AGENTS.md', included: true }),
+      expect.objectContaining({ path: 'CLAUDE.md', included: true }),
+    ]))
+  })
+
   it('loads project-local skill instructions only when explicitly selected', () => {
     const root = mkdtempSync(join(tmpdir(), 'spark-project-skill-load-'))
     roots.push(root)

@@ -185,3 +185,45 @@
 .runtime-env-add {
   color: var(--primary);
 }
+
+.prompt-runtime-metrics {
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+}
+
+.prompt-runtime-metrics-title {
+  margin-bottom: 6px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.prompt-runtime-metrics dl {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.prompt-runtime-metrics dt {
+  color: var(--text-faint);
+}
+
+.prompt-runtime-metrics dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.prompt-runtime-metrics-empty {
+  color: var(--text-faint);
+  font-size: 10px;
+}
