@@ -52,7 +52,10 @@ process.stderr?.on('error', ignoreEpipe)
 // 必须用 disable-features 强制关闭它，Chromium 才会走经典 ::-webkit-scrollbar 路径，
 // 此时 styles.css 中的 width / border-radius:999px / hover 颜色 才全部生效（圆头、不变宽）。
 // 注意：这是主进程命令行开关，改后必须【完全退出应用】重启（不能只刷新窗口）。
-app.commandLine.appendSwitch('disable-features', 'OverlayScrollbar,OverlayScrollbarFlashAfterAnyScrollUpdate,OverlayScrollbarFlashWhenMouseEnter,OverlayScrollbarWinStyle')
+app.commandLine.appendSwitch(
+  'disable-features',
+  'OverlayScrollbar,OverlayScrollbarFlashAfterAnyScrollUpdate,OverlayScrollbarFlashWhenMouseEnter,OverlayScrollbarWinStyle',
+)
 
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
@@ -80,8 +83,14 @@ import { getTerminalService } from './services/TerminalService.js'
 import { getUpdateService } from './services/UpdateService.js'
 import { checkSdkIntegrity } from './services/SdkIntegrityService.js'
 import { configureCodexRuntimeEnvironment } from './services/CodexRuntimeIntegrityService.js'
-import { initializeShellEnvironment, getShellEnvironmentStatus } from './services/ShellEnvironmentService.js'
-import { ensureRegistered as ensurePlaywrightRegistered, readRegistration as readPlaywrightRegistration } from './services/PlaywrightMcpRegistration.js'
+import {
+  initializeShellEnvironment,
+  getShellEnvironmentStatus,
+} from './services/ShellEnvironmentService.js'
+import {
+  ensureRegistered as ensurePlaywrightRegistered,
+  readRegistration as readPlaywrightRegistration,
+} from './services/PlaywrightMcpRegistration.js'
 import { detectIntegrity as detectPlaywrightIntegrity } from './services/PlaywrightIntegrityService.js'
 import { getInternalBrowserService } from './services/InternalBrowserService.js'
 import { getCanvasWindowService } from './services/CanvasWindowService.js'
@@ -96,7 +105,10 @@ import { registerCapabilityAssetProtocol } from './services/CapabilityAssetProto
 import { registerSnapshotProtocol } from './services/computer-use/SnapshotProtocol.js'
 import { registerPrivilegedProtocolSchemes } from './services/PrivilegedProtocolSchemes.js'
 import { isWebviewSourceAllowed, openExternalUrlSafely } from './services/ExternalUrlPolicy.js'
-import { ensurePreMigrationBackup, restoreDatabaseBackup } from './services/DatabaseBackupService.js'
+import {
+  ensurePreMigrationBackup,
+  restoreDatabaseBackup,
+} from './services/DatabaseBackupService.js'
 import { installSingleInstanceLock } from './single-instance.js'
 import { getDatabase } from './db.js'
 import { getRecentSessionsForTray } from './ipc/index.js'
@@ -218,10 +230,15 @@ app.on('open-url', (event, value) => {
   queuePlatformRedeemDeepLink(value)
 })
 
-const ownsSingleInstanceLock = installSingleInstanceLock(app, showMainWindow, (commandLine) => {
-  const code = findPlatformModelRedeemCode(commandLine)
-  if (code) queuePlatformRedeemDeepLink(`spark-agent://redeem?code=${encodeURIComponent(code)}`)
-}, shouldEnableSingleInstanceLock(is.dev, process.env))
+const ownsSingleInstanceLock = installSingleInstanceLock(
+  app,
+  showMainWindow,
+  (commandLine) => {
+    const code = findPlatformModelRedeemCode(commandLine)
+    if (code) queuePlatformRedeemDeepLink(`spark-agent://redeem?code=${encodeURIComponent(code)}`)
+  },
+  shouldEnableSingleInstanceLock(is.dev, process.env),
+)
 
 const initialRedeemCode = findPlatformModelRedeemCode(process.argv)
 if (initialRedeemCode) pendingRedeemCodes.add(initialRedeemCode)
@@ -240,9 +257,8 @@ function isAppZoomShortcut(input: Electron.Input): 'in' | 'out' | 'reset' | null
 
 function setBrowserZoom(win: BrowserWindow, action: 'in' | 'out' | 'reset'): void {
   const current = Math.round(win.webContents.getZoomFactor() * 100)
-  const requested = action === 'reset'
-    ? 100
-    : current + (action === 'in' ? UI_ZOOM_STEP : -UI_ZOOM_STEP)
+  const requested =
+    action === 'reset' ? 100 : current + (action === 'in' ? UI_ZOOM_STEP : -UI_ZOOM_STEP)
   const zoomPercent = Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, requested))
   win.webContents.setZoomFactor(zoomPercent / 100)
 
@@ -350,10 +366,7 @@ async function promptForDownloadedUpdate(info: UpdateInfo, autoInstall: boolean)
   const mainWindow = getMainWindow()
   if (mainWindow == null || mainWindow.isDestroyed()) return
 
-  const installButtonLabel =
-    process.platform === 'darwin'
-      ? '打开安装镜像'
-      : '安装更新'
+  const installButtonLabel = process.platform === 'darwin' ? '打开安装镜像' : '安装更新'
   const detail =
     process.platform === 'darwin'
       ? '现在打开 dmg 安装镜像，随后请将镜像中的应用拖到 Applications 并替换现有版本。'
@@ -383,7 +396,9 @@ async function promptForDownloadedUpdate(info: UpdateInfo, autoInstall: boolean)
 function createTray(): void {
   if (tray != null) return
 
-  const iconPath = getResourcePath(process.platform === 'darwin' ? 'trayTemplate.png' : 'trayIconWin.png')
+  const iconPath = getResourcePath(
+    process.platform === 'darwin' ? 'trayTemplate.png' : 'trayIconWin.png',
+  )
   let image = nativeImage.createFromPath(iconPath)
   if (process.platform === 'darwin') {
     image = image.resize({ width: 18, height: 18, quality: 'best' })
@@ -422,72 +437,81 @@ function createTray(): void {
 async function refreshTrayMenu(): Promise<void> {
   if (tray == null) return
 
-  let recentItems: Array<{ id: string; title: string; updatedAt: string; status: string; messageCount: number }> = []
+  let recentItems: Array<{
+    id: string
+    title: string
+    updatedAt: string
+    status: string
+    messageCount: number
+  }> = []
   try {
     recentItems = await getRecentSessionsForTray(8)
   } catch (err) {
     log.warn('Failed to list recent sessions for tray menu', err)
   }
 
-  const recentSubmenu = recentItems.length === 0
-    ? [{ label: '（暂无会话）', enabled: false }]
-    : recentItems.map((item) => ({
-        label: formatSessionLabel(item.title, item.status, item.messageCount),
-        click: () => {
-          showMainWindow()
-          sendToMainWindow('stream:tray:open-session', { sessionId: item.id })
-        },
-      }))
+  const recentSubmenu =
+    recentItems.length === 0
+      ? [{ label: '（暂无会话）', enabled: false }]
+      : recentItems.map((item) => ({
+          label: formatSessionLabel(item.title, item.status, item.messageCount),
+          click: () => {
+            showMainWindow()
+            sendToMainWindow('stream:tray:open-session', { sessionId: item.id })
+          },
+        }))
 
   const canvasWindowAvailable = getCanvasWindowService().getWindow() != null
   const computerControlSubmenu = buildComputerControlSubmenu()
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '打开主窗口', click: showMainWindow },
-    {
-      label: '打开画布',
-      visible: canvasWindowAvailable,
-      click: () => {
-        getCanvasWindowService().focus()
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: '打开主窗口', click: showMainWindow },
+      {
+        label: '打开画布',
+        visible: canvasWindowAvailable,
+        click: () => {
+          getCanvasWindowService().focus()
+        },
       },
-    },
-    { type: 'separator' },
-    {
-      label: '新建会话',
-      click: () => {
-        showMainWindow()
-        sendToMainWindow('stream:tray:new-session', {})
-      },
-    },
-    {
-      label: '最近会话',
-      submenu: recentSubmenu,
-    },
-    {
-      label: 'Computer Use',
-      submenu: computerControlSubmenu,
-    },
-    { type: 'separator' },
-    {
-      label: '打开内部控制台',
-      click: () => {
-        const win = getPreferredAppWindow()
-        if (win == null) {
+      { type: 'separator' },
+      {
+        label: '新建会话',
+        click: () => {
           showMainWindow()
-          return
-        }
-        revealAppWindow(win)
-        win.webContents.openDevTools({ mode: 'detach' })
+          sendToMainWindow('stream:tray:new-session', {})
+        },
       },
-    },
-    { type: 'separator' },
-    {
-      label: '退出',
-      click: () => {
-        isQuitting = true
-        app.quit()
+      {
+        label: '最近会话',
+        submenu: recentSubmenu,
       },
-    },
-  ]))
+      {
+        label: 'Computer Use',
+        submenu: computerControlSubmenu,
+      },
+      { type: 'separator' },
+      {
+        label: '打开内部控制台',
+        click: () => {
+          const win = getPreferredAppWindow()
+          if (win == null) {
+            showMainWindow()
+            return
+          }
+          revealAppWindow(win)
+          win.webContents.openDevTools({ mode: 'detach' })
+        },
+      },
+      { type: 'separator' },
+      {
+        label: '退出',
+        click: () => {
+          isQuitting = true
+          app.quit()
+        },
+      },
+    ]),
+  )
 }
 
 function scheduleComputerControlTrayRefresh(): void {
@@ -592,11 +616,23 @@ function pickWindowBg(): string {
 }
 
 /** 平台分流的 BrowserWindow 毛玻璃/底色选项。 */
-function buildNativeSplashOptions(
-  isDarwin: boolean,
-): {
+function buildNativeSplashOptions(isDarwin: boolean): {
   transparent?: boolean
-  vibrancy?: 'titlebar' | 'selection' | 'menu' | 'popover' | 'sidebar' | 'header' | 'sheet' | 'window' | 'hud' | 'fullscreen-ui' | 'tooltip' | 'content' | 'under-window' | 'under-page'
+  vibrancy?:
+    | 'titlebar'
+    | 'selection'
+    | 'menu'
+    | 'popover'
+    | 'sidebar'
+    | 'header'
+    | 'sheet'
+    | 'window'
+    | 'hud'
+    | 'fullscreen-ui'
+    | 'tooltip'
+    | 'content'
+    | 'under-window'
+    | 'under-page'
   visualEffectState?: 'followWindow' | 'active' | 'inactive'
   backgroundColor?: string
   backgroundMaterial?: 'auto' | 'none' | 'mica' | 'acrylic' | 'tabbed'
@@ -630,7 +666,7 @@ function createWindow(): BrowserWindow {
   const isDarwin = process.platform === 'darwin'
 
   const mainWindow = new BrowserWindow({
-    title: 'SparkWork',
+    title: 'SparkWork -Beta',
     width: 1310,
     height: 800,
     minWidth: 800,
@@ -921,8 +957,7 @@ async function initializeApp(): Promise<void> {
   // 环境变量 SPARK_EDUGEN_BASE_URL 覆盖。
   try {
     initAuthService({
-      defaultBaseUrl:
-        process.env.SPARK_EDUGEN_BASE_URL?.trim() || 'https://spark.yiqibyte.com/',
+      defaultBaseUrl: process.env.SPARK_EDUGEN_BASE_URL?.trim() || 'https://spark.yiqibyte.com/',
       keytarService: resolveAuthKeytarService(process.env),
       requestTimeoutMs: 30_000,
     })
@@ -1038,21 +1073,27 @@ async function initializeApp(): Promise<void> {
 
   // 5. SDK 完整性自检（延迟 5 秒，确保窗口已加载完成）
   setTimeout(() => {
-    void checkSdkIntegrity({ checkLatest: false }).then((result) => {
-      log.info(`SDK integrity check completed: ${result.sdks.map((s) => `${s.packageName}=${s.installed ? s.installedVersion : 'missing'}`).join(', ')}`)
-      sendToMainWindow('stream:sdk:integrity', result)
-    }).catch((err) => {
-      log.warn(`SDK integrity check failed: ${String(err)}`)
-    })
+    void checkSdkIntegrity({ checkLatest: false })
+      .then((result) => {
+        log.info(
+          `SDK integrity check completed: ${result.sdks.map((s) => `${s.packageName}=${s.installed ? s.installedVersion : 'missing'}`).join(', ')}`,
+        )
+        sendToMainWindow('stream:sdk:integrity', result)
+      })
+      .catch((err) => {
+        log.warn(`SDK integrity check failed: ${String(err)}`)
+      })
   }, 5_000)
 
   // 6. 推送运行时环境状态到渲染进程（延迟 3 秒）
   setTimeout(() => {
-    void getShellEnvironmentStatus().then((status) => {
-      sendToMainWindow('stream:env:status', status)
-    }).catch((err) => {
-      log.warn(`Failed to push shell environment status: ${String(err)}`)
-    })
+    void getShellEnvironmentStatus()
+      .then((status) => {
+        sendToMainWindow('stream:env:status', status)
+      })
+      .catch((err) => {
+        log.warn(`Failed to push shell environment status: ${String(err)}`)
+      })
   }, 3_000)
 
   // 6.5 字体不再打进安装包：启动后后台检查并下载/升级。
@@ -1072,18 +1113,20 @@ async function initializeApp(): Promise<void> {
   // 8. 检测 FFmpeg 完整性并推送状态（延迟 8 秒，排在 Playwright 之后）
   //    仅检测不自动下载——ffmpeg 按需安装（首次使用视频工作台时提示）
   setTimeout(() => {
-    void detectFfmpegIntegrity().then((state) => {
-      sendToMainWindow('stream:ffmpeg:status', {
-        ffmpegReady: state.ffmpegReady,
-        ffmpegSource: state.ffmpegSource,
-        ffmpegVersion: state.ffmpegVersion,
-        ffprobeReady: state.ffprobeReady,
-        binaryPath: state.binaryPath,
-        lastError: state.lastError,
+    void detectFfmpegIntegrity()
+      .then((state) => {
+        sendToMainWindow('stream:ffmpeg:status', {
+          ffmpegReady: state.ffmpegReady,
+          ffmpegSource: state.ffmpegSource,
+          ffmpegVersion: state.ffmpegVersion,
+          ffprobeReady: state.ffprobeReady,
+          binaryPath: state.binaryPath,
+          lastError: state.lastError,
+        })
       })
-    }).catch((err) => {
-      log.warn(`FFmpeg integrity check failed: ${String(err)}`)
-    })
+      .catch((err) => {
+        log.warn(`FFmpeg integrity check failed: ${String(err)}`)
+      })
   }, 8_000)
 
   // 9. 检查可选 Office / 深度资源。只读取小型 manifest，不自动下载大组件；

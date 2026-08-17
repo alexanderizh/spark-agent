@@ -459,10 +459,13 @@ export function OnboardingView(): React.ReactElement {
     setFetchedProviderModelIds([])
   }, [])
 
-  const setError = useCallback((message: string) => {
-    setErrorMessage(message)
-    setErrorStep(message ? state.step : null)
-  }, [state.step])
+  const setError = useCallback(
+    (message: string) => {
+      setErrorMessage(message)
+      setErrorStep(message ? state.step : null)
+    },
+    [state.step],
+  )
 
   // finishedRef: 标记用户是否已"主动结束"引导（点了稍后再说 / 跳过讲解 / 进入会话）。
   // 所有主动结束路径都经过下面的 goChat()，所以把 set 放进 goChat 即可覆盖全部。
@@ -501,9 +504,7 @@ export function OnboardingView(): React.ReactElement {
       })
       const ids = Array.from(
         new Set(
-          result.models
-            .map((model) => model.id.trim())
-            .filter((id): id is string => id.length > 0),
+          result.models.map((model) => model.id.trim()).filter((id): id is string => id.length > 0),
         ),
       )
       setFetchedProviderModelIds(ids)
@@ -740,7 +741,7 @@ export function OnboardingView(): React.ReactElement {
       <MacWindowDragHeader />
       <aside className="onboarding-steps" aria-label="新手引导步骤">
         <div className="onboarding-brand">
-          <img src={sparkLogo} alt="" aria-hidden="true" draggable={false} /> SparkWork
+          <img src={sparkLogo} alt="" aria-hidden="true" draggable={false} /> SparkWork -Beta
         </div>
         <button
           className="onboarding-back"
@@ -889,7 +890,7 @@ export function OnboardingView(): React.ReactElement {
 function WelcomeStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
   return (
     <>
-      <h1>欢迎使用 SparkWork</h1>
+      <h1>欢迎使用 SparkWork -Beta</h1>
       <p className="lead">
         不用理解复杂技术名词，我们会一步一步帮你连接模型、创建第一个 AI 助手，并完成第一次对话。
       </p>

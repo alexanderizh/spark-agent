@@ -48,7 +48,7 @@ export function AuthGate({ variant = 'full' }: AuthGateProps): React.ReactElemen
           <aside className="auth-brand-side" aria-hidden="true">
             <div className="auth-brand-mark">
               <img src={sparkLogo} alt="" className="auth-brand-logo" draggable={false} />
-              <span className="auth-brand-name">SparkWork</span>
+              <span className="auth-brand-name">SparkWork -Beta</span>
             </div>
 
             <div className="auth-brand-headline">

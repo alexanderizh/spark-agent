@@ -27,7 +27,7 @@ export function formatDockBadge(count: number): string {
 
 export function formatUnreadToolTip(count: number): string {
   const normalized = normalizeUnreadCount(count)
-  return normalized === 0 ? 'SparkWork' : `SparkWork · ${normalized} 个未读会话`
+  return normalized === 0 ? 'SparkWork -Beta' : `SparkWork -Beta · ${normalized} 个未读会话`
 }
 
 export function applyUnreadBadge(
@@ -37,7 +37,7 @@ export function applyUnreadBadge(
 ): void {
   const normalized = normalizeUnreadCount(count)
   const description =
-    normalized === 0 ? 'SparkWork 无未读会话' : `SparkWork 有 ${normalized} 个未读会话`
+    normalized === 0 ? 'SparkWork -Beta 无未读会话' : `SparkWork -Beta 有 ${normalized} 个未读会话`
 
   if (platform === 'darwin') {
     adapter.setDockBadge(formatDockBadge(normalized))

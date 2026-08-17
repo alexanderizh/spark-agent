@@ -32,7 +32,7 @@ mac:
     - zh_CN
     - zh_TW
   extendInfo:
-    CFBundleDisplayName: SparkWork
+    CFBundleDisplayName: SparkWork -Beta
     NSMicrophoneUsageDescription: SparkWork 需要访问麦克风，用于在本地将您的语音转换为文字。
     NSScreenCaptureUsageDescription: SparkWork 仅在您启用电脑操作或应用快照时读取所选窗口画面。
   target:
@@ -79,8 +79,8 @@ nsis:
   # Keep the selectable parent directory separate from the application files.
   # The custom include changes the automatic child directory to spark-worker.
   include: build/installer.nsh
-  shortcutName: SparkWork
-  uninstallDisplayName: SparkWork ${version}
+  shortcutName: SparkWork -Beta
+  uninstallDisplayName: SparkWork -Beta ${version}
   # A selectable installation directory requires the assisted NSIS installer.
   oneClick: false
   # Show the NSIS install directory page so Windows users can choose a location.
@@ -93,7 +93,7 @@ linux:
     - zh-TW
   desktop:
     entry:
-      Name: SparkWork
+      Name: SparkWork -Beta
 asar: true
 asarUnpack:
   - '**/*.node'

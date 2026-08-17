@@ -184,7 +184,7 @@ function createCanvasBrowserWindow(): CanvasBrowserWindow {
     minWidth: 980,
     minHeight: 680,
     show: false,
-    title: 'SparkWork · Canvas',
+    title: 'SparkWork -Beta · Canvas',
     autoHideMenuBar: true,
     backgroundColor: '#111113',
     hasShadow: true,
