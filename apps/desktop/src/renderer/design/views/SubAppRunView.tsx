@@ -122,16 +122,20 @@ export function SubAppRunView(): React.ReactElement {
       className={`sub-app-run-view${isPublishedContent ? ' is-published-content' : ''}`}
       data-testid="sub-app-run-view"
     >
+      {/* 窗口拖拽条由 App.tsx 的公用 MacWindowDragHeader 统一渲染。 */}
       {showRuntimeHeader ? (
         <header className="sar-header">
           <div className="sar-header-left">
-            <Tooltip title="返回应用列表">
-              <Button
-                icon={<Icons.ArrowLeft size={16} />}
-                aria-label="返回应用列表"
-                onClick={backToList}
-              />
-            </Tooltip>
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.ArrowLeft size={12} />}
+              aria-label="返回应用列表"
+              title="返回应用列表"
+              onClick={backToList}
+            >
+              列表
+            </Button>
             {details != null ? (
               <>
                 <span className="sar-icon" aria-hidden>
@@ -157,6 +161,7 @@ export function SubAppRunView(): React.ReactElement {
             {details != null ? (
               <>
                 <Segmented<RunMode>
+                  size="small"
                   value={mode}
                   onChange={setMode}
                   options={[
@@ -186,6 +191,8 @@ export function SubAppRunView(): React.ReactElement {
                 </Popconfirm>
                 <Tooltip title="重新加载应用">
                   <Button
+                    size="small"
+                    type="text"
                     icon={<Icons.Refresh size={15} />}
                     aria-label="重新加载应用"
                     onClick={() => void reload()}

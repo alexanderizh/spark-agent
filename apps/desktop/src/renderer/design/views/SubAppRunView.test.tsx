@@ -172,6 +172,8 @@ describe('SubAppRunView', () => {
     expect((mocks.runnerProps[0] as { release?: { version?: number } }).release?.version).toBe(3)
     expect(container?.querySelector('.sar-header')).toBeNull()
     expect(container?.querySelector('.is-published-content')).not.toBeNull()
+    // 拖拽条由 App.tsx 公用 MacWindowDragHeader 统一渲染，本页不重复渲染
+    expect(container?.querySelector('.mac-window-drag-header')).toBeNull()
   })
 
   it('未发布过的应用自动回退草稿模式', async () => {

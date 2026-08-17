@@ -15,14 +15,16 @@
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
-  padding: 10px 16px;
+  /* 与 WorkflowView wf-toolbar 紧凑工具栏统一：8px 上下 padding + 48px 最小高度 */
+  padding: 8px 12px;
+  min-height: 48px;
   border-bottom: 1px solid var(--divider, var(--border));
 }
 
 .sar-header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -30,11 +32,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   flex: none;
-  border-radius: 8px;
-  font-size: 16px;
+  border-radius: 6px;
+  font-size: 14px;
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 12%, var(--panel));
   overflow: hidden;
@@ -44,11 +46,12 @@
   }
 }
 
+/* 标题单行：应用名 + 状态 Badge 同行，不再上下两层 */
 .sar-title-block {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -72,12 +75,9 @@
   flex: 1;
   min-height: 0;
   position: relative;
-  background: var(--bg);
-}
-
-/* 已发布 content 应用是沉浸式工作区：没有宿主工具栏，也不强行铺一层平台背景。 */
-.sub-app-run-view.is-published-content .sar-body {
-  background: transparent;
+  /* 与窗口底色（.window）及列表等其他管理页统一为 --bg-soft，
+   * 避免透明 iframe 透出一档更暗的 --bg 底色。 */
+  background: var(--bg-soft);
 }
 
 .sar-runner {
