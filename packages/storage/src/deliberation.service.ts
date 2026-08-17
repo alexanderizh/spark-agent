@@ -5,7 +5,14 @@ export type DeliberationCapability = 'agent' | 'system' | 'user'
 export type DeliberationProposalPosition = 'support' | 'oppose' | 'conditional'
 export type DeliberationDecisionOutcome = 'approved' | 'rejected' | 'conditional'
 export type DeliberationStatus = 'proposed' | 'decided' | 'conflicted' | 'superseded'
-export type DeliberationOperation = 'create' | 'evidence' | 'alternative' | 'risk' | 'decide' | 'resolve' | 'owner'
+export type DeliberationOperation =
+  | 'create'
+  | 'evidence'
+  | 'alternative'
+  | 'risk'
+  | 'decide'
+  | 'resolve'
+  | 'owner'
 
 export interface DeliberationScope {
   sessionId: string
@@ -105,13 +112,15 @@ export interface DeliberationSnapshot {
 }
 
 export interface DeliberationLedgerWriter {
-  write(input: DeliberationLedgerWrite & {
-    sessionId: string
-    roomId: string
-    discussionId: string
-    deliberationId: string
-    opId: string
-  }): void
+  write(
+    input: DeliberationLedgerWrite & {
+      sessionId: string
+      roomId: string
+      discussionId: string
+      deliberationId: string
+      opId: string
+    },
+  ): void
 }
 
 export interface DeliberationServiceOptions {
@@ -209,15 +218,27 @@ export class DeliberationService {
     private readonly options: DeliberationServiceOptions = {},
   ) {}
 
-  static forAgent(db: SparkDatabase, scope: DeliberationScope, options?: DeliberationServiceOptions): DeliberationService {
+  static forAgent(
+    db: SparkDatabase,
+    scope: DeliberationScope,
+    options?: DeliberationServiceOptions,
+  ): DeliberationService {
     return new DeliberationService(db, scope, 'agent', options)
   }
 
-  static forSystem(db: SparkDatabase, scope: DeliberationScope, options?: DeliberationServiceOptions): DeliberationService {
+  static forSystem(
+    db: SparkDatabase,
+    scope: DeliberationScope,
+    options?: DeliberationServiceOptions,
+  ): DeliberationService {
     return new DeliberationService(db, scope, 'system', options)
   }
 
-  static forUser(db: SparkDatabase, scope: DeliberationScope, options?: DeliberationServiceOptions): DeliberationService {
+  static forUser(
+    db: SparkDatabase,
+    scope: DeliberationScope,
+    options?: DeliberationServiceOptions,
+  ): DeliberationService {
     return new DeliberationService(db, scope, 'user', options)
   }
 
@@ -228,7 +249,9 @@ export class DeliberationService {
     const request = { id: input.id, topic: input.topic, proposal: input.proposal }
     return this.mutate('create', input.opId, input.id, request, () => {
       if (this.countScoped() >= DELIBERATION_MAX_PER_DISCUSSION) {
-        throw new DeliberationConflictError(`Deliberation quota exceeded: limit ${DELIBERATION_MAX_PER_DISCUSSION}`)
+        throw new DeliberationConflictError(
+          `Deliberation quota exceeded: limit ${DELIBERATION_MAX_PER_DISCUSSION}`,
+        )
       }
       const now = new Date().toISOString()
       const opposing = this.findOpposing(input.topic, input.proposal.position)
@@ -259,7 +282,9 @@ export class DeliberationService {
     })
   }
 
-  addEvidence(input: VersionedInput & { evidence: Omit<DeliberationEvidence, 'id'> }): DeliberationRecord {
+  addEvidence(
+    input: VersionedInput & { evidence: Omit<DeliberationEvidence, 'id'> },
+  ): DeliberationRecord {
     assertEvidence(input.evidence)
     return this.append('evidence', input, input.evidence, (record) => ({
       ...record,
@@ -267,7 +292,9 @@ export class DeliberationService {
     }))
   }
 
-  addAlternative(input: VersionedInput & { alternative: Omit<DeliberationAlternative, 'id'> }): DeliberationRecord {
+  addAlternative(
+    input: VersionedInput & { alternative: Omit<DeliberationAlternative, 'id'> },
+  ): DeliberationRecord {
     assertAlternative(input.alternative)
     return this.append('alternative', input, input.alternative, (record) => ({
       ...record,
@@ -283,44 +310,52 @@ export class DeliberationService {
     }))
   }
 
-  decide(input: VersionedInput & { decision: Omit<DeliberationDecision, 'resolverId' | 'resolvedAt'> }): DeliberationRecord {
+  decide(
+    input: VersionedInput & { decision: Omit<DeliberationDecision, 'resolverId' | 'resolvedAt'> },
+  ): DeliberationRecord {
     this.requireResolver('decide')
     assertDecision(input.decision)
     assertDeliberationJson(input.decision.ledgerWrite?.value)
-    const request = { id: input.id, expectedVersion: input.expectedVersion, decision: input.decision }
-    let ledgerWrite: DeliberationLedgerWrite | null = null
-    const record = this.mutate('decide', input.opId, input.id, request, (current) => {
-      this.requireCurrentVersion(current, input.expectedVersion)
-      if (current.status !== 'proposed') throw new DeliberationConflictError(`Illegal deliberation transition: ${current.status} -> decide`)
-      const conflictingDecision = this.findConflictingDecision(current)
-      if (conflictingDecision != null) {
-        throw new DeliberationConflictError(`Decision conflicts with deliberation ${conflictingDecision.id}`)
-      }
-      const now = new Date().toISOString()
-      ledgerWrite = input.decision.ledgerWrite
-      return {
-        ...current,
-        status: 'decided',
-        capability: this.capability,
-        decision: { ...input.decision, resolverId: this.scope.actorId, resolvedAt: now },
-        version: current.version + 1,
-        updatedAt: now,
-      }
-    })
-    const write = ledgerWrite
-    if (write != null) {
-      this.options.ledgerWriter?.write(Object.assign({}, write, {
-        sessionId: this.scope.sessionId,
-        roomId: this.scope.roomId,
-        discussionId: this.scope.discussionId,
-        deliberationId: record.id,
-        opId: input.opId,
-      }))
+    const request = {
+      id: input.id,
+      expectedVersion: input.expectedVersion,
+      decision: input.decision,
     }
+    const record = this.mutate(
+      'decide',
+      input.opId,
+      input.id,
+      request,
+      (current) => {
+        this.requireCurrentVersion(current, input.expectedVersion)
+        if (current.status !== 'proposed')
+          throw new DeliberationConflictError(
+            `Illegal deliberation transition: ${current.status} -> decide`,
+          )
+        const conflictingDecision = this.findConflictingDecision(current)
+        if (conflictingDecision != null) {
+          throw new DeliberationConflictError(
+            `Decision conflicts with deliberation ${conflictingDecision.id}`,
+          )
+        }
+        const now = new Date().toISOString()
+        return {
+          ...current,
+          status: 'decided',
+          capability: this.capability,
+          decision: { ...input.decision, resolverId: this.scope.actorId, resolvedAt: now },
+          version: current.version + 1,
+          updatedAt: now,
+        }
+      },
+      (decided) => this.writeDecisionLedger(decided, input.opId),
+    )
     return record
   }
 
-  resolve(input: VersionedInput & { conflictingRecordId: string; reason: string }): DeliberationRecord {
+  resolve(
+    input: VersionedInput & { conflictingRecordId: string; reason: string },
+  ): DeliberationRecord {
     this.requireResolver('resolve')
     assertId(input.conflictingRecordId)
     assertText(input.reason, 'reason')
@@ -336,14 +371,30 @@ export class DeliberationService {
         throw new DeliberationConflictError(`Deliberation ${input.id} has no unresolved conflict`)
       }
       if (!current.conflict.recordIds.includes(input.conflictingRecordId)) {
-        throw new DeliberationConflictError(`Deliberation ${input.conflictingRecordId} is not a conflict participant`)
+        throw new DeliberationConflictError(
+          `Deliberation ${input.conflictingRecordId} is not a conflict participant`,
+        )
       }
       const other = this.findScoped(input.conflictingRecordId)
-      if (other == null) throw new DeliberationConflictError(`Conflicting deliberation not found: ${input.conflictingRecordId}`)
+      if (other == null)
+        throw new DeliberationConflictError(
+          `Conflicting deliberation not found: ${input.conflictingRecordId}`,
+        )
       const now = new Date().toISOString()
-      const resolved: DeliberationConflict = { ...current.conflict, resolvedBy: this.scope.actorId, resolvedAt: now, reason: input.reason }
+      const resolved: DeliberationConflict = {
+        ...current.conflict,
+        resolvedBy: this.scope.actorId,
+        resolvedAt: now,
+        reason: input.reason,
+      }
       this.updateConflict(resolved, now)
-      this.upsert({ ...other, status: 'superseded', conflict: resolved, version: other.version + 1, updatedAt: now })
+      this.upsert({
+        ...other,
+        status: 'superseded',
+        conflict: resolved,
+        version: other.version + 1,
+        updatedAt: now,
+      })
       return {
         ...current,
         status: 'proposed',
@@ -355,21 +406,44 @@ export class DeliberationService {
     })
   }
 
-  setOwner(input: VersionedInput & { ownerId: string | null; deadline: string | null }): DeliberationRecord {
-    if (this.capability === 'agent') throw new DeliberationConflictError('System or user capability required to assign deliberation ownership')
+  setOwner(
+    input: VersionedInput & { ownerId: string | null; deadline: string | null },
+  ): DeliberationRecord {
+    if (this.capability === 'agent')
+      throw new DeliberationConflictError(
+        'System or user capability required to assign deliberation ownership',
+      )
     if (input.ownerId != null) assertId(input.ownerId)
     if (input.deadline != null) assertText(input.deadline, 'deadline')
-    return this.mutate('owner', input.opId, input.id, {
-      id: input.id, expectedVersion: input.expectedVersion, ownerId: input.ownerId, deadline: input.deadline,
-    }, (current) => {
-      this.requireCurrentVersion(current, input.expectedVersion)
-      const now = new Date().toISOString()
-      return { ...current, ownerId: input.ownerId, deadline: input.deadline, capability: this.capability, version: current.version + 1, updatedAt: now }
-    })
+    return this.mutate(
+      'owner',
+      input.opId,
+      input.id,
+      {
+        id: input.id,
+        expectedVersion: input.expectedVersion,
+        ownerId: input.ownerId,
+        deadline: input.deadline,
+      },
+      (current) => {
+        this.requireCurrentVersion(current, input.expectedVersion)
+        const now = new Date().toISOString()
+        return {
+          ...current,
+          ownerId: input.ownerId,
+          deadline: input.deadline,
+          capability: this.capability,
+          version: current.version + 1,
+          updatedAt: now,
+        }
+      },
+    )
   }
 
   /** Alias retained for callers that describe this operation as assigning an owner. */
-  assignOwner(input: VersionedInput & { ownerId: string | null; deadline: string | null }): DeliberationRecord {
+  assignOwner(
+    input: VersionedInput & { ownerId: string | null; deadline: string | null },
+  ): DeliberationRecord {
     return this.setOwner(input)
   }
 
@@ -383,32 +457,51 @@ export class DeliberationService {
     const boundedOffset = Math.max(0, Math.trunc(offset))
     const params = this.scopeParams()
     const total = this.countScoped()
-    const rows = this.db.raw.prepare(`SELECT * FROM deliberations
-      WHERE session_id = ? AND room_id = ? AND discussion_id = ? ORDER BY rowid LIMIT ? OFFSET ?`)
+    const rows = this.db.raw
+      .prepare(
+        `SELECT * FROM deliberations
+      WHERE session_id = ? AND room_id = ? AND discussion_id = ? ORDER BY rowid LIMIT ? OFFSET ?`,
+      )
       .all(...params, boundedLimit, boundedOffset) as DeliberationRow[]
     return { items: rows.map(toRecord), total }
   }
 
-  listEvents(deliberationId?: string, limit = 50, offset = 0): { items: DeliberationAuditEvent[]; total: number } {
+  listEvents(
+    deliberationId?: string,
+    limit = 50,
+    offset = 0,
+  ): { items: DeliberationAuditEvent[]; total: number } {
     const boundedLimit = clamp(limit, 1, 100)
     const boundedOffset = Math.max(0, Math.trunc(offset))
-    const where = deliberationId == null
-      ? 'session_id = ? AND room_id = ? AND discussion_id = ?'
-      : 'session_id = ? AND room_id = ? AND discussion_id = ? AND deliberation_id = ?'
+    const where =
+      deliberationId == null
+        ? 'session_id = ? AND room_id = ? AND discussion_id = ?'
+        : 'session_id = ? AND room_id = ? AND discussion_id = ? AND deliberation_id = ?'
     const params: unknown[] = [...this.scopeParams()]
     if (deliberationId != null) params.push(deliberationId)
-    const total = (this.db.raw.prepare(`SELECT COUNT(*) AS count FROM deliberation_events WHERE ${where}`).get(...params) as { count: number }).count
-    const rows = this.db.raw.prepare(`SELECT * FROM deliberation_events WHERE ${where} ORDER BY rowid LIMIT ? OFFSET ?`)
+    const total = (
+      this.db.raw
+        .prepare(`SELECT COUNT(*) AS count FROM deliberation_events WHERE ${where}`)
+        .get(...params) as { count: number }
+    ).count
+    const rows = this.db.raw
+      .prepare(`SELECT * FROM deliberation_events WHERE ${where} ORDER BY rowid LIMIT ? OFFSET ?`)
       .all(...params, boundedLimit, boundedOffset) as EventRow[]
     return { items: rows.map(toEvent), total }
   }
 
   snapshot(): DeliberationSnapshot {
-    const records = this.db.raw.prepare(`SELECT * FROM deliberations
-      WHERE session_id = ? AND room_id = ? AND discussion_id = ? ORDER BY rowid`)
+    const records = this.db.raw
+      .prepare(
+        `SELECT * FROM deliberations
+      WHERE session_id = ? AND room_id = ? AND discussion_id = ? ORDER BY rowid`,
+      )
       .all(...this.scopeParams()) as DeliberationRow[]
-    const conflicts = this.db.raw.prepare(`SELECT * FROM deliberation_conflicts
-      WHERE session_id = ? AND room_id = ? AND discussion_id = ? ORDER BY rowid`)
+    const conflicts = this.db.raw
+      .prepare(
+        `SELECT * FROM deliberation_conflicts
+      WHERE session_id = ? AND room_id = ? AND discussion_id = ? ORDER BY rowid`,
+      )
       .all(...this.scopeParams()) as ConflictRow[]
     return {
       sessionId: this.scope.sessionId,
@@ -438,7 +531,10 @@ export class DeliberationService {
     const request = { id: input.id, expectedVersion: input.expectedVersion, [operation]: value }
     return this.mutate(operation, input.opId, input.id, request, (current) => {
       this.requireCurrentVersion(current, input.expectedVersion)
-      if (current.status !== 'proposed') throw new DeliberationConflictError(`Cannot add ${operation} to ${current.status} deliberation`)
+      if (current.status !== 'proposed')
+        throw new DeliberationConflictError(
+          `Cannot add ${operation} to ${current.status} deliberation`,
+        )
       const next = apply(current)
       const now = new Date().toISOString()
       return { ...next, version: current.version + 1, updatedAt: now }
@@ -451,103 +547,225 @@ export class DeliberationService {
     targetId: string,
     request: Record<string, unknown>,
     build: (current: DeliberationRecord | undefined) => DeliberationRecord,
+    afterPersist?: (record: DeliberationRecord) => void,
   ): DeliberationRecord {
     assertId(opId)
     return this.db.raw.transaction(() => {
-      const prior = this.db.raw.prepare(`SELECT session_id, room_id, discussion_id, deliberation_id,
-        operation, actor_id, capability, request_json, record_json FROM deliberation_events WHERE op_id = ?`)
+      const prior = this.db.raw
+        .prepare(
+          `SELECT session_id, room_id, discussion_id, deliberation_id,
+        operation, actor_id, capability, request_json, record_json FROM deliberation_events WHERE op_id = ?`,
+        )
         .get(opId) as EventRow | undefined
       if (prior != null) {
-        if (prior.session_id !== this.scope.sessionId || prior.room_id !== this.scope.roomId || prior.discussion_id !== this.scope.discussionId ||
-          prior.deliberation_id !== targetId || prior.operation !== operation || prior.actor_id !== this.scope.actorId || prior.capability !== this.capability ||
-          canonicalJson(JSON.parse(prior.request_json)) !== canonicalJson(request)) {
-          throw new DeliberationConflictError(`opId conflicts with another deliberation operation: ${opId}`)
+        if (
+          prior.session_id !== this.scope.sessionId ||
+          prior.room_id !== this.scope.roomId ||
+          prior.discussion_id !== this.scope.discussionId ||
+          prior.deliberation_id !== targetId ||
+          prior.operation !== operation ||
+          prior.actor_id !== this.scope.actorId ||
+          prior.capability !== this.capability ||
+          canonicalJson(JSON.parse(prior.request_json)) !== canonicalJson(request)
+        ) {
+          throw new DeliberationConflictError(
+            `opId conflicts with another deliberation operation: ${opId}`,
+          )
         }
         return parseEventPayload(prior.record_json).record
       }
-      if (operation === 'create' && this.db.raw.prepare('SELECT 1 FROM deliberations WHERE id = ?').get(targetId) != null) {
+      if (
+        operation === 'create' &&
+        this.db.raw.prepare('SELECT 1 FROM deliberations WHERE id = ?').get(targetId) != null
+      ) {
         throw new DeliberationConflictError(`Deliberation id already exists: ${targetId}`)
       }
       const current = operation === 'create' ? undefined : this.findScoped(targetId)
       const record = build(current)
       this.upsert(record)
-      this.db.raw.prepare(`INSERT INTO deliberation_events
+      this.db.raw
+        .prepare(
+          `INSERT INTO deliberation_events
         (id, session_id, room_id, discussion_id, deliberation_id, op_id, operation, actor_id, capability, request_json, record_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(randomUUID(), record.sessionId, record.roomId, record.discussionId, record.id, opId, operation,
-          this.scope.actorId, this.capability, JSON.stringify(request), JSON.stringify({ record, request } satisfies EventPayload), record.updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          record.sessionId,
+          record.roomId,
+          record.discussionId,
+          record.id,
+          opId,
+          operation,
+          this.scope.actorId,
+          this.capability,
+          JSON.stringify(request),
+          JSON.stringify({ record, request } satisfies EventPayload),
+          record.updatedAt,
+        )
+      afterPersist?.(record)
       return record
     })()
   }
 
+  private writeDecisionLedger(record: DeliberationRecord, opId: string): void {
+    const write = record.decision?.ledgerWrite
+    if (write == null) return
+    this.options.ledgerWriter?.write({
+      ...write,
+      sessionId: this.scope.sessionId,
+      roomId: this.scope.roomId,
+      discussionId: this.scope.discussionId,
+      deliberationId: record.id,
+      opId,
+    })
+  }
+
   private findScoped(id: string): DeliberationRecord | undefined {
-    const row = this.db.raw.prepare(`SELECT * FROM deliberations WHERE id = ? AND session_id = ? AND room_id = ? AND discussion_id = ?`)
+    const row = this.db.raw
+      .prepare(
+        `SELECT * FROM deliberations WHERE id = ? AND session_id = ? AND room_id = ? AND discussion_id = ?`,
+      )
       .get(id, ...this.scopeParams()) as DeliberationRow | undefined
     return row == null ? undefined : toRecord(row)
   }
 
-  private findOpposing(topic: string, position: DeliberationProposalPosition): DeliberationRecord | undefined {
+  private findOpposing(
+    topic: string,
+    position: DeliberationProposalPosition,
+  ): DeliberationRecord | undefined {
     if (position === 'conditional') return undefined
     const opposite = position === 'support' ? 'oppose' : 'support'
-    const row = this.db.raw.prepare(`SELECT * FROM deliberations
+    const row = this.db.raw
+      .prepare(
+        `SELECT * FROM deliberations
       WHERE session_id = ? AND room_id = ? AND discussion_id = ? AND topic = ? AND status != 'superseded'
-        AND json_extract(proposal_json, '$.position') = ? ORDER BY rowid LIMIT 1`)
+        AND json_extract(proposal_json, '$.position') = ? ORDER BY rowid LIMIT 1`,
+      )
       .get(...this.scopeParams(), topic, opposite) as DeliberationRow | undefined
     return row == null ? undefined : toRecord(row)
   }
 
   private findConflictingDecision(current: DeliberationRecord): DeliberationRecord | undefined {
-    const row = this.db.raw.prepare(`SELECT * FROM deliberations
+    const row = this.db.raw
+      .prepare(
+        `SELECT * FROM deliberations
       WHERE session_id = ? AND room_id = ? AND discussion_id = ? AND topic = ? AND id != ? AND status = 'decided'
-        AND json_extract(decision_json, '$.outcome') != json_extract(?, '$.outcome') ORDER BY rowid LIMIT 1`)
-      .get(...this.scopeParams(), current.topic, current.id, JSON.stringify(current.decision ?? { outcome: 'conditional' })) as DeliberationRow | undefined
+        AND json_extract(decision_json, '$.outcome') != json_extract(?, '$.outcome') ORDER BY rowid LIMIT 1`,
+      )
+      .get(
+        ...this.scopeParams(),
+        current.topic,
+        current.id,
+        JSON.stringify(current.decision ?? { outcome: 'conditional' }),
+      ) as DeliberationRow | undefined
     return row == null ? undefined : toRecord(row)
   }
 
-  private createConflict(current: DeliberationRecord, opposing: DeliberationRecord, now: string): DeliberationConflict {
+  private createConflict(
+    current: DeliberationRecord,
+    opposing: DeliberationRecord,
+    now: string,
+  ): DeliberationConflict {
     const conflict: DeliberationConflict = {
-      id: randomUUID(), topic: current.topic, recordIds: [opposing.id, current.id],
+      id: randomUUID(),
+      topic: current.topic,
+      recordIds: [opposing.id, current.id],
       reason: `Contradictory proposals: ${opposing.proposal.position} vs ${current.proposal.position}`,
-      resolvedBy: null, resolvedAt: null,
+      resolvedBy: null,
+      resolvedAt: null,
     }
-    this.db.raw.prepare(`INSERT INTO deliberation_conflicts
+    this.db.raw
+      .prepare(
+        `INSERT INTO deliberation_conflicts
       (id, session_id, room_id, discussion_id, topic, record_ids_json, reason, resolved_by, resolved_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(conflict.id, this.scope.sessionId, this.scope.roomId, this.scope.discussionId, conflict.topic,
-        JSON.stringify(conflict.recordIds), conflict.reason, null, null, now, now)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        conflict.id,
+        this.scope.sessionId,
+        this.scope.roomId,
+        this.scope.discussionId,
+        conflict.topic,
+        JSON.stringify(conflict.recordIds),
+        conflict.reason,
+        null,
+        null,
+        now,
+        now,
+      )
     return conflict
   }
 
   private updateConflict(conflict: DeliberationConflict, now: string): void {
-    this.db.raw.prepare(`UPDATE deliberation_conflicts SET record_ids_json = ?, reason = ?, resolved_by = ?, resolved_at = ?, updated_at = ? WHERE id = ? AND session_id = ? AND room_id = ? AND discussion_id = ?`)
-      .run(JSON.stringify(conflict.recordIds), conflict.reason, conflict.resolvedBy, conflict.resolvedAt, now,
-        conflict.id, this.scope.sessionId, this.scope.roomId, this.scope.discussionId)
+    this.db.raw
+      .prepare(
+        `UPDATE deliberation_conflicts SET record_ids_json = ?, reason = ?, resolved_by = ?, resolved_at = ?, updated_at = ? WHERE id = ? AND session_id = ? AND room_id = ? AND discussion_id = ?`,
+      )
+      .run(
+        JSON.stringify(conflict.recordIds),
+        conflict.reason,
+        conflict.resolvedBy,
+        conflict.resolvedAt,
+        now,
+        conflict.id,
+        this.scope.sessionId,
+        this.scope.roomId,
+        this.scope.discussionId,
+      )
   }
 
   private upsert(record: DeliberationRecord): void {
-    this.db.raw.prepare(`INSERT INTO deliberations
+    this.db.raw
+      .prepare(
+        `INSERT INTO deliberations
       (id, session_id, room_id, discussion_id, topic, proposal_json, evidence_json, alternatives_json, risks_json,
        decision_json, owner_id, deadline, status, capability, conflict_json, version, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET evidence_json = excluded.evidence_json, alternatives_json = excluded.alternatives_json,
         risks_json = excluded.risks_json, decision_json = excluded.decision_json, owner_id = excluded.owner_id,
         deadline = excluded.deadline, status = excluded.status, capability = excluded.capability,
-        conflict_json = excluded.conflict_json, version = excluded.version, updated_at = excluded.updated_at`).run(
-      record.id, record.sessionId, record.roomId, record.discussionId, record.topic, JSON.stringify(record.proposal),
-      JSON.stringify(record.evidence), JSON.stringify(record.alternatives), JSON.stringify(record.risks),
-      record.decision == null ? null : JSON.stringify(record.decision), record.ownerId, record.deadline,
-      record.status, record.capability, record.conflict == null ? null : JSON.stringify(record.conflict),
-      record.version, record.createdAt, record.updatedAt,
-    )
+        conflict_json = excluded.conflict_json, version = excluded.version, updated_at = excluded.updated_at`,
+      )
+      .run(
+        record.id,
+        record.sessionId,
+        record.roomId,
+        record.discussionId,
+        record.topic,
+        JSON.stringify(record.proposal),
+        JSON.stringify(record.evidence),
+        JSON.stringify(record.alternatives),
+        JSON.stringify(record.risks),
+        record.decision == null ? null : JSON.stringify(record.decision),
+        record.ownerId,
+        record.deadline,
+        record.status,
+        record.capability,
+        record.conflict == null ? null : JSON.stringify(record.conflict),
+        record.version,
+        record.createdAt,
+        record.updatedAt,
+      )
   }
 
   private requireResolver(operation: 'decide' | 'resolve'): void {
-    if (this.capability === 'agent') throw new DeliberationConflictError(`User or system capability required to ${operation} deliberation`)
+    if (this.capability === 'agent')
+      throw new DeliberationConflictError(
+        `User or system capability required to ${operation} deliberation`,
+      )
   }
 
-  private requireCurrentVersion(current: DeliberationRecord | undefined, expectedVersion: number): asserts current is DeliberationRecord {
-    if (current == null) throw new DeliberationConflictError('Deliberation record not found in the current discussion')
-    if (current.version !== expectedVersion) throw new DeliberationConflictError(`Expected version ${expectedVersion}, current version is ${current.version}`)
+  private requireCurrentVersion(
+    current: DeliberationRecord | undefined,
+    expectedVersion: number,
+  ): asserts current is DeliberationRecord {
+    if (current == null)
+      throw new DeliberationConflictError('Deliberation record not found in the current discussion')
+    if (current.version !== expectedVersion)
+      throw new DeliberationConflictError(
+        `Expected version ${expectedVersion}, current version is ${current.version}`,
+      )
   }
 
   private scopeParams(): [string, string, string] {
@@ -555,8 +773,13 @@ export class DeliberationService {
   }
 
   private countScoped(): number {
-    return (this.db.raw.prepare('SELECT COUNT(*) AS count FROM deliberations WHERE session_id = ? AND room_id = ? AND discussion_id = ?')
-      .get(...this.scopeParams()) as { count: number }).count
+    return (
+      this.db.raw
+        .prepare(
+          'SELECT COUNT(*) AS count FROM deliberations WHERE session_id = ? AND room_id = ? AND discussion_id = ?',
+        )
+        .get(...this.scopeParams()) as { count: number }
+    ).count
   }
 }
 
@@ -566,67 +789,94 @@ export function assertDeliberationJson(value: unknown): void {
   let nodes = 0
   let bytes = 0
   const visit = (current: unknown, depth: number): void => {
-    if (current == null) { bytes += 4; return }
-    if (typeof current === 'string') { bytes += current.length + 2; return }
-    if (typeof current === 'boolean') { bytes += current ? 4 : 5; return }
+    if (current == null) {
+      bytes += 4
+      return
+    }
+    if (typeof current === 'string') {
+      bytes += current.length + 2
+      return
+    }
+    if (typeof current === 'boolean') {
+      bytes += current ? 4 : 5
+      return
+    }
     if (typeof current === 'number') {
-      if (!Number.isFinite(current)) throw new DeliberationConflictError('Deliberation JSON must contain finite numbers')
+      if (!Number.isFinite(current))
+        throw new DeliberationConflictError('Deliberation JSON must contain finite numbers')
       bytes += String(current).length
       return
     }
-    if (typeof current !== 'object') throw new DeliberationConflictError('Deliberation JSON must contain JSON values')
-    if (seen.has(current)) throw new DeliberationConflictError('Deliberation JSON must not contain cycles')
-    if (depth >= MAX_JSON_DEPTH) throw new DeliberationConflictError('Deliberation JSON exceeds maximum depth')
+    if (typeof current !== 'object')
+      throw new DeliberationConflictError('Deliberation JSON must contain JSON values')
+    if (seen.has(current))
+      throw new DeliberationConflictError('Deliberation JSON must not contain cycles')
+    if (depth >= MAX_JSON_DEPTH)
+      throw new DeliberationConflictError('Deliberation JSON exceeds maximum depth')
     seen.add(current)
-    if (++nodes > MAX_JSON_NODES) throw new DeliberationConflictError('Deliberation JSON exceeds maximum node count')
+    if (++nodes > MAX_JSON_NODES)
+      throw new DeliberationConflictError('Deliberation JSON exceeds maximum node count')
     const entries = Array.isArray(current) ? current.entries() : Object.entries(current)
     for (const [key, item] of entries) {
       bytes += String(key).length + 3
       visit(item, depth + 1)
-      if (bytes > MAX_JSON_BYTES) throw new DeliberationConflictError('Deliberation JSON exceeds serialized byte limit')
+      if (bytes > MAX_JSON_BYTES)
+        throw new DeliberationConflictError('Deliberation JSON exceeds serialized byte limit')
     }
     seen.delete(current)
   }
   visit(value, 0)
-  if (bytes > MAX_JSON_BYTES) throw new DeliberationConflictError('Deliberation JSON exceeds serialized byte limit')
+  if (bytes > MAX_JSON_BYTES)
+    throw new DeliberationConflictError('Deliberation JSON exceeds serialized byte limit')
 }
 
 function assertId(value: string): void {
-  if (typeof value !== 'string' || value.trim().length === 0 || value.length > MAX_ID) throw new DeliberationConflictError('Deliberation identifiers must be non-empty and at most 160 characters')
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > MAX_ID)
+    throw new DeliberationConflictError(
+      'Deliberation identifiers must be non-empty and at most 160 characters',
+    )
 }
 
 function assertText(value: string, field: string): void {
-  if (typeof value !== 'string' || value.trim().length === 0 || value.length > MAX_TEXT) throw new DeliberationConflictError(`${field} must be non-empty and at most ${MAX_TEXT} characters`)
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > MAX_TEXT)
+    throw new DeliberationConflictError(
+      `${field} must be non-empty and at most ${MAX_TEXT} characters`,
+    )
 }
 
 function assertProposal(proposal: DeliberationProposal): void {
   assertText(proposal.claim, 'claim')
   assertText(proposal.rationale, 'rationale')
-  if (!['support', 'oppose', 'conditional'].includes(proposal.position)) throw new DeliberationConflictError('Invalid deliberation proposal position')
+  if (!['support', 'oppose', 'conditional'].includes(proposal.position))
+    throw new DeliberationConflictError('Invalid deliberation proposal position')
 }
 
 function assertEvidence(evidence: Omit<DeliberationEvidence, 'id'>): void {
   assertText(evidence.summary, 'evidence summary')
   assertId(evidence.sourceRef)
-  if (!['supports', 'challenges', 'neutral'].includes(evidence.polarity)) throw new DeliberationConflictError('Invalid evidence polarity')
+  if (!['supports', 'challenges', 'neutral'].includes(evidence.polarity))
+    throw new DeliberationConflictError('Invalid evidence polarity')
 }
 
 function assertAlternative(alternative: Omit<DeliberationAlternative, 'id'>): void {
   assertText(alternative.title, 'alternative title')
   assertText(alternative.summary, 'alternative summary')
-  if (!Array.isArray(alternative.tradeoffs) || alternative.tradeoffs.length > 8) throw new DeliberationConflictError('Alternative tradeoffs are limited to 8 items')
+  if (!Array.isArray(alternative.tradeoffs) || alternative.tradeoffs.length > 8)
+    throw new DeliberationConflictError('Alternative tradeoffs are limited to 8 items')
   alternative.tradeoffs.forEach((tradeoff) => assertText(tradeoff, 'alternative tradeoff'))
 }
 
 function assertRisk(risk: Omit<DeliberationRisk, 'id'>): void {
   assertText(risk.title, 'risk title')
   assertText(risk.mitigation, 'risk mitigation')
-  if (!['low', 'medium', 'high', 'critical'].includes(risk.severity)) throw new DeliberationConflictError('Invalid risk severity')
+  if (!['low', 'medium', 'high', 'critical'].includes(risk.severity))
+    throw new DeliberationConflictError('Invalid risk severity')
 }
 
 function assertDecision(decision: Omit<DeliberationDecision, 'resolverId' | 'resolvedAt'>): void {
   assertText(decision.reason, 'decision reason')
-  if (!['approved', 'rejected', 'conditional'].includes(decision.outcome)) throw new DeliberationConflictError('Invalid decision outcome')
+  if (!['approved', 'rejected', 'conditional'].includes(decision.outcome))
+    throw new DeliberationConflictError('Invalid decision outcome')
   if (decision.ledgerWrite != null) {
     assertId(decision.ledgerWrite.logicalKey)
     assertText(decision.ledgerWrite.reason, 'ledger write reason')
@@ -637,7 +887,10 @@ function assertDecision(decision: Omit<DeliberationDecision, 'resolverId' | 'res
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
   if (value != null && typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(',')}}`
   }
   return JSON.stringify(value)
 }
@@ -645,36 +898,57 @@ function canonicalJson(value: unknown): string {
 function parseEventPayload(raw: string): EventPayload {
   const parsed = JSON.parse(raw) as EventPayload | DeliberationRecord
   return typeof parsed === 'object' && parsed != null && 'record' in parsed
-    ? parsed as EventPayload
+    ? (parsed as EventPayload)
     : { record: parsed as DeliberationRecord, request: {} }
 }
 
 function toRecord(row: DeliberationRow): DeliberationRecord {
   return {
-    id: row.id, sessionId: row.session_id, roomId: row.room_id, discussionId: row.discussion_id, topic: row.topic,
+    id: row.id,
+    sessionId: row.session_id,
+    roomId: row.room_id,
+    discussionId: row.discussion_id,
+    topic: row.topic,
     proposal: JSON.parse(row.proposal_json) as DeliberationProposal,
     evidence: JSON.parse(row.evidence_json) as DeliberationEvidence[],
     alternatives: JSON.parse(row.alternatives_json) as DeliberationAlternative[],
     risks: JSON.parse(row.risks_json) as DeliberationRisk[],
-    decision: row.decision_json == null ? null : JSON.parse(row.decision_json) as DeliberationDecision,
-    ownerId: row.owner_id, deadline: row.deadline, status: row.status, capability: row.capability,
-    conflict: row.conflict_json == null ? null : JSON.parse(row.conflict_json) as DeliberationConflict,
-    version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
+    decision:
+      row.decision_json == null ? null : (JSON.parse(row.decision_json) as DeliberationDecision),
+    ownerId: row.owner_id,
+    deadline: row.deadline,
+    status: row.status,
+    capability: row.capability,
+    conflict:
+      row.conflict_json == null ? null : (JSON.parse(row.conflict_json) as DeliberationConflict),
+    version: row.version,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }
 }
 
 function toConflict(row: ConflictRow): DeliberationConflict {
   return {
-    id: row.id, topic: row.topic, recordIds: JSON.parse(row.record_ids_json) as string[], reason: row.reason,
-    resolvedBy: row.resolved_by, resolvedAt: row.resolved_at,
+    id: row.id,
+    topic: row.topic,
+    recordIds: JSON.parse(row.record_ids_json) as string[],
+    reason: row.reason,
+    resolvedBy: row.resolved_by,
+    resolvedAt: row.resolved_at,
   }
 }
 
 function toEvent(row: EventRow): DeliberationAuditEvent {
   const payload = parseEventPayload(row.record_json)
   return {
-    id: row.id, deliberationId: row.deliberation_id, operation: row.operation, actorId: row.actor_id,
-    capability: row.capability, request: payload.request, record: payload.record, createdAt: row.created_at,
+    id: row.id,
+    deliberationId: row.deliberation_id,
+    operation: row.operation,
+    actorId: row.actor_id,
+    capability: row.capability,
+    request: payload.request,
+    record: payload.record,
+    createdAt: row.created_at,
   }
 }
 

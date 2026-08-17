@@ -14,7 +14,13 @@
  * 这样既复用既有执行路径，又避免 TeamDispatchService ↔ SessionService 的循环依赖。
  */
 
-import type { AgentEvent, TeamA2ATask, TeamA2AReply, TeamModeConfig } from '@spark/protocol'
+import type {
+  AgentEvent,
+  CostStatus,
+  TeamA2ATask,
+  TeamA2AReply,
+  TeamModeConfig,
+} from '@spark/protocol'
 import type {
   TeamDiscussionRepository,
   TeamDispatchRepository,
@@ -36,6 +42,15 @@ export interface TeamMemberExecutionResult {
    * 部分产出，避免 Host 丢失工作后盲目重派。
    */
   partial?: boolean
+}
+
+export interface TeamDispatchUsage {
+  dispatchId: string
+  taskId: string
+  agentId: string
+  tokens: number | null
+  latencyMs: number
+  status: CostStatus
 }
 
 /** 一次 dispatch 的运行上下文 */
@@ -92,6 +107,18 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
   autoMentionHops?: number
   /** Host 本 turn 的派发预算耗尽时通知 SessionService，触发隐藏 continuation turn。 */
   onDispatchBudgetExceeded?: () => void
+  /**
+   * Steering Gate 执行守卫：在真正调 executeMember 前执行（每 member 每次执行一次）。
+   * 抛错时该 dispatch 走现有 failed 持久化/事件路径（reply.error.message = 抛出的错误信息），
+   * member 不会被执行。缺省 = 无守卫（非讨论 / 未接入场景行为不变）。
+   */
+  beforeExecuteMember?: (args: {
+    task: TeamA2ATask
+    member: { id: string; name: string }
+    dispatchId: string
+  }) => void | Promise<void>
+  /** Optional discussion-scoped cost hook. Failures are logged and never change dispatch state. */
+  onDispatchUsage?: (usage: TeamDispatchUsage) => void | Promise<void>
   /** 实际运行 member 一次 turn */
   executeMember: (args: {
     member: M
@@ -140,7 +167,10 @@ export class TeamDispatchService {
    * dispatch。早期这里只存 AbortController，导致 cancelAll() 成了唯一手段，
    * 在 A 会话点「停止」会把 B 会话正在跑的成员一起打断。
    */
-  private readonly controllers = new Map<string, { controller: AbortController; sessionId: string }>()
+  private readonly controllers = new Map<
+    string,
+    { controller: AbortController; sessionId: string }
+  >()
   private readonly activeRunPromises = new Set<Promise<unknown>>()
   private shuttingDown = false
 
@@ -170,7 +200,11 @@ export class TeamDispatchService {
       code: NonNullable<TeamA2AReply['error']>['code'],
       message: string,
     ): TeamA2AReply => {
-      log.warn('dispatch rejected', { reason: code, memberAgentId: task.memberAgentId, turnId: ctx.turnId })
+      log.warn('dispatch rejected', {
+        reason: code,
+        memberAgentId: task.memberAgentId,
+        turnId: ctx.turnId,
+      })
       return {
         taskId: task.taskId,
         memberAgentId: task.memberAgentId,
@@ -190,8 +224,14 @@ export class TeamDispatchService {
         `Worker "${task.memberAgentId}" is not enabled in this session. Available: [${[...effectiveAllowedIds].join(', ')}].`,
       )
     }
-    if (ctx.currentDepth > 0 && (!ctx.teamConfig.allowNesting || ctx.currentDepth >= ctx.teamConfig.maxDepth)) {
-      return fail('depth_exceeded', `Max chained dispatch depth (${ctx.teamConfig.maxDepth}) reached.`)
+    if (
+      ctx.currentDepth > 0 &&
+      (!ctx.teamConfig.allowNesting || ctx.currentDepth >= ctx.teamConfig.maxDepth)
+    ) {
+      return fail(
+        'depth_exceeded',
+        `Max chained dispatch depth (${ctx.teamConfig.maxDepth}) reached.`,
+      )
     }
     if (ctx.countAsPeerCall === true) {
       const count = (this.peerCallCountByTurn.get(ctx.turnId) ?? 0) + 1
@@ -269,9 +309,10 @@ export class TeamDispatchService {
           'Not enough time remains to consult a teammate synchronously. Use agent_message mode "note" or answer with the information you already have.',
         )
       }
-      const timeoutMs = ctx.countAsPeerCall === true
-        ? Math.min(cappedTimeoutMs, Math.max(remainingMs - PEER_CALL_DEADLINE_BUFFER_MS, 5_000))
-        : cappedTimeoutMs
+      const timeoutMs =
+        ctx.countAsPeerCall === true
+          ? Math.min(cappedTimeoutMs, Math.max(remainingMs - PEER_CALL_DEADLINE_BUFFER_MS, 5_000))
+          : cappedTimeoutMs
       let timedOut = false
       const timer = setTimeout(() => {
         timedOut = true
@@ -283,6 +324,8 @@ export class TeamDispatchService {
         if (controller.signal.aborted) {
           throw new Error('Dispatch was canceled.')
         }
+        // Steering Gate 执行守卫：gate 未放行时抛错，走下方 catch 的 failed 持久化/事件路径。
+        await ctx.beforeExecuteMember?.({ task, member, dispatchId })
         const result = await ctx.executeMember({
           member,
           task,
@@ -313,6 +356,17 @@ export class TeamDispatchService {
               durationMs,
             },
           }
+          await this.recordUsage(ctx, {
+            dispatchId,
+            taskId: task.taskId,
+            agentId: member.id,
+            tokens:
+              result.inputTokens != null && result.outputTokens != null
+                ? result.inputTokens + result.outputTokens
+                : null,
+            latencyMs: durationMs,
+            status: 'failed',
+          })
           this.dispatches.update(dispatchId, {
             state: reply.state,
             replyJson: JSON.stringify(reply),
@@ -351,6 +405,17 @@ export class TeamDispatchService {
           },
           ...(result.artifacts != null ? { artifacts: result.artifacts } : {}),
         }
+        await this.recordUsage(ctx, {
+          dispatchId,
+          taskId: task.taskId,
+          agentId: member.id,
+          tokens:
+            result.inputTokens != null && result.outputTokens != null
+              ? result.inputTokens + result.outputTokens
+              : null,
+          latencyMs: durationMs,
+          status: 'recorded',
+        })
         this.dispatches.update(dispatchId, {
           state: 'completed',
           replyJson: JSON.stringify(reply),
@@ -412,6 +477,14 @@ export class TeamDispatchService {
           content: '',
           error: { code, message },
         }
+        await this.recordUsage(ctx, {
+          dispatchId,
+          taskId: task.taskId,
+          agentId: member.id,
+          tokens: null,
+          latencyMs: durationMs,
+          status: 'failed',
+        })
         this.dispatches.update(dispatchId, {
           state: reply.state,
           replyJson: JSON.stringify(reply),
@@ -531,19 +604,27 @@ export class TeamDispatchService {
     }
 
     const peerMessages = this.listPersistedPeerMessages(args.discussionId)
-    const delivery: TeamThreadMessageDelivery = args.targetAgentId == null ? 'note' : (args.delivery ?? 'call')
+    const delivery: TeamThreadMessageDelivery =
+      args.targetAgentId == null ? 'note' : (args.delivery ?? 'call')
     const isSynchronousCall = args.targetAgentId != null && delivery === 'call'
     const enforceConsultDepth = args.enforceConsultDepth !== false
 
-    if (isSynchronousCall && enforceConsultDepth && (ctx.consultDepth ?? 0) >= MAX_SYNC_CONSULT_DEPTH) {
+    if (
+      isSynchronousCall &&
+      enforceConsultDepth &&
+      (ctx.consultDepth ?? 0) >= MAX_SYNC_CONSULT_DEPTH
+    ) {
       return {
         ok: false,
         code: 'consult_depth_exceeded',
-        message:
-          `Synchronous teammate consultation is limited to ${MAX_SYNC_CONSULT_DEPTH} levels. Break the question up for the host/user, or leave an async note instead.`,
+        message: `Synchronous teammate consultation is limited to ${MAX_SYNC_CONSULT_DEPTH} levels. Break the question up for the host/user, or leave an async note instead.`,
       }
     }
-    if (isSynchronousCall && ctx.deadlineAt != null && ctx.deadlineAt - Date.now() < PEER_CALL_DEADLINE_BUFFER_MS) {
+    if (
+      isSynchronousCall &&
+      ctx.deadlineAt != null &&
+      ctx.deadlineAt - Date.now() < PEER_CALL_DEADLINE_BUFFER_MS
+    ) {
       return {
         ok: false,
         code: 'deadline_insufficient',
@@ -554,13 +635,17 @@ export class TeamDispatchService {
 
     if (
       isSynchronousCall &&
-      this.isPairExchangeBudgetExceeded(args.senderAgentId, args.targetAgentId!, args.roundIndex, peerMessages)
+      this.isPairExchangeBudgetExceeded(
+        args.senderAgentId,
+        args.targetAgentId!,
+        args.roundIndex,
+        peerMessages,
+      )
     ) {
       return {
         ok: false,
         code: 'ping_pong_blocked',
-        message:
-          `You two have exchanged ${MAX_DIRECTED_EXCHANGES_PER_PAIR_PER_ROUND} directed messages this round — wrap up this thread. Summarize your conclusion for the host/user, or ask the host to advance the round if more discussion is genuinely needed.`,
+        message: `You two have exchanged ${MAX_DIRECTED_EXCHANGES_PER_PAIR_PER_ROUND} directed messages this round — wrap up this thread. Summarize your conclusion for the host/user, or ask the host to advance the round if more discussion is genuinely needed.`,
       }
     }
 
@@ -651,7 +736,12 @@ export class TeamDispatchService {
     reply: TeamA2AReply,
     ctx: TeamDispatchRunContext<M>,
   ): Promise<void> {
-    if (ctx.discussionId == null || ctx.teamConfig.enablePeerMessaging !== true || this.discussionRepo == null) return
+    if (
+      ctx.discussionId == null ||
+      ctx.teamConfig.enablePeerMessaging !== true ||
+      this.discussionRepo == null
+    )
+      return
     if ((ctx.autoMentionHops ?? 0) >= MAX_AUTO_MENTION_HOPS) return
     if (reply.state !== 'completed') return
     const content = reply.content
@@ -757,6 +847,20 @@ export class TeamDispatchService {
       if (this.executionQueueByTurn.get(turnId) === marker) {
         this.executionQueueByTurn.delete(turnId)
       }
+    }
+  }
+
+  private async recordUsage<M extends { id: string; name: string }>(
+    ctx: TeamDispatchRunContext<M>,
+    usage: TeamDispatchUsage,
+  ): Promise<void> {
+    try {
+      await ctx.onDispatchUsage?.(usage)
+    } catch (error) {
+      log.warn('dispatch usage recording failed (non-fatal)', {
+        dispatchId: usage.dispatchId,
+        error: error instanceof Error ? error.message : String(error),
+      })
     }
   }
 

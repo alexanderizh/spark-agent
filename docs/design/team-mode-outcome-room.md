@@ -1,6 +1,6 @@
 # Team Mode Outcome Room / Living Team Ledger
 
-> 状态: 已落地 | 最后核对: 2026-08-14
+> 状态: 已落地 | 最后核对: 2026-08-17
 
 ## 当前已落地范围（P0）
 
@@ -28,7 +28,9 @@
 ### Typed Handoff / Steering Gate（已落地 P1 垂直切片）
 
 - Storage migration 075/076 新增 discussion-scoped typed handoff 与 steering gate 表、事件历史和版本/CAS 约束；service 提供创建、合法状态迁移、幂等 `opId`、权限能力绑定、分页和会话清理。
-- `TeamP1RuntimeAdapter` 将 handoff/gate 工具绑定到可信 session/discussion/actor capability；agent 只读和创建草稿/等待 gate，system/user 才可执行治理迁移。
+- `TeamP1RuntimeAdapter` 已进入统一 Team Runtime tool registry，将 handoff/gate 工具绑定到可信 session/discussion/actor capability；agent 只读和创建草稿/等待 gate，system/user 才可执行治理迁移。
+- Steering Gate 已接入统一 `TeamDispatchService.run()` 执行前守卫；对 task 精确匹配的 waiting/revise/stopped/expired gate 会阻止成员执行，approved gate 才放行，并按既有 failed dispatch 路径留下事件。
+- 桌面 user capability 可治理 agent 目标的 handoff，事件仍保留真实操作 actor；handoff/gate 及事件历史在 session runtime 清理时与其他 P2 数据一起删除。
 - 新增 `team-p1:get` / `team-p1:mutate` typed IPC 与主进程 backend。renderer 仅提交 sessionId 及 discussion/version 快照，主进程重新解析可信 Team Mode discussion，并用 user capability 执行写入；Outcome Room 追加最小 Typed Handoff 与 Steering Gate 面板。
 - 已完成 Handoff + Steering Gate 垂直切片验证：Storage P1、Runtime Ledger/P1、backend/IPC 与 Outcome Room UI 均已完成定向回归，真实 Electron 端到端验收仍待补充。
 
@@ -40,7 +42,8 @@
 - agent 写入边界限制 logicalKey/sourceRefs 与 JSON value 的深度、节点数、循环引用和近似序列化字节数；摘要把 Ledger 明确标为不可信数据，转义控制字符并使用有界序列化，避免把内容当作指令或无界展开。
 - @ 成员直答路径固定为 `agent-inferred`；host/system 仅记录 `system-observed`，不会伪称 `user-confirmed`。成员工具面只暴露读取和 proposal/fact 增量，治理工具仅对可信 host/system context 可见。
 - session 删除事务同步清理确定性 `team-room:{sessionId}` 的 Ledger events 和 records，避免跨会话残留。
-- Task Graph、结构化 Deliberation、Evidence/Cost、Replay/Playbook 四类 runtime adapter 均绑定可信 session/discussion/actor capability；同一组 `TeamToolDefinition` 同时供 Claude in-process MCP 与 Codex HTTP bridge 使用。session 清理同步删除四类 session-owned 数据，避免已删除会话残留。
+- Task Graph、结构化 Deliberation、Evidence/Cost、Replay/Playbook、P1 五类 runtime adapter 均绑定可信 session/discussion/actor capability；同一组 `TeamToolDefinition` 同时供 Claude in-process MCP 与 Codex HTTP bridge 使用。Task Graph 拒绝跨 discussion 复用节点/边 ID，成本账本由真实 dispatch 结果自动记录并支持分页读取/全量聚合，session 清理同步删除六类 session-owned 数据，避免已删除会话残留。
+- Deliberation 决策与可选 Ledger 写入在同一 storage transaction 内完成；Ledger 写入失败会回滚决策事件，使用相同 `opId` 可安全重试。
 
 ### Outcome Room IPC/UI（已落地 P0 垂直切片）
 
@@ -52,9 +55,13 @@
 
 - Outcome Room 容器现挂载 Evidence/Cost、Task Graph/Deliberation、Replay/Playbook 三类面板；Replay/Playbook 使用当前 Outcome Room discussion scope，discussion 不存在时不发起读取。
 
-TaskGraph、结构化 Deliberation、Evidence/Cost、Replay/Playbook 已完成本批最小 runtime/UI 接线，并通过对应聚焦门禁；真实 Electron 端到端验收尚未完成，当前未作通过声明。
+TaskGraph、结构化 Deliberation、Evidence/Cost、Replay/Playbook、P1 已完成本批最小 runtime/UI 接线，并通过对应聚焦门禁；真实 Electron 端到端验收尚未完成，当前未作通过声明。
 
-## 交付验证（2026-08-14）
+## 交付验证（2026-08-17）
+
+- 本轮增量聚焦回归通过：Storage 团队治理相关 5 个测试文件 30/30；Agent Runtime dispatch/tooling/Deliberation/Ledger 4 个测试文件 51/51；Storage 与 Agent Runtime strict typecheck 通过。
+- 本轮补充验证了 P1 runtime 注册、Gate 执行前阻断与 approved 放行、Task Graph 跨 discussion ID 保护、成本 dispatch 自动记录/分页聚合、Deliberation Ledger 失败回滚重试，以及 handoff/gate session 清理。
+- Task Graph retry 后下游保持 blocked，直到上游 completed 才释放；这是依赖 DAG 的预期语义，不把 retry 误判为立即释放下游。
 
 - 独立后端/运行时与前端/IPC 对抗审查均为 `APPROVED`，未发现仍可复现的权限、作用域、幂等、CAS、竞态、XSS 或资源边界缺陷。
 - 聚焦回归通过：Protocol 14/14、Storage 60/60、Agent Runtime 31/31、Desktop Outcome Room 70/70；严格类型检查中 Protocol、Storage、Agent Runtime 通过，Outcome Room 相关 Renderer 文件无类型诊断。

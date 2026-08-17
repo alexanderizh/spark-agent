@@ -100,6 +100,7 @@ import {
 import { estimateTokens, normalizeReasoningBudgetTokens } from '@spark/shared'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
+import { createTeamDispatchGovernanceHooks } from './team-dispatch-governance.js'
 import {
   TEAM_DISPATCH_AUTO_CONTINUATION_PRESENTATION,
   TEAM_DISPATCH_AUTO_CONTINUATION_PROMPT,
@@ -6261,6 +6262,12 @@ export class SessionService {
     let currentDiscussionRound = ctx.discussionRoundIndex ?? 0
     let discussionConcludedReason: 'concluded' | 'canceled' | 'max_rounds' | null = null
 
+    const governanceHooks = createTeamDispatchGovernanceHooks(this.db, {
+      sessionId: ctx.sessionId,
+      ...(discussionId != null ? { discussionId } : {}),
+      actorId: ctx.hostAgent.id,
+    })
+
     // targetAgentId 容错解析：模型经常拿显示名（如 "Rust Coder"）当 id 用——精确 id 优先，
     // 其次唯一的大小写不敏感名称匹配；解析失败由调用处报错并列出可用名单。
     const resolveMemberRef = (ref: string): AgentItem | undefined => {
@@ -6350,6 +6357,7 @@ export class SessionService {
             ? { onDispatchBudgetExceeded: ctx.onDispatchBudgetExceeded }
             : {}),
           ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
+          ...governanceHooks,
           executeMember: ({
             member,
             task: memberTask,
@@ -6570,6 +6578,7 @@ export class SessionService {
                   onActivityChange: (sessionId) => this.handleTeamDispatchActivityChange(sessionId),
                   ...(ctx.signal != null ? { signal: ctx.signal } : {}),
                   ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
+                  ...governanceHooks,
                   executeMember: ({
                     member,
                     task: memberTask,

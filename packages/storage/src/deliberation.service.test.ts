@@ -30,76 +30,177 @@ describe('DeliberationService', () => {
   it('stores the proposal chain with CAS, audit history, and idempotent operations', () => {
     const service = DeliberationService.forAgent(db, scope)
     const created = service.create({
-      id: 'proposal-1', topic: 'Ship runtime',
-      proposal: { claim: 'Ship now', position: 'support', rationale: 'Evidence is ready' }, opId: 'op-create',
+      id: 'proposal-1',
+      topic: 'Ship runtime',
+      proposal: { claim: 'Ship now', position: 'support', rationale: 'Evidence is ready' },
+      opId: 'op-create',
     })
     const withEvidence = service.addEvidence({
-      id: created.id, expectedVersion: created.version, opId: 'op-evidence',
+      id: created.id,
+      expectedVersion: created.version,
+      opId: 'op-evidence',
       evidence: { summary: 'CI is green', sourceRef: 'run-1', polarity: 'supports' },
     })
-    expect(service.addEvidence({
-      id: created.id, expectedVersion: created.version, opId: 'op-evidence',
-      evidence: { summary: 'CI is green', sourceRef: 'run-1', polarity: 'supports' },
-    })).toEqual(withEvidence)
+    expect(
+      service.addEvidence({
+        id: created.id,
+        expectedVersion: created.version,
+        opId: 'op-evidence',
+        evidence: { summary: 'CI is green', sourceRef: 'run-1', polarity: 'supports' },
+      }),
+    ).toEqual(withEvidence)
     expect(withEvidence.evidence).toHaveLength(1)
     expect(service.listEvents(created.id).items).toHaveLength(2)
-    expect(() => service.addRisk({
-      id: created.id, expectedVersion: created.version, opId: 'op-stale',
-      risk: { title: 'stale', severity: 'low', mitigation: 'retry' },
-    })).toThrow(DeliberationConflictError)
+    expect(() =>
+      service.addRisk({
+        id: created.id,
+        expectedVersion: created.version,
+        opId: 'op-stale',
+        risk: { title: 'stale', severity: 'low', mitigation: 'retry' },
+      }),
+    ).toThrow(DeliberationConflictError)
   })
 
   it('detects contradictory proposals and resolves them only with user capability', () => {
     const first = DeliberationService.forAgent(db, scope).create({
-      id: 'proposal-a', topic: 'Release',
-      proposal: { claim: 'Release today', position: 'support', rationale: 'Ready' }, opId: 'op-a',
+      id: 'proposal-a',
+      topic: 'Release',
+      proposal: { claim: 'Release today', position: 'support', rationale: 'Ready' },
+      opId: 'op-a',
     })
     const second = DeliberationService.forAgent(db, { ...scope, actorId: 'agent-2' }).create({
-      id: 'proposal-b', topic: 'Release',
-      proposal: { claim: 'Delay release', position: 'oppose', rationale: 'Risk remains' }, opId: 'op-b',
+      id: 'proposal-b',
+      topic: 'Release',
+      proposal: { claim: 'Delay release', position: 'oppose', rationale: 'Risk remains' },
+      opId: 'op-b',
     })
     expect(first.status).toBe('proposed')
     expect(second.status).toBe('conflicted')
     expect(DeliberationService.forAgent(db, scope).snapshot().conflicts).toHaveLength(1)
-    expect(() => DeliberationService.forAgent(db, scope).resolve({
-      id: second.id, conflictingRecordId: first.id, expectedVersion: second.version, reason: 'Need a human ruling', opId: 'op-agent-resolve',
-    })).toThrow(/capability|user|system/i)
+    expect(() =>
+      DeliberationService.forAgent(db, scope).resolve({
+        id: second.id,
+        conflictingRecordId: first.id,
+        expectedVersion: second.version,
+        reason: 'Need a human ruling',
+        opId: 'op-agent-resolve',
+      }),
+    ).toThrow(/capability|user|system/i)
     const resolved = DeliberationService.forUser(db, { ...scope, actorId: 'user-1' }).resolve({
-      id: second.id, conflictingRecordId: first.id, expectedVersion: second.version, reason: 'Risk wins', opId: 'op-resolve',
+      id: second.id,
+      conflictingRecordId: first.id,
+      expectedVersion: second.version,
+      reason: 'Risk wins',
+      opId: 'op-resolve',
     })
     expect(resolved.status).toBe('proposed')
     expect(resolved.conflict?.resolvedBy).toBe('user-1')
-    expect(DeliberationService.forUser(db, { ...scope, actorId: 'user-1' }).snapshot().records.find((record) => record.id === first.id)?.status).toBe('superseded')
+    expect(
+      DeliberationService.forUser(db, { ...scope, actorId: 'user-1' })
+        .snapshot()
+        .records.find((record) => record.id === first.id)?.status,
+    ).toBe('superseded')
   })
 
   it('enforces decision capability, ledger JSON limits, and decision conflict detection', () => {
     const service = DeliberationService.forAgent(db, scope)
     const record = service.create({
-      id: 'proposal-1', topic: 'Policy',
-      proposal: { claim: 'Adopt policy A', position: 'conditional', rationale: 'With guardrails' }, opId: 'op-policy',
+      id: 'proposal-1',
+      topic: 'Policy',
+      proposal: { claim: 'Adopt policy A', position: 'conditional', rationale: 'With guardrails' },
+      opId: 'op-policy',
     })
-    expect(() => service.decide({
-      id: record.id, expectedVersion: record.version, opId: 'op-agent-decide',
-      decision: { outcome: 'conditional', reason: 'Needs approval', ledgerWrite: null },
-    })).toThrow(/capability|user|system/i)
+    expect(() =>
+      service.decide({
+        id: record.id,
+        expectedVersion: record.version,
+        opId: 'op-agent-decide',
+        decision: { outcome: 'conditional', reason: 'Needs approval', ledgerWrite: null },
+      }),
+    ).toThrow(/capability|user|system/i)
     const decided = DeliberationService.forUser(db, { ...scope, actorId: 'user-1' }).decide({
-      id: record.id, expectedVersion: record.version, opId: 'op-decide',
-      decision: { outcome: 'conditional', reason: 'Needs approval', ledgerWrite: { logicalKey: 'policy', value: { enabled: true }, reason: 'record decision' } },
+      id: record.id,
+      expectedVersion: record.version,
+      opId: 'op-decide',
+      decision: {
+        outcome: 'conditional',
+        reason: 'Needs approval',
+        ledgerWrite: { logicalKey: 'policy', value: { enabled: true }, reason: 'record decision' },
+      },
     })
     expect(decided.status).toBe('decided')
     expect(decided.decision?.resolverId).toBe('user-1')
-    expect(() => DeliberationService.forUser(db, { ...scope, actorId: 'user-1' }).decide({
-      id: record.id, expectedVersion: decided.version, opId: 'op-too-big',
-      decision: { outcome: 'approved', reason: 'x'.repeat(4_001), ledgerWrite: null },
-    })).toThrow()
+    expect(() =>
+      DeliberationService.forUser(db, { ...scope, actorId: 'user-1' }).decide({
+        id: record.id,
+        expectedVersion: decided.version,
+        opId: 'op-too-big',
+        decision: { outcome: 'approved', reason: 'x'.repeat(4_001), ledgerWrite: null },
+      }),
+    ).toThrow()
+  })
+
+  it('rolls back a decision when the ledger write fails and retries the same op safely', () => {
+    let shouldFail = true
+    const writes: unknown[] = []
+    const writer = {
+      write(input: unknown) {
+        if (shouldFail) throw new Error('ledger unavailable')
+        writes.push(input)
+      },
+    }
+    const draft = DeliberationService.forAgent(db, scope).create({
+      id: 'proposal-ledger-retry',
+      topic: 'Ledger retry',
+      proposal: {
+        claim: 'Persist atomically',
+        position: 'conditional',
+        rationale: 'Avoid split state',
+      },
+      opId: 'ledger-create',
+    })
+    const user = DeliberationService.forUser(
+      db,
+      { ...scope, actorId: 'user-1' },
+      { ledgerWriter: writer },
+    )
+    const decision = {
+      outcome: 'approved' as const,
+      reason: 'Persist atomically',
+      ledgerWrite: { logicalKey: 'ledger-retry', value: { ok: true }, reason: 'decision record' },
+    }
+    expect(() =>
+      user.decide({ id: draft.id, expectedVersion: 1, opId: 'ledger-decide', decision }),
+    ).toThrow('ledger unavailable')
+    expect(user.get(draft.id)).toMatchObject({ status: 'proposed', version: 1, decision: null })
+    expect(user.listEvents(draft.id).items.map((event) => event.operation)).toEqual(['create'])
+
+    shouldFail = false
+    const decided = user.decide({
+      id: draft.id,
+      expectedVersion: 1,
+      opId: 'ledger-decide',
+      decision,
+    })
+    expect(decided.status).toBe('decided')
+    expect(writes).toHaveLength(1)
+    expect(
+      user.decide({ id: draft.id, expectedVersion: 1, opId: 'ledger-decide', decision }),
+    ).toEqual(decided)
+    expect(writes).toHaveLength(1)
   })
 
   it('does not leak data across discussions and deletes all session records', () => {
     DeliberationService.forSystem(db, scope).create({
-      id: 'proposal-1', topic: 'Secret',
-      proposal: { claim: 'Keep private', position: 'support', rationale: 'Scope test' }, opId: 'op-secret',
+      id: 'proposal-1',
+      topic: 'Secret',
+      proposal: { claim: 'Keep private', position: 'support', rationale: 'Scope test' },
+      opId: 'op-secret',
     })
-    expect(DeliberationService.forSystem(db, { ...scope, discussionId: 'discussion-2' }).snapshot().records).toHaveLength(0)
+    expect(
+      DeliberationService.forSystem(db, { ...scope, discussionId: 'discussion-2' }).snapshot()
+        .records,
+    ).toHaveLength(0)
     expect(DeliberationService.deleteBySession(db, scope.sessionId)).toBeGreaterThan(0)
     expect(DeliberationService.forSystem(db, scope).snapshot().records).toHaveLength(0)
     expect(DeliberationService.forSystem(db, scope).listEvents().items).toHaveLength(0)

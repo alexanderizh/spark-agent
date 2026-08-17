@@ -54,6 +54,8 @@ export interface EvidenceCostSnapshot {
   discussionId: string | null
   evidence: EvidenceRecord[]
   costs: CostEvent[]
+  costsTotal?: number
+  costsHasMore?: boolean
   aggregates: CostAggregate[]
   budgetTokens: number | null
   budgetAmount: number | null
@@ -66,7 +68,14 @@ export interface EvidenceCostSnapshot {
 type EvidenceMutation =
   | { kind: 'evidence'; action: 'verify'; id: string; expectedVersion: number }
   | { kind: 'evidence'; action: 'invalidate'; id: string; expectedVersion: number; reason?: string }
-  | { kind: 'budget'; action: 'set'; expectedVersion: number; tokens?: number | null; amount?: number | null; currency?: string | null }
+  | {
+      kind: 'budget'
+      action: 'set'
+      expectedVersion: number
+      tokens?: number | null
+      amount?: number | null
+      currency?: string | null
+    }
 
 export type EvidenceCostMutationPayload = EvidenceMutation
 
@@ -89,7 +98,10 @@ type Invoke = (channel: string, request: object) => Promise<unknown>
 
 const MAX_ITEMS = 100
 
-export function useEvidenceCost(sessionId: SessionId | undefined, discussionId: string | undefined): EvidenceCostState {
+export function useEvidenceCost(
+  sessionId: SessionId | undefined,
+  discussionId: string | undefined,
+): EvidenceCostState {
   const [snapshot, setSnapshot] = useState<EvidenceCostSnapshot | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -110,44 +122,51 @@ export function useEvidenceCost(sessionId: SessionId | undefined, discussionId: 
 
   const refresh = useCallback(() => readRef.current(), [])
 
-  const mutate = useCallback(async (payload: EvidenceCostMutationPayload) => {
-    const requestSession = sessionId
-    const requestDiscussion = discussionId
-    if (requestSession == null || requestDiscussion == null || !mounted.current) return
+  const mutate = useCallback(
+    async (payload: EvidenceCostMutationPayload) => {
+      const requestSession = sessionId
+      const requestDiscussion = discussionId
+      if (requestSession == null || requestDiscussion == null || !mounted.current) return
 
-    const operationKey = operationKeyFor(payload)
-    const existingFlight = mutationFlights.current.get(operationKey)
-    if (existingFlight != null) return existingFlight
+      const operationKey = operationKeyFor(payload)
+      const existingFlight = mutationFlights.current.get(operationKey)
+      if (existingFlight != null) return existingFlight
 
-    const opId = operationIds.current.get(operationKey) ?? createOperationId()
-    operationIds.current.set(operationKey, opId)
-    const requestEpoch = epoch.current
-    setError(null)
-    setMutatingKey(operationKey)
-    const request: EvidenceCostMutationRequest = {
-      ...payload,
-      sessionId: requestSession,
-      expectedDiscussionId: requestDiscussion,
-      opId,
-    }
-    const flight = invoke('evidence-cost:mutate', request).then((result) => {
-      const next = unwrapSnapshot(result)
-      if (isCurrent(requestSession, requestDiscussion, requestEpoch) && next != null) {
-        snapshotRef.current = next
-        setSnapshot(next)
-        setError(null)
-        operationIds.current.delete(operationKey)
+      const opId = operationIds.current.get(operationKey) ?? createOperationId()
+      operationIds.current.set(operationKey, opId)
+      const requestEpoch = epoch.current
+      setError(null)
+      setMutatingKey(operationKey)
+      const request: EvidenceCostMutationRequest = {
+        ...payload,
+        sessionId: requestSession,
+        expectedDiscussionId: requestDiscussion,
+        opId,
       }
-    }).catch((caught: unknown) => {
-      if (isCurrent(requestSession, requestDiscussion, requestEpoch)) setError(errorMessage(caught))
-      throw caught
-    }).finally(() => {
-      mutationFlights.current.delete(operationKey)
-      if (isCurrent(requestSession, requestDiscussion, requestEpoch)) setMutatingKey(null)
-    })
-    mutationFlights.current.set(operationKey, flight)
-    return flight
-  }, [discussionId, sessionId])
+      const flight = invoke('evidence-cost:mutate', request)
+        .then((result) => {
+          const next = unwrapSnapshot(result)
+          if (isCurrent(requestSession, requestDiscussion, requestEpoch) && next != null) {
+            snapshotRef.current = next
+            setSnapshot(next)
+            setError(null)
+            operationIds.current.delete(operationKey)
+          }
+        })
+        .catch((caught: unknown) => {
+          if (isCurrent(requestSession, requestDiscussion, requestEpoch))
+            setError(errorMessage(caught))
+          throw caught
+        })
+        .finally(() => {
+          mutationFlights.current.delete(operationKey)
+          if (isCurrent(requestSession, requestDiscussion, requestEpoch)) setMutatingKey(null)
+        })
+      mutationFlights.current.set(operationKey, flight)
+      return flight
+    },
+    [discussionId, sessionId],
+  )
 
   useEffect(() => {
     mounted.current = true
@@ -166,25 +185,42 @@ export function useEvidenceCost(sessionId: SessionId | undefined, discussionId: 
     let disposed = false
 
     const read = async (): Promise<void> => {
-      if (requestSession == null || requestDiscussion == null || disposed || !mounted.current || activeSession.current !== requestSession || activeDiscussion.current !== requestDiscussion) return
+      if (
+        requestSession == null ||
+        requestDiscussion == null ||
+        disposed ||
+        !mounted.current ||
+        activeSession.current !== requestSession ||
+        activeDiscussion.current !== requestDiscussion
+      )
+        return
       if (readFlight.current != null) return readFlight.current
       const requestEpoch = epoch.current
       setLoading(true)
-      const flight = invoke('evidence-cost:get', { sessionId: requestSession, expectedDiscussionId: requestDiscussion })
+      const flight = invoke('evidence-cost:get', {
+        sessionId: requestSession,
+        expectedDiscussionId: requestDiscussion,
+      })
         .then((result) => {
           const next = unwrapSnapshot(result)
-          if (next != null && !disposed && isCurrent(requestSession, requestDiscussion, requestEpoch)) {
+          if (
+            next != null &&
+            !disposed &&
+            isCurrent(requestSession, requestDiscussion, requestEpoch)
+          ) {
             snapshotRef.current = next
             setSnapshot(next)
             setError(null)
           }
         })
         .catch((caught: unknown) => {
-          if (!disposed && isCurrent(requestSession, requestDiscussion, requestEpoch)) setError(errorMessage(caught))
+          if (!disposed && isCurrent(requestSession, requestDiscussion, requestEpoch))
+            setError(errorMessage(caught))
         })
         .finally(() => {
           if (readFlight.current === flight) readFlight.current = null
-          if (!disposed && isCurrent(requestSession, requestDiscussion, requestEpoch)) setLoading(false)
+          if (!disposed && isCurrent(requestSession, requestDiscussion, requestEpoch))
+            setLoading(false)
         })
       readFlight.current = flight
       return flight
@@ -202,7 +238,10 @@ export function useEvidenceCost(sessionId: SessionId | undefined, discussionId: 
   }, [discussionId, sessionId])
 
   const isCurrent = (requestSession: SessionId, requestDiscussion: string, requestEpoch: number) =>
-    mounted.current && activeSession.current === requestSession && activeDiscussion.current === requestDiscussion && epoch.current === requestEpoch
+    mounted.current &&
+    activeSession.current === requestSession &&
+    activeDiscussion.current === requestDiscussion &&
+    epoch.current === requestEpoch
 
   return { snapshot, loading, error, mutatingKey, refresh, mutate }
 }
@@ -218,7 +257,12 @@ function unwrapSnapshot(value: unknown): EvidenceCostSnapshot | null {
 }
 
 function isSnapshot(value: unknown): value is EvidenceCostSnapshot {
-  return isRecord(value) && Array.isArray(value.evidence) && Array.isArray(value.costs) && Array.isArray(value.aggregates)
+  return (
+    isRecord(value) &&
+    Array.isArray(value.evidence) &&
+    Array.isArray(value.costs) &&
+    Array.isArray(value.aggregates)
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -226,7 +270,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function operationKeyFor(payload: EvidenceCostMutationPayload): string {
-  return [payload.kind, payload.action, 'id' in payload ? payload.id : 'budget', payload.expectedVersion].join(':')
+  return [
+    payload.kind,
+    payload.action,
+    'id' in payload ? payload.id : 'budget',
+    payload.expectedVersion,
+  ].join(':')
 }
 
 function createOperationId(): string {

@@ -29,9 +29,10 @@ function makeTask(memberAgentId = 'reviewer', overrides: Partial<TeamA2ATask> = 
   }
 }
 
-function makeCtx(
-  overrides: Partial<TeamDispatchRunContext<Member>> = {},
-): { ctx: TeamDispatchRunContext<Member>; events: AgentEvent[] } {
+function makeCtx(overrides: Partial<TeamDispatchRunContext<Member>> = {}): {
+  ctx: TeamDispatchRunContext<Member>
+  events: AgentEvent[]
+} {
   const events: AgentEvent[] = []
   const teamConfig: TeamModeConfig = {
     enabled: true,
@@ -183,17 +184,19 @@ describe('TeamDispatchService', () => {
     const firstStarted = new Promise<void>((resolve) => {
       markFirstStarted = resolve
     })
-    const executeMember = vi.fn(async ({ member }: Parameters<TeamDispatchRunContext<Member>['executeMember']>[0]) => {
-      order.push(`start:${member.id}`)
-      if (member.id === 'reviewer') {
-        markFirstStarted?.()
-        await new Promise<void>((resolve) => {
-          releaseFirst = resolve
-        })
-      }
-      order.push(`end:${member.id}`)
-      return { content: `${member.name} done` }
-    })
+    const executeMember = vi.fn(
+      async ({ member }: Parameters<TeamDispatchRunContext<Member>['executeMember']>[0]) => {
+        order.push(`start:${member.id}`)
+        if (member.id === 'reviewer') {
+          markFirstStarted?.()
+          await new Promise<void>((resolve) => {
+            releaseFirst = resolve
+          })
+        }
+        order.push(`end:${member.id}`)
+        return { content: `${member.name} done` }
+      },
+    )
     const { ctx } = makeCtx({ executeMember })
 
     const first = service.run(makeTask('reviewer'), ctx)
@@ -205,12 +208,7 @@ describe('TeamDispatchService', () => {
     releaseFirst?.()
     await Promise.all([first, second])
 
-    expect(order).toEqual([
-      'start:reviewer',
-      'end:reviewer',
-      'start:rust-coder',
-      'end:rust-coder',
-    ])
+    expect(order).toEqual(['start:reviewer', 'end:reviewer', 'start:rust-coder', 'end:rust-coder'])
     expect(executeMember).toHaveBeenCalledTimes(2)
   })
 
@@ -246,13 +244,15 @@ describe('TeamDispatchService', () => {
 
   it('with options.parallel=true bypasses the turn serialization queue', async () => {
     const order: string[] = []
-    const executeMember = vi.fn(async ({ member }: Parameters<TeamDispatchRunContext<Member>['executeMember']>[0]) => {
-      order.push(`start:${member.id}`)
-      // 两个 member 同时进入；如果是串行，第二个会等第一个 await 才进入
-      await new Promise((r) => setTimeout(r, 10))
-      order.push(`end:${member.id}`)
-      return { content: `${member.name} done` }
-    })
+    const executeMember = vi.fn(
+      async ({ member }: Parameters<TeamDispatchRunContext<Member>['executeMember']>[0]) => {
+        order.push(`start:${member.id}`)
+        // 两个 member 同时进入；如果是串行，第二个会等第一个 await 才进入
+        await new Promise((r) => setTimeout(r, 10))
+        order.push(`end:${member.id}`)
+        return { content: `${member.name} done` }
+      },
+    )
     const { ctx } = makeCtx({ executeMember })
 
     const both = await Promise.all([
@@ -268,15 +268,15 @@ describe('TeamDispatchService', () => {
 })
 
 describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
-	  let threadMessages: Array<{
-	    discussion_id: string
-	    sender_agent_id: string
-	    target_agent_id: string | null
-	    round_index: number
-	    kind: string
-	    content: string
-	    delivery?: 'call' | 'note' | null
-	  }>
+  let threadMessages: Array<{
+    discussion_id: string
+    sender_agent_id: string
+    target_agent_id: string | null
+    round_index: number
+    kind: string
+    content: string
+    delivery?: 'call' | 'note' | null
+  }>
   let discussionRepo: {
     appendMessage: ReturnType<typeof vi.fn>
     listMessages: ReturnType<typeof vi.fn>
@@ -286,33 +286,39 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
   beforeEach(() => {
     threadMessages = []
     discussionRepo = {
-      appendMessage: vi.fn((message: {
-        discussionId: string
-        senderAgentId: string
-        targetAgentId?: string
-        roundIndex: number
-        kind: string
-	        content: string
-	        delivery?: 'call' | 'note' | null
-	      }) => {
-	        threadMessages.push({
-          discussion_id: message.discussionId,
-          sender_agent_id: message.senderAgentId,
-          target_agent_id: message.targetAgentId ?? null,
-          round_index: message.roundIndex,
-	          kind: message.kind,
-	          content: message.content,
-	          delivery: message.delivery ?? null,
-	        })
-	      }),
-      listMessages: vi.fn((discussionId: string) => threadMessages.filter((message) => message.discussion_id === discussionId)),
+      appendMessage: vi.fn(
+        (message: {
+          discussionId: string
+          senderAgentId: string
+          targetAgentId?: string
+          roundIndex: number
+          kind: string
+          content: string
+          delivery?: 'call' | 'note' | null
+        }) => {
+          threadMessages.push({
+            discussion_id: message.discussionId,
+            sender_agent_id: message.senderAgentId,
+            target_agent_id: message.targetAgentId ?? null,
+            round_index: message.roundIndex,
+            kind: message.kind,
+            content: message.content,
+            delivery: message.delivery ?? null,
+          })
+        },
+      ),
+      listMessages: vi.fn((discussionId: string) =>
+        threadMessages.filter((message) => message.discussion_id === discussionId),
+      ),
     }
     // maxDispatchesPerTurn=10, maxMessagesPerDiscussion=3（便于测超限）
     service = new TeamDispatchService(makeRepo() as never, 10, discussionRepo as never, 3)
   })
 
   it('广播：只写线程 + emit team_peer_message，不触发任何成员执行', async () => {
-    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'never' }))
+    const executeMember = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({ content: 'never' }),
+    )
     const { ctx, events } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember })
     const res = await service.recordPeerMessage(
       { content: 'hi team', senderAgentId: 'reviewer', discussionId: 'd1', roundIndex: 0 },
@@ -322,37 +328,45 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     expect(executeMember).not.toHaveBeenCalled()
     expect(discussionRepo.appendMessage).toHaveBeenCalledTimes(1)
     expect(discussionRepo.appendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'peer_message', senderAgentId: 'reviewer', content: 'hi team' }),
+      expect.objectContaining({
+        kind: 'peer_message',
+        senderAgentId: 'reviewer',
+        content: 'hi team',
+      }),
     )
-	    expect(events.some((e) => e.type === 'team_peer_message')).toBe(true)
-	  })
+    expect(events.some((e) => e.type === 'team_peer_message')).toBe(true)
+  })
 
-	  it('定向 note：只写线程 + emit delivery=note，不触发目标执行', async () => {
-	    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'never' }))
-	    const { ctx, events } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember })
-	    const res = await service.recordPeerMessage(
-	      {
-	        content: '接口更新好了，有空看一下',
-	        senderAgentId: 'reviewer',
-	        targetAgentId: 'rust-coder',
-	        delivery: 'note',
-	        discussionId: 'd1',
-	        roundIndex: 0,
-	      },
-	      ctx,
-	    )
-	    expect(res.ok).toBe(true)
-	    expect(executeMember).not.toHaveBeenCalled()
-	    expect(threadMessages[0]).toMatchObject({
-	      target_agent_id: 'rust-coder',
-	      delivery: 'note',
-	    })
-	    const event = events.find((e) => e.type === 'team_peer_message')
-	    expect(event).toMatchObject({ type: 'team_peer_message', delivery: 'note' })
-	  })
+  it('定向 note：只写线程 + emit delivery=note，不触发目标执行', async () => {
+    const executeMember = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({ content: 'never' }),
+    )
+    const { ctx, events } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember })
+    const res = await service.recordPeerMessage(
+      {
+        content: '接口更新好了，有空看一下',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        delivery: 'note',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    expect(res.ok).toBe(true)
+    expect(executeMember).not.toHaveBeenCalled()
+    expect(threadMessages[0]).toMatchObject({
+      target_agent_id: 'rust-coder',
+      delivery: 'note',
+    })
+    const event = events.find((e) => e.type === 'team_peer_message')
+    expect(event).toMatchObject({ type: 'team_peer_message', delivery: 'note' })
+  })
 
   it('定向 @：触发目标一次完整 turn（run），写 peer_message + member_reply 两条线程', async () => {
-    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'reply-body' }))
+    const executeMember = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({ content: 'reply-body' }),
+    )
     const { ctx, events } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember })
     const res = await service.recordPeerMessage(
       {
@@ -368,9 +382,9 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     expect(executeMember).toHaveBeenCalledTimes(1)
     // peer_message（发起者）+ member_reply（目标回复）
     expect(discussionRepo.appendMessage).toHaveBeenCalledTimes(2)
-    const kinds = (discussionRepo.appendMessage.mock.calls as unknown as Array<Array<{ kind: string }>>).map(
-      (c) => c[0]!.kind,
-    )
+    const kinds = (
+      discussionRepo.appendMessage.mock.calls as unknown as Array<Array<{ kind: string }>>
+    ).map((c) => c[0]!.kind)
     expect(kinds).toContain('peer_message')
     expect(kinds).toContain('member_reply')
     expect(events.some((e) => e.type === 'team_peer_message')).toBe(true)
@@ -384,11 +398,14 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     // reviewer 和 Rust Coder 的回复互相 @ 对方——链式语义下自动往返，直到某层预算拦截。
     // 本测试的 service maxMessagesPerDiscussion=3：3 条 auto peer_message 后第 4 条被
     // message_budget_exceeded 拦下 → executeMember 恰好 1（原始）+ 3（auto）= 4 次。
-    const executeMember = vi.fn(async ({ member }: { member: { id: string } }): Promise<TeamMemberExecutionResult> => ({
-      content: member.id === 'reviewer'
-        ? '@Rust Coder 你那边的接口定义确认了吗？'
-        : '@Reviewer 确认了，见 v2 schema。',
-    }))
+    const executeMember = vi.fn(
+      async ({ member }: { member: { id: string } }): Promise<TeamMemberExecutionResult> => ({
+        content:
+          member.id === 'reviewer'
+            ? '@Rust Coder 你那边的接口定义确认了吗？'
+            : '@Reviewer 确认了，见 v2 schema。',
+      }),
+    )
     const peerConfig: TeamModeConfig = {
       enabled: true,
       hostAgentId: 'code-agent',
@@ -397,7 +414,12 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
       allowNesting: false,
       enablePeerMessaging: true,
     }
-    const { ctx, events } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember, teamConfig: peerConfig })
+    const { ctx, events } = makeCtx({
+      discussionId: 'd1',
+      roundIndex: 0,
+      executeMember,
+      teamConfig: peerConfig,
+    })
     const reply = await service.run(makeTask('reviewer'), ctx)
     expect(reply.state).toBe('completed')
     expect(executeMember).toHaveBeenCalledTimes(4)
@@ -413,7 +435,9 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
   })
 
   it('自动 @ 转发：无 @ 的回复完全不干预；enablePeerMessaging=false 时含 @ 也不触发', async () => {
-    const plainExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: '完成，无需协作。' }))
+    const plainExecute = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({ content: '完成，无需协作。' }),
+    )
     const peerOnConfig: TeamModeConfig = {
       enabled: true,
       hostAgentId: 'code-agent',
@@ -422,19 +446,32 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
       allowNesting: false,
       enablePeerMessaging: true,
     }
-    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember: plainExecute, teamConfig: peerOnConfig })
+    const { ctx } = makeCtx({
+      discussionId: 'd1',
+      roundIndex: 0,
+      executeMember: plainExecute,
+      teamConfig: peerOnConfig,
+    })
     await service.run(makeTask('reviewer'), ctx)
     expect(plainExecute).toHaveBeenCalledTimes(1)
 
     // 灰度关：含 @ 也不触发
-    const mentionExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: '@Rust Coder 看一下' }))
-    const { ctx: offCtx } = makeCtx({ discussionId: 'd2', roundIndex: 0, executeMember: mentionExecute })
+    const mentionExecute = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({ content: '@Rust Coder 看一下' }),
+    )
+    const { ctx: offCtx } = makeCtx({
+      discussionId: 'd2',
+      roundIndex: 0,
+      executeMember: mentionExecute,
+    })
     await service.run(makeTask('reviewer'), offCtx)
     expect(mentionExecute).toHaveBeenCalledTimes(1)
   })
 
   it('成员发起的定向 @ 不受嵌套深度限制（currentDepth>0 + allowNesting=false 仍成功）', async () => {
-    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'peer reply' }))
+    const executeMember = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({ content: 'peer reply' }),
+    )
     // 模拟发起者是深度 1 的成员（被 Host dispatch 中）；默认 allowNesting=false, maxDepth=1，
     // 旧实现会被 run 的 depth_exceeded 拦截——peer messaging 是平层对话，不该走嵌套校验。
     const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember, currentDepth: 1 })
@@ -456,7 +493,9 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
   it('定向 @ 绕过 turn 串行队列：发起者占用队列槽位执行中也不会死锁', async () => {
     // 场景：Host 串行 dispatch 了成员 A（占着 turn 队列）；A 执行中调 agent_message @ B。
     // 旧实现 recordPeerMessage → run → enqueueTurnExecution(同 turnId) 会排在 A 自己后面 → 自等待死锁。
-    const innerExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'B answer' }))
+    const innerExecute = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({ content: 'B answer' }),
+    )
     const outerExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => {
       // A 执行中发起对 B 的定向 @（同一 turnId），必须能在 A 结束前完成
       const { ctx: peerCtx } = makeCtx({
@@ -481,7 +520,13 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember: outerExecute })
     // Host 串行 dispatch A（parallel 缺省 false → 走 turn 队列）
     const reply = await service.run(
-      { taskId: 't-outer', hostAgentId: 'code-agent', memberAgentId: 'reviewer', rootTurnId: 'turn-1', instruction: 'ask B then answer' },
+      {
+        taskId: 't-outer',
+        hostAgentId: 'code-agent',
+        memberAgentId: 'reviewer',
+        rootTurnId: 'turn-1',
+        instruction: 'ask B then answer',
+      },
       ctx,
     )
     expect(reply.state).toBe('completed')
@@ -492,7 +537,13 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
   it('越权 target 拒绝：target 不在启用成员', async () => {
     const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
     const res = await service.recordPeerMessage(
-      { content: 'hi', senderAgentId: 'reviewer', targetAgentId: 'unknown', discussionId: 'd1', roundIndex: 0 },
+      {
+        content: 'hi',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'unknown',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
       ctx,
     )
     expect(res.ok).toBe(false)
@@ -503,7 +554,13 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
   it('拒绝 self-@，避免成员给自己触发新一轮执行', async () => {
     const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
     const res = await service.recordPeerMessage(
-      { content: 'self loop', senderAgentId: 'reviewer', targetAgentId: 'reviewer', discussionId: 'd1', roundIndex: 0 },
+      {
+        content: 'self loop',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'reviewer',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
       ctx,
     )
     expect(res.ok).toBe(false)
@@ -515,111 +572,135 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     // 多轮互聊是合法形态（"你俩互相对话三轮"），旧的「立即回 ping 即拦」会掐死第一次回话。
     // 用大预算 service 隔离测 pair 上限：交替发满 8 条双向定向消息全部成功，第 9 条被拦。
     const bigBudget = new TeamDispatchService(makeRepo() as never, 30, discussionRepo as never, 30)
-    const quietExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'ok（无 @，防 auto 干扰）' }))
+    const quietExecute = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({ content: 'ok（无 @，防 auto 干扰）' }),
+    )
     const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember: quietExecute })
     for (let i = 0; i < 8; i++) {
       const sender = i % 2 === 0 ? 'reviewer' : 'rust-coder'
       const target = i % 2 === 0 ? 'rust-coder' : 'reviewer'
       const res = await bigBudget.recordPeerMessage(
-        { content: `round trip ${i}`, senderAgentId: sender, targetAgentId: target, discussionId: 'd1', roundIndex: 0 },
+        {
+          content: `round trip ${i}`,
+          senderAgentId: sender,
+          targetAgentId: target,
+          discussionId: 'd1',
+          roundIndex: 0,
+        },
         ctx,
       )
       expect(res.ok).toBe(true)
     }
     const ninth = await bigBudget.recordPeerMessage(
-      { content: 'one too many', senderAgentId: 'reviewer', targetAgentId: 'rust-coder', discussionId: 'd1', roundIndex: 0 },
+      {
+        content: 'one too many',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
       ctx,
     )
-	    expect(ninth.ok).toBe(false)
-	    if (!ninth.ok) expect(ninth.code).toBe('ping_pong_blocked')
-	  })
+    expect(ninth.ok).toBe(false)
+    if (!ninth.ok) expect(ninth.code).toBe('ping_pong_blocked')
+  })
 
-	  it('note 不计入同对往返上限，但仍计入讨论消息总量', async () => {
-	    const bigBudget = new TeamDispatchService(makeRepo() as never, 30, discussionRepo as never, 9)
-	    const quietExecute = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'ok（无 @，防 auto 干扰）' }))
-	    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember: quietExecute })
-	    for (let i = 0; i < 8; i++) {
-	      const sender = i % 2 === 0 ? 'reviewer' : 'rust-coder'
-	      const target = i % 2 === 0 ? 'rust-coder' : 'reviewer'
-	      const res = await bigBudget.recordPeerMessage(
-	        { content: `round trip ${i}`, senderAgentId: sender, targetAgentId: target, discussionId: 'd1', roundIndex: 0 },
-	        ctx,
-	      )
-	      expect(res.ok).toBe(true)
-	    }
-	    const note = await bigBudget.recordPeerMessage(
-	      {
-	        content: 'async FYI',
-	        senderAgentId: 'reviewer',
-	        targetAgentId: 'rust-coder',
-	        delivery: 'note',
-	        discussionId: 'd1',
-	        roundIndex: 0,
-	      },
-	      ctx,
-	    )
-	    expect(note.ok).toBe(true)
-	    const overTotal = await bigBudget.recordPeerMessage(
-	      {
-	        content: 'one message beyond total budget',
-	        senderAgentId: 'reviewer',
-	        targetAgentId: 'rust-coder',
-	        delivery: 'note',
-	        discussionId: 'd1',
-	        roundIndex: 0,
-	      },
-	      ctx,
-	    )
-	    expect(overTotal.ok).toBe(false)
-	    if (!overTotal.ok) expect(overTotal.code).toBe('message_budget_exceeded')
-	  })
+  it('note 不计入同对往返上限，但仍计入讨论消息总量', async () => {
+    const bigBudget = new TeamDispatchService(makeRepo() as never, 30, discussionRepo as never, 9)
+    const quietExecute = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({ content: 'ok（无 @，防 auto 干扰）' }),
+    )
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, executeMember: quietExecute })
+    for (let i = 0; i < 8; i++) {
+      const sender = i % 2 === 0 ? 'reviewer' : 'rust-coder'
+      const target = i % 2 === 0 ? 'rust-coder' : 'reviewer'
+      const res = await bigBudget.recordPeerMessage(
+        {
+          content: `round trip ${i}`,
+          senderAgentId: sender,
+          targetAgentId: target,
+          discussionId: 'd1',
+          roundIndex: 0,
+        },
+        ctx,
+      )
+      expect(res.ok).toBe(true)
+    }
+    const note = await bigBudget.recordPeerMessage(
+      {
+        content: 'async FYI',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        delivery: 'note',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    expect(note.ok).toBe(true)
+    const overTotal = await bigBudget.recordPeerMessage(
+      {
+        content: 'one message beyond total budget',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        delivery: 'note',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    expect(overTotal.ok).toBe(false)
+    if (!overTotal.ok) expect(overTotal.code).toBe('message_budget_exceeded')
+  })
 
-	  it('同步咨询深度达到 3 时拒绝第 4 层 call，并引导改用 note', async () => {
-	    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, consultDepth: 3 })
-	    const res = await service.recordPeerMessage(
-	      {
-	        content: 'ask one more teammate',
-	        senderAgentId: 'reviewer',
-	        targetAgentId: 'rust-coder',
-	        discussionId: 'd1',
-	        roundIndex: 0,
-	      },
-	      ctx,
-	    )
-	    expect(res.ok).toBe(false)
-	    if (!res.ok) {
-	      expect(res.code).toBe('consult_depth_exceeded')
-	      expect(res.message).toContain('note')
-	    }
-	    expect(discussionRepo.appendMessage).not.toHaveBeenCalled()
-	  })
+  it('同步咨询深度达到 3 时拒绝第 4 层 call，并引导改用 note', async () => {
+    const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0, consultDepth: 3 })
+    const res = await service.recordPeerMessage(
+      {
+        content: 'ask one more teammate',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.code).toBe('consult_depth_exceeded')
+      expect(res.message).toContain('note')
+    }
+    expect(discussionRepo.appendMessage).not.toHaveBeenCalled()
+  })
 
-	  it('deadline 剩余不足 30 秒时拒绝同步咨询，并引导改用 note', async () => {
-	    const { ctx } = makeCtx({
-	      discussionId: 'd1',
-	      roundIndex: 0,
-	      deadlineAt: Date.now() + 10_000,
-	    })
-	    const res = await service.recordPeerMessage(
-	      {
-	        content: 'quick sync?',
-	        senderAgentId: 'reviewer',
-	        targetAgentId: 'rust-coder',
-	        discussionId: 'd1',
-	        roundIndex: 0,
-	      },
-	      ctx,
-	    )
-	    expect(res.ok).toBe(false)
-	    if (!res.ok) {
-	      expect(res.code).toBe('deadline_insufficient')
-	      expect(res.message).toContain('note')
-	    }
-	  })
+  it('deadline 剩余不足 30 秒时拒绝同步咨询，并引导改用 note', async () => {
+    const { ctx } = makeCtx({
+      discussionId: 'd1',
+      roundIndex: 0,
+      deadlineAt: Date.now() + 10_000,
+    })
+    const res = await service.recordPeerMessage(
+      {
+        content: 'quick sync?',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.code).toBe('deadline_insufficient')
+      expect(res.message).toContain('note')
+    }
+  })
 
   it('peer call 独立预算不挤占 host dispatch 预算', async () => {
     const budgeted = new TeamDispatchService(makeRepo() as never, 0, discussionRepo as never, 20, 2)
-    const executeMember = vi.fn(async (): Promise<TeamMemberExecutionResult> => ({ content: 'peer ok' }))
+    const executeMember = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({ content: 'peer ok' }),
+    )
     const onDispatchBudgetExceeded = vi.fn()
     const { ctx } = makeCtx({
       discussionId: 'd1',
@@ -633,23 +714,41 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     expect(hostDispatch.error?.message).toContain('Dispatch budget exceeded')
     expect(onDispatchBudgetExceeded).toHaveBeenCalledTimes(1)
 
-	    const firstPeer = await budgeted.recordPeerMessage(
-	      { content: 'peer 1', senderAgentId: 'reviewer', targetAgentId: 'rust-coder', discussionId: 'd1', roundIndex: 0 },
-	      ctx,
-	    )
-	    const secondPeer = await budgeted.recordPeerMessage(
-	      { content: 'peer 2', senderAgentId: 'reviewer', targetAgentId: 'rust-coder', discussionId: 'd1', roundIndex: 0 },
-	      ctx,
-	    )
-	    const thirdPeer = await budgeted.recordPeerMessage(
-	      { content: 'peer 3', senderAgentId: 'reviewer', targetAgentId: 'rust-coder', discussionId: 'd1', roundIndex: 0 },
-	      ctx,
-	    )
-	    expect(firstPeer.ok).toBe(true)
-	    expect(secondPeer.ok).toBe(true)
-	    expect(thirdPeer.ok).toBe(true)
-	    if (thirdPeer.ok) expect(thirdPeer.reply?.error?.message).toContain('Peer call budget exceeded')
-	  })
+    const firstPeer = await budgeted.recordPeerMessage(
+      {
+        content: 'peer 1',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    const secondPeer = await budgeted.recordPeerMessage(
+      {
+        content: 'peer 2',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    const thirdPeer = await budgeted.recordPeerMessage(
+      {
+        content: 'peer 3',
+        senderAgentId: 'reviewer',
+        targetAgentId: 'rust-coder',
+        discussionId: 'd1',
+        roundIndex: 0,
+      },
+      ctx,
+    )
+    expect(firstPeer.ok).toBe(true)
+    expect(secondPeer.ok).toBe(true)
+    expect(thirdPeer.ok).toBe(true)
+    if (thirdPeer.ok) expect(thirdPeer.reply?.error?.message).toContain('Peer call budget exceeded')
+  })
 
   it('消息总量超限会跨 service 实例持续生效（持久化线程计数）', async () => {
     const { ctx } = makeCtx({ discussionId: 'd1', roundIndex: 0 })
@@ -686,5 +785,62 @@ describe('recordPeerMessage (FR-B agent_message 两形态)', () => {
     expect(reply.state).toBe('completed')
     expect(discussionRepo.appendMessage).not.toHaveBeenCalled()
     expect(events.some((e) => e.type === 'team_dispatch_completed')).toBe(true)
+  })
+
+  // ── Steering Gate 执行守卫（beforeExecuteMember 可选回调） ─────────────────
+  it('guard 抛错（waiting gate）时 member 不被执行，走 failed 持久化/事件路径', async () => {
+    const executeMember = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({
+        content: 'should not run',
+      }),
+    )
+    const { ctx, events } = makeCtx({
+      executeMember,
+      beforeExecuteMember: () => {
+        throw new Error(
+          'Steering gate gate-1 blocks task "t1" (status=waiting): budget threshold. Recommended action: reduce scope',
+        )
+      },
+    })
+    const reply = await service.run(makeTask('reviewer'), ctx)
+
+    expect(reply.state).toBe('failed')
+    expect(reply.content).toBe('')
+    expect(reply.error?.code).toBe('internal')
+    expect(reply.error?.message).toContain('Steering gate gate-1 blocks task "t1"')
+    expect(executeMember).not.toHaveBeenCalled()
+    // failed 完成事件照常发出；该 describe 使用独立的持久化 mock，不能引用外层 repo。
+    const completed = events.find((e) => e.type === 'team_dispatch_completed')
+    expect(completed).toBeDefined()
+    if (completed?.type === 'team_dispatch_completed') {
+      expect(completed.reply.state).toBe('failed')
+    }
+  })
+
+  it('guard 放行（approved gate）时 member 正常执行', async () => {
+    const executeMember = vi.fn(
+      async (): Promise<TeamMemberExecutionResult> => ({
+        content: 'looks good',
+      }),
+    )
+    const guardCalls: Array<{ taskId: string; memberId: string }> = []
+    const { ctx } = makeCtx({
+      executeMember,
+      beforeExecuteMember: (args) => {
+        guardCalls.push({ taskId: args.task.taskId, memberId: args.member.id })
+      },
+    })
+    const reply = await service.run(makeTask('reviewer'), ctx)
+
+    expect(reply.state).toBe('completed')
+    expect(reply.content).toBe('looks good')
+    expect(executeMember).toHaveBeenCalledTimes(1)
+    expect(guardCalls).toEqual([{ taskId: 't1', memberId: 'reviewer' }])
+  })
+
+  it('未提供 guard 的既有 ctx 行为不变（可选回调）', async () => {
+    const { ctx } = makeCtx()
+    const reply = await service.run(makeTask('reviewer'), ctx)
+    expect(reply.state).toBe('completed')
   })
 })

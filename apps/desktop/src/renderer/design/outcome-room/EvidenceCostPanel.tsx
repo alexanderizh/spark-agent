@@ -106,7 +106,7 @@ export function EvidenceCostPanel({
         <div className="evidence-cost-panel__content">
           <div className="evidence-cost-panel__summary" aria-label="账本概览">
             <Metric label="证据" value={snapshot.evidence.length} />
-            <Metric label="用量事件" value={snapshot.costs.length} />
+            <Metric label="用量事件" value={snapshot.costsTotal ?? snapshot.costs.length} />
             <Metric
               label="预算剩余"
               value={formatTokens(remainingTokens)}
@@ -235,7 +235,7 @@ function CostSection({
     <div className="evidence-cost-panel__section" data-cost-list>
       <div className="evidence-cost-panel__section-heading">
         <h4>
-          Cost <span>{snapshot?.costs.length ?? 0}</span>
+          Cost <span>{snapshot?.costsTotal ?? snapshot?.costs.length ?? 0}</span>
         </h4>
         <span>按 Room / Task / Agent 聚合</span>
       </div>
@@ -265,6 +265,11 @@ function CostSection({
           false) && (
           <div className="evidence-cost-panel__warning">
             <AlertTriangle size={14} aria-hidden /> 部分成本缺少可计量数据，已保留为未知。
+          </div>
+        )}
+        {snapshot?.costsHasMore && (
+          <div className="evidence-cost-panel__substate">
+            成本事件较多，当前显示首 100 条；聚合已覆盖全部事件。
           </div>
         )}
       </div>

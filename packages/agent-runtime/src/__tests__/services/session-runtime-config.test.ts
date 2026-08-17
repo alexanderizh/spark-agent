@@ -321,6 +321,79 @@ vi.mock('@spark/storage', () => {
     }
   }
 
+  class TeamHandoffService {
+    static forAgent() {
+      return new TeamHandoffService()
+    }
+    static forSystem() {
+      return new TeamHandoffService()
+    }
+    static forUser() {
+      return new TeamHandoffService()
+    }
+    static deleteBySession() {
+      return 0
+    }
+    list() {
+      return { items: [], total: 0 }
+    }
+    create(input: Record<string, unknown>) {
+      return input
+    }
+    submit(input: Record<string, unknown>) {
+      return input
+    }
+    accept(input: Record<string, unknown>) {
+      return input
+    }
+    requestClarification(input: Record<string, unknown>) {
+      return input
+    }
+    reject(input: Record<string, unknown>) {
+      return input
+    }
+    complete(input: Record<string, unknown>) {
+      return input
+    }
+    cancel(input: Record<string, unknown>) {
+      return input
+    }
+  }
+
+  class SteeringGateService {
+    static forAgent() {
+      return new SteeringGateService()
+    }
+    static forSystem() {
+      return new SteeringGateService()
+    }
+    static forUser() {
+      return new SteeringGateService()
+    }
+    static deleteBySession() {
+      return 0
+    }
+    list() {
+      return { items: [], total: 0 }
+    }
+    assertTargetRunnable() {}
+    create(input: Record<string, unknown>) {
+      return input
+    }
+    approve(input: Record<string, unknown>) {
+      return input
+    }
+    revise(input: Record<string, unknown>) {
+      return input
+    }
+    stop(input: Record<string, unknown>) {
+      return input
+    }
+    expire(input: Record<string, unknown>) {
+      return input
+    }
+  }
+
   class EvidenceCostService {
     static forAgent() {
       return new EvidenceCostService()
@@ -1294,6 +1367,8 @@ vi.mock('@spark/storage', () => {
     TurnRequestRepository,
     RoomLedgerService,
     DeliberationService,
+    TeamHandoffService,
+    SteeringGateService,
     EvidenceCostService,
     ReplayPlaybookService,
     TaskGraphService,
@@ -2817,7 +2892,7 @@ describe('SessionService runtime provider/model resolution', () => {
     )?.spark_canvas
     expect(canvasServer).toMatchObject({
       type: 'stdio',
-      command: process.execPath,
+      command: process.env.SPARK_STANDALONE_NODE?.trim() || process.execPath,
     })
     expect(canvasServer?.args?.join(' ')).toContain('spark-canvas-mcp-server.mjs')
     expect(canvasServer?.env?.SPARK_CANVAS_SID).toBe(sessionId)
@@ -3562,6 +3637,19 @@ describe('SessionService runtime provider/model resolution', () => {
       'team_playbook_publish',
       'team_playbook_apply',
       'team_playbook_archive',
+      'team_p1_read',
+      'team_handoff_create',
+      'team_steering_gate_create',
+      'team_handoff_submit',
+      'team_handoff_accept',
+      'team_handoff_request_clarification',
+      'team_handoff_reject',
+      'team_handoff_complete',
+      'team_handoff_cancel',
+      'team_steering_gate_approve',
+      'team_steering_gate_revise',
+      'team_steering_gate_stop',
+      'team_steering_gate_expire',
       'agent_message',
       'team_round_advance',
       'team_conclude',
@@ -3843,6 +3931,9 @@ describe('SessionService runtime provider/model resolution', () => {
       'team_replay_fork',
       'team_playbook_list',
       'team_playbook_propose',
+      'team_p1_read',
+      'team_handoff_create',
+      'team_steering_gate_create',
       'agent_message',
       'team_thread_read',
     ])
@@ -3948,6 +4039,9 @@ describe('SessionService runtime provider/model resolution', () => {
       'team_replay_fork',
       'team_playbook_list',
       'team_playbook_propose',
+      'team_p1_read',
+      'team_handoff_create',
+      'team_steering_gate_create',
       'agent_message',
       'team_thread_read',
     ])
@@ -4669,6 +4763,19 @@ describe('SessionService runtime provider/model resolution', () => {
       'team_playbook_publish',
       'team_playbook_apply',
       'team_playbook_archive',
+      'team_p1_read',
+      'team_handoff_create',
+      'team_steering_gate_create',
+      'team_handoff_submit',
+      'team_handoff_accept',
+      'team_handoff_request_clarification',
+      'team_handoff_reject',
+      'team_handoff_complete',
+      'team_handoff_cancel',
+      'team_steering_gate_approve',
+      'team_steering_gate_revise',
+      'team_steering_gate_stop',
+      'team_steering_gate_expire',
       'team_round_advance',
       'team_conclude',
       'team_thread_read',
