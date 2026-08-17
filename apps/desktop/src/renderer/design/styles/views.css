@@ -4155,7 +4155,10 @@ body.sidebar-resizing {
   overflow: auto;
   padding: 6px;
   border-radius: var(--r-md);
-  background: var(--panel);
+  /* 与会话栏 antd Select dropdown（project picker 等）保持一致：暗色用 --panel-elev
+   * 而非 --panel，避免模型选择弹窗与其他参数选择弹窗颜色不一致。box-shadow 由
+   * 外层 .ant-dropdown 自带，避免双重阴影。 */
+  background: var(--panel-elev);
   font-weight: 400;
 }
 .composer-model-menu {
@@ -4222,9 +4225,11 @@ body.sidebar-resizing {
   max-height: min(320px, calc(100vh - 24px));
   overflow: hidden;
   padding: 4px;
-  border: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
+  /* 与 .composer-dropdown-menu / antd Select dropdown 统一到 --panel-elev + --border，
+   * 让 CLI 模型子菜单与会话栏其他参数选择弹窗颜色一致。 */
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--panel);
+  background: var(--panel-elev);
 }
 .composer-cli-model-submenu-search {
   display: flex;
