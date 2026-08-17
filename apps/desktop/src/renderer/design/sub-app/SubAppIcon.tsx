@@ -1,75 +1,33 @@
 import React from 'react'
 import { Icons } from '../Icons'
+import { SUB_APP_ICONS, type SubAppIconComponent, type SubAppIconShape } from './subAppIconOptions'
 
-type IconRenderer = (props: { size: number; className?: string }) => React.ReactElement
+/** 与全局自绘图标体系一致的描边粗细（lucide-react 默认 2，这里统一为 1.6）。 */
+const ICON_STROKE_WIDTH = 1.6
 
-const renderAppIcon: IconRenderer = ({ size, className }) =>
-  className == null ? (
-    <Icons.AppWindow size={size} />
-  ) : (
-    <Icons.AppWindow size={size} className={className} />
-  )
-const renderListIcon: IconRenderer = ({ size, className }) =>
-  className == null ? (
-    <Icons.ListTodo size={size} />
-  ) : (
-    <Icons.ListTodo size={size} className={className} />
-  )
-const renderBookIcon: IconRenderer = ({ size, className }) =>
-  className == null ? <Icons.Book size={size} /> : <Icons.Book size={size} className={className} />
-const renderCalendarIcon: IconRenderer = ({ size, className }) =>
-  className == null ? (
-    <Icons.Calendar size={size} />
-  ) : (
-    <Icons.Calendar size={size} className={className} />
-  )
-const renderDatabaseIcon: IconRenderer = ({ size, className }) =>
-  className == null ? (
-    <Icons.Database size={size} />
-  ) : (
-    <Icons.Database size={size} className={className} />
-  )
-const renderAgentIcon: IconRenderer = ({ size, className }) =>
-  className == null ? <Icons.Bot size={size} /> : <Icons.Bot size={size} className={className} />
-const renderCanvasIcon: IconRenderer = ({ size, className }) =>
-  className == null ? (
-    <Icons.Canvas size={size} />
-  ) : (
-    <Icons.Canvas size={size} className={className} />
-  )
-const renderFolderIcon: IconRenderer = ({ size, className }) =>
-  className == null ? (
-    <Icons.Folder size={size} />
-  ) : (
-    <Icons.Folder size={size} className={className} />
-  )
-const renderGlobeIcon: IconRenderer = ({ size, className }) =>
-  className == null ? (
-    <Icons.Globe size={size} />
-  ) : (
-    <Icons.Globe size={size} className={className} />
-  )
+const DEFAULT_ICON: SubAppIconComponent = Icons.AppWindow
 
-const BUILTIN_ICONS: Record<string, IconRenderer> = {
-  app: renderAppIcon,
-  application: renderAppIcon,
-  'app-window': renderAppIcon,
-  'list-todo': renderListIcon,
-  list: renderListIcon,
-  todo: renderListIcon,
-  tasks: renderListIcon,
-  book: renderBookIcon,
-  reading: renderBookIcon,
-  calendar: renderCalendarIcon,
-  database: renderDatabaseIcon,
-  data: renderDatabaseIcon,
-  agent: renderAgentIcon,
-  assistant: renderAgentIcon,
-  canvas: renderCanvasIcon,
-  folder: renderFolderIcon,
-  files: renderFolderIcon,
-  globe: renderGlobeIcon,
-  web: renderGlobeIcon,
+const BUILTIN_ICON_MAP: ReadonlyMap<string, SubAppIconComponent> = new Map<
+  string,
+  SubAppIconComponent
+>([
+  // 默认图标也注册为受控值，历史 "app/application/app-window" 文本可解析到它。
+  ['app-window', DEFAULT_ICON],
+  ...SUB_APP_ICONS.map(({ key, Icon }) => [key, Icon] as const),
+])
+
+/** 历史别名：旧版本写入的短名/同义词继续解析到现在的受控图标。 */
+const LEGACY_ALIASES: Record<string, string> = {
+  app: 'app-window',
+  application: 'app-window',
+  list: 'list-todo',
+  todo: 'list-todo',
+  tasks: 'list-todo',
+  reading: 'book',
+  data: 'database',
+  assistant: 'agent',
+  files: 'folder',
+  web: 'globe',
 }
 
 function normalizeBuiltinKey(value: string): string {
@@ -85,12 +43,26 @@ function isEmojiLike(value: string): boolean {
   return value.length <= 8 && /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(value)
 }
 
-function resolveBuiltinIcon(value: string): IconRenderer | null {
-  return BUILTIN_ICONS[normalizeBuiltinKey(value)] ?? null
+function resolveBuiltinIcon(value: string): SubAppIconComponent | null {
+  const key = normalizeBuiltinKey(value)
+  if (key.length === 0) return null
+  return BUILTIN_ICON_MAP.get(LEGACY_ALIASES[key] ?? key) ?? null
+}
+
+function renderIcon(
+  Icon: SubAppIconComponent,
+  size: number,
+  className: string | undefined,
+): React.ReactElement {
+  // exactOptionalPropertyTypes：可选属性不能显式传 undefined，缺失时直接省略属性。
+  if (className == null) {
+    return <Icon size={size} strokeWidth={ICON_STROKE_WIDTH} />
+  }
+  return <Icon size={size} className={className} strokeWidth={ICON_STROKE_WIDTH} />
 }
 
 export interface SubAppIconProps {
-  icon?: string | null
+  icon?: string | null | undefined
   size?: number
   className?: string
 }
@@ -99,14 +71,15 @@ export interface SubAppIconProps {
  * 子应用图标的唯一渲染入口。
  *
  * 兼容历史数据：旧版本可能把任意说明文本写进 icon 字段；这类值不再直接
- * 渲染到窄菜单中，而是回退为统一的应用图标。新值支持 builtin:* 和短 Emoji。
+ * 渲染到窄菜单中，而是回退为统一的应用图标。新值只使用 builtin:* 受控图标；
+ * 短 Emoji 仅为旧数据保留渲染兼容，选择器与工具提示词均已不再提供。
  */
 export function SubAppIcon({ icon, size = 18, className }: SubAppIconProps): React.ReactElement {
   const value = icon?.trim() ?? ''
-  const BuiltinIcon = value.length > 0 ? resolveBuiltinIcon(value) : renderAppIcon
+  const BuiltinIcon = value.length > 0 ? resolveBuiltinIcon(value) : null
 
   if (BuiltinIcon != null) {
-    return BuiltinIcon(className == null ? { size } : { size, className })
+    return renderIcon(BuiltinIcon, size, className)
   }
 
   if (isEmojiLike(value)) {
@@ -121,9 +94,5 @@ export function SubAppIcon({ icon, size = 18, className }: SubAppIconProps): Rea
     )
   }
 
-  return className == null ? (
-    <Icons.AppWindow size={size} />
-  ) : (
-    <Icons.AppWindow size={size} className={className} />
-  )
+  return renderIcon(DEFAULT_ICON, size, className)
 }

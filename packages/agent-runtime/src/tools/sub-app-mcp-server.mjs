@@ -29,6 +29,67 @@ import readline from 'node:readline'
 const BRIDGE_PORT = Number(process.env.SPARK_PLATFORM_BRIDGE_PORT || 0)
 const BRIDGE_HOST = '127.0.0.1'
 
+// ─── 子应用图标 ────────────────────────────────────────────────────────
+// 与前端受控注册表同步维护：apps/desktop/src/renderer/design/sub-app/subAppIconOptions.ts。
+// 图标一律使用 builtin:<name>，不使用 Emoji。
+const SUB_APP_ICON_NAMES = [
+  'list-todo',
+  'book',
+  'calendar',
+  'sticky-note',
+  'note',
+  'kanban',
+  'table',
+  'presentation',
+  'file-text',
+  'search',
+  'translate',
+  'study',
+  'lightbulb',
+  'timer',
+  'clock',
+  'bell',
+  'chat',
+  'mail',
+  'agent',
+  'code',
+  'terminal',
+  'git',
+  'workflow',
+  'puzzle',
+  'key',
+  'calculator',
+  'database',
+  'canvas',
+  'palette',
+  'image',
+  'video',
+  'music',
+  'camera',
+  'globe',
+  'folder',
+  'weather',
+  'health',
+  'fitness',
+  'habit',
+  'wallet',
+  'shopping',
+  'cooking',
+  'travel',
+  'game',
+  'star',
+  'users',
+  'chart',
+].join('、')
+
+const SUB_APP_ICON_CREATE_DESCRIPTION =
+  `图标标识（可选）：必须使用受控图标 builtin:<name>（name 从中选：${SUB_APP_ICON_NAMES}）。` +
+  '按应用用途选择语义最贴近的图标；不要使用 Emoji 作为图标，也不要传多词说明文本。'
+
+const SUB_APP_ICON_UPDATE_DESCRIPTION =
+  `新图标标识：必须使用受控图标 builtin:<name>（name 从中选：${SUB_APP_ICON_NAMES}）。` +
+  '不要使用 Emoji；传 null 可恢复默认应用图标。'
+
 // ─── JSON-RPC helpers ────────────────────────────────────────────────
 
 function send(message) {
@@ -179,8 +240,7 @@ function toolDefinitions() {
           icon: {
             type: 'string',
             maxLength: 240,
-            description:
-              '图标标识（可选）：优先使用单个 Emoji 或 builtin:list-todo、builtin:book、builtin:calendar、builtin:database、builtin:agent、builtin:canvas、builtin:folder、builtin:globe；不要传多词说明文本。',
+            description: SUB_APP_ICON_CREATE_DESCRIPTION,
           },
           entry: { type: 'string', maxLength: 240, description: '入口文件名，默认 index.html' },
         },
@@ -266,8 +326,7 @@ function toolDefinitions() {
           icon: {
             type: 'string',
             maxLength: 240,
-            description:
-              '新图标标识：优先使用单个 Emoji 或受控 builtin:* 图标标识；传 null 可恢复默认应用图标。',
+            description: SUB_APP_ICON_UPDATE_DESCRIPTION,
           },
           entry: { type: 'string', minLength: 1, maxLength: 240, description: '新入口文件名' },
         },

@@ -649,7 +649,7 @@ export function SubAppsView(): React.ReactElement {
         width={440}
       >
         <div className="sa-icon-editor">
-          <p>选择内置图标或 Emoji。未知的旧文本图标会自动显示为默认应用图标。</p>
+          <p>选择内置图标。未知的旧图标标识会自动显示为默认应用图标。</p>
           <div className="sa-icon-picker" role="listbox" aria-label="应用图标">
             {SUB_APP_ICON_OPTIONS.map((option) => {
               const selected = (iconEditorFor?.icon ?? null) === option.value

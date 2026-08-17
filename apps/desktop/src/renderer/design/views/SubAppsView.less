@@ -359,8 +359,12 @@
 
 .sa-icon-picker {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  // 受控图标数量多（40+），列数随弹窗宽度自适应，窄窗口自动降列；
+  // 整体限高滚动，避免撑爆小屏幕上的 Modal。
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
   gap: 8px;
+  max-height: 56vh;
+  overflow-y: auto;
 }
 
 .sa-icon-option {
