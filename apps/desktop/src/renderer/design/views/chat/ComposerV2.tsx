@@ -2690,6 +2690,11 @@ export function ComposerV2({
 
   const flatSlashList = groupedSlashCmds.flatMap((g) => g.cmds)
 
+  // 稳定 commandNames 引用：ComposerLexicalInput 的外部同步 effect 依赖此数组，
+  // 若每次渲染都生成新引用，运行中会话的流式高频重渲染会让 effect 反复重跑，
+  // 放大「Lexical commit 与 React 回流之间」的 IME 竞态窗口。
+  const slashCommandNames = useMemo(() => slashCmds.map((command) => command.name), [slashCmds])
+
   const refreshSlashCommands = useCallback(async () => {
     try {
       const res = await window.spark.invoke('command:list', {})
@@ -3156,8 +3161,10 @@ export function ComposerV2({
           if (cmd != null) selectSlashCmd(cmd)
           return
         }
-        // 无匹配命令时关闭弹窗，让 Enter 落到下面的正常发送逻辑
+        // 无匹配命令时只关闭弹窗并吞掉本次 Enter：此时回车的语义是「收起弹窗」，
+        // 不应落入下方的正常发送逻辑（用户感知为「弹窗开着回车直接发送」）。
         closeSlashPopup()
+        return
       }
     }
 
@@ -4042,7 +4049,7 @@ export function ComposerV2({
             <ComposerLexicalInput
               ref={textareaRef}
               value={voiceDisplayValue}
-              commandNames={slashCmds.map((command) => command.name)}
+              commandNames={slashCommandNames}
               skillNames={knownSkillNames}
               placeholder={composerPlaceholder}
               readOnly={voiceInputActive}

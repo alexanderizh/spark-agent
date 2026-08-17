@@ -269,8 +269,14 @@ const ComposerLexicalInputController = forwardRef<
   const [editor] = useLexicalComposerContext()
   const editableRef = useRef<HTMLDivElement | null>(null)
   const lastSyncedValueRef = useRef(value)
-  const commandSignature = commandNames.join('\u0000')
-  const skillSignature = skillNames.join('\u0000')
+  // 编辑器最近一次对外呈现的内容：用户输入上报（onChange）或外部同步写入后的值。
+  // 用于识别「编辑器领先于 React value 回流」的窗口，避免用旧 value 重建编辑器。
+  const lastReportedValueRef = useRef(value)
+  // 上一次 effect 见到的 value prop；不相等说明是一次真正的外部 setValue。
+  const previousPropValueRef = useRef(value)
+  // IME 组合期间禁止任何外部重建；组合结束后再补一次挂起的外部同步。
+  const isComposingRef = useRef(false)
+  const pendingSyncAfterCompositionRef = useRef(false)
 
   const getValue = useCallback(
     () => editor.getEditorState().read(() => $readComposerValue()),
@@ -346,7 +352,19 @@ const ComposerLexicalInputController = forwardRef<
     [editor, onKeyDown],
   )
 
-  useEffect(() => {
+  // 外部 value 同步：编辑器内容与 React value 出现分歧时，用 value 重建编辑器。
+  // 两道防御保证不打断 IME / 不丢用户输入：
+  // 1) IME 组合期间（compositionstart -> compositionend）一律挂起，组合结束后再补；
+  // 2) Lexical 的 update commit 走微任务，组合文本写入编辑器与 React value 回流之间存在
+  //    毫秒级窗口；若 effect 在窗口内重跑（如流式渲染导致的高频重绘），编辑器内容仍是
+  //    最近一次 onChange 上报的内容（lastReportedValueRef），此时编辑器是权威数据源，
+  //    绝不能用尚未回流的旧 value root.clear() 重建，否则组合中的 DOM 被销毁、拼音上屏。
+  const syncExternalValue = useCallback(() => {
+    if (isComposingRef.current) {
+      pendingSyncAfterCompositionRef.current = true
+      return
+    }
+
     const currentValue = getValue()
     const expectedTokens = tokenizeComposerValue(
       value,
@@ -359,10 +377,18 @@ const ComposerLexicalInputController = forwardRef<
       .map((part) => `${part.kind}:${part.text}`)
       .join('\u0000')
 
-    const previousValue = lastSyncedValueRef.current
-    lastSyncedValueRef.current = value
+    const isNewPropValue = value !== previousPropValueRef.current
+    previousPropValueRef.current = value
+
     if (currentValue === value && currentTokens === expectedTokenSignature) return
 
+    // value prop 未变（effect 只是因 commandNames 引用变化等被重跑），而编辑器内容仍是
+    // 最近一次上报的内容：说明编辑器领先于 React 回流，跳过回写，等 value 追上来。
+    // token 重排也会在下一次 value 变化的 effect 中自动补齐。
+    if (!isNewPropValue && currentValue === lastReportedValueRef.current) return
+
+    const previousValue = lastSyncedValueRef.current
+    lastSyncedValueRef.current = value
     const selection = getSelection()
     const preserveSelection = editableRef.current === document.activeElement
     const placeCaretAtEnd = preserveSelection && previousValue.length === 0 && value.length > 0
@@ -374,16 +400,17 @@ const ComposerLexicalInputController = forwardRef<
       },
       { tag: 'composer-external-sync' },
     )
-  }, [
-    commandNames,
-    commandSignature,
-    editor,
-    getSelection,
-    getValue,
-    skillNames,
-    skillSignature,
-    value,
-  ])
+    lastReportedValueRef.current = value
+  }, [commandNames, editor, getSelection, getValue, skillNames, value])
+
+  // compositionend 之后 Lexical 才在微任务里 commit 组合文本并触发 onChange；
+  // 挂起的同步放到宏任务执行，确保 lastReportedValueRef 已是组合后的最新内容。
+  const syncExternalValueRef = useRef(syncExternalValue)
+  syncExternalValueRef.current = syncExternalValue
+
+  useEffect(() => {
+    syncExternalValue()
+  }, [syncExternalValue])
 
   return (
     <div className="composer-input-lexical">
@@ -396,8 +423,18 @@ const ComposerLexicalInputController = forwardRef<
             aria-multiline="true"
             tabIndex={0}
             onKeyDown={handleKeyDown}
-            onCompositionStart={onCompositionStart}
-            onCompositionEnd={onCompositionEnd}
+            onCompositionStart={(event) => {
+              isComposingRef.current = true
+              onCompositionStart?.(event)
+            }}
+            onCompositionEnd={(event) => {
+              isComposingRef.current = false
+              onCompositionEnd?.(event)
+              if (pendingSyncAfterCompositionRef.current) {
+                pendingSyncAfterCompositionRef.current = false
+                setTimeout(() => syncExternalValueRef.current(), 0)
+              }
+            }}
             onPaste={onPaste}
             onBlur={onBlur}
             onContextMenu={onContextMenu}
@@ -414,7 +451,9 @@ const ComposerLexicalInputController = forwardRef<
           // 同步时光标仍停在旧位置，若照常上报 onChange，handleValueChange 会按旧光标
           // 重新识别出斜杠片段，把 selectSlashCmd 刚关闭的命令弹窗再次打开。
           if (tags.has('composer-external-sync')) return
-          onChange(editorState.read(() => $readComposerValue()))
+          const nextValue = editorState.read(() => $readComposerValue())
+          lastReportedValueRef.current = nextValue
+          onChange(nextValue)
         }}
       />
     </div>

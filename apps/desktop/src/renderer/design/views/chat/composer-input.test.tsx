@@ -406,4 +406,80 @@ describe('ComposerLexicalInput', () => {
     })
     expect(inputRef.current?.getValue()).toBe('before  afterdone')
   })
+
+  it('defers external value sync while composing and applies it after composition ends', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createReactRoot(container)
+    const inputRef = createRef<ComposerLexicalInputHandle>()
+    const onChange = vi.fn()
+    mountedRoots.push({ root, container })
+
+    await act(async () => {
+      root.render(<ComposerLexicalInput ref={inputRef} value="hello" onChange={onChange} />)
+    })
+    await act(async () => {
+      inputRef.current?.focus()
+    })
+
+    const editor = container.querySelector<HTMLElement>('[contenteditable="true"]')
+
+    // 组合期间外部 setValue（如草稿恢复）：不得立刻重建编辑器
+    await act(async () => {
+      editor?.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    })
+    await act(async () => {
+      root.render(<ComposerLexicalInput ref={inputRef} value="hello 外部" onChange={onChange} />)
+    })
+    expect(inputRef.current?.getValue()).toBe('hello')
+
+    // compositionend 后 Lexical 在微任务 commit，挂起的同步在宏任务里补上
+    await act(async () => {
+      editor?.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(inputRef.current?.getValue()).toBe('hello 外部')
+  })
+
+  it('does not rebuild the editor from a stale value while react has not flushed the change', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createReactRoot(container)
+    const inputRef = createRef<ComposerLexicalInputHandle>()
+    const changes: string[] = []
+    mountedRoots.push({ root, container })
+
+    await act(async () => {
+      root.render(
+        <ComposerLexicalInput
+          ref={inputRef}
+          value="hello"
+          placeholder="初始"
+          onChange={(value) => changes.push(value)}
+        />,
+      )
+    })
+
+    // 模拟 Lexical 已 commit 组合文本（onChange 已上报「hello 你」）、
+    // 但父组件尚未把新 value 回流，仅因其他 state（如流式渲染）重渲染
+    await act(async () => {
+      inputRef.current?.setSelectionRange(5, 5)
+      inputRef.current?.replaceSelection(' 你')
+    })
+    expect(changes.at(-1)).toBe('hello 你')
+
+    await act(async () => {
+      root.render(
+        <ComposerLexicalInput
+          ref={inputRef}
+          value="hello"
+          placeholder="流式重渲染"
+          onChange={(value) => changes.push(value)}
+        />,
+      )
+    })
+
+    // 编辑器内容是权威数据源，不得被尚未回流的旧 value 重建覆盖
+    expect(inputRef.current?.getValue()).toBe('hello 你')
+  })
 })
