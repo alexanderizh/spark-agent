@@ -41,6 +41,8 @@ export type ViewId =
   | 'canvas-workflows'
   | 'canvas-prompts'
   | 'canvas-video-tasks'
+  | 'sub-apps'
+  | 'sub-app'
   | 'scheduled-tasks'
   | 'skills'
   | 'skill-store'
@@ -106,6 +108,9 @@ export type Tweaks = {
    *  CanvasProjectsView 监听其变化，>0 时打开新建弹窗。
    *  用于跨视图触发：用户在任意模式点新建项目 → 切到 canvas view + 弹窗。 */
   canvasCreateSignal: number
+  /** 子应用运行页当前打开的 appId（非持久化；null 时运行页回退到管理页）。
+   *  SubAppRunView 读取；SubAppsView / 菜单入口写入并切 view 到 'sub-app'。 */
+  subAppOpenId: string | null
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
@@ -128,6 +133,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   sidebarStyle: 'flat',
   workspaceMode: 'workbench',
   canvasCreateSignal: 0,
+  subAppOpenId: null,
 }
 
 /** Min/max bounds for the floating sidebar width (px). */

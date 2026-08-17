@@ -90,6 +90,12 @@ const CanvasVideoTasksView = React.lazy(async () => ({
 const ScheduledTasksView = React.lazy(async () => ({
   default: (await import('./design/views/ScheduledTasksView')).ScheduledTasksView,
 }))
+const SubAppsView = React.lazy(async () => ({
+  default: (await import('./design/views/SubAppsView')).SubAppsView,
+}))
+const SubAppRunView = React.lazy(async () => ({
+  default: (await import('./design/views/SubAppRunView')).SubAppRunView,
+}))
 const McpView = React.lazy(async () => ({
   default: (await import('./design/views/McpView')).McpView,
 }))
@@ -257,13 +263,14 @@ const NAV_ITEMS: Array<{
   { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
   { id: 'workflows', labelKey: 'nav.workflows', icon: Icons.Workflow },
   { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
+  { id: 'sub-apps', labelKey: 'nav.subApps', icon: Icons.Grid },
 ]
 
 // ── 侧栏三层结构（模式切换器架构）──────────────────────────────
 // canvas 由顶部模式切换器承担，不再作为 nav item 渲染（仍保留在 NAV_ITEMS
 // 供全局搜索派生）。
 // L2 工作台上下文工具：随 workbench 模式显示。pin 偏好仍对其生效。
-const WORKBENCH_TOOL_IDS = ['workflows', 'board', 'scheduled-tasks']
+const WORKBENCH_TOOL_IDS = ['workflows', 'board', 'scheduled-tasks', 'sub-apps']
 // L3 全局共享资源：常驻底部图标条，永不随模式切换。两边都用，故独立成层。
 // 记忆不在此列——按用户决策，记忆入口收归设置页。
 const SHARED_RESOURCE_IDS = ['agents', 'providers', 'skill-store', 'mcp']
@@ -1728,6 +1735,10 @@ function Shell() {
         return <CanvasVideoTasksView />
       case 'scheduled-tasks':
         return <ScheduledTasksView />
+      case 'sub-apps':
+        return <SubAppsView />
+      case 'sub-app':
+        return <SubAppRunView />
       case 'skills':
         return <SkillStoreView />
       case 'skill-store':

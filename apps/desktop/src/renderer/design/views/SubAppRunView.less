@@ -1,0 +1,123 @@
+/* SubAppRunView — 子应用运行页样式
+ * 顶栏工具条 + 全幅沙箱运行区；运行区高度铺满剩余空间。
+ */
+
+.sub-app-run-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.sar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border-2);
+}
+
+.sar-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 8px;
+  font-size: 16px;
+  background: var(--color-fill-2);
+  overflow: hidden;
+}
+
+.sar-title-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sar-name {
+  max-width: 320px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sar-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sar-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: var(--color-bg-1);
+}
+
+.sar-runner {
+  height: 100%;
+}
+
+.sar-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--color-text-2);
+
+  p {
+    margin: 0;
+  }
+}
+
+.sar-error {
+  color: var(--color-danger);
+}
+
+.sar-error-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sar-missing {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 13.5px;
+  color: var(--color-text-2);
+
+  p {
+    margin: 0;
+  }
+}
+
+@media (width <= 760px) {
+  .sar-name {
+    max-width: 160px;
+  }
+}

@@ -13,7 +13,11 @@ export type SubAppBridgeInvoke = <C extends SubAppDataChannel>(
   request: SubAppDataChannelRequest<C>,
 ) => Promise<unknown>
 
-export type SubAppDataChannel = 'sub-app:data:get' | 'sub-app:data:list' | 'sub-app:data:upsert'
+export type SubAppDataChannel =
+  | 'sub-app:data:get'
+  | 'sub-app:data:list'
+  | 'sub-app:data:upsert'
+  | 'sub-app:data:delete'
 
 type SubAppDataChannelRequestMap = {
   'sub-app:data:get': { appId: string; namespace: string; key: string }
@@ -31,6 +35,7 @@ type SubAppDataChannelRequestMap = {
     value: unknown
     expectedRevision?: number
   }
+  'sub-app:data:delete': { appId: string; namespace: string; key: string }
 }
 
 export type SubAppDataChannelRequest<C extends SubAppDataChannel> = SubAppDataChannelRequestMap[C]
@@ -252,6 +257,9 @@ export class SubAppBridgeHost {
         const expectedRevision = readOptionalNumber(payload.expectedRevision)
         if (expectedRevision !== undefined) upsertRequest.expectedRevision = expectedRevision
         return invoke('sub-app:data:upsert', upsertRequest)
+      }
+      if (request.operation === 'delete') {
+        return invoke('sub-app:data:delete', { appId: runtimeInfo.appId, namespace, key })
       }
       throw new BridgeRouteError('UNSUPPORTED_OPERATION')
     }

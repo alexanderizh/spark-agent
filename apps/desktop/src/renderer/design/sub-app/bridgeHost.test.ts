@@ -224,6 +224,25 @@ describe('SubAppBridgeHost 权限与路由', () => {
     expect(outbound.response?.error?.code).toBe('CONFLICT')
   })
 
+  it('data/delete 转发到 sub-app:data:delete 通道', async () => {
+    harness.invoke.mockResolvedValue({ deleted: true, appId, namespace: 'user', key: 'name' })
+    const message = requestMessage()
+    message.request = {
+      ...(message.request as object),
+      operation: 'delete',
+      payload: { namespace: 'user', key: 'name' },
+    } as never
+    harness.send(message)
+    await harness.flush()
+    expect(harness.invoke).toHaveBeenCalledWith('sub-app:data:delete', {
+      appId,
+      namespace: 'user',
+      key: 'name',
+    })
+    const outbound = outboundAt(harness.frame)
+    expect(outbound.response?.ok).toBe(true)
+  })
+
   it('未知操作返回 UNSUPPORTED_OPERATION', async () => {
     const message = requestMessage()
     message.request = { ...(message.request as object), operation: 'drop' } as never

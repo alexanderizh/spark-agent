@@ -179,6 +179,9 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
         if (expectedRevision !== undefined) payload.expectedRevision = expectedRevision
         return call('data', 'upsert', payload)
       },
+      delete: function (namespace, key) {
+        return call('data', 'delete', { namespace: namespace, key: key })
+      },
     },
   }
 
