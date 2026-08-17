@@ -25,6 +25,18 @@ describe('buildAppRuntimeDocument', () => {
     expect(doc.indexOf('window.sparkApp')).toBeLessThan(doc.indexOf('id="app"'))
     // app/ready 心跳存在于 bootstrap
     expect(doc).toContain("'app/ready'")
+    // 五个新能力域命名空间已注入 SDK
+    expect(doc).toContain('window.sparkApp = {')
+    // 宿主主题会自动映射为 --spark-* CSS 变量，应用无需依赖具体 UI 框架。
+    expect(doc).toContain('applyTheme(data.theme)')
+    expect(doc).toContain('--spark-primary-color')
+    expect(doc).toContain('toCssVariable')
+    expect(doc).toContain('files: {')
+    expect(doc).toContain('agent: {')
+    expect(doc).toContain('media: {')
+    expect(doc).toContain('canvas: {')
+    expect(doc).toContain('browser: {')
+    expect(doc).toContain('expectedRevision: expectedRevision')
   })
 
   it('完整文档源码在 head 内注入，不破坏原有结构', () => {

@@ -66,7 +66,7 @@ vi.mock('../sub-app/SubAppRunner', () => ({
 vi.mock('../AppContext', () => ({
   useApp: () => ({
     setTweak: mocks.setTweak,
-    t: { subAppOpenId: 'app-0001' },
+    t: { subAppOpenId: 'app-0001', subAppOpenMode: 'published' },
   }),
 }))
 
@@ -170,6 +170,8 @@ describe('SubAppRunView', () => {
       source: '<html>published-body</html>',
     })
     expect((mocks.runnerProps[0] as { release?: { version?: number } }).release?.version).toBe(3)
+    expect(container?.querySelector('.sar-header')).toBeNull()
+    expect(container?.querySelector('.is-published-content')).not.toBeNull()
   })
 
   it('未发布过的应用自动回退草稿模式', async () => {
@@ -181,6 +183,20 @@ describe('SubAppRunView', () => {
       mode: 'draft',
       source: '<html>draft-body</html>',
     })
+    expect(container?.querySelector('.sar-header')).not.toBeNull()
+  })
+
+  it('源码为空时显示可修复提示，不渲染空白 runner', async () => {
+    mocks.get.mockResolvedValue(
+      makeDetails({
+        draft: { ...makeDetails().draft, source: '' },
+        publishedRelease: { ...makeDetails().publishedRelease!, source: '' },
+      }),
+    )
+    await renderView()
+    expect(container?.querySelector('[data-testid="sub-app-runner"]')).toBeNull()
+    expect(container?.textContent).toContain('这个应用还没有可运行的源码')
+    expect(container?.textContent).toContain('去会话修复')
   })
 
   it('加载失败显示错误与重试/返回', async () => {
@@ -196,18 +212,6 @@ describe('SubAppRunView', () => {
       back?.click()
     })
     expect(mocks.setTweak).toHaveBeenCalledWith('subAppOpenId', null)
-    expect(mocks.setTweak).toHaveBeenCalledWith('view', 'sub-apps')
-  })
-
-  it('返回按钮回到应用列表', async () => {
-    mocks.get.mockResolvedValue(makeDetails())
-    await renderView()
-    const back = Array.from(container?.querySelectorAll('button') ?? []).find(
-      (b) => b.textContent?.includes('返回列表') || b.closest('.sar-header') != null,
-    )
-    await act(async () => {
-      back?.click()
-    })
     expect(mocks.setTweak).toHaveBeenCalledWith('view', 'sub-apps')
   })
 })

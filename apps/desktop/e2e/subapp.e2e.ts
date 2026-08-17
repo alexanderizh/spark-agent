@@ -91,6 +91,52 @@ function makeAppSource(marker: string, expectDeny = false, useToast = false): st
 </html>`
 }
 
+/**
+ * files/browser 能力域源码模板：
+ *   - files：write×2 → list → delete → list → read 全链路，结果写 dataset；
+ *   - browser：openUrl('file:///...') 应被宿主拒绝（data-browser-deny=1）；
+ *   - 无权限（permissions 缺 files）：list 被拒 → DOM 显示 DENY PERMISSION_DENIED。
+ */
+function makeFilesAppSource(marker: string): string {
+  return `<!doctype html>
+<html>
+<body data-marker="${marker}">
+<div id="root" data-state="boot">booting</div>
+<script>
+(function () {
+  var root = document.getElementById('root')
+  var marker = document.body.getAttribute('data-marker')
+  function set(text, state) {
+    root.textContent = text
+    root.dataset.state = state
+  }
+  var files = window.sparkApp.files
+  files.write('e2e/keep.md', marker)
+    .then(function () { return files.write('e2e/tmp.md', 'tmp') })
+    .then(function () { return files.list('e2e/') })
+    .then(function (res) { root.dataset.listBefore = String(res.files.length) })
+    .then(function () { return files.delete('e2e/tmp.md') })
+    .then(function () { return files.list('e2e/') })
+    .then(function (res) { root.dataset.listAfter = String(res.files.length) })
+    .then(function () { return files.read('e2e/keep.md') })
+    .then(function (res) { root.dataset.read = res.content })
+    .then(function () {
+      return window.sparkApp.browser.openUrl('file:///etc/passwd').then(function () {
+        root.dataset.browserDeny = '0'
+      }, function () {
+        root.dataset.browserDeny = '1'
+      })
+    })
+    .then(function () { set('READY FILES ' + marker, 'ready') })
+    .catch(function (err) {
+      set('DENY ' + (err.code || 'UNKNOWN'), 'denied')
+    })
+})()
+</script>
+</body>
+</html>`
+}
+
 async function launchApp(): Promise<{
   electronApp: ElectronApplication
   page: Page
@@ -157,9 +203,9 @@ async function dismissOnboarding(page: Page): Promise<void> {
 
 async function openSubAppsView(page: Page, expectEmpty = true): Promise<void> {
   await dismissOnboarding(page)
-  // L2 工具导航 VISIBLE_COUNT=3，「我的应用」排第 4，默认折叠在「更多」hover 菜单里。
-  // navItem 按钮内含置顶 pin（带 aria-label），完整可访问名是「我的应用 置顶」——
-  // 必须用子串/正则匹配，不能用 exact。
+  // 子应用管理入口和已发布应用优先出现在折叠前；如果当前布局仍有折叠，
+  // 兼容从「更多」菜单进入。navItem 内含置顶 pin，完整可访问名会带上 pin 文案，
+  // 所以这里使用子串/正则匹配而不是 exact。
   const direct = page.getByRole('button', { name: /我的应用/ })
   if (!(await direct.isVisible().catch(() => false))) {
     const more = page.locator('.nav-more-trigger')
@@ -290,11 +336,14 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
         .click()
       await expect(page.getByText('已发布 v1', { exact: false })).toBeVisible({ timeout: 10_000 })
 
+      // 发布后侧栏必须实时出现可直接运行的应用入口，不要求先离开管理页。
+      const menuApp = page.locator('.floating-sidebar').getByRole('button', {
+        name: /E2E 版本工具/,
+      })
+      await expect(menuApp).toBeVisible({ timeout: 10_000 })
+
       // 打开 → 默认运行发布版（不可变）
-      await page
-        .getByTestId('sub-app-card')
-        .getByRole('button', { name: /打\s*开/ })
-        .click()
+      await menuApp.click()
       const frame = page.frameLocator('iframe[title="E2E 版本工具"]')
       await expect(frame.locator('#root')).toHaveText(/READY marker=v1 mode=published/, {
         timeout: 15_000,
@@ -310,10 +359,18 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
         patch: { source: makeAppSource('v2') },
       })
 
-      // 重新加载 → 发布版仍是 v1；切草稿预览 → v2
-      await page.getByRole('button', { name: '重新加载应用' }).click()
+      // 发布版没有宿主工具栏：草稿修改后当前不可变快照仍保持 v1。
       await expect(frame.locator('#root')).toHaveText(/READY marker=v1 mode=published/)
-      await page.locator('.ant-segmented-item', { hasText: '草稿预览' }).click()
+
+      // 从侧栏回到应用管理页；发布版运行页已是沉浸式（无工具栏），
+      // 草稿预览从管理页卡片入口直接以草稿模式打开。
+      await page
+        .locator('.floating-sidebar')
+        .getByRole('button', { name: /我的应用/ })
+        .click()
+      await expect(page.getByTestId('sub-app-card')).toHaveCount(1)
+      await page.getByTestId('sub-app-card').getByRole('button', { name: '更多操作' }).click()
+      await page.getByRole('menuitem', { name: /草稿预览/ }).click()
       await expect(frame.locator('#root')).toHaveText(/READY marker=v2 mode=draft/, {
         timeout: 15_000,
       })
@@ -332,7 +389,10 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
         timeout: 15_000,
       })
 
-      await page.getByRole('button', { name: '返回应用列表' }).click()
+      await page
+        .locator('.floating-sidebar')
+        .getByRole('button', { name: /我的应用/ })
+        .click()
       await expect(page.getByTestId('sub-app-card')).toHaveCount(1)
       await page
         .getByTestId('sub-app-card')
@@ -344,14 +404,11 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
       await expect(drawer.getByText('v2', { exact: true })).toBeVisible()
       await drawer
         .locator('.sa-release-item', { hasText: 'v1' })
-        .getByRole('button', { name: '回滚草稿到此版本' })
+        .getByRole('button', { name: '回滚', exact: true })
         .click()
       await page.keyboard.press('Escape')
-      await page
-        .getByTestId('sub-app-card')
-        .getByRole('button', { name: /打\s*开/ })
-        .click()
-      await page.locator('.ant-segmented-item', { hasText: '草稿预览' }).click()
+      await page.getByTestId('sub-app-card').getByRole('button', { name: '更多操作' }).click()
+      await page.getByRole('menuitem', { name: /草稿预览/ }).click()
       await expect(frame.locator('#root')).toHaveText(/READY marker=v1 mode=draft/, {
         timeout: 15_000,
       })
@@ -485,9 +542,11 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
         )
         .toBe('draft')
 
-      await themeCard.getByRole('button', { name: /归\s*档/ }).click()
+      // 归档/删除已收进「更多操作」菜单 + Modal.confirm 二次确认
+      await themeCard.getByRole('button', { name: '更多操作' }).click()
+      await page.getByRole('menuitem', { name: /归\s*档/ }).click()
       await page
-        .locator('.ant-popconfirm')
+        .locator('.ant-modal-confirm')
         .getByRole('button', { name: /归\s*档/ })
         .click()
       await expect(page.getByTestId('sub-app-card')).toHaveCount(1, { timeout: 10_000 })
@@ -502,10 +561,11 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
 
       await page
         .locator('[data-testid="sub-app-card"]', { hasText: 'E2E 主题工具' })
-        .getByRole('button', { name: /删\s*除/ })
+        .getByRole('button', { name: '更多操作' })
         .click()
+      await page.getByRole('menuitem', { name: /删\s*除/ }).click()
       await page
-        .locator('.ant-popconfirm')
+        .locator('.ant-modal-confirm')
         .getByRole('button', { name: /删\s*除/ })
         .click()
       await expect(page.getByTestId('sub-app-card')).toHaveCount(1, { timeout: 10_000 })
@@ -522,6 +582,11 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
         source: makeAppSource('overlay'),
         surface: 'overlay',
       })
+      // 发布后应用进入胶囊启动器目录（published+enabled），广播刷新 renderer 入口
+      await sparkOf(page)('sub-app:publish', {
+        appId: overlayApp.id,
+        expectedDraftRevision: 1,
+      })
       // 上一步的鼠标路径可能让 lobe Tooltip 的 portal 弹层停在刷新按钮上
       // 拦截点击——先移开鼠标等 tooltip 关闭。
       await page.mouse.move(5, 5)
@@ -530,8 +595,9 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
       await expect(page.getByTestId('sub-app-card')).toHaveCount(2, { timeout: 10_000 })
       await page
         .locator('[data-testid="sub-app-card"]', { hasText: 'E2E 浮层工具' })
-        .getByRole('button', { name: /浮\s*层/ })
+        .getByRole('button', { name: '更多操作' })
         .click()
+      await page.getByRole('menuitem', { name: /以浮层运行/ }).click()
       const overlayCard = page.getByTestId('subapp-overlay-card')
       await expect(overlayCard).toBeVisible({ timeout: 10_000 })
       const overlayFrame = page.frameLocator('iframe[title="E2E 浮层工具"]')
@@ -548,6 +614,135 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
       await overlayCard.getByRole('button', { name: '关闭浮层' }).click()
       await expect(overlayCard).toHaveCount(0)
       await expect(page.locator('.sa-card-name', { hasText: 'E2E 浮层工具' })).toBeVisible()
+
+      // 浮层应用不进侧栏菜单：菜单里没有该应用的导航按钮
+      // （卡片名是 div；此断言只可能命中 nav 按钮）
+      await expect(page.getByRole('button', { name: /E2E 浮层工具/ })).toHaveCount(0)
+
+      // 回到工作台主视图：右下角胶囊启动器仍在，浮层随处可用
+      await page.locator('button', { hasText: '工作台' }).first().click()
+      const capsule = page
+        .getByTestId('subapp-surface-launcher')
+        .locator('.subapp-launcher-capsule')
+      await expect(capsule).toBeVisible({ timeout: 10_000 })
+      await capsule.click()
+      await page.locator('.subapp-launcher-item', { hasText: 'E2E 浮层工具' }).click()
+      await expect(overlayCard).toBeVisible({ timeout: 10_000 })
+      await expect(page.frameLocator('iframe[title="E2E 浮层工具"]').locator('#root')).toHaveText(
+        /READY marker=overlay mode=draft/,
+        { timeout: 15_000 },
+      )
+      // 胶囊徽标显示 1 个运行中实例
+      await expect(
+        page.getByTestId('subapp-surface-launcher').locator('.subapp-launcher-badge'),
+      ).toHaveText('1')
+    } finally {
+      await electronApp.close().catch(() => {})
+      await rm(userDataPath, { recursive: true, force: true })
+    }
+    expect(errors).toEqual([])
+  })
+
+  /**
+   * files/browser 能力域真实链路：
+   *   - files 写/列/读/删走主进程文件空间（真实磁盘）；
+   *   - browser 域拒绝非 http(s) 协议（不真正打开外部浏览器）；
+   *   - 重启后文件空间仍在（应用专属目录持久化）；
+   *   - 未声明 files 权限的应用调用被拒绝且磁盘零写入。
+   */
+  test('files/browser 能力域：文件空间读写、协议白名单与持久化', async ({
+    browserName: _browserName,
+  }, testInfo) => {
+    test.setTimeout(180_000)
+    const { electronApp, page, userDataPath, authService } = await launchApp()
+    const errors: Error[] = []
+    page.on('pageerror', (error) => errors.push(error))
+    try {
+      await openSubAppsView(page)
+      await createApp(page, {
+        name: 'E2E 文件工具',
+        source: makeFilesAppSource('files-v1'),
+        permissions: ['files', 'browser'],
+      })
+      await createApp(page, {
+        name: 'E2E 无文件权限工具',
+        source: makeFilesAppSource('files-deny'),
+        permissions: [],
+      })
+      await page.locator('.sa-header').getByRole('button', { name: '刷新', exact: true }).click()
+      await expect(page.getByTestId('sub-app-card')).toHaveCount(2)
+
+      // 无权限应用：files 全域拒绝
+      await page
+        .locator('[data-testid="sub-app-card"]', { hasText: 'E2E 无文件权限工具' })
+        .getByRole('button', { name: /打\s*开/ })
+        .click()
+      const deniedFrame = page.frameLocator('iframe[title="E2E 无文件权限工具"]')
+      await expect(deniedFrame.locator('#root')).toHaveText(/DENY PERMISSION_DENIED/, {
+        timeout: 15_000,
+      })
+      await page.getByRole('button', { name: '返回应用列表' }).click()
+
+      // 有权限应用：write×2 → list=2 → delete → list=1 → read 内容一致
+      await page
+        .locator('[data-testid="sub-app-card"]', { hasText: 'E2E 文件工具' })
+        .getByRole('button', { name: /打\s*开/ })
+        .click()
+      const filesFrame = page.frameLocator('iframe[title="E2E 文件工具"]')
+      await expect(filesFrame.locator('#root')).toHaveText(/READY FILES/, { timeout: 15_000 })
+      await expect(filesFrame.locator('#root')).toHaveAttribute('data-list-before', '2')
+      await expect(filesFrame.locator('#root')).toHaveAttribute('data-list-after', '1')
+      await expect(filesFrame.locator('#root')).toHaveAttribute('data-read', 'files-v1')
+      // browser 域：非 http(s) 协议被宿主拒绝
+      await expect(filesFrame.locator('#root')).toHaveAttribute('data-browser-deny', '1')
+
+      // 主进程真实磁盘核对：目录里只剩 keep.md
+      const appIdOf = async (query: string): Promise<string> => {
+        const found = (await sparkOf(page)('sub-app:list', { query })) as {
+          items: { id: string }[]
+        }
+        const id = found.items[0]?.id
+        if (id == null) throw new Error(`应用未找到：${query}`)
+        return id
+      }
+      const diskList = (await sparkOf(page)('sub-app:file:list', {
+        appId: await appIdOf('文件工具'),
+      })) as { files: { path: string }[] }
+      expect(diskList.files.map((file) => file.path)).toEqual(['e2e/keep.md'])
+      await page.screenshot({ path: testInfo.outputPath('subapp-files-run.png'), fullPage: true })
+
+      // 重启（同一 userData）：文件空间仍在
+      await electronApp.close()
+      const relaunched = await electron.launch({
+        args: [MAIN_ENTRY, `--user-data-dir=${userDataPath}`, '--disable-gpu'],
+        cwd: DESKTOP_ROOT,
+        env: {
+          ...process.env,
+          ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
+          NODE_ENV: 'production',
+          SPARK_ALLOW_MULTIPLE_INSTANCES: '1',
+          SPARK_SKIP_PROTOCOL_REGISTRATION: '1',
+          SPARK_AUTH_KEYTAR_SERVICE: authService,
+          SPARK_DISABLE_DEVTOOLS: '1',
+        },
+        timeout: 20_000,
+      })
+      const page2 = await relaunched.firstWindow({ timeout: 20_000 })
+      await page2.waitForLoadState('domcontentloaded')
+      await openSubAppsView(page2, false)
+      await page2
+        .getByTestId('sub-app-card')
+        .filter({ hasText: 'E2E 文件工具' })
+        .getByRole('button', { name: /打\s*开/ })
+        .click()
+      const frame2 = page2.frameLocator('iframe[title="E2E 文件工具"]')
+      // 重启后应用重跑完整流程（重写 tmp 再删）：文件空间持久——keep.md 读回上轮内容
+      await expect(frame2.locator('#root')).toHaveText(/READY FILES files-v1/, {
+        timeout: 15_000,
+      })
+      await expect(frame2.locator('#root')).toHaveAttribute('data-list-after', '1')
+      await expect(frame2.locator('#root')).toHaveAttribute('data-read', 'files-v1')
+      await relaunched.close()
     } finally {
       await electronApp.close().catch(() => {})
       await rm(userDataPath, { recursive: true, force: true })

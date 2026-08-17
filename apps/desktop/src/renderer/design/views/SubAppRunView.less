@@ -16,7 +16,7 @@
   gap: 8px;
   flex-wrap: wrap;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--color-border-2);
+  border-bottom: 1px solid var(--divider, var(--border));
 }
 
 .sar-header-left {
@@ -35,8 +35,13 @@
   flex: none;
   border-radius: 8px;
   font-size: 16px;
-  background: var(--color-fill-2);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel));
   overflow: hidden;
+
+  svg {
+    display: block;
+  }
 }
 
 .sar-title-block {
@@ -67,7 +72,12 @@
   flex: 1;
   min-height: 0;
   position: relative;
-  background: var(--color-bg-1);
+  background: var(--bg);
+}
+
+/* 已发布 content 应用是沉浸式工作区：没有宿主工具栏，也不强行铺一层平台背景。 */
+.sub-app-run-view.is-published-content .sar-body {
+  background: transparent;
 }
 
 .sar-runner {
@@ -85,7 +95,7 @@
   padding: 24px;
   text-align: center;
   font-size: 13.5px;
-  color: var(--color-text-2);
+  color: var(--text-muted, var(--text));
 
   p {
     margin: 0;
@@ -93,7 +103,16 @@
 }
 
 .sar-error {
-  color: var(--color-danger);
+  color: var(--danger, #ef4444);
+}
+
+.sar-empty-source {
+  color: var(--text-muted, var(--color-text-2));
+
+  span {
+    max-width: 420px;
+    line-height: 1.6;
+  }
 }
 
 .sar-error-actions {
@@ -109,7 +128,7 @@
   justify-content: center;
   gap: 12px;
   font-size: 13.5px;
-  color: var(--color-text-2);
+  color: var(--text-muted, var(--text));
 
   p {
     margin: 0;

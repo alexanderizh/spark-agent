@@ -12,10 +12,11 @@
 }
 
 // ── overlay：右下角堆叠、可拖拽、可收起 ─────────────────────
+// bottom 抬高避让常驻胶囊启动器（44px 高 + 20px 底距 + 12px 间距）
 .subapp-overlay-stack {
   position: absolute;
   right: 20px;
-  bottom: 20px;
+  bottom: 76px;
   display: flex;
   flex-direction: column-reverse;
   gap: 12px;
@@ -115,6 +116,37 @@
   box-shadow: -6px 0 20px rgba(0, 0, 0, 0.25);
 }
 
+// 左缘宽度拖拽条：hover/拖拽时高亮，拖拽期间禁用文本选择
+.subapp-panel-resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+  transition: background 0.15s ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: transparent;
+    transition: background 0.15s ease;
+  }
+
+  &:hover,
+  &:active {
+    &::after {
+      background: var(--primary, rgba(22, 119, 255, 0.8));
+    }
+  }
+}
+
 .subapp-panel-titlebar {
   display: flex;
   align-items: center;
@@ -156,4 +188,194 @@
 
 .subapp-panel-runner {
   height: 100%;
+}
+
+// ── 统一侧面板菜单：dock 头部 tab 切换侧板应用 ───────────────
+.subapp-panel-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-soft, rgba(255, 255, 255, 0.08));
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.subapp-panel-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 120px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.72;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease;
+
+  &:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.14);
+  }
+
+  &.is-active {
+    opacity: 1;
+    border-color: var(--primary, rgba(22, 119, 255, 0.55));
+    background: var(--primary-soft, rgba(99, 102, 241, 0.12));
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.subapp-panel-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ── 右下角胶囊启动器：浮层/侧板应用的统一全局入口 ────────────
+.subapp-surface-launcher {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.subapp-launcher-capsule {
+  pointer-events: auto;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.12));
+  background: var(--bg-container, rgba(30, 30, 34, 0.98));
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.3),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 8px 24px rgba(0, 0, 0, 0.35),
+      0 2px 8px rgba(0, 0, 0, 0.22);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+.subapp-launcher-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--primary, rgba(22, 119, 255, 0.95));
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+.subapp-launcher-panel {
+  pointer-events: auto;
+  width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  border-radius: 12px;
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.1));
+  background: var(--bg-container, rgba(30, 30, 34, 0.98));
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.25);
+  padding: 6px;
+}
+
+.subapp-launcher-group + .subapp-launcher-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft, rgba(255, 255, 255, 0.08));
+}
+
+.subapp-launcher-group-title {
+  font-size: 11px;
+  opacity: 0.55;
+  padding: 4px 8px;
+  user-select: none;
+}
+
+.subapp-launcher-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: rgba(128, 128, 128, 0.14);
+  }
+
+  &.is-running {
+    background: var(--primary-soft, rgba(99, 102, 241, 0.12));
+  }
+}
+
+.subapp-launcher-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subapp-launcher-item-surface {
+  flex-shrink: 0;
+  font-size: 11px;
+  opacity: 0.5;
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.14));
+  border-radius: 4px;
+  padding: 0 4px;
+  user-select: none;
+}
+
+.subapp-launcher-item-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--primary, rgba(22, 119, 255, 0.95));
 }

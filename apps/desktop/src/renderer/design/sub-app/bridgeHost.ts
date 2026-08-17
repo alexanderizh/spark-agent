@@ -7,7 +7,7 @@ import type {
   SparkAppThemeState,
 } from '@spark/protocol'
 
-/** 沙箱 iframe 应用可调用的宿主 invoke 通道子集（当前只有 data 域）。 */
+/** 沙箱 iframe 应用可调用的宿主 invoke 通道子集（data 与 files 域）。 */
 export type SubAppBridgeInvoke = <C extends SubAppDataChannel>(
   channel: C,
   request: SubAppDataChannelRequest<C>,
@@ -18,6 +18,10 @@ export type SubAppDataChannel =
   | 'sub-app:data:list'
   | 'sub-app:data:upsert'
   | 'sub-app:data:delete'
+  | 'sub-app:file:read'
+  | 'sub-app:file:write'
+  | 'sub-app:file:list'
+  | 'sub-app:file:delete'
 
 type SubAppDataChannelRequestMap = {
   'sub-app:data:get': { appId: string; namespace: string; key: string }
@@ -35,7 +39,16 @@ type SubAppDataChannelRequestMap = {
     value: unknown
     expectedRevision?: number
   }
-  'sub-app:data:delete': { appId: string; namespace: string; key: string }
+  'sub-app:data:delete': {
+    appId: string
+    namespace: string
+    key: string
+    expectedRevision: number
+  }
+  'sub-app:file:read': { appId: string; path: string }
+  'sub-app:file:write': { appId: string; path: string; content: string }
+  'sub-app:file:list': { appId: string; prefix?: string }
+  'sub-app:file:delete': { appId: string; path: string }
 }
 
 export type SubAppDataChannelRequest<C extends SubAppDataChannel> = SubAppDataChannelRequestMap[C]
@@ -66,6 +79,41 @@ export interface SubAppBridgeHostOptions {
    * 未提供时该域返回 CAPABILITY_NOT_IMPLEMENTED。
    */
   navigate?: (target: { kind: 'app' | 'view'; id: string }) => boolean
+  /**
+   * agent 域：把提示词交给宿主 Agent 会话执行（快捷 Agent / 桌面助手类应用）。
+   * newSession=true 时宿主应新建会话而非复用最近会话。
+   * 未提供时该域返回 CAPABILITY_NOT_IMPLEMENTED。
+   */
+  sendToAgent?: (input: {
+    prompt: string
+    newSession?: boolean
+  }) => Promise<{ sessionId: string; delivered: boolean }>
+  /**
+   * media 域：提交媒体生成任务（异步，立即返回 taskId）。
+   * operation 取画布媒体操作子集：text_to_image（文生图）/ text_to_video（文生视频）。
+   */
+  createMediaTask?: (input: {
+    operation: 'text_to_image' | 'text_to_video'
+    prompt: string
+    negativePrompt?: string
+    modelId?: string
+  }) => Promise<{ taskId: string; status: string }>
+  /** media 域：查询任务状态与产物（taskId 来自 createMediaTask 返回）。 */
+  getMediaTask?: (taskId: string) => Promise<{
+    status: string
+    assets?: Array<{ type: string; url?: string; filePath?: string; previewDataUrl?: string }>
+    error?: string
+  }>
+  /**
+   * canvas 域：画布只读枚举与追加写（画布状态在 renderer，必须经宿主回调）。
+   * listProjects 返回项目摘要；appendText 向指定项目追加文本节点。
+   */
+  canvasRequest?: (
+    operation: 'listProjects' | 'appendText',
+    payload: { projectId?: string; text?: string; boardId?: string },
+  ) => Promise<unknown>
+  /** browser 域：经宿主安全校验后打开外部链接（http/https）。返回 false 表示被拒绝。 */
+  openExternal?: (url: string) => Promise<boolean>
 }
 
 export interface SubAppBridgeAuditEntry {
@@ -261,8 +309,8 @@ export class SubAppBridgeHost {
     if (request.capability === 'data') {
       const payload = asRecord(request.payload)
       const namespace = readString(payload.namespace, 'namespace')
-      const key = readString(payload.key, 'key')
       if (request.operation === 'get') {
+        const key = readString(payload.key, 'key')
         return invoke('sub-app:data:get', { appId: runtimeInfo.appId, namespace, key })
       }
       if (request.operation === 'list') {
@@ -272,10 +320,12 @@ export class SubAppBridgeHost {
           appId: runtimeInfo.appId,
           namespace,
         }
+        if (typeof payload.prefix === 'string') listRequest.prefix = payload.prefix
         if (limit !== undefined) listRequest.limit = limit
         if (offset !== undefined) listRequest.offset = offset
         return invoke('sub-app:data:list', listRequest)
       }
+      const key = readString(payload.key, 'key')
       if (request.operation === 'upsert') {
         if (!('value' in payload)) throw new BridgeRouteError('INVALID_PAYLOAD')
         const upsertRequest: SubAppDataChannelRequest<'sub-app:data:upsert'> = {
@@ -289,7 +339,16 @@ export class SubAppBridgeHost {
         return invoke('sub-app:data:upsert', upsertRequest)
       }
       if (request.operation === 'delete') {
-        return invoke('sub-app:data:delete', { appId: runtimeInfo.appId, namespace, key })
+        const expectedRevision = readRequiredPositiveNumber(
+          payload.expectedRevision,
+          'expectedRevision',
+        )
+        return invoke('sub-app:data:delete', {
+          appId: runtimeInfo.appId,
+          namespace,
+          key,
+          expectedRevision,
+        })
       }
       throw new BridgeRouteError('UNSUPPORTED_OPERATION')
     }
@@ -323,6 +382,108 @@ export class SubAppBridgeHost {
         return null
       }
       throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+    }
+    if (request.capability === 'files') {
+      const payload = asRecord(request.payload)
+      // path 仅对单文件操作必填；list 只接受可选 prefix。
+      if (request.operation === 'read') {
+        const path = readString(payload.path, 'path')
+        return invoke('sub-app:file:read', { appId: runtimeInfo.appId, path })
+      }
+      if (request.operation === 'write') {
+        const path = readString(payload.path, 'path')
+        if (typeof payload.content !== 'string') {
+          throw new BridgeRouteError('INVALID_PAYLOAD:content')
+        }
+        return invoke('sub-app:file:write', {
+          appId: runtimeInfo.appId,
+          path,
+          content: payload.content,
+        })
+      }
+      if (request.operation === 'list') {
+        const listRequest: SubAppDataChannelRequest<'sub-app:file:list'> = {
+          appId: runtimeInfo.appId,
+        }
+        if (typeof payload.prefix === 'string' && payload.prefix.length > 0) {
+          listRequest.prefix = payload.prefix
+        }
+        return invoke('sub-app:file:list', listRequest)
+      }
+      if (request.operation === 'delete') {
+        const path = readString(payload.path, 'path')
+        return invoke('sub-app:file:delete', { appId: runtimeInfo.appId, path })
+      }
+      throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+    }
+    if (request.capability === 'agent') {
+      const sendToAgent = this.options.sendToAgent
+      if (sendToAgent == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+      if (request.operation !== 'send') throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+      const payload = asRecord(request.payload)
+      const prompt = readString(payload.prompt, 'prompt')
+      const newSession = payload.newSession === true
+      return sendToAgent({ prompt, ...(newSession ? { newSession: true } : {}) })
+    }
+    if (request.capability === 'media') {
+      const payload = asRecord(request.payload)
+      if (request.operation === 'generate') {
+        // payload 校验先于实现存在性检查：非法输入无论宿主是否实现都报 INVALID_PAYLOAD
+        const operation = readMediaOperation(payload.operation)
+        const prompt = readString(payload.prompt, 'prompt')
+        const createMediaTask = this.options.createMediaTask
+        if (createMediaTask == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        const request2: {
+          operation: 'text_to_image' | 'text_to_video'
+          prompt: string
+          negativePrompt?: string
+          modelId?: string
+        } = { operation, prompt }
+        if (typeof payload.negativePrompt === 'string' && payload.negativePrompt.length > 0) {
+          request2.negativePrompt = payload.negativePrompt
+        }
+        if (typeof payload.modelId === 'string' && payload.modelId.length > 0) {
+          request2.modelId = payload.modelId
+        }
+        return createMediaTask(request2)
+      }
+      if (request.operation === 'get') {
+        const getMediaTask = this.options.getMediaTask
+        if (getMediaTask == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        return getMediaTask(readString(payload.taskId, 'taskId'))
+      }
+      throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+    }
+    if (request.capability === 'canvas') {
+      const canvasRequest = this.options.canvasRequest
+      if (canvasRequest == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+      const payload = asRecord(request.payload)
+      if (request.operation === 'listProjects') {
+        return canvasRequest('listProjects', {})
+      }
+      if (request.operation === 'appendText') {
+        const projectId = readString(payload.projectId, 'projectId')
+        const text = readString(payload.text, 'text')
+        const appendPayload: { projectId: string; text: string; boardId?: string } = {
+          projectId,
+          text,
+        }
+        if (typeof payload.boardId === 'string' && payload.boardId.length > 0) {
+          appendPayload.boardId = payload.boardId
+        }
+        return canvasRequest('appendText', appendPayload)
+      }
+      throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+    }
+    if (request.capability === 'browser') {
+      const openExternal = this.options.openExternal
+      if (openExternal == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+      if (request.operation !== 'openUrl') throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+      const payload = asRecord(request.payload)
+      const url = readString(payload.url, 'url')
+      const opened = await openExternal(url)
+      if (!opened) throw new BridgeRouteError('NAVIGATION_REJECTED')
+      return { opened: true }
     }
     // 已过权限检查但宿主尚未实现的能力域。
     throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
@@ -411,6 +572,13 @@ function readOptionalNumber(value: unknown): number | undefined {
   return value
 }
 
+function readRequiredPositiveNumber(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new BridgeRouteError(`INVALID_PAYLOAD:${label}`)
+  }
+  return value
+}
+
 const TOAST_TYPES = new Set(['info', 'success', 'warning', 'error'])
 
 function readToastType(value: unknown): 'info' | 'success' | 'warning' | 'error' {
@@ -419,4 +587,14 @@ function readToastType(value: unknown): 'info' | 'success' | 'warning' | 'error'
     throw new BridgeRouteError('INVALID_PAYLOAD:type')
   }
   return value as 'info' | 'success' | 'warning' | 'error'
+}
+
+/** media 域生成操作白名单：只放开纯文本生成，输入文件类操作不暴露给子应用。 */
+const MEDIA_OPERATIONS = new Set(['text_to_image', 'text_to_video'])
+
+function readMediaOperation(value: unknown): 'text_to_image' | 'text_to_video' {
+  if (typeof value !== 'string' || !MEDIA_OPERATIONS.has(value)) {
+    throw new BridgeRouteError('INVALID_PAYLOAD:operation')
+  }
+  return value as 'text_to_image' | 'text_to_video'
 }

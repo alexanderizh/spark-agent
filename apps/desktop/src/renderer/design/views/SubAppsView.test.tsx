@@ -11,6 +11,7 @@ import { SubAppsView } from './SubAppsView'
 const mocks = vi.hoisted(() => ({
   setTweak: vi.fn(),
   list: vi.fn(),
+  updateDraft: vi.fn(),
   publish: vi.fn(),
   setEnabled: vi.fn(),
   archive: vi.fn(),
@@ -39,7 +40,53 @@ vi.mock('@lobehub/ui', async () => {
     ReactActual.createElement(ReactActual.Fragment, null, children)
   const Modal = ({ children, open }: { children?: React.ReactNode; open?: boolean }) =>
     ReactActual.createElement('div', { 'data-modal-open': String(open) }, children)
-  return { Button, Input, Empty, Tooltip, Modal }
+  // 简化版 Dropdown：点击触发器展开，把 menu.items 渲染为按钮列表，便于测试菜单项交互。
+  type MockMenuEntry =
+    | { key: string; label: React.ReactNode; onClick?: () => void }
+    | { type: 'divider' }
+  const Dropdown = ({
+    children,
+    menu,
+  }: {
+    children: React.ReactNode
+    menu?: { items?: MockMenuEntry[] }
+  }) => {
+    const [open, setOpen] = ReactActual.useState(false)
+    const menuItems = (menu?.items ?? []).filter(
+      (entry): entry is { key: string; label: React.ReactNode; onClick?: () => void } =>
+        !('type' in entry),
+    )
+    return ReactActual.createElement(
+      ReactActual.Fragment,
+      null,
+      ReactActual.createElement(
+        'div',
+        { 'data-testid': 'dropdown-trigger', onClick: () => setOpen((prev) => !prev) },
+        children,
+      ),
+      open
+        ? ReactActual.createElement(
+            'div',
+            { 'data-testid': 'dropdown-menu' },
+            menuItems.map((item, index) =>
+              ReactActual.createElement(
+                'button',
+                {
+                  key: item.key ?? `item-${index}`,
+                  type: 'button',
+                  onClick: () => {
+                    setOpen(false)
+                    item.onClick?.()
+                  },
+                },
+                item.label,
+              ),
+            ),
+          )
+        : null,
+    )
+  }
+  return { Button, Input, Empty, Tooltip, Modal, Dropdown }
 })
 
 vi.mock('antd', async () => {
@@ -65,12 +112,14 @@ vi.mock('antd', async () => {
       onChange: (e) => onChange?.(e.target.checked),
     })
   const message = { success: vi.fn(), error: vi.fn() }
-  return { Badge, Drawer, Popconfirm, Spin, Switch, message }
+  const Modal = { confirm: vi.fn() }
+  return { Badge, Drawer, Modal, Popconfirm, Spin, Switch, message }
 })
 
 vi.mock('../sub-app/subAppClient', () => ({
   subAppClient: {
     list: (...args: unknown[]) => mocks.list(...args),
+    updateDraft: (...args: unknown[]) => mocks.updateDraft(...args),
     publish: (...args: unknown[]) => mocks.publish(...args),
     setEnabled: (...args: unknown[]) => mocks.setEnabled(...args),
     archive: (...args: unknown[]) => mocks.archive(...args),
@@ -124,6 +173,7 @@ describe('SubAppsView', () => {
   beforeEach(() => {
     mocks.setTweak.mockReset()
     mocks.list.mockReset()
+    mocks.updateDraft.mockReset()
     mocks.publish.mockReset()
     mocks.setEnabled.mockReset()
     mocks.archive.mockReset()
@@ -181,6 +231,44 @@ describe('SubAppsView', () => {
     expect(container?.textContent).toContain('读书打卡')
     expect(container?.textContent).toContain('已发布 v2')
     expect(container?.textContent).toContain('草稿')
+  })
+
+  it('未知的历史文本图标回退为默认应用图标', async () => {
+    mocks.list.mockResolvedValue({ items: [makeApp({ icon: 'to do' })], total: 1 })
+    await renderView()
+    expect(
+      container?.querySelector('[data-testid="sub-app-card"] [data-icon="AppWindow"]'),
+    ).not.toBeNull()
+    expect(container?.querySelector('.sa-card-icon')?.textContent).not.toContain('to do')
+  })
+
+  it('图标选择器把选择写入草稿并刷新菜单', async () => {
+    mocks.list.mockResolvedValue({ items: [makeApp({ icon: null })], total: 1 })
+    mocks.updateDraft.mockResolvedValue({})
+    await renderView()
+    // 「修改图标」已收进更多操作菜单：先展开菜单，再点击菜单项
+    const moreTrigger = container?.querySelector<HTMLDivElement>('[data-testid="dropdown-trigger"]')
+    expect(moreTrigger).not.toBeNull()
+    await act(async () => {
+      moreTrigger?.click()
+    })
+    const iconButton = Array.from(container?.querySelectorAll('button') ?? []).find((button) =>
+      button.textContent?.includes('图标'),
+    )
+    expect(iconButton).toBeDefined()
+    await act(async () => {
+      iconButton?.click()
+    })
+    const todoOption = container?.querySelector<HTMLButtonElement>('[aria-label="待办清单"]')
+    expect(todoOption).not.toBeNull()
+    await act(async () => {
+      todoOption?.click()
+    })
+    expect(mocks.updateDraft).toHaveBeenCalledWith({
+      appId: 'app-0001',
+      expectedDraftRevision: 3,
+      patch: { icon: 'builtin:list-todo' },
+    })
   })
 
   it('点击打开写入 subAppOpenId 并切换到运行页视图', async () => {

@@ -856,6 +856,8 @@ export class PlatformBridgeService {
         return this.subAppPublish(d, params)
       case 'subapp.list_releases':
         return this.subAppListReleases(d, params)
+      case 'subapp.delete_release':
+        return this.subAppDeleteRelease(d, params)
       case 'subapp.rollback':
         return this.subAppRollback(d, params)
       case 'subapp.set_enabled':
@@ -2337,6 +2339,19 @@ export class PlatformBridgeService {
       })
       if (page == null) throw new SubAppNotFoundError()
       return page
+    } catch (error) {
+      throw subAppBridgeError(error)
+    }
+  }
+
+  private subAppDeleteRelease(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const appId = requireText(params, 'appId', 80)
+    const releaseVersion = optionalSubAppInt(params.releaseVersion, 'releaseVersion', 1)
+    if (releaseVersion == null) throw new Error('Missing parameter: releaseVersion')
+    try {
+      const deleted = d.subAppRepo.deleteRelease(appId, releaseVersion)
+      if (!deleted) throw new SubAppReleaseNotFoundError()
+      return { deleted: true, appId, releaseVersion }
     } catch (error) {
       throw subAppBridgeError(error)
     }

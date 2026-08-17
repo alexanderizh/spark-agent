@@ -1,6 +1,6 @@
 import React from 'react'
 import { message as antdMessage } from 'antd'
-import type { SubAppManifest, SubAppRelease } from '@spark/protocol'
+import type { SessionId, SubAppManifest, SubAppRelease } from '@spark/protocol'
 import { useApp, type ViewId } from '../AppContext'
 import { useResolvedTheme } from '../hooks/useResolvedTheme'
 import { buildAppRuntimeDocument } from './appRuntimeDocument'
@@ -28,6 +28,25 @@ const SUB_APP_NAVIGABLE_VIEWS: readonly ViewId[] = [
  */
 export function subAppRuntimeDocUrl(token: string, version: number): string {
   return `capability-asset://subapp-runtime/${token}?v=${version}`
+}
+
+/** SessionSidebarContext 持久化最近活跃会话的 localStorage key。 */
+const LAST_ACTIVE_SESSION_KEY = 'spark-agent:last-active-session'
+
+/** agent 域：复用最近活跃会话；无会话或 newSession 时新建（默认 Provider）。 */
+async function resolveAgentSession(newSession: boolean): Promise<SessionId> {
+  if (!newSession) {
+    const last = window.localStorage.getItem(LAST_ACTIVE_SESSION_KEY)
+    if (last != null && last.length > 0) return last as SessionId
+  }
+  const { profiles } = await window.spark.invoke('provider:list', {})
+  const provider =
+    profiles.find((item) => item.isDefault) ?? profiles.find((item) => item.enabled !== false)
+  if (provider == null) throw new Error('未配置任何 AI Provider，无法发送给 Agent。')
+  const { sessionId } = await window.spark.invoke('session:create', {
+    providerProfileId: provider.id,
+  })
+  return sessionId
 }
 
 /** 应用就绪心跳超时：超时进入错误态并给出可执行提示。 */
@@ -80,6 +99,26 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
   const hostRef = React.useRef<SubAppBridgeHost | null>(null)
   const resolvedThemeRef = React.useRef(resolvedTheme)
   const primaryRef = React.useRef(primary)
+  // media 域实例级任务缓存：clientTaskId → repoll 所需的完整参数。
+  const mediaTasksRef = React.useRef<
+    Map<
+      string,
+      {
+        projectId: string
+        clientTaskId: string
+        providerProfileId: string
+        providerTaskId: string
+        status: string
+        assets: Array<{
+          type: string
+          url?: string
+          filePath?: string
+          previewDataUrl?: string
+        }>
+        error?: string
+      }
+    >
+  >(new Map())
 
   // instanceId 只在 reload 时更换；主题变化不得重载应用。
   const instanceId = React.useMemo(
@@ -164,6 +203,123 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
         }
         if (!SUB_APP_NAVIGABLE_VIEWS.includes(id as ViewId)) return false
         setTweak('view', id as ViewId)
+        return true
+      },
+      // agent 域：复用最近活跃会话（无则新建）；newSession 强制新会话
+      sendToAgent: async ({ prompt, newSession }) => {
+        const sessionId = await resolveAgentSession(newSession === true)
+        await window.spark.invoke('session:submit-turn', { sessionId, message: prompt })
+        return { sessionId, delivered: true }
+      },
+      // media 域：异步提交画布媒体任务（合成 clientTaskId/projectId 仅供 stream 路由）
+      createMediaTask: async (input) => {
+        const clientTaskId = `subapp-${instanceId}-${mediaTasksRef.current.size + 1}`
+        const projectId = `subapp-${appId}`
+        const response = await window.spark.invoke('canvas:task:create-media', {
+          operation: input.operation,
+          prompt: input.prompt,
+          ...(input.negativePrompt != null ? { negativePrompt: input.negativePrompt } : {}),
+          ...(input.modelId != null ? { modelId: input.modelId } : {}),
+          projectId,
+          clientTaskId,
+          waitForCompletion: false,
+        })
+        const status = response.status ?? 'running'
+        mediaTasksRef.current.set(clientTaskId, {
+          projectId,
+          clientTaskId,
+          providerProfileId: response.providerProfileId,
+          providerTaskId: response.providerTaskId ?? '',
+          status,
+          assets: (response.assets ?? []).map((asset) => ({
+            type: asset.type,
+            ...(asset.url != null ? { url: asset.url } : {}),
+            ...(asset.filePath != null ? { filePath: asset.filePath } : {}),
+            ...(asset.previewDataUrl != null ? { previewDataUrl: asset.previewDataUrl } : {}),
+          })),
+          ...(response.error != null
+            ? { error: `${response.error.code}: ${response.error.message}` }
+            : {}),
+        })
+        return { taskId: clientTaskId, status }
+      },
+      // media 域：终态直接回缓存；进行中经 repoll 拉最新状态
+      getMediaTask: async (taskId) => {
+        const cached = mediaTasksRef.current.get(taskId)
+        if (cached == null) throw new Error('未找到该媒体任务，请重新发起生成。')
+        if (
+          cached.status === 'succeeded' ||
+          cached.status === 'failed' ||
+          cached.status === 'cancelled'
+        ) {
+          return {
+            status: cached.status,
+            assets: cached.assets,
+            ...(cached.error != null ? { error: cached.error } : {}),
+          }
+        }
+        const response = await window.spark.invoke('canvas:task:repoll-media', {
+          projectId: cached.projectId,
+          clientTaskId: cached.clientTaskId,
+          providerProfileId: cached.providerProfileId,
+          providerTaskId: cached.providerTaskId,
+        })
+        cached.status = response.status ?? cached.status
+        cached.assets = (response.assets ?? cached.assets).map((asset) => ({
+          type: asset.type,
+          ...(asset.url != null ? { url: asset.url } : {}),
+          ...(asset.filePath != null ? { filePath: asset.filePath } : {}),
+          ...(asset.previewDataUrl != null ? { previewDataUrl: asset.previewDataUrl } : {}),
+        }))
+        if (response.error != null)
+          cached.error = `${response.error.code}: ${response.error.message}`
+        return {
+          status: cached.status,
+          assets: cached.assets,
+          ...(cached.error != null ? { error: cached.error } : {}),
+        }
+      },
+      // canvas 域：画布状态在 renderer，经画布 API 单例读写（懒加载避免拉入画布 chunk）
+      canvasRequest: async (operation, payload) => {
+        const { canvasApi } = await import('../views/canvas/canvas.api')
+        if (operation === 'listProjects') {
+          const projects = await canvasApi.listProjects()
+          return {
+            projects: projects.map((project) => ({
+              id: project.id,
+              title: project.title,
+              description: project.description,
+              updatedAt: project.updatedAt,
+            })),
+          }
+        }
+        if (payload.projectId == null || payload.text == null) {
+          throw new Error('appendText 需要 projectId 与 text。')
+        }
+        let boardId = payload.boardId ?? null
+        if (boardId == null) {
+          const snapshot = await canvasApi.openSnapshot(payload.projectId)
+          boardId = snapshot.activeBoardId ?? snapshot.board.id
+        }
+        const node = await canvasApi.createTextNode({
+          projectId: payload.projectId,
+          boardId,
+          text: payload.text,
+          x: 0,
+          y: 0,
+        })
+        return { nodeId: node.id, boardId }
+      },
+      // browser 域：仅放行 http/https，经宿主 shell 打开（不暴露 file:// 等）
+      openExternal: async (url) => {
+        let parsed: URL
+        try {
+          parsed = new URL(url)
+        } catch {
+          return false
+        }
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+        await window.spark.invoke('browser:open-external', { url: parsed.toString() })
         return true
       },
     })

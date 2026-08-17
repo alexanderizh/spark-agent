@@ -12,6 +12,8 @@ import { Badge, Popconfirm, Segmented, Spin, Switch, message as antdMessage } fr
 import type { SubAppDetails } from '@spark/protocol'
 import { subAppClient } from '../sub-app/subAppClient'
 import { SubAppRunner } from '../sub-app/SubAppRunner'
+import { notifySubAppDirectoryChanged } from '../sub-app/subAppEvents'
+import { SubAppIcon } from '../sub-app/SubAppIcon'
 import { useApp } from '../AppContext'
 import { Icons } from '../Icons'
 import './SubAppRunView.less'
@@ -25,7 +27,7 @@ export function SubAppRunView(): React.ReactElement {
   const [details, setDetails] = useState<SubAppDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [mode, setMode] = useState<RunMode>('draft')
+  const [mode, setMode] = useState<RunMode>(t.subAppOpenMode)
   const [publishing, setPublishing] = useState(false)
 
   const reload = useCallback(async (): Promise<void> => {
@@ -47,9 +49,9 @@ export function SubAppRunView(): React.ReactElement {
 
   useEffect(() => {
     // 切换应用或首次进入时重置为默认模式，避免上一个应用的偏好带过来。
-    setMode('published')
+    setMode(t.subAppOpenMode)
     void reload()
-  }, [reload])
+  }, [reload, t.subAppOpenMode])
 
   const backToList = useCallback((): void => {
     setTweak('subAppOpenId', null)
@@ -65,6 +67,7 @@ export function SubAppRunView(): React.ReactElement {
         expectedDraftRevision: details.draftRevision,
       })
       setDetails(res)
+      notifySubAppDirectoryChanged()
       antdMessage.success(`已发布 ${res.name} v${res.publishedVersion ?? ''}`)
     } catch (err) {
       antdMessage.error(`发布失败：${err instanceof Error ? err.message : String(err)}`)
@@ -79,6 +82,7 @@ export function SubAppRunView(): React.ReactElement {
       if (details == null) return
       try {
         await subAppClient.setEnabled({ appId: details.id, enabled })
+        notifySubAppDirectoryChanged()
         await reload()
       } catch (err) {
         antdMessage.error(`操作失败：${err instanceof Error ? err.message : String(err)}`)
@@ -107,79 +111,91 @@ export function SubAppRunView(): React.ReactElement {
       : mode === 'published' && details.publishedRelease != null
         ? { source: details.publishedRelease.source, manifest: details.publishedRelease.manifest }
         : { source: details.draft.source, manifest: details.draft.manifest }
+  const sourceIsEmpty = runnerSource != null && runnerSource.source.trim().length === 0
+  // 已发布的 content 应用是用户真正使用的工作区内容，不再套一层平台运行
+  // 工具栏；草稿预览仍保留工具栏，方便切换版本、发布和重载。
+  const isPublishedContent = mode === 'published' && hasPublished && details?.surface === 'content'
+  const showRuntimeHeader = !isPublishedContent
 
   return (
-    <div className="sub-app-run-view" data-testid="sub-app-run-view">
-      <header className="sar-header">
-        <div className="sar-header-left">
-          <Tooltip title="返回应用列表">
-            <Button
-              icon={<Icons.ArrowLeft size={16} />}
-              aria-label="返回应用列表"
-              onClick={backToList}
-            />
-          </Tooltip>
-          {details != null ? (
-            <>
-              <span className="sar-icon" aria-hidden>
-                {details.icon ?? details.name.slice(0, 1)}
-              </span>
-              <div className="sar-title-block">
-                <span className="sar-name" title={details.name}>
-                  {details.name}
-                </span>
-                {details.enabled ? (
-                  <Badge
-                    color="success"
-                    text={hasPublished ? `已发布 v${details.publishedVersion ?? '?'}` : '草稿'}
-                  />
-                ) : (
-                  <Badge color="default" text="已禁用" />
-                )}
-              </div>
-            </>
-          ) : null}
-        </div>
-        <div className="sar-header-right">
-          {details != null ? (
-            <>
-              <Segmented<RunMode>
-                value={mode}
-                onChange={setMode}
-                options={[
-                  { value: 'published', label: '发布版', disabled: !hasPublished },
-                  { value: 'draft', label: '草稿预览' },
-                ]}
+    <div
+      className={`sub-app-run-view${isPublishedContent ? ' is-published-content' : ''}`}
+      data-testid="sub-app-run-view"
+    >
+      {showRuntimeHeader ? (
+        <header className="sar-header">
+          <div className="sar-header-left">
+            <Tooltip title="返回应用列表">
+              <Button
+                icon={<Icons.ArrowLeft size={16} />}
+                aria-label="返回应用列表"
+                onClick={backToList}
               />
-              <Tooltip title={details.enabled ? '禁用后从菜单隐藏且不可启动' : '启用后在菜单显示'}>
-                <Switch
-                  size="small"
-                  checked={details.enabled}
-                  onChange={(checked) => void handleSetEnabled(checked)}
+            </Tooltip>
+            {details != null ? (
+              <>
+                <span className="sar-icon" aria-hidden>
+                  <SubAppIcon icon={details.icon} size={18} />
+                </span>
+                <div className="sar-title-block">
+                  <span className="sar-name" title={details.name}>
+                    {details.name}
+                  </span>
+                  {details.enabled ? (
+                    <Badge
+                      color="success"
+                      text={hasPublished ? `已发布 v${details.publishedVersion ?? '?'}` : '草稿'}
+                    />
+                  ) : (
+                    <Badge color="default" text="已禁用" />
+                  )}
+                </div>
+              </>
+            ) : null}
+          </div>
+          <div className="sar-header-right">
+            {details != null ? (
+              <>
+                <Segmented<RunMode>
+                  value={mode}
+                  onChange={setMode}
+                  options={[
+                    { value: 'published', label: '发布版', disabled: !hasPublished },
+                    { value: 'draft', label: '草稿预览' },
+                  ]}
                 />
-              </Tooltip>
-              <Popconfirm
-                title="发布当前草稿？"
-                description={`将以草稿 revision ${details.draftRevision} 生成新版本，发布后不可修改。`}
-                okText="发布"
-                cancelText="取消"
-                onConfirm={() => void handlePublish()}
-              >
-                <Button type="primary" size="small" loading={publishing}>
-                  发布
-                </Button>
-              </Popconfirm>
-              <Tooltip title="重新加载应用">
-                <Button
-                  icon={<Icons.Refresh size={15} />}
-                  aria-label="重新加载应用"
-                  onClick={() => void reload()}
-                />
-              </Tooltip>
-            </>
-          ) : null}
-        </div>
-      </header>
+                <Tooltip
+                  title={details.enabled ? '禁用后从菜单隐藏且不可启动' : '启用后在菜单显示'}
+                >
+                  <Switch
+                    size="small"
+                    checked={details.enabled}
+                    onChange={(checked) => void handleSetEnabled(checked)}
+                  />
+                </Tooltip>
+                <Popconfirm
+                  title="发布当前草稿？"
+                  description={`将以草稿 revision ${details.draftRevision} 生成新版本，发布后不可修改。`}
+                  okText="发布"
+                  cancelText="取消"
+                  onConfirm={() => void handlePublish()}
+                >
+                  <Button type="primary" size="small" loading={publishing}>
+                    发布
+                  </Button>
+                </Popconfirm>
+                <Tooltip title="重新加载应用">
+                  <Button
+                    icon={<Icons.Refresh size={15} />}
+                    aria-label="重新加载应用"
+                    onClick={() => void reload()}
+                  />
+                </Tooltip>
+              </>
+            ) : null}
+          </div>
+        </header>
+      ) : null}
 
       <div className="sar-body">
         {loading && details == null && errorMessage == null ? (
@@ -207,7 +223,20 @@ export function SubAppRunView(): React.ReactElement {
           </div>
         ) : null}
 
-        {details != null && runnerSource != null ? (
+        {details != null && sourceIsEmpty ? (
+          <div className="sar-center sar-empty-source" role="status">
+            <p>这个应用还没有可运行的源码。</p>
+            <span>请在任意会话中让 Agent 更新该应用草稿后，再回来预览或发布。</span>
+            <div className="sar-error-actions">
+              <Button type="primary" onClick={() => setTweak('view', 'chat')}>
+                去会话修复
+              </Button>
+              <Button onClick={backToList}>返回列表</Button>
+            </div>
+          </div>
+        ) : null}
+
+        {details != null && runnerSource != null && !sourceIsEmpty ? (
           <SubAppRunner
             appId={details.id}
             manifest={runnerSource.manifest}

@@ -379,6 +379,14 @@ export const Icons = {
       <rect x="14" y="14" width="7" height="7" rx="1" />
     </IconBase>
   ),
+  /** 子应用没有配置图标时的默认图标。 */
+  AppWindow: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18M7 6.5h.01M10 6.5h.01" />
+      <path d="m8 13 2 2 4-4" />
+    </IconBase>
+  ),
   Combine: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M10 18H5a3 3 0 0 1-3-3v-1" />

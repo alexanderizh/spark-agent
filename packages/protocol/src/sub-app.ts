@@ -183,6 +183,55 @@ export interface SubAppDataUpsertRequest {
 }
 export type SubAppDataUpsertResponse = SubAppDataRecord
 
+// ---------------------------------------------------------------------------
+// files 能力域：应用专属文件空间（userData/sub-app-files/<appId>/ 下的相对路径）。
+// 与 data 域（结构化 KV）互补：存导出的 JSON 快照、生成的 markdown、素材等
+// 大文本/文件型内容。路径由主进程规范化校验，禁止逃逸应用目录。
+// ---------------------------------------------------------------------------
+
+export interface SubAppFileReadRequest {
+  appId: string
+  /** 应用空间内相对路径（正斜杠分隔） */
+  path: string
+}
+export interface SubAppFileReadResponse {
+  content: string
+  byteLength: number
+  updatedAt: string
+}
+
+export interface SubAppFileWriteRequest {
+  appId: string
+  path: string
+  content: string
+}
+export interface SubAppFileWriteResponse {
+  byteLength: number
+  updatedAt: string
+}
+
+export interface SubAppFileListRequest {
+  appId: string
+  /** 只返回该前缀下的文件（可选） */
+  prefix?: string
+}
+export interface SubAppFileEntry {
+  path: string
+  size: number
+  updatedAt: string
+}
+export interface SubAppFileListResponse {
+  files: SubAppFileEntry[]
+}
+
+export interface SubAppFileDeleteRequest {
+  appId: string
+  path: string
+}
+export interface SubAppFileDeleteResponse {
+  deleted: true
+}
+
 export interface SubAppReleaseSummary {
   id: string
   version: number
@@ -203,6 +252,16 @@ export interface SubAppListReleasesRequest {
 export interface SubAppListReleasesResponse {
   items: SubAppReleaseSummary[]
   total: number
+}
+
+export interface SubAppDeleteReleaseRequest {
+  appId: string
+  releaseVersion: number
+}
+export interface SubAppDeleteReleaseResponse {
+  deleted: true
+  appId: string
+  releaseVersion: number
 }
 
 export interface SubAppDeleteRequest {
@@ -255,11 +314,16 @@ export interface SubAppIpcChannelMap {
   'sub-app:archive': [SubAppArchiveRequest, SubAppArchiveResponse]
   'sub-app:rollback': [SubAppRollbackRequest, SubAppRollbackResponse]
   'sub-app:releases:list': [SubAppListReleasesRequest, SubAppListReleasesResponse]
+  'sub-app:releases:delete': [SubAppDeleteReleaseRequest, SubAppDeleteReleaseResponse]
   'sub-app:delete': [SubAppDeleteRequest, SubAppDeleteResponse]
   'sub-app:data:get': [SubAppDataGetRequest, SubAppDataGetResponse]
   'sub-app:data:list': [SubAppDataListRequest, SubAppDataListResponse]
   'sub-app:data:upsert': [SubAppDataUpsertRequest, SubAppDataUpsertResponse]
   'sub-app:data:delete': [SubAppDataDeleteRequest, SubAppDataDeleteResponse]
+  'sub-app:file:read': [SubAppFileReadRequest, SubAppFileReadResponse]
+  'sub-app:file:write': [SubAppFileWriteRequest, SubAppFileWriteResponse]
+  'sub-app:file:list': [SubAppFileListRequest, SubAppFileListResponse]
+  'sub-app:file:delete': [SubAppFileDeleteRequest, SubAppFileDeleteResponse]
   'sub-app:runtime:put-doc': [SubAppRuntimeDocPutRequest, SubAppRuntimeDocAck]
   'sub-app:runtime:release-doc': [SubAppRuntimeDocReleaseRequest, SubAppRuntimeDocAck]
 }
@@ -377,6 +441,19 @@ export const SPARK_APP_BRIDGE_INBOUND_SCHEMA = z.discriminatedUnion('type', [
 const appId = z.string().uuid()
 const text = (max: number) => z.string().trim().min(1).max(max)
 const surface = z.enum(SUB_APP_SURFACES)
+/**
+ * 应用文件空间内相对路径：正斜杠分隔、非空、无 `..` 段、无盘符/协议前缀，
+ * 总长 ≤ 240。主进程仍会做 join+resolve 二次校验（防逃逸）。
+ */
+const filePath = z
+  .string()
+  .trim()
+  .min(1)
+  .max(240)
+  .regex(/^(?!\/)(?!\\)[^\\:]+$/, '相对路径，正斜杠分隔')
+  .refine((value) => value.split('/').every((segment) => segment.length > 0 && segment !== '..'), {
+    message: '路径不得包含空段或 .. 段',
+  })
 const permissions = z.array(text(80)).max(64)
 
 const jsonValue = z.unknown().superRefine((value, context) => {
@@ -470,6 +547,9 @@ export const SubAppIpcSchemaRegistry = {
       offset: z.number().int().min(0).max(100_000).optional(),
     })
     .strict(),
+  'sub-app:releases:delete': z
+    .object({ appId, releaseVersion: z.number().int().positive() })
+    .strict(),
   'sub-app:delete': z.object({ appId }).strict(),
   'sub-app:data:get': z.object({ appId, namespace: text(120), key: text(240) }).strict(),
   'sub-app:data:list': z
@@ -498,6 +578,17 @@ export const SubAppIpcSchemaRegistry = {
       expectedRevision: z.number().int().positive(),
     })
     .strict(),
+  'sub-app:file:read': z.object({ appId, path: filePath }).strict(),
+  'sub-app:file:write': z
+    .object({
+      appId,
+      path: filePath,
+      // 与 data 域 value 上限对齐的文件型内容上限（2MB 文本）。
+      content: z.string().min(0).max(2_000_000),
+    })
+    .strict(),
+  'sub-app:file:list': z.object({ appId, prefix: z.string().max(240).optional() }).strict(),
+  'sub-app:file:delete': z.object({ appId, path: filePath }).strict(),
   'sub-app:runtime:put-doc': z
     .object({
       token: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$/),

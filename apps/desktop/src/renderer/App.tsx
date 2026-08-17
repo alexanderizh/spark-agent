@@ -13,6 +13,12 @@ import {
 import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSidebarContext'
 import { CanvasProjectSelectionProvider } from './design/views/canvas/CanvasProjectSelectionContext'
 import { SubAppSurfaceProvider } from './design/sub-app/SubAppSurfaceHost'
+import { subAppClient } from './design/sub-app/subAppClient'
+import {
+  SUB_APP_DIRECTORY_CHANGED_EVENT,
+  notifySubAppDirectoryChanged,
+} from './design/sub-app/subAppEvents'
+import { SubAppIcon } from './design/sub-app/SubAppIcon'
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { AvatarImage } from './design/components/AvatarImage'
@@ -23,6 +29,7 @@ import type {
   AgentEvent,
   PermissionApprovalRequest,
   SessionId,
+  SubAppSummary,
   UpdateStatus,
 } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
@@ -283,6 +290,14 @@ function pickNavItems(ids: string[]) {
     .filter((item): item is (typeof NAV_ITEMS)[number] => item != null)
 }
 
+// L2 导航项：视图项或子应用项（subApp 存在时点击直达子应用运行页）
+interface SidebarNavItem {
+  id: string
+  label: string
+  icon?: React.FC<{ size?: number }>
+  subApp?: { appId: string; icon: string; name: string }
+}
+
 /* ---------- FloatingSidebar — navigation menu + full session list ---------- */
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
@@ -349,6 +364,34 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   useEffect(() => {
     window.localStorage.setItem('spark-agent:pinned-nav', JSON.stringify(pinnedNavIds))
   }, [pinnedNavIds])
+  // 菜单中的子应用（已发布+已启用）：mount、视图切换和目录变化时刷新。
+  // 发布/启用/删除可能发生在管理页，也可能发生在 Agent 会话中；目录事件
+  // 让侧栏无需等待用户切换页面或依赖轮询即可显示最新入口。
+  const [menuApps, setMenuApps] = useState<SubAppSummary[]>([])
+  useEffect(() => {
+    let cancelled = false
+    const loadMenuApps = async (): Promise<void> => {
+      try {
+        const res = await subAppClient.list({ menuOnly: true, limit: 50 })
+        if (!cancelled) setMenuApps(res.items)
+      } catch {
+        if (!cancelled) setMenuApps([])
+      }
+    }
+    void loadMenuApps()
+    const handleDirectoryChanged = () => void loadMenuApps()
+    window.addEventListener(SUB_APP_DIRECTORY_CHANGED_EVENT, handleDirectoryChanged)
+    // 主进程广播：Agent MCP 工具/其他入口改了子应用目录（不经过管理页 UI），
+    // 转发为 renderer 内事件，菜单与胶囊启动器统一刷新。
+    const unsubDirectoryStream = window.spark?.on('stream:subapp:directory-changed', () => {
+      notifySubAppDirectoryChanged()
+    })
+    return () => {
+      cancelled = true
+      window.removeEventListener(SUB_APP_DIRECTORY_CHANGED_EVENT, handleDirectoryChanged)
+      unsubDirectoryStream?.()
+    }
+  }, [t.view, t.subAppOpenId])
   // 已登录时使用云端用户头像/昵称；未登录时使用产品 logo（白底）作为占位
   const userAvatarSrc = auth.isAuthenticated
     ? auth.user?.avatarUrl || resolveAvatarSrc(getUserAvatarConfig(null))
@@ -388,25 +431,41 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     }
   }, [])
 
-  const navItem = (viewId: string, title: string, Icon: React.FC<{ size?: number }>) => {
-    const isActive = t.view === viewId
-    const isPinned = pinnedNavIds.includes(viewId)
+  const navItem = (item: SidebarNavItem) => {
+    const isActive = item.subApp
+      ? t.view === 'sub-app' && t.subAppOpenId === item.subApp.appId
+      : t.view === item.id
+    const isPinned = pinnedNavIds.includes(item.id)
     const togglePin = (e: React.MouseEvent) => {
       e.stopPropagation()
       e.preventDefault()
-      setPinnedNavIds((cur) => (isPinned ? cur.filter((id) => id !== viewId) : [...cur, viewId]))
+      setPinnedNavIds((cur) => (isPinned ? cur.filter((id) => id !== item.id) : [...cur, item.id]))
     }
     return (
       <button
-        key={viewId}
+        key={item.id}
         className={`nav-item ${isActive ? 'active' : ''}${isPinned ? ' nav-item-pinned' : ''}`}
-        onClick={() => setTweak('view', viewId as typeof t.view)}
-        title={title}
+        onClick={() => {
+          if (item.subApp) {
+            setTweak('subAppOpenId', item.subApp.appId)
+            setTweak('subAppOpenMode', 'published')
+            setTweak('view', 'sub-app')
+          } else {
+            setTweak('view', item.id as typeof t.view)
+          }
+        }}
+        title={item.label}
       >
         <span className="nav-icon">
-          <Icon />
+          {item.subApp ? (
+            <span className="nav-app-glyph" aria-hidden>
+              <SubAppIcon icon={item.subApp.icon} size={16} />
+            </span>
+          ) : item.icon != null ? (
+            <item.icon />
+          ) : null}
         </span>
-        <span className="nav-label">{title}</span>
+        <span className="nav-label">{item.label}</span>
         <Tooltip
           title={isPinned ? tr('app.nav.unpin') : tr('app.nav.pinTop')}
           mouseEnterDelay={0.05}
@@ -427,7 +486,26 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   // L2 工作台上下文工具（canvas 模式下为空，整个 L2 section 不渲染）。
   // pin 偏好仍对其生效：固定项始终排前且优先显示。
   const l2SourceItems = isCanvasMode ? [] : pickNavItems(WORKBENCH_TOOL_IDS)
-  const resolvedNavItems = l2SourceItems.map((item) => ({ ...item, label: tr(item.labelKey) }))
+  // 已发布+已启用的内容区子应用进入菜单：点击直达运行页。
+  // 浮层/侧板 surface 不进菜单——它们的统一入口是主窗口右下角的
+  // 胶囊启动器（SubAppSurfaceLauncher），任何视图下都可打开。
+  // id 用 `app:<appId>` 与视图 id 区分，pin 机制照常生效。
+  const menuAppItems: SidebarNavItem[] = (
+    isCanvasMode ? [] : menuApps.filter((app) => app.surface === 'content')
+  ).map((app) => ({
+    id: `app:${app.id}`,
+    label: app.name,
+    subApp: { appId: app.id, icon: app.icon ?? '', name: app.name },
+  }))
+  const managementItem = l2SourceItems.find((item) => item.id === 'sub-apps')
+  const otherWorkbenchItems = l2SourceItems.filter((item) => item.id !== 'sub-apps')
+  // 子应用是用户创建后要立即找到的长期入口，优先放在「更多」折叠前；
+  // 管理入口紧随其后，避免发布成功但入口被四个固定工具挤到不可见区域。
+  const resolvedNavItems: SidebarNavItem[] = [
+    ...(managementItem != null ? [{ ...managementItem, label: tr(managementItem.labelKey) }] : []),
+    ...menuAppItems,
+    ...otherWorkbenchItems.map((item) => ({ ...item, label: tr(item.labelKey) })),
+  ]
   // 已固定的菜单项始终排在最前，且始终显示在可见区域
   const pinnedItems = resolvedNavItems.filter((item) => pinnedNavIds.includes(item.id))
   const unpinnedItems = resolvedNavItems.filter((item) => !pinnedNavIds.includes(item.id))
@@ -746,7 +824,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         <>
           {/* <div className="sidebar-section-label">{tr('nav.group.workbenchTools')}</div> */}
           <div className="sidebar-nav-section" style={{ paddingTop: 0 }}>
-            {visibleItems.map((item) => navItem(item.id, item.label, item.icon))}
+            {visibleItems.map((item) => navItem(item))}
             {hasCollapsed && (
               <Dropdown
                 menu={{ items: [] }}
@@ -757,9 +835,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                 mouseEnterDelay={0.08}
                 mouseLeaveDelay={0.12}
                 popupRender={() => (
-                  <div className="nav-more-menu">
-                    {collapsedItems.map((item) => navItem(item.id, item.label, item.icon))}
-                  </div>
+                  <div className="nav-more-menu">{collapsedItems.map((item) => navItem(item))}</div>
                 )}
               >
                 <button

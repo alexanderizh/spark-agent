@@ -839,6 +839,23 @@ body.floating-sidebar-resizing * {
   color: var(--sidebar-text, var(--text));
 }
 
+/* 子应用菜单项：统一渲染受控图标或 Emoji，未知文本由 SubAppIcon 回退为默认图标 */
+.nav-item .nav-app-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 13px;
+  line-height: 1;
+  overflow: hidden;
+}
+
+.nav-item .nav-app-glyph svg {
+  display: block;
+  flex: none;
+}
+
 .nav-item:hover .nav-icon {
   color: var(--sidebar-text, var(--text));
 }

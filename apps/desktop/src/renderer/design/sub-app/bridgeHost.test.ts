@@ -205,6 +205,24 @@ describe('SubAppBridgeHost 权限与路由', () => {
     expect(outbound.response?.data).toEqual({ namespace: 'user', key: 'name', value: 'spark' })
   })
 
+  it('data/list 转发 prefix、分页参数', async () => {
+    harness.invoke.mockResolvedValue({ items: [], total: 0 })
+    const message = requestMessage({
+      operation: 'list',
+      payload: { namespace: 'user', prefix: 'todo:', limit: 20, offset: 40 },
+    })
+    harness.send(message)
+    await harness.flush()
+    expect(harness.invoke).toHaveBeenCalledWith('sub-app:data:list', {
+      appId,
+      namespace: 'user',
+      prefix: 'todo:',
+      limit: 20,
+      offset: 40,
+    })
+    expect(outboundAt(harness.frame).response?.ok).toBe(true)
+  })
+
   it('data/upsert 冲突时透传 IPC 错误码 CONFLICT', async () => {
     const conflict = Object.assign(new Error('子应用数据已被其他操作更新'), { code: 'CONFLICT' })
     harness.invoke.mockRejectedValue(conflict)
@@ -234,7 +252,7 @@ describe('SubAppBridgeHost 权限与路由', () => {
     message.request = {
       ...(message.request as object),
       operation: 'delete',
-      payload: { namespace: 'user', key: 'name' },
+      payload: { namespace: 'user', key: 'name', expectedRevision: 2 },
     } as never
     harness.send(message)
     await harness.flush()
@@ -242,6 +260,7 @@ describe('SubAppBridgeHost 权限与路由', () => {
       appId,
       namespace: 'user',
       key: 'name',
+      expectedRevision: 2,
     })
     const outbound = outboundAt(harness.frame)
     expect(outbound.response?.ok).toBe(true)
@@ -257,14 +276,15 @@ describe('SubAppBridgeHost 权限与路由', () => {
   })
 
   it('已声明但未实现的能力域返回 CAPABILITY_NOT_IMPLEMENTED', async () => {
-    const extended = createHarness(['data', 'files'])
+    // clipboard 域协议已预留、宿主尚未路由——用它验证未实现分支
+    const extended = createHarness(['data', 'clipboard'])
     try {
       const message = requestMessage()
       message.request = {
         ...(message.request as object),
-        capability: 'files',
-        operation: 'read',
-        payload: null,
+        capability: 'clipboard',
+        operation: 'write',
+        payload: { text: 'x' },
       } as never
       extended.send(message)
       await extended.flush()
@@ -445,5 +465,199 @@ describe('SubAppBridgeHost ui / navigation / 限流', () => {
     // TS 看不到 mock 回调内的赋值，收窄回可空调用
     ;(releaseInvoke as (() => void) | null)?.()
     local.host.detach(window)
+  })
+})
+
+describe('SubAppBridgeHost files / agent / media / canvas / browser 域', () => {
+  it('files/write 转发到 sub-app:file:write 并回传结果', async () => {
+    const local = createHarness(['files'])
+    try {
+      local.invoke.mockResolvedValueOnce({ byteLength: 11, updatedAt: '2026-08-17T00:00:00Z' })
+      local.send(
+        requestMessage({
+          capability: 'files',
+          operation: 'write',
+          payload: { path: 'notes/a.md', content: '# 你好' },
+        }),
+      )
+      await local.flush()
+      expect(local.invoke).toHaveBeenCalledWith('sub-app:file:write', {
+        appId,
+        path: 'notes/a.md',
+        content: '# 你好',
+      })
+      expect(outboundAt(local.frame).response?.data).toEqual({
+        byteLength: 11,
+        updatedAt: '2026-08-17T00:00:00Z',
+      })
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('files/write 缺 content 返回 INVALID_PAYLOAD:content', async () => {
+    const local = createHarness(['files'])
+    try {
+      local.send(
+        requestMessage({ capability: 'files', operation: 'write', payload: { path: 'a.md' } }),
+      )
+      await local.flush()
+      expect(outboundAt(local.frame).response?.error?.code).toBe('INVALID_PAYLOAD:content')
+      expect(local.invoke).not.toHaveBeenCalled()
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('files/list 带前缀转发，prefix 缺省不传字段', async () => {
+    const local = createHarness(['files'])
+    try {
+      local.invoke.mockResolvedValueOnce({ files: [] })
+      local.send(
+        requestMessage({ capability: 'files', operation: 'list', payload: { prefix: 'notes/' } }),
+      )
+      await local.flush()
+      expect(local.invoke).toHaveBeenCalledWith('sub-app:file:list', {
+        appId,
+        prefix: 'notes/',
+      })
+      local.invoke.mockClear()
+      local.send(requestMessage({ capability: 'files', operation: 'list', payload: {} }))
+      await local.flush()
+      expect(local.invoke).toHaveBeenCalledWith('sub-app:file:list', { appId })
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('agent/send 需要 agent 权限并把 prompt 交给宿主回调', async () => {
+    const sendToAgent = vi.fn().mockResolvedValue({ sessionId: 'sess-1', delivered: true })
+    const local = createHarness(['agent'], { sendToAgent })
+    try {
+      local.send(
+        requestMessage({ capability: 'agent', operation: 'send', payload: { prompt: '总结一下' } }),
+      )
+      await local.flush()
+      expect(sendToAgent).toHaveBeenCalledWith({ prompt: '总结一下' })
+      expect(outboundAt(local.frame).response?.data).toEqual({
+        sessionId: 'sess-1',
+        delivered: true,
+      })
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('media/generate 拒绝白名单外的操作', async () => {
+    const local = createHarness(['media'])
+    try {
+      local.send(
+        requestMessage({
+          capability: 'media',
+          operation: 'generate',
+          payload: { operation: 'image_edit', prompt: 'x' },
+        }),
+      )
+      await local.flush()
+      expect(outboundAt(local.frame).response?.error?.code).toBe('INVALID_PAYLOAD:operation')
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('media/generate 放行 text_to_image 并透传可选参数', async () => {
+    const createMediaTask = vi.fn().mockResolvedValue({ taskId: 't-1', status: 'running' })
+    const local = createHarness(['media'], { createMediaTask })
+    try {
+      local.send(
+        requestMessage({
+          capability: 'media',
+          operation: 'generate',
+          payload: {
+            operation: 'text_to_image',
+            prompt: '一只猫',
+            negativePrompt: '模糊',
+            modelId: 'doubao-seedream-4-5',
+          },
+        }),
+      )
+      await local.flush()
+      expect(createMediaTask).toHaveBeenCalledWith({
+        operation: 'text_to_image',
+        prompt: '一只猫',
+        negativePrompt: '模糊',
+        modelId: 'doubao-seedream-4-5',
+      })
+      expect(outboundAt(local.frame).response?.data).toEqual({ taskId: 't-1', status: 'running' })
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('canvas/appendText 校验必填字段并转发宿主回调', async () => {
+    const canvasRequest = vi.fn().mockResolvedValue({ nodeId: 'n1', boardId: 'b1' })
+    const local = createHarness(['canvas'], { canvasRequest })
+    try {
+      local.send(
+        requestMessage({
+          capability: 'canvas',
+          operation: 'appendText',
+          payload: { projectId: 'canvas_project_1', text: '画布速记' },
+        }),
+      )
+      await local.flush()
+      expect(canvasRequest).toHaveBeenCalledWith('appendText', {
+        projectId: 'canvas_project_1',
+        text: '画布速记',
+      })
+      local.send(
+        requestMessage({ capability: 'canvas', operation: 'appendText', payload: { text: 'x' } }),
+      )
+      await local.flush()
+      expect(outboundAt(local.frame, 1).response?.error?.code).toBe('INVALID_PAYLOAD:projectId')
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('browser/openUrl 打开 http 链接，非 http(s) 协议被拒绝', async () => {
+    const openExternal = vi.fn().mockImplementation(async (url: string) => {
+      const parsed = new URL(url)
+      return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+    })
+    const local = createHarness(['browser'], { openExternal })
+    try {
+      local.send(
+        requestMessage({
+          capability: 'browser',
+          operation: 'openUrl',
+          payload: { url: 'https://example.com/docs' },
+        }),
+      )
+      await local.flush()
+      expect(openExternal).toHaveBeenCalledWith('https://example.com/docs')
+      expect(outboundAt(local.frame).response?.data).toEqual({ opened: true })
+      local.send(
+        requestMessage({
+          capability: 'browser',
+          operation: 'openUrl',
+          payload: { url: 'file:///etc/passwd' },
+        }),
+      )
+      await local.flush()
+      expect(outboundAt(local.frame, 1).response?.error?.code).toBe('NAVIGATION_REJECTED')
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('未声明对应权限时五域均返回 PERMISSION_DENIED', async () => {
+    for (const capability of ['files', 'agent', 'media', 'canvas', 'browser']) {
+      harness.frame.postMessage.mockClear()
+      harness.send(requestMessage({ capability, operation: 'list', payload: {} }))
+      await harness.flush()
+      expect(outboundAt(harness.frame).response?.error?.code).toBe('PERMISSION_DENIED')
+    }
+    expect(harness.invoke).not.toHaveBeenCalled()
   })
 })

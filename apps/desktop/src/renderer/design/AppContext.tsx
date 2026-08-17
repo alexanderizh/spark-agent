@@ -111,6 +111,8 @@ export type Tweaks = {
   /** 子应用运行页当前打开的 appId（非持久化；null 时运行页回退到管理页）。
    *  SubAppRunView 读取；SubAppsView / 菜单入口写入并切 view 到 'sub-app'。 */
   subAppOpenId: string | null
+  /** 子应用运行页的初始版本：菜单默认发布版，管理页可显式进入草稿预览。 */
+  subAppOpenMode: 'published' | 'draft'
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
@@ -134,6 +136,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   workspaceMode: 'workbench',
   canvasCreateSignal: 0,
   subAppOpenId: null,
+  subAppOpenMode: 'published',
 }
 
 /** Min/max bounds for the floating sidebar width (px). */

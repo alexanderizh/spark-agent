@@ -7,7 +7,9 @@ import {
   SubAppConflictError,
   SubAppDataConflictError,
   SubAppNotFoundError,
+  SubAppReleaseNotFoundError,
   SubAppRepository,
+  SubAppStateError,
 } from './sub-app.repository.js'
 
 function createTestDb(testDir: string): SparkDatabase {
@@ -68,8 +70,16 @@ describe('SubAppRepository', () => {
     expect(() => repository.publish(created.id, 2)).toThrow(SubAppConflictError)
   })
 
+  it('rejects publishing an app whose draft source is empty', () => {
+    // 回归：create 与 RPC 字段错配曾产出空源码应用，发布空版本必然白屏。
+    const app = repository.create({ name: '空壳应用' })
+    expect(app.draft.source).toBe('')
+    expect(() => repository.publish(app.id, 1)).toThrow(/草稿源码为空/)
+    expect(app.publicationStatus).toBe('draft')
+  })
+
   it('only exposes published and enabled apps in the menu view', () => {
-    const app = repository.create({ name: '菜单应用' })
+    const app = repository.create({ name: '菜单应用', source: '<main>menu</main>' })
     expect(repository.list({ menuOnly: true }).items).toHaveLength(0)
 
     // 发布即启用：菜单立即可见，无需再手动开启用开关
@@ -98,11 +108,35 @@ describe('SubAppRepository', () => {
 
     const updated = repository.upsertData(first.id, 'settings', 'theme', { mode: 'light' }, 1)
     expect(updated.revision).toBe(2)
+    const lastWriteWins = repository.upsertData(first.id, 'settings', 'theme', { mode: 'system' })
+    expect(lastWriteWins.revision).toBe(3)
     expect(() =>
       repository.upsertData(first.id, 'settings', 'theme', { mode: 'system' }, 1),
     ).toThrow(SubAppDataConflictError)
 
-    expect(repository.listData(first.id, 'settings').items).toEqual([updated])
+    expect(repository.listData(first.id, 'settings').items).toEqual([lastWriteWins])
+  })
+
+  it('keeps app data after closing and reopening the same database file', () => {
+    const app = repository.create({ name: '重启持久化应用' })
+    repository.upsertData(app.id, 'todos', 'items', [{ title: '保留我', done: false }])
+
+    db.close()
+    db = new SparkDatabase(join(testDir, 'test.db'))
+    db.runMigrations(join(process.cwd(), 'migrations'))
+    repository = new SubAppRepository(db)
+
+    expect(repository.getData(app.id, 'todos', 'items')?.value).toEqual([
+      { title: '保留我', done: false },
+    ])
+  })
+
+  it('defaults new apps to their isolated data capability while preserving explicit denial', () => {
+    const defaultApp = repository.create({ name: '默认数据应用' })
+    const deniedApp = repository.create({ name: '无数据应用', permissions: [] })
+
+    expect(defaultApp.draft.manifest.permissions).toEqual(['data'])
+    expect(deniedApp.draft.manifest.permissions).toEqual([])
   })
 
   it('lists release history newest first and marks the published release', () => {
@@ -150,5 +184,21 @@ describe('SubAppRepository', () => {
     expect(repository.getData(app.id, 'notes', 'todo-1')).toBeNull()
     // 记录已不存在：NOT_FOUND 语义（SubAppNotFoundError），不是冲突
     expect(() => repository.deleteData(app.id, 'notes', 'todo-1', 1)).toThrow(SubAppNotFoundError)
+  })
+
+  it('deleteRelease removes history versions but protects the live release', () => {
+    const app = repository.create({ name: '版本删除应用', source: 'v1' })
+    repository.publish(app.id, 1)
+    repository.updateDraft(app.id, 1, { source: 'v2' })
+    repository.publish(app.id, 2)
+
+    // 当前生效版本（v2）不可删，否则 published_release_id 悬空
+    expect(() => repository.deleteRelease(app.id, 2)).toThrow(SubAppStateError)
+    // 历史版本可删，且删除后生效版本不受影响
+    expect(repository.deleteRelease(app.id, 1)).toBe(true)
+    expect(repository.get(app.id)?.publishedRelease?.version).toBe(2)
+    // 版本不存在：NOT_FOUND 语义
+    expect(() => repository.deleteRelease(app.id, 1)).toThrow(SubAppReleaseNotFoundError)
+    expect(() => repository.deleteRelease('nonexistent-app', 1)).toThrow(SubAppNotFoundError)
   })
 })

@@ -70,6 +70,13 @@ export interface CreateSubAppParams {
   config?: Record<string, unknown>
 }
 
+/**
+ * 应用数据只属于当前 appId 的命名空间，不会读取其他应用或会话数据。
+ * 因此新建应用默认开放 data 能力，保证 Agent 生成的可持久化应用开箱可用；
+ * 调用方显式传入 [] 仍然表示拒绝 data 权限。
+ */
+export const DEFAULT_SUB_APP_PERMISSIONS = ['data'] as const
+
 export interface SubAppListPage {
   items: SubAppSummary[]
   total: number
@@ -142,7 +149,7 @@ export class SubAppRepository extends BaseRepository {
         params.surface ?? 'content',
         params.source ?? '',
         this.toJson(params.config ?? {}),
-        this.toJson(params.permissions ?? []),
+        this.toJson(params.permissions ?? DEFAULT_SUB_APP_PERMISSIONS),
         now,
         now,
       )
@@ -252,6 +259,10 @@ export class SubAppRepository extends BaseRepository {
       if (current == null) return null
       this.assertDraftRevision(current, expectedDraftRevision)
       this.assertMutable(current)
+      // 空源码发布出去必然白屏：在发布口拦下，避免空壳版本进入菜单。
+      if (current.draft_source.trim().length === 0) {
+        throw new SubAppStateError('草稿源码为空，无法发布：请先用源码更新草稿。')
+      }
 
       const nextVersionRow = this.raw
         .prepare(
@@ -358,6 +369,24 @@ export class SubAppRepository extends BaseRepository {
       })),
       total: totalRow.count,
     }
+  }
+
+  /**
+   * 删除历史发布版本。当前生效版本必须保留，否则 published_release_id
+   * 会失去指向，已发布应用也会变成无法运行的空壳。
+   */
+  deleteRelease(id: string, version: number): boolean {
+    const app = this.getRow(id)
+    if (app == null) throw new SubAppNotFoundError()
+    const release = this.getReleaseRow(id, version)
+    if (release == null) throw new SubAppReleaseNotFoundError()
+    if (release.id === app.published_release_id) {
+      throw new SubAppStateError('当前生效版本不能删除，请先发布其他版本后再删除。')
+    }
+    const result = this.raw
+      .prepare('DELETE FROM sub_app_releases WHERE app_id = ? AND version = ?')
+      .run(id, version)
+    return result.changes === 1
   }
 
   /**
@@ -505,16 +534,19 @@ export class SubAppRepository extends BaseRepository {
           )
           .run(appId, namespace, key, serialized, now, now)
       } else {
-        if (expectedRevision === undefined || current.revision !== expectedRevision) {
+        // 不传 expectedRevision 表示本地应用明确接受 last-write-wins；
+        // 传入时才启用 CAS，供 Agent 或并发写入场景避免覆盖新数据。
+        if (expectedRevision !== undefined && current.revision !== expectedRevision) {
           throw new SubAppDataConflictError()
         }
+        const revisionCondition = expectedRevision ?? current.revision
         const updateResult = this.raw
           .prepare(
             `UPDATE sub_app_data
              SET value_json = ?, revision = ?, updated_at = ?
              WHERE app_id = ? AND namespace = ? AND key = ? AND revision = ?`,
           )
-          .run(serialized, current.revision + 1, now, appId, namespace, key, expectedRevision)
+          .run(serialized, current.revision + 1, now, appId, namespace, key, revisionCondition)
         if (updateResult.changes !== 1) throw new SubAppDataConflictError()
       }
       const saved = this.getData(appId, namespace, key)

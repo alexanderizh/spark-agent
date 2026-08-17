@@ -11,8 +11,18 @@ import type {
   SubAppDataListResponse,
   SubAppDataUpsertRequest,
   SubAppDataUpsertResponse,
+  SubAppFileDeleteRequest,
+  SubAppFileDeleteResponse,
+  SubAppFileListRequest,
+  SubAppFileListResponse,
+  SubAppFileReadRequest,
+  SubAppFileReadResponse,
+  SubAppFileWriteRequest,
+  SubAppFileWriteResponse,
   SubAppDeleteRequest,
   SubAppDeleteResponse,
+  SubAppDeleteReleaseRequest,
+  SubAppDeleteReleaseResponse,
   SubAppGetRequest,
   SubAppGetResponse,
   SubAppListReleasesRequest,
@@ -43,12 +53,15 @@ import {
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import { putSubAppRuntimeDoc, releaseSubAppRuntimeDoc } from '../services/SubAppRuntimeDocs.js'
+import { SubAppFileStore } from '../services/SubAppFileStore.js'
 
 export class SubAppBackend {
   private readonly repository: SubAppRepository
+  private readonly fileStore: SubAppFileStore
 
-  constructor(database: SparkDatabase) {
+  constructor(database: SparkDatabase, fileStoreRootDir: string) {
     this.repository = new SubAppRepository(database)
+    this.fileStore = new SubAppFileStore(fileStoreRootDir)
   }
 
   list(request: SubAppListRequest): SubAppListResponse {
@@ -140,18 +153,34 @@ export class SubAppBackend {
     }
   }
 
-  /**
-   * 删除应用是破坏性操作：调用前 UI/Agent 层必须完成影响范围确认。
-   * 后端只做幂等失败——应用不存在时返回 NOT_FOUND，不重复删除。
-   */
-  delete(request: SubAppDeleteRequest): SubAppDeleteResponse {
+  deleteRelease(request: SubAppDeleteReleaseRequest): SubAppDeleteReleaseResponse {
     try {
-      const deleted = this.repository.delete(request.appId)
-      if (!deleted) throw new SparkError('NOT_FOUND', '子应用不存在或已被删除。')
-      return { deleted: true, appId: request.appId }
+      const deleted = this.repository.deleteRelease(request.appId, request.releaseVersion)
+      if (!deleted) throw new SparkError('NOT_FOUND', '指定的子应用发布版本不存在。')
+      return {
+        deleted: true,
+        appId: request.appId,
+        releaseVersion: request.releaseVersion,
+      }
     } catch (error) {
       throw this.mapError(error)
     }
+  }
+
+  /**
+   * 删除应用是破坏性操作：调用前 UI/Agent 层必须完成影响范围确认。
+   * 后端只做幂等失败——应用不存在时返回 NOT_FOUND，不重复删除。
+   * DB 删除成功后尽力清理应用文件空间（files 域）；清理失败不影响删除结果。
+   */
+  async delete(request: SubAppDeleteRequest): Promise<SubAppDeleteResponse> {
+    try {
+      const deleted = this.repository.delete(request.appId)
+      if (!deleted) throw new SparkError('NOT_FOUND', '子应用不存在或已被删除。')
+    } catch (error) {
+      throw this.mapError(error)
+    }
+    await this.fileStore.removeApp(request.appId).catch(() => {})
+    return { deleted: true, appId: request.appId }
   }
 
   dataGet(request: SubAppDataGetRequest): SubAppDataGetResponse {
@@ -193,6 +222,40 @@ export class SubAppBackend {
         request.expectedRevision,
       )
       return { deleted: true, appId: request.appId, namespace: request.namespace, key: request.key }
+    } catch (error) {
+      throw this.mapError(error)
+    }
+  }
+
+  /** files 能力域：应用专属文件空间（文本文件，路径校验见 SubAppFileStore）。 */
+  async fileRead(request: SubAppFileReadRequest): Promise<SubAppFileReadResponse> {
+    try {
+      return await this.fileStore.read(request.appId, request.path)
+    } catch (error) {
+      throw this.mapError(error)
+    }
+  }
+
+  async fileWrite(request: SubAppFileWriteRequest): Promise<SubAppFileWriteResponse> {
+    try {
+      return await this.fileStore.write(request.appId, request.path, request.content)
+    } catch (error) {
+      throw this.mapError(error)
+    }
+  }
+
+  async fileList(request: SubAppFileListRequest): Promise<SubAppFileListResponse> {
+    try {
+      return await this.fileStore.list(request.appId, request.prefix)
+    } catch (error) {
+      throw this.mapError(error)
+    }
+  }
+
+  async fileDelete(request: SubAppFileDeleteRequest): Promise<SubAppFileDeleteResponse> {
+    try {
+      await this.fileStore.delete(request.appId, request.path)
+      return { deleted: true }
     } catch (error) {
       throw this.mapError(error)
     }

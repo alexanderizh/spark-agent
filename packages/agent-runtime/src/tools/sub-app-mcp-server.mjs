@@ -13,7 +13,8 @@
  *
  * 工具（SDK 命名空间 mcp__spark_app__）：
  *   spark_app_create / spark_app_list / spark_app_get / spark_app_update_draft /
- *   spark_app_publish / spark_app_list_releases / spark_app_rollback /
+ *   spark_app_publish / spark_app_list_releases / spark_app_delete_release /
+ *   spark_app_rollback /
  *   spark_app_set_enabled / spark_app_archive / spark_app_delete /
  *   spark_app_data_get / spark_app_data_list / spark_app_data_set /
  *   spark_app_data_delete
@@ -122,6 +123,17 @@ const SURFACE_DESCRIPTION =
 const PERMISSIONS_DESCRIPTION =
   '权限声明列表（能力名，如 runtime/theme/ui/data/clipboard/notifications），应用运行时按声明获得对应宿主能力'
 
+const THEME_INTEGRATION_GUIDE =
+  '界面必须适配 SparkWork 宿主主题：使用 sparkApp.theme.get()/onChange 或 --spark-* CSS 变量（如 --spark-color-bg-container、--spark-color-text、--spark-color-primary），不要把深浅色背景和文字颜色硬编码为固定值。除非用户明确要求独立背景或特殊视觉效果，默认不要给应用根容器、页面或主布局设置 background/background-color/background-image，让 SparkWork 主应用自带的背景自然透出；确需自定义背景时也必须使用宿主主题 token。运行时会自动把宿主 token 同步为这些 CSS 变量。'
+
+const DATA_PERSISTENCE_GUIDE = [
+  '数据持久化契约：凡是用户创建、编辑、删除后还应在重新打开或重启 SparkWork 后保留的数据，必须使用 sparkApp.data.get/list/upsert/delete 写入应用专属持久化库。',
+  '源码调用 sparkApp.data 时必须让 permissions 包含 data；未传 permissions 的新应用默认拥有自身隔离的 data 能力，显式传 [] 仍会拒绝。',
+  '推荐更新模式：先 await sparkApp.data.get("app", "todos")，再把返回的 revision 传给 sparkApp.data.upsert("app", "todos", value, revision)；首次创建键时不传 revision。',
+  '删除必须先读取当前 revision，再调用 sparkApp.data.delete(namespace, key, revision)。',
+  '不要把 localStorage、sessionStorage、IndexedDB、内存数组或 URL 参数作为唯一数据源；它们不能替代 SparkWork 应用数据持久化。',
+].join(' ')
+
 function toolDefinitions() {
   return [
     // ── 应用生命周期 ──
@@ -130,6 +142,8 @@ function toolDefinitions() {
       description: [
         '创建一个新的自定义子应用。创建后处于草稿态（draft、未启用），需要先发布（spark_app_publish）才会出现在应用入口。',
         '何时调用：用户想要一个新的小工具/小组件/桌面宠物等自包含 HTML 应用时。',
+        THEME_INTEGRATION_GUIDE,
+        DATA_PERSISTENCE_GUIDE,
         '返回完整详情，其中的 draft.revision 是后续修改草稿要用的 CAS 基线。',
       ].join(' '),
       inputSchema: {
@@ -148,14 +162,20 @@ function toolDefinitions() {
             type: 'array',
             items: { type: 'string', maxLength: 80 },
             maxItems: 64,
-            description: PERMISSIONS_DESCRIPTION,
+            default: ['data'],
+            description: `${PERMISSIONS_DESCRIPTION} 未传时默认包含 data；显式传 [] 才表示不授予 data。`,
           },
           surface: {
             type: 'string',
             enum: ['content', 'panel', 'overlay', 'global-window', 'desktop-pet'],
             description: SURFACE_DESCRIPTION,
           },
-          icon: { type: 'string', maxLength: 240, description: '图标标识（可选）' },
+          icon: {
+            type: 'string',
+            maxLength: 240,
+            description:
+              '图标标识（可选）：优先使用单个 Emoji 或 builtin:list-todo、builtin:book、builtin:calendar、builtin:database、builtin:agent、builtin:canvas、builtin:folder、builtin:globe；不要传多词说明文本。',
+          },
           entry: { type: 'string', maxLength: 240, description: '入口文件名，默认 index.html' },
         },
       },
@@ -203,6 +223,8 @@ function toolDefinitions() {
       name: 'spark_app_update_draft',
       description: [
         '修改子应用草稿。可更新源码（draftHtml）、名称、描述、权限、展示面、图标、入口中的任意字段。',
+        THEME_INTEGRATION_GUIDE,
+        DATA_PERSISTENCE_GUIDE,
         'CAS 语义：必须传 spark_app_get 拿到的当前 expectedRevision；若期间草稿已被其他操作更新会返回冲突（SUBAPP_CONFLICT），此时应重新 get 拿新 revision 再重试，不要盲目覆盖。',
         'draftHtml 是整篇替换：传入新的完整 HTML 文档，而非增量补丁。成功后 revision +1。',
       ].join(' '),
@@ -227,14 +249,19 @@ function toolDefinitions() {
             type: 'array',
             items: { type: 'string', maxLength: 80 },
             maxItems: 64,
-            description: PERMISSIONS_DESCRIPTION,
+            description: `${PERMISSIONS_DESCRIPTION} 若源码使用 sparkApp.data，必须包含 data。`,
           },
           surface: {
             type: 'string',
             enum: ['content', 'panel', 'overlay', 'global-window', 'desktop-pet'],
             description: SURFACE_DESCRIPTION,
           },
-          icon: { type: 'string', maxLength: 240, description: '新图标标识' },
+          icon: {
+            type: 'string',
+            maxLength: 240,
+            description:
+              '新图标标识：优先使用单个 Emoji 或受控 builtin:* 图标标识；传 null 可恢复默认应用图标。',
+          },
           entry: { type: 'string', minLength: 1, maxLength: 240, description: '新入口文件名' },
         },
       },
@@ -273,6 +300,21 @@ function toolDefinitions() {
           appId: { type: 'string', description: '应用 ID' },
           limit: { type: 'integer', minimum: 1, maximum: 100, description: '每页数量，默认 50' },
           offset: { type: 'integer', minimum: 0, description: '分页偏移，默认 0' },
+        },
+      },
+    },
+    {
+      name: 'spark_app_delete_release',
+      description: [
+        '删除某个子应用的历史发布版本。当前正在使用的发布版本不能删除，以保证已发布应用始终可运行。',
+        '这是不可恢复操作；调用前必须向用户说明会移除指定版本，并获得明确确认。版本号不会重排，后续发布仍会使用新的递增版本号。',
+      ].join(' '),
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'releaseVersion'],
+        properties: {
+          appId: { type: 'string', description: '应用 ID' },
+          releaseVersion: { type: 'integer', minimum: 1, description: '要删除的历史版本号' },
         },
       },
     },
@@ -467,7 +509,9 @@ async function dispatchTool(name, args) {
       return rpc('subapp.create', {
         name: str(args.name),
         description: str(args.description),
-        draftHtml: str(args.draftHtml),
+        // 工具参数叫 draftHtml，bridge RPC 字段统一叫 source（与 update_draft 一致）。
+        // 曾因两侧字段名不一致导致创建出的应用源码为空、运行白屏。
+        source: str(args.draftHtml),
         permissions: optStringArray(args.permissions),
         surface: str(args.surface),
         icon: args.icon === null ? null : str(args.icon),
@@ -516,6 +560,12 @@ async function dispatchTool(name, args) {
         appId,
         limit: optPositiveInt(args.limit),
         offset: optNonNegativeInt(args.offset),
+      })
+
+    case 'spark_app_delete_release':
+      return rpc('subapp.delete_release', {
+        appId,
+        releaseVersion: optPositiveInt(args.releaseVersion),
       })
 
     case 'spark_app_rollback':

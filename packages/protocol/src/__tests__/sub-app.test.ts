@@ -67,6 +67,35 @@ describe('SubApp IPC schemas', () => {
     ).toMatchObject({ expectedRevision: 3 })
   })
 
+  it('file channel schemas accept relative paths and reject escapes', () => {
+    // 合法相对路径（含子目录）
+    expect(
+      SubAppIpcSchemaRegistry['sub-app:file:read'].parse({ appId, path: 'notes/a.md' }),
+    ).toMatchObject({ path: 'notes/a.md' })
+    expect(
+      SubAppIpcSchemaRegistry['sub-app:file:write'].parse({
+        appId,
+        path: 'snapshots/2026.json',
+        content: '{"v":1}',
+      }),
+    ).toMatchObject({ content: '{"v":1}' })
+    expect(SubAppIpcSchemaRegistry['sub-app:file:list'].parse({ appId })).toMatchObject({ appId })
+    // 逃逸与绝对路径拒绝
+    for (const bad of ['../escape', '/etc/passwd', 'a/../b', 'C:\\x', 'a//b']) {
+      expect(() =>
+        SubAppIpcSchemaRegistry['sub-app:file:read'].parse({ appId, path: bad }),
+      ).toThrow()
+    }
+    // content 上限 2MB
+    expect(() =>
+      SubAppIpcSchemaRegistry['sub-app:file:write'].parse({
+        appId,
+        path: 'big.txt',
+        content: 'x'.repeat(2_000_001),
+      }),
+    ).toThrow()
+  })
+
   it('runtime doc registration uses capped tokens and bounded documents', () => {
     expect(
       SubAppIpcSchemaRegistry['sub-app:runtime:put-doc'].parse({

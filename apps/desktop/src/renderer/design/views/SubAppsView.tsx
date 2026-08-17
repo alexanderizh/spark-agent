@@ -9,8 +9,16 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { Button, Empty, Input, Modal, Tooltip } from '@lobehub/ui'
-import { Badge, Drawer, Popconfirm, Spin, Switch, message as antdMessage } from 'antd'
+import { Button, Dropdown, Empty, Input, Modal, Tooltip } from '@lobehub/ui'
+import {
+  Badge,
+  Drawer,
+  Modal as AntdModal,
+  Popconfirm,
+  Spin,
+  Switch,
+  message as antdMessage,
+} from 'antd'
 import type {
   SubAppListReleasesResponse,
   SubAppReleaseSummary,
@@ -18,6 +26,9 @@ import type {
 } from '@spark/protocol'
 import { subAppClient } from '../sub-app/subAppClient'
 import { useSubAppSurfaces } from '../sub-app/SubAppSurfaceHost'
+import { notifySubAppDirectoryChanged } from '../sub-app/subAppEvents'
+import { SubAppIcon } from '../sub-app/SubAppIcon'
+import { SUB_APP_ICON_OPTIONS } from '../sub-app/subAppIconOptions'
 import { useApp } from '../AppContext'
 import { useI18n } from '../i18n'
 import { Icons } from '../Icons'
@@ -93,6 +104,8 @@ export function SubAppsView(): React.ReactElement {
 
   // Agent 创建引导
   const [guideOpen, setGuideOpen] = useState(false)
+  const [iconEditorFor, setIconEditorFor] = useState<SubAppSummary | null>(null)
+  const [iconSaving, setIconSaving] = useState(false)
 
   const reload = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -118,8 +131,9 @@ export function SubAppsView(): React.ReactElement {
   }, [reload])
 
   const openApp = useCallback(
-    (app: SubAppSummary): void => {
+    (app: SubAppSummary, mode: 'published' | 'draft' = 'published'): void => {
       setTweak('subAppOpenId', app.id)
+      setTweak('subAppOpenMode', mode)
       setTweak('view', 'sub-app')
     },
     [setTweak],
@@ -142,12 +156,36 @@ export function SubAppsView(): React.ReactElement {
     setTweak('view', 'chat')
   }, [setTweak])
 
+  const handleIconChange = useCallback(
+    async (icon: string | null): Promise<void> => {
+      if (iconEditorFor == null) return
+      setIconSaving(true)
+      try {
+        await subAppClient.updateDraft({
+          appId: iconEditorFor.id,
+          expectedDraftRevision: iconEditorFor.draftRevision,
+          patch: { icon },
+        })
+        notifySubAppDirectoryChanged()
+        setIconEditorFor(null)
+        await reload()
+      } catch (err) {
+        antdMessage.error(`图标保存失败：${err instanceof Error ? err.message : String(err)}`)
+        await reload()
+      } finally {
+        setIconSaving(false)
+      }
+    },
+    [iconEditorFor, reload],
+  )
+
   /** CAS 类操作统一收口：失败时提示并刷新列表（revision 可能已过期）。 */
   const withBusy = useCallback(
     async (appId: string, action: () => Promise<unknown>): Promise<void> => {
       setBusyAppId(appId)
       try {
         await action()
+        notifySubAppDirectoryChanged()
         await reload()
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -195,6 +233,34 @@ export function SubAppsView(): React.ReactElement {
     [withBusy],
   )
 
+  /** 归档/删除为破坏性操作：收进「更多操作」菜单后无法再用 Popconfirm 包裹，统一走 Modal.confirm 二次确认。 */
+  const confirmArchive = useCallback(
+    (app: SubAppSummary): void => {
+      AntdModal.confirm({
+        title: '归档此应用？',
+        content: '归档后从列表主视图隐藏，可在此页开启「归档」筛选后查看。',
+        okText: '归档',
+        cancelText: '取消',
+        onOk: () => handleArchive(app),
+      })
+    },
+    [handleArchive],
+  )
+
+  const confirmDelete = useCallback(
+    (app: SubAppSummary): void => {
+      AntdModal.confirm({
+        title: '删除此应用？',
+        content: '将永久删除源码、全部版本与应用数据，不可恢复。',
+        okText: '删除',
+        okButtonProps: { danger: true },
+        cancelText: '取消',
+        onOk: () => handleDelete(app),
+      })
+    },
+    [handleDelete],
+  )
+
   const openReleases = useCallback((app: SubAppSummary): void => {
     setReleasesFor(app)
     setReleases(null)
@@ -240,6 +306,22 @@ export function SubAppsView(): React.ReactElement {
     [releasesFor, withBusy],
   )
 
+  const handleDeleteRelease = useCallback(
+    (release: SubAppReleaseSummary): Promise<void> => {
+      if (releasesFor == null || release.isPublished) return Promise.resolve()
+      const app = releasesFor
+      return withBusy(app.id, async () => {
+        await subAppClient.deleteRelease({
+          appId: app.id,
+          releaseVersion: release.version,
+        })
+        setReleases((current) => current?.filter((item) => item.id !== release.id) ?? null)
+        antdMessage.success(`已删除 ${app.name} v${release.version}`)
+      })
+    },
+    [releasesFor, withBusy],
+  )
+
   return (
     <div className="sub-apps-view" data-testid="sub-apps-view">
       <header className="sa-header">
@@ -268,11 +350,14 @@ export function SubAppsView(): React.ReactElement {
           </Tooltip>
           <Tooltip title="刷新">
             <Button
+              type="text"
               icon={<Icons.Refresh size={15} />}
               aria-label="刷新"
               loading={loading}
               onClick={() => void reload()}
-            />
+            >
+              刷新
+            </Button>
           </Tooltip>
           <Button
             type="primary"
@@ -323,11 +408,77 @@ export function SubAppsView(): React.ReactElement {
             {apps.map((app) => {
               const badge = statusBadgeOf(app)
               const busy = busyAppId === app.id
+
+              // 低频操作收进「更多操作」菜单，卡片平铺区只保留 打开/发布/版本 三个常用入口。
+              const moreMenu = {
+                items: [
+                  {
+                    key: 'preview',
+                    label: (
+                      <span className="sa-card-menu-item">
+                        <Icons.Eye size={14} /> 草稿预览
+                      </span>
+                    ),
+                    onClick: () => openApp(app, 'draft'),
+                  },
+                  {
+                    key: 'icon',
+                    label: (
+                      <span className="sa-card-menu-item">
+                        <Icons.Image size={14} /> 修改图标
+                      </span>
+                    ),
+                    onClick: () => setIconEditorFor(app),
+                  },
+                  ...(app.surface === 'overlay' || app.surface === 'panel'
+                    ? [
+                        {
+                          key: 'surface',
+                          label: (
+                            <span className="sa-card-menu-item">
+                              <Icons.Box size={14} />{' '}
+                              {app.surface === 'overlay' ? '以浮层运行' : '以侧栏运行'}
+                            </span>
+                          ),
+                          onClick: () => void openSurface(app),
+                        },
+                      ]
+                    : []),
+                  { type: 'divider' as const },
+                  ...(app.publicationStatus === 'archived'
+                    ? []
+                    : [
+                        {
+                          key: 'archive',
+                          label: (
+                            <span className="sa-card-menu-item">
+                              <Icons.Archive size={14} /> 归档
+                            </span>
+                          ),
+                          onClick: () => confirmArchive(app),
+                        },
+                      ]),
+                  {
+                    key: 'delete',
+                    label: (
+                      <span className="sa-card-menu-item">
+                        <Icons.Trash size={14} /> 删除
+                      </span>
+                    ),
+                    danger: true,
+                    onClick: () => confirmDelete(app),
+                  },
+                ],
+              }
               return (
-                <div key={app.id} className="sa-card" data-testid="sub-app-card">
+                <div
+                  key={app.id}
+                  className={`sa-card sa-card-${app.surface}`}
+                  data-testid="sub-app-card"
+                >
                   <div className="sa-card-top">
                     <span className="sa-card-icon" aria-hidden>
-                      {app.icon ?? app.name.slice(0, 1)}
+                      <SubAppIcon icon={app.icon} size={20} />
                     </span>
                     <div className="sa-card-title-block">
                       <span className="sa-card-name" title={app.name}>
@@ -360,67 +511,41 @@ export function SubAppsView(): React.ReactElement {
                   </div>
 
                   <div className="sa-card-actions">
-                    <Button
-                      size="small"
-                      type="primary"
-                      disabled={busy}
-                      onClick={() => openApp(app)}
-                    >
-                      打开
-                    </Button>
-                    {app.surface === 'overlay' || app.surface === 'panel' ? (
-                      <Tooltip
-                        title={
-                          app.surface === 'overlay'
-                            ? '在主窗口右下角以浮层运行'
-                            : '在主内容区右侧以侧栏运行'
-                        }
-                      >
-                        <Button size="small" disabled={busy} onClick={() => void openSurface(app)}>
-                          {app.surface === 'overlay' ? '浮层' : '侧栏'}
-                        </Button>
-                      </Tooltip>
-                    ) : null}
-                    <Popconfirm
-                      title="发布当前草稿？"
-                      description={`将以草稿 revision ${app.draftRevision} 生成新版本，发布后不可修改。`}
-                      okText="发布"
-                      cancelText="取消"
-                      onConfirm={() => void handlePublish(app)}
-                    >
-                      <Button size="small" disabled={busy || app.publicationStatus === 'archived'}>
-                        发布
+                    <div className="sa-card-action-main">
+                      <Button size="small" type="text" disabled={busy} onClick={() => openApp(app)}>
+                        打开
                       </Button>
-                    </Popconfirm>
-                    <Button size="small" disabled={busy} onClick={() => openReleases(app)}>
-                      版本
-                    </Button>
-                    <span className="sa-card-actions-spacer" />
-                    {app.publicationStatus === 'archived' ? null : (
                       <Popconfirm
-                        title="归档此应用？"
-                        description="归档后从列表主视图隐藏，可在此页开启「归档」筛选后查看。"
-                        okText="归档"
+                        title="发布当前草稿？"
+                        description={`将以草稿 revision ${app.draftRevision} 生成新版本，发布后不可修改。`}
+                        okText="发布"
                         cancelText="取消"
-                        onConfirm={() => void handleArchive(app)}
+                        onConfirm={() => void handlePublish(app)}
                       >
-                        <Button size="small" disabled={busy}>
-                          归档
+                        <Button
+                          size="small"
+                          type="text"
+                          disabled={busy || app.publicationStatus === 'archived'}
+                        >
+                          发布
                         </Button>
                       </Popconfirm>
-                    )}
-                    <Popconfirm
-                      title="删除此应用？"
-                      description="将永久删除源码、全部版本与应用数据，不可恢复。"
-                      okText="删除"
-                      okButtonProps={{ danger: true }}
-                      cancelText="取消"
-                      onConfirm={() => void handleDelete(app)}
-                    >
-                      <Button size="small" danger disabled={busy}>
-                        删除
+                      <Button
+                        size="small"
+                        type="text"
+                        disabled={busy}
+                        onClick={() => openReleases(app)}
+                      >
+                        版本
                       </Button>
-                    </Popconfirm>
+                    </div>
+                    <div className="sa-card-action-secondary">
+                      <Dropdown menu={moreMenu} trigger={['click']} placement="bottomRight">
+                        <Button size="small" type="text" disabled={busy} title="更多操作">
+                          <Icons.More size={16} />
+                        </Button>
+                      </Dropdown>
+                    </div>
                   </div>
                 </div>
               )
@@ -450,13 +575,37 @@ export function SubAppsView(): React.ReactElement {
                   <span className="sa-release-version">v{rel.version}</span>
                   <span className="sa-release-time">{formatTime(rel.publishedAt)}</span>
                 </div>
-                <Button
-                  size="small"
-                  onClick={() => void handleRollback(rel.version)}
-                  loading={busyAppId === releasesFor?.id}
-                >
-                  回滚草稿到此版本
-                </Button>
+                <div className="sa-release-actions">
+                  <Button
+                    size="small"
+                    type="text"
+                    onClick={() => void handleRollback(rel.version)}
+                    loading={busyAppId === releasesFor?.id}
+                  >
+                    回滚
+                  </Button>
+                  {rel.isPublished ? (
+                    <span className="sa-release-current">当前生效</span>
+                  ) : (
+                    <Popconfirm
+                      title={`删除 v${rel.version}？`}
+                      description="删除后不能恢复，但不会影响当前生效版本。"
+                      okText="删除"
+                      okButtonProps={{ danger: true }}
+                      cancelText="取消"
+                      onConfirm={() => void handleDeleteRelease(rel)}
+                    >
+                      <Button
+                        size="small"
+                        type="text"
+                        danger
+                        disabled={busyAppId === releasesFor?.id}
+                      >
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -482,6 +631,39 @@ export function SubAppsView(): React.ReactElement {
             </li>
             <li>创建后在本页面管理：打开、发布、回滚、禁用、归档</li>
           </ul>
+        </div>
+      </Modal>
+
+      <Modal
+        title={iconEditorFor == null ? '设置应用图标' : `设置「${iconEditorFor.name}」图标`}
+        open={iconEditorFor != null}
+        onCancel={() => setIconEditorFor(null)}
+        footer={null}
+        width={440}
+      >
+        <div className="sa-icon-editor">
+          <p>选择内置图标或 Emoji。未知的旧文本图标会自动显示为默认应用图标。</p>
+          <div className="sa-icon-picker" role="listbox" aria-label="应用图标">
+            {SUB_APP_ICON_OPTIONS.map((option) => {
+              const selected = (iconEditorFor?.icon ?? null) === option.value
+              return (
+                <button
+                  key={option.value ?? 'default'}
+                  type="button"
+                  className={`sa-icon-option${selected ? ' is-selected' : ''}`}
+                  disabled={iconSaving}
+                  aria-label={option.label}
+                  aria-selected={selected}
+                  onClick={() => void handleIconChange(option.value)}
+                >
+                  <span className="sa-icon-option-glyph" aria-hidden>
+                    <SubAppIcon icon={option.value} size={22} />
+                  </span>
+                  <span>{option.label}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       </Modal>
     </div>

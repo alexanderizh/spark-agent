@@ -3698,6 +3698,7 @@ export type TerminalStreamEvent =
 export type CommandLayer = 'sdk' | 'builtin' | 'skill' | 'custom'
 
 export type CommandGroup =
+  | 'app'
   | 'session'
   | 'model'
   | 'context'
@@ -6460,6 +6461,10 @@ export interface IpcStreamChannelMap {
   }
   /** 历史导入进度（主进程推送，渲染进程更新进度条）*/
   'stream:history-import:progress': HistoryImportProgress
+  /** 子应用目录变化（主进程推送；渲染进程侧栏菜单/胶囊启动器据此刷新）。
+   * 任何入口（管理页 UI、Agent MCP 工具、IPC）造成的创建/发布/启停/归档/
+   * 删除/草稿更新都会触发，保证会话内创建的应用即时出现在菜单与胶囊。 */
+  'stream:subapp:directory-changed': Record<string, never>
   /** Global runtime configuration changed; renderer should refresh cached pickers/lists. */
   'stream:config:changed': {
     scope:

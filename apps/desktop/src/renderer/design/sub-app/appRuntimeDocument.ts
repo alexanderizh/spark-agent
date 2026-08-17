@@ -101,6 +101,7 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
     if (!data || typeof data !== 'object' || data.instanceId !== cfg.instanceId) return
     if (data.type === 'host/theme') {
       latestTheme = data.theme
+      applyTheme(data.theme)
       for (var i = 0; i < themeListeners.length; i++) {
         try { themeListeners[i](data.theme) } catch (e) { /* 应用监听器异常不影响宿主 */ }
       }
@@ -122,6 +123,36 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
       }
     }
   })
+
+  // 主题不要求应用先写一套框架适配代码：宿主 token 同步映射到只读的
+  // --spark-* CSS 变量，应用只要使用这些变量即可自动跟随 SparkWork。
+  function toCssVariable(name) {
+    return '--spark-' + name.replace(/[A-Z]/g, function (letter) {
+      return '-' + letter.toLowerCase()
+    })
+  }
+
+  function applyTheme(theme) {
+    if (!theme || typeof theme !== 'object') return
+    var root = document.documentElement
+    if (theme.theme === 'light' || theme.theme === 'dark') {
+      root.setAttribute('data-spark-theme', theme.theme)
+      root.style.colorScheme = theme.theme
+    }
+    if (theme.tokens && typeof theme.tokens === 'object') {
+      Object.keys(theme.tokens).forEach(function (name) {
+        var value = theme.tokens[name]
+        if (typeof value === 'string') root.style.setProperty(toCssVariable(name), value)
+      })
+    }
+    if (typeof theme.primaryColor === 'string') {
+      root.style.setProperty('--spark-primary-color', theme.primaryColor)
+    }
+    if (typeof theme.fontSize === 'number' && isFinite(theme.fontSize)) {
+      root.style.setProperty('--spark-font-size', theme.fontSize + 'px')
+    }
+    root.style.setProperty('--spark-reduced-motion', theme.reducedMotion ? '1' : '0')
+  }
 
   function call(capability, operation, payload) {
     return new Promise(function (resolve, reject) {
@@ -179,8 +210,12 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
         if (expectedRevision !== undefined) payload.expectedRevision = expectedRevision
         return call('data', 'upsert', payload)
       },
-      delete: function (namespace, key) {
-        return call('data', 'delete', { namespace: namespace, key: key })
+      delete: function (namespace, key, expectedRevision) {
+        return call('data', 'delete', {
+          namespace: namespace,
+          key: key,
+          expectedRevision: expectedRevision,
+        })
       },
     },
     ui: {
@@ -193,6 +228,45 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
     navigation: {
       openApp: function (appId) { return call('navigation', 'openApp', { appId: appId }) },
       openView: function (view) { return call('navigation', 'openView', { view: view }) },
+    },
+    files: {
+      read: function (path) { return call('files', 'read', { path: path }) },
+      write: function (path, content) {
+        return call('files', 'write', { path: path, content: content })
+      },
+      list: function (prefix) {
+        var payload = {}
+        if (prefix !== undefined) payload.prefix = prefix
+        return call('files', 'list', payload)
+      },
+      delete: function (path) { return call('files', 'delete', { path: path }) },
+    },
+    agent: {
+      send: function (prompt, options) {
+        var payload = { prompt: prompt }
+        if (options && options.newSession) payload.newSession = true
+        return call('agent', 'send', payload)
+      },
+    },
+    media: {
+      generate: function (options) {
+        var payload = { operation: options.operation, prompt: options.prompt }
+        if (options.negativePrompt !== undefined) payload.negativePrompt = options.negativePrompt
+        if (options.modelId !== undefined) payload.modelId = options.modelId
+        return call('media', 'generate', payload)
+      },
+      get: function (taskId) { return call('media', 'get', { taskId: taskId }) },
+    },
+    canvas: {
+      listProjects: function () { return call('canvas', 'listProjects', {}) },
+      appendText: function (projectId, text, options) {
+        var payload = { projectId: projectId, text: text }
+        if (options && options.boardId !== undefined) payload.boardId = options.boardId
+        return call('canvas', 'appendText', payload)
+      },
+    },
+    browser: {
+      openUrl: function (url) { return call('browser', 'openUrl', { url: url }) },
     },
   }
 

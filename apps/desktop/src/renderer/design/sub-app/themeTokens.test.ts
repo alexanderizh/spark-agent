@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildThemeState } from './themeTokens'
 import { THEME_PALETTE } from '../theme/LobeThemeProvider'
+
+// @lobehub/ui 内部经 @emoji-mart/data 引入 JSON（无 import attribute），
+// Node ESM 下直接解析失败；本测试只用 THEME_PALETTE 常量，mock 断开依赖链。
+vi.mock('@lobehub/ui', () => ({ ThemeProvider: () => null }))
 
 describe('buildThemeState', () => {
   it('深色主题映射到深色色板并携带主色', () => {

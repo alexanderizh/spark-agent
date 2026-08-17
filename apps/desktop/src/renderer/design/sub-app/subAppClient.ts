@@ -13,6 +13,8 @@ import type {
   SubAppDataUpsertResponse,
   SubAppDeleteRequest,
   SubAppDeleteResponse,
+  SubAppDeleteReleaseRequest,
+  SubAppDeleteReleaseResponse,
   SubAppDetails,
   SubAppGetRequest,
   SubAppGetResponse,
@@ -67,6 +69,9 @@ export const subAppClient = {
 
   listReleases: (request: SubAppListReleasesRequest): Promise<SubAppListReleasesResponse> =>
     window.spark.invoke('sub-app:releases:list', request),
+
+  deleteRelease: (request: SubAppDeleteReleaseRequest): Promise<SubAppDeleteReleaseResponse> =>
+    window.spark.invoke('sub-app:releases:delete', request),
 
   delete: (request: SubAppDeleteRequest): Promise<SubAppDeleteResponse> =>
     window.spark.invoke('sub-app:delete', request),
