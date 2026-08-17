@@ -27,14 +27,15 @@ import './SubAppsView.less'
 type StatusBadge = { text: string; color: string }
 
 function statusBadgeOf(app: SubAppSummary): StatusBadge {
+  // 归档操作会同时置 enabled=0——archived 必须最先判断，
+  // 否则归档应用错显「已禁用」，用户找不到入口。
+  if (app.publicationStatus === 'archived') return { text: '已归档', color: 'warning' }
   if (!app.enabled) return { text: '已禁用', color: 'default' }
   switch (app.publicationStatus) {
     case 'published':
       return { text: `已发布 v${app.publishedVersion ?? '?'}`, color: 'success' }
     case 'draft':
       return { text: '草稿', color: 'processing' }
-    case 'archived':
-      return { text: '已归档', color: 'warning' }
     default:
       return { text: app.publicationStatus, color: 'default' }
   }
@@ -255,6 +256,7 @@ export function SubAppsView(): React.ReactElement {
           <Tooltip title="刷新">
             <Button
               icon={<Icons.Refresh size={15} />}
+              aria-label="刷新"
               loading={loading}
               onClick={() => void reload()}
             />

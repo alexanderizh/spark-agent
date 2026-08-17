@@ -113,7 +113,11 @@ export function SubAppRunView(): React.ReactElement {
       <header className="sar-header">
         <div className="sar-header-left">
           <Tooltip title="返回应用列表">
-            <Button icon={<Icons.ArrowLeft size={16} />} onClick={backToList} />
+            <Button
+              icon={<Icons.ArrowLeft size={16} />}
+              aria-label="返回应用列表"
+              onClick={backToList}
+            />
           </Tooltip>
           {details != null ? (
             <>
@@ -166,7 +170,11 @@ export function SubAppRunView(): React.ReactElement {
                 </Button>
               </Popconfirm>
               <Tooltip title="重新加载应用">
-                <Button icon={<Icons.Refresh size={15} />} onClick={() => void reload()} />
+                <Button
+                  icon={<Icons.Refresh size={15} />}
+                  aria-label="重新加载应用"
+                  onClick={() => void reload()}
+                />
               </Tooltip>
             </>
           ) : null}
