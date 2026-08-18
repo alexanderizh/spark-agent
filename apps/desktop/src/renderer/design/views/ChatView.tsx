@@ -130,6 +130,7 @@ import {
   cancelOptimisticUserMessage,
   cancelOptimisticUserMessageByTurnId,
   clearOptimisticUserMessagesForSession,
+  commitCancelledOptimisticUserMessage,
   commitOptimisticUserMessage,
   createOptimisticUserMessage,
   failOptimisticUserMessage,
@@ -519,6 +520,9 @@ export function ChatView({
   const [sideChatScrollToBottomTrigger, setSideChatScrollToBottomTrigger] = useState(0)
   const persistedMessagesBySessionRef = useRef(new Map<string, UIMessage[]>())
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<OptimisticUserMessage[]>([])
+  // starting 窗口被终止的 turnId 集合：cancel 响应可能先于 submit-turn 的 settle 到达，
+  // 此时 onCommit 尚未给 optimistic 气泡绑上 turnId；用它兜底把迟到 commit 落到 cancelled 态。
+  const cancelledOptimisticTurnIdsRef = useRef(new Set<string>())
   const pruneOptimisticMessagesNextFrame = useCallback(
     (sessionId: string, messages: UIMessage[]) => {
       requestAnimationFrame(() => {
@@ -535,6 +539,14 @@ export function ChatView({
         setOptimisticUserMessages((current) => [...current, createOptimisticUserMessage(draft)])
       },
       onCommit: (clientId, turnId, started) => {
+        if (cancelledOptimisticTurnIdsRef.current.delete(turnId)) {
+          // 该 turn 已在 commit 到达前被用户终止：置为 cancelled 终态，
+          // 不能标成 accepted（否则永远等不到 user_message 承接而残留）。
+          setOptimisticUserMessages((current) =>
+            commitCancelledOptimisticUserMessage(current, clientId, turnId),
+          )
+          return
+        }
         setOptimisticUserMessages((current) =>
           commitOptimisticUserMessage(current, clientId, turnId, started),
         )
@@ -563,6 +575,11 @@ export function ChatView({
     },
     [],
   )
+  const handleDeleteOptimisticUserMessages = useCallback((clientIds: string[]) => {
+    if (clientIds.length === 0) return
+    const remove = new Set(clientIds)
+    setOptimisticUserMessages((current) => current.filter((item) => !remove.has(item.clientId)))
+  }, [])
   const handleOptimisticQueueTurnCancelled = useCallback((sessionId: string, turnId: string) => {
     setOptimisticUserMessages((current) =>
       cancelOptimisticUserMessageByTurnId(current, sessionId, turnId),
@@ -1568,6 +1585,7 @@ export function ChatView({
         const res = await cancelSessionTurn({ sessionId })
         if (res.cancelled && res.turnId != null) {
           const cancelledTurnId = res.turnId
+          cancelledOptimisticTurnIdsRef.current.add(cancelledTurnId)
           setOptimisticUserMessages((current) =>
             finalizeCancelledOptimisticUserMessage(current, sessionId, cancelledTurnId),
           )
@@ -2886,6 +2904,7 @@ export function ChatView({
                 key="chat-stream"
                 sessionId={active}
                 optimisticMessages={optimisticUserMessages}
+                onDeleteOptimisticMessages={handleDeleteOptimisticUserMessages}
                 workspaceId={activeSessionWorkspaceId}
                 workspaceRootPath={activeSessionWorkspace?.rootPath ?? null}
                 onStatusChange={setAgentStatus}
@@ -3198,6 +3217,7 @@ export function ChatView({
                         key={`side-chat-stream-${sideChatSessionId}`}
                         sessionId={sideChatSessionId}
                         optimisticMessages={optimisticUserMessages}
+                        onDeleteOptimisticMessages={handleDeleteOptimisticUserMessages}
                         workspaceId={sideChatWorkspace?.id ?? null}
                         workspaceRootPath={sideChatWorkspace?.rootPath ?? null}
                         onStatusChange={setSideChatAgentStatus}
@@ -3313,9 +3333,20 @@ export function ChatView({
   )
 }
 
+/** optimistic 用户气泡是否可单独删除：尚未落库（无 eventIds）且不在等待 SDK 承接的
+ *  accepted 态（accepted 很快会被持久化 user_message 替换，届时走正常事件删除路径）。 */
+function isDeletableOptimisticUserMessage(message: UIMessage): boolean {
+  return (
+    message.clientId != null &&
+    message.deliveryState != null &&
+    message.deliveryState !== 'accepted'
+  )
+}
+
 function ChatStream({
   sessionId,
   optimisticMessages,
+  onDeleteOptimisticMessages,
   workspaceId,
   workspaceRootPath,
   onStatusChange,
@@ -3350,6 +3381,8 @@ function ChatStream({
 }: {
   sessionId: SessionId
   optimisticMessages?: OptimisticUserMessage[]
+  /** 删除尚未落库的 optimistic 用户气泡（starting 窗口被取消/发送失败等）：按 clientId 摘除本地 state。 */
+  onDeleteOptimisticMessages?: (clientIds: string[]) => void
   /** 当前会话工作区 ID。 */
   workspaceId: string | null
   /** 当前会话工作区根目录，用于路径展示与旧汇总中的嵌套 worktree 清理。 */
@@ -4405,43 +4438,66 @@ function ChatStream({
   }, [selectedMessages, agents, assistantAgentId, assistantName, assistantAvatarSrc])
 
   const deleteSelectedMessages = useCallback(() => {
+    const selected = new Set(selectedMessages.map((msg) => msg.id))
+    // optimistic 气泡（尚未落库，无 eventIds）：只能从本地 state 摘除，没有持久化事件可删。
+    const optimisticClientIds = selectedMessages
+      .filter((msg) => msg.eventIds.length === 0 && isDeletableOptimisticUserMessage(msg))
+      .map((msg) => msg.clientId as string)
     const eventIds = selectedMessages.flatMap((msg) => msg.eventIds)
-    if (eventIds.length === 0) return
+    if (eventIds.length === 0 && optimisticClientIds.length === 0) return
+    const finishLocalState = () => {
+      if (optimisticClientIds.length > 0) onDeleteOptimisticMessages?.(optimisticClientIds)
+      const nextMessages = builderRef.current
+        .getAllMessages()
+        .filter((msg) => !selected.has(msg.id))
+      setMessages(nextMessages)
+      onMessagesChange(nextMessages)
+      exitMultiSelectMode()
+    }
+    if (eventIds.length === 0) {
+      finishLocalState()
+      return
+    }
     deleteMessageEvents({ sessionId, eventIds })
       .then(() => {
-        const selected = new Set(selectedMessages.map((msg) => msg.id))
         const removed = new Set(eventIds)
         for (const msg of selectedMessages) builderRef.current.removeMessage(msg.id)
         loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
         for (const eventId of removed) loadedEventIdsRef.current.delete(eventId)
-        const nextMessages = builderRef.current
-          .getAllMessages()
-          .filter((msg) => !selected.has(msg.id))
-        setMessages(nextMessages)
-        onMessagesChange(nextMessages)
-        exitMultiSelectMode()
+        finishLocalState()
       })
       .catch(console.error)
-  }, [deleteMessageEvents, exitMultiSelectMode, onMessagesChange, selectedMessages, sessionId])
+  }, [
+    deleteMessageEvents,
+    exitMultiSelectMode,
+    onDeleteOptimisticMessages,
+    onMessagesChange,
+    selectedMessages,
+    sessionId,
+  ])
 
   const handleDeleteMessage = useCallback(
-    (msgId: string, eventIds: string[]) => {
+    (msgId: string, eventIds: string[], clientId?: string) => {
+      // 纯 optimistic 气泡（如 starting 窗口被终止的 turn）：user_message 从未落库，
+      // 直接摘除本地 state 即可，不要走事件删除 IPC（空 eventIds 会被静默忽略）。
+      if (eventIds.length === 0) {
+        if (clientId != null) onDeleteOptimisticMessages?.([clientId])
+        return
+      }
       deleteMessageEvents({ sessionId, eventIds })
         .then(() => {
           builderRef.current.removeMessage(msgId)
           // 同步从窗口事件源剔除被删除的 event，避免向上翻页时被重建回来
-          if (eventIds.length > 0) {
-            const removed = new Set(eventIds)
-            loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
-            for (const eventId of removed) loadedEventIdsRef.current.delete(eventId)
-          }
+          const removed = new Set(eventIds)
+          loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
+          for (const eventId of removed) loadedEventIdsRef.current.delete(eventId)
           const nextMessages = builderRef.current.getAllMessages()
           setMessages(nextMessages)
           onMessagesChange(nextMessages)
         })
         .catch(console.error)
     },
-    [deleteMessageEvents, sessionId, onMessagesChange],
+    [deleteMessageEvents, sessionId, onMessagesChange, onDeleteOptimisticMessages],
   )
 
   // 团队模式：只删这条成员消息气泡对应的 event（保留 host message 与其他成员）。
@@ -4656,8 +4712,8 @@ function ChatStream({
                       : {})}
                     {...(msg.deliveryState != null ? { deliveryState: msg.deliveryState } : {})}
                     {...(msg.deliveryError != null ? { deliveryError: msg.deliveryError } : {})}
-                    {...(msg.eventIds.length > 0
-                      ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
+                    {...(msg.eventIds.length > 0 || isDeletableOptimisticUserMessage(msg)
+                      ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds, msg.clientId) }
                       : {})}
                     selectionMode={multiSelectMode}
                     selected={selectedMessageIds.has(msg.id)}

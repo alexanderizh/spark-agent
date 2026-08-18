@@ -4,6 +4,7 @@ import {
   cancelOptimisticUserMessage,
   cancelOptimisticUserMessageByTurnId,
   clearOptimisticUserMessagesForSession,
+  commitCancelledOptimisticUserMessage,
   commitOptimisticUserMessage,
   createOptimisticUserMessage,
   failOptimisticUserMessage,
@@ -449,5 +450,130 @@ describe('optimistic user messages', () => {
 
     expect(onCommit).not.toHaveBeenCalled()
     expect(onCancel).toHaveBeenCalledWith('client-image')
+  })
+
+  it('anchors an unacknowledged cancelled bubble before later persisted messages', () => {
+    // starting 窗口被终止：user_message 从未落库，cancelled 气泡没有 persisted 承接。
+    // 它必须按发送时间插回原位，而不是垫在所有后续消息之后。
+    const cancelled = finalizeCancelledOptimisticUserMessage(
+      commitOptimisticUserMessage(
+        [
+          createOptimisticUserMessage({
+            clientId: 'client-cancelled',
+            sessionId: 'session-1',
+            content: '555',
+            createdAt: '2026-08-18T10:00:00.000Z',
+            attachments: [],
+          }),
+        ],
+        'client-cancelled',
+        'turn-cancelled',
+      ),
+      'session-1',
+      'turn-cancelled',
+    )
+    const laterTurn: UIMessage = {
+      id: 'event-later',
+      turnId: 'turn-later',
+      role: 'user',
+      status: 'completed',
+      blocks: [{ kind: 'text', content: '后续消息', isStreaming: false }],
+      usage: null,
+      timestamp: '2026-08-18T10:00:05.000Z',
+      eventIds: ['event-later'],
+    }
+
+    const merged = mergeOptimisticUserMessages([laterTurn], cancelled, 'session-1')
+
+    expect(merged.map((message) => message.id)).toEqual([
+      'optimistic-client-cancelled',
+      'event-later',
+    ])
+  })
+
+  it('appends a cancelled bubble at the end when it is newer than all persisted messages', () => {
+    const cancelled = finalizeCancelledOptimisticUserMessage(
+      commitOptimisticUserMessage(
+        [
+          createOptimisticUserMessage({
+            clientId: 'client-cancelled',
+            sessionId: 'session-1',
+            content: '刚发就被终止',
+            createdAt: '2026-08-18T10:00:06.000Z',
+            attachments: [],
+          }),
+        ],
+        'client-cancelled',
+        'turn-cancelled',
+      ),
+      'session-1',
+      'turn-cancelled',
+    )
+    const earlierTurn: UIMessage = {
+      id: 'event-earlier',
+      turnId: 'turn-earlier',
+      role: 'user',
+      status: 'completed',
+      blocks: [{ kind: 'text', content: '更早的消息', isStreaming: false }],
+      usage: null,
+      timestamp: '2026-08-18T10:00:01.000Z',
+      eventIds: ['event-earlier'],
+    }
+
+    const merged = mergeOptimisticUserMessages([earlierTurn], cancelled, 'session-1')
+
+    expect(merged.map((message) => message.id)).toEqual([
+      'event-earlier',
+      'optimistic-client-cancelled',
+    ])
+  })
+
+  it('still appends submitting bubbles at the end (no timestamp anchoring)', () => {
+    const submitting = [
+      createOptimisticUserMessage({
+        clientId: 'client-submitting',
+        sessionId: 'session-1',
+        content: '正在发送',
+        createdAt: '2026-08-18T10:00:00.000Z',
+        attachments: [],
+      }),
+    ]
+    const laterTurn: UIMessage = {
+      id: 'event-later',
+      turnId: 'turn-later',
+      role: 'user',
+      status: 'completed',
+      blocks: [{ kind: 'text', content: '后续消息', isStreaming: false }],
+      usage: null,
+      timestamp: '2026-08-18T10:00:05.000Z',
+      eventIds: ['event-later'],
+    }
+
+    const merged = mergeOptimisticUserMessages([laterTurn], submitting, 'session-1')
+
+    expect(merged.map((message) => message.id)).toEqual([
+      'event-later',
+      'optimistic-client-submitting',
+    ])
+  })
+
+  it('settles a late commit onto the cancelled terminal state when cancel raced ahead', () => {
+    // cancel 响应先到、submit-turn 的 settle 后到：迟到的 commit 不能把气泡标成 accepted。
+    const optimistic = [
+      createOptimisticUserMessage({
+        clientId: 'client-raced',
+        sessionId: 'session-1',
+        content: '竞态场景',
+        createdAt: '2026-08-18T10:00:00.000Z',
+        attachments: [],
+      }),
+    ]
+
+    const settled = commitCancelledOptimisticUserMessage(optimistic, 'client-raced', 'turn-raced')
+
+    expect(settled).toHaveLength(1)
+    expect(settled[0]?.turnId).toBe('turn-raced')
+    expect(settled[0]?.message.turnId).toBe('turn-raced')
+    expect(settled[0]?.message.deliveryState).toBe('cancelled')
   })
 })

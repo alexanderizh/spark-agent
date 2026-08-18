@@ -196,6 +196,29 @@ export function commitOptimisticUserMessage(
   })
 }
 
+/** commit/cancel 竞态兜底：turn 已被取消、但 submit-turn 的 settle 晚于取消响应到达时，
+ *  直接把气泡落到 cancelled 终态并补上 turnId——与「先 commit 后 cancel」的显示一致，
+ *  也保证 merge 时能按时间锚定插回原位（不会被误标成 accepted 而永久残留）。 */
+export function commitCancelledOptimisticUserMessage(
+  messages: OptimisticUserMessage[],
+  clientId: string,
+  turnId: string,
+): OptimisticUserMessage[] {
+  return messages.map((item) => {
+    if (item.clientId !== clientId) return item
+    const { hiddenUntilStarted: _hiddenUntilStarted, ...visibleItem } = item
+    return {
+      ...visibleItem,
+      turnId,
+      message: {
+        ...item.message,
+        turnId,
+        deliveryState: 'cancelled',
+      },
+    }
+  })
+}
+
 export function failOptimisticUserMessage(
   messages: OptimisticUserMessage[],
   clientId: string,
@@ -338,11 +361,32 @@ export function mergeOptimisticUserMessages(
     merged.push(message)
   }
   for (const item of pending) {
-    if (item.turnId == null || !insertedTurnIds.has(item.turnId)) {
+    if (item.turnId != null && insertedTurnIds.has(item.turnId)) continue
+    if (item.message.deliveryState === 'cancelled') {
+      // starting 窗口被终止的 turn 永远等不到 user_message 事件回流；这条气泡
+      // 若追加到末尾，会排在后续真实消息之后（顺序错乱）。按发送时间插回原位。
+      insertAtTimestampAnchor(merged, item.message, item.createdAt)
+    } else {
       merged.push(item.message)
     }
   }
   return merged
+}
+
+/** 把消息插入到第一条 timestamp 晚于 anchorTime 的持久化消息之前；都更早（或无时间戳可比较）则追加末尾。 */
+function insertAtTimestampAnchor(
+  merged: UIMessage[],
+  message: UIMessage,
+  anchorTime: string,
+): void {
+  const anchorIndex = merged.findIndex(
+    (candidate) => candidate.timestamp != null && candidate.timestamp > anchorTime,
+  )
+  if (anchorIndex === -1) {
+    merged.push(message)
+    return
+  }
+  merged.splice(anchorIndex, 0, message)
 }
 
 export function pruneAcknowledgedOptimisticUserMessages(
