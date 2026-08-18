@@ -113,6 +113,8 @@ import {
   normalizeToolName,
   type ToolLogIconKey,
 } from './chat/tool-log-metadata'
+import { getRichImageDisplay, getRichSourceLinks } from './chat/rich-output-parsing'
+import { ToolLogImageThumb, ToolLogSourceList } from './chat/ToolLogRichOutput'
 import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 import { projectVisibleChatMessages } from './chat/internal-turn-message-visibility'
 import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
@@ -5461,6 +5463,7 @@ function renderActivityBlocks(
         blocks={batch}
         surface={surface}
         autoCollapseReady={options.autoCollapseTools !== false}
+        {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
       />,
     )
     batch = []
@@ -8157,10 +8160,12 @@ function ToolLogGroup({
   blocks,
   surface,
   autoCollapseReady = true,
+  onFilePreview,
 }: {
   blocks: Array<Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>>
   surface: 'main' | 'inspector'
   autoCollapseReady?: boolean
+  onFilePreview?: FileOpenHandler
 }) {
   const running = blocks.some((block) => {
     if (block.kind === 'terminal') return block.isStreaming
@@ -8209,7 +8214,12 @@ function ToolLogGroup({
       {open && (
         <div className="tool-log-body">
           {blocks.map((block, index) => (
-            <ToolLogEntry key={`${block.kind}-${index}`} block={block} index={index} />
+            <ToolLogEntry
+              key={`${block.kind}-${index}`}
+              block={block}
+              index={index}
+              {...(onFilePreview != null ? { onFilePreview } : {})}
+            />
           ))}
         </div>
       )}
@@ -8233,9 +8243,11 @@ const TOOL_LOG_ENTRY_ICONS: Record<ToolLogIconKey, ReactNode> = {
 function ToolLogEntry({
   block,
   index,
+  onFilePreview,
 }: {
   block: Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>
   index: number
+  onFilePreview?: FileOpenHandler
 }) {
   if (block.kind === 'terminal') {
     return (
@@ -8273,6 +8285,9 @@ function ToolLogEntry({
   const actionLabel = getToolActionLabel(block.toolName, block.toolInput)
   // exactOptionalPropertyTypes 下可选 prop 不显式传 undefined，有值时才展开
   const nativeTitle = actionLabel === block.toolName ? undefined : block.toolName
+  // 富输出：图片缩略图（插入卡片顶部）/ 搜索来源列表（替换输出文本）
+  const richImage = getRichImageDisplay(block.toolName, block.toolInput, output)
+  const richLinks = getRichSourceLinks(block.toolName, output)
 
   return (
     <div className={`tool-log-entry ${block.status === 'error' ? 'is-error' : ''}`}>
@@ -8283,12 +8298,22 @@ function ToolLogEntry({
         subtitle={block.durationMs != null ? formatDuration(block.durationMs) : `#${index + 1}`}
       />
       <div className="tool-log-card">
+        {richImage != null && (
+          <ToolLogImageThumb
+            key={richImage.src}
+            image={richImage}
+            {...(onFilePreview != null ? { onFilePreview } : {})}
+          />
+        )}
         {input && (
           <ToolLogSection label="输入" content={input} kind={isCommand ? 'terminal' : 'auto'} />
         )}
-        {output && (
-          <ToolLogSection label="输出" content={output} kind={isCommand ? 'terminal' : 'auto'} />
-        )}
+        {output &&
+          (richLinks != null ? (
+            <ToolLogSourceList links={richLinks} />
+          ) : (
+            <ToolLogSection label="输出" content={output} kind={isCommand ? 'terminal' : 'auto'} />
+          ))}
         {error && (
           <ToolLogSection
             label="错误"

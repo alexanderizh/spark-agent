@@ -39,8 +39,10 @@ const SAFE_FILE_SCHEME = 'safe-file'
  *   - file:// URL 提取出路径，转 safe-file://
  *   - 绝对路径：base64url 编码后转 safe-file://
  *   - 相对路径：原样返回（加载会失败，由错误占位兜底）
+ *
+ * 导出供行为日志缩略图（ToolLogRichOutput）等渲染侧复用同一转换策略。
  */
-function resolveImageSrc(src: string): string {
+export function resolveImageSrc(src: string): string {
   if (!src) return src
 
   const trimmed = src.trim()
@@ -230,12 +232,7 @@ export function MarkdownImage({ src, alt }: Props): ReactNode {
             >
               <Icons.Maximize size={11} />
             </button>
-            <button
-              type="button"
-              className="md-image-tool"
-              title="复制图片"
-              onClick={handleCopy}
-            >
+            <button type="button" className="md-image-tool" title="复制图片" onClick={handleCopy}>
               {copied ? <Icons.Check size={11} /> : <Icons.Copy size={11} />}
             </button>
             <button

@@ -43,7 +43,18 @@ export function normalizeToolName(name: string): string {
     .toLowerCase()
 }
 
-const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif']
+/** 图片扩展名（带点、小写）：rich-output-parsing 等渲染侧复用，保持单一数据源 */
+export const IMAGE_EXTENSIONS = [
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.svg',
+  '.bmp',
+  '.ico',
+  '.avif',
+]
 
 /** Read 类工具读取图片文件判定（图片查看单独成组/展示动作名） */
 export function isImageReadToolCall(
@@ -71,6 +82,30 @@ function isWebTool(normalized: string): boolean {
   // server 名含下划线（mcp__spark_search__*）不会被 normalizeToolName 去前缀，需 endsWith 兜底
   return (
     WEB_TOOL_NAMES.has(normalized) || [...WEB_TOOL_NAMES].some((n) => normalized.endsWith(`__${n}`))
+  )
+}
+
+/**
+ * 联网搜索类工具（区别于抓取类 web 工具）：输出为搜索结果列表，
+ * 可富展示来源链接（见 rich-output-parsing.getRichSourceLinks）。
+ */
+export function isWebSearchToolCall(name: string): boolean {
+  const normalized = normalizeToolName(name)
+  return (
+    normalized === 'web_search' ||
+    normalized === 'websearch' ||
+    normalized.endsWith('__web_search') ||
+    normalized.endsWith('__websearch')
+  )
+}
+
+/** 截图类工具判定（playwright browser_screenshot、spark_browser 截图等），输出含图片数据/路径 */
+export function isScreenshotToolCall(name: string): boolean {
+  const normalized = normalizeToolName(name)
+  return (
+    normalized === 'browser_screenshot' ||
+    normalized === 'screenshot' ||
+    normalized.endsWith('__screenshot')
   )
 }
 
