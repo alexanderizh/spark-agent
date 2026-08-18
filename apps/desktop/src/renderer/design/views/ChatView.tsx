@@ -256,6 +256,8 @@ import {
 } from '../ChatInteractions'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
 import { ClickableFilePath, type PreviewFileType } from '../components/ClickableFilePath'
+import { TurnElapsedTicker } from '../components/TurnElapsedTicker'
+import { formatTurnDuration } from '../utils/turn-duration'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
 import { FileTypeIcon, getFileTypeBadge, getPreviewFileType } from '../components/FileDisplay'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
@@ -7835,6 +7837,8 @@ const AgentMsg = React.memo(function AgentMsg({
         {isStreaming && (
           <div className="agent-task-running-tag">
             <span>执行任务中</span>
+            {/* 运行中实时耗时：与结束后折叠条的「耗时 Xs」同源同格式；isStreaming 翻 false 后本标签整体卸载 */}
+            {timestamp != null && <TurnElapsedTicker startedAt={timestamp} />}
             <span className="agent-task-running-dots">
               <span />
               <span />
@@ -8423,22 +8427,6 @@ function formatDuration(ms: number): string {
   const min = Math.floor(ms / 60_000)
   const sec = Math.round((ms % 60_000) / 1000)
   return `${min}m ${sec}s`
-}
-
-/**
- * 整轮耗时展示：整秒粒度（轮次耗时小数无意义），<1s 记为 1s 避免「耗时 0s」噪音；
- * ≥1m 显示「1m 12s」，≥1h 显示「1h 2m」。工具级耗时仍用 formatDuration（毫秒级）。
- */
-function formatTurnDuration(ms: number): string {
-  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`
-  if (ms < 3_600_000) {
-    const min = Math.floor(ms / 60_000)
-    const sec = Math.round((ms % 60_000) / 1000)
-    return sec >= 60 ? `${min + 1}m` : sec > 0 ? `${min}m ${sec}s` : `${min}m`
-  }
-  const hour = Math.floor(ms / 3_600_000)
-  const min = Math.round((ms % 3_600_000) / 60_000)
-  return min >= 60 ? `${hour + 1}h` : min > 0 ? `${hour}h ${min}m` : `${hour}h`
 }
 
 /** Extract a file path from one `diff --git` segment, preferring the new-file header. */
