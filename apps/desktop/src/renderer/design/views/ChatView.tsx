@@ -1721,8 +1721,8 @@ export function ChatView({
       !activeSessionLoading &&
       activeSession?.status !== 'running' &&
       !composerDispatching)
-  // 空会话用量感知：12 周内活跃超过 HERO_USAGE_MIN_ACTIVE_DAYS 天（不要求连续）的
-  // 老用户用使用足迹热力图替换快捷卡片，二者互斥；其余情况渲染完整快捷卡片。
+  // 空会话用量感知：16 周内任意一天（含今天）有用量数据即用使用足迹
+  // 热力图替换快捷卡片，二者互斥；其余情况渲染完整快捷卡片。
   const heroUsage = useEmptyHeroUsage(showEmptyHero && !teamConfig.enabled)
   const gitWorkspace = resolveComposerGitWorkspace({
     showEmptyHero,

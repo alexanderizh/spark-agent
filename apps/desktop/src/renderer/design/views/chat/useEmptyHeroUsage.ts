@@ -1,9 +1,6 @@
 import { useMemo } from 'react'
 import { buildUsageHeatmapWeeks, summarizeUsageHeatmap } from '../usageHeatmap.utils'
-import type {
-  UsageHeatmapDailyGroup,
-  UsageHeatmapRange,
-} from '../usageHeatmap.utils'
+import type { UsageHeatmapDailyGroup, UsageHeatmapRange } from '../usageHeatmap.utils'
 import { useUsageHeatmapData } from '../useUsageHeatmapData'
 
 /** 空会话 hero 固定展示最近 16 周（12 周再多一个月），不提供档位切换。 */
@@ -12,14 +9,14 @@ export const HERO_USAGE_RANGE: UsageHeatmapRange = '16w'
 /** hero 文案使用的范围标签，须与 HERO_USAGE_RANGE 保持一致。 */
 export const HERO_USAGE_RANGE_LABEL = '最近 16 周'
 
-/** 展示热力图所需的最少活跃天数：超过该天数（不要求连续）才用热力图替换快捷卡片。 */
-export const HERO_USAGE_MIN_ACTIVE_DAYS = 4
+/** 展示热力图所需的最少活跃天数：超过该天数（不要求连续）才用热力图替换快捷卡片。0 即任意一天有数据就展示。 */
+export const HERO_USAGE_MIN_ACTIVE_DAYS = 0
 
 /**
  * 空会话布局模式（快捷卡片与热力图互斥）：
  * - pending：用量数据尚未就绪，先按快捷卡片渲染（多数用户最终也是卡片）
- * - cards：活跃天数不足或加载失败，渲染完整快捷卡片，不展示热力图
- * - heatmap：16 周内活跃天数超过阈值，热力图替换快捷卡片
+ * - cards：没有任何活跃天数或加载失败，渲染完整快捷卡片，不展示热力图
+ * - heatmap：16 周内任意一天（含今天）有用量数据，热力图替换快捷卡片
  */
 export type EmptyHeroUsageMode = 'pending' | 'cards' | 'heatmap'
 
