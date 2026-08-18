@@ -66,6 +66,9 @@ describe('spark_app MCP server', () => {
     expect(create?.description).toContain('sparkApp.data')
     expect(create?.description).toContain('localStorage')
     expect(create?.description).toContain('默认不要给应用根容器')
+    // 防误用约束：未明确要求内置子应用时，默认外部项目开发，不得默认创建子应用
+    expect(create?.description).toContain('何时不要调用')
+    expect(create?.description).toContain('外部项目开发')
     expect(create?.inputSchema?.properties?.permissions?.default).toEqual(['data'])
     expect(dataSet?.description).toContain('expectedRevision')
   })
