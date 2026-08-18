@@ -4790,6 +4790,7 @@ function ChatStream({
                         {...(onFilePreview != null ? { onFilePreview } : {})}
                         {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
                         {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
+                        {...(msg.durationMs != null ? { turnDurationMs: msg.durationMs } : {})}
                         {...(msg.status !== 'streaming'
                           ? {
                               onDelete: () => handleDeleteMessage(msg.id, msg.eventIds),
@@ -7147,6 +7148,7 @@ type AssistantRowCompareProps = {
   messageStatus?: UIMessage['status']
   isLatest?: boolean
   timestamp?: string | undefined
+  turnDurationMs?: number | undefined
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
@@ -7176,6 +7178,7 @@ function assistantRowsPropsAreEqual(
     prev.assistantAvatarSrc === next.assistantAvatarSrc &&
     prev.showIdentity === next.showIdentity &&
     prev.timestamp === next.timestamp &&
+    prev.turnDurationMs === next.turnDurationMs &&
     prev.selectionMode === next.selectionMode &&
     prev.selected === next.selected &&
     prev.teamModeActive === next.teamModeActive &&
@@ -7193,6 +7196,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   messageStatus,
   isLatest,
   timestamp,
+  turnDurationMs,
   assistantId,
   assistantName,
   assistantAvatarSrc,
@@ -7218,6 +7222,8 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   messageStatus?: UIMessage['status']
   isLatest?: boolean
   timestamp?: string | undefined
+  /** 整轮耗时（毫秒）；终态才有，供折叠条显示「耗时 34s」 */
+  turnDurationMs?: number | undefined
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
@@ -7342,6 +7348,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             {...(segmentStreaming ? { status: 'running' as const } : {})}
             {...(messageStatus != null ? { messageStatus } : {})}
             {...(timestamp != null ? { timestamp } : {})}
+            {...(turnDurationMs != null ? { turnDurationMs } : {})}
             {...(onDelete != null ? { onDelete } : {})}
             {...(onFork != null && index === lastAgentSegmentIndex ? { onFork } : {})}
             {...(onReply != null ? { onReply } : {})}
@@ -7504,6 +7511,7 @@ const AgentMsg = React.memo(function AgentMsg({
   messageStatus,
   isLatest,
   timestamp,
+  turnDurationMs,
   assistantId,
   assistantName,
   assistantAvatarSrc,
@@ -7526,6 +7534,8 @@ const AgentMsg = React.memo(function AgentMsg({
   messageStatus?: UIMessage['status']
   isLatest?: boolean
   timestamp?: string | undefined
+  /** 整轮耗时（毫秒）；终态才有，供折叠条显示「耗时 34s」 */
+  turnDurationMs?: number | undefined
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
@@ -7786,7 +7796,11 @@ const AgentMsg = React.memo(function AgentMsg({
           onContextMenu={handleContextMenu}
         >
           {showToolLogsToggle && (
-            <ToolLogsMasterToggle open={toolLogsOpen} onToggle={() => setToolLogsOpen((v) => !v)} />
+            <ToolLogsMasterToggle
+              open={toolLogsOpen}
+              onToggle={() => setToolLogsOpen((v) => !v)}
+              {...(turnDurationMs != null ? { durationMs: turnDurationMs } : {})}
+            />
           )}
           {leadingThinkingBlocks.length > 0 && (
             <ThinkingSection blocks={leadingThinkingBlocks} streaming={isStreaming} />
@@ -7939,16 +7953,29 @@ function ThinkingSection({
   )
 }
 
-function ToolLogsMasterToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  // 复用「思考过程」切换条样式（thinking-section / thinking-toggle），文案为「思考和工具日志」，
+function ToolLogsMasterToggle({
+  open,
+  onToggle,
+  durationMs,
+}: {
+  open: boolean
+  onToggle: () => void
+  /** 整轮耗时（毫秒）；缺失（旧消息/时间戳异常）时回退到默认文案 */
+  durationMs?: number | undefined
+}) {
+  // 复用「思考过程」切换条样式（thinking-section / thinking-toggle），
   // 同时控制本气泡内所有思考过程与工具日志组的显隐；
+  // 两种状态都只展示整轮耗时（Claude.ai「Thought for 12s」风格）；无耗时数据
+  // （旧消息/时间戳异常）时回退默认文案；
   // 不带绿色对勾（thinking-done-badge）与 spinner，保留 chevron 箭头按展开状态旋转。
   // 自身也挂 thinking-section，故隐藏规则须用 :not(.tool-logs-master) 排除自身。
+  const durationSuffix = durationMs != null ? formatTurnDuration(durationMs) : null
+  const label = durationSuffix == null ? '思考和工具日志' : `耗时 ${durationSuffix}`
   return (
     <div className={`thinking-section tool-logs-master ${open ? 'open' : ''}`}>
       <button className="thinking-toggle" onClick={onToggle} aria-expanded={open}>
         <ActivityLogSummaryIcon icon={Wrench} className="thinking-icon" />
-        <span className="thinking-label">思考和工具日志</span>
+        <span className="thinking-label">{label}</span>
         <Icons.ChevronRight size={13} className={`chev ${open ? 'chev-open' : ''}`} />
       </button>
     </div>
@@ -8396,6 +8423,22 @@ function formatDuration(ms: number): string {
   const min = Math.floor(ms / 60_000)
   const sec = Math.round((ms % 60_000) / 1000)
   return `${min}m ${sec}s`
+}
+
+/**
+ * 整轮耗时展示：整秒粒度（轮次耗时小数无意义），<1s 记为 1s 避免「耗时 0s」噪音；
+ * ≥1m 显示「1m 12s」，≥1h 显示「1h 2m」。工具级耗时仍用 formatDuration（毫秒级）。
+ */
+function formatTurnDuration(ms: number): string {
+  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`
+  if (ms < 3_600_000) {
+    const min = Math.floor(ms / 60_000)
+    const sec = Math.round((ms % 60_000) / 1000)
+    return sec >= 60 ? `${min + 1}m` : sec > 0 ? `${min}m ${sec}s` : `${min}m`
+  }
+  const hour = Math.floor(ms / 3_600_000)
+  const min = Math.round((ms % 3_600_000) / 60_000)
+  return min >= 60 ? `${hour + 1}h` : min > 0 ? `${hour}h ${min}m` : `${hour}h`
 }
 
 /** Extract a file path from one `diff --git` segment, preferring the new-file header. */

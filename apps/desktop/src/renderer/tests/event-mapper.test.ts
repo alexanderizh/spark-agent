@@ -1931,4 +1931,126 @@ describe('MessageBuilder', () => {
       },
     })
   })
+
+  describe('turn durationMs', () => {
+    const T0 = '2026-05-27T00:00:00.000Z'
+    const at = (offsetMs: number) => new Date(Date.parse(T0) + offsetMs).toISOString()
+
+    function deltaEvent(id: string, offsetMs: number) {
+      return {
+        ...baseEvent('assistant_message'),
+        id,
+        type: 'assistant_message' as const,
+        timestamp: at(offsetMs),
+        mode: 'delta' as const,
+        content: `chunk-${id}`,
+        isFinal: false,
+        provider: 'codex',
+      }
+    }
+
+    it('records wall-clock duration when the turn completes', () => {
+      const builder = new MessageBuilder()
+      builder.processEvent(deltaEvent('delta-1', 0))
+      builder.processEvent(deltaEvent('delta-2', 4_000))
+
+      // 流式中不落耗时
+      expect(builder.getAllMessages()[0]?.durationMs).toBeUndefined()
+
+      builder.processEvent({
+        ...statusEvent('completed'),
+        id: 'status-completed',
+        timestamp: at(34_000),
+      })
+
+      expect(builder.getAllMessages()[0]).toMatchObject({
+        status: 'completed',
+        durationMs: 34_000,
+      })
+    })
+
+    it('records duration on cancelled and error turns too', () => {
+      const cancelled = new MessageBuilder()
+      cancelled.processEvent(deltaEvent('delta-c', 0))
+      cancelled.processEvent({
+        ...statusEvent('cancelled'),
+        id: 'status-cancelled',
+        timestamp: at(5_000),
+      })
+      expect(cancelled.getAllMessages()[0]).toMatchObject({
+        status: 'cancelled',
+        durationMs: 5_000,
+      })
+
+      const errored = new MessageBuilder()
+      errored.processEvent(deltaEvent('delta-e', 0))
+      errored.processEvent({
+        ...baseEvent('agent_error'),
+        id: 'agent-error',
+        type: 'agent_error',
+        timestamp: at(8_000),
+        code: 'PROVIDER_FAILED',
+        message: 'provider failed',
+        retryable: true,
+      })
+      expect(errored.getAllMessages()[0]).toMatchObject({
+        status: 'error',
+        durationMs: 8_000,
+      })
+    })
+
+    it('keeps the first recorded duration when later terminal events arrive', () => {
+      const builder = new MessageBuilder()
+      builder.processEvent(deltaEvent('delta-x', 0))
+      builder.processEvent({
+        ...baseEvent('agent_error'),
+        id: 'agent-error-x',
+        type: 'agent_error',
+        timestamp: at(3_000),
+        code: 'PROVIDER_FAILED',
+        message: 'provider failed',
+        retryable: true,
+      })
+      builder.processEvent({
+        ...statusEvent('cancelled'),
+        id: 'status-after-error',
+        timestamp: at(9_000),
+      })
+
+      expect(builder.getAllMessages()[0]?.durationMs).toBe(3_000)
+    })
+
+    it('recomputes the same duration on history replay', () => {
+      const events: AgentEvent[] = [
+        deltaEvent('delta-r', 0),
+        deltaEvent('delta-r2', 10_000),
+        {
+          ...statusEvent('completed'),
+          id: 'status-r',
+          timestamp: at(72_000),
+        },
+      ]
+
+      const live = new MessageBuilder()
+      for (const event of events) live.processEvent(event)
+
+      const replayed = new MessageBuilder()
+      for (const event of events) replayed.processEvent(event)
+
+      expect(replayed.getAllMessages()[0]?.durationMs).toBe(72_000)
+      expect(replayed.getAllMessages()[0]?.durationMs).toBe(live.getAllMessages()[0]?.durationMs)
+    })
+
+    it('leaves duration undefined for user messages', () => {
+      const builder = new MessageBuilder()
+      builder.processEvent({
+        ...baseEvent('user_message'),
+        type: 'user_message',
+        timestamp: T0,
+        content: '你好',
+      })
+
+      expect(builder.getAllMessages()[0]?.durationMs).toBeUndefined()
+    })
+  })
 })

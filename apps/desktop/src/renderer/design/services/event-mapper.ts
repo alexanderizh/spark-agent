@@ -68,6 +68,12 @@ export interface UIMessage {
   } | null
   /** 消息创建时间（ISO 8601），取自事件 timestamp */
   timestamp?: string | undefined
+  /**
+   * 该 assistant 消息整轮耗时（毫秒）：终态事件 timestamp − 消息创建 timestamp。
+   * 只在消息进入终态（completed / error / cancelled）时写入一次；历史回放按同一
+   * 事件序列重算可得相同值，无需持久化。用户消息与未完成消息恒为 undefined。
+   */
+  durationMs?: number | undefined
   /** 参与构建此消息的所有事件 ID（用于删除时定位数据库事件） */
   eventIds: string[]
   /** 团队模式：该用户消息通过 @ 指定的 Agent ID（未填 → Host 主循环） */
@@ -679,7 +685,11 @@ export class MessageBuilder {
           if (event.isFinal) {
             // 最终 result 文本只做去重收尾；整轮终态仍需等 agent_status，避免后续事件被提前折叠。
             this.reconcileFinalText(msg, event.content)
-            if (event.provider === 'spark') msg.status = 'completed'
+            if (event.provider === 'spark') {
+              msg.status = 'completed'
+              // spark provider 以最终 assistant_message 收尾，不再有 agent_status 终态事件。
+              this.markTurnDuration(msg, event)
+            }
             break
           }
           this.applySegmentComplete(msg.blocks, 'text', event.content, event.segmentId)
@@ -917,15 +927,18 @@ export class MessageBuilder {
           if (event.status === 'completed') {
             msg.status = 'completed'
             this.finishStreamingBlocks(msg, 'completed')
+            this.markTurnDuration(msg, event)
             // 在 turn 完成时生成文件变更汇总
             this.appendTurnSummary(msg)
           } else if (event.status === 'error') {
             msg.status = 'error'
             this.finishStreamingBlocks(msg, 'error')
+            this.markTurnDuration(msg, event)
             // 即使出错也生成文件变更汇总
             this.appendTurnSummary(msg)
           } else if (event.status === 'cancelled') {
             this.finishStreamingBlocks(msg, 'error')
+            this.markTurnDuration(msg, event)
             const hasHostFailure = msg.blocks.some(
               (block) => block.kind === 'error' && block.origin?.kind !== 'subagent',
             )
@@ -951,6 +964,7 @@ export class MessageBuilder {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           msg.status = 'cancelled'
           this.finishStreamingBlocks(msg, 'error')
+          this.markTurnDuration(msg, event)
           if (!msg.blocks.some((block) => block.kind === 'cancelled')) {
             msg.blocks.push({ kind: 'cancelled', message: '已取消本次任务' })
           }
@@ -983,6 +997,7 @@ export class MessageBuilder {
         } else {
           msg.status = 'error'
           this.finishStreamingBlocks(msg, 'error')
+          this.markTurnDuration(msg, event)
         }
 
         const nextBlock: Extract<UIBlock, { kind: 'error' }> = {
@@ -2229,6 +2244,20 @@ export class MessageBuilder {
         block.status = finalStatus === 'error' ? 'error' : 'success'
       }
     }
+  }
+
+  /**
+   * 在消息进入终态时记录整轮耗时：终态事件 timestamp − 消息创建 timestamp。
+   * 首次写入后不再覆盖（同一消息可能先后收到 error 与后续状态事件）；
+   * 时间戳缺失或倒挂（终态早于创建）时保持 undefined，由 UI 回退到默认文案。
+   */
+  private markTurnDuration(msg: UIMessage, event: AgentEvent): void {
+    if (msg.durationMs != null) return
+    if (msg.timestamp == null) return
+    const start = Date.parse(msg.timestamp)
+    const end = Date.parse(event.timestamp)
+    if (Number.isNaN(start) || Number.isNaN(end) || end < start) return
+    msg.durationMs = end - start
   }
 }
 
