@@ -71,7 +71,11 @@ import {
   resolveSpecialSidebarGroupWorkspaceId,
 } from './sidebar-session-routing'
 import { moveItem, sortByManualOrderWithinPinnedSections } from './sidebar-manual-order'
-import { composeProjectGroupSessions } from './sidebar-session-sort'
+import {
+  compareProjectDisplayGroups,
+  composeProjectGroupSessions,
+  getProjectGroupPinnedAt,
+} from './sidebar-session-sort'
 import { filterCanvasSessions, isCanvasWorkspace } from './workspace-visibility'
 import { SidebarProjectDropZone } from './components/SidebarProjectDropZone'
 import { useOptionalToast } from './components/Toast'
@@ -1434,6 +1438,8 @@ export function FlatGroup({
   unreviewedCompletedSessions,
   onSelectGroup,
   onNewSession,
+  pinned,
+  onTogglePinned,
   menuItems = [],
   open,
   onOpenChange,
@@ -1454,6 +1460,9 @@ export function FlatGroup({
   unreviewedCompletedSessions: Set<string>
   onSelectGroup?: (() => void) | undefined
   onNewSession?: (() => void | Promise<void>) | undefined
+  /** 分组置顶态（当前仅临时会话分组使用）；提供 onTogglePinned 时展示置顶按钮。 */
+  pinned?: boolean | undefined
+  onTogglePinned?: (() => void) | undefined
   open: boolean
   onOpenChange: (next: boolean) => void
   menuItems?: Array<{
@@ -1525,6 +1534,24 @@ export function FlatGroup({
           </span>
         </Tooltip>
         <span className="proj-name">{t(label)}</span>
+        {onTogglePinned != null && (
+          <Tooltip
+            title={pinned ? t('sidebar.group.unpin') : t('sidebar.group.pin')}
+            mouseEnterDelay={0.05}
+          >
+            <button
+              className={`proj-pin-btn${pinned ? ' is-pinned' : ''}`}
+              aria-label={pinned ? t('sidebar.group.unpin') : t('sidebar.group.pin')}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                onTogglePinned()
+              }}
+            >
+              {pinned ? <Pin size={11} fill="currentColor" /> : <PinOff size={11} />}
+            </button>
+          </Tooltip>
+        )}
         <span className="proj-count">{sessions.length}</span>
         {onNewSession != null && (
           <Tooltip
@@ -2210,28 +2237,37 @@ export function SidebarSessionList() {
       ),
       workspace: g.workspace,
     }))
-    if (noProjectWorkspace != null && (!hideEmptyProjectGroups || noProject.length > 0)) {
-      list.push({
-        id: 'project:no-project',
-        label: 'sidebar.noProjectChats',
-        sessions: composeProjectGroupSessions(
-          noProject,
-          ctx.sidebarOrder.sessionIdsByProject[noProjectWorkspace.id],
-          ctx.sidebarOrder.pinnedSessionIdsByProject[noProjectWorkspace.id],
-        ),
-      })
-    }
-    if (ungrouped.length > 0) {
-      list.push({ id: 'project:ungrouped', label: 'sidebar.ungroupedChats', sessions: ungrouped })
-    }
-    const reorderableProjects = list.filter((group) => group.id !== 'project:ungrouped')
+    const noProjectGroup: DisplayGroup | null =
+      noProjectWorkspace != null && (!hideEmptyProjectGroups || noProject.length > 0)
+        ? {
+            id: 'project:no-project',
+            label: 'sidebar.noProjectChats',
+            sessions: composeProjectGroupSessions(
+              noProject,
+              ctx.sidebarOrder.sessionIdsByProject[noProjectWorkspace.id],
+              ctx.sidebarOrder.pinnedSessionIdsByProject[noProjectWorkspace.id],
+            ),
+          }
+        : null
+    // 临时会话分组与真实项目同一口径参与 fallback 排序（置顶在前、最新活动倒序），
+    // 有新临时会话时分组会像真实项目一样上浮；拖拽手动序在其上覆盖。
+    const reorderableProjects =
+      noProjectGroup == null
+        ? list
+        : [...list, noProjectGroup].sort((a, b) =>
+            compareProjectDisplayGroups(a, b, noProjectWorkspace),
+          )
     const orderedProjects = sortByManualOrderWithinPinnedSections(
       reorderableProjects,
       ctx.sidebarOrder.projectIds,
       (group) => group.workspace?.id ?? noProjectWorkspace?.id ?? group.id,
-      (group) => group.workspace?.pinnedAt != null,
+      (group) => getProjectGroupPinnedAt(group, noProjectWorkspace) != null,
     )
-    return [...orderedProjects, ...list.filter((group) => group.id === 'project:ungrouped')]
+    const ungroupedGroup: DisplayGroup[] =
+      ungrouped.length > 0
+        ? [{ id: 'project:ungrouped', label: 'sidebar.ungroupedChats', sessions: ungrouped }]
+        : []
+    return [...orderedProjects, ...ungroupedGroup]
   }, [
     filter.groupBy,
     filter.projectId,
@@ -2660,6 +2696,18 @@ export function SidebarSessionList() {
                               }
                             : undefined
                         }
+                        pinned={
+                          group.id === 'project:no-project'
+                            ? (noProjectWorkspace?.pinnedAt ?? null) != null
+                            : undefined
+                        }
+                        onTogglePinned={
+                          group.id === 'project:no-project' && noProjectWorkspace != null
+                            ? () => {
+                                void ctx.handleToggleProjectPinned(noProjectWorkspace)
+                              }
+                            : undefined
+                        }
                         menuItems={[
                           ...(group.id === 'project:no-project' && noProjectWorkspace != null
                             ? [
@@ -2680,6 +2728,21 @@ export function SidebarSessionList() {
                                     void ctx.handleOpenProjectFolder(noProjectWorkspace)
                                   },
                                 },
+                                {
+                                  icon:
+                                    noProjectWorkspace.pinnedAt != null ? (
+                                      <PinOff size={14} />
+                                    ) : (
+                                      <Pin size={14} />
+                                    ),
+                                  label:
+                                    noProjectWorkspace.pinnedAt != null
+                                      ? t('sidebar.group.unpin')
+                                      : t('sidebar.group.pin'),
+                                  onClick: () => {
+                                    void ctx.handleToggleProjectPinned(noProjectWorkspace)
+                                  },
+                                },
                               ]
                             : []),
                           {
@@ -2689,6 +2752,47 @@ export function SidebarSessionList() {
                               void ctx.handleClearSessions(group.sessions)
                             },
                           },
+                          // 删除分组：与其他项目一致，把分组本身也从项目列表移除。
+                          // 临时会话删除背后的 no-project workspace（连会话一起删）；
+                          // 未归属会话删除组内全部会话后分组自然消失。
+                          ...(group.id === 'project:no-project' && noProjectWorkspace != null
+                            ? [
+                                {
+                                  icon: <Icons.Trash size={14} />,
+                                  label: t('sidebar.noProject.delete'),
+                                  danger: true,
+                                  onClick: () => {
+                                    void ctx.handleDeleteProject(noProjectWorkspace, {
+                                      title: t('sidebar.noProject.delete'),
+                                      description: t('sidebar.noProject.deleteDesc', {
+                                        count: ctx.sessions.filter((session) =>
+                                          session.workspaceIds.includes(noProjectWorkspace.id),
+                                        ).length,
+                                      }),
+                                      confirmText: t('common.delete'),
+                                    })
+                                  },
+                                },
+                              ]
+                            : []),
+                          ...(group.id === 'project:ungrouped' && group.sessions.length > 0
+                            ? [
+                                {
+                                  icon: <Icons.Trash size={14} />,
+                                  label: t('sidebar.ungrouped.delete'),
+                                  danger: true,
+                                  onClick: () => {
+                                    void ctx.handleClearSessions(group.sessions, {
+                                      title: t('sidebar.ungrouped.delete'),
+                                      description: t('sidebar.ungrouped.deleteDesc', {
+                                        count: group.sessions.length,
+                                      }),
+                                      confirmText: t('common.delete'),
+                                    })
+                                  },
+                                },
+                              ]
+                            : []),
                         ]}
                         actions={{
                           onSelectSession: (session) => {

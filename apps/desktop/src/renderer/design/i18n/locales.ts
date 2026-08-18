@@ -70,6 +70,13 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'sidebar.allSessions': '所有会话',
     'sidebar.noProjectChats': '临时会话',
     'sidebar.ungroupedChats': '未归属会话',
+    'sidebar.group.pin': '置顶',
+    'sidebar.group.unpin': '取消置顶',
+    'sidebar.noProject.delete': '删除临时会话',
+    'sidebar.noProject.deleteDesc':
+      '将删除全部 {{count}} 个临时会话，并从项目列表移除「临时会话」。之后新建临时会话时会自动重新创建。',
+    'sidebar.ungrouped.delete': '删除未归属会话',
+    'sidebar.ungrouped.deleteDesc': '将删除全部 {{count}} 个未归属会话，并移除该分组。',
     'sidebar.empty.noProjects': '还没有项目',
     'sidebar.empty.noProjectsDesc': '打开已有文件夹，或新建一个项目',
     'sidebar.empty.noProjectsLead': '打开已有文件夹，或',
@@ -466,6 +473,14 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'sidebar.allSessions': 'All sessions',
     'sidebar.noProjectChats': 'Temporary chats',
     'sidebar.ungroupedChats': 'Ungrouped sessions',
+    'sidebar.group.pin': 'Pin',
+    'sidebar.group.unpin': 'Unpin',
+    'sidebar.noProject.delete': 'Delete temporary chats',
+    'sidebar.noProject.deleteDesc':
+      'Deletes all {{count}} temporary sessions and removes this group from the list. It is recreated automatically when you start a new temporary chat.',
+    'sidebar.ungrouped.delete': 'Delete ungrouped sessions',
+    'sidebar.ungrouped.deleteDesc':
+      'Deletes all {{count}} ungrouped sessions and removes this group.',
     'sidebar.empty.noProjects': 'No projects yet',
     'sidebar.empty.noProjectsDesc': 'Open a folder or create a new project to get started',
     'sidebar.empty.noProjectsLead': 'Open an existing folder, or',

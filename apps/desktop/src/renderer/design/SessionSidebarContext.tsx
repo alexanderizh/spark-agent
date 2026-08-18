@@ -64,6 +64,16 @@ export type ProjectGroup = {
 
 export type TimeFilter = 'all' | '1d' | '3d' | '7d' | '10d'
 
+/**
+ * 分组级批量会话操作（一键清空 / 删除分组）的确认弹窗文案覆盖。
+ * 临时会话、未归属会话这类特殊分组复用同一删除链路，但需要各自的语义化文案。
+ */
+export type SessionGroupActionCopy = {
+  title?: string
+  description?: string
+  confirmText?: string
+}
+
 // 与主进程 ipc/index.ts / TerminalService.ts 的 NO_PROJECT_WORKSPACE_NAME 保持一致：
 // 主进程统一写入/查找 DB 时使用中文名 '不使用项目'。这里如果写成 'No project'，
 // 会让 buildProjectGroups 过滤失败 → noProject workspace 没被剔除 → sidebar 直接用
@@ -361,7 +371,10 @@ type SessionSidebarCtx = {
   commitSessionTitle: (session: SessionSummary, title: string) => Promise<void>
   handleRenameSession: (session: SessionSummary) => Promise<void>
   handleDeleteSession: (session: SessionSummary) => Promise<void>
-  handleClearSessions: (sessions: SessionSummary[]) => Promise<void>
+  handleClearSessions: (
+    sessions: SessionSummary[],
+    options?: SessionGroupActionCopy | undefined,
+  ) => Promise<void>
   handleArchiveSession: (session: SessionSummary) => Promise<void>
   handleOpenSessionFolder: (session: SessionSummary) => Promise<void>
 
@@ -369,7 +382,10 @@ type SessionSidebarCtx = {
   handleToggleProjectPinned: (workspace: WorkspaceInfo) => Promise<void>
   handleRenameProject: (workspace: WorkspaceInfo) => Promise<void>
   handleArchiveProject: (workspace: WorkspaceInfo) => Promise<void>
-  handleDeleteProject: (workspace: WorkspaceInfo) => Promise<void>
+  handleDeleteProject: (
+    workspace: WorkspaceInfo,
+    options?: SessionGroupActionCopy | undefined,
+  ) => Promise<void>
   handleOpenProjectFolder: (workspace: WorkspaceInfo) => Promise<void>
   handleOpenWorkspace: (workspace: WorkspaceInfo) => Promise<void>
   handleReorderProjects: (projectIds: string[]) => Promise<void>
@@ -940,7 +956,11 @@ export function SessionSidebarProvider({
   }, [])
 
   const ensureNoProjectWorkspace = useCallback(async (): Promise<string | null> => {
-    if (noProjectWorkspaceId) return noProjectWorkspaceId
+    // 缓存的 id 可能已过期（「删除临时会话」会连 workspace 一起删掉），
+    // 只有仍存在于 workspaces 列表时才可直接复用，否则按名称重找或重建。
+    if (noProjectWorkspaceId && workspaces.some((w) => w.id === noProjectWorkspaceId)) {
+      return noProjectWorkspaceId
+    }
     const existing = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME)
     if (existing) {
       setNoProjectWorkspaceId(existing.id)
@@ -1447,11 +1467,11 @@ export function SessionSidebarProvider({
   )
 
   const handleDeleteProject = useCallback(
-    async (workspace: WorkspaceInfo) => {
+    async (workspace: WorkspaceInfo, options?: SessionGroupActionCopy) => {
       const confirmed = await requestConfirm({
-        title: t('common.confirm'),
-        description: t('project.deleteDesc', { name: workspace.name }),
-        confirmText: t('common.delete'),
+        title: options?.title ?? t('common.confirm'),
+        description: options?.description ?? t('project.deleteDesc', { name: workspace.name }),
+        confirmText: options?.confirmText ?? t('common.delete'),
         danger: true,
       })
       if (!confirmed) return
@@ -1691,7 +1711,7 @@ export function SessionSidebarProvider({
   )
 
   const handleClearSessions = useCallback(
-    async (sessions: SessionSummary[]) => {
+    async (sessions: SessionSummary[], options?: SessionGroupActionCopy) => {
       const total = sessions.length
       const targets = sessions.filter((s) => !isSessionActive(s.id, sessionAgentStatuses))
       const skipped = total - targets.length
@@ -1700,9 +1720,9 @@ export function SessionSidebarProvider({
         return
       }
       const confirmed = await requestConfirm({
-        title: t('common.confirm'),
-        description: t('session.clearAllDesc', { count: targets.length }),
-        confirmText: t('session.clearAllConfirm'),
+        title: options?.title ?? t('common.confirm'),
+        description: options?.description ?? t('session.clearAllDesc', { count: targets.length }),
+        confirmText: options?.confirmText ?? t('session.clearAllConfirm'),
         danger: true,
       })
       if (!confirmed) return

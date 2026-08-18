@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionId } from '@spark/protocol'
 import {
+  compareProjectDisplayGroups,
   composeProjectGroupSessions,
+  getProjectGroupPinnedAt,
   resolveSessionGroupId,
   sortSessionsByPinned,
+  type ProjectDisplayGroupLike,
   type SessionSummary,
 } from './sidebar-session-sort'
 
@@ -146,5 +149,110 @@ describe('resolveSessionGroupId', () => {
     expect(
       resolveSessionGroupId(s, [{ id: 'wt1', worktreeMeta: { baseWorkspaceId: 'gone' } }]),
     ).toBe('wt1')
+  })
+})
+
+describe('compareProjectDisplayGroups（临时会话分组参与项目栏排序）', () => {
+  function group(
+    id: string,
+    opts: {
+      workspace?: { id: string; pinnedAt?: string | null; updatedAt?: string }
+      sessions?: Array<{ updatedAt: string }>
+    } = {},
+  ): ProjectDisplayGroupLike {
+    return {
+      id,
+      workspace:
+        opts.workspace == null
+          ? undefined
+          : {
+              id: opts.workspace.id,
+              pinnedAt: opts.workspace.pinnedAt ?? null,
+              updatedAt: opts.workspace.updatedAt ?? '2026-07-01T00:00:00.000Z',
+            },
+      sessions: (opts.sessions ?? []).map((s, i) =>
+        session(`${id}-s${i}`, { updatedAt: s.updatedAt }),
+      ),
+    }
+  }
+
+  it('未置顶时临时会话分组按最新会话活动与真实项目同一口径排序', () => {
+    const realOld = group('project:ws-real-old', {
+      workspace: { id: 'ws-real-old' },
+      sessions: [{ updatedAt: '2026-07-01T00:00:00.000Z' }],
+    })
+    const noProjectNew = group('project:no-project', {
+      sessions: [{ updatedAt: '2026-07-10T00:00:00.000Z' }],
+    })
+    const noProjectWorkspace = {
+      id: 'ws-no-project',
+      pinnedAt: null,
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    }
+    // 临时会话分组有更新的会话 → 排在旧项目前面（此前固定垫底，从不参与排序）
+    expect(compareProjectDisplayGroups(noProjectNew, realOld, noProjectWorkspace)).toBeLessThan(0)
+    expect(compareProjectDisplayGroups(realOld, noProjectNew, noProjectWorkspace)).toBeGreaterThan(
+      0,
+    )
+  })
+
+  it('置顶的临时会话分组排在未置顶真实项目之前', () => {
+    const real = group('project:ws-real', {
+      workspace: { id: 'ws-real', pinnedAt: null },
+      sessions: [{ updatedAt: '2026-07-10T00:00:00.000Z' }],
+    })
+    const noProject = group('project:no-project', {
+      sessions: [{ updatedAt: '2026-07-01T00:00:00.000Z' }],
+    })
+    const noProjectWorkspace = {
+      id: 'ws-no-project',
+      pinnedAt: '2026-07-05T00:00:00.000Z',
+      updatedAt: '2026-07-01T00:00:00.000Z',
+    }
+    expect(compareProjectDisplayGroups(noProject, real, noProjectWorkspace)).toBeLessThan(0)
+  })
+
+  it('多条置顶按 pinnedAt 倒序；真实项目置顶仍取自身 workspace', () => {
+    const realPinOld = group('project:ws-real', {
+      workspace: { id: 'ws-real', pinnedAt: '2026-07-01T00:00:00.000Z' },
+    })
+    const noProjectPinNew = group('project:no-project')
+    const noProjectWorkspace = {
+      id: 'ws-no-project',
+      pinnedAt: '2026-07-09T00:00:00.000Z',
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    }
+    expect(
+      compareProjectDisplayGroups(noProjectPinNew, realPinOld, noProjectWorkspace),
+    ).toBeLessThan(0)
+  })
+
+  it('组内无会话时回落 workspace 自身 updatedAt', () => {
+    const emptyNew = group('project:ws-empty-new', {
+      workspace: { id: 'ws-empty-new', updatedAt: '2026-07-10T00:00:00.000Z' },
+    })
+    const hasOldSession = group('project:ws-has-old', {
+      workspace: { id: 'ws-has-old', updatedAt: '2026-06-01T00:00:00.000Z' },
+      sessions: [{ updatedAt: '2026-07-01T00:00:00.000Z' }],
+    })
+    expect(compareProjectDisplayGroups(emptyNew, hasOldSession, null)).toBeLessThan(0)
+  })
+
+  it('getProjectGroupPinnedAt：未归属会话分组不参与置顶', () => {
+    const noProjectWorkspace = {
+      id: 'ws-no-project',
+      pinnedAt: '2026-07-05T00:00:00.000Z',
+      updatedAt: '2026-07-01T00:00:00.000Z',
+    }
+    expect(getProjectGroupPinnedAt(group('project:ungrouped'), noProjectWorkspace)).toBeNull()
+    expect(getProjectGroupPinnedAt(group('project:no-project'), noProjectWorkspace)).toBe(
+      '2026-07-05T00:00:00.000Z',
+    )
+    expect(
+      getProjectGroupPinnedAt(
+        group('project:ws-real', { workspace: { id: 'ws-real', pinnedAt: null } }),
+        noProjectWorkspace,
+      ),
+    ).toBeNull()
   })
 })

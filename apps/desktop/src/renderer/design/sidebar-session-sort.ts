@@ -75,3 +75,62 @@ export function composeProjectGroupSessions(
     ...sortByManualOrder(normal, normalIds, (session) => session.id),
   ]
 }
+
+/* ─── 项目栏分组 fallback 排序（含临时会话分组）─── */
+
+/** 项目栏分组排序所需的最小 workspace 结构（真实项目挂 workspace，临时会话分组不挂）。 */
+export type ProjectGroupWorkspaceLike = {
+  id: string
+  pinnedAt: string | null
+  updatedAt: string
+}
+
+/** 项目栏分组的排序输入；SidebarSessionList.DisplayGroup 结构兼容于此。 */
+export type ProjectDisplayGroupLike = {
+  id: string
+  sessions: readonly SessionSummary[]
+  workspace?: ProjectGroupWorkspaceLike | undefined
+}
+
+/** 解析分组的置顶时间：真实项目取 workspace.pinnedAt，临时会话分组取 no-project workspace。 */
+export function getProjectGroupPinnedAt(
+  group: ProjectDisplayGroupLike,
+  noProjectWorkspace: ProjectGroupWorkspaceLike | null,
+): string | null {
+  if (group.workspace != null) return group.workspace.pinnedAt
+  if (group.id === 'project:no-project') return noProjectWorkspace?.pinnedAt ?? null
+  return null
+}
+
+/** 分组最新活动：组内会话最大 updatedAt，无会话时回落 workspace 自身 updatedAt。 */
+function latestProjectGroupAt(
+  group: ProjectDisplayGroupLike,
+  noProjectWorkspace: ProjectGroupWorkspaceLike | null,
+): number {
+  let latest = 0
+  for (const session of group.sessions) {
+    const t = toTime(session.updatedAt)
+    if (t > latest) latest = t
+  }
+  return latest || toTime(group.workspace?.updatedAt ?? noProjectWorkspace?.updatedAt)
+}
+
+/**
+ * 项目栏分组 fallback 排序（手动拖拽序不存在/未覆盖时），口径与
+ * SessionSidebarContext.buildProjectGroups 逐字一致：置顶在前（pinnedAt 倒序），
+ * 未置顶按「组内最新会话 updatedAt」倒序，无会话回落 workspace.updatedAt。
+ * 临时会话分组（project:no-project）不挂 workspace，由调用方传入其背后的
+ * no-project workspace 提供排序字段，从而与真实项目同一口径参与排序。
+ */
+export function compareProjectDisplayGroups(
+  a: ProjectDisplayGroupLike,
+  b: ProjectDisplayGroupLike,
+  noProjectWorkspace: ProjectGroupWorkspaceLike | null,
+): number {
+  const aPinnedAt = getProjectGroupPinnedAt(a, noProjectWorkspace)
+  const bPinnedAt = getProjectGroupPinnedAt(b, noProjectWorkspace)
+  if (aPinnedAt != null && bPinnedAt == null) return -1
+  if (aPinnedAt == null && bPinnedAt != null) return 1
+  if (aPinnedAt != null && bPinnedAt != null) return toTime(bPinnedAt) - toTime(aPinnedAt)
+  return latestProjectGroupAt(b, noProjectWorkspace) - latestProjectGroupAt(a, noProjectWorkspace)
+}
