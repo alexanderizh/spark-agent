@@ -21,11 +21,14 @@ import './chat/ChatEmptyThemes.less'
 import type { ReactNode, RefObject } from 'react'
 import { Button } from '@lobehub/ui'
 import {
+  AppWindow,
   CheckCircle,
   Copy,
   FilePenLine,
   FileSearch,
   FolderOpen,
+  Globe,
+  Image as ImageIcon,
   Lightbulb,
   MoreHorizontal,
   PanelRight,
@@ -34,7 +37,9 @@ import {
   SquareTerminal,
   Trash,
   Save,
+  Wand as WandIcon,
   Wrench,
+  type LucideIcon,
 } from 'lucide-react'
 import {
   ActivityLogSummaryIcon,
@@ -102,6 +107,12 @@ import {
   type ChatActivityBlock,
   type ToolLogGroupKind,
 } from './chat/ChatActivitySegments'
+import {
+  getToolActionLabel,
+  getToolIconKey,
+  normalizeToolName,
+  type ToolLogIconKey,
+} from './chat/tool-log-metadata'
 import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 import { projectVisibleChatMessages } from './chat/internal-turn-message-visibility'
 import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
@@ -5482,13 +5493,6 @@ function reorderTurnSummaryBlocks(blocks: UIBlock[]): UIBlock[] {
   return reorderChatTurnSummaryBlocks(blocks)
 }
 
-function normalizeToolName(name: string): string {
-  return name
-    .replace(/^functions__/, '')
-    .replace(/^mcp__[^_]+__/, '')
-    .toLowerCase()
-}
-
 /** 解析 agentId → 显示名（取自 SessionSidebarContext 的 agents） */
 function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'team_dispatch' }> }) {
   const { agents } = useSessionSidebar()
@@ -8125,6 +8129,30 @@ function ToolCall({
   )
 }
 
+/** 折叠头文案：按分组类别生成「动词 + 数量」摘要 */
+const TOOL_LOG_GROUP_LABELS: Record<ToolLogGroupKind, (count: number) => string> = {
+  command: (n) => `执行 ${n} 条命令`,
+  read: (n) => `查看 ${n} 个文件`,
+  image: (n) => `查看 ${n} 张图片`,
+  web: (n) => `联网检索 ${n} 次`,
+  browser: (n) => `操作浏览器 ${n} 次`,
+  media: (n) => `生成 ${n} 个媒体`,
+  write: (n) => `修改 ${n} 个文件`,
+  tool: (n) => `调用 ${n} 个工具`,
+}
+
+/** 折叠头图标：按分组类别取 lucide 图标（ActivityLogSummaryIcon 契约） */
+const TOOL_LOG_GROUP_ICONS: Record<ToolLogGroupKind, LucideIcon> = {
+  command: SquareTerminal,
+  read: FileSearch,
+  image: ImageIcon,
+  web: Globe,
+  browser: AppWindow,
+  media: WandIcon,
+  write: FilePenLine,
+  tool: Wrench,
+}
+
 function ToolLogGroup({
   blocks,
   surface,
@@ -8154,22 +8182,8 @@ function ToolLogGroup({
 
   const kind = getToolLogGroupKind(blocks[0] as UIBlock, surface) ?? 'tool'
   const count = blocks.length
-  const label =
-    kind === 'command'
-      ? `执行 ${count} 条命令`
-      : kind === 'read'
-        ? `查看 ${count} 个文件`
-        : kind === 'write'
-          ? `修改 ${count} 个文件`
-          : `调用 ${count} 个工具`
-  const summaryIcon =
-    kind === 'command'
-      ? SquareTerminal
-      : kind === 'read'
-        ? FileSearch
-        : kind === 'write'
-          ? FilePenLine
-          : Wrench
+  const label = TOOL_LOG_GROUP_LABELS[kind](count)
+  const summaryIcon = TOOL_LOG_GROUP_ICONS[kind]
 
   return (
     <div
@@ -8201,6 +8215,19 @@ function ToolLogGroup({
       )}
     </div>
   )
+}
+
+/** 明细行图标：图标 key → 项目 Icons 组件（size 13 与旧实现一致） */
+const TOOL_LOG_ENTRY_ICONS: Record<ToolLogIconKey, ReactNode> = {
+  terminal: <Icons.BashCommand size={13} />,
+  search: <Icons.Search size={13} />,
+  edit: <Icons.Edit size={13} />,
+  file: <Icons.File size={13} />,
+  image: <Icons.Image size={13} />,
+  globe: <Icons.Globe size={13} />,
+  browser: <Icons.AppWindow size={13} />,
+  wand: <Icons.Wand size={13} />,
+  wrench: <Icons.Wrench size={13} />,
 }
 
 function ToolLogEntry({
@@ -8240,14 +8267,19 @@ function ToolLogEntry({
   const input = formatToolLogInput(block)
   const output = block.output
   const error = block.error
-  const icon = getToolLogIcon(block.toolName)
+  const icon = TOOL_LOG_ENTRY_ICONS[getToolIconKey(block.toolName, block.toolInput)]
   const isCommand = isCommandLikeTool(block.toolName)
+  // 明细行显示友好动作名，hover 显示完整工具名（区分 MCP server 来源）
+  const actionLabel = getToolActionLabel(block.toolName, block.toolInput)
+  // exactOptionalPropertyTypes 下可选 prop 不显式传 undefined，有值时才展开
+  const nativeTitle = actionLabel === block.toolName ? undefined : block.toolName
 
   return (
     <div className={`tool-log-entry ${block.status === 'error' ? 'is-error' : ''}`}>
       <ToolLogEntryHead
         icon={icon}
-        title={block.toolName}
+        title={actionLabel}
+        {...(nativeTitle != null ? { nativeTitle } : {})}
         subtitle={block.durationMs != null ? formatDuration(block.durationMs) : `#${index + 1}`}
       />
       <div className="tool-log-card">
@@ -8279,13 +8311,16 @@ function ToolLogEntryHead({
   icon,
   title,
   subtitle,
+  nativeTitle,
 }: {
   icon: ReactNode
   title: string
   subtitle: string
+  /** 原生 tooltip：与 title 相同时省略，避免冗余悬停 */
+  nativeTitle?: string
 }) {
   return (
-    <div className="tool-log-entry-head">
+    <div className="tool-log-entry-head" title={nativeTitle}>
       <span className="tool-log-entry-icon">{icon}</span>
       <span className="tool-log-entry-title">{title}</span>
       <span className="tool-log-entry-subtitle">{subtitle}</span>
@@ -8348,23 +8383,6 @@ function formatToolLogInput(block: Extract<UIBlock, { kind: 'tool_call' }>): str
   } catch {
     return String(block.toolInput)
   }
-}
-
-function getToolLogIcon(name: string): ReactNode {
-  const normalized = normalizeToolName(name)
-  if (normalized === 'bash' || normalized === 'run_command') return <Icons.BashCommand size={13} />
-  if (normalized === 'grep' || normalized === 'grep_files' || normalized.includes('search'))
-    return <Icons.Search size={13} />
-  if (normalized === 'edit' || normalized === 'edit_file' || normalized === 'apply_patch')
-    return <Icons.Edit size={13} />
-  if (
-    normalized === 'read' ||
-    normalized === 'read_file' ||
-    normalized === 'write' ||
-    normalized === 'write_file'
-  )
-    return <Icons.File size={13} />
-  return <Icons.Wrench size={13} />
 }
 
 function TerminalBlock({ children }: { children: ReactNode }) {

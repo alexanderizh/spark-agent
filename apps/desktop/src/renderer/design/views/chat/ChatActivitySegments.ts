@@ -1,8 +1,9 @@
 import type { UIBlock } from '../../services/event-mapper'
 import { filterDocumentOutputFiles } from './ChatDocumentOutput'
 import { filterMediaPresentedFiles } from './PresentedMedia'
+import { classifyToolLog, TOOL_LOG_GROUP_KINDS, type ToolLogGroupKind } from './tool-log-metadata'
 
-export type ToolLogGroupKind = 'read' | 'write' | 'command' | 'tool'
+export type { ToolLogGroupKind } from './tool-log-metadata'
 
 export type ChatActivityBlock = Extract<
   UIBlock,
@@ -22,57 +23,13 @@ export type ChatActivityTimelineItem =
       block: UIBlock
     }
 
-function normalizeToolName(name: string): string {
-  return name
-    .replace(/^functions__/, '')
-    .replace(/^mcp__[^_]+__/, '')
-    .toLowerCase()
-}
-
 export function getToolLogGroupKind(
   block: UIBlock,
   surface: 'main' | 'inspector',
 ): ToolLogGroupKind | null {
   if (block.kind === 'terminal') return surface === 'inspector' ? 'command' : null
   if (block.kind !== 'tool_call') return null
-  const name = normalizeToolName(block.toolName)
-  if (
-    name === 'todo_write' ||
-    block.toolName === 'mcp__spark_team__agent_dispatch' ||
-    name.endsWith('present_files')
-  ) {
-    return null
-  }
-  if (
-    name === 'bash' ||
-    name === 'run_command' ||
-    name.includes('shell') ||
-    name.includes('terminal')
-  ) {
-    return 'command'
-  }
-  if (
-    name === 'read' ||
-    name === 'read_file' ||
-    name === 'grep' ||
-    name === 'grep_files' ||
-    name === 'list' ||
-    name === 'ls' ||
-    name.includes('search')
-  ) {
-    return 'read'
-  }
-  if (
-    name === 'edit' ||
-    name === 'edit_file' ||
-    name === 'write' ||
-    name === 'write_file' ||
-    name === 'apply_patch' ||
-    name.includes('replace')
-  ) {
-    return 'write'
-  }
-  return 'tool'
+  return classifyToolLog(block.toolName, block.toolInput)
 }
 
 export function isChatActivityBlock(block: UIBlock): block is ChatActivityBlock {
@@ -165,12 +122,10 @@ export function isChatActivitySegmentRunning(blocks: UIBlock[]): boolean {
 }
 
 export function summarizeChatActivitySegment(blocks: UIBlock[]): string {
-  const counts: Record<ToolLogGroupKind, number> = {
-    read: 0,
-    command: 0,
-    write: 0,
-    tool: 0,
-  }
+  const counts = Object.fromEntries(TOOL_LOG_GROUP_KINDS.map((kind) => [kind, 0])) as Record<
+    ToolLogGroupKind,
+    number
+  >
   const commandToolCallIds = new Set<string>()
   const changedPaths = new Set<string>()
   let hasThinking = false
@@ -206,6 +161,10 @@ export function summarizeChatActivitySegment(blocks: UIBlock[]): string {
 
   const parts = [
     counts.read > 0 ? `查看了 ${counts.read} 个文件` : '',
+    counts.image > 0 ? `查看了 ${counts.image} 张图片` : '',
+    counts.web > 0 ? `联网检索 ${counts.web} 次` : '',
+    counts.browser > 0 ? `操作浏览器 ${counts.browser} 次` : '',
+    counts.media > 0 ? `生成了 ${counts.media} 个媒体` : '',
     counts.command > 0 ? `运行了 ${counts.command} 条命令` : '',
     counts.write > 0 ? `修改了 ${counts.write} 个文件` : '',
     counts.tool > 0 ? `调用了 ${counts.tool} 个工具` : '',

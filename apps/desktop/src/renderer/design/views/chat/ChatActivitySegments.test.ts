@@ -174,8 +174,41 @@ describe('ChatActivitySegments', () => {
     expect(getToolLogGroupKind(tool('read', 'Grep', 'success'), 'main')).toBe('read')
     expect(getToolLogGroupKind(tool('command', 'run_command', 'success'), 'main')).toBe('command')
     expect(getToolLogGroupKind(tool('write', 'apply_patch', 'success'), 'main')).toBe('write')
-    expect(getToolLogGroupKind(tool('generic', 'web_search', 'success'), 'main')).toBe('read')
     expect(getToolLogGroupKind(tool('todo', 'todo_write', 'success'), 'main')).toBeNull()
+  })
+
+  it('classifies web, browser, media and image-read tools into dedicated groups', () => {
+    expect(getToolLogGroupKind(tool('web', 'web_search', 'success'), 'main')).toBe('web')
+    expect(
+      getToolLogGroupKind(tool('fetch', 'mcp__spark_search__fetch_url', 'success'), 'main'),
+    ).toBe('web')
+    expect(
+      getToolLogGroupKind(tool('browser', 'mcp__playwright__browser_click', 'success'), 'main'),
+    ).toBe('browser')
+    expect(
+      getToolLogGroupKind(
+        tool('spark-browser', 'mcp__spark_browser__screenshot', 'success'),
+        'main',
+      ),
+    ).toBe('browser')
+    expect(
+      getToolLogGroupKind(tool('media', 'mcp__spark_media__generate_image', 'success'), 'main'),
+    ).toBe('media')
+    expect(getToolLogGroupKind(tool('media-video', 'generate_video', 'success'), 'main')).toBe(
+      'media',
+    )
+
+    const imageRead: Extract<UIBlock, { kind: 'tool_call' }> = {
+      ...tool('img-read', 'Read', 'success'),
+      toolInput: { file_path: '/tmp/screenshots/preview.png' },
+    }
+    expect(getToolLogGroupKind(imageRead, 'main')).toBe('image')
+    // 非图片路径的 Read 仍归 read
+    const textRead: Extract<UIBlock, { kind: 'tool_call' }> = {
+      ...tool('text-read', 'Read', 'success'),
+      toolInput: { file_path: '/tmp/src/index.ts' },
+    }
+    expect(getToolLogGroupKind(textRead, 'main')).toBe('read')
   })
 
   it('builds a compact natural-language summary without double-counting file changes', () => {
@@ -196,6 +229,23 @@ describe('ChatActivitySegments', () => {
 
     expect(summarizeChatActivitySegment(blocks)).toBe(
       '查看了 2 个文件 · 运行了 1 条命令 · 修改了 1 个文件 · 进行了思考',
+    )
+  })
+
+  it('summarizes image, web, browser and media groups with dedicated verbs', () => {
+    const imageRead: Extract<UIBlock, { kind: 'tool_call' }> = {
+      ...tool('img-read', 'Read', 'success'),
+      toolInput: { file_path: '/tmp/a.png' },
+    }
+    const blocks: UIBlock[] = [
+      imageRead,
+      tool('web-1', 'web_search', 'success'),
+      tool('browser-1', 'mcp__playwright__browser_click', 'success'),
+      tool('media-1', 'mcp__spark_media__generate_image', 'success'),
+    ]
+
+    expect(summarizeChatActivitySegment(blocks)).toBe(
+      '查看了 1 张图片 · 联网检索 1 次 · 操作浏览器 1 次 · 生成了 1 个媒体',
     )
   })
 
