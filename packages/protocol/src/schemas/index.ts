@@ -1589,6 +1589,14 @@ export const IpcSchemaRegistry = {
     olderThanDays: z.number().int().min(1),
   }),
 
+  // Turn Performance
+  'perf:get-session': z.object({
+    sessionId: z.string().min(1),
+  }),
+  'perf:get-model-aggregates': z.object({
+    limitDays: z.number().int().min(1).max(365).optional(),
+  }),
+
   // Auto-Update
   'update:check': z.object({}),
   'update:download': z.object({}),

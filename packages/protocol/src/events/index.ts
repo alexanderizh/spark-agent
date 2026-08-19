@@ -769,6 +769,19 @@ export interface TurnRuntimeMetrics {
     /** 仅当 adapter 能可靠观测实际载入 schema 时设置。 */
     loaded?: ToolSchemaTokenObservation
   }
+  /** 该轮输出 token 终值（最近一条 usage_update 的 outputTokens，后值覆盖）。 */
+  outputTokens?: number
+  /**
+   * 纯生成时长（ms）：仅累计模型流式输出的时间窗口（首输出开窗、
+   * tool_call / usage_update 关窗、下一段输出再开窗），剔除工具执行时间。
+   */
+  streamActiveMs?: number
+  /** 输出吞吐（tokens/s）= outputTokens / streamActiveMs；仅终态且两者均可观测时设置。 */
+  outputTokensPerSecond?: number
+  /** 轮次总时长（ms）：tracker 创建（轮次启动）到终态事件。 */
+  turnDurationMs?: number
+  /** 终态标记；仅出现在该轮最后一条 turn_runtime_metrics 事件里。 */
+  turnTerminalStatus?: 'completed' | 'cancelled' | 'error'
 }
 
 /** Prompt / MCP / cache / TTFT 的增量白盒观测事件。 */

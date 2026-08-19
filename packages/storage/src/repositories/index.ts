@@ -174,6 +174,12 @@ export type {
   SubAppRow,
 } from './sub-app.repository.js'
 export { UsageLedgerRepository } from './usage-ledger.repository.js'
+export { TurnPerfRepository } from './turn-perf.repository.js'
+export type {
+  TurnPerfRow,
+  RecordTurnPerfParams,
+  ModelPerfAggregate,
+} from './turn-perf.repository.js'
 export { CustomToolRepository } from './custom-tool.repository.js'
 export type { CustomToolRow, CustomToolSpecEnvelope } from './custom-tool.repository.js'
 export type {

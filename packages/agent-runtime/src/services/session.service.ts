@@ -375,6 +375,7 @@ import { SessionContinuityCoordinator } from './session-continuity-coordinator.j
 import { generateSessionTitle } from './session-title-generator.js'
 import { MemoryRepository } from '@spark/storage'
 import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
+import { TurnPerfRepository } from '@spark/storage'
 import { MemoryEntityRepository } from '@spark/storage'
 import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
@@ -1931,6 +1932,10 @@ export class SessionService {
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
     const eventRepo = new EventRepository(this.db)
+    // 吞吐口径落库（turn_perf_metrics，每 turn 一行）：provider/model 在下方解析，
+    // 回调触发（终态）时闭包变量已定值；写入失败不阻塞事件流（非致命）。
+    // 显式 undefined 初始化：变量在模型定值处唯一一次覆盖（闭包在终态时读取）。
+    let effectiveRuntimeModelId: string | undefined = undefined
     const runtimeMetrics = new TurnRuntimeMetricsTracker({
       emit: (metrics) => {
         this.emitAndPersist(
@@ -1947,6 +1952,24 @@ export class SessionService {
           },
           eventRepo,
         )
+      },
+      onFinalized: (summary) => {
+        try {
+          new TurnPerfRepository(this.db).recordFinal({
+            sessionId,
+            turnId,
+            providerId: effectiveRuntimeProviderProfileId ?? 'unknown',
+            modelId: effectiveRuntimeModelId ?? session.model_id ?? 'unknown',
+            terminalStatus: summary.terminalStatus,
+            ttftMs: summary.requestToFirstOutputMs,
+            streamActiveMs: summary.streamActiveMs,
+            turnDurationMs: summary.turnDurationMs,
+            outputTokens: summary.outputTokens,
+            outputTokensPerSecond: summary.outputTokensPerSecond,
+          })
+        } catch (err) {
+          log.warn('failed to persist turn perf metrics', { sessionId, turnId, error: err })
+        }
       },
     })
 
@@ -2187,6 +2210,8 @@ export class SessionService {
     // team 主持 agent 走 session 默认值；@mention 切到成员 agent 时切到成员自己的
     // providerProfileId + agent.modelId。
     this.activeChatModelBySession.set(sessionId, { providerId: provider.id, model })
+    // 供终态性能落库回调（tracker onFinalized）读取；provider/model 至此均已定值。
+    effectiveRuntimeModelId = model
 
     const agentAdapter = getAgentAdapterFromSession(
       isMentionTurn

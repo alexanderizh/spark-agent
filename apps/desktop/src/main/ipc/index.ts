@@ -111,6 +111,7 @@ import {
   SkillRepository,
   SettingsRepository,
   UsageLedgerRepository,
+  TurnPerfRepository,
   ContextPreferenceRepository,
   AgentRepository,
   WorkflowRepository,
@@ -8047,6 +8048,18 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('usage:purge', async (req) => {
     const deletedCount = getUsageLedgerService().purgeOldRecords(req.olderThanDays)
     return { deletedCount }
+  })
+
+  // ─── Turn Performance Handlers ───────────────────────────────────────────
+
+  typedIpcHandle('perf:get-session', async (req) => {
+    const turns = new TurnPerfRepository(getDatabase()).listBySession(req.sessionId)
+    return { turns }
+  })
+
+  typedIpcHandle('perf:get-model-aggregates', async (req) => {
+    const aggregates = new TurnPerfRepository(getDatabase()).getModelAggregates(req.limitDays ?? 30)
+    return { aggregates }
   })
 
   // ─── Auto-Update Handlers ────────────────────────────────────────────────
