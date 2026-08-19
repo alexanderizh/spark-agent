@@ -1317,11 +1317,12 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
     // executor 兜底补发。实测流关闭在 result 之后还有数秒延迟，扣到那时会让 UI
     // 在内容已完成后继续显示「进行中」。maxTurns 续跑场景（error_max_turns 走
     // else 分支）不受影响；executor 侧 terminalStatusEmitted 会随本事件置位，
-    // 流关闭后的兜底不会重复发。
+    // 流关闭后的兜底不会重复发。terminalSource 标记供 session 层即时广播门控。
     events.push({
       ...baseEvent(ctx),
       type: 'agent_status',
       status: 'completed',
+      terminalSource: 'result',
     })
   } else {
     const errorMsg = msg.errors?.join('; ') ?? `Turn ended: ${msg.subtype}`
@@ -1349,6 +1350,7 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
       ...baseEvent(ctx),
       type: 'agent_status',
       status: 'error',
+      terminalSource: 'result',
     })
   }
 

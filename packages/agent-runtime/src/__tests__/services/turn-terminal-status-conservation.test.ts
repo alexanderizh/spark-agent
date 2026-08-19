@@ -238,6 +238,66 @@ describe.each(ENGINES)('轮次终态守恒（$adapter 引擎）', (engine) => {
     expect(countTerminal(started.turnId)).toBe(1)
   })
 
+  it('③c 流中途可重试 error（无 result 标记）不落终态：唯一终态为最终 completed', async () => {
+    queueFakeEngineScript({
+      events: [
+        { type: 'assistant_message', content: 'working', isFinal: false },
+        // 模拟映射层对「assistant 消息带 error 字段」的中途 error：无 terminalSource 标记。
+        { type: 'agent_status', status: 'error', message: 'rate limited, retrying' },
+        { type: 'assistant_message', content: 'recovered and finished', isFinal: true },
+      ],
+      terminalStatus: 'completed',
+    })
+    const turnId = await sendTurnAndWaitSettled('retry then finish')
+
+    // 中途 error 被扣留不广播不落库，一轮只有一个终态且是最终 completed。
+    expect(loadTerminalStatuses(turnId)).toEqual([{ turnId, status: 'completed' }])
+    expect(sessionRepo.get(sessionId)?.status).not.toBe('running')
+  })
+
+  it('③d 无标记 error 终态被扣留后由 settle 补发：终态不丢失', async () => {
+    queueFakeEngineScript({
+      events: [{ type: 'assistant_message', content: 'partial', isFinal: false }],
+      // FakeEngine 的终态不带 terminalSource 标记：claude 路径应扣留到 settle 补发。
+      terminalStatus: 'error',
+    })
+    const turnId = await sendTurnAndWaitSettled('fail with held terminal')
+
+    expect(loadTerminalStatuses(turnId)).toEqual([{ turnId, status: 'error' }])
+    expect(sessionRepo.get(sessionId)?.status).toBe('error')
+  })
+
+  it('③e result 标记的 error 终态即时广播，settle 不重复补发', async () => {
+    queueFakeEngineScript({
+      events: [
+        { type: 'assistant_message', content: 'done', isFinal: true },
+        { type: 'agent_status', status: 'error', terminalSource: 'result' },
+      ],
+      terminalStatus: null,
+      holdForRelease: true,
+    })
+    const started = await service.sendTurn({ sessionId, message: 'result error terminal' })
+    expect(started.started).toBe(true)
+    const executor = fakeEngineInstances()[0]
+    if (executor == null) throw new Error('executor was never created')
+    await waitUntil(() => executor.holding, 5000, 'executor holding')
+
+    // promise 仍挂起：result 派生的 error 终态必须已即时落库。
+    expect(loadTerminalStatuses(started.turnId)).toEqual([
+      { turnId: started.turnId, status: 'error' },
+    ])
+    expect(sessionRepo.get(sessionId)?.status).toBe('running')
+
+    executor.release()
+    await waitUntil(
+      () => sessionRepo.get(sessionId)?.status !== 'running',
+      5000,
+      'session settles after release',
+    )
+    // settle 不重复补发。
+    expect(countTerminal(started.turnId)).toBe(1)
+  })
+
   describe('④⑤⑥ getHistory 僵尸懒恢复', () => {
     /** 直接向库内写入一段「断流轮」事件：有正文、无终态。 */
     function insertInterruptedTurn(turnId: string, turnIndex: number): void {

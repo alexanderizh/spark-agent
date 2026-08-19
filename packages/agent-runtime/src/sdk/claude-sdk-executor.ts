@@ -591,6 +591,8 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
     const claudeCodeExecutable = resolveClaudeCodeExecutable()
 
     let terminalStatusEmitted = false
+    // 被异步子代理守卫压住的终态：流关闭兜底时按原样还原（error 不能落成 completed）。
+    let suppressedTerminalStatus: AgentStatusValue | null = null
     const emitTerminalStatus = (status: AgentStatusValue): void => {
       if (terminalStatusEmitted) return
       terminalStatusEmitted = true
@@ -988,6 +990,8 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
                 isTerminalAgentStatus(event.status) &&
                 hasPendingAsyncSubagentLaunches(ctx)
               ) {
+                // 记住被压住的终态原值：兜底时按原样还原，error 结果不能被落成 completed。
+                suppressedTerminalStatus = event.status
                 continue
               }
               if (
@@ -1042,7 +1046,7 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
           return
         }
 
-        if (!terminalStatusEmitted) emitTerminalStatus('completed')
+        if (!terminalStatusEmitted) emitTerminalStatus(suppressedTerminalStatus ?? 'completed')
         // Record resume success if this was a resumed session
         if (resumeExistingSession) {
           resumeCircuitBreaker.recordSuccess(sessionId)
@@ -1075,6 +1079,7 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
             prompt = buildMaxTurnContinuationPrompt()
             resumeExistingSession = true
             terminalStatusEmitted = false
+            suppressedTerminalStatus = null
             continue
           }
 
@@ -1122,6 +1127,7 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
             config = { ...config, sdkSessionId: freshSessionId }
             // Reset terminal status since we're retrying
             terminalStatusEmitted = false
+            suppressedTerminalStatus = null
             continue
           }
 

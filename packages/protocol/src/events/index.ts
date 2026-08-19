@@ -554,6 +554,13 @@ export interface AgentStatusEvent extends BaseEvent {
   status: AgentStatusValue
   /** 状态描述（显示在 Agent Card 上）*/
   message?: string
+  /**
+   * 终态来源标记。`'result'` 表示该终态由 SDK result 消息直接映射而来，
+   * 是轮次真实的完成/失败信号，session 层据此即时广播落库。
+   * 未携带该标记的 error 终态（如流中途 assistant 消息带 error 字段的可重试
+   * 错误）不即时广播，仅在轮次收尾（settle）时定稿，避免一轮出现两个终态。
+   */
+  terminalSource?: 'result'
   /** Claude SDK init 阶段回报的实际运行时工具清单摘要；其他 adapter 可省略。 */
   runtimeInitialization?: {
     availableToolCount: number

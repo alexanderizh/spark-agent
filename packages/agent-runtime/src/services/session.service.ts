@@ -4501,6 +4501,8 @@ export class SessionService {
     // Codex SDK 现会先发各 segment 的 complete，再发整 turn 的 isFinal 汇总 complete；
     // 这里收集整轮 complete 事件，turn 结束后统一归并，避免只拿到第一段正文。
     let pendingTerminalStatus: AgentStatusEvent | null = null
+    // 当前 pending 终态是否已即时广播（未广播时收尾须补发，保证终态守恒）。
+    let pendingTerminalBroadcast = false
     // completed 终态本轮是否已广播过（防 result + 偶发流内 idle 双发）。
     let completedBroadcast = false
     // 终态事件在收到时即时广播（见下方 onEvent），这里只保留状态值供收尾使用：
@@ -4509,6 +4511,10 @@ export class SessionService {
     const settlePendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
       if (pendingTerminalStatus == null) return null
       const status = pendingTerminalStatus.status
+      // 被扣留的终态（流中途可重试 error）在收尾时补发，保证每轮事件流必有终态。
+      if (!pendingTerminalBroadcast) {
+        this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
+      }
       this.updateStatusAfterHostTerminal(sessionRepo, sessionId, status)
       pendingTerminalStatus = null
       return status
@@ -4546,9 +4552,16 @@ export class SessionService {
         // UI 在内容已完成后继续显示「进行中」数秒。事件流中终态之后的 presented_files /
         // context_summarized 等追加事件渲染端均按独立块处理（此前 context_summarized
         // 就已落在终态之后），顺序不受影响。
+        // 即时广播仅限 result 派生的真实终态（terminalSource 标记）；流中途的可重试
+        // error（assistant 消息带 error 字段，SDK 可能续流）扣留到收尾补发定稿，
+        // 避免一轮出现两个终态事件。
         const terminalEvent = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
         pendingTerminalStatus = terminalEvent
-        this.emitAndPersist(sessionId, turnId, terminalEvent, eventRepo)
+        const broadcastNow = event.status !== 'error' || event.terminalSource === 'result'
+        pendingTerminalBroadcast = broadcastNow
+        if (broadcastNow) {
+          this.emitAndPersist(sessionId, turnId, terminalEvent, eventRepo)
+        }
         return
       }
       mediaPresentationCollector.observe(event)
@@ -5028,6 +5041,8 @@ export class SessionService {
       )
     }
     let pendingTerminalStatus: AgentStatusEvent | null = null
+    // 当前 pending 终态是否已即时广播（未广播时收尾须补发，保证终态守恒）。
+    let pendingTerminalBroadcast = false
     // completed 终态本轮是否已广播过（防重复完成信号双发）。
     let completedBroadcast = false
     // 终态事件在收到时即时广播（见下方 onEvent）；这里只保留状态值供收尾使用，
@@ -5035,6 +5050,10 @@ export class SessionService {
     const settlePendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
       if (pendingTerminalStatus == null) return null
       const status = pendingTerminalStatus.status
+      // 被扣留的终态（无 result 标记的 error）在收尾时补发，保证每轮事件流必有终态。
+      if (!pendingTerminalBroadcast) {
+        this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
+      }
       this.updateStatusAfterHostTerminal(sessionRepo, sessionId, status)
       pendingTerminalStatus = null
       return status
@@ -5062,9 +5081,16 @@ export class SessionService {
         if (event.status === 'completed') completedBroadcast = true
         // 终态即时广播（与 claude 路径同因）：完成信号一到即收尾 UI，
         // 不再扣留到流关闭/后处理结束。
+        // 与 claude 路径一致：即时广播仅限 result 派生的真实终态（terminalSource
+        // 标记）；无标记的 error 扣留到收尾补发，防御未来 adapter 出现流中途
+        // 可重试 error 时破坏「每轮一个终态」守恒。
         const terminalEvent = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
         pendingTerminalStatus = terminalEvent
-        this.emitAndPersist(sessionId, turnId, terminalEvent, eventRepo)
+        const broadcastNow = event.status !== 'error' || event.terminalSource === 'result'
+        pendingTerminalBroadcast = broadcastNow
+        if (broadcastNow) {
+          this.emitAndPersist(sessionId, turnId, terminalEvent, eventRepo)
+        }
         return
       }
       mediaPresentationCollector.observe(event)
