@@ -1,6 +1,6 @@
 # 低代码自定义工具平台（Custom Tools）实施方案
 
-> 状态: 待开发 | 最后核对: 2026-08-16
+> 状态: 实施中 | 最后核对: 2026-08-19
 
 母讨论：2026-08-16 关于「自定义 Agent 工具 / UI 插件 / Agent 插件」的平台能力评估（结论：低代码自定义工具为 P0，UI 插件缓行，独立 Agent 插件概念不做）。
 本方案基于 2026-08-16 三路代码级调研（工具注册管道 / plugin-sdk 与权限模型 / 持久化与执行先例）+ 两项关键结论人工复核（PlaywrightMcpRegistration 模式、mcp 配置 env 透传）。所有文件路径为当日实测；`session.service.ts` 行号在 Phase 1 W2 拆分期间会漂移，仅作定位参考。
@@ -337,7 +337,7 @@ interface ExecutorResult {
 ## 7. UI 设计（`apps/desktop/src/renderer/design/views/CustomToolsView.tsx`）
 
 - **入口**：左侧导航「自定义工具」独立视图（与 MCP 管理并列），App.tsx 懒加载路由
-- **列表页**：工具卡片（类型图标、risk 徽标配色对齐现有 low/medium/high、启用开关、最近测试状态、来源 local/imported 标记）；空态引导（三个类型模板示例）
+- **列表页**：工具卡片采用应用统一的**扁平化风格**——不用边框（或仅极弱分隔），卡片以 `var(--bg-sunken)` 底色与页面背景拉开层次，hover 用底色加深而非阴影/描边，圆角沿用 `--r-md`；卡片内容（类型图标、risk 徽标配色对齐现有 low/medium/high、启用开关、最近测试状态、来源 local/imported 标记）；空态引导（三个类型模板示例）
 - **编辑器**（Drawer，窄屏可全屏）：
   - 基本信息区 → 类型选择（选定后不可改）→ 类型专属表单 → 参数 Schema 构建器（照抄 `ProviderManifestParameterEditor` 交互）→ 安全与超时 → 风险声明（编辑器给出类型建议值，只可上调）
   - 密钥字段：掩码输入 + 「写入密钥库」按钮，永不回显；`has-secret` 状态灯
