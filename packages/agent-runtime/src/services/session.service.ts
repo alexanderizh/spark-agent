@@ -161,6 +161,9 @@ import { SessionCrudController } from './session/session-crud.js'
 // ─── P1-W3-S5 MCP 工具面装配（迁出至 ./session/session-mcp-tooling.ts）───
 import { SessionMcpTooling } from './session/session-mcp-tooling.js'
 
+// ─── P1-W3-S6 用量台账（迁出至 ./session/session-usage-ledger.ts）───
+import { SessionUsageLedger } from './session/session-usage-ledger.js'
+
 // ─── P1-W3-S1 类外纯函数（迁出至 ./session/session-pure-utils.ts）───
 import {
   MEMORY_BEHAVIOR_SYSTEM_PROMPT,
@@ -820,17 +823,7 @@ export class SessionService {
   private readonly pendingTitleRefinements = new Map<string, PendingTitleRefinement>()
   /** 引擎注册表（P1-W1-D5）：kind → 执行器构造 + 能力声明；第三引擎接入只需 register。 */
   private readonly engineRegistry = createDefaultEngineRegistry()
-  private usageLedgerLastByTurn = new Map<
-    string,
-    {
-      inputTokens: number
-      outputTokens: number
-      reasoningOutputTokens: number
-      cacheHitTokens: number
-      cacheWriteTokens: number
-      estimatedCostUsd: number
-    }
-  >()
+  private readonly usageLedger: SessionUsageLedger
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandController: SessionCommandController
   private readonly resumeGate = new ResumeGateManager()
@@ -1043,6 +1036,7 @@ export class SessionService {
   ) {
     this.mcpService = mcpService ?? new McpService(new McpServerRepository(db), mcpOAuthProvider)
     this.commandController = new SessionCommandController(this.db, this)
+    this.usageLedger = new SessionUsageLedger(this.db)
     this.platformBridge = new PlatformBridgeService()
     this.continuityCoordinator = new SessionContinuityCoordinator(
       db,
@@ -7153,7 +7147,7 @@ export class SessionService {
         outputTokens = event.outputTokens
         // SDK usage_update 是累计快照；按 dispatch 隔离 delta 状态，避免多次快照重复计费，
         // 也避免覆盖同一 Host turn 的累计基线。Provider/Model 必须使用成员实际路由结果。
-        this.recordUsageUpdate(sessionId, turnId, event, {
+        this.usageLedger.recordUpdate(sessionId, turnId, event, {
           sourceKey: `member:${dispatchId}`,
           providerId: providerProfileId,
           modelId: model,
@@ -7259,93 +7253,10 @@ export class SessionService {
     }
   }
 
-  private usageLedgerKey(sessionId: string, turnId: string, sourceKey = 'host'): string {
-    return `${sessionId}:${turnId}:${sourceKey}`
-  }
-
+  /** 清除用量累计基线；委托 session-usage-ledger（P1-W3-S6）。命令系统 host 回调沿用此公共入口。 */
   clearUsageLedgerTurnState(sessionId: string, turnId?: string): void {
-    if (turnId != null) {
-      const turnPrefix = `${sessionId}:${turnId}:`
-      for (const key of this.usageLedgerLastByTurn.keys()) {
-        if (key.startsWith(turnPrefix)) this.usageLedgerLastByTurn.delete(key)
-      }
-      return
-    }
-    const prefix = `${sessionId}:`
-    for (const key of this.usageLedgerLastByTurn.keys()) {
-      if (key.startsWith(prefix)) this.usageLedgerLastByTurn.delete(key)
-    }
+    this.usageLedger.clearTurnState(sessionId, turnId)
   }
-
-  private recordUsageUpdate(
-    sessionId: string,
-    turnId: string,
-    event: Extract<AgentEvent, { type: 'usage_update' }>,
-    options: {
-      sourceKey?: string
-      providerId?: string
-      modelId?: string
-    } = {},
-  ): void {
-    const key = this.usageLedgerKey(sessionId, turnId, options.sourceKey)
-    const prev = this.usageLedgerLastByTurn.get(key) ?? {
-      inputTokens: 0,
-      outputTokens: 0,
-      reasoningOutputTokens: 0,
-      cacheHitTokens: 0,
-      cacheWriteTokens: 0,
-      estimatedCostUsd: 0,
-    }
-    const current = {
-      inputTokens: Math.max(0, event.inputTokens),
-      outputTokens: Math.max(0, event.outputTokens),
-      reasoningOutputTokens: Math.max(0, event.reasoningOutputTokens ?? 0),
-      cacheHitTokens: Math.max(0, event.cacheHitTokens ?? 0),
-      cacheWriteTokens: Math.max(0, event.cacheWriteTokens ?? 0),
-      estimatedCostUsd: Math.max(0, event.estimatedCostUsd ?? 0),
-    }
-    this.usageLedgerLastByTurn.set(key, current)
-
-    const inputTokens = Math.max(0, current.inputTokens - prev.inputTokens)
-    const outputTokens = Math.max(0, current.outputTokens - prev.outputTokens)
-    const reasoningOutputTokens = Math.max(
-      0,
-      current.reasoningOutputTokens - prev.reasoningOutputTokens,
-    )
-    const cacheReadTokens = Math.max(0, current.cacheHitTokens - prev.cacheHitTokens)
-    const cacheWriteTokens = Math.max(0, current.cacheWriteTokens - prev.cacheWriteTokens)
-    const costUsd = Math.max(0, current.estimatedCostUsd - prev.estimatedCostUsd)
-    if (
-      inputTokens === 0 &&
-      outputTokens === 0 &&
-      reasoningOutputTokens === 0 &&
-      cacheReadTokens === 0 &&
-      cacheWriteTokens === 0 &&
-      costUsd === 0
-    )
-      return
-
-    try {
-      const session = new SessionRepository(this.db).get(sessionId)
-      const providerId = options.providerId ?? session?.provider_profile_id ?? event.provider
-      const modelId = options.modelId ?? (event.model || session?.model_id || 'unknown')
-      new UsageLedgerRepository(this.db).record({
-        sessionId,
-        providerId,
-        modelId,
-        inputTokens,
-        outputTokens,
-        reasoningOutputTokens,
-        cacheReadTokens,
-        cacheWriteTokens,
-        costUsd,
-        requestTimestamp: event.timestamp,
-      })
-    } catch {
-      // Non-fatal: usage dashboard data must not interrupt chat event streaming.
-    }
-  }
-
   private emitAndPersist(
     sessionId: string,
     turnId: string,
@@ -7389,7 +7300,7 @@ export class SessionService {
       throw err
     }
     if (event.type === 'usage_update') {
-      this.recordUsageUpdate(sessionId, turnId, event)
+      this.usageLedger.recordUpdate(sessionId, turnId, event)
     }
 
     // 触发 hook：检测 agent_status 事件的关键状态变化
@@ -7421,7 +7332,7 @@ export class SessionService {
         })
       }
       if (TERMINAL_AGENT_STATUSES.has(status)) {
-        this.clearUsageLedgerTurnState(sessionId, turnId)
+        this.usageLedger.clearTurnState(sessionId, turnId)
       }
     }
   }
