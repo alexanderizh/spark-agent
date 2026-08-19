@@ -15,6 +15,7 @@ import type { SparkDatabase } from '@spark/storage'
 import type {
   AgentEvent,
   CliSparkOverride,
+  SessionChatMode,
   SessionId,
   SessionListResponse,
   SessionPermissionMode,
@@ -336,7 +337,7 @@ export class SessionCrudController {
     agentId?: string
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
-    chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+    chatMode?: SessionChatMode
     reasoningEffort?: SparkReasoningEffort
     debugMode?: boolean
     cliSparkOverride?: CliSparkOverride | null

@@ -48,6 +48,7 @@ import type {
   AgentEvent,
   CliSparkOverride,
   SessionCancelQueuedTurnResponse,
+  SessionChatMode,
   SessionClearQueuedTurnsResponse,
   SessionReorderQueuedTurnsResponse,
   SessionSendQueuedTurnNowResponse,
@@ -512,7 +513,7 @@ type SendTurnParams = UserMessagePresentation & {
   skillIds?: string[]
   agentAdapter?: AgentAdapterKind
   permissionMode?: SessionPermissionMode
-  chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+  chatMode?: SessionChatMode
   reasoningEffort?: SparkReasoningEffort
   cliSparkOverride?: CliSparkOverride | null
   skillId?: string
@@ -1460,7 +1461,7 @@ export class SessionService {
     agentId?: string
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
-    chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+    chatMode?: SessionChatMode
     reasoningEffort?: SparkReasoningEffort
     debugMode?: boolean
     cliSparkOverride?: CliSparkOverride | null
@@ -9062,7 +9063,7 @@ export class SessionService {
     agentId?: string
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
-    chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+    chatMode?: SessionChatMode
     reasoningEffort?: SparkReasoningEffort
     debugMode?: boolean
     cliSparkOverride?: CliSparkOverride | null

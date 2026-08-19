@@ -28,6 +28,7 @@ import type {
   AgentEvent,
   CliSparkOverride,
   HistoryImportSource,
+  SessionChatMode,
   SessionAttachment,
   SessionId,
   SessionLineage,
@@ -70,7 +71,7 @@ export type SessionRuntimePatch = {
   skillIds?: string[]
   agentAdapter?: AgentAdapterKind
   permissionMode?: SessionPermissionMode
-  chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+  chatMode?: SessionChatMode
   reasoningEffort?: SparkReasoningEffort
 }
 
@@ -968,9 +969,7 @@ export async function getWorkspaceRootIssue(rootPath: string): Promise<string | 
   }
 }
 
-export function getChatModeFromSession(
-  value: string | null | undefined,
-): 'agent' | 'ask' | 'edit' | 'review' {
+export function getChatModeFromSession(value: string | null | undefined): SessionChatMode {
   if (value === 'ask' || value === 'edit' || value === 'review') return value
   return 'agent'
 }

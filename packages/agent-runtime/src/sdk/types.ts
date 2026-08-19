@@ -10,7 +10,7 @@
  */
 
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages'
-import type { HookNode, UserQuestionPrompt } from '@spark/protocol'
+import type { HookNode, SessionPermissionMode, UserQuestionPrompt } from '@spark/protocol'
 import type { SparkReasoningEffort } from './reasoning-effort.js'
 
 // ── SDK Message Types ───────────────────────────────────────────────────────
@@ -637,15 +637,11 @@ export interface SDKQueryFunction {
 
 // ── Spark ↔ SDK Permission Mode Mapping ─────────────────────────────────────
 
-export type SparkPermissionMode =
-  | 'claude-ask'
-  | 'claude-auto-edits'
-  | 'claude-plan'
-  | 'claude-auto'
-  | 'claude-bypass'
-  | 'codex-default'
-  | 'codex-auto-review'
-  | 'codex-full-access'
+/**
+ * 兼容别名——唯一定义在 protocol 的 SessionPermissionMode（含
+ * SessionPermissionModeSchema zod 校验），P2.1 枚举收敛（2026-08-20）。
+ */
+export type SparkPermissionMode = SessionPermissionMode
 
 // ── Executor Configuration ──────────────────────────────────────────────────
 

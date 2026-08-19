@@ -24,7 +24,12 @@ import {
   resolveArtifactUrl,
   type SparkInstallArtifact,
 } from './skill-registry/artifact-manifest.js'
-import type { SkillItem, ProviderIconConfig, ProviderProfile } from '@spark/protocol'
+import type {
+  SkillItem,
+  ProviderIconConfig,
+  ProviderProfile,
+  SessionChatMode,
+} from '@spark/protocol'
 import { SUB_APP_SOURCE_HARD_LIMIT, SUB_APP_SURFACES, type SubAppSurface } from '@spark/protocol'
 import type { SubAppDraftPatch, SubAppListRequest } from '@spark/protocol'
 import {
@@ -404,7 +409,7 @@ export interface PlatformBridgeDeps {
       agentId?: string
       agentAdapter?: 'claude' | 'claude-sdk' | 'codex'
       permissionMode?: string
-      chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+      chatMode?: SessionChatMode
       reasoningEffort?: SparkReasoningEffort
     }): Promise<{ session: Record<string, unknown> }>
     getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>>
@@ -1663,7 +1668,7 @@ export class PlatformBridgeService {
 
   private async sessionSwitchMode(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const sessionId = String(params.sessionId ?? '')
-    const chatMode = params.chatMode as 'agent' | 'ask' | 'edit' | 'review' | undefined
+    const chatMode = params.chatMode as SessionChatMode | undefined
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!chatMode) throw new Error('Missing parameter: chatMode')
     const result = await d.sessionService.updateSession({ sessionId, chatMode })

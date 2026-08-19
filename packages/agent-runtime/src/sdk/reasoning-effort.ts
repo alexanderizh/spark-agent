@@ -1,4 +1,7 @@
-export type SparkReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+import type { SessionReasoningEffort } from '@spark/protocol'
+
+/** 兼容别名——唯一定义在 protocol 的 SessionReasoningEffort（P2.1 枚举收敛）。 */
+export type SparkReasoningEffort = SessionReasoningEffort
 export type ClaudeReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
 export type OpenAIResponsesReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
