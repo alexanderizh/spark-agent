@@ -840,7 +840,6 @@ export function ChatInspector({
             cacheHitTokens={usageData.cacheHitTokens}
             cacheHitRate={usageData.cacheHitRate}
             cacheWriteTokens={usageData.cacheWriteTokens}
-            estimatedCostUsd={usageData.estimatedCostUsd}
             sessionTotal={ledgerUsage}
           />
         </div>
@@ -1268,10 +1267,6 @@ function TaskListItem({ task }: { task: InspectorTask }) {
 
 /* ── Token Usage Visualization Components ── */
 
-function formatCostUsd(value: number): string {
-  return `$${value < 0.01 && value > 0 ? '<0.01' : value.toFixed(4)}`
-}
-
 /**
  * Token 用量面板。
  *
@@ -1279,6 +1274,10 @@ function formatCostUsd(value: number): string {
  * 「预估成本」却是累计值，同一块区域两种语义且没有任何标注：
  *   - 本轮：来自实时 usage_update 事件，反映当前/最近一轮
  *   - 会话累计：来自 usage_ledger（权威，覆盖全部轮次，不受历史窗口化影响）
+ *
+ * 注意：不再展示「预估成本」。SDK 的 total_cost_usd 是客户端按 Anthropic 官方牌价
+ * 本地估算的，渠道 API 从不返回成本；第三方中转 / 非 Anthropic 模型下与实际计费
+ * 完全脱钩，展示即误导，故整行移除（数据层 estimatedCostUsd 仍保留累计，仅不展示）。
  */
 function TokenUsagePanel({
   inputTokens,
@@ -1288,7 +1287,6 @@ function TokenUsagePanel({
   cacheHitTokens,
   cacheHitRate,
   cacheWriteTokens,
-  estimatedCostUsd,
   sessionTotal,
 }: {
   inputTokens: number
@@ -1299,7 +1297,6 @@ function TokenUsagePanel({
   /** 最近一轮缓存命中率（cache_read / 输入总量，provider 口径）；null = 未度量 */
   cacheHitRate: number | null
   cacheWriteTokens: number
-  estimatedCostUsd: number
   /** 会话累计（usage_ledger）。取不到时回落为仅展示本轮口径。 */
   sessionTotal: UsageGetSessionResponse['summary'] | null
 }) {
@@ -1362,20 +1359,7 @@ function TokenUsagePanel({
             <span className="token-row-label">Token 总计</span>
             <span className="token-row-value">{formatTokenCount(sessionTotalTokens)}</span>
           </div>
-          <div className="token-usage-row">
-            <span className="token-row-label">预估成本</span>
-            <span className="token-row-value token-cost">
-              {formatCostUsd(sessionTotal.totalCostUsd)}
-            </span>
-          </div>
         </>
-      )}
-      {/* ledger 不可用时（首次写入前 / 查询失败）至少保留本轮成本，不让成本行整个消失 */}
-      {!hasSessionTotal && hasUsage && (
-        <div className="token-usage-row">
-          <span className="token-row-label">预估成本（本轮）</span>
-          <span className="token-row-value token-cost">{formatCostUsd(estimatedCostUsd)}</span>
-        </div>
       )}
     </div>
   )
