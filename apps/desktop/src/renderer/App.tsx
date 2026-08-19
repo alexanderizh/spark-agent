@@ -51,6 +51,7 @@ import { MacWindowDragHeader } from './design/components/MacWindowDragHeader'
 import { WindowControls } from './design/components/WindowControls'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { CanvasProjectSidebarList } from './design/CanvasProjectSidebarList'
+import { NotificationBell } from './design/components/notifications/NotificationBell'
 import { Icons } from './design/Icons'
 import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
@@ -1129,6 +1130,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
             </button>
           </Dropdown>
+          <NotificationBell />
           <Tooltip title={tr('app.user.settings')} mouseEnterDelay={0.05}>
             <button
               className="sidebar-user-settings"
