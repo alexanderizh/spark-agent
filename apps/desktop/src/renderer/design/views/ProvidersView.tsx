@@ -110,10 +110,7 @@ import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
 import { ProviderManifestContractEditor } from '../components/ProviderManifestContractEditor'
 import { ManagedModelPreferencesModal } from './platform-model/ManagedModelPreferencesModal'
 import { editableProviderApiKeyPayload, loadEditableProviderSnapshot } from './providerApiKeyEcho'
-import {
-  CONTEXT_WINDOW_PRESETS,
-  resolveContextWindowSelectValue,
-} from '../utils/context-window'
+import { CONTEXT_WINDOW_PRESETS, resolveContextWindowSelectValue } from '../utils/context-window'
 import './ProvidersView.less'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -2613,7 +2610,7 @@ export function ProviderEditPanel({
   const [fetchingModels, setFetchingModels] = useState(false)
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null)
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(true)
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [modelPickerSearch, setModelPickerSearch] = useState('')
   const [iconPickerOpen, setIconPickerOpen] = useState(false)
@@ -2703,7 +2700,7 @@ export function ProviderEditPanel({
     // 新规则 react-hooks/set-state-in-effect 会误报，这里显式豁免。
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setConnectionFeedback(null)
-    setAdvancedOpen(false)
+    setAdvancedOpen(true)
     setModelPickerOpen(false)
     setModelPickerSearch('')
     setIconPickerOpen(false)
