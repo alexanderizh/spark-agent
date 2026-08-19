@@ -68,7 +68,6 @@ import type {
   AssistantMessageEvent,
   AgentStatusEvent,
   AgentStatusValue,
-  SessionHistoryResetEvent,
   UserMessagePresentation,
   HookNode,
   SessionAttachment,
@@ -155,6 +154,9 @@ export { createCodexExecutorForConfig } from './session/engine-registry.js'
 // ─── P1-W2-D1 turn 所有权注册表（迁出至 ./session/turn-registry.ts）───
 import { TurnRegistry } from './session/turn-registry.js'
 
+// ─── P1-W3-S2 命令系统（迁出至 ./session/session-commands.ts）───
+import { SessionCommandController } from './session/session-commands.js'
+
 // ─── P1-W3-S1 类外纯函数（迁出至 ./session/session-pure-utils.ts）───
 import {
   MEMORY_BEHAVIOR_SYSTEM_PROMPT,
@@ -173,9 +175,6 @@ import {
   buildTeamRosterPrompt,
   buildUserMessageSnapshot,
   buildWorktreeSessionSystemPrompt,
-  checkCommandAvailable,
-  checkOpenAISdkAvailable,
-  checkWorkspaceShellAvailable,
   collectManagedRuleContents,
   computerVisionCandidateScore,
   deriveSessionTitle,
@@ -204,11 +203,9 @@ import {
   isTitlePrefixOfMessage,
   joinPromptSections,
   listSessionCheckpointsFromEvents,
-  listSkillSummaries,
   makeRuntimeLoadStatus,
   mapSessionAttachmentsToDispatch,
   normalizeCliSparkOverride,
-  normalizeCustomCommandConfig,
   normalizeReasoningEffort,
   normalizeTurnAttachments,
   parseWorktreePromptMeta,
@@ -342,15 +339,8 @@ import {
 import { buildGoalContractDraftPrompt, parseGoalContractBlock } from './goal-contract.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
 import { z } from 'zod'
-import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
-import type {
-  CheckpointRestoreResult,
-  CheckpointSnapshot,
-  CommandDeps,
-  CommandListItem,
-  CustomCommandConfig,
-} from '../core/index.js'
+import type { CheckpointRestoreResult, CheckpointSnapshot, CommandListItem } from '../core/index.js'
 import { McpService } from './mcp-server.service.js'
 import type { McpOAuthTokenProvider } from './mcp-server.service.js'
 import { resolveMcpConfig } from '../mcp/index.js'
@@ -381,7 +371,6 @@ import {
 } from './workflow-executor.js'
 import { CheckpointGitService } from './checkpoint-git.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
-import { isSDKAvailable } from '../sdk/index.js'
 import type {
   SDKApprovalResult,
   SDKExecutorConfig,
@@ -608,7 +597,7 @@ const UNATTENDED_AUTOMATION_SYSTEM_PROMPT = [
   'Do not pause for approval or other interaction. If required context is missing, make the best reasonable assumption; if that would be unsafe, stop and return a concise blocker report instead of waiting.',
 ].join('\n')
 
-type SessionUsageTotals = { totalInputTokens: number; totalOutputTokens: number; totalCost: number }
+// getSessionUsageFromPersistence / SessionUsageTotals 迁出至 ./session/session-commands.ts（P1-W3-S2）
 
 function parseGoalStatusBlock(content: string): {
   status: 'continue' | 'completed' | 'blocked' | 'failed'
@@ -745,57 +734,6 @@ function buildGoalIterationPrompt(
   ].join('\n')
 }
 
-function getSessionUsageFromPersistence(
-  db: SparkDatabase,
-  eventRepo: EventRepository,
-  sessionId: string,
-): SessionUsageTotals | null {
-  try {
-    const ledgerUsage = new UsageLedgerRepository(db).getSessionUsage(sessionId)
-    if (ledgerUsage.recordCount > 0) {
-      return {
-        totalInputTokens: ledgerUsage.totalInputTokens,
-        totalOutputTokens: ledgerUsage.totalOutputTokens,
-        totalCost: ledgerUsage.totalCostUsd,
-      }
-    }
-  } catch {
-    // Usage ledger may be unavailable in older test doubles or partially migrated databases.
-  }
-
-  let totalInputTokens = 0
-  let totalOutputTokens = 0
-  let totalCost = 0
-  let usageEventCount = 0
-
-  for (const row of eventRepo.queryBySession({
-    sessionId,
-    eventType: 'usage_update',
-    limit: 10_000,
-  }).events) {
-    try {
-      const event = JSON.parse(row.event_json) as Partial<AgentEvent> & {
-        inputTokens?: unknown
-        outputTokens?: unknown
-        estimatedCostUsd?: unknown
-      }
-      const inputTokens = typeof event.inputTokens === 'number' ? event.inputTokens : 0
-      const outputTokens = typeof event.outputTokens === 'number' ? event.outputTokens : 0
-      const estimatedCostUsd =
-        typeof event.estimatedCostUsd === 'number' ? event.estimatedCostUsd : 0
-      totalInputTokens += inputTokens
-      totalOutputTokens += outputTokens
-      totalCost += estimatedCostUsd
-      usageEventCount += 1
-    } catch {
-      // Ignore malformed historical events.
-    }
-  }
-
-  if (usageEventCount === 0) return null
-  return { totalInputTokens, totalOutputTokens, totalCost }
-}
-
 /**
  * Canvas Agent 桥：由主进程注入。SessionService 在 sendTurn 时调用
  * `canvasMcpProvider(sessionId)` 拿到 in-process MCP server 配置；若 session
@@ -924,7 +862,7 @@ export class SessionService {
     }
   >()
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
-  private readonly commandRegistry = createBuiltinRegistry()
+  private readonly commandController: SessionCommandController
   private readonly resumeGate = new ResumeGateManager()
   private readonly mcpService: McpService
   private teamDispatchService: TeamDispatchService | null = null
@@ -1138,6 +1076,7 @@ export class SessionService {
     private readonly mcpOAuthProvider?: McpOAuthTokenProvider,
   ) {
     this.mcpService = mcpService ?? new McpService(new McpServerRepository(db), mcpOAuthProvider)
+    this.commandController = new SessionCommandController(this.db, this)
     this.platformBridge = new PlatformBridgeService()
     this.continuityCoordinator = new SessionContinuityCoordinator(
       db,
@@ -1604,201 +1543,7 @@ export class SessionService {
       }
     | { isCommand: false }
   > {
-    if (!isCommand(params.message)) return { isCommand: false }
-
-    const parsed = parseCommand(params.message)
-    if (parsed == null) return { isCommand: false }
-
-    const sessionRepo = new SessionRepository(this.db)
-    const providerRepo = new ProviderProfileRepository(this.db)
-    const eventRepo = new EventRepository(this.db)
-    const session = sessionRepo.get(params.sessionId)
-
-    // Get workspace path for git/shell commands
-    let workspacePath: string | null = null
-    try {
-      const workspaceIds: string[] = session?.workspace_ids_json
-        ? JSON.parse(session.workspace_ids_json)
-        : []
-      const workspaceId = workspaceIds[0]
-      if (workspaceId) {
-        const wsRepo = new WorkspaceRepository(this.db)
-        const ws = wsRepo.get(workspaceId)
-        workspacePath = ws?.root_path ?? null
-      }
-    } catch {
-      // ignore parse errors
-    }
-
-    const deps: CommandDeps = {
-      getSession: (id) => {
-        const s = sessionRepo.get(id)
-        if (s == null) return null
-        return {
-          title: s.title,
-          status: s.status,
-          modelId: s.model_id ?? null,
-          providerProfileId: s.provider_profile_id ?? '',
-          agentAdapter: getAgentAdapterFromSession(
-            s.agent_adapter,
-            s.chat_mode,
-            providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null,
-          ),
-          permissionMode: getPermissionModeFromSession(
-            s.permission_mode,
-            getAgentAdapterFromSession(
-              s.agent_adapter,
-              s.chat_mode,
-              providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null,
-            ),
-          ),
-          agentId: s.agent_id ?? null,
-        }
-      },
-      updateSession: async (id, fields) => {
-        if (fields.title !== undefined) sessionRepo.updateTitle(id, fields.title)
-        if (fields.modelId !== undefined) sessionRepo.updateRuntime(id, { modelId: fields.modelId })
-      },
-      clearSessionEvents: async (id) => {
-        eventRepo.deleteBySession(id)
-        this.eventSequencer.clear(id)
-        this.clearUsageLedgerTurnState(id)
-      },
-      getProviderName: (id) => {
-        return providerRepo.get(id)?.name ?? null
-      },
-      getProviderModelIds: (id) => getProviderModelIds(providerRepo.get(id)?.config_json),
-      setApprovalMode: (id, enabled) => {
-        this.applyApprovalToggle(id, enabled)
-      },
-      getWorkspacePath: () => workspacePath,
-      execShell: async (command, cwd) => {
-        const { exec } = await import('node:child_process')
-        const { promisify } = await import('node:util')
-        const execAsync = promisify(exec)
-        try {
-          const { stdout, stderr } = await execAsync(command, {
-            cwd: cwd ?? workspacePath ?? undefined,
-            timeout: 30000,
-            maxBuffer: 1024 * 1024,
-          })
-          return { stdout: stdout || '', stderr: stderr || '', exitCode: 0 }
-        } catch (err: unknown) {
-          const execErr = err as { stdout?: string; stderr?: string; code?: number }
-          return {
-            stdout: execErr.stdout || '',
-            stderr: execErr.stderr || '',
-            exitCode: execErr.code ?? 1,
-          }
-        }
-      },
-      getSessionEventCount: (id) => {
-        return eventRepo.countBySession(id)
-      },
-      getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
-      listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
-      restoreCheckpoint: async (id, checkpointRef) =>
-        this.restoreCheckpointViaSnapshot(id, checkpointRef),
-      getCheckpointEnabled: (id) => this.getSessionCheckpointEnabled(id),
-      setCheckpointEnabled: (id, enabled) => this.setSessionCheckpointEnabled(id, enabled),
-      listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
-      getSessionRuntimeInfo: (id) => {
-        const s = sessionRepo.get(id)
-        if (s == null) return null
-        const provider = providerRepo.get(s.provider_profile_id ?? '')
-        const adapter = getAgentAdapterFromSession(
-          s.agent_adapter,
-          s.chat_mode,
-          provider?.provider_type ?? null,
-        )
-        return {
-          providerProfileId: s.provider_profile_id ?? null,
-          providerName: provider?.name ?? null,
-          modelId: s.model_id ?? null,
-          agentAdapter: adapter,
-          permissionMode: getPermissionModeFromSession(s.permission_mode, adapter),
-        }
-      },
-      checkSdkAvailability: async () => ({
-        claudeSdk: await isSDKAvailable(),
-        codexCli: await checkCommandAvailable('codex --version', workspacePath),
-        openaiSdk: await checkOpenAISdkAvailable(),
-      }),
-      checkWorkspaceShell: async (cwd) => checkWorkspaceShellAvailable(cwd ?? workspacePath),
-      getMcpStatusSummary: () =>
-        this.mcpService.listServers().map((server) => ({
-          id: server.id,
-          name: server.name,
-          enabled: server.enabled,
-          ...this.mcpService.getServerStatus(server.id),
-        })),
-      getCurrentAgentSummary: (id) => {
-        const s = sessionRepo.get(id)
-        const agentId = s?.agent_id ?? 'platform-manager-agent'
-        const agent = new AgentRepository(this.db).get(agentId)
-        if (agent == null)
-          return {
-            id: agentId,
-            name: agentId,
-            exists: false,
-            enabled: false,
-            hasModelConfig: false,
-          }
-        return {
-          id: agent.id,
-          name: agent.name,
-          exists: true,
-          enabled: agent.enabled,
-          hasModelConfig: Boolean(agent.providerProfileId || agent.modelId),
-          providerProfileId: agent.providerProfileId ?? null,
-          modelId: agent.modelId ?? null,
-        }
-      },
-      setGoal: async (id, objective, options) =>
-        (
-          await this.setGoal({
-            sessionId: id,
-            objective,
-            ...(options?.attachments != null ? { attachments: options.attachments } : {}),
-            ...(options?.successCriteria != null
-              ? { successCriteria: options.successCriteria }
-              : {}),
-            ...(options?.validationCommands != null
-              ? { validation: { commands: options.validationCommands } }
-              : {}),
-          })
-        ).goal as unknown as Record<string, unknown>,
-      getGoal: (id) => this.getGoal(id).goal as unknown as Record<string, unknown> | null,
-      controlGoal: async (id, action, summary) =>
-        (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) }))
-          .goal as unknown as Record<string, unknown> | null,
-      confirmGoalContract: async (id) =>
-        (await this.confirmGoalContract({ sessionId: id })).goal as unknown as Record<
-          string,
-          unknown
-        > | null,
-      rejectGoalContract: async (id) =>
-        (await this.rejectGoalContract({ sessionId: id })).goal as unknown as Record<
-          string,
-          unknown
-        > | null,
-    }
-
-    const ctx = {
-      sessionId: params.sessionId,
-      ...(workspacePath != null ? { workspaceId: workspacePath } : {}),
-      ...(session?.provider_profile_id != null ? { providerId: session.provider_profile_id } : {}),
-      ...(session?.model_id != null ? { model: session.model_id } : {}),
-    }
-
-    this.registerConfiguredCommands()
-    // A leading slash is also common in routes, file paths, and pasted text.
-    // Only consume the message when its first token resolves to a real command;
-    // otherwise let the normal Agent turn interpret the user's full text.
-    if (this.commandRegistry.get(parsed.name) == null) return { isCommand: false }
-    const result = await this.commandRegistry.execute(parsed, ctx, deps)
-    if (result.forwardToAgent) return { isCommand: false }
-    return { isCommand: true, result }
+    return this.commandController.executeCommand(params)
   }
 
   async executeCommandAsEvents(params: {
@@ -1807,352 +1552,66 @@ export class SessionService {
     attachments?: SessionAttachment[]
     sessionReferences?: SessionReferenceInput[]
   }): Promise<{ isCommand: boolean; forwardToAgent?: boolean; started?: boolean }> {
-    if (!isCommand(params.message)) return { isCommand: false }
-    const parsed = parseCommand(params.message)
-    if (parsed == null) return { isCommand: false }
-
-    const sessionRepo = new SessionRepository(this.db)
-    const providerRepo = new ProviderProfileRepository(this.db)
-    const eventRepo = new EventRepository(this.db)
-    const commandAttachments = normalizeTurnAttachments(params.attachments)
-    const session = sessionRepo.get(params.sessionId)
-    const hadNoEventsBeforeCommand = eventRepo.countBySession(params.sessionId) === 0
-
-    let workspacePath: string | null = null
-    try {
-      const workspaceIds: string[] = session?.workspace_ids_json
-        ? JSON.parse(session.workspace_ids_json)
-        : []
-      const workspaceId = workspaceIds[0]
-      if (workspaceId) {
-        const wsRepo = new WorkspaceRepository(this.db)
-        const ws = wsRepo.get(workspaceId)
-        workspacePath = ws?.root_path ?? null
-      }
-    } catch {
-      /* ignore */
-    }
-
-    const deps: CommandDeps = {
-      getSession: (id) => {
-        const s = sessionRepo.get(id)
-        if (s == null) return null
-        return {
-          title: s.title,
-          status: s.status,
-          modelId: s.model_id ?? null,
-          providerProfileId: s.provider_profile_id ?? '',
-          agentAdapter: getAgentAdapterFromSession(
-            s.agent_adapter,
-            s.chat_mode,
-            providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null,
-          ),
-          permissionMode: getPermissionModeFromSession(
-            s.permission_mode,
-            getAgentAdapterFromSession(
-              s.agent_adapter,
-              s.chat_mode,
-              providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null,
-            ),
-          ),
-          agentId: s.agent_id ?? null,
-        }
-      },
-      updateSession: async (id, fields) => {
-        if (fields.title !== undefined) sessionRepo.updateTitle(id, fields.title)
-        if (fields.modelId !== undefined) sessionRepo.updateRuntime(id, { modelId: fields.modelId })
-      },
-      clearSessionEvents: async (id) => {
-        eventRepo.deleteBySession(id)
-        this.eventSequencer.clear(id)
-        this.clearUsageLedgerTurnState(id)
-      },
-      getProviderName: (id) => providerRepo.get(id)?.name ?? null,
-      getProviderModelIds: (id) => getProviderModelIds(providerRepo.get(id)?.config_json),
-      setApprovalMode: (id, enabled) => {
-        this.applyApprovalToggle(id, enabled)
-      },
-      getWorkspacePath: () => workspacePath,
-      execShell: async (command, cwd) => {
-        const { exec } = await import('node:child_process')
-        const { promisify } = await import('node:util')
-        const execAsync = promisify(exec)
-        try {
-          const { stdout, stderr } = await execAsync(command, {
-            cwd: cwd ?? workspacePath ?? undefined,
-            timeout: 30000,
-            maxBuffer: 1024 * 1024,
-          })
-          return { stdout: stdout || '', stderr: stderr || '', exitCode: 0 }
-        } catch (err: unknown) {
-          const e = err as { stdout?: string; stderr?: string; code?: number }
-          return { stdout: e.stdout || '', stderr: e.stderr || '', exitCode: e.code ?? 1 }
-        }
-      },
-      getSessionEventCount: (id) => eventRepo.countBySession(id),
-      getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
-      listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
-      restoreCheckpoint: async (id, checkpointRef) =>
-        this.restoreCheckpointViaSnapshot(id, checkpointRef),
-      getCheckpointEnabled: (id) => this.getSessionCheckpointEnabled(id),
-      setCheckpointEnabled: (id, enabled) => this.setSessionCheckpointEnabled(id, enabled),
-      listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
-      getSessionRuntimeInfo: (id) => {
-        const s = sessionRepo.get(id)
-        if (s == null) return null
-        const provider = providerRepo.get(s.provider_profile_id ?? '')
-        const adapter = getAgentAdapterFromSession(
-          s.agent_adapter,
-          s.chat_mode,
-          provider?.provider_type ?? null,
-        )
-        return {
-          providerProfileId: s.provider_profile_id ?? null,
-          providerName: provider?.name ?? null,
-          modelId: s.model_id ?? null,
-          agentAdapter: adapter,
-          permissionMode: getPermissionModeFromSession(s.permission_mode, adapter),
-        }
-      },
-      checkSdkAvailability: async () => ({
-        claudeSdk: await isSDKAvailable(),
-        codexCli: await checkCommandAvailable('codex --version', workspacePath),
-        openaiSdk: await checkOpenAISdkAvailable(),
-      }),
-      checkWorkspaceShell: async (cwd) => checkWorkspaceShellAvailable(cwd ?? workspacePath),
-      getMcpStatusSummary: () =>
-        this.mcpService.listServers().map((server) => ({
-          id: server.id,
-          name: server.name,
-          enabled: server.enabled,
-          ...this.mcpService.getServerStatus(server.id),
-        })),
-      getCurrentAgentSummary: (id) => {
-        const s = sessionRepo.get(id)
-        const agentId = s?.agent_id ?? 'platform-manager-agent'
-        const agent = new AgentRepository(this.db).get(agentId)
-        if (agent == null)
-          return {
-            id: agentId,
-            name: agentId,
-            exists: false,
-            enabled: false,
-            hasModelConfig: false,
-          }
-        return {
-          id: agent.id,
-          name: agent.name,
-          exists: true,
-          enabled: agent.enabled,
-          hasModelConfig: Boolean(agent.providerProfileId || agent.modelId),
-          providerProfileId: agent.providerProfileId ?? null,
-          modelId: agent.modelId ?? null,
-        }
-      },
-      setGoal: async (id, objective, options) =>
-        (
-          await this.setGoal({
-            sessionId: id,
-            objective,
-            ...(options?.attachments != null ? { attachments: options.attachments } : {}),
-            ...(options?.successCriteria != null
-              ? { successCriteria: options.successCriteria }
-              : {}),
-            ...(options?.validationCommands != null
-              ? { validation: { commands: options.validationCommands } }
-              : {}),
-          })
-        ).goal as unknown as Record<string, unknown>,
-      getGoal: (id) => this.getGoal(id).goal as unknown as Record<string, unknown> | null,
-      controlGoal: async (id, action, summary) =>
-        (await this.controlGoal({ sessionId: id, action, ...(summary != null ? { summary } : {}) }))
-          .goal as unknown as Record<string, unknown> | null,
-      confirmGoalContract: async (id) =>
-        (await this.confirmGoalContract({ sessionId: id })).goal as unknown as Record<
-          string,
-          unknown
-        > | null,
-      rejectGoalContract: async (id) =>
-        (await this.rejectGoalContract({ sessionId: id })).goal as unknown as Record<
-          string,
-          unknown
-        > | null,
-    }
-
-    const ctx = {
-      sessionId: params.sessionId,
-      ...(commandAttachments != null ? { attachments: commandAttachments } : {}),
-      ...(workspacePath != null ? { workspaceId: workspacePath } : {}),
-      ...(session?.provider_profile_id != null ? { providerId: session.provider_profile_id } : {}),
-      ...(session?.model_id != null ? { model: session.model_id } : {}),
-    }
-
-    this.registerConfiguredCommands()
-    // Preserve slash-prefixed routes/paths as ordinary user input when they do
-    // not match a registered command. The renderer will forward the original
-    // message unchanged, so the Agent can decide what the text represents.
-    if (this.commandRegistry.get(parsed.name) == null) {
-      return { isCommand: true, forwardToAgent: true }
-    }
-    const result = await this.commandRegistry.execute(parsed, ctx, deps)
-
-    if (result.forwardToAgent) return { isCommand: true, forwardToAgent: true }
-    // 创建命令会先写入“命令结果”事件，再启动 follow-up Agent turn；
-    // 因此后续 turn 已不再满足 existingEventCount === 0，常规首轮标题派生会被跳过。
-    // 直接使用用户在命令中提供的应用需求命名，避免新会话永久停留在“新会话”。
-    if (
-      parsed.name === 'spark-app-create' &&
-      result.success &&
-      hadNoEventsBeforeCommand &&
-      session != null &&
-      shouldDeriveSessionTitle(session.title)
-    ) {
-      const title = deriveSubAppCreateSessionTitle(parsed.args.join(' '))
-      sessionRepo.updateTitle(params.sessionId, title)
-      this.onSessionRenamed?.(params.sessionId, title)
-    }
-    const sessionReferences = params.sessionReferences?.slice(0, 10) ?? []
-    if (sessionReferences.length > 0) {
-      new SessionCollaborationRepository(this.db).attachReferencesInTransaction({
-        references: sessionReferences.map((reference) => ({
-          targetSessionId: params.sessionId,
-          sourceSessionId: reference.sourceSessionId,
-          ...(reference.snapshotSeq !== undefined ? { snapshotSeq: reference.snapshotSeq } : {}),
-          actor: 'user' as const,
-        })),
-      })
-    }
-
-    // Inject result as events into the chat stream. Internal commands that end here
-    // emit a terminal agent_status so the UI can clear loading, but commands that
-    // enqueue a follow-up Agent turn must not mark the overall user request complete.
-    const followUpPrompt = result.followUpPrompt?.trim()
-    const hasFollowUpPrompt = followUpPrompt != null && followUpPrompt.length > 0
-    // 若命令 handler 已自行启动了一个 agent loop（典型：/goal 触发 goal iteration），
-    // 这里就不能再注入 'completed' 终态——那会让 UI 把命令结果 bubble 标完，但 loop
-    // 仍在跑，渲染器随之渲出一个空的「执行任务中」占位气泡（双气泡 bug）。
-    const hasActiveLoopAfterHandler = this.turnRegistry.hasActiveSession(params.sessionId)
-    const shouldEmitCompleted = !hasFollowUpPrompt && !hasActiveLoopAfterHandler
-    const wipeHistory = result.wipeHistory === true
-    const turnId = crypto.randomUUID()
-    // wipeHistory 的命令（典型 /clear）会先 emit 一条 SessionHistoryResetEvent，
-    // 让 renderer 在新 user/assistant 事件到达前清空本地缓存。
-    const baseEventCount = shouldEmitCompleted ? 3 : 2
-    const totalEventCount = baseEventCount + (wipeHistory ? 1 : 0)
-    const seq0 = this.eventSequencer.reserve(params.sessionId, eventRepo, totalEventCount)
-    const commandEvents: AgentEvent[] = []
-    let seqOffset = 0
-    if (wipeHistory) {
-      const resetEvent: SessionHistoryResetEvent = {
-        id: crypto.randomUUID(),
-        type: 'session_history_reset',
-        sessionId: params.sessionId,
-        turnId,
-        timestamp: new Date().toISOString(),
-        seq: seq0 + seqOffset,
-        reason: `command:/${params.message.replace(/^\//, '').split(' ')[0]}`,
-      }
-      commandEvents.push(resetEvent)
-      seqOffset += 1
-    }
-
-    const userEvent: UserMessageEvent = {
-      id: crypto.randomUUID(),
-      type: 'user_message',
-      sessionId: params.sessionId,
-      turnId,
-      timestamp: new Date().toISOString(),
-      seq: seq0 + seqOffset,
-      content: params.message,
-      ...(commandAttachments != null ? { attachments: commandAttachments } : {}),
-      ...(sessionReferences.length > 0 ? { sessionReferences } : {}),
-    }
-    seqOffset += 1
-    const cmdName = params.message.replace(/^\//, '').split(' ')[0]
-    const icon = result.success ? '✅' : '❌'
-    let content = `${icon} **/${cmdName}**\n\n${result.message}`
-    if (result.data) content += '\n\n```json\n' + JSON.stringify(result.data, null, 2) + '\n```'
-
-    const assistantEvent: AssistantMessageEvent = {
-      id: crypto.randomUUID(),
-      type: 'assistant_message',
-      sessionId: params.sessionId,
-      turnId,
-      timestamp: new Date().toISOString(),
-      seq: seq0 + seqOffset,
-      mode: 'complete',
-      content,
-      provider: 'spark' as const,
-      isFinal: true,
-    }
-    seqOffset += 1
-
-    commandEvents.push(userEvent, assistantEvent)
-    if (shouldEmitCompleted) {
-      const completedEvent: AgentStatusEvent = {
-        id: crypto.randomUUID(),
-        type: 'agent_status',
-        sessionId: params.sessionId,
-        turnId,
-        timestamp: new Date().toISOString(),
-        seq: seq0 + seqOffset,
-        status: 'completed',
-        message: `/${cmdName} completed`,
-      }
-      commandEvents.push(completedEvent)
-    }
-
-    try {
-      persistAndPublishAgentEvents(eventRepo, commandEvents, this.onEvent)
-    } catch (err) {
-      if (err instanceof AgentEventPersistenceError) {
-        log.error('Failed to persist command events', {
-          sessionId: params.sessionId,
-          turnId,
-          error: err.message,
-        })
-      }
-      throw err
-    }
-
-    if (hasFollowUpPrompt) {
-      const sendResult = await this.sendTurn({
-        ...COMMAND_FOLLOW_UP_TURN_PRESENTATION,
-        sessionId: params.sessionId,
-        message: followUpPrompt,
-        ...(commandAttachments != null ? { attachments: commandAttachments } : {}),
-        ...(result.followUpSkillId != null ? { skillId: result.followUpSkillId } : {}),
-        ...(result.followUpSkillParams != null ? { skillParams: result.followUpSkillParams } : {}),
-      })
-      return { isCommand: true, forwardToAgent: false, started: sendResult.started }
-    }
-
-    return { isCommand: true, forwardToAgent: false, started: false }
+    return this.commandController.executeCommandAsEvents(params)
   }
 
   listCommands(): CommandListItem[] {
-    this.registerConfiguredCommands()
-    return this.commandRegistry.listItems()
+    return this.commandController.listCommands()
   }
 
-  private registerConfiguredCommands(): void {
-    const skills = listSkillSummaries(new SkillRepository(this.db))
-    this.commandRegistry.registerSkillCommands(skills)
-    this.commandRegistry.registerCustomCommands(this.listCustomCommands())
+  // ── SessionCommandHost 窄回调（P1-W3-S2 命令系统迁出）───
+
+  clearSessionEventSequencer(sessionId: string): void {
+    this.eventSequencer.clear(sessionId)
   }
 
-  private listCustomCommands(): CustomCommandConfig[] {
-    const raw = new SettingsRepository(this.db).get('custom-commands', 'items')
-    if (typeof raw !== 'string' || raw.trim().length === 0) return []
-    try {
-      const parsed = JSON.parse(raw) as unknown
-      if (!Array.isArray(parsed)) return []
-      return parsed
-        .map((item) => normalizeCustomCommandConfig(item))
-        .filter((item): item is CustomCommandConfig => item != null)
-    } catch {
-      return []
-    }
+  reserveEventSeqs(sessionId: string, eventRepo: EventRepository, count: number): number {
+    return this.eventSequencer.reserve(sessionId, eventRepo, count)
+  }
+
+  persistAndPublishCommandEvents(eventRepo: EventRepository, events: AgentEvent[]): void {
+    persistAndPublishAgentEvents(eventRepo, events, this.onEvent)
+  }
+
+  notifySessionRenamed(sessionId: string, title: string): void {
+    this.onSessionRenamed?.(sessionId, title)
+  }
+
+  getMcpStatusSummary(): Array<{
+    id: string
+    name: string
+    enabled: boolean
+    connected: boolean
+    toolCount: number
+    error?: string
+  }> {
+    return this.mcpService.listServers().map((server) => ({
+      id: server.id,
+      name: server.name,
+      enabled: server.enabled,
+      ...this.mcpService.getServerStatus(server.id),
+    }))
+  }
+
+  hasActiveTurnLoop(sessionId: string): boolean {
+    return this.turnRegistry.hasActiveSession(sessionId)
+  }
+
+  startCommandFollowUpTurn(params: {
+    sessionId: string
+    message: string
+    attachments?: SessionAttachment[]
+    skillId?: string
+    skillParams?: Record<string, unknown>
+  }): Promise<{ started: boolean }> {
+    return this.sendTurn({
+      ...COMMAND_FOLLOW_UP_TURN_PRESENTATION,
+      sessionId: params.sessionId,
+      message: params.message,
+      ...(params.attachments != null ? { attachments: params.attachments } : {}),
+      ...(params.skillId != null ? { skillId: params.skillId } : {}),
+      ...(params.skillParams != null ? { skillParams: params.skillParams } : {}),
+    })
   }
 
   async sendTurn(params: SendTurnParams): Promise<{ turnId: string; started: boolean }> {
@@ -8388,7 +7847,7 @@ export class SessionService {
     return `${sessionId}:${turnId}:${sourceKey}`
   }
 
-  private clearUsageLedgerTurnState(sessionId: string, turnId?: string): void {
+  clearUsageLedgerTurnState(sessionId: string, turnId?: string): void {
     if (turnId != null) {
       const turnPrefix = `${sessionId}:${turnId}:`
       for (const key of this.usageLedgerLastByTurn.keys()) {
@@ -9133,7 +8592,7 @@ export class SessionService {
    * 适配器按当前 stored mode 的前缀判断，避免再查 agent 配置。
    * updateSession 会同时持久化并热切换正在运行的 executor。
    */
-  private applyApprovalToggle(sessionId: string, enabled: boolean): void {
+  applyApprovalToggle(sessionId: string, enabled: boolean): void {
     const sessionRepo = new SessionRepository(this.db)
     const isCodex = isCodexPermissionMode(sessionRepo.get(sessionId)?.permission_mode)
     const mode: SessionPermissionMode = enabled
@@ -10667,7 +10126,7 @@ export class SessionService {
   }
 
   /** 用 git 还原 checkpoint：安全拦截（同工作区有其他会话在跑则阻止）+ 还原前自动备份 + 非破坏性 restore。 */
-  private async restoreCheckpointViaSnapshot(
+  async restoreCheckpointViaSnapshot(
     sessionId: string,
     checkpointRef: string,
   ): Promise<CheckpointRestoreResult> {
