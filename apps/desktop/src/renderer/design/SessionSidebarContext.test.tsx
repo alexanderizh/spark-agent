@@ -277,6 +277,10 @@ describe('SessionSidebarContext', () => {
     })
     expect(latestCtxRef.current?.unreviewedCompletedSessions.has('session-1')).toBe(true)
 
+    // 等待初始 session:list 刷新提交，避免 handleArchiveProject 闭包拿到空 sessions
+    // （真实 UI 中归档只能在会话列表渲染后触发，闭包总是新鲜的）。
+    await vi.waitFor(() => expect(latestCtxRef.current?.sessions).toHaveLength(1))
+
     await act(async () => {
       await latestCtxRef.current?.handleArchiveProject(workspace)
     })
@@ -1449,8 +1453,10 @@ describe('SessionSidebarContext', () => {
           </SessionSidebarProvider>
         </ToastProvider>,
       )
-      await new Promise((resolve) => setTimeout(resolve, 30))
     })
+
+    // 等待初始 session:list 刷新提交，替代固定 30ms 等待（修复竞态 flake）。
+    await vi.waitFor(() => expect(latestCtxRef.current?.sessions).toHaveLength(1))
 
     await act(async () => {
       queueChangedHandler?.({ sessionId: 'team-session', running: true, queuedTurns: [] })
