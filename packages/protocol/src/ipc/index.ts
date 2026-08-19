@@ -99,6 +99,7 @@ import type {
   ComputerUseIpcChannelMap,
 } from '../computer-use/ipc.js'
 import type { SubAppIpcChannelMap } from '../sub-app.js'
+import type { CustomToolsIpcChannelMap } from '../custom-tools.js'
 import type { ComputerUseEvent } from '../computer-use/events.js'
 import type { AppControlCommandRequest } from '../computer-use/action.js'
 import type {
@@ -5725,7 +5726,8 @@ export interface IpcChannelMap
     DeliberationIpcChannelMap,
     EvidenceCostIpcChannelMap,
     ReplayPlaybookIpcChannelMap,
-    SubAppIpcChannelMap {
+    SubAppIpcChannelMap,
+    CustomToolsIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
@@ -6472,6 +6474,11 @@ export interface IpcStreamChannelMap {
    * 任何入口（管理页 UI、Agent MCP 工具、IPC）造成的创建/发布/启停/归档/
    * 删除/草稿更新都会触发，保证会话内创建的应用即时出现在菜单与胶囊。 */
   'stream:subapp:directory-changed': Record<string, never>
+  /** 自定义工具变更（创建/更新/删除/启停/导入）：渲染进程工具列表据此刷新。 */
+  'stream:custom-tools:changed': {
+    change: 'created' | 'updated' | 'deleted' | 'enabled' | 'imported'
+    id?: string
+  }
   /** Global runtime configuration changed; renderer should refresh cached pickers/lists. */
   'stream:config:changed': {
     scope:

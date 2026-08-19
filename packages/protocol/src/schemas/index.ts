@@ -42,6 +42,7 @@ import { CrossSessionCollaborationIpcSchemaRegistry } from '../cross-session-col
 import { EvidenceCostIpcSchemaRegistry } from '../evidence-cost.js'
 import { ReplayIpcSchemaRegistry } from '../replay-playbook.js'
 import { SubAppIpcSchemaRegistry } from '../sub-app.js'
+import { CustomToolsIpcSchemaRegistry } from '../custom-tools.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -975,6 +976,7 @@ export const IpcSchemaRegistry = {
   ...EvidenceCostIpcSchemaRegistry,
   ...ReplayIpcSchemaRegistry,
   ...SubAppIpcSchemaRegistry,
+  ...CustomToolsIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,
