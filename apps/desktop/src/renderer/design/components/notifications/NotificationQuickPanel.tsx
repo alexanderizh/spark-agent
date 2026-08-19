@@ -15,6 +15,7 @@ import {
   mergeFeed,
   type NotificationFeedItem,
 } from './notification-format'
+import { Button } from '@lobehub/ui'
 
 export interface NotificationQuickPanelProps {
   snapshot: NotificationSnapshot | null
@@ -113,9 +114,9 @@ export function NotificationQuickPanel(props: NotificationQuickPanelProps): Reac
         )}
       </div>
 
-      <button className="nb-quick-footer" onClick={onOpenCenter}>
+      <Button className="nb-quick-footer" type="text" size="small" onClick={onOpenCenter}>
         {t('app.notification.viewAll')}
-      </button>
+      </Button>
     </div>
   )
 }

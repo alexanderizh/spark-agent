@@ -9,14 +9,14 @@
 .nb-center-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding-right: 8px;
+  width: 100%;
+  min-width: 0;
 }
 
-.nb-center-title-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.nb-center-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nb-center {
@@ -27,6 +27,11 @@
 
   .ant-tabs {
     padding: 0 16px;
+
+    .ant-tabs-extra-content {
+      display: flex;
+      align-items: center;
+    }
   }
 }
 

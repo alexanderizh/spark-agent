@@ -593,25 +593,6 @@ function formatSessionLabel(title: string, status: string, messageCount: number)
   return `${safeTitle}${statusTag}${countTag}`
 }
 
-/**
- * 创建主窗口
- *
- * 安全配置说明：
- *   - contextIsolation: true — preload 和 renderer 的 JS 上下文完全隔离
- *   - nodeIntegration: false — renderer 无法直接访问 Node.js API
- *   - sandbox: true — renderer 进程运行在沙盒中，只能通过 contextBridge 暴露的 API 与主进程通信
- *   - webSecurity: true — 启用同源策略
- *   - allowRunningInsecureContent: false — 禁止加载 HTTP 资源
- */
-// ─── 启动期窗口原生毛玻璃 / 深浅底色 ─────────────────────────────────────────
-// 启动页（GateAwareShell → .boot-splash）需要跟随系统深浅模式，并叠加原生毛玻璃
-// 效果。三个平台对透明性的要求不一致，必须分流配置：
-//   - macOS：vibrancy 由 NSVisualEffectView 提供，原生跟随系统深浅。
-//            需要 transparent: true 且不要 backgroundColor，否则会盖住模糊层。
-//   - Windows 11：backgroundMaterial: 'acrylic' 需要【不透明】窗口，
-//            配合 backgroundColor 给纯色兜底；Windows 10 不识别 acrylic，自动降级为纯色。
-//   - Linux：无原生模糊，仅按 nativeTheme 深浅给纯色 backgroundColor。
-// nativeTheme.shouldUseDarkColors 在窗口创建时即确定，保证首帧底色与系统一致。
 const SPLASH_BG_LIGHT = '#fdfdfc'
 const SPLASH_BG_DARK = '#1f1f1f'
 
@@ -664,10 +645,6 @@ function buildNativeSplashOptions(isDarwin: boolean): {
 function createWindow(): BrowserWindow {
   const iconPath = getResourcePath(process.platform === 'win32' ? 'taskbarIcon.png' : 'icon.png')
 
-  // macOS: the native Window Controls Overlay publishes the usable titlebar
-  // rectangle through env(titlebar-area-*), so the renderer can align floating
-  // and flat sidebar chrome without guessing traffic-light coordinates.
-  // Windows & Linux keep their custom HTML title bar and window controls.
   const isDarwin = process.platform === 'darwin'
 
   const mainWindow = new BrowserWindow({

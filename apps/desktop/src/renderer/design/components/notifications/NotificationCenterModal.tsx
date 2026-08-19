@@ -227,25 +227,15 @@ export function NotificationCenterModal(props: NotificationCenterModalProps): Re
       title={
         <div className="nb-center-title">
           <span>{t('app.notification.title')}</span>
-          <div className="nb-center-title-actions">
+          {authed && (
             <button
               className="nb-quick-action"
-              aria-label={t('app.notification.refresh')}
-              disabled={refreshing}
-              onClick={onRefresh}
+              disabled={!authed || unreadCount === 0}
+              onClick={handleMarkAll}
             >
-              <Icons.Refresh size={12} className={refreshing ? 'nb-spin' : ''} />
+              {t('app.notification.markAllRead')}
             </button>
-            {authed && (
-              <button
-                className="nb-quick-action"
-                disabled={!authed || unreadCount === 0}
-                onClick={handleMarkAll}
-              >
-                {t('app.notification.markAllRead')}
-              </button>
-            )}
-          </div>
+          )}
         </div>
       }
     >
@@ -255,6 +245,16 @@ export function NotificationCenterModal(props: NotificationCenterModalProps): Re
           size="small"
           activeKey={tab}
           onChange={(key) => setTab(key === 'unread' ? 'unread' : 'all')}
+          tabBarExtraContent={
+            <button
+              className="nb-quick-action"
+              aria-label={t('app.notification.refresh')}
+              disabled={refreshing}
+              onClick={onRefresh}
+            >
+              <Icons.Refresh size={12} className={refreshing ? 'nb-spin' : ''} />
+            </button>
+          }
           items={[
             { key: 'all', label: t('app.notification.tabAll') },
             {
