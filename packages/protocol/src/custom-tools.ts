@@ -233,6 +233,13 @@ export class CustomToolTemplateError extends Error {
  * 返回标记后的 JSON 文本与按出现顺序记录的占位符参数名。
  */
 function scanAndMarkJsonTemplate(template: string): { marked: string; names: string[] } {
+  // 模板原文含哨兵字符会与打标记混淆（轻则渲染报错，重则值被错误替换），直接拒绝
+  if (template.includes(JSON_SENTINEL_CHAR)) {
+    throw new CustomToolTemplateError(
+      'INVALID_TEMPLATE',
+      'JSON body 模板不允许包含 U+FFFC 保留哨兵字符',
+    )
+  }
   const names: string[] = []
   let marked = ''
   let inString = false

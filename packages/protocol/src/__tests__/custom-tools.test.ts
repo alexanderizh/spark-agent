@@ -3,10 +3,12 @@ import {
   CustomToolDraftSchema,
   CustomToolsExportPayloadSchema,
   CustomToolsIpcSchemaRegistry,
+  assertJsonTemplateStructure,
   containsLiteralSecret,
   extractSqlNamedParams,
   extractTemplatePlaceholders,
   httpMethodRiskFloor,
+  renderJsonBodyTemplate,
 } from '../custom-tools.js'
 
 interface TestParam {
@@ -354,6 +356,15 @@ describe('JSON body 模板结构校验', () => {
     )
     expect(() => CustomToolDraftSchema.parse(draftWithBody('{"summary": "a" "b"}'))).toThrow(/JSON/)
     expect(() => CustomToolDraftSchema.parse(draftWithBody('{"unclosed": '))).toThrow(/JSON/)
+  })
+
+  it('rejects templates containing the U+FFFC sentinel character', () => {
+    // 哨兵字符是渲染期的内部标记，模板原文含此字符会与打标记混淆
+    expect(() => CustomToolDraftSchema.parse(draftWithBody('{"summary": "￼ctph0￼"}'))).toThrow(
+      /哨兵/,
+    )
+    expect(() => assertJsonTemplateStructure('"￼"')).toThrow(/哨兵/)
+    expect(() => renderJsonBodyTemplate('{"a": "￼"}', {})).toThrow(/哨兵/)
   })
 })
 

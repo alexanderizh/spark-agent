@@ -22,7 +22,7 @@ import {
   toCustomToolSummary,
 } from '@spark/protocol'
 import { CustomToolRepository } from '@spark/storage'
-import type { SparkDatabase } from '@spark/storage'
+import type { CustomToolSpecEnvelope, SparkDatabase } from '@spark/storage'
 import type { KeystoreRef } from '@spark/shared/keystore'
 import { deleteSecret, getSecret, hasSecret, setSecret } from '@spark/shared/keystore'
 import { createLogger } from '@spark/shared'
@@ -130,21 +130,29 @@ export class CustomToolService {
       throw new CustomToolError('INVALID_INPUT', '工具类型创建后不可修改')
     }
     this.assertTypeAvailable(draft.type)
-    const now = new Date().toISOString()
-    const record = withPersistence(draft, {
-      enabled: existing.enabled,
-      origin: existing.origin,
-      lastTestAt: existing.lastTestAt,
-      createdAt: existing.createdAt,
-      updatedAt: now,
+    const envelope: CustomToolSpecEnvelope = {
+      spec: draft.spec,
+      ...(draft.secretRefs != null && Object.keys(draft.secretRefs).length > 0
+        ? { secretRefs: draft.secretRefs }
+        : {}),
+    }
+    // 单条 UPDATE 原子重写整行（含信封），避免 delete+create 之间的数据丢失窗口；
+    // enabled/origin/lastTestAt/createdAt 不在字段内，原样保留
+    const updated = this.repository.update(id, {
+      title: draft.title,
+      description: draft.description,
+      inputSchema: draft.inputSchema,
+      envelope,
+      risk: draft.risk,
+      effect: draft.effect,
+      idempotency: draft.idempotency,
+      timeoutMs: draft.timeoutMs,
     })
-    // 整行重写：draft 字段 + 信封（spec+secretRefs）+ 时间戳
-    this.repository.deleteById(id)
-    this.repository.create(record)
+    if (updated == null) throw new CustomToolError('NOT_FOUND', `工具 ${id} 不存在`)
     await this.cleanupOrphanSecrets(existing, draft)
     log.info('custom tool updated', { id })
     this.emit({ change: 'updated', id })
-    return record
+    return updated
   }
 
   async delete(id: string): Promise<void> {
