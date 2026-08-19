@@ -174,6 +174,8 @@ export type {
   SubAppRow,
 } from './sub-app.repository.js'
 export { UsageLedgerRepository } from './usage-ledger.repository.js'
+export { CustomToolRepository } from './custom-tool.repository.js'
+export type { CustomToolRow, CustomToolSpecEnvelope } from './custom-tool.repository.js'
 export type {
   UsageLedgerRow,
   RecordUsageParams,

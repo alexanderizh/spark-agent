@@ -566,9 +566,9 @@ export type CustomToolOrigin = z.infer<typeof CustomToolOriginSchema>
 export type CustomToolRecord = CustomToolDraft & {
   enabled: boolean
   origin: CustomToolOrigin
-  lastTestAt: number | null
-  createdAt: number
-  updatedAt: number
+  lastTestAt: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 /** 列表页摘要（不含完整 spec，体积友好） */
@@ -585,9 +585,9 @@ export interface CustomToolSummary {
   origin: CustomToolOrigin
   /** secretRefs 的名称列表（用于状态灯；值永不外出） */
   secretNames: string[]
-  lastTestAt: number | null
-  createdAt: number
-  updatedAt: number
+  lastTestAt: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export type CustomToolDetails = CustomToolRecord & {
@@ -645,7 +645,7 @@ export const CustomToolExportEntrySchema = z
 export const CustomToolsExportPayloadSchema = z
   .object({
     formatVersion: z.literal(1),
-    exportedAt: z.number().int().positive().optional(),
+    exportedAt: z.string().max(64).optional(),
     tools: z.array(CustomToolExportEntrySchema).max(CUSTOM_TOOL_EXPORT_MAX),
   })
   .strict()

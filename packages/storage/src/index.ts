@@ -139,6 +139,7 @@ export {
   SubAppNotFoundError,
   SubAppReleaseNotFoundError,
   SubAppStateError,
+  CustomToolRepository,
 } from './repositories/index.js'
 
 export type {
@@ -305,4 +306,6 @@ export type {
   SubAppListPage,
   SubAppReleaseRow,
   SubAppRow,
+  CustomToolRow,
+  CustomToolSpecEnvelope,
 } from './repositories/index.js'
