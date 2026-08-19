@@ -1313,6 +1313,16 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
         isFinal: true,
       })
     }
+    // result 消息即本轮完成信号：在映射层直接发出终态，而不是等 SDK 流关闭后由
+    // executor 兜底补发。实测流关闭在 result 之后还有数秒延迟，扣到那时会让 UI
+    // 在内容已完成后继续显示「进行中」。maxTurns 续跑场景（error_max_turns 走
+    // else 分支）不受影响；executor 侧 terminalStatusEmitted 会随本事件置位，
+    // 流关闭后的兜底不会重复发。
+    events.push({
+      ...baseEvent(ctx),
+      type: 'agent_status',
+      status: 'completed',
+    })
   } else {
     const errorMsg = msg.errors?.join('; ') ?? `Turn ended: ${msg.subtype}`
     const nonRetryable =
@@ -2077,6 +2087,16 @@ function getAsyncSubagentLaunches(
     ctx.asyncSubagentLaunchesByAgentId = new Map()
   }
   return ctx.asyncSubagentLaunchesByAgentId
+}
+
+/**
+ * 当前是否仍有未完成的异步子代理（async launch 已记录、complete 尚未到达）。
+ * executor 用它守卫「result 即终态」的快路径：还有后台任务在跑时压住映射层
+ * 直发的终态，留给流关闭后的兜底（等后台事件真正排空），避免轮次先标记
+ * 完成、后台事件再继续追加到已完成消息上。
+ */
+export function hasPendingAsyncSubagentLaunches(ctx: EventContext): boolean {
+  return getAsyncSubagentLaunches(ctx).size > 0
 }
 
 function isPlanProposalTool(name: string): boolean {

@@ -48,7 +48,7 @@ import type {
   RewindFilesParams,
   RewindFilesResult,
 } from './engine-executor.js'
-import { mapSDKMessageToEvents } from './event-mapper.js'
+import { hasPendingAsyncSubagentLaunches, mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type {
@@ -975,6 +975,18 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
                 maxTurnsResult === message &&
                 event.type !== 'usage_update' &&
                 event.type !== 'checkpoint'
+              ) {
+                continue
+              }
+              // result 即终态的快路径守卫：仍有异步子代理（后台任务）未完成时压住
+              // 映射层直发的终态，terminalStatusEmitted 保持 false，由流关闭后的
+              // emitTerminalStatus 兜底——后台事件排空后再标记完成（2026-07-11
+              // 审计：SDK 声明 idle 为权威完成信号正是针对该场景；本产品 query()
+              // 流内实际收不到 idle，等流关闭即等价于等排空）。
+              if (
+                event.type === 'agent_status' &&
+                isTerminalAgentStatus(event.status) &&
+                hasPendingAsyncSubagentLaunches(ctx)
               ) {
                 continue
               }

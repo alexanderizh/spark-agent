@@ -205,8 +205,15 @@ describe.each(ENGINES)('turn 管道贯穿基线（$adapter 引擎）', (engine) 
     const order = persisted.map((entry) => entry.type)
     expect(order.indexOf('turn_prompt_snapshot')).toBeLessThan(order.indexOf('user_message'))
     expect(order.indexOf('user_message')).toBeLessThan(order.indexOf('assistant_message'))
-    // 终态由 session 层在 executeTurn resolve 后补发，必然最后。
-    expect(order[order.length - 1]).toBe('agent_status')
+    // 终态在收到时即时落库（不等 executeTurn resolve）；其后只允许追加
+    // 非渲染负载的辅助事件（turn_runtime_metrics 的 microtask、settle 兜底的
+    // presented_files 等），渲染端对它们按独立块处理、不影响收尾状态。
+    const terminalPosition = persisted.findIndex((entry) => entry.seq === terminal.seq)
+    expect(terminalPosition).toBeGreaterThan(order.indexOf('assistant_message'))
+    const postTerminalTypes = new Set(order.slice(terminalPosition + 1))
+    for (const type of postTerminalTypes) {
+      expect(['turn_runtime_metrics', 'presented_files']).toContain(type)
+    }
 
     // 用户消息回显带上本轮 prompt 原文（executor 事件 + session 层 presentation）。
     const userMessage = loadPersistedEvents().find((entry) => entry.type === 'user_message')
