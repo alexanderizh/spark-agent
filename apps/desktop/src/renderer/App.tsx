@@ -279,6 +279,9 @@ const NAV_ITEMS: Array<{
 // 供全局搜索派生）。
 // L2 工作台上下文工具：随 workbench 模式显示。pin 偏好仍对其生效。
 const WORKBENCH_TOOL_IDS = ['workflows', 'board', 'scheduled-tasks', 'sub-apps']
+// 测试期功能入口：侧栏导航文字后渲染「测试版」小标签（.nav-beta-tag），
+// 代替此前直接拼在文案里的「 -Beta」文本后缀。
+const BETA_NAV_IDS = new Set(['workflows', 'sub-apps'])
 // L3 全局共享资源：常驻底部图标条，永不随模式切换。两边都用，故独立成层。
 // 记忆不在此列——按用户决策，记忆入口收归设置页。
 const SHARED_RESOURCE_IDS = ['agents', 'providers', 'skill-store', 'mcp']
@@ -465,7 +468,10 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             <item.icon />
           ) : null}
         </span>
-        <span className="nav-label">{item.label}</span>
+        <span className="nav-label">
+          {item.label}
+          {BETA_NAV_IDS.has(item.id) && <span className="nav-beta-tag">{tr('nav.betaTag')}</span>}
+        </span>
         <Tooltip
           title={isPinned ? tr('app.nav.unpin') : tr('app.nav.pinTop')}
           mouseEnterDelay={0.05}
@@ -785,7 +791,10 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               <span className="nav-icon">
                 <Icons.Workflow size={16} />
               </span>
-              <span className="nav-label">{tr('nav.canvas.workflowLibrary')}</span>
+              <span className="nav-label">
+                {tr('nav.canvas.workflowLibrary')}
+                <span className="nav-beta-tag">{tr('nav.betaTag')}</span>
+              </span>
             </button>
             <button
               className="nav-item"

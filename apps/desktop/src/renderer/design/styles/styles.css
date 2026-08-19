@@ -869,6 +869,22 @@ body.floating-sidebar-resizing * {
 .settings-nav .nav-item .nav-label {
   font-weight: 400;
 }
+
+/* 测试期功能小标签：紧跟导航文字，代替此前拼在文案里的「 -Beta」文本后缀 */
+.nav-beta-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--primary);
+  background: var(--primary-soft);
+  vertical-align: 1px;
+  white-space: nowrap;
+}
 /* "新建任务" was previously styled with a special trigger look; it now uses
    the standard .nav-item style shared with Workflows/Agents/Skills/Providers. */
 

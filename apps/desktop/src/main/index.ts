@@ -666,7 +666,7 @@ function createWindow(): BrowserWindow {
   const isDarwin = process.platform === 'darwin'
 
   const mainWindow = new BrowserWindow({
-    title: 'SparkWork -Beta',
+    title: 'SparkWork',
     width: 1310,
     height: 800,
     minWidth: 800,

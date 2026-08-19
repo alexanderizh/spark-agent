@@ -21,7 +21,6 @@ import { ProviderLogo } from '../components/ProviderLogo'
 import { RemoteAssetImage } from '../components/RemoteAssetImage'
 import { Icons } from '../Icons'
 import { OnboardingPlatformFunding } from './platform-model/OnboardingPlatformFunding'
-import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import {
   getVendorMeta,
   PROVIDER_PRESETS,
@@ -738,10 +737,19 @@ export function OnboardingView(): React.ReactElement {
 
   return (
     <div className="onboarding-shell">
-      <MacWindowDragHeader />
+      {/* 引导页自带透明拖拽条（拖拽移动窗口 / 双击最大化）：
+          不复用 MacWindowDragHeader，避免其底色在页面背景上形成异色头部；
+          透明背景让氛围光晕与页面背景自然透出。 */}
+      <div
+        className="onboarding-drag-strip"
+        aria-hidden="true"
+        onDoubleClick={() => {
+          window.spark?.invoke('window:maximize', {}).catch(() => {})
+        }}
+      />
       <aside className="onboarding-steps" aria-label="新手引导步骤">
         <div className="onboarding-brand">
-          <img src={sparkLogo} alt="" aria-hidden="true" draggable={false} /> SparkWork -Beta
+          <img src={sparkLogo} alt="" aria-hidden="true" draggable={false} /> SparkWork
         </div>
         <button
           className="onboarding-back"
@@ -890,7 +898,7 @@ export function OnboardingView(): React.ReactElement {
 function WelcomeStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
   return (
     <>
-      <h1>欢迎使用 SparkWork -Beta</h1>
+      <h1>欢迎使用 SparkWork</h1>
       <p className="lead">
         不用理解复杂技术名词，我们会一步一步帮你连接模型、创建第一个 AI 助手，并完成第一次对话。
       </p>

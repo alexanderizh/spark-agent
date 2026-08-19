@@ -44,8 +44,8 @@ describe('AppUnreadBadgeService', () => {
     expect(formatDockBadge(0)).toBe('')
     expect(formatDockBadge(12)).toBe('12')
     expect(formatDockBadge(100)).toBe('99+')
-    expect(formatUnreadToolTip(0)).toBe('SparkWork -Beta')
-    expect(formatUnreadToolTip(3)).toBe('SparkWork -Beta · 3 个未读会话')
+    expect(formatUnreadToolTip(0)).toBe('SparkWork')
+    expect(formatUnreadToolTip(3)).toBe('SparkWork · 3 个未读会话')
   })
 
   it('suppresses a session notification only while that session is actively viewed', () => {
@@ -64,7 +64,7 @@ describe('AppUnreadBadgeService', () => {
 
     expect(adapter.setDockBadge).toHaveBeenCalledWith('7')
     expect(adapter.setTaskbarOverlay).not.toHaveBeenCalled()
-    expect(adapter.setTrayToolTip).toHaveBeenCalledWith('SparkWork -Beta · 7 个未读会话')
+    expect(adapter.setTrayToolTip).toHaveBeenCalledWith('SparkWork · 7 个未读会话')
   })
 
   it('uses the launcher count on Linux', () => {
@@ -80,15 +80,7 @@ describe('AppUnreadBadgeService', () => {
     applyUnreadBadge(5, 'win32', adapter)
     applyUnreadBadge(0, 'win32', adapter)
 
-    expect(adapter.setTaskbarOverlay).toHaveBeenNthCalledWith(
-      1,
-      true,
-      'SparkWork -Beta 有 5 个未读会话',
-    )
-    expect(adapter.setTaskbarOverlay).toHaveBeenNthCalledWith(
-      2,
-      false,
-      'SparkWork -Beta 无未读会话',
-    )
+    expect(adapter.setTaskbarOverlay).toHaveBeenNthCalledWith(1, true, 'SparkWork 有 5 个未读会话')
+    expect(adapter.setTaskbarOverlay).toHaveBeenNthCalledWith(2, false, 'SparkWork 无未读会话')
   })
 })

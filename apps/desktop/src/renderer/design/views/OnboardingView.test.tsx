@@ -4,10 +4,7 @@ import React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  OnboardingView,
-  shouldShowOnboardingAsync,
-} from './OnboardingView'
+import { OnboardingView, shouldShowOnboardingAsync } from './OnboardingView'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const mocks = vi.hoisted(() => ({
@@ -75,10 +72,6 @@ vi.mock('../components/Toast', () => ({
 
 vi.mock('../components/ProviderLogo', () => ({
   ProviderLogo: () => React.createElement('span', { 'data-testid': 'provider-logo' }),
-}))
-
-vi.mock('../components/MacWindowDragHeader', () => ({
-  MacWindowDragHeader: () => React.createElement('div', { 'data-testid': 'drag-header' }),
 }))
 
 function buttonByText(text: string): HTMLButtonElement {
