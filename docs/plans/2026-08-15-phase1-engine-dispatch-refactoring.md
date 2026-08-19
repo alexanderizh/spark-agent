@@ -1,6 +1,6 @@
 # Phase 1 实施计划：引擎分派接口化 + session.service 拆分
 
-> 状态: 实施中（W1/W2 已落地，W3 待启动） | 最后核对: 2026-08-16
+> 状态: 实施中（W1/W2 已落地，W3 S1-S6 已落地，S5b/S6 漏斗/S7-S11 待启动） | 最后核对: 2026-08-20
 
 母方案：`docs/plans/2026-08-15-engineering-upgrade-roadmap.md` §5 Phase 1。
 本计划基于 2026-08-15 三路行号级调研（executor 层 / session.service 结构地图 / 测试基建），所有行号为当日实测。
@@ -428,6 +428,28 @@ services/session/
 **W3 每步验证**：`gitnexus_impact` 符号移动前查询（CLAUDE.md 规则）→ 拆 → agent-runtime typecheck + test:unit → desktop typecheck → commit message 记录行数变化（延续 `142aa2eb` 风格）。
 
 **总量核算**：11,685 − (1,470+535+416+480+916+281+1,356+710+1,144+2,700) ≈ 11,685 − 10,008 ≈ **1,677 行 façade**（≤2,000 达标，留 300 行余量给 re-export 与委托）。
+
+#### W3 落地记录（2026-08-19 ~ 2026-08-20，S1-S6 部分完成）
+
+| 步  | 提交       | 内容                                                                                                                                                    | session.service 行数 |
+| --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| S1  | `fd7d33ee` | 类外纯函数迁出 `session-pure-utils.ts`（标题/事件快照/附件/团队花名册/metadata/路由解析/历史裁剪）；顺带修复 team-roster 测试与 8b096d68 措辞失同步断言 | 12201 → 10761        |
+| S2  | `9a86ad70` | 命令系统迁出 `session-commands.ts`（SessionCommandController + 窄接口 host），两份重复 CommandDeps 合并为 buildCommandDeps                              | 10761 → 10222        |
+| S3  | `dbbe71c1` | checkpoint/事件清理迁出 `checkpoint.ts`（SessionCheckpointManager，惰性创建兼容 Object.create 测试构造）                                                | 10222 → 9970         |
+| S4  | `e05fdfc1` | 会话 CRUD/引用/fork 迁出 `session-crud.ts`（SessionCrudController）                                                                                     | 9970 → 9694          |
+| S5  | `c1462f07` | MCP 工具面装配迁出 `session-mcp-tooling.ts`（buildMcpServersForSDK + ensurePlatformBridge + 8 resolve\*，18 调用点改经 getMcpTooling()）                | 9694 → 9219          |
+| S6  | `ea63e431` | 用量台账迁出 `session-usage-ledger.ts`（SessionUsageLedger；emitAndPersist 漏斗本体缓行）                                                               | 9219 → 9146          |
+
+每步验证：agent-runtime/desktop typecheck 绿、lint 0 errors、行为锁与相关套件失败集与 HEAD stash 基线一致（零新增）。
+P2.1（权限/推理强度枚举单源化）随 W3 一并落地，见 `53c6d1d2`。
+
+**与原计划的偏差（诚实记录）**：
+
+- S5 仅完成 MCP 工具面（簇9）；簇10 记忆/标题与可变状态 activeChatModelBySession / pendingTitleRefinements 强耦合，缓行为 S5b。
+- S5 的 plugin runtime MCP（bearer 桥 + per-turn handle）因与 pluginManager 生命周期、turn 回收强耦合，暂留 SessionService。
+- S6 仅拆出用量台账（低风险子集）；emitAndPersist 事件漏斗（R3 最高风险）与 dispose 缓行，待行为锁更充分覆盖后单独评估。
+- 控制器一律惰性创建（getCheckpointManager/getCrudController/getMcpTooling 模式），兼容 Object.create(SessionService.prototype) 直捣私有字段的既有测试构造。
+- 新增公共 host 回调（getMcpService/applyPermissionModeChange/bumpMcpVersion 等）为窄接口注入所需，属受控的公共面扩张。
 
 ---
 
