@@ -1,7 +1,6 @@
 import crypto from 'node:crypto'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { homedir } from 'node:os'
 import {
   EventRepository,
   ProviderProfileRepository,
@@ -20,13 +19,9 @@ import {
   TeamDefinitionRepository,
   UsageLedgerRepository,
   GoalRepository,
-  ConnectorConnectionRepository,
   TurnRequestRepository,
   SessionSummaryRepository,
-  ScheduledTaskRepository,
-  TaskExecutionRepository,
   SessionCollaborationRepository,
-  SubAppRepository,
 } from '@spark/storage'
 import type {
   AgentItem,
@@ -162,6 +157,9 @@ import { SessionCheckpointManager } from './session/checkpoint.js'
 // ─── P1-W3-S4 会话 CRUD / 引用 / fork（迁出至 ./session/session-crud.ts）───
 import { SessionCrudController } from './session/session-crud.js'
 
+// ─── P1-W3-S5 MCP 工具面装配（迁出至 ./session/session-mcp-tooling.ts）───
+import { SessionMcpTooling } from './session/session-mcp-tooling.js'
+
 // ─── P1-W3-S1 类外纯函数（迁出至 ./session/session-pure-utils.ts）───
 import {
   MEMORY_BEHAVIOR_SYSTEM_PROMPT,
@@ -274,23 +272,14 @@ import {
   SPARK_WEB_TOOL_SYSTEM_PROMPT,
   VALIDATION_SUGGESTION_TOOL_NAMES,
   VALIDATION_SUGGESTION_TOOL_DESCRIPTION,
-  buildImageGenerationSystemPrompt,
   extractPresentedFiles,
   extractReportedFileChanges,
   workspaceRelativeChangeKey,
   mergeUniqueStrings,
-  resolveDebugMcpServerPath,
-  resolveImageGenerationMcpServerPath,
-  resolveMediaGenerationMcpServerPath,
   resolveMcpNodeRuntimeExecutable,
-  resolvePlatformManagementMcpServerPath,
   resolvePresentFilesMcpServer,
   resolveQuickRepliesMcpServer,
-  resolveSparkCanvasMcpServerPath,
-  resolveSparkMemoryMcpServerPath,
   resolveSparkSessionMcpServerPath,
-  resolveSubAppMcpServerPath,
-  resolveWebSearchMcpServerPath,
 } from './session-mcp-tooling-helpers.js'
 
 import {
@@ -340,14 +329,9 @@ import { TodoStore } from '../core/todo-store.js'
 import type { CheckpointRestoreResult, CheckpointSnapshot, CommandListItem } from '../core/index.js'
 import { McpService } from './mcp-server.service.js'
 import type { McpOAuthTokenProvider } from './mcp-server.service.js'
-import { resolveMcpConfig } from '../mcp/index.js'
 import type { McpChangeEvent } from './mcp-server.service.js'
 import { PlatformBridgeService } from './platform-bridge.service.js'
-import { ScheduledTaskService } from './scheduled-task.service.js'
-import {
-  SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT,
-  SessionScheduleAgentTools,
-} from './session-schedule-agent-tools.js'
+import { SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT } from './session-schedule-agent-tools.js'
 import { getDebugLogServer } from './debug-log-server.service.js'
 import {
   BROWSER_AUTOMATION_SYSTEM_PROMPT,
@@ -398,14 +382,7 @@ import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
 import { MemoryConsolidationService } from './memory/memory-consolidation.service.js'
-import {
-  resolveMediaMcpProviderRoutes,
-  writeMediaMcpRuntimeConfig,
-} from './media/media-mcp-runtime-config.js'
-import {
-  buildMediaGenerationSystemPrompt,
-  SPARK_MEDIA_TOOL_NAMES,
-} from './media/media-mcp-contract.js'
+import { SPARK_MEDIA_TOOL_NAMES } from './media/media-mcp-contract.js'
 import {
   AgentEventPersistenceError,
   SessionEventSequencer,
@@ -478,14 +455,6 @@ export function isOpenAiOnlyCodexConsumer(args: {
   return args.isCodex && !args.isLocalCli && args.codexApiKind === 'chat'
 }
 
-type ImageGenerationRuntimeContext = {
-  mcpServer: SDKMcpServerConfig
-  systemPrompt: string
-}
-type MediaGenerationRuntimeContext = {
-  mcpServer: SDKMcpServerConfig
-  systemPrompt: string
-}
 interface FirstTurnTitleContext {
   providerType: string
   apiKey: string
@@ -799,6 +768,8 @@ export class SessionService {
   private checkpointManager: SessionCheckpointManager | null = null
   /** 会话 CRUD / 引用 / fork 控制器（惰性创建，P1-W3-S4 迁出至 ./session/session-crud.ts） */
   private crudController: SessionCrudController | null = null
+  /** MCP 工具面装配器（惰性创建，P1-W3-S5 迁出至 ./session/session-mcp-tooling.ts） */
+  private mcpTooling: SessionMcpTooling | null = null
   /** 应用内可见浏览器 MCP server 提供器（由桌面主进程注入） */
   private browserAutomationMcpProvider: BrowserAutomationMcpProvider | null = null
   /** 受治理的 Computer Use MCP server 提供器（由桌面主进程注入） */
@@ -2399,21 +2370,24 @@ export class SessionService {
       },
     )
     runtimeMetrics.markMcpConfigurationStarted()
-    const mediaGenerationContext = await this.resolveMediaGenerationContext(workspaceRootPath)
+    const mediaGenerationContext =
+      await this.getMcpTooling().resolveMediaGenerationContext(workspaceRootPath)
     const imageGenerationContext =
       mediaGenerationContext == null
-        ? await this.resolveImageGenerationContext(workspaceRootPath)
+        ? await this.getMcpTooling().resolveImageGenerationContext(workspaceRootPath)
         : null
-    const platformMcpServer = await this.resolvePlatformManagementMcpServer(sessionId)
+    const platformMcpServer =
+      await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
     const pluginRuntimeMcp = await this.resolvePluginRuntimeMcpServer(turnId)
-    const webSearchMcpServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
-    const subAppMcpServer = await this.resolveSubAppMcpServer(sessionId)
+    const webSearchMcpServer =
+      await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
+    const subAppMcpServer = await this.getMcpTooling().resolveSubAppMcpServer(sessionId)
     const presentFilesMcpServer = resolvePresentFilesMcpServer(workspaceRootPath)
     const quickRepliesMcpServer = resolveQuickRepliesMcpServer(workspaceRootPath)
     // 调试模式（per-session 能力开关）：开启时挂载 spark_debug + 注入状态机 prompt。
     const debugModeEnabled = getDebugModeFromMetadata(session.metadata_json)
     const debugMcpServer = debugModeEnabled
-      ? await this.resolveDebugMcpServer(sessionId, workspaceRootPath)
+      ? await this.getMcpTooling().resolveDebugMcpServer(sessionId, workspaceRootPath)
       : null
     const browserAutomationMcpServer =
       this.browserAutomationMcpProvider != null
@@ -3570,7 +3544,7 @@ export class SessionService {
 
     // Build MCP server config from our McpService for the SDK
     options.runtimeMetrics?.markMcpConfigurationStarted()
-    const mcpServers = await this.buildMcpServersForSDK()
+    const mcpServers = await this.getMcpTooling().buildMcpServersForSDK()
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -4133,7 +4107,7 @@ export class SessionService {
     }
 
     options.runtimeMetrics?.markMcpConfigurationStarted()
-    const mcpServers = await this.buildMcpServersForSDK()
+    const mcpServers = await this.getMcpTooling().buildMcpServersForSDK()
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -4178,7 +4152,10 @@ export class SessionService {
         const canvas = await this.canvasMcpProvider(sessionId)
         if (canvas != null) {
           canvasAttached = true
-          const canvasServer = await this.resolveSparkCanvasMcpServer(sessionId, canvas)
+          const canvasServer = await this.getMcpTooling().resolveSparkCanvasMcpServer(
+            sessionId,
+            canvas,
+          )
           if (canvasServer != null) {
             mcpServers.spark_canvas = canvasServer
           } else {
@@ -4228,7 +4205,10 @@ export class SessionService {
     // 之前注入：本路径（tryStartCodexCliTurn）下方会用 filter 过滤掉 type='sdk' 的 server，
     // stdio 版本不受影响。
     try {
-      const memServer = await this.resolveSparkMemoryMcpServer(sessionId, config.workspaceRootPath)
+      const memServer = await this.getMcpTooling().resolveSparkMemoryMcpServer(
+        sessionId,
+        config.workspaceRootPath,
+      )
       if (memServer != null) mcpServers.spark_memory = memServer
     } catch (err) {
       log.warn(
@@ -4927,7 +4907,7 @@ export class SessionService {
       return null
     }
     try {
-      const port = await this.ensurePlatformBridge()
+      const port = await this.getMcpTooling().ensurePlatformBridge()
       return {
         type: 'stdio',
         command: resolveMcpNodeRuntimeExecutable(),
@@ -5087,51 +5067,44 @@ export class SessionService {
   /**
    * Build MCP server configs in the SDK's expected format from our McpService.
    */
-  private async buildMcpServersForSDK(): Promise<Record<string, SDKMcpServerConfig>> {
-    const result: Record<string, SDKMcpServerConfig> = {}
-    const servers = this.mcpService.listServers()
 
-    for (const server of servers) {
-      if (!server.enabled) continue
-      try {
-        const cfg = JSON.parse(server.configJson) as Record<string, unknown>
-        // 归一化：兼容 `transport`/`type` 字段名，支持 http(Streamable HTTP)/sse/stdio。
-        // 无法解析出有效传输的（如 http 缺 url）直接跳过，而不是降级成坏的 stdio。
-        const resolved = resolveMcpConfig(cfg)
-        if (resolved == null) {
-          log.warn(`Skipping MCP server "${server.name}": no valid transport in config`)
-          continue
-        }
-        if (resolved.type === 'stdio') {
-          result[server.name] = {
-            type: 'stdio',
-            command: resolved.command,
-            args: resolved.args,
-            ...(resolved.env != null ? { env: resolved.env } : {}),
-            ...(resolved.cwd != null ? { cwd: resolved.cwd } : {}),
-          }
-        } else {
-          const auth = cfg.auth as { type?: string } | undefined
-          let headers = resolved.headers
-          if (auth?.type === 'oauth2') {
-            const token = await this.mcpOAuthProvider?.getAccessToken(server.id)
-            if (token == null) {
-              log.warn(`Skipping OAuth MCP server "${server.name}": authorization required`)
-              continue
-            }
-            headers = { ...(headers ?? {}), Authorization: `Bearer ${token}` }
-          }
-          result[server.name] = {
-            type: resolved.type,
-            url: resolved.url,
-            ...(headers != null ? { headers } : {}),
-          }
-        }
-      } catch {
-        // Skip servers with invalid config
-      }
+  // ── MCP 工具面装配（P1-W3-S5 迁出至 ./session/session-mcp-tooling.ts）───
+
+  private getMcpTooling(): SessionMcpTooling {
+    if (this.mcpTooling == null) {
+      this.mcpTooling = new SessionMcpTooling(this.db, this)
     }
-    return result
+    return this.mcpTooling
+  }
+
+  // ── SessionMcpToolingHost 窄回调 ──
+
+  getMcpService(): McpService {
+    return this.mcpService
+  }
+
+  getMcpOAuthProvider(): McpOAuthTokenProvider | undefined {
+    return this.mcpOAuthProvider
+  }
+
+  getPlatformBridge(): PlatformBridgeService {
+    return this.platformBridge
+  }
+
+  getPluginManager(): PluginManager | null {
+    return this.pluginManager
+  }
+
+  getUserSkillsDir(): string | null {
+    return this.userSkillsDir
+  }
+
+  getPlatformConfigChangedHandler(): PlatformConfigChangedHandler | undefined {
+    return this.onPlatformConfigChanged
+  }
+
+  getSessionService(): SessionService {
+    return this
   }
 
   /**
@@ -5167,445 +5140,6 @@ export class SessionService {
         `Plugin runtime MCP setup failed: ${error instanceof Error ? error.message : String(error)}`,
       )
       return null
-    }
-  }
-
-  /**
-   * Ensure the Platform Bridge HTTP server is running.
-   * The bridge is long-lived (shared across all sessions) and lazily started.
-   */
-  private async ensurePlatformBridge(): Promise<number> {
-    if (this.platformBridge.isRunning()) {
-      return this.platformBridge.getPort()
-    }
-
-    const { SkillService } = await import('./skill.service.js')
-    const { SkillLoader } = await import('../skills/skill-loader.js')
-    const { SkillRegistryService } = await import('./skill-registry/index.js')
-    const { GitHubConnectorService } = await import('./github-connector.service.js')
-    const { PluginManager } = await import('./plugins/plugin-manager.service.js')
-    const { SkillRepository, SettingsRepository, TeamDefinitionRepository } =
-      await import('@spark/storage')
-
-    const skillRepo = new SkillRepository(this.db)
-    const settingsRepo = new SettingsRepository(this.db)
-    const pluginManager =
-      this.pluginManager ??
-      new PluginManager({
-        db: this.db,
-        pluginRoot: path.join(this.userSkillsDir ?? homedir(), '.spark-agent', 'plugins'),
-      })
-    await pluginManager.initialize()
-    const skillLoader = new SkillLoader(skillRepo)
-    const skillRegistryService = new SkillRegistryService(this.db, this.userSkillsDir ?? undefined)
-
-    // Initialize skill registry adapters (loads marketplace sources)
-    try {
-      skillRegistryService.initialize()
-    } catch {
-      /* non-critical */
-    }
-
-    const deps = {
-      skillService: new SkillService(skillRepo),
-      skillLoader,
-      skillRegistryService,
-      mcpService: this.mcpService,
-      mcpRepo: new McpServerRepository(this.db),
-      providerRepo: new ProviderProfileRepository(this.db),
-      workflowRepo: new WorkflowRepository(this.db),
-      agentRepo: new AgentRepository(this.db),
-      teamRepo: new TeamDefinitionRepository(this.db),
-      settingsRepo,
-      // spark_app MCP 桥（subapp.* RPC）直访子应用仓库
-      subAppRepo: new SubAppRepository(this.db),
-      pluginManager,
-      sessionScheduleTools: new SessionScheduleAgentTools(
-        new ScheduledTaskService(
-          new ScheduledTaskRepository(this.db),
-          new TaskExecutionRepository(this.db),
-        ),
-        (action, id) => this.onPlatformConfigChanged?.('scheduled-task', action, id),
-      ),
-      githubConnectorService: new GitHubConnectorService(
-        new ConnectorConnectionRepository(this.db),
-        () => pluginManager.isRuntimeEnabled('github'),
-      ),
-      sessionService: this,
-      onConfigChanged: ((scope, action, id) => {
-        this.onPlatformConfigChanged?.(scope, action, id)
-      }) as PlatformConfigChangedHandler,
-    }
-
-    return this.platformBridge.start(deps)
-  }
-
-  /**
-   * Resolve the Platform Management MCP server config.
-   * Returns null if the MCP server script cannot be found or the bridge fails to start.
-   */
-  private async resolvePlatformManagementMcpServer(
-    sessionId: string,
-  ): Promise<SDKMcpServerConfig | null> {
-    const serverPath = resolvePlatformManagementMcpServerPath()
-    if (serverPath == null) {
-      log.warn('Platform management MCP server script not found')
-      return null
-    }
-
-    try {
-      const port = await this.ensurePlatformBridge()
-      return {
-        type: 'stdio',
-        command: resolveMcpNodeRuntimeExecutable(),
-        args: [serverPath],
-        env: {
-          SPARK_PLATFORM_BRIDGE_PORT: String(port),
-          SPARK_SESSION_ID: sessionId,
-        },
-      }
-    } catch (err) {
-      log.warn(
-        `Failed to start platform bridge: ${err instanceof Error ? err.message : String(err)}`,
-      )
-      return null
-    }
-  }
-
-  /**
-   * 解析自定义子应用 MCP server（spark_app），对所有 session 默认挂载。
-   *
-   * agent 通过它创建/管理/发布自定义子应用（草稿 CAS、发布版本、应用数据）。
-   * stdio 子进程经 PlatformBridgeService 的 subapp.* RPC 回到主进程直访
-   * SubAppRepository，与桌面端 subAppBackend IPC 路径共享同一套语义；
-   * bridge 端口与会话 id 通过环境变量注入（照抄 platform-management 模式）。
-   */
-  private async resolveSubAppMcpServer(sessionId: string): Promise<SDKMcpServerConfig | null> {
-    const serverPath = resolveSubAppMcpServerPath()
-    if (serverPath == null) {
-      log.warn('Sub app MCP server script not found')
-      return null
-    }
-
-    try {
-      const port = await this.ensurePlatformBridge()
-      return {
-        type: 'stdio',
-        command: resolveMcpNodeRuntimeExecutable(),
-        args: [serverPath],
-        env: {
-          SPARK_PLATFORM_BRIDGE_PORT: String(port),
-          SPARK_SESSION_ID: sessionId,
-        },
-      }
-    } catch (err) {
-      log.warn(
-        `Failed to start spark_app MCP server: ${err instanceof Error ? err.message : String(err)}`,
-      )
-      return null
-    }
-  }
-
-  /**
-   * 解析画布 MCP server（spark_canvas）—— codex CLI / claude CLI 路径专用。
-   *
-   * 画布的真实状态和 IPC pending call 都活在 Electron 主进程里；CLI/Codex 子进程消费不了
-   * Claude SDK 的 in-process server。因此这里挂一个 stdio 瘦桥接，把工具调用经
-   * PlatformBridgeService 的 canvas.call_tool RPC 转回主进程 CanvasHostBridge。
-   */
-  private async resolveSparkCanvasMcpServer(
-    sessionId: string,
-    canvas: NonNullable<Awaited<ReturnType<CanvasMcpProvider>>>,
-  ): Promise<SDKMcpServerConfig | null> {
-    if (canvas.toolSchemas == null || canvas.toolSchemas.length === 0) return null
-    const serverPath = resolveSparkCanvasMcpServerPath()
-    if (serverPath == null) {
-      log.warn('Spark canvas MCP server script not found')
-      return null
-    }
-
-    try {
-      const port = await this.ensurePlatformBridge()
-      return {
-        type: 'stdio',
-        command: resolveMcpNodeRuntimeExecutable(),
-        args: [serverPath],
-        env: {
-          SPARK_PLATFORM_BRIDGE_PORT: String(port),
-          SPARK_CANVAS_SID: sessionId,
-          SPARK_CANVAS_TOOL_SCHEMAS_JSON: JSON.stringify(canvas.toolSchemas),
-        },
-      }
-    } catch (err) {
-      log.warn(
-        `Failed to start spark_canvas MCP server: ${err instanceof Error ? err.message : String(err)}`,
-      )
-      return null
-    }
-  }
-
-  /**
-   * 解析长期记忆 MCP server（spark_memory）—— codex CLI / claude CLI 路径专用。
-   *
-   * claude SDK 路径用 in-process SDK MCP（createSdkMcpServer，闭包直访 this.db），
-   * 但 codex CLI / claude CLI 是独立子进程，消费不了 type='sdk' 的 server。这里给它们
-   * 挂一个 stdio 子进程，通过 PlatformBridgeService HTTP RPC 回到主进程的
-   * bridgeMemorySearch / bridgeMemoryRecall —— 与 claude SDK 路径复用同一套
-   * MemorySearchService / MemoryReaderService，agent 看到的记忆范围/排序/降级语义一致。
-   *
-   * 仅在长期记忆开启时挂载；否则返回 null（agent 看不到 search_memory/recall_memory 工具）。
-   */
-  private async resolveSparkMemoryMcpServer(
-    sessionId: string,
-    _workspaceRootPath: string,
-    agentId?: string,
-  ): Promise<SDKMcpServerConfig | null> {
-    let memoryEnabled: unknown = true
-    try {
-      memoryEnabled = new SettingsRepository(this.db).get('memory', 'enabled')
-    } catch {
-      // settings 不可用时按默认（启用）处理
-    }
-    if (memoryEnabled === false || memoryEnabled === 0) return null
-
-    const serverPath = resolveSparkMemoryMcpServerPath()
-    if (serverPath == null) {
-      log.warn('Spark memory MCP server script not found')
-      return null
-    }
-
-    try {
-      const port = await this.ensurePlatformBridge()
-      return {
-        type: 'stdio',
-        command: resolveMcpNodeRuntimeExecutable(),
-        args: [serverPath],
-        env: {
-          SPARK_PLATFORM_BRIDGE_PORT: String(port),
-          SPARK_MEMORY_SID: sessionId,
-          ...(agentId != null && agentId.trim().length > 0
-            ? { SPARK_MEMORY_AGENT_ID: agentId.trim() }
-            : {}),
-        },
-      }
-    } catch (err) {
-      log.warn(
-        `Failed to start spark_memory MCP server: ${err instanceof Error ? err.message : String(err)}`,
-      )
-      return null
-    }
-  }
-
-  /**
-   * 解析内置联网搜索 MCP server（spark_search），对所有 session 默认挂载。
-   *
-   * 免密默认链（Bing → DuckDuckGo → 百度）零配置可用；若 app_settings 的
-   * `webSearch` 分类配置了 keyed provider（bocha/tavily/serper）+ apiKey，则
-   * 自动优先走它。key 仅注入子进程环境变量，不外泄。
-   */
-  private async resolveWebSearchMcpServer(
-    workspaceRootPath: string,
-  ): Promise<SDKMcpServerConfig | null> {
-    const serverPath = resolveWebSearchMcpServerPath()
-    if (serverPath == null) {
-      log.warn('Web search MCP server script not found')
-      return null
-    }
-    let provider = ''
-    let apiKey = ''
-    let baseUrl = ''
-    try {
-      const settings = new SettingsRepository(this.db).getByCategory('webSearch')
-      if (typeof settings.provider === 'string') provider = settings.provider.trim()
-      if (typeof settings.apiKey === 'string') apiKey = settings.apiKey.trim()
-      if (typeof settings.baseUrl === 'string') baseUrl = settings.baseUrl.trim()
-    } catch {
-      // settings 不可用时静默走免密默认链
-    }
-    return {
-      type: 'stdio',
-      command: resolveMcpNodeRuntimeExecutable(),
-      args: [serverPath],
-      cwd: workspaceRootPath,
-      env: {
-        ...(provider ? { SPARK_SEARCH_PROVIDER: provider } : {}),
-        ...(apiKey ? { SPARK_SEARCH_API_KEY: apiKey } : {}),
-        ...(baseUrl ? { SPARK_SEARCH_BASE_URL: baseUrl } : {}),
-      },
-    }
-  }
-
-  /**
-   * 解析调试模式 MCP server（spark_debug）。仅当 session 开启 debugMode 时调用。
-   *
-   * 长驻的 DebugLogServer 在主进程内懒启动（跨 turn 存活，承接浏览器侧 bug 日志，
-   * CORS 已处理）。本 MCP 子进程只是瘦桥接：把 begin/read/next_round/status/finish
-   * 代理到 `http://127.0.0.1:<port>`。注入 SPARK_DEBUG_SID = sessionId，保证同一
-   * 对话跨 turn / 跨子进程重启都映射到同一 debug session 的 buffer。
-   */
-  private async resolveDebugMcpServer(
-    sessionId: string,
-    workspaceRootPath: string,
-  ): Promise<SDKMcpServerConfig | null> {
-    const serverPath = resolveDebugMcpServerPath()
-    if (serverPath == null) {
-      log.warn('Debug mode MCP server script not found')
-      return null
-    }
-    let port: number
-    try {
-      port = await getDebugLogServer().start()
-    } catch (err) {
-      log.warn(
-        `Failed to start debug log server: ${err instanceof Error ? err.message : String(err)}`,
-      )
-      return null
-    }
-    return {
-      type: 'stdio',
-      command: resolveMcpNodeRuntimeExecutable(),
-      args: [serverPath],
-      cwd: workspaceRootPath,
-      env: {
-        SPARK_DEBUG_LOG_PORT: String(port),
-        SPARK_DEBUG_SID: sessionId,
-      },
-    }
-  }
-
-  private async resolveImageGenerationContext(
-    workspaceRootPath: string,
-  ): Promise<ImageGenerationRuntimeContext | null> {
-    const providerRepo = new ProviderProfileRepository(this.db)
-    if (typeof providerRepo.listAll !== 'function') return null
-    const imageProvider = providerRepo.listAll().find((row) => {
-      if (row.enabled !== 1) return false
-      try {
-        const config = JSON.parse(row.config_json) as { modelType?: string }
-        return config.modelType === 'image'
-      } catch {
-        return false
-      }
-    })
-    if (imageProvider == null || imageProvider.keystore_ref == null) return null
-
-    const apiKey = await resolveProviderApiKey(imageProvider)
-    if (apiKey.trim().length === 0) return null
-
-    const config = JSON.parse(imageProvider.config_json) as {
-      defaultModel?: string
-      model?: string
-      apiEndpoint?: string
-      imageProvider?: string | null
-      imageApiType?: 'sync' | 'async' | 'auto' | null
-    }
-    const model = (config.defaultModel ?? config.model ?? '').trim()
-    if (!model) return null
-
-    const serverPath = resolveImageGenerationMcpServerPath()
-    if (serverPath == null) {
-      log.warn('Image generation provider configured but MCP server script was not found')
-      return null
-    }
-
-    const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'images')
-    const providerName = config.imageProvider?.trim() || 'openai'
-    const apiType = config.imageApiType ?? 'sync'
-    return {
-      mcpServer: {
-        type: 'stdio',
-        command: resolveMcpNodeRuntimeExecutable(),
-        args: [serverPath],
-        cwd: workspaceRootPath,
-        env: {
-          SPARK_IMAGE_API_KEY: apiKey,
-          SPARK_IMAGE_MODEL: model,
-          SPARK_IMAGE_PROVIDER: providerName,
-          SPARK_IMAGE_API_TYPE: apiType,
-          SPARK_IMAGE_OUTPUT_DIR: outputDir,
-          ...(config.apiEndpoint != null && config.apiEndpoint.trim().length > 0
-            ? { SPARK_IMAGE_BASE_URL: config.apiEndpoint.trim() }
-            : {}),
-        },
-      },
-      systemPrompt: buildImageGenerationSystemPrompt({
-        name: imageProvider.name,
-        model,
-        provider: providerName,
-        apiType,
-        outputDir,
-        ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
-      }),
-    }
-  }
-
-  /**
-   * 解析 spark_media MCP server 配置。
-   *
-   * 聚合所有 enabled 且凭据可用的图片/语音/视频 Provider。每个模型保留所属
-   * profile 的 API key、endpoint、adapter 与 manifest，spark_media 子进程按显式
-   * model 参数切换路由。只要统一服务可用，就不再同时注入旧 spark_image。
-   */
-  private async resolveMediaGenerationContext(
-    workspaceRootPath: string,
-  ): Promise<MediaGenerationRuntimeContext | null> {
-    const serverPath = resolveMediaGenerationMcpServerPath()
-    if (serverPath == null) {
-      log.warn('Media provider configured but spark_media MCP server script was not found')
-      return null
-    }
-    const providers = await resolveMediaMcpProviderRoutes(this.db)
-    const [primary] = providers
-    if (primary == null) return null
-    const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'media')
-    const runtimeProviders = providers.map(({ apiKey: _apiKey, ...provider }, index) => ({
-      ...provider,
-      apiKeyEnv: `SPARK_MEDIA_API_KEY_${index}`,
-    }))
-    const runtimeConfigFile = writeMediaMcpRuntimeConfig({
-      apiKeyEnv: 'SPARK_MEDIA_API_KEY_0',
-      provider: primary.provider,
-      model: primary.model,
-      mode: primary.mode,
-      ...(primary.baseUrl != null ? { baseUrl: primary.baseUrl } : {}),
-      outputDir,
-      mediaDefaults: primary.mediaDefaults,
-      manifests: primary.manifests,
-      providers: runtimeProviders,
-    })
-    return {
-      mcpServer: {
-        type: 'stdio',
-        command: resolveMcpNodeRuntimeExecutable(),
-        args: [serverPath],
-        cwd: workspaceRootPath,
-        env: {
-          SPARK_MEDIA_CONFIG_FILE: runtimeConfigFile,
-          ...Object.fromEntries(
-            providers.map((provider, index) => [`SPARK_MEDIA_API_KEY_${index}`, provider.apiKey]),
-          ),
-        },
-      },
-      systemPrompt: buildMediaGenerationSystemPrompt({
-        name: primary.name,
-        model: primary.model,
-        provider: primary.provider,
-        apiType: primary.mode,
-        outputDir,
-        capabilities: [...new Set(providers.flatMap((provider) => provider.capabilities))],
-        providerConfigurations: providers.map((provider) => ({
-          id: provider.id,
-          name: provider.name,
-          model: provider.model,
-          provider: provider.provider,
-          modelManifests: provider.manifests.map((manifest) => ({
-            id: manifest.id,
-            modelId: manifest.modelId,
-            capabilities: manifest.capabilities.map((capability) => capability.id),
-          })),
-        })),
-        ...(primary.baseUrl !== undefined ? { apiEndpoint: primary.baseUrl } : {}),
-      }),
     }
   }
 
@@ -7303,17 +6837,22 @@ export class SessionService {
 
     // 显式 readonly 原子节点从空能力集开始，避免在判断前加载用户自定义（可能写入型）MCP。
     // 普通 Team/Workflow tool/mcp 成员则与 Host 一致加载已启用的应用 MCP。
-    const memberMcpServers = isReadonlyAtomicMember ? {} : await this.buildMcpServersForSDK()
+    const memberMcpServers = isReadonlyAtomicMember
+      ? {}
+      : await this.getMcpTooling().buildMcpServersForSDK()
     try {
       if (!isReadonlyAtomicMember) {
-        const memberWebSearchServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
+        const memberWebSearchServer =
+          await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
         if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer
-        const memberMediaContext = await this.resolveMediaGenerationContext(workspaceRootPath)
+        const memberMediaContext =
+          await this.getMcpTooling().resolveMediaGenerationContext(workspaceRootPath)
         const memberImageContext =
           memberMediaContext == null
-            ? await this.resolveImageGenerationContext(workspaceRootPath)
+            ? await this.getMcpTooling().resolveImageGenerationContext(workspaceRootPath)
             : null
-        const memberPlatformServer = await this.resolvePlatformManagementMcpServer(sessionId)
+        const memberPlatformServer =
+          await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
         const memberPresentFilesServer = resolvePresentFilesMcpServer(workspaceRootPath)
         if (memberMediaContext != null) {
           memberMcpServers.spark_media = memberMediaContext.mcpServer
@@ -7340,7 +6879,10 @@ export class SessionService {
       // readonly atomic 也可能需要查询调试状态（如 spark_debug.get_hypotheses）。
       const memberDebugModeEnabled = getDebugModeFromMetadata(session.metadata_json)
       if (memberDebugModeEnabled) {
-        const memberDebugServer = await this.resolveDebugMcpServer(sessionId, workspaceRootPath)
+        const memberDebugServer = await this.getMcpTooling().resolveDebugMcpServer(
+          sessionId,
+          workspaceRootPath,
+        )
         if (memberDebugServer != null) memberMcpServers.spark_debug = memberDebugServer
       }
     } catch (err) {
@@ -7353,7 +6895,7 @@ export class SessionService {
 
     // Memory 是只读检索能力。Claude SDK 使用进程内 MCP；Codex/CLI 使用 stdio bridge。
     if (isCodexMember) {
-      const memoryServer = await this.resolveSparkMemoryMcpServer(
+      const memoryServer = await this.getMcpTooling().resolveSparkMemoryMcpServer(
         sessionId,
         workspaceRootPath,
         member.id,
