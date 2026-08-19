@@ -39,7 +39,6 @@ import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 import {
   SessionWorktreeStateService,
-  readSessionRuntimeWorktree,
   type SessionRuntimeWorktreeState,
   type SessionWorktreeStateInput,
 } from './session-worktree-state.js'
@@ -160,6 +159,9 @@ import { SessionCommandController } from './session/session-commands.js'
 // ─── P1-W3-S3 checkpoint / 事件清理（迁出至 ./session/checkpoint.ts）───
 import { SessionCheckpointManager } from './session/checkpoint.js'
 
+// ─── P1-W3-S4 会话 CRUD / 引用 / fork（迁出至 ./session/session-crud.ts）───
+import { SessionCrudController } from './session/session-crud.js'
+
 // ─── P1-W3-S1 类外纯函数（迁出至 ./session/session-pure-utils.ts）───
 import {
   MEMORY_BEHAVIOR_SYSTEM_PROMPT,
@@ -190,10 +192,8 @@ import {
   formatThreadMessageFull,
   getAttachmentAdditionalDirectories,
   getAutomationMetadata,
-  getChatModeFromSession,
   getCliSparkOverrideFromMetadata,
   getDebugModeFromMetadata,
-  getImportedFromMetadata,
   getLatestAgentStatusFromEvents,
   getLatestMatchingTurnPromptSnapshot,
   getLatestTurnIdFromEvents,
@@ -217,11 +217,6 @@ import {
   readSessionTeamConfig,
   resolveCodexMemberExecutionProfile,
   shouldDeriveSessionTitle,
-  toProtocolCandidate,
-  toProtocolLineage,
-  toProtocolReference,
-  toProtocolReferenceTurn,
-  trimHistoryEvent,
   withAgentSnapshot,
 } from './session/session-pure-utils.js'
 import type { SessionRuntimePatch, WorktreePromptMeta } from './session/session-pure-utils.js'
@@ -802,6 +797,8 @@ export class SessionService {
   private worktreeStateService: SessionWorktreeStateService | null = null
   /** checkpoint / 事件清理管理器（惰性创建，P1-W3-S3 迁出至 ./session/checkpoint.ts） */
   private checkpointManager: SessionCheckpointManager | null = null
+  /** 会话 CRUD / 引用 / fork 控制器（惰性创建，P1-W3-S4 迁出至 ./session/session-crud.ts） */
+  private crudController: SessionCrudController | null = null
   /** 应用内可见浏览器 MCP server 提供器（由桌面主进程注入） */
   private browserAutomationMcpProvider: BrowserAutomationMcpProvider | null = null
   /** 受治理的 Computer Use MCP server 提供器（由桌面主进程注入） */
@@ -1613,127 +1610,6 @@ export class SessionService {
 
   async sendTurn(params: SendTurnParams): Promise<{ turnId: string; started: boolean }> {
     return this.dispatchTurn(params, false)
-  }
-
-  /** Create an independent materialized child session from a completed turn. */
-  async forkSession(params: {
-    sourceSessionId: string
-    anchorTurnId?: string
-    title?: string
-  }): Promise<import('@spark/protocol').SessionForkResponse> {
-    const collaboration = new SessionCollaborationRepository(this.db)
-    const result = collaboration.forkSession(params)
-    const session = await this.updateSession({ sessionId: result.child.id })
-    return {
-      sessionId: result.child.id as SessionId,
-      session: session.session,
-      lineage: toProtocolLineage(result.lineage)!,
-      copiedTurnCount: result.copiedTurnCount,
-      sourceWasRunning: result.sourceWasRunning,
-    }
-  }
-
-  async getSessionLineage(
-    sessionId: string,
-  ): Promise<import('@spark/protocol').SessionLineageResponse> {
-    const collaboration = new SessionCollaborationRepository(this.db)
-    return {
-      lineage: toProtocolLineage(collaboration.getLineage(sessionId)),
-      children: collaboration.listChildren(sessionId).map((row) => toProtocolLineage(row)!),
-    }
-  }
-
-  async listSessionReferenceCandidates(params: {
-    targetSessionId: string
-    workspaceId?: string
-    query?: string
-    includeArchived?: boolean
-    limit?: number
-  }): Promise<{ candidates: SessionReferenceCandidate[] }> {
-    return {
-      candidates: new SessionCollaborationRepository(this.db)
-        .listCandidates(params)
-        .map(toProtocolCandidate),
-    }
-  }
-
-  async attachSessionReference(params: {
-    targetSessionId: string
-    sourceSessionId: string
-    snapshotSeq?: number
-  }): Promise<{ reference: SessionReference }> {
-    return {
-      reference: toProtocolReference(
-        new SessionCollaborationRepository(this.db).attachReference(params),
-      ),
-    }
-  }
-
-  async listSessionReferences(sessionId: string): Promise<{ references: SessionReference[] }> {
-    return {
-      references: new SessionCollaborationRepository(this.db)
-        .listReferences(sessionId)
-        .map(toProtocolReference),
-    }
-  }
-
-  async listActiveSessionReferences(
-    sessionId: string,
-  ): Promise<{ references: SessionReference[] }> {
-    const result = await this.listSessionReferences(sessionId)
-    return { references: result.references.filter((reference) => reference.status === 'active') }
-  }
-
-  async updateSessionReference(params: {
-    targetSessionId: string
-    referenceId: string
-  }): Promise<{ reference: SessionReference }> {
-    return {
-      reference: toProtocolReference(
-        new SessionCollaborationRepository(this.db).updateReferenceSnapshot(params),
-      ),
-    }
-  }
-
-  async revokeSessionReference(params: {
-    targetSessionId: string
-    referenceId: string
-  }): Promise<{ revoked: boolean }> {
-    return { revoked: new SessionCollaborationRepository(this.db).revokeReference(params) }
-  }
-
-  async readReferencedSession(params: {
-    targetSessionId: string
-    referenceId: string
-    cursor?: number
-    turnLimit?: number
-    detail?: 'transcript' | 'user_visible_activity'
-    actor?: 'user' | 'agent' | 'system'
-  }): Promise<import('@spark/protocol').SessionReadReferenceResponse> {
-    const result = new SessionCollaborationRepository(this.db).readReference(params)
-    return {
-      reference: toProtocolReference(result.reference),
-      turns: result.turns.map(toProtocolReferenceTurn),
-      nextCursor: result.nextCursor,
-      hasMore: result.hasMore,
-    }
-  }
-
-  async searchReferencedSession(params: {
-    targetSessionId: string
-    referenceId: string
-    query: string
-    limit?: number
-    actor?: 'user' | 'agent' | 'system'
-  }): Promise<import('@spark/protocol').SessionSearchReferenceResponse> {
-    const result = new SessionCollaborationRepository(this.db).searchReference(params)
-    return {
-      reference: toProtocolReference(result.reference),
-      hits: result.hits.map((hit) => ({
-        ...hit,
-        turnId: hit.turnId as import('@spark/protocol').TurnId,
-      })),
-    }
   }
 
   async submitTurn(
@@ -9519,6 +9395,92 @@ export class SessionService {
     return activeLoop != null || startingTurnId != null || cancelledTeamDispatches > 0
   }
 
+  // ── 会话 CRUD / 引用 / fork（P1-W3-S4 迁出至 ./session/session-crud.ts）───
+
+  private getCrudController(): SessionCrudController {
+    if (this.crudController == null) {
+      this.crudController = new SessionCrudController(this.db, this)
+    }
+    return this.crudController
+  }
+
+  async forkSession(params: {
+    sourceSessionId: string
+    anchorTurnId?: string
+    title?: string
+  }): Promise<import('@spark/protocol').SessionForkResponse> {
+    return this.getCrudController().forkSession(params)
+  }
+
+  async getSessionLineage(
+    sessionId: string,
+  ): Promise<import('@spark/protocol').SessionLineageResponse> {
+    return this.getCrudController().getSessionLineage(sessionId)
+  }
+
+  async listSessionReferenceCandidates(params: {
+    targetSessionId: string
+    workspaceId?: string
+    query?: string
+    includeArchived?: boolean
+    limit?: number
+  }): Promise<{ candidates: SessionReferenceCandidate[] }> {
+    return this.getCrudController().listSessionReferenceCandidates(params)
+  }
+
+  async attachSessionReference(params: {
+    targetSessionId: string
+    sourceSessionId: string
+    snapshotSeq?: number
+  }): Promise<{ reference: SessionReference }> {
+    return this.getCrudController().attachSessionReference(params)
+  }
+
+  async listSessionReferences(sessionId: string): Promise<{ references: SessionReference[] }> {
+    return this.getCrudController().listSessionReferences(sessionId)
+  }
+
+  async listActiveSessionReferences(
+    sessionId: string,
+  ): Promise<{ references: SessionReference[] }> {
+    return this.getCrudController().listActiveSessionReferences(sessionId)
+  }
+
+  async updateSessionReference(params: {
+    targetSessionId: string
+    referenceId: string
+  }): Promise<{ reference: SessionReference }> {
+    return this.getCrudController().updateSessionReference(params)
+  }
+
+  async revokeSessionReference(params: {
+    targetSessionId: string
+    referenceId: string
+  }): Promise<{ revoked: boolean }> {
+    return this.getCrudController().revokeSessionReference(params)
+  }
+
+  async readReferencedSession(params: {
+    targetSessionId: string
+    referenceId: string
+    cursor?: number
+    turnLimit?: number
+    detail?: 'transcript' | 'user_visible_activity'
+    actor?: 'user' | 'agent' | 'system'
+  }): Promise<import('@spark/protocol').SessionReadReferenceResponse> {
+    return this.getCrudController().readReferencedSession(params)
+  }
+
+  async searchReferencedSession(params: {
+    targetSessionId: string
+    referenceId: string
+    query: string
+    limit?: number
+    actor?: 'user' | 'agent' | 'system'
+  }): Promise<import('@spark/protocol').SessionSearchReferenceResponse> {
+    return this.getCrudController().searchReferencedSession(params)
+  }
+
   async getHistory(params: {
     sessionId: string
     full?: boolean
@@ -9527,36 +9489,7 @@ export class SessionService {
     eventLimit?: number
     beforeSeq?: number
   }): Promise<{ events: AgentEvent[]; hasMore: boolean }> {
-    const eventRepo = new EventRepository(this.db)
-    if (params.full === true) {
-      const rows = eventRepo.queryAllBySession(params.sessionId)
-      return {
-        events: rows.map((row) => trimHistoryEvent(JSON.parse(row.event_json) as AgentEvent)),
-        hasMore: false,
-      }
-    }
-    // 按「轮次」分页（UI 历史加载首选）：每页都是完整轮次，永不把一个 agentic 轮次切碎，
-    // 同时排除流式 delta、裁剪超大 prompt 快照，兼顾「完整查看」与「不卡顿」。
-    if (params.turnLimit != null) {
-      const { events: rows, hasMore } = eventRepo.queryRenderableTurns({
-        sessionId: params.sessionId,
-        turnLimit: params.turnLimit,
-        ...(params.eventLimit != null ? { eventLimit: params.eventLimit } : {}),
-        ...(params.beforeSeq != null ? { beforeSeq: params.beforeSeq } : {}),
-      })
-      return {
-        events: rows.map((row) => trimHistoryEvent(JSON.parse(row.event_json) as AgentEvent)),
-        hasMore,
-      }
-    }
-    // 事件级分页（其余调用方，如远程回复查找 / ProjectView 预览）：排除 delta 的最近 N 条。
-    const { events: rows, hasMore } = eventRepo.queryRenderablePage({
-      sessionId: params.sessionId,
-      limit: params.limit ?? 80,
-      ...(params.beforeSeq != null ? { beforeSeq: params.beforeSeq } : {}),
-    })
-    const events = rows.map((row) => trimHistoryEvent(JSON.parse(row.event_json) as AgentEvent))
-    return { events, hasMore }
+    return this.getCrudController().getHistory(params)
   }
 
   async listSessions(params?: {
@@ -9566,102 +9499,15 @@ export class SessionService {
     offset?: number
     includeArchived?: boolean
   }): Promise<SessionListResponse> {
-    const sessionRepo = new SessionRepository(this.db)
-    const { sessions: rows, total } = sessionRepo.list(params ?? {})
-    const sessions = rows.map((row) => ({
-      id: row.id as SessionId,
-      title: row.title,
-      projectId: row.project_id,
-      workspaceIds: sessionRepo.getWorkspaceIdsFromRow(row),
-      providerProfileId: row.provider_profile_id ?? '',
-      modelId: row.model_id,
-      agentId: row.agent_id ?? 'platform-manager-agent',
-      agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
-      permissionMode: getPermissionModeFromSession(
-        row.permission_mode,
-        getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
-      ),
-      chatMode: getChatModeFromSession(row.chat_mode),
-      reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
-      status: row.status as 'idle' | 'running' | 'error',
-      pinnedAt: row.pinned_at,
-      archivedAt: row.archived_at,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      turnCount: row.turn_count,
-      logicalMessageCount: row.logical_message_count,
-      messageCount: row.logical_message_count,
-      ...(getImportedFromMetadata(row.metadata_json) != null
-        ? { importedFrom: getImportedFromMetadata(row.metadata_json)! }
-        : {}),
-      debugMode: getDebugModeFromMetadata(row.metadata_json),
-      runtimeWorktree: readSessionRuntimeWorktree(row.metadata_json),
-      cliSparkOverride: getCliSparkOverrideFromMetadata(row.metadata_json),
-    }))
-    return { sessions, total }
+    return this.getCrudController().listSessions(params)
   }
 
-  /**
-   * 搜索会话 — 按标题和消息内容模糊搜索
-   *
-   * 策略：
-   *   1. 先按标题 LIKE 搜索
-   *   2. 再按事件内容 LIKE 搜索
-   *   3. 去重合并，标题匹配优先
-   */
   async searchSessions(params: {
     query: string
     workspaceId?: string
     limit?: number
   }): Promise<SessionSearchResponse> {
-    const { query, workspaceId, limit = 20 } = params
-    const sessionRepo = new SessionRepository(this.db)
-    const eventRepo = new EventRepository(this.db)
-
-    const results: SessionSearchResponse['results'] = []
-    const seenSessionIds = new Set<string>()
-
-    // 1. Search by title
-    const titleMatches = sessionRepo.searchByTitle(query, limit)
-    for (const row of titleMatches) {
-      // Filter by workspace if specified
-      if (workspaceId != null) {
-        const wsIds = sessionRepo.getWorkspaceIds(row.id)
-        if (!wsIds.includes(workspaceId)) continue
-      }
-      seenSessionIds.add(row.id)
-      results.push({
-        sessionId: row.id as SessionId,
-        title: row.title,
-        snippet: '',
-        matchType: 'title',
-        updatedAt: row.updated_at,
-      })
-    }
-
-    // 2. Search by event content
-    const contentMatches = eventRepo.searchByContent(query, limit)
-    for (const match of contentMatches) {
-      if (seenSessionIds.has(match.sessionId)) continue
-      if (results.length >= limit) break
-      // Filter by workspace if specified
-      if (workspaceId != null) {
-        const wsIds = sessionRepo.getWorkspaceIds(match.sessionId)
-        if (!wsIds.includes(workspaceId)) continue
-      }
-      // Get session title
-      const session = sessionRepo.get(match.sessionId)
-      if (session == null || session.archived_at != null) continue
-      results.push({
-        sessionId: match.sessionId as SessionId,
-        title: session.title,
-        snippet: match.snippet,
-        matchType: 'content',
-        updatedAt: session.updated_at,
-      })
-    }
-
-    return { results }
+    return this.getCrudController().searchSessions(params)
   }
 
   async updateSession(params: {
@@ -9679,110 +9525,39 @@ export class SessionService {
     debugMode?: boolean
     cliSparkOverride?: CliSparkOverride | null
   }): Promise<{ session: SessionListResponse['sessions'][number] }> {
-    const sessionRepo = new SessionRepository(this.db)
+    return this.getCrudController().updateSession(params)
+  }
 
-    // 调试模式开关存 metadata（per-session 能力开关，不新增列），与 team 配置同策略。
-    // 切换会改变 MCP 工具集（挂/卸 spark_debug），bump mcpVersion 让下一 turn 起新
-    // SDK 会话以重新协商工具列表，避免沿用 SDK 冻结的旧快照。
-    if (params.debugMode !== undefined) {
-      sessionRepo.patchMetadata(params.sessionId, { debugMode: params.debugMode })
-      this.mcpVersion += 1
-    }
+  async getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>> {
+    return this.getCrudController().getSessionRuntimeState(sessionId)
+  }
 
-    if (params.cliSparkOverride !== undefined) {
-      sessionRepo.patchMetadata(params.sessionId, {
-        cliSparkOverride: normalizeCliSparkOverride(params.cliSparkOverride),
-      })
-    }
+  async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
+    return this.getCrudController().deleteSession(sessionId)
+  }
 
-    if (params.title !== undefined) {
-      sessionRepo.updateTitle(params.sessionId, params.title)
-    }
+  // ── SessionCrudHost 窄回调 ──
 
-    if (params.pinned !== undefined || params.archived !== undefined) {
-      sessionRepo.updateLifecycle(params.sessionId, {
-        ...(params.pinned !== undefined
-          ? { pinnedAt: params.pinned ? new Date().toISOString() : null }
-          : {}),
-        ...(params.archived !== undefined
-          ? { archivedAt: params.archived ? new Date().toISOString() : null }
-          : {}),
-      })
-    }
+  bumpMcpVersion(): void {
+    this.mcpVersion += 1
+  }
 
+  applyPermissionModeChange(sessionId: string, permissionMode: SessionPermissionMode): void {
     // 切换 permissionMode 通常意味着用户对 plan 模式审批弹窗做了选择
     // （批准会切到 claude-auto-edits）。此时解除闸门，让被阻塞的队列恢复推进。
-    if (params.permissionMode !== undefined && this.pendingPlanApprovals.has(params.sessionId)) {
-      this.pendingPlanApprovals.delete(params.sessionId)
-      if (!this.turnRegistry.hasActiveSession(params.sessionId)) {
-        this.startNextQueuedTurn(params.sessionId)
+    if (this.pendingPlanApprovals.has(sessionId)) {
+      this.pendingPlanApprovals.delete(sessionId)
+      if (!this.turnRegistry.hasActiveSession(sessionId)) {
+        this.startNextQueuedTurn(sessionId)
       }
     }
-
     // Hot-swap: propagate permission-mode change to the running executor so it
     // takes effect on the very next tool call within the current turn.
     // 经能力接口判定（W2-D4）：只有声明了热切换能力的执行器（claude）才会被调用，
     // 第三引擎带该能力即自动获得热切换，无需改这里。
-    if (params.permissionMode !== undefined) {
-      const active = this.turnRegistry.executorFor(params.sessionId)
-      if (active != null && isPermissionModeAware(active)) {
-        void active.setPermissionMode(params.permissionMode)
-      }
-    }
-
-    if (
-      params.providerProfileId !== undefined ||
-      params.modelId !== undefined ||
-      params.agentId !== undefined ||
-      params.agentAdapter !== undefined ||
-      params.permissionMode !== undefined ||
-      params.chatMode !== undefined ||
-      params.reasoningEffort !== undefined
-    ) {
-      sessionRepo.updateRuntime(params.sessionId, {
-        ...(params.providerProfileId !== undefined
-          ? { providerProfileId: params.providerProfileId }
-          : {}),
-        ...(params.modelId !== undefined ? { modelId: params.modelId } : {}),
-        ...(params.agentId !== undefined ? { agentId: params.agentId } : {}),
-        ...(params.agentAdapter !== undefined ? { agentAdapter: params.agentAdapter } : {}),
-        ...(params.permissionMode !== undefined ? { permissionMode: params.permissionMode } : {}),
-        ...(params.chatMode !== undefined ? { chatMode: params.chatMode } : {}),
-        ...(params.reasoningEffort !== undefined
-          ? { reasoningEffort: params.reasoningEffort }
-          : {}),
-      })
-    }
-
-    const row = sessionRepo.findByIdOrFail(params.sessionId)
-    return {
-      session: {
-        id: row.id as SessionId,
-        title: row.title,
-        projectId: row.project_id,
-        workspaceIds: sessionRepo.getWorkspaceIds(row.id),
-        providerProfileId: row.provider_profile_id ?? '',
-        modelId: row.model_id,
-        agentId: row.agent_id ?? 'platform-manager-agent',
-        agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
-        permissionMode: getPermissionModeFromSession(
-          row.permission_mode,
-          getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
-        ),
-        chatMode: getChatModeFromSession(row.chat_mode),
-        reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
-        status: row.status as 'idle' | 'running' | 'error',
-        pinnedAt: row.pinned_at,
-        archivedAt: row.archived_at,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        turnCount: row.turn_count,
-        logicalMessageCount: row.logical_message_count,
-        messageCount: row.logical_message_count,
-        debugMode: getDebugModeFromMetadata(row.metadata_json),
-        runtimeWorktree: readSessionRuntimeWorktree(row.metadata_json),
-        cliSparkOverride: getCliSparkOverrideFromMetadata(row.metadata_json),
-      },
+    const active = this.turnRegistry.executorFor(sessionId)
+    if (active != null && isPermissionModeAware(active)) {
+      void active.setPermissionMode(permissionMode)
     }
   }
 
@@ -9830,59 +9605,6 @@ export class SessionService {
   /** 读取会话当前引擎级 worktree 状态（无则 null）。 */
   getSessionRuntimeWorktree(sessionId: string): SessionRuntimeWorktreeState | null {
     return this.getWorktreeStateService().get(sessionId)
-  }
-
-  async getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>> {
-    const sessionRepo = new SessionRepository(this.db)
-    const row = sessionRepo.findByIdOrFail(sessionId)
-    const providerRepo = new ProviderProfileRepository(this.db)
-    const provider = providerRepo.get(row.provider_profile_id ?? '')
-    let providerName = ''
-    let providerType = ''
-    let availableModels: string[] = []
-    if (provider != null) {
-      providerName = provider.name
-      providerType = provider.provider_type
-      try {
-        const config = JSON.parse(provider.config_json) as { modelIds?: string[] }
-        availableModels = config.modelIds ?? []
-      } catch {
-        /* ignore */
-      }
-    }
-    return {
-      sessionId: row.id,
-      title: row.title,
-      providerProfileId: row.provider_profile_id ?? '',
-      providerName,
-      providerType,
-      modelId: row.model_id,
-      agentId: row.agent_id ?? '',
-      agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
-      permissionMode: getPermissionModeFromSession(
-        row.permission_mode,
-        getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
-      ),
-      chatMode: getChatModeFromSession(row.chat_mode),
-      reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
-      debugMode: getDebugModeFromMetadata(row.metadata_json),
-      status: row.status as 'idle' | 'running' | 'error',
-      availableModels,
-    }
-  }
-
-  async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
-    const sessionRepo = new SessionRepository(this.db)
-    // 先终止在跑的执行器再删数据：否则子进程会成为孤儿，继续改磁盘、继续计费。
-    const wasRunning = this.clearSessionMemory(sessionId)
-    if (wasRunning) {
-      log.info('cancelled running executor before deleting session', { sessionId })
-    }
-    const deleted = sessionRepo.deleteWithRelatedData(sessionId)
-    if (deleted) {
-      this.cleanupSessionEventsInBackground(sessionId)
-    }
-    return { deleted }
   }
 
   // ── checkpoint / 事件清理（P1-W3-S3 迁出至 ./session/checkpoint.ts）───
