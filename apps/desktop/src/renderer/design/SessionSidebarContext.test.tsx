@@ -24,14 +24,18 @@ const toastMocks = vi.hoisted(() => {
   return { dismiss: vi.fn(), toast }
 })
 
-const appContextMock = vi.hoisted(() => ({ view: 'chat' }))
+const appContextMock = vi.hoisted(() => ({
+  view: 'chat',
+  requestConfirm: vi.fn(),
+  requestPrompt: vi.fn(),
+}))
 
 vi.mock('./AppContext', () => {
   return {
     useApp: () => ({
       t: { view: appContextMock.view },
-      requestConfirm: vi.fn(),
-      requestPrompt: vi.fn(),
+      requestConfirm: appContextMock.requestConfirm,
+      requestPrompt: appContextMock.requestPrompt,
     }),
   }
 })
@@ -211,6 +215,81 @@ describe('SessionSidebarContext', () => {
     })
 
     expect(latestCtxRef.current?.unreviewedCompletedSessions.has('session-1')).toBe(true)
+  })
+
+  it('clears unread marks of project sessions when the project is archived', async () => {
+    appContextMock.view = 'settings'
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    appContextMock.requestConfirm.mockResolvedValueOnce(true)
+    const workspace = {
+      id: 'ws-1',
+      name: 'Demo project',
+      rootPath: '/tmp/demo-project',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      worktreeMeta: null,
+    }
+    const session = {
+      id: 'session-1',
+      title: 'Project session',
+      status: 'running',
+      workspaceIds: ['ws-1'],
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    } as unknown as SessionSummary
+    let onAgentEvent: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
+      if (channel === 'session:list') return { sessions: [session], total: 1 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'scheduled-task:list') return { tasks: [] }
+      return {}
+    })
+    const on = vi.fn((channel: string, handler: (event: Record<string, unknown>) => void) => {
+      if (channel === 'stream:session:agent-event') onAgentEvent = handler
+      return vi.fn()
+    })
+    vi.stubGlobal('spark', { invoke, on })
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 30))
+    })
+
+    await act(async () => {
+      onAgentEvent?.({ type: 'agent_status', status: 'completed', sessionId: 'session-1' })
+    })
+    expect(latestCtxRef.current?.unreviewedCompletedSessions.has('session-1')).toBe(true)
+
+    // 等待初始 session:list 刷新提交，避免 handleArchiveProject 闭包拿到空 sessions
+    // （真实 UI 中归档只能在会话列表渲染后触发，闭包总是新鲜的）。
+    await vi.waitFor(() => expect(latestCtxRef.current?.sessions).toHaveLength(1))
+
+    await act(async () => {
+      await latestCtxRef.current?.handleArchiveProject(workspace)
+    })
+
+    expect(invoke).toHaveBeenCalledWith(
+      'workspace:update',
+      expect.objectContaining({ workspaceId: 'ws-1', archived: true }),
+    )
+    expect(latestCtxRef.current?.unreviewedCompletedSessions.has('session-1')).toBe(false)
   })
 
   it('does not let a secondary window overwrite main-window activity reporting', async () => {
@@ -1374,8 +1453,10 @@ describe('SessionSidebarContext', () => {
           </SessionSidebarProvider>
         </ToastProvider>,
       )
-      await new Promise((resolve) => setTimeout(resolve, 30))
     })
+
+    // 等待初始 session:list 刷新提交，替代固定 30ms 等待（修复竞态 flake）。
+    await vi.waitFor(() => expect(latestCtxRef.current?.sessions).toHaveLength(1))
 
     await act(async () => {
       queueChangedHandler?.({ sessionId: 'team-session', running: true, queuedTurns: [] })

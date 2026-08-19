@@ -277,7 +277,7 @@ describe.each(ENGINES)('turn 管道生命周期基线（$adapter 引擎）', (en
     }
   })
 
-  it('⑥ 终态扣留：executor 已 emit 终态但 executeTurn 未 resolve 时不落库', async () => {
+  it('⑥ 终态即时广播：executor emit 终态后立即落库，不等 promise resolve', async () => {
     queueFakeEngineScript({
       events: [{ type: 'assistant_message', content: 'settling', isFinal: true }],
       terminalStatus: 'completed',
@@ -289,24 +289,29 @@ describe.each(ENGINES)('turn 管道生命周期基线（$adapter 引擎）', (en
     if (executor == null) throw new Error('executor was never created')
     await waitUntil(() => executor.holding, 5000, 'executor holding after terminal emit')
 
-    // 执行器已经 emit 了 completed 终态，但 executeTurn 尚未 resolve：
-    // session 层必须扣住它（pendingTerminalStatus），落库事件里不得出现任何终态。
+    // 执行器已 emit completed 且 promise 尚未 resolve：终态必须已经即时落库
+    // （历史实测 SDK 流关闭比完成信号晚数秒，扣到收尾会让 UI 在内容已完成后
+    // 继续显示「进行中」）。
     expect(
       executor.emitted.some(
         (event) => event.type === 'agent_status' && event.status === 'completed',
       ),
     ).toBe(true)
-    expect(
-      loadPersistedEvents().some(
-        (entry) => entry.turnId === turnId && entry.type === 'agent_status',
-      ),
-    ).toBe(false)
+    const persistedWhileHolding = loadPersistedEvents().filter(
+      (entry) => entry.turnId === turnId && entry.type === 'agent_status',
+    )
+    expect(persistedWhileHolding).toHaveLength(1)
+    expect((persistedWhileHolding[0]!.event as { status?: unknown }).status).toBe('completed')
+
+    // 会话级状态仍等 promise 收尾（updateStatusAfterHostTerminal 与队列推进
+    // 保持同一时序），此刻尚未落定。
+    expect(new SessionRepository(db).get(sessionId)?.status).toBe('running')
 
     executor.release()
     const terminal = await waitForTurnTerminal(5000, turnId)
     expect((terminal.event as { status?: unknown }).status).toBe('completed')
 
-    // 扣留的终态最终只落一次（executor 的 emit 与 session 层补发不重复）。
+    // settle 不重复补发：终态全程只有一条。
     expect(
       loadPersistedEvents().filter(
         (entry) => entry.turnId === turnId && entry.type === 'agent_status',

@@ -102,42 +102,58 @@ export function isTitlePrefixOfMessage(title: string | null | undefined, message
   return message.includes(stripped)
 }
 
-export function getLatestAgentStatusFromEvents(
+export function appendInterruptedTurnEvents(
   eventRepo: EventRepository,
   sessionId: string,
-): string | null {
-  const row = eventRepo.queryBySession({ sessionId, eventType: 'agent_status', limit: 1 }).events[0]
-  if (row == null) return null
-  try {
-    const event = JSON.parse(row.event_json) as AgentEvent
-    return event.type === 'agent_status' ? event.status : null
-  } catch {
-    return null
-  }
-}
-
-export function appendInterruptedTurnEvents(eventRepo: EventRepository, sessionId: string): void {
-  const turnId = getLatestTurnIdFromEvents(eventRepo, sessionId)
+  turnId?: string,
+): void {
+  const resolvedTurnId = turnId ?? getLatestTurnIdFromEvents(eventRepo, sessionId)
   const timestamp = new Date().toISOString()
   const seq = eventRepo.nextSeqBySession(sessionId)
-  const persistedEvents = eventRepo.queryStreamEventsByTurn(sessionId, turnId).flatMap((row) => {
-    try {
-      return [JSON.parse(row.event_json) as AgentEvent]
-    } catch {
-      return []
-    }
-  })
-  const events = createInterruptedTurnEvents(sessionId, turnId, seq, timestamp, persistedEvents)
+  const persistedEvents = eventRepo
+    .queryStreamEventsByTurn(sessionId, resolvedTurnId)
+    .flatMap((row) => {
+      try {
+        return [JSON.parse(row.event_json) as AgentEvent]
+      } catch {
+        return []
+      }
+    })
+  const events = createInterruptedTurnEvents(
+    sessionId,
+    resolvedTurnId,
+    seq,
+    timestamp,
+    persistedEvents,
+  )
 
   eventRepo.insertBatch(
     events.map((event) => ({
       id: event.id,
       sessionId,
-      turnId,
+      turnId: resolvedTurnId,
       eventType: event.type,
       eventJson: JSON.stringify(event),
     })),
   )
+}
+
+/**
+ * 为会话内所有断流轮（无终态 agent_status 的轮次）补齐中断终态事件。
+ * 进程重启可能同时硬杀多个轮次（多会话并行、goal 迭代续跑等），只补最新一轮
+ * 会让更早的断流轮在历史重放时永远停留在 streaming。调用方需保证该会话
+ * 当前没有任何执行在跑。
+ */
+export function appendInterruptedTurnEventsForSession(
+  eventRepo: EventRepository,
+  sessionId: string,
+): number {
+  let appended = 0
+  for (const turnId of eventRepo.listTurnIdsWithoutTerminalStatus(sessionId)) {
+    appendInterruptedTurnEvents(eventRepo, sessionId, turnId)
+    appended += 1
+  }
+  return appended
 }
 
 export function getLatestTurnIdFromEvents(eventRepo: EventRepository, sessionId: string): string {

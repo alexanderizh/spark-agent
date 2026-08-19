@@ -462,6 +462,27 @@ export class EventRepository extends BaseRepository {
   }
 
   /**
+   * 列出会话内没有任何终态 agent_status 的轮次（断流轮），按时间线正序返回。
+   * 断流轮 = 执行器死亡/应用退出导致事件流缺失收尾，重放时该轮消息会永远
+   * 停留在 streaming。调用方需自行保证该会话当前确实没有任何执行在跑。
+   */
+  listTurnIdsWithoutTerminalStatus(sessionId: string): string[] {
+    const rows = this.raw
+      .prepare(
+        `SELECT turn_id
+         FROM agent_events
+         WHERE session_id = ? AND turn_id IS NOT NULL AND turn_id != ''
+         GROUP BY turn_id
+         HAVING MAX(CASE WHEN event_type = 'agent_status'
+              AND json_extract(event_json, '$.status') IN ('completed', 'cancelled', 'error', 'idle')
+            THEN 1 ELSE 0 END) = 0
+         ORDER BY MIN(seq) ASC`,
+      )
+      .all(sessionId) as Array<{ turn_id: string }>
+    return rows.map((row) => row.turn_id)
+  }
+
+  /**
    * 查询用于构建「对话历史」的事件，按 seq 正序返回。
    *
    * 关键点：assistant_message / team_member_message 在流式时会产生海量 mode='delta'

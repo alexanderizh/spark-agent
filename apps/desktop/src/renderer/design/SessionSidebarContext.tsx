@@ -1454,6 +1454,19 @@ export function SessionSidebarProvider({
       if (!confirmed) return
       try {
         await updateWorkspace({ workspaceId: workspace.id, archived: true })
+        // Sessions of an archived project leave the sidebar but remain in session:list,
+        // so clear their unread marks here; otherwise the Dock badge keeps counting them
+        // while they can no longer be viewed (and consumed) from inside the app.
+        setUnreviewedCompleted((prev) => {
+          let changed = false
+          const next = new Set(prev)
+          for (const session of sessions) {
+            if (session.workspaceIds.includes(workspace.id) && next.delete(session.id)) {
+              changed = true
+            }
+          }
+          return changed ? next : prev
+        })
         if (activeWorkspaceId === workspace.id) {
           setActiveWorkspaceId(null)
           setActive(null)
@@ -1463,7 +1476,7 @@ export function SessionSidebarProvider({
         toast.error(err instanceof Error ? err.message : t('project.archiveFailed'))
       }
     },
-    [activeWorkspaceId, refreshData, requestConfirm, toast, updateWorkspace],
+    [activeWorkspaceId, refreshData, requestConfirm, sessions, toast, updateWorkspace],
   )
 
   const handleDeleteProject = useCallback(

@@ -1,6 +1,6 @@
 # 低代码自定义工具平台（Custom Tools）实施方案
 
-> 状态: 待开发 | 最后核对: 2026-08-16
+> 状态: 实施中 | 最后核对: 2026-08-19
 
 母讨论：2026-08-16 关于「自定义 Agent 工具 / UI 插件 / Agent 插件」的平台能力评估（结论：低代码自定义工具为 P0，UI 插件缓行，独立 Agent 插件概念不做）。
 本方案基于 2026-08-16 三路代码级调研（工具注册管道 / plugin-sdk 与权限模型 / 持久化与执行先例）+ 两项关键结论人工复核（PlaywrightMcpRegistration 模式、mcp 配置 env 透传）。所有文件路径为当日实测；`session.service.ts` 行号在 Phase 1 W2 拆分期间会漂移，仅作定位参考。
@@ -332,12 +332,25 @@ interface ExecutorResult {
 
 **备选路线 B**（S1/S2 失败时）：改走 `session-mcp-tooling-helpers.ts` 注册（同 `spark_memory` 模式），需在 session.service 两个 merge 块加条目——**必须排到 Phase 1 W2 合并之后**，工期顺延约 1 周。
 
+### 6.4 W0 Spike 结论（2026-08-19 代码级验证，路线 A 定稿）
+
+| #   | 结论                    | 关键证据                                                                                                                                                                                                                                                                                                                     |
+| --- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1  | ✅ 通过                 | env 全链路透传：`config-normalize.ts:72-80` → `buildMcpServersForSDK`（session.service.ts 实测 5834-5856，每 turn 活读 mcp_servers 表）→ `claude-sdk-executor.ts:716/946`；SDK 类型 `McpStdioServerConfig.env` 兼容                                                                                                          |
+| S2  | ✅ 通过（三可执行路径） | Codex SDK：`buildCodexMcpConfig` env 原样（codex-sdk-executor.ts:801）；App-Server 复用同函数；CLI TOML：`codex-cli-executor.ts:667-671` 序列化 env 段，`sanitizeConfigKey` 不伤 `SPARK_CUSTOM_TOOLS_*`。**OpenAI Chat Completions 路径本就无任何 MCP**（既有限制，非本方案缺口）                                            |
+| S3  | ✅ 通过                 | `codexDefaultToolsApprovalMode` 两处实现均 `rawName.startsWith('spark_')`（codex-sdk-executor.ts:807、codex-cli-executor.ts:676），`spark_custom_tools` 必命中 approve                                                                                                                                                       |
+| S4  | ⚠️ 机制完整，有一个断点 | onChange→mcpVersion bump→下一 turn `continueSession=false` 闭环存在（session.service.ts:1095/4377/4989；`lastBuiltMcpVersion` 初值 -1 使重启后首 turn 必然 fresh）。**断点：PlaywrightMcpRegistration 式裸 repo 写不 emit change**——运行中重写 configJson 不 bump。**约束 W1：注册/更新走 McpService（或显式触发变更通知）** |
+| S5  | ✅ 通过                 | `electron.vite.config.ts:38-65` 通配拷贝 `src/tools/*.mjs` + electron-builder.yml:153-157 入包；`resolveRuntimeToolPath`（session-mcp-tooling-helpers.ts:51-68）；**configJson 读取链路无二次路径解析——command/args/env 必须注册时固化为最终值（绝对路径 + 当时端口）**                                                      |
+| S6  | ✅ 参照                 | spark-memory-mcp-server.mjs：stdio JSON-RPC + `127.0.0.1:${PORT}/rpc`。**桥端口 listen(0) 每次启动随机 → 每次应用启动 ensureRegistered 重写 env（跨重启安全，S4 的 -1 机制兜底）**                                                                                                                                           |
+
+**W1 硬约束**：① `CustomToolsRegistration` 不得完全照抄裸 repo 写，configJson 变化时须经 McpService 触发变更；② 注册时固化 command（`resolveStandaloneNodeRuntimePath()`）/args（`resolveRuntimeToolPath('custom-tools-mcp-server.mjs')`）/env（bridge 启动后的实际端口+token）；③ 桥服务须在注册前启动完成。
+
 ---
 
 ## 7. UI 设计（`apps/desktop/src/renderer/design/views/CustomToolsView.tsx`）
 
 - **入口**：左侧导航「自定义工具」独立视图（与 MCP 管理并列），App.tsx 懒加载路由
-- **列表页**：工具卡片（类型图标、risk 徽标配色对齐现有 low/medium/high、启用开关、最近测试状态、来源 local/imported 标记）；空态引导（三个类型模板示例）
+- **列表页**：工具卡片采用应用统一的**扁平化风格**——不用边框（或仅极弱分隔），卡片以 `var(--bg-sunken)` 底色与页面背景拉开层次，hover 用底色加深而非阴影/描边，圆角沿用 `--r-md`；卡片内容（类型图标、risk 徽标配色对齐现有 low/medium/high、启用开关、最近测试状态、来源 local/imported 标记）；空态引导（三个类型模板示例）
 - **编辑器**（Drawer，窄屏可全屏）：
   - 基本信息区 → 类型选择（选定后不可改）→ 类型专属表单 → 参数 Schema 构建器（照抄 `ProviderManifestParameterEditor` 交互）→ 安全与超时 → 风险声明（编辑器给出类型建议值，只可上调）
   - 密钥字段：掩码输入 + 「写入密钥库」按钮，永不回显；`has-secret` 状态灯

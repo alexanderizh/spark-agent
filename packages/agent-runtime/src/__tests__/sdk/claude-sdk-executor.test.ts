@@ -495,6 +495,276 @@ describe('ClaudeSDKExecutor', () => {
     )
   })
 
+  it('emits the terminal at the result message, ahead of trailing stream events', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          uuid: 'result-fast',
+          session_id: 'sdk-session',
+          duration_ms: 10,
+          duration_api_ms: 5,
+          is_error: false,
+          num_turns: 1,
+          result: 'done',
+          total_cost_usd: 0.01,
+          usage: {
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+          },
+        },
+        {
+          type: 'system',
+          subtype: 'notification',
+          key: 'trailing-notification',
+          text: 'Stream tail event after result',
+          priority: 'normal',
+          uuid: 'notification-1',
+          session_id: 'sdk-session',
+        },
+      ]),
+    )
+    const events: AgentEvent[] = []
+    const executor = new ClaudeSDKExecutor()
+    executor.onEvent((event) => events.push(event))
+
+    await executor.executeTurn('sess-1', 'turn-1', 'hello', baseConfig())
+
+    const terminalIdx = events.findIndex(
+      (event) => event.type === 'agent_status' && event.status === 'completed',
+    )
+    const signalIdx = events.findIndex(
+      (event) =>
+        event.type === 'runtime_signal' && 'signal' in event && event.signal === 'notification',
+    )
+    expect(terminalIdx).toBeGreaterThanOrEqual(0)
+    expect(signalIdx).toBeGreaterThanOrEqual(0)
+    expect(terminalIdx).toBeLessThan(signalIdx)
+  })
+
+  it('holds the result terminal while async subagents are still pending', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'assistant',
+          uuid: 'assistant-spawn-hold',
+          session_id: 'sdk-session',
+          parent_tool_use_id: null,
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'agent-tool-hold',
+                name: 'Agent',
+                input: { agent: 'Researcher', description: 'Finds bugs', prompt: 'Search' },
+              },
+            ],
+          },
+        },
+        {
+          type: 'user',
+          uuid: 'user-launch-hold',
+          session_id: 'sdk-session',
+          parent_tool_use_id: null,
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'agent-tool-hold',
+                content: [
+                  'Async agent launched successfully. (This tool result is internal metadata.)',
+                  'agentId: agent-hold-1',
+                  'The agent is working in the background. You will be notified automatically when it completes.',
+                ].join('\n'),
+              },
+            ],
+          },
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          uuid: 'result-hold',
+          session_id: 'sdk-session',
+          duration_ms: 10,
+          duration_api_ms: 5,
+          is_error: false,
+          num_turns: 1,
+          result: 'launched background work',
+          total_cost_usd: 0.01,
+          usage: {
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+          },
+        },
+        {
+          type: 'assistant',
+          uuid: 'assistant-send-hold',
+          session_id: 'sdk-session',
+          parent_tool_use_id: null,
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'send-message-hold',
+                name: 'SendMessage',
+                input: { to: 'agent-hold-1', summary: 'collect findings' },
+              },
+            ],
+          },
+        },
+        {
+          type: 'user',
+          uuid: 'user-send-result-hold',
+          session_id: 'sdk-session',
+          parent_tool_use_id: null,
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'send-message-hold',
+                content: 'The background agent found the root cause.',
+              },
+            ],
+          },
+        },
+      ]),
+    )
+    const events: AgentEvent[] = []
+    const executor = new ClaudeSDKExecutor()
+    executor.onEvent((event) => events.push(event))
+
+    await executor.executeTurn('sess-1', 'turn-1', 'hello', baseConfig())
+
+    const subagentCompletedIdx = events.findIndex((event) => event.type === 'subagent_completed')
+    const terminalIdx = events.findIndex(
+      (event) => event.type === 'agent_status' && event.status === 'completed',
+    )
+    expect(subagentCompletedIdx).toBeGreaterThanOrEqual(0)
+    expect(terminalIdx).toBeGreaterThanOrEqual(0)
+    // 终态必须排在后台子代理完成事件之后（流关闭兜底），不得在 result 时抢发。
+    expect(terminalIdx).toBeGreaterThan(subagentCompletedIdx)
+  })
+
+  it('restores a suppressed error terminal instead of falling back to completed', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'assistant',
+          uuid: 'assistant-spawn-err',
+          session_id: 'sdk-session',
+          parent_tool_use_id: null,
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'agent-tool-err',
+                name: 'Agent',
+                input: { agent: 'Researcher', description: 'Finds bugs', prompt: 'Search' },
+              },
+            ],
+          },
+        },
+        {
+          type: 'user',
+          uuid: 'user-launch-err',
+          session_id: 'sdk-session',
+          parent_tool_use_id: null,
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'agent-tool-err',
+                content: [
+                  'Async agent launched successfully. (This tool result is internal metadata.)',
+                  'agentId: agent-err-1',
+                  'The agent is working in the background. You will be notified automatically when it completes.',
+                ].join('\n'),
+              },
+            ],
+          },
+        },
+        {
+          type: 'result',
+          subtype: 'error_max_budget_usd',
+          uuid: 'result-err',
+          session_id: 'sdk-session',
+          duration_ms: 10,
+          duration_api_ms: 5,
+          is_error: true,
+          num_turns: 1,
+          errors: ['Budget exceeded'],
+          result: '',
+          total_cost_usd: 5,
+          usage: {
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+          },
+        },
+        {
+          type: 'assistant',
+          uuid: 'assistant-send-err',
+          session_id: 'sdk-session',
+          parent_tool_use_id: null,
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'send-message-err',
+                name: 'SendMessage',
+                input: { to: 'agent-err-1', summary: 'collect findings' },
+              },
+            ],
+          },
+        },
+        {
+          type: 'user',
+          uuid: 'user-send-result-err',
+          session_id: 'sdk-session',
+          parent_tool_use_id: null,
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'send-message-err',
+                content: 'The background agent finished.',
+              },
+            ],
+          },
+        },
+      ]),
+    )
+    const events: AgentEvent[] = []
+    const executor = new ClaudeSDKExecutor()
+    executor.onEvent((event) => events.push(event))
+
+    await executor.executeTurn('sess-1', 'turn-1', 'hello', baseConfig())
+
+    const terminalStatuses = events.filter(
+      (event) =>
+        event.type === 'agent_status' &&
+        (event.status === 'completed' || event.status === 'error' || event.status === 'cancelled'),
+    )
+    // 守卫压住 result 派生的 error 终态后，流关闭兜底必须按原样还原 error，
+    // 不得错误覆盖为 completed（失败轮不能被标记为成功）。
+    expect(terminalStatuses).toHaveLength(1)
+    expect(terminalStatuses[0]).toMatchObject({ type: 'agent_status', status: 'error' })
+  })
+
   it('emits an error status and rejects when the SDK throws', async () => {
     queryMock.mockImplementation(() => {
       throw new Error('write EPIPE')

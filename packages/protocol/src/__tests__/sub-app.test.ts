@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { SPARK_APP_BRIDGE_INBOUND_SCHEMA, SubAppIpcSchemaRegistry } from '../sub-app.js'
+import {
+  SPARK_APP_BRIDGE_INBOUND_SCHEMA,
+  SUB_APP_SOURCE_HARD_LIMIT,
+  SubAppIpcSchemaRegistry,
+} from '../sub-app.js'
 
 const appId = '11111111-1111-4111-8111-111111111111'
 
@@ -28,10 +32,11 @@ describe('SubApp IPC schemas', () => {
 
   it('rejects invalid targets, oversized source and unbounded data pages', () => {
     expect(() => SubAppIpcSchemaRegistry['sub-app:get'].parse({ appId: 'not-an-uuid' })).toThrow()
+    // source 上限已由设置驱动放开，IPC 边界仅保留 5MB 硬安全上限
     expect(() =>
       SubAppIpcSchemaRegistry['sub-app:create'].parse({
         name: '应用',
-        source: 'x'.repeat(200_001),
+        source: 'x'.repeat(SUB_APP_SOURCE_HARD_LIMIT + 1),
       }),
     ).toThrow()
     expect(() =>

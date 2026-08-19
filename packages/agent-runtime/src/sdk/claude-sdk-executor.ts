@@ -48,7 +48,7 @@ import type {
   RewindFilesParams,
   RewindFilesResult,
 } from './engine-executor.js'
-import { mapSDKMessageToEvents } from './event-mapper.js'
+import { hasPendingAsyncSubagentLaunches, mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type {
@@ -591,6 +591,8 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
     const claudeCodeExecutable = resolveClaudeCodeExecutable()
 
     let terminalStatusEmitted = false
+    // 被异步子代理守卫压住的终态：流关闭兜底时按原样还原（error 不能落成 completed）。
+    let suppressedTerminalStatus: AgentStatusValue | null = null
     const emitTerminalStatus = (status: AgentStatusValue): void => {
       if (terminalStatusEmitted) return
       terminalStatusEmitted = true
@@ -978,6 +980,20 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
               ) {
                 continue
               }
+              // result 即终态的快路径守卫：仍有异步子代理（后台任务）未完成时压住
+              // 映射层直发的终态，terminalStatusEmitted 保持 false，由流关闭后的
+              // emitTerminalStatus 兜底——后台事件排空后再标记完成（2026-07-11
+              // 审计：SDK 声明 idle 为权威完成信号正是针对该场景；本产品 query()
+              // 流内实际收不到 idle，等流关闭即等价于等排空）。
+              if (
+                event.type === 'agent_status' &&
+                isTerminalAgentStatus(event.status) &&
+                hasPendingAsyncSubagentLaunches(ctx)
+              ) {
+                // 记住被压住的终态原值：兜底时按原样还原，error 结果不能被落成 completed。
+                suppressedTerminalStatus = event.status
+                continue
+              }
               if (
                 event.type === 'agent_error' ||
                 (event.type === 'agent_status' && isTerminalAgentStatus(event.status))
@@ -1030,7 +1046,7 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
           return
         }
 
-        if (!terminalStatusEmitted) emitTerminalStatus('completed')
+        if (!terminalStatusEmitted) emitTerminalStatus(suppressedTerminalStatus ?? 'completed')
         // Record resume success if this was a resumed session
         if (resumeExistingSession) {
           resumeCircuitBreaker.recordSuccess(sessionId)
@@ -1063,6 +1079,7 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
             prompt = buildMaxTurnContinuationPrompt()
             resumeExistingSession = true
             terminalStatusEmitted = false
+            suppressedTerminalStatus = null
             continue
           }
 
@@ -1110,6 +1127,7 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
             config = { ...config, sdkSessionId: freshSessionId }
             // Reset terminal status since we're retrying
             terminalStatusEmitted = false
+            suppressedTerminalStatus = null
             continue
           }
 

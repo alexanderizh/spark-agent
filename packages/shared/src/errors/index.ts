@@ -42,6 +42,8 @@ export type ErrorCode =
   // IPC
   | 'IPC_HANDLER_NOT_FOUND'
   | 'IPC_INVALID_PAYLOAD'
+  // 工具/任务执行
+  | 'EXECUTION_FAILED'
 
 export class SparkError extends Error {
   readonly code: ErrorCode

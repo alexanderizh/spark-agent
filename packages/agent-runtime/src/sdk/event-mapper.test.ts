@@ -43,22 +43,30 @@ describe('mapSDKMessageToEvents', () => {
     ['unknown', 'CLAUDE_UNKNOWN', true],
     ['max_output_tokens', 'CLAUDE_MAX_OUTPUT_TOKENS', true],
   ])('maps Claude assistant error %s', (error, code, retryable) => {
-    const events = mapSDKMessageToEvents({
-      type: 'assistant',
-      uuid: 'assistant-error',
-      session_id: 'sdk-session',
-      parent_tool_use_id: null,
-      error,
-      message: { role: 'assistant', content: [] },
-    }, { sessionId: 'session-1', turnId: 'turn-1' })
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-error',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        error,
+        message: { role: 'assistant', content: [] },
+      },
+      { sessionId: 'session-1', turnId: 'turn-1' },
+    )
 
-    expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: 'agent_error', code, retryable,
-        title: expect.any(String), actionHint: expect.any(String),
-      }),
-      expect.objectContaining({ type: 'agent_status', status: 'error' }),
-    ]))
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'agent_error',
+          code,
+          retryable,
+          title: expect.any(String),
+          actionHint: expect.any(String),
+        }),
+        expect.objectContaining({ type: 'agent_status', status: 'error' }),
+      ]),
+    )
   })
 
   it('attributes a subagent assistant error without failing the host status', () => {
@@ -209,99 +217,188 @@ describe('mapSDKMessageToEvents', () => {
   })
 
   it('treats structured output retry exhaustion as non-retryable', () => {
-    const events = mapSDKMessageToEvents({
-      type: 'result',
-      subtype: 'error_max_structured_output_retries',
-      uuid: 'result-structured-error',
-      session_id: 'sdk-session',
-      duration_ms: 10,
-      duration_api_ms: 5,
-      is_error: true,
-      num_turns: 2,
-      total_cost_usd: 0.01,
-      usage: {
-        input_tokens: 100,
-        output_tokens: 20,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'result',
+        subtype: 'error_max_structured_output_retries',
+        uuid: 'result-structured-error',
+        session_id: 'sdk-session',
+        duration_ms: 10,
+        duration_api_ms: 5,
+        is_error: true,
+        num_turns: 2,
+        total_cost_usd: 0.01,
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+        errors: ['schema mismatch'],
       },
-      errors: ['schema mismatch'],
-    }, { sessionId: 'session-1', turnId: 'turn-1' })
+      { sessionId: 'session-1', turnId: 'turn-1' },
+    )
 
-    expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: 'agent_error',
-        code: 'ERROR_MAX_STRUCTURED_OUTPUT_RETRIES',
-        retryable: false,
-      }),
-    ]))
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'agent_error',
+          code: 'ERROR_MAX_STRUCTURED_OUTPUT_RETRIES',
+          retryable: false,
+        }),
+      ]),
+    )
   })
 
   it('maps Claude runtime signals without silent drops', () => {
     const ctx = { sessionId: 'session-1', turnId: 'turn-1' }
     const messages = [
-      { type: 'system', subtype: 'api_retry', attempt: 2, max_retries: 4,
-        retry_delay_ms: 1500, error_status: 529, error: 'overloaded',
-        uuid: 'retry-1', session_id: 'sdk-session' },
-      { type: 'system', subtype: 'permission_denied', tool_name: 'Bash',
-        tool_use_id: 'tool-1', decision_reason_type: 'rule',
-        decision_reason: 'Denied by project rule', message: 'Command blocked',
-        uuid: 'permission-1', session_id: 'sdk-session' },
-      { type: 'auth_status', isAuthenticating: true,
-        output: ['Open the browser to continue'], uuid: 'auth-1', session_id: 'sdk-session' },
-      { type: 'rate_limit_event', rate_limit_info: {
-        status: 'allowed_warning', rateLimitType: 'five_hour',
-        utilization: 0.92, resetsAt: 1_800_000_000,
-      }, uuid: 'rate-1', session_id: 'sdk-session' },
-      { type: 'system', subtype: 'model_refusal_fallback',
-        original_model: 'claude-opus', fallback_model: 'claude-sonnet',
-        request_id: 'request-fallback', content: 'Continuing with the fallback model.',
-        uuid: 'fallback-1', session_id: 'sdk-session' },
-      { type: 'system', subtype: 'model_refusal_no_fallback',
-        original_model: 'claude-opus', request_id: 'request-1',
-        content: 'The model declined this request.', uuid: 'refusal-1', session_id: 'sdk-session' },
-      { type: 'system', subtype: 'notification', key: 'background-ready',
-        text: 'Background work finished', priority: 'high',
-        uuid: 'notification-1', session_id: 'sdk-session' },
-      { type: 'system', subtype: 'mirror_error', error: 'mirror timed out',
+      {
+        type: 'system',
+        subtype: 'api_retry',
+        attempt: 2,
+        max_retries: 4,
+        retry_delay_ms: 1500,
+        error_status: 529,
+        error: 'overloaded',
+        uuid: 'retry-1',
+        session_id: 'sdk-session',
+      },
+      {
+        type: 'system',
+        subtype: 'permission_denied',
+        tool_name: 'Bash',
+        tool_use_id: 'tool-1',
+        decision_reason_type: 'rule',
+        decision_reason: 'Denied by project rule',
+        message: 'Command blocked',
+        uuid: 'permission-1',
+        session_id: 'sdk-session',
+      },
+      {
+        type: 'auth_status',
+        isAuthenticating: true,
+        output: ['Open the browser to continue'],
+        uuid: 'auth-1',
+        session_id: 'sdk-session',
+      },
+      {
+        type: 'rate_limit_event',
+        rate_limit_info: {
+          status: 'allowed_warning',
+          rateLimitType: 'five_hour',
+          utilization: 0.92,
+          resetsAt: 1_800_000_000,
+        },
+        uuid: 'rate-1',
+        session_id: 'sdk-session',
+      },
+      {
+        type: 'system',
+        subtype: 'model_refusal_fallback',
+        original_model: 'claude-opus',
+        fallback_model: 'claude-sonnet',
+        request_id: 'request-fallback',
+        content: 'Continuing with the fallback model.',
+        uuid: 'fallback-1',
+        session_id: 'sdk-session',
+      },
+      {
+        type: 'system',
+        subtype: 'model_refusal_no_fallback',
+        original_model: 'claude-opus',
+        request_id: 'request-1',
+        content: 'The model declined this request.',
+        uuid: 'refusal-1',
+        session_id: 'sdk-session',
+      },
+      {
+        type: 'system',
+        subtype: 'notification',
+        key: 'background-ready',
+        text: 'Background work finished',
+        priority: 'high',
+        uuid: 'notification-1',
+        session_id: 'sdk-session',
+      },
+      {
+        type: 'system',
+        subtype: 'mirror_error',
+        error: 'mirror timed out',
         key: { projectKey: 'project-1', sessionId: 'sdk-session' },
-        uuid: 'mirror-1', session_id: 'sdk-session' },
-      { type: 'system', subtype: 'worker_shutting_down', reason: 'host_exit',
-        uuid: 'worker-1', session_id: 'sdk-session' },
+        uuid: 'mirror-1',
+        session_id: 'sdk-session',
+      },
+      {
+        type: 'system',
+        subtype: 'worker_shutting_down',
+        reason: 'host_exit',
+        uuid: 'worker-1',
+        session_id: 'sdk-session',
+      },
     ]
 
     const events = messages.flatMap((message) => mapSDKMessageToEvents(message, ctx))
-    expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'runtime_signal', signal: 'api_retry' }),
-      expect.objectContaining({ type: 'runtime_signal', signal: 'permission_denied' }),
-      expect.objectContaining({ type: 'runtime_signal', signal: 'auth_status' }),
-      expect.objectContaining({ type: 'runtime_signal', signal: 'rate_limit' }),
-      expect.objectContaining({ type: 'runtime_signal', signal: 'model_refusal_fallback' }),
-      expect.objectContaining({ type: 'agent_error', code: 'CLAUDE_MODEL_REFUSAL' }),
-      expect.objectContaining({ type: 'runtime_signal', signal: 'notification' }),
-      expect.objectContaining({ type: 'runtime_signal', signal: 'mirror_error' }),
-      expect.objectContaining({ type: 'runtime_signal', signal: 'worker_shutdown' }),
-      expect.objectContaining({ type: 'agent_status', status: 'error' }),
-    ]))
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'runtime_signal', signal: 'api_retry' }),
+        expect.objectContaining({ type: 'runtime_signal', signal: 'permission_denied' }),
+        expect.objectContaining({ type: 'runtime_signal', signal: 'auth_status' }),
+        expect.objectContaining({ type: 'runtime_signal', signal: 'rate_limit' }),
+        expect.objectContaining({ type: 'runtime_signal', signal: 'model_refusal_fallback' }),
+        expect.objectContaining({ type: 'agent_error', code: 'CLAUDE_MODEL_REFUSAL' }),
+        expect.objectContaining({ type: 'runtime_signal', signal: 'notification' }),
+        expect.objectContaining({ type: 'runtime_signal', signal: 'mirror_error' }),
+        expect.objectContaining({ type: 'runtime_signal', signal: 'worker_shutdown' }),
+        expect.objectContaining({ type: 'agent_status', status: 'error' }),
+      ]),
+    )
   })
 
-  it('uses session idle as the authoritative completion signal', () => {
+  it('emits terminal completed with the result message (session idle remains a fallback signal)', () => {
     const ctx = { sessionId: 'session-1', turnId: 'turn-1' }
-    const resultEvents = mapSDKMessageToEvents({
-      type: 'result', subtype: 'success', uuid: 'result-1', session_id: 'sdk-session',
-      duration_ms: 10, duration_api_ms: 5, is_error: false, num_turns: 1,
-      result: 'done', total_cost_usd: 0.01,
-      usage: { input_tokens: 100, output_tokens: 20,
-        cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
-    }, ctx)
-    const idleEvents = mapSDKMessageToEvents({
-      type: 'system', subtype: 'session_state_changed', state: 'idle',
-      uuid: 'state-1', session_id: 'sdk-session',
-    }, ctx)
-
-    expect(resultEvents).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'agent_status', status: 'completed' }),
-    ]))
+    const resultEvents = mapSDKMessageToEvents(
+      {
+        type: 'result',
+        subtype: 'success',
+        uuid: 'result-1',
+        session_id: 'sdk-session',
+        duration_ms: 10,
+        duration_api_ms: 5,
+        is_error: false,
+        num_turns: 1,
+        result: 'done',
+        total_cost_usd: 0.01,
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      },
+      ctx,
+    )
+    // result 即完成信号：final 正文之后紧跟终态。历史实测 SDK 流关闭比 result 晚
+    // 数秒且 idle 几乎不会在流内出现，把终态扣到流关闭/后处理之后会让 UI 在内容
+    // 已完成后继续显示「进行中」。仍有异步子代理在跑时由 executor 压住这条终态。
+    const finalIdx = resultEvents.findIndex((event) => event.type === 'assistant_message')
+    const terminalIdx = resultEvents.findIndex(
+      (event) => event.type === 'agent_status' && event.status === 'completed',
+    )
+    expect(finalIdx).toBeGreaterThanOrEqual(0)
+    expect(terminalIdx).toBeGreaterThan(finalIdx)
+    // idle 仍映射 completed：SDK 若在流内补发（生产极少出现），由 session.service
+    // 侧「completed 只广播一次」闩锁吞掉重复信号。
+    const idleEvents = mapSDKMessageToEvents(
+      {
+        type: 'system',
+        subtype: 'session_state_changed',
+        state: 'idle',
+        uuid: 'state-1',
+        session_id: 'sdk-session',
+      },
+      ctx,
+    )
     expect(idleEvents).toEqual([
       expect.objectContaining({ type: 'agent_status', status: 'completed' }),
     ])
@@ -309,21 +406,34 @@ describe('mapSDKMessageToEvents', () => {
 
   it('retracts superseded Claude messages before rendering a fallback replacement', () => {
     const ctx = { sessionId: 'session-1', turnId: 'turn-1' }
-    const refusedEvents = mapSDKMessageToEvents({
-      type: 'assistant', uuid: 'assistant-refused', session_id: 'sdk-session',
-      parent_tool_use_id: null,
-      message: { role: 'assistant', content: [{ type: 'text', text: 'stale partial' }] },
-    }, ctx)
-    const replacementEvents = mapSDKMessageToEvents({
-      type: 'assistant', uuid: 'assistant-fallback', session_id: 'sdk-session',
-      parent_tool_use_id: null, supersedes: ['assistant-refused'],
-      message: { role: 'assistant', content: [{ type: 'text', text: 'canonical answer' }] },
-    }, ctx)
+    const refusedEvents = mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-refused',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: { role: 'assistant', content: [{ type: 'text', text: 'stale partial' }] },
+      },
+      ctx,
+    )
+    const replacementEvents = mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-fallback',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        supersedes: ['assistant-refused'],
+        message: { role: 'assistant', content: [{ type: 'text', text: 'canonical answer' }] },
+      },
+      ctx,
+    )
 
-    expect(replacementEvents[0]).toEqual(expect.objectContaining({
-      type: 'transcript_retraction',
-      eventIds: expect.arrayContaining(refusedEvents.map((event) => event.id)),
-    }))
+    expect(replacementEvents[0]).toEqual(
+      expect.objectContaining({
+        type: 'transcript_retraction',
+        eventIds: expect.arrayContaining(refusedEvents.map((event) => event.id)),
+      }),
+    )
   })
 
   it('keeps SDK tool result names and emits file changes for write tools', () => {
@@ -339,12 +449,14 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'tool-1',
-          name: 'Edit',
-          input: { file_path: 'src/index.ts', old_string: 'a', new_string: 'b' },
-        }],
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tool-1',
+            name: 'Edit',
+            input: { file_path: 'src/index.ts', old_string: 'a', new_string: 'b' },
+          },
+        ],
       },
     }
     const user: SDKUserMessage = {
@@ -354,11 +466,13 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: 'tool-1',
-          content: 'Updated src/index.ts',
-        }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'tool-1',
+            content: 'Updated src/index.ts',
+          },
+        ],
       },
     }
 
@@ -389,60 +503,86 @@ describe('mapSDKMessageToEvents', () => {
   })
 
   it('routes extended Claude content blocks through the public message mapper', () => {
-    const events = mapSDKMessageToEvents({
-      type: 'assistant',
-      uuid: 'assistant-extended',
-      session_id: 'sdk-session',
-      parent_tool_use_id: null,
-      message: {
-        role: 'assistant',
-        content: [
-          { type: 'server_tool_use', id: 'search-1', name: 'web_search', input: { query: 'Spark Agent' } },
-          {
-            type: 'web_search_tool_result',
-            tool_use_id: 'search-1',
-            content: [{ type: 'web_search_result', title: 'Spark', url: 'https://example.com' }],
-          },
-        ],
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-extended',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'server_tool_use',
+              id: 'search-1',
+              name: 'web_search',
+              input: { query: 'Spark Agent' },
+            },
+            {
+              type: 'web_search_tool_result',
+              tool_use_id: 'search-1',
+              content: [{ type: 'web_search_result', title: 'Spark', url: 'https://example.com' }],
+            },
+          ],
+        },
       },
-    }, { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map() })
+      { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map() },
+    )
 
     expect(events).toEqual([
-      expect.objectContaining({ type: 'tool_call', toolCallId: 'search-1', toolName: 'web_search' }),
-      expect.objectContaining({ type: 'tool_result', toolCallId: 'search-1', toolName: 'web_search' }),
+      expect.objectContaining({
+        type: 'tool_call',
+        toolCallId: 'search-1',
+        toolName: 'web_search',
+      }),
+      expect.objectContaining({
+        type: 'tool_result',
+        toolCallId: 'search-1',
+        toolName: 'web_search',
+      }),
     ])
   })
 
   it('redacts encrypted payloads nested inside regular tool results', () => {
     const secret = 'nested-encrypted-secret'
-    const events = mapSDKMessageToEvents({
-      type: 'user',
-      uuid: 'user-encrypted-result',
-      session_id: 'sdk-session',
-      parent_tool_use_id: null,
-      message: {
-        role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: 'tool-1',
-          content: [{
-            type: 'code_execution_tool_result',
-            tool_use_id: 'nested-code-1',
-            content: {
-              type: 'encrypted_code_execution_result',
-              encrypted_stdout: secret,
-              stderr: '',
-              return_code: 0,
-              content: [],
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'user',
+        uuid: 'user-encrypted-result',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tool-1',
+              content: [
+                {
+                  type: 'code_execution_tool_result',
+                  tool_use_id: 'nested-code-1',
+                  content: {
+                    type: 'encrypted_code_execution_result',
+                    encrypted_stdout: secret,
+                    stderr: '',
+                    return_code: 0,
+                    content: [],
+                  },
+                },
+              ],
             },
-          }],
-        }],
+          ],
+        },
       },
-    }, { sessionId: 'session-1', turnId: 'turn-1' })
+      { sessionId: 'session-1', turnId: 'turn-1' },
+    )
 
     expect(JSON.stringify(events)).not.toContain(secret)
     expect(events).toEqual([
-      expect.objectContaining({ type: 'tool_result', output: expect.stringContaining('[redacted]') }),
+      expect.objectContaining({
+        type: 'tool_result',
+        output: expect.stringContaining('[redacted]'),
+      }),
     ])
   })
 
@@ -473,18 +613,24 @@ describe('mapSDKMessageToEvents', () => {
 
     const events = mapSDKMessageToEvents(result, { sessionId: 'session-1', turnId: 'turn-1' })
 
-    expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: 'checkpoint',
-        checkpointId: 'chk_123',
-        label: 'Before edits',
-        filePaths: ['src/index.ts'],
-      }),
-    ]))
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'checkpoint',
+          checkpointId: 'chk_123',
+          label: 'Before edits',
+          filePaths: ['src/index.ts'],
+        }),
+      ]),
+    )
   })
 
   it('emits subagent_started when Agent tool_use is encountered', () => {
-    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map<string, string>() }
+    const ctx = {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      toolNamesById: new Map<string, string>(),
+    }
     const assistant: SDKAssistantMessage = {
       type: 'assistant',
       uuid: 'assistant-1',
@@ -492,12 +638,18 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'agent-tool-1',
-          name: 'Agent',
-          input: { agent: 'Researcher', description: 'Finds bugs', prompt: 'Search for null pointer issues' },
-        }],
+        content: [
+          {
+            type: 'tool_use',
+            id: 'agent-tool-1',
+            name: 'Agent',
+            input: {
+              agent: 'Researcher',
+              description: 'Finds bugs',
+              prompt: 'Search for null pointer issues',
+            },
+          },
+        ],
       },
     }
 
@@ -527,12 +679,18 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'agent-tool-1',
-          name: 'Agent',
-          input: { agent: 'Researcher', description: 'Finds bugs', prompt: 'Search for null pointer issues' },
-        }],
+        content: [
+          {
+            type: 'tool_use',
+            id: 'agent-tool-1',
+            name: 'Agent',
+            input: {
+              agent: 'Researcher',
+              description: 'Finds bugs',
+              prompt: 'Search for null pointer issues',
+            },
+          },
+        ],
       },
     }
     mapSDKMessageToEvents(assistant, ctx)
@@ -544,11 +702,13 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: 'agent-tool-1',
-          content: 'Found 3 null pointer issues in auth module.',
-        }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'agent-tool-1',
+            content: 'Found 3 null pointer issues in auth module.',
+          },
+        ],
       },
     }
 
@@ -578,12 +738,14 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'agent-tool-bg',
-          name: 'Agent',
-          input: { agent: 'Researcher', description: 'Finds bugs', prompt: 'Search broadly' },
-        }],
+        content: [
+          {
+            type: 'tool_use',
+            id: 'agent-tool-bg',
+            name: 'Agent',
+            input: { agent: 'Researcher', description: 'Finds bugs', prompt: 'Search broadly' },
+          },
+        ],
       },
     }
     mapSDKMessageToEvents(assistant, ctx)
@@ -595,16 +757,18 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: 'agent-tool-bg',
-          content: [
-            'Async agent launched successfully. (This tool result is internal metadata.)',
-            'agentId: agent-bg-1',
-            'The agent is working in the background. You will be notified automatically when it completes.',
-            'output_file: /tmp/task.output',
-          ].join('\n'),
-        }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'agent-tool-bg',
+            content: [
+              'Async agent launched successfully. (This tool result is internal metadata.)',
+              'agentId: agent-bg-1',
+              'The agent is working in the background. You will be notified automatically when it completes.',
+              'output_file: /tmp/task.output',
+            ].join('\n'),
+          },
+        ],
       },
     }
 
@@ -619,12 +783,14 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'send-message-1',
-          name: 'SendMessage',
-          input: { to: 'agent-bg-1', summary: 'collect findings' },
-        }],
+        content: [
+          {
+            type: 'tool_use',
+            id: 'send-message-1',
+            name: 'SendMessage',
+            input: { to: 'agent-bg-1', summary: 'collect findings' },
+          },
+        ],
       },
     }
     mapSDKMessageToEvents(sendMessage, ctx)
@@ -636,11 +802,13 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: 'send-message-1',
-          content: 'The background agent found the root cause.',
-        }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'send-message-1',
+            content: 'The background agent found the root cause.',
+          },
+        ],
       },
     }
 
@@ -670,12 +838,14 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'agent-tool-usage',
-          name: 'Agent',
-          input: { agent: 'Researcher', description: 'Find news', prompt: 'Search news' },
-        }],
+        content: [
+          {
+            type: 'tool_use',
+            id: 'agent-tool-usage',
+            name: 'Agent',
+            input: { agent: 'Researcher', description: 'Find news', prompt: 'Search news' },
+          },
+        ],
       },
     }
     mapSDKMessageToEvents(spawn, ctx)
@@ -714,11 +884,13 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: 'agent-tool-usage',
-          content: 'Headlines: A, B, C',
-        }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'agent-tool-usage',
+            content: 'Headlines: A, B, C',
+          },
+        ],
       },
     }
     const events = mapSDKMessageToEvents(result, ctx)
@@ -747,12 +919,14 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'agent-tool-2',
-          name: 'Agent',
-          input: { agent: 'Writer', description: 'Writes docs', prompt: 'Write README' },
-        }],
+        content: [
+          {
+            type: 'tool_use',
+            id: 'agent-tool-2',
+            name: 'Agent',
+            input: { agent: 'Writer', description: 'Writes docs', prompt: 'Write README' },
+          },
+        ],
       },
     }
     mapSDKMessageToEvents(assistant, ctx)
@@ -764,12 +938,14 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: 'agent-tool-2',
-          content: 'Permission denied',
-          is_error: true,
-        }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'agent-tool-2',
+            content: 'Permission denied',
+            is_error: true,
+          },
+        ],
       },
     }
 
@@ -799,12 +975,14 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'agent-tool-3',
-          name: 'Agent',
-          input: { agent: 'Analyst', description: 'Deep analysis', prompt: 'Analyze all files' },
-        }],
+        content: [
+          {
+            type: 'tool_use',
+            id: 'agent-tool-3',
+            name: 'Agent',
+            input: { agent: 'Analyst', description: 'Deep analysis', prompt: 'Analyze all files' },
+          },
+        ],
       },
     }
     mapSDKMessageToEvents(assistant, ctx)
@@ -817,11 +995,13 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: 'agent-tool-3',
-          content: longOutput,
-        }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'agent-tool-3',
+            content: longOutput,
+          },
+        ],
       },
     }
 
@@ -844,12 +1024,14 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'tool-1',
-          name: 'ExitPlanMode',
-          input: { plan: '# Plan\n\n1. Do the thing' },
-        }],
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tool-1',
+            name: 'ExitPlanMode',
+            input: { plan: '# Plan\n\n1. Do the thing' },
+          },
+        ],
       },
     }
 
@@ -899,7 +1081,11 @@ describe('mapSDKMessageToEvents', () => {
     // 新版 CLI 计划模式：agent 先 Write 计划到 .claude/plans/*.md，ExitPlanMode
     // 的 input 不再带 plan 文本。event-mapper 应追踪这次写入，在 ExitPlanMode
     // 到来时把文件内容作为 plan 文本发出。
-    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map<string, string>() }
+    const ctx = {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      toolNamesById: new Map<string, string>(),
+    }
 
     const planWrite: SDKAssistantMessage = {
       type: 'assistant',
@@ -908,15 +1094,17 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'tool-write',
-          name: 'Write',
-          input: {
-            file_path: '/home/u/.claude/plans/abc-plan.md',
-            content: '# Plan from file\n\n1. Read code\n2. Add tests',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tool-write',
+            name: 'Write',
+            input: {
+              file_path: '/home/u/.claude/plans/abc-plan.md',
+              content: '# Plan from file\n\n1. Read code\n2. Add tests',
+            },
           },
-        }],
+        ],
       },
     }
     // 先处理 Write（建立 plan 文件追踪），再处理 ExitPlanMode
@@ -929,12 +1117,14 @@ describe('mapSDKMessageToEvents', () => {
       parent_tool_use_id: null,
       message: {
         role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'tool-exit',
-          name: 'ExitPlanMode',
-          input: { allowedPrompts: [{ tool: 'Bash', prompt: 'run tests' }] },
-        }],
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tool-exit',
+            name: 'ExitPlanMode',
+            input: { allowedPrompts: [{ tool: 'Bash', prompt: 'run tests' }] },
+          },
+        ],
       },
     }
     const events = mapSDKMessageToEvents(exitPlan, ctx)
@@ -948,7 +1138,11 @@ describe('mapSDKMessageToEvents', () => {
   })
 
   it('replays plan-file Edit changes before ExitPlanMode fallback', () => {
-    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map<string, string>() }
+    const ctx = {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      toolNamesById: new Map<string, string>(),
+    }
     const planPath = '/home/u/.claude/plans/abc-plan.md'
 
     mapSDKMessageToEvents(
@@ -959,15 +1153,17 @@ describe('mapSDKMessageToEvents', () => {
         parent_tool_use_id: null,
         message: {
           role: 'assistant',
-          content: [{
-            type: 'tool_use',
-            id: 'tool-write',
-            name: 'Write',
-            input: {
-              file_path: planPath,
-              content: '# Plan code\n\n1. Read code\n2. Add code tests',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-write',
+              name: 'Write',
+              input: {
+                file_path: planPath,
+                content: '# Plan code\n\n1. Read code\n2. Add code tests',
+              },
             },
-          }],
+          ],
         },
       },
       ctx,
@@ -980,16 +1176,18 @@ describe('mapSDKMessageToEvents', () => {
         parent_tool_use_id: null,
         message: {
           role: 'assistant',
-          content: [{
-            type: 'tool_use',
-            id: 'tool-edit',
-            name: 'Edit',
-            input: {
-              file_path: planPath,
-              old_string: '1. Read code',
-              new_string: '1. Read and verify code',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-edit',
+              name: 'Edit',
+              input: {
+                file_path: planPath,
+                old_string: '1. Read code',
+                new_string: '1. Read and verify code',
+              },
             },
-          }],
+          ],
         },
       },
       ctx,
@@ -1002,17 +1200,19 @@ describe('mapSDKMessageToEvents', () => {
         parent_tool_use_id: null,
         message: {
           role: 'assistant',
-          content: [{
-            type: 'tool_use',
-            id: 'tool-edit-all',
-            name: 'Edit',
-            input: {
-              filePath: planPath,
-              oldString: 'code',
-              newString: 'source',
-              replaceAll: true,
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-edit-all',
+              name: 'Edit',
+              input: {
+                filePath: planPath,
+                oldString: 'code',
+                newString: 'source',
+                replaceAll: true,
+              },
             },
-          }],
+          ],
         },
       },
       ctx,
@@ -1026,12 +1226,14 @@ describe('mapSDKMessageToEvents', () => {
         parent_tool_use_id: null,
         message: {
           role: 'assistant',
-          content: [{
-            type: 'tool_use',
-            id: 'tool-exit',
-            name: 'ExitPlanMode',
-            input: {},
-          }],
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-exit',
+              name: 'ExitPlanMode',
+              input: {},
+            },
+          ],
         },
       },
       ctx,

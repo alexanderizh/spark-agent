@@ -39,9 +39,9 @@ export interface FakeEngineScript {
   rejectWith?: Error
   /**
    * 事件与终态全部注入完毕后挂起 executeTurn，直到外部调用 release() 或 cancel()。
-   * 与 holdUntilCancel 的差异：终态事件已经 emit（session 层会扣住它），但
-   * executeTurn 的 promise 尚未 resolve —— 用于锁定「终态扣留」（pendingTerminalStatus）
-   * 与队列推进（finally 在 promise settle 后才跑）的时序基线。
+   * 与 holdUntilCancel 的差异：终态事件已经 emit（session 层会即时广播落库），但
+   * executeTurn 的 promise 尚未 resolve —— 用于锁定「终态即时广播」（终态先于
+   * promise 收尾落库）与队列推进（finally 在 promise settle 后才跑）的时序基线。
    */
   holdForRelease?: boolean
   /**

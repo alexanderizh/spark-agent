@@ -172,7 +172,7 @@ import {
   SUBAGENT_USAGE_HINT_SYSTEM_PROMPT,
   TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION,
   TEAM_DISPATCH_TOOL_DESCRIPTION,
-  appendInterruptedTurnEvents,
+  appendInterruptedTurnEventsForSession,
   buildAttachmentPromptLedger,
   buildCodexCliModelProviderConfig,
   buildMemberDispatchThreadContext,
@@ -196,7 +196,6 @@ import {
   getAutomationMetadata,
   getCliSparkOverrideFromMetadata,
   getDebugModeFromMetadata,
-  getLatestAgentStatusFromEvents,
   getLatestMatchingTurnPromptSnapshot,
   getLatestTurnIdFromEvents,
   getLocalCliDefaultModel,
@@ -1405,10 +1404,8 @@ export class SessionService {
     for (const session of sessions) {
       if (this.turnRegistry.hasActiveSession(session.id)) continue
 
-      const latestStatus = getLatestAgentStatusFromEvents(eventRepo, session.id)
-      if (latestStatus == null || !TERMINAL_AGENT_STATUSES.has(latestStatus)) {
-        appendInterruptedTurnEvents(eventRepo, session.id)
-      }
+      // 断流轮按轮补齐终态（含挂起的 delta 段落定），多轮断流一次修完。
+      appendInterruptedTurnEventsForSession(eventRepo, session.id)
 
       sessionRepo.updateStatus(session.id, 'idle')
       this.pendingTurns.delete(session.id)
@@ -1421,6 +1418,39 @@ export class SessionService {
       log.info(`Recovered ${recovered} interrupted running session(s) after app restart`)
     }
     return { recovered }
+  }
+
+  /**
+   * 僵尸 running 会话的懒恢复：sessions.status='running' 但主进程已无该会话的
+   * 任何执行（host executor / starting 过渡 / team dispatch 全部不在）。典型成因：
+   * 应用退出或崩溃硬杀执行器、执行器异常死亡、以及启动时 recoverInterruptedSessions
+   * 未覆盖到的会话。不修的话渲染端每次打开该会话都显示「运行中」，重放出的消息
+   * 永远停留在 streaming（思考/工具日志持续转圈，重开会话也无法恢复）。
+   * 在 getHistory 入口做懒校验：补齐断流轮终态事件、状态落回 idle——数据一次
+   * 治愈、对所有视图生效。判定源与 reconcileSessionExecutionStatus 完全一致
+   * （queueSnapshot().running），不会误伤正在执行的会话。
+   */
+  private reconcileZombieRunningSession(sessionId: string): void {
+    try {
+      if (this.queueSnapshot(sessionId).running) return
+      const sessionRepo = new SessionRepository(this.db)
+      const session = sessionRepo.get(sessionId)
+      if (session == null || session.status !== 'running') return
+      const eventRepo = new EventRepository(this.db)
+      const appended = appendInterruptedTurnEventsForSession(eventRepo, sessionId)
+      sessionRepo.updateStatus(sessionId, 'idle')
+      this.emitQueueChanged(sessionId)
+      log.info('reconciled zombie running session on history load', {
+        sessionId,
+        appendedTurns: appended,
+      })
+    } catch (err) {
+      // 懒恢复失败不能影响历史加载主流程
+      log.warn('failed to reconcile zombie running session', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   private recoverAcceptedTurnRequests(): void {
@@ -3268,12 +3298,13 @@ export class SessionService {
     turnId: string
     executor: ActiveExecution
     sessionRepo: SessionRepository
+    eventRepo: EventRepository
     config: SDKExecutorConfig
     options: TryStartSDKTurnOptions
     message: string
     completeAssistantEvents: AssistantMessageEvent[]
     emitUnpresentedMedia: () => void
-    emitPendingTerminalStatus: () => AgentStatusEvent['status'] | null
+    settleTerminalStatus: () => AgentStatusEvent['status'] | null
     /** claude 路径传：成功完成后重置 SDK resume 熔断器。 */
     onTurnSucceeded?: () => void
   }): void {
@@ -3319,28 +3350,68 @@ export class SessionService {
 
     this.settleTurnSuccessTail({
       sessionId,
+      turnId: args.turnId,
       executor: args.executor,
       sessionRepo: args.sessionRepo,
+      eventRepo: args.eventRepo,
       emitUnpresentedMedia: args.emitUnpresentedMedia,
-      emitPendingTerminalStatus: args.emitPendingTerminalStatus,
+      settleTerminalStatus: args.settleTerminalStatus,
     })
+  }
+
+  /**
+   * 终态守恒兜底：executor 结束（then/catch）但从未发出终态 agent_status 时，
+   * 事件流会缺一段收尾——历史重放时该轮消息永远停留在 streaming（UI 上
+   * 「思考日志/工具」持续显示运行中，且重开会话也无法恢复）。此处合成一条
+   * 终态事件补上，其余收尾（块落定、耗时、汇总）由渲染端对终态事件的
+   * 既有处理完成。仅在仍持有会话所有权时补发；被 forceRelease 的路径
+   * （插队/停止/删除）由各自入口负责补发 cancelled，避免双重终态。
+   */
+  private emitSyntheticTurnTerminalStatus(args: {
+    sessionId: string
+    turnId: string
+    eventRepo: EventRepository
+    status: 'completed' | 'error'
+  }): void {
+    const event: AgentStatusEvent = {
+      id: crypto.randomUUID(),
+      type: 'agent_status',
+      sessionId: args.sessionId,
+      turnId: args.turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+      status: args.status,
+      ...(args.status === 'error' ? { message: 'Turn ended without a terminal status' } : {}),
+    }
+    this.emitAndPersist(args.sessionId, args.turnId, event, args.eventRepo)
   }
 
   /**
    * 无后处理收尾（shouldRunTurnPostProcessing=false 的 then 分支）：
    * 媒体兜底 → computer-use 回收 → 终态补发（仍持有所有权时）。
+   * executor 正常 resolve 却没发过终态时，合成 completed 补上（守恒兜底）。
    */
   private settleTurnWithoutPostProcessing(args: {
     sessionId: string
+    turnId: string
     executor: ActiveExecution
     sessionRepo: SessionRepository
+    eventRepo: EventRepository
     emitUnpresentedMedia: () => void
-    emitPendingTerminalStatus: () => AgentStatusEvent['status'] | null
+    settleTerminalStatus: () => AgentStatusEvent['status'] | null
   }): void {
     args.emitUnpresentedMedia()
     this.revokeComputerUseSession(args.sessionId)
     const ownsSession = this.turnRegistry.isActiveExecutor(args.sessionId, args.executor)
-    const terminalStatus = ownsSession ? args.emitPendingTerminalStatus() : null
+    const terminalStatus = ownsSession ? args.settleTerminalStatus() : null
+    if (ownsSession && terminalStatus == null) {
+      this.emitSyntheticTurnTerminalStatus({
+        sessionId: args.sessionId,
+        turnId: args.turnId,
+        eventRepo: args.eventRepo,
+        status: 'completed',
+      })
+    }
     if (
       ownsSession &&
       (terminalStatus == null || terminalStatus === 'completed' || terminalStatus === 'cancelled')
@@ -3356,15 +3427,25 @@ export class SessionService {
    */
   private settleTurnSuccessTail(args: {
     sessionId: string
+    turnId: string
     executor: ActiveExecution
     sessionRepo: SessionRepository
+    eventRepo: EventRepository
     emitUnpresentedMedia: () => void
-    emitPendingTerminalStatus: () => AgentStatusEvent['status'] | null
+    settleTerminalStatus: () => AgentStatusEvent['status'] | null
   }): void {
     args.emitUnpresentedMedia()
     this.revokeComputerUseSession(args.sessionId)
     const ownsSession = this.turnRegistry.isActiveExecutor(args.sessionId, args.executor)
-    const terminalStatus = ownsSession ? args.emitPendingTerminalStatus() : null
+    const terminalStatus = ownsSession ? args.settleTerminalStatus() : null
+    if (ownsSession && terminalStatus == null) {
+      this.emitSyntheticTurnTerminalStatus({
+        sessionId: args.sessionId,
+        turnId: args.turnId,
+        eventRepo: args.eventRepo,
+        status: 'completed',
+      })
+    }
     if (
       ownsSession &&
       (terminalStatus == null || terminalStatus === 'completed' || terminalStatus === 'cancelled')
@@ -3373,18 +3454,31 @@ export class SessionService {
     }
   }
 
-  /** 异常收尾（catch 分支）：非 completed/cancelled 终态时会话标错。 */
+  /**
+   * 异常收尾（catch 分支）：非 completed/cancelled 终态时会话标错。
+   * executor 异常退出却没发过终态时，合成 error 补上（守恒兜底）。
+   */
   private settleTurnFailure(args: {
     sessionId: string
+    turnId: string
     executor: ActiveExecution
     sessionRepo: SessionRepository
+    eventRepo: EventRepository
     emitUnpresentedMedia: () => void
-    emitPendingTerminalStatus: () => AgentStatusEvent['status'] | null
+    settleTerminalStatus: () => AgentStatusEvent['status'] | null
   }): void {
     args.emitUnpresentedMedia()
     this.revokeComputerUseSession(args.sessionId)
     const ownsSession = this.turnRegistry.isActiveExecutor(args.sessionId, args.executor)
-    const terminalStatus = ownsSession ? args.emitPendingTerminalStatus() : null
+    const terminalStatus = ownsSession ? args.settleTerminalStatus() : null
+    if (ownsSession && terminalStatus == null) {
+      this.emitSyntheticTurnTerminalStatus({
+        sessionId: args.sessionId,
+        turnId: args.turnId,
+        eventRepo: args.eventRepo,
+        status: 'error',
+      })
+    }
     if (ownsSession && terminalStatus !== 'completed' && terminalStatus !== 'cancelled') {
       this.updateStatusAfterHostTerminal(args.sessionRepo, args.sessionId, 'error')
     }
@@ -3760,10 +3854,20 @@ export class SessionService {
     // Codex SDK 现会先发各 segment 的 complete，再发整 turn 的 isFinal 汇总 complete；
     // 这里收集整轮 complete 事件，turn 结束后统一归并，避免只拿到第一段正文。
     let pendingTerminalStatus: AgentStatusEvent | null = null
-    const emitPendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
+    // 当前 pending 终态是否已即时广播（未广播时收尾须补发，保证终态守恒）。
+    let pendingTerminalBroadcast = false
+    // completed 终态本轮是否已广播过（防 result + 偶发流内 idle 双发）。
+    let completedBroadcast = false
+    // 终态事件在收到时即时广播（见下方 onEvent），这里只保留状态值供收尾使用：
+    // 会话级状态落定（updateStatusAfterHostTerminal）仍等 executor promise 收尾，
+    // 与队列推进（settleTurnFinally）保持同一时序；轮次级 UI 收尾则不再被扣留。
+    const settlePendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
       if (pendingTerminalStatus == null) return null
       const status = pendingTerminalStatus.status
-      this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
+      // 被扣留的终态（流中途可重试 error）在收尾时补发，保证每轮事件流必有终态。
+      if (!pendingTerminalBroadcast) {
+        this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
+      }
       this.updateStatusAfterHostTerminal(sessionRepo, sessionId, status)
       pendingTerminalStatus = null
       return status
@@ -3793,7 +3897,24 @@ export class SessionService {
         event.type === 'agent_status' &&
         (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
       ) {
-        pendingTerminalStatus = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
+        // completed 只广播一次：result 消息与（偶发的）流内 idle 都会映射 completed，
+        // 第一条已即时广播，后续重复直接吞掉；error → completed 的恢复序列不受影响。
+        if (event.status === 'completed' && completedBroadcast) return
+        if (event.status === 'completed') completedBroadcast = true
+        // 终态即时广播：result 消息即真实完成信号，扣留到流关闭/后处理结束会让
+        // UI 在内容已完成后继续显示「进行中」数秒。事件流中终态之后的 presented_files /
+        // context_summarized 等追加事件渲染端均按独立块处理（此前 context_summarized
+        // 就已落在终态之后），顺序不受影响。
+        // 即时广播仅限 result 派生的真实终态（terminalSource 标记）；流中途的可重试
+        // error（assistant 消息带 error 字段，SDK 可能续流）扣留到收尾补发定稿，
+        // 避免一轮出现两个终态事件。
+        const terminalEvent = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
+        pendingTerminalStatus = terminalEvent
+        const broadcastNow = event.status !== 'error' || event.terminalSource === 'result'
+        pendingTerminalBroadcast = broadcastNow
+        if (broadcastNow) {
+          this.emitAndPersist(sessionId, turnId, terminalEvent, eventRepo)
+        }
         return
       }
       mediaPresentationCollector.observe(event)
@@ -4000,10 +4121,12 @@ export class SessionService {
         if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
           this.settleTurnWithoutPostProcessing({
             sessionId,
+            turnId,
             executor,
             sessionRepo,
+            eventRepo,
             emitUnpresentedMedia,
-            emitPendingTerminalStatus,
+            settleTerminalStatus: settlePendingTerminalStatus,
           })
           return
         }
@@ -4012,12 +4135,13 @@ export class SessionService {
           turnId,
           executor,
           sessionRepo,
+          eventRepo,
           config,
           options,
           message,
           completeAssistantEvents,
           emitUnpresentedMedia,
-          emitPendingTerminalStatus,
+          settleTerminalStatus: settlePendingTerminalStatus,
           // Reset resume circuit breaker on successful turn completion（claude 专属）
           onTurnSucceeded: () => getResumeCircuitBreaker().recordSuccess(sessionId),
         })
@@ -4025,10 +4149,12 @@ export class SessionService {
       .catch(() => {
         this.settleTurnFailure({
           sessionId,
+          turnId,
           executor,
           sessionRepo,
+          eventRepo,
           emitUnpresentedMedia,
-          emitPendingTerminalStatus,
+          settleTerminalStatus: settlePendingTerminalStatus,
         })
       })
       .finally(() => {
@@ -4274,10 +4400,19 @@ export class SessionService {
       )
     }
     let pendingTerminalStatus: AgentStatusEvent | null = null
-    const emitPendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
+    // 当前 pending 终态是否已即时广播（未广播时收尾须补发，保证终态守恒）。
+    let pendingTerminalBroadcast = false
+    // completed 终态本轮是否已广播过（防重复完成信号双发）。
+    let completedBroadcast = false
+    // 终态事件在收到时即时广播（见下方 onEvent）；这里只保留状态值供收尾使用，
+    // 会话级状态落定（updateStatusAfterHostTerminal）仍与队列推进保持同一时序。
+    const settlePendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
       if (pendingTerminalStatus == null) return null
       const status = pendingTerminalStatus.status
-      this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
+      // 被扣留的终态（无 result 标记的 error）在收尾时补发，保证每轮事件流必有终态。
+      if (!pendingTerminalBroadcast) {
+        this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
+      }
       this.updateStatusAfterHostTerminal(sessionRepo, sessionId, status)
       pendingTerminalStatus = null
       return status
@@ -4300,7 +4435,21 @@ export class SessionService {
         event.type === 'agent_status' &&
         (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
       ) {
-        pendingTerminalStatus = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
+        // completed 只广播一次，重复完成信号直接吞掉（与 claude 路径同因）。
+        if (event.status === 'completed' && completedBroadcast) return
+        if (event.status === 'completed') completedBroadcast = true
+        // 终态即时广播（与 claude 路径同因）：完成信号一到即收尾 UI，
+        // 不再扣留到流关闭/后处理结束。
+        // 与 claude 路径一致：即时广播仅限 result 派生的真实终态（terminalSource
+        // 标记）；无标记的 error 扣留到收尾补发，防御未来 adapter 出现流中途
+        // 可重试 error 时破坏「每轮一个终态」守恒。
+        const terminalEvent = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
+        pendingTerminalStatus = terminalEvent
+        const broadcastNow = event.status !== 'error' || event.terminalSource === 'result'
+        pendingTerminalBroadcast = broadcastNow
+        if (broadcastNow) {
+          this.emitAndPersist(sessionId, turnId, terminalEvent, eventRepo)
+        }
         return
       }
       mediaPresentationCollector.observe(event)
@@ -4453,10 +4602,12 @@ export class SessionService {
         if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
           this.settleTurnWithoutPostProcessing({
             sessionId,
+            turnId,
             executor,
             sessionRepo,
+            eventRepo,
             emitUnpresentedMedia,
-            emitPendingTerminalStatus,
+            settleTerminalStatus: settlePendingTerminalStatus,
           })
           return
         }
@@ -4466,21 +4617,24 @@ export class SessionService {
           turnId,
           executor,
           sessionRepo,
+          eventRepo,
           config,
           options,
           message,
           completeAssistantEvents,
           emitUnpresentedMedia,
-          emitPendingTerminalStatus,
+          settleTerminalStatus: settlePendingTerminalStatus,
         })
       })
       .catch(() => {
         this.settleTurnFailure({
           sessionId,
+          turnId,
           executor,
           sessionRepo,
+          eventRepo,
           emitUnpresentedMedia,
-          emitPendingTerminalStatus,
+          settleTerminalStatus: settlePendingTerminalStatus,
         })
       })
       .finally(() => {
@@ -8943,6 +9097,11 @@ export class SessionService {
     eventLimit?: number
     beforeSeq?: number
   }): Promise<{ events: AgentEvent[]; hasMore: boolean }> {
+    // 首页加载（无 beforeSeq）时顺带做僵尸 running 会话懒恢复：断流轮在此补齐
+    // 终态事件后，本次返回的事件里已包含收尾，渲染端正常重放即可复位 streaming。
+    if (params.beforeSeq == null) {
+      this.reconcileZombieRunningSession(params.sessionId)
+    }
     return this.getCrudController().getHistory(params)
   }
 
