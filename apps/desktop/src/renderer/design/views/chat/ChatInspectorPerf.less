@@ -1,0 +1,204 @@
+// 会话检查器「性能」区块：吞吐 / TTFT / 轮次时长。
+// 数据由 ChatViewUtils.buildSessionPerf 从 turn_prompt_snapshot（含合并的
+// turn_runtime_metrics）派生；本文件只负责展示层样式。
+
+.chat-inspector-perf {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+// ─── LIVE 实时条 ─────────────────────────────────────────────────────────
+
+.perf-live-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.perf-live-badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--primary);
+  animation: perf-live-breathe 1.6s ease-in-out infinite;
+}
+
+.perf-live-text {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.perf-live-tps {
+  margin-left: auto;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+@keyframes perf-live-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+// ─── 三联统计瓦片 ─────────────────────────────────────────────────────────
+
+.perf-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.perf-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  min-width: 0;
+  cursor: default;
+}
+
+.perf-tile-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.perf-tile-label {
+  font-size: 9.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// ─── 每轮吞吐图（一轮一行） ────────────────────────────────────────────────
+
+.perf-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.perf-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+}
+
+.perf-row-index {
+  font-size: 10px;
+  color: var(--text-faint);
+  min-width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.perf-bar-track {
+  flex: 1;
+  height: 10px;
+  border-radius: var(--r-xs);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  display: flex;
+  overflow: hidden;
+}
+
+.perf-bar-fill {
+  height: 100%;
+  background: color-mix(in srgb, var(--primary) 70%, transparent);
+  transition:
+    width 0.2s ease,
+    background 0.2s ease;
+}
+
+.perf-bar-slow {
+  background: color-mix(in srgb, var(--warning) 65%, transparent);
+}
+
+.perf-bar-live {
+  animation: perf-bar-running 1.6s ease-in-out infinite;
+}
+
+.perf-bar-muted {
+  width: 12%;
+  background: color-mix(in srgb, var(--text-faint) 30%, transparent);
+}
+
+@keyframes perf-bar-running {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.perf-row-tps {
+  font-size: 10px;
+  color: var(--text);
+  width: 44px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.perf-row-status {
+  font-size: 10px;
+  color: var(--text-faint);
+  width: 44px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.perf-row-ttft {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 44px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.perf-row-slow {
+  .perf-row-tps,
+  .perf-row-ttft {
+    color: var(--warning);
+  }
+}
+
+.perf-row-interrupted {
+  .perf-row-index,
+  .perf-row-ttft {
+    color: var(--text-faint);
+  }
+}
+
+// ─── 口径脚注 ─────────────────────────────────────────────────────────────
+
+.perf-footnote {
+  font-size: 9.5px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}

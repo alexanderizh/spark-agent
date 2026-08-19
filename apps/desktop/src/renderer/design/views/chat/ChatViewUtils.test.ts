@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentEvent } from '@spark/protocol'
+import type { AgentEvent, TurnPromptSnapshotEvent, TurnRuntimeMetrics } from '@spark/protocol'
 import type { UsageSnapshot } from './ChatUsageTypes'
 import {
+  buildSessionPerf,
   buildTurnUsageRows,
   buildUsageDataFromEvents,
   computeCacheHitRate,
@@ -235,6 +236,126 @@ describe('ChatViewUtils', () => {
       expect(rows).toHaveLength(20)
       expect(rows[0]?.turnNumber).toBe(11)
       expect(rows[19]?.turnNumber).toBe(30)
+    })
+  })
+
+  describe('buildSessionPerf', () => {
+    const perfSnapshot = (
+      turnId: string,
+      runtimeMetrics: TurnRuntimeMetrics | undefined,
+    ): TurnPromptSnapshotEvent =>
+      ({
+        id: `snap-${turnId}`,
+        type: 'turn_prompt_snapshot',
+        sessionId: 'session-1',
+        turnId,
+        timestamp: new Date(0).toISOString(),
+        seq: 0,
+        userMessage: '',
+        systemPromptSections: [],
+        model: 'test-model',
+        adapterKind: 'claude-sdk',
+        permissionMode: 'default',
+        toolCount: 0,
+        runtimeMetrics,
+      }) as TurnPromptSnapshotEvent
+
+    // exactOptionalPropertyTypes 下不能传显式 undefined 覆盖可选字段，
+    // 需要模拟「字段缺测」时用 omit 显式删键。
+    const completedMetrics = (
+      overrides: Partial<TurnRuntimeMetrics> = {},
+      omit: Array<'outputTokensPerSecond' | 'turnTerminalStatus' | 'turnDurationMs'> = [],
+    ): TurnRuntimeMetrics => {
+      const metrics: TurnRuntimeMetrics = {
+        requestToFirstOutputMs: overrides.requestToFirstOutputMs ?? 500,
+        streamActiveMs: overrides.streamActiveMs ?? 4000,
+        turnDurationMs: overrides.turnDurationMs ?? 10000,
+        outputTokens: overrides.outputTokens ?? 200,
+        outputTokensPerSecond: overrides.outputTokensPerSecond ?? 50,
+        turnTerminalStatus: overrides.turnTerminalStatus ?? 'completed',
+      }
+      for (const key of omit) delete metrics[key]
+      return metrics
+    }
+
+    it('computes median throughput / TTFT / generation share from completed turns only', () => {
+      const perf = buildSessionPerf(
+        [
+          perfSnapshot('t1', completedMetrics({ outputTokensPerSecond: 40 })),
+          perfSnapshot(
+            't2',
+            completedMetrics(
+              { requestToFirstOutputMs: 1500, streamActiveMs: 2000, turnDurationMs: 8000 },
+              ['outputTokensPerSecond'],
+            ),
+          ),
+          perfSnapshot('t3', completedMetrics({ outputTokensPerSecond: 60 })),
+          // 中断轮：展示但不参与任何统计
+          perfSnapshot('t4', completedMetrics({ turnTerminalStatus: 'cancelled' })),
+          // 无指标的轮：完全不占行
+          perfSnapshot('t5', undefined),
+        ],
+        false,
+      )
+
+      expect(perf.totalTurns).toBe(4)
+      expect(perf.completedCount).toBe(3)
+      // 吞吐样本 [40, 50(null t2 无吞吐), 60] → 中位 50；t2 无 outputTokensPerSecond
+      expect(perf.medianTokensPerSecond).toBe(50)
+      // TTFT 样本 [500, 1500, 500] → 中位 500
+      expect(perf.medianTtftMs).toBe(500)
+      // 生成占比 = (4000+2000+4000) / (10000+8000+10000)
+      expect(perf.generationShare).toBeCloseTo(10_000 / 28_000)
+      expect(perf.slowTokensPerSecond).toBeCloseTo(25)
+      // 中断轮保留在行内，状态可区分
+      expect(perf.rows.map((row) => row.status)).toEqual([
+        'completed',
+        'completed',
+        'completed',
+        'cancelled',
+      ])
+      // 无指标轮不占行，轮次序号仍按真实轮次计（t4 = 第 4 轮）
+      expect(perf.rows.at(-1)?.turnNumber).toBe(4)
+      expect(perf.liveRow).toBeNull()
+    })
+
+    it('treats the last metrics-less-terminal turn as running only while the session runs', () => {
+      const snapshots = [
+        perfSnapshot('t1', completedMetrics()),
+        perfSnapshot(
+          't2',
+          completedMetrics({ streamActiveMs: 3000 }, ['turnTerminalStatus', 'turnDurationMs']),
+        ),
+      ]
+
+      const running = buildSessionPerf(snapshots, true)
+      expect(running.rows.at(-1)?.status).toBe('running')
+      expect(running.liveRow?.turnId).toBe('t2')
+      expect(running.completedCount).toBe(1)
+
+      // 会话不在运行（如旧数据里应用中断留下的无终态轮）→ unknown，不算 live
+      const idle = buildSessionPerf(snapshots, false)
+      expect(idle.rows.at(-1)?.status).toBe('unknown')
+      expect(idle.liveRow).toBeNull()
+    })
+
+    it('keeps old-version turns (TTFT only, no terminal marker) excluded from stats but visible', () => {
+      const perf = buildSessionPerf(
+        [
+          perfSnapshot('t1', { requestToFirstOutputMs: 800 }),
+          perfSnapshot('t2', { requestToFirstOutputMs: 1200 }),
+        ],
+        false,
+      )
+
+      expect(perf.totalTurns).toBe(2)
+      expect(perf.completedCount).toBe(0)
+      expect(perf.medianTokensPerSecond).toBeNull()
+      expect(perf.medianTtftMs).toBeNull()
+      expect(perf.generationShare).toBeNull()
+      // TTFT 仍可展示（行数据保留），只是不进统计
+      expect(perf.rows.every((row) => row.ttftMs != null)).toBe(true)
+      expect(perf.rows.every((row) => row.status === 'unknown')).toBe(true)
     })
   })
 })
