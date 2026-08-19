@@ -71,9 +71,7 @@ export class AuthService {
   /** 启动：优先从加密备份加载会话；已有安装可回退读取旧 keytar 会话。 */
   async start(options: { allowLegacyKeytarFallback?: boolean } = {}): Promise<void> {
     await this.tokenStore.load(options)
-    log.info(
-      `auth service started, isAuthenticated=${this.tokenStore.isAuthenticated()}`,
-    )
+    log.info(`auth service started, isAuthenticated=${this.tokenStore.isAuthenticated()}`)
   }
 
   /** 启动后尝试自动登录（验证已存 token 是否仍有效）*/
@@ -130,11 +128,9 @@ export class AuthService {
     code: string
     inviteCode?: string
   }): Promise<AuthRegisterResponse> => {
-    const session = await this.client.post<AuthRegisterResponse>(
-      '/auth/register',
-      params,
-      { skipAuth: true },
-    )
+    const session = await this.client.post<AuthRegisterResponse>('/auth/register', params, {
+      skipAuth: true,
+    })
     await this.afterLoginSuccess(session)
     return session
   }
@@ -147,11 +143,9 @@ export class AuthService {
     captchaText?: string
     emailCode?: string
   }): Promise<AuthLoginResponse> => {
-    const session = await this.client.post<AuthLoginResponse>(
-      '/auth/login',
-      params,
-      { skipAuth: true },
-    )
+    const session = await this.client.post<AuthLoginResponse>('/auth/login', params, {
+      skipAuth: true,
+    })
     await this.afterLoginSuccess(session)
     return session
   }
@@ -183,6 +177,14 @@ export class AuthService {
 
   getCurrentUserId(): string | null {
     return this.tokenStore.get().userId ?? null
+  }
+
+  /**
+   * 暴露内部 EduServerClient 供其他主进程服务复用（如消息通知轮询）。
+   * 同一实例共享 401 续期的模块级单飞锁，避免并发 refresh 触发服务端轮换冲突。
+   */
+  getEduClient(): EduServerClient {
+    return this.client
   }
 
   addLogoutHook(hook: (userId: string | null) => Promise<void>): () => void {
@@ -284,9 +286,12 @@ export class AuthService {
   }
 
   wechatPoll = async (state: string): Promise<AuthWechatPollResponse> => {
-    return this.client.get<AuthWechatPollResponse>(`/auth/wechat/poll?state=${encodeURIComponent(state)}`, {
-      skipAuth: true,
-    })
+    return this.client.get<AuthWechatPollResponse>(
+      `/auth/wechat/poll?state=${encodeURIComponent(state)}`,
+      {
+        skipAuth: true,
+      },
+    )
   }
 
   wechatBindEmailSendCode = async (params: {
@@ -381,14 +386,16 @@ export class AuthService {
 
     const operation = (async () => {
       let allSucceeded = true
-      await Promise.all([...this.loginHooks].map(async hook => {
-        try {
-          await hook(userId)
-        } catch (error) {
-          allSucceeded = false
-          log.warn(`login hook failed: ${(error as Error).message}`)
-        }
-      }))
+      await Promise.all(
+        [...this.loginHooks].map(async (hook) => {
+          try {
+            await hook(userId)
+          } catch (error) {
+            allSucceeded = false
+            log.warn(`login hook failed: ${(error as Error).message}`)
+          }
+        }),
+      )
       if (!allSucceeded && force && this.loginHookUserId === userId) {
         this.loginHookUserId = null
       }
@@ -416,13 +423,15 @@ export class AuthService {
     if (this.sessionExpiryCleanup) return
     const userId = this.getCurrentUserId()
     const cleanup = (async () => {
-      await Promise.all([...this.logoutHooks].map(async hook => {
-        try {
-          await hook(userId)
-        } catch (error) {
-          log.warn(`session-expired hook failed: ${(error as Error).message}`)
-        }
-      }))
+      await Promise.all(
+        [...this.logoutHooks].map(async (hook) => {
+          try {
+            await hook(userId)
+          } catch (error) {
+            log.warn(`session-expired hook failed: ${(error as Error).message}`)
+          }
+        }),
+      )
       await this.tokenStore.clear()
       this.loginHookUserId = null
       this.emitStateChanged(false)
@@ -440,10 +449,7 @@ export class AuthService {
     })
   }
 
-  private emitStream<C extends IpcStreamChannel>(
-    channel: C,
-    payload: IpcStreamPayload<C>,
-  ): void {
+  private emitStream<C extends IpcStreamChannel>(channel: C, payload: IpcStreamPayload<C>): void {
     try {
       sendToMainWindow(channel, payload)
     } catch (e) {

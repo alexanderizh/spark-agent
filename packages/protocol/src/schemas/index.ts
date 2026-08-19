@@ -43,6 +43,7 @@ import { EvidenceCostIpcSchemaRegistry } from '../evidence-cost.js'
 import { ReplayIpcSchemaRegistry } from '../replay-playbook.js'
 import { SubAppIpcSchemaRegistry } from '../sub-app.js'
 import { CustomToolsIpcSchemaRegistry } from '../custom-tools.js'
+import { NotificationsIpcSchemaRegistry } from '../notifications.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -977,6 +978,7 @@ export const IpcSchemaRegistry = {
   ...ReplayIpcSchemaRegistry,
   ...SubAppIpcSchemaRegistry,
   ...CustomToolsIpcSchemaRegistry,
+  ...NotificationsIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,

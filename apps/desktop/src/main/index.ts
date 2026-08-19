@@ -96,6 +96,11 @@ import { getInternalBrowserService } from './services/InternalBrowserService.js'
 import { getCanvasWindowService } from './services/CanvasWindowService.js'
 import { attachAppUnreadBadgeTray } from './services/AppUnreadBadgeService.js'
 import { registerAppUnreadBadgeIpc } from './ipc/registerAppUnreadBadgeIpc.js'
+import { registerNotificationIpc } from './ipc/registerNotificationIpc.js'
+import {
+  initNotificationService,
+  type NotificationService,
+} from './services/Notifications/index.js'
 import { getOptionalCapabilityManager } from './ipc/registerOptionalCapabilityIpc.js'
 import { ensureBundledBrowserEnv } from './services/PlaywrightEnvironment.js'
 import { detectFfmpegIntegrity } from './services/FfmpegIntegrityService.js'
@@ -813,6 +818,8 @@ async function initializeApp(): Promise<void> {
 
   // 1. 初始化数据库
   const dbPath = getDatabasePath()
+  // 消息通知轮询服务（auth 初始化完成后赋值启动；提前声明供数据库 try 块内注册的退出清理引用）
+  let notificationService: NotificationService | null = null
   log.info(`Database path: ${dbPath}`)
   let databaseBackup: Awaited<ReturnType<typeof ensurePreMigrationBackup>>
   try {
@@ -903,6 +910,10 @@ async function initializeApp(): Promise<void> {
                 run: () => snapshotVaultMaintenance.dispose(),
               },
               {
+                name: 'notification polling',
+                run: () => notificationService?.dispose() ?? Promise.resolve(),
+              },
+              {
                 name: 'computer use agent bridge',
                 run: () => disposeComputerUseMcpProvider(),
               },
@@ -974,6 +985,17 @@ async function initializeApp(): Promise<void> {
     log.info('Cloud auth service started')
   } catch (err) {
     log.error(`Cloud auth service init failed: ${String(err)}`)
+  }
+
+  // 2.06 消息通知（站内信 + 平台公告）：注册 IPC 并启动 60s 轮询。
+  // 依赖 AuthService 的 EduServerClient 与登录态，必须在 auth 初始化后启动。
+  try {
+    notificationService = initNotificationService()
+    notificationService.start()
+    registerNotificationIpc()
+    log.info('Notification service started')
+  } catch (err) {
+    log.error(`Notification service init failed: ${String(err)}`)
   }
 
   // 2.1 启动定时任务调度器（使用 IPC 层的同一个 ScheduledTaskService 实例）

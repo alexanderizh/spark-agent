@@ -100,6 +100,8 @@ import type {
 } from '../computer-use/ipc.js'
 import type { SubAppIpcChannelMap } from '../sub-app.js'
 import type { CustomToolsIpcChannelMap } from '../custom-tools.js'
+import type { NotificationsIpcChannelMap } from '../notifications.js'
+import type { NotificationChangedEvent } from '../notifications.js'
 import type { ComputerUseEvent } from '../computer-use/events.js'
 import type { AppControlCommandRequest } from '../computer-use/action.js'
 import type {
@@ -5727,7 +5729,8 @@ export interface IpcChannelMap
     EvidenceCostIpcChannelMap,
     ReplayPlaybookIpcChannelMap,
     SubAppIpcChannelMap,
-    CustomToolsIpcChannelMap {
+    CustomToolsIpcChannelMap,
+    NotificationsIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
@@ -6479,6 +6482,9 @@ export interface IpcStreamChannelMap {
     change: 'created' | 'updated' | 'deleted' | 'enabled' | 'imported'
     id?: string
   }
+  /** 消息通知变化（主进程轮询 edu-server 后广播）：渲染层据此更新铃铛角标、
+   * 快捷面板缓存；newNotifications/newAnnouncements 非空时弹即时 toast。 */
+  'stream:notification:changed': NotificationChangedEvent
   /** Global runtime configuration changed; renderer should refresh cached pickers/lists. */
   'stream:config:changed': {
     scope:

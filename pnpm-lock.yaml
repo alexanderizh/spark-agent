@@ -233,6 +233,9 @@ importers:
       antd:
         specifier: ^6.4.4
         version: 6.4.4(luxon@3.7.2)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      dompurify:
+        specifier: 3.4.12
+        version: 3.4.12
       electron:
         specifier: ^43.2.0
         version: 43.2.0
@@ -12289,9 +12292,9 @@ snapshots:
 
   fast-uri@3.1.4: {}
 
-  fdir@6.5.0(picomatch@4.0.4):
+  fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
-      picomatch: 4.0.4
+      picomatch: 4.0.5
 
   fflate@0.6.10: {}
 
@@ -15326,8 +15329,8 @@ snapshots:
 
   tinyglobby@0.2.16:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.4)
-      picomatch: 4.0.4
+      fdir: 6.5.0(picomatch@4.0.5)
+      picomatch: 4.0.5
 
   tinypool@1.1.1: {}
 
@@ -15656,8 +15659,8 @@ snapshots:
   vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(less@4.6.4)(lightningcss@1.32.0)(sass@1.51.0)(yaml@2.9.0):
     dependencies:
       esbuild: 0.25.12
-      fdir: 6.5.0(picomatch@4.0.4)
-      picomatch: 4.0.4
+      fdir: 6.5.0(picomatch@4.0.5)
+      picomatch: 4.0.5
       postcss: 8.5.23
       rollup: 4.60.4
       tinyglobby: 0.2.16
@@ -15673,8 +15676,8 @@ snapshots:
   vite@6.4.3(@types/node@24.13.3)(jiti@2.7.0)(less@4.6.4)(lightningcss@1.32.0)(sass@1.51.0)(yaml@2.9.0):
     dependencies:
       esbuild: 0.25.12
-      fdir: 6.5.0(picomatch@4.0.4)
-      picomatch: 4.0.4
+      fdir: 6.5.0(picomatch@4.0.5)
+      picomatch: 4.0.5
       postcss: 8.5.23
       rollup: 4.60.4
       tinyglobby: 0.2.16
