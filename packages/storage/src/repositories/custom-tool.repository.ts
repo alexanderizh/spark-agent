@@ -183,7 +183,7 @@ export class CustomToolRepository extends BaseRepository {
     return super.deleteById(id)
   }
 
-  count(): number {
+  override count(): number {
     return super.count()
   }
 

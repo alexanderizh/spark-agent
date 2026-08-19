@@ -12,7 +12,9 @@ function createTestDb(testDir: string): SparkDatabase {
   return db
 }
 
-function makeRecord(overrides: Partial<CustomToolRecord> = {}): CustomToolRecord {
+type HttpToolRecord = Extract<CustomToolRecord, { type: 'http' }>
+
+function makeRecord(overrides: Partial<HttpToolRecord> = {}): HttpToolRecord {
   const now = new Date().toISOString()
   return {
     id: 'jira_search',
@@ -121,7 +123,7 @@ describe('CustomToolRepository', () => {
     expect(updated?.enabled).toBe(true)
     expect(updated?.timeoutMs).toBe(60_000)
     expect(updated?.title).toBe('Jira 查询')
-    expect(updated?.updatedAt >= (updated?.createdAt ?? '')).toBe(true)
+    expect(updated != null && updated.updatedAt >= updated.createdAt).toBe(true)
   })
 
   it('records last test timestamp', () => {

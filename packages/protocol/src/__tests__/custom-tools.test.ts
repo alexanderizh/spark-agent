@@ -9,31 +9,60 @@ import {
   httpMethodRiskFloor,
 } from '../custom-tools.js'
 
+interface TestParam {
+  type: string
+  description?: string
+  items?: { type: string }
+  enum?: Array<string | number>
+}
+
+interface TestHttpDraft {
+  id: string
+  title: string
+  description: string
+  type: 'http'
+  inputSchema: { type: 'object'; properties: Record<string, TestParam>; required?: string[] }
+  risk: string
+  effect: string
+  idempotency: string
+  timeoutMs: number
+  secretRefs?: Record<string, string>
+  spec: {
+    request: {
+      method: string
+      urlTemplate: string
+      headers?: Array<Record<string, string>>
+      body?: { mode: 'json'; jsonTemplate: string }
+    }
+    response: { format: string }
+  }
+}
+
 /** 合法 HTTP GET 工具基线，供各拒绝分支变异 */
-function validHttpDraft() {
+function validHttpDraft(): TestHttpDraft {
   return {
     id: 'jira_search',
     title: 'Jira 查询',
     description: '按 issue key 查询内部 Jira issue 详情',
-    type: 'http' as const,
+    type: 'http',
     inputSchema: {
-      type: 'object' as const,
+      type: 'object',
       properties: {
-        issueKey: { type: 'string' as const, description: 'issue 编号' },
+        issueKey: { type: 'string', description: 'issue 编号' },
       },
       required: ['issueKey'],
     },
-    risk: 'read' as const,
-    effect: 'read' as const,
-    idempotency: 'safe' as const,
+    risk: 'read',
+    effect: 'read',
+    idempotency: 'safe',
     timeoutMs: 30_000,
     spec: {
       request: {
-        method: 'GET' as const,
+        method: 'GET',
         urlTemplate: 'https://jira.internal/v3/issue/{{issueKey}}',
         headers: [{ name: 'Accept', valueTemplate: 'application/json' }],
       },
-      response: { format: 'json' as const },
+      response: { format: 'json' },
     },
   }
 }
@@ -196,23 +225,40 @@ describe('CustomToolDraftSchema', () => {
   })
 
   describe('sql draft (M2 契约先行)', () => {
-    function validSqlDraft() {
+    interface TestSqlDraft {
+      id: string
+      title: string
+      description: string
+      type: 'sql'
+      inputSchema: { type: 'object'; properties: Record<string, TestParam> }
+      risk: string
+      effect: string
+      idempotency: string
+      timeoutMs: number
+      spec: {
+        connection: { kind: 'sqlite'; databasePath: string }
+        mode: string
+        sqlTemplate: string
+      }
+    }
+
+    function validSqlDraft(): TestSqlDraft {
       return {
         id: 'spark_stats',
         title: '会话统计',
         description: '对本地 spark.db 跑只读统计查询',
-        type: 'sql' as const,
+        type: 'sql',
         inputSchema: {
-          type: 'object' as const,
-          properties: { status: { type: 'string' as const } },
+          type: 'object',
+          properties: { status: { type: 'string' } },
         },
-        risk: 'read' as const,
-        effect: 'read' as const,
-        idempotency: 'safe' as const,
+        risk: 'read',
+        effect: 'read',
+        idempotency: 'safe',
         timeoutMs: 30_000,
         spec: {
-          connection: { kind: 'sqlite' as const, databasePath: '/tmp/spark.db' },
-          mode: 'readonly' as const,
+          connection: { kind: 'sqlite', databasePath: '/tmp/spark.db' },
+          mode: 'readonly',
           sqlTemplate: 'SELECT * FROM sessions WHERE status = :status',
         },
       }
@@ -279,6 +325,35 @@ describe('CustomToolDraftSchema', () => {
       }
       expect(() => CustomToolDraftSchema.parse(draft)).toThrow()
     })
+  })
+})
+
+describe('JSON body 模板结构校验', () => {
+  function draftWithBody(jsonTemplate: string) {
+    const draft = validHttpDraft()
+    draft.spec.request.method = 'POST'
+    draft.risk = 'low-write'
+    draft.effect = 'create'
+    draft.inputSchema.properties.title = { type: 'string' }
+    draft.spec.request = {
+      ...draft.spec.request,
+      body: { mode: 'json' as const, jsonTemplate },
+    }
+    return draft
+  }
+
+  it('accepts placeholders at value position and inside strings', () => {
+    expect(() =>
+      CustomToolDraftSchema.parse(draftWithBody('{"summary": "{{title}}", "limit": {{issueKey}}}')),
+    ).not.toThrow()
+  })
+
+  it('rejects structurally broken json templates', () => {
+    expect(() => CustomToolDraftSchema.parse(draftWithBody('{"a": {{bad-name}}}'))).toThrow(
+      /占位符/,
+    )
+    expect(() => CustomToolDraftSchema.parse(draftWithBody('{"summary": "a" "b"}'))).toThrow(/JSON/)
+    expect(() => CustomToolDraftSchema.parse(draftWithBody('{"unclosed": '))).toThrow(/JSON/)
   })
 })
 

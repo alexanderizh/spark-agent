@@ -206,6 +206,182 @@ export function extractSqlNamedParams(sqlTemplate: string): string[] {
   return names
 }
 
+// ─── JSON body 模板：上下文感知扫描（区分字符串内外占位符）──────────────
+
+/** JSON 字符串内合法的可见哨兵字符（Object Replacement Character） */
+const JSON_SENTINEL_CHAR = '￼'
+const JSON_SENTINEL_REGEX = /￼ctph(\d+)￼/g
+const JSON_PLACEHOLDER_NAME_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
+export type CustomToolTemplateErrorKind = 'INVALID_TEMPLATE' | 'INVALID_INPUT' | 'MISSING_PARAM'
+
+/** 模板渲染错误（协议层无业务错误依赖；执行器按 kind 映射为自身错误码） */
+export class CustomToolTemplateError extends Error {
+  readonly kind: CustomToolTemplateErrorKind
+
+  constructor(kind: CustomToolTemplateErrorKind, message: string) {
+    super(message)
+    this.name = 'CustomToolTemplateError'
+    this.kind = kind
+  }
+}
+
+/**
+ * 扫描 JSON 模板并按占位符所处上下文打哨兵标记：
+ * - 值位置（字符串外）：替换为带引号的哨兵字符串（保持 JSON 合法）
+ * - 字符串内：替换为裸哨兵字符（JSON 字符串合法字符）
+ * 返回标记后的 JSON 文本与按出现顺序记录的占位符参数名。
+ */
+function scanAndMarkJsonTemplate(template: string): { marked: string; names: string[] } {
+  const names: string[] = []
+  let marked = ''
+  let inString = false
+  let escaped = false
+  let cursor = 0
+
+  const readPlaceholder = (start: number): { name: string; end: number } => {
+    const closeIndex = template.indexOf('}}', start + 2)
+    if (closeIndex < 0) {
+      throw new CustomToolTemplateError('INVALID_TEMPLATE', 'JSON 模板存在未闭合的 {{ 占位符')
+    }
+    const name = template.slice(start + 2, closeIndex).trim()
+    if (!JSON_PLACEHOLDER_NAME_REGEX.test(name)) {
+      throw new CustomToolTemplateError('INVALID_TEMPLATE', `JSON 模板占位符不合法：{{${name}}}`)
+    }
+    return { name, end: closeIndex + 2 }
+  }
+
+  while (cursor < template.length) {
+    const char = template[cursor]
+    if (!inString) {
+      if (char === '"') {
+        inString = true
+        marked += char
+        cursor += 1
+        continue
+      }
+      if (char === '{' && template[cursor + 1] === '{') {
+        const { name, end } = readPlaceholder(cursor)
+        names.push(name)
+        marked += `"${JSON_SENTINEL_CHAR}ctph${names.length - 1}${JSON_SENTINEL_CHAR}"`
+        cursor = end
+        continue
+      }
+      marked += char ?? ''
+      cursor += 1
+      continue
+    }
+    // 字符串内部
+    if (escaped) {
+      marked += char ?? ''
+      escaped = false
+      cursor += 1
+      continue
+    }
+    if (char === '\\') {
+      escaped = true
+      marked += char ?? ''
+      cursor += 1
+      continue
+    }
+    if (char === '"') {
+      inString = false
+      marked += char ?? ''
+      cursor += 1
+      continue
+    }
+    if (char === '{' && template[cursor + 1] === '{') {
+      const { name, end } = readPlaceholder(cursor)
+      names.push(name)
+      marked += `${JSON_SENTINEL_CHAR}ctph${names.length - 1}${JSON_SENTINEL_CHAR}`
+      cursor = end
+      continue
+    }
+    marked += char ?? ''
+    cursor += 1
+  }
+  return { marked, names }
+}
+
+/** 保存期结构校验：模板打标记后必须可解析为 JSON */
+export function assertJsonTemplateStructure(template: string): void {
+  let marked: string
+  try {
+    ;({ marked } = scanAndMarkJsonTemplate(template))
+  } catch (error) {
+    if (error instanceof CustomToolTemplateError) throw error
+    throw error
+  }
+  try {
+    JSON.parse(marked)
+  } catch {
+    throw new CustomToolTemplateError('INVALID_TEMPLATE', 'JSON body 模板不是合法的 JSON 结构')
+  }
+}
+
+function templateValueToString(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
+}
+
+/**
+ * 执行期渲染（parse-based，结构性注入在解析层死亡）：
+ * 1. 上下文感知打标记 → JSON.parse 校验结构
+ * 2. 遍历解析树回填：值位置占位符保留原始类型；字符串内嵌占位符按字符串转义
+ * 3. 重新序列化输出
+ */
+export function renderJsonBodyTemplate(template: string, input: Record<string, unknown>): string {
+  const { marked, names } = scanAndMarkJsonTemplate(template)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(marked)
+  } catch {
+    throw new CustomToolTemplateError('INVALID_TEMPLATE', 'JSON body 模板不是合法的 JSON 结构')
+  }
+
+  const resolveName = (indexText: string): string => {
+    const name = names[Number(indexText)]
+    if (name == null) {
+      throw new CustomToolTemplateError('INVALID_TEMPLATE', 'JSON 模板哨兵解析异常')
+    }
+    return name
+  }
+  const requireValue = (name: string): unknown => {
+    const value = input[name]
+    if (value == null) {
+      throw new CustomToolTemplateError('MISSING_PARAM', `模板引用了参数 ${name}，但调用输入未提供`)
+    }
+    return value
+  }
+
+  const fill = (node: unknown): unknown => {
+    if (typeof node === 'string') {
+      const exact = node.match(/^￼ctph(\d+)￼$/)
+      if (exact != null && exact[1] != null) {
+        return requireValue(resolveName(exact[1]))
+      }
+      if (node.includes(JSON_SENTINEL_CHAR)) {
+        return node.replace(JSON_SENTINEL_REGEX, (_match, indexText: string) =>
+          templateValueToString(requireValue(resolveName(indexText))),
+        )
+      }
+      return node
+    }
+    if (Array.isArray(node)) return node.map(fill)
+    if (node != null && typeof node === 'object') {
+      const result: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        result[key] = fill(value)
+      }
+      return result
+    }
+    return node
+  }
+
+  return JSON.stringify(fill(parsed))
+}
+
 // ─── 密钥安全嗅探 ────────────────────────────────────────────────────────
 
 /** 与 plugin-runtime/runtime-broker.ts 的 SENSITIVE_METADATA_KEY 对齐 */
@@ -318,6 +494,20 @@ export const HttpToolSpecSchema = z
     allowPrivateNetwork: z.boolean().optional(),
   })
   .strict()
+  .superRefine((spec, ctx) => {
+    const jsonTemplate = spec.request.body?.jsonTemplate
+    if (jsonTemplate == null) return
+    try {
+      assertJsonTemplateStructure(jsonTemplate)
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['request', 'body', 'jsonTemplate'],
+        message:
+          error instanceof CustomToolTemplateError ? error.message : 'JSON body 模板结构不合法',
+      })
+    }
+  })
 export type HttpToolSpec = z.infer<typeof HttpToolSpecSchema>
 
 export const SqlToolSpecSchema = z
