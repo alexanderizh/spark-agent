@@ -78,9 +78,9 @@ import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
 import { buildCanvasOperationMediaThumbnailItems } from './canvasOperationOutputThumbnails'
 import { canvasNodeInlinePrimaryAction } from './canvasNodeInlinePrimaryAction'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
-import type { CanvasOperationOutputMode, CanvasOperationType } from './canvas.types'
+import type { CanvasOperationType } from './canvas.types'
 import type { CanvasNodeData } from './canvas.types'
-import type { CanvasOperationRunView } from './canvasOperationRuns'
+import type { CanvasOperationOutputView, CanvasOperationRunView } from './canvasOperationRuns'
 import { effectiveCanvasOperationStatus } from './canvasTaskOutputIntegrity'
 import type { CanvasCollapsedGroupPresentation } from './canvasGroupCollapse'
 import { CanvasCollapsedGroup } from './CanvasCollapsedGroup'
@@ -209,12 +209,12 @@ function operationStatusLabel(status: SparkCanvasNode['data']['status']): string
 
 function OperationOutputDeck({
   runs,
-  mode,
   fallback,
   isolateWheel,
   runIndex,
   outputIndex,
   onSelectOutput,
+  onExpandOutput,
   onVideoMetadata,
   onVideoEdit,
   selected,
@@ -222,7 +222,6 @@ function OperationOutputDeck({
   audioPresentationRef,
 }: {
   runs: CanvasOperationRunView[]
-  mode: CanvasOperationOutputMode
   fallback: ReactNode
   isolateWheel: boolean
   runIndex: number
@@ -232,6 +231,7 @@ function OperationOutputDeck({
     outputIndex: number,
     output?: CanvasOperationRunView['outputs'][number],
   ) => void
+  onExpandOutput?: (output: CanvasOperationOutputView) => void
   onVideoMetadata?: (
     output: CanvasOperationRunView['outputs'][number],
     dimensions: { width: number; height: number },
@@ -245,7 +245,7 @@ function OperationOutputDeck({
   const outputs = activeRun?.outputs ?? []
   const activeOutput = outputs[Math.min(outputIndex, Math.max(0, outputs.length - 1))]
   const displayRunNumber = activeRun ? runs.length - runIndex : 0
-  const isCollection = mode === 'collection' && outputs.length > 0
+  const showOutputList = outputs.length > 1
   const shouldShowOutputNavigation = runs.length > 1
 
   if (!activeRun) return <>{fallback}</>
@@ -253,10 +253,14 @@ function OperationOutputDeck({
   return (
     <div className="canvas-operation-output-deck">
       <div
-        className={`canvas-operation-output-stage${isCollection ? ' is-collection' : ''}${activeOutput?.type === 'audio' ? ' is-audio' : ''}`}
+        className={`canvas-operation-output-stage${showOutputList ? ' is-list' : ''}${activeOutput?.type === 'audio' ? ' is-audio' : ''}`}
       >
-        {isCollection ? (
-          <CanvasOperationOutputList outputs={outputs} isolateWheel={isolateWheel} />
+        {showOutputList ? (
+          <CanvasOperationOutputList
+            outputs={outputs}
+            isolateWheel={isolateWheel}
+            {...(onExpandOutput ? { onExpandOutput } : {})}
+          />
         ) : (
           <>
             {activeOutput ? (
@@ -383,8 +387,8 @@ export type CanvasFlowNodeData = {
     audioTrim?: (nodeId: string, startSec: number, endSec: number) => void
     /** 音频节点：变速（factor 由 IPC 校验 0.1x–4.0x），由父级触发 IPC 并物化新子节点 */
     audioSpeed?: (nodeId: string, factor: number) => void
-    /** 多产物操作节点：右键一键展开最近一次运行的全部产物节点 */
-    expandOperationOutputs?: (nodeId: string) => void
+    /** 多产物操作节点：展开最近一次运行的全部产物，或指定的产物节点 */
+    expandOperationOutputs?: (nodeId: string, outputs?: CanvasOperationOutputView[]) => void
     createOperationChild: (
       parentId: string,
       operation: import('./canvas.types').CanvasOperationType,
@@ -1802,11 +1806,16 @@ export const CanvasNode = memo(function CanvasNode({
                     <div className="canvas-node-task canvas-node-operation">
                       <OperationOutputDeck
                         runs={operationRuns}
-                        mode={operationOutputState.mode}
                         isolateWheel={selected}
                         runIndex={operationSelection.runIndex}
                         outputIndex={operationSelection.outputIndex}
                         onSelectOutput={selectOperationOutput}
+                        {...(actions.expandOperationOutputs
+                          ? {
+                              onExpandOutput: (output: CanvasOperationOutputView) =>
+                                actions.expandOperationOutputs?.(node.id, [output]),
+                            }
+                          : {})}
                         onVideoMetadata={(output, dimensions) => {
                           if (
                             !output.nodeId ||

@@ -174,10 +174,13 @@ function CollectionOutputIcon({ output }: { output: CanvasOperationOutputView })
 export function CanvasOperationOutputList({
   outputs,
   isolateWheel = true,
+  onExpandOutput,
 }: {
   outputs: CanvasOperationOutputView[]
   /** 位于未选中的画布节点中时关闭，让滚轮继续交给画布。 */
   isolateWheel?: boolean
+  /** 节点内直接展开单个产物；未提供时隐藏该入口。 */
+  onExpandOutput?: (output: CanvasOperationOutputView) => void
 }) {
   const commonRole = outputs[0] ? outputRoleLabel(outputs[0]) : '产物'
   const sameRole = outputs.every((output) => outputRoleLabel(output) === commonRole)
@@ -185,7 +188,7 @@ export function CanvasOperationOutputList({
   return (
     <div className={`canvas-operation-output-list${isolateWheel ? ' nowheel' : ''}`}>
       <div className="canvas-operation-output-list-heading">
-        <span>提取结果</span>
+        <span>产物列表</span>
         <strong>{sameRole ? `${outputs.length} 个${commonRole}` : `${outputs.length} 项`}</strong>
       </div>
       <div className="canvas-operation-output-list-items">
@@ -216,6 +219,22 @@ export function CanvasOperationOutputList({
                 </div>
                 {summary ? <p title={summary}>{summary}</p> : <p>暂无文字说明</p>}
               </div>
+              {onExpandOutput ? (
+                <button
+                  type="button"
+                  className="canvas-operation-output-list-expand nodrag nopan"
+                  aria-label={`展开产物 ${output.title || index + 1}`}
+                  title="展开产物"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onExpandOutput(output)
+                  }}
+                >
+                  <Icons.Layers size={13} />
+                  <span>展开</span>
+                </button>
+              ) : null}
             </article>
           )
         })}

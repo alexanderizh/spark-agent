@@ -389,4 +389,17 @@ describe('canvas cinematic integration', () => {
     expect(switcherStyles).toContain('overflow-x: auto')
     expect(switcherStyles).toContain('flex-wrap: nowrap')
   })
+
+  it('renders every current-run operation output as a list and wires per-output expansion', () => {
+    const node = readCanvasSource('./CanvasNode.tsx')
+    const preview = readCanvasSource('./CanvasOperationOutputPreview.tsx')
+    const previewStyles = readCanvasSource('./CanvasOperationOutputPreview.less')
+
+    expect(node).toContain('const showOutputList = outputs.length > 1')
+    expect(node).toContain('onExpandOutput: (output: CanvasOperationOutputView) =>')
+    expect(node).toContain('actions.expandOperationOutputs?.(node.id, [output])')
+    expect(preview).toContain('className="canvas-operation-output-list-expand nodrag nopan"')
+    expect(preview).toContain('onExpandOutput(output)')
+    expect(previewStyles).toContain('grid-template-columns: 32px minmax(0, 1fr) auto')
+  })
 })

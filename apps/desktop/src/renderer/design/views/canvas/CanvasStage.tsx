@@ -82,6 +82,7 @@ import type { CanvasPipelineAssetKind } from './canvasPipelineOps'
 import {
   buildCanvasOperationRunViews,
   canvasOperationRunsFingerprint,
+  type CanvasOperationOutputView,
   type CanvasOperationRunView,
 } from './canvasOperationRuns'
 import {
@@ -725,8 +726,8 @@ function CanvasStageInner({
   onAudioTrim?: (nodeId: string, startSec: number, endSec: number) => void
   /** 音频节点 in-node chip "变速" → 触发 ffmpeg atempo + 物化新节点 */
   onAudioSpeed?: (nodeId: string, factor: number) => void
-  /** 多产物操作节点右键 → 展开最近一次运行的全部产物 */
-  onExpandOperationOutputs: (nodeId: string) => void
+  /** 多产物操作节点右键或卡片按钮 → 展开最近一次运行或指定产物 */
+  onExpandOperationOutputs: (nodeId: string, outputs?: CanvasOperationOutputView[]) => void
   onCreateOperationChild: (
     parentId: string,
     operation: import('./canvas.types').CanvasOperationType,

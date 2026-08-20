@@ -1,7 +1,12 @@
+// @vitest-environment jsdom
+
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../chat/ChatMarkdown', () => ({ MarkdownText: 'div' }))
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 import {
   CanvasOperationOutputList,
@@ -60,6 +65,29 @@ describe('CanvasOperationOutputList', () => {
 
     expect(html).toContain('class="canvas-operation-output-list"')
     expect(html).not.toContain('nowheel')
+  })
+
+  it('为每个产物提供展开按钮，并只回传被点击的产物', async () => {
+    const outputs = [characterOutput('character-1', '苏烬'), characterOutput('character-2', '林雾')]
+    const onExpandOutput = vi.fn()
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<CanvasOperationOutputList outputs={outputs} onExpandOutput={onExpandOutput} />)
+    })
+
+    const buttons = container.querySelectorAll<HTMLButtonElement>(
+      '.canvas-operation-output-list-expand',
+    )
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0]?.getAttribute('aria-label')).toBe('展开产物 苏烬')
+
+    await act(async () => buttons[1]?.click())
+    expect(onExpandOutput).toHaveBeenCalledTimes(1)
+    expect(onExpandOutput).toHaveBeenCalledWith(outputs[1])
+
+    await act(async () => root.unmount())
   })
 })
 

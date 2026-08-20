@@ -2817,10 +2817,14 @@ export function CanvasWorkspaceView({
   )
 
   const handleExpandLatestOperationOutputs = useCallback(
-    (operationNodeId: string) => {
+    (operationNodeId: string, outputs?: CanvasOperationOutputView[]) => {
+      if (outputs && outputs.length > 0) {
+        void handleExpandOperationOutputs(operationNodeId, outputs)
+        return
+      }
       handleExpandOperationOutputScope(operationNodeId, 'latest_run')
     },
-    [handleExpandOperationOutputScope],
+    [handleExpandOperationOutputScope, handleExpandOperationOutputs],
   )
 
   const createPanoramaCaptureNode = useCallback(

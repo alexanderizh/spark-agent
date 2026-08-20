@@ -123,7 +123,7 @@
 .canvas-operation-output-list-item {
   display: grid;
   min-height: 86px;
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   gap: 10px;
   padding: 11px 12px;
   border: 1px solid var(--divider);
@@ -185,6 +185,28 @@
   line-height: 1.55;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.canvas-operation-output-list-expand {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--divider);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.canvas-operation-output-list-expand:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .canvas-operation-output-audio.is-detail,
