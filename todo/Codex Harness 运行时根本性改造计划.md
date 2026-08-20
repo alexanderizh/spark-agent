@@ -107,8 +107,10 @@ CodexAppServerRuntime
 - [x] 默认 idle TTL 自动回收，并设置最大 runtime 数与 LRU 淘汰。
 - [x] SessionService / EngineRegistry dispose 时统一关闭 supervisor。
 - [x] feature flag `SPARK_CODEX_PERSISTENT_RUNTIME=1` 支持灰度与旧路径回退。
-- [ ] 将动态 MCP HTTP bridge/token 提升为 runtime lease 生命周期；在此之前 fingerprint
-      变化会安全重建 runtime，Team/Goal/部分插件 turn 暂时无法 warm 命中。
+- [x] 将动态 Team / Plugin MCP HTTP bridge 与 Bearer 提升为 runtime lease 生命周期；
+      turn 结束只停用 handler，TTL/LRU、崩溃、失效与 shutdown 才撤销 bearer。
+- [x] 工具目录变化时轮换 bridge resource 与 runtime fingerprint；fingerprint 轮换时相同
+      sidecar 可原子转移，避免新 Runtime 启动前误撤销复用凭据。
 
 阶段验收：同一会话第二轮不再 spawn / initialize；不同会话不共享 runtime；崩溃后下一轮
 可新建 runtime；冷/暖指标可区分。
@@ -151,10 +153,14 @@ CodexAppServerRuntime
 
 ### P4：资源治理与灰度
 
-- [ ] 采集 runtime RSS、进程数、句柄数、TTL 回收、crash/restart 和 warm 命中率。
+- [x] 提供按需脱敏诊断：runtime PID、RSS、句柄、loaded thread、进程/lease 数量，以及
+      cold/warm、thread mode、TTL/LRU、crash、失效、启动失败与手动重启计数。
+- [x] Platform Bridge / MCP 提供安全手动重启入口；只回收 idle Runtime，active turn 返回
+      busy 摘要并保持运行。对外 lease id 均为不可逆摘要，不返回 token、env 或 session id。
+- [ ] 在真实开发版采集 RSS、warm/resume 命中率与回收数据，形成资源基线和告警阈值。
 - [ ] 先灰度单 session 独占；达到资源基线后再评估受控 fingerprint 进程共享。
 - [ ] 对共享进程设置 thread 隔离、全局并发上限和公平调度。
-- [ ] 提供运行时健康诊断与手动重启入口。
+- [ ] 在 Settings / 完整性界面产品化诊断摘要与手动重启按钮；当前入口为 Platform MCP。
 
 ### P5：Harness 能力扩展
 
@@ -252,3 +258,8 @@ idle ── acquire ──> starting ── ready ── attach route ── run
 - 2026-08-21：修复 runtime 与 JS SDK 精确绑版导致的假“未安装”；以旧 `0.144.5` 官方
   `generate-ts` schema 反证当前 turn 权限与 client message 字段兼容，并保留最低协议基线。
   同时按 OpenAI Skills 官方文档把描述裁剪识别为独立预算告警，覆盖新版文案及历史回放。
+- 2026-08-21：动态 Team / Plugin MCP bridge 已按 Runtime lease 复用 bearer 和连接，并在
+  turn 边界切换 handler generation；工具目录变化会安全轮换资源。P4 后端诊断和 idle-only
+  手动重启已接到 Platform Bridge / MCP，真实灰度数据与 Settings UI 仍待完成。
+- 2026-08-21：两轮源码复核确认并修复两个 required finding：Team 目录指纹需兼容现有
+  `z.custom()` schema；bridge resource/error 不得携带原始 lease/session 标识。

@@ -58,9 +58,10 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 - 已通过单 session lease 实现串行闸门；transport 退出时唤醒所有 waiter。
 - 已实现懒启动、并发 acquire 合并、空闲 TTL、LRU 上限、崩溃回收和应用退出清理。
 - 通过 `SPARK_CODEX_PERSISTENT_RUNTIME=1` 灰度启用，默认仍走旧每-turn lifecycle。
-- 已确认动态 MCP HTTP bridge 的 Bearer token 可能逐 turn 变化；fingerprint 会安全重建
-  runtime。后续需把 bridge handle 提升到 runtime lease 生命周期，才能让 Team/Goal 与
-  部分插件场景稳定 warm 命中，不能通过忽略 token 强行复用旧授权。
+- 动态 Team / Plugin MCP HTTP bridge 已提升到 Runtime lease 生命周期：同一目录复用
+  bearer/连接并在 turn 边界切换 handler；TTL/LRU、崩溃、失效与 shutdown 统一撤销。
+- 工具目录/schema 变化时轮换 bearer 并触发 runtime fingerprint 重建；相同 sidecar 在
+  fingerprint 轮换时可原子转移，不以忽略 token 的方式复用旧授权。
 
 ### P3：真实 Codex thread 绑定（已实现，待灰度）
 
@@ -101,7 +102,16 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
   SDK、CLI、App Server 以及 renderer 历史回放均按三个语义锚点过滤该良性 warning；普通
   `CODEX_SDK_ITEM_ERROR` 仍照常展示。
 
-### P4：能力扩展（待实施）
+### P4：资源治理与诊断（后端已实现，待真实灰度）
+
+- Supervisor 可按需返回 PID、RSS、句柄、loaded thread、进程/lease 数量，以及 cold/warm、
+  native thread mode、TTL/LRU、crash、失效、启动失败和手动重启计数。
+- 对外只返回哈希 lease id；不包含 token、环境变量、runtime/thread fingerprint 或 session id。
+- Platform Bridge / MCP 已提供 idle-only 手动重启；active Runtime 返回 busy 并保持当前 turn。
+- 待真实开发版采集资源基线、warm/resume 命中率与回收数据，再决定是否设计受控共享池。
+- Settings / 完整性页的诊断摘要与手动重启按钮尚未产品化。
+
+### P5：能力扩展（待实施）
 
 - 接通 steer、compact、fork、review、结构化用户提问、本地图片和动态模型能力。
 - 资源压测后再评估从单 session lease 灰度到受控 fingerprint 共享池。
@@ -134,6 +144,13 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 - Runtime/Skills 修复的聚焦回归已通过：兼容旧 runtime 保持 installed 并提示可选更新，低于
   协议基线的 runtime 仍拒绝；三种 Codex 载具不再把新版 Skills 预算文案映射为执行失败，
   renderer 也会忽略已经持久化的同类假错误。
+- 动态 MCP lease 与 P4 后端诊断聚焦测试覆盖：跨 turn bearer/连接复用、最新 handler 切换、
+  schema 轮换、TTL/启动失败/shutdown 资源回收、fingerprint sidecar 转移、诊断脱敏和
+  idle-only 手动重启；Team 目录指纹兼容现有 `z.custom()` 工具 schema。
+- 本批最终验证：protocol、agent-runtime、desktop strict typecheck 通过；合并后的 13 个
+  Runtime/Bridge/Platform 文件 118/118 通过，lint 修复后桥接回归 11/11 通过；定向 ESLint
+  0 error（51 个既有 non-null/any warning），Prettier、MCP server 语法与 `git diff --check`
+  通过，SQLite 依赖已恢复 Electron ABI。
 - 本轮最终验证：protocol、agent-runtime、desktop strict typecheck 通过；Codex Runtime/SDK/
   CLI/App Server 91/91，完整性/可选升级/renderer 81/81；定向 ESLint 0 error；Prettier 与
   `git diff --check` 通过。GitNexus 纯索引更新为 70,082 nodes / 126,953 edges / 300 flows。
