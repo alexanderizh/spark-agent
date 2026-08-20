@@ -242,6 +242,11 @@ import {
   useCloseOnOutside,
   writeComposerPrefs,
 } from './chat/ComposerV2'
+import { NEW_SESSION_DRAFT_BUCKET } from './chat/composer-drafts'
+import {
+  updateComposerReplyReferenceBucket,
+  type ComposerReplyReferenceMap,
+} from './chat/composer-reply-references'
 import { ChatConfigPanel, ChatInspector } from './chat/ChatInspectorPanel'
 import {
   extractRunningTeamAgentIds,
@@ -1262,7 +1267,19 @@ export function ChatView({
   // 用户发送消息时立即贴底（不等 user_message 事件从后端回来）：bump 这个计数器，
   // ChatStream 内部 effect 监听到变化即 scrollTop = scrollHeight。
   const [scrollToBottomTrigger, setScrollToBottomTrigger] = useState(0)
-  const [replyTo, setReplyTo] = useState<ReplyToState | null>(null)
+  // 未发送的「引用对话」属于当前输入草稿，必须和文本/附件一样按会话隔离。
+  // 只用一个 replyTo state 会让切换已有会话时把旧会话的引用带到新会话。
+  const replyToBucketKey = active ?? NEW_SESSION_DRAFT_BUCKET
+  const [replyToByBucket, setReplyToByBucket] = useState<ComposerReplyReferenceMap>({})
+  const replyTo = replyToByBucket[replyToBucketKey] ?? null
+  const setReplyTo = useCallback(
+    (next: ReplyToState | null) => {
+      setReplyToByBucket((current) =>
+        updateComposerReplyReferenceBucket(current, replyToBucketKey, next),
+      )
+    },
+    [replyToBucketKey],
+  )
   const { toast } = useToast()
 
   useEffect(() => {
@@ -2287,7 +2304,7 @@ export function ChatView({
       })
       setComposerFocusTrigger((n) => n + 1)
     },
-    [],
+    [setReplyTo],
   )
 
   // 团队模式：引用成员消息气泡。messageId 取 host message（成员输出是其内部 block），
@@ -2311,20 +2328,23 @@ export function ChatView({
       })
       setComposerFocusTrigger((n) => n + 1)
     },
-    [],
+    [setReplyTo],
   )
 
-  const handleQuoteSelection = useCallback((text: string, label = '引用') => {
-    const preview = compactQuotePreview(text)
-    if (preview.length === 0) return
-    setReplyTo({
-      messageId: `selection-${Date.now()}`,
-      role: 'selection',
-      agentName: label,
-      contentPreview: preview,
-    })
-    setComposerFocusTrigger((n) => n + 1)
-  }, [])
+  const handleQuoteSelection = useCallback(
+    (text: string, label = '引用') => {
+      const preview = compactQuotePreview(text)
+      if (preview.length === 0) return
+      setReplyTo({
+        messageId: `selection-${Date.now()}`,
+        role: 'selection',
+        agentName: label,
+        contentPreview: preview,
+      })
+      setComposerFocusTrigger((n) => n + 1)
+    },
+    [setReplyTo],
+  )
 
   /**
    * 处理用户消息"重发"动作：把文本和附件打包成 resendRequest，

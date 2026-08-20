@@ -120,6 +120,7 @@ import type {
   SessionRuntimePatch,
   TextEditMenuState,
 } from './ChatComposerTypes'
+import { useComposerCodeReferences } from './composer-code-references'
 import {
   NO_PROJECT_WORKSPACE_NAME,
   useSessionSidebar,
@@ -1131,25 +1132,33 @@ export function ComposerV2({
   const sessionReferences = draftState.sessionReferences
   const manualExpanded = draftState.manualExpanded
   // 代码位置引用（编辑器右键「添加选中代码」产生）：纯渲染层 state，不进 draft / protocol，
-  // 切会话会丢失（第一版不持久化，与并行改动零冲突）。发送时转为「路径:行号」文本交给模型。
-  const [codeReferences, setCodeReferences] = useState<CodeReference[]>([])
-  const appendCodeReferences = useCallback((incoming: CodeReference[]) => {
-    let added = 0
-    setCodeReferences((current) => {
-      const byKey = new Map(current.map((ref) => [codeRefKey(ref), ref]))
-      for (const ref of incoming) {
-        const key = codeRefKey(ref)
-        if (byKey.has(key)) continue
-        byKey.set(key, ref)
-        added += 1
-      }
-      return Array.from(byKey.values())
-    })
-    return added
-  }, [])
-  const handleRemoveCodeReference = useCallback((key: string) => {
-    setCodeReferences((current) => current.filter((ref) => codeRefKey(ref) !== key))
-  }, [])
+  // 但必须按草稿桶隔离。ComposerV2 在切换会话时通常不会卸载，单一数组会把上个会话的
+  // 引用直接带到下个会话。发送时转为「路径:行号」文本交给模型。
+  const { codeReferences, setCodeReferences, clearCodeReferenceBuckets } =
+    useComposerCodeReferences(draftBucketKey)
+  const appendCodeReferences = useCallback(
+    (incoming: CodeReference[]) => {
+      let added = 0
+      setCodeReferences((current) => {
+        const byKey = new Map(current.map((ref) => [codeRefKey(ref), ref]))
+        for (const ref of incoming) {
+          const key = codeRefKey(ref)
+          if (byKey.has(key)) continue
+          byKey.set(key, ref)
+          added += 1
+        }
+        return Array.from(byKey.values())
+      })
+      return added
+    },
+    [setCodeReferences],
+  )
+  const handleRemoveCodeReference = useCallback(
+    (key: string) => {
+      setCodeReferences((current) => current.filter((ref) => codeRefKey(ref) !== key))
+    },
+    [setCodeReferences],
+  )
   const pendingQuickReplies = useMemo(() => resolvePendingQuickReplies(messages), [messages])
   const [dismissedQuickReplyKey, setDismissedQuickReplyKey] = useState<string | null>(null)
   useEffect(() => setDismissedQuickReplyKey(null), [session?.id])
@@ -1261,13 +1270,14 @@ export function ComposerV2({
     if (sessions.length === 0) return // 列表未加载完时不做删除，否则会误删全部草稿
     const liveIds = new Set(sessions.map((item) => item.id))
     setDrafts((current) => {
-      const { kept } = gcComposerDraftBuckets(liveIds)
+      const { kept, removed } = gcComposerDraftBuckets(liveIds)
+      if (removed.length > 0) clearCodeReferenceBuckets(removed)
       if (Object.keys(kept).length === Object.keys(current).length) return current
       return kept
     })
     // sessionIdsKey 而非 sessions：后者每次 refresh 都是新引用，会让 GC 空转
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionIdsKey])
+  }, [clearCodeReferenceBuckets, sessionIdsKey])
 
   const setValue = useCallback(
     (next: React.SetStateAction<string>) => {
@@ -1467,30 +1477,34 @@ export function ComposerV2({
     [updateDraft],
   )
 
-  const clearDraftBuckets = useCallback((keys: Array<string | null | undefined>) => {
-    const uniqueKeys = Array.from(new Set(keys.filter((key): key is string => !!key)))
-    if (uniqueKeys.length === 0) return
-    setDrafts((current) => {
-      let changed = false
-      const next = { ...current }
-      for (const key of uniqueKeys) {
-        const existing = next[key]
-        if (
-          existing != null &&
-          (existing.value !== '' ||
-            existing.attachments.length > 0 ||
-            existing.sessionReferences.length > 0)
-        ) {
-          // 内存里清成空草稿（UI 立即反映），localStorage 里直接删 key（per-bucket O(1)）
-          next[key] = { ...existing, value: '', attachments: [], sessionReferences: [] }
-          draftWriterRef.current?.removeBucket(key)
-          changed = true
+  const clearDraftBuckets = useCallback(
+    (keys: Array<string | null | undefined>) => {
+      const uniqueKeys = Array.from(new Set(keys.filter((key): key is string => !!key)))
+      if (uniqueKeys.length === 0) return
+      clearCodeReferenceBuckets(uniqueKeys)
+      setDrafts((current) => {
+        let changed = false
+        const next = { ...current }
+        for (const key of uniqueKeys) {
+          const existing = next[key]
+          if (
+            existing != null &&
+            (existing.value !== '' ||
+              existing.attachments.length > 0 ||
+              existing.sessionReferences.length > 0)
+          ) {
+            // 内存里清成空草稿（UI 立即反映），localStorage 里直接删 key（per-bucket O(1)）
+            next[key] = { ...existing, value: '', attachments: [], sessionReferences: [] }
+            draftWriterRef.current?.removeBucket(key)
+            changed = true
+          }
         }
-      }
-      if (!changed) return current
-      return next
-    })
-  }, [])
+        if (!changed) return current
+        return next
+      })
+    },
+    [clearCodeReferenceBuckets],
+  )
 
   const rememberRuntimePatch = useCallback((patch: SessionRuntimePatch) => {
     pendingRuntimePatchRef.current = { ...pendingRuntimePatchRef.current, ...patch }
@@ -1765,13 +1779,14 @@ export function ComposerV2({
           draftWriterRef.current?.removeBucket(NEW_SESSION_DRAFT_BUCKET)
           changed = true
         }
+        clearCodeReferenceBuckets([targetId, NEW_SESSION_DRAFT_BUCKET])
         if (!changed) return current
         return next
       })
     }
     window.addEventListener('spark:composer:reset-draft', handler)
     return () => window.removeEventListener('spark:composer:reset-draft', handler)
-  }, [])
+  }, [clearCodeReferenceBuckets])
 
   useEffect(() => {
     return window.spark.on('stream:session:queue-changed', (snapshot) => {
@@ -2552,6 +2567,7 @@ export function ComposerV2({
     setValue(message.content)
     setAttachments(message.attachments)
     setSessionReferences(message.sessionReferences)
+    setCodeReferences([])
     const res = await cancelQueuedTurn({ sessionId: session.id, turnId: message.turnId })
     setQueuedMessages(mapQueuedTurns(res.queuedTurns))
     if (res.cancelled) onOptimisticQueueTurnCancelled?.(session.id, message.turnId)
@@ -3556,6 +3572,7 @@ export function ComposerV2({
 
     setValue(payload.text)
     setSessionReferences(payload.sessionReferences ?? [])
+    setCodeReferences([])
 
     const stamp = Date.now()
     const placeholders: ComposerAttachment[] = payload.attachments.map((att, index) => ({
