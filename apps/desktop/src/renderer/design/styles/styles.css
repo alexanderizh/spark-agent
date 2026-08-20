@@ -611,7 +611,7 @@ body.floating-sidebar-resizing * {
   justify-content: flex-end;
   gap: 6px;
   height: 52px;
-  padding: 8px 10px 4px;
+  padding: 8px 12px 4px;
   position: relative;
   z-index: 1;
   -webkit-app-region: drag;
@@ -771,6 +771,8 @@ body.floating-sidebar-resizing * {
   flex-direction: column;
   gap: 1px;
   -webkit-app-region: no-drag;
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 /* Divider between nav and session list */
@@ -789,6 +791,8 @@ body.floating-sidebar-resizing * {
   display: flex;
   flex-direction: column;
   -webkit-app-region: no-drag;
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 /* Expand button when sidebar is hidden — visually matches .icon-btn / .sidebar-hide-btn */
