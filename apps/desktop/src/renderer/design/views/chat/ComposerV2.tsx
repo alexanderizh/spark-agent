@@ -154,6 +154,7 @@ import {
 import { SessionReferencePicker } from './SessionReferencePicker'
 import { QueuedTaskList } from './QueuedTaskList'
 import { ComposerLexicalInput, type ComposerLexicalInputHandle } from './ComposerLexicalInput'
+import { useComposerInputAutoSize } from './useComposerInputAutoSize'
 import {
   getSlashCommandContext,
   isComposerCommandSelectionKey,
@@ -1784,40 +1785,12 @@ export function ComposerV2({
     }
   }, [draftModelId, selectedProvider])
 
-  useEffect(() => {
-    const el = textareaRef.current?.getElement()
-    if (!el) return
-    // 高度范围：折叠态 76-280px（hero 状态下 padding 上下会撑出更大的视觉高度），
-    // 展开态 240-520px —— 展开后给足空间，长 prompt 能直接看完，不必依赖滚动。
-    // 关键点：minHeight 留一个能容纳一行文字 + 一点 padding 的值，
-    // 避免空 textarea 看起来永远是一坨；maxHeight 给得宽一些，常规长 prompt 都能直接展示完，
-    // 不需要靠滚动条来回看。
-    const minHeight = manualExpanded ? 240 : 100
-    const maxHeight = manualExpanded ? 520 : 280
-
-    // 用 'auto' 临时高度测量内容真实高度，再 clamp 到区间内
-    // 之前用 '0px' 临时归零在某些渲染时机下会触发 textarea 高度抖动，体感是"打不出字"
-    const prevHeight = el.style.height
-    const prevTransition = el.style.transition
-    el.style.transition = 'none'
-    el.style.height = 'auto'
-    // 强制回流以让浏览器按 auto 重新计算 scrollHeight
-    void el.offsetHeight
-    const scrollH = el.scrollHeight
-
-    const nextHeight = Math.max(minHeight, Math.min(scrollH, maxHeight))
-    el.style.height = `${nextHeight}px`
-
-    // 滚动条统一交给 CSS（views.css 中 .composer textarea 用 scrollbar-width:none 隐藏滚动条，
-    // 但滚动能力保留），这里不要再去切换 overflowY，避免 inline style 跟 CSS 互相覆盖
-    requestAnimationFrame(() => {
-      el.style.transition = prevTransition || ''
-      // 防御性：保证 height 永远不是空 / auto
-      if (el.style.height === 'auto' || el.style.height === '') {
-        el.style.height = prevHeight || `${minHeight}px`
-      }
-    })
-  }, [manualExpanded, value])
+  useComposerInputAutoSize({
+    inputRef: textareaRef,
+    draftBucketKey,
+    manualExpanded,
+    value,
+  })
 
   useEffect(() => {
     const el = textareaRef.current
