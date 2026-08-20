@@ -3116,6 +3116,56 @@ describe('SessionService runtime provider/model resolution', () => {
     }
   })
 
+  it('uses the current session provider for a custom command follow-up turn', async () => {
+    const disabledProvider = mockState.providers.get('xiaomi-provider')
+    if (disabledProvider == null) throw new Error('expected xiaomi provider fixture')
+    disabledProvider.enabled = 0
+    mockState.agents.set(
+      'disabled-provider-agent',
+      makeAgent({
+        id: 'disabled-provider-agent',
+        name: 'Disabled Provider Agent',
+        providerProfileId: 'xiaomi-provider',
+        modelId: 'mimo-v2.5-pro',
+      }),
+    )
+    mockState.settings.set(
+      'custom-commands:items',
+      JSON.stringify([
+        {
+          id: 'follow-up',
+          name: '/follow-up',
+          description: 'Run a follow-up turn with the current session provider',
+          prompt: '继续处理:',
+          script: '',
+          scriptLanguage: 'javascript',
+          enabled: true,
+        },
+      ]),
+    )
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentId: 'disabled-provider-agent',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Command follow-up provider session',
+    })
+
+    const result = await service.executeCommandAsEvents({
+      sessionId,
+      message: '/follow-up verify provider routing',
+    })
+
+    expect(result).toMatchObject({ isCommand: true, forwardToAgent: false, started: true })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    expect(mockState.sdkConfigs[0]).toMatchObject({
+      model: 'glm-5',
+      apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+    })
+  })
+
   it('renders /status usage totals from persisted usage_update events when ledger is empty', async () => {
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({

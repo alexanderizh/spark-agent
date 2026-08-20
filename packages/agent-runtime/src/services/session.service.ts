@@ -2003,18 +2003,24 @@ export class SessionService {
     const workflowMembers =
       workflowGraph != null ? this.resolveWorkflowMembers(workflowGraph, agent) : []
     const enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
-    // Provider / model：普通 turn 的显式 runtime patch 是用户刚刚做出的
-    // 选择，优先于当前 Agent 配置；mention 仍保持被 @ Agent 自身的路由语义。
-    // 这能避免画布已选择本地 Codex CLI，却被 Agent 旧的 BigModel/MiniMax 绑定重新覆盖。
+    // Provider / model：会话运行时是普通 turn 的唯一权威，保证 UI 当前选择与实际执行一致。
+    // Agent 绑定只用于 @mention、团队 Host，或旧会话缺少 provider 时的兼容兜底。
     const explicitProviderProfileId = isMentionTurn
       ? undefined
       : runtimePatch?.providerProfileId?.trim()
+    const sessionProviderProfileId = session.provider_profile_id?.trim()
+    const runtimeAgentSelectionTakesPrecedence =
+      isMentionTurn || sessionTeamConfig?.enabled === true
     const runtimeAgentProviderProfileId = runtimeAgent.providerProfileId?.trim()
     const runtimeAgentProviderIsStale =
       !isMentionTurn &&
+      (runtimeAgentSelectionTakesPrecedence || !sessionProviderProfileId) &&
       runtimeAgentProviderProfileId != null &&
       runtimeAgentProviderProfileId.length > 0 &&
       providerRepo.get(runtimeAgentProviderProfileId) == null
+    const availableRuntimeAgentProviderProfileId = runtimeAgentProviderIsStale
+      ? undefined
+      : runtimeAgentProviderProfileId
     if (runtimeAgentProviderIsStale) {
       log.warn('agent provider profile is missing; falling back to session provider', {
         sessionId,
@@ -2025,10 +2031,9 @@ export class SessionService {
     }
     const effectiveProviderProfileId =
       explicitProviderProfileId ||
-      (isMentionTurn
-        ? agent.providerProfileId?.trim() || session.provider_profile_id
-        : (!runtimeAgentProviderIsStale && runtimeAgentProviderProfileId) ||
-          session.provider_profile_id)
+      (runtimeAgentSelectionTakesPrecedence
+        ? availableRuntimeAgentProviderProfileId || sessionProviderProfileId
+        : sessionProviderProfileId || availableRuntimeAgentProviderProfileId)
     if (effectiveProviderProfileId == null) {
       throw new Error(`Session ${sessionId} has no provider profile`)
     }
@@ -2062,9 +2067,13 @@ export class SessionService {
     const explicitModelId = isMentionTurn ? undefined : runtimePatch?.modelId?.trim()
     const requestedModel =
       explicitModelId ||
-      (isMentionTurn
-        ? agent.modelId?.trim() || session.model_id
-        : (!runtimeAgentProviderIsStale && runtimeAgent.modelId?.trim()) || session.model_id)
+      (runtimeAgentSelectionTakesPrecedence
+        ? runtimeAgent.modelId?.trim() || session.model_id
+        : sessionProviderProfileId
+          ? session.model_id?.trim()
+          : runtimeAgentProviderIsStale
+            ? session.model_id
+            : runtimeAgent.modelId?.trim() || session.model_id)
     const loadProvider = (providerProfileId: string) => {
       const row = providerRepo.get(providerProfileId)
       if (row == null) {
@@ -2137,7 +2146,8 @@ export class SessionService {
       const configuredAgentModel =
         (isMentionTurn
           ? agent.modelId
-          : runtimeAgentProviderIsStale
+          : runtimeAgentProviderIsStale ||
+              (!runtimeAgentSelectionTakesPrecedence && sessionProviderProfileId)
             ? null
             : runtimeAgent.modelId
         )?.trim() ?? ''
@@ -2153,8 +2163,9 @@ export class SessionService {
       model = isLocalCli
         ? getLocalCliDefaultModel(provider)
         : explicitModelId ||
-          configuredAgentModel ||
-          inheritedModel ||
+          (runtimeAgentSelectionTakesPrecedence
+            ? configuredAgentModel || inheritedModel
+            : inheritedModel || configuredAgentModel) ||
           config.defaultModel ||
           config.model ||
           ''
