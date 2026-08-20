@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import {
+  MIN_SUPPORTED_MANAGED_CODEX_RUNTIME_VERSION,
   codexTargetTriple,
   readManagedCodexRuntimeState,
   resolveManagedCodexCli,
@@ -41,6 +42,60 @@ describe('managed Codex runtime resolver', () => {
       expect(readManagedCodexRuntimeState(root).installed).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps a compatible installed runtime active after the JS SDK version changes', () => {
+    const root = join(tmpdir(), `spark-codex-runtime-sdk-upgrade-${Date.now()}`)
+    const triple = codexTargetTriple()!
+    const version = MIN_SUPPORTED_MANAGED_CODEX_RUNTIME_VERSION
+    const packageRoot = join(root, version, triple)
+    const previousSdkVersion = process.env.SPARK_CODEX_SDK_VERSION
+    try {
+      mkdirSync(join(packageRoot, 'bin'), { recursive: true })
+      writeFileSync(
+        join(root, 'active.json'),
+        JSON.stringify({
+          version,
+          targetTriple: triple,
+          sdkPackage: `@openai/codex-sdk@${version}`,
+        }),
+      )
+      writeFileSync(
+        join(packageRoot, 'bin', process.platform === 'win32' ? 'codex.exe' : 'codex'),
+        '',
+      )
+      writeFileSync(join(packageRoot, 'codex-package.json'), JSON.stringify({ version }))
+      process.env.SPARK_CODEX_SDK_VERSION = '0.149.0'
+
+      expect(resolveManagedCodexCli(root)).toMatchObject({ version, targetTriple: triple })
+      expect(readManagedCodexRuntimeState(root)).toMatchObject({ installed: true, version })
+    } finally {
+      if (previousSdkVersion == null) delete process.env.SPARK_CODEX_SDK_VERSION
+      else process.env.SPARK_CODEX_SDK_VERSION = previousSdkVersion
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a runtime older than the stable App Server protocol baseline', () => {
+    for (const version of ['0.143.9', '0.144.5-beta.1']) {
+      const root = join(tmpdir(), `spark-codex-runtime-too-old-${version}-${Date.now()}`)
+      const triple = codexTargetTriple()!
+      const packageRoot = join(root, version, triple)
+      try {
+        mkdirSync(join(packageRoot, 'bin'), { recursive: true })
+        writeFileSync(join(root, 'active.json'), JSON.stringify({ version, targetTriple: triple }))
+        writeFileSync(
+          join(packageRoot, 'bin', process.platform === 'win32' ? 'codex.exe' : 'codex'),
+          '',
+        )
+        writeFileSync(join(packageRoot, 'codex-package.json'), JSON.stringify({ version }))
+
+        expect(resolveManagedCodexCli(root)).toBeNull()
+        expect(readManagedCodexRuntimeState(root)).toMatchObject({ installed: false, version })
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
     }
   })
 })

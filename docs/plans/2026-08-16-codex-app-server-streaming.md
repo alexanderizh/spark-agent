@@ -118,7 +118,9 @@ segmentId 沿用 `codex-sdk-{turnId}-text-{N}` 约定（renderer 累加逻辑零
 1. ~~**请求体精确形状**~~：**已由运行时实验确认**（NDJSON 帧、`initialize`/`thread/start`/`turn/start` 形状、`input` 数组、schema 可由 `generate-json-schema` 机器生成，见证据 4）。
 2. **审批语义必须显式钉死**（实验后新增，最重要的 gotcha）：app-server 模式下审批请求是 **server→client 请求**（`item/permissions/requestApproval` 等），若不响应会挂起 turn。而现状 exec 路径是 unattended（自动拒绝/按 sandbox 策略走）。Phase 1 必须在 `thread/start`/`turn/start` 显式传 `approvalPolicy`（对齐现有 unattended 语义），并对所有 `*requestApproval` 请求返回确定性响应（accept/deny 按现有权限模式映射），杜绝挂起。**Phase 1 不做交互审批 UI，但必须做防挂起兜底。**
 3. **MCP 服务器配置传递**：app-server 模式下 MCP 配置走 initialize 参数还是 config 覆盖，需核对；现 exec 路径走 `--config mcp_servers=...`。
-4. **experimental 标记**：`codex app-server` 在 0.144.5 标记 experimental，接口可能随版本变；版本钉死策略与现有 codex 运行时管理一致（`SPARK_CODEX_SDK_VERSION` 校验已存在）。
+4. **experimental 标记**：`codex app-server` 在 0.144.5 标记 experimental，接口可能随版本变；
+   运行时激活采用已验证的最低协议基线（当前为稳定版 0.144.5），不再与 JS SDK 精确绑版。
+   云端安装仍只选择声明兼容当前 SDK 的 artifact，升级后继续跑真实冒烟与 schema diff。
 5. **回退开关**：握手失败/超时自动降级 `CodexSdkExecutor` 并上报遥测，保证不比现状差。
 6. **进程生命周期差异**：exec 是「每 turn 一进程」，app-server 是「长驻服务进程」——需要崩溃检测、重启、空闲回收策略。Phase 1 采用最保守形态：每 executor 实例独占一个 app-server 进程（对齐现有每实例进程模型），不做跨会话共享。
 
@@ -166,8 +168,9 @@ segmentId 沿用 `codex-sdk-{turnId}-text-{N}` 约定（renderer 累加逻辑零
 
 ### 遗留观察项
 
-- app-server 为 experimental 接口：版本钉死策略与现有一致（SPARK_CODEX_SDK_VERSION 校验），
-  升级运行时后跑真实冒烟 + `codex app-server generate-json-schema` 核对协议类型子集。
+- app-server 为 experimental 接口：已安装 runtime 只要满足最低协议基线且完整即可继续使用；
+  `SPARK_CODEX_SDK_VERSION` 只用于选择可选升级 artifact，不再作为 active runtime 的精确版本门槛。
+  升级运行时后继续跑真实冒烟 + `codex app-server generate-json-schema` 核对协议类型子集。
 - 每 turn 一个 app-server 进程（保守形态）：冷启动 ~200-400ms 已被 prepare 前置于事件
   发射吸收；跨 turn 进程复用属后续优化（需与会话生命周期对齐，暂不做）。
 - 2026-08-21 复现表明部分环境的 prepare 空窗可达 7.592 秒，已启动生命周期升级；

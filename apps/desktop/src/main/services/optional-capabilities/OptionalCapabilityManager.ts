@@ -65,6 +65,12 @@ type CapabilityErrorState = {
 
 const MANIFEST_CACHE_TTL_MS = 24 * 60 * 60 * 1_000
 
+function defaultAutoUpdateForCapability(id: OptionalCapabilityId): boolean {
+  // Codex App Server 是 Spark 适配器的协议上游。已安装的兼容 runtime 应保持可用，
+  // 新版本默认由用户明确选择；其他可选能力沿用原有自动更新默认值。
+  return id !== 'codex-runtime'
+}
+
 export class OptionalCapabilityManager {
   private readonly root: string
   private readonly store: OptionalCapabilityStateStore
@@ -83,7 +89,9 @@ export class OptionalCapabilityManager {
   private readonly externalAutoUpdates = new Map<ExternalCapabilityId, boolean>()
   private readonly progressListeners = new Set<(progress: OptionalCapabilityProgress) => void>()
   private readonly logger: CapabilityLogger
-  private readonly externalAdapters: Partial<Record<ExternalCapabilityId, ExternalCapabilityAdapter>>
+  private readonly externalAdapters: Partial<
+    Record<ExternalCapabilityId, ExternalCapabilityAdapter>
+  >
   private queueTail: Promise<void> = Promise.resolve()
   private queuedJobs = 0
   private manifest: SparkInstallManifest | null = null
@@ -153,7 +161,11 @@ export class OptionalCapabilityManager {
     const definition = getOptionalCapabilityDefinition(id)
     if (!definition.cancellable) {
       const snapshot = await this.buildSnapshot()
-      return { success: false, message: `${definition.displayName}当前安装任务不支持取消`, snapshot }
+      return {
+        success: false,
+        message: `${definition.displayName}当前安装任务不支持取消`,
+        snapshot,
+      }
     }
     if (!controller) {
       const snapshot = await this.buildSnapshot()
@@ -617,7 +629,7 @@ export class OptionalCapabilityManager {
           const autoUpdate =
             this.externalAutoUpdates.get(externalId) ??
             (await this.store.readAutoUpdate(externalId)) ??
-            true
+            defaultAutoUpdateForCapability(externalId)
           this.externalAutoUpdates.set(externalId, autoUpdate)
           return {
             id: externalId,

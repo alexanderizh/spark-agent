@@ -16,13 +16,16 @@ export interface ManagedCodexRuntimeState {
 }
 
 /**
+ * Spark 当前消费的 App Server 协议能力从 0.144.5 起完整可用。
+ * runtime 可以比应用内 JS SDK 旧：二者通过进程协议通信，不应按 npm 包版本精确绑死。
+ */
+export const MIN_SUPPORTED_MANAGED_CODEX_RUNTIME_VERSION = '0.144.5'
+
+/**
  * Codex native runtime 的平台标识，与 @openai/codex 的 vendor 目录保持一致。
  * 这段逻辑不依赖 Electron，因此 agent-runtime 也能在测试和 CLI 场景复用。
  */
-export function codexTargetTriple(
-  platform = process.platform,
-  arch = process.arch,
-): string | null {
+export function codexTargetTriple(platform = process.platform, arch = process.arch): string | null {
   switch (platform) {
     case 'linux':
     case 'android':
@@ -59,30 +62,35 @@ export function resolveManagedCodexCli(
   if (!targetTriple) return null
 
   const activePath = join(runtimeRoot, 'active.json')
-  let active: { version?: string; targetTriple?: string; sdkPackage?: string }
+  let active: { version?: string; targetTriple?: string }
   try {
     active = JSON.parse(readFileSync(activePath, 'utf8')) as {
       version?: string
       targetTriple?: string
-      sdkPackage?: string
     }
   } catch {
     return null
   }
   const version = active.version?.trim()
-  if (!version || active.targetTriple !== targetTriple || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
+  if (
+    !version ||
+    active.targetTriple !== targetTriple ||
+    !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version) ||
+    compareRuntimeVersions(version, MIN_SUPPORTED_MANAGED_CODEX_RUNTIME_VERSION) < 0
+  ) {
     return null
   }
-  const expectedSdkVersion = process.env.SPARK_CODEX_SDK_VERSION?.trim()
-  if (expectedSdkVersion) {
-    const expectedPackage = `@openai/codex-sdk@${expectedSdkVersion}`
-    if (active.sdkPackage ? active.sdkPackage !== expectedPackage : version !== expectedSdkVersion) {
-      return null
-    }
-  }
+
+  // active.json.sdkPackage 记录该制品发布时对应的 JS SDK，仅用于更新来源追踪。
+  // App Server 是独立进程协议；应用升级 JS SDK 后，已安装且满足协议基线的 runtime
+  // 仍应继续工作，并由完整性页把新 runtime 作为可选更新呈现。
 
   const packageRoot = join(runtimeRoot, version, targetTriple)
-  const executablePath = join(packageRoot, 'bin', process.platform === 'win32' ? 'codex.exe' : 'codex')
+  const executablePath = join(
+    packageRoot,
+    'bin',
+    process.platform === 'win32' ? 'codex.exe' : 'codex',
+  )
   const manifestPath = join(packageRoot, 'codex-package.json')
   if (!existsSync(executablePath) || !existsSync(manifestPath)) return null
 
@@ -93,6 +101,21 @@ export function resolveManagedCodexCli(
     version,
     targetTriple,
   }
+}
+
+function compareRuntimeVersions(left: string, right: string): number {
+  const leftWithoutBuild = left.split('+')[0] ?? left
+  const rightWithoutBuild = right.split('+')[0] ?? right
+  const leftParts = leftWithoutBuild.split('-')[0]?.split('.').map(Number) ?? []
+  const rightParts = rightWithoutBuild.split('-')[0]?.split('.').map(Number) ?? []
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0)
+    if (difference !== 0) return difference
+  }
+  const leftIsPrerelease = leftWithoutBuild.includes('-')
+  const rightIsPrerelease = rightWithoutBuild.includes('-')
+  if (leftIsPrerelease !== rightIsPrerelease) return leftIsPrerelease ? -1 : 1
+  return 0
 }
 
 export function readManagedCodexRuntimeState(

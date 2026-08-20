@@ -222,4 +222,35 @@ describe('CodexRuntimeIntegrityService', () => {
       installedVersion: UPDATED_RUNTIME_VERSION,
     })
   })
+
+  it('keeps an older compatible runtime installed and presents the matching runtime as optional update', async () => {
+    const previousRuntimeVersion = '0.144.5'
+    mocks.artifacts = [artifact(previousRuntimeVersion)]
+    const { checkCodexRuntimeIntegrity, getCodexRuntimeRootPath, installCodexRuntime } =
+      await import('../CodexRuntimeIntegrityService.js')
+
+    expect((await installCodexRuntime(CODEX_SDK_VERSION)).success).toBe(true)
+    const activePath = join(getCodexRuntimeRootPath(), 'active.json')
+    const active = JSON.parse(readFileSync(activePath, 'utf8')) as Record<string, unknown>
+    writeFileSync(
+      activePath,
+      `${JSON.stringify(
+        {
+          ...active,
+          sdkPackage: `@openai/codex-sdk@${previousRuntimeVersion}`,
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    )
+    mocks.artifacts = [artifact(CODEX_SDK_VERSION)]
+
+    await expect(checkCodexRuntimeIntegrity(true, CODEX_SDK_VERSION)).resolves.toMatchObject({
+      installed: true,
+      installedVersion: previousRuntimeVersion,
+      latestVersion: CODEX_SDK_VERSION,
+      updateAvailable: true,
+    })
+  })
 })

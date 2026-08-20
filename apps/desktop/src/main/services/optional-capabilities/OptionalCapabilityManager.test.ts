@@ -259,6 +259,54 @@ describe('OptionalCapabilityManager', () => {
     })
   })
 
+  it('keeps Codex runtime updates opt-in by default and persists an explicit user override', async () => {
+    const root = await fixtureRoot()
+    const install = vi.fn(async () => ({ success: true, message: 'updated' }))
+    const codexAdapter: ExternalCapabilityAdapter = {
+      async describe() {
+        return {
+          state: 'update_available',
+          installedVersion: '0.144.5',
+          targetVersion: '0.149.0',
+          downloadSize: 100,
+          installedSize: 100,
+        }
+      },
+      install,
+    }
+    const manager = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchManifest: async () => manifest(),
+      externalAdapters: { 'codex-runtime': codexAdapter },
+    })
+
+    await expect(manager.check(true)).resolves.toMatchObject({
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'codex-runtime',
+          state: 'update_available',
+          autoUpdate: false,
+        }),
+      ]),
+    })
+    expect(install).not.toHaveBeenCalled()
+
+    await manager.setAutoUpdate('codex-runtime', true)
+    const restarted = new OptionalCapabilityManager({
+      userDataDir: root,
+      platform: 'darwin',
+      arch: 'arm64',
+      externalAdapters: { 'codex-runtime': codexAdapter },
+    })
+    await expect(restarted.list()).resolves.toMatchObject({
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({ id: 'codex-runtime', autoUpdate: true }),
+      ]),
+    })
+  })
+
   it('keeps external installation failures visible in the returned snapshot', async () => {
     const root = await fixtureRoot()
     const adapter: ExternalCapabilityAdapter = {
