@@ -109,6 +109,7 @@ import { buildWorkflowBindingAuthorityPrompt } from './workflow-system-prompt.js
 import { buildContextLedger } from './context-ledger.js'
 import { joinDistinctPromptSections } from './prompt-deduplication.js'
 import { TurnRuntimeMetricsTracker } from './turn-runtime-metrics.js'
+import { createAuthoritativeUserMessageEvent } from './session-user-message-authority.js'
 import { createCanvasMcpUnavailableEvents } from './canvas-mcp-startup-events.js'
 import type { PluginManager } from './plugins/plugin-manager.service.js'
 import {
@@ -491,6 +492,8 @@ interface TryStartSDKTurnOptions extends UserMessagePresentation {
   sessionReferences?: SessionReferenceInput[]
   /** 当前 Host turn 的 prompt / MCP / cache / TTFT 增量观测器。 */
   runtimeMetrics?: TurnRuntimeMetricsTracker
+  /** SessionService already persisted this turn's user_message before engine preparation. */
+  userMessageAlreadyPersisted?: boolean
 }
 type PendingTurn = UserMessagePresentation & {
   turnId: string
@@ -2061,6 +2064,18 @@ export class SessionService {
       sessionRepo.updateTitle(sessionId, derivedTitle)
       this.onSessionRenamed?.(sessionId, derivedTitle)
     }
+    const authoritativeUserMessage = createAuthoritativeUserMessageEvent({
+      sessionId,
+      turnId,
+      message,
+      ...(attachments != null ? { attachments } : {}),
+      ...(sessionReferences != null ? { sessionReferences } : {}),
+      ...(userMessagePresentation != null ? { presentation: userMessagePresentation } : {}),
+    })
+    const userMessageAlreadyPersisted = authoritativeUserMessage != null
+    if (authoritativeUserMessage != null) {
+      this.emitAndPersist(sessionId, turnId, authoritativeUserMessage, eventRepo)
+    }
     let effectiveRuntimeProviderProfileId = effectiveProviderProfileId
     const modelProfilesForRouting = new ModelProfileRepository(this.db).list()
     const providersForRouting = providerRowsForModelRouter(providerRepo.listAll())
@@ -2288,6 +2303,7 @@ export class SessionService {
     // fresh 路径或 resume 失败恢复。成功 resume 时不再重复注入近期对话。
     const conversationContext = buildConversationHistory(eventRepo, sessionId, {
       agentNameById,
+      excludeTurnId: turnId,
       historyTokenBudget: computeHistoryTokenBudget(contextWindowTokens),
       entryTokenBudget: computeHistoryEntryTokenBudget(contextWindowTokens),
       ...(storedContinuitySummary != null
@@ -3110,6 +3126,7 @@ export class SessionService {
         workspaceRootPath,
         ...userMessagePresentation,
         runtimeMetrics,
+        ...(userMessageAlreadyPersisted ? { userMessageAlreadyPersisted: true } : {}),
         ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
       }
       // Local CLI 走宿主 OAuth，没有可直发的 apiKey；跳过远程标题精炼，
@@ -3208,8 +3225,12 @@ export class SessionService {
       enableCheckpoints: false,
       sdkSessionId,
       continueSession: canResumeSdkSession,
+      ...(userMessagePresentation?.clientMessageId != null
+        ? { clientUserMessageId: userMessagePresentation.clientMessageId }
+        : {}),
       ...(goalConfig != null ? { goal: goalConfig } : {}),
       invocationObserver: observedInvocation,
+      runtimeMetricsObserver: (metrics) => runtimeMetrics.recordAdapterMetrics(metrics),
       // app-server 载具的交互审批回路（P2-1）：codex 原生审批请求（命令/文件变更）
       // 经 approvalCallback 走用户审批卡；载具侧负责 waiting_permission 状态与
       // 确定性兜底（无回调/unattended/回调异常 → deny，杜绝上游 turn 挂起）。
@@ -3231,6 +3252,7 @@ export class SessionService {
       workspaceRootPath,
       ...userMessagePresentation,
       runtimeMetrics,
+      ...(userMessageAlreadyPersisted ? { userMessageAlreadyPersisted: true } : {}),
       ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
     }
     // 与 claude 分支同款首轮标题精炼上下文（W2-D3 行为补齐：此前仅 claude 路径
@@ -3568,20 +3590,22 @@ export class SessionService {
     })
 
     const emitSdkRequiredError = (rawError?: string) => {
-      this.emitAndPersist(
-        sessionId,
-        turnId,
-        {
-          ...makeBase(),
-          type: 'user_message',
-          content: message,
-          ...userMessagePresentation,
-          ...(sessionReferences != null && sessionReferences.length > 0
-            ? { sessionReferences }
-            : {}),
-        },
-        eventRepo,
-      )
+      if (options.userMessageAlreadyPersisted !== true) {
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeBase(),
+            type: 'user_message',
+            content: message,
+            ...userMessagePresentation,
+            ...(sessionReferences != null && sessionReferences.length > 0
+              ? { sessionReferences }
+              : {}),
+          },
+          eventRepo,
+        )
+      }
       this.emitAndPersist(
         sessionId,
         turnId,
@@ -3612,20 +3636,22 @@ export class SessionService {
 
     const workspaceIssue = await getWorkspaceRootIssue(config.workspaceRootPath)
     if (workspaceIssue != null) {
-      this.emitAndPersist(
-        sessionId,
-        turnId,
-        {
-          ...makeBase(),
-          type: 'user_message',
-          content: message,
-          ...userMessagePresentation,
-          ...(sessionReferences != null && sessionReferences.length > 0
-            ? { sessionReferences }
-            : {}),
-        },
-        eventRepo,
-      )
+      if (options.userMessageAlreadyPersisted !== true) {
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeBase(),
+            type: 'user_message',
+            content: message,
+            ...userMessagePresentation,
+            ...(sessionReferences != null && sessionReferences.length > 0
+              ? { sessionReferences }
+              : {}),
+          },
+          eventRepo,
+        )
+      }
       this.emitAndPersist(
         sessionId,
         turnId,
@@ -3739,6 +3765,7 @@ export class SessionService {
         userMessage: message,
         rawError: canvasSetupFailure,
       })) {
+        if (options.userMessageAlreadyPersisted === true && event.type === 'user_message') continue
         this.emitAndPersist(
           sessionId,
           turnId,
@@ -3917,6 +3944,7 @@ export class SessionService {
         : undefined
     const turnAgent = this.resolveAgent(options.agentId)
     executor.onEvent((event) => {
+      if (options.userMessageAlreadyPersisted === true && event.type === 'user_message') return
       if (
         !shouldAcceptSessionExecutorEvent({
           activeLoops: this.turnRegistry.activeLoops,
@@ -4219,20 +4247,22 @@ export class SessionService {
 
     const workspaceIssue = await getWorkspaceRootIssue(config.workspaceRootPath)
     if (workspaceIssue != null) {
-      this.emitAndPersist(
-        sessionId,
-        turnId,
-        {
-          ...makeBase(),
-          type: 'user_message',
-          content: message,
-          ...userMessagePresentation,
-          ...(sessionReferences != null && sessionReferences.length > 0
-            ? { sessionReferences }
-            : {}),
-        },
-        eventRepo,
-      )
+      if (options.userMessageAlreadyPersisted !== true) {
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeBase(),
+            type: 'user_message',
+            content: message,
+            ...userMessagePresentation,
+            ...(sessionReferences != null && sessionReferences.length > 0
+              ? { sessionReferences }
+              : {}),
+          },
+          eventRepo,
+        )
+      }
       this.emitAndPersist(
         sessionId,
         turnId,
@@ -4337,6 +4367,7 @@ export class SessionService {
         userMessage: message,
         rawError: canvasSetupFailure,
       })) {
+        if (options.userMessageAlreadyPersisted === true && event.type === 'user_message') continue
         this.emitAndPersist(
           sessionId,
           turnId,
@@ -4455,6 +4486,7 @@ export class SessionService {
     }
 
     executor.onEvent((event) => {
+      if (options.userMessageAlreadyPersisted === true && event.type === 'user_message') return
       if (
         !shouldAcceptSessionExecutorEvent({
           activeLoops: this.turnRegistry.activeLoops,

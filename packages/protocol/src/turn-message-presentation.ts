@@ -10,6 +10,8 @@ export type TurnSource =
 export type UserMessageVisibility = 'visible' | 'hidden'
 
 export interface UserMessagePresentation {
+  /** Renderer-generated id used to reconcile the optimistic bubble with the persisted event. */
+  clientMessageId?: string
   turnSource?: TurnSource
   userMessageVisibility?: UserMessageVisibility
   /**
@@ -57,6 +59,7 @@ export function pickUserMessagePresentation(
   value: UserMessagePresentation,
 ): UserMessagePresentation {
   return {
+    ...(value.clientMessageId != null ? { clientMessageId: value.clientMessageId } : {}),
     ...(value.turnSource != null ? { turnSource: value.turnSource } : {}),
     ...(value.userMessageVisibility != null
       ? { userMessageVisibility: value.userMessageVisibility }

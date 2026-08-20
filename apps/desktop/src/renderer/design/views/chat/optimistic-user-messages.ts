@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom'
 import type { UIMessage } from '../../services/event-mapper'
 import type { ComposerAttachment, ComposerSessionReference } from './ChatComposerTypes'
 import {
@@ -35,6 +36,7 @@ export interface OptimisticUserSendCallbacks {
 
 export interface OptimisticUserSendLifecycle {
   clientId: string
+  waitUntilVisible: () => Promise<void>
   commit: (turnId: string, started: boolean) => void
   fail: (error: string) => void
   cancel: () => void
@@ -65,12 +67,13 @@ export function startOptimisticUserSend(
     hiddenUntilStarted: input.hiddenUntilStarted === true,
     contentLength: input.content.length,
   })
-  callbacks.onBegin({ ...input, clientId, createdAt })
+  flushSync(() => callbacks.onBegin({ ...input, clientId, createdAt }))
   markOptimisticBeginReturned(clientId)
   let settled = false
 
   return {
     clientId,
+    waitUntilVisible: waitForVisiblePaint,
     commit: (turnId, started) => {
       if (settled) return
       settled = true
@@ -345,12 +348,18 @@ export function mergeOptimisticUserMessages(
       message.role === 'user' && message.turnId != null ? [message.turnId] : [],
     ),
   )
+  const persistedUserClientIds = new Set(
+    persistedMessages.flatMap((message) =>
+      message.role === 'user' && message.clientId != null ? [message.clientId] : [],
+    ),
+  )
   const pending = optimisticMessages
     .filter(
       (item) =>
         item.sessionId === sessionId &&
         item.hiddenUntilStarted !== true &&
         item.message.deliveryState !== 'queued' &&
+        !persistedUserClientIds.has(item.clientId) &&
         (item.turnId == null || !persistedUserTurnIds.has(item.turnId)),
     )
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -416,8 +425,28 @@ export function pruneAcknowledgedOptimisticUserMessages(
       message.role === 'user' && message.turnId != null ? [message.turnId] : [],
     ),
   )
+  const persistedUserClientIds = new Set(
+    persistedMessages.flatMap((message) =>
+      message.role === 'user' && message.clientId != null ? [message.clientId] : [],
+    ),
+  )
   return optimisticMessages.filter(
     (item) =>
-      item.sessionId !== sessionId || item.turnId == null || !persistedUserTurnIds.has(item.turnId),
+      item.sessionId !== sessionId ||
+      (!persistedUserClientIds.has(item.clientId) &&
+        (item.turnId == null || !persistedUserTurnIds.has(item.turnId))),
   )
+}
+
+/** React commit 后再让出一次浏览器绘制机会，避免后续同步准备工作遮住发送反馈。 */
+function waitForVisiblePaint(): Promise<void> {
+  if (typeof requestAnimationFrame !== 'function') return Promise.resolve()
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      setTimeout(resolve, 0)
+    })
+  })
 }

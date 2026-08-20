@@ -292,6 +292,8 @@ export interface SessionCreateResponse {
 export interface SessionSendTurnRequest {
   sessionId: SessionId
   message: string
+  /** Renderer-generated id for optimistic/persisted user-message reconciliation. */
+  clientMessageId?: string
   providerProfileId?: string
   modelId?: string | null
   agentAdapter?: SessionAgentAdapter

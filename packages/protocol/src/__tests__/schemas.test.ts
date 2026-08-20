@@ -197,6 +197,7 @@ describe('IPC schemas', () => {
     const request = SessionSendTurnRequestSchema.parse({
       sessionId: '00000000-0000-4000-8000-000000000002',
       message: 'hello',
+      clientMessageId: '00000000-0000-4000-8000-000000000123',
       providerProfileId: '00000000-0000-4000-8000-000000000001',
       modelId: 'claude-sonnet-4-20250514',
       agentId: 'review-agent',
@@ -208,6 +209,7 @@ describe('IPC schemas', () => {
     })
 
     expect(request).toMatchObject({
+      clientMessageId: '00000000-0000-4000-8000-000000000123',
       agentId: 'review-agent',
       agentAdapter: 'claude-sdk',
       permissionMode: 'claude-auto-edits',
@@ -461,7 +463,9 @@ describe('IPC schemas', () => {
       return (capability.paramSchema.properties as Record<string, Record<string, unknown>>)[name]
     }
 
-    expect(property('volcengine:doubao-seedream-5-0-pro-260628', 'image.generate', 'size')).toMatchObject({
+    expect(
+      property('volcengine:doubao-seedream-5-0-pro-260628', 'image.generate', 'size'),
+    ).toMatchObject({
       examples: ['2560x1440', '1440x2560', '2048x1536'],
       'x-allow-custom': true,
     })

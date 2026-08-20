@@ -251,6 +251,7 @@ export const SessionCreateRequestSchema = z.object({
 export const SessionSendTurnRequestSchema = z.object({
   sessionId: SessionIdSchema,
   message: z.string().min(1).max(100_000),
+  clientMessageId: z.string().uuid().optional(),
   providerProfileId: ProfileIdSchema.optional(),
   modelId: z.string().min(1).max(200).nullable().optional(),
   agentId: z.string().min(1).max(160).optional(),

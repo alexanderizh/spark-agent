@@ -34,6 +34,7 @@ describe('turn message presentation', () => {
     expect(
       pickUserMessagePresentation({
         ...SCHEDULED_TASK_TURN_PRESENTATION,
+        clientMessageId: '00000000-0000-4000-8000-000000000123',
         userMessageDisplayContent: 'Inspect the repository',
         workspaceRootPath: '/private/project',
         agentId: 'agent-1',
@@ -44,6 +45,7 @@ describe('turn message presentation', () => {
       }),
     ).toEqual({
       ...SCHEDULED_TASK_TURN_PRESENTATION,
+      clientMessageId: '00000000-0000-4000-8000-000000000123',
       userMessageDisplayContent: 'Inspect the repository',
     })
   })

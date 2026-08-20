@@ -1906,7 +1906,6 @@ export function ComposerV2({
                 content: text,
                 attachments: turnAttachments,
                 sessionReferences,
-                hiddenUntilStarted: isWorking,
                 ...(replySnapshot?.agentId != null
                   ? { mentionAgentId: replySnapshot.agentId }
                   : teamConfig.enabled &&
@@ -1919,10 +1918,12 @@ export function ComposerV2({
               optimisticUserSendCallbacks,
             )
             setSending(false)
+            await optimisticSend?.waitUntilVisible()
             await flushPendingRuntimePatch()
             const sendRes = await sendTurn({
               sessionId,
               message: text,
+              ...(optimisticSend != null ? { clientMessageId: optimisticSend.clientId } : {}),
               ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
               ...(sessionReferences.length > 0
                 ? {
@@ -2015,7 +2016,6 @@ export function ComposerV2({
             content: text,
             attachments: turnAttachments,
             sessionReferences,
-            hiddenUntilStarted: isWorking,
             ...(replySnapshot?.agentId != null
               ? { mentionAgentId: replySnapshot.agentId }
               : teamConfig.enabled &&
@@ -2027,11 +2027,13 @@ export function ComposerV2({
           },
           optimisticUserSendCallbacks,
         )
+        await optimisticSend?.waitUntilVisible()
         await flushPendingRuntimePatch()
         const requestAttachments = await prepareRequestAttachments()
         const res = await sendTurn({
           sessionId: targetSessionId,
           message: text,
+          ...(optimisticSend != null ? { clientMessageId: optimisticSend.clientId } : {}),
           ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
           ...(sessionReferences.length > 0
             ? {

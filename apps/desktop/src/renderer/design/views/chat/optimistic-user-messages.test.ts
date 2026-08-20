@@ -154,6 +154,29 @@ describe('optimistic user messages', () => {
     expect(failed[0]?.message.deliveryError).toBe('连接已断开')
   })
 
+  it('reconciles a persisted user message by client id before turn commit settles', () => {
+    const optimistic = createOptimisticUserMessage({
+      clientId: 'client-correlated',
+      sessionId: 'session-1',
+      content: 'hello',
+      createdAt: '2026-08-02T10:00:00.000Z',
+      attachments: [],
+    })
+    const persisted = {
+      ...optimistic.message,
+      id: 'persisted-1',
+      turnId: 'turn-1',
+      clientId: 'client-correlated',
+      deliveryState: undefined,
+      eventIds: ['event-1'],
+    }
+
+    expect(mergeOptimisticUserMessages([persisted], [optimistic], 'session-1')).toEqual([persisted])
+    expect(pruneAcknowledgedOptimisticUserMessages([optimistic], [persisted], 'session-1')).toEqual(
+      [],
+    )
+  })
+
   it('keeps queued turns out of the chat stream and removes explicit cancellations', () => {
     const optimistic = createOptimisticUserMessage({
       clientId: 'client-queue',

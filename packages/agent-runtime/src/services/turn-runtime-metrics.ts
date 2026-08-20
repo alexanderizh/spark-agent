@@ -101,6 +101,11 @@ export class TurnRuntimeMetricsTracker {
     this.requestSentAt ??= this.now()
   }
 
+  recordAdapterMetrics(metrics: TurnRuntimeMetrics): void {
+    this.mergePendingMetrics(metrics)
+    this.scheduleMetricsDelivery()
+  }
+
   observe(event: AgentEvent): void {
     if (
       !this.mcpReadyObserved &&

@@ -180,6 +180,43 @@ describe.each(ENGINES)('turn 管道生命周期基线（$adapter 引擎）', (en
     return terminal
   }
 
+  it('在引擎准备前持久化带 client id 的用户消息，并抑制 executor 重复事件', async () => {
+    queueFakeEngineScript({
+      events: [
+        { type: 'user_message', content: 'executor duplicate' },
+        { type: 'assistant_message', content: 'done', isFinal: true },
+      ],
+      terminalStatus: 'completed',
+    })
+    const submitted = await service.submitTurn({
+      sessionId,
+      message: 'visible immediately',
+      clientMessageId: '00000000-0000-4000-8000-000000000123',
+    })
+
+    expect(submitted).toMatchObject({ accepted: true, started: true })
+    await waitUntil(
+      () => loadPersistedEvents().some((entry) => entry.type === 'user_message'),
+      5000,
+      'authoritative user message',
+    )
+    const beforeTerminal = loadPersistedEvents().filter(
+      (entry) => entry.turnId === submitted.turnId && entry.type === 'user_message',
+    )
+    expect(beforeTerminal).toHaveLength(1)
+    expect(beforeTerminal[0]?.event).toMatchObject({
+      content: 'visible immediately',
+      clientMessageId: '00000000-0000-4000-8000-000000000123',
+    })
+
+    await waitForTurnTerminal(5000, submitted.turnId)
+    expect(
+      loadPersistedEvents().filter(
+        (entry) => entry.turnId === submitted.turnId && entry.type === 'user_message',
+      ),
+    ).toHaveLength(1)
+  })
+
   it('④ 队列推进：A 未结束 B 只入队，A 收尾后 B 自动起跑', async () => {
     queueFakeEngineScript({
       events: [{ type: 'assistant_message', content: 'a working', isFinal: false }],

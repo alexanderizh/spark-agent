@@ -638,6 +638,7 @@ export class MessageBuilder {
           usage: null,
           timestamp: event.timestamp,
           eventIds: [event.id],
+          ...(event.clientMessageId != null ? { clientId: event.clientMessageId } : {}),
           ...(event.mentionAgentId != null ? { mentionAgentId: event.mentionAgentId } : {}),
           ...(event.turnSource != null ? { turnSource: event.turnSource } : {}),
           ...(event.userMessageVisibility != null

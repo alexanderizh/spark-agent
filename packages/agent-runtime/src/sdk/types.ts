@@ -10,7 +10,12 @@
  */
 
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages'
-import type { HookNode, SessionPermissionMode, UserQuestionPrompt } from '@spark/protocol'
+import type {
+  HookNode,
+  SessionPermissionMode,
+  TurnRuntimeMetrics,
+  UserQuestionPrompt,
+} from '@spark/protocol'
 import type { SparkReasoningEffort } from './reasoning-effort.js'
 
 // ── SDK Message Types ───────────────────────────────────────────────────────
@@ -770,7 +775,11 @@ export interface SDKExecutorConfig {
   enableCheckpoints?: boolean | undefined
   sdkSessionId?: string | undefined
   continueSession?: boolean | undefined
+  /** Stable renderer id forwarded to app-server as turn/start.clientUserMessageId. */
+  clientUserMessageId?: string | undefined
   invocationObserver?: ((snapshot: SDKInvocationSnapshot) => void) | undefined
+  /** Adapter-specific observable phase metrics; merged into the turn metrics stream. */
+  runtimeMetricsObserver?: ((metrics: TurnRuntimeMetrics) => void) | undefined
   approvalCallback?:
     | ((
         sessionId: string,

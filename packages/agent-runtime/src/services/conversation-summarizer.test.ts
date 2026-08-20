@@ -139,6 +139,22 @@ describe('ConversationHistory', () => {
       expect(result.prompt).not.toContain('Earlier Summary')
     })
 
+    it('excludes an already-persisted current turn from its own history prompt', () => {
+      const events: AgentEvent[] = [
+        userMsg('t1', 'Earlier request', 1),
+        assistantMsg('t1', 'Earlier answer', 2),
+        userMsg('t2', 'Current request must appear only as direct model input', 3),
+      ]
+      const mockEventRepo = {
+        queryDialogueEvents: () => dialogueRows(events),
+      } as any
+
+      const result = buildConversationHistory(mockEventRepo, 's1', { excludeTurnId: 't2' })
+      expect(result.prompt).toContain('Earlier request')
+      expect(result.prompt).toContain('Earlier answer')
+      expect(result.prompt).not.toContain('Current request must appear only as direct model input')
+    })
+
     it('preserves attachment ledger from turn snapshots during history recovery', () => {
       const events: AgentEvent[] = [
         userMsg('t1', 'Use the attached report to make a deck', 1),

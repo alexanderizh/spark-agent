@@ -3,6 +3,28 @@ import { describe, expect, it, vi } from 'vitest'
 import { measureDeclaredToolSchemas, TurnRuntimeMetricsTracker } from './turn-runtime-metrics.js'
 
 describe('TurnRuntimeMetricsTracker', () => {
+  it('merges adapter lifecycle phases into the metrics stream immediately', () => {
+    const emit = vi.fn()
+    const scheduled: Array<() => void> = []
+    const tracker = new TurnRuntimeMetricsTracker({
+      emit,
+      schedule: (task) => scheduled.push(task),
+    })
+
+    tracker.recordAdapterMetrics({
+      appServerSpawnMs: 12,
+      appServerInitializeMs: 80,
+      appServerThreadMode: 'start',
+    })
+    expect(emit).not.toHaveBeenCalled()
+    scheduled[0]?.()
+    expect(emit).toHaveBeenCalledWith({
+      appServerSpawnMs: 12,
+      appServerInitializeMs: 80,
+      appServerThreadMode: 'start',
+    })
+  })
+
   it('measures request-to-MCP and first-output latency once, then forwards usage snapshots', () => {
     const emit = vi.fn()
     const ticks = [0, 100, 140, 180, 220]

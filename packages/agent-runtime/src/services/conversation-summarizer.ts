@@ -60,6 +60,8 @@ export function buildConversationHistory(
      * 失败并切换 fresh session 时才使用 recoveryPrompt。
      */
     deferForSdkResume?: boolean
+    /** Excludes an already-persisted current turn from the history injected into that same turn. */
+    excludeTurnId?: string
   },
 ): { prompt: string | undefined; recoveryPrompt?: string } {
   const historyTokenBudget = Math.max(
@@ -70,7 +72,9 @@ export function buildConversationHistory(
     200,
     Math.floor(options?.entryTokenBudget ?? DEFAULT_ENTRY_TOKEN_BUDGET),
   )
-  const allEvents = loadDialogueEvents(eventRepo, sessionId)
+  const allEvents = loadDialogueEvents(eventRepo, sessionId).filter(
+    (event) => event.turnId !== options?.excludeTurnId,
+  )
   const capsule = parseStoredCapsule(options?.continuitySummary?.summaryText)
   const summaryBoundary = options?.continuitySummary?.summarizedToSeq
   const exactEvents =
