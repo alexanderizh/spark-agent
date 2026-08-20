@@ -978,8 +978,10 @@ function ProvidersView() {
       .finally(() => setLoading(false))
   }, [listModels, listProviders])
 
-  const { refreshPlatformCatalog } = usePlatformModelCatalogRefresh(refresh)
-  useRefreshable(refreshPlatformCatalog)
+  // Provider 管理页的刷新只负责重读本地配置；平台模型目录同步是可选的后台任务，
+  // 不能让未登录平台账号或目录服务异常阻断普通 Provider 的刷新。
+  usePlatformModelCatalogRefresh(refresh)
+  useRefreshable(refresh)
 
   useEffect(() => {
     return (
@@ -1275,7 +1277,7 @@ function ProvidersView() {
               shape="circle"
               type="text"
               icon={loading ? <Icons.Spinner size={12} /> : <Icons.Refresh />}
-              onClick={() => void refreshPlatformCatalog()}
+              onClick={refresh}
               title="刷新 (Ctrl+R)"
               aria-label="刷新"
             />

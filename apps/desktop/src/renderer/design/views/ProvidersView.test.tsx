@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  default as ProvidersView,
   ProviderEditPanel,
   resolveCodexApiKind,
   resolveProviderCardKind,
@@ -168,6 +169,18 @@ vi.mock('../components/Toast', () => ({
   useToast: () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }),
 }))
 
+vi.mock('../AppContext', () => ({
+  useApp: () => ({
+    requestConfirm: vi.fn(),
+    setTweak: vi.fn(),
+    t: { showProviderEdit: false },
+  }),
+}))
+
+vi.mock('./platform-model/usePlatformModelCatalogRefresh', () => ({
+  usePlatformModelCatalogRefresh: () => ({ refreshPlatformCatalog: vi.fn() }),
+}))
+
 vi.mock('../hooks/useIpc', () => ({
   useIpcInvoke: (channel: string) => {
     if (!mocks.invokers.has(channel)) {
@@ -196,6 +209,30 @@ describe('ProviderEditPanel progressive configuration', () => {
     if (root) act(() => root?.unmount())
     root = null
     container.remove()
+  })
+
+  it('refreshes local provider data without requiring platform catalog access', async () => {
+    const listProviders = vi.fn(async () => ({ profiles: [] }))
+    const listModels = vi.fn(async () => ({ models: [] }))
+    mocks.invokers.set('provider:list', listProviders)
+    mocks.invokers.set('model:list', listModels)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<ProvidersView />)
+    })
+
+    const refreshButton = container.querySelector('button[aria-label="刷新"]')
+    expect(refreshButton).not.toBeNull()
+
+    await act(async () => {
+      refreshButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
+
+    expect(listProviders).toHaveBeenCalledWith({ includeDisabled: true })
+    expect(listModels).toHaveBeenCalledWith({})
+    expect(mocks.invokers.has('platform-model:refresh-catalog')).toBe(false)
   })
 
   it('echoes the saved key but only sends it back after the user edits it', async () => {
