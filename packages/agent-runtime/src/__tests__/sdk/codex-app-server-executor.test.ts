@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
 import { CodexAppServerExecutor } from '../../sdk/codex-app-server/codex-app-server-executor.js'
 import type { CodexAppServerExecutorOptions } from '../../sdk/codex-app-server/codex-app-server-executor.js'
+import { CodexAppServerRuntimeSupervisor } from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
 import type { EngineExecutor } from '../../sdk/engine-executor.js'
 import { isCompactCapable, isSteerCapable } from '../../sdk/engine-executor.js'
 import type { SDKExecutorConfig, SDKTurnAttachment } from '../../sdk/types.js'
@@ -213,6 +214,33 @@ describe('CodexAppServerExecutor', () => {
     expect(
       journal.find((entry) => entry.kind === 'request' && entry.method === 'turn/start')?.params,
     ).toMatchObject({ clientUserMessageId: '00000000-0000-4000-8000-000000000123' })
+  })
+
+  it('turn/start 显式下发当前审批 reviewer、网络与额外 writable roots', async () => {
+    const { journal, error } = await runScenario(
+      { steps: [agentMessageCompletedStep('ok')] },
+      {
+        config: {
+          permissionMode: 'codex-auto-review',
+          networkAccessEnabled: true,
+          additionalDirectories: ['/workspace/shared'],
+        },
+      },
+    )
+    expect(error).toBeNull()
+    expect(
+      journal.find((entry) => entry.kind === 'request' && entry.method === 'turn/start')?.params,
+    ).toMatchObject({
+      approvalPolicy: 'on-request',
+      approvalsReviewer: 'auto_review',
+      sandboxPolicy: {
+        type: 'workspaceWrite',
+        writableRoots: ['/workspace/shared'],
+        networkAccess: true,
+        excludeTmpdirEnvVar: false,
+        excludeSlashTmp: false,
+      },
+    })
   })
 
   it('reports app-server prepare and turn-start phase metrics', async () => {
@@ -511,6 +539,36 @@ describe('CodexAppServerExecutor', () => {
     expect(eventsOf(events, 'user_message')).toHaveLength(0)
   })
 
+  it('fresh native thread 持久化失败时在 turn/start 前回退并注入备用历史', async () => {
+    const supervisor = new CodexAppServerRuntimeSupervisor({ idleTtlMs: 60_000 })
+    const fallback = new FakeEngineExecutor({ terminalStatus: 'completed' })
+    try {
+      const { journal, error } = await runScenario(
+        { steps: [agentMessageCompletedStep('must not run')] },
+        {
+          config: {
+            codexNativeThreadBindingKey: 'binding-persistence-failure',
+            codexNativeThreadBindingObserver: () => {
+              throw new Error('database unavailable')
+            },
+            resumeFallbackSystemPrompt: 'RECOVERY_HISTORY',
+          },
+          executor: {
+            runtimeSupervisor: supervisor,
+            createFallback: () => fallback,
+          },
+        },
+      )
+
+      expect(error).toBeNull()
+      expect(journal.some((entry) => entry.method === 'thread/start')).toBe(true)
+      expect(journal.some((entry) => entry.method === 'turn/start')).toBe(false)
+      expect(fallback.record?.config.systemPrompt).toContain('RECOVERY_HISTORY')
+    } finally {
+      await supervisor.dispose()
+    }
+  })
+
   it('图片附件：直接走 Sdk 载具（不 spawn app-server）', async () => {
     const attachments: SDKTurnAttachment[] = [{ type: 'image', path: '/tmp/x.png', name: 'x.png' }]
     const fallback = new FakeEngineExecutor({ terminalStatus: 'completed' })
@@ -729,6 +787,34 @@ describe('CodexAppServerExecutor', () => {
         code: 'CODEX_SDK_ITEM_ERROR',
         message: 'tool exploded',
         retryable: true,
+      })
+    })
+
+    it('Skills 上下文预算裁剪告警不会被映射成执行失败', async () => {
+      const { events, error } = await runScenario({
+        steps: [
+          {
+            kind: 'notify',
+            method: 'item/completed',
+            params: {
+              threadId: THREAD_ID,
+              turnId: 'server-turn-1',
+              item: {
+                type: 'error',
+                id: 'skills-budget-warning-1',
+                message:
+                  'Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.',
+              },
+            },
+          },
+          agentMessageCompletedStep('continued normally'),
+        ],
+      })
+
+      expect(error).toBeNull()
+      expect(eventsOf(events, 'agent_error')).toHaveLength(0)
+      expect(eventsOf(events, 'assistant_message').at(-1)).toMatchObject({
+        content: 'continued normally',
       })
     })
 
@@ -973,7 +1059,7 @@ describe('CodexAppServerExecutor', () => {
         input: [{ type: 'text', text: '补充要求：改用中文回答' }],
       })
       expect((steerRequest?.params as { expectedTurnId?: string })?.expectedTurnId).toBe(
-        'fake-turn-1',
+        'server-turn-1',
       )
     })
 

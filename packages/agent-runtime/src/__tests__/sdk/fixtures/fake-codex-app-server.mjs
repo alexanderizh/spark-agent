@@ -38,7 +38,7 @@ import { createInterface } from 'node:readline'
 const [, , scenarioPath, journalPath] = process.argv
 const scenario = JSON.parse(readFileSync(scenarioPath, 'utf8'))
 const THREAD_ID = 'fake-thread-1'
-const TURN_ID = 'fake-turn-1'
+const TURN_ID = 'server-turn-1'
 
 function journal(entry) {
   appendFileSync(journalPath, `${JSON.stringify(entry)}\n`)

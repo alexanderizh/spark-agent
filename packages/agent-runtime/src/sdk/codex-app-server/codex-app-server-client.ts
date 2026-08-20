@@ -115,9 +115,14 @@ export class CodexAppServerClient {
     })
 
     child.on('error', (err) => {
+      if (this.exited) return
+      this.exited = true
+      this.exitInfo = { code: null, signal: null }
       this.failPending(new Error(`codex app-server process error: ${err.message}`))
+      this.options.onExit?.(null, null, this.stderrTail())
     })
     child.on('exit', (code, signal) => {
+      if (this.exited) return
       this.exited = true
       this.exitInfo = { code, signal }
       this.failPending(new CodexAppServerProcessExitedError(code, signal, this.stderrTail()))

@@ -167,6 +167,26 @@ describe.each(ENGINES)('turn 管道生命周期基线（$adapter 引擎）', (en
     })
   }
 
+  function seedInterruptedTurn(turnId: string, content: string): void {
+    const event: AgentEvent = {
+      id: `user-${turnId}`,
+      type: 'user_message',
+      sessionId,
+      turnId,
+      timestamp: '2026-08-21T00:00:00.000Z',
+      seq: 0,
+      content,
+    }
+    eventRepo.insert({
+      id: event.id,
+      sessionId,
+      turnId,
+      eventType: event.type,
+      eventJson: JSON.stringify(event),
+    })
+    new SessionRepository(db).updateStatus(sessionId, 'running')
+  }
+
   async function waitForTurnTerminal(timeoutMs = 5000, turnId?: string): Promise<PersistedEvent> {
     const isTerminal = (entry: PersistedEvent): boolean =>
       entry.type === 'agent_status' &&
@@ -215,6 +235,32 @@ describe.each(ENGINES)('turn 管道生命周期基线（$adapter 引擎）', (en
         (entry) => entry.turnId === submitted.turnId && entry.type === 'user_message',
       ),
     ).toHaveLength(1)
+  })
+
+  it('队列查询会收口没有执行所有权的持久化 running', () => {
+    const turnId = 'ghost-turn-queue-state'
+    seedInterruptedTurn(turnId, 'stale turn')
+
+    expect(service.getQueueState({ sessionId })).toMatchObject({
+      sessionId,
+      running: false,
+    })
+    expect(new SessionRepository(db).get(sessionId)?.status).toBe('idle')
+    expect(
+      loadPersistedEvents().some(
+        (entry) =>
+          entry.turnId === turnId &&
+          entry.type === 'agent_status' &&
+          (entry.event as { status?: unknown }).status === 'cancelled',
+      ),
+    ).toBe(true)
+  })
+
+  it('停止入口将持久化 ghost running 视为成功收口', async () => {
+    seedInterruptedTurn('ghost-turn-cancel', 'stale cancel turn')
+
+    await expect(service.cancelTurn(sessionId)).resolves.toEqual({ cancelled: true })
+    expect(new SessionRepository(db).get(sessionId)?.status).toBe('idle')
   })
 
   it('④ 队列推进：A 未结束 B 只入队，A 收尾后 B 自动起跑', async () => {

@@ -760,13 +760,15 @@ export interface TurnRuntimeMetrics {
   requestToFirstOutputMs?: number
   firstOutputKind?: 'delta' | 'complete'
   /** Codex App Server lifecycle phases; absent for other transports or unobserved phases. */
+  appServerAcquireMs?: number
+  appServerRuntimeWarm?: boolean
   appServerSpawnMs?: number
   appServerInitializeMs?: number
   appServerThreadResumeMs?: number
   appServerThreadStartMs?: number
   appServerPrepareMs?: number
   appServerTurnStartMs?: number
-  appServerThreadMode?: 'resume' | 'start' | 'resume-fallback-start'
+  appServerThreadMode?: 'loaded' | 'resume' | 'start' | 'resume-fallback-start'
   appServerFallback?: boolean
   /** SDK init 回报的可用工具总数（含内置工具，不等同于 schema token）。 */
   availableToolCount?: number

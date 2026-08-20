@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SDKExecutorConfig } from '../../../sdk/index.js'
 import {
   ClaudeSDKExecutor,
@@ -45,6 +45,14 @@ describe('EngineRegistry', () => {
     }
     registry.register(stub)
     expect(registry.get('codex')).toBe(stub)
+  })
+
+  it('dispose handler 只执行一次，重复 dispose 幂等', async () => {
+    const registry = new EngineRegistry()
+    const dispose = vi.fn(async () => undefined)
+    registry.registerDisposeHandler(dispose)
+    await Promise.all([registry.dispose(), registry.dispose()])
+    expect(dispose).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -98,7 +106,7 @@ describe('createCodexExecutorForConfig（原 session.service 工厂等价迁移�
 })
 
 describe('能力声明与可用性检查', () => {
-  it('claude：四能力全开；codex：四能力全关（P1 声明面，W2 消费）', () => {
+  it('claude：四能力全开；codex 默认关闭原生 resume 灰度能力', () => {
     const registry = createDefaultEngineRegistry()
     expect(registry.get('claude-sdk').capabilities).toEqual({
       nativeResume: true,
@@ -112,6 +120,11 @@ describe('能力声明与可用性检查', () => {
       checkpointRewind: false,
       subagentTool: false,
     })
+  })
+
+  it('持久 Codex runtime 开启时如实声明 native resume', () => {
+    const registry = createDefaultEngineRegistry({ persistentCodexRuntime: true })
+    expect(registry.get('codex').capabilities.nativeResume).toBe(true)
   })
 
   it('checkAvailability 返回契约形状；codex 现状恒可用（无二进制预检）', async () => {

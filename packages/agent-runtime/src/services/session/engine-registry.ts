@@ -8,6 +8,8 @@ import {
 } from '../../sdk/index.js'
 import type { SDKExecutorConfig } from '../../sdk/index.js'
 import type { EngineExecutor, EngineKind } from '../../sdk/engine-executor.js'
+import { CodexAppServerRuntimeSupervisor } from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
+import { isPersistentCodexRuntimeEnabled } from '../../sdk/codex-app-server/codex-app-server-runtime.js'
 import { resolveEngineKind } from './engine-kinds.js'
 
 /**
@@ -50,6 +52,8 @@ export interface EngineDescriptor {
 
 export class EngineRegistry {
   private readonly descriptors = new Map<EngineKind, EngineDescriptor>()
+  private readonly disposeHandlers = new Set<() => void | Promise<void>>()
+  private disposePromise: Promise<void> | null = null
 
   register(descriptor: EngineDescriptor): void {
     this.descriptors.set(descriptor.kind, descriptor)
@@ -68,6 +72,18 @@ export class EngineRegistry {
   resolveExecutor(adapter: SessionAgentAdapter, config: SDKExecutorConfig): EngineExecutor {
     return this.get(resolveEngineKind(adapter)).createExecutor(config)
   }
+
+  registerDisposeHandler(handler: () => void | Promise<void>): void {
+    this.disposeHandlers.add(handler)
+  }
+
+  async dispose(): Promise<void> {
+    if (this.disposePromise != null) return this.disposePromise
+    this.disposePromise = Promise.allSettled(
+      [...this.disposeHandlers].map((handler) => Promise.resolve().then(handler)),
+    ).then(() => undefined)
+    return this.disposePromise
+  }
 }
 
 /**
@@ -81,6 +97,7 @@ export class EngineRegistry {
  */
 export function createCodexExecutorForConfig(
   config: Pick<SDKExecutorConfig, 'useLocalConfig' | 'codexApiKind' | 'codexCliProvider'>,
+  options: { runtimeSupervisor?: CodexAppServerRuntimeSupervisor | undefined } = {},
 ): CodexCliExecutor | CodexOpenAIExecutor | CodexAppServerExecutor {
   if (config.useLocalConfig === true) return new CodexCliExecutor()
   if (config.codexApiKind === 'chat') {
@@ -89,7 +106,9 @@ export function createCodexExecutorForConfig(
   if (config.codexApiKind == null && config.codexCliProvider?.wireApi === 'chat') {
     return new CodexOpenAIExecutor()
   }
-  return new CodexAppServerExecutor()
+  return options.runtimeSupervisor == null
+    ? new CodexAppServerExecutor()
+    : new CodexAppServerExecutor({ runtimeSupervisor: options.runtimeSupervisor })
 }
 
 const claudeEngineDescriptor: EngineDescriptor = {
@@ -111,22 +130,40 @@ const claudeEngineDescriptor: EngineDescriptor = {
         },
 }
 
-const codexEngineDescriptor: EngineDescriptor = {
-  kind: 'codex',
-  createExecutor: (config) => createCodexExecutorForConfig(config),
-  capabilities: {
-    nativeResume: false,
-    permissionHotSwitch: false,
-    checkpointRewind: false,
-    subagentTool: false,
-  },
-  // codex 路径现状无 SDK/CLI 二进制预检（仅 workspace 路径校验留在流程内），如实声明恒可用。
-  checkAvailability: async () => ({ available: true }),
+function createCodexEngineDescriptor(
+  runtimeSupervisor?: CodexAppServerRuntimeSupervisor,
+): EngineDescriptor {
+  return {
+    kind: 'codex',
+    createExecutor: (config) => createCodexExecutorForConfig(config, { runtimeSupervisor }),
+    capabilities: {
+      nativeResume: runtimeSupervisor != null,
+      permissionHotSwitch: false,
+      checkpointRewind: false,
+      subagentTool: false,
+    },
+    // codex 路径现状无 SDK/CLI 二进制预检（仅 workspace 路径校验留在流程内），如实声明恒可用。
+    checkAvailability: async () => ({ available: true }),
+  }
 }
 
-export function createDefaultEngineRegistry(): EngineRegistry {
+export interface DefaultEngineRegistryOptions {
+  persistentCodexRuntime?: boolean | undefined
+  runtimeSupervisor?: CodexAppServerRuntimeSupervisor | undefined
+}
+
+export function createDefaultEngineRegistry(
+  options: DefaultEngineRegistryOptions = {},
+): EngineRegistry {
   const registry = new EngineRegistry()
+  const persistentCodexRuntime = options.persistentCodexRuntime ?? isPersistentCodexRuntimeEnabled()
+  const runtimeSupervisor = persistentCodexRuntime
+    ? (options.runtimeSupervisor ?? new CodexAppServerRuntimeSupervisor())
+    : undefined
   registry.register(claudeEngineDescriptor)
-  registry.register(codexEngineDescriptor)
+  registry.register(createCodexEngineDescriptor(runtimeSupervisor))
+  if (runtimeSupervisor != null) {
+    registry.registerDisposeHandler(() => runtimeSupervisor.dispose())
+  }
   return registry
 }

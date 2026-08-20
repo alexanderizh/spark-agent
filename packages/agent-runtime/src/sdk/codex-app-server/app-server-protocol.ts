@@ -64,6 +64,16 @@ export interface AppServerInitializeParams {
 export type AppServerSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 export type AppServerApprovalPolicy = 'untrusted' | 'on-request' | 'never'
 export type AppServerApprovalsReviewer = 'user' | 'auto_review' | 'guardian_subagent'
+export type AppServerSandboxPolicy =
+  | { type: 'dangerFullAccess' }
+  | { type: 'readOnly'; networkAccess: boolean }
+  | {
+      type: 'workspaceWrite'
+      writableRoots: string[]
+      networkAccess: boolean
+      excludeTmpdirEnvVar: boolean
+      excludeSlashTmp: boolean
+    }
 
 /** thread/start 与 thread/resume 共享的会话级参数（resume 另需 threadId）。 */
 export interface AppServerThreadParamsBase {
@@ -86,6 +96,10 @@ export interface AppServerTurnStartParams {
   threadId: string
   clientUserMessageId?: string | null | undefined
   input: AppServerUserInput[]
+  /** 0.149.0 官方 turn 级覆盖；同时作用于当前 turn 与后续 turn。 */
+  approvalPolicy?: AppServerApprovalPolicy | null | undefined
+  approvalsReviewer?: AppServerApprovalsReviewer | null | undefined
+  sandboxPolicy?: AppServerSandboxPolicy | null | undefined
   effort?: string | undefined
 }
 

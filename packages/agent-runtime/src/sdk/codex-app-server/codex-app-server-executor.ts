@@ -24,6 +24,7 @@ import {
   stringifyEnv,
 } from '../codex-sdk-executor.js'
 import type {
+  CodexNativeThreadBinding,
   SDKApprovalResult,
   SDKExecutorConfig,
   SDKPermissionRequestContext,
@@ -34,10 +35,17 @@ import type {
   AppServerTurnStartParams,
   JsonRpcErrorShape,
 } from './app-server-protocol.js'
+import { CodexAppServerClient } from './codex-app-server-client.js'
+import { CodexAppServerRouter, type CodexAppServerRoute } from './codex-app-server-router.js'
 import {
-  CodexAppServerClient,
-  CodexAppServerProcessExitedError,
-} from './codex-app-server-client.js'
+  CodexAppServerRuntime,
+  createCodexAppServerRuntimeFingerprint,
+  createCodexAppServerThreadFingerprint,
+} from './codex-app-server-runtime.js'
+import {
+  CodexAppServerRuntimeSupervisor,
+  type CodexRuntimeLease,
+} from './codex-runtime-supervisor.js'
 
 /**
  * codex 引擎的 app-server 载具（流式修复主路径）。
@@ -74,6 +82,8 @@ export interface CodexAppServerExecutorOptions {
   handshakeTimeoutMs?: number | undefined
   /** stdout 解析 / 通知处理链异常的兜底出口（不致命，但不应静默）。 */
   onProtocolError?: ((error: Error) => void) | undefined
+  /** 由 EngineRegistry 注入；缺省保持旧的每-turn runtime，便于测试和回滚。 */
+  runtimeSupervisor?: CodexAppServerRuntimeSupervisor | undefined
 }
 
 /** 单个 turn 的流式累积状态（delta 原生，无需前缀切片推断）。 */
@@ -211,9 +221,15 @@ export class CodexAppServerExecutor
       return
     }
 
-    let prepared: { client: CodexAppServerClient; threadId: string } | null = null
+    let prepared: {
+      client: CodexAppServerClient
+      router: CodexAppServerRouter
+      lease: CodexRuntimeLease
+      threadId: string
+      resumedThread: boolean
+    } | null = null
     try {
-      prepared = await this.prepareSession(config)
+      prepared = await this.prepareSession(sessionId, config)
     } catch (err) {
       if (err instanceof CodexRuntimeNotInstalledError) throw err
     }
@@ -223,11 +239,11 @@ export class CodexAppServerExecutor
     }
     if (this.cancelRequested) {
       // cancel 在握手期间到达：session.service 已补发取消终态，这里静默收尾。
-      await prepared.client.dispose().catch(() => undefined)
+      await prepared.lease.release().catch(() => undefined)
       return
     }
 
-    const { client, threadId } = prepared
+    const { client, router, threadId, resumedThread } = prepared
     this.activeSessionId = sessionId
     this.activeSparkTurnId = turnId
     this.activeConfig = config
@@ -253,7 +269,11 @@ export class CodexAppServerExecutor
       seq: 0,
     })
 
-    const prompt = buildCodexSdkPrompt(buildCodexGoalPrompt(userMessage, config), config)
+    const promptConfig = resumedThread ? config : withResumeFallbackSystemPrompt(config)
+    const prompt = buildCodexSdkPrompt(
+      buildCodexGoalPrompt(userMessage, promptConfig),
+      promptConfig,
+    )
     this.emit({
       ...makeBase(),
       type: 'user_message',
@@ -300,14 +320,24 @@ export class CodexAppServerExecutor
     // TS 不跨闭包收窄可变捕获变量——经声明返回类型的读取器取值。
     const readOutcome = (): TurnOutcome | null => turnOutcome
     const readFailure = (): Error | null => processFailure
+    let route: CodexAppServerRoute | null = null
+    let invalidateRuntime = false
 
     try {
+      route = router.registerThread(threadId, {
+        onNotification: (method, params) => this.dispatchNotification(method, params),
+        onServerRequest: (method, params, respond, reject) => {
+          this.handleServerRequest(method, params, respond, reject, config)
+        },
+        onTransportFailure: (error) => this.processFailureResolver?.(error),
+      })
       const turnParams: AppServerTurnStartParams = {
         threadId,
         ...(config.clientUserMessageId != null
           ? { clientUserMessageId: config.clientUserMessageId }
           : {}),
         input: [{ type: 'text', text: prompt }],
+        ...buildAppServerTurnPermissionParams(config),
       }
       const effort = toCodexReasoningEffort(config.reasoningEffort)
       if (effort != null) turnParams.effort = effort
@@ -318,6 +348,9 @@ export class CodexAppServerExecutor
           clientUserMessageId: turnParams.clientUserMessageId ?? null,
           input: turnParams.input,
           effort: turnParams.effort ?? null,
+          approvalPolicy: turnParams.approvalPolicy ?? null,
+          approvalsReviewer: turnParams.approvalsReviewer ?? null,
+          sandboxPolicy: turnParams.sandboxPolicy ?? null,
           threadParams: sanitizeThreadParamsForDiagnostics(this.lastThreadParams),
         },
       })
@@ -331,9 +364,11 @@ export class CodexAppServerExecutor
         })
       }
       const serverTurnId = turnResponse.turn?.id
-      if (typeof serverTurnId === 'string' && serverTurnId.length > 0) {
-        this.activeServerTurnId = serverTurnId
+      if (typeof serverTurnId !== 'string' || serverTurnId.length === 0) {
+        throw new Error('codex app-server turn/start returned no turn id')
       }
+      this.activeServerTurnId = serverTurnId
+      route.bindTurn(serverTurnId)
       if (this.cancelRequested) {
         // cancel 在 turn/start 返回前到达且尚未拿到 turnId：杀进程，
         // 进程退出会触发 processFailure / pending reject，进入下方取消收尾。
@@ -398,6 +433,7 @@ export class CodexAppServerExecutor
         status: 'completed',
       })
     } catch (err) {
+      invalidateRuntime = true
       const aborted = this.cancelRequested
       for (const event of streamTerminalizer.finalize(makeBase)) this.emit(event)
       this.emit({
@@ -425,6 +461,7 @@ export class CodexAppServerExecutor
         this.interruptWatchdog = null
       }
       for (const controller of this.pendingApprovals) controller.abort()
+      route?.close()
       this.turnResolver = null
       this.processFailureResolver = null
       this.activeConfig = null
@@ -433,15 +470,24 @@ export class CodexAppServerExecutor
       this.activeServerTurnId = null
       this.currentState = null
       if (this.streamTerminalizer === streamTerminalizer) this.streamTerminalizer = null
-      await client.dispose().catch(() => undefined)
+      await prepared.lease
+        .release({ invalidate: invalidateRuntime || client.hasExited })
+        .catch(() => undefined)
     }
   }
 
   // ── prepare / fallback ────────────────────────────────────────────────────
 
   private async prepareSession(
+    sessionId: string,
     config: SDKExecutorConfig,
-  ): Promise<{ client: CodexAppServerClient; threadId: string } | null> {
+  ): Promise<{
+    client: CodexAppServerClient
+    router: CodexAppServerRouter
+    lease: CodexRuntimeLease
+    threadId: string
+    resumedThread: boolean
+  } | null> {
     const prepareStartedAt = performance.now()
     const lifecycleMetrics: TurnRuntimeMetrics = {}
     const publishLifecycleMetrics = (patch: TurnRuntimeMetrics = {}): void => {
@@ -467,47 +513,110 @@ export class CodexAppServerExecutor
       pathDirs = bundled.pathDirs
     }
     const env = this.options.env ?? buildAppServerEnv(config, pathDirs)
-    const spawnStartedAt = performance.now()
-    const client = CodexAppServerClient.spawn({
+    const runtimeFingerprint = createCodexAppServerRuntimeFingerprint({
       executablePath,
       args: this.options.args,
       env,
-      onProtocolError: this.options.onProtocolError,
-      onNotification: (method, params) => {
-        this.dispatchNotification(method, params)
-      },
-      onServerRequest: (method, params, respond, reject) => {
-        this.handleServerRequest(method, params, respond, reject, config)
-      },
-      onExit: (code, signal, stderrTail) => {
-        this.processFailureResolver?.(
-          new CodexAppServerProcessExitedError(code, signal, stderrTail),
-        )
-      },
     })
+    let lease: CodexRuntimeLease | null = null
     try {
-      await client.waitUntilSpawned(this.options.handshakeTimeoutMs ?? 15_000)
-      lifecycleMetrics.appServerSpawnMs = roundedElapsed(spawnStartedAt)
-      const initializeStartedAt = performance.now()
-      await client.initialize(APP_SERVER_CLIENT_INFO, this.options.handshakeTimeoutMs ?? 15_000)
-      lifecycleMetrics.appServerInitializeMs = roundedElapsed(initializeStartedAt)
+      const createRuntime = () =>
+        CodexAppServerRuntime.start({
+          executablePath,
+          args: this.options.args,
+          env,
+          clientInfo: APP_SERVER_CLIENT_INFO,
+          handshakeTimeoutMs: this.options.handshakeTimeoutMs,
+          onProtocolError: this.options.onProtocolError,
+        })
+      const acquireStartedAt = performance.now()
+      if (this.options.runtimeSupervisor != null) {
+        const runtimeLeaseKey = config.codexRuntimeLeaseKey?.trim() || sessionId
+        lease = await this.options.runtimeSupervisor.acquire(
+          runtimeLeaseKey,
+          runtimeFingerprint,
+          createRuntime,
+        )
+      } else {
+        const runtime = await createRuntime()
+        let released = false
+        lease = {
+          runtime,
+          warm: false,
+          release: async () => {
+            if (released) return
+            released = true
+            await runtime.dispose()
+          },
+        }
+      }
+      lifecycleMetrics.appServerAcquireMs = roundedElapsed(acquireStartedAt)
+      lifecycleMetrics.appServerRuntimeWarm = lease.warm
+      if (!lease.warm) {
+        lifecycleMetrics.appServerSpawnMs = lease.runtime.startupMetrics.spawnMs
+        lifecycleMetrics.appServerInitializeMs = lease.runtime.startupMetrics.initializeMs
+      }
+      const { client, router } = lease.runtime
       const threadParams = buildAppServerThreadParams(config)
+      const threadFingerprint = createCodexAppServerThreadFingerprint(threadParams)
       this.lastThreadParams = threadParams
+      const bindingKey =
+        this.options.runtimeSupervisor != null && config.codexNativeThreadBindingKey != null
+          ? config.codexNativeThreadBindingKey.trim()
+          : ''
+      if (bindingKey.length > 0) {
+        const loadedThreadId = lease.runtime.findLoadedThread(bindingKey, threadFingerprint)
+        if (loadedThreadId != null) {
+          lifecycleMetrics.appServerThreadMode = 'loaded'
+          publishLifecycleMetrics()
+          return {
+            client,
+            router,
+            lease,
+            threadId: loadedThreadId,
+            resumedThread: true,
+          }
+        }
+      }
       let resumeFailed = false
-      if (config.sdkSessionId != null && config.continueSession === true) {
+      const persistedBinding = config.codexNativeThreadBindings?.find(
+        (binding) =>
+          binding.bindingKey === bindingKey &&
+          binding.runtimeFingerprint === runtimeFingerprint &&
+          binding.threadFingerprint === threadFingerprint,
+      )
+      const nativeResumeThreadId =
+        bindingKey.length > 0 && persistedBinding != null ? persistedBinding.threadId : null
+      const legacyResumeThreadId =
+        bindingKey.length === 0 && config.sdkSessionId != null && config.continueSession === true
+          ? config.sdkSessionId
+          : null
+      const resumeThreadId = nativeResumeThreadId ?? legacyResumeThreadId
+      if (resumeThreadId != null) {
         const resumeStartedAt = performance.now()
         try {
           const resumed = await client.request<{ thread?: { id?: string } }>(
             'thread/resume',
-            { ...threadParams, threadId: config.sdkSessionId },
+            { ...threadParams, threadId: resumeThreadId },
             30_000,
           )
           const threadId = resumed.thread?.id
           if (typeof threadId === 'string' && threadId.length > 0) {
+            if (bindingKey.length > 0) {
+              await this.rememberNativeThreadBinding({
+                runtime: lease.runtime,
+                config,
+                bindingKey,
+                threadId,
+                runtimeFingerprint,
+                threadFingerprint,
+                requirePersistence: false,
+              })
+            }
             lifecycleMetrics.appServerThreadResumeMs = roundedElapsed(resumeStartedAt)
             lifecycleMetrics.appServerThreadMode = 'resume'
             publishLifecycleMetrics()
-            return { client, threadId }
+            return { client, router, lease, threadId, resumedThread: true }
           }
         } catch {
           lifecycleMetrics.appServerThreadResumeMs = roundedElapsed(resumeStartedAt)
@@ -527,13 +636,61 @@ export class CodexAppServerExecutor
       if (typeof threadId !== 'string' || threadId.length === 0) {
         throw new Error('codex app-server thread/start returned no thread id')
       }
+      if (bindingKey.length > 0) {
+        await this.rememberNativeThreadBinding({
+          runtime: lease.runtime,
+          config,
+          bindingKey,
+          threadId,
+          runtimeFingerprint,
+          threadFingerprint,
+          requirePersistence: true,
+        })
+      }
       publishLifecycleMetrics()
-      return { client, threadId }
+      return { client, router, lease, threadId, resumedThread: false }
     } catch (err) {
       publishLifecycleMetrics({ appServerFallback: true })
-      await client.dispose().catch(() => undefined)
+      await lease?.release({ invalidate: true }).catch(() => undefined)
       if (err instanceof CodexRuntimeNotInstalledError) throw err
       return null
+    }
+  }
+
+  private async rememberNativeThreadBinding(params: {
+    runtime: CodexAppServerRuntime
+    config: SDKExecutorConfig
+    bindingKey: string
+    threadId: string
+    runtimeFingerprint: string
+    threadFingerprint: string
+    requirePersistence: boolean
+  }): Promise<void> {
+    params.runtime.rememberLoadedThread(
+      params.bindingKey,
+      params.threadFingerprint,
+      params.threadId,
+    )
+    const observer = params.config.codexNativeThreadBindingObserver
+    if (observer == null) {
+      if (params.requirePersistence) {
+        throw new Error('fresh codex native thread requires a persistence observer')
+      }
+      return
+    }
+    const binding: CodexNativeThreadBinding = {
+      bindingKey: params.bindingKey,
+      threadId: params.threadId,
+      runtimeFingerprint: params.runtimeFingerprint,
+      threadFingerprint: params.threadFingerprint,
+    }
+    try {
+      await observer(binding)
+    } catch (error) {
+      const cause = error instanceof Error ? error : new Error(String(error))
+      const failure = new Error(`failed to persist codex native thread binding: ${cause.message}`)
+      this.options.onProtocolError?.(failure)
+      if (params.requirePersistence) throw failure
     }
   }
 
@@ -552,7 +709,12 @@ export class CodexAppServerExecutor
     fallback.onEvent(bridge)
     this.fallbackExecutor = fallback
     try {
-      await fallback.executeTurn(sessionId, turnId, userMessage, config)
+      await fallback.executeTurn(
+        sessionId,
+        turnId,
+        userMessage,
+        withResumeFallbackSystemPrompt(config),
+      )
     } finally {
       this.fallbackExecutor = null
       fallback.offEvent(bridge)
@@ -1064,6 +1226,42 @@ function buildAppServerThreadParams(config: SDKExecutorConfig): AppServerThreadP
     ...(policy.approvalsReviewer == null ? {} : { approvalsReviewer: policy.approvalsReviewer }),
     config: configOverrides,
   }
+}
+
+/**
+ * 权限是官方 `turn/start` 的 sticky turn 级配置：每轮都显式下发，保证用户在 Spark
+ * 切换权限后当前 turn 立即生效，同时不必为权限变化丢弃已加载的 native thread。
+ * reviewer 必须始终显式给出；否则从 auto_review 切回默认档时会沿用上轮 sticky 值。
+ */
+function buildAppServerTurnPermissionParams(
+  config: SDKExecutorConfig,
+): Pick<AppServerTurnStartParams, 'approvalPolicy' | 'approvalsReviewer' | 'sandboxPolicy'> {
+  const policy = resolveCodexPermissionPolicy(config.permissionMode, config.unattended === true)
+  return {
+    approvalPolicy: policy.approvalPolicy,
+    approvalsReviewer: policy.approvalsReviewer ?? 'user',
+    sandboxPolicy:
+      policy.sandboxMode === 'danger-full-access'
+        ? { type: 'dangerFullAccess' }
+        : {
+            type: 'workspaceWrite',
+            writableRoots: [...(config.additionalDirectories ?? [])],
+            networkAccess: config.networkAccessEnabled ?? false,
+            excludeTmpdirEnvVar: false,
+            excludeSlashTmp: false,
+          },
+  }
+}
+
+/** native resume 成功时省略备用历史；fresh thread / SDK fallback 才把它并入系统上下文。 */
+function withResumeFallbackSystemPrompt(config: SDKExecutorConfig): SDKExecutorConfig {
+  const fallback = config.resumeFallbackSystemPrompt?.trim()
+  if (fallback == null || fallback.length === 0) return config
+  const current = config.systemPrompt?.trim()
+  const next: SDKExecutorConfig = { ...config }
+  delete next.resumeFallbackSystemPrompt
+  next.systemPrompt = current != null && current.length > 0 ? `${current}\n\n${fallback}` : fallback
+  return next
 }
 
 function sanitizeThreadParamsForDiagnostics(params: AppServerThreadParamsBase | null): unknown {

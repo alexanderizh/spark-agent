@@ -144,6 +144,13 @@ export { getAgentAdapterFromSession, getPermissionModeFromSession } from './sess
 
 // ─── P1-W1-D5 引擎注册表（迁出至 ./session/engine-registry.ts）───
 import { createDefaultEngineRegistry } from './session/engine-registry.js'
+import { isPersistentCodexRuntimeEnabled } from '../sdk/codex-app-server/codex-app-server-runtime.js'
+import {
+  buildCodexNativeThreadIdentityScope,
+  buildPersistentCodexAppServerConfig,
+  createCodexNativeThreadMetadataPatch,
+  shouldUsePersistentCodexAppServer,
+} from './session/codex-native-thread-binding.js'
 // 原 codex 载具工厂整体迁入 codex descriptor；re-export 保持既有 import 面。
 export { createCodexExecutorForConfig } from './session/engine-registry.js'
 
@@ -1430,30 +1437,38 @@ export class SessionService {
    * 应用退出或崩溃硬杀执行器、执行器异常死亡、以及启动时 recoverInterruptedSessions
    * 未覆盖到的会话。不修的话渲染端每次打开该会话都显示「运行中」，重放出的消息
    * 永远停留在 streaming（思考/工具日志持续转圈，重开会话也无法恢复）。
-   * 在 getHistory 入口做懒校验：补齐断流轮终态事件、状态落回 idle——数据一次
-   * 治愈、对所有视图生效。判定源与 reconcileSessionExecutionStatus 完全一致
-   * （queueSnapshot().running），不会误伤正在执行的会话。
+   * 在 history / queue / cancel 权威入口做幂等校验：补齐断流轮终态事件、状态落回
+   * idle——数据一次治愈、对所有视图生效。判定源与 reconcileSessionExecutionStatus
+   * 完全一致（queueSnapshot().running），不会误伤正在执行的会话。
    */
-  private reconcileZombieRunningSession(sessionId: string): void {
+  private reconcileZombieRunningSession(sessionId: string): {
+    reconciled: boolean
+    appendedTurns: number
+  } {
     try {
-      if (this.queueSnapshot(sessionId).running) return
+      if (this.queueSnapshot(sessionId).running) return { reconciled: false, appendedTurns: 0 }
       const sessionRepo = new SessionRepository(this.db)
       const session = sessionRepo.get(sessionId)
-      if (session == null || session.status !== 'running') return
+      if (session == null || session.status !== 'running') {
+        return { reconciled: false, appendedTurns: 0 }
+      }
       const eventRepo = new EventRepository(this.db)
       const appended = appendInterruptedTurnEventsForSession(eventRepo, sessionId)
       sessionRepo.updateStatus(sessionId, 'idle')
+      this.deferredHostTerminalStatus.delete(sessionId)
       this.emitQueueChanged(sessionId)
-      log.info('reconciled zombie running session on history load', {
+      log.info('reconciled zombie running session', {
         sessionId,
         appendedTurns: appended,
       })
+      return { reconciled: true, appendedTurns: appended }
     } catch (err) {
-      // 懒恢复失败不能影响历史加载主流程
+      // 权威健康核对失败不能影响历史加载、队列查询或取消主流程。
       log.warn('failed to reconcile zombie running session', {
         sessionId,
         error: err instanceof Error ? err.message : String(err),
       })
+      return { reconciled: false, appendedTurns: 0 }
     }
   }
 
@@ -2269,6 +2284,13 @@ export class SessionService {
           model,
           agentAdapter,
         )
+    const codexNativeThreadBindingKey = this.resumeGate.makeRuntimeSessionId(
+      sessionId,
+      resumeProviderProfileId,
+      model,
+      agentAdapter,
+      buildCodexNativeThreadIdentityScope({ agentId: agent.id, isMentionTurn }),
+    )
     const sdkResumeSafe = this.resumeGate.isSafe({
       providerType: provider.provider_type,
       model,
@@ -2283,6 +2305,13 @@ export class SessionService {
       sdkSessionId: stableSdkSessionId,
     })
     const canResumeSdkSession = sdkResumeSafe && previousPromptSnapshot != null
+    const usePersistentCodexAppServer = shouldUsePersistentCodexAppServer({
+      enabled: isPersistentCodexRuntimeEnabled(),
+      adapterKind,
+      useLocalConfig: isLocalCli,
+      ...(config.codexApiKind != null ? { codexApiKind: config.codexApiKind } : {}),
+      hasImageAttachments: (attachments ?? []).some((attachment) => attachment.type === 'image'),
+    })
     const sdkSessionId = sdkResumeSafe
       ? stableSdkSessionId
       : this.resumeGate.makeRuntimeSessionId(
@@ -2314,7 +2343,7 @@ export class SessionService {
             },
           }
         : {}),
-      ...(canResumeSdkSession ? { deferForSdkResume: true } : {}),
+      ...(canResumeSdkSession || usePersistentCodexAppServer ? { deferForSdkResume: true } : {}),
     })
     const conversationHistoryPrompt = conversationContext.prompt
     const resumeRecoveryHistoryPrompt = conversationContext.recoveryPrompt
@@ -3181,6 +3210,23 @@ export class SessionService {
           }
         : {}),
       ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
+      ...(usePersistentCodexAppServer
+        ? buildPersistentCodexAppServerConfig({
+            runtimeLeaseKey: `host:${sessionId}`,
+            bindingKey: codexNativeThreadBindingKey,
+            metadataJson: session.metadata_json,
+            ...(resumeRecoveryHistoryPrompt != null
+              ? { resumeFallbackSystemPrompt: resumeRecoveryHistoryPrompt }
+              : {}),
+            onBinding: (binding) => {
+              const patch = createCodexNativeThreadMetadataPatch(
+                sessionRepo.getMetadata(sessionId),
+                binding,
+              )
+              sessionRepo.patchMetadata(sessionId, patch)
+            },
+          })
+        : {}),
       ...(composedSkillSystemPrompt != null
         ? { skillSystemPrompt: composedSkillSystemPrompt }
         : {}),
@@ -7040,18 +7086,33 @@ export class SessionService {
         agentAdapter: memberAdapter,
         ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
       })
-    const memberSdkSessionId = canContinueDiscussionSession
-      ? this.resumeGate.makeRuntimeSessionId(
-          sessionId,
-          appliedCliSparkOverride != null
-            ? `${cliProvider.id}::${providerProfileId}`
-            : providerProfileId,
-          model,
-          memberAdapter,
-          buildMemberContinuityKey(buildTeamContinuityScope(discussionId), member.id),
-        )
-      : crypto.randomUUID()
-
+    const stableMemberSessionId =
+      discussionId != null
+        ? this.resumeGate.makeRuntimeSessionId(
+            sessionId,
+            appliedCliSparkOverride != null
+              ? `${cliProvider.id}::${providerProfileId}`
+              : providerProfileId,
+            model,
+            memberAdapter,
+            buildMemberContinuityKey(buildTeamContinuityScope(discussionId), member.id),
+          )
+        : null
+    const memberSdkSessionId =
+      canContinueDiscussionSession && stableMemberSessionId != null
+        ? stableMemberSessionId
+        : crypto.randomUUID()
+    const usePersistentMemberCodexAppServer =
+      stableMemberSessionId != null &&
+      shouldUsePersistentCodexAppServer({
+        enabled: isPersistentCodexRuntimeEnabled(),
+        adapterKind: resolveEngineKind(memberAdapter),
+        useLocalConfig: isLocalCli,
+        ...(providerConfig.codexApiKind != null
+          ? { codexApiKind: providerConfig.codexApiKind }
+          : {}),
+        hasImageAttachments: false,
+      })
     // 显式 readonly 原子节点从空能力集开始，避免在判断前加载用户自定义（可能写入型）MCP。
     // 普通 Team/Workflow tool/mcp 成员则与 Host 一致加载已启用的应用 MCP。
     const memberMcpServers = isReadonlyAtomicMember
@@ -7271,6 +7332,22 @@ export class SessionService {
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
       continueSession: canContinueDiscussionSession,
+      ...(usePersistentMemberCodexAppServer && stableMemberSessionId != null
+        ? buildPersistentCodexAppServerConfig({
+            runtimeLeaseKey: `member:${sessionId}:${stableMemberSessionId}`,
+            bindingKey: stableMemberSessionId,
+            metadataJson: session.metadata_json,
+            onBinding: (binding) => {
+              const patch = createCodexNativeThreadMetadataPatch(
+                sessionRepo.getMetadata(sessionId),
+                binding,
+              )
+              sessionRepo.patchMetadata(sessionId, patch)
+            },
+          })
+        : isCodexMember
+          ? { codexRuntimeLeaseKey: `member:${sessionId}:${dispatchId}` }
+          : {}),
       ...(this.onHookTrigger != null ? { applicationHookCallback: this.onHookTrigger } : {}),
       ...(this.onApproval != null
         ? {
@@ -7633,6 +7710,7 @@ export class SessionService {
         })
       }
 
+      await this.engineRegistry.dispose()
       await this.platformBridge.stop()
       // FR-0b 修复（审查 B-3）：进程退出时关停所有残留桥接会话 + HTTP server。
       for (const turnId of this.teamMcpHandlesByTurn.keys()) {
@@ -7670,6 +7748,9 @@ export class SessionService {
   }
 
   getQueueState(params: { sessionId: string }): SessionGetQueueResponse {
+    // queueSnapshot 是当前主进程的执行权威。若库中仍残留 running，在返回给 UI 前
+    // 一次性补齐断流终态并复位，避免历史会话长期显示无法取消的幽灵 spinner。
+    this.reconcileZombieRunningSession(params.sessionId)
     return this.queueSnapshot(params.sessionId)
   }
 
@@ -8913,6 +8994,11 @@ export class SessionService {
         this.emitQueueChanged(sessionId)
         return { cancelled: true }
       }
+      // UI 可能仍依据持久化 running / 历史 agent_status 显示停止按钮，但内存执行
+      // 已不存在。把这次停止视为成功收口，补齐断流终态并复位，而不是误报
+      // “没有运行中的任务”。真实 starting/executor/Team dispatch 已由前面分支保护。
+      const zombie = this.reconcileZombieRunningSession(sessionId)
+      if (zombie.reconciled) return { cancelled: true }
       this.emitQueueChanged(sessionId)
       return { cancelled: false }
     }

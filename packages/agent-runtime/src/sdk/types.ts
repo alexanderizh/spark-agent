@@ -668,6 +668,20 @@ export interface SDKInvocationSnapshot {
   request: Record<string, unknown>
 }
 
+/**
+ * Spark 持久化的 Codex App Server 原生 thread 绑定。
+ *
+ * 两个 fingerprint 都是不可逆 SHA-256 摘要：runtime 用于隔离进程环境，thread 用于
+ * 隔离 cwd/model/MCP 等不可按 turn 覆盖的配置。权限由每次 turn/start 显式覆盖。
+ * 只有二者同时匹配时才允许 native resume。
+ */
+export interface CodexNativeThreadBinding {
+  bindingKey: string
+  threadId: string
+  runtimeFingerprint: string
+  threadFingerprint: string
+}
+
 export interface SDKExecutorConfig {
   apiKey: string
   /** True when the turn is running as unattended automation and must never wait on user input. */
@@ -775,6 +789,19 @@ export interface SDKExecutorConfig {
   enableCheckpoints?: boolean | undefined
   sdkSessionId?: string | undefined
   continueSession?: boolean | undefined
+  /** Persistent App Server binding key owned by Spark; absent keeps the legacy resume path. */
+  codexNativeThreadBindingKey?: string | undefined
+  /** Persisted candidates for the key above. The executor selects by both exact fingerprints. */
+  codexNativeThreadBindings?: readonly CodexNativeThreadBinding[] | undefined
+  /** Called after a native thread is started or resumed so the host can persist the real thread id. */
+  codexNativeThreadBindingObserver?:
+    | ((binding: CodexNativeThreadBinding) => void | Promise<void>)
+    | undefined
+  /**
+   * Runtime lease isolation key. Host defaults to the Spark session id; nested Team members must
+   * use their own continuity key so a Host waiting on a member never waits on its own lease.
+   */
+  codexRuntimeLeaseKey?: string | undefined
   /** Stable renderer id forwarded to app-server as turn/start.clientUserMessageId. */
   clientUserMessageId?: string | undefined
   invocationObserver?: ((snapshot: SDKInvocationSnapshot) => void) | undefined
