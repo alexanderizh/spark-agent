@@ -1,8 +1,8 @@
 import { app } from 'electron'
 import { chmod, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { findPackageJSON } from 'node:module'
+import { join } from 'node:path'
 import {
   codexTargetTriple,
   getCodexRuntimeRoot as getRuntimeRootFromEnv,
@@ -58,21 +58,16 @@ export function configureCodexRuntimeEnvironment(): string {
 
 function detectCodexSdkVersion(): string | null {
   try {
-    const require = createRequire(import.meta.url)
-    let directory = dirname(require.resolve('@openai/codex-sdk'))
-    for (let depth = 0; depth < 8; depth += 1) {
-      const packagePath = join(directory, 'package.json')
-      if (existsSync(packagePath)) {
-        const pkg = JSON.parse(readFileSync(packagePath, 'utf8')) as {
-          name?: string
-          version?: string
-        }
-        if (pkg.name === '@openai/codex-sdk' && pkg.version) return pkg.version
-      }
-      const parent = dirname(directory)
-      if (parent === directory) break
-      directory = parent
+    // Codex SDK 只暴露 ESM `import` 条件；createRequire().resolve() 会因没有
+    // CommonJS `require` export 而抛 ERR_PACKAGE_PATH_NOT_EXPORTED。findPackageJSON
+    // 直接定位包元数据，不依赖该包是否提供 CommonJS 入口。
+    const packagePath = findPackageJSON(CODEX_SDK_PACKAGE, import.meta.url)
+    if (!packagePath) return null
+    const pkg = JSON.parse(readFileSync(packagePath, 'utf8')) as {
+      name?: string
+      version?: string
     }
+    if (pkg.name === CODEX_SDK_PACKAGE && pkg.version) return pkg.version
   } catch {
     // 完整性服务会单独报告 JS SDK 缺失；启动配置保持非阻塞。
   }

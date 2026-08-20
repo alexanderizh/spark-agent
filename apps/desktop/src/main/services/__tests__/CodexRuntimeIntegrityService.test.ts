@@ -4,6 +4,13 @@ import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SparkInstallArtifact } from '../../../../../../packages/agent-runtime/src/services/skill-registry/artifact-manifest.js'
 
+const desktopPackage = JSON.parse(
+  readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8'),
+) as { dependencies?: Record<string, string> }
+const CODEX_SDK_VERSION = desktopPackage.dependencies?.['@openai/codex-sdk'] ?? ''
+const [sdkMajor = '0', sdkMinor = '0', sdkPatch = '0'] = CODEX_SDK_VERSION.split('.')
+const UPDATED_RUNTIME_VERSION = `${sdkMajor}.${sdkMinor}.${Number(sdkPatch) + 1}`
+
 const mocks = vi.hoisted(() => ({
   userData: '',
   artifacts: [] as SparkInstallArtifact[],
@@ -63,7 +70,7 @@ function artifact(
     platform: platform as Exclude<SparkInstallArtifact['platform'], undefined>,
     arch: arch as Exclude<SparkInstallArtifact['arch'], undefined>,
     targetTriple,
-    sdkPackage: '@openai/codex-sdk@0.144.5',
+    sdkPackage: `@openai/codex-sdk@${CODEX_SDK_VERSION}`,
     archive: { format: 'tar.gz', contentRoot: '.' },
   }
 }
@@ -79,7 +86,7 @@ function currentTargetTriple(): string {
 describe('CodexRuntimeIntegrityService', () => {
   beforeEach(() => {
     mocks.userData = mkdtempSync(join(tmpdir(), 'spark-codex-integrity-'))
-    mocks.artifacts = [artifact('0.144.5')]
+    mocks.artifacts = [artifact(CODEX_SDK_VERSION)]
     mocks.installBinaryArchive.mockReset()
     mocks.installBinaryArchive.mockImplementation(
       async (options: {
@@ -108,6 +115,15 @@ describe('CodexRuntimeIntegrityService', () => {
     delete process.env.SPARK_CODEX_REQUIRE_RUNTIME
   })
 
+  it('detects the version of the ESM-only Codex SDK package', async () => {
+    const { configureCodexRuntimeEnvironment } = await import('../CodexRuntimeIntegrityService.js')
+
+    configureCodexRuntimeEnvironment()
+
+    expect(CODEX_SDK_VERSION).toMatch(/^\d+\.\d+\.\d+/)
+    expect(process.env.SPARK_CODEX_SDK_VERSION).toBe(CODEX_SDK_VERSION)
+  })
+
   it('selects only the artifact matching platform, architecture, target triple, and SDK', async () => {
     const { selectCodexArtifact } = await import('../CodexRuntimeIntegrityService.js')
     const matrix: Array<[NodeJS.Platform, NodeJS.Architecture, string]> = [
@@ -119,11 +135,11 @@ describe('CodexRuntimeIntegrityService', () => {
       ['win32', 'x64', 'x86_64-pc-windows-msvc'],
     ]
     const artifacts = matrix.map(([platform, arch, triple]) =>
-      artifact('0.144.5', platform, arch, triple),
+      artifact(CODEX_SDK_VERSION, platform, arch, triple),
     )
 
     for (const [platform, arch, triple] of matrix) {
-      const selected = selectCodexArtifact(artifacts, triple, '0.144.5', platform, arch)
+      const selected = selectCodexArtifact(artifacts, triple, CODEX_SDK_VERSION, platform, arch)
       expect(selected).toMatchObject({ platform, arch, targetTriple: triple })
     }
     expect(
@@ -132,12 +148,12 @@ describe('CodexRuntimeIntegrityService', () => {
   })
 
   it('rejects Codex runtime artifacts without a valid SHA256', async () => {
-    const invalid = artifact('0.144.5')
+    const invalid = artifact(CODEX_SDK_VERSION)
     delete invalid.sha256
     mocks.artifacts = [invalid]
     const { installCodexRuntime } = await import('../CodexRuntimeIntegrityService.js')
 
-    const result = await installCodexRuntime('0.144.5')
+    const result = await installCodexRuntime(CODEX_SDK_VERSION)
 
     expect(result.success).toBe(false)
     expect(result.message).toContain('缺少有效的 SHA256')
@@ -153,7 +169,7 @@ describe('CodexRuntimeIntegrityService', () => {
       percent: number | null
     }> = []
 
-    const result = await installCodexRuntime('0.144.5', (event) => {
+    const result = await installCodexRuntime(CODEX_SDK_VERSION, (event) => {
       progress.push({
         state: event.state,
         downloaded: event.downloaded,
@@ -178,15 +194,15 @@ describe('CodexRuntimeIntegrityService', () => {
     const { checkCodexRuntimeIntegrity, getCodexRuntimeRootPath, installCodexRuntime } =
       await import('../CodexRuntimeIntegrityService.js')
 
-    expect((await installCodexRuntime('0.144.5')).success).toBe(true)
-    mocks.artifacts = [artifact('0.144.5'), artifact('0.144.6')]
-    expect(await checkCodexRuntimeIntegrity(true, '0.144.5')).toMatchObject({
+    expect((await installCodexRuntime(CODEX_SDK_VERSION)).success).toBe(true)
+    mocks.artifacts = [artifact(CODEX_SDK_VERSION), artifact(UPDATED_RUNTIME_VERSION)]
+    expect(await checkCodexRuntimeIntegrity(true, CODEX_SDK_VERSION)).toMatchObject({
       installed: true,
-      installedVersion: '0.144.5',
-      latestVersion: '0.144.6',
+      installedVersion: CODEX_SDK_VERSION,
+      latestVersion: UPDATED_RUNTIME_VERSION,
       updateAvailable: true,
     })
-    expect((await installCodexRuntime('0.144.5')).newVersion).toBe('0.144.6')
+    expect((await installCodexRuntime(CODEX_SDK_VERSION)).newVersion).toBe(UPDATED_RUNTIME_VERSION)
 
     const runtimeRoot = getCodexRuntimeRootPath()
     const active = JSON.parse(readFileSync(join(runtimeRoot, 'active.json'), 'utf8')) as {
@@ -195,15 +211,15 @@ describe('CodexRuntimeIntegrityService', () => {
     }
     expect(runtimeRoot).toBe(join(mocks.userData, 'agent-runtimes', 'codex'))
     expect(active).toMatchObject({
-      version: '0.144.6',
-      sdkPackage: '@openai/codex-sdk@0.144.5',
+      version: UPDATED_RUNTIME_VERSION,
+      sdkPackage: `@openai/codex-sdk@${CODEX_SDK_VERSION}`,
     })
 
     delete process.env.SPARK_CODEX_RUNTIME_ROOT
     delete process.env.SPARK_CODEX_SDK_VERSION
-    expect(await checkCodexRuntimeIntegrity(false, '0.144.5')).toMatchObject({
+    expect(await checkCodexRuntimeIntegrity(false, CODEX_SDK_VERSION)).toMatchObject({
       installed: true,
-      installedVersion: '0.144.6',
+      installedVersion: UPDATED_RUNTIME_VERSION,
     })
   })
 })
