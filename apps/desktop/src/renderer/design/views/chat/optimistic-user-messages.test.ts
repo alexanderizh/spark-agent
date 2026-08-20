@@ -162,12 +162,14 @@ describe('optimistic user messages', () => {
       createdAt: '2026-08-02T10:00:00.000Z',
       attachments: [],
     })
+    const { deliveryState: optimisticDeliveryState, ...messageWithoutDeliveryState } =
+      optimistic.message
+    expect(optimisticDeliveryState).toBe('submitting')
     const persisted = {
-      ...optimistic.message,
+      ...messageWithoutDeliveryState,
       id: 'persisted-1',
       turnId: 'turn-1',
       clientId: 'client-correlated',
-      deliveryState: undefined,
       eventIds: ['event-1'],
     }
 
