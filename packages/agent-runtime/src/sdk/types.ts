@@ -802,6 +802,12 @@ export interface SDKExecutorConfig {
    * use their own continuity key so a Host waiting on a member never waits on its own lease.
    */
   codexRuntimeLeaseKey?: string | undefined
+  /**
+   * Sidecar resources whose lifetime must exactly match the persistent App Server runtime.
+   * Typical examples are bearer-protected HTTP MCP bridge sessions. Resources are attached
+   * atomically during acquire and disposed on TTL/LRU eviction, crash invalidation or shutdown.
+   */
+  codexRuntimeResources?: readonly CodexRuntimeResource[] | undefined
   /** Stable renderer id forwarded to app-server as turn/start.clientUserMessageId. */
   clientUserMessageId?: string | undefined
   invocationObserver?: ((snapshot: SDKInvocationSnapshot) => void) | undefined
@@ -847,6 +853,15 @@ export interface SDKExecutorConfig {
         }>
       }
     | undefined
+}
+
+export interface CodexRuntimeResource {
+  /** Stable identity within one runtime lease; secrets must never be embedded in this id. */
+  readonly id: string
+  /** Called once the supervisor has accepted ownership of the resource. Must be idempotent. */
+  onAttached?(): void
+  /** Revoke credentials and release all sidecar state. Must be idempotent. */
+  dispose(): Promise<void>
 }
 
 // ── Resume Recovery ──────────────────────────────────────────────────────────

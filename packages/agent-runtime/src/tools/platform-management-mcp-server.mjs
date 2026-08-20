@@ -1047,6 +1047,18 @@ function toolDefinitions() {
         },
       },
     },
+    {
+      name: 'codex_runtime_diagnostics',
+      description:
+        '读取持久 Codex App Server 的脱敏运行诊断：进程/RSS/句柄、warm 命中、native thread 命中、TTL/LRU 与崩溃计数。不会返回 token、env、完整 lease key 或密钥。',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'codex_runtime_restart_idle',
+      description:
+        '手动重启所有空闲 Codex App Server runtime。正在执行的 runtime 会跳过，不中断用户 turn；仅在用户明确要求重启或诊断确认需要恢复时调用。',
+      inputSchema: { type: 'object', properties: {} },
+    },
 
     // ── Board Tasks ──
     {
@@ -1860,6 +1872,8 @@ async function handleToolCall(name, args) {
     teams_delete: 'teams.delete',
     artifacts_list: 'artifacts.list',
     artifacts_resolve: 'artifacts.resolve',
+    codex_runtime_diagnostics: 'codex_runtime.diagnostics',
+    codex_runtime_restart_idle: 'codex_runtime.restart_idle',
     settings_get: 'settings.get',
     settings_set: 'settings.set',
     settings_get_category: 'settings.get_category',

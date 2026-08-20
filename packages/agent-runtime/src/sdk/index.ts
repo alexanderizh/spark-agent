@@ -43,6 +43,7 @@ export type { SDKPermissionConfig } from './permission-mapper.js'
 export { mapSDKMessageToEvents } from './event-mapper.js'
 export type {
   SDKExecutorConfig,
+  CodexRuntimeResource,
   CodexNativeThreadBinding,
   SDKInvocationSnapshot,
   SDKMcpServerConfig,

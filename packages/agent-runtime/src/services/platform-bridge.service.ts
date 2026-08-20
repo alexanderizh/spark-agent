@@ -413,6 +413,8 @@ export interface PlatformBridgeDeps {
       reasoningEffort?: SparkReasoningEffort
     }): Promise<{ session: Record<string, unknown> }>
     getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>>
+    getCodexRuntimeDiagnostics(): Promise<unknown>
+    restartIdleCodexRuntimes(): Promise<unknown>
     /**
      * 记忆检索桥（codex CLI / claude CLI 的 stdio spark_memory MCP 子进程走这条
      * 路径回到主进程读记忆）。入参带 sessionId，用于解析该会话生效的 scope 集合。
@@ -725,6 +727,12 @@ export class PlatformBridgeService {
         return this.settingsGetCategory(d, params)
       case 'settings.get_all':
         return this.settingsGetAll(d, params)
+
+      // ── Codex Runtime ──
+      case 'codex_runtime.diagnostics':
+        return { diagnostics: await d.sessionService.getCodexRuntimeDiagnostics() }
+      case 'codex_runtime.restart_idle':
+        return { result: await d.sessionService.restartIdleCodexRuntimes() }
 
       // ── Sessions ──
       case 'sessions.get':

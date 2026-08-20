@@ -536,6 +536,7 @@ export class CodexAppServerExecutor
           runtimeLeaseKey,
           runtimeFingerprint,
           createRuntime,
+          { resources: config.codexRuntimeResources },
         )
       } else {
         const runtime = await createRuntime()
@@ -568,6 +569,7 @@ export class CodexAppServerExecutor
         const loadedThreadId = lease.runtime.findLoadedThread(bindingKey, threadFingerprint)
         if (loadedThreadId != null) {
           lifecycleMetrics.appServerThreadMode = 'loaded'
+          this.options.runtimeSupervisor?.recordThreadMode('loaded')
           publishLifecycleMetrics()
           return {
             client,
@@ -615,6 +617,7 @@ export class CodexAppServerExecutor
             }
             lifecycleMetrics.appServerThreadResumeMs = roundedElapsed(resumeStartedAt)
             lifecycleMetrics.appServerThreadMode = 'resume'
+            this.options.runtimeSupervisor?.recordThreadMode('resume')
             publishLifecycleMetrics()
             return { client, router, lease, threadId, resumedThread: true }
           }
@@ -632,7 +635,9 @@ export class CodexAppServerExecutor
       )
       const threadId = started.thread?.id
       lifecycleMetrics.appServerThreadStartMs = roundedElapsed(threadStartAt)
-      lifecycleMetrics.appServerThreadMode = resumeFailed ? 'resume-fallback-start' : 'start'
+      const threadMode = resumeFailed ? 'resume-fallback-start' : 'start'
+      lifecycleMetrics.appServerThreadMode = threadMode
+      this.options.runtimeSupervisor?.recordThreadMode(threadMode)
       if (typeof threadId !== 'string' || threadId.length === 0) {
         throw new Error('codex app-server thread/start returned no thread id')
       }

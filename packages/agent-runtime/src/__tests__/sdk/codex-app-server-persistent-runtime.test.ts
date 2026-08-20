@@ -5,7 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { CodexAppServerExecutor } from '../../sdk/codex-app-server/codex-app-server-executor.js'
 import { CodexAppServerRuntimeSupervisor } from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
-import type { CodexNativeThreadBinding, SDKExecutorConfig } from '../../sdk/types.js'
+import type {
+  CodexNativeThreadBinding,
+  CodexRuntimeResource,
+  SDKExecutorConfig,
+} from '../../sdk/types.js'
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/fake-codex-app-server.mjs', import.meta.url))
 
@@ -42,6 +46,11 @@ describe('Codex App Server persistent runtime', () => {
     const supervisor = new CodexAppServerRuntimeSupervisor({ idleTtlMs: 60_000 })
     const firstMetrics = vi.fn()
     const secondMetrics = vi.fn()
+    const runtimeResource: CodexRuntimeResource = {
+      id: 'team-mcp:host:session-persistent',
+      onAttached: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+    }
     let persistedBinding: CodexNativeThreadBinding | null = null
     const baseConfig: SDKExecutorConfig = {
       apiKey: 'test-key',
@@ -54,6 +63,7 @@ describe('Codex App Server persistent runtime', () => {
       codexNativeThreadBindingObserver: (binding) => {
         persistedBinding = binding
       },
+      codexRuntimeResources: [runtimeResource],
     }
     const createExecutor = () =>
       new CodexAppServerExecutor({
@@ -142,6 +152,8 @@ describe('Codex App Server persistent runtime', () => {
           appServerThreadMode: 'loaded',
         }),
       )
+      expect(runtimeResource.onAttached).toHaveBeenCalledTimes(2)
+      expect(runtimeResource.dispose).toHaveBeenCalledTimes(1)
     } finally {
       await supervisor.dispose()
       await rm(dir, { recursive: true, force: true })

@@ -10,8 +10,8 @@
  *
  * 设计要点（参照 spark_debug 的 DebugLogServer 先例）：
  *   - 进程内单例 http server，绑定 127.0.0.1 + 随机端口，跨 turn 存活。
- *   - 每次 serve() 创建独立 McpServer + StreamableHTTPServerTransport，绑定一组 tool
- *     定义 + 一个不可猜的 Bearer token；按 token 路由请求到对应 transport。
+ *   - 普通执行每次 serve() 创建隔离会话；持久 Codex Runtime 按 lease 复用 MCP 连接和
+ *     Bearer，并在 turn 边界原子切换 handler generation。
  *   - 不重写工具逻辑：tool 定义来自 createTeamMcpServer 的 buildTeamToolDefinitions，
  *     与 in-process 形态同源，避免两份实现漂移。
  *
@@ -22,12 +22,13 @@
  * Codex SDK-backed chat-wire providers also consume this HTTP bridge.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import type { ZodTypeAny } from 'zod'
+import { z, type ZodTypeAny } from 'zod'
 import { createLogger } from '@spark/shared'
+import type { CodexRuntimeResource } from '../sdk/types.js'
 
 const log = createLogger('team-mcp-http-bridge')
 
@@ -56,6 +57,12 @@ interface ServedSession {
   token: string
   mcp: McpServer
   transport: StreamableHTTPServerTransport
+  leaseKey: string | null
+  catalogFingerprint: string
+  handlers: Map<string, TeamToolDefinition['handler']>
+  activeGeneration: string | null
+  runtimeAttached: boolean
+  runtimeResource: CodexRuntimeResource | null
 }
 
 /** 一次 serve() 返回的句柄，供调用方塞进 SDKMcpServerConfig + 结束时 close。 */
@@ -63,17 +70,22 @@ export interface TeamMcpBridgeHandle {
   url: string
   token: string
   close: () => Promise<void>
+  /** Present only for a persistent Codex runtime lease. */
+  runtimeResource?: CodexRuntimeResource | undefined
 }
 
 export interface TeamMcpBridgeServeOptions {
-  /** 可选：绑定的 AbortSignal（通常是 turn 的取消信号），abort 时自动吊销 token + 关闭会话。 */
+  /** 可选：绑定的 AbortSignal；abort 时停用当前 handler，非持久会话同时吊销 token。 */
   signal?: AbortSignal | undefined
+  /** Reuse one bearer/MCP connection while the matching Codex runtime lease is alive. */
+  runtimeLeaseKey?: string | undefined
 }
 
 export class TeamMcpHttpBridge {
   private server: Server | null = null
   private port = 0
   private readonly sessions = new Map<string, ServedSession>()
+  private readonly sessionsByLeaseKey = new Map<string, ServedSession>()
 
   /** 惰性起 http server（单例），重复调用幂等。 */
   private ensureServer(): Promise<void> {
@@ -131,35 +143,101 @@ export class TeamMcpHttpBridge {
       throw new Error('Team MCP HTTP bridge requires at least one tool definition')
     }
     await this.ensureServer()
+    const leaseKey = opts?.runtimeLeaseKey?.trim() || null
+    const catalogFingerprint = createTeamToolCatalogFingerprint(defs)
+    if (leaseKey != null) {
+      const existing = this.sessionsByLeaseKey.get(leaseKey)
+      if (existing != null) {
+        if (existing.activeGeneration != null) {
+          throw new Error(
+            `Team MCP runtime lease is already active: ${createOpaqueLeaseId(leaseKey)}`,
+          )
+        }
+        if (existing.catalogFingerprint === catalogFingerprint) {
+          return this.activateSession(existing, defs, opts)
+        }
+        // Tool/schema changes must rotate the bearer so App Server's runtime fingerprint rotates
+        // with the MCP catalog. The old runtime resource disposer remains safely idempotent.
+        await this.closeSession(existing)
+      }
+    }
+    const session = await this.createSession(defs, leaseKey, catalogFingerprint)
+    return this.activateSession(session, defs, opts)
+  }
+
+  private async createSession(
+    defs: TeamToolDefinition[],
+    leaseKey: string | null,
+    catalogFingerprint: string,
+  ): Promise<ServedSession> {
     const token = randomUUID()
     const mcp = new McpServer({ name: 'spark_team', version: '0.2.0' })
-    for (const def of defs) {
-      mcp.tool(def.name, def.description, def.schema, async (args: Record<string, unknown>) =>
-        def.handler(args ?? {}),
-      )
-    }
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
     })
+    const session: ServedSession = {
+      token,
+      mcp,
+      transport,
+      leaseKey,
+      catalogFingerprint,
+      handlers: new Map(),
+      activeGeneration: null,
+      runtimeAttached: false,
+      runtimeResource: null,
+    }
+    for (const def of defs) {
+      mcp.tool(def.name, def.description, def.schema, async (args: Record<string, unknown>) => {
+        const handler = session.handlers.get(def.name)
+        if (session.activeGeneration == null || handler == null) {
+          return {
+            content: [{ type: 'text' as const, text: 'Team MCP turn is no longer active' }],
+            isError: true,
+          }
+        }
+        return handler(args ?? {})
+      })
+    }
     // MCP SDK 1.29 类型摩擦：StreamableHTTPServerTransport.onclose 声明为 (() => void) | undefined，
     // 而 Transport 接口要求 () => void，在 exactOptionalPropertyTypes 下不兼容（上游类型不一致）。断言绕过。
     await mcp.connect(transport as unknown as Transport)
-    const session: ServedSession = { token, mcp, transport }
-    this.sessions.set(token, session)
-
-    const close = async (): Promise<void> => {
-      if (this.sessions.delete(token)) {
-        try {
-          await mcp.close()
-        } catch (err) {
-          log.warn('team MCP bridge session close failed', err)
-        }
+    if (leaseKey != null) {
+      session.runtimeResource = {
+        id: `team-mcp:${createOpaqueLeaseId(leaseKey)}`,
+        onAttached: () => {
+          session.runtimeAttached = true
+        },
+        dispose: () => this.closeSession(session),
       }
+      this.sessionsByLeaseKey.set(leaseKey, session)
     }
-    // turn 取消信号：abort 时自动吊销 token，防止已取消 turn 的 dispatcher 仍可达。
+    this.sessions.set(token, session)
+    return session
+  }
+
+  private activateSession(
+    session: ServedSession,
+    defs: TeamToolDefinition[],
+    opts?: TeamMcpBridgeServeOptions,
+  ): TeamMcpBridgeHandle {
+    const generation = randomUUID()
+    session.activeGeneration = generation
+    session.handlers = new Map(defs.map((def) => [def.name, def.handler]))
+    let closed = false
+    const close = async (): Promise<void> => {
+      if (closed) return
+      closed = true
+      if (session.activeGeneration === generation) {
+        session.activeGeneration = null
+        session.handlers.clear()
+      }
+      // A resource not accepted by the supervisor (startup/fallback failure) must not leak.
+      if (session.leaseKey == null || !session.runtimeAttached) await this.closeSession(session)
+    }
+    // turn 取消信号：立即停用当前 handler generation；runtime-bound bearer 由 lease 回收。
     if (opts?.signal != null) {
       if (opts.signal.aborted) {
-        await close()
+        void close()
       } else {
         opts.signal.addEventListener('abort', () => void close(), { once: true })
       }
@@ -167,21 +245,30 @@ export class TeamMcpHttpBridge {
 
     return {
       url: `http://127.0.0.1:${this.port}/mcp`,
-      token,
+      token: session.token,
       close,
+      ...(session.runtimeResource != null ? { runtimeResource: session.runtimeResource } : {}),
+    }
+  }
+
+  private async closeSession(session: ServedSession): Promise<void> {
+    if (!this.sessions.delete(session.token)) return
+    if (session.leaseKey != null && this.sessionsByLeaseKey.get(session.leaseKey) === session) {
+      this.sessionsByLeaseKey.delete(session.leaseKey)
+    }
+    session.activeGeneration = null
+    session.handlers.clear()
+    try {
+      await session.mcp.close()
+    } catch (err) {
+      log.warn('team MCP bridge session close failed', err)
     }
   }
 
   /** 进程退出/服务销毁时关停所有会话与 http server。 */
   async dispose(): Promise<void> {
-    for (const session of this.sessions.values()) {
-      try {
-        await session.mcp.close()
-      } catch {
-        /* ignore */
-      }
-    }
-    this.sessions.clear()
+    await Promise.all([...this.sessions.values()].map((session) => this.closeSession(session)))
+    this.sessionsByLeaseKey.clear()
     if (this.server != null) {
       const server = this.server
       this.server = null
@@ -196,6 +283,23 @@ export class TeamMcpHttpBridge {
     res.writeHead(status, { 'Content-Type': 'text/plain' })
     res.end(message)
   }
+}
+
+function createTeamToolCatalogFingerprint(defs: TeamToolDefinition[]): string {
+  const catalog = defs
+    .map((def) => ({
+      name: def.name,
+      description: def.description,
+      // Team tools may use z.custom() for runtime-only validation. MCP represents those fields
+      // as unconstrained JSON, so the lifecycle fingerprint must use the same best-effort shape.
+      schema: z.toJSONSchema(z.object(def.schema), { unrepresentable: 'any' }),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+  return createHash('sha256').update(JSON.stringify(catalog)).digest('hex')
+}
+
+function createOpaqueLeaseId(leaseKey: string): string {
+  return createHash('sha256').update(leaseKey).digest('hex').slice(0, 16)
 }
 
 function extractBearer(req: IncomingMessage): string | null {

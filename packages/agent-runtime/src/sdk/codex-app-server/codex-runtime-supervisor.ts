@@ -1,8 +1,16 @@
+import { createHash } from 'node:crypto'
 import type { CodexAppServerRuntime } from './codex-app-server-runtime.js'
+import type { CodexRuntimeResource } from '../types.js'
 
 export interface ManagedCodexRuntime {
   readonly hasExited: boolean
   dispose(): Promise<void>
+  getDiagnostics?(): Promise<{
+    pid: number
+    rssBytes: number | null
+    handleCount: number | null
+    loadedThreadCount?: number | undefined
+  } | null>
 }
 
 export interface CodexRuntimeLease<T extends ManagedCodexRuntime = CodexAppServerRuntime> {
@@ -12,9 +20,56 @@ export interface CodexRuntimeLease<T extends ManagedCodexRuntime = CodexAppServe
   release(options?: { invalidate?: boolean } | undefined): Promise<void>
 }
 
+export interface CodexRuntimeAcquireOptions {
+  resources?: readonly CodexRuntimeResource[] | undefined
+}
+
 export interface CodexAppServerRuntimeSupervisorOptions {
   idleTtlMs?: number | undefined
   maxRuntimes?: number | undefined
+}
+
+export type CodexAppServerThreadMode = 'loaded' | 'resume' | 'start' | 'resume-fallback-start'
+
+export interface CodexRuntimeSupervisorDiagnostics {
+  disposed: boolean
+  activeRuntimeCount: number
+  leasedRuntimeCount: number
+  processCount: number
+  totalRssBytes: number | null
+  totalHandleCount: number | null
+  counters: {
+    acquireCount: number
+    coldStartCount: number
+    warmHitCount: number
+    warmHitRate: number
+    fingerprintRotationCount: number
+    crashReplacementCount: number
+    invalidationCount: number
+    startFailureCount: number
+    ttlEvictionCount: number
+    lruEvictionCount: number
+    manualRestartCount: number
+    threadLoadedCount: number
+    threadResumeCount: number
+    threadStartCount: number
+    threadResumeFallbackCount: number
+  }
+  runtimes: Array<{
+    leaseId: string
+    state: 'starting' | 'running' | 'idle' | 'exited'
+    lastUsedAt: string
+    resourceCount: number
+    pid: number | null
+    rssBytes: number | null
+    handleCount: number | null
+    loadedThreadCount: number | null
+  }>
+}
+
+export interface CodexRuntimeRestartResult {
+  restartedLeaseIds: string[]
+  busyLeaseIds: string[]
 }
 
 type RuntimeEntry<T extends ManagedCodexRuntime> = {
@@ -26,6 +81,7 @@ type RuntimeEntry<T extends ManagedCodexRuntime> = {
   lastUsedAt: number
   idleTimer: NodeJS.Timeout | null
   waiters: Set<() => void>
+  resources: Map<string, CodexRuntimeResource>
 }
 
 const DEFAULT_IDLE_TTL_MS = 2 * 60_000
@@ -45,6 +101,22 @@ export class CodexAppServerRuntimeSupervisor<
   private readonly idleTtlMs: number
   private readonly maxRuntimes: number
   private disposed = false
+  private readonly counters = {
+    acquireCount: 0,
+    coldStartCount: 0,
+    warmHitCount: 0,
+    fingerprintRotationCount: 0,
+    crashReplacementCount: 0,
+    invalidationCount: 0,
+    startFailureCount: 0,
+    ttlEvictionCount: 0,
+    lruEvictionCount: 0,
+    manualRestartCount: 0,
+    threadLoadedCount: 0,
+    threadResumeCount: 0,
+    threadStartCount: 0,
+    threadResumeFallbackCount: 0,
+  }
 
   constructor(options: CodexAppServerRuntimeSupervisorOptions = {}) {
     this.idleTtlMs = Math.max(0, options.idleTtlMs ?? DEFAULT_IDLE_TTL_MS)
@@ -55,8 +127,10 @@ export class CodexAppServerRuntimeSupervisor<
     leaseKey: string,
     fingerprint: string,
     createRuntime: () => Promise<T>,
+    options: CodexRuntimeAcquireOptions = {},
   ): Promise<CodexRuntimeLease<T>> {
     if (leaseKey.length === 0) throw new Error('codex runtime lease requires a non-empty key')
+    this.counters.acquireCount += 1
     for (;;) {
       this.assertActive()
       const existing = this.entries.get(leaseKey)
@@ -68,11 +142,23 @@ export class CodexAppServerRuntimeSupervisor<
         const runtime = await this.resolveRuntime(existing)
         if (this.entries.get(leaseKey) !== existing) continue
         if (existing.fingerprint !== fingerprint || runtime.hasExited) {
-          await this.removeAndDispose(existing)
+          if (runtime.hasExited) this.counters.crashReplacementCount += 1
+          else this.counters.fingerprintRotationCount += 1
+          const transferable = this.findTransferableResources(existing, options.resources)
+          await this.removeAndDispose(existing, transferable)
+          if (this.disposed) {
+            await Promise.all(
+              [...transferable.values()].map((resource) =>
+                resource.dispose().catch(() => undefined),
+              ),
+            )
+          }
           continue
         }
+        this.attachResources(existing, options.resources)
         existing.leased = true
         this.clearIdleTimer(existing)
+        this.counters.warmHitCount += 1
         return this.createLease(existing, runtime, true)
       }
 
@@ -85,8 +171,11 @@ export class CodexAppServerRuntimeSupervisor<
         lastUsedAt: Date.now(),
         idleTimer: null,
         waiters: new Set(),
+        resources: new Map(),
       }
+      this.attachResources(entry, options.resources)
       this.entries.set(leaseKey, entry)
+      this.counters.coldStartCount += 1
       let runtime: T
       try {
         runtime = await this.resolveRuntime(entry)
@@ -94,10 +183,13 @@ export class CodexAppServerRuntimeSupervisor<
         if (this.entries.get(leaseKey) === entry) this.entries.delete(leaseKey)
         entry.leased = false
         this.notifyWaiters(entry)
+        await this.disposeResources(entry)
+        this.counters.startFailureCount += 1
         throw error
       }
       if (this.disposed || this.entries.get(leaseKey) !== entry) {
         await runtime.dispose().catch(() => undefined)
+        await this.disposeResources(entry)
         this.assertActive()
         continue
       }
@@ -123,6 +215,93 @@ export class CodexAppServerRuntimeSupervisor<
     return this.entries.size
   }
 
+  recordThreadMode(mode: CodexAppServerThreadMode): void {
+    switch (mode) {
+      case 'loaded':
+        this.counters.threadLoadedCount += 1
+        return
+      case 'resume':
+        this.counters.threadResumeCount += 1
+        return
+      case 'start':
+        this.counters.threadStartCount += 1
+        return
+      case 'resume-fallback-start':
+        this.counters.threadResumeFallbackCount += 1
+    }
+  }
+
+  async restartIdle(leaseKey?: string): Promise<CodexRuntimeRestartResult> {
+    const candidates = leaseKey == null ? [...this.entries.values()] : [this.entries.get(leaseKey)]
+    const restartedLeaseIds: string[] = []
+    const busyLeaseIds: string[] = []
+    for (const entry of candidates) {
+      if (entry == null) continue
+      const leaseId = opaqueLeaseId(entry.leaseKey)
+      if (entry.leased) {
+        busyLeaseIds.push(leaseId)
+        continue
+      }
+      this.counters.manualRestartCount += 1
+      restartedLeaseIds.push(leaseId)
+      await this.removeAndDispose(entry)
+    }
+    return { restartedLeaseIds, busyLeaseIds }
+  }
+
+  async getDiagnostics(): Promise<CodexRuntimeSupervisorDiagnostics> {
+    const runtimes = await Promise.all(
+      [...this.entries.values()].map(async (entry) => {
+        const diagnostics =
+          entry.runtime != null && entry.runtime.getDiagnostics != null
+            ? await entry.runtime.getDiagnostics().catch(() => null)
+            : null
+        const state =
+          entry.runtime == null
+            ? ('starting' as const)
+            : entry.runtime.hasExited
+              ? ('exited' as const)
+              : entry.leased
+                ? ('running' as const)
+                : ('idle' as const)
+        return {
+          leaseId: opaqueLeaseId(entry.leaseKey),
+          state,
+          lastUsedAt: new Date(entry.lastUsedAt).toISOString(),
+          resourceCount: entry.resources.size,
+          pid: diagnostics?.pid ?? null,
+          rssBytes: diagnostics?.rssBytes ?? null,
+          handleCount: diagnostics?.handleCount ?? null,
+          loadedThreadCount: diagnostics?.loadedThreadCount ?? null,
+        }
+      }),
+    )
+    const rssValues = runtimes.flatMap((runtime) =>
+      runtime.rssBytes == null ? [] : [runtime.rssBytes],
+    )
+    const handleValues = runtimes.flatMap((runtime) =>
+      runtime.handleCount == null ? [] : [runtime.handleCount],
+    )
+    return {
+      disposed: this.disposed,
+      activeRuntimeCount: runtimes.length,
+      leasedRuntimeCount: runtimes.filter((runtime) => runtime.state === 'running').length,
+      processCount: runtimes.filter((runtime) => runtime.pid != null && runtime.state !== 'exited')
+        .length,
+      totalRssBytes: rssValues.length > 0 ? rssValues.reduce((sum, value) => sum + value, 0) : null,
+      totalHandleCount:
+        handleValues.length > 0 ? handleValues.reduce((sum, value) => sum + value, 0) : null,
+      counters: {
+        ...this.counters,
+        warmHitRate:
+          this.counters.acquireCount > 0
+            ? this.counters.warmHitCount / this.counters.acquireCount
+            : 0,
+      },
+      runtimes,
+    }
+  }
+
   private createLease(entry: RuntimeEntry<T>, runtime: T, warm: boolean): CodexRuntimeLease<T> {
     let released = false
     return {
@@ -135,6 +314,8 @@ export class CodexAppServerRuntimeSupervisor<
         entry.leased = false
         entry.lastUsedAt = Date.now()
         if (options.invalidate === true || runtime.hasExited || this.disposed) {
+          if (runtime.hasExited) this.counters.crashReplacementCount += 1
+          else if (options.invalidate === true) this.counters.invalidationCount += 1
           await this.removeAndDispose(entry)
           return
         }
@@ -171,7 +352,10 @@ export class CodexAppServerRuntimeSupervisor<
     }
     entry.idleTimer = setTimeout(() => {
       entry.idleTimer = null
-      if (!entry.leased) void this.removeAndDispose(entry)
+      if (!entry.leased) {
+        this.counters.ttlEvictionCount += 1
+        void this.removeAndDispose(entry)
+      }
     }, this.idleTtlMs)
     if (typeof entry.idleTimer.unref === 'function') entry.idleTimer.unref()
   }
@@ -188,28 +372,87 @@ export class CodexAppServerRuntimeSupervisor<
         .filter((entry) => !entry.leased && entry.leaseKey !== protectedLeaseKey)
         .sort((left, right) => left.lastUsedAt - right.lastUsedAt)[0]
       if (candidate == null) return
+      this.counters.lruEvictionCount += 1
       await this.removeAndDispose(candidate)
     }
   }
 
-  private async removeAndDispose(entry: RuntimeEntry<T>): Promise<void> {
+  private async removeAndDispose(
+    entry: RuntimeEntry<T>,
+    preservedResources: ReadonlyMap<string, CodexRuntimeResource> = new Map(),
+  ): Promise<void> {
     if (this.entries.get(entry.leaseKey) === entry) this.entries.delete(entry.leaseKey)
     this.clearIdleTimer(entry)
     entry.leased = false
     this.notifyWaiters(entry)
-    await this.disposeEntry(entry)
+    await this.disposeEntry(entry, preservedResources)
   }
 
-  private async disposeEntry(entry: RuntimeEntry<T>): Promise<void> {
+  private async disposeEntry(
+    entry: RuntimeEntry<T>,
+    preservedResources: ReadonlyMap<string, CodexRuntimeResource> = new Map(),
+  ): Promise<void> {
     try {
       const runtime = await this.resolveRuntime(entry)
       await runtime.dispose()
     } catch {
       // 启动失败或退出期 dispose 失败：entry 已从权威 map 摘除，不阻塞其他会话。
+    } finally {
+      await this.disposeResources(entry, preservedResources)
     }
+  }
+
+  private attachResources(
+    entry: RuntimeEntry<T>,
+    resources: readonly CodexRuntimeResource[] | undefined,
+  ): void {
+    for (const resource of resources ?? []) {
+      const id = resource.id.trim()
+      if (id.length === 0) throw new Error('codex runtime resource requires a non-empty id')
+      const existing = entry.resources.get(id)
+      if (existing != null && existing !== resource) {
+        throw new Error(`codex runtime resource identity changed for ${id}`)
+      }
+    }
+    for (const resource of resources ?? []) {
+      const id = resource.id.trim()
+      const existing = entry.resources.get(id)
+      if (existing == null) entry.resources.set(id, resource)
+      resource.onAttached?.()
+    }
+  }
+
+  private findTransferableResources(
+    entry: RuntimeEntry<T>,
+    requested: readonly CodexRuntimeResource[] | undefined,
+  ): Map<string, CodexRuntimeResource> {
+    const transferable = new Map<string, CodexRuntimeResource>()
+    for (const resource of requested ?? []) {
+      const existing = entry.resources.get(resource.id)
+      if (existing === resource) transferable.set(resource.id, resource)
+    }
+    return transferable
+  }
+
+  private async disposeResources(
+    entry: RuntimeEntry<T>,
+    preservedResources: ReadonlyMap<string, CodexRuntimeResource> = new Map(),
+  ): Promise<void> {
+    const resources = [...entry.resources.entries()]
+    entry.resources.clear()
+    await Promise.all(
+      resources.map(async ([id, resource]) => {
+        if (preservedResources.get(id) === resource) return
+        await resource.dispose().catch(() => undefined)
+      }),
+    )
   }
 
   private assertActive(): void {
     if (this.disposed) throw new Error('codex runtime supervisor is disposed')
   }
+}
+
+function opaqueLeaseId(leaseKey: string): string {
+  return createHash('sha256').update(leaseKey).digest('hex').slice(0, 12)
 }

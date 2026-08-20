@@ -175,6 +175,10 @@ export class CodexAppServerClient {
     return this.exited
   }
 
+  get processId(): number | undefined {
+    return this.child.pid
+  }
+
   exitedCode(): { code: number | null; signal: NodeJS.Signals | null } | null {
     return this.exitInfo
   }

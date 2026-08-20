@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { z, type ZodTypeAny } from 'zod'
-import type { SDKMcpServerConfig } from '../../sdk/types.js'
+import type { CodexRuntimeResource, SDKMcpServerConfig } from '../../sdk/types.js'
 import { createLogger } from '@spark/shared'
 import type { RuntimeBroker } from './runtime-broker.js'
 import type { RuntimeToolDefinition } from '@spark/protocol'
@@ -16,27 +16,80 @@ interface ServedRuntimeSession {
   token: string
   mcp: McpServer
   transport: StreamableHTTPServerTransport
+  leaseKey: string | null
+  catalogFingerprint: string
+  definitions: Map<string, CollectedRuntimeDefinition>
+  activeGeneration: string | null
+  runtimeAttached: boolean
+  runtimeResource: CodexRuntimeResource | null
+}
+
+type CollectedRuntimeDefinition = {
+  runtimeId: string
+  tool: RuntimeToolDefinition
+  qualifiedName: string
 }
 
 export interface PluginRuntimeMcpHandle {
   config: SDKMcpServerConfig
   toolNames: string[]
   close: () => Promise<void>
+  runtimeResource?: CodexRuntimeResource | undefined
 }
 
 export class PluginRuntimeMcpBridge {
   private server: Server | null = null
   private port = 0
   private readonly sessions = new Map<string, ServedRuntimeSession>()
+  private readonly sessionsByLeaseKey = new Map<string, ServedRuntimeSession>()
 
   constructor(private readonly broker: RuntimeBroker) {}
 
-  async serve(): Promise<PluginRuntimeMcpHandle | null> {
+  async serve(
+    options: { runtimeLeaseKey?: string | undefined } = {},
+  ): Promise<PluginRuntimeMcpHandle | null> {
     const definitions = await this.collectDefinitions()
     if (definitions.length === 0) return null
     await this.ensureServer()
+    const leaseKey = options.runtimeLeaseKey?.trim() || null
+    const catalogFingerprint = createPluginToolCatalogFingerprint(definitions)
+    if (leaseKey != null) {
+      const existing = this.sessionsByLeaseKey.get(leaseKey)
+      if (existing != null) {
+        if (existing.activeGeneration != null) {
+          throw new Error(
+            `Plugin MCP runtime lease is already active: ${createOpaqueLeaseId(leaseKey)}`,
+          )
+        }
+        if (existing.catalogFingerprint === catalogFingerprint) {
+          return this.activateSession(existing, definitions)
+        }
+        await this.closeSession(existing)
+      }
+    }
+    const session = await this.createSession(definitions, leaseKey, catalogFingerprint)
+    return this.activateSession(session, definitions)
+  }
+
+  private async createSession(
+    definitions: CollectedRuntimeDefinition[],
+    leaseKey: string | null,
+    catalogFingerprint: string,
+  ): Promise<ServedRuntimeSession> {
     const token = randomUUID()
     const mcp = new McpServer({ name: 'spark_plugins', version: '2.0.0' })
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() })
+    const session: ServedRuntimeSession = {
+      token,
+      mcp,
+      transport,
+      leaseKey,
+      catalogFingerprint,
+      definitions: new Map(),
+      activeGeneration: null,
+      runtimeAttached: false,
+      runtimeResource: null,
+    }
     for (const definition of definitions) {
       mcp.registerTool(
         definition.qualifiedName,
@@ -51,12 +104,19 @@ export class PluginRuntimeMcpBridge {
             .passthrough(),
         },
         async (args: Record<string, unknown>) => {
+          const activeDefinition = session.definitions.get(definition.qualifiedName)
+          if (session.activeGeneration == null || activeDefinition == null) {
+            return {
+              content: [{ type: 'text' as const, text: 'Plugin MCP turn is no longer active' }],
+              isError: true,
+            }
+          }
           const { accountId, confirmationToken, ...input } = args ?? {}
           try {
             const result = await this.broker.invoke({
-              runtimeId: definition.runtimeId,
+              runtimeId: activeDefinition.runtimeId,
               ...(typeof accountId === 'string' ? { accountId } : {}),
-              toolName: definition.tool.name,
+              toolName: activeDefinition.tool.name,
               input,
               ...(typeof confirmationToken === 'string' ? { confirmationToken } : {}),
             })
@@ -68,31 +128,69 @@ export class PluginRuntimeMcpBridge {
         },
       )
     }
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() })
     await mcp.connect(transport as unknown as Transport)
-    this.sessions.set(token, { token, mcp, transport })
-    const close = async (): Promise<void> => {
-      if (!this.sessions.delete(token)) return
-      try {
-        await mcp.close()
-      } catch (error) {
-        log.warn(`plugin runtime MCP close failed: ${String(error)}`)
+    if (leaseKey != null) {
+      session.runtimeResource = {
+        id: `plugin-mcp:${createOpaqueLeaseId(leaseKey)}`,
+        onAttached: () => {
+          session.runtimeAttached = true
+        },
+        dispose: () => this.closeSession(session),
       }
+      this.sessionsByLeaseKey.set(leaseKey, session)
+    }
+    this.sessions.set(token, session)
+    return session
+  }
+
+  private activateSession(
+    session: ServedRuntimeSession,
+    definitions: CollectedRuntimeDefinition[],
+  ): PluginRuntimeMcpHandle {
+    const generation = randomUUID()
+    session.activeGeneration = generation
+    session.definitions = new Map(
+      definitions.map((definition) => [definition.qualifiedName, definition]),
+    )
+    let closed = false
+    const close = async (): Promise<void> => {
+      if (closed) return
+      closed = true
+      if (session.activeGeneration === generation) {
+        session.activeGeneration = null
+        session.definitions.clear()
+      }
+      if (session.leaseKey == null || !session.runtimeAttached) await this.closeSession(session)
     }
     return {
       config: {
         type: 'http',
         url: `http://127.0.0.1:${this.port}/mcp`,
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${session.token}` },
       },
       toolNames: definitions.map((definition) => `mcp__spark_plugins__${definition.qualifiedName}`),
       close,
+      ...(session.runtimeResource != null ? { runtimeResource: session.runtimeResource } : {}),
+    }
+  }
+
+  private async closeSession(session: ServedRuntimeSession): Promise<void> {
+    if (!this.sessions.delete(session.token)) return
+    if (session.leaseKey != null && this.sessionsByLeaseKey.get(session.leaseKey) === session) {
+      this.sessionsByLeaseKey.delete(session.leaseKey)
+    }
+    session.activeGeneration = null
+    session.definitions.clear()
+    try {
+      await session.mcp.close()
+    } catch (error) {
+      log.warn(`plugin runtime MCP close failed: ${String(error)}`)
     }
   }
 
   async dispose(): Promise<void> {
-    for (const session of this.sessions.values()) await session.mcp.close().catch(() => undefined)
-    this.sessions.clear()
+    await Promise.all([...this.sessions.values()].map((session) => this.closeSession(session)))
+    this.sessionsByLeaseKey.clear()
     if (this.server != null) {
       const server = this.server
       this.server = null
@@ -101,14 +199,8 @@ export class PluginRuntimeMcpBridge {
     }
   }
 
-  private async collectDefinitions(): Promise<
-    Array<{ runtimeId: string; tool: RuntimeToolDefinition; qualifiedName: string }>
-  > {
-    const definitions: Array<{
-      runtimeId: string
-      tool: RuntimeToolDefinition
-      qualifiedName: string
-    }> = []
+  private async collectDefinitions(): Promise<CollectedRuntimeDefinition[]> {
+    const definitions: CollectedRuntimeDefinition[] = []
     const enabled = new Set(
       this.broker
         .listRuntimeStatus()
@@ -165,6 +257,22 @@ export class PluginRuntimeMcpBridge {
       if (!response.headersSent) response.writeHead(500).end('Plugin runtime MCP bridge error')
     }
   }
+}
+
+function createPluginToolCatalogFingerprint(definitions: CollectedRuntimeDefinition[]): string {
+  const catalog = definitions
+    .map((definition) => ({
+      runtimeId: definition.runtimeId,
+      qualifiedName: definition.qualifiedName,
+      description: definition.tool.description,
+      inputSchema: definition.tool.inputSchema,
+    }))
+    .sort((left, right) => left.qualifiedName.localeCompare(right.qualifiedName))
+  return createHash('sha256').update(JSON.stringify(catalog)).digest('hex')
+}
+
+function createOpaqueLeaseId(leaseKey: string): string {
+  return createHash('sha256').update(leaseKey).digest('hex').slice(0, 16)
 }
 
 function extractBearer(request: IncomingMessage): string | null {

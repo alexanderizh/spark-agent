@@ -370,6 +370,7 @@ import type {
   SDKPermissionRequestContext,
   SDKQuestionRequestContext,
 } from '../sdk/index.js'
+import { CodexRuntimeMcpResourceCoordinator } from './session/codex-runtime-mcp-resources.js'
 import type { ActiveExecution } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { isPermissionModeAware } from '../sdk/index.js'
@@ -842,6 +843,7 @@ export class SessionService {
   /** Host 已终止但成员仍在收尾时，延后到会话所有执行都退出后再落库的真实终态。 */
   private readonly deferredHostTerminalStatus = new Map<string, AgentStatusValue>()
   private readonly teamMcpToolNames = new WeakMap<object, ReadonlySet<string>>()
+  private readonly codexRuntimeMcpResources = new CodexRuntimeMcpResourceCoordinator()
   /** sessionId → the host turn whose dispatch budget was exhausted. */
   private readonly teamDispatchBudgetExhaustedTurns = new Map<string, string>()
   /** Bounds one budget-exhaustion continuation chain without imposing a user-visible turn limit. */
@@ -2312,6 +2314,7 @@ export class SessionService {
       ...(config.codexApiKind != null ? { codexApiKind: config.codexApiKind } : {}),
       hasImageAttachments: (attachments ?? []).some((attachment) => attachment.type === 'image'),
     })
+    const codexRuntimeLeaseKey = `host:${sessionId}`
     const sdkSessionId = sdkResumeSafe
       ? stableSdkSessionId
       : this.resumeGate.makeRuntimeSessionId(
@@ -2484,7 +2487,10 @@ export class SessionService {
         : null
     const platformMcpServer =
       await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
-    const pluginRuntimeMcp = await this.resolvePluginRuntimeMcpServer(turnId)
+    const pluginRuntimeMcp = await this.resolvePluginRuntimeMcpServer(
+      turnId,
+      usePersistentCodexAppServer ? codexRuntimeLeaseKey : undefined,
+    )
     const webSearchMcpServer =
       await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
     const subAppMcpServer = await this.getMcpTooling().resolveSubAppMcpServer(sessionId)
@@ -2631,6 +2637,7 @@ export class SessionService {
               : {}),
             ledgerActorAuthority: 'system-observed',
             onDispatchBudgetExceeded: () => this.markTeamDispatchBudgetExhausted(sessionId, turnId),
+            ...(usePersistentCodexAppServer ? { codexRuntimeLeaseKey } : {}),
           })) ?? undefined
         // 告诉 UI（及下面拼进系统提示词的编排提示）：本轮宿主进入编排模式（保留全量
         // 工具，提示词引导「优先派发」——不再剥离 Edit/Write/Bash，产品决策 2026-07-04）。
@@ -2737,6 +2744,7 @@ export class SessionService {
               discussionId: mentionDiscussion.id,
               discussionRoundIndex: mentionDiscussion.round_index,
               ledgerActorAuthority: 'agent-inferred',
+              ...(usePersistentCodexAppServer ? { codexRuntimeLeaseKey } : {}),
             })) ?? undefined
         }
       }
@@ -3212,7 +3220,7 @@ export class SessionService {
       ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
       ...(usePersistentCodexAppServer
         ? buildPersistentCodexAppServerConfig({
-            runtimeLeaseKey: `host:${sessionId}`,
+            runtimeLeaseKey: codexRuntimeLeaseKey,
             bindingKey: codexNativeThreadBindingKey,
             metadataJson: session.metadata_json,
             ...(resumeRecoveryHistoryPrompt != null
@@ -3247,6 +3255,9 @@ export class SessionService {
             pluginRuntimeMcpServer: pluginRuntimeMcp.server,
             pluginRuntimeToolNames: pluginRuntimeMcp.toolNames,
           }
+        : {}),
+      ...(usePersistentCodexAppServer
+        ? this.codexRuntimeMcpResources.buildConfig([teamMcpServer, pluginRuntimeMcp?.server])
         : {}),
       ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
       ...(subAppMcpServer != null ? { subAppMcpServer } : {}),
@@ -5371,11 +5382,13 @@ export class SessionService {
   }
 
   /**
-   * Build a per-turn, bearer-protected MCP snapshot for connected plugin runtimes.
-   * The HTTP bridge is shared, while the token/session handle is revoked at turn end.
+   * Build a bearer-protected MCP snapshot for connected plugin runtimes. Ordinary executions
+   * revoke the session at turn end; persistent Codex runtimes retain the bearer/connection while
+   * deactivating the turn-specific handler generation until the next acquire.
    */
   private async resolvePluginRuntimeMcpServer(
     turnId: string,
+    codexRuntimeLeaseKey?: string,
   ): Promise<{ server: SDKMcpServerConfig; toolNames: string[] } | null> {
     if (this.pluginManager != null) {
       this.pluginManagerInitialization ??= this.pluginManager.initialize()
@@ -5391,12 +5404,17 @@ export class SessionService {
       this.pluginRuntimeMcpBridge = new PluginRuntimeMcpBridge(this.pluginRuntimeBroker)
     }
     try {
-      const handle = await this.pluginRuntimeMcpBridge.serve()
+      const handle = await this.pluginRuntimeMcpBridge.serve({
+        ...(codexRuntimeLeaseKey != null ? { runtimeLeaseKey: codexRuntimeLeaseKey } : {}),
+      })
       if (handle == null) return null
       const handles =
         this.pluginRuntimeMcpHandlesByTurn.get(turnId) ?? new Set<PluginRuntimeMcpHandle>()
       handles.add(handle)
       this.pluginRuntimeMcpHandlesByTurn.set(turnId, handles)
+      if (handle.runtimeResource != null) {
+        this.codexRuntimeMcpResources.register(handle.config, handle.runtimeResource)
+      }
       return { server: handle.config, toolNames: handle.toolNames }
     } catch (error) {
       log.warn(
@@ -5522,6 +5540,8 @@ export class SessionService {
     ledgerActorAuthority?: import('@spark/storage').RoomLedgerAuthority
     /** Host-only notification used to schedule a hidden continuation after cleanup. */
     onDispatchBudgetExceeded?: () => void
+    /** Persistent Codex runtime lease that should own the HTTP bridge bearer/session. */
+    codexRuntimeLeaseKey?: string
   }): Promise<SDKMcpServerConfig | null> {
     // FR-0b：目标消费者是 codex 时用 HTTP 桥接（codex 子进程无法回调主进程 in-process sdk server）；
     // claude 消费者走 in-process（现状）。两形态共用下方 tool 定义，避免实现漂移。
@@ -6577,7 +6597,14 @@ export class SessionService {
       // Codex consumers use the HTTP MCP bridge so SDK-backed chat-wire providers keep team tools.
       const handle = await getTeamMcpHttpBridge().serve(
         defs,
-        ctx.signal != null ? { signal: ctx.signal } : undefined,
+        ctx.signal != null || ctx.codexRuntimeLeaseKey != null
+          ? {
+              ...(ctx.signal != null ? { signal: ctx.signal } : {}),
+              ...(ctx.codexRuntimeLeaseKey != null
+                ? { runtimeLeaseKey: ctx.codexRuntimeLeaseKey }
+                : {}),
+            }
+          : undefined,
       )
       // FR-0b 修复（审查 B-1）：登记 handle 以便 turn 结束清理（防 codex Host 每 turn leak 一个 ServedSession）。
       const handleSet = this.teamMcpHandlesByTurn.get(ctx.turnId) ?? new Set<TeamMcpBridgeHandle>()
@@ -6587,6 +6614,9 @@ export class SessionService {
         type: 'http',
         url: handle.url,
         headers: { Authorization: `Bearer ${handle.token}` },
+      }
+      if (handle.runtimeResource != null) {
+        this.codexRuntimeMcpResources.register(server, handle.runtimeResource)
       }
       this.teamMcpToolNames.set(server, new Set(defs.map((d) => d.name)))
       return server
@@ -7113,6 +7143,10 @@ export class SessionService {
           : {}),
         hasImageAttachments: false,
       })
+    const memberCodexRuntimeLeaseKey =
+      usePersistentMemberCodexAppServer && stableMemberSessionId != null
+        ? `member:${sessionId}:${stableMemberSessionId}`
+        : null
     // 显式 readonly 原子节点从空能力集开始，避免在判断前加载用户自定义（可能写入型）MCP。
     // 普通 Team/Workflow tool/mcp 成员则与 Host 一致加载已启用的应用 MCP。
     const memberMcpServers = isReadonlyAtomicMember
@@ -7244,6 +7278,9 @@ export class SessionService {
             : {}),
           ...(hostIsFullAccess && hostPermissionMode != null ? { hostPermissionMode } : {}),
           ...(ledgerActorAuthority != null ? { ledgerActorAuthority } : {}),
+          ...(memberCodexRuntimeLeaseKey != null
+            ? { codexRuntimeLeaseKey: memberCodexRuntimeLeaseKey }
+            : {}),
         })) ?? undefined
       if (memberTeamServer != null) memberMcpServers.spark_team = memberTeamServer
     }
@@ -7283,6 +7320,9 @@ export class SessionService {
         : {}),
       ...(memberCustomEnv != null ? { customEnv: memberCustomEnv } : {}),
       ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
+      ...(memberCodexRuntimeLeaseKey != null
+        ? this.codexRuntimeMcpResources.buildConfig([memberTeamServer])
+        : {}),
       ...(!isCodexMember && !isReadonlyAtomicMember
         ? (() => {
             const plugins = this.resolveNativeSkillPlugins()
@@ -7332,9 +7372,9 @@ export class SessionService {
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
       continueSession: canContinueDiscussionSession,
-      ...(usePersistentMemberCodexAppServer && stableMemberSessionId != null
+      ...(memberCodexRuntimeLeaseKey != null && stableMemberSessionId != null
         ? buildPersistentCodexAppServerConfig({
-            runtimeLeaseKey: `member:${sessionId}:${stableMemberSessionId}`,
+            runtimeLeaseKey: memberCodexRuntimeLeaseKey,
             bindingKey: stableMemberSessionId,
             metadataJson: session.metadata_json,
             onBinding: (binding) => {
@@ -7752,6 +7792,14 @@ export class SessionService {
     // 一次性补齐断流终态并复位，避免历史会话长期显示无法取消的幽灵 spinner。
     this.reconcileZombieRunningSession(params.sessionId)
     return this.queueSnapshot(params.sessionId)
+  }
+
+  getCodexRuntimeDiagnostics() {
+    return this.engineRegistry.getCodexRuntimeDiagnostics()
+  }
+
+  restartIdleCodexRuntimes(leaseKey?: string) {
+    return this.engineRegistry.restartIdleCodexRuntimes(leaseKey)
   }
 
   cancelQueuedTurn(params: { sessionId: string; turnId: string }): SessionCancelQueuedTurnResponse {

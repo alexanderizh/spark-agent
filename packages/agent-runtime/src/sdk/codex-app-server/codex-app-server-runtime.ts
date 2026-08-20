@@ -9,6 +9,10 @@ import {
   CodexAppServerProcessExitedError,
 } from './codex-app-server-client.js'
 import { CodexAppServerRouter } from './codex-app-server-router.js'
+import {
+  readCodexRuntimeProcessStats,
+  type CodexRuntimeProcessStats,
+} from './codex-runtime-process-stats.js'
 
 export interface CodexAppServerRuntimeOptions {
   executablePath: string
@@ -88,6 +92,13 @@ export class CodexAppServerRuntime {
 
   async dispose(): Promise<void> {
     await this.client.dispose()
+  }
+
+  async getDiagnostics(): Promise<
+    (CodexRuntimeProcessStats & { loadedThreadCount: number }) | null
+  > {
+    const stats = await readCodexRuntimeProcessStats(this.client.processId)
+    return stats == null ? null : { ...stats, loadedThreadCount: this.loadedThreads.size }
   }
 }
 

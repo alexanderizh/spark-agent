@@ -329,6 +329,39 @@ describe('PlatformBridgeService referenced sessions payload privacy', () => {
   })
 })
 
+describe('PlatformBridgeService Codex runtime control', () => {
+  let service: PlatformBridgeService
+
+  afterEach(async () => {
+    await service?.stop()
+  })
+
+  it('returns redacted diagnostics and restarts only through SessionService authority', async () => {
+    const diagnostics = {
+      activeRuntimeCount: 1,
+      runtimes: [{ leaseId: 'a1b2c3d4e5f6', state: 'idle' }],
+    }
+    const restart = { restartedLeaseIds: ['a1b2c3d4e5f6'], busyLeaseIds: [] }
+    const sessionService = {
+      getCodexRuntimeDiagnostics: vi.fn(async () => diagnostics),
+      restartIdleCodexRuntimes: vi.fn(async () => restart),
+    }
+    service = new PlatformBridgeService()
+    const port = await service.start({ sessionService } as unknown as PlatformBridgeDeps)
+
+    await expect(callBridgeRpc(port, 'codex_runtime.diagnostics', {})).resolves.toEqual({
+      ok: true,
+      data: { diagnostics },
+    })
+    await expect(callBridgeRpc(port, 'codex_runtime.restart_idle', {})).resolves.toEqual({
+      ok: true,
+      data: { result: restart },
+    })
+    expect(sessionService.getCodexRuntimeDiagnostics).toHaveBeenCalledTimes(1)
+    expect(sessionService.restartIdleCodexRuntimes).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('PlatformBridgeService Provider CRUD', () => {
   let db: SparkDatabase
   let testDir: string

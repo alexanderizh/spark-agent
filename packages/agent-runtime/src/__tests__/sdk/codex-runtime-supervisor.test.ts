@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CodexAppServerRuntimeSupervisor } from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
 import type { ManagedCodexRuntime } from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
+import type { CodexRuntimeResource } from '../../sdk/types.js'
 import {
   createCodexAppServerRuntimeFingerprint,
   createCodexAppServerThreadFingerprint,
@@ -9,6 +10,26 @@ import {
 class FakeRuntime implements ManagedCodexRuntime {
   hasExited = false
   readonly dispose = vi.fn(async () => undefined)
+}
+
+class DiagnosticRuntime extends FakeRuntime {
+  readonly getDiagnostics = vi.fn(async () => ({
+    pid: 4321,
+    rssBytes: 64 * 1024 * 1024,
+    handleCount: 24,
+    loadedThreadCount: 2,
+  }))
+}
+
+function fakeResource(id = 'mcp:session-1'): CodexRuntimeResource & {
+  onAttached: ReturnType<typeof vi.fn>
+  dispose: ReturnType<typeof vi.fn>
+} {
+  return {
+    id,
+    onAttached: vi.fn(),
+    dispose: vi.fn(async () => undefined),
+  }
 }
 
 function deferred<T>() {
@@ -142,6 +163,47 @@ describe('CodexAppServerRuntimeSupervisor', () => {
     await supervisor.dispose()
   })
 
+  it('fingerprint 轮换会把相同 sidecar 原子转移给新 runtime', async () => {
+    const supervisor = new CodexAppServerRuntimeSupervisor<FakeRuntime>({ idleTtlMs: 60_000 })
+    const resource = fakeResource()
+    const firstRuntime = new FakeRuntime()
+    const first = await supervisor.acquire('session-1', 'fp-1', async () => firstRuntime, {
+      resources: [resource],
+    })
+    await first.release()
+
+    const secondRuntime = new FakeRuntime()
+    const second = await supervisor.acquire('session-1', 'fp-2', async () => secondRuntime, {
+      resources: [resource],
+    })
+
+    expect(firstRuntime.dispose).toHaveBeenCalledTimes(1)
+    expect(resource.dispose).not.toHaveBeenCalled()
+    expect(resource.onAttached).toHaveBeenCalledTimes(2)
+    await second.release()
+    await supervisor.dispose()
+    expect(resource.dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('fingerprint 轮换会销毁未被新 runtime 继承的 sidecar', async () => {
+    const supervisor = new CodexAppServerRuntimeSupervisor<FakeRuntime>({ idleTtlMs: 60_000 })
+    const oldResource = fakeResource()
+    const first = await supervisor.acquire('session-1', 'fp-1', async () => new FakeRuntime(), {
+      resources: [oldResource],
+    })
+    await first.release()
+    const newResource = fakeResource()
+    const second = await supervisor.acquire('session-1', 'fp-2', async () => new FakeRuntime(), {
+      resources: [newResource],
+    })
+
+    expect(oldResource.dispose).toHaveBeenCalledTimes(1)
+    expect(newResource.dispose).not.toHaveBeenCalled()
+    await second.release()
+    await supervisor.dispose()
+    expect(newResource.dispose).toHaveBeenCalledTimes(1)
+  })
+
   it('已退出 runtime 在下一次 acquire 时失效并重建', async () => {
     const supervisor = new CodexAppServerRuntimeSupervisor<FakeRuntime>({ idleTtlMs: 60_000 })
     const dead = new FakeRuntime()
@@ -182,6 +244,89 @@ describe('CodexAppServerRuntimeSupervisor', () => {
     }
   })
 
+  it('TTL 到期与 runtime 一起回收 bearer sidecar', async () => {
+    vi.useFakeTimers()
+    try {
+      const supervisor = new CodexAppServerRuntimeSupervisor<FakeRuntime>({ idleTtlMs: 100 })
+      const resource = fakeResource()
+      const lease = await supervisor.acquire('session-1', 'fp-1', async () => new FakeRuntime(), {
+        resources: [resource],
+      })
+      await lease.release()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(resource.dispose).toHaveBeenCalledTimes(1)
+      await supervisor.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('diagnostics 汇总资源、warm/thread 命中与脱敏 lease id', async () => {
+    const supervisor = new CodexAppServerRuntimeSupervisor<DiagnosticRuntime>({
+      idleTtlMs: 60_000,
+    })
+    const resource = fakeResource()
+    const runtime = new DiagnosticRuntime()
+    const first = await supervisor.acquire('host:sensitive-session-id', 'fp', async () => runtime, {
+      resources: [resource],
+    })
+    supervisor.recordThreadMode('start')
+    await first.release()
+    const second = await supervisor.acquire(
+      'host:sensitive-session-id',
+      'fp',
+      async () => runtime,
+      {
+        resources: [resource],
+      },
+    )
+    supervisor.recordThreadMode('loaded')
+    await second.release()
+
+    const diagnostics = await supervisor.getDiagnostics()
+    expect(diagnostics).toMatchObject({
+      activeRuntimeCount: 1,
+      leasedRuntimeCount: 0,
+      processCount: 1,
+      totalRssBytes: 64 * 1024 * 1024,
+      totalHandleCount: 24,
+      counters: {
+        acquireCount: 2,
+        coldStartCount: 1,
+        warmHitCount: 1,
+        warmHitRate: 0.5,
+        threadStartCount: 1,
+        threadLoadedCount: 1,
+      },
+    })
+    expect(diagnostics.runtimes[0]).toMatchObject({
+      state: 'idle',
+      resourceCount: 1,
+      pid: 4321,
+      loadedThreadCount: 2,
+    })
+    expect(JSON.stringify(diagnostics)).not.toContain('sensitive-session-id')
+    await supervisor.dispose()
+  })
+
+  it('manual restart 跳过 busy runtime，并在 idle 后安全回收', async () => {
+    const supervisor = new CodexAppServerRuntimeSupervisor<FakeRuntime>({ idleTtlMs: 60_000 })
+    const runtime = new FakeRuntime()
+    const lease = await supervisor.acquire('host:session-1', 'fp', async () => runtime)
+    const busy = await supervisor.restartIdle()
+    expect(busy.busyLeaseIds).toHaveLength(1)
+    expect(busy.restartedLeaseIds).toHaveLength(0)
+    expect(runtime.dispose).not.toHaveBeenCalled()
+
+    await lease.release()
+    const restarted = await supervisor.restartIdle()
+    expect(restarted.restartedLeaseIds).toEqual(busy.busyLeaseIds)
+    expect(restarted.busyLeaseIds).toHaveLength(0)
+    expect(runtime.dispose).toHaveBeenCalledTimes(1)
+    expect((await supervisor.getDiagnostics()).counters.manualRestartCount).toBe(1)
+    await supervisor.dispose()
+  })
+
   it('超过上限时回收最久未使用的 idle runtime', async () => {
     const supervisor = new CodexAppServerRuntimeSupervisor<FakeRuntime>({
       idleTtlMs: 60_000,
@@ -204,11 +349,18 @@ describe('CodexAppServerRuntimeSupervisor', () => {
 
   it('启动失败不污染缓存，下一次 acquire 可重试', async () => {
     const supervisor = new CodexAppServerRuntimeSupervisor<FakeRuntime>()
+    const failedResource = fakeResource()
     await expect(
-      supervisor.acquire('session-1', 'fp', async () => {
-        throw new Error('spawn failed')
-      }),
+      supervisor.acquire(
+        'session-1',
+        'fp',
+        async () => {
+          throw new Error('spawn failed')
+        },
+        { resources: [failedResource] },
+      ),
     ).rejects.toThrow('spawn failed')
+    expect(failedResource.dispose).toHaveBeenCalledTimes(1)
     const runtime = new FakeRuntime()
     const lease = await supervisor.acquire('session-1', 'fp', async () => runtime)
     expect(lease.runtime).toBe(runtime)

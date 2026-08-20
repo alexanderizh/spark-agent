@@ -8,7 +8,11 @@ import {
 } from '../../sdk/index.js'
 import type { SDKExecutorConfig } from '../../sdk/index.js'
 import type { EngineExecutor, EngineKind } from '../../sdk/engine-executor.js'
-import { CodexAppServerRuntimeSupervisor } from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
+import {
+  CodexAppServerRuntimeSupervisor,
+  type CodexRuntimeRestartResult,
+  type CodexRuntimeSupervisorDiagnostics,
+} from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
 import { isPersistentCodexRuntimeEnabled } from '../../sdk/codex-app-server/codex-app-server-runtime.js'
 import { resolveEngineKind } from './engine-kinds.js'
 
@@ -54,6 +58,7 @@ export class EngineRegistry {
   private readonly descriptors = new Map<EngineKind, EngineDescriptor>()
   private readonly disposeHandlers = new Set<() => void | Promise<void>>()
   private disposePromise: Promise<void> | null = null
+  private codexRuntimeSupervisor: CodexAppServerRuntimeSupervisor | null = null
 
   register(descriptor: EngineDescriptor): void {
     this.descriptors.set(descriptor.kind, descriptor)
@@ -75,6 +80,19 @@ export class EngineRegistry {
 
   registerDisposeHandler(handler: () => void | Promise<void>): void {
     this.disposeHandlers.add(handler)
+  }
+
+  registerCodexRuntimeSupervisor(supervisor: CodexAppServerRuntimeSupervisor): void {
+    this.codexRuntimeSupervisor = supervisor
+    this.registerDisposeHandler(() => supervisor.dispose())
+  }
+
+  getCodexRuntimeDiagnostics(): Promise<CodexRuntimeSupervisorDiagnostics | null> {
+    return this.codexRuntimeSupervisor?.getDiagnostics() ?? Promise.resolve(null)
+  }
+
+  restartIdleCodexRuntimes(leaseKey?: string): Promise<CodexRuntimeRestartResult | null> {
+    return this.codexRuntimeSupervisor?.restartIdle(leaseKey) ?? Promise.resolve(null)
   }
 
   async dispose(): Promise<void> {
@@ -163,7 +181,7 @@ export function createDefaultEngineRegistry(
   registry.register(claudeEngineDescriptor)
   registry.register(createCodexEngineDescriptor(runtimeSupervisor))
   if (runtimeSupervisor != null) {
-    registry.registerDisposeHandler(() => runtimeSupervisor.dispose())
+    registry.registerCodexRuntimeSupervisor(runtimeSupervisor)
   }
   return registry
 }

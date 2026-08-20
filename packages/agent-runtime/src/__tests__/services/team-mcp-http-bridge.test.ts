@@ -20,7 +20,11 @@ const JSONRPC_INIT = JSON.stringify({
   jsonrpc: '2.0',
   id: 1,
   method: 'initialize',
-  params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'raw', version: '0' } },
+  params: {
+    protocolVersion: '2025-06-18',
+    capabilities: {},
+    clientInfo: { name: 'raw', version: '0' },
+  },
 })
 
 const echoDef: TeamToolDefinition = {
@@ -59,7 +63,10 @@ describe('TeamMcpHttpBridge (FR-0b spark_team HTTP 桥接)', () => {
     try {
       const res = await fetch(handle.url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
         body: JSONRPC_INIT,
       })
       expect(res.status).toBe(401)
@@ -117,6 +124,83 @@ describe('TeamMcpHttpBridge (FR-0b spark_team HTTP 桥接)', () => {
       await handleA.close()
       await handleB.close()
     }
+  })
+
+  it('runtime lease 跨 turn 复用 bearer/连接并切换到最新 handler', async () => {
+    const first = await bridge.serve(
+      [
+        {
+          ...echoDef,
+          handler: async () => ({ content: [{ type: 'text', text: 'turn-1' }] }),
+        },
+      ],
+      { runtimeLeaseKey: 'host:session-1' },
+    )
+    expect(first.runtimeResource).toBeDefined()
+    expect(first.runtimeResource?.id).not.toContain('session-1')
+    first.runtimeResource?.onAttached?.()
+    const client = await connectClient(first.url, first.token)
+    expect(
+      (await client.callTool({ name: 'echo', arguments: { text: 'ignored' } })).content,
+    ).toEqual([{ type: 'text', text: 'turn-1' }])
+    await first.close()
+
+    const second = await bridge.serve(
+      [
+        {
+          ...echoDef,
+          handler: async () => ({ content: [{ type: 'text', text: 'turn-2' }] }),
+        },
+      ],
+      { runtimeLeaseKey: 'host:session-1' },
+    )
+    expect(second.token).toBe(first.token)
+    expect(second.runtimeResource).toBe(first.runtimeResource)
+    expect(
+      (await client.callTool({ name: 'echo', arguments: { text: 'ignored' } })).content,
+    ).toEqual([{ type: 'text', text: 'turn-2' }])
+
+    await second.close()
+    await client.close()
+    await second.runtimeResource?.dispose()
+    const response = await fetch(second.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${second.token}`,
+      },
+      body: JSONRPC_INIT,
+    })
+    expect(response.status).toBe(401)
+  })
+
+  it('runtime lease 的工具 schema 变化会轮换 bearer', async () => {
+    const first = await bridge.serve([echoDef], { runtimeLeaseKey: 'host:session-1' })
+    first.runtimeResource?.onAttached?.()
+    await first.close()
+    const second = await bridge.serve(
+      [{ ...echoDef, schema: { text: z.string(), count: z.number().optional() } }],
+      { runtimeLeaseKey: 'host:session-1' },
+    )
+    expect(second.token).not.toBe(first.token)
+    await second.close()
+  })
+
+  it('runtime lease 可为包含 z.custom 的现有 Team 工具生成稳定目录指纹', async () => {
+    const first = await bridge.serve(
+      [{ ...echoDef, schema: { value: z.custom<unknown>(() => true) } }],
+      { runtimeLeaseKey: 'host:custom-schema-session' },
+    )
+    first.runtimeResource?.onAttached?.()
+    await first.close()
+    const second = await bridge.serve(
+      [{ ...echoDef, schema: { value: z.custom<unknown>(() => true) } }],
+      { runtimeLeaseKey: 'host:custom-schema-session' },
+    )
+
+    expect(second.token).toBe(first.token)
+    await second.close()
   })
 
   it('handle.close() 吊销 token：后续请求 → 401', async () => {
