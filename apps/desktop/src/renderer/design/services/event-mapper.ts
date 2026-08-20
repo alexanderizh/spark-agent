@@ -487,6 +487,17 @@ function isCancellationErrorCode(code: string): boolean {
   return CANCELLATION_ERROR_CODES.has(code.trim().toUpperCase())
 }
 
+function isBenignCodexSkillsBudgetError(error: { code: string; message: string }): boolean {
+  const code = error.code.trim().toUpperCase()
+  if (code !== 'CODEX_SDK_ITEM_ERROR' && code !== 'CODEX_CLI_ITEM_ERROR') return false
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('skill descriptions were shortened to fit') &&
+    message.includes('skills context budget') &&
+    message.includes('codex can still see every skill')
+  )
+}
+
 function mergeTurnRuntimeMetrics(
   current: TurnRuntimeMetrics | undefined,
   patch: TurnRuntimeMetrics | undefined,
@@ -963,6 +974,9 @@ export class MessageBuilder {
       }
 
       case 'agent_error': {
+        // Codex 会把 Skills 初始目录的渐进披露裁剪作为 error item 上报；它不影响
+        // 后续读取完整 SKILL.md。这里兼容已经持久化的旧事件，避免历史会话继续显示假失败。
+        if (isBenignCodexSkillsBudgetError(event)) break
         if (event.origin?.kind !== 'subagent' && isCancellationErrorCode(event.code)) {
           const msg =
             this.findAssistantForEvent(event) ??

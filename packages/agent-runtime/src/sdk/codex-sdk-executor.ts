@@ -960,6 +960,10 @@ export function computeDelta(next: string, prev: string): string {
 
 export function isBenignCodexSdkError(message: string): boolean {
   const normalizedMessage = message.toLowerCase()
+  const isSkillsContextBudgetWarning =
+    normalizedMessage.includes('skill descriptions were shortened to fit') &&
+    normalizedMessage.includes('skills context budget') &&
+    normalizedMessage.includes('codex can still see every skill')
   const isUnsupportedResponsesWebSocket =
     normalizedMessage.includes('unexpected status 404') &&
     /wss?:\/\/\S+\/(?:v1\/)?responses\b/i.test(message) &&
@@ -978,7 +982,7 @@ export function isBenignCodexSdkError(message: string): boolean {
     message.includes('dropped') &&
     message.includes('events')
   return (
-    message.includes('Skill descriptions were shortened to fit the 2% skills context budget') ||
+    isSkillsContextBudgetWarning ||
     isUnsupportedServiceTierWarning ||
     isMissingModelMetadataWarning ||
     isEventStreamLagWarning ||

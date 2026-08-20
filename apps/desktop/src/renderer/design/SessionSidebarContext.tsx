@@ -706,31 +706,91 @@ export function SessionSidebarProvider({
     return () => window.clearTimeout(timer)
   }, [refreshData])
 
+  const applyQueueSnapshot = useCallback((snapshot: SessionGetQueueResponse) => {
+    queueRunningRef.current[snapshot.sessionId] = snapshot.running
+    setSessions((prev) => {
+      let changed = false
+      const next = prev.map((item) => {
+        if (item.id !== snapshot.sessionId) return item
+        if (snapshot.running) {
+          if (item.status === 'running') return item
+          changed = true
+          return { ...item, status: 'running' as const, updatedAt: new Date().toISOString() }
+        }
+        if (item.status !== 'running') return item
+        changed = true
+        return { ...item, status: 'idle' as const }
+      })
+      return changed ? next : prev
+    })
+    if (!snapshot.running) {
+      setSessionAgentStatuses((prev) => {
+        if (!(snapshot.sessionId in prev)) return prev
+        const { [snapshot.sessionId]: _, ...rest } = prev
+        return rest
+      })
+    }
+  }, [])
+
   // Real-time session queue state updates
   useEffect(() => {
     return (
-      window.spark?.on?.('stream:session:queue-changed', (snapshot: SessionGetQueueResponse) => {
-        queueRunningRef.current[snapshot.sessionId] = snapshot.running
-        setSessions((prev) =>
-          prev.map((item) => {
-            if (item.id !== snapshot.sessionId) return item
-            if (snapshot.running)
-              return item.status === 'running'
-                ? item
-                : { ...item, status: 'running', updatedAt: new Date().toISOString() }
-            return item.status === 'running' ? { ...item, status: 'idle' } : item
-          }),
-        )
-        if (!snapshot.running) {
-          setSessionAgentStatuses((prev) => {
-            if (!(snapshot.sessionId in prev)) return prev
-            const { [snapshot.sessionId]: _, ...rest } = prev
-            return rest
-          })
-        }
-      }) ?? (() => {})
+      window.spark?.on?.('stream:session:queue-changed', (snapshot: SessionGetQueueResponse) =>
+        applyQueueSnapshot(snapshot),
+      ) ?? (() => {})
     )
-  }, [])
+  }, [applyQueueSnapshot])
+
+  const activeRunningSessionId =
+    active != null &&
+    sessions.some((session) => session.id === active && session.status === 'running')
+      ? active
+      : null
+
+  // 历史会话可能残留持久化 running，却已没有主进程执行所有权。对当前活跃会话在
+  // 切换/聚焦时立即核对，并以 15s 低频兜底；后端 getQueueState 会先完成权威协调。
+  useEffect(() => {
+    if (!reportAppActivity || activeRunningSessionId == null) return
+    let disposed = false
+    let inFlight = false
+    const reconcile = async (): Promise<void> => {
+      if (inFlight) return
+      inFlight = true
+      try {
+        // 轮询不走 useIpcInvoke：其 loading/error 状态会让整个 sidebar provider
+        // 每 15 秒无意义重渲染，直接调用 typed preload IPC 即可。
+        const snapshot = await window.spark.invoke('session:get-queue', {
+          sessionId: activeRunningSessionId,
+        })
+        if (
+          !disposed &&
+          snapshot.sessionId === activeRunningSessionId &&
+          typeof snapshot.running === 'boolean' &&
+          Array.isArray(snapshot.queuedTurns)
+        ) {
+          applyQueueSnapshot(snapshot)
+        }
+      } catch (error) {
+        console.warn('[session-queue] active session health check failed:', error)
+      } finally {
+        inFlight = false
+      }
+    }
+    void reconcile()
+    const interval = window.setInterval(() => void reconcile(), 15_000)
+    const onFocus = () => void reconcile()
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void reconcile()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      disposed = true
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [activeRunningSessionId, applyQueueSnapshot, reportAppActivity])
 
   // Real-time agent status tracking (waiting_permission / waiting_user)
   useEffect(() => {

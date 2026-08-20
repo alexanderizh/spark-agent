@@ -815,6 +815,35 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('ignores a persisted Codex Skills context budget warning without hiding real item errors', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-before-skills-warning',
+      type: 'assistant_message',
+      mode: 'delta',
+      content: '继续处理任务。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'skills-warning-segment',
+    })
+    builder.processEvent({
+      ...baseEvent('agent_error'),
+      id: 'skills-budget-warning',
+      type: 'agent_error',
+      code: 'CODEX_SDK_ITEM_ERROR',
+      message:
+        'Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.',
+      retryable: true,
+    })
+
+    const [assistant] = builder.getAllMessages()
+    expect(assistant?.blocks).toHaveLength(1)
+    expect(assistant?.blocks[0]).toMatchObject({ kind: 'text', content: '继续处理任务。' })
+    expect(assistant?.status).not.toBe('error')
+  })
+
   it('appends later complete blocks when one SDK message reuses the same segment id', () => {
     const builder = new MessageBuilder()
 

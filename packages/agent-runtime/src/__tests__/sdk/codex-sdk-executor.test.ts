@@ -522,7 +522,7 @@ describe('CodexSdkExecutor', () => {
             id: 'warn-1',
             type: 'error',
             message:
-              'Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill, but some descriptions are shorter.',
+              'Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.',
           },
         },
         {

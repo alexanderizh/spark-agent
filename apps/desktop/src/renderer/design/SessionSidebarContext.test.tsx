@@ -217,6 +217,78 @@ describe('SessionSidebarContext', () => {
     expect(latestCtxRef.current?.unreviewedCompletedSessions.has('session-1')).toBe(true)
   })
 
+  it('reconciles a stale active running session from authoritative queue state', async () => {
+    const addEventListener = vi.spyOn(window, 'addEventListener')
+    localStorage.setItem('spark-agent:last-active-session', 'session-ghost')
+    const session = {
+      id: 'session-ghost',
+      title: 'Stale running session',
+      status: 'running',
+      workspaceIds: [],
+      updatedAt: '2026-08-21T00:00:00.000Z',
+    } as unknown as SessionSummary
+    let queueRunning = true
+    let onAgentEvent: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [session], total: 1 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'scheduled-task:list') return { tasks: [] }
+      if (channel === 'session:get-queue') {
+        return { sessionId: 'session-ghost', running: queueRunning, queuedTurns: [] }
+      }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, handler: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:agent-event') onAgentEvent = handler
+        return vi.fn()
+      }),
+    })
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(latestCtxRef.current?.activeSessionId).toBe('session-ghost')
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('running')
+    expect(addEventListener).toHaveBeenCalledWith('focus', expect.any(Function))
+
+    await act(async () => {
+      onAgentEvent?.({
+        type: 'agent_status',
+        status: 'waiting_permission',
+        sessionId: 'session-ghost',
+      })
+      queueRunning = false
+      window.dispatchEvent(new Event('focus'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(invoke).toHaveBeenCalledWith('session:get-queue', { sessionId: 'session-ghost' })
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('idle')
+    expect(latestCtxRef.current?.sessionAgentStatuses['session-ghost']).toBeUndefined()
+  })
+
   it('clears unread marks of project sessions when the project is archived', async () => {
     appContextMock.view = 'settings'
     localStorage.setItem('spark-agent:last-active-session', 'session-1')

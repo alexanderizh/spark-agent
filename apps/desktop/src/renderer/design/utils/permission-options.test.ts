@@ -6,8 +6,8 @@ describe('Codex permission copy', () => {
     expect(CODEX_PERMISSION_MODE_OPTIONS).toEqual([
       expect.objectContaining({
         value: 'codex-default',
-        label: '请求批准',
-        description: expect.stringContaining('workspace-write'),
+        label: '按需批准',
+        description: expect.stringMatching(/工作区内.*自动执行/),
       }),
       expect.objectContaining({
         value: 'codex-auto-review',

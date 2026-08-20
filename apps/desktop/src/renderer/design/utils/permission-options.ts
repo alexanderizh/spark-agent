@@ -39,8 +39,8 @@ export const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
 export const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
   {
     value: 'codex-default',
-    label: '请求批准',
-    description: 'workspace-write；越界操作请求批准，SDK 无法承接时会拒绝',
+    label: '按需批准',
+    description: 'workspace-write；工作区内安全写入自动执行，越界操作请求批准',
   },
   {
     value: 'codex-auto-review',

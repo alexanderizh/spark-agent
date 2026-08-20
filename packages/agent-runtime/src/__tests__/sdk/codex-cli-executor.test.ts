@@ -399,7 +399,7 @@ describe('CodexCliExecutor', () => {
     spawnMock.mockImplementation(
       (_command: string, args: string[]) =>
         new MockChildProcess(args, [
-          '{"type":"item.completed","item":{"type":"error","message":"Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill, but some descriptions are shorter."}}',
+          '{"type":"item.completed","item":{"type":"error","message":"Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest."}}',
           '{"type":"item.completed","item":{"type":"agent_message","text":"继续执行"}}',
         ]),
     )

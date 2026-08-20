@@ -854,7 +854,12 @@ function normalizeCodexCliErrorText(value: string): string {
 }
 
 function isBenignCodexCliItemError(message: string): boolean {
-  return message.includes('Skill descriptions were shortened to fit the 2% skills context budget')
+  const normalizedMessage = message.toLowerCase()
+  return (
+    normalizedMessage.includes('skill descriptions were shortened to fit') &&
+    normalizedMessage.includes('skills context budget') &&
+    normalizedMessage.includes('codex can still see every skill')
+  )
 }
 
 function findTextFromLine(line: string): string {
