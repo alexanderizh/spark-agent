@@ -247,7 +247,9 @@ function OperationOutputDeck({
   const outputs = activeRun?.outputs ?? []
   const activeOutput = outputs[Math.min(outputIndex, Math.max(0, outputs.length - 1))]
   const displayRunNumber = activeRun ? runs.length - runIndex : 0
-  const showOutputList = outputs.length > 1
+  const showOutputList =
+    outputs.length > 1 &&
+    outputs.every((output) => output.type === 'text' || output.type === 'prompt')
   const shouldShowOutputNavigation = runs.length > 1
 
   if (!activeRun) return <>{fallback}</>
@@ -1668,7 +1670,10 @@ export const CanvasNode = memo(function CanvasNode({
                           decoding="async"
                         />
                         {!isTask && (
-                          <div className="canvas-node-image-chips">
+                          <div
+                            className="canvas-node-image-chips nodrag nopan"
+                            onPointerDown={(event) => event.stopPropagation()}
+                          >
                             <button
                               type="button"
                               className="canvas-node-subview-chip canvas-node-image-chip-replace"

@@ -1173,7 +1173,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  z-index: 2;
+  // 图片操作按钮位于节点右下角，必须盖过同一区域的 NodeResizer 角点，
+  // 否则按钮虽然可见，点击会被缩放控件拦截。
+  z-index: 8;
 }
 
 .canvas-node-subview-chip {
@@ -3079,7 +3081,6 @@ body.canvas-side-panel-resizing {
     text-overflow: ellipsis;
     white-space: nowrap;
     line-height: 1.5;
-
   }
 }
 

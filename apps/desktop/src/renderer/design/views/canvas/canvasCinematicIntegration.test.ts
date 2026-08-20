@@ -263,6 +263,18 @@ describe('canvas cinematic integration', () => {
     expect(nodeStyles).toContain('background: linear-gradient(transparent, rgba(5, 7, 9, 0.84))')
   })
 
+  it('keeps loaded image action chips clickable above the resize handle', () => {
+    const node = readCanvasSource('./CanvasNode.tsx')
+    const workspaceStyles = readCanvasSource('./CanvasWorkspaceView.less')
+
+    expect(node).toContain('className="canvas-node-image-chips nodrag nopan"')
+    expect(node).toContain('onPointerDown={(event) => event.stopPropagation()}')
+    expect(workspaceStyles).toMatch(
+      /\.canvas-node-resize-handle\s*\{[\s\S]*?z-index:\s*7\s*!important;/,
+    )
+    expect(workspaceStyles).toMatch(/\.canvas-node-image-chips\s*\{[\s\S]*?z-index:\s*8;/)
+  })
+
   it('keeps readable inset spacing on text nodes without affecting flat media frames', () => {
     const nodeStyles = readCanvasSource('./cinematic/nodes.less')
 
@@ -390,15 +402,19 @@ describe('canvas cinematic integration', () => {
     expect(switcherStyles).toContain('flex-wrap: nowrap')
   })
 
-  it('renders every current-run operation output as a list and wires per-output expansion', () => {
+  it('renders text outputs as a list and wires per-output expansion', () => {
     const node = readCanvasSource('./CanvasNode.tsx')
     const preview = readCanvasSource('./CanvasOperationOutputPreview.tsx')
     const previewStyles = readCanvasSource('./CanvasOperationOutputPreview.less')
 
-    expect(node).toContain('const showOutputList = outputs.length > 1')
+    expect(node).toContain('outputs.length > 1 &&')
+    expect(node).toContain(
+      "outputs.every((output) => output.type === 'text' || output.type === 'prompt')",
+    )
     expect(node).toContain('onExpandOutput: (output: CanvasOperationOutputView) =>')
     expect(node).toContain('actions.expandOperationOutputs?.(node.id, [output])')
-    expect(preview).toContain('className="canvas-operation-output-list-expand nodrag nopan"')
+    expect(preview).toContain('className="canvas-operation-output-list-actions nodrag nopan"')
+    expect(preview).toContain('className="canvas-operation-output-list-expand"')
     expect(preview).toContain('onExpandOutput(output)')
     expect(previewStyles).toContain('grid-template-columns: 32px minmax(0, 1fr) auto')
   })
