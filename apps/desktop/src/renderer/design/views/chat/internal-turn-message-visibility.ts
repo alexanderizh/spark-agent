@@ -24,7 +24,26 @@ export function projectVisibleChatMessages(messages: UIMessage[]): UIMessage[] {
   }
 
   return messages.flatMap((message) => {
-    if (message.role === 'user' && message.userMessageVisibility === 'hidden') return []
+    if (message.role === 'user' && message.userMessageVisibility === 'hidden') {
+      if (
+        message.userMessageDisplayContent == null ||
+        message.userMessageDisplayContent.trim().length === 0
+      ) {
+        return []
+      }
+      return [
+        {
+          ...message,
+          blocks: [
+            {
+              kind: 'text' as const,
+              content: message.userMessageDisplayContent,
+              isStreaming: false,
+            },
+          ],
+        },
+      ]
+    }
     const hiddenPresentation = message.turnId == null ? undefined : hiddenTurns.get(message.turnId)
     return hiddenPresentation == null ? [message] : [{ ...message, ...hiddenPresentation }]
   })
@@ -49,14 +68,23 @@ function getInternalTurnDisplayLabel(turnSource: SessionQueuedTurn['turnSource']
 export function projectQueuedTurnsForDisplay(turns: SessionQueuedTurn[]): SessionQueuedTurn[] {
   return turns.map((turn) =>
     turn.userMessageVisibility === 'hidden'
-      ? { ...turn, message: getInternalTurnDisplayLabel(turn.turnSource) }
+      ? {
+          ...turn,
+          message:
+            turn.userMessageDisplayContent != null &&
+            turn.userMessageDisplayContent.trim().length > 0
+              ? turn.userMessageDisplayContent
+              : getInternalTurnDisplayLabel(turn.turnSource),
+        }
       : turn,
   )
 }
 
-/** Runtime audit keeps the snapshot but never renders an explicitly hidden user prompt. */
+/** Runtime audit shows only the explicit safe body for a hidden prompt, otherwise a placeholder. */
 export function getVisibleTurnPromptSnapshotUserMessage(snapshot: TurnPromptSnapshotEvent): string {
-  return snapshot.userMessageVisibility === 'hidden'
-    ? HIDDEN_INTERNAL_TURN_PLACEHOLDER
-    : snapshot.userMessage
+  if (snapshot.userMessageVisibility !== 'hidden') return snapshot.userMessage
+  return snapshot.userMessageDisplayContent != null &&
+    snapshot.userMessageDisplayContent.trim().length > 0
+    ? snapshot.userMessageDisplayContent
+    : HIDDEN_INTERNAL_TURN_PLACEHOLDER
 }

@@ -45,8 +45,10 @@ export interface UIMessage {
   turnId?: string
   /** Persisted Turn source; used by the renderer's visible projection and audit-safe actions. */
   turnSource?: TurnSource
-  /** Only the user bubble is hidden; logical messages and assistant output remain available. */
+  /** The original user body is hidden; logical messages and assistant output remain available. */
   userMessageVisibility?: UserMessageVisibility
+  /** Safe user-facing body for an otherwise hidden platform-generated message. */
+  userMessageDisplayContent?: string
   role: 'user' | 'assistant'
   status: 'streaming' | 'completed' | 'error' | 'cancelled'
   blocks: UIBlock[]
@@ -640,6 +642,9 @@ export class MessageBuilder {
           ...(event.turnSource != null ? { turnSource: event.turnSource } : {}),
           ...(event.userMessageVisibility != null
             ? { userMessageVisibility: event.userMessageVisibility }
+            : {}),
+          ...(event.userMessageDisplayContent != null
+            ? { userMessageDisplayContent: event.userMessageDisplayContent }
             : {}),
         }
         const existingAssistantIndex = this.messages.findIndex(

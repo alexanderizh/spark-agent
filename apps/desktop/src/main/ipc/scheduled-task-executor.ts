@@ -1,8 +1,9 @@
-import { SCHEDULED_TASK_TURN_PRESENTATION } from '@spark/protocol'
+import { createScheduledTaskTurnPresentation } from '@spark/protocol'
 
 export interface SessionScheduledTaskTurnParams {
   sessionId: string
   promptTemplate: string
+  userMessageDisplayContent: string
   onSessionCreated?: (sessionId: string) => void
 }
 
@@ -13,6 +14,7 @@ export interface SessionScheduledTaskTurnDeps {
     message: string
     turnSource: 'scheduled_task'
     userMessageVisibility: 'hidden'
+    userMessageDisplayContent: string
   }) => Promise<{ turnId: string }>
 }
 
@@ -33,7 +35,7 @@ export async function runSessionScheduledTaskTurn(
   const result = await deps.submitTurn({
     sessionId: params.sessionId,
     message: params.promptTemplate,
-    ...SCHEDULED_TASK_TURN_PRESENTATION,
+    ...createScheduledTaskTurnPresentation(params.userMessageDisplayContent),
   })
   return {
     sessionId: params.sessionId,

@@ -49,12 +49,16 @@ export function extractSearchableEventBody(eventType: string, eventJson: string)
     content?: unknown
     mode?: unknown
     userMessageVisibility?: unknown
+    userMessageDisplayContent?: unknown
   }
-  if (eventType === 'user_message' && event.userMessageVisibility === 'hidden') return null
+  const visibleContent =
+    eventType === 'user_message' && event.userMessageVisibility === 'hidden'
+      ? event.userMessageDisplayContent
+      : event.content
   // 流式 delta 是同一段正文的碎片，索引它们会产生大量重复命中；只索引完整消息。
   if (event.mode === 'delta') return null
-  if (typeof event.content !== 'string') return null
-  const content = event.content.trim()
+  if (typeof visibleContent !== 'string') return null
+  const content = visibleContent.trim()
   if (content.length === 0) return null
   return content.slice(0, MAX_INDEXED_BODY_CHARS)
 }

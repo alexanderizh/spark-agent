@@ -11,6 +11,7 @@ describe('runSessionScheduledTaskTurn', () => {
       {
         sessionId: 'session-1',
         promptTemplate: 'Inspect the current repository state',
+        userMessageDisplayContent: 'Inspect the repository',
         onSessionCreated,
       },
       {
@@ -24,6 +25,7 @@ describe('runSessionScheduledTaskTurn', () => {
       message: 'Inspect the current repository state',
       turnSource: 'scheduled_task',
       userMessageVisibility: 'hidden',
+      userMessageDisplayContent: 'Inspect the repository',
     })
     expect(onSessionCreated).toHaveBeenCalledWith('session-1')
     expect(result).toEqual({ sessionId: 'session-1', output: 'Turn turn-1 queued' })
@@ -34,14 +36,14 @@ describe('runSessionScheduledTaskTurn', () => {
 
     await expect(
       runSessionScheduledTaskTurn(
-        { sessionId: 'missing', promptTemplate: 'Run' },
+        { sessionId: 'missing', promptTemplate: 'Run', userMessageDisplayContent: 'Run' },
         { getSession: () => null, submitTurn },
       ),
     ).rejects.toThrow('no longer exists')
 
     await expect(
       runSessionScheduledTaskTurn(
-        { sessionId: 'archived', promptTemplate: 'Run' },
+        { sessionId: 'archived', promptTemplate: 'Run', userMessageDisplayContent: 'Run' },
         {
           getSession: () => ({ id: 'archived', archived_at: '2026-08-01T08:00:00.000Z' }),
           submitTurn,

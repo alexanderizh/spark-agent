@@ -492,6 +492,7 @@ describe('ScheduledTaskService', () => {
         agentId: 'agent-1',
         taskName: 'Daily Review v2',
         promptTemplate: expect.stringContaining('review the repo carefully'),
+        userMessageDisplayContent: 'review the repo carefully',
       }),
     )
     expect(executor).toHaveBeenCalledWith(

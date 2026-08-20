@@ -27,6 +27,7 @@ function addEvent(
     status?: string
     sdkSessionId?: string
     userMessageVisibility?: 'visible' | 'hidden'
+    userMessageDisplayContent?: string
   },
 ): void {
   events.insert({
@@ -47,6 +48,9 @@ function addEvent(
       ...(input.sdkSessionId != null ? { sdkSessionId: input.sdkSessionId } : {}),
       ...(input.userMessageVisibility != null
         ? { userMessageVisibility: input.userMessageVisibility }
+        : {}),
+      ...(input.userMessageDisplayContent != null
+        ? { userMessageDisplayContent: input.userMessageDisplayContent }
         : {}),
     }),
   })
@@ -578,6 +582,76 @@ describe('SessionCollaborationRepository', () => {
         })
         .map((candidate) => candidate.sessionId),
     ).toEqual(['content-source'])
+  })
+
+  it('finds completed scheduled task turns by their safe display body only', () => {
+    sessions.create({
+      id: 'scheduled-target',
+      kind: 'chat',
+      title: 'Target',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    sessions.create({
+      id: 'scheduled-source',
+      kind: 'chat',
+      title: 'Scheduled source',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    addEvent(events, {
+      id: 'scheduled-user',
+      sessionId: 'scheduled-source',
+      runId: 'scheduled-run',
+      turnId: 'scheduled-turn',
+      seq: 0,
+      type: 'user_message',
+      content: '[Scheduled Task Context] private-scheduler-marker',
+      userMessageVisibility: 'hidden',
+      userMessageDisplayContent: 'inspect-visible-marker',
+    })
+    addEvent(events, {
+      id: 'scheduled-assistant',
+      sessionId: 'scheduled-source',
+      runId: 'scheduled-run',
+      turnId: 'scheduled-turn',
+      seq: 1,
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'scheduled result',
+    })
+    addEvent(events, {
+      id: 'scheduled-status',
+      sessionId: 'scheduled-source',
+      runId: 'scheduled-run',
+      turnId: 'scheduled-turn',
+      seq: 2,
+      type: 'agent_status',
+      status: 'completed',
+    })
+
+    expect(
+      collaboration
+        .listCandidates({
+          targetSessionId: 'scheduled-target',
+          query: 'inspect-visible-marker',
+        })
+        .map((candidate) => candidate.sessionId),
+    ).toEqual(['scheduled-source'])
+    expect(
+      collaboration.listCandidates({
+        targetSessionId: 'scheduled-target',
+        query: 'private-scheduler-marker',
+      }),
+    ).toEqual([])
+    expect(
+      collaboration
+        .listCandidates({
+          targetSessionId: 'scheduled-target',
+          query: 'scheduled result',
+        })
+        .map((candidate) => candidate.sessionId),
+    ).toEqual(['scheduled-source'])
   })
 
   it('paginates dense reference turns without splitting a turn across pages', () => {

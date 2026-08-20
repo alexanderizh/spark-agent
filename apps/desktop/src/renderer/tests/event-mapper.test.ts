@@ -350,12 +350,14 @@ describe('MessageBuilder', () => {
       content: 'internal prompt',
       turnSource: 'scheduled_task',
       userMessageVisibility: 'hidden',
+      userMessageDisplayContent: 'inspect repository',
     })
 
     expect(builder.getAllMessages()[0]).toMatchObject({
       role: 'user',
       turnSource: 'scheduled_task',
       userMessageVisibility: 'hidden',
+      userMessageDisplayContent: 'inspect repository',
     })
   })
 

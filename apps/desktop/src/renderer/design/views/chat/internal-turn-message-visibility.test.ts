@@ -20,15 +20,22 @@ function message(patch: Partial<UIMessage> & Pick<UIMessage, 'id' | 'role'>): UI
 }
 
 describe('projectVisibleChatMessages', () => {
-  it('hides only the internal user bubble and keeps the assistant result', () => {
+  it('shows only the scheduled task body and keeps the assistant result', () => {
     const logicalMessages: UIMessage[] = [
       message({
         id: 'internal-user',
         turnId: 'turn-1',
         role: 'user',
-        blocks: [{ kind: 'text', content: 'built-in prompt', isStreaming: false }],
+        blocks: [
+          {
+            kind: 'text',
+            content: '[Scheduled Task Context]\nprivate\n[Task Instructions]\ninspect repository',
+            isStreaming: false,
+          },
+        ],
         turnSource: 'scheduled_task',
         userMessageVisibility: 'hidden',
+        userMessageDisplayContent: 'inspect repository',
       }),
       message({ id: 'assistant-result', turnId: 'turn-1', role: 'assistant' }),
       message({ id: 'real-user', turnId: 'turn-2', role: 'user' }),
@@ -36,8 +43,15 @@ describe('projectVisibleChatMessages', () => {
 
     const visible = projectVisibleChatMessages(logicalMessages)
 
-    expect(visible.map((item) => item.id)).toEqual(['assistant-result', 'real-user'])
-    expect(visible[0]).toMatchObject({
+    expect(visible.map((item) => item.id)).toEqual([
+      'internal-user',
+      'assistant-result',
+      'real-user',
+    ])
+    expect(visible[0]?.blocks).toEqual([
+      { kind: 'text', content: 'inspect repository', isStreaming: false },
+    ])
+    expect(visible[1]).toMatchObject({
       turnSource: 'scheduled_task',
       userMessageVisibility: 'hidden',
     })
@@ -50,9 +64,13 @@ describe('projectVisibleChatMessages', () => {
       { turnId: 'turn-2' },
     ])
     expect(groupChatPanelMessagesByTurn(visible)[0]?.messages.map((item) => item.id)).toEqual([
+      'internal-user',
       'assistant-result',
     ])
     expect(logicalMessages).toHaveLength(3)
+    expect(logicalMessages[0]?.blocks[0]).toMatchObject({
+      content: expect.stringContaining('private'),
+    })
   })
 
   it('keeps legacy and explicitly visible user messages unchanged', () => {
@@ -76,6 +94,7 @@ describe('projectVisibleChatMessages', () => {
           enqueuedAt: '2026-08-13T00:00:00.000Z',
           turnSource: 'scheduled_task',
           userMessageVisibility: 'hidden',
+          userMessageDisplayContent: 'check deployment status',
         },
         {
           turnId: 'user',
@@ -86,7 +105,7 @@ describe('projectVisibleChatMessages', () => {
     ).toEqual([
       expect.objectContaining({
         turnId: 'internal',
-        message: '定时任务自动执行',
+        message: 'check deployment status',
         userMessageVisibility: 'hidden',
       }),
       expect.objectContaining({ turnId: 'user', message: 'visible prompt' }),
@@ -146,11 +165,33 @@ describe('projectVisibleChatMessages', () => {
         timestamp: '2026-08-13T00:00:00.000Z',
         seq: 1,
         userMessage: 'internal prompt',
+        userMessageDisplayContent: 'check deployment status',
         systemPromptSections: [],
         model: 'model',
         adapterKind: 'codex',
         permissionMode: 'default',
         toolCount: 0,
+        userMessageVisibility: 'hidden',
+      }),
+    ).toBe('check deployment status')
+  })
+
+  it('keeps pure internal prompt snapshots redacted when no safe body is provided', () => {
+    expect(
+      getVisibleTurnPromptSnapshotUserMessage({
+        id: 'snapshot-goal',
+        type: 'turn_prompt_snapshot',
+        sessionId: 'session',
+        turnId: 'turn-goal',
+        timestamp: '2026-08-13T00:00:00.000Z',
+        seq: 1,
+        userMessage: 'internal goal prompt',
+        systemPromptSections: [],
+        model: 'model',
+        adapterKind: 'codex',
+        permissionMode: 'default',
+        toolCount: 0,
+        turnSource: 'goal_iteration',
         userMessageVisibility: 'hidden',
       }),
     ).toBe(HIDDEN_INTERNAL_TURN_PLACEHOLDER)

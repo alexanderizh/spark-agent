@@ -335,16 +335,38 @@ export class SessionCollaborationRepository extends BaseRepository {
                       json_extract(searchable_events.event_json, '$.userMessageVisibility'),
                       'visible'
                     ) <> 'hidden'
+                    OR (
+                      typeof(json_extract(
+                        searchable_events.event_json,
+                        '$.userMessageDisplayContent'
+                      )) = 'text'
+                      AND TRIM(json_extract(
+                        searchable_events.event_json,
+                        '$.userMessageDisplayContent'
+                      )) <> ''
+                    )
                   )
                   AND EXISTS (
                     SELECT 1 FROM agent_events visible_user_events
                     WHERE visible_user_events.session_id = searchable_events.session_id
                       AND visible_user_events.turn_id = searchable_events.turn_id
                       AND visible_user_events.event_type = 'user_message'
-                      AND COALESCE(
-                        json_extract(visible_user_events.event_json, '$.userMessageVisibility'),
-                        'visible'
-                      ) <> 'hidden'
+                      AND (
+                        COALESCE(
+                          json_extract(visible_user_events.event_json, '$.userMessageVisibility'),
+                          'visible'
+                        ) <> 'hidden'
+                        OR (
+                          typeof(json_extract(
+                            visible_user_events.event_json,
+                            '$.userMessageDisplayContent'
+                          )) = 'text'
+                          AND TRIM(json_extract(
+                            visible_user_events.event_json,
+                            '$.userMessageDisplayContent'
+                          )) <> ''
+                        )
+                      )
                   )
                   AND EXISTS (
                     SELECT 1 FROM agent_events completion_events
@@ -354,7 +376,18 @@ export class SessionCollaborationRepository extends BaseRepository {
                       AND json_extract(completion_events.event_json, '$.status')
                         IN ('idle', 'completed', 'cancelled', 'error')
                   )
-                  AND json_extract(searchable_events.event_json, '$.content') LIKE ? ESCAPE '\\'
+                  AND CASE
+                    WHEN searchable_events.event_type = 'user_message'
+                      AND json_extract(
+                        searchable_events.event_json,
+                        '$.userMessageVisibility'
+                      ) = 'hidden'
+                    THEN json_extract(
+                      searchable_events.event_json,
+                      '$.userMessageDisplayContent'
+                    )
+                    ELSE json_extract(searchable_events.event_json, '$.content')
+                  END LIKE ? ESCAPE '\\'
               )
             )
           )

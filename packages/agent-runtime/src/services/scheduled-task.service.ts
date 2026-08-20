@@ -120,6 +120,8 @@ export type TaskExecutorFn = (params: {
   modelId?: string | null
   workspaceId?: string | null
   promptTemplate: string
+  /** User-authored task body shown in chat; promptTemplate also contains scheduler context. */
+  userMessageDisplayContent: string
   permissionMode?: string
   timeoutSeconds?: number
   taskName: string
@@ -630,8 +632,12 @@ export class ScheduledTaskService {
 
       // Resolve prompt template variables
       const promptContextTask = this.taskRepo.get(task.id) ?? task
+      const userMessageDisplayContent = this.resolveTemplate(
+        task.prompt_template,
+        promptContextTask,
+      )
       const prompt = this.buildExecutionPrompt(
-        this.resolveTemplate(task.prompt_template, promptContextTask),
+        userMessageDisplayContent,
         promptContextTask,
         _triggerType,
       )
@@ -645,6 +651,7 @@ export class ScheduledTaskService {
           modelId: task.model_id,
           workspaceId: task.workspace_id,
           promptTemplate: prompt,
+          userMessageDisplayContent,
           permissionMode: task.permission_mode,
           timeoutSeconds: task.timeout_seconds,
           taskName: task.name,

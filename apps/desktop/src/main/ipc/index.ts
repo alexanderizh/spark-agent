@@ -230,7 +230,7 @@ import {
   MediaModelManifestSchema,
   isAutoRouterProvider,
   migrateMediaModelManifestToV2,
-  SCHEDULED_TASK_TURN_PRESENTATION,
+  createScheduledTaskTurnPresentation,
   validateMediaModelManifestSemantics,
 } from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
@@ -1813,11 +1813,7 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
 
   if (params.sessionId != null) {
     return runSessionScheduledTaskTurn(
-      {
-        sessionId: params.sessionId,
-        promptTemplate: params.promptTemplate,
-        ...(params.onSessionCreated != null ? { onSessionCreated: params.onSessionCreated } : {}),
-      },
+      { ...params, sessionId: params.sessionId },
       {
         getSession: (sessionId) => sessionRepo.get(sessionId),
         submitTurn: (turn) => sessionService.submitTurn(turn),
@@ -1876,7 +1872,7 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
     const result = await sessionService.sendTurn({
       sessionId: created.sessionId,
       message: params.promptTemplate,
-      ...SCHEDULED_TASK_TURN_PRESENTATION,
+      ...createScheduledTaskTurnPresentation(params.userMessageDisplayContent),
       providerProfileId: runtime.providerProfileId,
       ...(runtime.modelId != null ? { modelId: runtime.modelId } : {}),
       ...(runtime.agentId != null ? { agentId: runtime.agentId } : {}),

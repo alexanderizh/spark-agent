@@ -12,12 +12,26 @@ export type UserMessageVisibility = 'visible' | 'hidden'
 export interface UserMessagePresentation {
   turnSource?: TurnSource
   userMessageVisibility?: UserMessageVisibility
+  /**
+   * 当模型输入包含平台内部上下文时，聊天时间线可展示的安全正文。
+   * 缺省时继续遵循 userMessageVisibility；该字段不改变模型实际收到的消息。
+   */
+  userMessageDisplayContent?: string
 }
 
 export const SCHEDULED_TASK_TURN_PRESENTATION = {
   turnSource: 'scheduled_task',
   userMessageVisibility: 'hidden',
 } as const satisfies UserMessagePresentation
+
+export function createScheduledTaskTurnPresentation(
+  userMessageDisplayContent: string,
+): typeof SCHEDULED_TASK_TURN_PRESENTATION & { userMessageDisplayContent: string } {
+  return {
+    ...SCHEDULED_TASK_TURN_PRESENTATION,
+    userMessageDisplayContent,
+  }
+}
 
 export const GOAL_CONTRACT_DRAFT_TURN_PRESENTATION = {
   turnSource: 'goal_contract_draft',
@@ -46,6 +60,9 @@ export function pickUserMessagePresentation(
     ...(value.turnSource != null ? { turnSource: value.turnSource } : {}),
     ...(value.userMessageVisibility != null
       ? { userMessageVisibility: value.userMessageVisibility }
+      : {}),
+    ...(value.userMessageDisplayContent != null
+      ? { userMessageDisplayContent: value.userMessageDisplayContent }
       : {}),
   }
 }

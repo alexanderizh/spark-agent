@@ -1027,6 +1027,7 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
       presentation?: {
         turnSource?: 'user' | 'scheduled_task' | 'goal_contract_draft' | 'goal_iteration'
         userMessageVisibility?: 'visible' | 'hidden'
+        userMessageDisplayContent?: string
       },
     ) => Promise<void>
   }
@@ -1062,11 +1063,12 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
     expect(enqueueTurn.mock.calls[0]![0]).toBe('session-new')
   })
 
-  it('入队时保留内部 Turn 的来源与用户消息可见性', async () => {
+  it('入队时保留内部 Turn 的来源、可见性与安全展示正文', async () => {
     const service = makeStartTurnService(1, 1)
     const presentation = {
       turnSource: 'scheduled_task' as const,
       userMessageVisibility: 'hidden' as const,
+      userMessageDisplayContent: 'inspect repository',
     }
 
     await service.startTurn('session-new', 'turn-1', 'internal prompt', presentation)
@@ -1132,6 +1134,7 @@ describe('SessionService.queueSnapshot (内部 Turn 展示隔离)', () => {
           message: string
           enqueuedAt: string
           userMessageVisibility?: 'visible' | 'hidden'
+          userMessageDisplayContent?: string
         }>,
       ) => Array<{ turnId: string; message: string }>
     }
@@ -1143,6 +1146,7 @@ describe('SessionService.queueSnapshot (内部 Turn 展示隔离)', () => {
           message: 'internal prompt',
           enqueuedAt: '2026-08-13T00:00:00.000Z',
           userMessageVisibility: 'hidden',
+          userMessageDisplayContent: 'inspect repository',
         },
         {
           turnId: 'user-turn',
@@ -1155,6 +1159,7 @@ describe('SessionService.queueSnapshot (内部 Turn 展示隔离)', () => {
         turnId: 'internal-turn',
         message: 'internal prompt',
         userMessageVisibility: 'hidden',
+        userMessageDisplayContent: 'inspect repository',
       }),
       expect.objectContaining({ turnId: 'user-turn', message: 'visible prompt' }),
     ])

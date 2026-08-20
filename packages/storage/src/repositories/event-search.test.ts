@@ -125,6 +125,33 @@ describe('EventRepository — 会话内容搜索 (FTS5)', () => {
     ).toBeNull()
   })
 
+  it('只索引隐藏定时任务的可见正文，不索引完整调度 Prompt', () => {
+    repo.insert({
+      ...userMessage('s-scheduled', 'scheduler-private-marker'),
+      eventJson: JSON.stringify({
+        content: '[Scheduled Task Context] scheduler-private-marker',
+        turnSource: 'scheduled_task',
+        userMessageVisibility: 'hidden',
+        userMessageDisplayContent: 'check-visible-marker',
+      }),
+    })
+
+    expect(repo.searchByContent('scheduler-private-marker', 10)).toEqual([])
+    expect(repo.searchByContent('check-visible-marker', 10).map((item) => item.sessionId)).toEqual([
+      's-scheduled',
+    ])
+    expect(
+      extractSearchableEventBody(
+        'user_message',
+        JSON.stringify({
+          content: 'private',
+          userMessageVisibility: 'hidden',
+          userMessageDisplayContent: 'visible',
+        }),
+      ),
+    ).toBe('visible')
+  })
+
   it('deleteBySession 同步清除该 session 的索引项（触发器保证）', () => {
     repo.insert(userMessage('s1', 'unique-marker-xyz-to-delete'))
     expect(repo.searchByContent('unique-marker-xyz-to-delete', 10)).toHaveLength(1)
@@ -300,6 +327,34 @@ describe('EventRepository — FTS 不可用时降级到 LIKE', () => {
     })
 
     expect(repo.searchByContent('fallback-private-marker', 10)).toEqual([])
+
+    db.close()
+  })
+
+  it('LIKE 兜底只检索隐藏定时任务的可见正文', () => {
+    const db = new SparkDatabase(join(testDir, 'scheduled-visible-fallback.db'))
+    db.runMigrations(join(process.cwd(), 'migrations'))
+    db.raw.exec(`DROP TRIGGER IF EXISTS agent_events_fts_after_delete`)
+    db.raw.exec(`DROP TABLE IF EXISTS agent_event_fts`)
+    db.raw.exec(`DROP TABLE IF EXISTS agent_event_fts_map`)
+
+    const repo = new EventRepository(db)
+    repo.insert({
+      id: 'scheduled-visible-event',
+      sessionId: 'scheduled-visible-session',
+      eventType: 'user_message',
+      eventJson: JSON.stringify({
+        content: '[Scheduled Task Context] fallback-private-marker',
+        turnSource: 'scheduled_task',
+        userMessageVisibility: 'hidden',
+        userMessageDisplayContent: 'fallback-visible-marker',
+      }),
+    })
+
+    expect(repo.searchByContent('fallback-private-marker', 10)).toEqual([])
+    expect(
+      repo.searchByContent('fallback-visible-marker', 10).map((item) => item.sessionId),
+    ).toEqual(['scheduled-visible-session'])
 
     db.close()
   })
