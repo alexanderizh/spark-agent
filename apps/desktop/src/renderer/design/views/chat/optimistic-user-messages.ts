@@ -1,5 +1,10 @@
 import type { UIMessage } from '../../services/event-mapper'
 import type { ComposerAttachment, ComposerSessionReference } from './ChatComposerTypes'
+import {
+  beginOptimisticMessageRenderProbe,
+  markOptimisticBeginReturned,
+  markOptimisticLifecycleSettled,
+} from './optimistic-message-render-debug'
 
 export interface OptimisticUserMessageDraft {
   clientId: string
@@ -52,7 +57,16 @@ export function startOptimisticUserSend(
   if (callbacks == null) return null
 
   const clientId = createId()
-  callbacks.onBegin({ ...input, clientId, createdAt: now() })
+  const createdAt = now()
+  beginOptimisticMessageRenderProbe({
+    clientId,
+    sessionId: input.sessionId,
+    createdAt,
+    hiddenUntilStarted: input.hiddenUntilStarted === true,
+    contentLength: input.content.length,
+  })
+  callbacks.onBegin({ ...input, clientId, createdAt })
+  markOptimisticBeginReturned(clientId)
   let settled = false
 
   return {
@@ -60,16 +74,19 @@ export function startOptimisticUserSend(
     commit: (turnId, started) => {
       if (settled) return
       settled = true
+      markOptimisticLifecycleSettled(clientId, 'commit', { turnId, started })
       callbacks.onCommit(clientId, turnId, started)
     },
     fail: (error) => {
       if (settled) return
       settled = true
+      markOptimisticLifecycleSettled(clientId, 'fail', { error })
       callbacks.onFail(clientId, error)
     },
     cancel: () => {
       if (settled) return
       settled = true
+      markOptimisticLifecycleSettled(clientId, 'cancel')
       callbacks.onCancel(clientId)
     },
   }

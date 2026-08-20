@@ -1,5 +1,6 @@
 import React, { forwardRef, useImperativeHandle } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { markVirtualMessageRowMounted } from './optimistic-message-render-debug'
 
 const DEFAULT_VIRTUALIZE_AT = 40
 const DEFAULT_ESTIMATED_ROW_SIZE = 180
@@ -57,6 +58,7 @@ function StaticMessageListInner<T>(
       {items.map((item, index) => (
         <div
           key={getItemKey(item, index)}
+          ref={(node) => markVirtualMessageRowMounted(item, node)}
           data-virtual-message-index={index}
           role="listitem"
           style={{ scrollMarginTop: START_ALIGN_SCROLL_MARGIN }}
@@ -137,7 +139,10 @@ function VirtualizedMessageListInner<T>(
         return (
           <div
             key={virtualRow.key}
-            ref={virtualizer.measureElement}
+            ref={(node) => {
+              virtualizer.measureElement(node)
+              markVirtualMessageRowMounted(item, node)
+            }}
             data-index={virtualRow.index}
             data-virtual-message-index={virtualRow.index}
             className="chat-virtual-message-row"
