@@ -89,6 +89,29 @@ describe('CanvasOperationOutputList', () => {
 
     await act(async () => root.unmount())
   })
+
+  it('为每个产物提供删除按钮，并只回传被点击的产物', async () => {
+    const outputs = [characterOutput('character-1', '苏烬'), characterOutput('character-2', '林雾')]
+    const onDeleteOutput = vi.fn()
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<CanvasOperationOutputList outputs={outputs} onDeleteOutput={onDeleteOutput} />)
+    })
+
+    const buttons = container.querySelectorAll<HTMLButtonElement>(
+      '.canvas-operation-output-list-delete',
+    )
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0]?.getAttribute('aria-label')).toBe('删除产物 苏烬')
+
+    await act(async () => buttons[1]?.click())
+    expect(onDeleteOutput).toHaveBeenCalledTimes(1)
+    expect(onDeleteOutput).toHaveBeenCalledWith(outputs[1])
+
+    await act(async () => root.unmount())
+  })
 })
 
 describe('CanvasOperationOutputPreview', () => {

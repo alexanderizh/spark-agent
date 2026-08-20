@@ -646,6 +646,7 @@ function CanvasStageInner({
   onAudioTrim,
   onAudioSpeed,
   onExpandOperationOutputs,
+  onDeleteOperationOutputs,
   onCreateOperationChild,
   onPipelineAction,
   onSetProductionState,
@@ -728,6 +729,8 @@ function CanvasStageInner({
   onAudioSpeed?: (nodeId: string, factor: number) => void
   /** 多产物操作节点右键或卡片按钮 → 展开最近一次运行或指定产物 */
   onExpandOperationOutputs: (nodeId: string, outputs?: CanvasOperationOutputView[]) => void
+  /** 多产物操作节点卡片按钮 → 删除指定产物 */
+  onDeleteOperationOutputs: (nodeId: string, outputs: CanvasOperationOutputView[]) => void
   onCreateOperationChild: (
     parentId: string,
     operation: import('./canvas.types').CanvasOperationType,
@@ -825,6 +828,7 @@ function CanvasStageInner({
       ...(onAudioTrim ? { audioTrim: onAudioTrim } : {}),
       ...(onAudioSpeed ? { audioSpeed: onAudioSpeed } : {}),
       expandOperationOutputs: onExpandOperationOutputs,
+      deleteOperationOutputs: onDeleteOperationOutputs,
       createOperationChild: onCreateOperationChild,
       pipelineAction: onPipelineAction,
       setProductionState: onSetProductionState,
@@ -854,6 +858,7 @@ function CanvasStageInner({
       onAudioTrim,
       onAudioSpeed,
       onExpandOperationOutputs,
+      onDeleteOperationOutputs,
       onRemoveNodeFromGroup,
       onSelectGroupChildren,
       onAddNodeToAgent,

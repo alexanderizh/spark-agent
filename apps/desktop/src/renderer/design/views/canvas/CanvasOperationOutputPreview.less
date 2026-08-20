@@ -203,6 +203,34 @@
   white-space: nowrap;
 }
 
+.canvas-operation-output-list-actions {
+  display: flex;
+  align-self: center;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-operation-output-list-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--color-error, #ff4d4f) 35%, var(--divider));
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-error, #ff4d4f);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.canvas-operation-output-list-delete:hover {
+  border-color: var(--color-error, #ff4d4f);
+  background: color-mix(in srgb, var(--color-error, #ff4d4f) 10%, transparent);
+}
+
 .canvas-operation-output-list-expand:hover {
   border-color: var(--primary);
   background: var(--primary-soft);

@@ -215,6 +215,7 @@ function OperationOutputDeck({
   outputIndex,
   onSelectOutput,
   onExpandOutput,
+  onDeleteOutput,
   onVideoMetadata,
   onVideoEdit,
   selected,
@@ -232,6 +233,7 @@ function OperationOutputDeck({
     output?: CanvasOperationRunView['outputs'][number],
   ) => void
   onExpandOutput?: (output: CanvasOperationOutputView) => void
+  onDeleteOutput?: (output: CanvasOperationOutputView) => void
   onVideoMetadata?: (
     output: CanvasOperationRunView['outputs'][number],
     dimensions: { width: number; height: number },
@@ -260,6 +262,7 @@ function OperationOutputDeck({
             outputs={outputs}
             isolateWheel={isolateWheel}
             {...(onExpandOutput ? { onExpandOutput } : {})}
+            {...(onDeleteOutput ? { onDeleteOutput } : {})}
           />
         ) : (
           <>
@@ -389,6 +392,8 @@ export type CanvasFlowNodeData = {
     audioSpeed?: (nodeId: string, factor: number) => void
     /** 多产物操作节点：展开最近一次运行的全部产物，或指定的产物节点 */
     expandOperationOutputs?: (nodeId: string, outputs?: CanvasOperationOutputView[]) => void
+    /** 多产物操作节点：从节点内直接删除指定产物 */
+    deleteOperationOutputs?: (nodeId: string, outputs: CanvasOperationOutputView[]) => void
     createOperationChild: (
       parentId: string,
       operation: import('./canvas.types').CanvasOperationType,
@@ -1814,6 +1819,12 @@ export const CanvasNode = memo(function CanvasNode({
                           ? {
                               onExpandOutput: (output: CanvasOperationOutputView) =>
                                 actions.expandOperationOutputs?.(node.id, [output]),
+                            }
+                          : {})}
+                        {...(actions.deleteOperationOutputs
+                          ? {
+                              onDeleteOutput: (output: CanvasOperationOutputView) =>
+                                actions.deleteOperationOutputs?.(node.id, [output]),
                             }
                           : {})}
                         onVideoMetadata={(output, dimensions) => {

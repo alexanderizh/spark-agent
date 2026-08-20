@@ -8457,6 +8457,9 @@ export function CanvasWorkspaceView({
             onAudioTrim={handleAudioTrim}
             onAudioSpeed={handleAudioSpeed}
             onExpandOperationOutputs={handleExpandLatestOperationOutputs}
+            onDeleteOperationOutputs={(nodeId, outputs) => {
+              void handleDeleteOperationOutputs(nodeId, outputs)
+            }}
             onPreviewPanorama={handlePreviewPanorama}
             onSaveNodeToLibrary={onSaveNodeToLibraryStable}
             onAnnotateImage={onAnnotateImageStable}
