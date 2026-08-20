@@ -192,6 +192,50 @@ describe('CodexAppServerExecutor', () => {
     expect(statuses.at(-1)).toMatchObject({ status: 'completed' })
   })
 
+  it('按官方顺序完成 initialized 握手，并透传 clientUserMessageId', async () => {
+    const { journal, error } = await runScenario(
+      { steps: [agentMessageCompletedStep('ok')] },
+      { config: { clientUserMessageId: '00000000-0000-4000-8000-000000000123' } },
+    )
+    expect(error).toBeNull()
+    const initializeIndex = journal.findIndex(
+      (entry) => entry.kind === 'request' && entry.method === 'initialize',
+    )
+    const initializedIndex = journal.findIndex(
+      (entry) => entry.kind === 'notification' && entry.method === 'initialized',
+    )
+    const threadStartIndex = journal.findIndex(
+      (entry) => entry.kind === 'request' && entry.method === 'thread/start',
+    )
+    expect(initializeIndex).toBeGreaterThanOrEqual(0)
+    expect(initializedIndex).toBeGreaterThan(initializeIndex)
+    expect(threadStartIndex).toBeGreaterThan(initializedIndex)
+    expect(
+      journal.find((entry) => entry.kind === 'request' && entry.method === 'turn/start')?.params,
+    ).toMatchObject({ clientUserMessageId: '00000000-0000-4000-8000-000000000123' })
+  })
+
+  it('reports app-server prepare and turn-start phase metrics', async () => {
+    const runtimeMetricsObserver = vi.fn()
+    const { error } = await runScenario(
+      { steps: [agentMessageCompletedStep('ok')] },
+      { config: { runtimeMetricsObserver } },
+    )
+    expect(error).toBeNull()
+    expect(runtimeMetricsObserver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appServerSpawnMs: expect.any(Number),
+        appServerInitializeMs: expect.any(Number),
+        appServerThreadStartMs: expect.any(Number),
+        appServerPrepareMs: expect.any(Number),
+        appServerThreadMode: 'start',
+      }),
+    )
+    expect(runtimeMetricsObserver).toHaveBeenCalledWith(
+      expect.objectContaining({ appServerTurnStartMs: expect.any(Number) }),
+    )
+  })
+
   it('工具生命周期：commandExecution started→outputDelta→completed 映射 tool_call/terminal_output/tool_result', async () => {
     const commandItem = (status: string, aggregatedOutput?: string, exitCode?: number) => ({
       type: 'commandExecution',

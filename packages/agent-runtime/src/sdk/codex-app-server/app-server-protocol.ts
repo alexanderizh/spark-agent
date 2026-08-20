@@ -1,7 +1,7 @@
 /**
  * codex app-server v2 协议类型（Spark 消费面子集）。
  *
- * 来源：`codex app-server generate-json-schema --out <dir>`（0.144.5 实测），
+ * 来源：`codex app-server generate-ts --out <dir>`（0.149.0 实测），
  * 本文件只收敛 CodexAppServerExecutor 实际读写的请求/通知/条目形状；
  * 未消费的字段一律不声明，避免与上游 experimental 协议过度耦合。
  * 升级 codex 运行时版本时重新生成 schema 并核对本文件。
@@ -84,6 +84,7 @@ export type AppServerUserInput = { type: 'text'; text: string }
 
 export interface AppServerTurnStartParams {
   threadId: string
+  clientUserMessageId?: string | null | undefined
   input: AppServerUserInput[]
   effort?: string | undefined
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent } from '@spark/protocol'
+import type { AgentEvent, TurnRuntimeMetrics } from '@spark/protocol'
 import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from '../codex-compaction-event.js'
 import { resolveCodexPermissionPolicy } from '../codex-permission-policy.js'
@@ -89,6 +89,10 @@ type AppServerStreamState = {
 
 const INTERRUPT_WATCHDOG_MS = 8_000
 const APP_SERVER_CLIENT_INFO = { name: 'spark-agent', version: '1' }
+
+function roundedElapsed(startedAt: number): number {
+  return Math.max(0, Math.round(performance.now() - startedAt))
+}
 
 export class CodexAppServerExecutor
   implements EngineExecutor, SteerCapableExecutor, CompactCapableExecutor
@@ -300,6 +304,9 @@ export class CodexAppServerExecutor
     try {
       const turnParams: AppServerTurnStartParams = {
         threadId,
+        ...(config.clientUserMessageId != null
+          ? { clientUserMessageId: config.clientUserMessageId }
+          : {}),
         input: [{ type: 'text', text: prompt }],
       }
       const effort = toCodexReasoningEffort(config.reasoningEffort)
@@ -308,15 +315,21 @@ export class CodexAppServerExecutor
         transport: 'codex-app-server',
         request: {
           threadId,
+          clientUserMessageId: turnParams.clientUserMessageId ?? null,
           input: turnParams.input,
           effort: turnParams.effort ?? null,
           threadParams: sanitizeThreadParamsForDiagnostics(this.lastThreadParams),
         },
       })
-      const turnResponse = await client.request<{ turn?: { id?: string } }>(
-        'turn/start',
-        turnParams,
-      )
+      const turnStartAt = performance.now()
+      let turnResponse: { turn?: { id?: string } }
+      try {
+        turnResponse = await client.request<{ turn?: { id?: string } }>('turn/start', turnParams)
+      } finally {
+        config.runtimeMetricsObserver?.({
+          appServerTurnStartMs: roundedElapsed(turnStartAt),
+        })
+      }
       const serverTurnId = turnResponse.turn?.id
       if (typeof serverTurnId === 'string' && serverTurnId.length > 0) {
         this.activeServerTurnId = serverTurnId
@@ -429,6 +442,15 @@ export class CodexAppServerExecutor
   private async prepareSession(
     config: SDKExecutorConfig,
   ): Promise<{ client: CodexAppServerClient; threadId: string } | null> {
+    const prepareStartedAt = performance.now()
+    const lifecycleMetrics: TurnRuntimeMetrics = {}
+    const publishLifecycleMetrics = (patch: TurnRuntimeMetrics = {}): void => {
+      config.runtimeMetricsObserver?.({
+        ...lifecycleMetrics,
+        ...patch,
+        appServerPrepareMs: roundedElapsed(prepareStartedAt),
+      })
+    }
     let executablePath = this.options.executablePath
     let pathDirs: string[] = []
     if (executablePath == null) {
@@ -438,12 +460,14 @@ export class CodexAppServerExecutor
         if (process.env.SPARK_CODEX_REQUIRE_RUNTIME === '1') {
           throw new CodexRuntimeNotInstalledError()
         }
+        publishLifecycleMetrics({ appServerFallback: true })
         return null
       }
       executablePath = bundled.executablePath
       pathDirs = bundled.pathDirs
     }
     const env = this.options.env ?? buildAppServerEnv(config, pathDirs)
+    const spawnStartedAt = performance.now()
     const client = CodexAppServerClient.spawn({
       executablePath,
       args: this.options.args,
@@ -462,10 +486,16 @@ export class CodexAppServerExecutor
       },
     })
     try {
+      await client.waitUntilSpawned(this.options.handshakeTimeoutMs ?? 15_000)
+      lifecycleMetrics.appServerSpawnMs = roundedElapsed(spawnStartedAt)
+      const initializeStartedAt = performance.now()
       await client.initialize(APP_SERVER_CLIENT_INFO, this.options.handshakeTimeoutMs ?? 15_000)
+      lifecycleMetrics.appServerInitializeMs = roundedElapsed(initializeStartedAt)
       const threadParams = buildAppServerThreadParams(config)
       this.lastThreadParams = threadParams
+      let resumeFailed = false
       if (config.sdkSessionId != null && config.continueSession === true) {
+        const resumeStartedAt = performance.now()
         try {
           const resumed = await client.request<{ thread?: { id?: string } }>(
             'thread/resume',
@@ -474,23 +504,33 @@ export class CodexAppServerExecutor
           )
           const threadId = resumed.thread?.id
           if (typeof threadId === 'string' && threadId.length > 0) {
+            lifecycleMetrics.appServerThreadResumeMs = roundedElapsed(resumeStartedAt)
+            lifecycleMetrics.appServerThreadMode = 'resume'
+            publishLifecycleMetrics()
             return { client, threadId }
           }
         } catch {
+          lifecycleMetrics.appServerThreadResumeMs = roundedElapsed(resumeStartedAt)
+          resumeFailed = true
           // exec 载具对未知 session id 的既有行为是静默新开线程，这里保持等价。
         }
       }
+      const threadStartAt = performance.now()
       const started = await client.request<{ thread?: { id?: string } }>(
         'thread/start',
         threadParams,
         30_000,
       )
       const threadId = started.thread?.id
+      lifecycleMetrics.appServerThreadStartMs = roundedElapsed(threadStartAt)
+      lifecycleMetrics.appServerThreadMode = resumeFailed ? 'resume-fallback-start' : 'start'
       if (typeof threadId !== 'string' || threadId.length === 0) {
         throw new Error('codex app-server thread/start returned no thread id')
       }
+      publishLifecycleMetrics()
       return { client, threadId }
     } catch (err) {
+      publishLifecycleMetrics({ appServerFallback: true })
       await client.dispose().catch(() => undefined)
       if (err instanceof CodexRuntimeNotInstalledError) throw err
       return null

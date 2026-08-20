@@ -196,6 +196,10 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line)
     handleClientRequest(message)
     return
   }
+  if (message.method != null) {
+    journal({ kind: 'notification', method: message.method, params: message.params ?? null })
+    return
+  }
   if (message.result != null || message.error != null) {
     // 客户端对我们 server→client 请求（审批）的响应。
     journal({

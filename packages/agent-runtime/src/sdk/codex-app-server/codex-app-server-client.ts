@@ -104,10 +104,15 @@ export class CodexAppServerClient {
   private exited = false
   private exitInfo: { code: number | null; signal: NodeJS.Signals | null } | null = null
   private stdinClosed = false
+  private readonly spawned: Promise<void>
 
   private constructor(child: ChildProcess, options: CodexAppServerClientOptions) {
     this.child = child
     this.options = options
+    this.spawned = new Promise<void>((resolve, reject) => {
+      child.once('spawn', resolve)
+      child.once('error', reject)
+    })
 
     child.on('error', (err) => {
       this.failPending(new Error(`codex app-server process error: ${err.message}`))
@@ -173,9 +178,28 @@ export class CodexAppServerClient {
     return Buffer.concat(this.stderrChunks).toString('utf8').slice(-STDERR_TAIL_LIMIT)
   }
 
+  async waitUntilSpawned(timeoutMs = 15_000): Promise<void> {
+    let timer: NodeJS.Timeout | null = null
+    try {
+      await Promise.race([
+        this.spawned,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new CodexAppServerTimeoutError('spawn', timeoutMs)),
+            timeoutMs,
+          )
+          if (typeof timer.unref === 'function') timer.unref()
+        }),
+      ])
+    } finally {
+      if (timer != null) clearTimeout(timer)
+    }
+  }
+
   async initialize(clientInfo: AppServerClientInfo, timeoutMs = 15_000): Promise<void> {
     const params: AppServerInitializeParams = { clientInfo }
     await this.request('initialize', params, timeoutMs)
+    this.notification('initialized', {})
   }
 
   async request<T>(method: string, params?: unknown, timeoutMs = 120_000): Promise<T> {

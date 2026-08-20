@@ -1,6 +1,6 @@
 # Codex 引擎流式输出修复：app-server 传输替换方案
 
-> 状态: 已落地 | 最后核对: 2026-08-16
+> 状态: 已落地 | 最后核对: 2026-08-21
 
 ## 一、现象
 
@@ -170,3 +170,5 @@ segmentId 沿用 `codex-sdk-{turnId}-text-{N}` 约定（renderer 累加逻辑零
   升级运行时后跑真实冒烟 + `codex app-server generate-json-schema` 核对协议类型子集。
 - 每 turn 一个 app-server 进程（保守形态）：冷启动 ~200-400ms 已被 prepare 前置于事件
   发射吸收；跨 turn 进程复用属后续优化（需与会话生命周期对齐，暂不做）。
+- 2026-08-21 复现表明部分环境的 prepare 空窗可达 7.592 秒，已启动生命周期升级；
+  详见 `docs/plans/2026-08-21-codex-runtime-lifecycle-upgrade.md`。
