@@ -167,7 +167,10 @@ export class SessionRepository extends BaseRepository {
   }
 
   /** 更新会话生命周期状态 */
-  updateLifecycle(id: string, params: { pinnedAt?: string | null; archivedAt?: string | null }): void {
+  updateLifecycle(
+    id: string,
+    params: { pinnedAt?: string | null; archivedAt?: string | null },
+  ): void {
     const fields: string[] = []
     const values: unknown[] = []
 
@@ -254,7 +257,14 @@ export class SessionRepository extends BaseRepository {
 
   /** 查询会话列表 */
   list(params: ListSessionsParams = {}): { sessions: SessionRow[]; total: number } {
-    const { projectId, workspaceId, status, includeArchived = false, limit = 50, offset = 0 } = params
+    const {
+      projectId,
+      workspaceId,
+      status,
+      includeArchived = false,
+      limit = 50,
+      offset = 0,
+    } = params
 
     // 动态构建 WHERE 子句（参数化，防止 SQL 注入）
     const conditions: string[] = []
@@ -379,6 +389,8 @@ export class SessionRepository extends BaseRepository {
     }
 
     this.raw.prepare('DELETE FROM usage_ledger WHERE session_id = ?').run(id)
+    // 性能指标（吞吐/TTFT，每轮一行）随会话级联清理，与用量账本同策略。
+    this.raw.prepare('DELETE FROM turn_perf_metrics WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM session_summaries WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM run_usage_summaries WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM media_artifacts WHERE session_id = ?').run(id)

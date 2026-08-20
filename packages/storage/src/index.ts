@@ -99,6 +99,7 @@ export {
   PluginRepository,
   SettingsRepository,
   UsageLedgerRepository,
+  TurnPerfRepository,
   ContextPreferenceRepository,
   SessionSummaryRepository,
   AgentRepository,
