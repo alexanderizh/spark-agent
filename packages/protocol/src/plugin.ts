@@ -119,9 +119,9 @@ const ConnectorManifestSchema = z.object({
   displayName: z.string().min(1).max(200),
   description: z.string().max(4_000),
   icon: z.string().min(1).max(200),
-  auth: z.array(z.record(z.unknown())).max(32),
+  auth: z.array(z.record(z.string(), z.unknown())).max(32),
   capabilities: z.array(ConnectorCapabilitySchema).max(100),
-  endpoints: z.record(z.string().url()).optional(),
+  endpoints: z.record(z.string(), z.string().url()).optional(),
   security: z.object({
     preferredAuthFlow: z.string().min(1).max(100),
     tokenStorage: z.enum(['keystore', 'vault', 'memory-only', 'not-stored']),
@@ -178,7 +178,7 @@ export const PluginManifestSchema = z
             z.object({
               id: z.string().regex(/^[a-z0-9][a-z0-9._-]{1,95}$/),
               name: z.string().min(1).max(160),
-              config: z.record(z.unknown()),
+              config: z.record(z.string(), z.unknown()),
               permissions: z.array(PluginPermissionSchema).max(32).optional(),
             }),
           )

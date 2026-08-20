@@ -52,7 +52,7 @@ export const RuntimeToolDefinitionSchema = z.object({
   name: z.string().regex(/^[a-z0-9][a-z0-9_-]{1,95}$/),
   title: z.string().min(1).max(160),
   description: z.string().min(1).max(4_000),
-  inputSchema: z.record(z.unknown()),
+  inputSchema: z.record(z.string(), z.unknown()),
   requiredCapabilities: z.array(z.string().min(1).max(120)).max(32),
   risk: RuntimeRiskSchema,
   effect: RuntimeEffectSchema,
@@ -297,8 +297,8 @@ export interface PluginRuntimeIpcChannelMap {
 
 const RuntimeIdSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{1,95}$/)
 const AccountIdSchema = z.string().min(1).max(200)
-const RuntimeSecretSchema = z.record(z.string().max(16_000))
-const RuntimeConfigSchema = z.record(z.unknown()).default({})
+const RuntimeSecretSchema = z.record(z.string(), z.string().max(16_000))
+const RuntimeConfigSchema = z.record(z.string(), z.unknown()).default({})
 
 export const PluginRuntimeIpcSchemaRegistry = {
   'plugin-runtime:list': z.object({}).strict(),
@@ -328,7 +328,7 @@ export const PluginRuntimeIpcSchemaRegistry = {
         .string()
         .regex(/^\/[A-Za-z0-9._/-]{1,120}$/)
         .optional(),
-      extraAuthorizationParams: z.record(z.string().max(500)).optional(),
+      extraAuthorizationParams: z.record(z.string(), z.string().max(500)).optional(),
       config: RuntimeConfigSchema.optional(),
       enabledCapabilities: z.array(z.string().min(1).max(120)).max(64).optional(),
       resourceScope: RuntimeConfigSchema.optional(),

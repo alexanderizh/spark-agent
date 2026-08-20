@@ -118,7 +118,7 @@ function jsonPropToZod(prop: unknown): z.ZodTypeAny {
         }
         return withDesc(obj.passthrough())
       }
-      return withDesc(z.record(z.unknown()))
+      return withDesc(z.record(z.string(), z.unknown()))
     }
     default:
       return z.unknown()

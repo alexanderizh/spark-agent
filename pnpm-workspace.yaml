@@ -68,3 +68,8 @@ minimumReleaseAgeExclude:
   - '@openai/codex'
   - '@openai/codex-sdk'
   - '@hono/node-server@2.0.12'
+  - '@file-viewer/preset-office@2.3.2'
+  - '@file-viewer/react@2.3.0'
+  - '@file-viewer/renderer-spreadsheet@2.3.1'
+  - '@file-viewer/renderer-word@2.3.1'
+  - '@file-viewer/web@2.3.0'

@@ -5621,7 +5621,7 @@ export class SessionService {
           .string()
           .max(8000)
           .describe('Clear, self-contained description of what the member should do.'),
-        inputs: z.record(z.unknown()).optional(),
+        inputs: z.record(z.string(), z.unknown()).optional(),
         attachments: z
           .array(z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }))
           .max(10)
@@ -5650,7 +5650,7 @@ export class SessionService {
             z.object({
               targetAgentId: z.string(),
               instruction: z.string().max(8000),
-              inputs: z.record(z.unknown()).optional(),
+              inputs: z.record(z.string(), z.unknown()).optional(),
               attachments: z
                 .array(
                   z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }),

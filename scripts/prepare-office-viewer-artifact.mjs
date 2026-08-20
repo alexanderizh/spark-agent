@@ -2,22 +2,13 @@
 
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import {
-  copyFile,
-  lstat,
-  mkdir,
-  readdir,
-  rm,
-  stat,
-  utimes,
-  writeFile,
-} from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 
 export const OFFICE_VIEWER_CAPABILITY_ID = 'office-viewer'
-export const OFFICE_VIEWER_UPSTREAM_VERSION = '2.2.3'
+export const OFFICE_VIEWER_UPSTREAM_VERSION = '2.3.0'
 const NORMALIZED_TIME = new Date('2000-01-01T00:00:00.000Z')
 
 export async function prepareOfficeViewerArtifact(sourceDirectory, outputDirectory, options = {}) {

@@ -316,7 +316,7 @@ export interface ProviderMediaModelRef {
   manifest?: MediaModelManifest | undefined
 }
 
-const JsonObjectSchema = z.record(z.unknown())
+const JsonObjectSchema = z.record(z.string(), z.unknown())
 
 export const MediaInvocationAuthSchema: z.ZodType<MediaInvocationAuth> = z.discriminatedUnion(
   'kind',
@@ -466,7 +466,7 @@ export const MediaModelCapabilityManifestSchema: z.ZodType<MediaModelCapabilityM
     }),
     paramSchema: JsonObjectSchema,
     defaults: JsonObjectSchema.optional(),
-    aliases: z.record(z.string().min(1).max(120)).optional(),
+    aliases: z.record(z.string(), z.string().min(1).max(120)).optional(),
     paramPolicy: MediaModelParamPolicySchema.optional(),
   },
 )
@@ -501,7 +501,10 @@ export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object(
         intervalMs: z.number().int().min(250).max(300_000),
         // 上限对齐火山方舟异步视频任务默认 48h（与 ProviderMediaDefaultsSchema 一致）。
         timeoutMs: z.number().int().min(1_000).max(172_800_000),
-        statusMap: z.record(z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled'])),
+        statusMap: z.record(
+          z.string(),
+          z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']),
+        ),
         maxAttempts: z.number().int().min(1).max(10_000).optional(),
         unknownStatus: z.enum(['fail', 'running']).optional(),
         retry: z

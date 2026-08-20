@@ -20,7 +20,7 @@
     "@spark/shared": "workspace:*",
     "better-sqlite3": "^12.11.1",
     "sqlite-vec": "0.1.9",
-    "zod": "^3.23.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",

@@ -479,7 +479,7 @@ const jsonValue = z.unknown().superRefine((value, context) => {
   }
 })
 
-const config = z.record(z.unknown()).superRefine((value, context) => {
+const config = z.record(z.string(), z.unknown()).superRefine((value, context) => {
   try {
     const serialized = JSON.stringify(value)
     if (serialized === undefined) {

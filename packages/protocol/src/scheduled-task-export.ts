@@ -27,7 +27,7 @@ const ScheduledTaskExportNotificationSchema = z.object({
   id: z.string().min(1).max(200),
   url: z.string().min(1).max(2000),
   triggers: z.array(z.enum(['onSuccess', 'onFailure', 'onRetry', 'onDisabled'])).max(20),
-  headers: z.record(z.string()).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
   bodyTemplate: z.string().max(10000).optional(),
 })
 
@@ -43,7 +43,12 @@ export const ScheduledTaskExportTaskSchema = z.object({
   description: z.string().max(2000),
   enabled: z.boolean(),
   triggerType: ScheduledTaskExportTriggerSchema,
-  intervalSeconds: z.number().int().min(10).max(86400 * 365).nullable(),
+  intervalSeconds: z
+    .number()
+    .int()
+    .min(10)
+    .max(86400 * 365)
+    .nullable(),
   cronExpression: z.string().min(1).max(200).nullable(),
   runAt: z.string().min(1).nullable(),
   timezone: z.string().min(1).max(100),

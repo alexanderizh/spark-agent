@@ -877,7 +877,7 @@ const CanvasPromptTaskFieldsSchema = {
     capturedAt: z.string().max(80).optional(),
   }).optional(),
   compiledUserText: z.string().max(100_000).optional(),
-  inputSnapshots: z.array(z.record(z.unknown())).max(64).optional(),
+  inputSnapshots: z.array(z.record(z.string(), z.unknown())).max(64).optional(),
   relationManifest: z
     .array(
       z.object({
@@ -1150,7 +1150,7 @@ export const IpcSchemaRegistry = {
   'skill:search': z.object({ query: z.string().min(0).max(200) }),
   'skill:execute': z.object({
     skillId: z.string().min(1).max(120),
-    params: z.record(z.unknown()).optional(),
+    params: z.record(z.string(), z.unknown()).optional(),
   }),
   'skill:detect-local': z.object({
     searchRoots: z.array(z.string().min(1).max(1000)).max(20).optional(),
@@ -1279,7 +1279,7 @@ export const IpcSchemaRegistry = {
     modelId: z.string().min(1).max(200).optional(),
     prompt: z.string().max(100_000).optional(),
     validateSubmission: z.boolean().optional(),
-    modelParams: z.record(z.unknown()),
+    modelParams: z.record(z.string(), z.unknown()),
     inputFiles: z
       .array(
         z.object({
@@ -1302,7 +1302,7 @@ export const IpcSchemaRegistry = {
   'canvas:media:prune-model-params-by-inline-manifest': z.object({
     manifest: MediaModelManifestSchema,
     capabilityId: z.string().min(1).max(120),
-    modelParams: z.record(z.unknown()),
+    modelParams: z.record(z.string(), z.unknown()),
     inputFiles: z
       .array(
         z.object({
@@ -1356,7 +1356,7 @@ export const IpcSchemaRegistry = {
     providerProfileId: z.string().min(1).max(200).nullable().optional(),
     manifestId: z.string().min(1).max(160).nullable().optional(),
     modelId: z.string().min(1).max(200).nullable().optional(),
-    modelParams: z.record(z.unknown()).optional(),
+    modelParams: z.record(z.string(), z.unknown()).optional(),
     skipParameterValidation: z.boolean().optional(),
     waitForCompletion: z.boolean().optional(),
     outputDir: z.string().max(2000).optional(),
@@ -1686,7 +1686,7 @@ export const IpcSchemaRegistry = {
   'video:probe': z.object({
     operation: z.string().min(1).max(50),
     input: z.string().min(1).max(4096),
-    params: z.record(z.unknown()),
+    params: z.record(z.string(), z.unknown()),
     requestId: z.string().min(1).max(100),
   }),
   'video:process': z.object({
@@ -1706,7 +1706,7 @@ export const IpcSchemaRegistry = {
       'burnSubtitle',
     ]),
     input: z.string().min(1).max(4096),
-    params: z.record(z.unknown()),
+    params: z.record(z.string(), z.unknown()),
     requestId: z.string().min(1).max(100),
   }),
 

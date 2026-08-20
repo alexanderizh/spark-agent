@@ -109,7 +109,7 @@ describe('SdkIntegrityService', () => {
     const codexSdk = result.sdks.find((sdk) => sdk.packageName === '@openai/codex-sdk')
 
     expect(codexSdk?.installed).toBe(true)
-    expect(codexSdk?.installedVersion).toBe('0.146.0')
+    expect(codexSdk?.installedVersion).toBe('0.149.0')
     expect(codexSdk?.runtime).toMatchObject({
       installed: true,
       installedVersion: 'bundled',
@@ -192,7 +192,7 @@ describe('SdkIntegrityService', () => {
       dependencies?: Record<string, string>
     }
 
-    expect(pkg.dependencies?.['@openai/codex-sdk']).toBe('0.146.0')
+    expect(pkg.dependencies?.['@openai/codex-sdk']).toBe('0.149.0')
   })
 
   it('excludes Codex native vendor binaries from Electron asar archives', () => {
