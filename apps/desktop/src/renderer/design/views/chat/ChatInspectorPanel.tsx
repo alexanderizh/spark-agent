@@ -5,6 +5,7 @@ import { Popover } from '@lobehub/ui'
 import { Switch } from 'antd'
 import { Icons } from '../../Icons'
 import { TeamInspectorSection } from '../../components/TeamInspectorSection'
+import { ChatInspectorPerf } from './ChatInspectorPerf'
 import { OutcomeRoomContainer } from '../../outcome-room/OutcomeRoomContainer'
 import { WorktreePanel } from '../../components/WorktreePanel'
 import { useToast } from '../../components/Toast'
@@ -876,6 +877,12 @@ export function ChatInspector({
             <TurnUsageChart rows={turnUsage.rows} />
           </div>
         )}
+
+        {/* 性能区块 — 吞吐 / TTFT / 轮次时长；从事件回放派生（含 live 更新） */}
+        <ChatInspectorPerf
+          snapshots={turnPromptSnapshots}
+          isSessionRunning={session?.status === 'running'}
+        />
 
         {/* 白盒提示词面板 — 展示每轮 SDK 调用的全量提示词快照 */}
         {turnPromptSnapshots.length > 0 && (

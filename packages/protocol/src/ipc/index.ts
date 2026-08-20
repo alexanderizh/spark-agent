@@ -3302,8 +3302,48 @@ export interface UsageGetSessionResponse {
   }
 }
 
-export interface UsageGetDashboardRequest {}
+/** 单轮性能指标（turn_perf_metrics 一行；缺测字段为 null，不冒充 0） */
+export interface TurnPerfRowPayload {
+  turnId: string
+  providerId: string
+  modelId: string
+  terminalStatus: 'completed' | 'cancelled' | 'error'
+  ttftMs: number | null
+  streamActiveMs: number | null
+  turnDurationMs: number | null
+  outputTokens: number | null
+  outputTokensPerSecond: number | null
+  requestTimestamp: string
+}
 
+export interface PerfGetSessionRequest {
+  sessionId: string
+}
+
+export interface PerfGetSessionResponse {
+  /** 时间升序的全量轮次；聚合（中位/p95/慢轮）由渲染层纯函数计算 */
+  turns: TurnPerfRowPayload[]
+}
+
+export interface PerfGetModelAggregatesRequest {
+  /** 统计窗口天数，默认 30 */
+  limitDays?: number
+}
+
+export interface PerfGetModelAggregatesResponse {
+  aggregates: Array<{
+    providerId: string
+    modelId: string
+    turnCount: number
+    completedTurnCount: number
+    avgTokensPerSecond: number | null
+    avgTtftMs: number | null
+    totalStreamMs: number
+    totalOutputTokens: number
+  }>
+}
+
+export interface UsageGetDashboardRequest {}
 export interface UsageGetDashboardResponse {
   total: {
     totalInputTokens: number
@@ -6057,6 +6097,10 @@ export interface IpcChannelMap
   'usage:get-dashboard': [UsageGetDashboardRequest, UsageGetDashboardResponse]
   'usage:get-by-date-range': [UsageGetByDateRangeRequest, UsageGetByDateRangeResponse]
   'usage:purge': [UsagePurgeRequest, UsagePurgeResponse]
+
+  // Turn Performance (吞吐 / TTFT / 轮次时长)
+  'perf:get-session': [PerfGetSessionRequest, PerfGetSessionResponse]
+  'perf:get-model-aggregates': [PerfGetModelAggregatesRequest, PerfGetModelAggregatesResponse]
 
   // Auto-Update
   'update:check': [UpdateCheckRequest, UpdateCheckResponse]

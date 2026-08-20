@@ -1,4 +1,4 @@
-import type { AgentEvent } from '@spark/protocol'
+import type { AgentEvent, TurnPromptSnapshotEvent } from '@spark/protocol'
 import type { SessionUsageData, TurnUsageRow, UsageSnapshot } from './ChatUsageTypes'
 
 export function clamp(value: number, min: number, max: number): number {
@@ -161,6 +161,123 @@ export function buildTurnUsageRows(
           0,
       )
       .slice(-maxRows),
+  }
+}
+
+// ─── 会话性能指标（吞吐 / TTFT / 轮次时长）────────────────────────────────
+
+/** 「性能」区块单行：一轮一行（buildSessionPerf 输出）。缺测字段为 null，不冒充 0。 */
+export type TurnPerfRow = {
+  /** 真实轮次序号（1-based，按 turn_prompt_snapshot 出现顺序计，与真实轮次对应） */
+  turnNumber: number
+  turnId: string
+  /** 该轮使用的模型（tooltip 展示用） */
+  model: string
+  /** completed 参与统计；cancelled / error 展示但排除；unknown = 终态未记录（旧数据/应用中断） */
+  status: 'completed' | 'cancelled' | 'error' | 'unknown' | 'running'
+  ttftMs: number | null
+  /** 纯生成时长（流窗口累加，剔除工具执行时间） */
+  streamActiveMs: number | null
+  turnDurationMs: number | null
+  outputTokens: number | null
+  /** 吞吐 = outputTokens / streamActiveMs；任一缺测为 null */
+  tokensPerSecond: number | null
+}
+
+export type SessionPerfSummary = {
+  /** 有运行时指标可展示的轮次总数（含运行中 / 中断轮） */
+  totalTurns: number
+  completedCount: number
+  /** completed 且可测吞吐轮次的中位 tok/s（中位数对个别慢轮不敏感） */
+  medianTokensPerSecond: number | null
+  /** completed 且有 TTFT 轮次的中位 TTFT（ms） */
+  medianTtftMs: number | null
+  /** 生成时间占比 = ΣstreamActiveMs / ΣturnDurationMs（completed 且两者齐备的轮次） */
+  generationShare: number | null
+  /** 慢轮阈值 = 中位吞吐 × 0.5；低于该值的 completed 轮标记「偏慢」 */
+  slowTokensPerSecond: number | null
+  /** 最近 maxRows 行（时间升序，含运行中 / 中断行） */
+  rows: TurnPerfRow[]
+  /** 运行中轮引用（rows 末尾元素；仅会话 running 且末轮无终态标记时非 null） */
+  liveRow: TurnPerfRow | null
+}
+
+function medianOf(values: number[]): number | null {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  const upper = sorted[mid]
+  if (upper == null) return null
+  if (sorted.length % 2 === 1) return upper
+  const lower = sorted[mid - 1] ?? 0
+  return (lower + upper) / 2
+}
+
+/**
+ * 从 turn_prompt_snapshot（renderer 已把同 turn 的 turn_runtime_metrics 增量合并进
+ * runtimeMetrics 字段）派生「性能」区块数据。数据源覆盖历史回放与 live 事件，
+ * 与轮次用量图同链路；旧版本事件的缺测字段（吞吐/终态标记）保持 null / unknown，
+ * 不参与统计但保留 TTFT 展示价值。
+ */
+export function buildSessionPerf(
+  snapshots: TurnPromptSnapshotEvent[],
+  isSessionRunning: boolean,
+  maxRows = 20,
+): SessionPerfSummary {
+  const rows: TurnPerfRow[] = []
+  for (let index = 0; index < snapshots.length; index += 1) {
+    const snapshot = snapshots[index]
+    const metrics = snapshot?.runtimeMetrics
+    if (snapshot == null || metrics == null) continue
+    const terminal = metrics.turnTerminalStatus
+    const status: TurnPerfRow['status'] =
+      terminal ?? (index === snapshots.length - 1 && isSessionRunning ? 'running' : 'unknown')
+    rows.push({
+      turnNumber: index + 1,
+      turnId: snapshot.turnId,
+      model: snapshot.model,
+      status,
+      ttftMs: metrics.requestToFirstOutputMs ?? null,
+      streamActiveMs: metrics.streamActiveMs ?? null,
+      turnDurationMs: metrics.turnDurationMs ?? null,
+      outputTokens: metrics.outputTokens ?? null,
+      tokensPerSecond: metrics.outputTokensPerSecond ?? null,
+    })
+  }
+
+  const completed = rows.filter((row) => row.status === 'completed')
+  const throughputSamples = completed
+    .map((row) => row.tokensPerSecond)
+    .filter((value): value is number => value != null && value > 0)
+  const ttftSamples = completed
+    .map((row) => row.ttftMs)
+    .filter((value): value is number => value != null && value > 0)
+
+  let streamTotalMs = 0
+  let durationTotalMs = 0
+  for (const row of completed) {
+    if (
+      row.streamActiveMs != null &&
+      row.turnDurationMs != null &&
+      row.streamActiveMs > 0 &&
+      row.turnDurationMs > 0
+    ) {
+      streamTotalMs += row.streamActiveMs
+      durationTotalMs += row.turnDurationMs
+    }
+  }
+
+  const medianTokensPerSecond = medianOf(throughputSamples)
+  const lastRow = rows.at(-1)
+  return {
+    totalTurns: rows.length,
+    completedCount: completed.length,
+    medianTokensPerSecond,
+    medianTtftMs: medianOf(ttftSamples),
+    generationShare: durationTotalMs > 0 ? streamTotalMs / durationTotalMs : null,
+    slowTokensPerSecond: medianTokensPerSecond != null ? medianTokensPerSecond * 0.5 : null,
+    rows: rows.slice(-maxRows),
+    liveRow: lastRow != null && lastRow.status === 'running' ? lastRow : null,
   }
 }
 
