@@ -216,6 +216,7 @@ function OperationOutputDeck({
   onSelectOutput,
   onExpandOutput,
   onDeleteOutput,
+  overlayActions,
   onVideoMetadata,
   onVideoEdit,
   selected,
@@ -234,6 +235,7 @@ function OperationOutputDeck({
   ) => void
   onExpandOutput?: (output: CanvasOperationOutputView) => void
   onDeleteOutput?: (output: CanvasOperationOutputView) => void
+  overlayActions?: ReactNode
   onVideoMetadata?: (
     output: CanvasOperationRunView['outputs'][number],
     dimensions: { width: number; height: number },
@@ -251,6 +253,7 @@ function OperationOutputDeck({
     outputs.length > 1 &&
     outputs.every((output) => output.type === 'text' || output.type === 'prompt')
   const shouldShowOutputNavigation = runs.length > 1
+  const showOutputFooter = shouldShowOutputNavigation
 
   if (!activeRun) return <>{fallback}</>
 
@@ -281,43 +284,46 @@ function OperationOutputDeck({
             ) : (
               fallback
             )}
+            {overlayActions}
           </>
         )}
       </div>
-      {shouldShowOutputNavigation ? (
+      {showOutputFooter ? (
         <div className="canvas-operation-output-nav nodrag nopan">
-          <div className="canvas-operation-run-nav">
-            <button
-              type="button"
-              aria-label="查看更新的一次运行"
-              disabled={runIndex === 0}
-              onClick={(event) => {
-                event.stopPropagation()
-                const nextRunIndex = Math.max(0, runIndex - 1)
-                const next = runs[nextRunIndex]?.outputs[0]
-                onSelectOutput(nextRunIndex, 0, next)
-              }}
-            >
-              <Icons.ChevronLeft size={13} />
-            </button>
-            <span>
-              第 {displayRunNumber} 次运行
-              {runs.length > 1 ? ` / 共 ${runs.length} 次` : ''}
-            </span>
-            <button
-              type="button"
-              aria-label="查看更早的一次运行"
-              disabled={runIndex >= runs.length - 1}
-              onClick={(event) => {
-                event.stopPropagation()
-                const nextRunIndex = Math.min(runs.length - 1, runIndex + 1)
-                const next = runs[nextRunIndex]?.outputs[0]
-                onSelectOutput(nextRunIndex, 0, next)
-              }}
-            >
-              <Icons.ChevronRight size={13} />
-            </button>
-          </div>
+          {shouldShowOutputNavigation ? (
+            <div className="canvas-operation-run-nav">
+              <button
+                type="button"
+                aria-label="查看更新的一次运行"
+                disabled={runIndex === 0}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  const nextRunIndex = Math.max(0, runIndex - 1)
+                  const next = runs[nextRunIndex]?.outputs[0]
+                  onSelectOutput(nextRunIndex, 0, next)
+                }}
+              >
+                <Icons.ChevronLeft size={13} />
+              </button>
+              <span>
+                第 {displayRunNumber} 次运行
+                {runs.length > 1 ? ` / 共 ${runs.length} 次` : ''}
+              </span>
+              <button
+                type="button"
+                aria-label="查看更早的一次运行"
+                disabled={runIndex >= runs.length - 1}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  const nextRunIndex = Math.min(runs.length - 1, runIndex + 1)
+                  const next = runs[nextRunIndex]?.outputs[0]
+                  onSelectOutput(nextRunIndex, 0, next)
+                }}
+              >
+                <Icons.ChevronRight size={13} />
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -735,10 +741,130 @@ export const CanvasNode = memo(function CanvasNode({
     ? contentNode.type === 'text' || contentNode.type === 'prompt'
     : false
   const canExtractCharacterSubview = isImageContent && hasOperationOutput
+  const imageTaskOutput =
+    isTask && activeOperationOutput?.type === 'image' ? activeOperationOutput : null
   const latestOperationOutputCount =
     operationRuns.find((run) => run.outputs.length > 0)?.outputs.length ?? 0
   const canExpandOperationOutputs =
     isTask && Boolean(actions.expandOperationOutputs) && latestOperationOutputCount > 0
+  const canExpandImageTaskOutput = Boolean(imageTaskOutput && actions.expandOperationOutputs)
+  const canDeleteImageTaskOutput = Boolean(
+    imageTaskOutput &&
+    (imageTaskOutput.assetId || imageTaskOutput.nodeId) &&
+    actions.deleteOperationOutputs,
+  )
+  const imageTaskActions = imageTaskOutput ? (
+    <div
+      className="canvas-node-media-action-group canvas-node-image-chips canvas-node-task-image-actions nodrag nopan"
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        aria-label="查看任务"
+        title="查看任务"
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          actions.editNode(node.id)
+        }}
+      >
+        <Icons.Eye size={14} />
+      </button>
+      {canExtractCharacterSubview ? (
+        <button
+          type="button"
+          aria-label="提取子视图"
+          title="提取子视图"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            actions.extractCharacterSubview?.(node.id)
+          }}
+        >
+          <Icons.Crop size={14} />
+        </button>
+      ) : null}
+      {canExpandImageTaskOutput ? (
+        <button
+          type="button"
+          aria-label="展开产物"
+          title="展开产物"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            actions.expandOperationOutputs?.(node.id, [imageTaskOutput])
+          }}
+        >
+          <Icons.Layers size={14} />
+        </button>
+      ) : null}
+      {canDeleteImageTaskOutput ? (
+        <button
+          type="button"
+          className="is-danger"
+          aria-label={`删除当前产物 ${imageTaskOutput.title}`}
+          title="删除当前产物"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            actions.deleteOperationOutputs?.(node.id, [imageTaskOutput])
+          }}
+        >
+          <Icons.Trash size={14} />
+        </button>
+      ) : null}
+    </div>
+  ) : null
+  const imageResourceActions =
+    !isTask && node.type === 'image' && node.data.url ? (
+      <div
+        className="canvas-node-media-action-group canvas-node-image-chips nodrag nopan"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="canvas-node-subview-chip canvas-node-image-chip-preview"
+          aria-label="预览"
+          title="预览"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            actions.editNode(node.id)
+          }}
+        >
+          <Icons.Eye size={13} />
+          <span>预览</span>
+        </button>
+        <button
+          type="button"
+          className="canvas-node-subview-chip canvas-node-image-chip-replace"
+          aria-label="替换图片"
+          title="替换图片"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            actions.replaceImage?.(node.id)
+          }}
+        >
+          <Icons.Refresh size={13} />
+          <span>替换图片</span>
+        </button>
+        <button
+          type="button"
+          className={`canvas-node-subview-chip${assetSubviewCount > 0 ? ' has-subviews' : ''}`}
+          aria-label="提取子视图"
+          title="提取子视图"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            actions.extractCharacterSubview?.(node.id)
+          }}
+        >
+          <Icons.Crop size={13} />
+          <span>{assetSubviewCount > 0 ? `子视图 ${assetSubviewCount}` : '提取子视图'}</span>
+        </button>
+      </div>
+    ) : null
   const storyboardSplitSource = useMemo(
     () => resolveStoryboardSplitSourceNode(node, operationOutputState.primaryOutput),
     [node, operationOutputState.primaryOutput],
@@ -1669,41 +1795,7 @@ export const CanvasNode = memo(function CanvasNode({
                           loading="lazy"
                           decoding="async"
                         />
-                        {!isTask && (
-                          <div
-                            className="canvas-node-image-chips nodrag nopan"
-                            onPointerDown={(event) => event.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              className="canvas-node-subview-chip canvas-node-image-chip-replace"
-                              onClick={(event) => {
-                                event.preventDefault()
-                                event.stopPropagation()
-                                actions.replaceImage?.(node.id)
-                              }}
-                            >
-                              <Icons.Refresh size={12} />
-                              <span>替换图片</span>
-                            </button>
-                            <button
-                              type="button"
-                              className={`canvas-node-subview-chip${assetSubviewCount > 0 ? ' has-subviews' : ''}`}
-                              onClick={(event) => {
-                                event.preventDefault()
-                                event.stopPropagation()
-                                actions.extractCharacterSubview?.(node.id)
-                              }}
-                            >
-                              <Icons.Crop size={12} />
-                              <span>
-                                {assetSubviewCount > 0
-                                  ? `子视图 ${assetSubviewCount}`
-                                  : '提取子视图'}
-                              </span>
-                            </button>
-                          </div>
-                        )}
+                        {imageResourceActions}
                       </div>
                     ) : (
                       <div className="canvas-node-image-placeholder">
@@ -1832,6 +1924,7 @@ export const CanvasNode = memo(function CanvasNode({
                                 actions.deleteOperationOutputs?.(node.id, [output]),
                             }
                           : {})}
+                        overlayActions={imageTaskActions}
                         onVideoMetadata={(output, dimensions) => {
                           if (
                             !output.nodeId ||
@@ -1977,33 +2070,35 @@ export const CanvasNode = memo(function CanvasNode({
                     </div>
                   )}
                 </div>
-                {useFlatMediaFrame ? (
-                  <div className="canvas-node-image-overlay-footer nodrag nopan">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        actions.editNode(node.id)
-                      }}
-                    >
-                      {nodeActionLabel}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="canvas-node-quick-footer nodrag nopan">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        actions.editNode(node.id)
-                      }}
-                    >
-                      {nodeActionLabel}
-                    </button>
-                  </div>
-                )}
+                {!isTask && node.type !== 'image' ? (
+                  useFlatMediaFrame ? (
+                    <div className="canvas-node-image-overlay-footer nodrag nopan">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          actions.editNode(node.id)
+                        }}
+                      >
+                        {nodeActionLabel}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="canvas-node-quick-footer nodrag nopan">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          actions.editNode(node.id)
+                        }}
+                      >
+                        {nodeActionLabel}
+                      </button>
+                    </div>
+                  )
+                ) : null}
               </div>
               {selected &&
               isTask &&

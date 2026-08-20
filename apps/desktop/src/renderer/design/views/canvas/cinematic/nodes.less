@@ -259,6 +259,23 @@
     transform: translateY(0);
   }
 
+  .canvas-node-operation .canvas-node-task-image-actions {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(3px);
+    transition:
+      opacity var(--canvas-cinema-motion-fast) ease,
+      transform var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node-operation:hover .canvas-node-task-image-actions,
+  .canvas-node.canvas-node-selected .canvas-node-task-image-actions,
+  .canvas-node-operation:focus-within .canvas-node-task-image-actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
   // 主操作按钮不能跟随 hover 才出现，否则媒体节点只剩图片占位，用户无法发现入口。
   .canvas-node-media-full-bleed .canvas-node-image-overlay-footer > button {
     opacity: 1;
@@ -295,6 +312,50 @@
   .canvas-node-quick-footer button:hover {
     background: transparent;
     color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-node-task-image-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 0;
+    background: transparent;
+  }
+
+  .canvas-node-task-image-actions button {
+    display: inline-flex;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: var(--canvas-cinema-radius-xs);
+    background: rgba(9, 11, 14, 0.68);
+    color: var(--canvas-cinema-text-muted);
+    cursor: pointer;
+    transition:
+      border-color var(--canvas-cinema-motion-fast) ease,
+      background var(--canvas-cinema-motion-fast) ease,
+      color var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node-task-image-actions button:hover {
+    border-color: var(--canvas-cinema-accent);
+    background: var(--canvas-cinema-accent-soft);
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-node-task-image-actions button.is-danger {
+    color: var(--canvas-cinema-danger, #ff7875);
+  }
+
+  .canvas-node-task-image-actions button.is-danger:hover {
+    border-color: var(--canvas-cinema-danger, #ff7875);
+    background: rgba(255, 77, 79, 0.12);
+    color: #ffaaa8;
   }
 
   .canvas-node.canvas-node-group {

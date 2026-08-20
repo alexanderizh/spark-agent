@@ -267,12 +267,54 @@ describe('canvas cinematic integration', () => {
     const node = readCanvasSource('./CanvasNode.tsx')
     const workspaceStyles = readCanvasSource('./CanvasWorkspaceView.less')
 
-    expect(node).toContain('className="canvas-node-image-chips nodrag nopan"')
+    expect(node).toContain(
+      'className="canvas-node-media-action-group canvas-node-image-chips nodrag nopan"',
+    )
     expect(node).toContain('onPointerDown={(event) => event.stopPropagation()}')
     expect(workspaceStyles).toMatch(
       /\.canvas-node-resize-handle\s*\{[\s\S]*?z-index:\s*7\s*!important;/,
     )
     expect(workspaceStyles).toMatch(/\.canvas-node-image-chips\s*\{[\s\S]*?z-index:\s*8;/)
+  })
+
+  it('puts image task preview and output actions in one icon rail', () => {
+    const node = readCanvasSource('./CanvasNode.tsx')
+    const nodeStyles = readCanvasSource('./cinematic/nodes.less')
+    const taskActionsStart = node.indexOf('const imageTaskActions =')
+    const taskActionsEnd = node.indexOf('const storyboardSplitSource', taskActionsStart)
+    const taskActions = node.slice(taskActionsStart, taskActionsEnd)
+
+    expect(node).toContain('const imageTaskOutput =')
+    expect(node).toContain(
+      'className="canvas-node-media-action-group canvas-node-image-chips canvas-node-task-image-actions nodrag nopan"',
+    )
+    expect(node).toContain('aria-label="查看任务"')
+    expect(node).toContain('aria-label="提取子视图"')
+    expect(node).toContain('aria-label="展开产物"')
+    expect(taskActions).toContain('actions.expandOperationOutputs?.(node.id, [imageTaskOutput])')
+    expect(taskActions).not.toContain('actions.expandOperationOutputs?.(node.id)')
+    expect(node).toContain('onClick: () => actions.expandOperationOutputs?.(node.id),')
+    expect(node).toContain('aria-label={`删除当前产物 ${imageTaskOutput.title}`}')
+    expect(node).toContain('actions.deleteOperationOutputs?.(node.id, [imageTaskOutput])')
+    expect(node).toContain('overlayActions={imageTaskActions}')
+    expect(node).toContain('canvas-node-image-chips canvas-node-task-image-actions')
+    expect(node).toContain("{!isTask && node.type !== 'image' ? (")
+    expect(node).toContain('const showOutputFooter = shouldShowOutputNavigation')
+    expect(nodeStyles).toContain('.canvas-node-operation .canvas-node-task-image-actions')
+    expect(nodeStyles).toContain('.canvas-node-task-image-actions')
+    expect(nodeStyles).toContain('flex: 0 0 auto;')
+    expect(nodeStyles).toContain('.canvas-node-task-image-actions button.is-danger')
+  })
+
+  it('merges resource image preview and editing actions into the floating rail', () => {
+    const node = readCanvasSource('./CanvasNode.tsx')
+
+    expect(node).toContain('const imageResourceActions =')
+    expect(node).toContain('className="canvas-node-subview-chip canvas-node-image-chip-preview"')
+    expect(node).toContain('className="canvas-node-subview-chip canvas-node-image-chip-replace"')
+    expect(node).toContain('{imageResourceActions}')
+    expect(node).toContain("!isTask && node.type !== 'image'")
+    expect(node).not.toContain('className="canvas-node-image-chips nodrag nopan"')
   })
 
   it('keeps readable inset spacing on text nodes without affecting flat media frames', () => {
@@ -417,5 +459,20 @@ describe('canvas cinematic integration', () => {
     expect(preview).toContain('className="canvas-operation-output-list-expand"')
     expect(preview).toContain('onExpandOutput(output)')
     expect(previewStyles).toContain('grid-template-columns: 32px minmax(0, 1fr) auto')
+  })
+
+  it('does not auto-create a group when generated outputs are written back', () => {
+    const api = readCanvasSource('./canvas.api.ts')
+    const writeback = api.slice(
+      api.indexOf('const preparedOutputs: CanvasAsset[] = []'),
+      api.indexOf('/** 拉取当前可用的多媒体 provider 列表'),
+    )
+
+    expect(writeback).toContain('writeDb(db)')
+    expect(writeback).toContain('db.assets.push(output)')
+    expect(writeback).toContain('return this.openSnapshot(projectId, task.boardId)')
+    expect(writeback).not.toContain('createNodeBase({')
+    expect(writeback).not.toContain('task.outputNodeIds.push')
+    expect(writeback).not.toContain('createGroupNode(projectId, task.outputNodeIds)')
   })
 })

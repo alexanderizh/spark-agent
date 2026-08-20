@@ -75,7 +75,7 @@ import { materializeStoryboardRows } from './canvasStoryboardMaterialization'
 import { materializeCanvasTextTaskFallbackOutput } from './canvasTextTaskFallbackOutput'
 import { validateCanvasSemanticTextOutput } from './canvasTextOutputValidation'
 import { materializeSplitEpisodeOutputs } from './canvasEpisodeSplitOutput'
-import { placeAutoNodeToRight, stackAutoNodesToRight } from './canvasAutoPlacement'
+import { placeAutoNodeToRight } from './canvasAutoPlacement'
 import { planGroupLayout } from './canvasGroupLayout'
 import { resolveCollisionFreeNodePosition } from './canvasCollisionPlacement'
 import type {
@@ -5563,9 +5563,7 @@ export const canvasApi = {
                 { ...request, boardId: node.boardId },
                 {
                   bindToNodeId: nodeId,
-                  ...(params.inputNodeIds
-                    ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN }
-                    : {}),
+                  ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
                 },
               )
             : this.createLocalDepthTask(
@@ -6908,12 +6906,7 @@ export const canvasApi = {
       kind: 'completed',
       label: 'Provider 任务完成并返回产物',
     })
-    const preparedOutputs: Array<{
-      asset: CanvasAsset
-      nodeType: CanvasNode['type']
-      nodeData: CanvasNode['data']
-      resultNodeSize: { width: number; height: number }
-    }> = []
+    const preparedOutputs: CanvasAsset[] = []
     const explicitFilmOwner =
       typeof taskNode.data.outputFilmAssetId === 'string'
         ? db.assets.find(
@@ -7025,47 +7018,18 @@ export const canvasApi = {
         createdAt: at,
         updatedAt: at,
       }
-      const nodeType: CanvasNode['type'] =
-        assetType === 'text'
-          ? 'text'
-          : assetType === 'image'
-            ? 'image'
-            : assetType === 'audio'
-              ? 'audio'
-              : assetType === 'video'
-                ? 'video'
-                : 'text'
-      const nodeData: CanvasNode['data'] =
-        nodeType === 'text'
-          ? { text: asset.contentText ?? '', format: 'plain' }
-          : { message: assetOut.filePath ?? asset.title ?? 'media asset' }
-      // 专用流水线节点：产物图片/视频继承任务暂存的产物角色（如三视图=design_card、关键帧=keyframe）
-      if (taskNode.data.outputPipelineRole) nodeData.pipelineRole = taskNode.data.outputPipelineRole
-      if (nodeType !== 'text') {
-        if (displayUrl) nodeData.url = displayUrl
-        if (assetOut.filePath) nodeData.filePath = assetOut.filePath
-        if (asset.mimeType) nodeData.mimeType = asset.mimeType
-        if (assetType === 'image' && asset.thumbnailUrl) nodeData.thumbnailUrl = asset.thumbnailUrl
-        if (isPanorama360)
-          nodeData.panorama360 = { projection: 'equirectangular', sourceOperation: 'panorama_360' }
-      }
-      preparedOutputs.push({
-        asset,
-        nodeType,
-        nodeData,
-        resultNodeSize: fitMediaNodeSize(assetType, assetWidth, assetHeight),
-      })
+      preparedOutputs.push(asset)
     }
 
     if (filmOwner) {
       const currentReferences = readReferences(filmOwner.metadata)
       const generatedReferences: FilmReference[] = preparedOutputs
-        .filter((output) => output.asset.type === 'image')
+        .filter((output) => output.type === 'image')
         .map((output, index) => ({
           id: filmUid('ref'),
           kind: filmReferenceKind,
-          assetId: output.asset.id,
-          description: output.asset.title ?? task.title ?? '',
+          assetId: output.id,
+          description: output.title ?? task.title ?? '',
           order: currentReferences.length + index,
           ...(currentReferences.length === 0 && index === 0 ? { isPrimary: true } : {}),
         }))
@@ -7078,62 +7042,19 @@ export const canvasApi = {
       }
     }
 
-    const outputSizes = preparedOutputs.map((item) => item.resultNodeSize)
-    // 多产物统一在任务节点右侧纵向单列展开，列的垂直中点与任务节点中心对齐；
-    // 不做碰撞回避，配合 createGroupNode 自动成组，保证产物组落位规整、便于框选。
-    const outputPlacements = stackAutoNodesToRight(
-      {
-        x: taskNode.x,
-        y: taskNode.y,
-        width: taskNode.width,
-        height: taskNode.height,
-      },
-      outputSizes,
-    )
-
-    for (const [index, output] of preparedOutputs.entries()) {
-      const placement = outputPlacements[index]
-      if (!placement) continue
-      const resultNode = createNodeBase({
-        nodes: db.nodes,
-        projectId,
-        boardId: task.boardId,
-        type: output.nodeType,
-        title: output.asset.title ?? null,
-        assetId: output.asset.id,
-        x: placement.x,
-        y: placement.y,
-        width: output.resultNodeSize.width,
-        height: output.resultNodeSize.height,
-        data: output.nodeData,
-      })
-      task.outputAssetIds.push(output.asset.id)
-      task.outputNodeIds.push(resultNode.id)
-      db.assets.push(output.asset)
-      db.nodes.push(resultNode)
-      db.edges.push({
-        id: uid('canvas_edge'),
-        projectId,
-        boardId: task.boardId,
-        userId: USER_ID,
-        sourceNodeId: taskNode.id,
-        targetNodeId: resultNode.id,
-        type: 'generated',
-        taskId,
-        metadata: {},
-        createdAt: at,
-      })
+    // 生成完成只写入资产，暂不创建产物节点或 generated 连线；任务节点仍可直接预览。
+    // 用户点击“展开产物”后，再由现有物化链路按需创建资产引用节点。
+    for (const output of preparedOutputs) {
+      task.outputAssetIds.push(output.id)
+      db.assets.push(output)
     }
 
     // AI 产物的视频类型异步生成首帧缩略图（与 createMediaNode 对称）
     for (const output of preparedOutputs) {
-      if (output.nodeType !== 'video') continue
-      const fp = output.asset.metadata?.filePath
+      if (output.type !== 'video') continue
+      const fp = output.metadata?.filePath
       if (typeof fp !== 'string' || !fp) continue
-      const node = db.nodes.find((n) => n.assetId === output.asset.id)
-      if (node) {
-        void ensureVideoThumbnail(projectId, output.asset.id, node.id, fp)
-      }
+      void ensureVideoThumbnail(projectId, output.id, undefined, fp)
     }
 
     if (patchTaskNode) {
@@ -7148,9 +7069,6 @@ export const canvasApi = {
     }
     updateProjectCounts(db, projectId)
     writeDb(db)
-    if (task.outputNodeIds.length > 1) {
-      return this.createGroupNode(projectId, task.outputNodeIds)
-    }
     return this.openSnapshot(projectId, task.boardId)
   },
 
@@ -7252,7 +7170,7 @@ export function operationLabel(operation: CanvasOperationType): string {
  * 异步为视频资产生成首帧缩略图。
  *
  * 修复视频节点 thumbnailUrl 缺失问题：视频文件 url 不能直接当 <img> src（加载失败），
- * 需用 ffmpeg 提取一帧 jpg 作为缩略图。生成成功后回填 asset.thumbnailUrl 和 node.data.thumbnailUrl。
+ * 需用 ffmpeg 提取一帧 jpg 作为缩略图。生成成功后回填 asset.thumbnailUrl；有节点时同步回填节点。
  *
  * fire-and-forget：调用方不 await，失败静默（CanvasAssetThumbnail 的 Play 占位图标兜底）。
  * 仅当 ffmpeg 可用时执行；不可用时留空，完整性面板下载 ffmpeg 后可手动刷新。
@@ -7263,7 +7181,7 @@ const thumbnailsInFlight = new Set<string>()
 async function ensureVideoThumbnail(
   projectId: string,
   assetId: string,
-  nodeId: string,
+  nodeId: string | undefined,
   videoFilePath: string,
 ): Promise<void> {
   // 去重：同一 assetId 已在生成中则跳过
@@ -7292,8 +7210,10 @@ async function ensureVideoThumbnail(
     const db = readDb()
     const asset = db.assets.find((a) => a.id === assetId)
     if (asset) asset.thumbnailUrl = thumbUrl
-    const node = db.nodes.find((n) => n.id === nodeId)
-    if (node) node.data.thumbnailUrl = thumbUrl
+    if (nodeId) {
+      const node = db.nodes.find((n) => n.id === nodeId)
+      if (node) node.data.thumbnailUrl = thumbUrl
+    }
     writeDb(db)
   } catch {
     // 静默失败——缩略图不是关键功能，Play 占位图标兜底
@@ -7325,7 +7245,7 @@ type CleanupRequest = {
 
 function logCanvasAssetCleanupWarning(source: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error)
-  // eslint-disable-next-line no-console
+
   console.warn(`[canvas-asset-cleanup] ${source} failed:`, message)
 }
 
