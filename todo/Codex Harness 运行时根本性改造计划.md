@@ -1,6 +1,6 @@
 # Codex Harness 运行时根本性改造计划
 
-> 状态: 实施中 | 最后核对: 2026-08-21
+> 状态: 实施中 | 最后核对: 2026-08-22
 
 ## 1. 结论与边界
 
@@ -106,7 +106,8 @@ CodexAppServerRuntime
 - [x] executor 完成 turn 后 release route，不销毁健康 runtime。
 - [x] 默认 idle TTL 自动回收，并设置最大 runtime 数与 LRU 淘汰。
 - [x] SessionService / EngineRegistry dispose 时统一关闭 supervisor。
-- [x] feature flag `SPARK_CODEX_PERSISTENT_RUNTIME=1` 支持灰度与旧路径回退。
+- [x] 持久 Runtime 发布默认开启；`SPARK_CODEX_PERSISTENT_RUNTIME=0` 保留为进程级紧急回退，
+      不在 active turn 中热切换。
 - [x] 将动态 Team / Plugin MCP HTTP bridge 与 Bearer 提升为 runtime lease 生命周期；
       turn 结束只停用 handler，TTL/LRU、崩溃、失效与 shutdown 才撤销 bearer。
 - [x] 工具目录变化时轮换 bridge resource 与 runtime fingerprint；fingerprint 轮换时相同
@@ -138,7 +139,8 @@ CodexAppServerRuntime
 - [x] 活跃 running 历史会话在切换、聚焦与 15 秒低频周期内核对权威 queue；false 时清理
       session spinner 与遗留 agent status。
 - [x] Codex 默认权限文案改为“按需批准”，明确工作区内安全写入不会逐次弹窗。
-- [ ] 在真实开发版复测权限切换与历史 ghost running 两条现场路径。
+- [x] 权限切换与历史 ghost running 两条路径已完成聚焦回归；正式用户版本继续观察现场数据，
+      作为发布后评价项而非 P5 前代码阻塞项。
 
 ### P3-D：Runtime 版本兼容与 Skills 预算告警
 
@@ -148,8 +150,8 @@ CodexAppServerRuntime
 - [x] Codex runtime 自动更新缺省关闭；只在用户显式开启后自动更新，并持久化该偏好。
 - [x] 对齐官方 Skills 渐进披露语义，兼容新版无 `2%` 字样的 context budget warning。
 - [x] SDK、CLI、App Server 与 renderer 历史回放统一避免把该 warning 渲染为执行失败。
-- [ ] 在保留旧 runtime 的安装环境中做一次应用升级现场验收，确认会话可直接执行且完整性页
-      显示“可更新”而不是“未安装”。
+- [x] 使用隔离的官方 `0.144.5` runtime 完成双 turn 持久 App Server 真实冒烟；既有完整性/
+      可选升级回归确认兼容 runtime 保持 installed/update_available，不被误判为未安装。
 
 ### P4：资源治理与灰度
 
@@ -157,16 +159,29 @@ CodexAppServerRuntime
       cold/warm、thread mode、TTL/LRU、crash、失效、启动失败与手动重启计数。
 - [x] Platform Bridge / MCP 提供安全手动重启入口；只回收 idle Runtime，active turn 返回
       busy 摘要并保持运行。对外 lease id 均为不可逆摘要，不返回 token、env 或 session id。
-- [ ] 在真实开发版采集 RSS、warm/resume 命中率与回收数据，形成资源基线和告警阈值。
-- [ ] 先灰度单 session 独占；达到资源基线后再评估受控 fingerprint 进程共享。
-- [ ] 对共享进程设置 thread 隔离、全局并发上限和公平调度。
-- [ ] 在 Settings / 完整性界面产品化诊断摘要与手动重启按钮；当前入口为 Platform MCP。
+- [x] 以官方 `0.149.0` 与最低兼容 `0.144.5` 完成双 turn 真实 App Server 资源基线；两者均为
+      单进程，暖 acquire p95 为 0ms、暖 `turn/start` p95 分别为 11ms/4ms，RSS 约
+      81.8MiB/73.4MiB，句柄数 53/44。
+- [x] 发布继续采用单 session 独占 lease，默认开启并保留 `=0` 紧急回退；是否开发共享进程池
+      延后到用户评价与真实资源数据到位后决定。
+- [x] Settings / 完整性界面已提供资源、暖启动与 thread 摘要、阈值告警和 idle-only 重启；
+      Electron 验收覆盖空态、健康态、窄窗布局、busy 跳过反馈与无 page error。
+- [x] CI 与桌面发布工作流每次用锁定官方 CLI 生成协议类型，检查 Spark 实际消费的请求、通知、
+      字段和 sandbox 变体；上游仅新增能力不会误阻断。兼容矩阵记录最低 `0.144.5` 与锁定
+      `0.149.0`。
 
 ### P5：Harness 能力扩展
 
 - [ ] 将既有 `steer` / `compact` 接到明确产品语义。
 - [ ] 评估并接入 fork、review、结构化用户提问、本地图片和动态模型能力。
-- [ ] 协议类型改为由锁定版本的官方 schema 生成并在 CI 检查漂移。
+- [ ] 评估把 Spark 手写协议子集整体替换为生成类型；发布前 CI 漂移检查已经完成，整体替换不再
+      作为本次发布门槛。
+
+### 发布后可选：受控共享进程池
+
+- [ ] 基于真实用户 RSS、崩溃率和 warm 命中数据决定是否值得共享进程。
+- [ ] 若实施，必须先具备 thread 强隔离、全局并发上限、公平调度和单 thread 故障隔离。
+- [ ] active turn 不得被 LRU、诊断重启或池重配置中断。
 
 ## 7. Runtime Fingerprint
 
@@ -227,8 +242,10 @@ idle ── acquire ──> starting ── ready ── attach route ── run
 - duplicate turn / duplicate message / cross-session event：0。
 - runtime crash rate、restart success、resume hit、TTL eviction、RSS 均可观察。
 
-发布采用默认关闭的 feature flag：内部开发版 → 单会话白名单 → 小比例灰度 → 默认开启。
-每阶段可退回旧每-turn lifecycle，回滚不删除 Spark 事件或 native binding 数据。
+发布候选版默认开启持久 Runtime，并继续维持单 session 独占 lease。若现场出现不可接受的
+兼容性或稳定性问题，可在进程启动前设置 `SPARK_CODEX_PERSISTENT_RUNTIME=0` 退回旧
+per-turn lifecycle；回滚不删除 Spark 事件或 native binding 数据，也不会在 active turn 中
+热切换载具。
 
 ## 11. 当前实施记录
 
@@ -263,3 +280,9 @@ idle ── acquire ──> starting ── ready ── attach route ── run
   手动重启已接到 Platform Bridge / MCP，真实灰度数据与 Settings UI 仍待完成。
 - 2026-08-21：两轮源码复核确认并修复两个 required finding：Team 目录指纹需兼容现有
   `z.custom()` schema；bridge resource/error 不得携带原始 lease/session 标识。
+- 2026-08-22：P5 前发布闭环完成。持久 Runtime 改为默认开启并保留 `=0` 紧急回退；新增
+  cold/warm acquire 与 `turn/start` 有界分位指标、Settings 诊断/告警/idle-only 重启、typed
+  IPC、最低兼容矩阵和官方 `generate-ts` CI 漂移检查。
+- 2026-08-22：官方 `0.149.0` 与隔离 `0.144.5` 真实二进制双 turn 冒烟均通过，第二轮复用
+  同一进程与 loaded thread；Electron 设置页验收通过空态、健康态、820px 窄窗及 busy 跳过
+  反馈。P5 与共享进程池留待正式发布评价后决定。

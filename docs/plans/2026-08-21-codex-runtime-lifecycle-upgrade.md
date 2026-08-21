@@ -1,6 +1,6 @@
 # Codex Runtime 生命周期升级计划
 
-> 状态: 实施中 | 最后核对: 2026-08-21
+> 状态: 实施中 | 最后核对: 2026-08-22
 
 ## 背景
 
@@ -52,18 +52,19 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 - 增加 App Server spawn、initialize、resume/start、prepare、turn/start 分段指标；
   首输出继续复用统一 `requestToFirstOutputMs`。
 
-### P2：多路复用 Client 与 Runtime Supervisor（已实现，待灰度）
+### P2：多路复用 Client 与 Runtime Supervisor（已落地，发布默认开启）
 
 - 已新增单 reader 的 request/thread/turn 动态路由，缓存 turn 注册前的抢跑事件。
 - 已通过单 session lease 实现串行闸门；transport 退出时唤醒所有 waiter。
 - 已实现懒启动、并发 acquire 合并、空闲 TTL、LRU 上限、崩溃回收和应用退出清理。
-- 通过 `SPARK_CODEX_PERSISTENT_RUNTIME=1` 灰度启用，默认仍走旧每-turn lifecycle。
+- 持久 Runtime 默认启用；`SPARK_CODEX_PERSISTENT_RUNTIME=0` 保留为进程级紧急回退，
+  不支持 active turn 中热切换。
 - 动态 Team / Plugin MCP HTTP bridge 已提升到 Runtime lease 生命周期：同一目录复用
   bearer/连接并在 turn 边界切换 handler；TTL/LRU、崩溃、失效与 shutdown 统一撤销。
 - 工具目录/schema 变化时轮换 bearer 并触发 runtime fingerprint 重建；相同 sidecar 在
   fingerprint 轮换时可原子转移，不以忽略 token 的方式复用旧授权。
 
-### P3：真实 Codex thread 绑定（已实现，待灰度）
+### P3：真实 Codex thread 绑定（已落地，发布默认开启）
 
 - 已把真实 thread id 与 runtime/thread 双 fingerprint 持久化到 session metadata；同一
   binding key 保留多组候选，配置切回时可恢复旧 thread，最近记录总量限制为 12 条。
@@ -78,7 +79,7 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 - fresh thread 绑定必须先持久化再允许 `turn/start`；持久化失败只在 turn 开始前回退。
 - fallback 只允许发生在 `turn/start` 之前；已开始的 turn 禁止自动二次执行。
 
-### P3-C：运行态权威协调（已实现，待现场复测）
+### P3-C：运行态权威协调（已落地，发布后继续观察）
 
 - `getQueueState` 以 TurnRegistry starting/executor 和 Team dispatch 为内存执行权威；当数据库
   残留 `running` 而上述执行均不存在时，补齐断流轮终态并把 session 恢复为 idle。
@@ -102,19 +103,31 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
   SDK、CLI、App Server 以及 renderer 历史回放均按三个语义锚点过滤该良性 warning；普通
   `CODEX_SDK_ITEM_ERROR` 仍照常展示。
 
-### P4：资源治理与诊断（后端已实现，待真实灰度）
+### P4：资源治理、诊断与兼容发布闭环（已落地）
 
 - Supervisor 可按需返回 PID、RSS、句柄、loaded thread、进程/lease 数量，以及 cold/warm、
   native thread mode、TTL/LRU、crash、失效、启动失败和手动重启计数。
 - 对外只返回哈希 lease id；不包含 token、环境变量、runtime/thread fingerprint 或 session id。
 - Platform Bridge / MCP 已提供 idle-only 手动重启；active Runtime 返回 busy 并保持当前 turn。
-- 待真实开发版采集资源基线、warm/resume 命中率与回收数据，再决定是否设计受控共享池。
-- Settings / 完整性页的诊断摘要与手动重启按钮尚未产品化。
+- `0.149.0` 与最低兼容 `0.144.5` 官方二进制双 turn 冒烟均复用单进程和 loaded thread；
+  RSS 约 81.8MiB/73.4MiB、句柄 53/44、暖 acquire p95 均为 0ms、暖 `turn/start` p95
+  为 11ms/4ms。
+- Settings / 完整性页已展示进程、RSS、句柄、warm 命中率、`turn/start` 分位与哈希 lease，
+  并提供阈值告警和 idle-only 重启；运行中任务只报告 busy，不会被中断。
+- Electron 发布构建验收覆盖真实空诊断、健康快照、820px 窄窗、重启反馈和无 page error。
+- CI 与桌面发布工作流使用锁定官方 CLI 临时生成协议类型，只检查 Spark 消费的协议契约；
+  兼容矩阵固定最低 `0.144.5` 与当前 `0.149.0`，无害上游新增不会失败。
 
 ### P5：能力扩展（待实施）
 
 - 接通 steer、compact、fork、review、结构化用户提问、本地图片和动态模型能力。
-- 资源压测后再评估从单 session lease 灰度到受控 fingerprint 共享池。
+- 正式版本评价到位后，再决定是否启动能力扩展。
+
+### 发布后可选：受控共享进程池
+
+- 仅在真实用户资源数据表明单 session lease 成本不可接受时评估。
+- 实施前必须补齐 thread 强隔离、全局并发上限、公平调度、单 thread 故障隔离，且 active
+  turn 不受 LRU 或重配置影响。
 
 ## 验收与回滚
 
@@ -122,7 +135,8 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 - warm runtime acquire + `turn/start`：p95 ≤ 300ms。
 - 重复用户消息、重复 turn、跨会话事件必须为 0。
 - 排队、取消、失败、进程崩溃、Provider/MCP/权限变化均有聚焦测试。
-- 每阶段使用 feature flag 灰度；P2 以后可按单会话回退旧的每-turn 载具。
+- 发布候选版默认使用持久 Runtime；进程启动前设置 `SPARK_CODEX_PERSISTENT_RUNTIME=0`
+  可立即退回旧每-turn 载具，且不删除 Spark 事件或 native binding 数据。
 
 ## 当前验证
 
@@ -156,3 +170,6 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
   `git diff --check` 通过。GitNexus 纯索引更新为 70,082 nodes / 126,953 edges / 300 flows。
 - 两轮最终源码复核未发现未解决的 critical / important 缺陷；定向 ESLint 0 error，
   warning 均位于既有规则命中处。
+- P5 前发布闭环新增验证：官方 `0.149.0` 与隔离 `0.144.5` 真实二进制双 turn 基线通过；
+  协议 checker 及 Node 测试通过；Settings Runtime 卡片 unit/IPC 测试与 Electron E2E 通过；
+  production desktop build 成功。P5 和共享进程池不属于本次发布阻塞项。
