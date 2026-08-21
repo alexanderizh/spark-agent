@@ -51,7 +51,14 @@ describe('@spark/plugin-sdk', () => {
     expect(runtime.listTools()[0]?.inputSchema).toMatchObject({
       type: 'object',
       required: ['query'],
+      properties: {
+        query: {
+          type: 'string',
+          maxLength: 200,
+        },
+      },
     })
+    expect(runtime.listTools()[0]?.inputSchema).not.toHaveProperty('$schema')
     await expect(
       runtime.invokeTool(createMockRuntimeContext(), 'search_tasks', { query: 42 }),
     ).rejects.toThrow()

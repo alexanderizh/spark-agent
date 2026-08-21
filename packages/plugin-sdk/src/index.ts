@@ -1,5 +1,4 @@
-import { zodToJsonSchema } from 'zod-to-json-schema'
-import type { z } from 'zod'
+import { z } from 'zod'
 import type {
   ConnectorAccount,
   ConnectorAuthMethod,
@@ -161,9 +160,11 @@ export function defineConnectorRuntime(
 
 function toJsonSchema<T>(schema: InputSchema<T>): JsonSchema {
   if (isZodSchema(schema)) {
-    const result = zodToJsonSchema(schema, {
-      target: 'jsonSchema7',
-      $refStrategy: 'none',
+    const result = z.toJSONSchema(schema, {
+      target: 'draft-7',
+      io: 'input',
+      reused: 'inline',
+      unrepresentable: 'any',
     }) as JsonSchema
     delete result.$schema
     return result
