@@ -106,7 +106,7 @@ describe('createCodexExecutorForConfig（原 session.service 工厂等价迁移�
 })
 
 describe('能力声明与可用性检查', () => {
-  it('claude：四能力全开；codex 默认关闭原生 resume 灰度能力', () => {
+  it('claude：四能力全开；codex 发布默认开启原生 resume', () => {
     const registry = createDefaultEngineRegistry()
     expect(registry.get('claude-sdk').capabilities).toEqual({
       nativeResume: true,
@@ -115,16 +115,16 @@ describe('能力声明与可用性检查', () => {
       subagentTool: true,
     })
     expect(registry.get('codex').capabilities).toEqual({
-      nativeResume: false,
+      nativeResume: true,
       permissionHotSwitch: false,
       checkpointRewind: false,
       subagentTool: false,
     })
   })
 
-  it('持久 Codex runtime 开启时如实声明 native resume', () => {
-    const registry = createDefaultEngineRegistry({ persistentCodexRuntime: true })
-    expect(registry.get('codex').capabilities.nativeResume).toBe(true)
+  it('持久 Codex runtime 显式关闭时恢复旧载具能力声明', () => {
+    const registry = createDefaultEngineRegistry({ persistentCodexRuntime: false })
+    expect(registry.get('codex').capabilities.nativeResume).toBe(false)
   })
 
   it('checkAvailability 返回契约形状；codex 现状恒可用（无二进制预检）', async () => {

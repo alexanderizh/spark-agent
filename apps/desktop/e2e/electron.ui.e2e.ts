@@ -173,6 +173,19 @@ async function dismissOnboarding(page: Page): Promise<void> {
     .not.toBe('loading')
   if (await skip.isVisible().catch(() => false)) await skip.click()
   await expect(sidebar).toBeVisible()
+
+  const optionalCapabilityLater = page.getByRole('button', { name: /^稍\s*后$/ })
+  let quietRounds = 0
+  for (let attempt = 0; attempt < 30 && quietRounds < 3; attempt += 1) {
+    await page.waitForTimeout(500)
+    if (await optionalCapabilityLater.isVisible().catch(() => false)) {
+      await optionalCapabilityLater.click()
+      quietRounds = 0
+    } else {
+      quietRounds += 1
+    }
+  }
+  await expect(page.locator('.ant-modal-wrap:visible')).toHaveCount(0, { timeout: 5_000 })
 }
 
 test.describe.serial('SparkWork Electron release acceptance', () => {
@@ -216,6 +229,107 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
     ).toBeVisible()
     await dismissOnboarding(page)
     await expect(page.getByText('新建任务', { exact: true })).toBeVisible()
+    expect(pageErrors).toEqual([])
+  })
+
+  test('shows Codex Runtime diagnostics and safely restarts only idle runtimes', async ({
+    browserName: _browserName,
+  }, testInfo) => {
+    test.setTimeout(60_000)
+    await dismissOnboarding(page)
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await page.getByRole('button', { name: '完整性', exact: true }).click()
+
+    const card = page.locator('.codex-runtime-diagnostics')
+    await expect(card.getByRole('heading', { name: 'Codex Runtime 诊断' })).toBeVisible()
+    await expect(
+      card.getByText('尚无活跃 Runtime；首次 Codex 会话执行后会显示诊断。'),
+    ).toBeVisible()
+    const refreshButton = card.locator('.codex-runtime-actions button').first()
+    await expect(refreshButton).not.toHaveClass(/ant-btn-loading/)
+
+    await electronApp.evaluate(({ ipcMain }) => {
+      ipcMain.removeHandler('codex-runtime:diagnostics')
+      ipcMain.handle('codex-runtime:diagnostics', () => ({
+        ok: true,
+        data: {
+          enabled: true,
+          source: 'default',
+          diagnostics: {
+            disposed: false,
+            activeRuntimeCount: 1,
+            leasedRuntimeCount: 0,
+            processCount: 1,
+            totalRssBytes: 64 * 1024 * 1024,
+            totalHandleCount: 24,
+            counters: {
+              acquireCount: 6,
+              coldStartCount: 1,
+              warmHitCount: 5,
+              warmHitRate: 5 / 6,
+              fingerprintRotationCount: 0,
+              crashReplacementCount: 0,
+              invalidationCount: 0,
+              startFailureCount: 0,
+              ttlEvictionCount: 0,
+              lruEvictionCount: 0,
+              manualRestartCount: 0,
+              threadLoadedCount: 5,
+              threadResumeCount: 0,
+              threadStartCount: 1,
+              threadResumeFallbackCount: 0,
+            },
+            latency: {
+              coldAcquire: { count: 1, p50Ms: 210, p95Ms: 210, maxMs: 210 },
+              warmAcquire: { count: 5, p50Ms: 2, p95Ms: 4, maxMs: 4 },
+              coldTurnStart: { count: 1, p50Ms: 180, p95Ms: 180, maxMs: 180 },
+              warmTurnStart: { count: 5, p50Ms: 22, p95Ms: 40, maxMs: 40 },
+            },
+            runtimes: [
+              {
+                leaseId: 'a1b2c3d4e5f6',
+                state: 'idle',
+                lastUsedAt: '2026-08-21T12:00:00.000Z',
+                resourceCount: 1,
+                pid: 1234,
+                rssBytes: 64 * 1024 * 1024,
+                handleCount: 24,
+                loadedThreadCount: 1,
+              },
+            ],
+          },
+        },
+      }))
+      ipcMain.removeHandler('codex-runtime:restart-idle')
+      ipcMain.handle('codex-runtime:restart-idle', () => ({
+        ok: true,
+        data: {
+          enabled: true,
+          result: {
+            restartedLeaseIds: ['a1b2c3d4e5f6'],
+            busyLeaseIds: ['running-runtime'],
+          },
+        },
+      }))
+    })
+
+    await refreshButton.click()
+    await expect(card.getByText('83%', { exact: true })).toBeVisible()
+    await expect(card.getByText('Runtime a1b2c3d4e5f6', { exact: true })).toBeVisible()
+    await expect(card.getByText('40ms', { exact: true }).first()).toBeVisible()
+
+    await page.setViewportSize({ width: 820, height: 760 })
+    await expect
+      .poll(() =>
+        card
+          .locator('.codex-runtime-summary-grid')
+          .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length),
+      )
+      .toBe(2)
+
+    await card.getByRole('button', { name: '重启空闲 Runtime', exact: true }).click()
+    await expect(card.getByText('已重启 1 个空闲 Runtime，跳过 1 个运行中任务')).toBeVisible()
+    await card.screenshot({ path: testInfo.outputPath('codex-runtime-diagnostics.png') })
     expect(pageErrors).toEqual([])
   })
 

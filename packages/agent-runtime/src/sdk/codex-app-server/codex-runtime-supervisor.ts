@@ -1,4 +1,9 @@
 import { createHash } from 'node:crypto'
+import type {
+  CodexRuntimeLatencySummary,
+  CodexRuntimeRestartResult,
+  CodexRuntimeSupervisorDiagnostics,
+} from '@spark/protocol'
 import type { CodexAppServerRuntime } from './codex-app-server-runtime.js'
 import type { CodexRuntimeResource } from '../types.js'
 
@@ -31,47 +36,6 @@ export interface CodexAppServerRuntimeSupervisorOptions {
 
 export type CodexAppServerThreadMode = 'loaded' | 'resume' | 'start' | 'resume-fallback-start'
 
-export interface CodexRuntimeSupervisorDiagnostics {
-  disposed: boolean
-  activeRuntimeCount: number
-  leasedRuntimeCount: number
-  processCount: number
-  totalRssBytes: number | null
-  totalHandleCount: number | null
-  counters: {
-    acquireCount: number
-    coldStartCount: number
-    warmHitCount: number
-    warmHitRate: number
-    fingerprintRotationCount: number
-    crashReplacementCount: number
-    invalidationCount: number
-    startFailureCount: number
-    ttlEvictionCount: number
-    lruEvictionCount: number
-    manualRestartCount: number
-    threadLoadedCount: number
-    threadResumeCount: number
-    threadStartCount: number
-    threadResumeFallbackCount: number
-  }
-  runtimes: Array<{
-    leaseId: string
-    state: 'starting' | 'running' | 'idle' | 'exited'
-    lastUsedAt: string
-    resourceCount: number
-    pid: number | null
-    rssBytes: number | null
-    handleCount: number | null
-    loadedThreadCount: number | null
-  }>
-}
-
-export interface CodexRuntimeRestartResult {
-  restartedLeaseIds: string[]
-  busyLeaseIds: string[]
-}
-
 type RuntimeEntry<T extends ManagedCodexRuntime> = {
   leaseKey: string
   fingerprint: string
@@ -86,6 +50,7 @@ type RuntimeEntry<T extends ManagedCodexRuntime> = {
 
 const DEFAULT_IDLE_TTL_MS = 2 * 60_000
 const DEFAULT_MAX_RUNTIMES = 4
+const MAX_LATENCY_SAMPLES = 256
 
 /**
  * 第一阶段按 host session / nested member continuity key 独占 runtime 的生命周期管理器。
@@ -117,6 +82,12 @@ export class CodexAppServerRuntimeSupervisor<
     threadStartCount: 0,
     threadResumeFallbackCount: 0,
   }
+  private readonly latencySamples = {
+    coldAcquire: [] as number[],
+    warmAcquire: [] as number[],
+    coldTurnStart: [] as number[],
+    warmTurnStart: [] as number[],
+  }
 
   constructor(options: CodexAppServerRuntimeSupervisorOptions = {}) {
     this.idleTtlMs = Math.max(0, options.idleTtlMs ?? DEFAULT_IDLE_TTL_MS)
@@ -130,6 +101,7 @@ export class CodexAppServerRuntimeSupervisor<
     options: CodexRuntimeAcquireOptions = {},
   ): Promise<CodexRuntimeLease<T>> {
     if (leaseKey.length === 0) throw new Error('codex runtime lease requires a non-empty key')
+    const acquireStartedAt = performance.now()
     this.counters.acquireCount += 1
     for (;;) {
       this.assertActive()
@@ -159,6 +131,7 @@ export class CodexAppServerRuntimeSupervisor<
         existing.leased = true
         this.clearIdleTimer(existing)
         this.counters.warmHitCount += 1
+        this.recordLatency('warmAcquire', performance.now() - acquireStartedAt)
         return this.createLease(existing, runtime, true)
       }
 
@@ -194,6 +167,7 @@ export class CodexAppServerRuntimeSupervisor<
         continue
       }
       await this.evictOverflow(leaseKey)
+      this.recordLatency('coldAcquire', performance.now() - acquireStartedAt)
       return this.createLease(entry, runtime, false)
     }
   }
@@ -229,6 +203,10 @@ export class CodexAppServerRuntimeSupervisor<
       case 'resume-fallback-start':
         this.counters.threadResumeFallbackCount += 1
     }
+  }
+
+  recordTurnStart(durationMs: number, warm: boolean): void {
+    this.recordLatency(warm ? 'warmTurnStart' : 'coldTurnStart', durationMs)
   }
 
   async restartIdle(leaseKey?: string): Promise<CodexRuntimeRestartResult> {
@@ -297,6 +275,12 @@ export class CodexAppServerRuntimeSupervisor<
           this.counters.acquireCount > 0
             ? this.counters.warmHitCount / this.counters.acquireCount
             : 0,
+      },
+      latency: {
+        coldAcquire: summarizeLatency(this.latencySamples.coldAcquire),
+        warmAcquire: summarizeLatency(this.latencySamples.warmAcquire),
+        coldTurnStart: summarizeLatency(this.latencySamples.coldTurnStart),
+        warmTurnStart: summarizeLatency(this.latencySamples.warmTurnStart),
       },
       runtimes,
     }
@@ -451,6 +435,28 @@ export class CodexAppServerRuntimeSupervisor<
   private assertActive(): void {
     if (this.disposed) throw new Error('codex runtime supervisor is disposed')
   }
+
+  private recordLatency(kind: keyof typeof this.latencySamples, durationMs: number): void {
+    const samples = this.latencySamples[kind]
+    samples.push(Math.max(0, Math.round(durationMs)))
+    if (samples.length > MAX_LATENCY_SAMPLES) samples.shift()
+  }
+}
+
+function summarizeLatency(samples: readonly number[]): CodexRuntimeLatencySummary {
+  if (samples.length === 0) return { count: 0, p50Ms: null, p95Ms: null, maxMs: null }
+  const sorted = [...samples].sort((left, right) => left - right)
+  return {
+    count: sorted.length,
+    p50Ms: percentile(sorted, 0.5),
+    p95Ms: percentile(sorted, 0.95),
+    maxMs: sorted.at(-1) ?? null,
+  }
+}
+
+function percentile(sorted: readonly number[], ratio: number): number {
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1))
+  return sorted[index] ?? 0
 }
 
 function opaqueLeaseId(leaseKey: string): string {

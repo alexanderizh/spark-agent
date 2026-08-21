@@ -359,8 +359,10 @@ export class CodexAppServerExecutor
       try {
         turnResponse = await client.request<{ turn?: { id?: string } }>('turn/start', turnParams)
       } finally {
+        const turnStartMs = roundedElapsed(turnStartAt)
+        this.options.runtimeSupervisor?.recordTurnStart(turnStartMs, prepared.lease.warm)
         config.runtimeMetricsObserver?.({
-          appServerTurnStartMs: roundedElapsed(turnStartAt),
+          appServerTurnStartMs: turnStartMs,
         })
       }
       const serverTurnId = turnResponse.turn?.id

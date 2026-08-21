@@ -137,6 +137,12 @@ import type {
   OptionalCapabilitySetAutoUpdateResponse,
   OptionalCapabilitySnapshot,
 } from '../optional-capabilities.js'
+import type {
+  CodexRuntimeDiagnosticsRequest,
+  CodexRuntimeDiagnosticsResponse,
+  CodexRuntimeRestartIdleRequest,
+  CodexRuntimeRestartIdleResponse,
+} from '../codex-runtime.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -6142,6 +6148,10 @@ export interface IpcChannelMap
     OptionalCapabilitySetAutoUpdateRequest,
     OptionalCapabilitySetAutoUpdateResponse,
   ]
+
+  // Persistent Codex App Server runtime diagnostics and safe idle restart.
+  'codex-runtime:diagnostics': [CodexRuntimeDiagnosticsRequest, CodexRuntimeDiagnosticsResponse]
+  'codex-runtime:restart-idle': [CodexRuntimeRestartIdleRequest, CodexRuntimeRestartIdleResponse]
 
   // Shell Environment & Runtime Detection
   'env:get-status': [EnvGetStatusRequest, EnvGetStatusResponse]

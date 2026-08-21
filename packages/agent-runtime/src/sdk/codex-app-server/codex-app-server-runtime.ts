@@ -147,7 +147,17 @@ export function createCodexAppServerThreadFingerprint(params: AppServerThreadPar
 export function isPersistentCodexRuntimeEnabled(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
-  return env.SPARK_CODEX_PERSISTENT_RUNTIME === '1'
+  return env.SPARK_CODEX_PERSISTENT_RUNTIME !== '0'
+}
+
+export function persistentCodexRuntimePolicy(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): { enabled: boolean; source: 'default' | 'environment' } {
+  const override = env.SPARK_CODEX_PERSISTENT_RUNTIME
+  if (override === '0' || override === '1') {
+    return { enabled: override === '1', source: 'environment' }
+  }
+  return { enabled: true, source: 'default' }
 }
 
 function respondToUnroutedServerRequest(

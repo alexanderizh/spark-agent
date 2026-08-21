@@ -1,4 +1,8 @@
-import type { SessionAgentAdapter } from '@spark/protocol'
+import type {
+  CodexRuntimeRestartResult,
+  CodexRuntimeSupervisorDiagnostics,
+  SessionAgentAdapter,
+} from '@spark/protocol'
 import {
   ClaudeSDKExecutor,
   CodexAppServerExecutor,
@@ -8,11 +12,7 @@ import {
 } from '../../sdk/index.js'
 import type { SDKExecutorConfig } from '../../sdk/index.js'
 import type { EngineExecutor, EngineKind } from '../../sdk/engine-executor.js'
-import {
-  CodexAppServerRuntimeSupervisor,
-  type CodexRuntimeRestartResult,
-  type CodexRuntimeSupervisorDiagnostics,
-} from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
+import { CodexAppServerRuntimeSupervisor } from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
 import { isPersistentCodexRuntimeEnabled } from '../../sdk/codex-app-server/codex-app-server-runtime.js'
 import { resolveEngineKind } from './engine-kinds.js'
 

@@ -23,6 +23,7 @@
     "test:unit": "pnpm -r run test:unit",
     "test:e2e": "pnpm --filter @spark/desktop test:e2e",
     "check:file-size": "node scripts/check-file-size.mjs",
+    "check:codex-protocol": "node scripts/check-codex-app-server-protocol.mjs",
     "validate:skills": "node scripts/validate-builtin-skills.mjs",
     "lint": "pnpm -r run lint",
     "typecheck": "pnpm -r run typecheck",

@@ -8,8 +8,23 @@ import {
   readManagedCodexRuntimeState,
   resolveManagedCodexCli,
 } from '../../sdk/codex-runtime.js'
+import {
+  isPersistentCodexRuntimeEnabled,
+  persistentCodexRuntimePolicy,
+} from '../../sdk/codex-app-server/codex-app-server-runtime.js'
 
 describe('managed Codex runtime resolver', () => {
+  it('enables persistent App Server by default and keeps an explicit rollback override', () => {
+    expect(isPersistentCodexRuntimeEnabled({})).toBe(true)
+    expect(persistentCodexRuntimePolicy({})).toEqual({ enabled: true, source: 'default' })
+    expect(isPersistentCodexRuntimeEnabled({ SPARK_CODEX_PERSISTENT_RUNTIME: '0' })).toBe(false)
+    expect(persistentCodexRuntimePolicy({ SPARK_CODEX_PERSISTENT_RUNTIME: '0' })).toEqual({
+      enabled: false,
+      source: 'environment',
+    })
+    expect(isPersistentCodexRuntimeEnabled({ SPARK_CODEX_PERSISTENT_RUNTIME: '1' })).toBe(true)
+  })
+
   it('maps the current platform to the Codex target triple', () => {
     expect(codexTargetTriple('darwin', 'arm64')).toBe('aarch64-apple-darwin')
     expect(codexTargetTriple('darwin', 'x64')).toBe('x86_64-apple-darwin')

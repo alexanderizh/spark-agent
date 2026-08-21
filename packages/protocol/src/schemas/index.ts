@@ -1638,6 +1638,8 @@ export const IpcSchemaRegistry = {
       enabled: z.boolean(),
     })
     .strict(),
+  'codex-runtime:diagnostics': z.object({}).strict(),
+  'codex-runtime:restart-idle': z.object({}).strict(),
 
   // Playwright Browser Automation
   'playwright:status': z.object({}),

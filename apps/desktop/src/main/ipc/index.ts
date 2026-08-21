@@ -265,6 +265,7 @@ import { registerCanvasDepthTaskIpc } from './registerCanvasDepthTaskIpc.js'
 import { registerCanvasAudioExtractIpc } from './registerCanvasAudioExtractIpc.js'
 import { registerCanvasFrameExtractIpc } from './registerCanvasFrameExtractIpc.js'
 import { registerOptionalCapabilityIpc } from './registerOptionalCapabilityIpc.js'
+import { registerCodexRuntimeIpc } from './registerCodexRuntimeIpc.js'
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
 import { registerSidebarOrderIpc } from './registerSidebarOrderIpc.js'
@@ -3164,6 +3165,10 @@ export function registerAllIpcHandlers(): void {
   registerCanvasAudioExtractIpc()
   registerCanvasFrameExtractIpc()
   registerOptionalCapabilityIpc()
+  registerCodexRuntimeIpc({
+    getDiagnostics: () => getSessionService().getCodexRuntimeDiagnostics(),
+    restartIdle: () => getSessionService().restartIdleCodexRuntimes(),
+  })
   registerOutcomeRoomIpc()
   registerTeamP1Ipc()
   registerTeamOutcomeIpc()

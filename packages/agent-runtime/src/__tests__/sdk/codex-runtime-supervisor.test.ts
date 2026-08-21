@@ -271,6 +271,7 @@ describe('CodexAppServerRuntimeSupervisor', () => {
       resources: [resource],
     })
     supervisor.recordThreadMode('start')
+    supervisor.recordTurnStart(420, false)
     await first.release()
     const second = await supervisor.acquire(
       'host:sensitive-session-id',
@@ -281,6 +282,7 @@ describe('CodexAppServerRuntimeSupervisor', () => {
       },
     )
     supervisor.recordThreadMode('loaded')
+    supervisor.recordTurnStart(12, true)
     await second.release()
 
     const diagnostics = await supervisor.getDiagnostics()
@@ -298,6 +300,12 @@ describe('CodexAppServerRuntimeSupervisor', () => {
         threadStartCount: 1,
         threadLoadedCount: 1,
       },
+      latency: {
+        coldAcquire: { count: 1 },
+        warmAcquire: { count: 1 },
+        coldTurnStart: { count: 1, p50Ms: 420, p95Ms: 420, maxMs: 420 },
+        warmTurnStart: { count: 1, p50Ms: 12, p95Ms: 12, maxMs: 12 },
+      },
     })
     expect(diagnostics.runtimes[0]).toMatchObject({
       state: 'idle',
@@ -306,6 +314,22 @@ describe('CodexAppServerRuntimeSupervisor', () => {
       loadedThreadCount: 2,
     })
     expect(JSON.stringify(diagnostics)).not.toContain('sensitive-session-id')
+    await supervisor.dispose()
+  })
+
+  it('latency diagnostics keep only the latest 256 samples with nearest-rank percentiles', async () => {
+    const supervisor = new CodexAppServerRuntimeSupervisor<FakeRuntime>()
+    for (let durationMs = 0; durationMs < 300; durationMs += 1) {
+      supervisor.recordTurnStart(durationMs, true)
+    }
+
+    const diagnostics = await supervisor.getDiagnostics()
+    expect(diagnostics.latency.warmTurnStart).toEqual({
+      count: 256,
+      p50Ms: 171,
+      p95Ms: 287,
+      maxMs: 299,
+    })
     await supervisor.dispose()
   })
 

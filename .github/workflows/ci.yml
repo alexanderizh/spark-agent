@@ -86,6 +86,10 @@ jobs:
       - name: Typecheck
         run: pnpm --filter ${{ matrix.package }} run typecheck
 
+      - name: Codex App Server protocol compatibility
+        if: matrix.package == '@spark/agent-runtime'
+        run: pnpm run check:codex-protocol
+
       - name: Lint
         if: matrix.skip-lint != true
         run: pnpm --filter ${{ matrix.package }} run lint

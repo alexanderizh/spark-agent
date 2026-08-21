@@ -230,6 +230,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify Codex App Server protocol compatibility
+        run: pnpm run check:codex-protocol
+
       # node-gyp 9.x (electron-rebuild) imports distutils, removed in Python 3.12+.
       # macOS runner 自带 Python 3.12+ 且受 PEP 668 保护，无法 pip install；改用 3.11。
       - name: Setup Python 3.11 for native module rebuild

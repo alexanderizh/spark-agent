@@ -83,6 +83,108 @@
   gap: 12px;
 }
 
+.codex-runtime-actions,
+.codex-runtime-health-copy,
+.codex-runtime-latency-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.codex-runtime-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.codex-runtime-health-copy {
+  align-items: flex-start;
+  flex-direction: column;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 42%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.codex-runtime-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.codex-runtime-summary-item {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+
+  span,
+  small {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  strong {
+    color: var(--text-primary);
+    font-size: 20px;
+  }
+}
+
+.codex-runtime-latency-card {
+  margin-bottom: 12px;
+  padding: 4px 14px;
+}
+
+.codex-runtime-latency-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) repeat(3, minmax(76px, auto)) minmax(72px, auto);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  > span:first-child {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+}
+
+.codex-runtime-list {
+  margin-bottom: 10px;
+}
+
+.codex-runtime-disabled {
+  padding: 16px;
+  color: var(--text-secondary);
+}
+
+.codex-runtime-footnote {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .codex-runtime-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .codex-runtime-latency-row {
+    grid-template-columns: minmax(120px, 1fr) repeat(2, minmax(68px, auto));
+
+    span:nth-of-type(4),
+    small {
+      display: none;
+    }
+  }
+}
+
 .optional-capability-progress-header button {
   border: 0;
   background: transparent;

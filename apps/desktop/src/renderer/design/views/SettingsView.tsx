@@ -49,6 +49,7 @@ import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { FfmpegStatusCard } from './FfmpegStatusCard'
 import { VoiceIntegritySettingsItem } from '../voice/VoiceIntegritySettingsItem'
 import { OptionalCapabilitiesSettingsCard } from '../optional-capabilities/OptionalCapabilitiesSettingsCard'
+import { CodexRuntimeDiagnosticsCard } from '../optional-capabilities/CodexRuntimeDiagnosticsCard'
 import { FontAssetControl } from '../components/FontAssetControl'
 import { SdkInstallProgressView } from '../components/SdkInstallProgress'
 import { clearOnboardingState } from './onboarding-state'
@@ -5587,6 +5588,8 @@ function IntegritySection() {
       <FfmpegStatusCard />
 
       <OptionalCapabilitiesSettingsCard />
+
+      <CodexRuntimeDiagnosticsCard />
 
       {/* ── 语音输入 (ASR) 语音包完整性 ── */}
       <VoiceIntegritySettingsItem />

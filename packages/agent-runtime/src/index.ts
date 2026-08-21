@@ -200,6 +200,10 @@ export type {
   UpdateRuleFields,
 } from './services/rules.service.js'
 export { SessionService } from './services/session.service.js'
+export {
+  isPersistentCodexRuntimeEnabled,
+  persistentCodexRuntimePolicy,
+} from './sdk/codex-app-server/codex-app-server-runtime.js'
 export { PlatformBridgeService } from './services/platform-bridge.service.js'
 export { GitHubConnectorService } from './services/github-connector.service.js'
 export { RuntimeBroker } from './services/plugin-runtime/runtime-broker.js'
