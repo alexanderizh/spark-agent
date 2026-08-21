@@ -13,6 +13,21 @@ export function getLatestInputTokens(events: AgentEvent[]): number {
   return 0
 }
 
+/**
+ * 上下文进度保留完整 ledger 分段，同时用 Provider 的本轮实际输入兜底 native
+ * resume 未重放 Spark history 的场景。取较大值可避免二者各自缺项造成低估。
+ */
+export function resolveContextUsedTokens(params: {
+  ledgerEstimatedTokens?: number | null | undefined
+  turnEstimatedTokens?: number | null | undefined
+  providerInputTokens: number
+}): number {
+  const estimated = params.ledgerEstimatedTokens ?? params.turnEstimatedTokens ?? 0
+  return params.providerInputTokens > 0
+    ? Math.max(estimated, params.providerInputTokens)
+    : estimated
+}
+
 export function createEmptySessionUsageData(): SessionUsageData {
   return {
     inputTokens: 0,

@@ -8,6 +8,7 @@ import {
   computeCacheHitRate,
   createEmptySessionUsageData,
   eventsAfterLastHistoryReset,
+  resolveContextUsedTokens,
 } from './ChatViewUtils'
 
 function event(type: AgentEvent['type'], seq: number): AgentEvent {
@@ -23,6 +24,30 @@ function event(type: AgentEvent['type'], seq: number): AgentEvent {
 }
 
 describe('ChatViewUtils', () => {
+  it('uses the larger of ledger estimate and provider-observed input for context progress', () => {
+    expect(
+      resolveContextUsedTokens({
+        ledgerEstimatedTokens: 12_000,
+        turnEstimatedTokens: 8_000,
+        providerInputTokens: 40_000,
+      }),
+    ).toBe(40_000)
+    expect(
+      resolveContextUsedTokens({
+        ledgerEstimatedTokens: 50_000,
+        turnEstimatedTokens: 8_000,
+        providerInputTokens: 40_000,
+      }),
+    ).toBe(50_000)
+    expect(
+      resolveContextUsedTokens({
+        ledgerEstimatedTokens: null,
+        turnEstimatedTokens: 8_000,
+        providerInputTokens: 0,
+      }),
+    ).toBe(8_000)
+  })
+
   it('derives session metadata only from the latest history window', () => {
     const reset = event('session_history_reset', 3)
     const events = [

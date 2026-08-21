@@ -6,6 +6,10 @@ import path from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
 import * as keystore from '@spark/shared/keystore'
 import {
+  SessionRuntimeConfigSubAppRepositoryStub,
+  SessionRuntimeConfigTurnPerfRepositoryStub,
+} from './session-runtime-config-storage-stubs.js'
+import {
   SessionService,
   buildMediaGenerationSystemPrompt,
   isSdkResumeSafe,
@@ -1334,6 +1338,8 @@ vi.mock('@spark/storage', () => {
   }
 
   return {
+    SubAppRepository: SessionRuntimeConfigSubAppRepositoryStub,
+    TurnPerfRepository: SessionRuntimeConfigTurnPerfRepositoryStub,
     SessionRepository,
     ProviderProfileRepository,
     MediaModelManifestRepository,

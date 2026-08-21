@@ -114,6 +114,39 @@ export function readCodexNativeThreadBindings(
   return []
 }
 
+/** `/clear` 后轮换 binding scope；0 保持历史 key，避免升级后无故断开已有 thread。 */
+export function scopeCodexNativeThreadBindingKey(bindingKey: string, generation: number): string {
+  return generation > 0 ? `${bindingKey}:generation:${generation}` : bindingKey
+}
+
+export function readCodexNativeThreadGeneration(metadataJson: string | null | undefined): number {
+  if (metadataJson == null || metadataJson.length === 0) return 0
+  try {
+    return readCodexNativeThreadGenerationFromMetadata(JSON.parse(metadataJson) as unknown)
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * 清空持久 thread 绑定并递增 generation。Runtime 内仍缓存的旧 binding key 因 scope
+ * 已轮换而不可再命中；Host 与 Team member 的下一轮都会创建全新 native thread。
+ */
+export function createCodexNativeThreadClearPatch(
+  currentMetadata: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const currentAppServer = readRecord(currentMetadata[CODEX_APP_SERVER_METADATA_KEY]) ?? {}
+  const currentGeneration = readCodexNativeThreadGenerationFromMetadata(currentMetadata)
+  return {
+    [CODEX_APP_SERVER_METADATA_KEY]: {
+      ...currentAppServer,
+      version: 1,
+      threadGeneration: currentGeneration >= Number.MAX_SAFE_INTEGER ? 1 : currentGeneration + 1,
+      nativeThreadBindings: [],
+    },
+  }
+}
+
 /**
  * 为 SessionRepository.patchMetadata 生成浅合并 patch。
  * 保留 codexAppServer 下未来新增字段，并把绑定限制为最近 12 条，避免 metadata 无界增长。
@@ -183,6 +216,14 @@ function stripStoredFields(binding: StoredCodexNativeThreadBinding): CodexNative
     runtimeFingerprint: binding.runtimeFingerprint,
     threadFingerprint: binding.threadFingerprint,
   }
+}
+
+function readCodexNativeThreadGenerationFromMetadata(metadata: unknown): number {
+  const appServer = readRecord(readRecord(metadata)?.[CODEX_APP_SERVER_METADATA_KEY])
+  const generation = appServer?.threadGeneration
+  return typeof generation === 'number' && Number.isSafeInteger(generation) && generation >= 0
+    ? generation
+    : 0
 }
 
 function assertBinding(binding: CodexNativeThreadBinding): void {

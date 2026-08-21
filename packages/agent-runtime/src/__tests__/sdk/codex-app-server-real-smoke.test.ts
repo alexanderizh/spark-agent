@@ -228,6 +228,7 @@ describe.skipIf(!RUN_SMOKE || SMOKE_EXECUTABLE_PATH == null)(
       expect(executablePath).toBeTruthy()
       const supervisor = new CodexAppServerRuntimeSupervisor({ idleTtlMs: 60_000 })
       const metricPatches: TurnRuntimeMetrics[][] = [[], []]
+      const usageSnapshots: Array<Array<Extract<AgentEvent, { type: 'usage_update' }>>> = [[], []]
       const baseConfig: SDKExecutorConfig = {
         apiKey: 'smoke-test-key',
         model: 'mock-gpt',
@@ -251,7 +252,9 @@ describe.skipIf(!RUN_SMOKE || SMOKE_EXECUTABLE_PATH == null)(
             handshakeTimeoutMs: 20_000,
             runtimeSupervisor: supervisor,
           })
-          executor.onEvent(() => undefined)
+          executor.onEvent((event) => {
+            if (event.type === 'usage_update') usageSnapshots[index]?.push(event)
+          })
           await executor.executeTurn(
             'release-baseline-session',
             `release-baseline-turn-${index + 1}`,
@@ -274,6 +277,8 @@ describe.skipIf(!RUN_SMOKE || SMOKE_EXECUTABLE_PATH == null)(
             }),
           ]),
         )
+        expect(usageSnapshots.map((events) => events.at(-1)?.inputTokens)).toEqual([10, 10])
+        expect(usageSnapshots.map((events) => events.at(-1)?.outputTokens)).toEqual([10, 10])
         const diagnostics = await supervisor.getDiagnostics()
         expect(diagnostics.processCount).toBe(1)
         expect(diagnostics.counters).toMatchObject({

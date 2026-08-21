@@ -149,6 +149,8 @@ import {
   buildCodexNativeThreadIdentityScope,
   buildPersistentCodexAppServerConfig,
   createCodexNativeThreadMetadataPatch,
+  readCodexNativeThreadGeneration,
+  scopeCodexNativeThreadBindingKey,
   shouldUsePersistentCodexAppServer,
 } from './session/codex-native-thread-binding.js'
 // 原 codex 载具工厂整体迁入 codex descriptor；re-export 保持既有 import 面。
@@ -2286,12 +2288,15 @@ export class SessionService {
           model,
           agentAdapter,
         )
-    const codexNativeThreadBindingKey = this.resumeGate.makeRuntimeSessionId(
-      sessionId,
-      resumeProviderProfileId,
-      model,
-      agentAdapter,
-      buildCodexNativeThreadIdentityScope({ agentId: agent.id, isMentionTurn }),
+    const codexNativeThreadBindingKey = scopeCodexNativeThreadBindingKey(
+      this.resumeGate.makeRuntimeSessionId(
+        sessionId,
+        resumeProviderProfileId,
+        model,
+        agentAdapter,
+        buildCodexNativeThreadIdentityScope({ agentId: agent.id, isMentionTurn }),
+      ),
+      readCodexNativeThreadGeneration(session.metadata_json),
     )
     const sdkResumeSafe = this.resumeGate.isSafe({
       providerType: provider.provider_type,
@@ -7375,7 +7380,10 @@ export class SessionService {
       ...(memberCodexRuntimeLeaseKey != null && stableMemberSessionId != null
         ? buildPersistentCodexAppServerConfig({
             runtimeLeaseKey: memberCodexRuntimeLeaseKey,
-            bindingKey: stableMemberSessionId,
+            bindingKey: scopeCodexNativeThreadBindingKey(
+              stableMemberSessionId,
+              readCodexNativeThreadGeneration(session.metadata_json),
+            ),
             metadataJson: session.metadata_json,
             onBinding: (binding) => {
               const patch = createCodexNativeThreadMetadataPatch(

@@ -816,7 +816,7 @@ export class CodexAppServerExecutor
       case 'thread/tokenUsage/updated': {
         const usage = record.tokenUsage as
           | {
-              total?: {
+              last?: {
                 inputTokens?: number
                 outputTokens?: number
                 cachedInputTokens?: number
@@ -824,11 +824,13 @@ export class CodexAppServerExecutor
               }
             }
           | undefined
-        const total = usage?.total
+        // `total` 是 native thread 跨 turn 的累计值；usage_update 的既有契约是本轮
+        // 快照，必须使用 `last`，否则第 N 轮会把前 N-1 轮再次计入审计与成本台账。
+        const last = usage?.last
         if (
-          total == null ||
-          typeof total.inputTokens !== 'number' ||
-          typeof total.outputTokens !== 'number'
+          last == null ||
+          typeof last.inputTokens !== 'number' ||
+          typeof last.outputTokens !== 'number'
         ) {
           return
         }
@@ -836,11 +838,11 @@ export class CodexAppServerExecutor
           type: 'usage_update',
           provider: 'codex',
           model: this.activeConfig?.model ?? '',
-          inputTokens: total.inputTokens,
-          outputTokens: total.outputTokens,
-          cacheHitTokens: typeof total.cachedInputTokens === 'number' ? total.cachedInputTokens : 0,
+          inputTokens: last.inputTokens,
+          outputTokens: last.outputTokens,
+          cacheHitTokens: typeof last.cachedInputTokens === 'number' ? last.cachedInputTokens : 0,
           reasoningOutputTokens:
-            typeof total.reasoningOutputTokens === 'number' ? total.reasoningOutputTokens : 0,
+            typeof last.reasoningOutputTokens === 'number' ? last.reasoningOutputTokens : 0,
           ...this.makeCurrentBase(),
         })
         return

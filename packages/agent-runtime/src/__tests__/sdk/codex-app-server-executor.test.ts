@@ -644,10 +644,10 @@ describe('CodexAppServerExecutor', () => {
     expect(usage).toMatchObject({
       provider: 'codex',
       model: 'gpt-test',
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheHitTokens: 20,
-      reasoningOutputTokens: 10,
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheHitTokens: 2,
+      reasoningOutputTokens: 1,
     })
   })
 

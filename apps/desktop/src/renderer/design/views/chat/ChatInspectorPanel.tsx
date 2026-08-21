@@ -16,6 +16,7 @@ import {
   clamp,
   computeCacheHitRate,
   formatTokenCount,
+  resolveContextUsedTokens,
 } from './ChatViewUtils'
 import { extractInspectorSubagents, isRecord, type InspectorTask } from './ChatInspectorUtils'
 import type {
@@ -570,11 +571,11 @@ export function ChatInspector({
     document.body.classList.remove('inspector-resizing')
   }
 
-  // 与底部 ContextMeterWithPopup 弹窗保持同一口径：优先采用 context_ledger 的完整分段总和
-  // （含对话历史 / 项目上下文 / 附件），比 context_usage.estimatedTokens（仅统计本轮系统提示
-  // + 用户消息）更准确，避免这里少算。
-  const currentContextTokens =
-    contextLedger?.totalEstimatedTokens ?? contextUsage?.estimatedTokens ?? contextInputTokens
+  const currentContextTokens = resolveContextUsedTokens({
+    ledgerEstimatedTokens: contextLedger?.totalEstimatedTokens,
+    turnEstimatedTokens: contextUsage?.estimatedTokens,
+    providerInputTokens: contextInputTokens,
+  })
   // 窗口大小由 Provider 显式配置决定；历史 context_usage 里可能还带旧的模型名推断值。
   const contextWindow = providerContextWindow
   // 「X% 已用」始终按硬窗口显示，对齐弹窗顶部「X% 已用 / 200K」。

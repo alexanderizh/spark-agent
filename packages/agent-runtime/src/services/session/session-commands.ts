@@ -52,6 +52,7 @@ import {
   shouldDeriveSessionTitle,
 } from './session-pure-utils.js'
 import { getAgentAdapterFromSession, getPermissionModeFromSession } from './engine-kinds.js'
+import { createCodexNativeThreadClearPatch } from './codex-native-thread-binding.js'
 
 const log = createLogger('session.commands')
 
@@ -470,6 +471,10 @@ export class SessionCommandController {
         if (fields.modelId !== undefined) sessionRepo.updateRuntime(id, { modelId: fields.modelId })
       },
       clearSessionEvents: async (id) => {
+        sessionRepo.patchMetadata(
+          id,
+          createCodexNativeThreadClearPatch(sessionRepo.getMetadata(id)),
+        )
         eventRepo.deleteBySession(id)
         this.host.clearSessionEventSequencer(id)
         this.host.clearUsageLedgerTurnState(id)

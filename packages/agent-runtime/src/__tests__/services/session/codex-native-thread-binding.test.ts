@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createCodexNativeThreadClearPatch,
   createCodexNativeThreadMetadataPatch,
   readCodexNativeThreadBinding,
   readCodexNativeThreadBindings,
+  readCodexNativeThreadGeneration,
+  scopeCodexNativeThreadBindingKey,
   shouldUsePersistentCodexAppServer,
 } from '../../../services/session/codex-native-thread-binding.js'
 import type { CodexNativeThreadBinding } from '../../../sdk/types.js'
@@ -111,5 +114,33 @@ describe('Codex native thread binding metadata', () => {
         },
       ),
     ).toThrow(/SHA-256/)
+  })
+
+  it('/clear 清除 Host/member 绑定并轮换 scope，同时保留其他 App Server 元数据', () => {
+    const metadata = {
+      existing: true,
+      ...createCodexNativeThreadMetadataPatch(
+        { codexAppServer: { diagnosticsEnabled: true } },
+        binding(),
+      ),
+    }
+    const cleared = { ...metadata, ...createCodexNativeThreadClearPatch(metadata) }
+    const clearedJson = JSON.stringify(cleared)
+
+    expect(readCodexNativeThreadBindings(clearedJson, binding().bindingKey)).toEqual([])
+    expect(readCodexNativeThreadGeneration(clearedJson)).toBe(1)
+    expect(scopeCodexNativeThreadBindingKey('host-key', 0)).toBe('host-key')
+    expect(scopeCodexNativeThreadBindingKey('host-key', 1)).not.toBe('host-key')
+    expect(cleared).toMatchObject({
+      existing: true,
+      codexAppServer: {
+        diagnosticsEnabled: true,
+        threadGeneration: 1,
+        nativeThreadBindings: [],
+      },
+    })
+
+    const clearedAgain = { ...cleared, ...createCodexNativeThreadClearPatch(cleared) }
+    expect(readCodexNativeThreadGeneration(JSON.stringify(clearedAgain))).toBe(2)
   })
 })

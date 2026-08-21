@@ -45,6 +45,8 @@ describe('spark_platform MCP server', () => {
         'skills_install_github',
         'artifacts_list',
         'artifacts_resolve',
+        'codex_runtime_diagnostics',
+        'codex_runtime_restart_idle',
         'teams_list',
         'teams_get',
         'teams_create',

@@ -37,6 +37,12 @@ vi.mock('../../services/debug-log-server.service.js', () => ({
   getDebugLogServer: () => ({ start: async () => 43123 }),
 }))
 
+vi.mock('../../sdk/codex-app-server/codex-app-server-runtime.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../sdk/codex-app-server/codex-app-server-runtime.js')>()
+  return { ...actual, isPersistentCodexRuntimeEnabled: () => false }
+})
+
 vi.mock('../../sdk/index.js', async () => {
   const { FakeEngineExecutor } = await import('../sdk/fake-engine-executor.js')
   return {

@@ -151,6 +151,7 @@ describe('SessionService recovery helpers', () => {
       teamMcpHandlesByTurn: Map<string, unknown>
       teamDispatchBudgetExhaustedTurns: Map<string, string>
       teamDispatchAutoContinuationTracker: { clear: () => void; reset: (sessionId: string) => void }
+      engineRegistry: { dispose: () => Promise<void> }
     }
     service.turnRegistry = new TurnRegistry()
     service.turnRegistry.registerExecutor('session-1', 'turn-dispose', execution)
@@ -168,6 +169,7 @@ describe('SessionService recovery helpers', () => {
     service.teamMcpHandlesByTurn = new Map()
     service.teamDispatchBudgetExhaustedTurns = new Map()
     service.teamDispatchAutoContinuationTracker = { clear: vi.fn(), reset: vi.fn() }
+    service.engineRegistry = { dispose: vi.fn(async () => undefined) }
 
     let disposed = false
     const disposePromise = service.dispose().then(() => {

@@ -32,6 +32,12 @@ vi.mock('../../services/session-title-generator.js', () => ({
   generateSessionTitle: generateTitleMock,
 }))
 
+vi.mock('../../sdk/codex-app-server/codex-app-server-runtime.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../sdk/codex-app-server/codex-app-server-runtime.js')>()
+  return { ...actual, isPersistentCodexRuntimeEnabled: () => false }
+})
+
 vi.mock('../../sdk/index.js', async () => {
   const { FakeEngineExecutor } = await import('../sdk/fake-engine-executor.js')
   return {

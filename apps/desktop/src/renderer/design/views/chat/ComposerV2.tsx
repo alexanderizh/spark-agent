@@ -127,7 +127,7 @@ import {
   type SessionSummary,
 } from '../../SessionSidebarContext'
 import type { UIMessage } from '../../services/event-mapper'
-import { formatTokenCount } from './ChatViewUtils'
+import { formatTokenCount, resolveContextUsedTokens } from './ChatViewUtils'
 import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
 import { resolvePendingQuickReplies } from '../../services/quick-reply-suggestions'
 import { useAppControlComposerPrefill } from './composerAppControl'
@@ -1166,10 +1166,11 @@ export function ComposerV2({
     pendingQuickReplies != null && pendingQuickReplies.key !== dismissedQuickReplyKey
       ? pendingQuickReplies
       : null
-  // 已使用 token 优先采用 context_ledger 的完整分段总和（含对话历史 / 项目上下文 / 附件），
-  // 它比 context_usage.estimatedTokens（仅统计本轮系统提示 + 用户消息）更准确。
-  const contextUsedTokens =
-    contextLedger?.totalEstimatedTokens ?? contextUsage?.estimatedTokens ?? contextInputTokens
+  const contextUsedTokens = resolveContextUsedTokens({
+    ledgerEstimatedTokens: contextLedger?.totalEstimatedTokens,
+    turnEstimatedTokens: contextUsage?.estimatedTokens,
+    providerInputTokens: contextInputTokens,
+  })
   const contextRatio =
     contextWindow > 0
       ? Math.min(100, Math.round((contextUsedTokens / contextWindow) * 1000) / 10)

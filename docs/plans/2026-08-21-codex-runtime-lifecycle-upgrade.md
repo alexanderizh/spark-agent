@@ -76,6 +76,8 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 - native loaded/resume 成功时不重复注入 Spark 历史；fresh、resume 失败或 SDK fallback
   使用 standby continuity history 恢复上下文。
 - Host、mention 与 Team member 使用独立 binding/lease scope，避免 Host 等待成员时互锁。
+- `/clear` 会清空持久 binding 并轮换 session generation；Host、mention 与 Team member 的
+  下一轮都无法再次命中清空前的 loaded/native thread，同时保留其他 session metadata。
 - fresh thread 绑定必须先持久化再允许 `turn/start`；持久化失败只在 turn 开始前回退。
 - fallback 只允许发生在 `turn/start` 之前；已开始的 turn 禁止自动二次执行。
 
@@ -173,3 +175,9 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 - P5 前发布闭环新增验证：官方 `0.149.0` 与隔离 `0.144.5` 真实二进制双 turn 基线通过；
   协议 checker 及 Node 测试通过；Settings Runtime 卡片 unit/IPC 测试与 Electron E2E 通过；
   production desktop build 成功。P5 和共享进程池不属于本次发布阻塞项。
+- 2026-08-22 发布前适配完整性审计覆盖 Team/Goal/Workflow/Plugin MCP、会话定时任务、画布
+  Codex、队列/取消/审批、引用/附件、提示词/环境变量/上下文预算、自定义/内置命令与 Runtime
+  诊断。审计修复 `/clear` 未切断 native thread、App Server 把 thread 累计用量当本轮用量、
+  Runtime 诊断工具漏入 Host/Team allow-list 三项真实缺陷；agent-runtime 全量 2115/2115、
+  Desktop 核心矩阵 155/155、三包 strict typecheck 与协议兼容检查均通过。官方 `0.149.0`
+  双轮 smoke 继续保持单进程/warm loaded thread，且两轮用量都按本轮 `10/10` 上报。

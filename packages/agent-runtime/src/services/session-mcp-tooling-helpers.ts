@@ -393,6 +393,9 @@ export const PLATFORM_TOOL_NAMES: string[] = [
   // Spark install artifacts
   'mcp__spark_platform__artifacts_list',
   'mcp__spark_platform__artifacts_resolve',
+  // Codex Runtime diagnostics
+  'mcp__spark_platform__codex_runtime_diagnostics',
+  'mcp__spark_platform__codex_runtime_restart_idle',
   // Settings
   'mcp__spark_platform__settings_get',
   'mcp__spark_platform__settings_set',
