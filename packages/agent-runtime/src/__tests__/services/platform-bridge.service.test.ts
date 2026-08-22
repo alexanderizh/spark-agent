@@ -30,6 +30,7 @@ import {
   AgentRepository,
   ProviderProfileRepository,
   SparkDatabase,
+  SubAppRepository,
   TeamDefinitionRepository,
 } from '@spark/storage'
 import {
@@ -39,7 +40,16 @@ import {
 import * as keystore from '@spark/shared/keystore'
 
 type ConfigChange = {
-  scope: 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt'
+  scope:
+    | 'provider'
+    | 'agent'
+    | 'team'
+    | 'skill'
+    | 'mcp'
+    | 'workflow'
+    | 'rule'
+    | 'prompt'
+    | 'sub-app'
   action: 'create' | 'update' | 'delete' | 'import'
   id?: string | undefined
 }
@@ -359,6 +369,76 @@ describe('PlatformBridgeService Codex runtime control', () => {
     })
     expect(sessionService.getCodexRuntimeDiagnostics).toHaveBeenCalledTimes(1)
     expect(sessionService.restartIdleCodexRuntimes).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('PlatformBridgeService sub-app directory notifications', () => {
+  let db: SparkDatabase
+  let testDir: string
+  let subAppRepo: SubAppRepository
+  let service: PlatformBridgeService
+  let port = 0
+  const changes: ConfigChange[] = []
+
+  beforeEach(async () => {
+    testDir = join(
+      tmpdir(),
+      `spark-sub-app-bridge-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
+    mkdirSync(testDir, { recursive: true })
+    db = new SparkDatabase(join(testDir, 'test.db'))
+    db.runMigrations(join(process.cwd(), '..', 'storage', 'migrations'))
+    subAppRepo = new SubAppRepository(db)
+    changes.length = 0
+
+    service = new PlatformBridgeService()
+    port = await service.start({
+      subAppRepo,
+      onConfigChanged: (
+        scope: ConfigChange['scope'],
+        action: ConfigChange['action'],
+        id?: string,
+      ) => changes.push({ scope, action, id }),
+    } as unknown as PlatformBridgeDeps)
+  })
+
+  afterEach(async () => {
+    await service.stop()
+    db.close()
+    rmSync(testDir, { recursive: true, force: true })
+  })
+
+  it('broadcasts create and publish only after the repository mutation succeeds', async () => {
+    const created = await callBridgeRpc(port, 'subapp.create', {
+      name: 'Agent 发布应用',
+      source: '<main>v1</main>',
+      surface: 'content',
+    })
+    expect(created.ok).toBe(true)
+    const appId = (created.data as { id: string }).id
+    expect(changes).toEqual([{ scope: 'sub-app', action: 'create', id: appId }])
+
+    const published = await callBridgeRpc(port, 'subapp.publish', {
+      appId,
+      expectedDraftRevision: 1,
+    })
+    expect(published).toMatchObject({
+      ok: true,
+      data: { id: appId, publicationStatus: 'published', publishedVersion: 1 },
+    })
+    expect(subAppRepo.get(appId)?.publishedRelease?.source).toBe('<main>v1</main>')
+    expect(changes).toEqual([
+      { scope: 'sub-app', action: 'create', id: appId },
+      { scope: 'sub-app', action: 'update', id: appId },
+    ])
+
+    changes.length = 0
+    const conflicted = await callBridgeRpc(port, 'subapp.publish', {
+      appId,
+      expectedDraftRevision: 99,
+    })
+    expect(conflicted.ok).toBe(false)
+    expect(changes).toEqual([])
   })
 })
 

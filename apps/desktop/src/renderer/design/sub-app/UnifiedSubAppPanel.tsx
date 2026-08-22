@@ -7,8 +7,8 @@ import { SubAppRunner } from './SubAppRunner'
  * 统一侧边面板内的 panel 子应用内容区。
  *
  * 目录（SubAppSummary）不含 manifest/source，这里按 appId 拉取应用
- * details 后交给 SubAppRunner 渲染；与 SubAppPanelDock 一致使用
- * draft 模式运行（宿主直接加载当前草稿源码）。
+ * details 后交给 SubAppRunner 渲染；与 SubAppPanelDock 一致优先运行
+ * 发布快照（未发布的应用回落草稿）。
  */
 export function UnifiedSubAppPanel({ appId }: { appId: string }): React.ReactElement {
   const [state, setState] = useState<
@@ -53,12 +53,14 @@ export function UnifiedSubAppPanel({ appId }: { appId: string }): React.ReactEle
       </div>
     )
   }
+  const runtime = state.details.publishedRelease ?? state.details.draft
   return (
     <SubAppRunner
       appId={appId}
-      manifest={state.details.draft.manifest}
-      source={state.details.draft.source}
-      mode="draft"
+      manifest={runtime.manifest}
+      source={runtime.source}
+      mode={state.details.publishedRelease != null ? 'published' : 'draft'}
+      release={state.details.publishedRelease}
       className="subapp-unified-runner"
     />
   )

@@ -439,7 +439,8 @@ export type PlatformConfigChangedHandler = (
     | 'workflow'
     | 'rule'
     | 'prompt'
-    | 'scheduled-task',
+    | 'scheduled-task'
+    | 'sub-app',
   action: 'create' | 'update' | 'delete' | 'import',
   id?: string,
 ) => void

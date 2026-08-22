@@ -37,8 +37,10 @@ export function registerSubAppIpc(options: RegisterSubAppIpcOptions = {}): void 
     return backend.get(request)
   })
   /** 目录变化广播：变更类操作成功后通知 renderer 刷新侧栏菜单与胶囊启动器。
-   *  Agent MCP 工具与 e2e 直连 IPC 都不经过管理页 UI，没有这条广播它们
-   *  创建/发布的应用不会即时出现在任何入口。 */
+   *  本文件只覆盖渲染进程 IPC 入口（管理页/运行页 UI 操作）；Agent MCP 工具
+   *  （spark_app_publish 等）走 platform-bridge 的 subapp.* RPC，由其经
+   *  onConfigChanged('sub-app') 在 apps/desktop/src/main/ipc/index.ts 转发为
+   *  同一条流，两个入口最终都触发 renderer 的目录刷新事件。 */
   const notifyDirectoryChanged = <T>(result: T): T => {
     const window = getMainWindow()
     if (window != null && !window.isDestroyed()) {

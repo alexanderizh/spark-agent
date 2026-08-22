@@ -5,6 +5,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubAppSummary } from '@spark/protocol'
+import { SUB_APP_DIRECTORY_CHANGED_EVENT } from '../sub-app/subAppEvents'
 import { SubAppsView } from './SubAppsView'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -231,6 +232,22 @@ describe('SubAppsView', () => {
     expect(container?.textContent).toContain('读书打卡')
     expect(container?.textContent).toContain('已发布 v2')
     expect(container?.textContent).toContain('草稿')
+  })
+
+  it('目录变化事件触发列表刷新并显示新发布应用', async () => {
+    mocks.list.mockResolvedValue({ items: [], total: 0 })
+    await renderView()
+    expect(container?.querySelector('[data-testid="sub-app-card"]')).toBeNull()
+
+    mocks.list.mockResolvedValue({ items: [makeApp()], total: 1 })
+    await act(async () => {
+      window.dispatchEvent(new Event(SUB_APP_DIRECTORY_CHANGED_EVENT))
+    })
+
+    expect(container?.querySelector('[data-testid="sub-app-card"]')?.textContent).toContain(
+      '记账工具',
+    )
+    expect(mocks.list).toHaveBeenCalledWith(expect.objectContaining({ includeArchived: false }))
   })
 
   it('未知的历史文本图标回退为默认应用图标', async () => {

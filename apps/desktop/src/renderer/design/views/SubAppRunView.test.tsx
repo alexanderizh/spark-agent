@@ -5,6 +5,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubAppDetails } from '@spark/protocol'
+import { SUB_APP_DIRECTORY_CHANGED_EVENT } from '../sub-app/subAppEvents'
 import { SubAppRunView } from './SubAppRunView'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -190,6 +191,36 @@ describe('SubAppRunView', () => {
     expect(container?.querySelector('.sar-header')).not.toBeNull()
     // 有 sar-header 时由 header 承担拖拽，不再渲染独立拖拽条
     expect(container?.querySelector('.mac-window-drag-header')).toBeNull()
+  })
+
+  it('目录变化后静默加载最新发布版本并保持发布模式', async () => {
+    const initial = makeDetails()
+    if (initial.publishedRelease == null) throw new Error('测试夹具必须包含发布版本')
+    mocks.get.mockResolvedValue(initial)
+    await renderView()
+
+    const latest = makeDetails({
+      publishedVersion: 4,
+      publishedRelease: {
+        ...initial.publishedRelease,
+        id: 'rel-0004',
+        version: 4,
+        source: '<html>published-v4</html>',
+      },
+    })
+    mocks.get.mockResolvedValue(latest)
+    await act(async () => {
+      window.dispatchEvent(new Event(SUB_APP_DIRECTORY_CHANGED_EVENT))
+    })
+
+    const lastRunnerProps = mocks.runnerProps[mocks.runnerProps.length - 1]
+    expect(mocks.get).toHaveBeenLastCalledWith({ appId: 'app-0001' })
+    expect(lastRunnerProps).toMatchObject({
+      mode: 'published',
+      source: '<html>published-v4</html>',
+    })
+    expect((lastRunnerProps as { release?: { id?: string } }).release?.id).toBe('rel-0004')
+    expect(container?.querySelector('[data-testid="spin"]')).toBeNull()
   })
 
   it('源码为空时显示可修复提示，不渲染空白 runner', async () => {

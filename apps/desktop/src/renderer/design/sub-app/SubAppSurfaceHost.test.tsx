@@ -11,6 +11,7 @@ import { SUB_APP_DIRECTORY_CHANGED_EVENT } from './subAppEvents'
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   get: vi.fn(),
+  runnerProps: [] as Array<Record<string, unknown>>,
 }))
 
 vi.mock('./subAppClient', () => ({
@@ -22,7 +23,10 @@ vi.mock('./subAppClient', () => ({
 vi.mock('./SubAppRunner', async () => {
   const ReactActual = await vi.importActual<typeof import('react')>('react')
   return {
-    SubAppRunner: () => ReactActual.createElement('div', { 'data-testid': 'subapp-runner' }),
+    SubAppRunner: (props: Record<string, unknown>) => {
+      mocks.runnerProps.push(props)
+      return ReactActual.createElement('div', { 'data-testid': 'subapp-runner' })
+    },
   }
 })
 
@@ -51,6 +55,8 @@ describe('SubAppSurfaceProvider 目录加载', () => {
 
   beforeEach(() => {
     mocks.list.mockReset()
+    mocks.get.mockReset()
+    mocks.runnerProps = []
     // 清理浮窗几何持久化，避免用例间位置串扰
     Object.keys(window.localStorage)
       .filter((key) => key.startsWith('spark-agent:subapp-overlay-geometry'))
@@ -156,6 +162,63 @@ describe('SubAppSurfaceProvider 目录加载', () => {
     await act(async () => {})
     expect(container.textContent).toContain('child')
     expect(container.querySelector('[data-testid="subapp-surface-launcher"]')).toBeNull()
+  })
+
+  it('从胶囊打开已发布应用时运行发布快照而不是草稿', async () => {
+    mocks.list.mockResolvedValue({
+      items: [makeApp({ id: 'o1', name: '浮层应用', surface: 'overlay' })],
+      total: 1,
+    })
+    mocks.get.mockResolvedValue({
+      ...makeApp({ id: 'o1', name: '浮层应用', surface: 'overlay' }),
+      draft: {
+        revision: 2,
+        source: '<main>draft-v2</main>',
+        config: {},
+        manifest: {
+          name: '浮层应用',
+          description: '',
+          icon: null,
+          entry: 'index.html',
+          surface: 'overlay',
+          permissions: [],
+        },
+        updatedAt: '2026-08-18T01:00:00.000Z',
+      },
+      publishedRelease: {
+        id: 'release-v1',
+        appId: 'o1',
+        version: 1,
+        source: '<main>published-v1</main>',
+        config: {},
+        manifest: {
+          name: '浮层应用',
+          description: '',
+          icon: null,
+          entry: 'index.html',
+          surface: 'overlay',
+          permissions: [],
+        },
+        publishedAt: '2026-08-18T00:30:00.000Z',
+      },
+    })
+    renderProvider()
+    await act(async () => {})
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.subapp-launcher-capsule')?.click()
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.subapp-launcher-item')?.click()
+    })
+
+    const lastRunnerProps = mocks.runnerProps[mocks.runnerProps.length - 1]
+    expect(lastRunnerProps).toMatchObject({
+      appId: 'o1',
+      mode: 'published',
+      source: '<main>published-v1</main>',
+      release: { id: 'release-v1', version: 1 },
+    })
   })
 
   it('侧板 dock 头部显示面板菜单，点击其他侧板应用切换', async () => {
@@ -327,7 +390,7 @@ describe('SubAppSurfaceProvider 目录加载', () => {
     )
   }
 
-  it('浮窗带公用头部：应用标识+关闭入口，头部拖动、三向拉伸；关闭销毁可经胶囊重开', async () => {
+  it('浮窗带公用头部：应用标识+关闭入口，头部拖动、四个拉伸入口；关闭销毁可经胶囊重开', async () => {
     mocks.list.mockResolvedValue({
       items: [makeApp({ id: 'o1', name: '浮层应用', surface: 'overlay' })],
       total: 1,
@@ -348,11 +411,11 @@ describe('SubAppSurfaceProvider 目录加载', () => {
     // 应用本体（runner）直接是卡片的子元素，铺满头部之下
     const runner = card?.querySelector('[data-testid="subapp-runner"]')
     expect(runner?.parentElement).toBe(card)
-    // 自由浮窗手势件：三向拉伸手柄
+    // 自由浮窗手势件：右/下/右下角/左上角四个拉伸入口
     const dirs = [...(card?.querySelectorAll('.subapp-overlay-resize') ?? [])].map((el) =>
       el.getAttribute('data-dir'),
     )
-    expect(dirs).toEqual(['e', 's', 'se'])
+    expect(dirs).toEqual(['e', 's', 'se', 'nw'])
     // 窗口有独立几何（默认内容区 85%），不是铺满视口
     expect(card?.style.left).not.toBe('')
     expect(card?.style.width).not.toBe('')
@@ -414,7 +477,7 @@ describe('SubAppSurfaceProvider 目录加载', () => {
     }
   })
 
-  it('拖动浮窗移动位置并持久化；三向拉伸改宽高', async () => {
+  it('拖动浮窗移动位置并持久化；右下角和左上角均可拉伸', async () => {
     mocks.list.mockResolvedValue({
       items: [makeApp({ id: 'o1', name: '浮层应用', surface: 'overlay' })],
       total: 1,
@@ -453,6 +516,33 @@ describe('SubAppSurfaceProvider 目录加载', () => {
     })
     expect(Number.parseInt(card()?.style.width ?? '0', 10)).toBe(before.width + 40)
     expect(Number.parseInt(card()?.style.height ?? '0', 10)).toBe(before.height + 30)
+
+    // 左上角向内拉伸：左/上边界移动，右/下边界保持不动
+    const beforeNw = {
+      left: Number.parseInt(card()?.style.left ?? '0', 10),
+      top: Number.parseInt(card()?.style.top ?? '0', 10),
+      width: Number.parseInt(card()?.style.width ?? '0', 10),
+      height: Number.parseInt(card()?.style.height ?? '0', 10),
+    }
+    await act(async () => {
+      const nw = card()?.querySelector<HTMLElement>('.subapp-overlay-resize[data-dir="nw"]')
+      expect(nw).not.toBeNull()
+      firePointer(nw as Element, 'pointerdown', 200, 160)
+      firePointer(nw as Element, 'pointermove', 225, 180)
+      firePointer(nw as Element, 'pointerup', 225, 180)
+    })
+    const afterNw = {
+      left: Number.parseInt(card()?.style.left ?? '0', 10),
+      top: Number.parseInt(card()?.style.top ?? '0', 10),
+      width: Number.parseInt(card()?.style.width ?? '0', 10),
+      height: Number.parseInt(card()?.style.height ?? '0', 10),
+    }
+    expect(afterNw.left).toBe(beforeNw.left + 25)
+    expect(afterNw.top).toBe(beforeNw.top + 20)
+    expect(afterNw.width).toBe(beforeNw.width - 25)
+    expect(afterNw.height).toBe(beforeNw.height - 20)
+    expect(afterNw.left + afterNw.width).toBe(beforeNw.left + beforeNw.width)
+    expect(afterNw.top + afterNw.height).toBe(beforeNw.top + beforeNw.height)
 
     // 几何持久化：卸载重挂后恢复拖拽后的位置
     const savedLeft = Number.parseInt(card()?.style.left ?? '0', 10)

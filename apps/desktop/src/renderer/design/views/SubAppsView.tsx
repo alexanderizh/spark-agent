@@ -26,7 +26,10 @@ import type {
 } from '@spark/protocol'
 import { subAppClient } from '../sub-app/subAppClient'
 import { useSubAppSurfaces } from '../sub-app/SubAppSurfaceHost'
-import { notifySubAppDirectoryChanged } from '../sub-app/subAppEvents'
+import {
+  SUB_APP_DIRECTORY_CHANGED_EVENT,
+  notifySubAppDirectoryChanged,
+} from '../sub-app/subAppEvents'
 import { SubAppIcon } from '../sub-app/SubAppIcon'
 import { SUB_APP_ICON_OPTIONS } from '../sub-app/subAppIconOptions'
 import { useApp } from '../AppContext'
@@ -128,6 +131,18 @@ export function SubAppsView(): React.ReactElement {
 
   useEffect(() => {
     void reload()
+  }, [reload])
+
+  // 目录可能在别处发生变化（Agent 会话里 spark_app_create/publish 等），
+  // 监听 renderer 目录事件即时刷新列表，而不是等用户切页或重启。
+  useEffect(() => {
+    const handleDirectoryChanged = (): void => {
+      void reload()
+    }
+    window.addEventListener(SUB_APP_DIRECTORY_CHANGED_EVENT, handleDirectoryChanged)
+    return () => {
+      window.removeEventListener(SUB_APP_DIRECTORY_CHANGED_EVENT, handleDirectoryChanged)
+    }
   }, [reload])
 
   const openApp = useCallback(

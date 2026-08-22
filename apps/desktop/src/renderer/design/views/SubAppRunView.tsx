@@ -12,7 +12,10 @@ import { Badge, Popconfirm, Segmented, Spin, Switch, message as antdMessage } fr
 import type { SubAppDetails } from '@spark/protocol'
 import { subAppClient } from '../sub-app/subAppClient'
 import { SubAppRunner } from '../sub-app/SubAppRunner'
-import { notifySubAppDirectoryChanged } from '../sub-app/subAppEvents'
+import {
+  SUB_APP_DIRECTORY_CHANGED_EVENT,
+  notifySubAppDirectoryChanged,
+} from '../sub-app/subAppEvents'
 import { SubAppIcon } from '../sub-app/SubAppIcon'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useApp } from '../AppContext'
@@ -53,6 +56,33 @@ export function SubAppRunView(): React.ReactElement {
     setMode(t.subAppOpenMode)
     void reload()
   }, [reload, t.subAppOpenMode])
+
+  // 目录变化（如 Agent 在会话里发布了新版本）时静默重拉详情；发布模式下
+  // release 引用变化会让 SubAppRunner 以新版本源码重建沙箱，当前模式保持不变。
+  // 不走带 loading 态的 reload：目录事件可能来自其他应用的变化，不应打断
+  // 正在运行的实例；失败时保留现有详情即可。
+  useEffect(() => {
+    let cancelled = false
+    let latestRefresh = 0
+    const handleDirectoryChanged = (): void => {
+      // 首次/显式 reload 已在读取权威详情，此时额外刷新只会制造重复请求和竞态。
+      if (appId == null || loading) return
+      const refresh = ++latestRefresh
+      void subAppClient
+        .get({ appId })
+        .then((res) => {
+          if (cancelled || refresh !== latestRefresh) return
+          setDetails(res)
+          setMode((prev) => (prev === 'published' && res.publishedRelease == null ? 'draft' : prev))
+        })
+        .catch(() => {})
+    }
+    window.addEventListener(SUB_APP_DIRECTORY_CHANGED_EVENT, handleDirectoryChanged)
+    return () => {
+      cancelled = true
+      window.removeEventListener(SUB_APP_DIRECTORY_CHANGED_EVENT, handleDirectoryChanged)
+    }
+  }, [appId, loading])
 
   const backToList = useCallback((): void => {
     setTweak('subAppOpenId', null)

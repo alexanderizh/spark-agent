@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { SubAppDetails, SubAppManifest, SubAppSummary, SubAppSurface } from '@spark/protocol'
+import type {
+  SubAppDetails,
+  SubAppManifest,
+  SubAppRelease,
+  SubAppSummary,
+  SubAppSurface,
+} from '@spark/protocol'
 import { subAppClient } from './subAppClient'
 import { SubAppIcon } from './SubAppIcon'
 import { SubAppRunner } from './SubAppRunner'
@@ -16,7 +22,7 @@ import './SubAppSurfaceHost.less'
  *
  * 实例约束：overlay 最多 3 个（超出替换最旧），panel 最多 1 个（后开替换）。
  * overlay 是带公用头部的自由浮窗：头部（应用图标/名称 + 关闭）兼任拖动把手，
- * 应用本体（iframe）铺满头部之下的窗口区域；可三向拉伸（右/下/右下角），
+ * 应用本体（iframe）铺满头部之下的窗口区域；可从右/下/右下角/左上角拉伸，
  * 几何按 appId 持久化，多开时级联偏移。浮窗无收起态——关闭即销毁实例，
  * 重新打开走右下角胶囊启动器菜单；关闭只销毁该实例的 SubAppRunner
  * （iframe + bridge host 随组件卸载），不影响其他实例与运行页。
@@ -130,6 +136,10 @@ interface SurfaceInstance {
   icon: string | null
   manifest: SubAppManifest
   source: string
+  /** 实例打开时快照的运行模式：已发布应用跑发布快照，未发布回落草稿。 */
+  mode: 'draft' | 'published'
+  /** published 模式下的不可变发布记录；draft 模式为 null。 */
+  release: SubAppRelease | null
 }
 
 export interface SubAppSurfaceController {
@@ -214,7 +224,10 @@ export function SubAppSurfaceProvider({
     } catch (err) {
       throw err instanceof Error ? err : new Error(String(err))
     }
-    const kind = kindOfSurface(details.draft.manifest.surface)
+    // 胶囊启动器只列已发布+已启用应用，实例运行发布快照；未发布的
+    // （预览场景）回落草稿。快照在打开时定格，发布新版本后重开实例即新版本。
+    const runtime = details.publishedRelease ?? details.draft
+    const kind = kindOfSurface(runtime.manifest.surface)
     if (kind == null) return
     // panel 应用优先转发给统一侧面板（作为 subapp tab 打开）；无处理器时回落 dock
     if (kind === 'panel') {
@@ -234,8 +247,10 @@ export function SubAppSurfaceProvider({
         appId,
         name: details.name,
         icon: details.icon,
-        manifest: details.draft.manifest,
-        source: details.draft.source,
+        manifest: runtime.manifest,
+        source: runtime.source,
+        mode: details.publishedRelease != null ? 'published' : 'draft',
+        release: details.publishedRelease,
       }
       const cap = kind === 'overlay' ? MAX_OVERLAY_INSTANCES : MAX_PANEL_INSTANCES
       const sameKind = prev.filter((item) => item.kind === kind)
@@ -298,13 +313,13 @@ function SubAppSurfaceLayer({
   )
 }
 
-type ResizeDir = 'e' | 's' | 'se'
+type ResizeDir = 'e' | 's' | 'se' | 'nw'
 
 /**
  * 浮层：带公用头部的自由浮窗。头部（应用图标/名称 + 关闭按钮）兼任窗口
  * 拖动把手——iframe 隔离鼠标事件，宿主必须提供移动入口；应用本体
  * （runner iframe）铺满头部之下的窗口区域。窗口有独立几何（默认取内容区
- * 85% 居中，多开级联偏移），可三向拉伸（右缘/下缘/右下角），几何按 appId
+ * 85% 居中，多开级联偏移），可从右缘/下缘/右下角/左上角拉伸，几何按 appId
  * 持久化并在恢复/拖拽/拉伸时整体钳制在视口内。无收起态：关闭即销毁实例。
  */
 function SubAppOverlayCard({
@@ -360,6 +375,19 @@ function SubAppOverlayCard({
     if (drag.dir == null) {
       // 移动窗口：整体平移，钳制保证标题抓手始终可达
       next = clampOverlayGeometry({ ...base, left: base.left + dx, top: base.top + dy })
+    } else if (drag.dir === 'nw') {
+      // 左上角拉伸：右/下边界保持不动；尺寸达到最小值或视口边距后停止。
+      const right = base.left + base.width
+      const bottom = base.top + base.height
+      const width = Math.min(
+        Math.max(base.width - dx, OVERLAY_MIN_WIDTH),
+        right - OVERLAY_VIEWPORT_MARGIN,
+      )
+      const height = Math.min(
+        Math.max(base.height - dy, OVERLAY_MIN_HEIGHT),
+        bottom - OVERLAY_VIEWPORT_MARGIN,
+      )
+      next = clampOverlayGeometry({ left: right - width, top: bottom - height, width, height })
     } else {
       next = { ...base }
       if (drag.dir === 'e' || drag.dir === 'se') next.width = base.width + dx
@@ -428,11 +456,12 @@ function SubAppOverlayCard({
         appId={instance.appId}
         manifest={instance.manifest}
         source={instance.source}
-        mode="draft"
+        mode={instance.mode}
+        release={instance.release}
         className="subapp-overlay-runner"
       />
-      {/* 三向拉伸手柄：右缘加宽、下缘加高、右下角同时改宽高 */}
-      {(['e', 's', 'se'] as const).map((dir) => (
+      {/* 四个拉伸入口：右缘、下缘、右下角，以及可反向调整位置和尺寸的左上角 */}
+      {(['e', 's', 'se', 'nw'] as const).map((dir) => (
         <div
           key={dir}
           className="subapp-overlay-resize"
@@ -559,7 +588,8 @@ function SubAppPanelDock({
           appId={instance.appId}
           manifest={instance.manifest}
           source={instance.source}
-          mode="draft"
+          mode={instance.mode}
+          release={instance.release}
           className="subapp-panel-runner"
         />
       </div>

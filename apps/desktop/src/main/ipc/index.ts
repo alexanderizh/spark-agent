@@ -2290,10 +2290,17 @@ function getSessionService(): SessionService {
     const onSessionRenamed: SessionRenamedHandler = (sessionId, title) => {
       pushStreamEvent('stream:session:renamed', { sessionId, title })
     }
-    // 平台资源（agent/team/provider/mcp/skill/workflow）通过 MCP 工具发生变更时，
-    // 向渲染进程广播 stream:config:changed，使会话侧边栏、Agent 选择器等订阅方刷新。
-    // 与本文件 typedIpcHandle('agent:create'/...) 等内部调用的 pushConfigChanged 同语义。
+    // 平台资源通过 MCP 工具发生变更时向 renderer 广播：常规配置走
+    // stream:config:changed；sub-app 走既有专属目录流。常规分支与本文件
+    // typedIpcHandle('agent:create'/...) 等内部调用的 pushConfigChanged 同语义。
     const onPlatformConfigChanged: PlatformConfigChangedHandler = (scope, action, id) => {
+      // 子应用目录变化走专属流（renderer 的 App.tsx 订阅后转发为
+      // spark:sub-app-directory-changed renderer 事件，侧栏菜单、胶囊启动器、
+      // 管理页与运行页统一刷新）；不进 stream:config:changed，避免无关心方误刷。
+      if (scope === 'sub-app') {
+        pushStreamEvent('stream:subapp:directory-changed', {})
+        return
+      }
       pushConfigChanged(scope, action, id)
       // bridge 通过 MCP 工具增删/切换技能（install/uninstall/toggle）后，
       // 原地重建 SDK 原生托管插件目录，使新装/启停的技能对当前及后续 session 的

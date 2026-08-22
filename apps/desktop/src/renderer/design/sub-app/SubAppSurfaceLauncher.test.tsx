@@ -127,6 +127,8 @@ describe('SubAppSurfaceLauncher', () => {
             permissions: [],
           } satisfies SubAppSurfaceController['instances'][number]['manifest'],
           source: '',
+          mode: 'draft',
+          release: null,
         },
       ],
     })

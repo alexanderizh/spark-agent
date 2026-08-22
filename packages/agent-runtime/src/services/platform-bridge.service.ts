@@ -489,7 +489,8 @@ export interface PlatformBridgeDeps {
       | 'workflow'
       | 'rule'
       | 'prompt'
-      | 'scheduled-task',
+      | 'scheduled-task'
+      | 'sub-app',
     action: 'create' | 'update' | 'delete' | 'import',
     id?: string,
   ) => void
@@ -2302,7 +2303,7 @@ export class PlatformBridgeService {
     }
     const entry = optionalSubAppText(params.entry, 'entry', 240)
     try {
-      return d.subAppRepo.create({
+      const created = d.subAppRepo.create({
         name,
         ...(description !== undefined ? { description } : {}),
         ...(icon !== undefined ? { icon } : {}),
@@ -2311,6 +2312,8 @@ export class PlatformBridgeService {
         ...(permissions !== undefined ? { permissions } : {}),
         ...(source !== undefined ? { source } : {}),
       })
+      d.onConfigChanged?.('sub-app', 'create', created.id)
+      return created
     } catch (error) {
       throw subAppBridgeError(error)
     }
@@ -2323,6 +2326,7 @@ export class PlatformBridgeService {
     try {
       const details = d.subAppRepo.updateDraft(appId, expectedDraftRevision, patch)
       if (details == null) throw new SubAppNotFoundError()
+      d.onConfigChanged?.('sub-app', 'update', appId)
       return details
     } catch (error) {
       throw subAppBridgeError(error)
@@ -2335,6 +2339,7 @@ export class PlatformBridgeService {
     try {
       const details = d.subAppRepo.publish(appId, expectedDraftRevision)
       if (details == null) throw new SubAppNotFoundError()
+      d.onConfigChanged?.('sub-app', 'update', appId)
       return details
     } catch (error) {
       throw subAppBridgeError(error)
@@ -2378,6 +2383,7 @@ export class PlatformBridgeService {
     try {
       const details = d.subAppRepo.rollbackDraft(appId, releaseVersion, expectedDraftRevision)
       if (details == null) throw new SubAppNotFoundError()
+      d.onConfigChanged?.('sub-app', 'update', appId)
       return details
     } catch (error) {
       throw subAppBridgeError(error)
@@ -2390,6 +2396,7 @@ export class PlatformBridgeService {
     try {
       const summary = d.subAppRepo.setEnabled(appId, params.enabled)
       if (summary == null) throw new SubAppNotFoundError()
+      d.onConfigChanged?.('sub-app', 'update', appId)
       return summary
     } catch (error) {
       throw subAppBridgeError(error)
@@ -2401,6 +2408,7 @@ export class PlatformBridgeService {
     try {
       const summary = d.subAppRepo.archive(appId)
       if (summary == null) throw new SubAppNotFoundError()
+      d.onConfigChanged?.('sub-app', 'update', appId)
       return summary
     } catch (error) {
       throw subAppBridgeError(error)
@@ -2416,6 +2424,7 @@ export class PlatformBridgeService {
     const appId = requireText(params, 'appId', 80)
     try {
       const deleted = d.subAppRepo.delete(appId)
+      if (deleted) d.onConfigChanged?.('sub-app', 'delete', appId)
       return deleted
         ? { deleted: true, appId }
         : { deleted: false, appId, note: '应用不存在（可能已被删除），本次为幂等空操作。' }
