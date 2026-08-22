@@ -38,6 +38,9 @@ export function canvasNodeHasContentTitle(node: CanvasNode): boolean {
  * React Flow 需要把它们计入视图高度；保存尺寸时再由布局层扣回。
  */
 export function canvasNodeChromeExtraHeight(node: CanvasNode): number {
+  // 操作节点不渲染 `.canvas-node-quick-footer`；继续预留会把任务产物舞台
+  // 无端撑高，并让 contain 图片在多出的空间内产生上下留白。
+  if (isOperationNode(node)) return 0
   if (canvasNodeUsesFlatMediaFrame(node)) return 0
   return (
     CANVAS_NODE_QUICK_FOOTER_HEIGHT +

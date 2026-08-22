@@ -55,10 +55,16 @@ describe('canvasNodeChromeExtraHeight', () => {
     ).toBe(0)
   })
 
-  it('only includes the footer for operation, group, and shot script nodes', () => {
-    expect(canvasNodeChromeExtraHeight(createNode({ type: 'text_to_image' }))).toBe(
-      CANVAS_NODE_QUICK_FOOTER_HEIGHT,
-    )
+  it('does not reserve the footer removed from operation nodes', () => {
+    expect(canvasNodeChromeExtraHeight(createNode({ type: 'text_to_image' }))).toBe(0)
+    expect(
+      canvasNodeChromeExtraHeight(
+        createNode({ type: 'extract_audio', data: { operation: 'extract_audio' } }),
+      ),
+    ).toBe(0)
+  })
+
+  it('only includes the footer for group and shot script nodes', () => {
     expect(canvasNodeChromeExtraHeight(createNode({ type: 'group' }))).toBe(
       CANVAS_NODE_QUICK_FOOTER_HEIGHT,
     )
@@ -79,15 +85,10 @@ describe('canvasNodeChromeExtraHeight', () => {
     ).toBe(CANVAS_NODE_QUICK_FOOTER_HEIGHT)
   })
 
-  it('does not reserve a duplicate content title for audio resources or extract-audio tasks', () => {
+  it('does not reserve a duplicate content title for audio resources', () => {
     expect(canvasNodeChromeExtraHeight(createNode({ type: 'audio' }))).toBe(
       CANVAS_NODE_QUICK_FOOTER_HEIGHT,
     )
-    expect(
-      canvasNodeChromeExtraHeight(
-        createNode({ type: 'extract_audio', data: { operation: 'extract_audio' } }),
-      ),
-    ).toBe(CANVAS_NODE_QUICK_FOOTER_HEIGHT)
   })
 
   it('uses storyboard chrome for a split node containing one shot', () => {
