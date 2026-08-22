@@ -38,7 +38,17 @@ describe('buildAppRuntimeDocument', () => {
     expect(doc).toContain('media: {')
     expect(doc).toContain('canvas: {')
     expect(doc).toContain('browser: {')
+    expect(doc).toContain('inspectMedia: function')
+    expect(doc).toContain('download: function')
+    expect(doc).toContain('openDownload: function')
+    expect(doc).toContain('openDownloadFolder: function')
+    expect(doc).toContain('payload.backend = options.backend')
     expect(doc).toContain('expectedRevision: expectedRevision')
+    expect(doc).toContain('sparkApp.ipc')
+    expect(doc).toContain("call('ipc', 'invoke'")
+    expect(doc).toContain("call('ipc', 'subscribe'")
+    expect(doc).toContain("type === 'host/event'")
+    expect(doc).toContain('trusted: cfg.trusted === true')
   })
 
   it('完整文档源码在 head 内注入，不破坏原有结构', () => {

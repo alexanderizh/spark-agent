@@ -28,6 +28,7 @@ interface Harness {
 function createHarness(
   permissions: string[] = ['data'],
   extra?: Partial<ConstructorParameters<typeof SubAppBridgeHost>[0]>,
+  trusted = false,
 ): Harness {
   const frame = { postMessage: vi.fn() }
   const invoke = vi.fn()
@@ -42,6 +43,7 @@ function createHarness(
       instanceId,
       mode: 'draft',
       permissions,
+      trusted,
     },
     getFrameWindow: () => frame as unknown as Window,
     invoke: invoke as never,
@@ -136,7 +138,7 @@ describe('SubAppBridgeHost 消息安全', () => {
     const message = requestMessage()
     message.request = {
       ...(message.request as object),
-      appId: '11111111-2222-3333-4444-555555555555',
+      appId: '11111111-2222-4333-8444-555555555555',
     } as never
     harness.send(message)
     await harness.flush()
@@ -293,6 +295,89 @@ describe('SubAppBridgeHost 权限与路由', () => {
     } finally {
       extended.host.detach(window)
     }
+  })
+})
+
+describe('SubAppBridgeHost 可信内部 IPC', () => {
+  it('trusted 子应用可以调用任意现有 IPC，不受 manifest permissions 裁剪', async () => {
+    const invokeIpc = vi.fn().mockResolvedValue({ apiKey: 'secret-in-test' })
+    const local = createHarness([], { invokeIpc }, true)
+    try {
+      local.send(
+        requestMessage({
+          capability: 'ipc',
+          operation: 'invoke',
+          payload: {
+            channel: 'provider:get-api-key',
+            request: { profileId: 'provider-1' },
+          },
+        }),
+      )
+      await local.flush()
+      expect(invokeIpc).toHaveBeenCalledWith('provider:get-api-key', { profileId: 'provider-1' })
+      expect(outboundAt(local.frame).response?.data).toEqual({ apiKey: 'secret-in-test' })
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('非 trusted 子应用仍按旧 permissions 规则拒绝原始 IPC', async () => {
+    const invokeIpc = vi.fn()
+    const local = createHarness([], { invokeIpc })
+    try {
+      local.send(
+        requestMessage({
+          capability: 'ipc',
+          operation: 'invoke',
+          payload: { channel: 'provider:list', request: {} },
+        }),
+      )
+      await local.flush()
+      expect(invokeIpc).not.toHaveBeenCalled()
+      expect(outboundAt(local.frame).response?.error?.code).toBe('PERMISSION_DENIED')
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('trusted 子应用可以订阅 stream，并在卸载时取消订阅', async () => {
+    const streamState = { listener: null as ((payload: unknown) => void) | null }
+    const unsubscribe = vi.fn()
+    const subscribeIpc = vi.fn((_channel: string, listener: (payload: unknown) => void) => {
+      streamState.listener = listener
+      return unsubscribe
+    })
+    const local = createHarness([], { subscribeIpc }, true)
+    local.send(
+      requestMessage({
+        capability: 'ipc',
+        operation: 'subscribe',
+        payload: { channel: 'stream:session:agent-event' },
+      }),
+    )
+    await local.flush()
+    expect(subscribeIpc).toHaveBeenCalledWith('stream:session:agent-event', expect.any(Function))
+    const subscription = outboundAt(local.frame).response?.data as {
+      subscriptionId: string
+      channel: string
+    }
+    expect(subscription.channel).toBe('stream:session:agent-event')
+
+    const emitStreamEvent = streamState.listener
+    if (emitStreamEvent == null) throw new Error('expected stream listener')
+    emitStreamEvent({ sessionId: 'session-1', type: 'message', content: 'hello' })
+    const event = outboundAt(local.frame, 1) as unknown as {
+      type: string
+      subscriptionId: string
+      channel: string
+      payload: unknown
+    }
+    expect(event.type).toBe('host/event')
+    expect(event.subscriptionId).toBe(subscription.subscriptionId)
+    expect(event.channel).toBe('stream:session:agent-event')
+
+    local.host.detach(window)
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -645,7 +730,134 @@ describe('SubAppBridgeHost files / agent / media / canvas / browser 域', () => 
         }),
       )
       await local.flush()
-      expect(outboundAt(local.frame, 1).response?.error?.code).toBe('NAVIGATION_REJECTED')
+      expect(outboundAt(local.frame, 1).response?.error?.code).toBe('INVALID_PAYLOAD:url')
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('browser/open、inspectMedia、download 通过内置浏览器回调', async () => {
+    const openBrowser = vi.fn().mockResolvedValue({
+      windowId: 'browser-1',
+      profileId: 'video-downloader-main',
+      visible: true,
+      url: 'https://www.douyin.com/video/1',
+      title: '视频',
+      injectedScriptCount: 0,
+      networkRuleCount: 0,
+      consoleEventCount: 0,
+    })
+    const inspectBrowserMedia = vi.fn().mockResolvedValue({
+      pageUrl: 'https://www.douyin.com/video/1',
+      title: '视频',
+      candidates: [{ url: 'https://cdn.example/video.mp4', source: 'video', kind: 'mp4' }],
+    })
+    const downloadBrowserMedia = vi.fn().mockResolvedValue({
+      path: '/Users/test/Downloads/video.mp4',
+      filename: 'video.mp4',
+      size: 123,
+    })
+    const closeBrowser = vi.fn().mockResolvedValue({ ok: true })
+    const openDownloadFile = vi.fn().mockResolvedValue({ opened: true })
+    const openDownloadFolder = vi.fn().mockResolvedValue({ opened: true })
+    const local = createHarness(['browser'], {
+      openBrowser,
+      inspectBrowserMedia,
+      downloadBrowserMedia,
+      closeBrowser,
+      openDownloadFile,
+      openDownloadFolder,
+    })
+    try {
+      local.send(
+        requestMessage({
+          capability: 'browser',
+          operation: 'open',
+          payload: {
+            url: 'https://www.douyin.com/video/1',
+            profileId: 'video-downloader-main',
+            reuse: true,
+            backend: 'system',
+          },
+        }),
+      )
+      await local.flush()
+      expect(openBrowser).toHaveBeenCalledWith({
+        url: 'https://www.douyin.com/video/1',
+        profileId: 'video-downloader-main',
+        reuse: true,
+        backend: 'system',
+      })
+      expect(outboundAt(local.frame).response?.data).toMatchObject({ windowId: 'browser-1' })
+
+      local.send(
+        requestMessage({
+          requestId: 'inspect-1',
+          capability: 'browser',
+          operation: 'inspectMedia',
+          payload: { windowId: 'browser-1' },
+        }),
+      )
+      await local.flush()
+      expect(inspectBrowserMedia).toHaveBeenCalledWith('browser-1')
+      expect(outboundAt(local.frame, 1).response?.data).toMatchObject({
+        candidates: [{ kind: 'mp4' }],
+      })
+
+      local.send(
+        requestMessage({
+          requestId: 'download-1',
+          capability: 'browser',
+          operation: 'download',
+          payload: {
+            windowId: 'browser-1',
+            url: 'https://cdn.example/video.mp4',
+            filename: 'video.mp4',
+          },
+        }),
+      )
+      await local.flush()
+      expect(downloadBrowserMedia).toHaveBeenCalledWith({
+        windowId: 'browser-1',
+        url: 'https://cdn.example/video.mp4',
+        filename: 'video.mp4',
+      })
+      expect(outboundAt(local.frame, 2).response?.data).toMatchObject({ size: 123 })
+
+      local.send(
+        requestMessage({
+          requestId: 'close-1',
+          capability: 'browser',
+          operation: 'close',
+          payload: { windowId: 'browser-1' },
+        }),
+      )
+      await local.flush()
+      expect(closeBrowser).toHaveBeenCalledWith({ windowId: 'browser-1' })
+
+      local.send(
+        requestMessage({
+          requestId: 'open-file-1',
+          capability: 'browser',
+          operation: 'openDownload',
+          payload: { filePath: '/Users/test/Downloads/video.mp4' },
+        }),
+      )
+      await local.flush()
+      expect(openDownloadFile).toHaveBeenCalledWith({
+        filePath: '/Users/test/Downloads/video.mp4',
+      })
+
+      local.send(
+        requestMessage({
+          requestId: 'open-folder-1',
+          capability: 'browser',
+          operation: 'openDownloadFolder',
+          payload: {},
+        }),
+      )
+      await local.flush()
+      expect(openDownloadFolder).toHaveBeenCalledOnce()
     } finally {
       local.host.detach(window)
     }

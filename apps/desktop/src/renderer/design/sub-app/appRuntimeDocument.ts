@@ -67,6 +67,8 @@ export interface SubAppBootstrapConfig {
   instanceId: string
   mode: 'draft' | 'published'
   surface: SubAppSurface
+  /** 平台内部应用标记；缺省按可信内部应用运行。 */
+  trusted?: boolean
 }
 
 export interface BuildAppRuntimeDocumentInput {
@@ -181,12 +183,14 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
     appId: config.appId,
     versionId: config.versionId,
     instanceId: config.instanceId,
+    trusted: config.trusted !== false,
   })
   return `(function () {
   'use strict'
   var cfg = ${injected}
   var seq = 0
   var pending = {}
+  var ipcListeners = {}
   var themeListeners = []
   var latestTheme = null
   var REQUEST_TIMEOUT_MS = 30000
@@ -218,6 +222,12 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
         if (response.error && response.error.code) error.code = response.error.code
         entry.reject(error)
       }
+      return
+    }
+    if (data.type === 'host/event') {
+      var listener = ipcListeners[data.subscriptionId]
+      if (typeof listener !== 'function') return
+      try { listener(data.payload, data.channel) } catch (e) { /* 应用监听器异常不影响宿主 */ }
     }
   })
 
@@ -275,6 +285,34 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
         },
       })
     })
+  }
+
+  var privilegedIpc = {
+    invoke: function (channel, request) {
+      return call('ipc', 'invoke', {
+        channel: channel,
+        request: request === undefined ? null : request,
+      })
+    },
+    on: function (channel, listener) {
+      if (typeof listener !== 'function') {
+        return Promise.reject(new Error('sparkApp.ipc.on 需要传入监听函数'))
+      }
+      return call('ipc', 'subscribe', { channel: channel }).then(function (result) {
+        var subscriptionId = result && result.subscriptionId
+        if (typeof subscriptionId !== 'string') {
+          throw new Error('Spark App Bridge 未返回有效的 IPC 订阅 ID')
+        }
+        ipcListeners[subscriptionId] = listener
+        var active = true
+        return function () {
+          if (!active) return Promise.resolve({ unsubscribed: false })
+          active = false
+          delete ipcListeners[subscriptionId]
+          return call('ipc', 'unsubscribe', { subscriptionId: subscriptionId })
+        }
+      })
+    },
   }
 
   window.sparkApp = {
@@ -364,6 +402,39 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
     },
     browser: {
       openUrl: function (url) { return call('browser', 'openUrl', { url: url }) },
+      open: function (url, options) {
+        var payload = { url: url }
+        if (options && options.profileId !== undefined) payload.profileId = options.profileId
+        if (options && options.reuse !== undefined) payload.reuse = options.reuse
+        if (options && options.show !== undefined) payload.show = options.show
+        if (options && options.backend !== undefined) payload.backend = options.backend
+        return call('browser', 'open', payload)
+      },
+      inspectMedia: function (windowId) {
+        return call('browser', 'inspectMedia', { windowId: windowId })
+      },
+      download: function (windowId, url, filename) {
+        var payload = { windowId: windowId, url: url }
+        if (filename !== undefined) payload.filename = filename
+        return call('browser', 'download', payload)
+      },
+      close: function (windowId) {
+        return call('browser', 'close', { windowId: windowId })
+      },
+      openDownload: function (filePath) {
+        return call('browser', 'openDownload', { filePath: filePath })
+      },
+      openDownloadFolder: function () {
+        return call('browser', 'openDownloadFolder', {})
+      },
+    },
+    // 平台核心子应用的原始 IPC/stream 面：不受 manifest permissions 裁剪。
+    ipc: privilegedIpc,
+    platform: {
+      ipc: privilegedIpc,
+      invoke: privilegedIpc.invoke,
+      on: privilegedIpc.on,
+      trusted: cfg.trusted === true,
     },
   }
 

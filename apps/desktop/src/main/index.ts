@@ -92,7 +92,7 @@ import {
   readRegistration as readPlaywrightRegistration,
 } from './services/PlaywrightMcpRegistration.js'
 import { detectIntegrity as detectPlaywrightIntegrity } from './services/PlaywrightIntegrityService.js'
-import { getInternalBrowserService } from './services/InternalBrowserService.js'
+import { getSubAppBrowserService } from './services/SubAppBrowserService.js'
 import { getCanvasWindowService } from './services/CanvasWindowService.js'
 import { attachAppUnreadBadgeTray } from './services/AppUnreadBadgeService.js'
 import { registerAppUnreadBadgeIpc } from './ipc/registerAppUnreadBadgeIpc.js'
@@ -1006,7 +1006,7 @@ async function initializeApp(): Promise<void> {
       force: true,
       cdpEndpoint: null,
     })
-    getInternalBrowserService().bindLifecycle()
+    getSubAppBrowserService().bindLifecycle()
   } catch (err) {
     log.warn(`Failed to register Playwright MCP: ${String(err)}`)
   }

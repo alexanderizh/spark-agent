@@ -66,6 +66,7 @@ import {
   parseTextFileEncoding,
 } from '../services/TextFileEncoding.js'
 import { openHtmlInExternalBrowser, openHtmlViewerWindow } from '../services/HtmlViewerService.js'
+import { getSubAppBrowserService } from '../services/SubAppBrowserService.js'
 import { fetchLinkMetadata } from '../services/LinkMetadataService.js'
 import {
   isSessionServiceShutdownStarted,
@@ -1176,6 +1177,12 @@ function getPersistentNoProjectRootPath(): string {
 function isWithinDirectory(targetPath: string, directory: string): boolean {
   const relative = path.relative(directory, targetPath)
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+function isInsideDownloads(filePath: string): boolean {
+  const downloadsDir = path.resolve(app.getPath('downloads'))
+  const targetPath = path.resolve(filePath)
+  return targetPath !== downloadsDir && isWithinDirectory(targetPath, downloadsDir)
 }
 
 function isTemporaryWorkspaceRoot(rootPath: string): boolean {
@@ -8910,6 +8917,42 @@ export function registerAllIpcHandlers(): void {
       req.url && req.url.trim().length > 0 ? req.url : 'https://spark.yiqibyte.com',
     )
     return { success: true }
+  })
+
+  typedIpcHandle('browser:sub-app-open', async (req) => {
+    const browser = getSubAppBrowserService()
+    return browser.openWindow({
+      url: req.url,
+      ...(req.profileId === undefined ? {} : { profileId: req.profileId }),
+      ...(req.reuse === undefined ? {} : { reuse: req.reuse }),
+      ...(req.show === undefined ? {} : { show: req.show }),
+      ...(req.backend === undefined ? {} : { backend: req.backend }),
+    })
+  })
+
+  typedIpcHandle('browser:sub-app-inspect-media', async (req) => {
+    return getSubAppBrowserService().inspectMedia(req.windowId)
+  })
+
+  typedIpcHandle('browser:sub-app-download', async (req) => {
+    return getSubAppBrowserService().downloadMedia(req.windowId, req.url, req.filename)
+  })
+
+  typedIpcHandle('browser:sub-app-close', async (req) => {
+    return getSubAppBrowserService().closeWindow(req.windowId)
+  })
+
+  typedIpcHandle('browser:sub-app-open-download', async (req) => {
+    if (!isInsideDownloads(req.filePath)) {
+      return { opened: false, error: '只能打开系统 Downloads 目录中的已下载文件。' }
+    }
+    const errorMessage = await shell.openPath(path.resolve(req.filePath))
+    return errorMessage ? { opened: false, error: errorMessage } : { opened: true }
+  })
+
+  typedIpcHandle('browser:sub-app-open-download-folder', async () => {
+    const errorMessage = await shell.openPath(app.getPath('downloads'))
+    return errorMessage ? { opened: false, error: errorMessage } : { opened: true }
   })
 
   typedIpcHandle('browser:get-link-metadata', async (req) => ({

@@ -1795,6 +1795,31 @@ export const IpcSchemaRegistry = {
   'browser:get-link-metadata': z.object({
     url: z.string().url().max(4000),
   }),
+  'browser:sub-app-open': z.object({
+    url: z.string().url().max(20_000),
+    profileId: z
+      .string()
+      .regex(/^[a-zA-Z0-9_.-]{1,80}$/)
+      .optional(),
+    reuse: z.boolean().optional(),
+    show: z.boolean().optional(),
+    backend: z.enum(['system', 'internal', 'auto']).optional(),
+  }),
+  'browser:sub-app-inspect-media': z.object({
+    windowId: z.string().min(1).max(120),
+  }),
+  'browser:sub-app-download': z.object({
+    windowId: z.string().min(1).max(120),
+    url: z.string().url().max(20_000),
+    filename: z.string().max(200).optional(),
+  }),
+  'browser:sub-app-close': z.object({
+    windowId: z.string().min(1).max(120),
+  }),
+  'browser:sub-app-open-download': z.object({
+    filePath: z.string().min(1).max(4000),
+  }),
+  'browser:sub-app-open-download-folder': z.object({}),
   'html:open-external': z.object({
     html: z.string().min(1).max(200_000),
     title: z.string().max(60).optional(),

@@ -1,5 +1,15 @@
 import { SPARK_APP_BRIDGE_INBOUND_SCHEMA, SUB_APP_PROTOCOL_VERSION } from '@spark/protocol'
 import type {
+  BrowserSubAppCloseRequest,
+  BrowserSubAppCloseResponse,
+  BrowserSubAppDownloadRequest,
+  BrowserSubAppDownloadResponse,
+  BrowserSubAppInspectMediaResponse,
+  BrowserSubAppOpenDownloadRequest,
+  BrowserSubAppOpenDownloadResponse,
+  BrowserSubAppOpenDownloadFolderResponse,
+  BrowserSubAppOpenRequest,
+  BrowserSubAppOpenResponse,
   SparkAppBridgeInboundMessage,
   SparkAppBridgeOutboundMessage,
   SparkAppBridgeRequest,
@@ -7,11 +17,20 @@ import type {
   SparkAppThemeState,
 } from '@spark/protocol'
 
-/** 沙箱 iframe 应用可调用的宿主 invoke 通道子集（data 与 files 域）。 */
-export type SubAppBridgeInvoke = <C extends SubAppDataChannel>(
+/** 沙箱 iframe 应用可调用的宿主 invoke 通道子集（data/files/browser 域）。 */
+export type SubAppBridgeInvoke = <C extends SubAppBridgeChannel>(
   channel: C,
-  request: SubAppDataChannelRequest<C>,
+  request: SubAppBridgeChannelRequest<C>,
 ) => Promise<unknown>
+
+/** 可信内部子应用可调用的完整宿主 IPC 面。 */
+export type SubAppIpcInvoke = (channel: string, request: unknown) => Promise<unknown>
+
+/** 可信内部子应用可订阅的宿主 stream。 */
+export type SubAppIpcSubscribe = (
+  channel: string,
+  listener: (payload: unknown) => void,
+) => () => void
 
 export type SubAppDataChannel =
   | 'sub-app:data:get'
@@ -53,6 +72,30 @@ type SubAppDataChannelRequestMap = {
 
 export type SubAppDataChannelRequest<C extends SubAppDataChannel> = SubAppDataChannelRequestMap[C]
 
+export type SubAppBrowserChannel =
+  | 'browser:sub-app-open'
+  | 'browser:sub-app-inspect-media'
+  | 'browser:sub-app-download'
+  | 'browser:sub-app-close'
+  | 'browser:sub-app-open-download'
+  | 'browser:sub-app-open-download-folder'
+
+type SubAppBrowserChannelRequestMap = {
+  'browser:sub-app-open': BrowserSubAppOpenRequest
+  'browser:sub-app-inspect-media': { windowId: string }
+  'browser:sub-app-download': BrowserSubAppDownloadRequest
+  'browser:sub-app-close': BrowserSubAppCloseRequest
+  'browser:sub-app-open-download': BrowserSubAppOpenDownloadRequest
+  'browser:sub-app-open-download-folder': Record<string, never>
+}
+
+export type SubAppBridgeChannel = SubAppDataChannel | SubAppBrowserChannel
+export type SubAppBridgeChannelRequest<C extends SubAppBridgeChannel> = C extends SubAppDataChannel
+  ? SubAppDataChannelRequest<C>
+  : C extends SubAppBrowserChannel
+    ? SubAppBrowserChannelRequestMap[C]
+    : never
+
 export interface SubAppBridgeHostOptions {
   /** 宿主裁决后的运行时信息；appId/versionId/instanceId 以此为准，不接受应用自报。 */
   runtimeInfo: {
@@ -65,11 +108,17 @@ export interface SubAppBridgeHostOptions {
     instanceId: string
     mode: 'draft' | 'published'
     permissions: string[]
+    /** 平台核心子应用默认开启；开启后不再按 manifest permissions 裁剪能力。 */
+    trusted?: boolean
   }
   /** 取目标 iframe 的 contentWindow；每次消息时读取，避免悬挂引用。 */
   getFrameWindow: () => Window | null
   /** data 域转发使用的 invoke（renderer 内即 window.spark.invoke）。 */
   invoke: SubAppBridgeInvoke
+  /** trusted 内部子应用的原始 IPC 转发。 */
+  invokeIpc?: SubAppIpcInvoke
+  /** trusted 内部子应用的原始 stream 订阅。 */
+  subscribeIpc?: SubAppIpcSubscribe
   /** 当前主题状态；app/ready 与 theme/get 时读取。 */
   getThemeState: () => SparkAppThemeState
   /** ui 域：宿主内展示 toast。未提供时该域返回 CAPABILITY_NOT_IMPLEMENTED。 */
@@ -114,6 +163,22 @@ export interface SubAppBridgeHostOptions {
   ) => Promise<unknown>
   /** browser 域：经宿主安全校验后打开外部链接（http/https）。返回 false 表示被拒绝。 */
   openExternal?: (url: string) => Promise<boolean>
+  /** browser 域：打开可复用的持久化内置浏览器页面。 */
+  openBrowser?: (request: BrowserSubAppOpenRequest) => Promise<BrowserSubAppOpenResponse>
+  /** browser 域：读取页面真实 video/source 播放节点与已记录媒体请求。 */
+  inspectBrowserMedia?: (windowId: string) => Promise<BrowserSubAppInspectMediaResponse>
+  /** browser 域：使用该页面所属会话下载已抓取的媒体地址。 */
+  downloadBrowserMedia?: (
+    request: BrowserSubAppDownloadRequest,
+  ) => Promise<BrowserSubAppDownloadResponse>
+  /** browser 域：关闭由子应用打开的独立浏览器窗口。 */
+  closeBrowser?: (request: BrowserSubAppCloseRequest) => Promise<BrowserSubAppCloseResponse>
+  /** browser 域：打开 Downloads 目录中的已下载文件。 */
+  openDownloadFile?: (
+    request: BrowserSubAppOpenDownloadRequest,
+  ) => Promise<BrowserSubAppOpenDownloadResponse>
+  /** browser 域：打开系统 Downloads 目录。 */
+  openDownloadFolder?: () => Promise<BrowserSubAppOpenDownloadFolderResponse>
 }
 
 export interface SubAppBridgeAuditEntry {
@@ -148,6 +213,8 @@ export class SubAppBridgeHost {
   private ready = false
   private detached = false
   private inFlight = 0
+  private subscriptionSequence = 0
+  private readonly subscriptions = new Map<string, () => void>()
 
   constructor(options: SubAppBridgeHostOptions) {
     this.options = options
@@ -160,6 +227,14 @@ export class SubAppBridgeHost {
   detach(target: Window | typeof globalThis = window): void {
     this.detached = true
     target.removeEventListener('message', this.handleMessage as EventListener)
+    for (const unsubscribe of this.subscriptions.values()) {
+      try {
+        unsubscribe()
+      } catch {
+        // 卸载阶段忽略已失效的 renderer stream 订阅。
+      }
+    }
+    this.subscriptions.clear()
   }
 
   isReady(): boolean {
@@ -285,7 +360,10 @@ export class SubAppBridgeHost {
   }
 
   private checkPermission(capability: string): BridgeError | null {
-    // runtime/theme 为只读宿主信息，所有应用可用；其余能力必须显式声明。
+    // 平台子应用是一等内部应用：manifest permissions 仅保留为旧版本兼容字段，
+    // trusted 运行时不再以它裁剪宿主能力。
+    if (this.options.runtimeInfo.trusted === true) return null
+    // legacy runtime/theme 为只读宿主信息，所有应用可用；其余能力必须显式声明。
     if (capability === 'runtime' || capability === 'theme') return null
     if (!this.options.runtimeInfo.permissions.includes(capability)) {
       return {
@@ -305,6 +383,9 @@ export class SubAppBridgeHost {
     if (request.capability === 'theme') {
       if (request.operation !== 'get') throw new BridgeRouteError('UNSUPPORTED_OPERATION')
       return getThemeState()
+    }
+    if (request.capability === 'ipc') {
+      return this.routeIpc(request)
     }
     if (request.capability === 'data') {
       const payload = asRecord(request.payload)
@@ -476,23 +557,115 @@ export class SubAppBridgeHost {
       throw new BridgeRouteError('UNSUPPORTED_OPERATION')
     }
     if (request.capability === 'browser') {
-      const openExternal = this.options.openExternal
-      if (openExternal == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
-      if (request.operation !== 'openUrl') throw new BridgeRouteError('UNSUPPORTED_OPERATION')
       const payload = asRecord(request.payload)
-      const url = readString(payload.url, 'url')
-      const opened = await openExternal(url)
-      if (!opened) throw new BridgeRouteError('NAVIGATION_REJECTED')
-      return { opened: true }
+      if (request.operation === 'openUrl') {
+        const openExternal = this.options.openExternal
+        if (openExternal == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        const url = readHttpUrl(payload.url, 'url')
+        const opened = await openExternal(url)
+        if (!opened) throw new BridgeRouteError('NAVIGATION_REJECTED')
+        return { opened: true }
+      }
+      if (request.operation === 'open') {
+        const openBrowser = this.options.openBrowser
+        if (openBrowser == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        const request2: BrowserSubAppOpenRequest = {
+          url: readHttpUrl(payload.url, 'url'),
+          ...(typeof payload.profileId === 'string' ? { profileId: payload.profileId } : {}),
+          ...(typeof payload.reuse === 'boolean' ? { reuse: payload.reuse } : {}),
+          ...(typeof payload.show === 'boolean' ? { show: payload.show } : {}),
+          ...(payload.backend === 'system' ||
+          payload.backend === 'internal' ||
+          payload.backend === 'auto'
+            ? { backend: payload.backend }
+            : {}),
+        }
+        return openBrowser(request2)
+      }
+      if (request.operation === 'inspectMedia') {
+        const inspectBrowserMedia = this.options.inspectBrowserMedia
+        if (inspectBrowserMedia == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        return inspectBrowserMedia(readString(payload.windowId, 'windowId'))
+      }
+      if (request.operation === 'download') {
+        const downloadBrowserMedia = this.options.downloadBrowserMedia
+        if (downloadBrowserMedia == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        const request2: BrowserSubAppDownloadRequest = {
+          windowId: readString(payload.windowId, 'windowId'),
+          url: readHttpUrl(payload.url, 'url'),
+          ...(typeof payload.filename === 'string' ? { filename: payload.filename } : {}),
+        }
+        return downloadBrowserMedia(request2)
+      }
+      if (request.operation === 'close') {
+        const closeBrowser = this.options.closeBrowser
+        if (closeBrowser == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        return closeBrowser({ windowId: readString(payload.windowId, 'windowId') })
+      }
+      if (request.operation === 'openDownload') {
+        const openDownloadFile = this.options.openDownloadFile
+        if (openDownloadFile == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        return openDownloadFile({ filePath: readString(payload.filePath, 'filePath') })
+      }
+      if (request.operation === 'openDownloadFolder') {
+        const openDownloadFolder = this.options.openDownloadFolder
+        if (openDownloadFolder == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        return openDownloadFolder()
+      }
+      throw new BridgeRouteError('UNSUPPORTED_OPERATION')
     }
     // 已过权限检查但宿主尚未实现的能力域。
     throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+  }
+
+  private routeIpc(request: SparkAppBridgeRequest): unknown | Promise<unknown> {
+    const payload = asRecord(request.payload)
+    if (request.operation === 'invoke') {
+      const invokeIpc = this.options.invokeIpc
+      if (invokeIpc == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+      const channel = readIpcInvokeChannel(payload.channel)
+      return invokeIpc(channel, payload.request === undefined ? null : payload.request)
+    }
+    if (request.operation === 'subscribe') {
+      const subscribeIpc = this.options.subscribeIpc
+      if (subscribeIpc == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+      const channel = readIpcStreamChannel(payload.channel)
+      const subscriptionId = `${this.options.runtimeInfo.instanceId}-sub-${++this.subscriptionSequence}`
+      const unsubscribe = subscribeIpc(channel, (eventPayload) => {
+        this.pushEvent(subscriptionId, channel, eventPayload)
+      })
+      this.subscriptions.set(subscriptionId, unsubscribe)
+      return { subscriptionId, channel }
+    }
+    if (request.operation === 'unsubscribe') {
+      const subscriptionId = readStringMax(payload.subscriptionId, 'subscriptionId', 160)
+      const unsubscribe = this.subscriptions.get(subscriptionId)
+      if (unsubscribe == null) return { unsubscribed: false }
+      this.subscriptions.delete(subscriptionId)
+      unsubscribe()
+      return { unsubscribed: true }
+    }
+    throw new BridgeRouteError('UNSUPPORTED_OPERATION')
   }
 
   private respond(instanceId: string, response: SparkAppBridgeResponse): void {
     const frameWindow = this.options.getFrameWindow()
     if (frameWindow == null) return
     const message: SparkAppBridgeOutboundMessage = { type: 'host/response', instanceId, response }
+    frameWindow.postMessage(message, '*')
+  }
+
+  private pushEvent(subscriptionId: string, channel: string, payload: unknown): void {
+    if (this.detached) return
+    const frameWindow = this.options.getFrameWindow()
+    if (frameWindow == null) return
+    const message: SparkAppBridgeOutboundMessage = {
+      type: 'host/event',
+      instanceId: this.options.runtimeInfo.instanceId,
+      subscriptionId,
+      channel,
+      payload,
+    }
     frameWindow.postMessage(message, '*')
   }
 
@@ -558,10 +731,43 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function readString(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.length === 0 || value.length > 240) {
+  return readStringMax(value, label, 240)
+}
+
+function readStringMax(value: unknown, label: string, maxLength: number): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > maxLength) {
     throw new BridgeRouteError(`INVALID_PAYLOAD:${label}`)
   }
   return value
+}
+
+function readHttpUrl(value: unknown, label: string): string {
+  const text = readStringMax(value, label, 20_000)
+  try {
+    const parsed = new URL(text)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('unsupported protocol')
+    }
+    return parsed.toString()
+  } catch {
+    throw new BridgeRouteError(`INVALID_PAYLOAD:${label}`)
+  }
+}
+
+function readIpcInvokeChannel(value: unknown): string {
+  const channel = readStringMax(value, 'channel', 160)
+  if (channel.startsWith('stream:')) {
+    throw new BridgeRouteError('INVALID_PAYLOAD:channel')
+  }
+  return channel
+}
+
+function readIpcStreamChannel(value: unknown): string {
+  const channel = readStringMax(value, 'channel', 160)
+  if (!channel.startsWith('stream:')) {
+    throw new BridgeRouteError('INVALID_PAYLOAD:channel')
+  }
+  return channel
 }
 
 function readOptionalNumber(value: unknown): number | undefined {

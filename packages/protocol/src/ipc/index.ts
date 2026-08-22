@@ -4139,6 +4139,79 @@ export interface BrowserGetLinkMetadataResponse {
   metadata: BrowserLinkMetadata | null
 }
 
+export interface BrowserSubAppOpenRequest {
+  url: string
+  profileId?: string
+  reuse?: boolean
+  show?: boolean
+  backend?: 'system' | 'internal' | 'auto'
+}
+
+export interface BrowserSubAppOpenResponse {
+  windowId: string
+  profileId: string
+  backend?: 'system' | 'internal'
+  visible: boolean
+  url: string | null
+  title: string | null
+  injectedScriptCount: number
+  networkRuleCount: number
+  consoleEventCount: number
+}
+
+export interface BrowserSubAppInspectMediaRequest {
+  windowId: string
+}
+
+export interface BrowserSubAppMediaCandidate {
+  url: string
+  source: 'video' | 'source' | 'network'
+  kind: 'mp4' | 'hls' | 'dash' | 'unknown'
+  visible?: boolean
+  width?: number
+  height?: number
+}
+
+export interface BrowserSubAppInspectMediaResponse {
+  pageUrl: string | null
+  title: string | null
+  candidates: BrowserSubAppMediaCandidate[]
+}
+
+export interface BrowserSubAppDownloadRequest {
+  windowId: string
+  url: string
+  filename?: string
+}
+
+export interface BrowserSubAppDownloadResponse {
+  path: string
+  filename: string
+  size: number
+}
+
+export interface BrowserSubAppCloseRequest {
+  windowId: string
+}
+
+export interface BrowserSubAppCloseResponse {
+  ok: true
+}
+
+export interface BrowserSubAppOpenDownloadRequest {
+  filePath: string
+}
+
+export interface BrowserSubAppOpenDownloadResponse {
+  opened: boolean
+  error?: string
+}
+
+export interface BrowserSubAppOpenDownloadFolderResponse {
+  opened: boolean
+  error?: string
+}
+
 export interface HtmlViewerOpenRequest {
   html: string
   title?: string
@@ -6328,6 +6401,21 @@ export interface IpcChannelMap
   // Browser helpers
   'browser:open-external': [BrowserOpenExternalRequest, BrowserOpenExternalResponse]
   'browser:get-link-metadata': [BrowserGetLinkMetadataRequest, BrowserGetLinkMetadataResponse]
+  'browser:sub-app-open': [BrowserSubAppOpenRequest, BrowserSubAppOpenResponse]
+  'browser:sub-app-inspect-media': [
+    BrowserSubAppInspectMediaRequest,
+    BrowserSubAppInspectMediaResponse,
+  ]
+  'browser:sub-app-download': [BrowserSubAppDownloadRequest, BrowserSubAppDownloadResponse]
+  'browser:sub-app-close': [BrowserSubAppCloseRequest, BrowserSubAppCloseResponse]
+  'browser:sub-app-open-download': [
+    BrowserSubAppOpenDownloadRequest,
+    BrowserSubAppOpenDownloadResponse,
+  ]
+  'browser:sub-app-open-download-folder': [
+    Record<string, never>,
+    BrowserSubAppOpenDownloadFolderResponse,
+  ]
   'html:open-window': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
   'html:open-external': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
 

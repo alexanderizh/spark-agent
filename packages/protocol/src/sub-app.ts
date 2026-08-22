@@ -36,6 +36,8 @@ export const SUB_APP_CAPABILITIES = [
   'canvas',
   'media',
   'browser',
+  /** 可信内部子应用：直接访问宿主类型化 IPC 与 stream。 */
+  'ipc',
 ] as const
 export type SubAppCapability = (typeof SUB_APP_CAPABILITIES)[number]
 
@@ -382,6 +384,8 @@ export interface SparkAppRuntimeInfo {
   instanceId: string
   mode: 'draft' | 'published'
   permissions: string[]
+  /** 平台核心子应用标记；为 true 时 manifest permissions 不再裁剪 IPC 能力。 */
+  trusted?: boolean
 }
 
 export interface SparkAppThemeState {
@@ -416,6 +420,13 @@ export type SparkAppBridgeOutboundMessage =
       type: 'host/response'
       instanceId: string
       response: SparkAppBridgeResponse
+    }
+  | {
+      type: 'host/event'
+      instanceId: string
+      subscriptionId: string
+      channel: string
+      payload: unknown
     }
 
 export const SPARK_APP_BRIDGE_INBOUND_SCHEMA = z.discriminatedUnion('type', [

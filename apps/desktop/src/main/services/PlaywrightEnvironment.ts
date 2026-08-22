@@ -117,9 +117,7 @@ function hasUsableChromium(dir: string): boolean {
 function hasChromiumSubdir(dir: string): boolean {
   try {
     const entries = readdirSync(dir, { withFileTypes: true })
-    return entries.some(
-      (e) => e.isDirectory() && /^chromium[_-]/.test(e.name),
-    )
+    return entries.some((e) => e.isDirectory() && /^chromium[_-]/.test(e.name))
   } catch {
     return false
   }
@@ -184,15 +182,17 @@ const SYSTEM_EDGE_PATHS_WIN = [
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
 ]
 
-const SYSTEM_CHROME_PATHS_MAC = [
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-]
+const SYSTEM_CHROME_PATHS_MAC = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
+
+const SYSTEM_EDGE_PATHS_MAC = ['/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge']
 
 const SYSTEM_CHROME_PATHS_LINUX = [
   '/usr/bin/google-chrome',
   '/usr/bin/chromium-browser',
   '/usr/bin/chromium',
 ]
+
+const SYSTEM_EDGE_PATHS_LINUX = ['/usr/bin/microsoft-edge', '/usr/bin/microsoft-edge-stable']
 
 /**
  * Detect whether a Chromium-based browser is installed on the system.
@@ -206,8 +206,8 @@ export function detectSystemBrowser(): 'chrome' | 'msedge' | null {
     process.platform === 'win32'
       ? [...SYSTEM_CHROME_PATHS_WIN, ...SYSTEM_EDGE_PATHS_WIN]
       : process.platform === 'darwin'
-        ? SYSTEM_CHROME_PATHS_MAC
-        : SYSTEM_CHROME_PATHS_LINUX
+        ? [...SYSTEM_CHROME_PATHS_MAC, ...SYSTEM_EDGE_PATHS_MAC]
+        : [...SYSTEM_CHROME_PATHS_LINUX, ...SYSTEM_EDGE_PATHS_LINUX]
 
   for (const p of paths) {
     if (existsSync(p)) {
@@ -262,13 +262,16 @@ function isPlaywrightDefaultChromiumAvailable(): boolean {
  *   - `{ type: 'system', channel: 'chrome' | 'msedge' }` — use system browser
  *   - `null` — no browser available
  */
-export function resolveBrowserStrategy(): {
-  type: 'bundled'
-  browserPath: string
-} | {
-  type: 'system'
-  channel: 'chrome' | 'msedge'
-} | null {
+export function resolveBrowserStrategy():
+  | {
+      type: 'bundled'
+      browserPath: string
+    }
+  | {
+      type: 'system'
+      channel: 'chrome' | 'msedge'
+    }
+  | null {
   // 1. Locally downloaded chromium (or app-bundled chromium in custom builds) — best
   const bundledPath = getBundledBrowsersPath()
   if (bundledPath != null) {
@@ -309,9 +312,7 @@ export function resolveBrowserStrategy(): {
  */
 export function ensureBundledBrowserEnv(): void {
   if (process.env.PLAYWRIGHT_BROWSERS_PATH != null) {
-    log.info(
-      `PLAYWRIGHT_BROWSERS_PATH already set: ${process.env.PLAYWRIGHT_BROWSERS_PATH}`,
-    )
+    log.info(`PLAYWRIGHT_BROWSERS_PATH already set: ${process.env.PLAYWRIGHT_BROWSERS_PATH}`)
     return
   }
   // ONLY override the env when we have an app-bundled chromium dir.

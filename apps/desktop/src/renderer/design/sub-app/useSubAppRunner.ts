@@ -1,6 +1,12 @@
 import React from 'react'
 import { message as antdMessage } from 'antd'
-import type { SessionId, SubAppManifest, SubAppRelease } from '@spark/protocol'
+import type {
+  IpcChannel,
+  IpcStreamChannel,
+  SessionId,
+  SubAppManifest,
+  SubAppRelease,
+} from '@spark/protocol'
 import { useApp, type ViewId } from '../AppContext'
 import { useResolvedTheme } from '../hooks/useResolvedTheme'
 import { buildAppRuntimeDocument } from './appRuntimeDocument'
@@ -176,7 +182,14 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
       buildAppRuntimeDocument({
         source,
         theme: resolvedThemeRef.current,
-        config: { appId, versionId, instanceId, mode, surface: manifest.surface },
+        config: {
+          appId,
+          versionId,
+          instanceId,
+          mode,
+          surface: manifest.surface,
+          trusted: true,
+        },
         security: runtimeSecurity,
       }),
     // 文档只随源码/实例/surface/安全设置变化重建；主题走 postMessage 热推送。
@@ -225,9 +238,13 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
         instanceId,
         mode,
         permissions: manifest.permissions,
+        trusted: true,
       },
       getFrameWindow: () => frameRef.current?.contentWindow ?? null,
       invoke: (channel, request) => window.spark.invoke(channel, request),
+      invokeIpc: (channel, request) => window.spark.invoke(channel as IpcChannel, request as never),
+      subscribeIpc: (channel, callback) =>
+        window.spark.on(channel as IpcStreamChannel, callback as never),
       getThemeState: () => buildThemeState(resolvedThemeRef.current, primaryRef.current),
       // ui 域：应用 toast 在宿主以 antd message 展示（带应用名前缀便于归因）
       notify: ({ type, content }) => {
@@ -365,6 +382,16 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
         await window.spark.invoke('browser:open-external', { url: parsed.toString() })
         return true
       },
+      openBrowser: async (request) => window.spark.invoke('browser:sub-app-open', request),
+      inspectBrowserMedia: async (windowId) =>
+        window.spark.invoke('browser:sub-app-inspect-media', { windowId }),
+      downloadBrowserMedia: async (request) =>
+        window.spark.invoke('browser:sub-app-download', request),
+      closeBrowser: async (request) => window.spark.invoke('browser:sub-app-close', request),
+      openDownloadFile: async (request) =>
+        window.spark.invoke('browser:sub-app-open-download', request),
+      openDownloadFolder: async () =>
+        window.spark.invoke('browser:sub-app-open-download-folder', {}),
     })
     hostRef.current = host
     host.attach()

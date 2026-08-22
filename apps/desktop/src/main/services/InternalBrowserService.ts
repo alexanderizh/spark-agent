@@ -1,12 +1,15 @@
 import { app, BrowserWindow, session as electronSession } from 'electron'
-import type { WebContents } from 'electron'
+import type { DownloadItem, Event, WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
+import path from 'node:path'
 import { createLogger } from '@spark/shared'
 import { buildInternalBrowserShellUrl } from './internal-browser-shell.js'
 
 const log = createLogger('internal-browser')
 
-const DEFAULT_URL = 'data:text/html;charset=utf-8,' + encodeURIComponent(`
+const DEFAULT_URL =
+  'data:text/html;charset=utf-8,' +
+  encodeURIComponent(`
 <!doctype html>
 <html>
 <head>
@@ -37,6 +40,30 @@ const DEFAULT_URL = 'data:text/html;charset=utf-8,' + encodeURIComponent(`
 
 const PROFILE_ID_RE = /^[a-zA-Z0-9_.-]{1,80}$/
 const MAX_EVENTS = 500
+const DOWNLOAD_TIMEOUT_MS = 120_000
+const MEDIA_INSPECTION_SCRIPT = `(() => {
+  const candidates = []
+  const seen = new Set()
+  const add = (value, source, visible, width, height) => {
+    if (typeof value !== 'string' || !/^https?:\\/\\//i.test(value) || seen.has(value)) return
+    seen.add(value)
+    candidates.push({ value, source, visible, width, height })
+  }
+  const describe = (element, source) => {
+    const rect = element.getBoundingClientRect()
+    const visible = rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== 'hidden'
+    add(element.currentSrc || element.src || '', source, visible, Math.round(rect.width), Math.round(rect.height))
+  }
+  document.querySelectorAll('video').forEach((video) => {
+    describe(video, 'video')
+    video.querySelectorAll('source').forEach((source) => add(source.src || source.getAttribute('src') || '', 'source', true, 0, 0))
+  })
+  document.querySelectorAll('video source, source').forEach((source) => {
+    add(source.src || source.getAttribute('src') || '', 'source', true, 0, 0)
+  })
+  const title = document.querySelector('meta[property="og:title"]')?.getAttribute('content') || document.title || ''
+  return { pageUrl: location.href, title, candidates }
+})()`
 
 export type InternalBrowserErrorCode =
   | 'WINDOW_NOT_FOUND'
@@ -45,6 +72,9 @@ export type InternalBrowserErrorCode =
   | 'SCRIPT_INJECTION_FAILED'
   | 'NETWORK_RULE_UNSUPPORTED'
   | 'PROFILE_INVALID'
+  | 'MEDIA_NOT_FOUND'
+  | 'INVALID_MEDIA_URL'
+  | 'DOWNLOAD_FAILED'
 
 export class InternalBrowserError extends Error {
   constructor(
@@ -71,6 +101,8 @@ type NetworkEvent = {
   kind: 'request' | 'completed' | 'error' | 'blocked' | 'redirected'
   method?: string
   url: string
+  resourceType?: string
+  mimeType?: string
   statusCode?: number
   error?: string
   ruleId?: string
@@ -111,6 +143,28 @@ type WindowState = {
   networkEvents: NetworkEvent[]
   networkSeq: number
   networkRules: Map<string, NetworkRule>
+  mediaCandidates: Map<string, InternalBrowserMediaCandidate['kind']>
+}
+
+export type InternalBrowserMediaCandidate = {
+  url: string
+  source: 'video' | 'source' | 'network'
+  kind: 'mp4' | 'hls' | 'dash' | 'unknown'
+  visible?: boolean
+  width?: number
+  height?: number
+}
+
+export type InternalBrowserMediaInspection = {
+  pageUrl: string | null
+  title: string | null
+  candidates: InternalBrowserMediaCandidate[]
+}
+
+export type InternalBrowserDownloadResult = {
+  path: string
+  filename: string
+  size: number
 }
 
 export type InternalBrowserMeta = {
@@ -158,6 +212,71 @@ function matchesRule(rule: NetworkRule, url: string): boolean {
   }
 }
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function mediaKind(url: string, mimeType?: string): InternalBrowserMediaCandidate['kind'] {
+  const lower = url.toLowerCase()
+  const mime = mimeType?.toLowerCase() ?? ''
+  if (
+    /\.mp4(?:[?#]|$)/.test(lower) ||
+    lower.includes('mime_type=video_mp4') ||
+    mime.startsWith('video/mp4')
+  )
+    return 'mp4'
+  if (/\.m3u8(?:[?#]|$)/.test(lower) || mime.includes('mpegurl') || mime.includes('x-mpegurl'))
+    return 'hls'
+  if (/\.mpd(?:[?#]|$)/.test(lower) || mime.includes('dash+xml')) return 'dash'
+  return 'unknown'
+}
+
+function isLikelyMediaUrl(url: string, resourceType?: string, mimeType?: string): boolean {
+  const lower = url.toLowerCase()
+  const mime = mimeType?.toLowerCase() ?? ''
+  return (
+    resourceType === 'media' ||
+    mime.startsWith('video/') ||
+    mime.includes('mpegurl') ||
+    mime.includes('x-mpegurl') ||
+    mime.includes('dash+xml') ||
+    /\.(mp4|m3u8|mpd)(?:[?#]|$)/.test(lower) ||
+    lower.includes('mime_type=video') ||
+    lower.includes('douyinvod.com/') ||
+    lower.includes('/videoplayback')
+  )
+}
+
+function sanitizeDownloadFilename(
+  input: string | undefined,
+  mediaUrl: string,
+  kindOverride?: InternalBrowserMediaCandidate['kind'],
+): string {
+  const fallback = `video-${Date.now()}`
+  const raw = input?.trim() || fallback
+  const safeRaw = [...raw]
+    .map((character) =>
+      character.charCodeAt(0) < 32 || '\\/:*?"<>|'.includes(character) ? '_' : character,
+    )
+    .join('')
+  const base = path.basename(safeRaw).slice(0, 160) || fallback
+  if (/\.[a-z0-9]{2,5}$/i.test(base)) return base
+  const extension = (kindOverride ?? mediaKind(mediaUrl)) === 'mp4' ? '.mp4' : '.bin'
+  return `${base}${extension}`
+}
+
+function extractMimeType(headers: Record<string, string[]> | undefined): string | undefined {
+  if (headers == null) return undefined
+  const raw = headers['content-type'] ?? headers['Content-Type']
+  const value = raw?.[0]?.split(';', 1)[0]?.trim()
+  return value || undefined
+}
+
 function createPageReady(): {
   promise: Promise<WebContents>
   resolve: (contents: WebContents) => void
@@ -181,17 +300,22 @@ export class InternalBrowserService {
     })
   }
 
-  async openWindow(opts: {
-    url?: string
-    show?: boolean
-    profileId?: string
-    reuse?: boolean
-  } = {}): Promise<InternalBrowserMeta> {
+  async openWindow(
+    opts: {
+      url?: string
+      show?: boolean
+      profileId?: string
+      reuse?: boolean
+    } = {},
+  ): Promise<InternalBrowserMeta> {
     const profileId = validateProfileId(opts.profileId)
     const targetUrl = normalizeUrl(opts.url)
-    const reused = opts.reuse === true
-      ? [...this.windows.values()].find((state) => state.profileId === profileId && !state.win.isDestroyed())
-      : undefined
+    const reused =
+      opts.reuse === true
+        ? [...this.windows.values()].find(
+            (state) => state.profileId === profileId && !state.win.isDestroyed(),
+          )
+        : undefined
     if (reused != null) {
       if (opts.show !== false) reused.win.show()
       await this.navigate(reused.windowId, targetUrl)
@@ -238,6 +362,7 @@ export class InternalBrowserService {
       networkEvents: [],
       networkSeq: 0,
       networkRules: new Map(),
+      mediaCandidates: new Map(),
     }
     this.windows.set(windowId, state)
     this.attachWindowEvents(state)
@@ -246,9 +371,13 @@ export class InternalBrowserService {
     return this.meta(state)
   }
 
-  async navigate(windowId: string | undefined, url: string): Promise<{ url: string | null; title: string | null }> {
+  async navigate(
+    windowId: string | undefined,
+    url: string,
+  ): Promise<{ url: string | null; title: string | null }> {
     const state = this.requireWindow(windowId)
     const targetUrl = normalizeUrl(url)
+    this.clearMediaState(state)
     try {
       const page = await this.getPageWebContents(state)
       await page.loadURL(targetUrl)
@@ -258,10 +387,14 @@ export class InternalBrowserService {
       await this.runInjectedScripts(state)
       return { url: state.url, title: state.title }
     } catch (err) {
-      throw new InternalBrowserError('NAVIGATION_FAILED', err instanceof Error ? err.message : String(err), {
-        windowId: state.windowId,
-        url: targetUrl,
-      })
+      throw new InternalBrowserError(
+        'NAVIGATION_FAILED',
+        err instanceof Error ? err.message : String(err),
+        {
+          windowId: state.windowId,
+          url: targetUrl,
+        },
+      )
     }
   }
 
@@ -272,13 +405,174 @@ export class InternalBrowserService {
       state.lastActiveAt = new Date().toISOString()
       return await page.executeJavaScript(code, true)
     } catch (err) {
-      throw new InternalBrowserError('EVAL_FAILED', err instanceof Error ? err.message : String(err), {
-        windowId: state.windowId,
-      })
+      throw new InternalBrowserError(
+        'EVAL_FAILED',
+        err instanceof Error ? err.message : String(err),
+        {
+          windowId: state.windowId,
+        },
+      )
     }
   }
 
-  async injectScript(windowId: string | undefined, code: string, scriptId?: string): Promise<{ scriptId: string }> {
+  async inspectMedia(windowId: string | undefined): Promise<InternalBrowserMediaInspection> {
+    const state = this.requireWindow(windowId)
+    const page = await this.getPageWebContents(state)
+    let domResult: {
+      pageUrl?: unknown
+      title?: unknown
+      candidates?: unknown
+    }
+    try {
+      domResult = (await page.executeJavaScript(MEDIA_INSPECTION_SCRIPT, true)) as typeof domResult
+    } catch (err) {
+      throw new InternalBrowserError(
+        'EVAL_FAILED',
+        err instanceof Error ? err.message : String(err),
+        {
+          windowId: state.windowId,
+        },
+      )
+    }
+
+    const candidates: InternalBrowserMediaCandidate[] = []
+    const seen = new Set<string>()
+    const addCandidate = (
+      value: unknown,
+      source: InternalBrowserMediaCandidate['source'],
+      metadata: Partial<InternalBrowserMediaCandidate> = {},
+    ): void => {
+      if (typeof value !== 'string' || !isHttpUrl(value)) return
+      const kind = metadata.kind ?? mediaKind(value)
+      if (seen.has(value)) {
+        const existing = candidates.find((candidate) => candidate.url === value)
+        if (existing != null && existing.kind === 'unknown' && kind !== 'unknown') {
+          existing.kind = kind
+          state.mediaCandidates.set(value, kind)
+        }
+        return
+      }
+      seen.add(value)
+      state.mediaCandidates.set(value, kind)
+      candidates.push({ url: value, source, ...metadata, kind })
+    }
+
+    if (Array.isArray(domResult?.candidates)) {
+      for (const candidate of domResult.candidates) {
+        if (candidate == null || typeof candidate !== 'object') continue
+        const item = candidate as Record<string, unknown>
+        const source = item.source === 'source' ? 'source' : 'video'
+        addCandidate(item.value, source, {
+          visible: item.visible === true,
+          ...(typeof item.width === 'number' ? { width: item.width } : {}),
+          ...(typeof item.height === 'number' ? { height: item.height } : {}),
+        })
+      }
+    }
+
+    for (const event of state.networkEvents) {
+      if (event.kind !== 'request' && event.kind !== 'completed') continue
+      if (!isLikelyMediaUrl(event.url, event.resourceType, event.mimeType)) continue
+      addCandidate(event.url, 'network', { kind: mediaKind(event.url, event.mimeType) })
+    }
+
+    return {
+      pageUrl: typeof domResult?.pageUrl === 'string' ? domResult.pageUrl : page.getURL() || null,
+      title: typeof domResult?.title === 'string' ? domResult.title : page.getTitle() || null,
+      candidates,
+    }
+  }
+
+  async downloadMedia(
+    windowId: string | undefined,
+    mediaUrl: string,
+    filename?: string,
+  ): Promise<InternalBrowserDownloadResult> {
+    const state = this.requireWindow(windowId)
+    if (!isHttpUrl(mediaUrl)) {
+      throw new InternalBrowserError('INVALID_MEDIA_URL', '媒体地址必须是 http(s) URL。', {
+        windowId: state.windowId,
+      })
+    }
+    if (!state.mediaCandidates.has(mediaUrl)) {
+      throw new InternalBrowserError(
+        'INVALID_MEDIA_URL',
+        '媒体地址不是当前页面抓取到的播放资源。',
+        {
+          windowId: state.windowId,
+        },
+      )
+    }
+
+    const page = await this.getPageWebContents(state)
+    const safeFilename = sanitizeDownloadFilename(
+      filename,
+      mediaUrl,
+      state.mediaCandidates.get(mediaUrl),
+    )
+    const destination = path.join(app.getPath('downloads'), safeFilename)
+    const downloadSession = page.session
+
+    return await new Promise<InternalBrowserDownloadResult>((resolve, reject) => {
+      let settled = false
+      let downloadItem: DownloadItem | null = null
+
+      const finish = (error?: Error, result?: InternalBrowserDownloadResult): void => {
+        if (settled) return
+        settled = true
+        if (timeoutId != null) clearTimeout(timeoutId)
+        downloadSession.removeListener('will-download', handleWillDownload)
+        if (error != null) reject(error)
+        else if (result != null) resolve(result)
+        else reject(new Error('下载未返回结果'))
+      }
+
+      const handleWillDownload = (_event: Event, item: DownloadItem): void => {
+        downloadItem = item
+        item.setSavePath(destination)
+        item.once('done', (_doneEvent, stateValue) => {
+          if (stateValue !== 'completed') {
+            finish(new Error(`浏览器下载未完成：${stateValue}`))
+            return
+          }
+          finish(undefined, {
+            path: item.getSavePath() || destination,
+            filename: item.getFilename() || safeFilename,
+            size: Math.max(item.getReceivedBytes(), 0),
+          })
+        })
+      }
+
+      downloadSession.once('will-download', handleWillDownload)
+      const timeoutId = setTimeout(() => {
+        if (downloadItem != null) downloadItem.cancel()
+        finish(new Error('浏览器下载超时，请确认页面仍保持登录并可播放。'))
+      }, DOWNLOAD_TIMEOUT_MS)
+
+      try {
+        const referer = page.getURL()
+        const headers = referer ? { Referer: referer } : undefined
+        page.downloadURL(mediaUrl, headers == null ? undefined : { headers })
+      } catch (err) {
+        finish(new Error(err instanceof Error ? err.message : String(err)))
+      }
+    }).catch((err) => {
+      throw new InternalBrowserError(
+        'DOWNLOAD_FAILED',
+        err instanceof Error ? err.message : String(err),
+        {
+          windowId: state.windowId,
+          url: mediaUrl,
+        },
+      )
+    })
+  }
+
+  async injectScript(
+    windowId: string | undefined,
+    code: string,
+    scriptId?: string,
+  ): Promise<{ scriptId: string }> {
     const state = this.requireWindow(windowId)
     const id = scriptId?.trim() || `script-${randomUUID()}`
     state.injectedScripts.set(id, { scriptId: id, code, createdAt: new Date().toISOString() })
@@ -288,10 +582,14 @@ export class InternalBrowserService {
       return { scriptId: id }
     } catch (err) {
       state.injectedScripts.delete(id)
-      throw new InternalBrowserError('SCRIPT_INJECTION_FAILED', err instanceof Error ? err.message : String(err), {
-        windowId: state.windowId,
-        scriptId: id,
-      })
+      throw new InternalBrowserError(
+        'SCRIPT_INJECTION_FAILED',
+        err instanceof Error ? err.message : String(err),
+        {
+          windowId: state.windowId,
+          scriptId: id,
+        },
+      )
     }
   }
 
@@ -301,11 +599,17 @@ export class InternalBrowserService {
     return { ok: true }
   }
 
-  async screenshot(windowId: string | undefined): Promise<{ dataUrl: string; url: string | null; title: string | null }> {
+  async screenshot(
+    windowId: string | undefined,
+  ): Promise<{ dataUrl: string; url: string | null; title: string | null }> {
     const state = this.requireWindow(windowId)
     const page = await this.getPageWebContents(state)
     const image = await state.win.webContents.capturePage()
-    return { dataUrl: image.toDataURL(), url: state.url ?? page.getURL() ?? null, title: state.title ?? page.getTitle() ?? null }
+    return {
+      dataUrl: image.toDataURL(),
+      url: state.url ?? page.getURL() ?? null,
+      title: state.title ?? page.getTitle() ?? null,
+    }
   }
 
   getUrl(windowId: string | undefined): { url: string | null } {
@@ -352,7 +656,10 @@ export class InternalBrowserService {
     return { ok: true }
   }
 
-  setNetworkRules(windowId: string | undefined, rules: Array<Partial<NetworkRule>>): { ruleIds: string[] } {
+  setNetworkRules(
+    windowId: string | undefined,
+    rules: Array<Partial<NetworkRule>>,
+  ): { ruleIds: string[] } {
     const state = this.requireWindow(windowId)
     const ruleIds: string[] = []
     for (const raw of rules) {
@@ -364,14 +671,22 @@ export class InternalBrowserService {
           { windowId: state.windowId },
         )
       }
-      if (action !== 'record' && action !== 'block' && action !== 'redirect' && action !== 'set_headers') continue
+      if (
+        action !== 'record' &&
+        action !== 'block' &&
+        action !== 'redirect' &&
+        action !== 'set_headers'
+      )
+        continue
       const id = raw.id ?? `rule-${randomUUID()}`
       state.networkRules.set(id, {
         id,
         match: String(raw.match ?? ''),
         action,
         ...(typeof raw.redirectUrl === 'string' ? { redirectUrl: raw.redirectUrl } : {}),
-        ...(raw.headers != null && typeof raw.headers === 'object' ? { headers: raw.headers as Record<string, string> } : {}),
+        ...(raw.headers != null && typeof raw.headers === 'object'
+          ? { headers: raw.headers as Record<string, string> }
+          : {}),
       })
       ruleIds.push(id)
     }
@@ -395,7 +710,10 @@ export class InternalBrowserService {
     return { ok: true }
   }
 
-  async clearProfile(profileIdInput: string, scope: string[] = ['all']): Promise<{ ok: true; profileId: string }> {
+  async clearProfile(
+    profileIdInput: string,
+    scope: string[] = ['all'],
+  ): Promise<{ ok: true; profileId: string }> {
     const profileId = validateProfileId(profileIdInput)
     const ses = electronSession.fromPartition(partitionForProfile(profileId))
     const all = scope.includes('all')
@@ -428,14 +746,20 @@ export class InternalBrowserService {
 
   private attachPageEvents(state: WindowState, page: WebContents): void {
     page.setWindowOpenHandler(({ url }) => {
-      void this.navigate(state.windowId, url).catch((err) => log.warn(`windowOpen navigate failed: ${String(err)}`))
+      void this.navigate(state.windowId, url).catch((err) =>
+        log.warn(`windowOpen navigate failed: ${String(err)}`),
+      )
       return { action: 'deny' }
     })
     page.on('did-navigate', (_event, url) => {
       state.url = url
       state.lastActiveAt = new Date().toISOString()
     })
-    page.on('did-navigate-in-page', (_event, url) => {
+    page.on('did-start-navigation', (_event, _url, _isInPlace, isMainFrame) => {
+      if (isMainFrame) this.clearMediaState(state)
+    })
+    page.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+      if (isMainFrame) this.clearMediaState(state)
       state.url = url
       state.lastActiveAt = new Date().toISOString()
     })
@@ -468,25 +792,36 @@ export class InternalBrowserService {
     const isActive = (): boolean => this.windows.get(state.windowId) === state
     ses.webRequest.onBeforeRequest(filter, (details, callback) => {
       if (!isActive() || details.webContentsId !== webContentsId) return callback({})
-      const rule = [...state.networkRules.values()].find((candidate) => matchesRule(candidate, details.url))
+      const rule = [...state.networkRules.values()].find((candidate) =>
+        matchesRule(candidate, details.url),
+      )
       pushBounded(state.networkEvents, {
         seq: ++state.networkSeq,
-        kind: rule?.action === 'block' ? 'blocked' : rule?.action === 'redirect' ? 'redirected' : 'request',
+        kind:
+          rule?.action === 'block'
+            ? 'blocked'
+            : rule?.action === 'redirect'
+              ? 'redirected'
+              : 'request',
         method: details.method,
         url: details.url,
+        resourceType: details.resourceType,
         ...(rule?.id != null ? { ruleId: rule.id } : {}),
         ts: Date.now(),
       })
       if (rule?.action === 'block') return callback({ cancel: true })
-      if (rule?.action === 'redirect' && rule.redirectUrl) return callback({ redirectURL: rule.redirectUrl })
+      if (rule?.action === 'redirect' && rule.redirectUrl)
+        return callback({ redirectURL: rule.redirectUrl })
       callback({})
     })
     ses.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
       if (!isActive() || details.webContentsId !== webContentsId) {
         return callback({ requestHeaders: details.requestHeaders })
       }
-      const headerRules = [...state.networkRules.values()]
-        .filter((rule) => rule.action === 'set_headers' && matchesRule(rule, details.url) && rule.headers != null)
+      const headerRules = [...state.networkRules.values()].filter(
+        (rule) =>
+          rule.action === 'set_headers' && matchesRule(rule, details.url) && rule.headers != null,
+      )
       if (headerRules.length === 0) return callback({ requestHeaders: details.requestHeaders })
       const requestHeaders = { ...details.requestHeaders }
       for (const rule of headerRules) Object.assign(requestHeaders, rule.headers)
@@ -494,11 +829,14 @@ export class InternalBrowserService {
     })
     ses.webRequest.onCompleted(filter, (details) => {
       if (!isActive() || details.webContentsId !== webContentsId) return
+      const mimeType = extractMimeType(details.responseHeaders)
       pushBounded(state.networkEvents, {
         seq: ++state.networkSeq,
         kind: 'completed',
         method: details.method,
         url: details.url,
+        resourceType: details.resourceType,
+        ...(mimeType == null ? {} : { mimeType }),
         statusCode: details.statusCode,
         ts: Date.now(),
       })
@@ -510,6 +848,7 @@ export class InternalBrowserService {
         kind: 'error',
         method: details.method,
         url: details.url,
+        resourceType: details.resourceType,
         error: details.error,
         ts: Date.now(),
       })
@@ -523,7 +862,9 @@ export class InternalBrowserService {
       try {
         await page.executeJavaScript(script.code, true)
       } catch (err) {
-        log.warn(`Persistent script failed windowId=${state.windowId} scriptId=${script.scriptId}: ${String(err)}`)
+        log.warn(
+          `Persistent script failed windowId=${state.windowId} scriptId=${script.scriptId}: ${String(err)}`,
+        )
       }
     }
   }
@@ -540,22 +881,32 @@ export class InternalBrowserService {
         }),
       ])
     } catch (err) {
-      throw new InternalBrowserError('NAVIGATION_FAILED', err instanceof Error ? err.message : String(err), {
-        windowId: state.windowId,
-      })
+      throw new InternalBrowserError(
+        'NAVIGATION_FAILED',
+        err instanceof Error ? err.message : String(err),
+        {
+          windowId: state.windowId,
+        },
+      )
     } finally {
       if (timeoutId != null) clearTimeout(timeoutId)
     }
   }
 
   private requireWindow(windowId: string | undefined): WindowState {
-    const target = windowId == null || windowId.trim() === ''
-      ? [...this.windows.values()].find((state) => !state.win.isDestroyed())
-      : this.windows.get(windowId)
+    const target =
+      windowId == null || windowId.trim() === ''
+        ? [...this.windows.values()].find((state) => !state.win.isDestroyed())
+        : this.windows.get(windowId)
     if (target == null || target.win.isDestroyed()) {
       throw new InternalBrowserError('WINDOW_NOT_FOUND', 'Browser window not found', { windowId })
     }
     return target
+  }
+
+  private clearMediaState(state: WindowState): void {
+    state.mediaCandidates.clear()
+    state.networkEvents = []
   }
 
   private meta(state: WindowState): InternalBrowserMeta {
