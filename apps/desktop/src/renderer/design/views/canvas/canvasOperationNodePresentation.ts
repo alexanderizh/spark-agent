@@ -115,6 +115,6 @@ export function operationNodePresentationSize(
   const mediaHeight = Math.min(720, Math.max(160, Math.round(node.width / aspectRatio)))
   return {
     width: node.width,
-    height: Math.max(node.height, mediaHeight + CANVAS_NODE_META_BAR_HEIGHT),
+    height: mediaHeight + CANVAS_NODE_META_BAR_HEIGHT,
   }
 }
