@@ -1,5 +1,43 @@
 import { isOperationNode } from './canvas.capabilities'
-import type { CanvasEdge, CanvasNode } from './canvas.types'
+import type { CanvasEdge, CanvasNode, CanvasTask } from './canvas.types'
+
+/**
+ * Remove deleted node references from a task without treating independent
+ * asset references as owned task outputs. An asset is removed only when a
+ * deleted node is registered in outputNodeIds and no retained registered
+ * output node still exposes the same asset.
+ */
+export function removeDeletedCanvasNodeReferencesFromTask(input: {
+  task: CanvasTask
+  nodesById: ReadonlyMap<string, CanvasNode>
+  deletedNodeIds: ReadonlySet<string>
+}): CanvasTask {
+  const { task, nodesById, deletedNodeIds } = input
+  const inputNodeIds = task.inputNodeIds.filter((id) => !deletedNodeIds.has(id))
+  const outputNodeIds = task.outputNodeIds.filter((id) => !deletedNodeIds.has(id))
+  const retainedOutputAssetIds = new Set(
+    outputNodeIds.map((id) => nodesById.get(id)?.assetId).filter((id): id is string => Boolean(id)),
+  )
+  const removedOwnedAssetIds = new Set(
+    task.outputNodeIds
+      .filter((id) => deletedNodeIds.has(id))
+      .map((id) => nodesById.get(id)?.assetId)
+      .filter((id): id is string => typeof id === 'string' && !retainedOutputAssetIds.has(id)),
+  )
+  const outputAssetIds =
+    removedOwnedAssetIds.size > 0
+      ? task.outputAssetIds.filter((id) => !removedOwnedAssetIds.has(id))
+      : task.outputAssetIds
+
+  if (
+    inputNodeIds.length === task.inputNodeIds.length &&
+    outputNodeIds.length === task.outputNodeIds.length &&
+    outputAssetIds.length === task.outputAssetIds.length
+  ) {
+    return task
+  }
+  return { ...task, inputNodeIds, outputNodeIds, outputAssetIds }
+}
 
 /**
  * Expand an explicit node deletion with outputs that are still embedded inside

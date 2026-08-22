@@ -90,8 +90,11 @@ describe('canvas cinematic integration', () => {
   })
 
   it('gives the left floating dock a larger translucent glass surface', () => {
+    const dock = readCanvasSource('./CanvasBottomDock.tsx')
     const shell = readCanvasSource('./cinematic/shell.less')
 
+    expect(dock).toContain('shape="circle"')
+    expect(dock).not.toContain('shape="round"')
     expect(shell).toMatch(/\.canvas-bottom-dock\s*\{[\s\S]*?width:\s*44px;/)
     expect(shell).toMatch(/\.canvas-bottom-dock\s*\{[\s\S]*?backdrop-filter:\s*blur\(20px\)/)
     expect(shell).toContain('background: rgba(25, 25, 25, 0.72);')

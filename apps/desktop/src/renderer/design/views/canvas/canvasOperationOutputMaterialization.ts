@@ -16,6 +16,12 @@ export type CanvasOperationOutputMaterializationPlan = {
   items: Array<{ output: CanvasOperationOutputView; x: number; y: number }>
 }
 
+function outputIdentityKeys(output: CanvasOperationOutputView): string[] {
+  return [output.id, output.nodeId, output.assetId].filter(
+    (id, index, keys): id is string => Boolean(id) && keys.indexOf(id) === index,
+  )
+}
+
 export function planCanvasOperationOutputMaterialization({
   operationNode,
   outputs,
@@ -25,28 +31,34 @@ export function planCanvasOperationOutputMaterialization({
   outputs: CanvasOperationOutputView[]
   existingNodes: CanvasNode[]
 }): CanvasOperationOutputMaterializationPlan {
-  const existingByOutputId = new Map(
-    existingNodes.flatMap((node) => {
-      const materialized = node.data.materializedOutput
-      return materialized?.operationNodeId === operationNode.id
-        ? [[materialized.outputId, node] as const]
-        : []
-    }),
-  )
+  const existingByIdentityKey = new Map<string, CanvasNode>()
+  for (const node of existingNodes) {
+    const materialized = node.data.materializedOutput
+    if (materialized?.operationNodeId !== operationNode.id) continue
+    for (const key of [materialized.outputId, node.id, node.assetId]) {
+      if (key && !existingByIdentityKey.has(key)) existingByIdentityKey.set(key, node)
+    }
+  }
   const existingNodeIds: string[] = []
+  const existingNodeIdSet = new Set<string>()
   const unsupportedOutputIds: string[] = []
   const missing: CanvasOperationOutputView[] = []
-  const seen = new Set<string>()
+  const seenIdentityKeys = new Set<string>()
 
   for (const output of outputs) {
-    const outputId = output.id
-    if (seen.has(outputId)) continue
-    seen.add(outputId)
-    const existing = existingByOutputId.get(outputId)
+    const identityKeys = outputIdentityKeys(output)
+    if (identityKeys.some((key) => seenIdentityKeys.has(key))) continue
+    for (const key of identityKeys) seenIdentityKeys.add(key)
+    const existing = identityKeys
+      .map((key) => existingByIdentityKey.get(key))
+      .find((node): node is CanvasNode => Boolean(node))
     if (existing) {
-      existingNodeIds.push(existing.id)
+      if (!existingNodeIdSet.has(existing.id)) {
+        existingNodeIdSet.add(existing.id)
+        existingNodeIds.push(existing.id)
+      }
     } else if (!output.assetId) {
-      unsupportedOutputIds.push(outputId)
+      unsupportedOutputIds.push(output.id)
     } else {
       missing.push(output)
     }

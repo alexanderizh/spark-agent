@@ -249,6 +249,12 @@ import type {
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { isSafeFilePathAllowed, toSafeFileUrl } from '../services/SafeFileProtocol.js'
 import { isPathStrictlyInsideRoot } from '../services/CanvasProjectPath.js'
+import {
+  preserveCanvasProjectPrompts,
+  PROMPT_LIBRARY_SETTINGS_CATEGORY,
+  PROMPT_LIBRARY_SETTINGS_KEY,
+  type CanvasPromptSnapshot,
+} from '../services/CanvasPromptLibraryPersistence.js'
 import { PASTED_IMAGE_MAX_EDGE, resizePastedImageBuffer } from '../services/PastedImageResizer.js'
 import { collectCanvasVideoWorkbenchPaths } from '../services/canvasVideoWorkbenchPaths.js'
 import { getUpdateService } from '../services/UpdateService.js'
@@ -658,6 +664,42 @@ async function removeCanvasProjectDirectory(rootPath: string | null | undefined)
   } catch (err) {
     log.error(`canvas:project:delete failed to remove project directory: ${resolved}`, err)
     return false
+  }
+}
+
+async function readCanvasSnapshotForProjectDeletion(
+  projectId: string,
+  rootPath: string | null | undefined,
+): Promise<CanvasPromptSnapshot | null> {
+  let snapshotJson: string | null = null
+  if (rootPath?.trim()) {
+    try {
+      snapshotJson = await fs.readFile(
+        path.join(path.resolve(rootPath), 'snapshots', 'latest.json'),
+        'utf8',
+      )
+    } catch {
+      // Fall through to the SQLite compatibility snapshot below.
+    }
+  }
+  if (!snapshotJson) snapshotJson = getCanvasSnapshotRepo().get(projectId)?.snapshot_json ?? null
+  if (!snapshotJson) return null
+  try {
+    const parsed: unknown = JSON.parse(snapshotJson)
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      !Array.isArray(parsed) &&
+      'snapshot' in parsed &&
+      typeof parsed.snapshot === 'object' &&
+      parsed.snapshot !== null &&
+      !Array.isArray(parsed.snapshot)
+    ) {
+      return parsed.snapshot as CanvasPromptSnapshot
+    }
+    return parsed as CanvasPromptSnapshot
+  } catch {
+    throw new Error('项目快照无法读取，已中止项目删除以保护提示词资产')
   }
 }
 
@@ -4904,6 +4946,25 @@ export function registerAllIpcHandlers(): void {
     // 用户预期「删除」即彻底清理（含项目文件夹），软删/硬删均清理磁盘。
     const project = getCanvasProjectRepo().get(req.projectId)
     const rootPath = project?.root_path ?? null
+    const snapshot = await readCanvasSnapshotForProjectDeletion(req.projectId, rootPath)
+    if (snapshot) {
+      const preserved = await preserveCanvasProjectPrompts(
+        req.projectId,
+        snapshot,
+        getSettingsService().get(PROMPT_LIBRARY_SETTINGS_CATEGORY, PROMPT_LIBRARY_SETTINGS_KEY),
+        {
+          isAllowedPath: (filePath) => isSafeFilePathAllowed(filePath),
+          readFile: (filePath) => fs.readFile(filePath),
+        },
+      )
+      if (preserved.changed) {
+        getSettingsService().set(
+          PROMPT_LIBRARY_SETTINGS_CATEGORY,
+          PROMPT_LIBRARY_SETTINGS_KEY,
+          preserved.state,
+        )
+      }
+    }
     let directoryRemoved = false
     if (rootPath) {
       directoryRemoved = await removeCanvasProjectDirectory(rootPath)

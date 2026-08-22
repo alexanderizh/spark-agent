@@ -79,7 +79,7 @@ describe('canvas pane context menu', () => {
 
   it('uses one shared menu surface with a compact second-level density', () => {
     expect(contextMenuStyles).toMatch(
-      /\.canvas-pane-context-menu,[\s\S]*?\.canvas-node-context-submenu-popup \.ant-dropdown-menu\s*\{[\s\S]*?background: var\(--canvas-context-menu-bg, var\(--panel, #303030\)\) !important;/,
+      /\.canvas-pane-context-menu,[\s\S]*?\.canvas-pane-context-submenu-panel,[\s\S]*?\.canvas-context-menu,[\s\S]*?\.canvas-context-submenu-panel,[\s\S]*?\.canvas-node-context-submenu-popup \.ant-dropdown-menu\s*\{[\s\S]*?background: var\(--canvas-context-menu-bg, var\(--panel, #303030\)\) !important;/,
     )
     expect(contextMenuStyles).toMatch(
       /\.canvas-pane-context-menu button,[\s\S]*?\.canvas-node-context-menu\.ant-dropdown-menu \.ant-dropdown-menu-item[\s\S]*?min-height: 38px[\s\S]*?font-size: 14px/,

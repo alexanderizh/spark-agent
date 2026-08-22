@@ -4530,7 +4530,10 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border-radius: 0;
   background: transparent;
 }
-
+.canvas-prompt-library-head {
+  padding-right: 50px;
+  padding-top: 4px;
+}
 .canvas-prompt-library-head,
 .canvas-node-edit-prompt-library-head {
   display: flex;
@@ -4625,9 +4628,10 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   grid-auto-rows: auto;
   align-items: start;
   align-content: start;
-  gap: 12px;
+  gap: 54px 12px;
   overflow: auto;
   padding-right: 2px;
+  padding-top: 4px;
 }
 
 .canvas-film-prompt-library .canvas-prompt-library-list {
@@ -4729,7 +4733,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .canvas-prompt-library-entry-fallback {

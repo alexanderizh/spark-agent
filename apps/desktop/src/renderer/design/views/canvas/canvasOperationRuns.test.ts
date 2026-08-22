@@ -159,6 +159,7 @@ describe('canvas operation run views', () => {
       type: 'image',
       url: 'https://example.com/two.png',
     })
+    expect(runs[0]?.outputs).toHaveLength(1)
   })
 
   it('groups asset-only runs by their stable operation node owner', () => {
@@ -176,6 +177,32 @@ describe('canvas operation run views', () => {
 
     expect(runs.map((run) => run.taskId)).toEqual(['task-2', 'task-1'])
     expect(runs.map((run) => run.outputs[0]?.assetId)).toEqual(['asset-two', 'asset-one'])
+  })
+
+  it('keeps asset-only output identity stable after an independent reference is expanded', () => {
+    const snapshot = snapshotFixture()
+    const operationNode = operationFixtureNode(snapshot)
+    const independentReference = snapshot.nodes[1]!
+    independentReference.id = 'expanded-reference'
+    independentReference.data.materializedOutput = {
+      operationNodeId: operationNode.id,
+      outputId: 'asset-one',
+      taskId: 'task-1',
+      materializedAt: '2026-07-10T00:03:00.000Z',
+    }
+    snapshot.nodes = [operationNode, independentReference]
+    snapshot.edges = []
+    snapshot.tasks = snapshot.tasks.map((task) => ({
+      ...task,
+      operationNodeId: operationNode.id,
+      outputNodeIds: [],
+    }))
+
+    const runs = buildCanvasOperationRunViews(operationNode, snapshot)
+    const historicalOutput = runs.find((run) => run.taskId === 'task-1')?.outputs[0]
+
+    expect(historicalOutput).toMatchObject({ id: 'asset-one', assetId: 'asset-one' })
+    expect(historicalOutput?.nodeId).toBeUndefined()
   })
 
   it('recovers generated outputs when failed-task cleanup removed the task row', () => {

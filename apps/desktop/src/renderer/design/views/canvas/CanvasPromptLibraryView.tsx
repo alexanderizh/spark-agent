@@ -179,11 +179,20 @@ export function CanvasPromptLibraryView() {
   }, [])
 
   const globalAssets = useMemo(
-    () =>
-      (library?.items ?? [])
-        .filter((item) => !item.id.startsWith('legacy:'))
-        .map(globalPromptToCanvasAsset),
+    () => (library?.items ?? []).map(globalPromptToCanvasAsset),
     [library],
+  )
+  const visibleProjectEntries = useMemo(
+    () =>
+      projectEntries.filter(
+        ({ asset }) =>
+          !(library?.items ?? []).some(
+            (item) =>
+              item.id === `legacy:${asset.projectId}:${asset.id}` ||
+              item.id === `legacy:${asset.id}`,
+          ),
+      ),
+    [library, projectEntries],
   )
   const categories = useMemo(
     () =>
@@ -191,8 +200,8 @@ export function CanvasPromptLibraryView() {
     [library],
   )
   const allPromptAssets = useMemo(
-    () => [...globalAssets, ...projectEntries.map((entry) => entry.asset)],
-    [globalAssets, projectEntries],
+    () => [...globalAssets, ...visibleProjectEntries.map((entry) => entry.asset)],
+    [globalAssets, visibleProjectEntries],
   )
   const usage = useMemo(() => getPromptCategoryUsage(allPromptAssets), [allPromptAssets])
   const systemPromptEntries = useMemo(
@@ -201,12 +210,12 @@ export function CanvasPromptLibraryView() {
   )
   const sourceCount = useMemo(
     () => ({
-      all: globalAssets.length + projectEntries.length + systemPromptEntries.length,
+      all: globalAssets.length + visibleProjectEntries.length + systemPromptEntries.length,
       global: globalAssets.length,
-      project: projectEntries.length,
+      project: visibleProjectEntries.length,
       system: systemPromptEntries.length,
     }),
-    [globalAssets, projectEntries, systemPromptEntries],
+    [globalAssets, systemPromptEntries, visibleProjectEntries],
   )
   const filteredGlobalAssets = useMemo(() => {
     if (activeSource === 'project' || activeSource === 'system') return []
@@ -224,7 +233,7 @@ export function CanvasPromptLibraryView() {
   const filteredProjectEntries = useMemo(() => {
     if (activeSource === 'global' || activeSource === 'system') return []
     const cleanQuery = query.trim().toLowerCase()
-    return projectEntries.filter(({ asset, projectName }) => {
+    return visibleProjectEntries.filter(({ asset, projectName }) => {
       const category = getPromptCategory(asset)
       if (activeCategory !== 'all' && category !== activeCategory) return false
       if (!cleanQuery) return true
@@ -233,7 +242,7 @@ export function CanvasPromptLibraryView() {
       } ${projectName}`.toLowerCase()
       return haystack.includes(cleanQuery)
     })
-  }, [activeCategory, activeSource, projectEntries, query])
+  }, [activeCategory, activeSource, query, visibleProjectEntries])
   const filteredSystemPromptEntries = useMemo<CanvasPromptLibraryEntry[]>(() => {
     if (activeSource === 'global' || activeSource === 'project') return []
     if (hideSystemPrompts || activeCategory !== 'all') return []
@@ -336,7 +345,9 @@ export function CanvasPromptLibraryView() {
           message.warning('提示词来源信息缺失，无法保存')
           return
         }
-        const existingEntry = projectEntries.find((entry) => entry.asset.id === editor.assetId)
+        const existingEntry = visibleProjectEntries.find(
+          (entry) => entry.asset.id === editor.assetId,
+        )
         const existingAttributes = (existingEntry?.asset.metadata?.attributes ?? {}) as Record<
           string,
           string
@@ -884,11 +895,7 @@ function PromptLibraryCoverImage({ src, remote = false }: { src: string; remote?
         draggable={false}
       />
       {remote ? (
-        <RemoteAssetImage
-          className="canvas-prompt-library-card-cover-remote"
-          src={src}
-          alt=""
-        />
+        <RemoteAssetImage className="canvas-prompt-library-card-cover-remote" src={src} alt="" />
       ) : (
         <img
           className="canvas-prompt-library-card-cover-image"

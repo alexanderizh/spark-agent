@@ -202,7 +202,7 @@
 
 .canvas-prompt-library-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
   gap: 8px;
 }
 
@@ -235,7 +235,7 @@
 
 .canvas-prompt-library-card-cover {
   position: relative;
-  height: 132px;
+  height: 232px;
   overflow: hidden;
   background: linear-gradient(
     135deg,
@@ -703,11 +703,14 @@
   padding: 0;
   overflow: hidden;
 }
+.canvas-prompt-quick-use-modal .ant-modal-container {
+  padding: 0;
+}
 
 .canvas-prompt-quick-use-modal .ant-modal-header {
   margin: 0;
-  padding: 16px 18px 13px;
-  border-bottom: 1px solid var(--divider, rgba(255, 255, 255, 0.1));
+  padding: 0px 18px 8px 0;
+  margin-top: -4px;
 }
 
 .canvas-prompt-quick-use-modal .ant-modal-body {
@@ -748,8 +751,38 @@
 
 .canvas-prompt-quick-use-panel {
   max-height: min(680px, 72vh);
-  padding: 14px 18px 18px;
+  padding: 14px 12px 18px;
   overflow: auto;
+}
+
+.canvas-prompt-quick-use-panel .canvas-prompt-library-filter-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.canvas-prompt-quick-use-panel .canvas-prompt-library-source-filter {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.canvas-prompt-quick-use-panel .canvas-prompt-library-filter-tools {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.canvas-prompt-quick-use-panel .canvas-prompt-library-quick-search {
+  width: min(220px, 30vw);
+}
+
+.canvas-prompt-quick-use-panel .canvas-prompt-library-sort {
+  width: 92px;
+  flex: 0 0 92px;
 }
 
 @media (max-width: 720px) {
@@ -832,6 +865,7 @@
   min-height: 0;
   flex-direction: column;
   grid-template-rows: none;
+  background: var(--panel-elev);
 }
 
 // compact 变体（节点编辑弹层 hover Popover）：单独反覆盖，解决三件事——
@@ -907,7 +941,6 @@
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(58px, auto) minmax(0, 1fr);
-  align-items: start;
   gap: 7px;
 }
 
@@ -927,6 +960,14 @@
   line-height: 1.35;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.canvas-prompt-library-entry-project {
+  overflow: hidden;
+  color: var(--text-faint, var(--text-muted));
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-prompt-library-entry-prompt-preview {
@@ -983,6 +1024,20 @@
 }
 
 @media (max-width: 480px) {
+  .canvas-prompt-quick-use-panel .canvas-prompt-library-filter-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .canvas-prompt-quick-use-panel .canvas-prompt-library-filter-tools {
+    width: 100%;
+  }
+
+  .canvas-prompt-quick-use-panel .canvas-prompt-library-quick-search {
+    width: 100%;
+  }
+
   .canvas-prompt-library-panel.canvas-film-prompt-library .canvas-prompt-library-entry {
     min-height: 0;
   }

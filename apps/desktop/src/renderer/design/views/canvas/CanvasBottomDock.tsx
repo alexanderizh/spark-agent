@@ -93,7 +93,7 @@ export function CanvasBottomDock({
             <Button
               size="small"
               type="text"
-              shape="round"
+              shape="circle"
               className={activeTool === 'select' ? 'canvas-dock-tool-active' : ''}
               icon={<Icons.MousePointer size={14} />}
               aria-label="选择"
@@ -103,7 +103,7 @@ export function CanvasBottomDock({
           <Tooltip title="平移 · Tab / 按住 Space 拖拽" placement="top">
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               className={activeTool === 'pan' ? 'canvas-dock-tool-active' : ''}
               icon={<Icons.Hand size={14} />}
@@ -119,7 +119,7 @@ export function CanvasBottomDock({
           <Tooltip title="全部节点类型" placement="top">
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.Plus size={14} />}
               aria-label="全部节点类型"
@@ -134,7 +134,7 @@ export function CanvasBottomDock({
           <Tooltip title="画布工作流（项目流程 / 个人库 / 从选区提取）" placement="top">
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.Workflow size={14} />}
               aria-label="画布工作流"
@@ -144,7 +144,7 @@ export function CanvasBottomDock({
           <Tooltip title="项目资产中心（剧本/角色/场景/道具/分镜/提示词库）" placement="top">
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.Box size={14} />}
               aria-label="项目资产中心"
@@ -154,7 +154,7 @@ export function CanvasBottomDock({
           <Tooltip title="角色库（角色卡 / 子视图 / 快速应用到画布）" placement="top">
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.Users size={14} />}
               aria-label="角色库"
@@ -164,7 +164,7 @@ export function CanvasBottomDock({
           <Tooltip title="3D 导演台（人偶 / 道具 / 取景相机 / 提示词）" placement="top">
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.Film size={14} />}
               aria-label="3D 导演台"
@@ -174,7 +174,7 @@ export function CanvasBottomDock({
           <Tooltip title="视频工作台（关键帧提取 / 剪辑 / 转码）" placement="top">
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.Video size={14} />}
               aria-label="视频工作台"
@@ -184,7 +184,7 @@ export function CanvasBottomDock({
           <Tooltip title="画布 Agent 助手（对话操作画布）" placement="top">
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.Agent size={14} />}
               aria-label="画布 Agent 助手"
@@ -200,7 +200,7 @@ export function CanvasBottomDock({
             <Button
               size="small"
               type="text"
-              shape="round"
+              shape="circle"
               danger
               icon={<Icons.Trash style={{ color: '#f87171' }} size={14} />}
               aria-label="删除选中节点"
@@ -216,7 +216,7 @@ export function CanvasBottomDock({
           <Tooltip title="适配全部节点 · Ctrl/⌘ 0" placement="top">
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.Maximize size={14} />}
               aria-label="适配全部节点"
@@ -229,7 +229,7 @@ export function CanvasBottomDock({
           >
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.Crosshair size={14} />}
               aria-label="回到选中节点中心"
@@ -239,7 +239,7 @@ export function CanvasBottomDock({
           </Tooltip>
           <Tooltip title={gridVisible ? '隐藏网格' : '显示网格'} placement="top">
             <Button
-              shape="round"
+              shape="circle"
               size="small"
               type={gridVisible ? 'primary' : 'text'}
               icon={<Icons.Grid size={14} />}
@@ -253,7 +253,7 @@ export function CanvasBottomDock({
           >
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.RotateCcw size={14} />}
               aria-label="撤销"
@@ -269,7 +269,7 @@ export function CanvasBottomDock({
           >
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.RotateCw size={14} />}
               aria-label="重做"
@@ -280,7 +280,7 @@ export function CanvasBottomDock({
           <Tooltip title="画布帮助 / 快捷键" placement="top">
             <Button
               size="small"
-              shape="round"
+              shape="circle"
               type="text"
               icon={<Icons.HelpCircle size={14} />}
               aria-label="画布帮助 / 快捷键"

@@ -71,6 +71,31 @@ describe('canvas operation output materialization', () => {
     expect(plan.items[0]?.x).not.toBe(existing.x)
   })
 
+  it('recognizes legacy expanded references by asset identity after a rerun', () => {
+    const operation = operationNode()
+    const legacyExpanded: CanvasNode = {
+      ...operation,
+      id: 'legacy-reference-a',
+      type: 'image',
+      assetId: 'asset-a',
+      data: {
+        materializedOutput: {
+          operationNodeId: operation.id,
+          outputId: 'legacy-reference-a',
+          materializedAt: at,
+        },
+      },
+    }
+    const plan = planCanvasOperationOutputMaterialization({
+      operationNode: operation,
+      outputs: [output('a'), output('b'), output('c')],
+      existingNodes: [operation, legacyExpanded],
+    })
+
+    expect(plan.existingNodeIds).toEqual(['legacy-reference-a'])
+    expect(plan.items.map((item) => item.output.id)).toEqual(['b', 'c'])
+  })
+
   it('stacks expanded outputs in a single column to the right, centered on the operation node', () => {
     const operation = operationNode()
     const plan = planCanvasOperationOutputMaterialization({
@@ -86,7 +111,8 @@ describe('canvas operation output materialization', () => {
       expect(item.x).toBe(expectedX)
     }
     // 行距固定：默认图片节点高度 + 纵向间距。
-    const rowStep = IMAGE_NODE_DEFAULT_SIZE.height + AUTO_NODE_VERTICAL_GAP + AUTO_NODE_META_BAR_CLEARANCE
+    const rowStep =
+      IMAGE_NODE_DEFAULT_SIZE.height + AUTO_NODE_VERTICAL_GAP + AUTO_NODE_META_BAR_CLEARANCE
     expect(plan.items[1]!.y - plan.items[0]!.y).toBe(rowStep)
     expect(plan.items[2]!.y - plan.items[1]!.y).toBe(rowStep)
     expect(plan.items[3]!.y - plan.items[2]!.y).toBe(rowStep)

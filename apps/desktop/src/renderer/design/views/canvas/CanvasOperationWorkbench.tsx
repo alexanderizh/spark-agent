@@ -431,14 +431,6 @@ export function CanvasOperationWorkbench({
               </div>
             ) : null}
           </div>
-          <Button
-            size="small"
-            type="primary"
-            ghost
-            onClick={() => dispatch({ type: 'select-tab', tab: 'config' })}
-          >
-            查看进度
-          </Button>
         </div>
       ) : null}
 

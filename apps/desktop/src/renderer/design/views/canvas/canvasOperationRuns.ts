@@ -155,6 +155,7 @@ export function buildCanvasOperationRunViews(
   ): CanvasOperationOutputView[] => {
     const outputs: CanvasOperationOutputView[] = []
     const seen = new Set<string>()
+    const nodeOutputAssetIds = new Set<string>()
     const nodeIds = new Set([
       ...outputNodeIds,
       ...(generatedEdgesByTaskId.get(taskId) ?? []).map((edge) => edge.targetNodeId),
@@ -167,14 +168,17 @@ export function buildCanvasOperationRunViews(
       const view = operationOutputView(node, asset, nodeId, taskId)
       if (seen.has(view.id)) continue
       seen.add(view.id)
+      if (view.assetId) nodeOutputAssetIds.add(view.assetId)
       outputs.push(view)
     }
 
     for (const assetId of outputAssetIds) {
       const asset = assetsById.get(assetId)
-      if (!asset || seen.has(asset.id)) continue
-      const node = snapshot.nodes.find((item) => item.assetId === assetId)
-      const view = operationOutputView(node, asset, assetId, taskId)
+      if (!asset || nodeOutputAssetIds.has(asset.id) || seen.has(asset.id)) continue
+      // Asset-only outputs have no owned output node. Do not borrow an
+      // independent materialized/reference node that happens to share the
+      // asset, otherwise the output identity changes after expansion.
+      const view = operationOutputView(undefined, asset, assetId, taskId)
       if (seen.has(view.id)) continue
       seen.add(view.id)
       outputs.push(view)

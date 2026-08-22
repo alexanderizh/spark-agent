@@ -131,7 +131,10 @@ import {
   isCompletedCanvasTaskWithOutputs,
   recoverCanvasTaskFromMaterializedOutputs,
 } from './canvasTaskOutputIntegrity'
-import { resolveCanvasNodeDeletionIds } from './canvasNodeDeletion'
+import {
+  removeDeletedCanvasNodeReferencesFromTask,
+  resolveCanvasNodeDeletionIds,
+} from './canvasNodeDeletion'
 import {
   applyCanvasOperationOutputDeletion,
   type CanvasOperationOutputDeletionResult,
@@ -1951,6 +1954,10 @@ export const canvasApi = {
   },
 
   async deleteProject(projectId: string): Promise<void> {
+    const persisted = await flushPersist()
+    if (!persisted) {
+      throw new Error('项目尚未成功保存，无法安全删除；请稍后重试')
+    }
     await window.spark.invoke('canvas:project:delete', { projectId })
     const db = readDb()
     const project = db.projects.find((item) => item.id === projectId)
@@ -4581,6 +4588,7 @@ export const canvasApi = {
 
   async deleteNodes(projectId: string, nodeIds: string[]): Promise<void> {
     const db = readDb()
+    const nodesById = new Map(db.nodes.map((node) => [node.id, node]))
     const remove = resolveCanvasNodeDeletionIds({
       projectId,
       nodeIds,
@@ -4621,29 +4629,16 @@ export const canvasApi = {
     if (removedTaskIds.size > 0) {
       db.tasks = db.tasks.filter((task) => !removedTaskIds.has(task.id))
     }
-    // 收集被删节点关联的资产 id，同步清理 task.outputAssetIds；否则 collectOutputs
-    // 会仅凭残留 assetId 把已删产物重新投影成无 nodeId 的幽灵产物（canvasOperationRuns.ts:162-170）。
-    const removedAssetIds = new Set<string>()
-    for (const node of db.nodes) {
-      if (remove.has(node.id) && node.projectId === projectId && node.assetId) {
-        removedAssetIds.add(node.assetId)
-      }
-    }
+    // 仅当被删节点确实登记在 task.outputNodeIds 中时清理对应资产。
+    // 独立展开的引用节点会复用 assetId，但不属于任务产物记录，删除它不能回写任务。
     db.tasks = db.tasks.map((task) => {
       if (task.projectId !== projectId) return task
-      const inputNodeIds = task.inputNodeIds.filter((id) => !remove.has(id))
-      const outputNodeIds = task.outputNodeIds.filter((id) => !remove.has(id))
-      const outputAssetIds = removedAssetIds.size
-        ? task.outputAssetIds.filter((id) => !removedAssetIds.has(id))
-        : task.outputAssetIds
-      if (
-        inputNodeIds.length === task.inputNodeIds.length &&
-        outputNodeIds.length === task.outputNodeIds.length &&
-        outputAssetIds.length === task.outputAssetIds.length
-      ) {
-        return task
-      }
-      return { ...task, inputNodeIds, outputNodeIds, outputAssetIds, updatedAt: at }
+      const next = removeDeletedCanvasNodeReferencesFromTask({
+        task,
+        nodesById,
+        deletedNodeIds: remove,
+      })
+      return next === task ? task : { ...next, updatedAt: at }
     })
     updateProjectCounts(db, projectId)
     writeDb(db)

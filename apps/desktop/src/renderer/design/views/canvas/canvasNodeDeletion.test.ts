@@ -172,6 +172,44 @@ describe('canvas node deletion', () => {
     expect(snapshot.assets.map((item) => item.id)).toEqual(['asset-1'])
   })
 
+  it('deletes an expanded reference without changing the original task output', async () => {
+    await canvasApi.deleteNodes('project-1', ['expanded-reference'])
+
+    const snapshot = await canvasApi.openSnapshot('project-1')
+    expect(snapshot.nodes.map((item) => item.id)).toEqual(['operation-1', 'embedded-output'])
+    expect(snapshot.edges.map((item) => item.id)).toEqual(['generated-edge'])
+    expect(snapshot.tasks).toHaveLength(1)
+    expect(snapshot.tasks[0]?.outputNodeIds).toEqual(['embedded-output'])
+    expect(snapshot.tasks[0]?.outputAssetIds).toEqual(['asset-1'])
+
+    const operation = snapshot.nodes.find((item) => item.id === 'operation-1')!
+    expect(buildCanvasOperationRunViews(operation, snapshot)[0]?.outputs[0]).toMatchObject({
+      nodeId: 'embedded-output',
+      assetId: 'asset-1',
+    })
+  })
+
+  it('keeps an asset-only task output when its expanded reference is deleted', async () => {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    expect(raw).toBeTruthy()
+    const seeded = JSON.parse(raw!) as CanvasDb
+    seeded.nodes = seeded.nodes.filter((item) => item.id !== 'embedded-output')
+    seeded.edges = seeded.edges.filter((item) => item.id !== 'generated-edge')
+    seeded.tasks[0]!.outputNodeIds = []
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded))
+    __resetCanvasHotCache()
+
+    await canvasApi.deleteNodes('project-1', ['expanded-reference'])
+
+    const snapshot = await canvasApi.openSnapshot('project-1')
+    expect(snapshot.tasks[0]?.outputNodeIds).toEqual([])
+    expect(snapshot.tasks[0]?.outputAssetIds).toEqual(['asset-1'])
+    const operation = snapshot.nodes.find((item) => item.id === 'operation-1')!
+    expect(buildCanvasOperationRunViews(operation, snapshot)[0]?.outputs).toEqual([
+      expect.objectContaining({ id: 'asset-1', assetId: 'asset-1' }),
+    ])
+  })
+
   it('clears task outputAssetIds when deleting output nodes so ghost outputs do not reappear', async () => {
     // 只删产物节点（不删操作节点）：task 应保留，但其 outputNodeIds / outputAssetIds
     // 必须同步清空，否则 collectOutputs 会仅凭残留 assetId 把已删产物重新投影成无 nodeId 的幽灵。
