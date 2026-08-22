@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  buildCanvasOperationRunViews,
-  canvasOperationRunsFingerprint,
-} from './canvasOperationRuns'
+import { buildCanvasOperationRunViews, canvasOperationRunsFingerprint } from './canvasOperationRuns'
 import type { CanvasSnapshot } from './canvas.types'
 
 function snapshotFixture(): CanvasSnapshot {
@@ -162,6 +159,23 @@ describe('canvas operation run views', () => {
       type: 'image',
       url: 'https://example.com/two.png',
     })
+  })
+
+  it('groups asset-only runs by their stable operation node owner', () => {
+    const snapshot = snapshotFixture()
+    const operationNode = operationFixtureNode(snapshot)
+    snapshot.nodes = [operationNode]
+    snapshot.edges = []
+    snapshot.tasks = snapshot.tasks.map((task) => ({
+      ...task,
+      operationNodeId: operationNode.id,
+      outputNodeIds: [],
+    }))
+
+    const runs = buildCanvasOperationRunViews(operationNode, snapshot)
+
+    expect(runs.map((run) => run.taskId)).toEqual(['task-2', 'task-1'])
+    expect(runs.map((run) => run.outputs[0]?.assetId)).toEqual(['asset-two', 'asset-one'])
   })
 
   it('recovers generated outputs when failed-task cleanup removed the task row', () => {

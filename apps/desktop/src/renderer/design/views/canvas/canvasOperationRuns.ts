@@ -180,7 +180,7 @@ export function buildCanvasOperationRunViews(
 
   const persistedTaskIds = new Set<string>()
   const persistedRuns = snapshot.tasks
-    .filter((task) => taskIds.has(task.id))
+    .filter((task) => task.operationNodeId === operationNode.id || taskIds.has(task.id))
     .map((task): CanvasOperationRunView => {
       persistedTaskIds.add(task.id)
       const outputs = collectOutputs(task.id, task.outputNodeIds, task.outputAssetIds)
