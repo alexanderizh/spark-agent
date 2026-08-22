@@ -40,7 +40,6 @@ import {
   isProviderCompatibleWithAdapter,
 } from './utils/provider-adapter'
 import { resolveSessionGroupId, sortSessionsByPinned, toTime } from './sidebar-session-sort'
-import { isCanvasWorkspace } from './workspace-visibility'
 import { listAllWorkspaces } from './services/list-all-workspaces'
 import {
   addProjectsFromDroppedPaths,
@@ -259,9 +258,7 @@ export function buildProjectGroups(
   workspaces: WorkspaceInfo[],
   sessions: SessionSummary[],
 ): ProjectGroup[] {
-  const visible = workspaces.filter(
-    (w) => w.name !== NO_PROJECT_WORKSPACE_NAME && !w.archivedAt && !isCanvasWorkspace(w),
-  )
+  const visible = workspaces.filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME && !w.archivedAt)
   const byId = new Map(visible.map((w) => [w.id, w] as const))
   // 普通（基）项目构成分组；worktree workspace 不单独成组，其会话归并到 base 项目。
   const baseWorkspaces = visible.filter((w) => w.worktreeMeta == null)
@@ -312,6 +309,11 @@ export function buildProjectGroups(
     }
     return latestSessionAt(b) - latestSessionAt(a)
   })
+}
+
+/** 侧边栏筛选后只展示仍有命中会话的项目，避免渲染空项目分组。 */
+export function filterProjectGroupsWithSessions(groups: ProjectGroup[]): ProjectGroup[] {
+  return groups.filter((group) => group.sessions.length > 0)
 }
 
 type SessionSidebarCtx = {

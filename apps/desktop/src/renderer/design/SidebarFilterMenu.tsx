@@ -11,7 +11,6 @@ import './SidebarFilterMenu.less'
 import { Icons } from './Icons'
 import { useI18n } from './i18n'
 import type { WorkspaceInfo } from '@spark/protocol'
-import { isCanvasWorkspace } from './workspace-visibility'
 
 export type SidebarStatusFilter = 'active' | 'archived' | 'all'
 export type SidebarLastActivityFilter = 'today' | '1d' | '3d' | '7d' | '30d' | 'all'
@@ -203,7 +202,6 @@ function FilterPopupContent({
       { value: 'all', label: t('sidebar.filter.allProjects') },
     ]
     for (const w of workspaces) {
-      if (isCanvasWorkspace(w)) continue
       const last = w.rootPath?.split(/[/\\]/).filter(Boolean).slice(-1)[0] ?? ''
       const hint = last && last !== w.name ? last : undefined
       const item: { value: string; label: string; hint?: string } = { value: w.id, label: w.name }
@@ -216,7 +214,7 @@ function FilterPopupContent({
   const projectLabel = useMemo(() => {
     if (state.projectId === 'all') return t('sidebar.filter.all')
     const found = workspaces.find((w) => w.id === state.projectId)
-    return found != null && !isCanvasWorkspace(found) ? found.name : t('sidebar.filter.all')
+    return found != null ? found.name : t('sidebar.filter.all')
   }, [state.projectId, workspaces, t])
 
   const statusHighlight =

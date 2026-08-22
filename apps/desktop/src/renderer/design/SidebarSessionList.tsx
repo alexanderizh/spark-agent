@@ -43,6 +43,7 @@ import { requestSessionReferenceAdd } from './views/chat/session-reference-contr
 import {
   useSessionSidebar,
   buildProjectGroups,
+  filterProjectGroupsWithSessions,
   sortSessionsByPinned,
   type SessionSummary,
   type ProjectGroup,
@@ -76,7 +77,6 @@ import {
   composeProjectGroupSessions,
   getProjectGroupPinnedAt,
 } from './sidebar-session-sort'
-import { filterCanvasSessions, isCanvasWorkspace } from './workspace-visibility'
 import { SidebarProjectDropZone } from './components/SidebarProjectDropZone'
 import { useOptionalToast } from './components/Toast'
 import {
@@ -2067,15 +2067,6 @@ export function SidebarSessionList() {
     writeSidebarFilter(cleared)
   }, [])
 
-  // 升级前可能已把某个画布 workspace 存成项目筛选条件；标记加载后自动回到全部项目，
-  // 避免普通会话栏因一个已隐藏的筛选项而呈现空白。
-  useEffect(() => {
-    if (filter.projectId === 'all') return
-    const selected = ctx.workspaces.find((workspace) => workspace.id === filter.projectId)
-    if (selected == null || !isCanvasWorkspace(selected)) return
-    handleFilterChange({ ...filter, projectId: 'all' })
-  }, [ctx.workspaces, filter, handleFilterChange])
-
   // Notice
   const [notice, setNotice] = useState('')
 
@@ -2177,7 +2168,7 @@ export function SidebarSessionList() {
   // Apply status / project / lastActivity filters
   const filteredSessions = useMemo(() => {
     const source = searchVisible && searchQuery.trim() ? searchResultSessions : ctx.sessions
-    const visibleSource = filterCanvasSessions(source, ctx.workspaces)
+    const visibleSource = source
     // 与后端 SQL 对齐：置顶在前、未置顶按 updatedAt 倒序。
     // 乐观更新 pinnedAt 后由这里即时重排，覆盖 date/state/none 分组及 noProject/ungrouped。
     return sortSessionsByPinned(
@@ -2192,12 +2183,6 @@ export function SidebarSessionList() {
     searchResultSessions,
     searchVisible,
   ])
-
-  // 状态 / 最近活动 / 计划任务 / 项目 这些筛选项只用于「筛选会话」，
-  // 项目分组头必须始终保留 —— 否则一旦某项目下没有命中筛选的会话，
-  // 整个项目就会从侧栏消失，用户无法再点选切换项目。
-  // 仅在「搜索会话」时隐藏没有匹配会话的空项目分组（搜索是针对会话的模糊匹配）。
-  const hideEmptyProjectGroups = searchVisible && searchQuery.trim().length > 0
 
   // Build display groups based on groupBy mode
   const displayGroups = useMemo<DisplayGroup[]>(() => {
@@ -2217,11 +2202,9 @@ export function SidebarSessionList() {
       ctx.workspaces.some((w) => w.id === selectedBaseWorkspaceId)
         ? selectedBaseWorkspaceId
         : filter.projectId
-    const projectGroups = buildProjectGroups(ctx.workspaces, filteredSessions).filter(
-      (group) =>
-        (!hideEmptyProjectGroups || group.sessions.length > 0) &&
-        (filter.projectId === 'all' || group.workspace.id === selectedProjectGroupId),
-    )
+    const projectGroups = filterProjectGroupsWithSessions(
+      buildProjectGroups(ctx.workspaces, filteredSessions),
+    ).filter((group) => filter.projectId === 'all' || group.workspace.id === selectedProjectGroupId)
     const noProjectWorkspace = ctx.noProjectWorkspace
     const noProject = noProjectWorkspace
       ? filteredSessions.filter((s) => s.workspaceIds.includes(noProjectWorkspace.id))
@@ -2238,7 +2221,7 @@ export function SidebarSessionList() {
       workspace: g.workspace,
     }))
     const noProjectGroup: DisplayGroup | null =
-      noProjectWorkspace != null && (!hideEmptyProjectGroups || noProject.length > 0)
+      noProjectWorkspace != null && noProject.length > 0
         ? {
             id: 'project:no-project',
             label: 'sidebar.noProjectChats',
@@ -2276,7 +2259,6 @@ export function SidebarSessionList() {
     ctx.noProjectWorkspace,
     ctx.sidebarOrder,
     ctx.sessionAgentStatuses,
-    hideEmptyProjectGroups,
   ])
 
   const noProjectWorkspace = ctx.noProjectWorkspace
