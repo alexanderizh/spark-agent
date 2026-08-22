@@ -121,6 +121,7 @@ import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
 import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
 import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
 import { ChatTurnNavigator } from './chat/ChatTurnNavigator'
+import { SessionSwitchingOverlay } from './chat/SessionSwitchingOverlay'
 import { buildChatTurnNavItems, type ChatTurnNavItem } from './chat/chat-turn-navigation'
 import { SessionForkDialog } from './chat/SessionForkDialog'
 import { MessageHoverBar } from './chat/MessageHoverBar'
@@ -4907,9 +4908,9 @@ function ChatStream({
         </div>
       </div>
       {isLoadingHistory && messages.length > 0 && (
-        <div className="chat-switching-overlay" aria-hidden="true">
-          <Icons.Spinner size={22} />
-        </div>
+        <SessionSwitchingOverlay
+          host={streamRef.current?.closest<HTMLElement>('.chat-main, .side-chat-panel') ?? null}
+        />
       )}
       {showScrollToBottom && (
         <button
