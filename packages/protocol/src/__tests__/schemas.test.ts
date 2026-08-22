@@ -940,4 +940,20 @@ describe('IPC schemas', () => {
       IpcSchemaRegistry['html:open-external'].parse({ html: 'x'.repeat(200_001) }),
     ).toThrow()
   })
+
+  it('validates sub-app download history payloads', () => {
+    expect(
+      IpcSchemaRegistry['browser:sub-app-reveal-download'].parse({
+        filePath: '/Users/test/Downloads/video.mp4',
+      }),
+    ).toEqual({ filePath: '/Users/test/Downloads/video.mp4' })
+    expect(
+      IpcSchemaRegistry['browser:sub-app-preview-download'].parse({
+        filePath: '/Users/test/Downloads/video.mp4',
+      }),
+    ).toEqual({ filePath: '/Users/test/Downloads/video.mp4' })
+    expect(() =>
+      IpcSchemaRegistry['browser:sub-app-preview-download'].parse({ filePath: '' }),
+    ).toThrow()
+  })
 })

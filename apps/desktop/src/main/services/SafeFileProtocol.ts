@@ -105,8 +105,8 @@ export function getSafeFileAllowedRoots(): string[] {
  */
 function getWorkspaceRoots(): string[] {
   try {
-    const rows = getDatabase().raw
-      .prepare('SELECT root_path FROM workspaces WHERE archived_at IS NULL')
+    const rows = getDatabase()
+      .raw.prepare('SELECT root_path FROM workspaces WHERE archived_at IS NULL')
       .all() as Array<{ root_path?: unknown }>
     return rows
       .map((row) => (typeof row.root_path === 'string' ? row.root_path : ''))
@@ -122,13 +122,19 @@ function getWorkspaceRoots(): string[] {
 function getCanvasProjectRoots(): string[] {
   const roots: string[] = []
   try {
-    const settingsRows = getDatabase().raw
-      .prepare(`SELECT value FROM app_settings WHERE category = 'canvas' AND key = 'data'`)
+    const settingsRows = getDatabase()
+      .raw.prepare(`SELECT value FROM app_settings WHERE category = 'canvas' AND key = 'data'`)
       .all() as Array<{ value?: unknown }>
     for (const row of settingsRows) {
       try {
-        const parsed = typeof row.value === 'string' ? JSON.parse(row.value) as { projectsRootPath?: unknown } : null
-        if (typeof parsed?.projectsRootPath === 'string' && parsed.projectsRootPath.trim().length > 0) {
+        const parsed =
+          typeof row.value === 'string'
+            ? (JSON.parse(row.value) as { projectsRootPath?: unknown })
+            : null
+        if (
+          typeof parsed?.projectsRootPath === 'string' &&
+          parsed.projectsRootPath.trim().length > 0
+        ) {
           roots.push(resolvePath(parsed.projectsRootPath))
         }
       } catch {
@@ -139,8 +145,10 @@ function getCanvasProjectRoots(): string[] {
     // app_settings may not exist during early startup/migration.
   }
   try {
-    const rows = getDatabase().raw
-      .prepare('SELECT root_path FROM canvas_projects WHERE root_path IS NOT NULL AND status != ?')
+    const rows = getDatabase()
+      .raw.prepare(
+        'SELECT root_path FROM canvas_projects WHERE root_path IS NOT NULL AND status != ?',
+      )
       .all('deleted') as Array<{ root_path?: unknown }>
     roots.push(
       ...rows
@@ -188,12 +196,28 @@ export function toSafeFileUrl(absolutePath: string): string {
   return `${SAFE_FILE_SCHEME}://x/${encoded}`
 }
 
+/** 允许通过 safe-file:// 预览的系统 Downloads 媒体扩展名（视频/音频）。 */
+const DOWNLOADS_PREVIEW_MEDIA_EXTS = new Set([
+  '.mp4',
+  '.m4v',
+  '.mov',
+  '.webm',
+  '.mp3',
+  '.m4a',
+  '.wav',
+  '.aac',
+  '.flac',
+  '.ogg',
+  '.opus',
+])
+
 /**
  * 检查一个绝对路径是否落在白名单根目录下。
  * 防止渲染进程通过协议读取 /etc/passwd、~/.ssh 等敏感文件。
  */
 export function isSafeFilePathAllowed(absolutePath: string): boolean {
   const resolved = resolvePath(absolutePath)
+  if (isDownloadsPreviewMediaPath(resolved)) return true
   const allowedRoots = getSafeFileAllowedRoots()
   for (const root of allowedRoots) {
     if (!isSamePathOrChild(resolved, root)) continue
@@ -205,6 +229,23 @@ export function isSafeFilePathAllowed(absolutePath: string): boolean {
     if (isSamePathOrChild(canonicalTarget, canonicalRoot)) return true
   }
   return false
+}
+
+/**
+ * Downloads 目录内的媒体文件放行规则：仅供子应用“下载历史站内预览”使用。
+ * 只放行音视频扩展名，且限制在系统 Downloads 根目录内，不扩大到其他用户目录。
+ */
+export function isDownloadsPreviewMediaPath(resolvedPath: string): boolean {
+  try {
+    const downloadsRoot = resolvePath(app.getPath('downloads'))
+    if (!isSamePathOrChild(resolvedPath, downloadsRoot)) return false
+    if (!DOWNLOADS_PREVIEW_MEDIA_EXTS.has(extname(resolvedPath).toLowerCase())) return false
+    // 经符号链接逃逸出 Downloads 的路径仍拒绝。
+    if (!existsSync(resolvedPath)) return false
+    return isSamePathOrChild(canonicalPath(resolvedPath), canonicalPath(downloadsRoot))
+  } catch {
+    return false
+  }
 }
 
 function canonicalPath(filePath: string): string {
@@ -335,9 +376,12 @@ export function createSafeFileResponse(absolutePath: string, request: Request): 
   }
   if (range) headers['content-range'] = `bytes ${start}-${end}/${size}`
 
-  const body = request.method === 'HEAD'
-    ? null
-    : Readable.toWeb(createReadStream(absolutePath, { start, end })) as unknown as ConstructorParameters<typeof Response>[0]
+  const body =
+    request.method === 'HEAD'
+      ? null
+      : (Readable.toWeb(
+          createReadStream(absolutePath, { start, end }),
+        ) as unknown as ConstructorParameters<typeof Response>[0])
 
   return new Response(body, {
     status: range ? 206 : 200,

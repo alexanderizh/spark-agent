@@ -78,7 +78,7 @@ body.sidebar-resizing {
 .chat-list {
   flex: 1;
   overflow: auto;
-  padding: 2px 3px 6px 6px;
+  padding: 2px 3px 6px 0px;
 }
 
 /* 滚动条样式交由全局规则统一处理（styles.css 顶部的 `::-webkit-scrollbar*` 经典路径：

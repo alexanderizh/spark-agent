@@ -1820,6 +1820,12 @@ export const IpcSchemaRegistry = {
     filePath: z.string().min(1).max(4000),
   }),
   'browser:sub-app-open-download-folder': z.object({}),
+  'browser:sub-app-reveal-download': z.object({
+    filePath: z.string().min(1).max(4000),
+  }),
+  'browser:sub-app-preview-download': z.object({
+    filePath: z.string().min(1).max(4000),
+  }),
   'html:open-external': z.object({
     html: z.string().min(1).max(200_000),
     title: z.string().max(60).optional(),

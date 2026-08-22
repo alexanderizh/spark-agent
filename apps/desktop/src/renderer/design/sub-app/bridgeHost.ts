@@ -8,6 +8,10 @@ import type {
   BrowserSubAppOpenDownloadRequest,
   BrowserSubAppOpenDownloadResponse,
   BrowserSubAppOpenDownloadFolderResponse,
+  BrowserSubAppPreviewDownloadRequest,
+  BrowserSubAppPreviewDownloadResponse,
+  BrowserSubAppRevealDownloadRequest,
+  BrowserSubAppRevealDownloadResponse,
   BrowserSubAppOpenRequest,
   BrowserSubAppOpenResponse,
   SparkAppBridgeInboundMessage,
@@ -79,6 +83,8 @@ export type SubAppBrowserChannel =
   | 'browser:sub-app-close'
   | 'browser:sub-app-open-download'
   | 'browser:sub-app-open-download-folder'
+  | 'browser:sub-app-reveal-download'
+  | 'browser:sub-app-preview-download'
 
 type SubAppBrowserChannelRequestMap = {
   'browser:sub-app-open': BrowserSubAppOpenRequest
@@ -87,6 +93,8 @@ type SubAppBrowserChannelRequestMap = {
   'browser:sub-app-close': BrowserSubAppCloseRequest
   'browser:sub-app-open-download': BrowserSubAppOpenDownloadRequest
   'browser:sub-app-open-download-folder': Record<string, never>
+  'browser:sub-app-reveal-download': BrowserSubAppRevealDownloadRequest
+  'browser:sub-app-preview-download': BrowserSubAppPreviewDownloadRequest
 }
 
 export type SubAppBridgeChannel = SubAppDataChannel | SubAppBrowserChannel
@@ -179,6 +187,12 @@ export interface SubAppBridgeHostOptions {
   ) => Promise<BrowserSubAppOpenDownloadResponse>
   /** browser 域：打开系统 Downloads 目录。 */
   openDownloadFolder?: () => Promise<BrowserSubAppOpenDownloadFolderResponse>
+  revealDownloadFile?: (
+    request: BrowserSubAppRevealDownloadRequest,
+  ) => Promise<BrowserSubAppRevealDownloadResponse>
+  previewDownloadFile?: (
+    request: BrowserSubAppPreviewDownloadRequest,
+  ) => Promise<BrowserSubAppPreviewDownloadResponse>
 }
 
 export interface SubAppBridgeAuditEntry {
@@ -611,6 +625,16 @@ export class SubAppBridgeHost {
         const openDownloadFolder = this.options.openDownloadFolder
         if (openDownloadFolder == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
         return openDownloadFolder()
+      }
+      if (request.operation === 'revealDownload') {
+        const revealDownloadFile = this.options.revealDownloadFile
+        if (revealDownloadFile == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        return revealDownloadFile({ filePath: readString(payload.filePath, 'filePath') })
+      }
+      if (request.operation === 'previewDownload') {
+        const previewDownloadFile = this.options.previewDownloadFile
+        if (previewDownloadFile == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        return previewDownloadFile({ filePath: readString(payload.filePath, 'filePath') })
       }
       throw new BridgeRouteError('UNSUPPORTED_OPERATION')
     }

@@ -760,6 +760,8 @@ describe('SubAppBridgeHost files / agent / media / canvas / browser 域', () => 
     const closeBrowser = vi.fn().mockResolvedValue({ ok: true })
     const openDownloadFile = vi.fn().mockResolvedValue({ opened: true })
     const openDownloadFolder = vi.fn().mockResolvedValue({ opened: true })
+    const revealDownloadFile = vi.fn().mockResolvedValue({ revealed: true })
+    const previewDownloadFile = vi.fn().mockResolvedValue({ url: 'safe-file://x/preview' })
     const local = createHarness(['browser'], {
       openBrowser,
       inspectBrowserMedia,
@@ -767,6 +769,8 @@ describe('SubAppBridgeHost files / agent / media / canvas / browser 域', () => 
       closeBrowser,
       openDownloadFile,
       openDownloadFolder,
+      revealDownloadFile,
+      previewDownloadFile,
     })
     try {
       local.send(
@@ -858,6 +862,36 @@ describe('SubAppBridgeHost files / agent / media / canvas / browser 域', () => 
       )
       await local.flush()
       expect(openDownloadFolder).toHaveBeenCalledOnce()
+
+      local.send(
+        requestMessage({
+          requestId: 'reveal-1',
+          capability: 'browser',
+          operation: 'revealDownload',
+          payload: { filePath: '/Users/test/Downloads/video.mp4' },
+        }),
+      )
+      await local.flush()
+      expect(revealDownloadFile).toHaveBeenCalledWith({
+        filePath: '/Users/test/Downloads/video.mp4',
+      })
+      expect(outboundAt(local.frame, 6).response?.data).toMatchObject({ revealed: true })
+
+      local.send(
+        requestMessage({
+          requestId: 'preview-1',
+          capability: 'browser',
+          operation: 'previewDownload',
+          payload: { filePath: '/Users/test/Downloads/video.mp4' },
+        }),
+      )
+      await local.flush()
+      expect(previewDownloadFile).toHaveBeenCalledWith({
+        filePath: '/Users/test/Downloads/video.mp4',
+      })
+      expect(outboundAt(local.frame, 7).response?.data).toMatchObject({
+        url: 'safe-file://x/preview',
+      })
     } finally {
       local.host.detach(window)
     }

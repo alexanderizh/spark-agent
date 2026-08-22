@@ -9,6 +9,7 @@ const electronMocks = vi.hoisted(() => ({
   paths: {
     userData: 'C:/Users/Test/AppData/Roaming/SparkAgent',
     temp: 'C:/Users/Test/AppData/Local/Temp',
+    downloads: 'C:/Users/Test/Downloads',
   },
 }))
 
@@ -17,6 +18,7 @@ vi.mock('electron', () => ({
     getPath: (name: string) => {
       if (name === 'userData') return electronMocks.paths.userData
       if (name === 'temp') return electronMocks.paths.temp
+      if (name === 'downloads') return electronMocks.paths.downloads
       return ''
     },
   },
@@ -79,24 +81,29 @@ describe('SafeFileProtocol', () => {
     expect(isSafeFilePathAllowed(outsideFile)).toBe(false)
   })
 
-  it.runIf(process.platform !== 'win32')('rejects an existing file that escapes an allowed root through a symlink', () => {
-    const allowedRoot = mkdtempSync(join(tmpdir(), 'safe-file-root-'))
-    const outsideRoot = mkdtempSync(join(tmpdir(), 'safe-file-outside-'))
-    const outsideFile = join(outsideRoot, 'secret.txt')
-    mkdirSync(join(allowedRoot, 'links'))
-    writeFileSync(outsideFile, 'secret')
-    symlinkSync(outsideRoot, join(allowedRoot, 'links', 'outside'), 'dir')
-    const previousTemp = electronMocks.paths.temp
-    electronMocks.paths.temp = allowedRoot
+  it.runIf(process.platform !== 'win32')(
+    'rejects an existing file that escapes an allowed root through a symlink',
+    () => {
+      const allowedRoot = mkdtempSync(join(tmpdir(), 'safe-file-root-'))
+      const outsideRoot = mkdtempSync(join(tmpdir(), 'safe-file-outside-'))
+      const outsideFile = join(outsideRoot, 'secret.txt')
+      mkdirSync(join(allowedRoot, 'links'))
+      writeFileSync(outsideFile, 'secret')
+      symlinkSync(outsideRoot, join(allowedRoot, 'links', 'outside'), 'dir')
+      const previousTemp = electronMocks.paths.temp
+      electronMocks.paths.temp = allowedRoot
 
-    try {
-      expect(isSafeFilePathAllowed(join(allowedRoot, 'links', 'outside', 'secret.txt'))).toBe(false)
-    } finally {
-      electronMocks.paths.temp = previousTemp
-      rmSync(allowedRoot, { recursive: true, force: true })
-      rmSync(outsideRoot, { recursive: true, force: true })
-    }
-  })
+      try {
+        expect(isSafeFilePathAllowed(join(allowedRoot, 'links', 'outside', 'secret.txt'))).toBe(
+          false,
+        )
+      } finally {
+        electronMocks.paths.temp = previousTemp
+        rmSync(allowedRoot, { recursive: true, force: true })
+        rmSync(outsideRoot, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('exposes workspace roots in the allowlist', () => {
     expect(getSafeFileAllowedRoots()).toContain(resolve(workspaceRoot))
@@ -138,12 +145,41 @@ describe('SafeFileProtocol', () => {
         ),
       ).toBe('text/javascript; charset=utf-8')
       expect(
-        createSafeFileResponse(wasm, new Request('safe-file://x/wasm')).headers.get(
-          'content-type',
-        ),
+        createSafeFileResponse(wasm, new Request('safe-file://x/wasm')).headers.get('content-type'),
       ).toBe('application/wasm')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  describe('downloads media preview allowlist', () => {
+    let downloads: string
+    let videoPath: string
+    let textPath: string
+
+    beforeAll(() => {
+      downloads = mkdtempSync(join(tmpdir(), 'safe-file-dl-'))
+      electronMocks.paths.downloads = downloads
+      writeFileSync(join(downloads, 'dl-preview-test.mp4'), 'x')
+      writeFileSync(join(downloads, 'dl-preview-test.txt'), 'x')
+      videoPath = join(downloads, 'dl-preview-test.mp4')
+      textPath = join(downloads, 'dl-preview-test.txt')
+    })
+
+    afterAll(() => {
+      rmSync(downloads, { recursive: true, force: true })
+    })
+
+    it('allows media files directly inside Downloads for sub-app preview', () => {
+      expect(isSafeFilePathAllowed(videoPath)).toBe(true)
+    })
+
+    it('rejects non-media files in Downloads', () => {
+      expect(isSafeFilePathAllowed(textPath)).toBe(false)
+    })
+
+    it('rejects paths that merely prefix-match the Downloads root', () => {
+      expect(isSafeFilePathAllowed(join(downloads, '..', 'Downloads-secrets.mp4'))).toBe(false)
+    })
   })
 })

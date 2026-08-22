@@ -26,6 +26,8 @@ sparkApp.browser.*
 - `browser:sub-app-close`
 - `browser:sub-app-open-download`
 - `browser:sub-app-open-download-folder`
+- `browser:sub-app-reveal-download`
+- `browser:sub-app-preview-download`
 
 ## 子应用 API
 
@@ -57,6 +59,8 @@ if (candidate) {
 `backend` 可取 `system`、`internal` 或 `auto`。`system`/`auto` 使用 Playwright 启动本机 Chrome/Edge 的独立可见窗口，配置目录位于 SparkWork 用户数据目录下的 `browser-profiles/<profileId>`，用于长期保留登录态但不接管用户日常浏览器 profile；`auto` 或默认模式在系统浏览器缺失/启动失败时回退内置浏览器。系统浏览器下载使用同一浏览器上下文的 cookies、Referer 与 User-Agent 请求保存到系统 Downloads 目录。
 
 `close` 用于任务成功后关闭独立浏览器窗口。`openDownload` 只允许打开系统 Downloads 目录下的文件，`openDownloadFolder` 只打开系统 Downloads 目录；两者均由主进程做路径边界校验，子应用不能打开任意本地路径。验证、登录或播放期间应用可以保留窗口，供用户手动介入。
+
+`revealDownload` 用于在系统文件管理器中定位 Downloads 目录下的文件。`previewDownload` 仅为 Downloads 目录内的视频/音频文件生成受控的 `safe-file://` 地址，应用可将返回的 `url` 赋给 `<video>` 或 `<audio>` 的 `src`，不支持的文件类型应回退到 `openDownload`。这两个能力同样由主进程校验路径，且 safe-file 协议会再次校验文件扩展名、存在性和符号链接边界。
 
 ## 边界
 

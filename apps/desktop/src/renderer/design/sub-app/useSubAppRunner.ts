@@ -392,6 +392,10 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
         window.spark.invoke('browser:sub-app-open-download', request),
       openDownloadFolder: async () =>
         window.spark.invoke('browser:sub-app-open-download-folder', {}),
+      revealDownloadFile: async (request) =>
+        window.spark.invoke('browser:sub-app-reveal-download', request),
+      previewDownloadFile: async (request) =>
+        window.spark.invoke('browser:sub-app-preview-download', request),
     })
     hostRef.current = host
     host.attach()

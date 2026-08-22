@@ -42,6 +42,8 @@ describe('buildAppRuntimeDocument', () => {
     expect(doc).toContain('download: function')
     expect(doc).toContain('openDownload: function')
     expect(doc).toContain('openDownloadFolder: function')
+    expect(doc).toContain('revealDownload: function')
+    expect(doc).toContain('previewDownload: function')
     expect(doc).toContain('payload.backend = options.backend')
     expect(doc).toContain('expectedRevision: expectedRevision')
     expect(doc).toContain('sparkApp.ipc')

@@ -49,8 +49,8 @@ function buildSubAppRuntimeCsp(security: Required<SubAppRuntimeSecurityOptions>)
     "default-src 'none'",
     `script-src ${scriptSrc}`,
     "style-src 'unsafe-inline' https: http:",
-    'img-src data: blob: https: http:',
-    'media-src data: blob: https: http:',
+    'img-src data: blob: https: http: safe-file:',
+    'media-src data: blob: https: http: safe-file:',
     'font-src data: https: http:',
     `connect-src ${connectSrc}`,
     'worker-src blob:',
@@ -426,6 +426,12 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
       },
       openDownloadFolder: function () {
         return call('browser', 'openDownloadFolder', {})
+      },
+      revealDownload: function (filePath) {
+        return call('browser', 'revealDownload', { filePath: filePath })
+      },
+      previewDownload: function (filePath) {
+        return call('browser', 'previewDownload', { filePath: filePath })
       },
     },
     // 平台核心子应用的原始 IPC/stream 面：不受 manifest permissions 裁剪。

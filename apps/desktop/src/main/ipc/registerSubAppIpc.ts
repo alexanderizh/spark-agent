@@ -6,6 +6,7 @@ import { getDatabase } from '../db.js'
 import { getMainWindow, sendToMainWindow } from '../windows/index.js'
 import { typedIpcHandle } from './typed-ipc.js'
 import { SubAppBackend } from './subAppBackend.js'
+import { registerSubAppBrowserDownloadIpc } from './registerSubAppBrowserDownloadIpc.js'
 
 export interface RegisterSubAppIpcOptions {
   backend?: SubAppBackend
@@ -13,6 +14,7 @@ export interface RegisterSubAppIpcOptions {
 }
 
 export function registerSubAppIpc(options: RegisterSubAppIpcOptions = {}): void {
+  registerSubAppBrowserDownloadIpc()
   const backend =
     options.backend ??
     new SubAppBackend(getDatabase(), path.join(app.getPath('userData'), 'sub-app-files'))

@@ -4212,6 +4212,25 @@ export interface BrowserSubAppOpenDownloadFolderResponse {
   error?: string
 }
 
+export interface BrowserSubAppRevealDownloadRequest {
+  filePath: string
+}
+
+export interface BrowserSubAppRevealDownloadResponse {
+  revealed: boolean
+  error?: string
+}
+
+export interface BrowserSubAppPreviewDownloadRequest {
+  filePath: string
+}
+
+export interface BrowserSubAppPreviewDownloadResponse {
+  /** 可直接用于 <video>/<audio> src 的 safe-file:// URL；失败时缺省。 */
+  url?: string
+  error?: string
+}
+
 export interface HtmlViewerOpenRequest {
   html: string
   title?: string
@@ -6415,6 +6434,14 @@ export interface IpcChannelMap
   'browser:sub-app-open-download-folder': [
     Record<string, never>,
     BrowserSubAppOpenDownloadFolderResponse,
+  ]
+  'browser:sub-app-reveal-download': [
+    BrowserSubAppRevealDownloadRequest,
+    BrowserSubAppRevealDownloadResponse,
+  ]
+  'browser:sub-app-preview-download': [
+    BrowserSubAppPreviewDownloadRequest,
+    BrowserSubAppPreviewDownloadResponse,
   ]
   'html:open-window': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
   'html:open-external': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
