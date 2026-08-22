@@ -189,17 +189,28 @@ const SURFACE_DESCRIPTION =
   '展示面：content=普通内容区 iframe（默认），panel=侧边面板，overlay=悬浮层，global-window=独立窗口，desktop-pet=桌面宠物'
 
 const PERMISSIONS_DESCRIPTION =
-  '权限声明列表（能力名，如 runtime/theme/ui/data/clipboard/notifications），应用运行时按声明获得对应宿主能力'
+  '兼容旧版本的 manifest 字段（能力名，如 runtime/theme/ui/data/browser）；当前 SparkWork 子应用按平台核心内部应用运行，宿主不会用它裁剪平台 IPC、MCP、Plugin、Skill、Provider 或模型能力'
 
 const THEME_INTEGRATION_GUIDE =
   '界面必须适配 SparkWork 宿主主题：使用 sparkApp.theme.get()/onChange 或 --spark-* CSS 变量（如 --spark-color-bg-container、--spark-color-text、--spark-color-primary），不要把深浅色背景和文字颜色硬编码为固定值。除非用户明确要求独立背景或特殊视觉效果，默认不要给应用根容器、页面或主布局设置 background/background-color/background-image，让 SparkWork 主应用自带的背景自然透出；确需自定义背景时也必须使用宿主主题 token。例外：surface=overlay 的悬浮窗应用，其悬浮弹窗容器背景是透明的，必须给应用根容器（弹窗容器本体）显式设置宿主主题背景色（如 background: var(--spark-color-bg-container)），否则界面会呈透明悬浮、文字与背后内容叠透。运行时会自动把宿主 token 同步为这些 CSS 变量。'
 
 const DATA_PERSISTENCE_GUIDE = [
   '数据持久化契约：凡是用户创建、编辑、删除后还应在重新打开或重启 SparkWork 后保留的数据，必须使用 sparkApp.data.get/list/upsert/delete 写入应用专属持久化库。',
-  '源码调用 sparkApp.data 时必须让 permissions 包含 data；未传 permissions 的新应用默认拥有自身隔离的 data 能力，显式传 [] 仍会拒绝。',
+  'sparkApp.data 仍然是应用专属隔离数据的便捷 API；也可以按需通过 sparkApp.ipc 调用平台的其他数据与文件 IPC。',
   '推荐更新模式：先 await sparkApp.data.get("app", "todos")，再把返回的 revision 传给 sparkApp.data.upsert("app", "todos", value, revision)；首次创建键时不传 revision。',
   '删除必须先读取当前 revision，再调用 sparkApp.data.delete(namespace, key, revision)。',
   '不要把 localStorage、sessionStorage、IndexedDB、内存数组或 URL 参数作为唯一数据源；它们不能替代 SparkWork 应用数据持久化。',
+].join(' ')
+
+const BROWSER_INTEGRATION_GUIDE = [
+  '浏览器能力：源码使用 sparkApp.browser.open/openUrl/inspectMedia/download 时，直接调用即可，无需在 manifest permissions 中逐项声明。open(url, options) 打开或复用 SparkWork 内置浏览器并返回 windowId；inspectMedia(windowId) 读取当前页面 video/source 节点与已记录的媒体请求；download(windowId, url, filename) 只能下载 inspectMedia 返回的 http(s) 媒体地址，并沿用该浏览器页面的登录会话。媒体下载推荐按 open → 等待页面加载 → inspectMedia → 选择候选 → download 顺序调用；更底层的浏览器能力可按现有 IPC channel 通过 sparkApp.ipc.invoke/on 直接组合。',
+].join(' ')
+
+const PLATFORM_IPC_GUIDE = [
+  '子应用是 SparkWork 的一等平台应用，可以直接使用完整原始 IPC 面：sparkApp.ipc.invoke(channel, request) 调用任意已注册 IPC，sparkApp.ipc.on(streamChannel, listener) 订阅任意 stream。',
+  '开发 AI 应用时可并行调用 provider:list、provider:get-api-key、provider:export、model:list、agent:list/get、skill:list/detail/execute、mcp:list/server-tools、plugin 与 plugin-runtime channel，自行选择 Provider/Model 并组合 Agent、Skill、Plugin、MCP。',
+  '会话示例：先调用 session:create({ providerProfileId, modelId, agentId })，再订阅 stream:session:agent-event，最后调用 session:submit-turn({ sessionId, message, providerProfileId, modelId, agentId, skillIds })；事件 payload 自带 sessionId，应用自行过滤和渲染。',
+  '凭据和原始 Provider 配置是平台内部应用可读取的能力，provider:get-api-key 的请求字段是 id；不要把密钥写入日志、源码或持久化应用数据。',
 ].join(' ')
 
 const DESIGN_PREVIEW_WORKFLOW_GUIDE = [
@@ -227,6 +238,8 @@ function toolDefinitions() {
         DESIGN_PREVIEW_WORKFLOW_GUIDE,
         THEME_INTEGRATION_GUIDE,
         DATA_PERSISTENCE_GUIDE,
+        BROWSER_INTEGRATION_GUIDE,
+        PLATFORM_IPC_GUIDE,
         LIBRARY_DEV_GUIDE,
         '源码较长时先写入工作区 HTML 文件并传 draftFilePath，避免把完整源码作为工具参数反复带入上下文。draftHtml 与 draftFilePath 二选一。',
         '返回紧凑详情，其中的 draft.revision 是后续修改草稿要用的 CAS 基线。',
@@ -251,7 +264,7 @@ function toolDefinitions() {
             items: { type: 'string', maxLength: 80 },
             maxItems: 64,
             default: ['data'],
-            description: `${PERMISSIONS_DESCRIPTION} 未传时默认包含 data；显式传 [] 才表示不授予 data。`,
+            description: `${PERMISSIONS_DESCRIPTION}；不传时默认仍写入兼容性的 data 值。`,
           },
           surface: {
             type: 'string',
@@ -333,6 +346,8 @@ function toolDefinitions() {
         '涉及界面大改版时同样遵循设计先行：先出界面设计预览给用户确认，再写入完整实现。',
         THEME_INTEGRATION_GUIDE,
         DATA_PERSISTENCE_GUIDE,
+        BROWSER_INTEGRATION_GUIDE,
+        PLATFORM_IPC_GUIDE,
         LIBRARY_DEV_GUIDE,
         'CAS 语义：必须传 spark_app_get 拿到的当前 expectedRevision；若期间草稿已被其他操作更新会返回冲突（SUBAPP_CONFLICT），此时应重新 get 拿新 revision 再重试，不要盲目覆盖。',
         '源码是整篇替换语义；长源码优先传工作区 draftFilePath，避免完整 HTML 常驻工具调用历史。draftHtml 与 draftFilePath 二选一。成功后 revision +1。',
@@ -361,7 +376,7 @@ function toolDefinitions() {
             type: 'array',
             items: { type: 'string', maxLength: 80 },
             maxItems: 64,
-            description: `${PERMISSIONS_DESCRIPTION} 若源码使用 sparkApp.data，必须包含 data。`,
+            description: `${PERMISSIONS_DESCRIPTION}；数据 API 可直接使用，完整平台能力请通过 sparkApp.ipc 调用。`,
           },
           surface: {
             type: 'string',

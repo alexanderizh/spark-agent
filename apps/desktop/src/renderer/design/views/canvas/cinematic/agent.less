@@ -11,7 +11,7 @@
     width: auto;
     height: 100%;
     border: 0;
-    border-left: 1px solid var(--canvas-cinema-border);
+    border-left: 0px solid var(--canvas-cinema-border);
     border-radius: 0;
     background: var(--canvas-cinema-surface-1);
     box-shadow: -18px 0 40px rgba(0, 0, 0, 0.16);
@@ -47,20 +47,6 @@
     position: relative;
     flex-direction: row;
     gap: 8px;
-  }
-
-  .canvas-agent-head-composer::before {
-    display: grid;
-    width: 28px;
-    height: 28px;
-    flex: 0 0 auto;
-    place-items: center;
-    border: 1px solid rgba(119, 108, 246, 0.3);
-    border-radius: 9px;
-    background: linear-gradient(145deg, rgba(119, 108, 246, 0.25), rgba(46, 41, 99, 0.16));
-    color: #b9b4ff;
-    content: '✦';
-    font-size: 13px;
   }
 
   .canvas-agent-head-composer .composer-select {

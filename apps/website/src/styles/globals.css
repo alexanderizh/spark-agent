@@ -1077,10 +1077,10 @@ h3 {
 }
 
 /* ---------- focus ---------- */
-:focus-visible {
+/* :focus-visible {
   outline: 3px solid var(--primary);
   outline-offset: 3px;
-}
+} */
 
 /* ---------- 响应式断点（mobile-first） ---------- */
 @media (min-width: 640px) {

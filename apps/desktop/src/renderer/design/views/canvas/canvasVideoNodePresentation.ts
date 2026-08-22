@@ -1,4 +1,5 @@
 import type { CanvasNode } from './canvas.types'
+import { CANVAS_NODE_META_BAR_HEIGHT } from './canvasNodeSize'
 
 export type CanvasVideoSourceDimensions = {
   width?: number | null
@@ -56,6 +57,6 @@ export function resolveCanvasVideoNodePresentationSize(
   if (!width || !height) return { width: node.width, height: node.height }
   return {
     width: node.width,
-    height: Math.max(1, Math.round((node.width * height) / width)),
+    height: Math.max(1, Math.round((node.width * height) / width)) + CANVAS_NODE_META_BAR_HEIGHT,
   }
 }

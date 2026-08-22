@@ -32,7 +32,7 @@ describe('canvas video node presentation', () => {
   it('repairs an old portrait node using intrinsic dimensions while preserving its width', () => {
     expect(
       resolveCanvasVideoNodePresentationSize(videoNode(), { width: 1080, height: 1920 }),
-    ).toEqual({ width: 500, height: 889 })
+    ).toEqual({ width: 500, height: 927 })
   })
 
   it('falls back to dimensions backfilled into node data', () => {
@@ -40,7 +40,7 @@ describe('canvas video node presentation', () => {
       resolveCanvasVideoNodePresentationSize(
         videoNode({ data: { url: 'safe-file://clip.mp4', mediaWidth: 1920, mediaHeight: 1080 } }),
       ),
-    ).toEqual({ width: 500, height: 281 })
+    ).toEqual({ width: 500, height: 319 })
   })
 
   it('prefers browser-backfilled intrinsic dimensions over stale asset metadata', () => {
@@ -51,7 +51,7 @@ describe('canvas video node presentation', () => {
         }),
         { width: 1920, height: 1080 },
       ),
-    ).toEqual({ width: 500, height: 889 })
+    ).toEqual({ width: 500, height: 927 })
   })
 
   it('does not combine a partial node backfill with an unrelated asset dimension', () => {
@@ -60,7 +60,7 @@ describe('canvas video node presentation', () => {
         videoNode({ data: { url: 'safe-file://clip.mp4', mediaWidth: 1080 } }),
         { width: 1920, height: 1080 },
       ),
-    ).toEqual({ width: 500, height: 281 })
+    ).toEqual({ width: 500, height: 319 })
   })
 
   it('reads ratio and dimension model parameters through known aliases', () => {

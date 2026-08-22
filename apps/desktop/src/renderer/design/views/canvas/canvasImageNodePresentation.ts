@@ -1,4 +1,5 @@
 import type { CanvasNode } from './canvas.types'
+import { CANVAS_NODE_META_BAR_HEIGHT } from './canvasNodeSize'
 
 export type CanvasImageSourceDimensions = {
   width?: number | null
@@ -23,6 +24,8 @@ export function resolveCanvasImageNodePresentationSize(
 
   return {
     width: node.width,
-    height: Math.max(1, Math.round((node.width * sourceHeight) / sourceWidth)),
+    height:
+      Math.max(1, Math.round((node.width * sourceHeight) / sourceWidth)) +
+      CANVAS_NODE_META_BAR_HEIGHT,
   }
 }

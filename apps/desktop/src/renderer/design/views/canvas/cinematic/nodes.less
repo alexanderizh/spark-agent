@@ -326,15 +326,19 @@
 
   .canvas-node-task-image-actions button {
     display: inline-flex;
-    width: 24px;
-    height: 24px;
+    width: auto;
+    height: auto;
     align-items: center;
     justify-content: center;
-    padding: 0;
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: var(--canvas-cinema-radius-xs);
-    background: rgba(9, 11, 14, 0.68);
-    color: var(--canvas-cinema-text-muted);
+    gap: 6px;
+    min-height: 26px;
+    padding: 6px 10px;
+    border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, rgba(10, 14, 24, 0.88) 90%, var(--canvas-node-body-bg));
+    color: #f8fbff;
+    font-size: 11px;
+    line-height: 1;
     cursor: pointer;
     transition:
       border-color var(--canvas-cinema-motion-fast) ease,
@@ -343,9 +347,9 @@
   }
 
   .canvas-node-task-image-actions button:hover {
-    border-color: var(--canvas-cinema-accent);
-    background: var(--canvas-cinema-accent-soft);
-    color: var(--canvas-cinema-accent-bright);
+    border-color: color-mix(in srgb, var(--primary) 64%, transparent);
+    background: color-mix(in srgb, rgba(18, 28, 44, 0.94) 92%, var(--canvas-node-body-bg));
+    color: #fff;
   }
 
   .canvas-node-task-image-actions button.is-danger {
@@ -412,12 +416,6 @@
 
   .canvas-node-text.canvas-node-text-long {
     padding: 18px 20px 22px;
-  }
-
-  .canvas-node-body > .canvas-node-operation,
-  .canvas-operation-output-deck,
-  .canvas-operation-output-nav {
-    background: var(--canvas-cinema-surface-2);
   }
 
   .canvas-operation-empty-state {

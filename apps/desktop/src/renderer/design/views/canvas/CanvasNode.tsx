@@ -17,7 +17,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react'
-import { Button, Dropdown } from '@lobehub/ui'
+import { Button, Dropdown, Tooltip } from '@lobehub/ui'
 import { Progress, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
@@ -284,11 +284,10 @@ function OperationOutputDeck({
             ) : (
               fallback
             )}
-            {overlayActions}
           </>
         )}
       </div>
-      {showOutputFooter ? (
+      {showOutputFooter || overlayActions ? (
         <div className="canvas-operation-output-nav nodrag nopan">
           {shouldShowOutputNavigation ? (
             <div className="canvas-operation-run-nav">
@@ -303,7 +302,9 @@ function OperationOutputDeck({
                   onSelectOutput(nextRunIndex, 0, next)
                 }}
               >
-                <Icons.ChevronLeft size={13} />
+                <Tooltip title="查看更新的一次运行">
+                  <Icons.ChevronLeft size={13} />
+                </Tooltip>
               </button>
               <span>
                 第 {displayRunNumber} 次运行
@@ -320,10 +321,13 @@ function OperationOutputDeck({
                   onSelectOutput(nextRunIndex, 0, next)
                 }}
               >
-                <Icons.ChevronRight size={13} />
+                <Tooltip title="查看更早的一次运行">
+                  <Icons.ChevronRight size={13} />
+                </Tooltip>
               </button>
             </div>
           ) : null}
+          {overlayActions}
         </div>
       ) : null}
     </div>
@@ -755,63 +759,70 @@ export const CanvasNode = memo(function CanvasNode({
   )
   const imageTaskActions = imageTaskOutput ? (
     <div
-      className="canvas-node-media-action-group canvas-node-image-chips canvas-node-task-image-actions nodrag nopan"
+      className="canvas-node-media-action-group canvas-node-task-image-actions nodrag nopan"
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <button
-        type="button"
-        aria-label="查看任务"
-        title="查看任务"
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          actions.editNode(node.id)
-        }}
-      >
-        <Icons.Eye size={14} />
-      </button>
-      {canExtractCharacterSubview ? (
+      <Tooltip title="预览">
         <button
           type="button"
-          aria-label="提取子视图"
-          title="提取子视图"
+          className="canvas-node-subview-chip canvas-node-image-chip-preview"
+          aria-label="预览"
           onClick={(event) => {
             event.preventDefault()
             event.stopPropagation()
-            actions.extractCharacterSubview?.(node.id)
+            actions.editNode(node.id)
           }}
         >
-          <Icons.Crop size={14} />
+          <Icons.Eye size={13} />
         </button>
+      </Tooltip>
+      {canExtractCharacterSubview ? (
+        <Tooltip title="提取子视图">
+          <button
+            type="button"
+            className="canvas-node-subview-chip"
+            aria-label="提取子视图"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              actions.extractCharacterSubview?.(node.id)
+            }}
+          >
+            <Icons.Crop size={13} />
+          </button>
+        </Tooltip>
       ) : null}
       {canExpandImageTaskOutput ? (
-        <button
-          type="button"
-          aria-label="展开产物"
-          title="展开产物"
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            actions.expandOperationOutputs?.(node.id, [imageTaskOutput])
-          }}
-        >
-          <Icons.Layers size={14} />
-        </button>
+        <Tooltip title="展开产物">
+          <button
+            type="button"
+            className="canvas-node-subview-chip"
+            aria-label="展开产物"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              actions.expandOperationOutputs?.(node.id, [imageTaskOutput])
+            }}
+          >
+            <Icons.Layers size={13} />
+          </button>
+        </Tooltip>
       ) : null}
       {canDeleteImageTaskOutput ? (
-        <button
-          type="button"
-          className="is-danger"
-          aria-label={`删除当前产物 ${imageTaskOutput.title}`}
-          title="删除当前产物"
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            actions.deleteOperationOutputs?.(node.id, [imageTaskOutput])
-          }}
-        >
-          <Icons.Trash size={14} />
-        </button>
+        <Tooltip title="删除当前产物">
+          <button
+            type="button"
+            className="canvas-node-subview-chip is-danger"
+            aria-label={`删除当前产物 ${imageTaskOutput.title}`}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              actions.deleteOperationOutputs?.(node.id, [imageTaskOutput])
+            }}
+          >
+            <Icons.Trash size={13} />
+          </button>
+        </Tooltip>
       ) : null}
     </div>
   ) : null
@@ -821,48 +832,48 @@ export const CanvasNode = memo(function CanvasNode({
         className="canvas-node-media-action-group canvas-node-image-chips nodrag nopan"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <button
-          type="button"
-          className="canvas-node-subview-chip canvas-node-image-chip-preview"
-          aria-label="预览"
-          title="预览"
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            actions.editNode(node.id)
-          }}
-        >
-          <Icons.Eye size={13} />
-          <span>预览</span>
-        </button>
-        <button
-          type="button"
-          className="canvas-node-subview-chip canvas-node-image-chip-replace"
-          aria-label="替换图片"
-          title="替换图片"
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            actions.replaceImage?.(node.id)
-          }}
-        >
-          <Icons.Refresh size={13} />
-          <span>替换图片</span>
-        </button>
-        <button
-          type="button"
-          className={`canvas-node-subview-chip${assetSubviewCount > 0 ? ' has-subviews' : ''}`}
-          aria-label="提取子视图"
-          title="提取子视图"
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            actions.extractCharacterSubview?.(node.id)
-          }}
-        >
-          <Icons.Crop size={13} />
-          <span>{assetSubviewCount > 0 ? `子视图 ${assetSubviewCount}` : '提取子视图'}</span>
-        </button>
+        <Tooltip title="预览">
+          <button
+            type="button"
+            className="canvas-node-subview-chip canvas-node-image-chip-preview"
+            aria-label="预览"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              actions.editNode(node.id)
+            }}
+          >
+            <Icons.Eye size={13} />
+          </button>
+        </Tooltip>
+        <Tooltip title="替换图片">
+          <button
+            type="button"
+            className="canvas-node-subview-chip canvas-node-image-chip-replace"
+            aria-label="替换图片"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              actions.replaceImage?.(node.id)
+            }}
+          >
+            <Icons.Refresh size={13} />
+          </button>
+        </Tooltip>
+        <Tooltip title="提取子视图">
+          <button
+            type="button"
+            className={`canvas-node-subview-chip${assetSubviewCount > 0 ? ' has-subviews' : ''}`}
+            aria-label="提取子视图"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              actions.extractCharacterSubview?.(node.id)
+            }}
+          >
+            <Icons.Crop size={13} />
+          </button>
+        </Tooltip>
       </div>
     ) : null
   const storyboardSplitSource = useMemo(

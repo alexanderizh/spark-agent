@@ -87,9 +87,12 @@
 
 .canvas-model-picker-providers,
 .canvas-model-picker-models {
-  min-height: 0;
-  overflow-y: auto;
   padding: 7px;
+  height: 100%;
+  overflow: hidden;
+  overflow-y: auto;
+  min-height: 280px;
+  max-height: 420px;
 }
 
 // 画布弹层细圆头滚动条：局部覆盖全局 *::-webkit-scrollbar{width:0!important} 隐藏规则。
@@ -129,6 +132,11 @@
 .canvas-model-picker-providers {
   border-right: 1px solid var(--divider);
   background: color-mix(in srgb, var(--bg-sunken) 72%, transparent);
+  height: 100%;
+  overflow: hidden;
+  overflow-y: auto;
+  min-height: 280px;
+  max-height: 420px;
 }
 
 .canvas-model-picker-provider,

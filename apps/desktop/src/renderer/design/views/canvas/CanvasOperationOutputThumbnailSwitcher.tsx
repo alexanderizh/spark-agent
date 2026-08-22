@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type WheelEvent } from 'react'
+import { Tooltip } from '@lobehub/ui'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import type { CanvasOperationMediaThumbnailItem } from './canvasOperationOutputThumbnails'
@@ -83,18 +84,20 @@ export function CanvasOperationOutputThumbnailSwitcher({
       aria-label="历史媒体产物"
     >
       {scrollState.overflowing ? (
-        <button
-          type="button"
-          className="canvas-operation-output-thumbnail-scroll is-previous"
-          aria-label="向左滚动产物"
-          disabled={!scrollState.canScrollPrevious}
-          onClick={(event) => {
-            event.stopPropagation()
-            scrollTrack(-1)
-          }}
-        >
-          <Icons.ChevronLeft size={15} />
-        </button>
+        <Tooltip title="向左滚动产物">
+          <button
+            type="button"
+            className="canvas-operation-output-thumbnail-scroll is-previous"
+            aria-label="向左滚动产物"
+            disabled={!scrollState.canScrollPrevious}
+            onClick={(event) => {
+              event.stopPropagation()
+              scrollTrack(-1)
+            }}
+          >
+            <Icons.ChevronLeft size={15} />
+          </button>
+        </Tooltip>
       ) : null}
       <div
         ref={trackRef}
@@ -107,66 +110,68 @@ export function CanvasOperationOutputThumbnailSwitcher({
           const failed = failedKeys.has(item.key)
           const previewUrl = normalizeEduAssetUrl(item.previewUrl)
           return (
-            <button
-              key={item.key}
-              ref={active ? activeItemRef : undefined}
-              type="button"
-              className={active ? 'is-active' : ''}
-              data-output-thumbnail-id={item.output.id}
-              aria-current={active ? 'true' : undefined}
-              aria-label={`查看产物：${item.output.title}`}
-              title={item.output.title}
-              onClick={(event) => {
-                event.stopPropagation()
-                onSelect(item)
-              }}
-            >
-              {failed ? (
-                <span
-                  className="canvas-operation-output-thumbnail-placeholder"
-                  data-media-placeholder={item.output.type}
-                  aria-hidden="true"
-                >
-                  {item.output.type === 'video' ? <Icons.Play size={18} /> : <Icons.Image size={18} />}
-                </span>
-              ) : item.previewKind === 'video' ? (
-                <video
-                  src={previewUrl}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  onError={() =>
-                    setFailedKeys((current) => new Set(current).add(item.key))
-                  }
-                />
-              ) : (
-                <img
-                  src={previewUrl}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  onError={() =>
-                    setFailedKeys((current) => new Set(current).add(item.key))
-                  }
-                />
-              )}
-            </button>
+            <Tooltip key={item.key} title={item.output.title}>
+              <button
+                ref={active ? activeItemRef : undefined}
+                type="button"
+                className={active ? 'is-active' : ''}
+                data-output-thumbnail-id={item.output.id}
+                aria-current={active ? 'true' : undefined}
+                aria-label={`查看产物：${item.output.title}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onSelect(item)
+                }}
+              >
+                {failed ? (
+                  <span
+                    className="canvas-operation-output-thumbnail-placeholder"
+                    data-media-placeholder={item.output.type}
+                    aria-hidden="true"
+                  >
+                    {item.output.type === 'video' ? (
+                      <Icons.Play size={18} />
+                    ) : (
+                      <Icons.Image size={18} />
+                    )}
+                  </span>
+                ) : item.previewKind === 'video' ? (
+                  <video
+                    src={previewUrl}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    onError={() => setFailedKeys((current) => new Set(current).add(item.key))}
+                  />
+                ) : (
+                  <img
+                    src={previewUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    onError={() => setFailedKeys((current) => new Set(current).add(item.key))}
+                  />
+                )}
+              </button>
+            </Tooltip>
           )
         })}
       </div>
       {scrollState.overflowing ? (
-        <button
-          type="button"
-          className="canvas-operation-output-thumbnail-scroll is-next"
-          aria-label="向右滚动产物"
-          disabled={!scrollState.canScrollNext}
-          onClick={(event) => {
-            event.stopPropagation()
-            scrollTrack(1)
-          }}
-        >
-          <Icons.ChevronRight size={15} />
-        </button>
+        <Tooltip title="向右滚动产物">
+          <button
+            type="button"
+            className="canvas-operation-output-thumbnail-scroll is-next"
+            aria-label="向右滚动产物"
+            disabled={!scrollState.canScrollNext}
+            onClick={(event) => {
+              event.stopPropagation()
+              scrollTrack(1)
+            }}
+          >
+            <Icons.ChevronRight size={15} />
+          </button>
+        </Tooltip>
       ) : null}
     </div>
   )

@@ -84,6 +84,22 @@ describe('chat scroll controls', () => {
     expect(overlayComponent).toContain('ResizeObserver')
   })
 
+  it('portals the session-switching mask to the full chat host', () => {
+    const component = readFileSync(
+      fileURLToPath(new URL('./ChatView.tsx', import.meta.url)),
+      'utf8',
+    )
+    const overlay = readFileSync(
+      fileURLToPath(new URL('./chat/SessionSwitchingOverlay.tsx', import.meta.url)),
+      'utf8',
+    )
+
+    expect(component).toMatch(
+      /<SessionSwitchingOverlay\s+host=\{\s*streamRef\.current\?\.closest<HTMLElement>\('\.chat-main, \.side-chat-panel'\) \?\? null\s*\}/s,
+    )
+    expect(overlay).toContain('createPortal(overlay, host)')
+  })
+
   it('keeps the active chat stream and composer containers width-aligned', () => {
     const stylesheet = readFileSync(
       fileURLToPath(new URL('./ChatView.less', import.meta.url)),

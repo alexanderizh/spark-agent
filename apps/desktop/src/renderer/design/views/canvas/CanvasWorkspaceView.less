@@ -1181,8 +1181,10 @@
 .canvas-node-subview-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, rgba(10, 14, 24, 0.88) 90%, var(--canvas-node-body-bg));
@@ -1356,6 +1358,7 @@
 }
 
 .canvas-operation-output-deck {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
@@ -1527,14 +1530,20 @@
 }
 
 .canvas-operation-output-nav {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  z-index: 8;
   display: flex;
+  flex-wrap: nowrap;
   min-width: 0;
-  min-height: 24px;
+  min-height: 28px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 8px 5px;
-  background: #15191f;
+  padding: 0;
+  pointer-events: none;
   color: rgba(203, 213, 225, 0.68);
   font-size: 10px;
 }
@@ -1544,6 +1553,18 @@
   min-width: 0;
   align-items: center;
   gap: 4px;
+  pointer-events: auto;
+  padding: 3px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(10, 14, 20, 0.78);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(8px);
+}
+
+.canvas-operation-output-nav > .canvas-node-task-image-actions {
+  margin-left: auto;
+  pointer-events: auto;
 }
 
 .canvas-operation-run-nav > span {
@@ -6053,7 +6074,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   width: min(1040px, calc(100% - 32px));
   max-height: min(74vh, 760px);
   display: flex;
-  min-height: 0;
+  min-height: 414px;
   flex-direction: column;
   overflow: hidden;
   border-radius: 16px;

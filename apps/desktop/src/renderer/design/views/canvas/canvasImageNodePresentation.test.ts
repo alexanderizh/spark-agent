@@ -39,7 +39,7 @@ describe('canvas image node presentation', () => {
   it('uses source dimensions to correct an existing loaded image node height', () => {
     expect(
       resolveCanvasImageNodePresentationSize(createNode(), { width: 1536, height: 1024 }),
-    ).toEqual({ width: 540, height: 360 })
+    ).toEqual({ width: 540, height: 398 })
   })
 
   it('preserves the current node size when source dimensions are unavailable', () => {

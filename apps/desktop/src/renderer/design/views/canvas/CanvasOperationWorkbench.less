@@ -3,7 +3,7 @@
   container-type: inline-size;
   display: flex;
   width: 100%;
-  min-height: clamp(440px, 56vh, 620px);
+  // min-height: clamp(340px, 56vh, 620px);
   max-height: min(72vh, 780px);
   flex: 1 1 auto;
   flex-direction: column;
@@ -140,7 +140,7 @@
 
 .canvas-operation-workbench-content {
   display: flex;
-  min-height: 380px;
+  min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
   overflow: hidden;
@@ -168,13 +168,9 @@
 
 .canvas-operation-node-settings-card {
   display: grid;
-  width: min(520px, 100%);
+  width: 100%;
   gap: 10px;
-  padding: 20px;
-  border: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
-  // 节点设置卡片是面板内部的结构容器，保持直角以避免圆角嵌套。
   border-radius: 0;
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
 }
 
 .canvas-operation-node-settings-card label {
@@ -293,7 +289,7 @@
   justify-content: center;
   overflow: hidden;
   // 详情内容属于浮层面板，使用与顶部面板一致的底色，和画布背景明确分层。
-  background: var(--canvas-edit-bg, var(--panel));
+  // background: var(--canvas-edit-bg, var(--panel));
 }
 
 .canvas-operation-workbench:not(.is-fullscreen):has(
@@ -503,7 +499,10 @@
 .canvas-operation-history-item {
   display: grid;
   min-height: 58px;
-  grid-template-columns: 10px minmax(150px, 1.4fr) minmax(100px, 1fr) minmax(100px, 1fr) 80px auto 28px;
+  grid-template-columns: 10px minmax(150px, 1.4fr) minmax(100px, 1fr) minmax(
+      100px,
+      1fr
+    ) 80px auto 28px;
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
