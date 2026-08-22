@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
 import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
+import { CODEX_TOOL_OUTPUT_TOKEN_LIMIT } from './codex-context-policy.js'
 import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import { toCodexReasoningEffort, type CodexReasoningEffort } from './reasoning-effort.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
@@ -510,6 +511,7 @@ function buildCodexProfileConfigItems(config: SDKExecutorConfig): string[] {
   items.push(`model_reasoning_summary='concise'`)
   items.push('show_raw_agent_reasoning=true')
   items.push('hide_agent_reasoning=false')
+  items.push(`tool_output_token_limit=${CODEX_TOOL_OUTPUT_TOKEN_LIMIT}`)
   items.push(`approval_policy=${tomlString(policy.approvalPolicy)}`)
   if (policy.approvalsReviewer != null) {
     items.push(`approvals_reviewer=${tomlString(policy.approvalsReviewer)}`)

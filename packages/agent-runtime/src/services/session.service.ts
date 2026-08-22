@@ -281,6 +281,8 @@ import {
   RENDER_HTML_SYSTEM_PROMPT,
   RENDER_DIAGRAM_TOOL_NAMES,
   RENDER_DIAGRAM_SYSTEM_PROMPT,
+  TOOL_RESULT_SYSTEM_PROMPT,
+  TOOL_RESULT_TOOL_NAMES,
   WEB_SEARCH_SYSTEM_PROMPT,
   SPARK_WEB_TOOL_SYSTEM_PROMPT,
   VALIDATION_SUGGESTION_TOOL_NAMES,
@@ -293,7 +295,12 @@ import {
   resolvePresentFilesMcpServer,
   resolveQuickRepliesMcpServer,
   resolveSparkSessionMcpServerPath,
+  resolveToolResultProxyMcpServerPath,
+  resolveToolResultReaderMcpServer,
+  tryResolveMcpNodeRuntimeExecutable,
 } from './session-mcp-tooling-helpers.js'
+import { governMcpServers } from './tool-result-mcp-governance.js'
+import { governAgentToolResultEvent } from '../tools/tool-result-artifact-store.mjs'
 
 import {
   buildManagedAgentSystemPrompt,
@@ -2498,9 +2505,13 @@ export class SessionService {
     )
     const webSearchMcpServer =
       await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
-    const subAppMcpServer = await this.getMcpTooling().resolveSubAppMcpServer(sessionId)
+    const subAppMcpServer = await this.getMcpTooling().resolveSubAppMcpServer(
+      sessionId,
+      workspaceRootPath,
+    )
     const presentFilesMcpServer = resolvePresentFilesMcpServer(workspaceRootPath)
     const quickRepliesMcpServer = resolveQuickRepliesMcpServer(workspaceRootPath)
+    const toolResultReaderAvailable = resolveToolResultReaderMcpServer(workspaceRootPath) != null
     // 调试模式（per-session 能力开关）：开启时挂载 spark_debug + 注入状态机 prompt。
     const debugModeEnabled = getDebugModeFromMetadata(session.metadata_json)
     const debugMcpServer = debugModeEnabled
@@ -2819,6 +2830,7 @@ export class SessionService {
       platformMcpServer != null ? SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT : undefined,
       webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
       presentFilesMcpServer != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
+      toolResultReaderAvailable ? TOOL_RESULT_SYSTEM_PROMPT : undefined,
       quickRepliesMcpServer != null ? QUICK_REPLIES_SYSTEM_PROMPT : undefined,
       quickRepliesMcpServer != null ? RENDER_HTML_SYSTEM_PROMPT : undefined,
       quickRepliesMcpServer != null ? RENDER_DIAGRAM_SYSTEM_PROMPT : undefined,
@@ -3757,7 +3769,7 @@ export class SessionService {
 
     // Build MCP server config from our McpService for the SDK
     options.runtimeMetrics?.markMcpConfigurationStarted()
-    const mcpServers = await this.getMcpTooling().buildMcpServersForSDK()
+    let mcpServers = await this.getMcpTooling().buildMcpServersForSDK()
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -3972,6 +3984,12 @@ export class SessionService {
 
     // spark_session（in-process 版）—— agent 上报引擎级 worktree 状态的工具
     await this.attachSparkSessionMcpServer(sessionId, mcpServers)
+    mcpServers = governMcpServers(mcpServers, {
+      workspaceRootPath,
+      nodeExecutable: tryResolveMcpNodeRuntimeExecutable(),
+      proxyServerPath: resolveToolResultProxyMcpServerPath(),
+      readerServer: resolveToolResultReaderMcpServer(workspaceRootPath),
+    })
     options.runtimeMetrics?.pauseMcpConfiguration()
 
     const completeAssistantEvents: AssistantMessageEvent[] = []
@@ -4087,6 +4105,7 @@ export class SessionService {
           outgoing = { ...event, teamMemberContext: mentionMemberContext }
         }
       }
+      outgoing = governAgentToolResultEvent(outgoing, workspaceRootPath)
       this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
       // 媒体产物（生图/截图等）紧跟其工具调用发出，而非堆到 turn 末尾
       emitPendingMedia()
@@ -4199,6 +4218,9 @@ export class SessionService {
         'mcp__spark_memory__search_memory',
         'mcp__spark_memory__recall_memory',
       ])
+    }
+    if (mcpServers.spark_tool_results != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, TOOL_RESULT_TOOL_NAMES)
     }
     if (config.debugMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, DEBUG_TOOL_NAMES)
@@ -4356,7 +4378,7 @@ export class SessionService {
     }
 
     options.runtimeMetrics?.markMcpConfigurationStarted()
-    const mcpServers = await this.getMcpTooling().buildMcpServersForSDK()
+    let mcpServers = await this.getMcpTooling().buildMcpServersForSDK()
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -4483,6 +4505,12 @@ export class SessionService {
     if (config.debugMcpServer != null) {
       mcpServers.spark_debug = config.debugMcpServer
     }
+    mcpServers = governMcpServers(mcpServers, {
+      workspaceRootPath: config.workspaceRootPath,
+      nodeExecutable: tryResolveMcpNodeRuntimeExecutable(),
+      proxyServerPath: resolveToolResultProxyMcpServerPath(),
+      readerServer: resolveToolResultReaderMcpServer(config.workspaceRootPath),
+    })
     options.runtimeMetrics?.pauseMcpConfiguration()
 
     // MCP hot-reload: same as Claude SDK path — force a fresh session if the MCP
@@ -4632,6 +4660,7 @@ export class SessionService {
           outgoing = { ...event, teamMemberContext: mentionMemberContext }
         }
       }
+      outgoing = governAgentToolResultEvent(outgoing, config.workspaceRootPath)
       this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
       // 媒体产物（生图/截图等）紧跟其工具调用发出，而非堆到 turn 末尾
       emitPendingMedia()
@@ -7154,7 +7183,7 @@ export class SessionService {
         : null
     // 显式 readonly 原子节点从空能力集开始，避免在判断前加载用户自定义（可能写入型）MCP。
     // 普通 Team/Workflow tool/mcp 成员则与 Host 一致加载已启用的应用 MCP。
-    const memberMcpServers = isReadonlyAtomicMember
+    let memberMcpServers = isReadonlyAtomicMember
       ? {}
       : await this.getMcpTooling().buildMcpServersForSDK()
     try {
@@ -7290,6 +7319,13 @@ export class SessionService {
       if (memberTeamServer != null) memberMcpServers.spark_team = memberTeamServer
     }
 
+    memberMcpServers = governMcpServers(memberMcpServers, {
+      workspaceRootPath,
+      nodeExecutable: tryResolveMcpNodeRuntimeExecutable(),
+      proxyServerPath: resolveToolResultProxyMcpServerPath(),
+      readerServer: resolveToolResultReaderMcpServer(workspaceRootPath),
+    })
+
     const memberSystemPrompt =
       joinPromptSections(
         APPLICATION_FOUNDATION_SYSTEM_PROMPT,
@@ -7297,6 +7333,7 @@ export class SessionService {
         memberTeamPrompt,
         memberEnvPrompt || undefined,
         memberMcpServers.spark_files != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
+        memberMcpServers.spark_tool_results != null ? TOOL_RESULT_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_platform != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_platform != null ? SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_debug != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
@@ -7362,7 +7399,10 @@ export class SessionService {
       // A-03 细致审查修复：member allowedTools 必须包含所有已加载 MCP 的工具，否则
       // SDK 视为非免审批 → member 在 unattended dispatch 时卡在 approval 等待。
       // 镜像 Host 路径（line 3253-3295）按 mcpServers 实际加载的工具构建 allowedTools。
-      allowedTools: this.buildMemberAllowedTools(memberMcpServers, memberTeamServer),
+      allowedTools: mergeUniqueStrings(
+        this.buildMemberAllowedTools(memberMcpServers, memberTeamServer),
+        memberMcpServers.spark_tool_results != null ? TOOL_RESULT_TOOL_NAMES : [],
+      ),
       // 始终禁用 Task；节点配了 toolIds（工作流「工具」选择器）时额外收窄到白名单——
       // 用 disallowedTools = 全量可限制工具 - toolIds，而不是直接把 toolIds 当 allowedTools，
       // 因为 allowedTools 在 SDK 里只是"免审批"名单，不是"仅允许"名单，压根挡不住其它工具。
@@ -7509,9 +7549,7 @@ export class SessionService {
         event.type === 'terminal_output'
       ) {
         // 透传时重写 base 字段（seq 由 emitAndPersist 覆盖），保留原事件 payload
-        this.emitAndPersist(
-          sessionId,
-          turnId,
+        const outgoing = governAgentToolResultEvent(
           {
             ...event,
             sessionId,
@@ -7519,8 +7557,9 @@ export class SessionService {
             seq: 0,
             teamMemberContext: { dispatchId, memberAgentId: member.id },
           },
-          eventRepo,
+          workspaceRootPath,
         )
+        this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
       }
       const reportedChanges = extractReportedFileChanges(event, workspaceRootPath)
       if (reportedChanges != null) {

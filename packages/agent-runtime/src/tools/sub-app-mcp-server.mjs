@@ -22,12 +22,19 @@
  * 配置来自环境变量（由 session.service 注入）：
  *   SPARK_PLATFORM_BRIDGE_PORT  PlatformBridgeService 端口（必需）
  *   SPARK_SESSION_ID            当前会话 id（注入备用，当前工具不消费）
+ *   SPARK_WORKSPACE_ROOT         当前会话工作区根目录（源码文件引用边界）
  */
 import { request as httpRequest } from 'node:http'
 import readline from 'node:readline'
+import {
+  compactSubAppDetails,
+  exportWorkspaceSubAppSource,
+  readWorkspaceSubAppSource,
+} from './sub-app-source-store.mjs'
 
 const BRIDGE_PORT = Number(process.env.SPARK_PLATFORM_BRIDGE_PORT || 0)
 const BRIDGE_HOST = '127.0.0.1'
+const WORKSPACE_ROOT = process.env.SPARK_WORKSPACE_ROOT || ''
 
 // ─── 子应用图标 ────────────────────────────────────────────────────────
 // 与前端受控注册表同步维护：apps/desktop/src/renderer/design/sub-app/subAppIconOptions.ts。
@@ -221,7 +228,8 @@ function toolDefinitions() {
         THEME_INTEGRATION_GUIDE,
         DATA_PERSISTENCE_GUIDE,
         LIBRARY_DEV_GUIDE,
-        '返回完整详情，其中的 draft.revision 是后续修改草稿要用的 CAS 基线。',
+        '源码较长时先写入工作区 HTML 文件并传 draftFilePath，避免把完整源码作为工具参数反复带入上下文。draftHtml 与 draftFilePath 二选一。',
+        '返回紧凑详情，其中的 draft.revision 是后续修改草稿要用的 CAS 基线。',
       ].join(' '),
       inputSchema: {
         type: 'object',
@@ -233,6 +241,10 @@ function toolDefinitions() {
             type: 'string',
             description:
               '初始草稿源码：完整的自包含 HTML 文档（内联 CSS/JS，或经 CDN 引入外部库；不引外部本地文件）。可选，之后可用 spark_app_update_draft 替换。',
+          },
+          draftFilePath: {
+            type: 'string',
+            description: '工作区内的 .html/.htm 源码文件路径；长源码优先使用。与 draftHtml 互斥。',
           },
           permissions: {
             type: 'array',
@@ -276,7 +288,7 @@ function toolDefinitions() {
       description: [
         '取单个子应用详情：当前草稿（含源码摘要、manifest、revision）与已发布版本摘要。',
         '何时调用：修改草稿/发布/回滚前必先调用，拿到最新 draft.revision 作为 CAS 基线。',
-        '注意：draft 源码过长时会截断显示（省 token）；更新草稿是整篇替换语义，直接用 spark_app_update_draft 传入新的完整 HTML 即可，不需要基于旧文做局部补丁。',
+        'draft 与 publishedRelease 都只返回源码指纹和最多 2000 字符的头尾预览；需要完整源码时调用 spark_app_export_source，把源码导出为工作区文件后按文件编辑。',
       ].join(' '),
       inputSchema: {
         type: 'object',
@@ -295,15 +307,35 @@ function toolDefinitions() {
       },
     },
     {
+      name: 'spark_app_export_source',
+      description: [
+        '把子应用完整草稿或指定历史发布版本导出到当前工作区的 .spark-agent/sub-app-sources/。',
+        '返回稳定文件路径、SHA-256、字符数和字节数；相同内容复用同一文件。需要检查或修改既有完整源码时先调用本工具，再用文件工具按范围读取/编辑。',
+        '默认导出当前草稿；传 releaseVersion 时导出对应发布快照。',
+      ].join(' '),
+      inputSchema: {
+        type: 'object',
+        required: ['appId'],
+        properties: {
+          appId: { type: 'string', description: '应用 ID' },
+          releaseVersion: {
+            type: 'integer',
+            minimum: 1,
+            description: '可选；导出指定历史发布版本，缺省导出当前草稿',
+          },
+        },
+      },
+    },
+    {
       name: 'spark_app_update_draft',
       description: [
-        '修改子应用草稿。可更新源码（draftHtml）、名称、描述、权限、展示面、图标、入口中的任意字段。',
+        '修改子应用草稿。可更新源码（draftHtml 或 draftFilePath）、名称、描述、权限、展示面、图标、入口中的任意字段。',
         '涉及界面大改版时同样遵循设计先行：先出界面设计预览给用户确认，再写入完整实现。',
         THEME_INTEGRATION_GUIDE,
         DATA_PERSISTENCE_GUIDE,
         LIBRARY_DEV_GUIDE,
         'CAS 语义：必须传 spark_app_get 拿到的当前 expectedRevision；若期间草稿已被其他操作更新会返回冲突（SUBAPP_CONFLICT），此时应重新 get 拿新 revision 再重试，不要盲目覆盖。',
-        'draftHtml 是整篇替换：传入新的完整 HTML 文档，而非增量补丁。成功后 revision +1。',
+        '源码是整篇替换语义；长源码优先传工作区 draftFilePath，避免完整 HTML 常驻工具调用历史。draftHtml 与 draftFilePath 二选一。成功后 revision +1。',
       ].join(' '),
       inputSchema: {
         type: 'object',
@@ -318,6 +350,10 @@ function toolDefinitions() {
           draftHtml: {
             type: 'string',
             description: '新的完整草稿源码（自包含 HTML 文档，可经 CDN 引入外部库）',
+          },
+          draftFilePath: {
+            type: 'string',
+            description: '工作区内的 .html/.htm 源码文件路径；长源码优先使用。与 draftHtml 互斥。',
           },
           name: { type: 'string', minLength: 1, maxLength: 120, description: '新名称' },
           description: { type: 'string', maxLength: 400, description: '新描述' },
@@ -580,18 +616,20 @@ async function dispatchTool(name, args) {
   const key = str(args.key)
 
   switch (name) {
-    case 'spark_app_create':
+    case 'spark_app_create': {
+      const source = await resolveDraftSource(args)
       return rpc('subapp.create', {
         name: str(args.name),
         description: str(args.description),
         // 工具参数叫 draftHtml，bridge RPC 字段统一叫 source（与 update_draft 一致）。
         // 曾因两侧字段名不一致导致创建出的应用源码为空、运行白屏。
-        source: str(args.draftHtml),
+        source,
         permissions: optStringArray(args.permissions),
         surface: str(args.surface),
         icon: args.icon === null ? null : str(args.icon),
         entry: str(args.entry),
       })
+    }
 
     case 'spark_app_list':
       return rpc('subapp.list', {
@@ -607,9 +645,35 @@ async function dispatchTool(name, args) {
         releaseVersion: optPositiveInt(args.releaseVersion),
       })
 
+    case 'spark_app_export_source': {
+      if (appId == null || appId.trim().length === 0) throw new Error('appId 必填。')
+      const releaseVersion = optPositiveInt(args.releaseVersion)
+      const details = await rpc('subapp.get', { appId, releaseVersion })
+      const owner = releaseVersion == null ? details?.draft : details?.publishedRelease
+      if (owner == null || typeof owner !== 'object' || typeof owner.source !== 'string') {
+        throw new Error(
+          releaseVersion == null ? '当前草稿源码不存在。' : `发布版本 ${releaseVersion} 不存在。`,
+        )
+      }
+      const version =
+        releaseVersion == null ? optPositiveInt(owner.revision) : optPositiveInt(owner.version)
+      const exported = await exportWorkspaceSubAppSource({
+        workspaceRoot: WORKSPACE_ROOT,
+        appId,
+        source: owner.source,
+      })
+      return {
+        appId,
+        kind: releaseVersion == null ? 'draft' : 'release',
+        ...(releaseVersion == null ? { revision: version } : { version }),
+        ...exported,
+      }
+    }
+
     case 'spark_app_update_draft': {
+      const source = await resolveDraftSource(args)
       const patch = defined({
-        source: str(args.draftHtml),
+        source,
         name: str(args.name),
         description: str(args.description),
         permissions: optStringArray(args.permissions),
@@ -698,20 +762,6 @@ async function dispatchTool(name, args) {
 
 // ─── Summarize（把结构化结果转成给 agent 看的文本）────────────────────
 
-/** draft 源码过长时截断展示，避免大 HTML 吃满上下文；更新语义是整篇替换。 */
-const SOURCE_PREVIEW_LIMIT = 2000
-
-function truncateSource(source) {
-  if (typeof source !== 'string' || source.length <= SOURCE_PREVIEW_LIMIT) return source
-  return `${source.slice(0, SOURCE_PREVIEW_LIMIT)}\n…[草稿源码已截断：完整长度 ${source.length} 字符；更新时直接传新的完整 HTML 即可]`
-}
-
-function withTruncatedDraft(details) {
-  if (details == null || typeof details !== 'object') return details
-  if (details.draft == null || typeof details.draft !== 'object') return details
-  return { ...details, draft: { ...details.draft, source: truncateSource(details.draft.source) } }
-}
-
 function present(name, data) {
   if (
     name === 'spark_app_get' ||
@@ -720,12 +770,26 @@ function present(name, data) {
     name === 'spark_app_publish' ||
     name === 'spark_app_rollback'
   ) {
-    return JSON.stringify(withTruncatedDraft(data), null, 2)
+    return JSON.stringify(
+      compactSubAppDetails(data, { includePreview: name === 'spark_app_get' }),
+      null,
+      2,
+    )
   }
   if (name === 'spark_app_data_get' && data == null) {
     return '未找到该数据键（键不存在或已被删除）。'
   }
   return JSON.stringify(data, null, 2)
+}
+
+async function resolveDraftSource(args) {
+  const inlineSource = str(args.draftHtml)
+  const filePath = str(args.draftFilePath)
+  if (inlineSource != null && filePath != null) {
+    throw new Error('draftHtml 与 draftFilePath 互斥，只能传一个。')
+  }
+  if (filePath != null) return readWorkspaceSubAppSource(filePath, WORKSPACE_ROOT)
+  return inlineSource
 }
 
 // ─── Main loop ───────────────────────────────────────────────────────

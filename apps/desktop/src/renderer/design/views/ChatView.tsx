@@ -202,6 +202,7 @@ import {
   formatTokenCount,
   getBasename,
   getLatestInputTokens,
+  getProviderContextInputUpdate,
 } from './chat/ChatViewUtils'
 import {
   extractInspectorSubagents,
@@ -3665,6 +3666,9 @@ function ChatStream({
       loadedEventsRef.current.push(event)
       loadedEventIdsRef.current.add(event.id)
 
+      const providerContextInputUpdate = getProviderContextInputUpdate(event)
+      if (providerContextInputUpdate != null) callbacks.onUsageChange(providerContextInputUpdate)
+
       if (event.type === 'agent_status') {
         const keepTeamSessionRunning =
           hadRunningTeamMemberActivity ||
@@ -3697,7 +3701,6 @@ function ChatStream({
         }
       }
       if (event.type === 'usage_update') {
-        if (event.inputTokens > 0) callbacks.onUsageChange(event.inputTokens)
         const snapshot: UsageSnapshot = {
           turnId: event.turnId,
           inputTokens: event.inputTokens,

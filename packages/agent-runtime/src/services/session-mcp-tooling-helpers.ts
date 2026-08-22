@@ -5,7 +5,7 @@
  * - buildImageGenerationSystemPrompt：图片生成 system prompt 模板
  * - mergeUniqueStrings：去重合并（通用工具）
  * - extractPresentedFiles / parsePresentedFilesPayload：从 present_files 工具结果里提取文件
- * - resolve*McpServerPath：9 个内置 MCP server 路径解析（image / media / platform / web / memory / canvas / debug / sub-app）
+ * - resolve*McpServerPath：内置 MCP server 路径解析
  * - resolvePresentFilesMcpServer：present_files MCP server 配置（返回 SDKMcpServerConfig）
  * - *_TOOL_NAMES：SDK 命名空间的工具白名单（platform / search / present_files / validation / debug）
  * - *_SYSTEM_PROMPT / *_TOOL_DESCRIPTION：相关 system prompt 片段
@@ -334,6 +334,19 @@ export function resolveMcpNodeRuntimeExecutable(): string {
   )
 }
 
+export function tryResolveMcpNodeRuntimeExecutable(): string | null {
+  try {
+    return resolveMcpNodeRuntimeExecutable()
+  } catch (error) {
+    log.warn(
+      `Standalone Node runtime unavailable for optional MCP tooling: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
+    return null
+  }
+}
+
 /**
  * All platform management tool names (SDK namespace: mcp__spark_platform__).
  *
@@ -471,6 +484,47 @@ export function resolveSparkCanvasMcpServerPath(): string | null {
   return resolveRuntimeToolPath('spark-canvas-mcp-server.mjs')
 }
 
+function resolveToolResultRuntimePath(
+  fileName: string,
+  options: RuntimeToolPathOptions = {},
+): string | null {
+  const serverPath = resolveRuntimeToolPath(fileName, options)
+  if (serverPath == null) return null
+  const toolsDirectory = path.dirname(serverPath)
+  const dependencies = [
+    path.resolve(toolsDirectory, 'tool-result-artifact-store.mjs'),
+    path.resolve(toolsDirectory, 'workspace-content-store.mjs'),
+  ]
+  return dependencies.every((candidate) => existsSync(candidate)) ? serverPath : null
+}
+
+export function resolveToolResultProxyMcpServerPath(
+  options: RuntimeToolPathOptions = {},
+): string | null {
+  return resolveToolResultRuntimePath('tool-result-governance-mcp-proxy.mjs', options)
+}
+
+export function resolveToolResultReaderMcpServer(
+  workspaceRootPath: string,
+): SDKMcpServerConfig | null {
+  const serverPath = resolveToolResultRuntimePath('tool-result-reader-mcp-server.mjs')
+  if (serverPath == null) {
+    log.warn('Tool result reader MCP server script or dependencies not found')
+    return null
+  }
+  const nodeExecutable = tryResolveMcpNodeRuntimeExecutable()
+  if (nodeExecutable == null) return null
+  return {
+    type: 'stdio',
+    command: nodeExecutable,
+    args: [serverPath],
+    cwd: workspaceRootPath,
+    env: {
+      SPARK_WORKSPACE_ROOT: workspaceRootPath,
+    },
+  }
+}
+
 export function resolvePresentFilesMcpServer(workspaceRootPath: string): SDKMcpServerConfig | null {
   const serverPath = resolveRuntimeToolPath('present-files-mcp-server.mjs')
   if (serverPath == null) {
@@ -525,6 +579,7 @@ export const SUB_APP_TOOL_NAMES: string[] = [
   'mcp__spark_app__spark_app_create',
   'mcp__spark_app__spark_app_list',
   'mcp__spark_app__spark_app_get',
+  'mcp__spark_app__spark_app_export_source',
   'mcp__spark_app__spark_app_update_draft',
   'mcp__spark_app__spark_app_publish',
   'mcp__spark_app__spark_app_list_releases',
@@ -542,6 +597,12 @@ export const SUB_APP_TOOL_NAMES: string[] = [
 export const PRESENT_FILES_TOOL_NAMES = [
   'mcp__spark_files__present_files',
   'mcp__spark_files__report_file_changes',
+]
+
+export const TOOL_RESULT_TOOL_NAMES = [
+  'mcp__spark_tool_results__list',
+  'mcp__spark_tool_results__read',
+  'mcp__spark_tool_results__search',
 ]
 
 export const QUICK_REPLIES_TOOL_NAMES = ['mcp__spark_ui__suggest_replies']
@@ -575,6 +636,15 @@ export const PRESENT_FILES_SYSTEM_PROMPT = [
   'Do not call the tool when there are no user-facing files to present.',
   'The tool call controls the app file cards; mentioning a path in prose does not add it to that list.',
   'After calling the tool, do not repeat the same paths as standalone file links in the final response.',
+].join('\n')
+
+export const TOOL_RESULT_SYSTEM_PROMPT = [
+  '## Archived Tool Results',
+  'Large tool outputs may be replaced by a `spark.tool_result_envelope` containing an error-aware preview and a content-addressed artifact reference.',
+  'Use `mcp__spark_tool_results__read` with the envelope artifact id and an offset/limit to continue reading only the needed range.',
+  'Use `mcp__spark_tool_results__search` to find exact text before reading nearby ranges; use `list` only when an artifact id is not already available.',
+  'Do not infer that omitted preview text was absent from the original result. The archived artifact is the complete source for follow-up inspection.',
+  'Tool-result artifacts are internal working context, not user-facing deliverables; do not present them as files unless the user explicitly asks for the raw output.',
 ].join('\n')
 
 export const QUICK_REPLIES_SYSTEM_PROMPT = [

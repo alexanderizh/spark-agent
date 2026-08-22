@@ -14,6 +14,7 @@ import type {
 import type { AgentEvent } from '@spark/protocol'
 import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
+import { CODEX_CONTEXT_POLICY_CONFIG } from './codex-context-policy.js'
 import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import { toCodexReasoningEffort } from './reasoning-effort.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
@@ -743,6 +744,7 @@ export function buildCodexConfig(config: SDKExecutorConfig): CodexConfigObject {
   return {
     model_reasoning_summary: 'concise',
     hide_agent_reasoning: false,
+    ...CODEX_CONTEXT_POLICY_CONFIG,
     ...(policy.approvalsReviewer == null ? {} : { approvals_reviewer: policy.approvalsReviewer }),
     ...buildCodexModelProviderConfig(config),
     ...buildCodexMcpConfig(config.mcpServers),

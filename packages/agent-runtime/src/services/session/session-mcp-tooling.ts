@@ -241,7 +241,10 @@ export class SessionMcpTooling {
    * SubAppRepository，与桌面端 subAppBackend IPC 路径共享同一套语义；
    * bridge 端口与会话 id 通过环境变量注入（照抄 platform-management 模式）。
    */
-  async resolveSubAppMcpServer(sessionId: string): Promise<SDKMcpServerConfig | null> {
+  async resolveSubAppMcpServer(
+    sessionId: string,
+    workspaceRootPath: string,
+  ): Promise<SDKMcpServerConfig | null> {
     const serverPath = resolveSubAppMcpServerPath()
     if (serverPath == null) {
       log.warn('Sub app MCP server script not found')
@@ -254,9 +257,11 @@ export class SessionMcpTooling {
         type: 'stdio',
         command: resolveMcpNodeRuntimeExecutable(),
         args: [serverPath],
+        cwd: workspaceRootPath,
         env: {
           SPARK_PLATFORM_BRIDGE_PORT: String(port),
           SPARK_SESSION_ID: sessionId,
+          SPARK_WORKSPACE_ROOT: workspaceRootPath,
         },
       }
     } catch (err) {

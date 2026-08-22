@@ -325,6 +325,7 @@ describe('CodexCliExecutor', () => {
     expect(lastProfileConfig).toContain("model_reasoning_summary='concise'")
     expect(lastProfileConfig).toContain('show_raw_agent_reasoning=true')
     expect(lastProfileConfig).toContain('hide_agent_reasoning=false')
+    expect(lastProfileConfig).toContain('tool_output_token_limit=12000')
     expect(lastProfileConfig).toContain('sandbox_workspace_write.network_access=true')
     expect(lastProfileConfig).toContain("web_search='cached'")
   })

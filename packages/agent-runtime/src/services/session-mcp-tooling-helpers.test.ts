@@ -10,8 +10,11 @@ import {
   PRESENT_FILES_SYSTEM_PROMPT,
   resolveMediaGenerationMcpServerPath,
   resolveRuntimeToolPath,
+  resolveToolResultProxyMcpServerPath,
   QUICK_REPLIES_SYSTEM_PROMPT,
   RENDER_HTML_SYSTEM_PROMPT,
+  TOOL_RESULT_SYSTEM_PROMPT,
+  TOOL_RESULT_TOOL_NAMES,
   WEB_SEARCH_SYSTEM_PROMPT,
 } from './session-mcp-tooling-helpers.js'
 import { SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT } from './session-schedule-agent-tools.js'
@@ -105,6 +108,39 @@ describe('resolveRuntimeToolPath', () => {
 
     writeFileSync(join(mediaServices, 'media-request-compiler.mjs'), 'export {}\n')
     expect(resolveMediaGenerationMcpServerPath(options)).toBe(packagedTool)
+  })
+
+  it('only resolves the packaged tool-result proxy with its local runtime dependencies', () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-runtime-tool-result-'))
+    const resourcesPath = join(root, 'Resources')
+    const toolsPath = join(resourcesPath, 'tools')
+    const proxyPath = join(toolsPath, 'tool-result-governance-mcp-proxy.mjs')
+    mkdirSync(toolsPath, { recursive: true })
+    writeFileSync(proxyPath, '#!/usr/bin/env node\n')
+    const options = {
+      resourcesPath,
+      moduleDirectory: join(root, 'app.asar', 'out', 'main'),
+      cwd: root,
+    }
+
+    expect(resolveToolResultProxyMcpServerPath(options)).toBeNull()
+    writeFileSync(join(toolsPath, 'tool-result-artifact-store.mjs'), 'export {}\n')
+    writeFileSync(join(toolsPath, 'workspace-content-store.mjs'), 'export {}\n')
+    expect(resolveToolResultProxyMcpServerPath(options)).toBe(proxyPath)
+  })
+})
+
+describe('TOOL_RESULT_SYSTEM_PROMPT', () => {
+  it('teaches range reads and search without treating archived output as a user artifact', () => {
+    expect(TOOL_RESULT_TOOL_NAMES).toEqual([
+      'mcp__spark_tool_results__list',
+      'mcp__spark_tool_results__read',
+      'mcp__spark_tool_results__search',
+    ])
+    expect(TOOL_RESULT_SYSTEM_PROMPT).toContain('spark.tool_result_envelope')
+    expect(TOOL_RESULT_SYSTEM_PROMPT).toContain('offset/limit')
+    expect(TOOL_RESULT_SYSTEM_PROMPT).toContain('search')
+    expect(TOOL_RESULT_SYSTEM_PROMPT).toContain('not user-facing deliverables')
   })
 })
 

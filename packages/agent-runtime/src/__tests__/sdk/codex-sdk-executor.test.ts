@@ -201,6 +201,7 @@ describe('CodexSdkExecutor', () => {
         apiKey: 'sk-test',
         config: expect.objectContaining({
           hide_agent_reasoning: false,
+          tool_output_token_limit: 12_000,
           mcp_servers: expect.objectContaining({
             spark_search: expect.objectContaining({
               command: 'node',

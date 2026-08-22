@@ -67,6 +67,22 @@ function requireEnvValue(env: Record<string, string>, key: string): string {
   return value
 }
 
+type TestMcpServerConfig = {
+  type?: string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  url?: string
+}
+
+function unwrapGovernedMcpServer(server: TestMcpServerConfig | undefined): TestMcpServerConfig {
+  if (server == null) throw new Error('Expected MCP server config')
+  const encoded = server.env?.SPARK_TOOL_RESULT_UPSTREAM_CONFIG
+  if (encoded == null) return server
+  return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as TestMcpServerConfig
+}
+
 type MockAgentItem = {
   id: string
   name: string
@@ -1618,13 +1634,16 @@ describe('SessionService runtime provider/model resolution', () => {
       await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
 
       const config = mockState.sdkConfigs[0]
-      expect(config?.mcpServers).toMatchObject({
-        spark_computer: expect.objectContaining({ type: 'stdio' }),
-        spark_platform: expect.objectContaining({
-          type: 'stdio',
-          env: expect.objectContaining({ SPARK_SESSION_ID: sessionId }),
-        }),
+      const servers = config?.mcpServers as Record<string, TestMcpServerConfig>
+      expect(servers.spark_computer).toMatchObject({
+        type: 'stdio',
+        env: expect.objectContaining({ SPARK_TOOL_RESULT_SERVER_NAME: 'spark_computer' }),
       })
+      expect(unwrapGovernedMcpServer(servers.spark_platform)).toMatchObject({
+        type: 'stdio',
+        env: expect.objectContaining({ SPARK_SESSION_ID: sessionId }),
+      })
+      expect(servers).toHaveProperty('spark_tool_results')
       expect(config?.allowedTools).toEqual(
         expect.arrayContaining([
           'mcp__spark_computer__get_capabilities',
@@ -1634,6 +1653,8 @@ describe('SessionService runtime provider/model resolution', () => {
                 'mcp__spark_platform__session_schedule_list',
                 'mcp__spark_platform__session_schedule_create',
                 'mcp__spark_platform__session_schedule_delete',
+                'mcp__spark_tool_results__read',
+                'mcp__spark_tool_results__search',
               ]
             : []),
         ]),
@@ -1642,6 +1663,7 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(String(config?.skillSystemPrompt ?? '')).toContain(
         'After creation succeeds, tell the user briefly and end the current turn',
       )
+      expect(String(config?.skillSystemPrompt ?? '')).toContain('Archived Tool Results')
     },
   )
 
@@ -1665,11 +1687,12 @@ describe('SessionService runtime provider/model resolution', () => {
     await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
 
     const config = mockState.sdkConfigs[0]
-    expect(config?.mcpServers).toMatchObject({
-      spark_debug: expect.objectContaining({
-        type: 'stdio',
-        env: expect.objectContaining({ SPARK_DEBUG_SID: sessionId }),
-      }),
+    const debugServer = unwrapGovernedMcpServer(
+      (config?.mcpServers as Record<string, TestMcpServerConfig>).spark_debug,
+    )
+    expect(debugServer).toMatchObject({
+      type: 'stdio',
+      env: expect.objectContaining({ SPARK_DEBUG_SID: sessionId }),
     })
     expect(config?.allowedTools).toEqual(
       expect.arrayContaining(['mcp__spark_debug__begin', 'mcp__spark_debug__read']),
@@ -2297,18 +2320,17 @@ describe('SessionService runtime provider/model resolution', () => {
         'mcp__spark_media__generate_video',
       ]),
     )
-    const mediaServer = (
-      config?.mcpServers as {
-        spark_media: { env: Record<string, string> }
-      }
-    ).spark_media
-    expect(Object.keys(mediaServer.env).sort()).toEqual([
+    const mediaServer = unwrapGovernedMcpServer(
+      (config?.mcpServers as Record<string, TestMcpServerConfig>).spark_media,
+    )
+    const mediaEnv = mediaServer.env ?? {}
+    expect(Object.keys(mediaEnv).sort()).toEqual([
       'SPARK_MEDIA_API_KEY_0',
       'SPARK_MEDIA_CONFIG_FILE',
     ])
-    expect(JSON.stringify(mediaServer.env).length).toBeLessThan(2_048)
+    expect(JSON.stringify(mediaEnv).length).toBeLessThan(2_048)
     const serializedRuntimeConfig = readFileSync(
-      requireEnvValue(mediaServer.env, 'SPARK_MEDIA_CONFIG_FILE'),
+      requireEnvValue(mediaEnv, 'SPARK_MEDIA_CONFIG_FILE'),
       'utf8',
     )
     const runtimeConfig = JSON.parse(serializedRuntimeConfig) as {
@@ -2316,7 +2338,7 @@ describe('SessionService runtime provider/model resolution', () => {
       model: string
       providers: Array<{ apiKeyEnv: string; apiKey?: string; manifests: Array<{ id: string }> }>
     }
-    expect(mediaServer.env.SPARK_MEDIA_API_KEY_0).toBe('test-api-key')
+    expect(mediaEnv.SPARK_MEDIA_API_KEY_0).toBe('test-api-key')
     expect(serializedRuntimeConfig).not.toContain('test-api-key')
     expect(runtimeConfig.providers[0]).toMatchObject({ apiKeyEnv: 'SPARK_MEDIA_API_KEY_0' })
     expect(runtimeConfig.providers[0]).not.toHaveProperty('apiKey')
@@ -2514,13 +2536,12 @@ describe('SessionService runtime provider/model resolution', () => {
     await service.sendTurn({ sessionId, message: 'draw with the platform image model' })
     await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
 
-    const mediaServer = (
-      mockState.sdkConfigs[0]?.mcpServers as {
-        spark_media: { env: Record<string, string> }
-      }
-    ).spark_media
+    const mediaServer = unwrapGovernedMcpServer(
+      (mockState.sdkConfigs[0]?.mcpServers as Record<string, TestMcpServerConfig>).spark_media,
+    )
+    const mediaEnv = mediaServer.env ?? {}
     const runtimeConfig = JSON.parse(
-      readFileSync(requireEnvValue(mediaServer.env, 'SPARK_MEDIA_CONFIG_FILE'), 'utf8'),
+      readFileSync(requireEnvValue(mediaEnv, 'SPARK_MEDIA_CONFIG_FILE'), 'utf8'),
     ) as {
       providers: Array<{
         id: string
@@ -2644,12 +2665,12 @@ describe('SessionService runtime provider/model resolution', () => {
     const config = mockState.sdkConfigs[0]
     expect(config?.mcpServers).toHaveProperty('spark_media')
     expect(config?.mcpServers).not.toHaveProperty('spark_image')
-    const mediaServer = (config?.mcpServers as { spark_media: { env: Record<string, string> } })
-      .spark_media
+    const mediaServer = unwrapGovernedMcpServer(
+      (config?.mcpServers as Record<string, TestMcpServerConfig>).spark_media,
+    )
+    const mediaEnv = mediaServer.env ?? {}
     const providers = (
-      JSON.parse(
-        readFileSync(requireEnvValue(mediaServer.env, 'SPARK_MEDIA_CONFIG_FILE'), 'utf8'),
-      ) as {
+      JSON.parse(readFileSync(requireEnvValue(mediaEnv, 'SPARK_MEDIA_CONFIG_FILE'), 'utf8')) as {
         providers: Array<{ id: string; model: string; provider: string }>
       }
     ).providers
@@ -2736,13 +2757,12 @@ describe('SessionService runtime provider/model resolution', () => {
     await service.sendTurn({ sessionId, message: 'draw with the working provider' })
     await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
 
-    const mediaServer = (
-      mockState.sdkConfigs[0]?.mcpServers as { spark_media: { env: Record<string, string> } }
-    ).spark_media
+    const mediaServer = unwrapGovernedMcpServer(
+      (mockState.sdkConfigs[0]?.mcpServers as Record<string, TestMcpServerConfig>).spark_media,
+    )
+    const mediaEnv = mediaServer.env ?? {}
     const providers = (
-      JSON.parse(
-        readFileSync(requireEnvValue(mediaServer.env, 'SPARK_MEDIA_CONFIG_FILE'), 'utf8'),
-      ) as {
+      JSON.parse(readFileSync(requireEnvValue(mediaEnv, 'SPARK_MEDIA_CONFIG_FILE'), 'utf8')) as {
         providers: Array<{ id: string }>
       }
     ).providers
@@ -2883,7 +2903,7 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
     const config = mockState.sdkConfigs[0]
-    const canvasServer = (
+    const governedCanvasServer = (
       config?.mcpServers as
         | Record<
             string,
@@ -2896,6 +2916,8 @@ describe('SessionService runtime provider/model resolution', () => {
           >
         | undefined
     )?.spark_canvas
+    const canvasServer = unwrapGovernedMcpServer(governedCanvasServer)
+    expect(governedCanvasServer?.env?.SPARK_TOOL_RESULT_SERVER_NAME).toBe('spark_canvas')
     expect(canvasServer).toMatchObject({
       type: 'stdio',
       command: process.env.SPARK_STANDALONE_NODE?.trim() || process.execPath,

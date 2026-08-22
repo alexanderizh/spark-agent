@@ -8,6 +8,8 @@ import {
   computeCacheHitRate,
   createEmptySessionUsageData,
   eventsAfterLastHistoryReset,
+  getLatestInputTokens,
+  getProviderContextInputUpdate,
   resolveContextUsedTokens,
 } from './ChatViewUtils'
 
@@ -24,28 +26,66 @@ function event(type: AgentEvent['type'], seq: number): AgentEvent {
 }
 
 describe('ChatViewUtils', () => {
-  it('uses the larger of ledger estimate and provider-observed input for context progress', () => {
+  it('does not restore provider input from the previous turn during history hydration', () => {
+    const previousUsage = {
+      ...event('usage_update', 1),
+      inputTokens: 42_000,
+      outputTokens: 10,
+    } as AgentEvent
+    const nextUserMessage = event('user_message', 2)
+    const currentUsage = {
+      ...event('usage_update', 3),
+      inputTokens: 7_000,
+      outputTokens: 5,
+    } as AgentEvent
+
+    expect(getLatestInputTokens([previousUsage, nextUserMessage])).toBe(0)
+    expect(getLatestInputTokens([previousUsage, nextUserMessage, currentUsage])).toBe(7_000)
+  })
+
+  it('prefers request-boundary estimates over turn-cumulative provider input', () => {
     expect(
       resolveContextUsedTokens({
         ledgerEstimatedTokens: 12_000,
         turnEstimatedTokens: 8_000,
-        providerInputTokens: 40_000,
+        providerInputTokens: 1_296_035,
       }),
-    ).toBe(40_000)
-    expect(
-      resolveContextUsedTokens({
-        ledgerEstimatedTokens: 50_000,
-        turnEstimatedTokens: 8_000,
-        providerInputTokens: 40_000,
-      }),
-    ).toBe(50_000)
+    ).toBe(12_000)
     expect(
       resolveContextUsedTokens({
         ledgerEstimatedTokens: null,
         turnEstimatedTokens: 8_000,
-        providerInputTokens: 0,
+        providerInputTokens: 40_000,
       }),
     ).toBe(8_000)
+  })
+
+  it('uses provider input only when no request-boundary estimate exists', () => {
+    expect(
+      resolveContextUsedTokens({
+        ledgerEstimatedTokens: null,
+        turnEstimatedTokens: null,
+        providerInputTokens: 40_000,
+      }),
+    ).toBe(40_000)
+  })
+
+  it('clears the provider fallback at the start of a new user turn', () => {
+    expect(getProviderContextInputUpdate(event('user_message', 1))).toBe(0)
+    expect(
+      getProviderContextInputUpdate({
+        ...event('usage_update', 2),
+        inputTokens: 42_000,
+        outputTokens: 10,
+      } as AgentEvent),
+    ).toBe(42_000)
+    expect(
+      getProviderContextInputUpdate({
+        ...event('usage_update', 3),
+        inputTokens: 0,
+        outputTokens: 0,
+      } as AgentEvent),
+    ).toBeNull()
   })
 
   it('derives session metadata only from the latest history window', () => {

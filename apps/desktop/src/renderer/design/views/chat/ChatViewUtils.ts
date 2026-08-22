@@ -8,24 +8,33 @@ export function clamp(value: number, min: number, max: number): number {
 export function getLatestInputTokens(events: AgentEvent[]): number {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
+    if (event?.type === 'user_message') return 0
     if (event?.type === 'usage_update' && event.inputTokens > 0) return event.inputTokens
   }
   return 0
 }
 
+export function getProviderContextInputUpdate(event: AgentEvent): number | null {
+  if (event.type === 'user_message') return 0
+  if (event.type === 'usage_update' && event.inputTokens > 0) return event.inputTokens
+  return null
+}
+
 /**
- * 上下文进度保留完整 ledger 分段，同时用 Provider 的本轮实际输入兜底 native
- * resume 未重放 Spark history 的场景。取较大值可避免二者各自缺项造成低估。
+ * 上下文占用优先使用 Spark 在请求边界构建的 ledger / governor 估算。
+ *
+ * Provider 的 inputTokens 口径并不统一：Codex native turn 包含轮内多次模型调用时，
+ * 它是累计输入消耗，不是最后一次请求的有效上下文。仅当两个请求边界估算都缺失时
+ * 才用它兜底 native resume，禁止再用 max 把累计消耗冒充窗口占用。
  */
 export function resolveContextUsedTokens(params: {
   ledgerEstimatedTokens?: number | null | undefined
   turnEstimatedTokens?: number | null | undefined
   providerInputTokens: number
 }): number {
-  const estimated = params.ledgerEstimatedTokens ?? params.turnEstimatedTokens ?? 0
-  return params.providerInputTokens > 0
-    ? Math.max(estimated, params.providerInputTokens)
-    : estimated
+  const estimated = params.ledgerEstimatedTokens ?? params.turnEstimatedTokens
+  if (estimated != null) return Math.max(0, estimated)
+  return Math.max(0, params.providerInputTokens)
 }
 
 export function createEmptySessionUsageData(): SessionUsageData {

@@ -211,6 +211,9 @@ describe('CodexAppServerExecutor', () => {
     expect(initializeIndex).toBeGreaterThanOrEqual(0)
     expect(initializedIndex).toBeGreaterThan(initializeIndex)
     expect(threadStartIndex).toBeGreaterThan(initializedIndex)
+    expect(journal[threadStartIndex]?.params).toMatchObject({
+      config: { tool_output_token_limit: 12_000 },
+    })
     expect(
       journal.find((entry) => entry.kind === 'request' && entry.method === 'turn/start')?.params,
     ).toMatchObject({ clientUserMessageId: '00000000-0000-4000-8000-000000000123' })
