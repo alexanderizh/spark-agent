@@ -1,32 +1,73 @@
-import React from 'react'
+import React, { createContext, useCallback, useLayoutEffect, useState } from 'react'
 import { AppDialogHost, AppProvider, useApp } from './design/AppContext'
 import { AuthProvider } from './design/auth/AuthContext'
 import { ToastContainer, ToastProvider } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { SessionSidebarProvider } from './design/SessionSidebarContext'
 import { LobeThemeProvider } from './design/theme/LobeThemeProvider'
-import { useResolvedTheme } from './design/hooks/useResolvedTheme'
 import { CanvasWorkspaceView } from './design/views/canvas/CanvasWorkspaceView'
+import {
+  persistCanvasWindowTheme,
+  readCanvasWindowTheme,
+  type CanvasWindowTheme,
+} from './design/views/canvas/canvas-window-theme'
 import { getCanvasWindowPlatformClass, readCanvasWindowProjectId } from './canvasWindowParams'
+
+type CanvasWindowThemeContextValue = {
+  theme: CanvasWindowTheme
+  setTheme: (theme: CanvasWindowTheme) => void
+}
+
+const CanvasWindowThemeContext = createContext<CanvasWindowThemeContextValue | null>(null)
 
 function CanvasWindowThemeBridge({ children }: { children: React.ReactNode }) {
   const { t } = useApp()
-  const resolvedTheme = useResolvedTheme()
+  const [theme, setTheme] = useState<CanvasWindowTheme>(() => readCanvasWindowTheme())
+  const setWindowTheme = useCallback((nextTheme: CanvasWindowTheme) => {
+    setTheme(nextTheme)
+    persistCanvasWindowTheme(nextTheme)
+  }, [])
+
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    const syncWindowTheme = () => {
+      if (root.dataset.theme !== theme) root.dataset.theme = theme
+      root.style.colorScheme = theme
+    }
+
+    syncWindowTheme()
+    const observer = new MutationObserver(syncWindowTheme)
+    observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => observer.disconnect()
+  }, [theme])
+
   return (
-    <LobeThemeProvider themeMode={t.theme} resolvedTheme={resolvedTheme} primary={t.primary}>
-      {children}
+    <LobeThemeProvider themeMode={theme} resolvedTheme={theme} primary={t.primary}>
+      <CanvasWindowThemeContext.Provider value={{ theme, setTheme: setWindowTheme }}>
+        {children}
+      </CanvasWindowThemeContext.Provider>
     </LobeThemeProvider>
   )
 }
 
 function CanvasWindowShell({ projectId }: { projectId: string }) {
+  const themeContext = React.useContext(CanvasWindowThemeContext)
+  if (themeContext == null)
+    throw new Error('CanvasWindowShell must be inside CanvasWindowThemeBridge')
+
+  const { theme, setTheme } = themeContext
+
   return (
     <ErrorBoundary level="global" name="CanvasWindow">
       <div
-        className={`app window canvas-window-standalone theme-dark density-regular ${getCanvasWindowPlatformClass()} sidebar-hidden`}
+        className={`app window canvas-window-standalone theme-${theme} density-regular ${getCanvasWindowPlatformClass()} sidebar-hidden`}
+        data-canvas-window-theme={theme}
       >
         <CanvasWorkspaceView
           projectId={projectId}
+          themeControlled
+          windowTheme={theme}
+          onWindowThemeChange={setTheme}
           showSidebarExpandButton={false}
           onBack={async () => {
             await window.spark.invoke('canvas:window:close-confirmed', {})

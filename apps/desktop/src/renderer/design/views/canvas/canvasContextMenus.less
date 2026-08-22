@@ -119,7 +119,9 @@
   border: 1px solid
     var(--canvas-cinema-border-strong, var(--border-strong, rgba(255, 255, 255, 0.14))) !important;
   border-radius: var(--canvas-cinema-radius-lg, var(--r-lg, 14px)) !important;
-  background: var(--canvas-cinema-surface-4, var(--panel-elev, #343434)) !important;
+  // 不让 Ant Design Dropdown 使用 colorBgElevated；节点菜单是 Portal，必须和
+  // 工作台内部的空白画布菜单显式使用同一根节点背景。
+  background: var(--canvas-context-menu-bg, var(--panel, #303030)) !important;
   color: var(--canvas-cinema-text, var(--text, #cccccc));
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42) !important;
 }

@@ -15,6 +15,17 @@
   --stage3d-text: var(--text, #e4e4e7);
   --stage3d-text-muted: var(--text-muted, #9ca3af);
   --stage3d-text-faint: var(--text-faint, #6b7280);
+  --stage3d-control-bg: #252525;
+  --stage3d-control-bg-hover: #303030;
+  --stage3d-control-bg-active: #1d1d1f;
+  --stage3d-control-border: #454545;
+  --stage3d-control-border-hover: #5b5b66;
+  --stage3d-control-text: #e4e4e7;
+  --stage3d-control-text-strong: #ffffff;
+  --stage3d-control-text-muted: #b5b5bf;
+  --stage3d-control-primary: #3b82f6;
+  --stage3d-control-primary-hover: #2563eb;
+  --stage3d-control-primary-text: #ffffff;
   position: fixed;
   inset: 0;
   z-index: 1200;
@@ -25,6 +36,88 @@
   justify-content: center;
   padding: 0;
   outline: none;
+}
+
+html[data-theme='light'] .stage3d-modal-overlay,
+.app.theme-light .stage3d-modal-overlay {
+  --stage3d-control-bg: #ffffff;
+  --stage3d-control-bg-hover: #f1f0ec;
+  --stage3d-control-bg-active: #e7e4de;
+  --stage3d-control-border: #d7d2c9;
+  --stage3d-control-border-hover: #b7b1a6;
+  --stage3d-control-text: #484640;
+  --stage3d-control-text-strong: #1d1c19;
+  --stage3d-control-text-muted: #777169;
+  --stage3d-control-primary: #655bd8;
+  --stage3d-control-primary-hover: #5148c7;
+  --stage3d-control-primary-text: #ffffff;
+}
+
+// Lobe Button and Ant Design Segmented are rendered by CSS-in-JS. Keep their
+// local surface/foreground palette explicit so nested theme providers cannot
+// leave dark button groups on a light director-stage panel.
+.stage3d-modal-overlay {
+  .ant-btn {
+    border-color: var(--stage3d-control-border);
+    background: var(--stage3d-control-bg);
+    color: var(--stage3d-control-text);
+    box-shadow: none;
+  }
+
+  .ant-btn:hover:not(:disabled):not(.ant-btn-disabled),
+  .ant-btn:focus-visible:not(:disabled):not(.ant-btn-disabled) {
+    border-color: var(--stage3d-control-border-hover);
+    background: var(--stage3d-control-bg-hover);
+    color: var(--stage3d-control-text-strong);
+  }
+
+  .ant-btn.ant-btn-text {
+    border-color: transparent;
+    background: transparent;
+    color: var(--stage3d-control-text-muted);
+  }
+
+  .ant-btn.ant-btn-text:hover:not(:disabled):not(.ant-btn-disabled),
+  .ant-btn.ant-btn-text:focus-visible:not(:disabled):not(.ant-btn-disabled) {
+    border-color: transparent;
+    background: var(--stage3d-control-bg-hover);
+    color: var(--stage3d-control-text-strong);
+  }
+
+  .ant-btn.ant-btn-primary,
+  .ant-btn.ant-btn-primary:hover:not(:disabled):not(.ant-btn-disabled),
+  .ant-btn.ant-btn-primary:focus-visible:not(:disabled):not(.ant-btn-disabled) {
+    border-color: var(--stage3d-control-primary);
+    background: var(--stage3d-control-primary);
+    color: var(--stage3d-control-primary-text);
+  }
+
+  .ant-btn.ant-btn-primary:hover:not(:disabled):not(.ant-btn-disabled),
+  .ant-btn.ant-btn-primary:focus-visible:not(:disabled):not(.ant-btn-disabled) {
+    border-color: var(--stage3d-control-primary-hover);
+    background: var(--stage3d-control-primary-hover);
+  }
+
+  .ant-btn:disabled,
+  .ant-btn.ant-btn-disabled {
+    color: var(--stage3d-control-text-muted);
+    opacity: 0.48;
+  }
+
+  .ant-segmented {
+    background: var(--stage3d-control-bg);
+    color: var(--stage3d-control-text-muted);
+  }
+
+  .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
+    color: var(--stage3d-control-text-strong);
+  }
+
+  .ant-segmented-item-selected {
+    background: var(--stage3d-control-bg-active);
+    color: var(--stage3d-control-text-strong);
+    box-shadow: 0 1px 2px rgba(31, 28, 24, 0.12);
+  }
 }
 
 .stage3d-shell {
@@ -577,7 +670,7 @@
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--stage3d-text-muted);
 
   > span {
     font-size: 11px;
@@ -611,7 +704,7 @@
   border: 2px solid transparent;
   cursor: pointer;
   &.active {
-    border-color: #e2e8f0;
+    border-color: var(--stage3d-control-primary);
   }
 }
 
@@ -631,7 +724,7 @@
 .stage3d-collapse-toggle {
   background: none;
   border: none;
-  color: #94a3b8;
+  color: var(--stage3d-text-muted);
   font-size: 12px;
   cursor: pointer;
   padding: 2px 0;

@@ -81,26 +81,75 @@ import {
 import { buildStage3DPrompt } from './prompt'
 import { makeLocalModelProp, readStage3DLocalModelFile } from './localModelImport'
 import { useCanvasUnsavedChangesGuard } from '../useCanvasUnsavedChangesGuard'
+import { useResolvedTheme } from '../../../hooks/useResolvedTheme'
 import './stage3d.less'
 
 const RAD = Math.PI / 180
 
 /**
- * 导演台固定使用深色工作区，但应用主题可能是浅色。给所有 Ant Design 表单一个独立主题，
- * 同时覆盖 portal 中的下拉选项，避免深色自定义面板上出现深色文字或不可读的选中值。
+ * 3D 导演台的表单控件使用独立 token，但必须跟随当前窗口主题。
+ * 下拉菜单是 portal，不能只依赖 stage3d.less 里的局部继承色。
  */
-const STAGE3D_FORM_THEME = {
-  algorithm: antdTheme.darkAlgorithm,
-  token: {
-    colorPrimary: '#3b82f6',
-    colorBgContainer: '#252525',
-    colorBgElevated: '#303030',
-    colorBorder: '#454545',
-    colorText: '#e4e4e7',
-    colorTextPlaceholder: '#8b8b94',
-    controlItemBgActive: '#1d4ed8',
+const STAGE3D_FORM_THEMES = {
+  light: {
+    algorithm: antdTheme.defaultAlgorithm,
+    token: {
+      colorPrimary: '#655bd8',
+      colorBgContainer: '#ffffff',
+      colorBgElevated: '#ffffff',
+      colorBorder: '#d7d2c9',
+      colorText: '#484640',
+      colorTextPlaceholder: '#9a958c',
+      controlItemBgActive: '#eeecff',
+    },
+    components: {
+      Button: {
+        colorBgContainer: '#ffffff',
+        defaultBorderColor: '#d7d2c9',
+        defaultColor: '#484640',
+        defaultHoverBg: '#f1f0ec',
+        defaultHoverColor: '#1d1c19',
+        defaultHoverBorderColor: '#b7b1a6',
+        defaultActiveBg: '#e7e4de',
+        defaultActiveColor: '#1d1c19',
+        defaultActiveBorderColor: '#b7b1a6',
+        textHoverBg: 'rgba(47, 43, 37, 0.06)',
+        primaryColor: '#ffffff',
+        primaryShadow: 'transparent',
+        defaultShadow: 'none',
+      },
+    },
   },
-}
+  dark: {
+    algorithm: antdTheme.darkAlgorithm,
+    token: {
+      colorPrimary: '#3b82f6',
+      colorBgContainer: '#252525',
+      colorBgElevated: '#303030',
+      colorBorder: '#454545',
+      colorText: '#e4e4e7',
+      colorTextPlaceholder: '#8b8b94',
+      controlItemBgActive: '#1d4ed8',
+    },
+    components: {
+      Button: {
+        colorBgContainer: '#252525',
+        defaultBorderColor: '#454545',
+        defaultColor: '#e4e4e7',
+        defaultHoverBg: '#303030',
+        defaultHoverColor: '#ffffff',
+        defaultHoverBorderColor: '#5b5b66',
+        defaultActiveBg: '#1d1d1f',
+        defaultActiveColor: '#ffffff',
+        defaultActiveBorderColor: '#5b5b66',
+        textHoverBg: 'rgba(255, 255, 255, 0.08)',
+        primaryColor: '#ffffff',
+        primaryShadow: 'transparent',
+        defaultShadow: 'none',
+      },
+    },
+  },
+} as const
 
 /** macOS 无边框窗口红绿灯安全区（顶栏左侧留白，避免标题被交通灯压住） */
 const isPlatformDarwin = typeof window !== 'undefined' && window.spark?.platform === 'darwin'
@@ -147,6 +196,7 @@ export function CanvasDirectorStage3DModal({
     inputs: { dataUrl: string; title: string; prompt: string }[],
   ) => Promise<void> | void
 }) {
+  const resolvedTheme = useResolvedTheme()
   const initial = useMemo(() => (node ? readStage3DData(node) : createDefaultStage3DData()), [node])
   const [draft, setDraft] = useState<Stage3DData>(initial)
   const savedDraftSignatureRef = useRef(JSON.stringify(initial))
@@ -800,549 +850,567 @@ export function CanvasDirectorStage3DModal({
   }))
 
   return (
-    <ConfigProvider theme={STAGE3D_FORM_THEME}>
+    <ConfigProvider theme={STAGE3D_FORM_THEMES[resolvedTheme]}>
       <div className="stage3d-modal-overlay" onKeyDown={handleKeyDown} tabIndex={-1}>
         <div className="stage3d-shell">
-        {/* 顶栏 */}
-        <div className={`stage3d-topbar${isPlatformDarwin ? ' platform-darwin-safe-area' : ''}`}>
-          <div className="stage3d-titlebox">
-            <div className="stage3d-kicker">3D Director Stage</div>
-            <div className="stage3d-title">{node?.title ?? '3D 导演台'}</div>
-          </div>
-          <div className="stage3d-topbar-actions">
-            <Button
-              size="small"
-              type={toolsCollapsed ? 'primary' : 'text'}
-              icon={<Icons.PanelLeft size={14} />}
-              onClick={() => setToolsCollapsed((v) => !v)}
-              title={toolsCollapsed ? '展开左侧面板' : '折叠左侧面板'}
-            />
-            <Button
-              size="small"
-              type={inspectorCollapsed ? 'primary' : 'text'}
-              icon={<Icons.PanelRight size={14} />}
-              onClick={() => setInspectorCollapsed((v) => !v)}
-              title={inspectorCollapsed ? '展开右侧面板' : '折叠右侧面板'}
-            />
-            <Button
-              size="small"
-              type={cameraPreview ? 'primary' : 'text'}
-              icon={<Icons.Eye size={14} />}
-              onClick={() => setCameraPreview((v) => !v)}
-            >
-              {cameraPreview ? '退出取景视角' : '进入取景视角'}
-            </Button>
-            <Button
-              size="small"
-              type="text"
-              icon={<Icons.Image size={14} />}
-              onClick={captureScreenshot}
-            >
-              截图入画布
-            </Button>
-            {onExportScreenshots && (
+          {/* 顶栏 */}
+          <div className={`stage3d-topbar${isPlatformDarwin ? ' platform-darwin-safe-area' : ''}`}>
+            <div className="stage3d-titlebox">
+              <div className="stage3d-kicker">3D Director Stage</div>
+              <div className="stage3d-title">{node?.title ?? '3D 导演台'}</div>
+            </div>
+            <div className="stage3d-topbar-actions">
+              <Button
+                size="small"
+                type={toolsCollapsed ? 'primary' : 'text'}
+                icon={<Icons.PanelLeft size={14} />}
+                onClick={() => setToolsCollapsed((v) => !v)}
+                title={toolsCollapsed ? '展开左侧面板' : '折叠左侧面板'}
+              />
+              <Button
+                size="small"
+                type={inspectorCollapsed ? 'primary' : 'text'}
+                icon={<Icons.PanelRight size={14} />}
+                onClick={() => setInspectorCollapsed((v) => !v)}
+                title={inspectorCollapsed ? '展开右侧面板' : '折叠右侧面板'}
+              />
+              <Button
+                size="small"
+                type={cameraPreview ? 'primary' : 'text'}
+                icon={<Icons.Eye size={14} />}
+                onClick={() => setCameraPreview((v) => !v)}
+              >
+                {cameraPreview ? '退出取景视角' : '进入取景视角'}
+              </Button>
               <Button
                 size="small"
                 type="text"
-                icon={<Icons.Film size={14} />}
-                disabled={shots.length === 0}
-                onClick={exportAllShots}
+                icon={<Icons.Image size={14} />}
+                onClick={captureScreenshot}
               >
-                导出全部镜头{shots.length > 0 ? `（${shots.length}）` : ''}
+                截图入画布
               </Button>
-            )}
-            <Button size="small" type="text" icon={<Icons.Copy size={14} />} onClick={copyPrompt}>
-              复制提示词
-            </Button>
-            {onInsertPrompt && (
-              <Button
-                size="small"
-                type="text"
-                icon={<Icons.FileText size={14} />}
-                onClick={insertPrompt}
-              >
-                提示词节点
-              </Button>
-            )}
-            <Button size="small" type="text" icon={<Icons.Check size={14} />} onClick={save}>
-              保存
-            </Button>
-            <Button
-              size="small"
-              type="text"
-              icon={<Icons.X size={16} />}
-              onClick={requestClose}
-              title="关闭（有未保存内容时会提示）"
-            />
-          </div>
-        </div>
-
-        <div className="stage3d-body">
-          {/* 左：工具栏 */}
-          {toolsCollapsed ? (
-            <button
-              type="button"
-              className="stage3d-panel-rail stage3d-panel-rail-left"
-              onClick={() => setToolsCollapsed(false)}
-              title="展开左侧面板"
-            >
-              <Icons.PanelLeft size={16} />
-            </button>
-          ) : (
-            <aside className="stage3d-tools">
-              <button
-                type="button"
-                className="stage3d-panel-collapse stage3d-panel-collapse-left"
-                onClick={() => setToolsCollapsed(true)}
-                title="折叠左侧面板"
-              >
-                <Icons.ChevronLeft size={14} />
-              </button>
-              <div className="stage3d-section-title">添加角色</div>
-              <label className="stage3d-field">
-                <span>人物模型</span>
-                <Select
-                  size="small"
-                  style={{ width: '100%' }}
-                  value={newActorModelId}
-                  onChange={(id) => setNewActorModelId(id as Stage3DActorModelId)}
-                  options={BUILTIN_STAGE3D_ACTOR_MODELS.map((model) => ({
-                    value: model.id,
-                    label: model.label,
-                  }))}
-                />
-              </label>
-              <Button block size="small" icon={<Icons.User size={14} />} onClick={() => addActor()}>
-                路人角色
-              </Button>
-              {characterNodes.length > 0 && (
-                <Dropdown
-                  menu={{
-                    items: characterNodes.map((c) => ({ key: c.id, label: c.title })),
-                    onClick: ({ key }) => {
-                      const c = characterNodes.find((x) => x.id === key)
-                      if (c) addActor(c.id, c.title)
-                    },
-                  }}
-                >
-                  <Button block size="small" icon={<Icons.Users size={14} />}>
-                    绑定画布角色
-                  </Button>
-                </Dropdown>
-              )}
-
-              <div className="stage3d-section-title">群众阵列</div>
-              <div className="stage3d-crowd-grid">
-                <label className="stage3d-field">
-                  <span>行</span>
-                  <Input
-                    size="small"
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={crowdRows}
-                    onChange={(e) => setCrowdRows(clamp(Number(e.target.value), 1, 12))}
-                  />
-                </label>
-                <label className="stage3d-field">
-                  <span>列</span>
-                  <Input
-                    size="small"
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={crowdColumns}
-                    onChange={(e) => setCrowdColumns(clamp(Number(e.target.value), 1, 12))}
-                  />
-                </label>
-                <label className="stage3d-field">
-                  <span>间距</span>
-                  <Input
-                    size="small"
-                    type="number"
-                    min={0.5}
-                    max={4}
-                    step={0.1}
-                    value={crowdSpacing}
-                    onChange={(e) => setCrowdSpacing(clamp(Number(e.target.value), 0.5, 4))}
-                  />
-                </label>
-              </div>
-              <Button block size="small" icon={<Icons.Users size={14} />} onClick={addCrowdActors}>
-                添加群众阵列（{Math.round(crowdRows)}x{Math.round(crowdColumns)}）
-              </Button>
-
-              <div className="stage3d-section-title">添加几何道具</div>
-              <div className="stage3d-prim-grid">
-                {PRIMITIVE_DEFS.map((p) => (
-                  <Button key={p.id} size="small" onClick={() => addPrimitive(p.id)}>
-                    {p.label}
-                  </Button>
-                ))}
-              </div>
-
-              <div className="stage3d-section-title">家具（GLB）</div>
-              {GLB_ASSETS.length === 0 ? (
-                <div className="stage3d-tip">
-                  Kenney 家具资产由后续阶段接入，当前可用几何道具搭建布局。
-                </div>
-              ) : (
-                <FurniturePanel onPick={addGlbProp} />
-              )}
-
-              <div className="stage3d-section-title">本地模型</div>
-              <input
-                ref={localModelInputRef}
-                type="file"
-                accept=".fbx,.obj,.glb"
-                className="stage3d-hidden-input"
-                onChange={(e) => {
-                  const input = e.currentTarget
-                  void importLocalModel(input.files?.[0]).finally(() => {
-                    input.value = ''
-                  })
-                }}
-              />
-              <Button
-                block
-                size="small"
-                icon={<Icons.Upload size={14} />}
-                onClick={() => localModelInputRef.current?.click()}
-              >
-                导入 FBX / OBJ / GLB
-              </Button>
-
-              <div className="stage3d-section-title">背景</div>
-              <Segmented
-                size="small"
-                block
-                value={draft.backdrop.mode}
-                onChange={(v) => setBackdropMode(v as Stage3DBackdropMode)}
-                options={[
-                  { label: '网格', value: 'grid' },
-                  { label: '全景', value: 'panorama' },
-                  { label: '背板', value: 'backdrop' },
-                ]}
-              />
-              {draft.backdrop.mode !== 'grid' && (
-                <>
-                  <div className="stage3d-subtle">
-                    {draft.backdrop.mode === 'panorama'
-                      ? '选一张全景图作为环境球'
-                      : '选一张场景图作为背板'}
-                  </div>
-                  {imageNodes.length === 0 ? (
-                    <div className="stage3d-tip">
-                      画布中暂无图片节点，先生成/上传一张图片再回来选取。
-                    </div>
-                  ) : (
-                    <Select
-                      size="small"
-                      className="stage3d-image-select"
-                      placeholder="选择背板图"
-                      allowClear
-                      showSearch
-                      optionFilterProp="title"
-                      value={bgNode?.id}
-                      options={backdropImageOptions}
-                      popupClassName="stage3d-image-select-popup"
-                      onChange={(id) =>
-                        setBackdropImage(imageNodes.find((n) => n.id === id) ?? null)
-                      }
-                    />
-                  )}
-                  <label className="stage3d-field">
-                    <span>旋转 {Math.round((draft.backdrop.rotationY ?? 0) / RAD)}°</span>
-                    <Slider
-                      min={-180}
-                      max={180}
-                      value={Math.round((draft.backdrop.rotationY ?? 0) / RAD)}
-                      onChange={(v) =>
-                        setDraft((d) => ({ ...d, backdrop: { ...d.backdrop, rotationY: v * RAD } }))
-                      }
-                    />
-                  </label>
-                </>
-              )}
-
-              <SceneControls draft={draft} setDraft={setDraft} />
-              <div className="stage3d-section-title">对象列表</div>
-              <div className="stage3d-object-list">
-                {!poseMode && (
-                  <button
-                    className={activeIsCamera ? 'active' : ''}
-                    onClick={() => setActive('camera')}
-                  >
-                    <span className="stage3d-swatch stage3d-swatch-cam">
-                      <Icons.Eye size={11} />
-                    </span>
-                    取景相机
-                    <Tag>机位</Tag>
-                  </button>
-                )}
-                {draft.actors.map((a) => (
-                  <button
-                    key={a.id}
-                    className={a.id === draft.activeId ? 'active' : ''}
-                    onClick={() => setActive(a.id)}
-                  >
-                    <span className="stage3d-swatch" style={{ background: a.color }}>
-                      <Icons.User size={11} />
-                    </span>
-                    {a.name}
-                    <Tag>{getStage3DActorModel(a.modelId).label}</Tag>
-                  </button>
-                ))}
-                {draft.props.map((p) => (
-                  <button
-                    key={p.id}
-                    className={p.id === draft.activeId ? 'active' : ''}
-                    onClick={() => setActive(p.id)}
-                  >
-                    <span className="stage3d-swatch" style={{ background: p.color ?? '#94a3b8' }}>
-                      <Icons.Box size={11} />
-                    </span>
-                    {p.name}
-                    <Tag>道具</Tag>
-                  </button>
-                ))}
-              </div>
-              <Button
-                block
-                size="small"
-                danger
-                icon={<Icons.Trash size={13} />}
-                disabled={activeIsCamera || !draft.activeId}
-                onClick={removeActive}
-              >
-                删除选中
-              </Button>
-              <div className="stage3d-tip">
-                点击选中对象；拖动坐标轴移动，切换到旋转微调朝向；Delete 删除。
-              </div>
-            </aside>
-          )}
-
-          {/* 中：3D 视口 */}
-          <div className="stage3d-viewport">
-            <Scene3D
-              ref={sceneRef}
-              data={draft}
-              cameraPreview={cameraPreview}
-              transformMode={transformMode}
-              snap={snap}
-              poseMode={poseMode}
-              onActorJointEuler={setActorJointEuler}
-              onActorDoubleClick={(id) => {
-                setActive(id)
-                setPoseMode(true)
-              }}
-              onSelect={setActive}
-              onActorTransform={handleActorTransform}
-              onCrowdTransform={handleCrowdTransform}
-              onPropTransform={handlePropTransform}
-              onCameraTransform={handleCameraTransform}
-              onActorPoseDragBegin={handleActorPoseDragBegin}
-              onActorPoseDragCommit={handleActorPoseDragCommit}
-              viewNavigationMode={viewNavigationMode}
-            />
-            {cameraPreview && (
-              <div className="stage3d-frame-mask" data-aspect={draft.camera.aspect} />
-            )}
-            {/* C3 构图参考线：纯 DOM overlay，只在取景预览时显示，不参与离屏截图 */}
-            {cameraPreview && guide !== 'none' && (
-              <div className={`stage3d-guide stage3d-guide-${guide}`} aria-hidden />
-            )}
-            {!cameraPreview && (
-              <div className="stage3d-viewport-toolbar">
-                <Segmented
-                  size="small"
-                  value={viewNavigationMode}
-                  onChange={(v) => setViewNavigationMode(v as 'orbit' | 'pan')}
-                  options={[
-                    {
-                      label: (
-                        <span className="stage3d-toolbar-option" title="左键旋转视角，右键平移画布">
-                          <Icons.Compass size={13} />
-                          视角
-                        </span>
-                      ),
-                      value: 'orbit',
-                    },
-                    {
-                      label: (
-                        <span className="stage3d-toolbar-option" title="左键拖动画布前后左右移动">
-                          <Icons.Hand size={13} />
-                          平移
-                        </span>
-                      ),
-                      value: 'pan',
-                    },
-                  ]}
-                />
-                <Segmented
-                  size="small"
-                  value={transformMode}
-                  onChange={(v) => setTransformMode(v as 'translate' | 'rotate')}
-                  options={[
-                    { label: '移动', value: 'translate' },
-                    { label: '旋转', value: 'rotate' },
-                  ]}
-                />
+              {onExportScreenshots && (
                 <Button
                   size="small"
-                  type={snap ? 'primary' : 'default'}
-                  icon={<Icons.Grid size={13} />}
-                  onClick={() => setSnap((v) => !v)}
-                  title="吸附对齐：半格网格 0.25m / 15°"
+                  type="text"
+                  icon={<Icons.Film size={14} />}
+                  disabled={shots.length === 0}
+                  onClick={exportAllShots}
                 >
-                  吸附
+                  导出全部镜头{shots.length > 0 ? `（${shots.length}）` : ''}
                 </Button>
-                {activeActor && (
-                  <Button
-                    size="small"
-                    type={poseMode ? 'primary' : 'default'}
-                    icon={<Icons.User size={13} />}
-                    onClick={() => setPoseMode((v) => !v)}
-                    title="摆姿势：点关节后用视口调节器调整 XYZ，手脚末端可拖 IK（Esc 退出）"
-                  >
-                    摆姿势
-                  </Button>
-                )}
-                {activeActor && (
-                  <Button
-                    size="small"
-                    icon={<Icons.Maximize size={13} />}
-                    onClick={() => setPoseEditorOpen(true)}
-                    title="全屏编辑：把当前角色扔进大视口摆姿势"
-                  >
-                    全屏编辑
-                  </Button>
-                )}
-                {poseMode && (
-                  <>
-                    <Button
-                      size="small"
-                      icon={<Icons.Undo2 size={13} />}
-                      disabled={!canUndo}
-                      onClick={undoPose}
-                      title="撤销（Cmd/Ctrl+Z）"
-                    >
-                      撤销
-                    </Button>
-                    <Button
-                      size="small"
-                      icon={<Icons.Redo2 size={13} />}
-                      disabled={!canRedo}
-                      onClick={redoPose}
-                      title="重做（Cmd/Ctrl+Shift+Z）"
-                    >
-                      重做
-                    </Button>
-                  </>
-                )}
-              </div>
-            )}
-            {cameraPreview && (
-              <div className="stage3d-viewport-toolbar">
-                <Segmented
+              )}
+              <Button size="small" type="text" icon={<Icons.Copy size={14} />} onClick={copyPrompt}>
+                复制提示词
+              </Button>
+              {onInsertPrompt && (
+                <Button
                   size="small"
-                  value={guide}
-                  onChange={(v) => setGuide(v as 'none' | 'thirds' | 'cross')}
-                  options={[
-                    { label: '无参考线', value: 'none' },
-                    { label: '三分法', value: 'thirds' },
-                    { label: '中心十字', value: 'cross' },
-                  ]}
-                />
-              </div>
-            )}
+                  type="text"
+                  icon={<Icons.FileText size={14} />}
+                  onClick={insertPrompt}
+                >
+                  提示词节点
+                </Button>
+              )}
+              <Button size="small" type="text" icon={<Icons.Check size={14} />} onClick={save}>
+                保存
+              </Button>
+              <Button
+                size="small"
+                type="text"
+                icon={<Icons.X size={16} />}
+                onClick={requestClose}
+                title="关闭（有未保存内容时会提示）"
+              />
+            </div>
           </div>
 
-          {/* 右：属性面板 */}
-          {inspectorCollapsed ? (
-            <button
-              type="button"
-              className="stage3d-panel-rail stage3d-panel-rail-right"
-              onClick={() => setInspectorCollapsed(false)}
-              title="展开右侧面板"
-            >
-              <Icons.PanelRight size={16} />
-            </button>
-          ) : (
-            <aside className="stage3d-inspector">
+          <div className="stage3d-body">
+            {/* 左：工具栏 */}
+            {toolsCollapsed ? (
               <button
                 type="button"
-                className="stage3d-panel-collapse stage3d-panel-collapse-right"
-                onClick={() => setInspectorCollapsed(true)}
-                title="折叠右侧面板"
+                className="stage3d-panel-rail stage3d-panel-rail-left"
+                onClick={() => setToolsCollapsed(false)}
+                title="展开左侧面板"
               >
-                <Icons.ChevronRight size={14} />
+                <Icons.PanelLeft size={16} />
               </button>
-              {activeIsCamera ? (
-                <CameraInspector draft={draft} setDraft={setDraft} onAim={aimCameraAtSelected} />
-              ) : activeActor ? (
-                <ActorInspector
-                  actor={activeActor}
-                  characterNodes={characterNodes}
-                  onUpdate={(patch) => updateActor(activeActor.id, patch)}
-                  onJoint={(joint, axis, deg) => updateActorJoint(activeActor.id, joint, axis, deg)}
-                  onJointBegin={() => beginActorJointEdit(activeActor.id)}
-                  onJointCommit={() => commitActorJointEdit(activeActor.id)}
-                  onResetJoints={() => resetActorJoints(activeActor.id)}
-                />
-              ) : activeProp ? (
-                <PropInspector
-                  prop={activeProp}
-                  onUpdate={(patch) => updateProp(activeProp.id, patch)}
-                />
-              ) : (
-                <div className="stage3d-tip">选中一个对象以编辑属性。</div>
-              )}
-
-              <ShotListPanel
-                shots={shots}
-                onSaveCurrent={saveCurrentAsShot}
-                onApply={applyShot}
-                onUpdate={updateShot}
-                onDuplicate={duplicateShot}
-                onRemove={removeShot}
-              />
-
-              <LightingInspector
-                preset={lighting.preset}
-                intensity={lighting.intensity}
-                onPreset={(preset) => setLighting({ preset })}
-                onIntensity={(intensity) => setLighting({ intensity })}
-              />
-
-              <SlateInspector
-                scene={draft.slate?.scene ?? ''}
-                shotNumber={draft.slate?.shotNumber ?? ''}
-                take={draft.slate?.take ?? ''}
-                note={draft.slate?.note ?? ''}
-                onChange={setSlate}
-              />
-
-              <div className="stage3d-section-title">场景与提示词</div>
-              <label className="stage3d-field">
-                <span>场景一句话</span>
-                <Input
+            ) : (
+              <aside className="stage3d-tools">
+                <button
+                  type="button"
+                  className="stage3d-panel-collapse stage3d-panel-collapse-left"
+                  onClick={() => setToolsCollapsed(true)}
+                  title="折叠左侧面板"
+                >
+                  <Icons.ChevronLeft size={14} />
+                </button>
+                <div className="stage3d-section-title">添加角色</div>
+                <label className="stage3d-field">
+                  <span>人物模型</span>
+                  <Select
+                    size="small"
+                    style={{ width: '100%' }}
+                    value={newActorModelId}
+                    onChange={(id) => setNewActorModelId(id as Stage3DActorModelId)}
+                    options={BUILTIN_STAGE3D_ACTOR_MODELS.map((model) => ({
+                      value: model.id,
+                      label: model.label,
+                    }))}
+                  />
+                </label>
+                <Button
+                  block
                   size="small"
-                  value={draft.sceneBrief ?? ''}
-                  onChange={(e) => setDraft((d) => ({ ...d, sceneBrief: e.target.value }))}
-                  placeholder="例如：黄昏的咖啡馆窗边"
+                  icon={<Icons.User size={14} />}
+                  onClick={() => addActor()}
+                >
+                  路人角色
+                </Button>
+                {characterNodes.length > 0 && (
+                  <Dropdown
+                    menu={{
+                      items: characterNodes.map((c) => ({ key: c.id, label: c.title })),
+                      onClick: ({ key }) => {
+                        const c = characterNodes.find((x) => x.id === key)
+                        if (c) addActor(c.id, c.title)
+                      },
+                    }}
+                  >
+                    <Button block size="small" icon={<Icons.Users size={14} />}>
+                      绑定画布角色
+                    </Button>
+                  </Dropdown>
+                )}
+
+                <div className="stage3d-section-title">群众阵列</div>
+                <div className="stage3d-crowd-grid">
+                  <label className="stage3d-field">
+                    <span>行</span>
+                    <Input
+                      size="small"
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={crowdRows}
+                      onChange={(e) => setCrowdRows(clamp(Number(e.target.value), 1, 12))}
+                    />
+                  </label>
+                  <label className="stage3d-field">
+                    <span>列</span>
+                    <Input
+                      size="small"
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={crowdColumns}
+                      onChange={(e) => setCrowdColumns(clamp(Number(e.target.value), 1, 12))}
+                    />
+                  </label>
+                  <label className="stage3d-field">
+                    <span>间距</span>
+                    <Input
+                      size="small"
+                      type="number"
+                      min={0.5}
+                      max={4}
+                      step={0.1}
+                      value={crowdSpacing}
+                      onChange={(e) => setCrowdSpacing(clamp(Number(e.target.value), 0.5, 4))}
+                    />
+                  </label>
+                </div>
+                <Button
+                  block
+                  size="small"
+                  icon={<Icons.Users size={14} />}
+                  onClick={addCrowdActors}
+                >
+                  添加群众阵列（{Math.round(crowdRows)}x{Math.round(crowdColumns)}）
+                </Button>
+
+                <div className="stage3d-section-title">添加几何道具</div>
+                <div className="stage3d-prim-grid">
+                  {PRIMITIVE_DEFS.map((p) => (
+                    <Button key={p.id} size="small" onClick={() => addPrimitive(p.id)}>
+                      {p.label}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="stage3d-section-title">家具（GLB）</div>
+                {GLB_ASSETS.length === 0 ? (
+                  <div className="stage3d-tip">
+                    Kenney 家具资产由后续阶段接入，当前可用几何道具搭建布局。
+                  </div>
+                ) : (
+                  <FurniturePanel onPick={addGlbProp} />
+                )}
+
+                <div className="stage3d-section-title">本地模型</div>
+                <input
+                  ref={localModelInputRef}
+                  type="file"
+                  accept=".fbx,.obj,.glb"
+                  className="stage3d-hidden-input"
+                  onChange={(e) => {
+                    const input = e.currentTarget
+                    void importLocalModel(input.files?.[0]).finally(() => {
+                      input.value = ''
+                    })
+                  }}
                 />
-              </label>
-              <Input.TextArea
-                className="stage3d-prompt"
-                value={prompt}
-                autoSize={{ minRows: 5, maxRows: 12 }}
-                readOnly
+                <Button
+                  block
+                  size="small"
+                  icon={<Icons.Upload size={14} />}
+                  onClick={() => localModelInputRef.current?.click()}
+                >
+                  导入 FBX / OBJ / GLB
+                </Button>
+
+                <div className="stage3d-section-title">背景</div>
+                <Segmented
+                  size="small"
+                  block
+                  value={draft.backdrop.mode}
+                  onChange={(v) => setBackdropMode(v as Stage3DBackdropMode)}
+                  options={[
+                    { label: '网格', value: 'grid' },
+                    { label: '全景', value: 'panorama' },
+                    { label: '背板', value: 'backdrop' },
+                  ]}
+                />
+                {draft.backdrop.mode !== 'grid' && (
+                  <>
+                    <div className="stage3d-subtle">
+                      {draft.backdrop.mode === 'panorama'
+                        ? '选一张全景图作为环境球'
+                        : '选一张场景图作为背板'}
+                    </div>
+                    {imageNodes.length === 0 ? (
+                      <div className="stage3d-tip">
+                        画布中暂无图片节点，先生成/上传一张图片再回来选取。
+                      </div>
+                    ) : (
+                      <Select
+                        size="small"
+                        className="stage3d-image-select"
+                        placeholder="选择背板图"
+                        allowClear
+                        showSearch
+                        optionFilterProp="title"
+                        value={bgNode?.id}
+                        options={backdropImageOptions}
+                        popupClassName="stage3d-image-select-popup"
+                        onChange={(id) =>
+                          setBackdropImage(imageNodes.find((n) => n.id === id) ?? null)
+                        }
+                      />
+                    )}
+                    <label className="stage3d-field">
+                      <span>旋转 {Math.round((draft.backdrop.rotationY ?? 0) / RAD)}°</span>
+                      <Slider
+                        min={-180}
+                        max={180}
+                        value={Math.round((draft.backdrop.rotationY ?? 0) / RAD)}
+                        onChange={(v) =>
+                          setDraft((d) => ({
+                            ...d,
+                            backdrop: { ...d.backdrop, rotationY: v * RAD },
+                          }))
+                        }
+                      />
+                    </label>
+                  </>
+                )}
+
+                <SceneControls draft={draft} setDraft={setDraft} />
+                <div className="stage3d-section-title">对象列表</div>
+                <div className="stage3d-object-list">
+                  {!poseMode && (
+                    <button
+                      className={activeIsCamera ? 'active' : ''}
+                      onClick={() => setActive('camera')}
+                    >
+                      <span className="stage3d-swatch stage3d-swatch-cam">
+                        <Icons.Eye size={11} />
+                      </span>
+                      取景相机
+                      <Tag>机位</Tag>
+                    </button>
+                  )}
+                  {draft.actors.map((a) => (
+                    <button
+                      key={a.id}
+                      className={a.id === draft.activeId ? 'active' : ''}
+                      onClick={() => setActive(a.id)}
+                    >
+                      <span className="stage3d-swatch" style={{ background: a.color }}>
+                        <Icons.User size={11} />
+                      </span>
+                      {a.name}
+                      <Tag>{getStage3DActorModel(a.modelId).label}</Tag>
+                    </button>
+                  ))}
+                  {draft.props.map((p) => (
+                    <button
+                      key={p.id}
+                      className={p.id === draft.activeId ? 'active' : ''}
+                      onClick={() => setActive(p.id)}
+                    >
+                      <span className="stage3d-swatch" style={{ background: p.color ?? '#94a3b8' }}>
+                        <Icons.Box size={11} />
+                      </span>
+                      {p.name}
+                      <Tag>道具</Tag>
+                    </button>
+                  ))}
+                </div>
+                <Button
+                  block
+                  size="small"
+                  danger
+                  icon={<Icons.Trash size={13} />}
+                  disabled={activeIsCamera || !draft.activeId}
+                  onClick={removeActive}
+                >
+                  删除选中
+                </Button>
+                <div className="stage3d-tip">
+                  点击选中对象；拖动坐标轴移动，切换到旋转微调朝向；Delete 删除。
+                </div>
+              </aside>
+            )}
+
+            {/* 中：3D 视口 */}
+            <div className="stage3d-viewport">
+              <Scene3D
+                ref={sceneRef}
+                data={draft}
+                cameraPreview={cameraPreview}
+                transformMode={transformMode}
+                snap={snap}
+                poseMode={poseMode}
+                onActorJointEuler={setActorJointEuler}
+                onActorDoubleClick={(id) => {
+                  setActive(id)
+                  setPoseMode(true)
+                }}
+                onSelect={setActive}
+                onActorTransform={handleActorTransform}
+                onCrowdTransform={handleCrowdTransform}
+                onPropTransform={handlePropTransform}
+                onCameraTransform={handleCameraTransform}
+                onActorPoseDragBegin={handleActorPoseDragBegin}
+                onActorPoseDragCommit={handleActorPoseDragCommit}
+                viewNavigationMode={viewNavigationMode}
               />
-            </aside>
-          )}
-        </div>
+              {cameraPreview && (
+                <div className="stage3d-frame-mask" data-aspect={draft.camera.aspect} />
+              )}
+              {/* C3 构图参考线：纯 DOM overlay，只在取景预览时显示，不参与离屏截图 */}
+              {cameraPreview && guide !== 'none' && (
+                <div className={`stage3d-guide stage3d-guide-${guide}`} aria-hidden />
+              )}
+              {!cameraPreview && (
+                <div className="stage3d-viewport-toolbar">
+                  <Segmented
+                    size="small"
+                    value={viewNavigationMode}
+                    onChange={(v) => setViewNavigationMode(v as 'orbit' | 'pan')}
+                    options={[
+                      {
+                        label: (
+                          <span
+                            className="stage3d-toolbar-option"
+                            title="左键旋转视角，右键平移画布"
+                          >
+                            <Icons.Compass size={13} />
+                            视角
+                          </span>
+                        ),
+                        value: 'orbit',
+                      },
+                      {
+                        label: (
+                          <span className="stage3d-toolbar-option" title="左键拖动画布前后左右移动">
+                            <Icons.Hand size={13} />
+                            平移
+                          </span>
+                        ),
+                        value: 'pan',
+                      },
+                    ]}
+                  />
+                  <Segmented
+                    size="small"
+                    value={transformMode}
+                    onChange={(v) => setTransformMode(v as 'translate' | 'rotate')}
+                    options={[
+                      { label: '移动', value: 'translate' },
+                      { label: '旋转', value: 'rotate' },
+                    ]}
+                  />
+                  <Button
+                    size="small"
+                    type={snap ? 'primary' : 'default'}
+                    icon={<Icons.Grid size={13} />}
+                    onClick={() => setSnap((v) => !v)}
+                    title="吸附对齐：半格网格 0.25m / 15°"
+                  >
+                    吸附
+                  </Button>
+                  {activeActor && (
+                    <Button
+                      size="small"
+                      type={poseMode ? 'primary' : 'default'}
+                      icon={<Icons.User size={13} />}
+                      onClick={() => setPoseMode((v) => !v)}
+                      title="摆姿势：点关节后用视口调节器调整 XYZ，手脚末端可拖 IK（Esc 退出）"
+                    >
+                      摆姿势
+                    </Button>
+                  )}
+                  {activeActor && (
+                    <Button
+                      size="small"
+                      icon={<Icons.Maximize size={13} />}
+                      onClick={() => setPoseEditorOpen(true)}
+                      title="全屏编辑：把当前角色扔进大视口摆姿势"
+                    >
+                      全屏编辑
+                    </Button>
+                  )}
+                  {poseMode && (
+                    <>
+                      <Button
+                        size="small"
+                        icon={<Icons.Undo2 size={13} />}
+                        disabled={!canUndo}
+                        onClick={undoPose}
+                        title="撤销（Cmd/Ctrl+Z）"
+                      >
+                        撤销
+                      </Button>
+                      <Button
+                        size="small"
+                        icon={<Icons.Redo2 size={13} />}
+                        disabled={!canRedo}
+                        onClick={redoPose}
+                        title="重做（Cmd/Ctrl+Shift+Z）"
+                      >
+                        重做
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
+              {cameraPreview && (
+                <div className="stage3d-viewport-toolbar">
+                  <Segmented
+                    size="small"
+                    value={guide}
+                    onChange={(v) => setGuide(v as 'none' | 'thirds' | 'cross')}
+                    options={[
+                      { label: '无参考线', value: 'none' },
+                      { label: '三分法', value: 'thirds' },
+                      { label: '中心十字', value: 'cross' },
+                    ]}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* 右：属性面板 */}
+            {inspectorCollapsed ? (
+              <button
+                type="button"
+                className="stage3d-panel-rail stage3d-panel-rail-right"
+                onClick={() => setInspectorCollapsed(false)}
+                title="展开右侧面板"
+              >
+                <Icons.PanelRight size={16} />
+              </button>
+            ) : (
+              <aside className="stage3d-inspector">
+                <button
+                  type="button"
+                  className="stage3d-panel-collapse stage3d-panel-collapse-right"
+                  onClick={() => setInspectorCollapsed(true)}
+                  title="折叠右侧面板"
+                >
+                  <Icons.ChevronRight size={14} />
+                </button>
+                {activeIsCamera ? (
+                  <CameraInspector draft={draft} setDraft={setDraft} onAim={aimCameraAtSelected} />
+                ) : activeActor ? (
+                  <ActorInspector
+                    actor={activeActor}
+                    characterNodes={characterNodes}
+                    onUpdate={(patch) => updateActor(activeActor.id, patch)}
+                    onJoint={(joint, axis, deg) =>
+                      updateActorJoint(activeActor.id, joint, axis, deg)
+                    }
+                    onJointBegin={() => beginActorJointEdit(activeActor.id)}
+                    onJointCommit={() => commitActorJointEdit(activeActor.id)}
+                    onResetJoints={() => resetActorJoints(activeActor.id)}
+                  />
+                ) : activeProp ? (
+                  <PropInspector
+                    prop={activeProp}
+                    onUpdate={(patch) => updateProp(activeProp.id, patch)}
+                  />
+                ) : (
+                  <div className="stage3d-tip">选中一个对象以编辑属性。</div>
+                )}
+
+                <ShotListPanel
+                  shots={shots}
+                  onSaveCurrent={saveCurrentAsShot}
+                  onApply={applyShot}
+                  onUpdate={updateShot}
+                  onDuplicate={duplicateShot}
+                  onRemove={removeShot}
+                />
+
+                <LightingInspector
+                  preset={lighting.preset}
+                  intensity={lighting.intensity}
+                  onPreset={(preset) => setLighting({ preset })}
+                  onIntensity={(intensity) => setLighting({ intensity })}
+                />
+
+                <SlateInspector
+                  scene={draft.slate?.scene ?? ''}
+                  shotNumber={draft.slate?.shotNumber ?? ''}
+                  take={draft.slate?.take ?? ''}
+                  note={draft.slate?.note ?? ''}
+                  onChange={setSlate}
+                />
+
+                <div className="stage3d-section-title">场景与提示词</div>
+                <label className="stage3d-field">
+                  <span>场景一句话</span>
+                  <Input
+                    size="small"
+                    value={draft.sceneBrief ?? ''}
+                    onChange={(e) => setDraft((d) => ({ ...d, sceneBrief: e.target.value }))}
+                    placeholder="例如：黄昏的咖啡馆窗边"
+                  />
+                </label>
+                <Input.TextArea
+                  className="stage3d-prompt"
+                  value={prompt}
+                  autoSize={{ minRows: 5, maxRows: 12 }}
+                  readOnly
+                />
+              </aside>
+            )}
+          </div>
         </div>
         {poseEditorOpen && activeActor && (
           <PoseEditorModal

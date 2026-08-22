@@ -1,0 +1,680 @@
+// Legacy canvas panels and portal-mounted dialogs use these names instead of the
+// cinematic tokens. Keep them on the document theme as well as the workspace so
+// Ant Design portals mounted under body inherit the same light palette.
+html:has(.canvas-workspace.canvas-cinematic) {
+  // 节点右键菜单由 Ant Design 挂到 body，无法继承工作台内部的 --panel。
+  // 这里把它桥接到图一空白画布菜单使用的炭黑表面。
+  --canvas-context-menu-bg: #191919;
+}
+
+html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
+  --canvas-context-menu-bg: rgba(255, 255, 255, 0.98);
+  --canvas-v4-surface: #ffffff;
+  --canvas-v4-surface-muted: #f1f0ec;
+  --canvas-v4-divider: rgba(47, 43, 37, 0.1);
+  --canvas-v4-radius-xs: 6px;
+  --canvas-v4-radius-sm: 8px;
+  --canvas-field-bg: #f5f4f1;
+  --canvas-float-bg: rgba(255, 255, 255, 0.96);
+  --canvas-float-bg-solid: #ffffff;
+  --canvas-float-border-subtle: rgba(47, 43, 37, 0.14);
+  --canvas-float-divider-subtle: rgba(47, 43, 37, 0.1);
+  --canvas-float-icon: #6a665e;
+  --canvas-float-icon-strong: #2f2c27;
+  --canvas-float-hover: rgba(47, 43, 37, 0.06);
+  --canvas-float-active: rgba(101, 91, 216, 0.1);
+  --canvas-float-shadow:
+    0 20px 52px rgba(59, 54, 47, 0.14), 0 8px 18px rgba(59, 54, 47, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  --canvas-node-bg: #ffffff;
+  --canvas-node-head-bg: #faf9f6;
+  --canvas-node-body-bg: #ffffff;
+  --canvas-node-shadow: 0 16px 32px rgba(31, 28, 24, 0.08), 0 2px 8px rgba(31, 28, 24, 0.06);
+  --canvas-node-shadow-selected: 0 18px 44px rgba(31, 28, 24, 0.14);
+  --canvas-node-edge: rgba(47, 43, 37, 0.12);
+}
+
+.canvas-workspace.canvas-cinematic {
+  .canvas-window-theme-switcher {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--canvas-cinema-border);
+    border-radius: 10px;
+    background: var(--canvas-cinema-surface-2);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+  }
+
+  .canvas-window-theme-option {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--canvas-cinema-text-faint);
+    cursor: pointer;
+    transition:
+      background var(--canvas-cinema-motion-fast) ease,
+      color var(--canvas-cinema-motion-fast) ease,
+      transform var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-window-theme-option:hover {
+    background: var(--canvas-cinema-surface-3);
+    color: var(--canvas-cinema-text);
+    transform: translateY(-1px);
+  }
+
+  .canvas-window-theme-option.is-active {
+    background: var(--canvas-cinema-accent-soft);
+    color: var(--canvas-cinema-accent-bright);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--canvas-cinema-accent) 32%, transparent);
+  }
+
+  .canvas-window-theme-option:focus-visible {
+    outline: 2px solid var(--canvas-cinema-accent-bright);
+    outline-offset: 1px;
+  }
+}
+
+.canvas-window-standalone > .canvas-workspace.canvas-cinematic {
+  .canvas-toolbar {
+    min-width: 0;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    overflow: hidden;
+  }
+
+  .canvas-toolbar-save {
+    min-width: 0;
+  }
+}
+
+.canvas-window-standalone.theme-light > .canvas-workspace.canvas-cinematic {
+  color-scheme: light;
+
+  --canvas-cinema-bg: #f7f6f3;
+  --canvas-cinema-stage: #efeeeb;
+  --canvas-cinema-surface-1: #fbfaf7;
+  --canvas-cinema-surface-2: #ffffff;
+  --canvas-cinema-surface-3: #f1f0ec;
+  --canvas-cinema-surface-4: #e4e1da;
+  --canvas-cinema-border: rgba(47, 43, 37, 0.1);
+  --canvas-cinema-border-strong: rgba(47, 43, 37, 0.18);
+  --canvas-cinema-text-strong: #1d1c19;
+  --canvas-cinema-text: #484640;
+  --canvas-cinema-text-muted: #777169;
+  --canvas-cinema-text-faint: #9a958c;
+  --canvas-cinema-accent: #655bd8;
+  --canvas-cinema-accent-bright: #5148c7;
+  --canvas-cinema-accent-soft: rgba(101, 91, 216, 0.11);
+  --canvas-cinema-success: #168b68;
+  --canvas-cinema-warning: #b87512;
+  --canvas-cinema-danger: #d84d5b;
+  --canvas-context-menu-bg: rgba(255, 255, 255, 0.98);
+
+  // 旧画布模块仍使用 v4 / float / node 变量。这里显式桥接，避免未定义变量
+  // 回退到组件库暗色默认值，尤其是任务队列、预设中心和文本编辑浮层。
+  --canvas-v4-surface: var(--canvas-cinema-surface-2);
+  --canvas-v4-surface-muted: var(--canvas-cinema-surface-3);
+  --canvas-v4-divider: var(--canvas-cinema-border);
+  --canvas-v4-radius-xs: var(--canvas-cinema-radius-xs);
+  --canvas-v4-radius-sm: var(--canvas-cinema-radius-sm);
+  --canvas-field-bg: #f5f4f1;
+  --canvas-float-bg: rgba(255, 255, 255, 0.96);
+  --canvas-float-bg-solid: #ffffff;
+  --canvas-float-border-subtle: rgba(47, 43, 37, 0.14);
+  --canvas-float-divider-subtle: rgba(47, 43, 37, 0.1);
+  --canvas-float-icon: #6a665e;
+  --canvas-float-icon-strong: #2f2c27;
+  --canvas-float-hover: rgba(47, 43, 37, 0.06);
+  --canvas-float-active: rgba(101, 91, 216, 0.1);
+  --canvas-float-shadow:
+    0 20px 52px rgba(59, 54, 47, 0.14), 0 8px 18px rgba(59, 54, 47, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  --canvas-node-bg: #ffffff;
+  --canvas-node-head-bg: #faf9f6;
+  --canvas-node-body-bg: #ffffff;
+  --canvas-node-shadow: 0 16px 32px rgba(31, 28, 24, 0.08), 0 2px 8px rgba(31, 28, 24, 0.06);
+  --canvas-node-shadow-selected: 0 18px 44px rgba(31, 28, 24, 0.14);
+  --canvas-node-edge: rgba(47, 43, 37, 0.12);
+  --success: #168b68;
+  --success-bg: rgba(22, 139, 104, 0.1);
+  --warning: #b87512;
+  --warning-bg: rgba(184, 117, 18, 0.12);
+  --danger: #d84d5b;
+  --danger-bg: rgba(216, 77, 91, 0.1);
+  --info: #277191;
+  --info-bg: rgba(39, 113, 145, 0.1);
+  --danger-6: #d84d5b;
+  --shadow-color: #2f2b25;
+
+  --bg: var(--canvas-cinema-bg);
+  --bg-soft: var(--canvas-cinema-surface-1);
+  --bg-sunken: var(--canvas-cinema-stage);
+  --panel: var(--canvas-cinema-surface-1);
+  --panel-elev: var(--canvas-cinema-surface-2);
+  --canvas-edit-bg: var(--canvas-cinema-surface-3);
+  --border: var(--canvas-cinema-border);
+  --border-strong: var(--canvas-cinema-border-strong);
+  --divider: var(--canvas-cinema-border);
+  --text: var(--canvas-cinema-text);
+  --text-strong: var(--canvas-cinema-text-strong);
+  --text-muted: var(--canvas-cinema-text-muted);
+  --text-faint: var(--canvas-cinema-text-faint);
+  --primary: var(--canvas-cinema-accent);
+  --primary-hover: var(--canvas-cinema-accent-bright);
+  --primary-soft: var(--canvas-cinema-accent-soft);
+
+  .canvas-workspace-header {
+    background: rgba(251, 250, 247, 0.96);
+    box-shadow: 0 1px rgba(47, 43, 37, 0.08);
+  }
+
+  .canvas-stage {
+    background:
+      radial-gradient(circle at 58% 42%, rgba(101, 91, 216, 0.07), transparent 36%),
+      var(--canvas-cinema-stage);
+  }
+
+  .canvas-stage::before {
+    background-image: radial-gradient(circle, rgba(71, 67, 60, 0.16) 0 0.7px, transparent 0.8px);
+  }
+
+  .canvas-bottom-dock {
+    border-color: rgba(47, 43, 37, 0.16);
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow:
+      0 18px 42px rgba(59, 54, 47, 0.14),
+      inset 0 1px rgba(255, 255, 255, 0.78);
+  }
+
+  .canvas-minimap {
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 12px 30px rgba(59, 54, 47, 0.14);
+  }
+
+  .canvas-controls {
+    background: rgba(255, 255, 255, 0.86) !important;
+    box-shadow: 0 8px 22px rgba(59, 54, 47, 0.11) !important;
+  }
+
+  .canvas-controls .canvas-controls-button:hover:not(:disabled) {
+    background: rgba(47, 43, 37, 0.06);
+  }
+
+  .canvas-cinematic-empty-kicker {
+    background: rgba(255, 255, 255, 0.8);
+  }
+
+  .canvas-cinematic-command {
+    border-color: rgba(47, 43, 37, 0.14);
+    background: rgba(255, 255, 255, 0.94);
+    color: var(--canvas-cinema-accent-bright);
+    box-shadow:
+      0 26px 72px rgba(59, 54, 47, 0.14),
+      inset 0 1px rgba(255, 255, 255, 0.86);
+  }
+
+  .canvas-cinematic-command:focus-within {
+    box-shadow:
+      0 26px 72px rgba(59, 54, 47, 0.14),
+      0 0 0 3px rgba(101, 91, 216, 0.1),
+      inset 0 1px rgba(255, 255, 255, 0.86);
+  }
+
+  .canvas-cinematic-command-send {
+    background: var(--canvas-cinema-accent);
+    color: #ffffff;
+  }
+
+  .canvas-cinematic-starters button {
+    border-color: rgba(47, 43, 37, 0.1);
+    background: rgba(255, 255, 255, 0.74);
+  }
+
+  .canvas-agent-side-panel {
+    box-shadow: -18px 0 40px rgba(59, 54, 47, 0.1);
+  }
+
+  .canvas-agent-modal .chat-panel-context,
+  .canvas-agent-modal .chat-panel-text,
+  .canvas-agent-modal :is(.tool-call-card, .tool-result-card, .chat-panel-tool-card) {
+    background: var(--canvas-cinema-surface-3);
+  }
+
+  .canvas-agent-modal .chat-panel-message-user .chat-panel-text {
+    border-color: rgba(47, 43, 37, 0.1);
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-agent-modal .chat-panel-composer textarea {
+    box-shadow:
+      0 16px 36px rgba(59, 54, 47, 0.1),
+      inset 0 1px rgba(255, 255, 255, 0.78);
+  }
+
+  .canvas-right-panel-switch {
+    background: rgba(255, 255, 255, 0.78);
+  }
+
+  .canvas-right-panel-switch.is-agent.is-open {
+    background: rgba(101, 91, 216, 0.14);
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-right-panel-switch.is-workspace.is-open {
+    background: rgba(44, 130, 167, 0.12);
+    color: #277191;
+  }
+
+  .canvas-side-panel {
+    box-shadow: -14px 0 32px rgba(59, 54, 47, 0.08);
+  }
+
+  .canvas-pane-context-menu,
+  .canvas-pane-context-submenu-panel,
+  .canvas-edge-context-menu {
+    box-shadow: 0 18px 42px rgba(59, 54, 47, 0.18) !important;
+  }
+
+  .canvas-add-node-menu,
+  .canvas-dock-add-dropdown-panel {
+    background: rgba(255, 255, 255, 0.98);
+  }
+
+  .canvas-node {
+    box-shadow: 0 14px 34px rgba(59, 54, 47, 0.08);
+  }
+
+  .canvas-node-group {
+    border-color: rgba(47, 43, 37, 0.13) !important;
+    background: color-mix(in srgb, var(--canvas-cinema-surface-3) 86%, transparent) !important;
+  }
+
+  .canvas-node-group .canvas-node-quick-footer {
+    background: rgba(241, 240, 236, 0.92);
+  }
+
+  .canvas-node-task-image-actions button,
+  .canvas-node-image-overlay-footer button {
+    border-color: rgba(47, 43, 37, 0.12);
+    background: rgba(255, 255, 255, 0.84);
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  .canvas-stage-area {
+    --canvas-float-bg-solid: #ffffff;
+    --canvas-float-border-subtle: rgba(47, 43, 37, 0.14);
+    --canvas-float-divider-subtle: rgba(47, 43, 37, 0.1);
+    --canvas-float-icon: #6a665e;
+    --canvas-float-icon-strong: #2f2c27;
+    --canvas-float-hover: rgba(47, 43, 37, 0.06);
+    --canvas-float-active: rgba(101, 91, 216, 0.1);
+    --canvas-float-shadow:
+      0 20px 52px rgba(59, 54, 47, 0.14), 0 8px 18px rgba(59, 54, 47, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  }
+
+  // MarkdownText 还会经过全局 .md-surface 规则。显式设置内容和 Markdown
+  // 子元素颜色，避免独立窗口在切换后出现浅底白字或灰到不可读。
+  .canvas-node-text.md-surface,
+  .canvas-node-resource-text-content.md-surface,
+  .canvas-operation-output-text > .md-surface {
+    color: var(--canvas-cinema-text) !important;
+    --md-heading: var(--canvas-cinema-text-strong) !important;
+    --md-muted: var(--canvas-cinema-text-muted) !important;
+    --md-accent: var(--canvas-cinema-accent-bright) !important;
+    --md-divider: var(--canvas-cinema-border) !important;
+    --md-block-bg: var(--canvas-cinema-surface-3) !important;
+    --md-block-border: var(--canvas-cinema-border) !important;
+    --md-quote-bg: var(--canvas-cinema-accent-soft) !important;
+    --md-quote-border: color-mix(
+      in srgb,
+      var(--canvas-cinema-accent) 46%,
+      var(--canvas-cinema-border)
+    ) !important;
+    --md-inline-code-bg: var(--canvas-cinema-surface-3) !important;
+    --md-table-head-bg: var(--canvas-cinema-surface-3) !important;
+    --md-table-row-alt-bg: var(--canvas-cinema-surface-1) !important;
+    --code-fg: var(--canvas-cinema-text-strong) !important;
+    --code-bg: var(--canvas-cinema-surface-3) !important;
+  }
+
+  .canvas-node-text.md-surface :is(p, li, blockquote, td, th),
+  .canvas-node-resource-text-content.md-surface :is(p, li, blockquote, td, th),
+  .canvas-operation-output-text > .md-surface :is(p, li, blockquote, td, th) {
+    color: var(--canvas-cinema-text) !important;
+  }
+
+  .canvas-node-text.md-surface :is(h1, h2, h3, h4, h5, h6, strong),
+  .canvas-node-resource-text-content.md-surface :is(h1, h2, h3, h4, h5, h6, strong),
+  .canvas-operation-output-text > .md-surface :is(h1, h2, h3, h4, h5, h6, strong) {
+    color: var(--canvas-cinema-text-strong) !important;
+  }
+
+  .canvas-node-text.md-surface a,
+  .canvas-node-resource-text-content.md-surface a,
+  .canvas-operation-output-text > .md-surface a {
+    color: var(--canvas-cinema-accent-bright) !important;
+  }
+
+  .canvas-node-text.md-surface code,
+  .canvas-node-resource-text-content.md-surface code,
+  .canvas-operation-output-text > .md-surface code {
+    color: var(--canvas-cinema-text-strong) !important;
+    background: var(--canvas-cinema-surface-3) !important;
+  }
+
+  .canvas-node-text.md-surface :is(.md-code-block, .md-code-header, .md-code-highlighted),
+  .canvas-node-resource-text-content.md-surface
+    :is(.md-code-block, .md-code-header, .md-code-highlighted),
+  .canvas-operation-output-text
+    > .md-surface
+    :is(.md-code-block, .md-code-header, .md-code-highlighted) {
+    color: var(--canvas-cinema-text) !important;
+    background: var(--canvas-cinema-surface-3) !important;
+  }
+
+  .canvas-node-text.md-surface :is(.md-code, .md-code-highlighted .shiki),
+  .canvas-node-resource-text-content.md-surface :is(.md-code, .md-code-highlighted .shiki),
+  .canvas-operation-output-text > .md-surface :is(.md-code, .md-code-highlighted .shiki) {
+    color: var(--canvas-cinema-text-strong) !important;
+    background: transparent !important;
+  }
+
+  .canvas-node-text.md-surface .md-code-lang,
+  .canvas-node-resource-text-content.md-surface .md-code-lang,
+  .canvas-operation-output-text > .md-surface .md-code-lang {
+    color: var(--canvas-cinema-text-muted) !important;
+  }
+
+  .canvas-node-text.md-surface .md-code-highlighted span,
+  .canvas-node-resource-text-content.md-surface .md-code-highlighted span,
+  .canvas-operation-output-text > .md-surface .md-code-highlighted span {
+    color: var(--canvas-cinema-text-strong) !important;
+  }
+
+  // 操作产物预览仍复用旧版工作台的暗色继承色；浅色窗口需要在实际渲染容器上重置。
+  .canvas-operation-output-audio,
+  .canvas-operation-output-empty,
+  .canvas-operation-output-text {
+    color: var(--canvas-cinema-text) !important;
+  }
+
+  .canvas-node-resource-text,
+  .canvas-node-resource-text-content {
+    color: var(--canvas-cinema-text);
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-node-content-title-text {
+    color: var(--canvas-cinema-text-strong);
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-node-content-title-text strong {
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-node-content-title-text span,
+  .canvas-node-resource-text-icon {
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  // 任务队列侧栏和任务详情共用一组稳定的浅色表面，避免正文继承到
+  // antd 的暗色算法或未定义的旧变量。
+  .canvas-task-center,
+  .canvas-task-center .canvas-panel-title-row,
+  .canvas-task-center .canvas-task-queue-list,
+  .canvas-task-center .canvas-task-queue-list-modal {
+    color: var(--canvas-cinema-text);
+  }
+
+  .canvas-task-stat,
+  .canvas-task-card,
+  .canvas-task-detail-note,
+  .canvas-task-detail-empty-call,
+  .canvas-task-ref-list {
+    border-color: var(--canvas-cinema-border);
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text);
+  }
+
+  .canvas-task-stat:hover,
+  .canvas-task-card:hover {
+    border-color: var(--canvas-cinema-border-strong);
+    background: var(--canvas-cinema-surface-3);
+  }
+
+  .canvas-task-stat-active {
+    border-color: color-mix(in srgb, var(--canvas-cinema-accent) 48%, var(--canvas-cinema-border));
+    background: var(--canvas-cinema-accent-soft);
+  }
+
+  .canvas-task-card-title,
+  .canvas-task-detail-title,
+  .canvas-task-detail-block-title,
+  .canvas-task-detail-ref-list button {
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-task-card-meta,
+  .canvas-task-detail-meta,
+  .canvas-task-detail-subtitle,
+  .canvas-task-ref-list span,
+  .canvas-task-detail-desc .ant-descriptions-item-label {
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  .canvas-task-detail-block pre,
+  .canvas-task-error-log pre {
+    border-color: var(--canvas-cinema-border);
+    background: var(--canvas-cinema-surface-3);
+    color: var(--canvas-cinema-text);
+  }
+
+  .canvas-task-queue-modal-body {
+    color: var(--canvas-cinema-text);
+  }
+
+  .canvas-task-queue-bulk-actions .ant-btn {
+    color: var(--canvas-cinema-text);
+  }
+
+  // 预设中心的浮动入口、卡片和模式切换器统一使用浅色控件表面。
+  .canvas-preset-hub-quick-entry {
+    border-color: var(--canvas-cinema-border-strong);
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text);
+    box-shadow: 0 14px 30px rgba(59, 54, 47, 0.12);
+  }
+
+  .canvas-preset-hub-quick-entry:hover,
+  .canvas-preset-hub-quick-entry:focus-visible {
+    border-color: color-mix(
+      in srgb,
+      var(--canvas-cinema-accent) 38%,
+      var(--canvas-cinema-border-strong)
+    );
+    background: var(--canvas-cinema-surface-1);
+  }
+
+  .canvas-preset-hub-quick-entry-icon {
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-preset-hub-quick-entry-body strong,
+  .canvas-preset-hub-card-title-row h3 {
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-preset-hub-quick-entry-body span,
+  .canvas-preset-hub-quick-entry-status,
+  .canvas-preset-hub-card-title > span,
+  .canvas-preset-hub-card-points span {
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  .canvas-preset-hub-quick-entry-status,
+  .canvas-preset-hub-card-points span {
+    background: var(--canvas-cinema-surface-3);
+    box-shadow: inset 0 0 0 1px var(--canvas-cinema-border);
+  }
+
+  .canvas-preset-hub-card {
+    border-color: color-mix(in srgb, var(--canvas-cinema-accent) 24%, var(--canvas-cinema-border));
+    background: var(--canvas-cinema-surface-2);
+    box-shadow:
+      0 14px 34px rgba(59, 54, 47, 0.1),
+      inset 0 1px rgba(255, 255, 255, 0.7);
+  }
+
+  .canvas-preset-hub-card-icon {
+    color: var(--canvas-cinema-accent-bright);
+    background: var(--canvas-cinema-accent-soft);
+  }
+
+  .canvas-floating-toolbar-shell .ant-btn:hover {
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-operation-preset-modal,
+  .canvas-operation-preset-modal-shell,
+  .canvas-operation-preset-scroll,
+  .canvas-preset-task-page,
+  .canvas-preset-node-page {
+    color: var(--canvas-cinema-text);
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-preset-mode-tabs,
+  .canvas-preset-node-list {
+    border-color: var(--canvas-cinema-border);
+    background: var(--canvas-cinema-surface-3);
+  }
+
+  .canvas-preset-task-card,
+  .canvas-preset-node-row:hover,
+  .canvas-preset-node-row.is-active {
+    border-color: var(--canvas-cinema-border);
+    background: var(--canvas-cinema-surface-1);
+  }
+
+  .canvas-preset-task-heading strong,
+  .canvas-preset-page-intro strong,
+  .canvas-preset-node-list-intro strong,
+  .canvas-preset-node-row.is-active,
+  .canvas-preset-mode-tabs > button.is-active {
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-preset-task-heading small,
+  .canvas-preset-page-intro span,
+  .canvas-preset-inheritance-note,
+  .canvas-preset-task-field-label,
+  .canvas-preset-task-note,
+  .canvas-preset-node-list-intro span,
+  .canvas-preset-node-row-copy small,
+  .canvas-preset-node-row-status,
+  .canvas-preset-detail-status {
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  .canvas-preset-task-picker .composer-select,
+  .canvas-preset-execution-switch {
+    border-color: var(--canvas-cinema-border);
+    background: var(--canvas-cinema-surface-3);
+  }
+
+  .canvas-preset-task-picker .canvas-model-picker-trigger,
+  .canvas-preset-execution-switch button {
+    color: var(--canvas-cinema-text);
+  }
+
+  .canvas-preset-execution-switch button.is-active {
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  // 媒体预览本身保持深色画面底，避免图片 / 视频内容被浅色主题改变观感。
+  .canvas-node-media-full-bleed,
+  .canvas-node-media-full-bleed .canvas-node-core,
+  .canvas-node-media-full-bleed .canvas-node-body,
+  .canvas-node-media-full-bleed .canvas-node-image-wrap {
+    background: #07090b;
+  }
+}
+
+// Modal / confirm portals are mounted under body, outside the workspace subtree.
+// Keep their light surfaces readable even when opened from the side panel.
+html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
+  .canvas-task-queue-modal .ant-modal-content,
+  .canvas-task-detail-modal .ant-modal-content,
+  .canvas-operation-preset-dialog .ant-modal-content,
+  .canvas-batch-task-modal .ant-modal-content {
+    border: 1px solid rgba(47, 43, 37, 0.1);
+    background: #ffffff;
+    color: #484640;
+  }
+
+  .canvas-task-queue-modal .ant-modal-header,
+  .canvas-task-detail-modal .ant-modal-header,
+  .canvas-operation-preset-dialog .ant-modal-header,
+  .canvas-batch-task-modal .ant-modal-header {
+    background: #ffffff;
+    color: #1d1c19;
+  }
+
+  .canvas-task-queue-modal .ant-modal-title,
+  .canvas-task-detail-modal .ant-modal-title,
+  .canvas-operation-preset-dialog .ant-modal-title,
+  .canvas-batch-task-modal .ant-modal-title {
+    color: #1d1c19;
+  }
+
+  .canvas-task-queue-modal .ant-modal-body,
+  .canvas-task-detail-modal .ant-modal-body,
+  .canvas-operation-preset-dialog .ant-modal-body,
+  .canvas-batch-task-modal .ant-modal-body {
+    background: #ffffff;
+    color: #484640;
+  }
+
+  .canvas-task-queue-modal .canvas-task-stat,
+  .canvas-task-queue-modal .canvas-task-card,
+  .canvas-task-detail-modal .canvas-task-detail-note,
+  .canvas-task-detail-modal .canvas-task-detail-empty-call,
+  .canvas-task-detail-modal .canvas-task-ref-list {
+    border-color: rgba(47, 43, 37, 0.1);
+    background: #fbfaf7;
+    color: #484640;
+  }
+
+  .canvas-task-queue-modal .canvas-task-stat strong,
+  .canvas-task-queue-modal .canvas-task-card-title,
+  .canvas-task-detail-modal .canvas-task-detail-title,
+  .canvas-task-detail-modal .canvas-task-detail-block-title {
+    color: #1d1c19;
+  }
+
+  .canvas-task-queue-modal .canvas-task-stat span,
+  .canvas-task-queue-modal .canvas-task-card-meta,
+  .canvas-task-detail-modal .canvas-task-detail-meta,
+  .canvas-task-detail-modal .canvas-task-detail-subtitle {
+    color: #777169;
+  }
+}
+
+@media (max-width: 1180px) {
+  .canvas-window-standalone.theme-light > .canvas-workspace.canvas-cinematic {
+    .canvas-window-theme-switcher {
+      margin-left: 2px;
+    }
+  }
+}

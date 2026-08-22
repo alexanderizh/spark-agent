@@ -40,6 +40,9 @@
   --bg-sunken: var(--canvas-cinema-stage);
   --panel: var(--canvas-cinema-surface-1);
   --panel-elev: var(--canvas-cinema-surface-2);
+  // 所有画布右键菜单共用同一根节点表面；Portal 菜单会在 window-theme.less
+  // 中把该变量桥接到 document，避免 Ant Design 的 colorBgElevated 抢回默认灰色。
+  --canvas-context-menu-bg: var(--panel);
   --canvas-edit-bg: var(--canvas-cinema-surface-2);
   --border: var(--canvas-cinema-border);
   --border-strong: var(--canvas-cinema-border-strong);

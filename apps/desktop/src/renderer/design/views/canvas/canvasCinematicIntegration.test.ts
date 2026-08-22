@@ -18,6 +18,7 @@ describe('canvas cinematic integration', () => {
       'agent.less',
       'panel-rail.less',
       'overlays.less',
+      'window-theme.less',
     ]
 
     expect(workspace).toContain("import './cinematic/index.less'")
@@ -329,6 +330,56 @@ describe('canvas cinematic integration', () => {
     )
   })
 
+  it('hard-overrides global Markdown colors inside light text nodes', () => {
+    const windowTheme = readCanvasSource('./cinematic/window-theme.less')
+
+    expect(windowTheme).toContain('--md-heading: var(--canvas-cinema-text-strong) !important;')
+    expect(windowTheme).toContain('--md-muted: var(--canvas-cinema-text-muted) !important;')
+    expect(windowTheme).toMatch(
+      /\.canvas-node-text\.md-surface :is\(h1, h2, h3, h4, h5, h6, strong\)[\s\S]*?color: var\(--canvas-cinema-text-strong\) !important;/,
+    )
+    expect(windowTheme).toMatch(
+      /\.canvas-node-text\.md-surface a[\s\S]*?color: var\(--canvas-cinema-accent-bright\) !important;/,
+    )
+    expect(windowTheme).toContain(
+      '.canvas-node-text.md-surface :is(.md-code, .md-code-highlighted .shiki)',
+    )
+  })
+
+  it('overrides legacy operation output text colors in the light canvas window', () => {
+    const windowTheme = readCanvasSource('./cinematic/window-theme.less')
+
+    expect(windowTheme).toMatch(
+      /\.canvas-operation-output-audio,[\s\S]*?\.canvas-operation-output-empty,[\s\S]*?\.canvas-operation-output-text\s*\{[\s\S]*?color: var\(--canvas-cinema-text\) !important;/,
+    )
+    expect(windowTheme).toContain('.canvas-operation-output-text > .md-surface')
+  })
+
+  it('uses the same white surface for light add-node menus as context submenus', () => {
+    const windowTheme = readCanvasSource('./cinematic/window-theme.less')
+
+    expect(windowTheme).toMatch(
+      /\.canvas-add-node-menu,[\s\S]*?\.canvas-dock-add-dropdown-panel\s*\{[\s\S]*?background: rgba\(255, 255, 255, 0\.98\);/,
+    )
+  })
+
+  it('bridges the shared context-menu surface to Ant Design portals', () => {
+    const contextMenuStyles = readCanvasSource('./canvasContextMenus.less')
+    const tokens = readCanvasSource('./cinematic/tokens.less')
+    const windowTheme = readCanvasSource('./cinematic/window-theme.less')
+
+    expect(tokens).toContain('--canvas-context-menu-bg: var(--panel);')
+    expect(contextMenuStyles).toContain(
+      'background: var(--canvas-context-menu-bg, var(--panel, #303030)) !important;',
+    )
+    expect(windowTheme).toContain('html:has(.canvas-workspace.canvas-cinematic) {')
+    expect(windowTheme).toContain('--canvas-context-menu-bg: #191919;')
+    expect(windowTheme).toContain(
+      "html[data-theme='light']:has(.canvas-window-standalone.theme-light)",
+    )
+    expect(windowTheme).toContain('--canvas-context-menu-bg: rgba(255, 255, 255, 0.98);')
+  })
+
   it('renders a functional empty-canvas creation surface', () => {
     const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
     const emptyState = readCanvasSource('./CanvasCinematicEmptyState.tsx')
@@ -384,7 +435,7 @@ describe('canvas cinematic integration', () => {
     expect(assetManager).toContain("event.key !== 'Escape'")
   })
 
-  it('keeps only the 3D director stage and gives its forms an isolated dark theme', () => {
+  it('keeps only the 3D director stage and makes its forms follow the window theme', () => {
     const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
     const stage = readCanvasSource('./CanvasStage.tsx')
     const node = readCanvasSource('./CanvasNode.tsx')
@@ -394,9 +445,12 @@ describe('canvas cinematic integration', () => {
     expect(workspace).not.toContain("subtype: 'director_stage'")
     expect(stage).not.toContain('onAddDirectorStageAtPosition')
     expect(node).not.toContain('DirectorStageMini')
-    expect(stage3dModal).toContain('<ConfigProvider theme={STAGE3D_FORM_THEME}>')
+    expect(stage3dModal).toContain('const STAGE3D_FORM_THEMES = {')
+    expect(stage3dModal).toContain('const resolvedTheme = useResolvedTheme()')
+    expect(stage3dModal).toContain('<ConfigProvider theme={STAGE3D_FORM_THEMES[resolvedTheme]}>')
+    expect(stage3dModal).toContain('algorithm: antdTheme.defaultAlgorithm')
     expect(stage3dModal).toContain('algorithm: antdTheme.darkAlgorithm')
-    expect(stage3dModal).toContain("colorText: '#e4e4e7'")
+    expect(stage3dModal).toContain("colorText: '#484640'")
   })
 
   it('keeps dedicated workbench owners and their macOS title-bar safe areas', () => {
@@ -409,6 +463,9 @@ describe('canvas cinematic integration', () => {
 
     expect(shellStyles).toMatch(/\.canvas-toolbar\s*\{[^}]*z-index:\s*auto/s)
     expect(workbenchStyles).toContain('.stage3d-field')
+    expect(workbenchStyles).toContain('.ant-btn {')
+    expect(workbenchStyles).toContain('.ant-segmented-item-selected')
+    expect(workbenchStyles).toContain("html[data-theme='light'] .stage3d-modal-overlay")
     expect(workbenchStyles).toContain('&.platform-darwin-safe-area')
     expect(workbenchStyles).toContain('background: var(--stage3d-topbar-bg)')
     expect(workbenchStyles).toMatch(

@@ -97,6 +97,7 @@ import { CanvasWorkspaceChrome } from './CanvasWorkspaceChrome'
 import { CanvasOverlayBoundary } from './CanvasOverlayBoundary'
 import { CanvasNodeEditModal } from './CanvasNodeEditModal'
 import { CanvasFloatingNodeToolbar } from './CanvasFloatingNodeToolbar'
+import type { CanvasWindowTheme } from './canvas-window-theme'
 import {
   buildCanvasSnapshotFileName,
   canvasTaskFailureMessage,
@@ -550,10 +551,16 @@ export function CanvasWorkspaceView({
   projectId,
   onBack,
   showSidebarExpandButton = true,
+  themeControlled = false,
+  windowTheme,
+  onWindowThemeChange,
 }: {
   projectId: string
   onBack: () => void | Promise<void>
   showSidebarExpandButton?: boolean
+  themeControlled?: boolean
+  windowTheme?: CanvasWindowTheme
+  onWindowThemeChange?: (theme: CanvasWindowTheme) => void
 }) {
   const {
     snapshot,
@@ -815,13 +822,14 @@ export function CanvasWorkspaceView({
     [promptLibraryCategories, snapshot?.project.metadata, updateProjectMetadata],
   )
   useEffect(() => {
+    if (themeControlled) return
     const prevTheme = t.theme
     if (prevTheme !== 'dark') setTweak('theme', 'dark')
     return () => {
       if (prevTheme !== 'dark') setTweak('theme', prevTheme)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [themeControlled])
   const [dirty, setDirty] = useState(() => isCanvasDirty(projectId))
   const [saving, setSaving] = useState(false)
   const [arrangingCanvas, setArrangingCanvas] = useState(false)
@@ -8257,6 +8265,8 @@ export function CanvasWorkspaceView({
         onAutoSaveChange={handleAutoSaveToggle}
         onExport={() => void handleExportProject()}
         onUploadFiles={() => uploadFilesInputRef.current?.click()}
+        {...(windowTheme != null ? { windowTheme } : {})}
+        {...(onWindowThemeChange != null ? { onWindowThemeChange } : {})}
         onOpenAgent={() => {
           closeCanvasFloatPanels('agent')
           openAgentPanel()
