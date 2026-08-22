@@ -828,6 +828,19 @@ function writeDb(db: CanvasDb): void {
   }
 }
 
+/**
+ * 写入任务运行态，但保留项目进入本次回写前的 dirty 状态。
+ *
+ * 任务提交、失败和取消属于后台生命周期回写；它们必须更新热存储，不能因为
+ * 一个原本干净的项目收到运行态事件，就伪造出「有未保存的用户编辑」。
+ * 若项目本来已经 dirty，则继续保留 dirty，避免吞掉用户自己的画布修改。
+ */
+function writeTaskRuntimeDb(db: CanvasDb, projectId: string): void {
+  const wasDirty = dirtyProjectIds.has(projectId)
+  persistHotDb(db)
+  if (wasDirty) dispatchDirty(projectId, true)
+}
+
 function writeHotDb(db: CanvasDb, projectId: string, dirty: boolean): void {
   persistHotDb(db)
   if (dirty) dirtyProjectIds.add(projectId)
@@ -4981,8 +4994,12 @@ export const canvasApi = {
     }
 
     updateProjectCounts(db, projectId)
-    writeDb(db)
-    return this.openSnapshot(projectId, task.boardId)
+    if (status === 'completed' || task.outputNodeIds.length > 0 || task.outputAssetIds.length > 0) {
+      writeDb(db)
+      return this.openSnapshot(projectId, task.boardId)
+    }
+    writeTaskRuntimeDb(db, projectId)
+    return snapshotFromDb(db, projectId, task.boardId)
   },
 
   /**
@@ -5648,8 +5665,8 @@ export const canvasApi = {
     }
 
     updateProjectCounts(db, projectId)
-    writeDb(db)
-    return this.openSnapshot(projectId)
+    writeTaskRuntimeDb(db, projectId)
+    return snapshotFromDb(db, projectId, task.boardId)
   },
 
   /**
@@ -6448,6 +6465,7 @@ export const canvasApi = {
     }
 
     if (response.status === 'failed' || response.error || !response.text.trim()) {
+      const hasFallbackOutput = response.text.trim().length > 0
       const at = now()
       task.status = 'failed'
       task.progress = 100
@@ -6460,7 +6478,7 @@ export const canvasApi = {
       task.provider = response.provider || task.provider || null
       task.modelId = response.model || task.modelId || null
       task.requestCall = response.requestCall ?? task.requestCall ?? null
-      if (response.text.trim()) {
+      if (hasFallbackOutput) {
         task.modelOutputText = response.text
         appendCanvasTaskModelOutputEvent(task, at, response.text)
         materializeCanvasTextTaskFallbackOutput({
@@ -6498,8 +6516,12 @@ export const canvasApi = {
         taskNode.updatedAt = at
       }
       updateProjectCounts(db, projectId)
-      writeDb(db)
-      return this.openSnapshot(projectId, task.boardId)
+      if (hasFallbackOutput) {
+        writeDb(db)
+        return this.openSnapshot(projectId, task.boardId)
+      }
+      writeTaskRuntimeDb(db, projectId)
+      return snapshotFromDb(db, projectId, task.boardId)
     }
 
     const outputRole = task.outputPipelineRole ?? taskNode.data.outputPipelineRole
@@ -6800,8 +6822,8 @@ export const canvasApi = {
       taskNode.updatedAt = at
     }
     updateProjectCounts(db, projectId)
-    writeDb(db)
-    return this.openSnapshot(projectId, task.boardId)
+    writeTaskRuntimeDb(db, projectId)
+    return snapshotFromDb(db, projectId, task.boardId)
   },
 
   /** 把平台 adapter 的输出写回 canvas_assets / canvas_nodes / canvas_edges */
@@ -6878,8 +6900,8 @@ export const canvasApi = {
         taskNode.updatedAt = at
       }
       updateProjectCounts(db, projectId)
-      writeDb(db)
-      return this.openSnapshot(projectId, task.boardId)
+      writeTaskRuntimeDb(db, projectId)
+      return snapshotFromDb(db, projectId, task.boardId)
     }
 
     task.status = 'completed'
