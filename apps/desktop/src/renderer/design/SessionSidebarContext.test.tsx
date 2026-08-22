@@ -48,6 +48,7 @@ vi.mock('./components/Toast', () => ({
 import { ToastProvider } from './components/Toast'
 import {
   filterSessionsByTime,
+  filterProjectGroupsWithSessions,
   SessionSidebarProvider,
   useSessionSidebar,
   type SessionSummary,
@@ -70,6 +71,23 @@ describe('SessionSidebarContext', () => {
     }
 
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  })
+
+  it('keeps only projects with sessions matching the active sidebar filters', () => {
+    const groups = [
+      {
+        workspace: { id: 'project-with-match' },
+        sessions: [{ id: 'session-1' }],
+      },
+      {
+        workspace: { id: 'project-without-match' },
+        sessions: [],
+      },
+    ] as unknown as Parameters<typeof filterProjectGroupsWithSessions>[0]
+
+    expect(filterProjectGroupsWithSessions(groups).map((group) => group.workspace.id)).toEqual([
+      'project-with-match',
+    ])
   })
 
   it('loads all session schedules once per refresh and exposes aggregated summaries', async () => {
