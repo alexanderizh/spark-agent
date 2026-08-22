@@ -141,6 +141,47 @@ function snapshotWithOutputs(node: CanvasNode): CanvasSnapshot {
   }
 }
 
+function snapshotWithAssetOnlyOutput(node: CanvasNode): CanvasSnapshot {
+  node.taskId = 'task-asset'
+  const base = snapshot(node)
+  return {
+    ...base,
+    assets: [
+      {
+        id: 'asset-only',
+        projectId: 'project-1',
+        userId: 1,
+        type: 'image',
+        source: 'ai_generated',
+        title: '全景产物',
+        url: 'https://example.com/panorama.png',
+        metadata: { panorama360: { projection: 'equirectangular' } },
+        createdAt: at,
+        updatedAt: at,
+      },
+    ],
+    tasks: [
+      {
+        id: 'task-asset',
+        projectId: 'project-1',
+        boardId: 'board-1',
+        userId: 1,
+        operation: 'panorama_360',
+        status: 'completed',
+        progress: 100,
+        operationNodeId: node.id,
+        inputNodeIds: [],
+        inputAssetIds: [],
+        outputNodeIds: [],
+        outputAssetIds: ['asset-only'],
+        modelParams: {},
+        createdAt: at,
+        updatedAt: at,
+      },
+    ],
+  }
+}
+
 function snapshotWithCurrentRun(
   node: CanvasNode,
   currentStatus: 'running' | 'failed',
@@ -293,6 +334,56 @@ describe('CanvasOperationWorkbench', () => {
     expect(actions?.textContent).not.toContain('展开当前')
     expect(document.querySelector('.canvas-operation-more-menu')?.textContent).toContain(
       '展开当前产物',
+    )
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('keeps download and panorama actions available for asset-only outputs', async () => {
+    const node = operationNode()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const onDownloadOutput = vi.fn()
+    const onPreviewPanoramaOutput = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <CanvasOperationWorkbench
+          node={node}
+          snapshot={snapshotWithAssetOnlyOutput(node)}
+          configPanel={<div>任务配置内容</div>}
+          onSaveOutput={vi.fn()}
+          onRenameNode={vi.fn()}
+          onDownloadOutput={onDownloadOutput}
+          onPreviewPanoramaOutput={onPreviewPanoramaOutput}
+        />,
+      )
+    })
+
+    const outputTab = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.canvas-operation-workbench-tab'),
+    ).find((tab) => tab.textContent?.includes('产物'))
+    await act(async () => outputTab?.click())
+
+    const popover = document.querySelector('[data-testid="popover-content"]')
+    const downloadButton = Array.from(popover?.querySelectorAll('button') ?? []).find((button) =>
+      button.textContent?.includes('下载当前产物'),
+    )
+    const panoramaButton = Array.from(popover?.querySelectorAll('button') ?? []).find((button) =>
+      button.textContent?.includes('全景预览'),
+    )
+    expect(downloadButton).toBeTruthy()
+    expect(panoramaButton).toBeTruthy()
+
+    await act(async () => downloadButton?.click())
+    await act(async () => panoramaButton?.click())
+    expect(onDownloadOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ assetId: 'asset-only', taskId: 'task-asset' }),
+    )
+    expect(onPreviewPanoramaOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ assetId: 'asset-only', panorama360: expect.any(Object) }),
     )
 
     await act(async () => root.unmount())

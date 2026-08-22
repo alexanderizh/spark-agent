@@ -133,6 +133,11 @@ import {
 } from './canvasTaskOutputIntegrity'
 import { resolveCanvasNodeDeletionIds } from './canvasNodeDeletion'
 import {
+  applyCanvasOperationOutputDeletion,
+  type CanvasOperationOutputDeletionResult,
+} from './canvasOperationOutputDeletion'
+import type { CanvasOperationOutputView } from './canvasOperationRuns'
+import {
   applyCanvasNodeLayoutUpdates,
   type CanvasNodeLayoutUpdate,
 } from './canvasNodeLayoutPersistence'
@@ -4327,6 +4332,27 @@ export const canvasApi = {
     updateProjectCounts(db, projectId)
     writeDb(db)
     return this.openSnapshot(projectId)
+  },
+
+  async deleteOperationOutputs(
+    projectId: string,
+    input: { operationNodeId: string; outputs: CanvasOperationOutputView[] },
+  ): Promise<{ snapshot: CanvasSnapshot; result: CanvasOperationOutputDeletionResult }> {
+    const db = readDb()
+    const applied = applyCanvasOperationOutputDeletion({
+      projectId,
+      ...input,
+      nodes: db.nodes,
+      edges: db.edges,
+      tasks: db.tasks,
+      updatedAt: now(),
+    })
+    db.nodes = applied.nodes
+    db.edges = applied.edges
+    db.tasks = applied.tasks
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return { snapshot: await this.openSnapshot(projectId), result: applied.result }
   },
 
   async patchNodes(

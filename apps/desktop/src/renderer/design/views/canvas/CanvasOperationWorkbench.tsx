@@ -64,8 +64,8 @@ export function CanvasOperationWorkbench({
     patch: Partial<CanvasNode>,
     data: CanvasNode['data'],
   ) => Promise<void>
-  onDownloadOutput?: (nodeId: string) => void
-  onPreviewPanoramaOutput?: (nodeId: string) => void
+  onDownloadOutput?: (output: CanvasOperationOutputView) => void
+  onPreviewPanoramaOutput?: (output: CanvasOperationOutputView) => void
   onOpenAssetLibrary?: (assetId: string) => void
   onSetPrimaryOutput?: (output: CanvasOperationOutputView) => Promise<void> | void
   onExpandOutputs?: (outputs: CanvasOperationOutputView[]) => Promise<void> | void
@@ -119,9 +119,17 @@ export function CanvasOperationWorkbench({
     outputs.length > 0 && outputs.every((output) => selectedOutputIdSet.has(output.id))
   const displayRunNumber = activeRun ? runs.length - effectiveRunIndex : 0
   const canDownload = Boolean(
-    outputNode && (activeOutput?.type === 'image' || activeOutput?.type === 'video'),
+    activeOutput &&
+    (activeOutput.type === 'image' ||
+      activeOutput.type === 'video' ||
+      activeOutput.type === 'audio') &&
+    (activeOutput.assetId || activeOutput.url || activeOutput.filePath),
   )
-  const canPreviewPanorama = Boolean(outputNode && activeOutput?.panorama360)
+  const canPreviewPanorama = Boolean(
+    activeOutput?.type === 'image' &&
+    activeOutput.panorama360 &&
+    (activeOutput.assetId || activeOutput.url),
+  )
   const isPrimaryOutput = Boolean(
     activeOutput && outputState.primaryOutput && activeOutput.id === outputState.primaryOutput.id,
   )
@@ -193,6 +201,7 @@ export function CanvasOperationWorkbench({
     <Button
       type="text"
       size="small"
+      className={`canvas-operation-workbench-tab${activeTab === tab ? ' is-active' : ''}`}
       disabled={(tab === 'output' || tab === 'history') && !hasOutputs}
       onClick={() => dispatch({ type: 'select-tab', tab })}
     >
@@ -353,17 +362,14 @@ export function CanvasOperationWorkbench({
                           </button>
                         </>
                       ) : null}
-                      {canPreviewPanorama && outputNode && onPreviewPanoramaOutput ? (
-                        <button
-                          type="button"
-                          onClick={() => onPreviewPanoramaOutput(outputNode.id)}
-                        >
+                      {canPreviewPanorama && activeOutput && onPreviewPanoramaOutput ? (
+                        <button type="button" onClick={() => onPreviewPanoramaOutput(activeOutput)}>
                           <Icons.Maximize size={14} />
                           <span>全景预览</span>
                         </button>
                       ) : null}
-                      {canDownload && outputNode && onDownloadOutput ? (
-                        <button type="button" onClick={() => onDownloadOutput(outputNode.id)}>
+                      {canDownload && activeOutput && onDownloadOutput ? (
+                        <button type="button" onClick={() => onDownloadOutput(activeOutput)}>
                           <Icons.Download size={14} />
                           <span>下载当前产物</span>
                         </button>

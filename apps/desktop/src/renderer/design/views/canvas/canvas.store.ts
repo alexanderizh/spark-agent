@@ -657,6 +657,15 @@ export function useCanvasWorkspace(projectId: string) {
     [applyCanvasMutationSnapshot, projectId],
   )
 
+  const deleteOperationOutputs = useCallback(
+    async (input: Parameters<typeof canvasApi.deleteOperationOutputs>[1]) => {
+      const { snapshot: next, result } = await canvasApi.deleteOperationOutputs(projectId, input)
+      await applyCanvasMutationSnapshot(Promise.resolve(next))
+      return result
+    },
+    [applyCanvasMutationSnapshot, projectId],
+  )
+
   const duplicateNodes = useCallback(
     async (nodeIds: string[]) => {
       await applyCanvasMutationSnapshot(canvasApi.duplicateNodes(projectId, nodeIds))
@@ -1261,6 +1270,7 @@ export function useCanvasWorkspace(projectId: string) {
     addNodesToGroup,
     removeNodesFromGroup,
     deleteNodes,
+    deleteOperationOutputs,
     duplicateNodes,
     patchNodes,
     updateNode,

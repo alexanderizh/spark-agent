@@ -3,6 +3,8 @@ import type { CanvasAsset, CanvasNode, CanvasSnapshot, CanvasTaskStatus } from '
 
 export type CanvasOperationOutputView = {
   id: string
+  /** 所属运行任务；删除等持久化操作据此只修改当前 run。 */
+  taskId?: string
   nodeId?: string
   assetId?: string
   type: CanvasAsset['type']
@@ -79,6 +81,7 @@ function operationOutputView(
   node: CanvasNode | undefined,
   asset: CanvasAsset | undefined,
   fallbackId: string,
+  taskId: string,
 ): CanvasOperationOutputView {
   const url = node?.data.url ?? asset?.url ?? undefined
   const thumbnailUrl = node?.data.thumbnailUrl ?? asset?.thumbnailUrl ?? undefined
@@ -96,6 +99,7 @@ function operationOutputView(
     (typeof asset?.metadata.filePath === 'string' ? asset.metadata.filePath : undefined)
   return {
     id: node?.id ?? asset?.id ?? fallbackId,
+    taskId,
     ...(node ? { nodeId: node.id } : {}),
     ...(asset ? { assetId: asset.id } : {}),
     type: outputTypeForNode(node, asset),
@@ -160,7 +164,7 @@ export function buildCanvasOperationRunViews(
       const node = nodesById.get(nodeId)
       const asset = node?.assetId ? assetsById.get(node.assetId) : undefined
       if (!node && !asset) continue
-      const view = operationOutputView(node, asset, nodeId)
+      const view = operationOutputView(node, asset, nodeId, taskId)
       if (seen.has(view.id)) continue
       seen.add(view.id)
       outputs.push(view)
@@ -170,7 +174,7 @@ export function buildCanvasOperationRunViews(
       const asset = assetsById.get(assetId)
       if (!asset || seen.has(asset.id)) continue
       const node = snapshot.nodes.find((item) => item.assetId === assetId)
-      const view = operationOutputView(node, asset, assetId)
+      const view = operationOutputView(node, asset, assetId, taskId)
       if (seen.has(view.id)) continue
       seen.add(view.id)
       outputs.push(view)

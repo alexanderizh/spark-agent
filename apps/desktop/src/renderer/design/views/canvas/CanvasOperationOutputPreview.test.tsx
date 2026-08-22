@@ -115,6 +115,89 @@ describe('CanvasOperationOutputList', () => {
 })
 
 describe('CanvasOperationOutputPreview', () => {
+  it('详情图片默认填满预览舞台并提供独立缩放工具栏', async () => {
+    const output: CanvasOperationOutputView = {
+      id: 'image-output',
+      type: 'image',
+      title: '海边日落',
+      url: 'https://example.com/sunset.png',
+      createdAt: at,
+      updatedAt: at,
+    }
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<CanvasOperationOutputPreview output={output} variant="detail" />)
+    })
+
+    expect(
+      container.querySelector('.canvas-operation-output-image-preview.is-detail'),
+    ).not.toBeNull()
+    expect(container.querySelector('[aria-label="图片缩放工具栏"]')?.textContent).toContain('100%')
+    expect(
+      container.querySelector<HTMLImageElement>('.canvas-operation-output-media.is-detail')?.style
+        .transform,
+    ).toContain('scale(1)')
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="放大图片"]')?.click()
+    })
+    expect(container.querySelector('[aria-label="图片缩放工具栏"]')?.textContent).toContain('125%')
+
+    await act(async () => root.unmount())
+  })
+
+  it('节点卡片图片不挂载详情缩放层', () => {
+    const output: CanvasOperationOutputView = {
+      id: 'image-output',
+      type: 'image',
+      title: '海边日落',
+      url: 'https://example.com/sunset.png',
+      createdAt: at,
+      updatedAt: at,
+    }
+
+    const html = renderToStaticMarkup(<CanvasOperationOutputPreview output={output} />)
+
+    expect(html).toContain('canvas-operation-output-media is-card')
+    expect(html).not.toContain('canvas-operation-output-image-zoom')
+  })
+
+  it('切换详情产物时重置图片缩放状态', async () => {
+    const first: CanvasOperationOutputView = {
+      id: 'image-a',
+      type: 'image',
+      title: '图片 A',
+      url: 'https://example.com/a.png',
+      createdAt: at,
+      updatedAt: at,
+    }
+    const second: CanvasOperationOutputView = {
+      ...first,
+      id: 'image-b',
+      title: '图片 B',
+      url: 'https://example.com/b.png',
+    }
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(<CanvasOperationOutputPreview output={first} variant="detail" />)
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="放大图片"]')?.click()
+    })
+    expect(container.querySelector('[aria-label="图片缩放工具栏"]')?.textContent).toContain('125%')
+
+    await act(async () => {
+      root.render(<CanvasOperationOutputPreview output={second} variant="detail" />)
+    })
+    expect(container.querySelector('[aria-label="图片缩放工具栏"]')?.textContent).toContain('100%')
+
+    await act(async () => root.unmount())
+  })
+
   it('分离音频任务的产物预览复用音频资源节点播放器外壳', () => {
     const output: CanvasOperationOutputView = {
       id: 'audio-output',

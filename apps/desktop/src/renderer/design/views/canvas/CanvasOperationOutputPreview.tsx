@@ -1,4 +1,11 @@
-import { useMemo, type Ref } from 'react'
+import {
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type Ref,
+  type WheelEvent as ReactWheelEvent,
+} from 'react'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { MarkdownText } from '../chat/ChatMarkdown'
@@ -20,6 +27,116 @@ export type CanvasAudioPreviewActions = {
   onSpeedApply?: (factor: number) => Promise<void> | void
   onDownload?: () => void
   onPeaks?: (peaks: number[]) => void
+}
+
+const IMAGE_PREVIEW_MIN_SCALE = 0.5
+const IMAGE_PREVIEW_MAX_SCALE = 3
+const IMAGE_PREVIEW_SCALE_STEP = 0.25
+
+function clampImagePreviewScale(scale: number): number {
+  return Math.min(IMAGE_PREVIEW_MAX_SCALE, Math.max(IMAGE_PREVIEW_MIN_SCALE, scale))
+}
+
+function CanvasOperationImagePreview({ src, title }: { src: string; title: string }) {
+  const [scale, setScale] = useState(1)
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const dragRef = useRef<{
+    pointerId: number
+    x: number
+    y: number
+    left: number
+    top: number
+  } | null>(null)
+
+  const updateScale = (nextScale: number) => {
+    const clamped = clampImagePreviewScale(nextScale)
+    setScale(clamped)
+    if (clamped <= 1) setOffset({ x: 0, y: 0 })
+  }
+
+  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    updateScale(scale + (event.deltaY < 0 ? 0.1 : -0.1))
+  }
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (scale <= 1 || event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      left: offset.x,
+      top: offset.y,
+    }
+  }
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    setOffset({
+      x: drag.left + event.clientX - drag.x,
+      y: drag.top + event.clientY - drag.y,
+    })
+  }
+
+  const finishPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return
+    dragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  return (
+    <div className="canvas-operation-output-image-preview is-detail nowheel">
+      <div
+        className={`canvas-operation-output-image-stage${scale > 1 ? ' is-pannable' : ''}`}
+        aria-label="图片预览，可使用滚轮或工具栏缩放"
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishPointer}
+        onPointerCancel={finishPointer}
+        onDoubleClick={() => updateScale(1)}
+      >
+        <img
+          className="canvas-operation-output-media is-detail"
+          src={src}
+          alt={title}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          style={{ transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${scale})` }}
+        />
+      </div>
+      <div className="canvas-operation-output-image-zoom" aria-label="图片缩放工具栏">
+        <button
+          type="button"
+          aria-label="缩小图片"
+          disabled={scale <= IMAGE_PREVIEW_MIN_SCALE}
+          onClick={() => updateScale(scale - IMAGE_PREVIEW_SCALE_STEP)}
+        >
+          −
+        </button>
+        <span>{Math.round(scale * 100)}%</span>
+        <button
+          type="button"
+          aria-label="放大图片"
+          disabled={scale >= IMAGE_PREVIEW_MAX_SCALE}
+          onClick={() => updateScale(scale + IMAGE_PREVIEW_SCALE_STEP)}
+        >
+          +
+        </button>
+        <button type="button" className="is-fit" onClick={() => updateScale(1)}>
+          适应
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export function CanvasOperationOutputPreview({
@@ -56,6 +173,15 @@ export function CanvasOperationOutputPreview({
   )
 
   if (output.type === 'image' && normalizedThumbnail) {
+    if (variant === 'detail') {
+      return (
+        <CanvasOperationImagePreview
+          key={`${output.id}:${normalizedThumbnail}`}
+          src={normalizedThumbnail}
+          title={output.title}
+        />
+      )
+    }
     return (
       <img
         className={`canvas-operation-output-media is-${variant}`}

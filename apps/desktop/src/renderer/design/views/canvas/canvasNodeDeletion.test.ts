@@ -188,6 +188,48 @@ describe('canvas node deletion', () => {
     expect(runs.flatMap((run) => run.outputs)).toEqual([])
   })
 
+  it('persists asset-only output deletion while retaining the resource asset', async () => {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    expect(raw).toBeTruthy()
+    const seeded = JSON.parse(raw!) as CanvasDb
+    const operation = seeded.nodes.find((item) => item.id === 'operation-1')!
+    operation.data.primaryOutputId = 'asset-1'
+    operation.data.primaryOutputSelection = 'manual'
+    seeded.nodes = [operation]
+    seeded.edges = []
+    seeded.tasks[0]!.outputNodeIds = []
+    seeded.tasks[0]!.outputAssetIds = ['asset-1']
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded))
+    __resetCanvasHotCache()
+
+    const { result } = await canvasApi.deleteOperationOutputs('project-1', {
+      operationNodeId: operation.id,
+      outputs: [
+        {
+          id: 'asset-1',
+          taskId: 'task-1',
+          assetId: 'asset-1',
+          type: 'image',
+          title: 'Output',
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+
+    const snapshot = await canvasApi.openSnapshot('project-1')
+    expect(result).toEqual({
+      deletedOutputCount: 1,
+      deletedNodeCount: 0,
+      deletedTaskCount: 1,
+      skippedOutputCount: 0,
+    })
+    expect(snapshot.tasks).toEqual([])
+    expect(snapshot.assets.map((item) => item.id)).toEqual(['asset-1'])
+    expect(snapshot.nodes[0]?.data.primaryOutputId).toBeUndefined()
+    expect(snapshot.nodes[0]?.data.primaryOutputSelection).toBe('auto_latest')
+  })
+
   it('never dispatches cleanup-files IPC when deleting nodes, even if they carry source files', async () => {
     // 画布内删节点是软删（hidden=true，可撤销），刻意不清理源文件：
     // 同一素材可能仍被其它节点/分镜引用；资产管理入口会在节点软删后

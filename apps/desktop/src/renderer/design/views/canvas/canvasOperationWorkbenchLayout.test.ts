@@ -20,7 +20,7 @@ describe('operation workbench media layout', () => {
     )
   })
 
-  it('只在未全屏时限制详情媒体，不改变外层面板宽度断点', () => {
+  it('详情图片默认填满可用预览空间，不改变外层面板宽度断点', () => {
     const source = readSource('./CanvasOperationWorkbench.tsx')
     const previewStyles = readSource('./CanvasOperationOutputPreview.less')
     const workspaceStyles = readSource('./CanvasWorkspaceView.less')
@@ -28,9 +28,14 @@ describe('operation workbench media layout', () => {
     expect(source).toContain(
       "className={`canvas-operation-workbench${fullscreen ? ' is-fullscreen' : ''}`}",
     )
-    expect(previewStyles).toMatch(
-      /\.canvas-operation-workbench:not\(\.is-fullscreen\)[^{]*\.canvas-operation-output-media\.is-detail\s*\{[^}]*max-width:\s*min\(640px, 100%\)[^}]*max-height:\s*min\(360px, 100%\)/s,
+    expect(source).toContain(
+      '<CanvasOperationOutputPreview output={activeOutput} variant="detail" />',
     )
+    expect(previewStyles).toMatch(
+      /\.canvas-operation-output-image-preview\.is-detail\s*\{[^}]*width:\s*100%[^}]*height:\s*100%/s,
+    )
+    expect(previewStyles).not.toContain('max-width: min(640px, 100%)')
+    expect(previewStyles).not.toContain('max-height: min(360px, 100%)')
     expect(workspaceStyles).not.toMatch(
       /\.canvas-node-bottom-editor:not\(\.is-fullscreen\)[\s\S]*?:has\(\s*\.canvas-operation-workbench-preview \.canvas-operation-output-media\.is-detail\s*\)\s*\{[^}]*width:/s,
     )

@@ -43,22 +43,107 @@
 .canvas-operation-output-media.is-detail {
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   object-fit: contain;
   background: var(--canvas-edit-bg, var(--panel));
 }
 
-.canvas-operation-workbench:not(.is-fullscreen) .canvas-operation-output-media.is-detail {
-  width: auto;
-  height: auto;
-  max-width: min(640px, 100%);
-  max-height: min(360px, 100%);
+.canvas-operation-output-image-preview.is-detail {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--canvas-edit-bg, var(--panel));
 }
 
-.canvas-operation-workbench.is-fullscreen .canvas-operation-output-media.is-detail {
+.canvas-operation-output-image-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.canvas-operation-output-image-stage.is-pannable {
+  cursor: grab;
+}
+
+.canvas-operation-output-image-stage.is-pannable:active {
+  cursor: grabbing;
+}
+
+.canvas-operation-output-image-stage .canvas-operation-output-media.is-detail {
   width: 100%;
   height: 100%;
   max-width: none;
   max-height: none;
+  transform-origin: center;
+  transition: transform 140ms ease-out;
+  user-select: none;
+}
+
+.canvas-operation-output-image-stage.is-pannable .canvas-operation-output-media.is-detail {
+  transition: none;
+}
+
+.canvas-operation-output-image-zoom {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--divider) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 20%, transparent);
+  color: var(--text-secondary);
+  backdrop-filter: blur(10px);
+}
+
+.canvas-operation-output-image-zoom button {
+  display: inline-flex;
+  min-width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.canvas-operation-output-image-zoom button:hover:not(:disabled) {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-operation-output-image-zoom button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.canvas-operation-output-image-zoom button.is-fit {
+  min-width: 42px;
+  font-size: 11px;
+}
+
+.canvas-operation-output-image-zoom span {
+  min-width: 42px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
 }
 
 .canvas-operation-output-text.is-detail {

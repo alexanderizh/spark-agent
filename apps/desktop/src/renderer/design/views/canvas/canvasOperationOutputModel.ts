@@ -177,6 +177,16 @@ function outputToInputNode(
   }
 }
 
+/** 将指定运行产物解析为可供下载、全景等资源操作消费的节点视图。 */
+export function resolveCanvasOperationOutputResourceNode(
+  operationNode: CanvasNode,
+  output: CanvasOperationOutputView,
+  snapshot: CanvasSnapshot,
+): CanvasNode | null {
+  if (!isOperationNode(operationNode)) return null
+  return outputToInputNode(output, operationNode, snapshot)
+}
+
 export function resolveCanvasOperationInputNodes(
   operationNode: CanvasNode,
   snapshot: CanvasSnapshot,
@@ -212,7 +222,7 @@ export function resolveCanvasOperationResourceNode(
     buildCanvasOperationRunViews(operationNode, snapshot),
   )
   return state.primaryOutput
-    ? outputToInputNode(state.primaryOutput, operationNode, snapshot)
+    ? resolveCanvasOperationOutputResourceNode(operationNode, state.primaryOutput, snapshot)
     : null
 }
 

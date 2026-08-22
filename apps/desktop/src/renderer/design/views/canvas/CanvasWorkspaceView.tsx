@@ -19,7 +19,6 @@ import {
 import type { PendingCanvasConnection } from './canvasPendingConnection'
 import type { CanvasTaskRetryRuntimeSource } from './CanvasTaskQueue'
 import type { CanvasTool } from './CanvasToolbar'
-import { downloadCanvasResource } from './CanvasAssetsPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasCinematicEmptyState } from './CanvasCinematicEmptyState'
 import { CanvasWorkflowDrawer } from './CanvasWorkflowDrawer'
@@ -34,7 +33,7 @@ import { executeCanvasWorkflowPlan } from './canvasWorkflowRunner'
 import { executeCanvasWorkflowCanvasStep } from './canvasWorkflowCanvasExecutor'
 import { waitForCanvasWorkflowTask } from './canvasWorkflowTaskAdapter'
 import { extractCanvasWorkflowDraft, type CanvasWorkflowDraft } from './canvasWorkflowExtraction'
-import { canvasNodeDownloadName } from './canvasNodeNaming'
+import { downloadCanvasNodeResource } from './canvasResourceDownload'
 import { CanvasCharacterLibraryPanel } from './CanvasCharacterLibraryPanel'
 import { CanvasCharacterSubviewEditor } from './CanvasCharacterSubviewEditor'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
@@ -69,12 +68,12 @@ import { captureCanvasTaskViewport, runWithCanvasTaskViewport } from './canvasTa
 import { CanvasOperationWorkbench } from './CanvasOperationWorkbench'
 import {
   resolveCanvasOperationResourceNode,
+  resolveCanvasOperationOutputResourceNode,
   resolveCanvasOperationOutputState,
   selectCanvasOperationOutputs,
 } from './canvasOperationOutputModel'
 import { operationNodeAspectRatioSizePatch } from './canvasOperationNodePresentation'
 import { planCanvasOperationOutputMaterialization } from './canvasOperationOutputMaterialization'
-import { planCanvasOperationOutputDeletion } from './canvasOperationOutputDeletion'
 import {
   buildCanvasOperationRunViews,
   type CanvasOperationOutputView,
@@ -151,7 +150,7 @@ import {
   getKeyframeImportTitle,
 } from './videoWorkbench/videoWorkbenchKeyframeImport'
 import { resolveWorkbenchMaterializationMedia } from './videoWorkbench/videoWorkbenchMaterialization'
-import { isCanvasImageContentNode, isOperationNode } from './canvas.capabilities'
+import { isOperationNode } from './canvas.capabilities'
 import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
 import {
   readAssetKind,
@@ -331,6 +330,13 @@ type TrackedCanvasWorkflowResult = CanvasTrackedWorkflowDiagnostics & {
   outputAssetIds?: string[]
   message?: string
 }
+type CanvasPanoramaPreviewTarget =
+  | { kind: 'node'; nodeId: string }
+  | {
+      kind: 'operation-output'
+      operationNodeId: string
+      output: CanvasOperationOutputView
+    }
 type PreparedMediaUpload = {
   kind: 'video' | 'audio'
   file: File
@@ -587,6 +593,7 @@ export function CanvasWorkspaceView({
     addNodesToGroup,
     removeNodesFromGroup,
     deleteNodes,
+    deleteOperationOutputs,
     duplicateNodes,
     patchNodes,
     updateNode,
@@ -679,7 +686,8 @@ export function CanvasWorkspaceView({
     nodeId: string
     nonce: number
   } | null>(null)
-  const [panoramaPreviewNodeId, setPanoramaPreviewNodeId] = useState<string | null>(null)
+  const [panoramaPreviewTarget, setPanoramaPreviewTarget] =
+    useState<CanvasPanoramaPreviewTarget | null>(null)
   const [annotatingImageNodeId, setAnnotatingImageNodeId] = useState<string | null>(null)
   const [gridSplitImageNodeId, setGridSplitImageNodeId] = useState<string | null>(null)
   const [characterSubviewEditorNodeId, setCharacterSubviewEditorNodeId] = useState<string | null>(
@@ -1552,10 +1560,30 @@ export function CanvasWorkspaceView({
   // 渲染期写入 ref 是安全的：不触发重渲染，读取只发生在远晚于渲染的事件回调中。
   persistViewportFnRef.current = persistCurrentCanvasViewport
 
-  const panoramaPreviewNode = useMemo(
-    () => (panoramaPreviewNodeId ? resolveCanvasResourceActionNode(panoramaPreviewNodeId) : null),
-    [panoramaPreviewNodeId, resolveCanvasResourceActionNode],
-  )
+  const panoramaPreviewNode = useMemo(() => {
+    if (!panoramaPreviewTarget || !snapshot) return null
+    if (panoramaPreviewTarget.kind === 'node') {
+      return resolveCanvasResourceActionNode(panoramaPreviewTarget.nodeId)
+    }
+    const operationNode = snapshot.nodes.find(
+      (node) => node.id === panoramaPreviewTarget.operationNodeId && isOperationNode(node),
+    )
+    if (!operationNode) return null
+    const resource = resolveCanvasOperationOutputResourceNode(
+      operationNode,
+      panoramaPreviewTarget.output,
+      snapshot,
+    )
+    return resource
+      ? {
+          ...resource,
+          id: operationNode.id,
+          x: operationNode.x,
+          y: operationNode.y,
+          zIndex: operationNode.zIndex,
+        }
+      : null
+  }, [panoramaPreviewTarget, resolveCanvasResourceActionNode, snapshot])
   const selectedGroups = useMemo(
     () => selectedNodes.filter((node) => node.type === 'group'),
     [selectedNodes],
@@ -2487,7 +2515,28 @@ export function CanvasWorkspaceView({
       }
       closeCanvasFloatPanels('node-edit')
       setSelectedNodeIds([nodeId])
-      setPanoramaPreviewNodeId(nodeId)
+      setPanoramaPreviewTarget({ kind: 'node', nodeId })
+    },
+    [closeCanvasFloatPanels],
+  )
+
+  const handlePreviewOperationPanorama = useCallback(
+    (operationNodeId: string, output: CanvasOperationOutputView) => {
+      const currentSnapshot = snapshotRef.current
+      if (!currentSnapshot) return
+      const operationNode = currentSnapshot.nodes.find(
+        (node) => node.id === operationNodeId && isOperationNode(node),
+      )
+      const resource = operationNode
+        ? resolveCanvasOperationOutputResourceNode(operationNode, output, currentSnapshot)
+        : null
+      if (!resource?.data.panorama360) {
+        message.warning('当前产物没有可预览的全景图内容')
+        return
+      }
+      closeCanvasFloatPanels('node-edit')
+      setSelectedNodeIds([operationNodeId])
+      setPanoramaPreviewTarget({ kind: 'operation-output', operationNodeId, output })
     },
     [closeCanvasFloatPanels],
   )
@@ -2522,7 +2571,6 @@ export function CanvasWorkspaceView({
   )
 
   const handleDownloadMediaNode = useCallback(async (nodeId: string) => {
-    // 从 ref 读取，避免 snapshot/resolveCanvasResourceActionNode 引用抖动传导到 nodeActions
     const currentSnapshot = snapshotRef.current
     if (!currentSnapshot) return
     const node = currentSnapshot.nodes.find((item) => item.id === nodeId)
@@ -2530,39 +2578,40 @@ export function CanvasWorkspaceView({
     const resolved = isOperationNode(node)
       ? resolveCanvasOperationResourceNode(node, currentSnapshot)
       : node
-    const resolvedKind: 'image' | 'video' | 'audio' | null =
-      resolved && !isCanvasImageContentNode(resolved)
-        ? resolved.type === 'video'
-          ? 'video'
-          : resolved.type === 'audio'
-            ? 'audio'
-            : null
-        : resolved
-          ? 'image'
-          : null
-    if (!resolved || resolvedKind == null) {
-      message.warning('当前节点没有可下载的图片、视频或音频内容')
-      return
-    }
-    const linkedAsset = resolved.assetId
-      ? (currentSnapshot.assets.find((item) => item.id === resolved.assetId) ?? null)
-      : null
-    await downloadCanvasResource({
-      id: linkedAsset?.id ?? resolved.id,
-      type: linkedAsset?.type ?? resolvedKind,
-      title: linkedAsset?.title ?? resolved.title ?? null,
-      suggestedFileName: canvasNodeDownloadName(
-        node,
-        linkedAsset?.title ?? resolved.title,
-        resolvedKind === 'video' ? '视频' : resolvedKind === 'audio' ? '音频' : '图片',
-      ),
-      mimeType: linkedAsset?.mimeType ?? resolved.data.mimeType ?? null,
-      storageKey: linkedAsset?.storageKey ?? null,
-      url: resolved.data.url ?? linkedAsset?.url ?? null,
-      thumbnailUrl: resolved.data.thumbnailUrl ?? linkedAsset?.thumbnailUrl ?? null,
-      contentText: linkedAsset?.contentText ?? null,
+    const downloaded = await downloadCanvasNodeResource({
+      sourceNode: node,
+      resourceNode: resolved,
+      assets: currentSnapshot.assets,
     })
+    if (!downloaded) {
+      message.warning('当前节点没有可下载的图片、视频或音频内容')
+    }
   }, [])
+
+  const handleDownloadOperationOutput = useCallback(
+    async (operationNodeId: string, output: CanvasOperationOutputView) => {
+      const currentSnapshot = snapshotRef.current
+      if (!currentSnapshot) return
+      const operationNode = currentSnapshot.nodes.find(
+        (node) => node.id === operationNodeId && isOperationNode(node),
+      )
+      if (!operationNode) return
+      const resource = resolveCanvasOperationOutputResourceNode(
+        operationNode,
+        output,
+        currentSnapshot,
+      )
+      const downloaded = await downloadCanvasNodeResource({
+        sourceNode: operationNode,
+        resourceNode: resource,
+        assets: currentSnapshot.assets,
+      })
+      if (!downloaded) {
+        message.warning('当前产物没有可下载的图片、视频或音频内容')
+      }
+    },
+    [],
+  )
 
   const handleSaveNodeEdit = useCallback(
     async (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => {
@@ -2588,78 +2637,27 @@ export function CanvasWorkspaceView({
     async (operationNodeId: string, outputs: CanvasOperationOutputView[]) => {
       const current = snapshotRef.current
       if (!current || outputs.length === 0) return
-      const operationNode = current.nodes.find(
-        (node) => node.id === operationNodeId && isOperationNode(node),
-      )
-      const plan = planCanvasOperationOutputDeletion({
+      const result = await deleteOperationOutputs({
         operationNodeId,
         outputs,
-        edges: current.edges,
       })
-      if (plan.nodeIds.length === 0) {
-        message.warning('所选产物没有可删除的画布节点')
+      if (result.deletedOutputCount === 0) {
+        message.warning('所选产物已不存在或不属于当前任务节点')
         return
       }
-
-      // 删除前预算，避免依赖 await 后的 snapshot 时序：
-      // 1) 被删产物是否命中 primaryOutputId（命中则清空悬空指针，让 resolve 回退到最新 run）；
-      // 2) 哪些 completed run 删完后产物全空 —— 按决策①连带删除空 task，
-      //    避免运行历史残留可切到空白的空 run。
-      const deletedKeys = new Set<string>()
-      for (const item of outputs) {
-        deletedKeys.add(item.id)
-        if (item.nodeId) deletedKeys.add(item.nodeId)
-        if (item.assetId) deletedKeys.add(item.assetId)
-      }
-      const primaryOutputId = operationNode?.data.primaryOutputId
-      const primaryHit = primaryOutputId
-        ? outputs.some(
-            (item) =>
-              item.id === primaryOutputId ||
-              item.nodeId === primaryOutputId ||
-              item.assetId === primaryOutputId,
-          )
-        : false
-      const emptyTaskIds: string[] = []
-      if (operationNode) {
-        const runs = buildCanvasOperationRunViews(operationNode, current)
-        for (const run of runs) {
-          if (run.status !== 'completed') continue
-          const remaining = run.outputs.filter((item) => {
-            if (deletedKeys.has(item.id)) return false
-            if (item.nodeId && deletedKeys.has(item.nodeId)) return false
-            if (item.assetId && deletedKeys.has(item.assetId)) return false
-            return true
-          })
-          if (remaining.length === 0) emptyTaskIds.push(run.taskId)
-        }
-      }
-
-      await deleteEdges(plan.edgeIds)
-      await deleteNodes(plan.nodeIds)
-      if (primaryHit) {
-        // primaryOutputId 是 optional 字段；updateManyNodeData 的清理逻辑（canvas.api.ts:4125-4129）
-        // 会删除值为 undefined 的 key，借此清除悬空指针。exactOptionalPropertyTypes 下用双重断言表达删除语义。
-        await updateNodeData(operationNodeId, {
-          primaryOutputId: undefined,
-          primaryOutputSelection: 'auto_latest',
-        } as unknown as Partial<CanvasNode['data']>)
-      }
-      if (emptyTaskIds.length > 0) {
-        await deleteTasks(emptyTaskIds)
-      }
-
-      if (plan.skippedOutputIds.length > 0) {
+      if (result.skippedOutputCount > 0) {
         message.warning(
-          `已删除 ${plan.nodeIds.length} 个产物，另有 ${plan.skippedOutputIds.length} 个未关联画布节点，已跳过`,
+          `已删除 ${result.deletedOutputCount} 个产物，另有 ${result.skippedOutputCount} 个产物已不存在，已跳过`,
         )
         return
       }
       message.success(
-        plan.nodeIds.length === 1 ? '已删除产物节点' : `已删除 ${plan.nodeIds.length} 个产物节点`,
+        result.deletedOutputCount === 1
+          ? '已删除当前产物'
+          : `已删除 ${result.deletedOutputCount} 个产物`,
       )
     },
-    [deleteEdges, deleteNodes, deleteTasks, updateNodeData],
+    [deleteOperationOutputs],
   )
 
   const handleDeleteOperationRun = useCallback(
@@ -2768,6 +2766,7 @@ export function CanvasWorkspaceView({
           materializedOutput: {
             operationNodeId,
             outputId: item.output.id,
+            ...(item.output.taskId ? { taskId: item.output.taskId } : {}),
             materializedAt: new Date().toISOString(),
           },
         })
@@ -7846,8 +7845,10 @@ export function CanvasWorkspaceView({
               onRenameNode={async (title) => {
                 await patchNodes([opNode.id], { title })
               }}
-              onDownloadOutput={(nodeId) => void handleDownloadMediaNode(nodeId)}
-              onPreviewPanoramaOutput={handlePreviewPanorama}
+              onDownloadOutput={(output) => void handleDownloadOperationOutput(opNode.id, output)}
+              onPreviewPanoramaOutput={(output) =>
+                handlePreviewOperationPanorama(opNode.id, output)
+              }
               onOpenAssetLibrary={() => setSidePanelTab('assets')}
               onSetPrimaryOutput={(output) => handleSetOperationPrimaryOutput(opNode.id, output)}
               onExpandOutputs={(outputs) => handleExpandOperationOutputs(opNode.id, outputs)}
@@ -8717,7 +8718,7 @@ export function CanvasWorkspaceView({
           <CanvasPanoramaViewerModal
             node={panoramaPreviewNode}
             open={Boolean(panoramaPreviewNode)}
-            onClose={() => setPanoramaPreviewNodeId(null)}
+            onClose={() => setPanoramaPreviewTarget(null)}
             onScreenshot={handlePanoramaScreenshot}
             onCrop={handlePanoramaCrop}
           />
