@@ -15,8 +15,6 @@ import {
   resolveCanvasVideoAspectRatio,
 } from './canvasVideoNodePresentation'
 
-const OPERATION_RUN_NAV_HEIGHT = 31
-
 /**
  * Returns the persisted node size to apply after a configured aspect ratio changes.
  * Keeping this as a one-time patch lets later manual resizing remain authoritative.
@@ -75,15 +73,15 @@ export function operationNodePresentationSize(
   // 分离音频任务的可见卡片就是音频资源播放器；旧任务节点可能仍保存普通
   // 操作节点的 460×420，因此这里也按默认尺寸做一次展示层兼容收敛。
   if (isAudioOperation || output?.type === 'audio') {
-    const width = node.width <= OPERATION_NODE_DEFAULT_SIZE.width
-      ? AUDIO_NODE_DEFAULT_SIZE.width
-      : node.width
-    const height = node.height <= OPERATION_NODE_DEFAULT_SIZE.height
-      ? AUDIO_NODE_DEFAULT_SIZE.height
-      : node.height
+    const width =
+      node.width <= OPERATION_NODE_DEFAULT_SIZE.width ? AUDIO_NODE_DEFAULT_SIZE.width : node.width
+    const height =
+      node.height <= OPERATION_NODE_DEFAULT_SIZE.height
+        ? AUDIO_NODE_DEFAULT_SIZE.height
+        : node.height
     return {
       width,
-      height: height + (runs.length > 1 ? OPERATION_RUN_NAV_HEIGHT : 0),
+      height,
     }
   }
 
@@ -98,10 +96,7 @@ export function operationNodePresentationSize(
     const mediaHeight = Math.max(1, Math.round(node.width / aspectRatio))
     return {
       width: node.width,
-      height:
-        mediaHeight +
-        CANVAS_NODE_META_BAR_HEIGHT +
-        (runs.length > 1 ? OPERATION_RUN_NAV_HEIGHT : 0),
+      height: mediaHeight + CANVAS_NODE_META_BAR_HEIGHT,
     }
   }
 
@@ -120,9 +115,6 @@ export function operationNodePresentationSize(
   const mediaHeight = Math.min(720, Math.max(160, Math.round(node.width / aspectRatio)))
   return {
     width: node.width,
-    height: Math.max(
-      node.height,
-      mediaHeight + CANVAS_NODE_META_BAR_HEIGHT + OPERATION_RUN_NAV_HEIGHT,
-    ),
+    height: Math.max(node.height, mediaHeight + CANVAS_NODE_META_BAR_HEIGHT),
   }
 }

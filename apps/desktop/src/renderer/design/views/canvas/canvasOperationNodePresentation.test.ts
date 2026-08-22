@@ -157,10 +157,27 @@ describe('operation video presentation size', () => {
     ).toEqual({ width: 520, height: 500 })
   })
 
-  it('only reserves run navigation height when multiple runs are rendered', () => {
+  it('does not reserve layout height for the floating run navigation', () => {
     const output = videoOutput('portrait', 1080, 1920)
     expect(
       operationNodePresentationSize(operationNode(), [run('run-2', [output]), run('run-1', [])]),
-    ).toEqual({ width: 460, height: 887 })
+    ).toEqual({ width: 460, height: 856 })
+  })
+
+  it('does not reserve layout height for floating image actions', () => {
+    const output = {
+      ...videoOutput('image', 1920, 1080),
+      type: 'image' as const,
+    }
+    expect(
+      operationNodePresentationSize(
+        operationNode({
+          type: 'text_to_image',
+          height: 200,
+          data: { operation: 'text_to_image' },
+        }),
+        [run('run-2', [output]), run('run-1', [])],
+      ),
+    ).toEqual({ width: 460, height: 297 })
   })
 })
