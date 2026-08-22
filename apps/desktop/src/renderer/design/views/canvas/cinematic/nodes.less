@@ -27,21 +27,26 @@
     position: relative;
     isolation: isolate;
     border-color: rgba(119, 108, 246, 0.56);
+    box-shadow:
+      0 0 0 2px rgba(119, 108, 246, 0.42),
+      0 0 26px rgba(119, 108, 246, 0.3),
+      var(--canvas-node-shadow);
+    animation: canvas-cinema-running-breathe 1.15s ease-in-out infinite alternate;
   }
 
   .canvas-node.canvas-node-task-running::before {
     position: absolute;
     z-index: var(--z-canvas-selection);
-    inset: -1px;
-    padding: 2px;
+    inset: -4px;
+    padding: 3px;
     border-radius: inherit;
     background: conic-gradient(
       from var(--canvas-cinema-running-angle, 0deg),
-      transparent 0 13%,
-      #a49dff 21%,
-      transparent 31% 60%,
-      #7065ef 69%,
-      transparent 81%
+      transparent 0deg 42deg,
+      rgba(164, 157, 255, 0.45) 58deg,
+      #b8b3ff 92deg,
+      rgba(112, 101, 239, 0.42) 126deg,
+      transparent 154deg 360deg
     );
     content: '';
     mask:
@@ -49,14 +54,16 @@
       linear-gradient(#000 0 0);
     mask-composite: exclude;
     pointer-events: none;
-    animation: canvas-cinema-running-border 1.4s linear infinite;
+    animation: canvas-cinema-running-border 1.15s linear infinite;
   }
 
   .canvas-node.canvas-node-task-running::after {
     position: absolute;
     z-index: var(--z-canvas-selection);
-    inset: 0;
+    inset: -1px;
+    border: 1px solid rgba(164, 157, 255, 0.46);
     border-radius: inherit;
+    box-shadow: 0 0 22px rgba(119, 108, 246, 0.3);
     content: '';
     pointer-events: none;
     animation: canvas-cinema-running-breathe 1.2s ease-in-out infinite alternate;
@@ -626,6 +633,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .canvas-workspace.canvas-cinematic {
+    .canvas-node.canvas-node-task-running {
+      animation: none;
+    }
+
     .canvas-node.canvas-node-task-running::before,
     .canvas-node.canvas-node-task-running::after {
       animation: none;
