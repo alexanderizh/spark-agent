@@ -174,21 +174,36 @@ describe('CanvasParameterControl', () => {
     expect(rail?.querySelectorAll('[data-param-value]')).toHaveLength(values.length)
   })
 
-  it('renders pixel-asterisk size (bailian qwen-image) as compact options, not aspect thumbnails', async () => {
-    // 百炼 Qwen-Image 2.0 的 size 用像素星号（2048*2048），与 wan 的 1K/2K/4K、
-    // 与 agnes 的 1024x1024 都不同。isRatioValue 正则只匹配 ':' 或 'x'/'×'，
-    // 不匹配 '*'，因此星号格式必须落到 resolution（CompactOptions 按钮横排），
-    // 不能被误判为 aspect-ratio 缩略图，否则画布会渲染出错误的比例预览。
+  it('renders pixel-asterisk size (bailian qwen-image) as visual ratio choices', async () => {
+    // 百炼 Qwen-Image 2.0 的 size 使用像素星号（2048*2048）。它与 x/× 像素尺寸
+    // 一样携带明确宽高，应该进入比例缩略图，帮助用户直观看出横竖构图。
     const values = ['2048*2048', '2688*1536', '1536*2688', '2368*1728', '1728*2368']
-    const { container } = await renderControl(field('size', values), '2048*2048')
-    const rail = container.querySelector('.canvas-parameter-option-rail')
+    const { container } = await renderControl(
+      field('size', values, 'string', {
+        allowCustom: true,
+        pattern: '^\\d+\\*\\d+$',
+        enumLabels: {
+          '2048*2048': '1:1',
+          '2688*1536': '16:9',
+          '1536*2688': '9:16',
+          '2368*1728': '4:3',
+          '1728*2368': '3:4',
+        },
+      }),
+      '2048*2048',
+    )
+    const grid = container.querySelector('.canvas-aspect-ratio-grid')
 
-    expect(rail).not.toBeNull()
-    expect(rail?.querySelectorAll('[data-param-value]')).toHaveLength(values.length)
-    // 星号格式不得渲染为比例缩略图（aspect-ratio 控件才有 data-aspect-width）
-    expect(rail?.querySelector('[data-aspect-width]')).toBeNull()
+    expect(grid).not.toBeNull()
+    expect(grid?.querySelectorAll('[data-param-value]')).toHaveLength(values.length)
+    const landscape = grid?.querySelector('[data-param-value="2688*1536"]')
     expect(
-      rail?.querySelector('[data-param-value="2048*2048"]')?.getAttribute('aria-pressed'),
+      landscape?.querySelector('[data-aspect-width="32"][data-aspect-height="18"]'),
+    ).not.toBeNull()
+    expect(landscape?.textContent).toContain('16:9')
+    expect(container.querySelector('input')).not.toBeNull()
+    expect(
+      grid?.querySelector('[data-param-value="2048*2048"]')?.getAttribute('aria-pressed'),
     ).toBe('true')
   })
 

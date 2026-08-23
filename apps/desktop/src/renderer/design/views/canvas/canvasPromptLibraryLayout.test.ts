@@ -40,7 +40,7 @@ describe('canvas prompt library layout', () => {
       /\.canvas-prompt-library-panel\.canvas-node-edit-prompt-library-compact \.canvas-prompt-library-entry\s*\{[\s\S]*?border:\s*0\s*;/,
     )
     expect(stylesheet).toMatch(
-      /\.canvas-prompt-library-panel\.canvas-node-edit-prompt-library-compact \.canvas-prompt-library-entry:hover\s*\{[\s\S]*?transform:\s*none\s*;/,
+      /\.canvas-prompt-library-panel\.canvas-node-edit-prompt-library-compact\s+\.canvas-prompt-library-entry:hover\s*\{[\s\S]*?transform:\s*none\s*;/,
     )
   })
 

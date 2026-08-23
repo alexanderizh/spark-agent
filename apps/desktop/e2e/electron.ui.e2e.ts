@@ -394,6 +394,7 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
   test('creates a canvas project and opens its workflow drawer', async ({
     browserName: _browserName,
   }, testInfo) => {
+    test.setTimeout(60_000)
     await dismissOnboarding(page)
     await page.getByRole('tab', { name: '画布', exact: true }).click()
     await expect(page.getByRole('heading', { name: '无限画布', exact: true })).toBeVisible()
@@ -567,6 +568,25 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
       path: testInfo.outputPath('canvas-cinematic-node-state-matrix.png'),
       fullPage: true,
     })
+    await page.locator('[data-canvas-node-id="visual-operation-pending"]').dblclick()
+    const promptComposer = page.locator('.canvas-node-floating-panel .canvas-prompt-composer')
+    await expect(promptComposer).toBeVisible()
+    const promptInsertButton = promptComposer.getByRole('button', {
+      name: '添加参数、图片、视频或资源',
+    })
+    await expect(promptInsertButton).toBeVisible()
+    await promptInsertButton.click()
+    const promptInsertMenu = page.locator('.canvas-prompt-insert-menu')
+    await expect(promptInsertMenu).toBeVisible()
+    await expect(promptInsertMenu).toContainText('镜头时长')
+    await page.keyboard.press('Escape')
+    await expect(promptInsertMenu).not.toBeVisible()
+    const floatingPanel = page.locator('.canvas-node-floating-panel')
+    if (await floatingPanel.isVisible().catch(() => false)) {
+      await page.locator('.canvas-node-bottom-editor-toolbar button').last().click()
+    }
+    await expect(floatingPanel).not.toBeVisible()
+    await page.getByRole('button', { name: '适配全部节点', exact: true }).click()
     await page.getByRole('button', { name: '选择', exact: true }).click()
     await page.locator('[data-canvas-node-id="visual-empty-image"]').click()
     await page.getByRole('button', { name: '回到选中节点中心', exact: true }).click()
