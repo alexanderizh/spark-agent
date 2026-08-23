@@ -86,6 +86,7 @@ function mergeTaskEntities<T extends VersionedCanvasEntity>(
   current: T[],
   next: T[],
   preserveMissing = false,
+  rejectOlderVersions = false,
 ): T[] {
   const currentById = new Map(current.map((item) => [item.id, item]))
   const merged = next.map((item) => {
@@ -93,7 +94,9 @@ function mergeTaskEntities<T extends VersionedCanvasEntity>(
     if (!previous) return item
     const previousVersion = previous.updatedAt ?? previous.createdAt
     const nextVersion = item.updatedAt ?? item.createdAt
-    return previousVersion != null && previousVersion === nextVersion ? previous : item
+    if (previousVersion == null || nextVersion == null) return item
+    if (previousVersion === nextVersion) return previous
+    return rejectOlderVersions && previousVersion > nextVersion ? previous : item
   })
   if (preserveMissing) {
     const nextIds = new Set(next.map((item) => item.id))
@@ -131,6 +134,7 @@ function mergeCanvasSnapshot(
   current: CanvasSnapshot | null,
   next: CanvasSnapshot,
   preserveMissingEntities: boolean,
+  rejectOlderVersions = false,
 ): CanvasSnapshot {
   if (
     !current ||
@@ -143,7 +147,12 @@ function mergeCanvasSnapshot(
 
   const boards =
     current.boards && next.boards
-      ? mergeTaskEntities(current.boards, next.boards, preserveMissingEntities).map((board) =>
+      ? mergeTaskEntities(
+          current.boards,
+          next.boards,
+          preserveMissingEntities,
+          rejectOlderVersions,
+        ).map((board) =>
           board.id === current.board.id ? { ...board, viewport: current.board.viewport } : board,
         )
       : (current.boards ?? next.boards)
@@ -153,10 +162,30 @@ function mergeCanvasSnapshot(
     board: current.board,
     ...(boards ? { boards } : {}),
     ...(current.activeBoardId ? { activeBoardId: current.activeBoardId } : {}),
-    nodes: mergeTaskEntities(current.nodes, next.nodes, preserveMissingEntities),
-    edges: mergeTaskEntities(current.edges, next.edges, preserveMissingEntities),
-    assets: mergeTaskEntities(current.assets, next.assets, preserveMissingEntities),
-    tasks: mergeTaskEntities(current.tasks, next.tasks, preserveMissingEntities),
+    nodes: mergeTaskEntities(
+      current.nodes,
+      next.nodes,
+      preserveMissingEntities,
+      rejectOlderVersions,
+    ),
+    edges: mergeTaskEntities(
+      current.edges,
+      next.edges,
+      preserveMissingEntities,
+      rejectOlderVersions,
+    ),
+    assets: mergeTaskEntities(
+      current.assets,
+      next.assets,
+      preserveMissingEntities,
+      rejectOlderVersions,
+    ),
+    tasks: mergeTaskEntities(
+      current.tasks,
+      next.tasks,
+      preserveMissingEntities,
+      rejectOlderVersions,
+    ),
   }
 }
 
@@ -170,18 +199,18 @@ export function mergeCanvasBackgroundTaskSnapshot(
   if (currentBoardId !== nextBoardId) {
     const boards =
       current.boards && next.boards
-        ? mergeTaskEntities(current.boards, next.boards, true)
+        ? mergeTaskEntities(current.boards, next.boards, true, true)
         : (current.boards ?? next.boards)
     return {
       ...current,
       project: next.project,
       ...(boards ? { boards } : {}),
-      assets: mergeTaskEntities(current.assets, next.assets, true),
+      assets: mergeTaskEntities(current.assets, next.assets, true, true),
     }
   }
   // Stream callbacks can finish out of order. Preserve entities missing from a stale callback
   // snapshot so it cannot erase nodes/assets/tasks created by a newer foreground action.
-  return mergeCanvasSnapshot(current, next, true)
+  return mergeCanvasSnapshot(current, next, true, true)
 }
 
 type CanvasProjectListSnapshot = {

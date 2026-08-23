@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { canvasApi, __resetCanvasHotCache, isCanvasDirty, type CanvasDb } from './canvas.api'
+import {
+  canvasApi,
+  __resetCanvasHotCache,
+  isCanvasDirty,
+  saveCanvas,
+  type CanvasDb,
+} from './canvas.api'
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const at = '2026-08-22T00:00:00.000Z'
@@ -167,5 +173,81 @@ describe('canvas task runtime dirty handling', () => {
 
     expect(snapshot.tasks[0]?.status).toBe('running')
     expect(isCanvasDirty(projectId)).toBe(false)
+  })
+
+  it('clears dirty after a save when no newer project mutation occurs', async () => {
+    const projectId = 'project-task-stable-save'
+    seedTaskProject(projectId)
+    const initial = await canvasApi.openSnapshot(projectId)
+    const initialNode = initial.nodes[0]
+    expect(initialNode).toBeDefined()
+    if (!initialNode) throw new Error('seeded task node is missing')
+    await canvasApi.updateNodes(projectId, [{ ...initialNode, x: 120 }])
+
+    expect(isCanvasDirty(projectId)).toBe(true)
+    await expect(saveCanvas()).resolves.toBe(true)
+    expect(isCanvasDirty(projectId)).toBe(false)
+  })
+
+  it('keeps a terminal task write dirty when an older save finishes afterward', async () => {
+    const projectId = 'project-task-save-race'
+    seedTaskProject(projectId)
+    const initial = await canvasApi.openSnapshot(projectId)
+    const initialNode = initial.nodes[0]
+    expect(initialNode).toBeDefined()
+    if (!initialNode) throw new Error('seeded task node is missing')
+    await canvasApi.updateNodes(projectId, [{ ...initialNode, x: 120 }])
+
+    let resolveSave: (() => void) | undefined
+    let notifySaveStarted: (() => void) | undefined
+    let savedSnapshotJson = ''
+    const saveFinished = new Promise<void>((resolve) => {
+      resolveSave = resolve
+    })
+    const saveStarted = new Promise<void>((resolve) => {
+      notifySaveStarted = resolve
+    })
+    const invoke = vi.fn((channel: string, request?: unknown) => {
+      if (channel === 'canvas:snapshot:save') {
+        savedSnapshotJson = (request as { snapshotJson: string }).snapshotJson
+        notifySaveStarted?.()
+        return saveFinished.then(() => ({}))
+      }
+      return Promise.resolve({})
+    })
+    Object.assign(window, { spark: { invoke } })
+
+    const saving = saveCanvas()
+    await saveStarted
+    expect((JSON.parse(savedSnapshotJson) as CanvasDb).tasks[0]?.status).toBe('running')
+
+    const completed = await canvasApi.applyMediaTaskResult(projectId, 'task-1', {
+      status: 'succeeded',
+      providerProfileId: 'provider-1',
+      provider: 'test-provider',
+      model: 'test-model',
+      mode: 'async',
+      assets: [
+        {
+          type: 'image',
+          filePath: '/tmp/project-task-save-race/result.png',
+          mimeType: 'image/png',
+          width: 1024,
+          height: 1024,
+        },
+      ],
+    })
+    expect(completed.tasks[0]?.status).toBe('completed')
+    expect(completed.tasks[0]?.outputAssetIds).toHaveLength(1)
+
+    resolveSave?.()
+    await saving
+
+    expect(isCanvasDirty(projectId)).toBe(true)
+    const reopened = await canvasApi.openSnapshot(projectId)
+    expect(reopened.tasks[0]?.status).toBe('completed')
+    expect(reopened.tasks[0]?.outputAssetIds).toHaveLength(1)
+    expect(reopened.nodes[0]?.data.status).toBe('completed')
+    expect(invoke).not.toHaveBeenCalledWith('canvas:snapshot:load', expect.anything())
   })
 })

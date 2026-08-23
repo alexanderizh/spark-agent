@@ -387,6 +387,96 @@ describe('mergeCanvasBackgroundTaskSnapshot', () => {
     expect(merged.nodes.find((node) => node.id === 'node-other-board')).toBe(current.nodes[1])
   })
 
+  it('does not let an older running snapshot replace a newer completed task state', () => {
+    const current = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              data: { ...node.data, status: 'completed' as const, progress: 100 },
+              updatedAt: '2026-06-01T00:03:00.000Z',
+            }
+          : node,
+      ),
+      tasks: makeSnapshot().tasks.map((task) => ({
+        ...task,
+        status: 'completed' as const,
+        progress: 100,
+        updatedAt: '2026-06-01T00:03:00.000Z',
+      })),
+    })
+    const staleRunning = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              data: { ...node.data, status: 'running' as const, progress: 60 },
+              updatedAt: '2026-06-01T00:02:00.000Z',
+            }
+          : node,
+      ),
+      tasks: makeSnapshot().tasks.map((task) => ({
+        ...task,
+        status: 'running' as const,
+        progress: 60,
+        updatedAt: '2026-06-01T00:02:00.000Z',
+      })),
+    })
+
+    const merged = mergeCanvasBackgroundTaskSnapshot(current, staleRunning)
+
+    expect(merged.nodes.find((node) => node.id === 'node-1')?.data.status).toBe('completed')
+    expect(merged.tasks.find((task) => task.id === 'task-1')?.status).toBe('completed')
+  })
+
+  it('accepts a newer running state when the same node starts another execution', () => {
+    const current = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              taskId: 'task-1',
+              data: { ...node.data, status: 'completed' as const, progress: 100 },
+              updatedAt: '2026-06-01T00:03:00.000Z',
+            }
+          : node,
+      ),
+      tasks: makeSnapshot().tasks.map((task) => ({
+        ...task,
+        status: 'completed' as const,
+        progress: 100,
+        updatedAt: '2026-06-01T00:03:00.000Z',
+      })),
+    })
+    const rerun = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              taskId: 'task-2',
+              data: { ...node.data, status: 'running' as const, progress: 10 },
+              updatedAt: '2026-06-01T00:04:00.000Z',
+            }
+          : node,
+      ),
+      tasks: makeSnapshot().tasks.map((task) => ({
+        ...task,
+        id: 'task-2',
+        status: 'running' as const,
+        progress: 10,
+        updatedAt: '2026-06-01T00:04:00.000Z',
+      })),
+    })
+
+    const merged = mergeCanvasBackgroundTaskSnapshot(current, rerun)
+    const operationNode = merged.nodes.find((node) => node.id === 'node-1')
+
+    expect(operationNode?.taskId).toBe('task-2')
+    expect(operationNode?.data.status).toBe('running')
+    expect(merged.tasks.find((task) => task.id === 'task-2')?.status).toBe('running')
+    expect(merged.tasks.find((task) => task.id === 'task-1')?.status).toBe('completed')
+  })
+
   it('preserves the viewport while honoring structural deletions', () => {
     const current = makeSnapshot({
       board: {

@@ -126,6 +126,7 @@ import {
   sanitizeLegacyCanvasSystemPrompt,
 } from './canvasOperationPresets'
 import { canvasTaskErrorMessage } from './canvasTaskErrorMessage'
+import { CanvasProjectMutationVersion } from './canvasProjectMutationVersion'
 import {
   canvasTaskIdsSafeToDelete,
   isCompletedCanvasTaskWithOutputs,
@@ -307,6 +308,7 @@ let persistInFlight: Promise<{ attempted: Set<string>; failed: Set<string> }> = 
  * 按当前 projectId 查询。
  */
 const dirtyProjectIds = new Set<string>()
+const projectMutationVersion = new CanvasProjectMutationVersion()
 
 function isProjectDirty(projectId: string): boolean {
   return dirtyProjectIds.has(projectId)
@@ -396,10 +398,16 @@ async function flushPersist(): Promise<boolean> {
   flushHotPersist()
   // readDb 现在返回内存缓存引用（非深拷贝）；persistAllProjects 内部有跨 project 的 await，
   // 期间可能被其他 mutation 修改，所以这里做一次快照拷贝保证落库数据一致性。
-  persistInFlight = persistAllProjects(cloneDb(readDb()))
+  const dbSnapshot = cloneDb(readDb())
+  const persistedVersions = projectMutationVersion.capture(
+    dbSnapshot.projects.map((project) => project.id),
+  )
+  persistInFlight = persistAllProjects(dbSnapshot)
   const { attempted, failed } = await persistInFlight
   for (const id of attempted) {
-    if (!failed.has(id)) {
+    // 保存期间可能收到任务终态或新的用户编辑。只有当前热数据仍与保存开始时同代，
+    // 才能清 dirty；否则旧保存结果不能把尚未落库的新状态伪装成 clean。
+    if (!failed.has(id) && projectMutationVersion.isCurrent(id, persistedVersions.get(id))) {
       dirtyProjectIds.delete(id)
       dispatchDirty(id, false)
     }
@@ -462,6 +470,7 @@ export function isCanvasDirty(projectId: string): boolean {
 export function __resetCanvasHotCache(): void {
   hotMemory = null
   hotOverflow = null
+  projectMutationVersion.reset()
   canvasTaskDiagnosticsMigratedDbs = new WeakSet<CanvasDb>()
   if (hotPersistTimer != null) {
     clearTimeout(hotPersistTimer)
@@ -831,6 +840,7 @@ function writeDb(db: CanvasDb): void {
   persistHotDb(db)
   for (const project of db.projects) {
     if (project.status === 'deleted') continue
+    projectMutationVersion.mark(project.id)
     dirtyProjectIds.add(project.id)
     dispatchDirty(project.id, true)
   }
@@ -845,11 +855,13 @@ function writeDb(db: CanvasDb): void {
  */
 function writeTaskRuntimeDb(db: CanvasDb, projectId: string): void {
   const wasDirty = dirtyProjectIds.has(projectId)
+  projectMutationVersion.mark(projectId)
   persistHotDb(db)
   if (wasDirty) dispatchDirty(projectId, true)
 }
 
 function writeHotDb(db: CanvasDb, projectId: string, dirty: boolean): void {
+  projectMutationVersion.mark(projectId)
   persistHotDb(db)
   if (dirty) dirtyProjectIds.add(projectId)
   else dirtyProjectIds.delete(projectId)
@@ -2124,6 +2136,7 @@ export const canvasApi = {
     board.viewport = viewport
     board.updatedAt = now()
     // 立即落 localStorage，保留项目原有 dirty 状态（不主动标记 true，也不清除已 dirty）。
+    projectMutationVersion.mark(projectId)
     persistHotDb(db)
     flushHotPersist()
     // 单项目落 SQLite：构造只含本项目的 snapshot，复用 canvas:snapshot:save IPC，
