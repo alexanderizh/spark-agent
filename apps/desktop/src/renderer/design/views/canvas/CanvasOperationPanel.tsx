@@ -44,12 +44,11 @@ import {
 import { selectCanvasMediaCapability } from './canvasMediaCapabilitySelection'
 import { canvasApi } from './canvas.api'
 import { expandCanvasInputNodes } from './canvasWorkspaceTaskInput'
-import { resolveCanvasOperationResourceNode } from './canvasOperationOutputModel'
 import { readCanvasTextInputContent } from './canvasTextInputPresentation'
 import { confirmVideoSubmission, isVideoSubmissionOperation } from './canvasVideoSubmissionGate'
 import { useCanvasInputBindings } from './useCanvasInputBindings'
 import { materializeCanvasInputBindingReferences } from './canvasInputBindings'
-import { buildOutputMediaKindMap, buildOutputMediaNodeMap } from './canvasNodeMediaKind'
+import { resolveCanvasMediaInputs } from './canvasResolvedMediaInputs'
 
 /** 分离音频的输出格式选项（copy=原轨无损抽取，其余为重编码） */
 const AUDIO_FORMAT_OPTIONS: Array<{ value: 'copy' | 'mp3' | 'aac' | 'wav'; label: string }> = [
@@ -638,15 +637,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     () => buildOperationPanelPromptOwnerNodeIds(snapshot),
     [snapshot],
   )
-  // 任务节点 → 产物媒体类型 / 产物媒体节点。让「从画布选择」与连接路径里选中任务节点时，
-  // 等价于选中它的产物 output（视频/图片/音频）。
-  const outputMediaKindByNodeId = useMemo(
-    () => buildOutputMediaKindMap(snapshot.nodes, snapshot.edges),
-    [snapshot.nodes, snapshot.edges],
-  )
-  const outputMediaNodeByNodeId = useMemo(
-    () => buildOutputMediaNodeMap(snapshot.nodes, snapshot.edges),
-    [snapshot.nodes, snapshot.edges],
+  const { bindingNodes, outputMediaKindByNodeId, outputMediaNodeByNodeId } = useMemo(
+    () => resolveCanvasMediaInputs(snapshot, expandedSourceInputNodes),
+    [expandedSourceInputNodes, snapshot],
   )
   const editableSourceMediaNodes = useMemo(
     () =>
@@ -812,7 +805,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       : task?.inputBindings
         ? { initialBindings: task.inputBindings }
         : {}),
-    nodes: snapshot.nodes,
+    nodes: bindingNodes,
     connectionNodeIds: bindingConnectionNodeIds,
     promptOwnerNodeIdsBySourceNodeId,
     outputMediaKindByNodeId,
@@ -1980,14 +1973,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     markConfigurationTouched()
   }, [markConfigurationTouched, nodeById, pendingDedicatedMediaNode, setSelectedInputNodeIds])
   const promptPresentationNodeBySourceId = useMemo(() => {
-    const resolved = new Map<string, CanvasNode>()
-    for (const candidate of promptCandidateNodes) {
-      if (!isOperationNode(candidate)) continue
-      const output = resolveCanvasOperationResourceNode(candidate, snapshot)
-      if (output) resolved.set(candidate.id, output)
-    }
-    return resolved
-  }, [promptCandidateNodes, snapshot])
+    return new Map(outputMediaNodeByNodeId)
+  }, [outputMediaNodeByNodeId])
   const mediaPresentationNodeBySourceId = useMemo(() => {
     const resolved = new Map(promptPresentationNodeBySourceId)
     for (const assignment of mediaInputAssignments) {
@@ -2444,7 +2431,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               value={effectiveMediaInputMode}
               assignments={mediaInputAssignments}
               bindings={inputBindings}
-              nodes={snapshot.nodes}
+              nodes={bindingNodes}
               assets={snapshot.assets}
               presentationNodeBySourceId={mediaPresentationNodeBySourceId}
               disabled={running}
@@ -2912,7 +2899,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               value={effectiveMediaInputMode}
               assignments={mediaInputAssignments}
               bindings={inputBindings}
-              nodes={snapshot.nodes}
+              nodes={bindingNodes}
               assets={snapshot.assets}
               presentationNodeBySourceId={promptPresentationNodeBySourceId}
               disabled={running}

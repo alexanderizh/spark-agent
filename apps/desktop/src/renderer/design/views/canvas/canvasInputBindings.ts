@@ -6,6 +6,7 @@ import type {
   CanvasPromptRelation,
 } from '@spark/protocol'
 import type { CanvasNode } from './canvas.types'
+import { type CanvasNodeMediaKind, resolveCanvasNodeMediaKind } from './canvasNodeMediaKind'
 
 type CreateCanvasInputBinding = Omit<CanvasInputBinding, 'id' | 'enabled'> & {
   id?: string
@@ -110,6 +111,7 @@ export function reconcileCanvasInputBindings(input: {
   nodes: readonly CanvasNode[]
   connectionNodeIds: readonly string[]
   promptOwnerNodeIdsBySourceNodeId?: ReadonlyMap<string, readonly string[]> | undefined
+  outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind> | undefined
 }): CanvasInputBinding[] {
   const nodeById = new Map(input.nodes.map((node) => [node.id, node]))
   const blockById = new Map(input.document.blocks.map((block) => [block.id, block]))
@@ -124,6 +126,13 @@ export function reconcileCanvasInputBindings(input: {
   const connectionIds = new Set(input.connectionNodeIds)
   let next = input.bindings.flatMap<CanvasInputBinding>((binding) => {
     let current = binding
+    const sourceNode = nodeById.get(binding.sourceNodeId)
+    const resolvedMediaKind = sourceNode
+      ? resolveCanvasNodeMediaKind(sourceNode, input.outputMediaKindByNodeId)
+      : undefined
+    if (binding.kind === 'file' && resolvedMediaKind) {
+      current = { ...current, kind: resolvedMediaKind }
+    }
     const existingBlock = binding.promptBlockId ? blockById.get(binding.promptBlockId) : undefined
     const existingBlockIsActive =
       existingBlock != null &&
@@ -137,7 +146,7 @@ export function reconcileCanvasInputBindings(input: {
         activePromptBlockIdBySourceNodeId,
         promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
       })
-      if (promptBlockId) current = { ...binding, promptBlockId }
+      if (promptBlockId) current = { ...current, promptBlockId }
     }
     if (current.promptBlockId) {
       const block = blockById.get(current.promptBlockId)
@@ -188,9 +197,10 @@ export function reconcileCanvasInputBindings(input: {
       'connection',
       promptBlockId,
       next.length,
-      relationForNode(node),
+      relationForNode(node, input.outputMediaKindByNodeId),
       undefined,
       membershipBinding ? 'input' : undefined,
+      input.outputMediaKindByNodeId,
     )
     if (
       next.some((binding) => canvasInputBindingKey(binding) === canvasInputBindingKey(candidate))
@@ -235,6 +245,7 @@ export function reconcileCanvasInputBindings(input: {
       relation,
       block.kind === 'structured' ? 'structured' : undefined,
       membershipBinding ? 'input' : undefined,
+      input.outputMediaKindByNodeId,
     )
     next = addCanvasInputBinding(next, candidate)
   }
@@ -408,8 +419,9 @@ function bindingForNode(
   relation = relationForNode(node),
   kindOverride?: CanvasInputBinding['kind'],
   roleOverride?: CanvasInputBindingRole,
+  outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind>,
 ): CanvasInputBinding {
-  const kind = kindOverride ?? inputKindForNode(node)
+  const kind = kindOverride ?? inputKindForNode(node, outputMediaKindByNodeId)
   const role: CanvasInputBindingRole =
     roleOverride ??
     (relation === 'first_frame'
@@ -431,21 +443,29 @@ function bindingForNode(
   })
 }
 
-function inputKindForNode(node: CanvasNode): CanvasInputBinding['kind'] {
-  if (node.type === 'image' || node.type === 'video' || node.type === 'audio') return node.type
+function inputKindForNode(
+  node: CanvasNode,
+  outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind>,
+): CanvasInputBinding['kind'] {
+  const mediaKind = resolveCanvasNodeMediaKind(node, outputMediaKindByNodeId)
+  if (mediaKind) return mediaKind
   if (node.type === 'text' || node.type === 'prompt') return 'text'
   return 'file'
 }
 
-function relationForNode(node: CanvasNode): CanvasPromptRelation {
+function relationForNode(
+  node: CanvasNode,
+  outputMediaKindByNodeId?: ReadonlyMap<string, CanvasNodeMediaKind>,
+): CanvasPromptRelation {
   if (node.data.pipelineRole === 'character') return 'character'
   if (node.data.pipelineRole === 'scene') return 'scene'
   if (node.data.pipelineRole === 'prop') return 'prop'
   if (node.data.pipelineRole === 'shot') return 'storyboard'
   if (node.data.pipelineRole === 'screenplay') return 'screenplay'
-  if (node.type === 'image') return 'reference_image'
-  if (node.type === 'video') return 'reference_video'
-  if (node.type === 'audio') return 'reference_audio'
+  const mediaKind = resolveCanvasNodeMediaKind(node, outputMediaKindByNodeId)
+  if (mediaKind === 'image') return 'reference_image'
+  if (mediaKind === 'video') return 'reference_video'
+  if (mediaKind === 'audio') return 'reference_audio'
   return 'generic'
 }
 

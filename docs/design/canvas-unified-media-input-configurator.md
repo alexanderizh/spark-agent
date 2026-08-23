@@ -1,6 +1,6 @@
 # 无限画布统一媒体任务输入配置器
 
-> 状态: 实施中 | 最后核对: 2026-08-05
+> 状态: 实施中 | 最后核对: 2026-08-23
 
 ## 1. 背景与问题
 
@@ -205,6 +205,7 @@ capabilityId?: MediaCapabilityId
 - Prompt 编译器现已一致识别 `reference_image`、`reference_video` 与 `reference_audio`；视频编辑和延长的主视频保持 `input` 角色。
 - 火山 Seedance 1.x 实际 adapter 请求回归确认只包含 `first_frame` / `last_frame`，不包含 `reference_image` 或 `task_type=r2v`；Seedance 2.x 和 APIMart 参考模式保持独立。
 - 操作节点或分组标签解析到实际产物时，提示词 owner 与产物 binding 视为同一逻辑输入；任务边与素材轨道只保留实际产物，避免单条连线显示两份相同素材。
+- 图片、视频、音频任务的主产物即使尚未展开为独立画布节点，也会从 task/asset 记录解析成临时媒体输入节点；素材编排的紧凑版与完整面板、角色分配和提交编译共用包含临时节点的 binding 数据源，既能预览缩略图，也不再回退为不可用的 `file` binding。
 - 最终验证覆盖 protocol 46 项、desktop 129 项、agent-runtime 74 项相关测试，三个包类型检查通过，变更文件 ESLint 无错误。
 
 ## 12. 统一视频节点二期改造

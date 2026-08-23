@@ -16,6 +16,114 @@ afterEach(async () => {
 })
 
 describe('useCanvasInputBindings', () => {
+  it.each(['image', 'video', 'audio'] as const)(
+    'binds a lazily materialized %s task output to its visible operation reference',
+    async (kind) => {
+      const owner = canvasNode(`owner-${kind}`, 'text_to_video')
+      const output = canvasNode(`operation-output:asset-${kind}`, kind)
+      const promptOwnerNodeIdsBySourceNodeId = new Map([[output.id, [owner.id]]])
+      const mounted = await mountHook({
+        initialDocument: {
+          version: 2,
+          blocks: [
+            {
+              kind: 'reference',
+              id: `connection-${kind}`,
+              source: 'connection',
+              sourceNodeId: owner.id,
+              relation:
+                kind === 'image'
+                  ? 'reference_image'
+                  : kind === 'video'
+                    ? 'reference_video'
+                    : 'reference_audio',
+              label: `${kind} task output`,
+              order: 0,
+            },
+          ],
+        },
+        nodes: [owner, output],
+        connectionNodeIds: [output.id],
+        promptOwnerNodeIdsBySourceNodeId,
+      })
+
+      expect(mounted.current().bindings.filter((binding) => binding.enabled)).toEqual([
+        expect.objectContaining({
+          sourceNodeId: output.id,
+          kind,
+          promptBlockId: `connection-${kind}`,
+        }),
+      ])
+    },
+  )
+
+  it('upgrades a legacy task-owner file binding to its resolved media kind', async () => {
+    const owner = canvasNode('owner-image', 'text_to_image')
+    const mounted = await mountHook({
+      initialDocument: {
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'legacy-owner-reference',
+            source: 'manual',
+            sourceNodeId: owner.id,
+            relation: 'generic',
+            label: '历史任务引用',
+            order: 0,
+          },
+        ],
+      },
+      initialBindings: [
+        {
+          id: 'picker:owner-image:input',
+          sourceNodeId: owner.id,
+          origin: 'picker',
+          kind: 'file',
+          relation: 'generic',
+          role: 'input',
+          enabled: true,
+          order: 0,
+        },
+      ],
+      nodes: [owner],
+      connectionNodeIds: [],
+      outputMediaKindByNodeId: new Map([[owner.id, 'image']]),
+    })
+
+    expect(mounted.current().bindings).toEqual([
+      expect.objectContaining({
+        sourceNodeId: owner.id,
+        kind: 'image',
+        promptBlockId: 'legacy-owner-reference',
+      }),
+    ])
+  })
+
+  it('preserves a structured binding while reconciling media kinds', async () => {
+    const source = canvasNode('structured-source', 'text')
+    const mounted = await mountHook({
+      initialDocument: {
+        version: 2,
+        blocks: [
+          {
+            kind: 'structured',
+            id: 'structured-block',
+            sourceNodeId: source.id,
+            schema: 'json',
+            summary: '结构化输入',
+          },
+        ],
+      },
+      nodes: [source],
+      connectionNodeIds: [],
+    })
+
+    expect(mounted.current().bindings).toEqual([
+      expect.objectContaining({ sourceNodeId: source.id, kind: 'structured' }),
+    ])
+  })
+
   it('removes a manually mentioned image from every derived input when its tag is deleted', async () => {
     const image = canvasNode('image-1', 'image')
     const initialDocument: CanvasPromptDocument = {

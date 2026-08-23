@@ -186,9 +186,13 @@ describe('CanvasMediaInputConfigurator', () => {
     expect(html).not.toContain('aria-label="视频生成模式"')
   })
 
-  it('merges video edit and extend into one mode with an edit/extend sub-toggle', () => {    const html = renderToStaticMarkup(
+  it('merges video edit and extend into one mode with an edit/extend sub-toggle', () => {
+    const html = renderToStaticMarkup(
       <CanvasMediaInputConfigurator
-        options={[videoSourceOption('edit', 'video.edit'), videoSourceOption('extend', 'video.extend')]}
+        options={[
+          videoSourceOption('edit', 'video.edit'),
+          videoSourceOption('extend', 'video.extend'),
+        ]}
         value="extend"
         assignments={[]}
         bindings={[]}
@@ -209,6 +213,53 @@ describe('CanvasMediaInputConfigurator', () => {
     expect(html).toContain('data-segmented-value="extend"')
     expect(html).toContain('data-segmented-option="edit"')
     expect(html).toContain('data-segmented-option="extend"')
+  })
+
+  it('previews a lazily materialized task output supplied as a binding node', () => {
+    const sourceNodeId = 'operation-output:asset-image'
+    const html = renderToStaticMarkup(
+      <CanvasMediaInputConfigurator
+        options={[firstFrameOption()]}
+        value="first_frame"
+        assignments={[
+          {
+            sourceNodeId,
+            kind: 'image',
+            role: 'first_frame',
+            order: 0,
+            used: true,
+          },
+        ]}
+        bindings={[
+          {
+            id: `connection:${sourceNodeId}:first_frame`,
+            sourceNodeId,
+            origin: 'connection',
+            kind: 'image',
+            relation: 'first_frame',
+            role: 'first_frame',
+            enabled: true,
+            order: 0,
+          },
+        ]}
+        nodes={[
+          {
+            id: sourceNodeId,
+            title: '图片任务产物',
+            type: 'image',
+            assetId: null,
+            data: { thumbnailUrl: 'https://example.com/task-output.png' },
+          } as never,
+        ]}
+        assets={[]}
+        variant="panel"
+        onChange={vi.fn()}
+        onMove={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('src="https://example.com/task-output.png"')
+    expect(html).toContain('图片任务产物')
   })
 })
 

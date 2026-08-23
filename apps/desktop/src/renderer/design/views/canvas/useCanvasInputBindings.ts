@@ -52,6 +52,7 @@ export function useCanvasInputBindings(input: {
       nodes: input.nodes,
       connectionNodeIds: input.connectionNodeIds,
       promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+      outputMediaKindByNodeId: input.outputMediaKindByNodeId,
     }),
   }))
   const resetKeyRef = useRef(input.resetKey)
@@ -67,6 +68,7 @@ export function useCanvasInputBindings(input: {
           nodes: input.nodes,
           connectionNodeIds: input.connectionNodeIds,
           promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+          outputMediaKindByNodeId: input.outputMediaKindByNodeId,
         }),
       })
       return
@@ -79,6 +81,7 @@ export function useCanvasInputBindings(input: {
         nodes: input.nodes,
         connectionNodeIds: input.connectionNodeIds,
         promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+        outputMediaKindByNodeId: input.outputMediaKindByNodeId,
       }),
     }))
   }, [
@@ -86,6 +89,7 @@ export function useCanvasInputBindings(input: {
     input.initialBindings,
     input.initialDocument,
     input.nodes,
+    input.outputMediaKindByNodeId,
     input.promptOwnerNodeIdsBySourceNodeId,
     input.resetKey,
   ])
@@ -126,11 +130,17 @@ export function useCanvasInputBindings(input: {
             nodes: input.nodes,
             connectionNodeIds: input.connectionNodeIds,
             promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+            outputMediaKindByNodeId: input.outputMediaKindByNodeId,
           }),
         }
       })
     },
-    [input.connectionNodeIds, input.nodes, input.promptOwnerNodeIdsBySourceNodeId],
+    [
+      input.connectionNodeIds,
+      input.nodes,
+      input.outputMediaKindByNodeId,
+      input.promptOwnerNodeIdsBySourceNodeId,
+    ],
   )
 
   const setBindings = useCallback<Dispatch<SetStateAction<CanvasInputBinding[]>>>(
@@ -145,11 +155,17 @@ export function useCanvasInputBindings(input: {
             nodes: input.nodes,
             connectionNodeIds: input.connectionNodeIds,
             promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+            outputMediaKindByNodeId: input.outputMediaKindByNodeId,
           }),
         }
       })
     },
-    [input.connectionNodeIds, input.nodes, input.promptOwnerNodeIdsBySourceNodeId],
+    [
+      input.connectionNodeIds,
+      input.nodes,
+      input.outputMediaKindByNodeId,
+      input.promptOwnerNodeIdsBySourceNodeId,
+    ],
   )
 
   const setSelectedInputNodeIds = useRoleSelectionSetter({
@@ -204,11 +220,17 @@ export function useCanvasInputBindings(input: {
             nodes: input.nodes,
             connectionNodeIds: input.connectionNodeIds,
             promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+            outputMediaKindByNodeId: input.outputMediaKindByNodeId,
           }),
         }
       })
     },
-    [input.connectionNodeIds, input.nodes, input.promptOwnerNodeIdsBySourceNodeId],
+    [
+      input.connectionNodeIds,
+      input.nodes,
+      input.outputMediaKindByNodeId,
+      input.promptOwnerNodeIdsBySourceNodeId,
+    ],
   )
 
   return {
@@ -375,6 +397,7 @@ function updateRoleSelection(
         nodes: input.nodes,
         connectionNodeIds: input.connectionNodeIds,
         promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+        outputMediaKindByNodeId: input.outputMediaKindByNodeId,
       }),
     }
   })

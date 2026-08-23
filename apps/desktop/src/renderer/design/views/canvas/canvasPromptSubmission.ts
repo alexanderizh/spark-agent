@@ -3,7 +3,13 @@ import type {
   CanvasMediaTaskInputFile,
   CanvasPromptTaskFields,
 } from '@spark/protocol'
-import type { CanvasAsset, CanvasInputTransport, CanvasNode, CanvasOperationType, CanvasSnapshot } from './canvas.types'
+import type {
+  CanvasAsset,
+  CanvasInputTransport,
+  CanvasNode,
+  CanvasOperationType,
+  CanvasSnapshot,
+} from './canvas.types'
 import type { CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
 import { compileCanvasPromptDocument } from './canvasPromptCompiler'
 import {
@@ -11,11 +17,9 @@ import {
   buildCanvasVisiblePromptDocument,
 } from './canvasPromptInitialization'
 import { activeCanvasInputNodeIds } from './canvasInputBindings'
-import {
-  expandCanvasInputNodes,
-  materializeCanvasTaskInputFiles,
-} from './canvasWorkspaceTaskInput'
+import { expandCanvasInputNodes, materializeCanvasTaskInputFiles } from './canvasWorkspaceTaskInput'
 import { canvasOperationKind } from './canvasOperationKind'
+import { resolveCanvasMediaInputs } from './canvasResolvedMediaInputs'
 
 export type CanvasPromptSubmission = CanvasPromptTaskFields & {
   prompt: string
@@ -46,19 +50,33 @@ export async function buildCanvasPromptSubmission(input: {
   inputNodeIds?: string[]
   inputBindings?: CanvasPromptTaskFields['inputBindings']
 }): Promise<CanvasPromptSubmission> {
+  const resolved = resolveExecutableReferences(input.document, input.snapshot)
   const inputNodeIds = new Set(
     input.inputBindings
       ? activeCanvasInputNodeIds(input.inputBindings)
       : (input.inputNodeIds ?? []),
   )
-  const selectedSourceNodes = input.snapshot.nodes.filter((node) => inputNodeIds.has(node.id))
+  const selectableNodes = Array.from(
+    new Map(
+      [...resolveCanvasMediaInputs(input.snapshot).bindingNodes, ...resolved.nodes].map((node) => [
+        node.id,
+        node,
+      ]),
+    ).values(),
+  )
+  const selectedSourceNodes = selectableNodes.filter((node) => inputNodeIds.has(node.id))
   const inputNodes = expandCanvasInputNodes(selectedSourceNodes, input.snapshot)
-  const executableSourceDocument = applyInputBindings(input.document, input.inputBindings)
-  const resolved = resolveExecutableReferences(executableSourceDocument, input.snapshot)
-  const visibleDocument = applyInputRoles(input.document, input.inputRoles)
-  const document = applyInputRoles(
-    buildCanvasSubmissionPromptDocument({ document: resolved.document, inputNodes }),
+  const executableInputRoles = expandInputRolesToResolvedNodes(
     input.inputRoles,
+    selectedSourceNodes,
+    input.snapshot,
+  )
+  const executableSourceDocument = applyInputBindings(resolved.document, input.inputBindings)
+  const visibleDocument = applyInputRoles(input.document, input.inputRoles, input.inputBindings)
+  const document = applyInputRoles(
+    buildCanvasSubmissionPromptDocument({ document: executableSourceDocument, inputNodes }),
+    executableInputRoles,
+    input.inputBindings,
   )
   const compilationNodes = Array.from(
     new Map(
@@ -135,7 +153,8 @@ function resolveExecutableReferences(
           ...block,
           id: `${block.id}-resolved-${index}`,
           sourceNodeId: node.id,
-          summary: expanded.length > 1 ? `${block.summary} · ${node.title ?? index + 1}` : block.summary,
+          summary:
+            expanded.length > 1 ? `${block.summary} · ${node.title ?? index + 1}` : block.summary,
         }
       }
       return {
@@ -153,23 +172,31 @@ function resolveExecutableReferences(
 function applyInputRoles(
   document: NonNullable<CanvasPromptTaskFields['promptDocument']>,
   inputRoles: Record<string, CanvasTaskInputRoleSelection> | undefined,
+  inputBindings?: CanvasPromptTaskFields['inputBindings'],
 ): NonNullable<CanvasPromptTaskFields['promptDocument']> {
   if (!inputRoles) return document
   const blocks = document.blocks.flatMap<CanvasPromptBlock>((block) => {
     if (block.kind !== 'reference') return [{ ...block }]
-    const selected = inputRoles[block.sourceNodeId]
+    const bindingSourceNodeId = inputBindings?.find(
+      (binding) => binding.enabled && binding.promptBlockId === block.id,
+    )?.sourceNodeId
+    const selected =
+      inputRoles[block.sourceNodeId] ??
+      (bindingSourceNodeId ? inputRoles[bindingSourceNodeId] : undefined)
     if (!selected) return [{ ...block }]
     const roles = Array.isArray(selected) ? selected : [selected]
-    const mapped = roles.map<Extract<CanvasPromptBlock, { kind: 'reference' }>['relation']>((role) => {
-      if (role === 'first_frame' || role === 'last_frame') return role
-      if (role === 'reference') {
-        if (block.relation === 'reference_video' || block.relation === 'reference_audio') {
-          return block.relation
+    const mapped = roles.map<Extract<CanvasPromptBlock, { kind: 'reference' }>['relation']>(
+      (role) => {
+        if (role === 'first_frame' || role === 'last_frame') return role
+        if (role === 'reference') {
+          if (block.relation === 'reference_video' || block.relation === 'reference_audio') {
+            return block.relation
+          }
+          return 'reference_image' as const
         }
-        return 'reference_image' as const
-      }
-      return block.relation
-    })
+        return block.relation
+      },
+    )
     return mapped.map((relation, index) => ({
       ...block,
       id: index === 0 ? block.id : `${block.id}-${roles[index]}`,
@@ -178,4 +205,22 @@ function applyInputRoles(
     }))
   })
   return { version: 2, blocks }
+}
+
+function expandInputRolesToResolvedNodes(
+  inputRoles: Record<string, CanvasTaskInputRoleSelection> | undefined,
+  selectedSourceNodes: readonly CanvasNode[],
+  snapshot: CanvasSnapshot,
+): Record<string, CanvasTaskInputRoleSelection> | undefined {
+  if (!inputRoles) return undefined
+  const expandedRoles = { ...inputRoles }
+  for (const sourceNode of selectedSourceNodes) {
+    const selectedRole = inputRoles[sourceNode.id]
+    if (!selectedRole) continue
+    const expandedNodes = expandCanvasInputNodes([sourceNode], snapshot)
+    const resolvedNode = expandedNodes.length === 1 ? expandedNodes[0] : undefined
+    if (!resolvedNode || resolvedNode.id === sourceNode.id) continue
+    expandedRoles[resolvedNode.id] = selectedRole
+  }
+  return expandedRoles
 }
