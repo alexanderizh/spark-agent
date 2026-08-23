@@ -19,6 +19,7 @@ import { useCanvasProjects } from './views/canvas/canvas.store'
 import { canvasApi } from './views/canvas/canvas.api'
 import { openCanvasProjectWindow } from './views/canvas/canvas-window-client'
 import { useCanvasProjectSelection } from './views/canvas/CanvasProjectSelectionContext'
+import { sortCanvasProjects } from './views/canvas/canvasProjectSort'
 import { useApp } from './AppContext'
 import { useI18n } from './i18n'
 
@@ -162,13 +163,8 @@ function CanvasProjectSidebarListComponent() {
     )
   }
 
-  // 置顶优先，再按 updatedAt 降序
-  const sorted = [...projects].sort((a, b) => {
-    const pa = a.pinned ? 1 : 0
-    const pb = b.pinned ? 1 : 0
-    if (pa !== pb) return pb - pa
-    return b.updatedAt.localeCompare(a.updatedAt)
-  })
+  // 置顶优先，再按最近更新时间降序；同一时间戳由排序工具按 id 稳定兜底。
+  const sorted = sortCanvasProjects(projects, 'updated', 'desc')
 
   return (
     <div className="canvas-sidebar-list" role="list" aria-label={tr('nav.canvas.projects')}>

@@ -20,7 +20,10 @@ describe('CanvasSnapshotRepository', () => {
   let testDir: string
 
   beforeEach(() => {
-    testDir = join(tmpdir(), `spark-test-canvas-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    testDir = join(
+      tmpdir(),
+      `spark-test-canvas-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    )
     mkdirSync(testDir, { recursive: true })
     db = createTestDb(testDir)
     projects = new CanvasProjectRepository(db)
@@ -53,7 +56,10 @@ describe('CanvasProjectRepository.cover_url', () => {
   let testDir: string
 
   beforeEach(() => {
-    testDir = join(tmpdir(), `spark-test-canvas-cover-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    testDir = join(
+      tmpdir(),
+      `spark-test-canvas-cover-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    )
     mkdirSync(testDir, { recursive: true })
     db = createTestDb(testDir)
     projects = new CanvasProjectRepository(db)
@@ -147,7 +153,12 @@ describe('CanvasProjectRepository.pinned', () => {
   })
 
   it('clears pinned_at when pinned=false after being pinned', () => {
-    projects.upsert({ id: 'pin-toggle', title: 't', pinned: true, pinnedAt: '2026-01-01T00:00:00Z' })
+    projects.upsert({
+      id: 'pin-toggle',
+      title: 't',
+      pinned: true,
+      pinnedAt: '2026-01-01T00:00:00Z',
+    })
     projects.upsert({ id: 'pin-toggle', title: 't', pinned: false })
     const row = projects.get('pin-toggle')
     expect(row?.pinned).toBe(0)
@@ -171,5 +182,32 @@ describe('CanvasProjectRepository.pinned', () => {
     const ids = rows.map((r) => r.id)
     expect(ids.indexOf('b')).toBeLessThan(ids.indexOf('a'))
     expect(ids.indexOf('b')).toBeLessThan(ids.indexOf('c'))
+  })
+
+  it('orders each pinned group by updated_at desc with a stable id tie-breaker', () => {
+    projects.upsert({ id: 'updated-old', title: 'Old', pinned: false })
+    projects.upsert({ id: 'updated-new', title: 'New', pinned: false })
+    projects.upsert({ id: 'pinned-old', title: 'Pinned old', pinned: true })
+    projects.upsert({ id: 'pinned-new', title: 'Pinned new', pinned: true })
+
+    db.raw
+      .prepare('UPDATE canvas_projects SET updated_at = ? WHERE id = ?')
+      .run('2026-01-01T00:00:00.000Z', 'updated-old')
+    db.raw
+      .prepare('UPDATE canvas_projects SET updated_at = ? WHERE id = ?')
+      .run('2026-01-02T00:00:00.000Z', 'updated-new')
+    db.raw
+      .prepare('UPDATE canvas_projects SET updated_at = ? WHERE id = ?')
+      .run('2026-01-01T00:00:00.000Z', 'pinned-old')
+    db.raw
+      .prepare('UPDATE canvas_projects SET updated_at = ? WHERE id = ?')
+      .run('2026-01-02T00:00:00.000Z', 'pinned-new')
+
+    expect(projects.list(0).map((row) => row.id)).toEqual([
+      'pinned-new',
+      'pinned-old',
+      'updated-new',
+      'updated-old',
+    ])
   })
 })

@@ -12,6 +12,7 @@ import { CanvasAcceptanceLauncher } from './acceptance/CanvasAcceptanceLauncher'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { useApp } from '../../AppContext'
 import { useCanvasProjectSelection } from './CanvasProjectSelectionContext'
+import { sortCanvasProjects } from './canvasProjectSort'
 // 记录已被本组件处理过的「新建项目」信号值（来自侧栏 L1「新建项目」按钮）。
 // 用 module-level 而非 ref，确保 unmount→remount（切走再切回 canvas view）
 // 时不会重复响应同一个已处理过的信号——用户切走再回来不应自动弹窗。
@@ -56,7 +57,7 @@ export function CanvasProjectsView({
   )
   // 欢迎页最近项目缩略（最多 4 个，按更新时间降序）
   const recentProjects = useMemo(
-    () => [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 4),
+    () => sortCanvasProjects(projects, 'updated', 'desc').slice(0, 4),
     [projects],
   )
 
@@ -73,7 +74,6 @@ export function CanvasProjectsView({
       handledCanvasCreateSignal = signal
       openCreate()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t.canvasCreateSignal])
 
   const handleOpenProject = async (projectId: string) => {

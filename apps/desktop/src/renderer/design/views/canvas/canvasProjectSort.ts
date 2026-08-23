@@ -17,6 +17,10 @@ function compareIso(a: string | null | undefined, b: string | null | undefined):
   return left < right ? -1 : 1
 }
 
+function compareProjectId(a: CanvasProject, b: CanvasProject): number {
+  return a.id.localeCompare(b.id)
+}
+
 /**
  * 排序无限画布项目列表：置顶项目始终排最前，未置顶按 sortKey/sortDir 排序。
  * 纯函数，便于单测；UI 层（CanvasProjectsView）直接复用。
@@ -28,22 +32,25 @@ export function sortCanvasProjects(
 ): CanvasProject[] {
   const factor = sortDir === 'asc' ? 1 : -1
   const sorted = [...projects].sort((a, b) => {
+    let result: number
     switch (sortKey) {
       case 'created':
-        return factor * compareIso(a.createdAt, b.createdAt)
+        result = compareIso(a.createdAt, b.createdAt)
+        break
       case 'lastOpened':
-        return factor * compareIso(
-          a.lastOpenedAt ?? a.createdAt,
-          b.lastOpenedAt ?? b.createdAt,
-        )
+        result = compareIso(a.lastOpenedAt ?? a.createdAt, b.lastOpenedAt ?? b.createdAt)
+        break
       case 'title':
-        return factor * (a.title ?? '').localeCompare(b.title ?? '', undefined, {
+        result = (a.title ?? '').localeCompare(b.title ?? '', undefined, {
           sensitivity: 'base',
         })
+        break
       case 'updated':
       default:
-        return factor * compareIso(a.updatedAt, b.updatedAt)
+        result = compareIso(a.updatedAt, b.updatedAt)
+        break
     }
+    return result === 0 ? compareProjectId(a, b) : factor * result
   })
   return [
     ...sorted.filter((project) => project.pinned),

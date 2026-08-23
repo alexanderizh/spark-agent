@@ -116,4 +116,16 @@ describe('sortCanvasProjects', () => {
   it('returns empty array for empty input', () => {
     expect(sortCanvasProjects([], 'updated', 'desc')).toEqual([])
   })
+
+  it('uses project id as a stable tie-breaker when sort values match', () => {
+    const sameUpdated = [
+      makeProject({ id: 'project-b', updatedAt: '2026-03-01T00:00:00.000Z' }),
+      makeProject({ id: 'project-a', updatedAt: '2026-03-01T00:00:00.000Z' }),
+    ]
+
+    expect(ids(sortCanvasProjects(sameUpdated, 'updated', 'desc'))).toEqual([
+      'project-a',
+      'project-b',
+    ])
+  })
 })

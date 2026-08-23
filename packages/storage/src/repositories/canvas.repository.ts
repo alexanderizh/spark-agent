@@ -79,12 +79,7 @@ export class CanvasProjectRepository extends BaseRepository {
       status: params.status ?? existing?.status ?? 'active',
       cover_asset_id: params.coverAssetId ?? existing?.cover_asset_id ?? null,
       cover_url: params.coverUrl !== undefined ? params.coverUrl : (existing?.cover_url ?? null),
-      pinned:
-        params.pinned !== undefined
-          ? params.pinned
-            ? 1
-            : 0
-          : (existing?.pinned ?? 0),
+      pinned: params.pinned !== undefined ? (params.pinned ? 1 : 0) : (existing?.pinned ?? 0),
       pinned_at:
         params.pinned !== undefined
           ? params.pinned
@@ -117,8 +112,8 @@ export class CanvasProjectRepository extends BaseRepository {
   }
 
   list(userId = 0, includeDeleted = false): CanvasProjectRow[] {
-    // 置顶优先；置顶内部按 pinned_at 倒序，未置顶按最近打开时间倒序。
-    const order = `ORDER BY pinned DESC, datetime(pinned_at) DESC, datetime(last_opened_at) DESC`
+    // 置顶优先；两组都按最近更新时间倒序，并用 id 保证同一时间戳下顺序稳定。
+    const order = `ORDER BY pinned DESC, datetime(updated_at) DESC, id ASC`
     const sql = includeDeleted
       ? `SELECT * FROM canvas_projects WHERE user_id = ? ${order}`
       : `SELECT * FROM canvas_projects WHERE user_id = ? AND status != 'deleted' ${order}`
