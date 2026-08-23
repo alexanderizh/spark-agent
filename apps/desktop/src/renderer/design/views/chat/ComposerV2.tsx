@@ -14,7 +14,7 @@ import { MentionPopover, type MentionCandidate } from '../../components/MentionP
 import { ComposerActionsMenu } from '../../components/ComposerActionsMenu'
 import { AvatarImage } from '../../components/AvatarImage'
 import { FileTypeIcon, getFileTypeBadge } from '../../components/FileDisplay'
-import { PermissionRequestDetails } from '../../components/PermissionRequestDetails'
+import { InlinePermissionApproval } from '../../components/InlinePermissionApproval'
 import { ProviderLogo } from '../../components/ProviderLogo'
 import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
@@ -67,7 +67,6 @@ import {
   type ManagedAgent,
   type ManagedTeam,
   type ModelProfile,
-  type PermissionApprovalDecision,
   type PermissionApprovalRequest,
   type ProviderProfile,
   type SessionChatMode,
@@ -345,113 +344,6 @@ function TextEditContextMenu({ menu, onClose }: { menu: TextEditMenuState; onClo
 function FileChipIcon({ path, size }: { path: string; size: number }) {
   if (!getFileTypeBadge(path).icon) return <Icons.File size={size} />
   return <FileTypeIcon filePath={path} size={size} />
-}
-
-function InlineApprovalRequest({
-  request,
-  onClose,
-}: {
-  request: PermissionApprovalRequest
-  onClose?: () => void
-}) {
-  const { toast } = useToast()
-  const [busyDecision, setBusyDecision] = useState<PermissionApprovalDecision | null>(null)
-  const riskLabel = { low: '低', medium: '中', high: '高' }[request.riskLevel]
-  const riskTone =
-    request.riskLevel === 'high' ? 'high' : request.riskLevel === 'medium' ? 'medium' : 'low'
-
-  const respond = useCallback(
-    async (decision: PermissionApprovalDecision) => {
-      setBusyDecision(decision)
-      try {
-        const result = await window.spark.invoke('permission:approval-respond', {
-          requestId: request.requestId,
-          decision,
-        })
-        // ok:false = 这条审批在主进程已经不存在了（等待超时被自动拒绝，或会话被取消）。
-        // 不能静默关掉卡片——那会让用户以为自己的「允许」生效了，实际 agent 早已被拒。
-        if (result?.ok === false) {
-          toast.warning('该权限请求已失效（等待超时或会话已取消），你的选择未生效')
-        }
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : '提交权限审批失败')
-      } finally {
-        setBusyDecision(null)
-        onClose?.()
-      }
-    },
-    [onClose, request.requestId, toast],
-  )
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || busyDecision != null) return
-      event.preventDefault()
-      void respond('deny')
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [busyDecision, respond])
-
-  return (
-    <div className={`composer-approval-card ${riskTone}`}>
-      <div className="composer-approval-icon">
-        {request.riskLevel === 'high' ? (
-          <Icons.AlertTriangle size={17} />
-        ) : (
-          <Icons.Shield size={17} />
-        )}
-      </div>
-      <div className="composer-approval-main">
-        <div className="composer-approval-top">
-          <div>
-            <div className="composer-approval-title">
-              允许执行 <span>{request.toolName}</span>?
-            </div>
-            <div className="composer-approval-meta">
-              Session {request.sessionId.slice(0, 8)} · 风险 {riskLabel}
-            </div>
-          </div>
-          <div className="composer-approval-actions">
-            <button
-              type="button"
-              className="composer-approval-btn ghost"
-              disabled={busyDecision != null}
-              onClick={() => void respond('deny')}
-            >
-              拒绝
-            </button>
-            <button
-              type="button"
-              className="composer-approval-btn"
-              disabled={busyDecision != null}
-              onClick={() => void respond('deny-session')}
-            >
-              会话拒绝
-            </button>
-            <button
-              type="button"
-              className="composer-approval-btn"
-              disabled={busyDecision != null}
-              onClick={() => void respond('allow-session')}
-            >
-              会话允许
-            </button>
-            <button
-              type="button"
-              className="composer-approval-btn primary"
-              disabled={busyDecision != null}
-              onClick={() => void respond('allow-once')}
-            >
-              {busyDecision === 'allow-once' ? <Icons.Spinner size={13} /> : null}
-              允许
-            </button>
-          </div>
-        </div>
-        <PermissionRequestDetails request={request} />
-      </div>
-    </div>
-  )
 }
 
 /** 上下文进度悬浮弹窗 */
@@ -3683,7 +3575,7 @@ export function ComposerV2({
       />
       <div className="composer-inner">
         {visibleApprovalRequest && (
-          <InlineApprovalRequest
+          <InlinePermissionApproval
             request={visibleApprovalRequest}
             {...(onApprovalClose !== undefined
               ? {

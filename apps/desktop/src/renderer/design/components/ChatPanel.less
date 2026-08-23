@@ -1,4 +1,5 @@
 .chat-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -6,6 +7,49 @@
   background: transparent;
   color: var(--text);
   font-size: 13px;
+}
+
+.chat-panel-drop-overlay {
+  position: absolute;
+  inset: 8px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 68%, var(--divider));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-elev) 92%, var(--primary) 8%);
+  box-shadow: 0 12px 32px color-mix(in srgb, #000 20%, transparent);
+  color: var(--primary);
+  pointer-events: none;
+
+  strong {
+    color: var(--text);
+    font-size: 14px;
+  }
+
+  span {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+}
+
+.chat-panel-input-area > .composer-approval-card {
+  margin: 0 0 8px;
+  border-radius: 10px;
+}
+
+.chat-panel-input-area > .composer-approval-card .composer-approval-top {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.chat-panel-input-area > .composer-approval-card .composer-approval-actions {
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .chat-panel-loading {
@@ -254,7 +298,6 @@
       color: var(--text-strong);
       padding: 6px 10px;
       border-radius: inherit;
-
     }
   }
 }
@@ -619,8 +662,14 @@
   animation: chat-panel-blink 1s steps(2) infinite;
 }
 @keyframes chat-panel-blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .chat-panel-thinking {
@@ -876,7 +925,8 @@
     background: transparent;
   }
 
-  &.chat-panel-tool-running, &.chat-panel-tool-pending {
+  &.chat-panel-tool-running,
+  &.chat-panel-tool-pending {
     color: var(--text);
   }
 
@@ -1244,7 +1294,9 @@ textarea.chat-panel-question-answer {
   border: 1px solid var(--border-strong);
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel-elev) 45%, var(--bg-soft));
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
   overflow: hidden;
 
   &:focus-within {
@@ -1302,7 +1354,10 @@ textarea.chat-panel-question-answer {
   background: var(--primary);
   color: var(--primary-fg, #fff);
   cursor: pointer;
-  transition: background 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.1s ease;
 
   &:hover:not(:disabled) {
     background: var(--primary-hover, var(--primary));
@@ -1355,7 +1410,9 @@ textarea.chat-panel-question-answer {
     max-width: 80px;
     gap: 3px;
     font-size: 11.5px;
-    svg { flex-shrink: 0; }
+    svg {
+      flex-shrink: 0;
+    }
   }
   .composer-select-trigger span {
     min-width: 0;
@@ -1363,7 +1420,6 @@ textarea.chat-panel-question-answer {
     text-overflow: ellipsis;
     white-space: nowrap;
     line-height: 1.5;
-
   }
 }
 
@@ -1380,7 +1436,9 @@ textarea.chat-panel-question-answer {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 
   &:hover:not(:disabled) {
     background: color-mix(in srgb, var(--text) 6%, transparent);

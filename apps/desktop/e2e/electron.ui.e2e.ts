@@ -45,6 +45,20 @@ async function seedCanvasNodeStateMatrix(page: Page): Promise<void> {
       updatedAt: now,
       ...input,
     })
+    const baseTask = (input: Record<string, unknown>) => ({
+      projectId,
+      boardId,
+      userId: 0,
+      progress: 0,
+      inputNodeIds: [],
+      inputAssetIds: [],
+      outputNodeIds: [],
+      outputAssetIds: [],
+      modelParams: {},
+      createdAt: now,
+      updatedAt: now,
+      ...input,
+    })
 
     const group = snapshot.nodes.find((node: any) => node.type === 'group')
     if (group) {
@@ -89,6 +103,7 @@ async function seedCanvasNodeStateMatrix(page: Page): Promise<void> {
       }),
       baseNode({
         id: 'visual-operation-running',
+        taskId: 'visual-task-running',
         type: 'text_to_image',
         title: '生成关键帧',
         x: 1220,
@@ -105,6 +120,7 @@ async function seedCanvasNodeStateMatrix(page: Page): Promise<void> {
       }),
       baseNode({
         id: 'visual-operation-failed',
+        taskId: 'visual-task-failed',
         type: 'image_to_video',
         title: '生成动态镜头',
         x: 800,
@@ -121,6 +137,7 @@ async function seedCanvasNodeStateMatrix(page: Page): Promise<void> {
       }),
       baseNode({
         id: 'visual-operation-pending',
+        taskId: 'visual-task-pending',
         type: 'text_to_video',
         title: '下一镜头',
         x: 1280,
@@ -133,6 +150,29 @@ async function seedCanvasNodeStateMatrix(page: Page): Promise<void> {
           prompt: '人物停在电话亭前，镜头切到照片特写。',
           message: '连接参考节点后即可开始任务',
         },
+      }),
+    )
+    snapshot.tasks.push(
+      baseTask({
+        id: 'visual-task-running',
+        operation: 'text_to_image',
+        operationNodeId: 'visual-operation-running',
+        status: 'running',
+        progress: 48,
+      }),
+      baseTask({
+        id: 'visual-task-failed',
+        operation: 'image_to_video',
+        operationNodeId: 'visual-operation-failed',
+        status: 'failed',
+        progress: 68,
+        errorMsg: '生成中断，请检查模型参数后重试',
+      }),
+      baseTask({
+        id: 'visual-task-pending',
+        operation: 'text_to_video',
+        operationNodeId: 'visual-operation-pending',
+        status: 'pending',
       }),
     )
     snapshot.project.nodeCount = snapshot.nodes.length
@@ -467,7 +507,7 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
     const zoomControls = page.locator('.canvas-controls')
     const zoomControlButtons = zoomControls.locator('.canvas-controls-button')
     await expect(zoomControls).toBeVisible()
-    await expect(zoomControlButtons).toHaveCount(4)
+    await expect(zoomControlButtons).toHaveCount(5)
     const zoomControlPalette = await zoomControls.evaluate((controls) => {
       const firstButton = controls.querySelector<HTMLElement>('.canvas-controls-button')
       if (firstButton == null) throw new Error('Canvas zoom control button is missing')
@@ -615,6 +655,65 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
     await expect(workflowDrawer).not.toBeVisible()
     await rightPanelRail.getByRole('button', { name: '展开画布助手' }).click()
     await expect(rightPanelRail.getByRole('button', { name: '收起画布助手' })).toBeVisible()
+
+    const permissionPicker = page.locator(
+      '.canvas-agent-modal .composer-permission-picker .composer-select-trigger',
+    )
+    await expect(permissionPicker).toBeVisible()
+    await permissionPicker.click()
+    await expect(page.locator('.canvas-agent-permission-menu')).toBeVisible()
+    await expect(page.locator('.canvas-agent-permission-menu')).toContainText('运行权限')
+    const alternatePermission = page.locator('.canvas-agent-permission-option:not(.active)').first()
+    const alternatePermissionLabel = await alternatePermission.locator('strong').innerText()
+    await alternatePermission.click()
+    await expect(page.locator('.canvas-agent-permission-menu')).not.toBeVisible()
+    await expect(permissionPicker).toContainText(alternatePermissionLabel)
+    await expect(rightPanelRail.getByRole('button', { name: '收起画布助手' })).toBeVisible()
+
+    const canvasAgentChat = page.locator('.canvas-agent-modal .chat-panel')
+    await canvasAgentChat.evaluate((element) => {
+      const dataTransfer = new DataTransfer()
+      dataTransfer.setData(
+        'application/x-spark-canvas-agent-artifact+json',
+        JSON.stringify({
+          version: 1,
+          kind: 'canvas-artifact',
+          id: 'e2e-artifact',
+          title: 'E2E 产物',
+          artifactType: 'file',
+          filePath: '/tmp/canvas-agent-e2e.txt',
+        }),
+      )
+      element.dispatchEvent(
+        new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer }),
+      )
+    })
+    await expect(page.locator('.chat-panel-drop-overlay')).toBeVisible()
+    await expect(page.locator('.chat-panel-drop-overlay')).toContainText('放开以加入会话')
+    await canvasAgentChat.evaluate((element) => {
+      const dataTransfer = new DataTransfer()
+      dataTransfer.setData(
+        'application/x-spark-canvas-agent-artifact+json',
+        JSON.stringify({
+          version: 1,
+          kind: 'canvas-artifact',
+          id: 'e2e-artifact',
+          title: 'E2E 产物',
+          artifactType: 'file',
+          filePath: '/tmp/canvas-agent-e2e.txt',
+        }),
+      )
+      element.dispatchEvent(
+        new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }),
+      )
+    })
+    const removeDroppedArtifact = page.getByRole('button', {
+      name: '移除 canvas-agent-e2e.txt',
+    })
+    await expect(removeDroppedArtifact).toBeVisible()
+    await removeDroppedArtifact.click()
+    await expect(removeDroppedArtifact).not.toBeVisible()
+
     await page.evaluate(() => {
       const sparkWindow = window as Window & {
         spark: { invoke: (...args: unknown[]) => unknown }

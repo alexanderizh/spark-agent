@@ -5,7 +5,8 @@
  *   - 只把 canvas project / board id 作为首轮绑定信息注入，避免把 snapshot 文本塞进 prompt；
  *   - 每轮显式激活 builtin:canvas-studio，让 agent 通过实时画布工具拿最新状态；
  *   - 会话级支持附加 Skills，但强制保留 canvas-studio；
- *   - 支持 Claude SDK / Codex 运行时，权限固定为对应 bypass/full-access；
+ *   - 支持 Claude SDK / Codex 运行时，并复用主会话权限模式与内联审批；
+ *   - 本地产物和资产可通过版本化拖拽载荷进入会话附件；
  *   - 面板支持边框拖拽缩放，消息渲染复用常规会话的 Markdown 能力。
  */
 import {
@@ -68,6 +69,13 @@ import {
 import { CliProviderModelMenu, type CliSparkProviderGroup } from '../chat/CliProviderModelMenu'
 import { ModelPickerMenuItem } from '../chat/ModelPickerMenuItem'
 import { usePinnedCanvasItems } from './pinned-canvas-items'
+import { getPermissionModeOptions, getValidPermissionMode } from '../../utils/permission-options'
+import {
+  hasCanvasAgentArtifactDrag,
+  readCanvasAgentArtifactDrag,
+  resolveCanvasAgentArtifactAttachment,
+} from './canvasAgentArtifactDrag'
+import { useSessionPermissionApproval } from '../../components/useSessionPermissionApproval'
 
 interface Props {
   open: boolean
@@ -95,7 +103,7 @@ interface Props {
   externalSubmitRequest?: { id: number; text: string } | null
 }
 
-type CanvasAgentComposerMenu = 'session' | 'agent' | 'model' | 'skills'
+type CanvasAgentComposerMenu = 'session' | 'agent' | 'model' | 'skills' | 'permission'
 type CanvasAgentResizeHandle = 'top' | 'left' | 'right' | 'top-left' | 'top-right'
 type SkillSummary = {
   id: string
@@ -110,6 +118,7 @@ type CanvasAgentProjectCache = {
   draftAdapter?: SessionAgentAdapter
   draftProviderId?: string
   draftModelId?: string
+  draftPermissionMode?: SessionPermissionMode
   selectedExtraSkillIds?: string[]
   /** Distinguishes an intentional selection from the initial draft snapshot. */
   agentSelectionTouched?: boolean
@@ -164,6 +173,9 @@ function readCanvasAgentPrefs(): Omit<CanvasAgentProjectCache, 'sessionId' | 'fi
         ? { draftProviderId: parsed.draftProviderId }
         : {}),
       ...(typeof parsed.draftModelId === 'string' ? { draftModelId: parsed.draftModelId } : {}),
+      ...(typeof parsed.draftPermissionMode === 'string'
+        ? { draftPermissionMode: parsed.draftPermissionMode as SessionPermissionMode }
+        : {}),
       ...(Array.isArray(parsed.selectedExtraSkillIds)
         ? {
             selectedExtraSkillIds: parsed.selectedExtraSkillIds.filter(
@@ -272,10 +284,6 @@ function resolveProviderVendor(provider: ProviderProfile | undefined) {
     desc: '',
     logoPath: '',
   }
-}
-
-function getCanvasPermissionMode(adapter: SessionAgentAdapter): SessionPermissionMode {
-  return adapter === 'codex' ? 'codex-full-access' : 'claude-bypass'
 }
 
 function resolveProviderModel(
@@ -409,12 +417,17 @@ export function CanvasAgentModal({
   const [draftAdapter, setDraftAdapter] = useState<SessionAgentAdapter>('claude-sdk')
   const [draftProviderId, setDraftProviderId] = useState<string>('')
   const [draftModelId, setDraftModelId] = useState<string>('')
+  const [draftPermissionMode, setDraftPermissionMode] = useState<SessionPermissionMode>(() => {
+    const prefs = readCanvasAgentPrefs()
+    return getValidPermissionMode(prefs.draftPermissionMode, 'claude-sdk')
+  })
   const [cliSparkOverride, setCliSparkOverride] = useState<CliSparkOverride | null>(null)
   const [selectedExtraSkillIds, setSelectedExtraSkillIds] = useState<string[]>([])
   const [loadingConfig, setLoadingConfig] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [running, setRunning] = useState(false)
+  const { approvalRequest, dismissApprovalRequest } = useSessionPermissionApproval(sessionId)
   const [openMenu, setOpenMenu] = useState<CanvasAgentComposerMenu | null>(null)
   const [panelWidth, setPanelWidth] = useState(
     () => readCanvasAgentPrefs().panelWidth ?? DEFAULT_PANEL_WIDTH,
@@ -454,7 +467,10 @@ export function CanvasAgentModal({
 
   const activeAgent = useMemo(() => pickCanvasAgent(agents, draftAgentId), [agents, draftAgentId])
   const adapter = draftAdapter
-  const forcedPermissionMode = useMemo(() => getCanvasPermissionMode(adapter), [adapter])
+  const effectivePermissionMode = useMemo(
+    () => getValidPermissionMode(draftPermissionMode, adapter),
+    [adapter, draftPermissionMode],
+  )
   const selectedProvider = useMemo(() => {
     const hit = providers.find((provider) => provider.id === draftProviderId)
     if (hit) return hit
@@ -576,6 +592,7 @@ export function CanvasAgentModal({
       agentSelectionTouchedRef.current = true
       const nextAdapter = normalizeCanvasAdapter(session.agentAdapter)
       setDraftAdapter(nextAdapter)
+      setDraftPermissionMode(getValidPermissionMode(session.permissionMode, nextAdapter))
       modelSelectionTouchedRef.current = true
       setCliSparkOverride(session.cliSparkOverride ?? null)
       cliSparkCacheHydratedKeyRef.current = null
@@ -650,6 +667,13 @@ export function CanvasAgentModal({
     setDraftAdapter(normalizeCanvasAdapter(prefs.draftAdapter ?? cached?.draftAdapter))
     setDraftProviderId(prefs.draftProviderId ?? cached?.draftProviderId ?? '')
     setDraftModelId(prefs.draftModelId ?? cached?.draftModelId ?? '')
+    const restoredAdapter = normalizeCanvasAdapter(prefs.draftAdapter ?? cached?.draftAdapter)
+    setDraftPermissionMode(
+      getValidPermissionMode(
+        prefs.draftPermissionMode ?? cached?.draftPermissionMode,
+        restoredAdapter,
+      ),
+    )
     setCliSparkOverride(null)
     cliSparkCacheHydratedKeyRef.current = null
     setSelectedExtraSkillIds(prefs.selectedExtraSkillIds ?? cached?.selectedExtraSkillIds ?? [])
@@ -728,6 +752,14 @@ export function CanvasAgentModal({
         const restoredAdapter = normalizeCanvasAdapter(restoredAdapterSource)
         setDraftAgentId(restoredAgentId)
         setDraftAdapter(restoredAdapter)
+        setDraftPermissionMode(
+          getValidPermissionMode(
+            prefs.draftPermissionMode ??
+              cached?.draftPermissionMode ??
+              restoredAgent?.permissionMode,
+            restoredAdapter,
+          ),
+        )
 
         const compatible = loadedProviders.filter((provider) =>
           isProviderCompatibleWithAdapter(provider, restoredAdapter),
@@ -782,7 +814,6 @@ export function CanvasAgentModal({
     setOpenMenu(null)
     setResizing(false)
     setError(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   useEffect(() => {
@@ -939,6 +970,7 @@ export function CanvasAgentModal({
       draftAdapter,
       draftProviderId,
       draftModelId,
+      draftPermissionMode: effectivePermissionMode,
       selectedExtraSkillIds,
       agentSelectionTouched: agentSelectionTouchedRef.current,
       modelSelectionTouched: modelSelectionTouchedRef.current,
@@ -949,6 +981,7 @@ export function CanvasAgentModal({
       draftAdapter,
       draftProviderId,
       draftModelId,
+      draftPermissionMode: effectivePermissionMode,
       selectedExtraSkillIds,
     })
   }, [
@@ -956,6 +989,7 @@ export function CanvasAgentModal({
     draftAdapter,
     draftModelId,
     draftProviderId,
+    effectivePermissionMode,
     projectId,
     selectedExtraSkillIds,
     sessionId,
@@ -1020,6 +1054,8 @@ export function CanvasAgentModal({
       setDraftAgentId(agentId)
       const nextAdapter = normalizeCanvasAdapter(next.agentAdapter)
       setDraftAdapter(nextAdapter)
+      const nextPermissionMode = getValidPermissionMode(next.permissionMode, nextAdapter)
+      setDraftPermissionMode(nextPermissionMode)
       const compatible = providers.filter((provider) =>
         isProviderCompatibleWithAdapter(provider, nextAdapter),
       )
@@ -1044,7 +1080,7 @@ export function CanvasAgentModal({
             sessionId: sessionId as never,
             agentId,
             agentAdapter: nextAdapter,
-            permissionMode: getCanvasPermissionMode(nextAdapter),
+            permissionMode: nextPermissionMode,
             ...(preferred ? { providerProfileId: preferred.id, modelId } : {}),
             ...(clearCliSparkOverride ? { cliSparkOverride: null } : {}),
           })
@@ -1075,12 +1111,14 @@ export function CanvasAgentModal({
       })
       const nextAdapter = normalizeCanvasAdapter(selection.adapter)
       const nextModelId = selection.modelId
+      const nextPermissionMode = getValidPermissionMode(draftPermissionMode, nextAdapter)
       const isLocalCli = isBuiltInLocalCliProvider(provider)
       const isHostCliModel =
         isLocalCli && nextModelId === resolveProviderModel(provider, provider.modelIds[0])
       const clearCliSparkOverride = cliSparkOverride != null && (!isLocalCli || isHostCliModel)
       if (clearCliSparkOverride) setCliSparkOverride(null)
       setDraftAdapter(nextAdapter)
+      setDraftPermissionMode(nextPermissionMode)
       setDraftProviderId(selection.providerId)
       setDraftModelId(nextModelId)
       if (sessionId != null) {
@@ -1090,13 +1128,13 @@ export function CanvasAgentModal({
             providerProfileId: selection.providerId,
             modelId: nextModelId,
             agentAdapter: nextAdapter,
-            permissionMode: getCanvasPermissionMode(nextAdapter),
+            permissionMode: nextPermissionMode,
             ...(clearCliSparkOverride ? { cliSparkOverride: null } : {}),
           })
           .catch(() => {})
       }
     },
-    [adapter, cliSparkOverride, providers, sessionId],
+    [adapter, cliSparkOverride, draftPermissionMode, providers, sessionId],
   )
 
   const handleChangeCliSparkModel = useCallback(
@@ -1114,8 +1152,10 @@ export function CanvasAgentModal({
         modelId: nextModelId,
       }
       const nextAdapter = normalizeCanvasAdapter(getProviderAdapterKind(cliProvider))
+      const nextPermissionMode = getValidPermissionMode(draftPermissionMode, nextAdapter)
       const hostModelId = resolveProviderModel(cliProvider, undefined)
       setDraftAdapter(nextAdapter)
+      setDraftPermissionMode(nextPermissionMode)
       setDraftProviderId(cliProvider.id)
       setDraftModelId(hostModelId)
       setCliSparkOverride(nextOverride)
@@ -1127,13 +1167,13 @@ export function CanvasAgentModal({
             providerProfileId: cliProvider.id,
             modelId: hostModelId,
             agentAdapter: nextAdapter,
-            permissionMode: getCanvasPermissionMode(nextAdapter),
+            permissionMode: nextPermissionMode,
             cliSparkOverride: nextOverride,
           })
           .catch(() => {})
       }
     },
-    [cliSparkProvidersByPrimaryId, providers, sessionId],
+    [cliSparkProvidersByPrimaryId, draftPermissionMode, providers, sessionId],
   )
 
   const handleClearCliSparkOverride = useCallback(() => {
@@ -1153,6 +1193,32 @@ export function CanvasAgentModal({
     skillSelectionTouchedRef.current = true
     setSelectedExtraSkillIds(skillIds)
   }, [])
+
+  const handleChangePermission = useCallback(
+    (permissionMode: SessionPermissionMode) => {
+      const nextPermissionMode = getValidPermissionMode(permissionMode, adapter)
+      setOpenMenu(null)
+      setDraftPermissionMode(nextPermissionMode)
+      if (sessionId != null) {
+        void window.spark
+          .invoke('session:update', {
+            sessionId: sessionId as never,
+            permissionMode: nextPermissionMode,
+          })
+          .then((result) => {
+            setProjectSessions((current) =>
+              current.map((session) =>
+                session.id === result.session.id ? result.session : session,
+              ),
+            )
+          })
+          .catch((updateError) => {
+            console.warn('更新画布 Agent 权限模式失败', updateError)
+          })
+      }
+    },
+    [adapter, sessionId],
+  )
 
   useEffect(() => {
     if (!open || loadingConfig || sessionId != null || agents.length === 0) return
@@ -1318,7 +1384,7 @@ export function CanvasAgentModal({
             modelId: effectiveModelId,
             agentId: draftAgentId,
             agentAdapter: adapter,
-            permissionMode: forcedPermissionMode,
+            permissionMode: effectivePermissionMode,
             chatMode: 'agent',
             title: `画布助手 · ${snapshot.project.title}`,
             ...(cliSparkOverride != null ? { cliSparkOverride } : {}),
@@ -1366,7 +1432,7 @@ export function CanvasAgentModal({
           modelId: effectiveModelId,
           agentId: draftAgentId,
           agentAdapter: adapter,
-          permissionMode: forcedPermissionMode,
+          permissionMode: effectivePermissionMode,
           skillIds: effectiveSkillIds,
           skillId: REQUIRED_CANVAS_SKILL_ID,
           ...(cliSparkOverride != null ? { cliSparkOverride } : {}),
@@ -1398,7 +1464,7 @@ export function CanvasAgentModal({
       draftAgentId,
       effectiveModelId,
       effectiveSkillIds,
-      forcedPermissionMode,
+      effectivePermissionMode,
       updateProjectCache,
       refreshProjectSessions,
       selectedProvider,
@@ -1445,6 +1511,21 @@ export function CanvasAgentModal({
       })
     },
     [turnCheckpoints, workspace],
+  )
+
+  const canResolveCanvasArtifactDrop = useCallback(
+    (dataTransfer: DataTransfer) => hasCanvasAgentArtifactDrag(dataTransfer),
+    [],
+  )
+
+  const resolveCanvasArtifactDrop = useCallback(
+    (dataTransfer: DataTransfer): SessionAttachment[] => {
+      const payload = readCanvasAgentArtifactDrag(dataTransfer)
+      if (payload == null) return []
+      const attachment = resolveCanvasAgentArtifactAttachment(payload, snapshot.project.rootPath)
+      return attachment ? [attachment] : []
+    },
+    [snapshot.project.rootPath],
   )
 
   const selectedProjectSession = useMemo(
@@ -1503,6 +1584,14 @@ export function CanvasAgentModal({
         open={openMenu === 'skills'}
         onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'skills' : null)}
         onChange={handleChangeSkills}
+      />
+      <PermissionPickerInline
+        adapter={adapter}
+        value={effectivePermissionMode}
+        disabled={running || creating}
+        open={openMenu === 'permission'}
+        onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'permission' : null)}
+        onChange={handleChangePermission}
       />
     </>
   )
@@ -1622,6 +1711,10 @@ export function CanvasAgentModal({
             if (node.title) ref.title = node.title
             return ref
           })}
+          approvalRequest={approvalRequest?.sessionId === sessionId ? approvalRequest : null}
+          onApprovalClose={dismissApprovalRequest}
+          canResolveDroppedAttachments={canResolveCanvasArtifactDrop}
+          resolveDroppedAttachments={resolveCanvasArtifactDrop}
           {...(onRemoveNodeRef ? { onRemoveNodeReference: onRemoveNodeRef } : {})}
           {...(onClearNodeRefs ? { onClearNodeReferences: onClearNodeRefs } : {})}
           {...(onFocusNode ? { onFocusNodeReference: onFocusNode } : {})}
@@ -2353,6 +2446,81 @@ function PickerPinButton({
     >
       {pinned ? <Icons.PinFill size={12} /> : <Icons.Pin size={12} />}
     </button>
+  )
+}
+
+export function PermissionPickerInline({
+  adapter,
+  value,
+  disabled,
+  open,
+  onOpenChange,
+  onChange,
+}: {
+  adapter: SessionAgentAdapter
+  value: SessionPermissionMode
+  disabled?: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onChange: (mode: SessionPermissionMode) => void
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const options = getPermissionModeOptions(adapter)
+  const selected = options.find((option) => option.value === value) ?? options[0]
+  const menuHeight = 28 + options.length * 54
+  const placement = useComposerDropdownPlacement(rootRef, open, menuHeight, 280)
+
+  return (
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      trigger={['click']}
+      placement={placement}
+      disabled={disabled === true}
+      onOpenChange={(nextOpen) => {
+        if (disabled) {
+          onOpenChange(false)
+          return
+        }
+        onOpenChange(nextOpen)
+      }}
+      popupRender={() => (
+        <div className="composer-dropdown-menu canvas-agent-permission-menu">
+          <div className="composer-menu-group-title">运行权限</div>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`composer-menu-item canvas-agent-permission-option${option.value === value ? ' active' : ''}${option.tone ? ` is-${option.tone}` : ''}`}
+              onClick={() => {
+                onOpenChange(false)
+                onChange(option.value)
+              }}
+            >
+              <span className="canvas-agent-permission-copy">
+                <strong>{option.label}</strong>
+                <small>{option.description}</small>
+              </span>
+              {option.value === value ? <Icons.Check size={14} /> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    >
+      <div
+        ref={rootRef}
+        className={`composer-select composer-permission-picker${disabled ? ' is-disabled' : ''}`}
+        title={disabled ? '会话运行中不可切换' : selected?.description}
+      >
+        <span className="composer-select-icon">
+          <Icons.Shield size={13} />
+        </span>
+        <button type="button" className="composer-select-trigger" disabled={disabled}>
+          <span>{selected?.label ?? '权限'}</span>
+          <Icons.ChevronDown size={12} />
+        </button>
+      </div>
+    </Dropdown>
   )
 }
 

@@ -16,6 +16,11 @@ import { readAssetKind } from './canvasFilmAssets'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import { canvasNodeDownloadName, readCanvasNodeNumber } from './canvasNodeNaming'
 import type { CanvasAsset, CanvasNode, CanvasTask } from './canvas.types'
+import {
+  canDragCanvasAgentArtifact,
+  createCanvasAgentAssetPayload,
+  writeCanvasAgentArtifactDrag,
+} from './canvasAgentArtifactDrag'
 
 type AssetTypeFilter = 'all' | CanvasAsset['type']
 
@@ -525,11 +530,21 @@ function AssetGridCard({
   onToggle: () => void
   onShowDetail: () => void
 }) {
+  const dragPayload = createCanvasAgentAssetPayload(asset)
+  const draggable = canDragCanvasAgentArtifact(dragPayload)
   return (
     <div
       className={`canvas-asset-grid-card${selected ? ' selected' : ''}`}
+      draggable={draggable}
+      title={draggable ? '拖入 Agent 对话' : undefined}
+      style={draggable ? { cursor: 'grab' } : undefined}
       onClick={onToggle}
       onDoubleClick={onShowDetail}
+      onDragStart={(event) => {
+        if (!draggable) return
+        event.stopPropagation()
+        writeCanvasAgentArtifactDrag(event.dataTransfer, dragPayload)
+      }}
     >
       <div className="canvas-asset-grid-thumb">
         <AssetThumbnail asset={asset} />
@@ -567,8 +582,21 @@ function AssetManagerRow({
   onInsertOne: (assetId: string) => void
   onDownloadOne: (asset: CanvasAsset) => Promise<void>
 }) {
+  const dragPayload = createCanvasAgentAssetPayload(asset)
+  const draggable = canDragCanvasAgentArtifact(dragPayload)
   return (
-    <div className={`canvas-asset-manager-row${selected ? ' selected' : ''}`} onClick={onToggle}>
+    <div
+      className={`canvas-asset-manager-row${selected ? ' selected' : ''}`}
+      draggable={draggable}
+      title={draggable ? '拖入 Agent 对话' : undefined}
+      style={draggable ? { cursor: 'grab' } : undefined}
+      onClick={onToggle}
+      onDragStart={(event) => {
+        if (!draggable) return
+        event.stopPropagation()
+        writeCanvasAgentArtifactDrag(event.dataTransfer, dragPayload)
+      }}
+    >
       <div className="canvas-asset-mini-thumb">
         <AssetThumbnail asset={asset} />
       </div>

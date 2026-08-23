@@ -123,3 +123,44 @@
   flex: 0 0 28px;
   margin-right: 4px;
 }
+
+.canvas-agent-permission-menu {
+  width: min(280px, calc(100vw - 24px));
+  padding: 6px;
+}
+
+.canvas-agent-permission-option {
+  min-height: 50px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  text-align: left;
+
+  &.is-danger:not(.active) strong {
+    color: var(--danger);
+  }
+}
+
+.canvas-agent-permission-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+
+  strong {
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  small {
+    overflow: hidden;
+    color: var(--text-faint);
+    font-size: 10px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

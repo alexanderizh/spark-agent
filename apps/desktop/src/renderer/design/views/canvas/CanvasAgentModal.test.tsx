@@ -2,9 +2,9 @@
 
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { ProviderProfile } from '@spark/protocol'
+import type { ProviderProfile, SessionPermissionMode } from '@spark/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ProviderModelPickerInline } from './CanvasAgentModal'
+import { PermissionPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('@lobehub/ui', async () => {
@@ -123,5 +123,39 @@ describe('ProviderModelPickerInline', () => {
     expect(logos).toHaveLength(2)
     expect(logos.map((logo) => logo.dataset.providerIcon)).toEqual([undefined, undefined])
     expect(logos.map((logo) => logo.dataset.providerVendor)).toEqual(['openai', 'openai'])
+  })
+})
+
+describe('PermissionPickerInline', () => {
+  it('shows adapter-compatible modes and emits the selected mode', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mounted.push({ root, container })
+    const onChange = vi.fn<(mode: SessionPermissionMode) => void>()
+
+    await act(async () =>
+      root.render(
+        <PermissionPickerInline
+          adapter="codex"
+          value="codex-default"
+          open
+          onOpenChange={vi.fn()}
+          onChange={onChange}
+        />,
+      ),
+    )
+
+    expect(container.textContent).toContain('按需批准')
+    expect(container.textContent).toContain('替我批准')
+    expect(container.textContent).toContain('完全访问')
+    expect(container.textContent).not.toContain('自动编辑')
+
+    const fullAccess = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('完全访问'),
+    )
+    expect(fullAccess).toBeDefined()
+    await act(async () => fullAccess?.click())
+    expect(onChange).toHaveBeenCalledWith('codex-full-access')
   })
 })

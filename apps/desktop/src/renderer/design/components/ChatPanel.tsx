@@ -10,7 +10,13 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Popover, Spin } from 'antd'
-import type { AgentEvent, ManagedAgent, SessionAttachment, SessionId } from '@spark/protocol'
+import type {
+  AgentEvent,
+  ManagedAgent,
+  PermissionApprovalRequest,
+  SessionAttachment,
+  SessionId,
+} from '@spark/protocol'
 import type { UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
 import { Icons } from '../Icons'
 import {
@@ -26,6 +32,7 @@ import { projectVisibleChatMessages } from '../views/chat/internal-turn-message-
 import { CancellationNotice } from '../views/chat/CancellationNotice'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
+import { InlinePermissionApproval } from './InlinePermissionApproval'
 import { ChatPanelThinkingGroup } from './ChatPanelThinkingGroup'
 import { ChatPanelToolActivity } from './ChatPanelToolActivity'
 import { isCanvasMutationTool } from './chat-panel-tool-activity'
@@ -43,6 +50,11 @@ import { MarkdownText } from '../views/ChatView'
 import { resolveComposerImageSrc } from '../views/chat/ComposerV2'
 import { getLatestAgentStatus, isRunningAgentStatus } from '../views/chat-session-status'
 import { isOptionalUserQuestion } from '../utils/user-question-readiness'
+import {
+  getDataTransferFilePaths,
+  hasFileDataTransfer,
+  isUnresolvableFileDrop,
+} from '../services/composer-attachments'
 import './ChatPanel.less'
 
 export interface ChatPanelProps {
@@ -90,6 +102,16 @@ export interface ChatPanelProps {
   composerBelow?: React.ReactNode
   /** 可选：输入框上方展示的「已引用节点」chip 列表（如画布右键"添加到 Agent 对话"） */
   nodeReferences?: ChatPanelNodeReference[]
+  /** 当前嵌入式会话的待处理权限审批。 */
+  approvalRequest?: PermissionApprovalRequest | null
+  /** 权限审批完成或失效后由宿主移除请求。 */
+  onApprovalClose?: (requestId: string) => void
+  /** 宿主自定义拖拽载荷是否可作为会话附件。普通本地文件由 ChatPanel 自行处理。 */
+  canResolveDroppedAttachments?: (dataTransfer: DataTransfer) => boolean
+  /** 把宿主自定义拖拽载荷解析为会话附件。 */
+  resolveDroppedAttachments?: (
+    dataTransfer: DataTransfer,
+  ) => SessionAttachment[] | Promise<SessionAttachment[]>
   /** 可选：移除某个引用节点 */
   onRemoveNodeReference?: (id: string) => void
   /** 可选：清空全部引用节点 */
@@ -150,6 +172,10 @@ export function ChatPanel({
   composer,
   composerBelow,
   nodeReferences,
+  approvalRequest,
+  onApprovalClose,
+  canResolveDroppedAttachments,
+  resolveDroppedAttachments,
   onRemoveNodeReference,
   onClearNodeReferences,
   onFocusNodeReference,
@@ -178,6 +204,18 @@ export function ChatPanel({
     setInput((prev) => (prev === initialInput ? prev : initialInput))
   }, [initialInput])
   const [attachments, setAttachments] = useState<ChatPanelAttachment[]>([])
+  const attachmentsRef = useRef<ChatPanelAttachment[]>(attachments)
+  const updateAttachments = useCallback(
+    (
+      update: ChatPanelAttachment[] | ((current: ChatPanelAttachment[]) => ChatPanelAttachment[]),
+    ) => {
+      const next = typeof update === 'function' ? update(attachmentsRef.current) : update
+      attachmentsRef.current = next
+      setAttachments(next)
+    },
+    [],
+  )
+  const [dropActive, setDropActive] = useState(false)
   const [status, setStatus] = useState<AssistantStatus>('idle')
   const [cancelling, setCancelling] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
@@ -200,6 +238,7 @@ export function ChatPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const dropDepthRef = useRef(0)
 
   // textarea 自适应高度：输入时自动撑高，上限 160px 后滚动
   const autoResizeTextarea = useCallback(() => {
@@ -233,7 +272,7 @@ export function ChatPanel({
     builderRef.current = new MessageBuilder()
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMessages([])
-    setAttachments([])
+    updateAttachments([])
     liveEventsRef.current = []
     loadedEventsRef.current = []
     unseenActivityKeysRef.current.clear()
@@ -257,7 +296,7 @@ export function ChatPanel({
     }
     setSendError(null)
     preservePendingOnSessionBindRef.current = false
-  }, [sessionId])
+  }, [sessionId, updateAttachments])
 
   useEffect(() => {
     if (sessionId == null) return
@@ -454,7 +493,7 @@ export function ChatPanel({
     (nextAttachments: ChatPanelAttachment[]) => {
       let truncated = false
       let added = 0
-      setAttachments((current) => {
+      updateAttachments((current) => {
         const byPath = new Map(current.map((attachment) => [attachment.path, attachment]))
         for (const attachment of nextAttachments) {
           if (byPath.size >= 20) {
@@ -470,7 +509,7 @@ export function ChatPanel({
       if (truncated) toast.info('单轮最多添加 20 个文件或目录引用。')
       return added
     },
-    [toast],
+    [toast, updateAttachments],
   )
 
   const buildContextAttachment = useCallback(
@@ -524,9 +563,52 @@ export function ChatPanel({
     }
   }, [appendAttachments, buildContextAttachment, openDirectoryDialog, toast])
 
-  const handleRemoveAttachment = useCallback((id: string) => {
-    setAttachments((current) => current.filter((attachment) => attachment.id !== id))
-  }, [])
+  const canHandleDrop = useCallback(
+    (dataTransfer: DataTransfer) =>
+      hasFileDataTransfer(dataTransfer) || canResolveDroppedAttachments?.(dataTransfer) === true,
+    [canResolveDroppedAttachments],
+  )
+
+  const handleDrop = useCallback(
+    async (dataTransfer: DataTransfer) => {
+      const customDrop = canResolveDroppedAttachments?.(dataTransfer) === true
+      const filePaths = customDrop ? [] : getDataTransferFilePaths(dataTransfer)
+      if (!customDrop && isUnresolvableFileDrop(dataTransfer, filePaths)) {
+        throw new Error('无法读取拖入文件的本地路径，请更新应用后重试。')
+      }
+      const nextAttachments = customDrop
+        ? await resolveDroppedAttachments?.(dataTransfer)
+        : await Promise.all(
+            filePaths.map((filePath, index) => buildContextAttachment(filePath, 'drop', index)),
+          )
+      if (nextAttachments == null || nextAttachments.length === 0) {
+        throw new Error(
+          customDrop ? '该产物没有可读取的本地文件，请先下载或物化产物。' : '未发现可添加的文件。',
+        )
+      }
+      const composerAttachments = nextAttachments.map((attachment, index) => ({
+        ...attachment,
+        id: `${Date.now()}-drop-${index}-${attachment.path}`,
+        name: getFileNameFromPath(attachment.path),
+      }))
+      const added = appendAttachments(composerAttachments)
+      if (added > 0) toast.success(`已添加 ${added} 个附件`)
+    },
+    [
+      appendAttachments,
+      buildContextAttachment,
+      canResolveDroppedAttachments,
+      resolveDroppedAttachments,
+      toast,
+    ],
+  )
+
+  const handleRemoveAttachment = useCallback(
+    (id: string) => {
+      updateAttachments((current) => current.filter((attachment) => attachment.id !== id))
+    },
+    [updateAttachments],
+  )
 
   // 粘贴图片：把剪贴板里的图片存到本地，作为 image 附件引用（与主聊天 ComposerV2 行为一致）。
   // 粘贴纯文本时无 image 项，直接放行走默认文本粘贴。
@@ -581,7 +663,7 @@ export function ChatPanel({
       if (onSend == null && sessionId == null) return
       if (!preserveComposer) {
         applyInput('')
-        setAttachments([])
+        updateAttachments([])
       }
       setStatus('sending')
       setSendError(null)
@@ -605,9 +687,9 @@ export function ChatPanel({
       } catch (err) {
         if (!preserveComposer) {
           applyInput(restoreText)
-          setAttachments(
+          updateAttachments((current) =>
             pendingAttachmentsToComposer(turnAttachments).concat(
-              attachments.filter(
+              current.filter(
                 (attachment) =>
                   !turnAttachments.some(
                     (pendingAttachment) => pendingAttachment.path === attachment.path,
@@ -625,7 +707,7 @@ export function ChatPanel({
         setShowAssistantPending(false)
       }
     },
-    [applyInput, attachments, nodeReferences, onAfterSend, onSend, sessionId, status],
+    [applyInput, nodeReferences, onAfterSend, onSend, sessionId, status, updateAttachments],
   )
 
   const lastExternalSubmitIdRef = useRef<number | null>(null)
@@ -727,7 +809,46 @@ export function ChatPanel({
   const turns = useMemo(() => groupChatPanelMessagesByTurn(visibleMessages), [visibleMessages])
 
   return (
-    <div className="chat-panel">
+    <div
+      className={`chat-panel${dropActive ? ' is-drop-active' : ''}`}
+      onDragEnter={(event) => {
+        if (!canHandleDrop(event.dataTransfer)) return
+        event.preventDefault()
+        event.stopPropagation()
+        dropDepthRef.current += 1
+        setDropActive(true)
+      }}
+      onDragOver={(event) => {
+        if (!canHandleDrop(event.dataTransfer)) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDragLeave={(event) => {
+        if (!dropActive) return
+        event.preventDefault()
+        event.stopPropagation()
+        dropDepthRef.current = Math.max(0, dropDepthRef.current - 1)
+        if (dropDepthRef.current === 0) setDropActive(false)
+      }}
+      onDrop={(event) => {
+        if (!canHandleDrop(event.dataTransfer)) return
+        event.preventDefault()
+        event.stopPropagation()
+        dropDepthRef.current = 0
+        setDropActive(false)
+        void handleDrop(event.dataTransfer).catch((dropError) => {
+          toast.error(dropError instanceof Error ? dropError.message : '添加拖拽附件失败')
+        })
+      }}
+    >
+      {dropActive && (
+        <div className="chat-panel-drop-overlay" aria-hidden="true">
+          <Icons.Upload size={24} />
+          <strong>放开以加入会话</strong>
+          <span>画布产物或本地文件将作为本轮附件</span>
+        </div>
+      )}
       {loading && (
         <div className="chat-panel-loading">
           <Spin tip="正在准备会话..." />
@@ -888,6 +1009,12 @@ export function ChatPanel({
 
       <div className="chat-panel-input-area">
         {composer && <div className="chat-panel-composer-bar">{composer}</div>}
+        {approvalRequest && (
+          <InlinePermissionApproval
+            request={approvalRequest}
+            onClose={() => onApprovalClose?.(approvalRequest.requestId)}
+          />
+        )}
         {sendError && (
           <div className="chat-panel-send-error">
             <Icons.X size={12} />

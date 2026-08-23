@@ -3,6 +3,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   type Ref,
   type WheelEvent as ReactWheelEvent,
 } from 'react'
@@ -19,6 +20,11 @@ import {
   resolveCanvasTextOutputPresentation,
 } from './canvasOperationOutputPresentation'
 import type { CanvasOperationOutputView } from './canvasOperationRuns'
+import {
+  canDragCanvasAgentArtifact,
+  createCanvasAgentArtifactPayload,
+  writeCanvasAgentArtifactDrag,
+} from './canvasAgentArtifactDrag'
 import { CanvasVideoPlayer } from './videoPlayer/CanvasVideoPlayer'
 import './CanvasOperationOutputPreview.less'
 
@@ -27,6 +33,30 @@ export type CanvasAudioPreviewActions = {
   onSpeedApply?: (factor: number) => Promise<void> | void
   onDownload?: () => void
   onPeaks?: (peaks: number[]) => void
+}
+
+function CanvasAgentArtifactDragSource({
+  output,
+  children,
+}: {
+  output: CanvasOperationOutputView
+  children: ReactNode
+}) {
+  const payload = createCanvasAgentArtifactPayload(output)
+  if (!canDragCanvasAgentArtifact(payload)) return <>{children}</>
+  return (
+    <div
+      className="canvas-agent-artifact-drag-source nodrag"
+      draggable
+      title="拖入 Agent 对话"
+      onDragStart={(event) => {
+        event.stopPropagation()
+        writeCanvasAgentArtifactDrag(event.dataTransfer, payload)
+      }}
+    >
+      {children}
+    </div>
+  )
 }
 
 const IMAGE_PREVIEW_MIN_SCALE = 0.5
@@ -175,95 +205,112 @@ export function CanvasOperationOutputPreview({
   if (output.type === 'image' && normalizedThumbnail) {
     if (variant === 'detail') {
       return (
-        <CanvasOperationImagePreview
-          key={`${output.id}:${normalizedThumbnail}`}
-          src={normalizedThumbnail}
-          title={output.title}
-        />
+        <CanvasAgentArtifactDragSource output={output}>
+          <CanvasOperationImagePreview
+            key={`${output.id}:${normalizedThumbnail}`}
+            src={normalizedThumbnail}
+            title={output.title}
+          />
+        </CanvasAgentArtifactDragSource>
       )
     }
     return (
-      <img
-        className={`canvas-operation-output-media is-${variant}`}
-        src={normalizedThumbnail}
-        alt={output.title}
-        loading="lazy"
-        decoding="async"
-      />
+      <CanvasAgentArtifactDragSource output={output}>
+        <img
+          className={`canvas-operation-output-media is-${variant}`}
+          src={normalizedThumbnail}
+          alt={output.title}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+        />
+      </CanvasAgentArtifactDragSource>
     )
   }
   if (output.type === 'video' && normalizedUrl) {
     return (
-      <CanvasVideoPlayer
-        className={`canvas-operation-output-media is-${variant}`}
-        src={normalizedUrl}
-        onVideoMetadata={({ width, height }) => {
-          if (width > 0 && height > 0) onVideoMetadata?.({ width, height })
-        }}
-        onDoubleClickEdit={onVideoEdit}
-      />
+      <CanvasAgentArtifactDragSource output={output}>
+        <CanvasVideoPlayer
+          className={`canvas-operation-output-media is-${variant}`}
+          src={normalizedUrl}
+          onVideoMetadata={({ width, height }) => {
+            if (width > 0 && height > 0) onVideoMetadata?.({ width, height })
+          }}
+          onDoubleClickEdit={onVideoEdit}
+        />
+      </CanvasAgentArtifactDragSource>
     )
   }
   if (output.type === 'audio' && normalizedUrl) {
     return (
-      <div className={`canvas-operation-output-audio is-${variant}`}>
-        <CanvasAudioNodePresentation
-          ref={audioPresentationRef}
-          src={normalizedUrl}
-          fileName={output.title}
-          durationSec={0}
-          selected={selected && Boolean(output.nodeId)}
-          actions={audioActions ?? {}}
-        />
-      </div>
+      <CanvasAgentArtifactDragSource output={output}>
+        <div className={`canvas-operation-output-audio is-${variant}`}>
+          <CanvasAudioNodePresentation
+            ref={audioPresentationRef}
+            src={normalizedUrl}
+            fileName={output.title}
+            durationSec={0}
+            selected={selected && Boolean(output.nodeId)}
+            actions={audioActions ?? {}}
+          />
+        </div>
+      </CanvasAgentArtifactDragSource>
     )
   }
   if (textPresentation?.kind === 'storyboard') {
     return (
-      <div className={`canvas-operation-output-storyboard is-${variant}`}>
-        <CanvasShotScriptTable rows={textPresentation.rows} isolateWheel={isolateWheel} />
-      </div>
+      <CanvasAgentArtifactDragSource output={output}>
+        <div className={`canvas-operation-output-storyboard is-${variant}`}>
+          <CanvasShotScriptTable rows={textPresentation.rows} isolateWheel={isolateWheel} />
+        </div>
+      </CanvasAgentArtifactDragSource>
     )
   }
   if (textPresentation?.kind === 'json') {
     return (
-      <pre
-        className={`canvas-operation-output-json is-${variant}${isolateWheel ? ' nowheel' : ''}`}
-      >
-        {textPresentation.text}
-      </pre>
+      <CanvasAgentArtifactDragSource output={output}>
+        <pre
+          className={`canvas-operation-output-json is-${variant}${isolateWheel ? ' nowheel' : ''}`}
+        >
+          {textPresentation.text}
+        </pre>
+      </CanvasAgentArtifactDragSource>
     )
   }
   if (textPresentation?.kind === 'text') {
     return (
-      <div
-        className={`canvas-operation-output-text is-${variant}${isolateWheel ? ' nowheel' : ''}`}
-      >
-        {output.pipelineRole === 'character' ? (
-          <Icons.User size={variant === 'detail' ? 26 : 20} />
-        ) : output.pipelineRole === 'scene' ? (
-          <Icons.Box size={variant === 'detail' ? 26 : 20} />
-        ) : (
-          <Icons.File size={variant === 'detail' ? 26 : 20} />
-        )}
-        <div className="md-surface">
-          <MarkdownText content={textPresentation.text} />
+      <CanvasAgentArtifactDragSource output={output}>
+        <div
+          className={`canvas-operation-output-text is-${variant}${isolateWheel ? ' nowheel' : ''}`}
+        >
+          {output.pipelineRole === 'character' ? (
+            <Icons.User size={variant === 'detail' ? 26 : 20} />
+          ) : output.pipelineRole === 'scene' ? (
+            <Icons.Box size={variant === 'detail' ? 26 : 20} />
+          ) : (
+            <Icons.File size={variant === 'detail' ? 26 : 20} />
+          )}
+          <div className="md-surface">
+            <MarkdownText content={textPresentation.text} />
+          </div>
         </div>
-      </div>
+      </CanvasAgentArtifactDragSource>
     )
   }
 
   return (
-    <div className={`canvas-operation-output-empty is-${variant}`}>
-      {output.type === 'video' || output.type === 'audio' ? (
-        <Icons.Play size={variant === 'detail' ? 38 : 30} />
-      ) : output.type === 'image' ? (
-        <Icons.Image size={variant === 'detail' ? 38 : 30} />
-      ) : (
-        <Icons.File size={variant === 'detail' ? 38 : 30} />
-      )}
-      <span>{output.title}</span>
-    </div>
+    <CanvasAgentArtifactDragSource output={output}>
+      <div className={`canvas-operation-output-empty is-${variant}`}>
+        {output.type === 'video' || output.type === 'audio' ? (
+          <Icons.Play size={variant === 'detail' ? 38 : 30} />
+        ) : output.type === 'image' ? (
+          <Icons.Image size={variant === 'detail' ? 38 : 30} />
+        ) : (
+          <Icons.File size={variant === 'detail' ? 38 : 30} />
+        )}
+        <span>{output.title}</span>
+      </div>
+    </CanvasAgentArtifactDragSource>
   )
 }
 

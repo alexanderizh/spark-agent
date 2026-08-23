@@ -148,7 +148,7 @@ describe('CanvasOperationOutputPreview', () => {
     await act(async () => root.unmount())
   })
 
-  it('节点卡片图片不挂载详情缩放层', () => {
+  it('节点卡片图片不挂载详情缩放层，但仍可拖入 Agent 会话', () => {
     const output: CanvasOperationOutputView = {
       id: 'image-output',
       type: 'image',
@@ -162,6 +162,25 @@ describe('CanvasOperationOutputPreview', () => {
 
     expect(html).toContain('canvas-operation-output-media is-card')
     expect(html).not.toContain('canvas-operation-output-image-zoom')
+    expect(html).toContain('canvas-agent-artifact-drag-source')
+  })
+
+  it('本地产物成为可拖入 Agent 会话的拖拽源', () => {
+    const output: CanvasOperationOutputView = {
+      id: 'local-image-output',
+      type: 'image',
+      title: '本地镜头图',
+      url: 'safe-file://x/L3Byb2plY3QvYXNzZXRzL3Nob3QucG5n',
+      filePath: '/project/assets/shot.png',
+      createdAt: at,
+      updatedAt: at,
+    }
+
+    const html = renderToStaticMarkup(<CanvasOperationOutputPreview output={output} />)
+
+    expect(html).toContain('canvas-agent-artifact-drag-source')
+    expect(html).toContain('draggable="true"')
+    expect(html).toContain('title="拖入 Agent 对话"')
   })
 
   it('切换详情产物时重置图片缩放状态', async () => {
