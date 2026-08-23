@@ -16,6 +16,9 @@
 // app-region 只认显式声明、视觉覆盖不会自动抵消拖拽区：不整体 no-drag 的话
 // dock 头部关闭按钮的点击会被系统窗口拖拽吞掉，双击还会触发窗口最大化；
 // 浮窗头部是卡片自身的拖动把手，被劫持成窗口拖拽同样会失效。
+// 前提：app-region 按 DOM 文档顺序合成、重叠区域后声明者覆盖先声明者。
+// 本组 no-drag 要生效，.subapp-surface-layer 必须渲染在 Provider children
+// 之后（即全部 drag 区域之后），见 SubAppSurfaceHost.tsx 渲染层注释。
 .subapp-panel-dock,
 .subapp-overlay-card,
 .subapp-surface-launcher {

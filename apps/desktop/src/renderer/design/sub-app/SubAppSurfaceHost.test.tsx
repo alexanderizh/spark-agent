@@ -111,6 +111,23 @@ describe('SubAppSurfaceProvider 目录加载', () => {
     publishedRelease: null,
   })
 
+  // app-region 的 drag/no-drag 按 DOM 文档顺序合成、重叠区后声明者覆盖先
+  // 声明者：渲染层若排在 children 之前，浮窗卡片的 no-drag 会被 .app 内
+  // 后声明的拖拽条（mac-window-drag-header 等）覆盖，浮窗移到窗口顶部后
+  // 头部拖拽/关闭即被系统窗口拖拽劫持。锁定渲染层必须在 children 之后。
+  it('渲染层位于 children 之后，保证浮层 no-drag 能覆盖窗口拖拽区', async () => {
+    mocks.list.mockResolvedValue({ items: [], total: 0 })
+    renderProvider()
+    await act(async () => {})
+    const child = [...container.children].find((el) => el.textContent === 'child')
+    const layer = container.querySelector('.subapp-surface-layer')
+    expect(child).toBeDefined()
+    expect(layer).not.toBeNull()
+    expect(layer!.compareDocumentPosition(child!) & Node.DOCUMENT_POSITION_PRECEDING).toBe(
+      Node.DOCUMENT_POSITION_PRECEDING,
+    )
+  })
+
   it('目录只保留浮层/侧板应用；内容区应用不进胶囊', async () => {
     mocks.list.mockResolvedValue({
       items: [

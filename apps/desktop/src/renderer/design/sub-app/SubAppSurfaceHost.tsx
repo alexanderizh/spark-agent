@@ -278,13 +278,21 @@ export function SubAppSurfaceProvider({
 
   return (
     <SurfaceContext.Provider value={controller}>
-      <SubAppSurfaceLayer controller={controller} />
       {children}
+      {/* 渲染层：必须放在 Provider children 渲染树之外，且 DOM 顺序在 children
+          之后（fixed 定位，视觉层级由 z-index 决定不受影响）。
+
+          app-region 的 drag/no-drag 按 DOM 文档顺序合成，重叠区域后声明者
+          覆盖先声明者、与 z-index 无关。浮层卡片靠自身 no-drag 抵消窗口
+          drag 区域（见 SubAppSurfaceHost.less），若本层渲染在 children 之前，
+          其 no-drag 会被 .app 内后声明的 mac-window-drag-header / shell-titlebar
+          等拖拽条覆盖：浮窗移到窗口顶部后头部拖拽与关闭按钮即被系统窗口
+          拖拽劫持。渲染在全部 drag 区域之后，no-drag 才能最终胜出。 */}
+      <SubAppSurfaceLayer controller={controller} />
     </SurfaceContext.Provider>
   )
 }
 
-/** 渲染层：必须放在 Provider children 渲染树之外、主内容区尾部（fixed 定位）。 */
 function SubAppSurfaceLayer({
   controller,
 }: {
