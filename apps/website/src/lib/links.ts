@@ -19,7 +19,7 @@ export const ISSUES_URL = `${GITHUB_URL}/issues`
 export const DISCUSSIONS_URL = `${GITHUB_URL}/discussions`
 export const SITE_URL = 'https://spark-agent.dev'
 /** 联系邮箱（与桌面端「联系我们」一致） */
-export const CONTACT_EMAIL = 'open@yiqibyte.com'
+export const CONTACT_EMAIL = 'zhangyangupup@163.com'
 /** QQ 开发讨论群加群链接（也是二维码扫码值） */
 export const QQ_GROUP_URL = 'https://qm.qq.com/q/diT40hGAyQ'
 /** QQ 开发讨论群群号 */

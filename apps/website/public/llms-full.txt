@@ -47,7 +47,7 @@ The website documents all of the above. Documentation is treated as first-class 
 - /docs links to repository documentation and organizes quick start, coding, team, canvas, and ecosystem workflows. 20 topic pages are individually browseable.
 - /docs/search provides full-text search across all topics.
 - /roadmap explains current, next, and future development focus.
-- /contact links to email (open@yiqibyte.com) and QQ discussion group (1041461465).
+- /contact links to email (zhangyangupup@163.com) and QQ discussion group (1041461465).
 
 ## FAQ
 Q: Is Spark Work local-first? A: Yes, project data and runtime state are designed around local desktop storage.
