@@ -12,7 +12,8 @@ import {
 import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
 import {
   buildCanvasOperationRunViews,
-  canvasOperationRunsFingerprint,
+  canvasOperationOutputSelectionFingerprint,
+  isCanvasOperationRunQuickDeletable,
   type CanvasOperationOutputView,
   type CanvasOperationRunView,
 } from './canvasOperationRuns'
@@ -85,7 +86,7 @@ export function CanvasOperationWorkbench({
       outputState.primaryOutputIndex,
     ),
   )
-  const runsFingerprint = canvasOperationRunsFingerprint(runs)
+  const outputSelectionFingerprint = canvasOperationOutputSelectionFingerprint(runs)
 
   useEffect(() => {
     dispatch({
@@ -99,7 +100,7 @@ export function CanvasOperationWorkbench({
     node.data.primaryOutputId,
     outputState.primaryOutputIndex,
     outputState.primaryRunIndex,
-    runsFingerprint,
+    outputSelectionFingerprint,
   ])
 
   const effectiveRunIndex = Math.min(state.runIndex, Math.max(0, runs.length - 1))
@@ -112,7 +113,7 @@ export function CanvasOperationWorkbench({
     ? (snapshot.nodes.find((item) => item.id === activeOutput.nodeId) ?? null)
     : null
   const activeTab: CanvasOperationWorkbenchTab =
-    !hasOutputs && (state.tab === 'output' || state.tab === 'history') ? 'config' : state.tab
+    !hasOutputs && runs.length === 0 && state.tab === 'output' ? 'config' : state.tab
   const selectedOutputIdSet = new Set(state.selectedOutputIds)
   const selectedOutputs = outputs.filter((output) => selectedOutputIdSet.has(output.id))
   const allCurrentRunSelected =
@@ -144,7 +145,10 @@ export function CanvasOperationWorkbench({
     if (!onDeleteRun || state.busy) return
     Modal.confirm({
       title: '删除这次运行记录？',
-      content: '该运行的任务记录、连线与产物节点会同步清理；资源库中的资产仍会保留。',
+      content:
+        run.status === 'pending' || run.status === 'running'
+          ? '该运行会先取消，再同步清理任务记录、连线与产物节点；资源库中的资产仍会保留。'
+          : '该运行的任务记录、连线与产物节点会同步清理；资源库中的资产仍会保留。',
       okText: '删除',
       okButtonProps: { danger: true },
       cancelText: '取消',
@@ -202,7 +206,7 @@ export function CanvasOperationWorkbench({
       type="text"
       size="small"
       className={`canvas-operation-workbench-tab${activeTab === tab ? ' is-active' : ''}`}
-      disabled={(tab === 'output' || tab === 'history') && !hasOutputs}
+      disabled={tab === 'output' ? !hasOutputs : tab === 'history' ? runs.length === 0 : false}
       onClick={() => dispatch({ type: 'select-tab', tab })}
     >
       {icon}
@@ -448,10 +452,7 @@ export function CanvasOperationWorkbench({
         ) : activeTab === 'history' ? (
           <div className="canvas-operation-history" aria-label="运行历史">
             {runs.map((run, index) => {
-              const deletable =
-                run.status === 'failed' ||
-                run.status === 'cancelled' ||
-                (run.outputs.length === 0 && run.status !== 'running')
+              const deletable = isCanvasOperationRunQuickDeletable(run)
               return (
                 <div
                   key={run.taskId}

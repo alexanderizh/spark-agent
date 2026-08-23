@@ -141,9 +141,125 @@ describe('canvas task output integrity', () => {
     expect(task.outputAssetIds).toEqual(['asset-1'])
   })
 
+  it('points an operation node back to its latest surviving run after deleting the current run', () => {
+    const { operationNode, task, asset } = fixtures()
+    const previousTask: CanvasTask = {
+      ...task,
+      id: 'task-previous',
+      status: 'completed',
+      progress: 100,
+      operationNodeId: operationNode.id,
+      outputNodeIds: [],
+      outputAssetIds: [asset.id],
+      createdAt: '2026-07-20T02:40:00.000Z',
+    }
+    const currentTask: CanvasTask = {
+      ...task,
+      id: 'task-current',
+      status: 'cancelled',
+      progress: 100,
+      operationNodeId: operationNode.id,
+      outputNodeIds: [],
+      outputAssetIds: [],
+      createdAt: '2026-07-20T02:42:00.000Z',
+    }
+    operationNode.taskId = currentTask.id
+    operationNode.data = {
+      ...operationNode.data,
+      status: 'cancelled',
+      progress: 100,
+      message: '任务已取消',
+    }
+
+    const safeToDelete = canvasTaskIdsSafeToDelete({
+      projectId: 'project-1',
+      taskIds: [currentTask.id],
+      tasks: [previousTask, currentTask],
+      nodes: [operationNode],
+      assets: [asset],
+      edges: [],
+      at,
+    })
+
+    expect([...safeToDelete]).toEqual([currentTask.id])
+    expect(operationNode.taskId).toBe(previousTask.id)
+    expect(operationNode.data).toMatchObject({
+      status: 'completed',
+      progress: 100,
+      message: '任务已完成',
+    })
+  })
+
+  it('resets an operation node to pending after deleting its only run', () => {
+    const { operationNode, task } = fixtures()
+    const currentTask: CanvasTask = {
+      ...task,
+      status: 'failed',
+      outputNodeIds: [],
+      outputAssetIds: [],
+      operationNodeId: operationNode.id,
+    }
+    operationNode.taskId = currentTask.id
+
+    const safeToDelete = canvasTaskIdsSafeToDelete({
+      projectId: 'project-1',
+      taskIds: [currentTask.id],
+      tasks: [currentTask],
+      nodes: [operationNode],
+      assets: [],
+      edges: [],
+      at,
+    })
+
+    expect([...safeToDelete]).toEqual([currentTask.id])
+    expect(operationNode.taskId).toBeNull()
+    expect(operationNode.data).toMatchObject({
+      status: 'pending',
+      progress: 0,
+      message: '待提交',
+    })
+  })
+
+  it('clears a legacy dangling task pointer even when the task row is already missing', () => {
+    const { operationNode } = fixtures()
+    operationNode.taskId = 'task-missing'
+    operationNode.data = {
+      ...operationNode.data,
+      status: 'running',
+      progress: 42,
+      message: '任务运行中',
+    }
+
+    const safeToDelete = canvasTaskIdsSafeToDelete({
+      projectId: 'project-1',
+      taskIds: ['task-missing'],
+      tasks: [],
+      nodes: [operationNode],
+      assets: [],
+      edges: [],
+      at,
+    })
+
+    expect([...safeToDelete]).toEqual(['task-missing'])
+    expect(operationNode.taskId).toBeNull()
+    expect(operationNode.data).toMatchObject({
+      status: 'pending',
+      progress: 0,
+      message: '待提交',
+    })
+  })
+
   it('presents legacy failed nodes with surviving outputs as completed', () => {
     expect(effectiveCanvasOperationStatus('failed', true)).toBe('completed')
     expect(effectiveCanvasOperationStatus('failed', false)).toBe('failed')
+    expect(effectiveCanvasOperationStatus('cancelled', false)).toBe('cancelled')
     expect(effectiveCanvasOperationStatus('running', true)).toBe('running')
+  })
+
+  it('uses the current CanvasTask status as the lifecycle authority', () => {
+    expect(effectiveCanvasOperationStatus('running', false, 'completed')).toBe('completed')
+    expect(effectiveCanvasOperationStatus('completed', true, 'running')).toBe('running')
+    expect(effectiveCanvasOperationStatus('completed', true, 'cancelled')).toBe('cancelled')
+    expect(effectiveCanvasOperationStatus('completed', true, 'failed')).toBe('failed')
   })
 })

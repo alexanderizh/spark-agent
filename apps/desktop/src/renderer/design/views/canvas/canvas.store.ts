@@ -27,6 +27,7 @@ import {
 } from './canvasNodeLayoutPersistence'
 import { buildCanvasWorkflowTemplateBlueprint } from './canvasWorkflowMaterialization'
 import { canvasOperationKind } from './canvasOperationKind'
+import { isCanvasTaskActive } from './canvasTaskActivity'
 
 export type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
 
@@ -82,6 +83,45 @@ type VersionedCanvasEntity = {
   createdAt?: string
 }
 
+const CANVAS_TASK_STATUS_ORDER = {
+  pending: 0,
+  running: 1,
+  failed: 2,
+  cancelled: 2,
+  completed: 3,
+} as const
+
+function canvasEntityTaskStatus(
+  entity: VersionedCanvasEntity,
+): keyof typeof CANVAS_TASK_STATUS_ORDER | null {
+  const candidate = entity as VersionedCanvasEntity & {
+    status?: unknown
+    data?: { status?: unknown }
+  }
+  const status = candidate.status ?? candidate.data?.status
+  return typeof status === 'string' && status in CANVAS_TASK_STATUS_ORDER
+    ? (status as keyof typeof CANVAS_TASK_STATUS_ORDER)
+    : null
+}
+
+function preferEqualVersionEntity<T extends VersionedCanvasEntity>(previous: T, next: T): T {
+  if (JSON.stringify(previous) === JSON.stringify(next)) return previous
+  const previousTaskId = (previous as VersionedCanvasEntity & { taskId?: unknown }).taskId
+  const nextTaskId = (next as VersionedCanvasEntity & { taskId?: unknown }).taskId
+  if (previousTaskId !== nextTaskId) return next
+  const previousStatus = canvasEntityTaskStatus(previous)
+  const nextStatus = canvasEntityTaskStatus(next)
+  if (
+    previousStatus &&
+    nextStatus &&
+    CANVAS_TASK_STATUS_ORDER[previousStatus] > CANVAS_TASK_STATUS_ORDER[nextStatus]
+  ) {
+    return previous
+  }
+  // 同毫秒的新终态、进度或产物字段仍必须进入视图；仅阻止生命周期倒退。
+  return next
+}
+
 function mergeTaskEntities<T extends VersionedCanvasEntity>(
   current: T[],
   next: T[],
@@ -95,7 +135,9 @@ function mergeTaskEntities<T extends VersionedCanvasEntity>(
     const previousVersion = previous.updatedAt ?? previous.createdAt
     const nextVersion = item.updatedAt ?? item.createdAt
     if (previousVersion == null || nextVersion == null) return item
-    if (previousVersion === nextVersion) return previous
+    if (previousVersion === nextVersion) {
+      return rejectOlderVersions ? preferEqualVersionEntity(previous, item) : item
+    }
     return rejectOlderVersions && previousVersion > nextVersion ? previous : item
   })
   if (preserveMissing) {
@@ -792,7 +834,7 @@ export function useCanvasWorkspace(projectId: string) {
     async (taskIds: string[]) => {
       if (taskIds.length === 0) return
       await canvasApi.deleteTasks(projectId, taskIds)
-      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
+      return await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
     },
     [applyCanvasMutationSnapshot, projectId],
   )
@@ -816,9 +858,7 @@ export function useCanvasWorkspace(projectId: string) {
     async (scope: 'active' | 'failed') => {
       if (!snapshot) return
       if (scope === 'active') {
-        const activeTasks = snapshot.tasks.filter(
-          (task) => task.status === 'pending' || task.status === 'running',
-        )
+        const activeTasks = snapshot.tasks.filter(isCanvasTaskActive)
         for (const task of activeTasks) {
           try {
             await applyTaskSnapshot(canvasApi.cancelTask(projectId, task.id))

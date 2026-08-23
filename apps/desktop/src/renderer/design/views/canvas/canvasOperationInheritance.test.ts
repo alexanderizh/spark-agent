@@ -3432,7 +3432,7 @@ describe('canvas operation inheritance', () => {
     expect(snapshot.nodes.find((node) => node.id === 'node-op')?.taskId).toBe('task-pending')
   })
 
-  it('writes media task outputs through task edges when the node task id was overwritten', async () => {
+  it('keeps asset-only media outputs on the original run when the node task id was overwritten', async () => {
     seedCanvasDb({
       projects: [
         {
@@ -3584,21 +3584,15 @@ describe('canvas operation inheritance', () => {
 
     const oldTask = snapshot.tasks.find((item) => item.id === 'task-old')
     const opNode = snapshot.nodes.find((item) => item.id === 'node-op')
-    const outputNode = snapshot.nodes.find(
-      (item) => item.id !== 'node-op' && item.id !== 'node-source',
-    )
-    const generatedEdge = snapshot.edges.find(
-      (item) =>
-        item.type === 'generated' &&
-        item.taskId === 'task-old' &&
-        item.sourceNodeId === 'node-op' &&
-        item.targetNodeId === outputNode?.id,
-    )
+    const outputAsset = snapshot.assets.find((item) => item.metadata.taskId === 'task-old')
 
     expect(oldTask?.status).toBe('completed')
-    expect(oldTask?.outputNodeIds).toEqual([outputNode?.id])
-    expect(outputNode?.type).toBe('image')
-    expect(generatedEdge).toBeDefined()
+    expect(oldTask?.outputNodeIds).toEqual([])
+    expect(oldTask?.outputAssetIds).toEqual([outputAsset?.id])
+    expect(outputAsset?.type).toBe('image')
+    expect(
+      snapshot.edges.some((item) => item.taskId === 'task-old' && item.type === 'generated'),
+    ).toBe(false)
     expect(opNode?.taskId).toBe('task-new')
     expect(opNode?.data.status).toBe('running')
   })
@@ -3785,7 +3779,7 @@ describe('canvas operation inheritance', () => {
     expect(asset?.metadata).toEqual({ version: 'current' })
   })
 
-  it('uses operation outputTitle for generated media asset and node names', async () => {
+  it('uses operation outputTitle for asset-only media output names before expansion', async () => {
     seedCanvasDb({
       projects: [
         {
@@ -3890,9 +3884,9 @@ describe('canvas operation inheritance', () => {
     const asset = snapshot.assets.find((item) => item.metadata.taskId === 'task-running')
     const outputNode = snapshot.nodes.find((item) => item.assetId === asset?.id)
     expect(asset?.title).toBe('林岚')
-    expect(outputNode?.title).toBe('#1 林岚')
-    expect(outputNode?.data.nodeSequence).toBe(1)
-    expect(outputNode?.data.pipelineRole).toBe('design_card')
+    expect(outputNode).toBeUndefined()
+    expect(snapshot.tasks[0]?.outputAssetIds).toEqual([asset?.id])
+    expect(snapshot.tasks[0]?.outputNodeIds).toEqual([])
     expect(asset?.metadata.kind).toBeUndefined()
   })
 

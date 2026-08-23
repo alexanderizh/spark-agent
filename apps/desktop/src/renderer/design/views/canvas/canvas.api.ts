@@ -127,6 +127,12 @@ import {
 } from './canvasOperationPresets'
 import { canvasTaskErrorMessage } from './canvasTaskErrorMessage'
 import { CanvasProjectMutationVersion } from './canvasProjectMutationVersion'
+import { CanvasRuntimePersistGate } from './canvasRuntimePersistGate'
+import {
+  persistCanvasRuntimeSnapshot,
+  type CanvasPersistOutcome,
+} from './canvasRuntimeSnapshotPersist'
+import { mergeCanvasRuntimeStateIntoSnapshot } from './canvasRuntimeStateMerge'
 import {
   canvasTaskIdsSafeToDelete,
   isCompletedCanvasTaskWithOutputs,
@@ -294,7 +300,7 @@ type CanvasWorkflowTaskFinishRequest = {
  * dirty 状态通过 'canvas:dirty' CustomEvent 广播，供工作区刷新「未保存」徽标。
  */
 // persistAllProjects 的在途 Promise（返回 attempted/failed 项目集合）；flushPersist 据此串行化落库并 per-project 更新 dirty。
-let persistInFlight: Promise<{ attempted: Set<string>; failed: Set<string> }> = Promise.resolve({
+let persistInFlight: Promise<CanvasPersistOutcome> = Promise.resolve({
   attempted: new Set(),
   failed: new Set(),
 })
@@ -309,6 +315,9 @@ let persistInFlight: Promise<{ attempted: Set<string>; failed: Set<string> }> = 
  */
 const dirtyProjectIds = new Set<string>()
 const projectMutationVersion = new CanvasProjectMutationVersion()
+// 任务运行态（提交/进度/终态）写入热存储但尚未静默落盘的项目门闩：挂起期间
+// openSnapshot / hydrateFromStorage 不得用磁盘旧快照覆盖该项目热数据。
+const runtimePersistGate = new CanvasRuntimePersistGate()
 
 function isProjectDirty(projectId: string): boolean {
   return dirtyProjectIds.has(projectId)
@@ -393,22 +402,29 @@ async function persistAllProjects(db: CanvasDb): Promise<{
  * db 不一致，把未落库的编辑误判为已保存。
  */
 async function flushPersist(): Promise<boolean> {
-  await persistInFlight
-  // 确保防抖的 localStorage 写入已落盘（与 SQLite 保持一致）
-  flushHotPersist()
-  // readDb 现在返回内存缓存引用（非深拷贝）；persistAllProjects 内部有跨 project 的 await，
-  // 期间可能被其他 mutation 修改，所以这里做一次快照拷贝保证落库数据一致性。
-  const dbSnapshot = cloneDb(readDb())
-  const persistedVersions = projectMutationVersion.capture(
-    dbSnapshot.projects.map((project) => project.id),
-  )
-  persistInFlight = persistAllProjects(dbSnapshot)
-  const { attempted, failed } = await persistInFlight
+  const previousPersist = persistInFlight
+  let persistedVersions: ReadonlyMap<string, number> = new Map()
+  // 先同步登记队列尾部，再在队列内读取热库。这样 runtime 的“加载基线→合并→保存”
+  // 无法插入 await 与赋值之间，避免旧基线最后覆盖一次更新的全量保存。
+  const run = previousPersist.then(async () => {
+    // 确保防抖的 localStorage 写入已落盘（与 SQLite 保持一致）
+    flushHotPersist()
+    // readDb 返回内存缓存引用；persistAllProjects 内部有跨 project 的 await，必须先克隆。
+    const dbSnapshot = cloneDb(readDb())
+    persistedVersions = projectMutationVersion.capture(
+      dbSnapshot.projects.map((project) => project.id),
+    )
+    return persistAllProjects(dbSnapshot)
+  })
+  persistInFlight = run
+  const { attempted, failed } = await run
   for (const id of attempted) {
     // 保存期间可能收到任务终态或新的用户编辑。只有当前热数据仍与保存开始时同代，
     // 才能清 dirty；否则旧保存结果不能把尚未落库的新状态伪装成 clean。
     if (!failed.has(id) && projectMutationVersion.isCurrent(id, persistedVersions.get(id))) {
       dirtyProjectIds.delete(id)
+      // 全量落库已包含该项目的运行态回写，静默落盘保护同步解除。
+      runtimePersistGate.clearPersisted(id)
       dispatchDirty(id, false)
     }
   }
@@ -426,40 +442,57 @@ export async function saveCanvas(): Promise<boolean> {
  * （saveCanvas / openSnapshot）时被悄悄写回，违背「不保存」的语义。
  */
 export async function revertProject(projectId: string): Promise<void> {
+  // 离开守卫可能刚把活动任务改为 cancelled。先跳过防抖立即冲刷运行态，避免随后
+  // 从旧磁盘快照恢复出 running；同时等待已有全量保存，禁止回滚与保存交错。
+  await runtimePersistGate.flushPending(projectId)
+  await persistInFlight
   const db = readDb()
-  db.projects = db.projects.filter((p) => p.id !== projectId)
-  db.boards = db.boards.filter((b) => b.projectId !== projectId)
-  db.nodes = db.nodes.filter((n) => n.projectId !== projectId)
-  db.edges = db.edges.filter((e) => e.projectId !== projectId)
-  db.assets = db.assets.filter((a) => a.projectId !== projectId)
-  db.tasks = db.tasks.filter((t) => t.projectId !== projectId)
+  let runtimeMergeChanged = false
   try {
-    const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
-    if (snapshotJson) {
-      const snap = JSON.parse(snapshotJson) as Partial<CanvasSnapshot>
-      if (snap.project) db.projects.push(snap.project)
-      // 兼容多 board：优先用 boards[]；旧快照只有单 board
-      if (Array.isArray(snap.boards) && snap.boards.length > 0) {
-        db.boards.push(...snap.boards)
-      } else if (snap.board) {
-        db.boards.push(snap.board)
-      }
-      if (snap.nodes) db.nodes.push(...snap.nodes)
-      if (snap.edges) db.edges.push(...snap.edges)
-      if (snap.assets) db.assets.push(...snap.assets)
-      if (snap.tasks) db.tasks.push(...snap.tasks)
+    const persisted = await loadSnapshotFromStorage(projectId)
+    if (persisted) {
+      // 加载在途仍可能收到最后一条 provider 回调；提交回滚前再读一次热库，只把运行态
+      // 白名单合并进磁盘基线，用户未保存的节点/Prompt 编辑仍会被丢弃。
+      const merged = mergeCanvasRuntimeStateIntoSnapshot(persisted.snapshot, cloneDb(readDb()))
+      runtimeMergeChanged = JSON.stringify(merged) !== JSON.stringify(persisted.snapshot)
+      replaceProjectSnapshot(db, merged)
+    } else {
+      removeProjectFromDb(db, projectId)
     }
   } catch (err) {
     // SQLite 读不到快照时，项目就地清空（等同丢弃）。
+    removeProjectFromDb(db, projectId)
+    runtimePersistGate.clearPersisted(projectId)
     console.error('[canvas] revertProject load failed', projectId, err)
   }
+  projectMutationVersion.mark(projectId)
   persistHotDb(db)
   dirtyProjectIds.delete(projectId)
   dispatchDirty(projectId, false)
+  // 运行态合并若改变了磁盘基线，立即以 clean 完整快照落盘；否则下一次 openSnapshot
+  // 仍会从旧 latest.json 读回 running。加载期间若又收到回写，pending 也会在这里重排。
+  if (runtimeMergeChanged || runtimePersistGate.isPending(projectId)) {
+    runtimePersistGate.markPending(projectId)
+    await runtimePersistGate.flushPending(projectId)
+  }
 }
 
 export function isCanvasDirty(projectId: string): boolean {
   return dirtyProjectIds.has(projectId)
+}
+
+/**
+ * 删除任务记录前确保最近一次运行态已经进入持久化基线。
+ *
+ * 任务取消/失败/完成不新增 dirty，但运行记录删除属于可放弃的用户编辑。若先从热库
+ * 删除 task 再放弃修改，运行态合并将失去取消终态来源，并从旧磁盘快照恢复出 running。
+ * 因此调用方必须先冲刷运行态；冲刷失败或期间又有新回写时保留记录，让用户稍后重试。
+ */
+export async function flushCanvasTaskRuntimeWrites(projectId: string): Promise<void> {
+  await runtimePersistGate.flushPending(projectId)
+  if (runtimePersistGate.isPending(projectId)) {
+    throw new Error('任务状态尚未完成持久化，请稍后重试删除')
+  }
 }
 
 /**
@@ -470,7 +503,10 @@ export function isCanvasDirty(projectId: string): boolean {
 export function __resetCanvasHotCache(): void {
   hotMemory = null
   hotOverflow = null
+  dirtyProjectIds.clear()
+  persistInFlight = Promise.resolve({ attempted: new Set(), failed: new Set() })
   projectMutationVersion.reset()
+  runtimePersistGate.reset()
   canvasTaskDiagnosticsMigratedDbs = new WeakSet<CanvasDb>()
   if (hotPersistTimer != null) {
     clearTimeout(hotPersistTimer)
@@ -857,8 +893,34 @@ function writeTaskRuntimeDb(db: CanvasDb, projectId: string): void {
   const wasDirty = dirtyProjectIds.has(projectId)
   projectMutationVersion.mark(projectId)
   persistHotDb(db)
+  // clean 项目静默保存完整热快照；dirty 项目由持久化层读取上次保存的磁盘基线，
+  // 只合并任务生命周期白名单，避免把节点位置、Prompt 等未保存编辑一并写盘。
+  runtimePersistGate.markPending(projectId)
   if (wasDirty) dispatchDirty(projectId, true)
 }
+
+async function persistProjectRuntimeWrites(projectId: string): Promise<void> {
+  await persistCanvasRuntimeSnapshot({
+    projectId,
+    waitForPreviousPersist: () => persistInFlight,
+    canPersistFullSnapshot: () => !isProjectDirty(projectId),
+    flushHotPersist,
+    readDbSnapshot: () => cloneDb(readDb()),
+    loadPersistedSnapshot: async () => (await loadSnapshotFromStorage(projectId))?.snapshot ?? null,
+    mergeRuntimeState: mergeCanvasRuntimeStateIntoSnapshot,
+    resolveActiveBoard,
+    buildProjectMeta,
+    captureVersion: () => projectMutationVersion.capture([projectId]).get(projectId),
+    isVersionCurrent: (version) => projectMutationVersion.isCurrent(projectId, version),
+    saveSnapshot: (request) => window.spark.invoke('canvas:snapshot:save', request),
+    setPersistTail: (tail) => (persistInFlight = tail),
+    clearPending: () => runtimePersistGate.clearPersisted(projectId),
+    reschedulePending: () => runtimePersistGate.markPending(projectId),
+    reportError: (error) => console.error('[canvas] task runtime persist failed', projectId, error),
+  })
+}
+
+runtimePersistGate.setHandler((projectId) => persistProjectRuntimeWrites(projectId))
 
 function writeHotDb(db: CanvasDb, projectId: string, dirty: boolean): void {
   projectMutationVersion.mark(projectId)
@@ -868,14 +930,18 @@ function writeHotDb(db: CanvasDb, projectId: string, dirty: boolean): void {
   dispatchDirty(projectId, dirty)
 }
 
-function replaceProjectSnapshot(db: CanvasDb, snapshot: CanvasSnapshot): void {
-  const projectId = snapshot.project.id
+function removeProjectFromDb(db: CanvasDb, projectId: string): void {
   db.projects = db.projects.filter((item) => item.id !== projectId)
   db.boards = db.boards.filter((item) => item.projectId !== projectId)
   db.nodes = db.nodes.filter((item) => item.projectId !== projectId)
   db.edges = db.edges.filter((item) => item.projectId !== projectId)
   db.assets = db.assets.filter((item) => item.projectId !== projectId)
   db.tasks = db.tasks.filter((item) => item.projectId !== projectId)
+}
+
+function replaceProjectSnapshot(db: CanvasDb, snapshot: CanvasSnapshot): void {
+  const projectId = snapshot.project.id
+  removeProjectFromDb(db, projectId)
   db.projects.push(snapshot.project)
   // 多 board：优先写入 boards[]；向下兼容只写单 board 的旧快照
   if (Array.isArray(snapshot.boards) && snapshot.boards.length > 0) {
@@ -2037,9 +2103,39 @@ export const canvasApi = {
       return typeof stored === 'string' ? stored : undefined
     }
 
+    // 任务运行态已写入热存储但尚未静默落盘：磁盘 latest.json 比热数据旧（通常仍是
+    // running），不得走下方磁盘整库替换分支，否则已显示的终态与产物会被旧快照覆盖
+    // 回 loading（750ms 工作流轮询会反复触发该分支）。这里纯读热数据返回：
+    // 不推进 mutation 代次、不改 dirty（运行态回写不触发退出拦截/未保存徽标）。
+    if (!isProjectDirty(projectId) && runtimePersistGate.isPending(projectId)) {
+      const hotDb = readDb()
+      const hasProject = hotDb.projects.some((item) => item.id === projectId)
+      if (hasProject && readProjectBoards(hotDb, projectId).length > 0) {
+        return snapshotFromDb(hotDb, projectId, resolvePreferredBoard(hotDb))
+      }
+      // 热存储缺失该项目（异常兜底）：落回磁盘加载路径。
+    }
+
     if (!isProjectDirty(projectId)) {
+      const loadStartedAtVersion = projectMutationVersion.capture([projectId]).get(projectId)
       try {
         const snapshot = await loadSnapshotFromStorage(projectId)
+        // loadSnapshotFromStorage 是异步 IPC。读取在途期间可能恰好有任务完成、用户启动
+        // 另一节点或发生其他画布 mutation；此时刚返回的磁盘快照已经过期，绝不能再
+        // replaceProjectSnapshot 整库覆盖热数据。dirty/pending 覆盖语义状态，mutation
+        // 代次覆盖“状态已再次保存并恢复 clean”等仍需拒绝旧读取的完整竞态窗口。
+        const staleLoad =
+          isProjectDirty(projectId) ||
+          runtimePersistGate.isPending(projectId) ||
+          !projectMutationVersion.isCurrent(projectId, loadStartedAtVersion)
+        if (staleLoad) {
+          const hotDb = readDb()
+          const hasProject = hotDb.projects.some((item) => item.id === projectId)
+          if (!hasProject || readProjectBoards(hotDb, projectId).length === 0) {
+            throw new Error('Canvas project not found')
+          }
+          return snapshotFromDb(hotDb, projectId, resolvePreferredBoard(hotDb))
+        }
         if (snapshot) {
           snapshot.snapshot.project.lastOpenedAt = now()
           const db = emptyDb()
@@ -5029,7 +5125,7 @@ export const canvasApi = {
 
     updateProjectCounts(db, projectId)
     if (status === 'completed' || task.outputNodeIds.length > 0 || task.outputAssetIds.length > 0) {
-      writeDb(db)
+      writeTaskRuntimeDb(db, projectId)
       return this.openSnapshot(projectId, task.boardId)
     }
     writeTaskRuntimeDb(db, projectId)
@@ -6551,7 +6647,7 @@ export const canvasApi = {
       }
       updateProjectCounts(db, projectId)
       if (hasFallbackOutput) {
-        writeDb(db)
+        writeTaskRuntimeDb(db, projectId)
         return this.openSnapshot(projectId, task.boardId)
       }
       writeTaskRuntimeDb(db, projectId)
@@ -6611,7 +6707,7 @@ export const canvasApi = {
         taskNode.updatedAt = at
       }
       updateProjectCounts(db, projectId)
-      writeDb(db)
+      writeTaskRuntimeDb(db, projectId)
       return this.openSnapshot(projectId, task.boardId)
     }
 
@@ -6678,7 +6774,7 @@ export const canvasApi = {
         taskNode.updatedAt = at
       }
       updateProjectCounts(db, projectId)
-      writeDb(db)
+      writeTaskRuntimeDb(db, projectId)
       return this.openSnapshot(projectId, task.boardId)
     }
     const asset: CanvasAsset = {
@@ -6793,7 +6889,7 @@ export const canvasApi = {
       createdAt: at,
     })
     updateProjectCounts(db, projectId)
-    writeDb(db)
+    writeTaskRuntimeDb(db, projectId)
     return this.openSnapshot(projectId, task.boardId)
   },
 
@@ -7124,7 +7220,7 @@ export const canvasApi = {
       taskNode.updatedAt = at
     }
     updateProjectCounts(db, projectId)
-    writeDb(db)
+    writeTaskRuntimeDb(db, projectId)
     return this.openSnapshot(projectId, task.boardId)
   },
 
@@ -7185,8 +7281,12 @@ export const canvasApi = {
    * 否则用 SQLite 快照重建 localStorage，避免旧缓存里的项目 ID 和列表不一致。
    */
   async hydrateFromStorage(): Promise<{ restored: number }> {
-    // 整库重建是全库级操作：只要**任何一个**项目还有未落库改动，就不覆盖热存储。
-    if (dirtyProjectIds.size > 0) return { restored: 0 }
+    // 整库重建是全库级操作：只要**任何一个**项目还有未落库改动（用户编辑 dirty、
+    // 或任务运行态尚未静默落盘），就不覆盖热存储。
+    if (dirtyProjectIds.size > 0 || runtimePersistGate.hasPending()) return { restored: 0 }
+    const hydrationStartDb = readDb()
+    const hydrationStartProjectIds = hydrationStartDb.projects.map((project) => project.id).sort()
+    const hydrationStartVersions = projectMutationVersion.capture(hydrationStartProjectIds)
     const db = emptyDb()
     let restored = 0
     let migrated = false
@@ -7204,8 +7304,30 @@ export const canvasApi = {
           // 单个项目解析失败跳过
         }
       }
+      // project:list / snapshot:load 跨多个异步 IPC。期间任一任务终态、节点执行或画布
+      // mutation 都会让本次整库重建过期；即便中途自动保存已把 dirty 恢复为 false，
+      // 项目集合或 mutation 代次仍能识别旧 hydrate，禁止它覆盖当前热数据。
+      const currentProjectIds = readDb()
+        .projects.map((project) => project.id)
+        .sort()
+      const projectSetChanged =
+        currentProjectIds.length !== hydrationStartProjectIds.length ||
+        currentProjectIds.some((projectId, index) => projectId !== hydrationStartProjectIds[index])
+      const projectMutated = hydrationStartProjectIds.some(
+        (projectId) =>
+          !projectMutationVersion.isCurrent(projectId, hydrationStartVersions.get(projectId)),
+      )
+      if (
+        dirtyProjectIds.size > 0 ||
+        runtimePersistGate.hasPending() ||
+        projectSetChanged ||
+        projectMutated
+      ) {
+        return { restored: 0 }
+      }
       // 从权威源整库重建：重建出来的项目本身不带未落库改动，整体清空 dirty 集合。
       persistHotDb(db)
+      for (const project of db.projects) projectMutationVersion.mark(project.id)
       dirtyProjectIds.clear()
       dispatchDirty(null, false)
       if (migrated) {

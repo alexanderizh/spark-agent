@@ -1,4 +1,5 @@
 import type { CanvasOperationOutputView } from './canvasOperationRuns'
+import { syncCanvasOperationNodeCurrentTask } from './canvasTaskOutputIntegrity'
 import type { CanvasEdge, CanvasNode, CanvasTask } from './canvas.types'
 
 export type CanvasOperationOutputDeletionPlan = {
@@ -298,12 +299,21 @@ export function applyCanvasOperationOutputDeletion(input: {
       delete data.primaryOutputId
       data.primaryOutputSelection = 'auto_latest'
     }
-    return {
+    const nextNode: CanvasNode = {
       ...node,
       ...(nextTaskId !== undefined ? { taskId: nextTaskId } : {}),
       data,
       updatedAt: input.updatedAt,
     }
+    if (nextTaskId !== node.taskId) {
+      syncCanvasOperationNodeCurrentTask(
+        nextNode,
+        latestRemainingTask,
+        input.updatedAt,
+        nextTaskId && !latestRemainingTask ? nextTaskId : undefined,
+      )
+    }
+    return nextNode
   })
   const edges = input.edges.filter(
     (edge) =>

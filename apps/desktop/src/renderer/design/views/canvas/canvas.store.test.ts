@@ -429,6 +429,82 @@ describe('mergeCanvasBackgroundTaskSnapshot', () => {
     expect(merged.tasks.find((task) => task.id === 'task-1')?.status).toBe('completed')
   })
 
+  it('accepts a terminal state produced in the same millisecond as the running snapshot', () => {
+    const current = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              data: { ...node.data, status: 'running' as const, progress: 80 },
+            }
+          : node,
+      ),
+      tasks: makeSnapshot().tasks.map((task) => ({
+        ...task,
+        status: 'running' as const,
+        progress: 80,
+      })),
+    })
+    const completed = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              data: { ...node.data, status: 'completed' as const, progress: 100 },
+            }
+          : node,
+      ),
+      tasks: makeSnapshot().tasks.map((task) => ({
+        ...task,
+        status: 'completed' as const,
+        progress: 100,
+      })),
+    })
+
+    const merged = mergeCanvasBackgroundTaskSnapshot(current, completed)
+
+    expect(merged.nodes.find((node) => node.id === 'node-1')?.data.status).toBe('completed')
+    expect(merged.tasks.find((task) => task.id === 'task-1')?.status).toBe('completed')
+  })
+
+  it('rejects a running rollback with the same timestamp as the completed state', () => {
+    const completed = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              data: { ...node.data, status: 'completed' as const, progress: 100 },
+            }
+          : node,
+      ),
+      tasks: makeSnapshot().tasks.map((task) => ({
+        ...task,
+        status: 'completed' as const,
+        progress: 100,
+      })),
+    })
+    const staleRunning = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              data: { ...node.data, status: 'running' as const, progress: 80 },
+            }
+          : node,
+      ),
+      tasks: makeSnapshot().tasks.map((task) => ({
+        ...task,
+        status: 'running' as const,
+        progress: 80,
+      })),
+    })
+
+    const merged = mergeCanvasBackgroundTaskSnapshot(completed, staleRunning)
+
+    expect(merged.nodes.find((node) => node.id === 'node-1')?.data.status).toBe('completed')
+    expect(merged.tasks.find((task) => task.id === 'task-1')?.status).toBe('completed')
+  })
+
   it('accepts a newer running state when the same node starts another execution', () => {
     const current = makeSnapshot({
       nodes: makeSnapshot().nodes.map((node) =>
@@ -466,6 +542,53 @@ describe('mergeCanvasBackgroundTaskSnapshot', () => {
         progress: 10,
         updatedAt: '2026-06-01T00:04:00.000Z',
       })),
+    })
+
+    const merged = mergeCanvasBackgroundTaskSnapshot(current, rerun)
+    const operationNode = merged.nodes.find((node) => node.id === 'node-1')
+
+    expect(operationNode?.taskId).toBe('task-2')
+    expect(operationNode?.data.status).toBe('running')
+    expect(merged.tasks.find((task) => task.id === 'task-2')?.status).toBe('running')
+    expect(merged.tasks.find((task) => task.id === 'task-1')?.status).toBe('completed')
+  })
+
+  it('accepts a replacement run even when the operation node timestamp shares the same millisecond', () => {
+    const current = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              taskId: 'task-1',
+              data: { ...node.data, status: 'completed' as const, progress: 100 },
+            }
+          : node,
+      ),
+      tasks: makeSnapshot().tasks.map((task) => ({
+        ...task,
+        status: 'completed' as const,
+        progress: 100,
+      })),
+    })
+    const rerun = makeSnapshot({
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              taskId: 'task-2',
+              data: { ...node.data, status: 'running' as const, progress: 10 },
+            }
+          : node,
+      ),
+      tasks: [
+        {
+          ...makeSnapshot().tasks[0]!,
+          id: 'task-2',
+          status: 'running' as const,
+          progress: 10,
+          operationNodeId: 'node-1',
+        },
+      ],
     })
 
     const merged = mergeCanvasBackgroundTaskSnapshot(current, rerun)

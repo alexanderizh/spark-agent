@@ -38,6 +38,29 @@ export type CanvasOperationRunView = {
   outputs: CanvasOperationOutputView[]
 }
 
+/**
+ * 节点快捷删除只补齐“没有可直接操作的成功产物”这一侧：
+ * 非成功运行无论是否已有部分产物都可整次清理；成功但无产物的空记录也可清理。
+ * 成功且有产物时继续使用节点既有的产物级删除，避免两个相同删除入口并存。
+ */
+export function isCanvasOperationRunQuickDeletable(
+  run: CanvasOperationRunView | undefined,
+): run is CanvasOperationRunView {
+  return Boolean(run && (run.status !== 'completed' || run.outputs.length === 0))
+}
+
+/** 只从真实运行历史中解析当前任务，避免为悬空 taskId 伪造可删除记录。 */
+export function resolveCanvasOperationCurrentRun(
+  operationNode: CanvasNode,
+  runs: CanvasOperationRunView[],
+): CanvasOperationRunView | undefined {
+  if (operationNode.taskId) {
+    const matchingRun = runs.find((run) => run.taskId === operationNode.taskId)
+    if (matchingRun) return matchingRun
+  }
+  return runs[0]
+}
+
 function outputTypeForNode(node: CanvasNode | undefined, asset: CanvasAsset | undefined) {
   if (asset) return asset.type
   if (node?.type === 'image' || node?.type === 'audio' || node?.type === 'video') return node.type
@@ -258,5 +281,16 @@ export function canvasOperationRunsFingerprint(runs: CanvasOperationRunView[]): 
           .map((output) => `${output.id}:${output.updatedAt}`)
           .join(',')}`,
     )
+    .join('|')
+}
+
+/**
+ * 仅描述会改变产物选择坐标的运行/产物结构。
+ * 进度、状态和缩略图元数据更新仍由完整 fingerprint 触发视图刷新，但不应清除用户
+ * 已选择的历史产物；新增/删除 run 或 output 时才让选择回落到最新有效产物。
+ */
+export function canvasOperationOutputSelectionFingerprint(runs: CanvasOperationRunView[]): string {
+  return runs
+    .map((run) => `${run.taskId}:${run.outputs.map((output) => output.id).join(',')}`)
     .join('|')
 }

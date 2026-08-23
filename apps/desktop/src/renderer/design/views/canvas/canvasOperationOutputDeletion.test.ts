@@ -175,7 +175,32 @@ describe('applyCanvasOperationOutputDeletion', () => {
 
     expect(applied.tasks.map((item) => item.id)).toEqual(['task-1'])
     expect(applied.nodes[0]?.taskId).toBe('task-1')
+    expect(applied.nodes[0]?.data).toMatchObject({
+      status: 'completed',
+      progress: 100,
+      message: '任务已完成',
+    })
     expect(applied.result.deletedTaskCount).toBe(1)
+  })
+
+  it('resets the operation node to pending after deleting its final successful output', () => {
+    const applied = applyCanvasOperationOutputDeletion({
+      projectId: 'project-1',
+      operationNodeId: 'operation-1',
+      outputs: [output('asset-b', { taskId: 'task-2', assetId: 'asset-b' })],
+      nodes: [operationNode()],
+      edges: [],
+      tasks: [task('task-2', [], ['asset-b'])],
+      updatedAt: '2026-07-16T00:03:00.000Z',
+    })
+
+    expect(applied.tasks).toHaveLength(0)
+    expect(applied.nodes[0]?.taskId).toBeNull()
+    expect(applied.nodes[0]?.data).toMatchObject({
+      status: 'pending',
+      progress: 0,
+      message: '待提交',
+    })
   })
 
   it('falls back to a legacy task still owned through a generated edge', () => {

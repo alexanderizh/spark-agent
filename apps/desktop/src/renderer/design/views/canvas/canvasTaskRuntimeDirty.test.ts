@@ -175,6 +175,32 @@ describe('canvas task runtime dirty handling', () => {
     expect(isCanvasDirty(projectId)).toBe(false)
   })
 
+  it('does not mark a clean project dirty when a persisted task completes with outputs', async () => {
+    const projectId = 'project-task-completed'
+    seedTaskProject(projectId)
+
+    const snapshot = await canvasApi.applyMediaTaskResult(projectId, 'task-1', {
+      status: 'succeeded',
+      providerProfileId: 'provider-1',
+      provider: 'test-provider',
+      model: 'test-model',
+      mode: 'async',
+      assets: [
+        {
+          type: 'image',
+          filePath: '/tmp/project-task-completed/result.png',
+          mimeType: 'image/png',
+          width: 1024,
+          height: 1024,
+        },
+      ],
+    })
+
+    expect(snapshot.tasks[0]?.status).toBe('completed')
+    expect(snapshot.tasks[0]?.outputAssetIds).toHaveLength(1)
+    expect(isCanvasDirty(projectId)).toBe(false)
+  })
+
   it('clears dirty after a save when no newer project mutation occurs', async () => {
     const projectId = 'project-task-stable-save'
     seedTaskProject(projectId)

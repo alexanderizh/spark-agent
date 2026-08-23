@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildCanvasOperationRunViews, canvasOperationRunsFingerprint } from './canvasOperationRuns'
+import {
+  buildCanvasOperationRunViews,
+  canvasOperationOutputSelectionFingerprint,
+  canvasOperationRunsFingerprint,
+  isCanvasOperationRunQuickDeletable,
+  resolveCanvasOperationCurrentRun,
+} from './canvasOperationRuns'
 import type { CanvasSnapshot } from './canvas.types'
 
 function snapshotFixture(): CanvasSnapshot {
@@ -148,6 +154,52 @@ function operationFixtureNode(snapshot: CanvasSnapshot) {
 }
 
 describe('canvas operation run views', () => {
+  it.each([
+    ['pending', 0, true],
+    ['running', 0, true],
+    ['failed', 0, true],
+    ['cancelled', 1, true],
+    ['completed', 0, true],
+    ['completed', 1, false],
+  ] as const)(
+    'marks a %s run with %i outputs quick-deletable: %s',
+    (status, outputCount, expected) => {
+      const snapshot = snapshotFixture()
+      const run = buildCanvasOperationRunViews(operationFixtureNode(snapshot), snapshot)[0]!
+      run.status = status
+      run.outputs = run.outputs.slice(0, outputCount)
+
+      expect(isCanvasOperationRunQuickDeletable(run)).toBe(expected)
+    },
+  )
+
+  it('does not expose a quick-delete run when the node has no persisted run history', () => {
+    const snapshot = snapshotFixture()
+    const operationNode = operationFixtureNode(snapshot)
+    operationNode.taskId = 'task-missing'
+    operationNode.data.status = 'failed'
+    operationNode.data.progress = 100
+    snapshot.tasks = []
+    snapshot.edges = []
+
+    const currentRun = resolveCanvasOperationCurrentRun(
+      operationNode,
+      buildCanvasOperationRunViews(operationNode, snapshot),
+    )
+
+    expect(currentRun).toBeUndefined()
+    expect(isCanvasOperationRunQuickDeletable(currentRun)).toBe(false)
+  })
+
+  it('falls back to the latest real run when the node task pointer is stale', () => {
+    const snapshot = snapshotFixture()
+    const operationNode = operationFixtureNode(snapshot)
+    operationNode.taskId = 'task-missing'
+    const runs = buildCanvasOperationRunViews(operationNode, snapshot)
+
+    expect(resolveCanvasOperationCurrentRun(operationNode, runs)?.taskId).toBe(runs[0]?.taskId)
+  })
+
   it('groups historical generated outputs under the stable operation node', () => {
     const snapshot = snapshotFixture()
     const runs = buildCanvasOperationRunViews(operationFixtureNode(snapshot), snapshot)
@@ -239,6 +291,45 @@ describe('canvas operation run views', () => {
     )
 
     expect(after).not.toBe(before)
+  })
+
+  it('keeps the output selection fingerprint stable across status-only updates', () => {
+    const snapshot = snapshotFixture()
+    const beforeRuns = buildCanvasOperationRunViews(snapshot.nodes[0]!, snapshot)
+    const before = canvasOperationOutputSelectionFingerprint(beforeRuns)
+
+    snapshot.tasks[1]!.status = 'running'
+    snapshot.tasks[1]!.progress = 75
+    snapshot.tasks[1]!.updatedAt = '2026-07-10T00:03:00.000Z'
+    const afterRuns = buildCanvasOperationRunViews(snapshot.nodes[0]!, snapshot)
+
+    expect(canvasOperationRunsFingerprint(afterRuns)).not.toBe(
+      canvasOperationRunsFingerprint(beforeRuns),
+    )
+    expect(canvasOperationOutputSelectionFingerprint(afterRuns)).toBe(before)
+  })
+
+  it('changes the output selection fingerprint when the run/output structure changes', () => {
+    const snapshot = snapshotFixture()
+    const before = canvasOperationOutputSelectionFingerprint(
+      buildCanvasOperationRunViews(snapshot.nodes[0]!, snapshot),
+    )
+
+    snapshot.tasks.push({
+      ...snapshot.tasks[1]!,
+      id: 'task-3',
+      outputNodeIds: [],
+      outputAssetIds: [],
+      createdAt: '2026-07-10T00:03:00.000Z',
+      updatedAt: '2026-07-10T00:03:00.000Z',
+    })
+    snapshot.nodes[0]!.taskId = 'task-3'
+
+    expect(
+      canvasOperationOutputSelectionFingerprint(
+        buildCanvasOperationRunViews(snapshot.nodes[0]!, snapshot),
+      ),
+    ).not.toBe(before)
   })
 
   it('keeps asset-only workflow outputs available to the operation workbench', () => {

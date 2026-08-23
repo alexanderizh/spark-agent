@@ -5,6 +5,7 @@ import { Icons } from '../../Icons'
 import { operationLabel } from './canvas.api'
 import { buildCanvasTaskDetailParams } from './canvasTaskInputDiagnostics'
 import { stripDuplicateCanvasRuntimeDiagnostics } from './canvasTaskDetailPresentation'
+import { isCanvasTaskActive } from './canvasTaskActivity'
 import type { CanvasAsset, CanvasNode, CanvasTask, CanvasTaskStatus } from './canvas.types'
 import { CanvasTaskInputSnapshotList } from './CanvasTaskInputSnapshotList'
 
@@ -47,12 +48,12 @@ export function CanvasTaskQueue({
     [tasks],
   )
   const visibleTasks = orderedTasks.filter((task) => {
-    if (filter === 'active') return isTaskActive(task)
+    if (filter === 'active') return isCanvasTaskActive(task)
     if (filter === 'failed') return task.status === 'failed' || task.status === 'cancelled'
     if (filter === 'completed') return task.status === 'completed'
     return true
   })
-  const activeCount = tasks.filter(isTaskActive).length
+  const activeCount = tasks.filter(isCanvasTaskActive).length
   const failedCount = tasks.filter(
     (task) => task.status === 'failed' || task.status === 'cancelled',
   ).length
@@ -66,7 +67,7 @@ export function CanvasTaskQueue({
   )
   const visibleNodeIds = useMemo(() => new Set(nodes.map((node) => node.id)), [nodes])
   const isOrphanTask = (task: CanvasTask) => {
-    if (!isTaskActive(task)) return false
+    if (!isCanvasTaskActive(task)) return false
     // nodes 与正常任务列表都属于当前画板。显式校验 boardId 后，即使空画板没有
     // 任何节点，也能安全识别残留任务；意外传入的其他画板任务仍不会被误删。
     if (task.boardId !== boardId) return false
@@ -334,7 +335,7 @@ function TaskCard({
   onCancelTask: (taskId: string) => void
   onClearOrphan: () => void
 }) {
-  const active = isTaskActive(task)
+  const active = isCanvasTaskActive(task)
   return (
     <div
       className={`canvas-task-card canvas-task-card-${task.status}${orphan ? ' canvas-task-card-orphan' : ''}`}
@@ -465,7 +466,7 @@ function TaskDetailModal({
   const taskNode =
     (task.operationNodeId ? nodes.find((node) => node.id === task.operationNodeId) : undefined) ??
     nodes.find((node) => node.taskId === task.id)
-  const canCancel = isTaskActive(task)
+  const canCancel = isCanvasTaskActive(task)
   const raw = isRecord(task.rawResponse) ? task.rawResponse : null
   const outputText = task.modelOutputText || stringField(raw?.outputText) || stringField(raw?.text)
   const parsedEntities = raw?.parsedEntities
@@ -811,10 +812,6 @@ function TaskStatusTag({ status }: { status: CanvasTaskStatus }) {
       {statusLabel(status)}
     </Tag>
   )
-}
-
-function isTaskActive(task: CanvasTask): boolean {
-  return task.status === 'pending' || task.status === 'running'
 }
 
 function canRepollTask(task: CanvasTask): boolean {

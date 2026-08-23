@@ -69,7 +69,7 @@ describe('canvas cinematic integration', () => {
     expect(node).toContain('canvas-node-quick-footer')
     expect(node).toContain('shouldShowOutputNavigation')
     expect(node).not.toContain('双击可快速打开')
-    expect(nodeStyles).toContain('.canvas-node-body > .canvas-node-operation')
+    expect(nodeStyles).toContain('.canvas-operation-empty-state')
     expect(nodeStyles).toContain(".canvas-stage[data-zoom-lod='overview']")
     expect(nodeStyles).toContain('flex-basis: 34px')
     expect(legacyStyles).not.toMatch(/\.canvas-node-task\s*\{[^}]*padding:\s*12px/s)
@@ -284,15 +284,15 @@ describe('canvas cinematic integration', () => {
   it('puts image task preview and output actions in one icon rail', () => {
     const node = readCanvasSource('./CanvasNode.tsx')
     const nodeStyles = readCanvasSource('./cinematic/nodes.less')
-    const taskActionsStart = node.indexOf('const imageTaskActions =')
+    const taskActionsStart = node.indexOf('const operationTaskActions =')
     const taskActionsEnd = node.indexOf('const storyboardSplitSource', taskActionsStart)
     const taskActions = node.slice(taskActionsStart, taskActionsEnd)
 
     expect(node).toContain('const imageTaskOutput =')
     expect(node).toContain(
-      'className="canvas-node-media-action-group canvas-node-image-chips canvas-node-task-image-actions nodrag nopan"',
+      'className="canvas-node-media-action-group canvas-node-task-image-actions nodrag nopan"',
     )
-    expect(node).toContain('aria-label="查看任务"')
+    expect(taskActions).toContain('aria-label="预览"')
     expect(node).toContain('aria-label="提取子视图"')
     expect(node).toContain('aria-label="展开产物"')
     expect(taskActions).toContain('actions.expandOperationOutputs?.(node.id, [imageTaskOutput])')
@@ -300,8 +300,8 @@ describe('canvas cinematic integration', () => {
     expect(node).toContain('onClick: () => actions.expandOperationOutputs?.(node.id),')
     expect(node).toContain('aria-label={`删除当前产物 ${imageTaskOutput.title}`}')
     expect(node).toContain('actions.deleteOperationOutputs?.(node.id, [imageTaskOutput])')
-    expect(node).toContain('overlayActions={imageTaskActions}')
-    expect(node).toContain('canvas-node-image-chips canvas-node-task-image-actions')
+    expect(node).toContain('overlayActions={operationTaskActions}')
+    expect(node).toContain('canvas-node-task-image-actions')
     expect(node).toContain("{!isTask && node.type !== 'image' ? (")
     expect(node).toContain('const showOutputFooter = shouldShowOutputNavigation')
     expect(nodeStyles).toContain('.canvas-node-operation .canvas-node-task-image-actions')
@@ -528,7 +528,7 @@ describe('canvas cinematic integration', () => {
       api.indexOf('/** 拉取当前可用的多媒体 provider 列表'),
     )
 
-    expect(writeback).toContain('writeDb(db)')
+    expect(writeback).toContain('writeTaskRuntimeDb(db, projectId)')
     expect(writeback).toContain('db.assets.push(output)')
     expect(writeback).toContain('return this.openSnapshot(projectId, task.boardId)')
     expect(writeback).not.toContain('createNodeBase({')

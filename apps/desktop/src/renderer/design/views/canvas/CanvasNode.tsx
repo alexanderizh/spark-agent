@@ -80,7 +80,13 @@ import { canvasNodeInlinePrimaryAction } from './canvasNodeInlinePrimaryAction'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationType } from './canvas.types'
 import type { CanvasNodeData } from './canvas.types'
-import type { CanvasOperationOutputView, CanvasOperationRunView } from './canvasOperationRuns'
+import {
+  canvasOperationOutputSelectionFingerprint,
+  isCanvasOperationRunQuickDeletable,
+  resolveCanvasOperationCurrentRun,
+  type CanvasOperationOutputView,
+  type CanvasOperationRunView,
+} from './canvasOperationRuns'
 import { effectiveCanvasOperationStatus } from './canvasTaskOutputIntegrity'
 import type { CanvasCollapsedGroupPresentation } from './canvasGroupCollapse'
 import { CanvasCollapsedGroup } from './CanvasCollapsedGroup'
@@ -255,7 +261,8 @@ function OperationOutputDeck({
   const shouldShowOutputNavigation = runs.length > 1
   const showOutputFooter = shouldShowOutputNavigation
 
-  if (!activeRun) return <>{fallback}</>
+  // 有真实运行记录对应的 overlay action 时保留底栏；无历史节点直接回退普通内容。
+  if (!activeRun && !overlayActions) return <>{fallback}</>
 
   return (
     <div className="canvas-operation-output-deck">
@@ -406,6 +413,8 @@ export type CanvasFlowNodeData = {
     expandOperationOutputs?: (nodeId: string, outputs?: CanvasOperationOutputView[]) => void
     /** 多产物操作节点：从节点内直接删除指定产物 */
     deleteOperationOutputs?: (nodeId: string, outputs: CanvasOperationOutputView[]) => void
+    /** 操作节点：快捷删除当前非成功或无产物的运行记录 */
+    deleteOperationRun?: (nodeId: string, run: CanvasOperationRunView) => void
     createOperationChild: (
       parentId: string,
       operation: import('./canvas.types').CanvasOperationType,
@@ -592,7 +601,6 @@ export const CanvasNode = memo(function CanvasNode({
     assetKinds = [],
     assetSubviewCount = 0,
     operationRuns = [],
-    operationRunsFingerprint = '',
     isGeneratedOutput = false,
     baseRenderedHeight = node.height,
     cardChromeExtraHeight = 0,
@@ -625,7 +633,7 @@ export const CanvasNode = memo(function CanvasNode({
     () => resolveCanvasOperationOutputState(node, operationRuns),
     [node, operationRuns],
   )
-  const operationSelectionSyncKey = `${operationRunsFingerprint}:${operationOutputState.primaryRunIndex}:${operationOutputState.primaryOutputIndex}`
+  const operationSelectionSyncKey = `${canvasOperationOutputSelectionFingerprint(operationRuns)}:${operationOutputState.primaryRunIndex}:${operationOutputState.primaryOutputIndex}`
   const [operationSelectionOverride, setOperationSelectionOverride] = useState<{
     syncKey: string
     runIndex: number
@@ -646,6 +654,23 @@ export const CanvasNode = memo(function CanvasNode({
   )
   const activeOperationOutput =
     operationRuns[operationSelection.runIndex]?.outputs[operationSelection.outputIndex]
+  const currentOperationRun = isTask
+    ? resolveCanvasOperationCurrentRun(node, operationRuns)
+    : undefined
+  const operationStatus = isTask
+    ? operationRuns.length === 0
+      ? 'pending'
+      : effectiveCanvasOperationStatus(
+          node.data.status,
+          Boolean(
+            operationOutputState.primaryOutput &&
+            operationOutputState.primaryRun?.taskId === node.taskId,
+          ),
+          currentOperationRun?.status,
+        )
+    : null
+  const operationProgress =
+    operationRuns.length === 0 ? 0 : (currentOperationRun?.progress ?? node.data.progress ?? 0)
   const isAudioTaskNode = isTask && node.data.operation === 'extract_audio'
   const showImagePromptInputActions =
     isTask && node.data.operation === 'image_prompt_reverse' && (lineage?.incoming ?? 0) === 0
@@ -757,75 +782,105 @@ export const CanvasNode = memo(function CanvasNode({
     (imageTaskOutput.assetId || imageTaskOutput.nodeId) &&
     actions.deleteOperationOutputs,
   )
-  const imageTaskActions = imageTaskOutput ? (
-    <div
-      className="canvas-node-media-action-group canvas-node-task-image-actions nodrag nopan"
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <Tooltip title="预览">
-        <button
-          type="button"
-          className="canvas-node-subview-chip canvas-node-image-chip-preview"
-          aria-label="预览"
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            actions.editNode(node.id)
-          }}
-        >
-          <Icons.Eye size={13} />
-        </button>
-      </Tooltip>
-      {canExtractCharacterSubview ? (
-        <Tooltip title="提取子视图">
-          <button
-            type="button"
-            className="canvas-node-subview-chip"
-            aria-label="提取子视图"
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              actions.extractCharacterSubview?.(node.id)
-            }}
+  const canDeleteCurrentOperationRun = Boolean(
+    actions.deleteOperationRun && isCanvasOperationRunQuickDeletable(currentOperationRun),
+  )
+  const operationTaskActions =
+    imageTaskOutput || canDeleteCurrentOperationRun ? (
+      <div
+        className="canvas-node-media-action-group canvas-node-task-image-actions nodrag nopan"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {imageTaskOutput ? (
+          <>
+            <Tooltip title="预览">
+              <button
+                type="button"
+                className="canvas-node-subview-chip canvas-node-image-chip-preview"
+                aria-label="预览"
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  actions.editNode(node.id)
+                }}
+              >
+                <Icons.Eye size={13} />
+              </button>
+            </Tooltip>
+            {canExtractCharacterSubview ? (
+              <Tooltip title="提取子视图">
+                <button
+                  type="button"
+                  className="canvas-node-subview-chip"
+                  aria-label="提取子视图"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    actions.extractCharacterSubview?.(node.id)
+                  }}
+                >
+                  <Icons.Crop size={13} />
+                </button>
+              </Tooltip>
+            ) : null}
+            {canExpandImageTaskOutput ? (
+              <Tooltip title="展开产物">
+                <button
+                  type="button"
+                  className="canvas-node-subview-chip"
+                  aria-label="展开产物"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    actions.expandOperationOutputs?.(node.id, [imageTaskOutput])
+                  }}
+                >
+                  <Icons.Layers size={13} />
+                </button>
+              </Tooltip>
+            ) : null}
+            {canDeleteImageTaskOutput ? (
+              <Tooltip title="删除当前产物">
+                <button
+                  type="button"
+                  className="canvas-node-subview-chip is-danger"
+                  aria-label={`删除当前产物 ${imageTaskOutput.title}`}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    actions.deleteOperationOutputs?.(node.id, [imageTaskOutput])
+                  }}
+                >
+                  <Icons.Trash size={13} />
+                </button>
+              </Tooltip>
+            ) : null}
+          </>
+        ) : null}
+        {canDeleteCurrentOperationRun && currentOperationRun ? (
+          <Tooltip
+            title={
+              currentOperationRun.status === 'pending' || currentOperationRun.status === 'running'
+                ? '取消并删除本次运行'
+                : '删除本次运行'
+            }
           >
-            <Icons.Crop size={13} />
-          </button>
-        </Tooltip>
-      ) : null}
-      {canExpandImageTaskOutput ? (
-        <Tooltip title="展开产物">
-          <button
-            type="button"
-            className="canvas-node-subview-chip"
-            aria-label="展开产物"
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              actions.expandOperationOutputs?.(node.id, [imageTaskOutput])
-            }}
-          >
-            <Icons.Layers size={13} />
-          </button>
-        </Tooltip>
-      ) : null}
-      {canDeleteImageTaskOutput ? (
-        <Tooltip title="删除当前产物">
-          <button
-            type="button"
-            className="canvas-node-subview-chip is-danger"
-            aria-label={`删除当前产物 ${imageTaskOutput.title}`}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              actions.deleteOperationOutputs?.(node.id, [imageTaskOutput])
-            }}
-          >
-            <Icons.Trash size={13} />
-          </button>
-        </Tooltip>
-      ) : null}
-    </div>
-  ) : null
+            <button
+              type="button"
+              className="canvas-node-subview-chip is-danger"
+              aria-label="删除本次运行记录"
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                actions.deleteOperationRun?.(node.id, currentOperationRun)
+              }}
+            >
+              <Icons.Trash size={13} />
+            </button>
+          </Tooltip>
+        ) : null}
+      </div>
+    ) : null
   const imageResourceActions =
     !isTask && node.type === 'image' && node.data.url ? (
       <div
@@ -1002,7 +1057,7 @@ export const CanvasNode = memo(function CanvasNode({
         key: 'run-operation',
         label: '提交运行',
         icon: <Icons.Play size={15} />,
-        disabled: node.data.status === 'running',
+        disabled: operationStatus === 'running',
         onClick: () => actions.runOperationNode?.(node.id),
       })
     }
@@ -1172,6 +1227,7 @@ export const CanvasNode = memo(function CanvasNode({
     isPanorama360,
     isTask,
     node,
+    operationStatus,
     storyboardSplitSource,
   ])
   const [contextMenuBoundary, setContextMenuBoundary] = useState<{
@@ -1601,9 +1657,6 @@ export const CanvasNode = memo(function CanvasNode({
   const productionBadge =
     node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState]
   const operationSummary = isOperationNode(node) ? canvasOperationRuntimeSummary(node) : null
-  const operationStatus = isOperationNode(node)
-    ? effectiveCanvasOperationStatus(node.data.status, Boolean(operationOutputState.primaryOutput))
-    : null
   const operationParamSummary = isOperationNode(node)
     ? buildCanvasOperationParamSummary(node.data.modelParams, 4)
     : []
@@ -1935,7 +1988,7 @@ export const CanvasNode = memo(function CanvasNode({
                                 actions.deleteOperationOutputs?.(node.id, [output]),
                             }
                           : {})}
-                        overlayActions={imageTaskActions}
+                        overlayActions={operationTaskActions}
                         onVideoMetadata={(output, dimensions) => {
                           if (
                             !output.nodeId ||
@@ -1982,7 +2035,7 @@ export const CanvasNode = memo(function CanvasNode({
                             </div>
                             {(operationStatus ?? 'pending') !== 'pending' ? (
                               <Progress
-                                percent={node.data.progress ?? 0}
+                                percent={operationProgress}
                                 size="middle"
                                 status={
                                   operationStatus === 'failed'

@@ -65,6 +65,7 @@ import { CanvasBatchTaskPanel } from './CanvasBatchTaskPanel'
 import { useCanvasBatchTasks } from './useCanvasBatchTasks'
 import { shouldFocusCanvasInlinePanel } from './canvasInlinePanelFocus'
 import { captureCanvasTaskViewport, runWithCanvasTaskViewport } from './canvasTaskViewportGuard'
+import { confirmCanvasLeaveWithRunningTasks } from './canvasLeaveTaskGuard'
 import { CanvasOperationWorkbench } from './CanvasOperationWorkbench'
 import {
   resolveCanvasOperationResourceNode,
@@ -76,9 +77,11 @@ import { operationNodeAspectRatioSizePatch } from './canvasOperationNodePresenta
 import { planCanvasOperationOutputMaterialization } from './canvasOperationOutputMaterialization'
 import {
   buildCanvasOperationRunViews,
+  isCanvasOperationRunQuickDeletable,
   type CanvasOperationOutputView,
   type CanvasOperationRunView,
 } from './canvasOperationRuns'
+import { deleteCanvasOperationRun } from './canvasOperationRunDeletion'
 import { CanvasOperationPresetModal } from './CanvasOperationPresetModal'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
 import { CanvasImageAnnotationModal } from './CanvasImageAnnotationModal'
@@ -266,6 +269,7 @@ import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace } from './canvas.store'
 import {
   canvasApi,
+  flushCanvasTaskRuntimeWrites,
   isCanvasDirty,
   readAudioLocalFilePath,
   revertProject,
@@ -1239,42 +1243,24 @@ export function CanvasWorkspaceView({
     })
   }, [])
 
-  // 是否有运行中的画布任务：离开画布会让正在执行的后台任务进度无法回写，需让用户确认风险。
-  // 注意只看 running：pending 是「已创建但尚未提交/尚未开始执行」的等待态任务
-  // （草稿占位、等待 agent/provider 接入），退出不会中断它们，因此不计入校验。
-  const activeCanvasTaskCount = useMemo(
-    () => snapshot?.tasks.filter((task) => task.status === 'running').length ?? 0,
-    [snapshot?.tasks],
-  )
-
-  // 用户确认「继续退出」后，退出前把画布上所有运行中任务自动取消，
-  // 避免离开画布后仍残留运行态（结果无法回写）。串行取消以防并发写库竞态，
-  // 单个任务取消失败不阻塞退出流程。
-  const cancelActiveCanvasTasks = useCallback(async () => {
-    const activeTasks = snapshot?.tasks.filter((task) => task.status === 'running') ?? []
-    for (const task of activeTasks) {
-      try {
-        await cancelTask(task.id)
-      } catch {
-        // 单个任务取消失败不阻塞退出；继续处理剩余任务。
-      }
-    }
-  }, [snapshot?.tasks, cancelTask])
-
+  // 离开画布会让运行中任务的后台进度无法继续回写。离开动作发生时重新读取热存储，
+  // 不使用 React 上一次 render 捕获的 snapshot；确认后再读一次，排除弹窗期间已结束任务。
   const confirmLeaveWithActiveTasks = useCallback(async (): Promise<boolean> => {
-    if (activeCanvasTaskCount === 0) return true
-    const confirmed = await requestConfirm({
-      title: '画布仍有运行中的任务',
-      description: `当前还有 ${activeCanvasTaskCount} 个正在运行的任务。继续退出将自动取消这些运行中的任务。`,
-      confirmText: '继续退出',
-      cancelText: '留下等待',
-      danger: true,
+    const preferredBoardId = snapshot?.activeBoardId ?? snapshot?.board.id
+    return confirmCanvasLeaveWithRunningTasks({
+      readLatestTasks: async () =>
+        (await canvasApi.openSnapshot(projectId, preferredBoardId)).tasks,
+      confirmLeave: (runningCount) =>
+        requestConfirm({
+          title: '画布仍有运行中的任务',
+          description: `当前还有 ${runningCount} 个正在运行的任务。继续退出将自动取消这些运行中的任务。`,
+          confirmText: '继续退出',
+          cancelText: '留下等待',
+          danger: true,
+        }),
+      cancelTask,
     })
-    if (!confirmed) return false
-    // 用户选择继续退出：退出前自动取消所有运行中任务。
-    await cancelActiveCanvasTasks()
-    return true
-  }, [activeCanvasTaskCount, requestConfirm, cancelActiveCanvasTasks])
+  }, [cancelTask, projectId, requestConfirm, snapshot?.activeBoardId, snapshot?.board.id])
 
   // 离开画布（无内容改动）时静默保留当前缩放比例：立即落盘 localStorage，不污染 dirty。
   // viewport 属于视图偏好，缓存失败不应阻塞离开流程。
@@ -2668,46 +2654,60 @@ export function CanvasWorkspaceView({
         (node) => node.id === operationNodeId && isOperationNode(node),
       )
       if (!operationNode) return
-
-      // 1. 该 task 的 generated 连线（sourceNodeId 命中 + 同一 taskId）
-      const edgeIds = current.edges
-        .filter(
-          (edge) =>
-            edge.type === 'generated' &&
-            edge.sourceNodeId === operationNodeId &&
-            edge.taskId === run.taskId,
+      try {
+        const currentRun = buildCanvasOperationRunViews(operationNode, current).find(
+          (candidate) => candidate.taskId === run.taskId,
         )
-        .map((edge) => edge.id)
+        if (!currentRun) {
+          const refreshed = await deleteTasks([run.taskId])
+          if (refreshed?.tasks.some((task) => task.id === run.taskId)) {
+            message.info('该运行记录仍有关联产物，已保留')
+            return
+          }
+          message.success('已清理该节点的失效运行状态')
+          return
+        }
+        if (!isCanvasOperationRunQuickDeletable(currentRun)) {
+          message.info('该运行已经完成并生成产物，请删除具体产物而不是整次运行')
+          return
+        }
 
-      // 2. 该 task 的产物节点（失败/取消 run 通常为空）
-      const nodeIds = run.outputs
-        .map((output) => output.nodeId)
-        .filter((id): id is string => Boolean(id))
-
-      // 3. primaryOutputId 是否命中该 run 的产物（命中则清空悬空指针）
-      const primaryOutputId = operationNode.data.primaryOutputId
-      const primaryHit = primaryOutputId
-        ? run.outputs.some(
-            (item) =>
-              item.id === primaryOutputId ||
-              item.nodeId === primaryOutputId ||
-              item.assetId === primaryOutputId,
-          )
-        : false
-
-      if (edgeIds.length > 0) await deleteEdges(edgeIds)
-      if (nodeIds.length > 0) await deleteNodes(nodeIds)
-      await deleteTasks([run.taskId])
-      if (primaryHit) {
-        await updateNodeData(operationNodeId, {
-          primaryOutputId: undefined,
-          primaryOutputSelection: 'auto_latest',
-        } as unknown as Partial<CanvasNode['data']>)
+        const result = await deleteCanvasOperationRun({
+          operationNodeId,
+          run: currentRun,
+          cancelTask,
+          flushTaskRuntimeWrites: () => flushCanvasTaskRuntimeWrites(projectId),
+          deleteOperationOutputs,
+          deleteTasks,
+        })
+        if (result === 'preserved') {
+          message.info('该运行已经完成并生成产物，已保留运行记录')
+          return
+        }
+        message.success('已删除该运行记录')
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '删除运行记录失败')
       }
-
-      message.success('已删除该运行记录')
     },
-    [deleteEdges, deleteNodes, deleteTasks, updateNodeData],
+    [cancelTask, deleteOperationOutputs, deleteTasks, projectId],
+  )
+
+  const handleQuickDeleteOperationRun = useCallback(
+    async (operationNodeId: string, run: CanvasOperationRunView) => {
+      const active = run.status === 'pending' || run.status === 'running'
+      const confirmed = await requestConfirm({
+        title: active ? '取消并删除本次运行？' : '删除本次运行？',
+        description: active
+          ? '任务仍在执行或等待中。继续后会先取消任务，再删除这次运行记录。'
+          : '这次运行没有可保留的成功产物，删除后无法恢复。',
+        confirmText: active ? '取消并删除' : '删除',
+        cancelText: '保留',
+        danger: true,
+      })
+      if (!confirmed) return
+      await handleDeleteOperationRun(operationNodeId, run)
+    },
+    [handleDeleteOperationRun, requestConfirm],
   )
 
   const handleExpandOperationOutputs = useCallback(
@@ -8470,6 +8470,9 @@ export function CanvasWorkspaceView({
             onExpandOperationOutputs={handleExpandLatestOperationOutputs}
             onDeleteOperationOutputs={(nodeId, outputs) => {
               void handleDeleteOperationOutputs(nodeId, outputs)
+            }}
+            onDeleteOperationRun={(nodeId, run) => {
+              void handleQuickDeleteOperationRun(nodeId, run)
             }}
             onPreviewPanorama={handlePreviewPanorama}
             onSaveNodeToLibrary={onSaveNodeToLibraryStable}

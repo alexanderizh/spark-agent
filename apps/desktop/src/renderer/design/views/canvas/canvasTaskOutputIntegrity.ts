@@ -1,4 +1,5 @@
 import { appendCanvasTaskRuntimeEvent } from './canvasTaskLifecycle'
+import { isOperationNode } from './canvas.capabilities'
 import type {
   CanvasAsset,
   CanvasEdge,
@@ -66,18 +67,21 @@ export function canvasTaskIdsSafeToDelete(input: {
   at: string
 }): Set<string> {
   const requested = new Set(input.taskIds)
+  const existingProjectTaskIds = new Set(
+    input.tasks.filter((task) => task.projectId === input.projectId).map((task) => task.id),
+  )
   const nodesById = new Map(input.nodes.map((node) => [node.id, node]))
   const assetsById = new Map(input.assets.map((asset) => [asset.id, asset]))
-  const safeToDelete = new Set<string>()
+  const safeToDelete = new Set(
+    [...requested].filter((taskId) => !existingProjectTaskIds.has(taskId)),
+  )
 
   for (const task of input.tasks) {
     if (task.projectId !== input.projectId || !requested.has(task.id)) continue
 
     const generatedEdges = input.edges.filter(
       (edge) =>
-        edge.projectId === input.projectId &&
-        edge.type === 'generated' &&
-        edge.taskId === task.id,
+        edge.projectId === input.projectId && edge.type === 'generated' && edge.taskId === task.id,
     )
     const outputNodeIds = new Set(
       [...task.outputNodeIds, ...generatedEdges.map((edge) => edge.targetNodeId)].filter((id) =>
@@ -112,22 +116,125 @@ export function canvasTaskIdsSafeToDelete(input: {
     })
   }
 
+  repairOperationNodesAfterTaskDeletion(input, safeToDelete)
+
   return safeToDelete
+}
+
+function repairOperationNodesAfterTaskDeletion(
+  input: {
+    projectId: string
+    tasks: CanvasTask[]
+    nodes: CanvasNode[]
+    edges: CanvasEdge[]
+    at: string
+  },
+  deletedTaskIds: Set<string>,
+): void {
+  if (deletedTaskIds.size === 0) return
+
+  for (const node of input.nodes) {
+    if (
+      node.projectId !== input.projectId ||
+      !isOperationNode(node) ||
+      !node.taskId ||
+      !deletedTaskIds.has(node.taskId)
+    ) {
+      continue
+    }
+
+    const latestTask = input.tasks
+      .filter(
+        (task) =>
+          task.projectId === input.projectId &&
+          !deletedTaskIds.has(task.id) &&
+          (task.operationNodeId === node.id ||
+            input.edges.some(
+              (edge) =>
+                edge.projectId === input.projectId &&
+                edge.sourceNodeId === node.id &&
+                edge.type === 'generated' &&
+                edge.taskId === task.id,
+            )),
+      )
+      .sort(
+        (left, right) =>
+          right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+      )[0]
+
+    const latestRecoveredRunId = latestTask
+      ? undefined
+      : input.edges
+          .filter(
+            (edge) =>
+              edge.projectId === input.projectId &&
+              edge.sourceNodeId === node.id &&
+              edge.type === 'generated' &&
+              edge.taskId != null &&
+              !deletedTaskIds.has(edge.taskId),
+          )
+          .sort(
+            (left, right) =>
+              right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+          )[0]?.taskId
+
+    syncCanvasOperationNodeCurrentTask(
+      node,
+      latestTask,
+      input.at,
+      latestRecoveredRunId ?? undefined,
+    )
+  }
+}
+
+/**
+ * 同步操作节点的“当前任务指针 + 展示状态”。删除任务记录或最后一个产物时必须原子地
+ * 更新两者，避免 taskId 已切换/清空而 data.status 仍停留在旧运行终态。
+ */
+export function syncCanvasOperationNodeCurrentTask(
+  node: CanvasNode,
+  task: CanvasTask | undefined,
+  at: string,
+  recoveredRunId?: string,
+): void {
+  node.taskId = task?.id ?? recoveredRunId ?? null
+  node.data = {
+    ...node.data,
+    status: task?.status ?? (recoveredRunId ? 'completed' : 'pending'),
+    progress: task?.progress ?? (recoveredRunId ? 100 : 0),
+    message: task ? canvasTaskNodeMessage(task) : recoveredRunId ? '任务已完成' : '待提交',
+  }
+  node.updatedAt = at
+}
+
+function canvasTaskNodeMessage(task: CanvasTask): string {
+  if (task.status === 'completed') return '任务已完成'
+  if (task.status === 'cancelled') return '任务已取消'
+  if (task.status === 'failed') {
+    return `失败：${task.errorDetail ?? task.errorMsg ?? '任务执行失败'}`
+  }
+  if (task.status === 'running') return '任务运行中'
+  return '待提交'
 }
 
 export function isCompletedCanvasTaskWithOutputs(task: CanvasTask): boolean {
   return (
-    task.status === 'completed' &&
-    (task.outputNodeIds.length > 0 || task.outputAssetIds.length > 0)
+    task.status === 'completed' && (task.outputNodeIds.length > 0 || task.outputAssetIds.length > 0)
   )
 }
 
 export function effectiveCanvasOperationStatus(
-  status: CanvasTaskStatus | undefined,
+  nodeStatus: CanvasTaskStatus | undefined,
   hasMaterializedOutput: boolean,
+  currentTaskStatus?: CanvasTaskStatus,
 ): CanvasTaskStatus {
-  if (hasMaterializedOutput && (status === 'failed' || status === 'cancelled')) return 'completed'
-  return status ?? 'pending'
+  // CanvasTask 是当前运行生命周期的权威；node.data.status 只承担没有任务记录的旧数据兜底。
+  // 任务已取消/失败但仍有历史或部分产物时，必须保留真实终态，同时允许产物独立预览。
+  if (currentTaskStatus) return currentTaskStatus
+  if (hasMaterializedOutput && (nodeStatus === 'failed' || nodeStatus === 'cancelled')) {
+    return 'completed'
+  }
+  return nodeStatus ?? 'pending'
 }
 
 function mergeIds(current: string[], additions?: Iterable<string>): string[] {

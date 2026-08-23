@@ -11,6 +11,7 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
+import { CanvasSnapshotWriteCoordinator } from './canvasSnapshotWriteCoordinator.js'
 import { registerOutcomeRoomIpc } from './registerOutcomeRoomIpc.js'
 import { registerTeamP1Ipc } from './registerTeamP1Ipc.js'
 import { registerTeamOutcomeIpc } from './registerTeamOutcomeIpc.js'
@@ -354,6 +355,7 @@ import {
 import { homedir } from 'node:os'
 
 const log = createLogger('ipc:register')
+const canvasSnapshotWriteCoordinator = new CanvasSnapshotWriteCoordinator()
 const execFileAsync = promisify(execFile)
 const AUTO_WINDOW_WIDTH_TOLERANCE = 12
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
@@ -4865,60 +4867,65 @@ export function registerAllIpcHandlers(): void {
 
   // ─── Canvas 持久化 Handlers（SQLite-backed 生产存储） ─────────────────────
 
-  typedIpcHandle('canvas:snapshot:save', async (req) => {
-    const snapshotRepo = getCanvasSnapshotRepo()
-    const projectRepo = getCanvasProjectRepo()
-    const directory = await ensureCanvasProjectDirectoryById(
-      req.projectId,
-      req.meta?.rootPath ?? null,
-      req.meta?.title ?? req.projectId,
-    )
-    let snapshotJson = req.snapshotJson
-    try {
-      const snapshot = JSON.parse(req.snapshotJson)
-      if (snapshot?.project) snapshot.project.rootPath = directory.rootPath
-      snapshotJson = JSON.stringify(snapshot)
-      await writeCanvasProjectPackageFiles({
-        projectId: req.projectId,
-        rootPath: directory.rootPath,
-        snapshotJson,
-      })
-    } catch (err) {
-      log.warn(`canvas:snapshot:save project files failed: ${String(err)}`)
-    }
-    projectRepo.upsert({
-      id: req.projectId,
-      title: req.meta?.title ?? req.projectId,
-      ...(req.meta?.description !== undefined ? { description: req.meta.description } : {}),
-      ...(req.meta?.status !== undefined ? { status: req.meta.status } : {}),
-      ...(req.meta?.nodeCount !== undefined ? { nodeCount: req.meta.nodeCount } : {}),
-      ...(req.meta?.assetCount !== undefined ? { assetCount: req.meta.assetCount } : {}),
-      ...(req.meta?.taskCount !== undefined ? { taskCount: req.meta.taskCount } : {}),
-      ...(req.meta?.coverAssetId !== undefined ? { coverAssetId: req.meta.coverAssetId } : {}),
-      ...(req.meta?.coverUrl !== undefined ? { coverUrl: req.meta.coverUrl } : {}),
-      ...(req.meta?.pinned !== undefined ? { pinned: req.meta.pinned } : {}),
-      ...(req.meta?.pinnedAt !== undefined ? { pinnedAt: req.meta.pinnedAt } : {}),
-      rootPath: directory.rootPath,
-      lastOpenedAt: new Date().toISOString(),
-    })
-    snapshotRepo.save(req.projectId, 0, snapshotJson)
-    return { saved: true, updatedAt: new Date().toISOString() }
-  })
-
-  typedIpcHandle('canvas:snapshot:load', async (req) => {
-    const project = getCanvasProjectRepo().get(req.projectId)
-    if (project?.root_path) {
-      const latestPath = path.join(project.root_path, 'snapshots', 'latest.json')
+  typedIpcHandle('canvas:snapshot:save', (req) =>
+    canvasSnapshotWriteCoordinator.run(req.projectId, async () => {
+      const snapshotRepo = getCanvasSnapshotRepo()
+      const projectRepo = getCanvasProjectRepo()
+      const directory = await ensureCanvasProjectDirectoryById(
+        req.projectId,
+        req.meta?.rootPath ?? null,
+        req.meta?.title ?? req.projectId,
+      )
+      let snapshotJson = req.snapshotJson
       try {
-        const snapshotJson = await fs.readFile(latestPath, 'utf-8')
-        return { snapshotJson }
-      } catch {
-        // Directory snapshots are preferred but SQLite remains a compatibility fallback.
+        const snapshot = JSON.parse(req.snapshotJson)
+        if (snapshot?.project) snapshot.project.rootPath = directory.rootPath
+        snapshotJson = JSON.stringify(snapshot)
+        await writeCanvasProjectPackageFiles({
+          projectId: req.projectId,
+          rootPath: directory.rootPath,
+          snapshotJson,
+        })
+      } catch (err) {
+        log.warn(`canvas:snapshot:save project files failed: ${String(err)}`)
       }
-    }
-    const row = getCanvasSnapshotRepo().get(req.projectId)
-    return { snapshotJson: row ? row.snapshot_json : null }
-  })
+      projectRepo.upsert({
+        id: req.projectId,
+        title: req.meta?.title ?? req.projectId,
+        ...(req.meta?.description !== undefined ? { description: req.meta.description } : {}),
+        ...(req.meta?.status !== undefined ? { status: req.meta.status } : {}),
+        ...(req.meta?.nodeCount !== undefined ? { nodeCount: req.meta.nodeCount } : {}),
+        ...(req.meta?.assetCount !== undefined ? { assetCount: req.meta.assetCount } : {}),
+        ...(req.meta?.taskCount !== undefined ? { taskCount: req.meta.taskCount } : {}),
+        ...(req.meta?.coverAssetId !== undefined ? { coverAssetId: req.meta.coverAssetId } : {}),
+        ...(req.meta?.coverUrl !== undefined ? { coverUrl: req.meta.coverUrl } : {}),
+        ...(req.meta?.pinned !== undefined ? { pinned: req.meta.pinned } : {}),
+        ...(req.meta?.pinnedAt !== undefined ? { pinnedAt: req.meta.pinnedAt } : {}),
+        rootPath: directory.rootPath,
+        lastOpenedAt: new Date().toISOString(),
+      })
+      snapshotRepo.save(req.projectId, 0, snapshotJson)
+      return { saved: true, updatedAt: new Date().toISOString() }
+    }),
+  )
+
+  typedIpcHandle('canvas:snapshot:load', (req) =>
+    canvasSnapshotWriteCoordinator.run(req.projectId, async () => {
+      const project = getCanvasProjectRepo().get(req.projectId)
+      if (project?.root_path) {
+        const latestPath = path.join(project.root_path, 'snapshots', 'latest.json')
+        try {
+          const snapshotJson = await fs.readFile(latestPath, 'utf-8')
+          JSON.parse(snapshotJson)
+          return { snapshotJson }
+        } catch {
+          // Directory snapshots are preferred but SQLite remains a compatibility fallback.
+        }
+      }
+      const row = getCanvasSnapshotRepo().get(req.projectId)
+      return { snapshotJson: row ? row.snapshot_json : null }
+    }),
+  )
 
   typedIpcHandle('canvas:project:list', async (req) => {
     const rows = getCanvasProjectRepo().list(0, req.includeDeleted === true)

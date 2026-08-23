@@ -215,7 +215,7 @@ describe('canvas media output integrity', () => {
     expect(snapshot.assets).toHaveLength(1)
   })
 
-  it('probes missing generated-video metadata before sizing the output node', async () => {
+  it('probes missing generated-video metadata before registering the lazy output asset', async () => {
     seedRunningVideoTask()
     readVideoDimensionsMock.mockResolvedValue({ width: 1080, height: 1920, durationMs: 4200 })
 
@@ -234,10 +234,11 @@ describe('canvas media output integrity', () => {
 
     expect(readVideoDimensionsMock).toHaveBeenCalledWith('https://cdn.example.com/portrait.mp4')
     expect(snapshot.assets[0]).toMatchObject({ width: 1080, height: 1920, durationMs: 4200 })
-    expect(snapshot.nodes.find((node) => node.type === 'video')).toMatchObject({
-      width: 405,
-      height: 720,
+    expect(snapshot.tasks[0]).toMatchObject({
+      outputAssetIds: [snapshot.assets[0]?.id],
+      outputNodeIds: [],
     })
+    expect(snapshot.nodes.some((node) => node.type === 'video')).toBe(false)
   })
 
   it('does not persist zero dimensions when generated-video metadata probing fails', async () => {
