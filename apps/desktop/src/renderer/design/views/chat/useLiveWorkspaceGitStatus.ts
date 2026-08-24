@@ -43,6 +43,7 @@ export function useLiveWorkspaceGitStatus({
   const { invoke: startWatch } = useIpcInvoke('workspace:watch-start')
   const { invoke: stopWatch } = useIpcInvoke('workspace:watch-stop')
   const [gitStatus, setGitStatus] = useState<WorkspaceGitStatusResponse | null>(null)
+  const lastTrustedBranchRef = useRef<BranchState>({ currentBranch: null, branches: [] })
   const workspaceIdRef = useRef(workspaceId)
   const requestVersionRef = useRef(0)
   const activeRequestCountRef = useRef(0)
@@ -59,12 +60,19 @@ export function useLiveWorkspaceGitStatus({
         statusFingerprintRef.current = fingerprint
         setGitStatus(status)
       }
-      if (status?.isGitRepo === true) {
-        onBranchStateChange({
+      if (status?.state.kind === 'ready') {
+        const trustedState: BranchState = {
+          gitState: status.state,
           currentBranch: status.currentBranch,
           branches: status.branches,
           branchDetails: status.branchDetails,
-        })
+        }
+        lastTrustedBranchRef.current = trustedState
+        onBranchStateChange(trustedState)
+      } else if (status?.state.kind === 'not_repository') {
+        onBranchStateChange({ gitState: status.state, currentBranch: null, branches: [] })
+      } else if (status != null) {
+        onBranchStateChange({ ...lastTrustedBranchRef.current, gitState: status.state })
       }
     },
     [onBranchStateChange],
@@ -105,10 +113,7 @@ export function useLiveWorkspaceGitStatus({
     [commitStatus, getGitStatus, workspaceId],
   )
 
-  const refreshGitStatus = useCallback(
-    () => requestGitStatus(true),
-    [requestGitStatus],
-  )
+  const refreshGitStatus = useCallback(() => requestGitStatus(true), [requestGitStatus])
 
   const applyGitStatus = useCallback(
     (status: WorkspaceGitStatusResponse | null) => {
@@ -132,6 +137,10 @@ export function useLiveWorkspaceGitStatus({
     },
     [requestGitStatus],
   )
+
+  useEffect(() => {
+    lastTrustedBranchRef.current = { currentBranch: null, branches: [] }
+  }, [workspaceId])
 
   useEffect(() => {
     requestVersionRef.current += 1

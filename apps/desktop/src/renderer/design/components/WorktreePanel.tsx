@@ -9,7 +9,7 @@
  * `.config/superpowers/worktrees` 等），不止 Spark 自己创建的子项。
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { SessionId, WorktreeInfo } from '@spark/protocol'
+import type { SessionId, WorktreeInfo, WorkspaceGitState } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
@@ -28,7 +28,7 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
   const { invoke: openFolder } = useIpcInvoke('workspace:open-folder')
   const { invoke: sendTurn } = useIpcInvoke('session:submit-turn')
 
-  const [isGitRepo, setIsGitRepo] = useState(true)
+  const [gitState, setGitState] = useState<WorkspaceGitState | null>(null)
   const [baseBranch, setBaseBranch] = useState<string | null>(null)
   const [baseRepoRoot, setBaseRepoRoot] = useState<string | null>(null)
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
@@ -40,13 +40,17 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
     setLoading(true)
     listWorktrees({ workspaceId })
       .then((res) => {
-        setIsGitRepo(res.isGitRepo)
+        setGitState(res.state)
         setBaseBranch(res.baseBranch)
         setBaseRepoRoot(res.baseRepoRoot)
         setWorktrees(res.worktrees)
       })
       .catch(() => {
-        setIsGitRepo(false)
+        setGitState({
+          kind: 'failed',
+          code: 'GIT_OPERATION_FAILED',
+          message: '无法读取 Git worktree 状态',
+        })
         setWorktrees([])
       })
       .finally(() => setLoading(false))
@@ -60,7 +64,8 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
 
   const handleMerge = useCallback(
     async (wt: WorktreeInfo) => {
-      if (sessionId == null || wt.branch == null || baseBranch == null || baseRepoRoot == null) return
+      if (sessionId == null || wt.branch == null || baseBranch == null || baseRepoRoot == null)
+        return
       // 注意：base 分支已在主工作树检出，无法在当前 worktree 内 checkout，
       // 因此合并必须在主仓库目录执行（git -C <baseRepoRoot>）。
       const message =
@@ -105,6 +110,12 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
   if (workspaceId == null) return null
 
   const visibleCount = worktrees.filter((w) => !w.isMain).length
+  const gitUnavailableMessage =
+    gitState?.kind === 'not_repository'
+      ? '当前项目不是 Git 仓库'
+      : gitState?.kind === 'runtime_unavailable' || gitState?.kind === 'failed'
+        ? gitState.message
+        : null
 
   return (
     <section className="worktree-panel">
@@ -130,8 +141,8 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
         <Icons.ChevronRight size={10} className={`chev ${collapsed ? '' : 'chev-open'}`} />
       </h4>
       {!collapsed &&
-        (!isGitRepo ? (
-          <p className="worktree-panel__empty">当前项目不是 git 仓库</p>
+        (gitUnavailableMessage != null ? (
+          <p className="worktree-panel__empty">{gitUnavailableMessage}</p>
         ) : worktrees.length === 0 ? (
           <p className="worktree-panel__empty">暂无 worktree</p>
         ) : (
@@ -151,7 +162,9 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
                 </div>
                 <div className="worktree-item__meta">
                   <code>{wt.head}</code>
-                  {wt.sessionTitle && <span className="worktree-item__session">{wt.sessionTitle}</span>}
+                  {wt.sessionTitle && (
+                    <span className="worktree-item__session">{wt.sessionTitle}</span>
+                  )}
                 </div>
                 {!wt.isMain && (
                   <div className="worktree-item__actions">
@@ -161,7 +174,11 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
                       </button>
                     )}
                     <button onClick={() => handleReveal(wt)}>打开</button>
-                    <button className="danger" onClick={() => handleRemove(wt)} disabled={wt.workspaceId == null}>
+                    <button
+                      className="danger"
+                      onClick={() => handleRemove(wt)}
+                      disabled={wt.workspaceId == null}
+                    >
                       删除
                     </button>
                   </div>

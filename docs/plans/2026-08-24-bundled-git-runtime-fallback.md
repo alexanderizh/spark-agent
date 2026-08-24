@@ -2,7 +2,7 @@
 
 > 状态: 实施中 | 最后核对: 2026-08-24
 
-> Phase 1（打包、解析与完整性）已在隔离 worktree 分支 `worktree-bundled-git-runtime` 实现：GitRuntimeService 解析器、runtime lock、package-git-runtime 打包/校验脚本、after-pack 接线（fail closed）、完整性页「系统/内置」来源标识。Phase 0 制品尚未入库（lock targets 为空，此时打包会按设计直接失败），制品产出后补齐 lock 条目即可。
+> Phase 1–3 的代码改造已在隔离 worktree 分支 `worktree-bundled-git-runtime` 实现：GitRuntimeService、runtime lock、打包校验与完整性来源，统一 GitCommandService，Workspace 四态协议/UI，以及 worktree、checkpoint、`/git`、内置终端和 Agent 子进程迁移。代码级验证已完成：desktop 聚焦测试 49/49、agent-runtime 聚焦测试 89/89，desktop、agent-runtime、protocol、shared typecheck，定向 ESLint、统一 Git runtime 静态门禁和 `git diff --check` 均通过。Phase 0 制品尚未入库（lock targets 为空，此时打包会按设计直接失败）；Phase 4 的正式安装包与无系统 Git 真机矩阵按用户要求暂缓。
 
 ## 1. 结论
 

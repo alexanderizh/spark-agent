@@ -49,6 +49,36 @@ afterEach(async () => {
 })
 
 describe('workspace Git status for an unpushed local branch', () => {
+  it('keeps an unborn repository in the ready state', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-unborn-repo-'))
+    tempDirs.push(workspacePath)
+    await git(workspacePath, ['init', '--initial-branch=master'])
+    await fs.writeFile(path.join(workspacePath, 'draft.txt'), 'draft\n')
+
+    const status = await getWorkspaceGitStatus(workspacePath)
+
+    expect(status.state.kind).toBe('ready')
+    expect(status.isGitRepo).toBe(true)
+    expect(status.currentBranch).toBe('master')
+    expect(status.changedFiles).toBe(1)
+    expect(status.files).toEqual([
+      expect.objectContaining({ path: 'draft.txt', untracked: true, additions: 1 }),
+    ])
+  })
+
+  it('reports a bare repository as ready without workspace changes', async () => {
+    const barePath = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-bare-repo-'))
+    tempDirs.push(barePath)
+    await git(barePath, ['init', '--bare', '--initial-branch=master'])
+
+    const status = await getWorkspaceGitStatus(barePath)
+
+    expect(status.state).toMatchObject({ kind: 'ready', repositoryKind: 'bare' })
+    expect(status.isGitRepo).toBe(true)
+    expect(status.changedFiles).toBe(0)
+    expect(status.files).toEqual([])
+  })
+
   it('lists local and remote branches with activity metadata', async () => {
     const workspacePath = await createUnpushedFeatureRepository()
 

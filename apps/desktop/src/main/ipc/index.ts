@@ -74,11 +74,9 @@ import {
   registerSessionServiceForShutdown,
 } from '../session-service-shutdown.js'
 import { app, clipboard, dialog, shell, Notification, screen } from 'electron'
-import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import {
   createLogger,
   deriveTeamAvatar,
@@ -286,13 +284,19 @@ import { ComputerUseAgentController } from '../services/computer-use/ComputerUse
 import { sparkMediaUploader } from '../services/media/SparkMediaUploader.js'
 import { registerPlatformModelIpc } from '../services/PlatformModel/registerPlatformModelIpc.js'
 import {
-  getGitExecErrorMessage,
   getWorkspaceBranches,
   getWorkspaceGitFileDiff,
   getWorkspaceGitStatus,
   pushWorkspaceBranch,
   tryGitStdout,
+  workspaceGitStateFromError,
 } from './workspace-git-status.js'
+import {
+  asSparkGitError,
+  assertWorkspaceGitReady,
+  assertWorkspaceGitWorktree,
+} from './workspace-git-errors.js'
+import { getGitCommandService } from '../services/GitRuntimeService.js'
 import {
   getShellEnvironmentStatus,
   recheckRuntimeTools,
@@ -356,7 +360,6 @@ import { homedir } from 'node:os'
 
 const log = createLogger('ipc:register')
 const canvasSnapshotWriteCoordinator = new CanvasSnapshotWriteCoordinator()
-const execFileAsync = promisify(execFile)
 const AUTO_WINDOW_WIDTH_TOLERANCE = 12
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
@@ -5630,6 +5633,7 @@ export function registerAllIpcHandlers(): void {
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
     try {
       const refs = await getWorkspaceBranches(workspace.root_path)
+      assertWorkspaceGitWorktree(refs.state)
       const localBranch = refs.branchDetails.find(
         (item) => item.kind === 'local' && item.name === req.branch,
       )
@@ -5637,31 +5641,33 @@ export function registerAllIpcHandlers(): void {
         (item) => item.kind === 'remote' && item.name === req.branch,
       )
       if (localBranch != null || remoteBranch == null) {
-        await execFileAsync('git', ['switch', req.branch], { cwd: workspace.root_path })
+        await getGitCommandService().execute(['switch', req.branch], {
+          cwd: workspace.root_path,
+          operation: 'write',
+        })
       } else {
         const localName = remoteBranch.name.slice(remoteBranch.name.indexOf('/') + 1)
         const matchingLocal = refs.branchDetails.some(
           (item) => item.kind === 'local' && item.name === localName,
         )
-        await execFileAsync(
-          'git',
+        await getGitCommandService().execute(
           matchingLocal ? ['switch', localName] : ['switch', '--track', remoteBranch.name],
-          { cwd: workspace.root_path },
+          { cwd: workspace.root_path, operation: 'write' },
         )
       }
       const result = await getWorkspaceBranches(workspace.root_path)
+      assertWorkspaceGitWorktree(result.state)
       if (result.currentBranch == null) {
         throw new Error('Unable to determine current git branch after switch')
       }
       return {
+        state: result.state,
         currentBranch: result.currentBranch,
         branches: result.branches,
         branchDetails: result.branchDetails,
       }
     } catch (err) {
-      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '切换分支失败'), {
-        cause: err,
-      })
+      throw asSparkGitError(err, '切换分支失败')
     }
   })
 
@@ -5669,15 +5675,18 @@ export function registerAllIpcHandlers(): void {
     log.info(`workspace:fetch-branches requested, workspaceId=${req.workspaceId}`)
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
     try {
-      const remotes = await execFileAsync('git', ['remote'], { cwd: workspace.root_path })
+      const remotes = await getGitCommandService().execute(['remote'], {
+        cwd: workspace.root_path,
+      })
       if (remotes.stdout.trim().length > 0) {
-        await execFileAsync('git', ['fetch', '--prune'], { cwd: workspace.root_path })
+        await getGitCommandService().execute(['fetch', '--prune'], {
+          cwd: workspace.root_path,
+          operation: 'network',
+        })
       }
       return { ...(await getWorkspaceBranches(workspace.root_path)), fetched: true as const }
     } catch (err) {
-      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, 'Fetch 失败'), {
-        cause: err,
-      })
+      throw asSparkGitError(err, 'Fetch 失败')
     }
   })
 
@@ -5690,21 +5699,33 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('workspace:git-file-diff', async (req) => {
     log.info(`workspace:git-file-diff requested, workspaceId=${req.workspaceId}, path=${req.path}`)
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
-    return getWorkspaceGitFileDiff(workspace.root_path, req.path, req.untracked === true)
+    try {
+      return await getWorkspaceGitFileDiff(workspace.root_path, req.path, req.untracked === true)
+    } catch (error) {
+      throw asSparkGitError(error, '读取 Git diff 失败')
+    }
   })
 
   typedIpcHandle('workspace:git-check-ignore', async (req) => {
     if (!Array.isArray(req.paths) || req.paths.length === 0) return { ignoredPaths: [] }
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
-    // git check-ignore 对所有路径都不被忽略时退出码=1 → tryGitStdout catch 返回 null
+    // git check-ignore 对所有路径都不被忽略时退出码=1，属于该命令的正常语义。
     // 被忽略时退出码=0，stdout 用 -z 按 NUL 分隔列出被忽略路径
-    const out = await tryGitStdout(workspace.root_path, ['check-ignore', '-z', '--', ...req.paths])
-    if (out == null || out === '') return { ignoredPaths: [] }
-    return {
-      ignoredPaths: out
-        .split('\0')
-        .map((s) => s.trim())
-        .filter(Boolean),
+    try {
+      const out = await tryGitStdout(
+        workspace.root_path,
+        ['check-ignore', '-z', '--', ...req.paths],
+        [0, 1],
+      )
+      if (out == null || out === '') return { ignoredPaths: [] }
+      return {
+        ignoredPaths: out
+          .split('\0')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      }
+    } catch (error) {
+      throw asSparkGitError(error, '检查 Git ignore 规则失败')
     }
   })
 
@@ -5716,11 +5737,18 @@ export function registerAllIpcHandlers(): void {
     const message = req.message.trim()
     if (message.length === 0) throw new SparkError('VALIDATION_FAILED', '提交信息不能为空')
     try {
+      assertWorkspaceGitWorktree(await getGitCommandService().probeRepository(workspace.root_path))
       if (req.includeUnstaged === true) {
-        await execFileAsync('git', ['add', '-A'], { cwd: workspace.root_path })
+        await getGitCommandService().execute(['add', '-A'], {
+          cwd: workspace.root_path,
+          operation: 'write',
+        })
       }
-      await execFileAsync('git', ['commit', '-m', message], { cwd: workspace.root_path })
-      const sha = await execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
+      await getGitCommandService().execute(['commit', '-m', message], {
+        cwd: workspace.root_path,
+        operation: 'write',
+      })
+      const sha = await getGitCommandService().execute(['rev-parse', '--short', 'HEAD'], {
         cwd: workspace.root_path,
       })
       let pushed = false
@@ -5735,9 +5763,7 @@ export function registerAllIpcHandlers(): void {
         status: await getWorkspaceGitStatus(workspace.root_path),
       }
     } catch (err) {
-      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '提交失败'), {
-        cause: err,
-      })
+      throw asSparkGitError(err, '提交失败')
     }
   })
 
@@ -5748,9 +5774,7 @@ export function registerAllIpcHandlers(): void {
       await pushWorkspaceBranch(workspace.root_path)
       return { pushed: true, status: await getWorkspaceGitStatus(workspace.root_path) }
     } catch (err) {
-      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '推送失败'), {
-        cause: err,
-      })
+      throw asSparkGitError(err, '推送失败')
     }
   })
 
@@ -5763,26 +5787,28 @@ export function registerAllIpcHandlers(): void {
     if (branch.length === 0) throw new SparkError('VALIDATION_FAILED', '分支名称不能为空')
     if (branch.endsWith('/')) throw new SparkError('VALIDATION_FAILED', '分支名不能以“/”结尾。')
     try {
-      await execFileAsync('git', ['check-ref-format', '--branch', branch], {
+      assertWorkspaceGitWorktree(await getGitCommandService().probeRepository(workspace.root_path))
+      await getGitCommandService().execute(['check-ref-format', '--branch', branch], {
         cwd: workspace.root_path,
       })
-      await execFileAsync('git', ['switch', '-c', branch], { cwd: workspace.root_path })
+      await getGitCommandService().execute(['switch', '-c', branch], {
+        cwd: workspace.root_path,
+        operation: 'write',
+      })
       const branches = await getWorkspaceBranches(workspace.root_path)
+      assertWorkspaceGitWorktree(branches.state)
       if (branches.currentBranch == null) {
         throw new Error('Unable to determine current git branch after create')
       }
       return {
+        state: branches.state,
         currentBranch: branches.currentBranch,
         branches: branches.branches,
         branchDetails: branches.branchDetails,
         status: await getWorkspaceGitStatus(workspace.root_path),
       }
     } catch (err) {
-      throw new SparkError(
-        'GIT_OPERATION_FAILED',
-        getGitExecErrorMessage(err, '创建并检出分支失败'),
-        { cause: err },
-      )
+      throw asSparkGitError(err, '创建并检出分支失败')
     }
   })
 
@@ -5793,6 +5819,16 @@ export function registerAllIpcHandlers(): void {
     const sessionRepo = new SessionRepository(db)
     const workspace = wsRepo.findByIdOrFail(req.workspaceId)
     const git = new GitWorktreeService()
+    const state = await getGitCommandService().probeRepository(workspace.root_path)
+    if (state.kind !== 'ready') {
+      return {
+        state,
+        isGitRepo: state.kind === 'not_repository' ? false : null,
+        baseBranch: null,
+        baseRepoRoot: null,
+        worktrees: [],
+      }
+    }
     try {
       const mainRepoRoot = await git.resolveMainRepoRoot(workspace.root_path)
       const baseBranch = await git.detectBaseBranch(mainRepoRoot)
@@ -5823,9 +5859,15 @@ export function registerAllIpcHandlers(): void {
           ...(sessionTitle ? { sessionTitle } : {}),
         }
       })
-      return { isGitRepo: true, baseBranch, baseRepoRoot: mainRepoRoot, worktrees }
-    } catch {
-      return { isGitRepo: false, baseBranch: null, baseRepoRoot: null, worktrees: [] }
+      return { state, isGitRepo: true, baseBranch, baseRepoRoot: mainRepoRoot, worktrees }
+    } catch (error) {
+      return {
+        state: workspaceGitStateFromError(error),
+        isGitRepo: null,
+        baseBranch: null,
+        baseRepoRoot: null,
+        worktrees: [],
+      }
     }
   })
 

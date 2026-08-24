@@ -1224,7 +1224,26 @@ export interface WorkspaceGitBranch {
   updatedAt: number
 }
 
+export type GitRuntimeSource = 'override' | 'system' | 'bundled'
+
+export type WorkspaceGitFailureCode =
+  | 'GIT_OPERATION_FAILED'
+  | 'GIT_OPERATION_OUTCOME_UNKNOWN'
+  | 'AUTH_REQUIRED'
+
+export type WorkspaceGitState =
+  | {
+      kind: 'ready'
+      repositoryKind: 'worktree' | 'bare'
+      runtimeSource: GitRuntimeSource
+      runtimeVersion: string
+    }
+  | { kind: 'not_repository' }
+  | { kind: 'runtime_unavailable'; code: 'GIT_RUNTIME_UNAVAILABLE'; message: string }
+  | { kind: 'failed'; code: WorkspaceGitFailureCode; message: string }
+
 export interface WorkspaceListBranchesResponse {
+  state: WorkspaceGitState
   currentBranch: string | null
   branches: string[]
   branchDetails?: WorkspaceGitBranch[]
@@ -1236,6 +1255,7 @@ export interface WorkspaceSwitchBranchRequest {
 }
 
 export interface WorkspaceSwitchBranchResponse {
+  state: WorkspaceGitState
   currentBranch: string
   branches: string[]
   branchDetails?: WorkspaceGitBranch[]
@@ -1272,7 +1292,9 @@ export interface WorkspaceGitStashEntry {
 }
 
 export interface WorkspaceGitStatusResponse {
-  isGitRepo: boolean
+  state: WorkspaceGitState
+  /** Compatibility field: error states are null, not false. */
+  isGitRepo: boolean | null
   currentBranch: string | null
   branches: string[]
   branchDetails?: WorkspaceGitBranch[]
@@ -1341,6 +1363,7 @@ export interface WorkspaceCreateBranchRequest {
 }
 
 export interface WorkspaceCreateBranchResponse {
+  state: WorkspaceGitState
   currentBranch: string
   branches: string[]
   branchDetails?: WorkspaceGitBranch[]
@@ -1362,7 +1385,8 @@ export interface WorkspaceListWorktreesRequest {
   workspaceId: string
 }
 export interface WorkspaceListWorktreesResponse {
-  isGitRepo: boolean
+  state: WorkspaceGitState
+  isGitRepo: boolean | null
   baseBranch: string | null
   /** 主仓库根的绝对路径；合并需在主仓库执行（base 分支无法在子 worktree 检出） */
   baseRepoRoot: string | null

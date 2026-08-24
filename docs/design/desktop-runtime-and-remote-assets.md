@@ -1,6 +1,6 @@
 # 桌面端按需 Runtime 与远程静态资源设计
 
-> 状态: 已落地 | 最后核对: 2026-07-31
+> 状态: 已落地 | 最后核对: 2026-08-24
 
 ## 目标
 
@@ -32,6 +32,36 @@ Claude 只允许检查和升级，不能因为本次体积优化变成首次启�
 `sdk:integrity-install` 流程下载安装，展示安装中、成功和失败状态；安装成功后可立即重试
 当前消息，不要求重启应用。卡片同时保留「前往完整性」入口，跳转到统一的安装与升级页面。
 Claude JS SDK 和各平台 native runtime 仍随应用安装包保留。
+
+### Git 基础 Runtime
+
+Git 与 Codex 等按需能力的交付策略不同：会话分支、Git 面板、worktree 和 checkpoint
+属于桌面端基础能力，因此完整 Git 前缀固定随安装包交付到
+`resources/runtime/git/`，不在首次使用时下载。发布过程根据
+`apps/desktop/runtime/git-runtime-lock.json` 精确选择平台/架构制品，校验归档 SHA256、
+版本、入口和 `libexec/git-core` helper；正式 target 缺少 lock 条目时 `afterPack` 直接失败。
+
+应用在修复宿主 PATH 后按“`SPARK_GIT_EXECUTABLE` 严格开发覆盖 → 满足最低能力门槛的
+系统 Git → 内置 Git”解析一次不可变 descriptor。系统 Git 必须是 PATH 中解析出的绝对路径，
+版本不低于 2.31.0，且 `--exec-path` 与 HTTPS helper 可用；macOS `/usr/bin/git` 只有在
+Command Line Tools 已配置时才会探测，避免触发系统安装弹窗。所有内部调用通过
+`GitCommandService` 以参数数组和绝对路径执行，不写全局 `process.env`，也不在非零退出后
+切换另一套 Git 重放。
+
+`GitCommandService` 对本地查询、本地写入和网络操作使用独立超时档位；只有进程尚未启动且
+已确认 executable 消失时才刷新 runtime 并重试一次。写操作或网络操作超时统一返回
+`GIT_OPERATION_OUTCOME_UNKNOWN`，要求 UI 先刷新状态判断是否已生效。内置终端、Claude/Codex
+Agent 子进程通过同一 child-env builder 获取 PATH 与 helper 环境，已有长生命周期进程不热改。
+
+Workspace Git 协议统一返回 `ready / not_repository / runtime_unavailable / failed` 四态；
+`isGitRepo` 只在明确非仓库时为 `false`，runtime 或命令错误为 `null`。status、branches、
+worktrees、会话分支和 worktree 控件共享该语义，错误时保留最后可信分支快照，不再把
+`spawn ENOENT` 伪装为“当前项目不是 Git 仓库”。
+
+截至 2026-08-24，resolver、统一执行层、消费者迁移、错误状态、完整性来源展示和静态门禁
+已落地；正式 macOS arm64/x64、Windows x64 Git runtime 制品与 lock targets 仍待发布，
+因此当前正式打包会按设计 fail closed。制品发布、签名/公证、SBOM、许可证和无系统 Git
+真机矩阵完成前，本节的“随安装包交付”仍属于发布阻断项。
 
 安装服务通过 `stream:sdk:install-progress` 同步准备、下载、校验解压、激活、完成和失败阶段。
 下载阶段展示百分比以及已下载/总字节；服务端没有返回 `Content-Length` 时使用 manifest 的
@@ -135,6 +165,9 @@ Windows/Linux 使用 `en-US`、`zh-CN`、`zh-TW`。钩子会校验三种目录�
 - managed MCP 使用 `@playwright/mcp@0.0.78` 自带的 Playwright 依赖闭包，应用测试工具使用
   `playwright@1.62.0`；外置运行时避免了安装包中“配置存在但子进程无法读取 ASAR”的断连。
 - agent-runtime / protocol / desktop typecheck、字体与 locale 针对性测试、Vite production build 和 Electron unpacked pack 均通过。
+- Git Phase 2/3 代码级验证通过：desktop 聚焦测试 49/49、agent-runtime 聚焦测试 89/89，
+  desktop、agent-runtime、protocol、shared typecheck，定向 ESLint、统一 Git runtime 静态门禁和
+  `git diff --check` 均通过。正式打包、签名/公证和无系统 Git 真机矩阵未执行，仍由 Phase 0/4 门禁。
 
 ## 构建内存与 CI
 

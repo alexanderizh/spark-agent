@@ -1,15 +1,15 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import type {
   WorkspaceGitFileChange,
   WorkspaceGitFileDiffResponse,
   WorkspaceGitBranch,
+  WorkspaceGitState,
   WorkspaceGitStashEntry,
   WorkspaceGitStatusResponse,
 } from '@spark/protocol'
+import { homedir } from 'node:os'
+import { isGitCommandError, type GitRepositoryState } from '@spark/agent-runtime'
 import { getUntrackedFilesLineStats } from './git-status-utils.js'
-
-const execFileAsync = promisify(execFile)
+import { getGitCommandService } from '../services/GitRuntimeService.js'
 
 type GitFileStats = { additions: number; deletions: number }
 
@@ -22,16 +22,23 @@ type GitComparison = {
   remoteUrl: string | null
 }
 
-export async function getWorkspaceBranches(rootPath: string): Promise<{
+export async function getWorkspaceBranches(
+  rootPath: string,
+  knownState?: GitRepositoryState,
+): Promise<{
+  state: WorkspaceGitState
   currentBranch: string | null
   branches: string[]
   branchDetails: WorkspaceGitBranch[]
 }> {
+  const state = knownState ?? (await getGitCommandService().probeRepository(rootPath))
+  if (state.kind !== 'ready') {
+    return { state, currentBranch: null, branches: [], branchDetails: [] }
+  }
   try {
     const [current, refs] = await Promise.all([
-      execFileAsync('git', ['branch', '--show-current'], { cwd: rootPath }),
-      execFileAsync(
-        'git',
+      getGitCommandService().execute(['branch', '--show-current'], { cwd: rootPath }),
+      getGitCommandService().execute(
         [
           'for-each-ref',
           '--format=%(refname)%09%(committerdate:unix)',
@@ -70,15 +77,21 @@ export async function getWorkspaceBranches(rootPath: string): Promise<{
       .filter((branch) => branch.kind === 'local')
       .map((branch) => branch.name)
     const currentBranch = current.stdout.trim() || branchList[0] || null
-    return { currentBranch, branches: branchList, branchDetails }
-  } catch {
-    return { currentBranch: null, branches: [], branchDetails: [] }
+    return { state, currentBranch, branches: branchList, branchDetails }
+  } catch (error) {
+    return {
+      state: workspaceGitStateFromError(error),
+      currentBranch: null,
+      branches: [],
+      branchDetails: [],
+    }
   }
 }
 
-function emptyGitStatus(): WorkspaceGitStatusResponse {
+function emptyGitStatus(state: WorkspaceGitState): WorkspaceGitStatusResponse {
   return {
-    isGitRepo: false,
+    state,
+    isGitRepo: state.kind === 'not_repository' ? false : state.kind === 'ready' ? true : null,
     currentBranch: null,
     branches: [],
     branchDetails: [],
@@ -100,15 +113,59 @@ function emptyGitStatus(): WorkspaceGitStatusResponse {
 }
 
 export function getGitExecErrorMessage(err: unknown, fallback: string): string {
+  if (isGitCommandError(err)) {
+    if (err.code === 'GIT_RUNTIME_UNAVAILABLE') {
+      return 'Git 运行环境不可用，请在“设置 → 完整性”中重新检测。'
+    }
+    if (err.code === 'GIT_OPERATION_OUTCOME_UNKNOWN') {
+      return 'Git 操作超时，结果可能已经生效，请先刷新状态后再继续。'
+    }
+    if (err.code === 'AUTH_REQUIRED') {
+      return 'Git 需要认证或交互式凭据，请在内置终端中完成认证后重试。'
+    }
+    const detail = sanitizeGitErrorText(err.stderr || err.stdout)
+    return detail || fallback
+  }
   if (err != null && typeof err === 'object') {
     const maybe = err as { stderr?: unknown; stdout?: unknown; message?: unknown }
     const stderr = typeof maybe.stderr === 'string' ? maybe.stderr.trim() : ''
-    if (stderr.length > 0) return stderr
+    if (stderr.length > 0) return sanitizeGitErrorText(stderr) || fallback
     const stdout = typeof maybe.stdout === 'string' ? maybe.stdout.trim() : ''
-    if (stdout.length > 0) return stdout
-    if (typeof maybe.message === 'string' && maybe.message.length > 0) return maybe.message
+    if (stdout.length > 0) return sanitizeGitErrorText(stdout) || fallback
+    if (typeof maybe.message === 'string' && maybe.message.length > 0) {
+      return sanitizeGitErrorText(maybe.message) || fallback
+    }
   }
   return fallback
+}
+
+export function workspaceGitStateFromError(error: unknown): WorkspaceGitState {
+  if (isGitCommandError(error)) {
+    if (error.code === 'GIT_RUNTIME_UNAVAILABLE') {
+      return {
+        kind: 'runtime_unavailable',
+        code: error.code,
+        message: getGitExecErrorMessage(error, 'Git 运行环境不可用'),
+      }
+    }
+    return {
+      kind: 'failed',
+      code: error.code,
+      message: getGitExecErrorMessage(error, 'Git 操作失败'),
+    }
+  }
+  return { kind: 'failed', code: 'GIT_OPERATION_FAILED', message: 'Git 操作失败' }
+}
+
+function sanitizeGitErrorText(value: string): string {
+  const home = homedir()
+  const withoutHome = home.length > 1 ? value.split(home).join('~') : value
+  return withoutHome
+    .replace(/(https?:\/\/)[^/@\s]+@/gi, '$1***@')
+    .replace(/(authorization\s*:\s*)([^\s]+)/gi, '$1***')
+    .replace(/(token|password|passwd|secret)=([^\s&]+)/gi, '$1=***')
+    .trim()
+    .slice(0, 800)
 }
 
 function parseGitPorcelainPath(rawPath: string): string {
@@ -227,56 +284,52 @@ function parseGitStashList(stdout: string): WorkspaceGitStashEntry[] {
     .filter((item): item is WorkspaceGitStashEntry => item != null)
 }
 
-export async function tryGitStdout(rootPath: string, args: string[]): Promise<string | null> {
-  try {
-    const result = await execFileAsync('git', args, { cwd: rootPath })
-    return result.stdout.trim()
-  } catch {
-    return null
-  }
+export async function tryGitStdout(
+  rootPath: string,
+  args: string[],
+  allowedExitCodes: readonly number[] = [0],
+): Promise<string | null> {
+  const result = await getGitCommandService().execute(args, { cwd: rootPath, allowedExitCodes })
+  return result.exitCode === 0 ? result.stdout.trim() : null
 }
 
-async function tryGitRawStdout(rootPath: string, args: string[]): Promise<string | null> {
-  try {
-    const result = await execFileAsync('git', args, { cwd: rootPath })
-    return result.stdout.replace(/\r?\n$/, '')
-  } catch {
-    return null
-  }
+async function tryGitRawStdout(
+  rootPath: string,
+  args: string[],
+  allowedExitCodes: readonly number[] = [0],
+): Promise<string | null> {
+  const result = await getGitCommandService().execute(args, {
+    cwd: rootPath,
+    allowedExitCodes,
+  })
+  return result.exitCode === 0 ? result.stdout.replace(/\r?\n$/, '') : null
 }
 
 async function tryGitDiffStdout(rootPath: string, args: string[]): Promise<string | null> {
-  try {
-    const result = await execFileAsync('git', args, { cwd: rootPath })
-    return result.stdout.trim()
-  } catch (err) {
-    const gitError = err as { code?: number | string; stdout?: unknown }
-    if (
-      Number(gitError.code) === 1 &&
-      typeof gitError.stdout === 'string' &&
-      gitError.stdout.length > 0
-    ) {
-      return gitError.stdout.trim()
-    }
-    return null
-  }
+  const result = await getGitCommandService().execute(args, {
+    cwd: rootPath,
+    allowedExitCodes: [0, 1],
+  })
+  return result.stdout.trim()
 }
 
 async function findRemoteComparisonRef(
   rootPath: string,
   remoteName: string,
 ): Promise<string | null> {
-  const remoteHead = await tryGitStdout(rootPath, [
-    'symbolic-ref',
-    '--quiet',
-    '--short',
-    `refs/remotes/${remoteName}/HEAD`,
-  ])
+  const remoteHead = await tryGitStdout(
+    rootPath,
+    ['symbolic-ref', '--quiet', '--short', `refs/remotes/${remoteName}/HEAD`],
+    [0, 1],
+  )
   if (remoteHead) return remoteHead
 
   for (const branch of ['main', 'master']) {
     const candidate = `${remoteName}/${branch}`
-    if ((await tryGitStdout(rootPath, ['rev-parse', '--verify', '--quiet', candidate])) != null) {
+    if (
+      (await tryGitStdout(rootPath, ['rev-parse', '--verify', '--quiet', candidate], [0, 1])) !=
+      null
+    ) {
       return candidate
     }
   }
@@ -284,12 +337,11 @@ async function findRemoteComparisonRef(
 }
 
 async function resolveGitComparison(rootPath: string): Promise<GitComparison> {
-  const upstream = await tryGitStdout(rootPath, [
-    'rev-parse',
-    '--abbrev-ref',
-    '--symbolic-full-name',
-    '@{u}',
-  ])
+  const upstream = await tryGitStdout(
+    rootPath,
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+    [0, 128],
+  )
   const firstRemote = await tryGitStdout(rootPath, ['remote'])
   const remoteNames = (firstRemote ?? '').split(/\r?\n/).filter(Boolean)
   const upstreamRemoteCandidate = upstream?.split('/')[0]
@@ -303,7 +355,7 @@ async function resolveGitComparison(rootPath: string): Promise<GitComparison> {
   const baseRef =
     (comparisonRef == null
       ? null
-      : await tryGitStdout(rootPath, ['merge-base', 'HEAD', comparisonRef])) ?? 'HEAD'
+      : await tryGitStdout(rootPath, ['merge-base', 'HEAD', comparisonRef], [0, 1])) ?? 'HEAD'
   const remoteBranch =
     comparisonRef != null && remoteName != null && comparisonRef.startsWith(`${remoteName}/`)
       ? comparisonRef.slice(remoteName.length + 1)
@@ -350,7 +402,7 @@ export async function getWorkspaceGitFileDiff(
   // 前端透传的 untracked 可能缺失（变更卡片未带 changeType），此处用 ls-files 兜底。
   // 已 staged 的新文件仍在 index 中，ls-files 命中 → 走 tracked 分支，由 `git diff HEAD` 以 new file 呈现。
   const tracked =
-    (await tryGitStdout(rootPath, ['ls-files', '--error-unmatch', '--', filePath])) != null
+    (await tryGitStdout(rootPath, ['ls-files', '--error-unmatch', '--', filePath], [0, 1])) != null
   const effectiveUntracked = untracked || !tracked
 
   let diff: string
@@ -359,8 +411,11 @@ export async function getWorkspaceGitFileDiff(
       (await tryGitDiffStdout(rootPath, ['diff', '--no-index', '--', '/dev/null', filePath])) ?? ''
   } else {
     const comparison = await resolveGitComparison(rootPath)
-    diff = (await tryGitStdout(rootPath, ['diff', comparison.baseRef, '--', filePath])) ?? ''
-    if (!diff.trim()) diff = (await tryGitStdout(rootPath, ['diff', 'HEAD', '--', filePath])) ?? ''
+    diff =
+      (await tryGitStdout(rootPath, ['diff', comparison.baseRef, '--', filePath], [0, 128])) ?? ''
+    if (!diff.trim()) {
+      diff = (await tryGitStdout(rootPath, ['diff', 'HEAD', '--', filePath], [0, 128])) ?? ''
+    }
     if (!diff.trim()) {
       diff = (await tryGitStdout(rootPath, ['diff', '--cached', '--', filePath])) ?? ''
     }
@@ -369,76 +424,94 @@ export async function getWorkspaceGitFileDiff(
 }
 
 export async function getWorkspaceGitStatus(rootPath: string): Promise<WorkspaceGitStatusResponse> {
-  const isRepo = (await tryGitStdout(rootPath, ['rev-parse', '--is-inside-work-tree'])) === 'true'
-  if (!isRepo) return emptyGitStatus()
+  const state = await getGitCommandService().probeRepository(rootPath)
+  if (state.kind !== 'ready') return emptyGitStatus(state)
+  try {
+    const branches = await getWorkspaceBranches(rootPath, state)
+    if (branches.state.kind !== 'ready') return emptyGitStatus(branches.state)
+    if (state.repositoryKind === 'bare') {
+      return {
+        ...emptyGitStatus(state),
+        isGitRepo: true,
+        currentBranch: branches.currentBranch,
+        branches: branches.branches,
+        branchDetails: branches.branchDetails,
+      }
+    }
+    const comparison = await resolveGitComparison(rootPath)
+    const [porcelain, comparisonNumstat, headNumstat, nameStatus, stashList] = await Promise.all([
+      tryGitRawStdout(rootPath, ['status', '--porcelain=v1', '--untracked-files=all']),
+      tryGitStdout(rootPath, ['diff', '--numstat', comparison.baseRef, '--'], [0, 128]),
+      tryGitStdout(rootPath, ['diff', '--numstat', 'HEAD', '--'], [0, 128]),
+      tryGitRawStdout(
+        rootPath,
+        ['diff', '--name-status', '-z', comparison.baseRef, '--'],
+        [0, 128],
+      ),
+      tryGitStdout(rootPath, [
+        'stash',
+        'list',
+        '--date=iso-strict',
+        '--format=%gd%x1f%h%x1f%ci%x1f%gs%x1e',
+      ]),
+    ])
+    const comparisonStats = parseGitNumstat(comparisonNumstat ?? '')
+    const pendingStats = mergeGitStats(comparisonStats, parseGitNumstat(headNumstat ?? ''))
+    const parsedPendingFiles = parseGitPorcelainChanges(porcelain ?? '', pendingStats)
+    const untrackedStats = await getUntrackedFilesLineStats(
+      rootPath,
+      parsedPendingFiles.filter((item) => item.untracked).map((item) => item.path),
+    )
+    const pendingFiles = parsedPendingFiles.map((item) => {
+      if (!item.untracked) return item
+      const stats = untrackedStats.get(item.path)
+      return stats == null ? item : { ...item, ...stats }
+    })
+    const baselineFiles = parseGitNameStatusChanges(nameStatus ?? '', comparisonStats)
+    // `files` drives review and therefore spans committed + pending changes.
+    // The pending-only counters below intentionally keep commit-dialog semantics.
+    const files = mergeReviewChanges(baselineFiles, pendingFiles)
 
-  const [branches, comparison] = await Promise.all([
-    getWorkspaceBranches(rootPath),
-    resolveGitComparison(rootPath),
-  ])
-  const [porcelain, comparisonNumstat, headNumstat, nameStatus, stashList] = await Promise.all([
-    tryGitRawStdout(rootPath, ['status', '--porcelain=v1', '--untracked-files=all']),
-    tryGitStdout(rootPath, ['diff', '--numstat', comparison.baseRef, '--']),
-    tryGitStdout(rootPath, ['diff', '--numstat', 'HEAD', '--']),
-    tryGitRawStdout(rootPath, ['diff', '--name-status', '-z', comparison.baseRef, '--']),
-    tryGitStdout(rootPath, [
-      'stash',
-      'list',
-      '--date=iso-strict',
-      '--format=%gd%x1f%h%x1f%ci%x1f%gs%x1e',
-    ]),
-  ])
-  const comparisonStats = parseGitNumstat(comparisonNumstat ?? '')
-  const pendingStats = mergeGitStats(comparisonStats, parseGitNumstat(headNumstat ?? ''))
-  const parsedPendingFiles = parseGitPorcelainChanges(porcelain ?? '', pendingStats)
-  const untrackedStats = await getUntrackedFilesLineStats(
-    rootPath,
-    parsedPendingFiles.filter((item) => item.untracked).map((item) => item.path),
-  )
-  const pendingFiles = parsedPendingFiles.map((item) => {
-    if (!item.untracked) return item
-    const stats = untrackedStats.get(item.path)
-    return stats == null ? item : { ...item, ...stats }
-  })
-  const baselineFiles = parseGitNameStatusChanges(nameStatus ?? '', comparisonStats)
-  // `files` drives review and therefore spans committed + pending changes.
-  // The pending-only counters below intentionally keep commit-dialog semantics.
-  const files = mergeReviewChanges(baselineFiles, pendingFiles)
-
-  return {
-    isGitRepo: true,
-    currentBranch: branches.currentBranch,
-    branches: branches.branches,
-    branchDetails: branches.branchDetails,
-    ahead: comparison.ahead,
-    behind: comparison.behind,
-    additions: files.reduce((sum, item) => sum + item.additions, 0),
-    deletions: files.reduce((sum, item) => sum + item.deletions, 0),
-    changedFiles: pendingFiles.length,
-    stagedFiles: pendingFiles.filter((item) => item.staged).length,
-    unstagedFiles: pendingFiles.filter((item) => item.unstaged || item.untracked).length,
-    untrackedFiles: pendingFiles.filter((item) => item.untracked).length,
-    hasRemote: comparison.remoteName != null,
-    remoteName: comparison.remoteName,
-    remoteBranch: comparison.remoteBranch,
-    pullRequestUrl: buildGitHubCompareUrl(comparison.remoteUrl, branches.currentBranch),
-    stashEntries: parseGitStashList(stashList ?? ''),
-    files,
+    return {
+      state,
+      isGitRepo: true,
+      currentBranch: branches.currentBranch,
+      branches: branches.branches,
+      branchDetails: branches.branchDetails,
+      ahead: comparison.ahead,
+      behind: comparison.behind,
+      additions: files.reduce((sum, item) => sum + item.additions, 0),
+      deletions: files.reduce((sum, item) => sum + item.deletions, 0),
+      changedFiles: pendingFiles.length,
+      stagedFiles: pendingFiles.filter((item) => item.staged).length,
+      unstagedFiles: pendingFiles.filter((item) => item.unstaged || item.untracked).length,
+      untrackedFiles: pendingFiles.filter((item) => item.untracked).length,
+      hasRemote: comparison.remoteName != null,
+      remoteName: comparison.remoteName,
+      remoteBranch: comparison.remoteBranch,
+      pullRequestUrl: buildGitHubCompareUrl(comparison.remoteUrl, branches.currentBranch),
+      stashEntries: parseGitStashList(stashList ?? ''),
+      files,
+    }
+  } catch (error) {
+    return emptyGitStatus(workspaceGitStateFromError(error))
   }
 }
 
 export async function pushWorkspaceBranch(rootPath: string): Promise<void> {
   const currentBranch = (await tryGitStdout(rootPath, ['branch', '--show-current'])) ?? ''
   if (!currentBranch) throw new Error('当前不是可推送的本地分支')
-  const upstream = await tryGitStdout(rootPath, [
-    'rev-parse',
-    '--abbrev-ref',
-    '--symbolic-full-name',
-    '@{u}',
-  ])
+  const upstream = await tryGitStdout(
+    rootPath,
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+    [0, 128],
+  )
   if (upstream != null) {
-    await execFileAsync('git', ['push'], { cwd: rootPath })
+    await getGitCommandService().execute(['push'], { cwd: rootPath, operation: 'network' })
     return
   }
-  await execFileAsync('git', ['push', '-u', 'origin', currentBranch], { cwd: rootPath })
+  await getGitCommandService().execute(['push', '-u', 'origin', currentBranch], {
+    cwd: rootPath,
+    operation: 'network',
+  })
 }

@@ -124,6 +124,7 @@ export function GitEnvPanel({
 }) {
   const [collaborationDetailsKey, setCollaborationDetailsKey] = useState<string | null>(null)
   const isGitRepo = status?.isGitRepo === true
+  const isGitWorktree = status?.state.kind === 'ready' && status.state.repositoryKind === 'worktree'
   const inWorktree = runtimeWorktree != null
   const worktreeHint = inWorktree
     ? `运行在隔离 worktree${runtimeWorktree.branch ? ` · ${runtimeWorktree.branch}` : ''}\n${runtimeWorktree.path}`
@@ -152,7 +153,7 @@ export function GitEnvPanel({
         <div className="git-popover-header">
           <div className="git-popover-title">环境信息</div>
           <span className="git-env-spacer" />
-          {isGitRepo && (
+          {isGitWorktree && (
             <button
               type="button"
               className="git-popover-icon"
@@ -166,7 +167,7 @@ export function GitEnvPanel({
             <Icons.X size={14} />
           </button>
         </div>
-        {isGitRepo && (
+        {isGitWorktree && (
           <>
             <button type="button" className="git-env-row strong" onClick={onOpenReview}>
               <span className="git-env-icon">
@@ -200,6 +201,14 @@ export function GitEnvPanel({
               <span>提交或推送</span>
             </button>
           </>
+        )}
+        {isGitRepo && !isGitWorktree && (
+          <div className="git-env-row">
+            <span className="git-env-icon">
+              <Icons.GitBranch size={14} />
+            </span>
+            <span>裸仓库（无工作区）</span>
+          </div>
         )}
         {/* 环境快捷入口：终端打开常驻，git 与否都可用 */}
         {hasCollaboration && collaboration != null && (

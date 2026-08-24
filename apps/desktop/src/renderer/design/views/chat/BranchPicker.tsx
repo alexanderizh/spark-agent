@@ -49,6 +49,18 @@ export function GitBranchRows({
   onSelect: (branch: string) => void
 }) {
   const groups = getBranchGroups(branchState, search)
+  if (branchState.gitState?.kind === 'runtime_unavailable') {
+    return <div className="git-popover-muted">Git 运行环境不可用，请前往设置重新检测</div>
+  }
+  if (branchState.gitState?.kind === 'failed') {
+    return <div className="git-popover-muted">{branchState.gitState.message}</div>
+  }
+  if (branchState.gitState?.kind === 'not_repository') {
+    return <div className="git-popover-muted">当前项目不是 Git 仓库</div>
+  }
+  if (branchState.gitState?.kind === 'ready' && branchState.gitState.repositoryKind === 'bare') {
+    return <div className="git-popover-muted">裸仓库没有工作区，无法切换分支</div>
+  }
   if (groups.length === 0) return <div className="git-popover-muted">没有匹配分支</div>
 
   return groups.map((group) => (
@@ -121,6 +133,9 @@ export function ComposerBranchSelect({
   useCloseOnOutside(rootRef, () => setOpen(false), open)
 
   const currentBranch = branchState.currentBranch ?? ''
+  const canCreateBranch = !(
+    branchState.gitState?.kind === 'ready' && branchState.gitState.repositoryKind === 'bare'
+  )
 
   const resetPanel = () => {
     setSearch('')
@@ -214,6 +229,7 @@ export function ComposerBranchSelect({
             />
           </div>
           {onCreateBranch != null &&
+            canCreateBranch &&
             (creating ? (
               <div className="git-create-branch-inline">
                 <input

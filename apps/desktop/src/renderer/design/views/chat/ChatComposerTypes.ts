@@ -7,9 +7,11 @@ import type {
   SessionPermissionMode,
   SessionReasoningEffort,
   WorkspaceGitBranch,
+  WorkspaceGitState,
 } from '@spark/protocol'
 
 export type BranchState = {
+  gitState?: WorkspaceGitState
   currentBranch: string | null
   branches: string[]
   branchDetails?: WorkspaceGitBranch[] | undefined
