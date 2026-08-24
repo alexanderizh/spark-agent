@@ -28,6 +28,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { join, sep } from 'node:path'
+import { buildDefaultGitChildEnvironment } from '../services/git-command.service.js'
 import type {
   AgentEvent,
   AgentStatusValue,
@@ -271,7 +272,7 @@ function buildIsolatedRuntimeEnv(
     for (const [k, v] of Object.entries(settingsEnv)) {
       if (env[k] == null) env[k] = v
     }
-    return env
+    return finalizeManagedRuntimeEnv(env)
   }
   env.ANTHROPIC_API_KEY = apiKey
   if (apiEndpoint != null) env.ANTHROPIC_BASE_URL = apiEndpoint
@@ -287,7 +288,16 @@ function buildIsolatedRuntimeEnv(
   env.ANTHROPIC_DEFAULT_SONNET_MODEL = sonnet
   env.ANTHROPIC_DEFAULT_OPUS_MODEL = opus
   env.ANTHROPIC_SMALL_FAST_MODEL = haiku
-  return env
+  return finalizeManagedRuntimeEnv(env)
+}
+
+function finalizeManagedRuntimeEnv(env: Record<string, string>): Record<string, string> {
+  const managed = buildDefaultGitChildEnvironment(env)
+  return Object.fromEntries(
+    Object.entries(managed).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    ),
+  )
 }
 
 async function loadSDK(): Promise<SDKModule | null> {

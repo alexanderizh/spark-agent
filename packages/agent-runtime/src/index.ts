@@ -254,6 +254,26 @@ export { WorkspaceService, detectProjectKind } from './services/workspace.servic
 export type { UpdateWorkspaceParams } from './services/workspace.service.js'
 export { GitWorktreeService } from './services/git-worktree.service.js'
 export type { RawWorktree, AddWorktreeParams } from './services/git-worktree.service.js'
+export {
+  GitCommandError,
+  GitCommandService,
+  buildDefaultGitChildEnvironment,
+  buildGitChildEnvironment,
+  configureDefaultGitCommandService,
+  getDefaultGitCommandService,
+  isGitCommandError,
+} from './services/git-command.service.js'
+export type {
+  GitCommandOperation,
+  GitCommandOptions,
+  GitCommandResult,
+  GitCommandRuntimeDescriptor,
+  GitCommandRuntimeProvider,
+  GitCommandRuntimeResolution,
+  GitFailureCode,
+  GitRepositoryState,
+  GitRuntimeSource,
+} from './services/git-command.service.js'
 export { generateWorktreeName, sanitizeBranchSlug } from './services/worktree-name-generator.js'
 export type { GenerateWorktreeNameParams } from './services/worktree-name-generator.js'
 export {

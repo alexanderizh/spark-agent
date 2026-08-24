@@ -12,6 +12,7 @@ import { toCodexReasoningEffort, type CodexReasoningEffort } from './reasoning-e
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { EngineExecutor } from './engine-executor.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
+import { buildDefaultGitChildEnvironment } from '../services/git-command.service.js'
 
 type Listener = (event: AgentEvent) => void
 type EventBase = { id: string; sessionId: string; turnId: string; timestamp: string; seq: number }
@@ -291,13 +292,13 @@ export class CodexCliExecutor implements EngineExecutor {
 
         const child = spawn(command, args, {
           cwd,
-          env: {
+          env: buildDefaultGitChildEnvironment({
             ...process.env,
             ...(config.codexCliProvider?.env ?? {}),
             // 用户在会话/项目级配置的自定义环境变量：注入 codex 子进程，供其 shell/工具引用真实值。
             ...(config.customEnv ?? {}),
             ...buildCodexMcpEnv(config.mcpServers),
-          },
+          }),
           shell: shouldSpawnWithShell(command),
           windowsHide: true,
         })

@@ -487,6 +487,10 @@ export class SessionCommandController {
         this.host.applyApprovalToggle(id, enabled)
       },
       getWorkspacePath: () => workspacePath,
+      execGit: async (args, cwd) => {
+        const { getDefaultGitCommandService } = await import('../git-command.service.js')
+        return getDefaultGitCommandService().execute(args, { cwd, operation: 'read' })
+      },
       execShell: async (command, cwd) => {
         const { exec } = await import('node:child_process')
         const { promisify } = await import('node:util')

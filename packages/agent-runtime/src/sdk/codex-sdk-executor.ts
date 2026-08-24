@@ -21,6 +21,7 @@ import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { EngineExecutor } from './engine-executor.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 import { codexTargetTriple, resolveManagedCodexCli } from './codex-runtime.js'
+import { buildDefaultGitChildEnvironment } from '../services/git-command.service.js'
 
 type Listener = (event: AgentEvent) => void
 type EventBase = { id: string; sessionId: string; turnId: string; timestamp: string; seq: number }
@@ -612,12 +613,14 @@ function buildCodexOptions(config: SDKExecutorConfig): CodexOptions {
   if (bundledCodex == null && process.env.SPARK_CODEX_REQUIRE_RUNTIME === '1') {
     throw new CodexRuntimeNotInstalledError()
   }
-  const env = stringifyEnv({
-    ...process.env,
-    ...(config.codexCliProvider?.env ?? {}),
-    ...(config.customEnv ?? {}),
-    ...buildCodexMcpEnv(config.mcpServers),
-  })
+  const env = stringifyEnv(
+    buildDefaultGitChildEnvironment({
+      ...process.env,
+      ...(config.codexCliProvider?.env ?? {}),
+      ...(config.customEnv ?? {}),
+      ...buildCodexMcpEnv(config.mcpServers),
+    }),
+  )
   if (bundledCodex != null) prependPathDirs(env, bundledCodex.pathDirs)
   return {
     apiKey: config.apiKey,

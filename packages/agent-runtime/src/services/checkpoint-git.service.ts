@@ -11,15 +11,13 @@
  *   - 还原用 `git restore --source=<ref> --worktree`：**非破坏性**，只回退/重建快照内文件，
  *     不会删除快照之后新增的文件（杜绝「删库」）。
  */
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createLogger } from '@spark/shared'
+import { getDefaultGitCommandService, type GitCommandService } from './git-command.service.js'
 
 const log = createLogger('checkpoint-git')
-const execFileAsync = promisify(execFile)
 const MAX_BUFFER = 1 << 26 // 64MB
 
 function sanitizeRefPart(id: string): string {
@@ -40,26 +38,22 @@ export class CheckpointGitService {
   /** sessionId → 上个 checkpoint 的 tree SHA，用于「仅变更时快照」的去重 gating。 */
   private readonly lastTree = new Map<string, string>()
 
-  private async git(
-    workspaceRoot: string,
-    args: string[],
-    indexFile?: string,
-  ): Promise<string> {
-    const env = indexFile != null ? { ...process.env, GIT_INDEX_FILE: indexFile } : process.env
-    const { stdout } = await execFileAsync('git', ['-C', workspaceRoot, ...args], {
-      env,
-      maxBuffer: MAX_BUFFER,
+  constructor(private readonly commands: GitCommandService = getDefaultGitCommandService()) {}
+
+  private async git(workspaceRoot: string, args: string[], indexFile?: string): Promise<string> {
+    const { stdout } = await this.commands.execute(args, {
+      cwd: workspaceRoot,
+      operation: isCheckpointWriteCommand(args) ? 'write' : 'read',
+      ...(indexFile != null ? { env: { GIT_INDEX_FILE: indexFile } } : {}),
+      maxBufferBytes: MAX_BUFFER,
     })
     return stdout
   }
 
   /** 工作区是否为 git 仓库（功能可用性判定）。 */
   async isGitRepo(workspaceRoot: string): Promise<boolean> {
-    try {
-      return (await this.git(workspaceRoot, ['rev-parse', '--is-inside-work-tree'])).trim() === 'true'
-    } catch {
-      return false
-    }
+    const state = await this.commands.probeRepository(workspaceRoot)
+    return state.kind === 'ready' && state.repositoryKind === 'worktree'
   }
 
   private refName(sessionId: string, checkpointId: string): string {
@@ -89,7 +83,14 @@ export class CheckpointGitService {
   ): Promise<CheckpointSnapshotResult> {
     const tree = await this.writeWorkTree(workspaceRoot)
     if (this.lastTree.get(sessionId) === tree) return { created: false, fileCount: 0 }
-    const commit = (await this.git(workspaceRoot, ['commit-tree', tree, '-m', label.slice(0, 200) || 'spark-checkpoint'])).trim()
+    const commit = (
+      await this.git(workspaceRoot, [
+        'commit-tree',
+        tree,
+        '-m',
+        label.slice(0, 200) || 'spark-checkpoint',
+      ])
+    ).trim()
     await this.git(workspaceRoot, ['update-ref', this.refName(sessionId, checkpointId), commit])
     this.lastTree.set(sessionId, tree)
     let fileCount = 0
@@ -104,9 +105,17 @@ export class CheckpointGitService {
   }
 
   /** ref 是否存在。 */
-  async hasCheckpoint(workspaceRoot: string, sessionId: string, checkpointId: string): Promise<boolean> {
+  async hasCheckpoint(
+    workspaceRoot: string,
+    sessionId: string,
+    checkpointId: string,
+  ): Promise<boolean> {
     try {
-      await this.git(workspaceRoot, ['rev-parse', '--verify', `${this.refName(sessionId, checkpointId)}^{commit}`])
+      await this.git(workspaceRoot, [
+        'rev-parse',
+        '--verify',
+        `${this.refName(sessionId, checkpointId)}^{commit}`,
+      ])
       return true
     } catch {
       return false
@@ -117,7 +126,11 @@ export class CheckpointGitService {
    * 还原到某个 checkpoint：`git restore --source=<ref> --worktree`，非破坏性。
    * 只回退/重建快照内文件，不删除其后新增的文件。
    */
-  async restore(workspaceRoot: string, sessionId: string, checkpointId: string): Promise<CheckpointRestoreOutcome> {
+  async restore(
+    workspaceRoot: string,
+    sessionId: string,
+    checkpointId: string,
+  ): Promise<CheckpointRestoreOutcome> {
     const ref = this.refName(sessionId, checkpointId)
     await this.git(workspaceRoot, ['rev-parse', '--verify', `${ref}^{commit}`]) // 不存在则抛错
     let restoredFiles: string[] = []
@@ -139,7 +152,9 @@ export class CheckpointGitService {
     const prefix = `refs/spark/checkpoints/${sanitizeRefPart(sessionId)}/`
     let refs: string[]
     try {
-      const out = (await this.git(workspaceRoot, ['for-each-ref', '--format=%(refname)', prefix])).trim()
+      const out = (
+        await this.git(workspaceRoot, ['for-each-ref', '--format=%(refname)', prefix])
+      ).trim()
       refs = out.length > 0 ? out.split('\n') : []
     } catch {
       return
@@ -150,7 +165,10 @@ export class CheckpointGitService {
       try {
         await this.git(workspaceRoot, ['update-ref', '-d', r])
       } catch (err) {
-        log.warn('checkpoint prune failed', { ref: r, error: err instanceof Error ? err.message : String(err) })
+        log.warn('checkpoint prune failed', {
+          ref: r,
+          error: err instanceof Error ? err.message : String(err),
+        })
       }
     }
   }
@@ -159,4 +177,8 @@ export class CheckpointGitService {
   resetGatingBaseline(sessionId: string): void {
     this.lastTree.delete(sessionId)
   }
+}
+
+function isCheckpointWriteCommand(args: readonly string[]): boolean {
+  return ['add', 'write-tree', 'commit-tree', 'update-ref', 'restore'].includes(args[0] ?? '')
 }

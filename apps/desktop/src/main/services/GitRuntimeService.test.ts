@@ -14,10 +14,21 @@ import {
 function makeFakeExec(systemVersion: string, bundledVersion = '2.45.4') {
   return async (
     file: string,
-    _args: string[],
+    args: string[],
     _options: { cwd?: string; timeout?: number; env?: NodeJS.ProcessEnv },
   ) => {
-    const version = file === 'git' || file === 'git.exe' ? systemVersion : bundledVersion
+    if (file === '/usr/bin/xcode-select')
+      return { stdout: '/Library/Developer/CommandLineTools\n', stderr: '' }
+    if (args[0] === '--exec-path') {
+      return {
+        stdout:
+          file === '/usr/bin/git'
+            ? '/usr/libexec/git-core\n'
+            : '/bundle/runtime/git/libexec/git-core\n',
+        stderr: '',
+      }
+    }
+    const version = file === '/usr/bin/git' ? systemVersion : bundledVersion
     if (version === 'broken') {
       throw new Error('spawn failed')
     }
@@ -28,12 +39,15 @@ function makeFakeExec(systemVersion: string, bundledVersion = '2.45.4') {
 function makeDeps(overrides: Partial<GitRuntimeResolverDeps> = {}): GitRuntimeResolverDeps {
   const existing = new Set<string>([
     '/usr/bin/git',
+    '/usr/libexec/git-core',
+    '/usr/libexec/git-core/git-remote-https',
     '/bundle/runtime/git/git-runtime.json',
     '/bundle/runtime/git/bin/git',
     '/bundle/runtime/git/libexec/git-core',
+    '/bundle/runtime/git/libexec/git-core/git-remote-https',
   ])
   return {
-    env: {},
+    env: { PATH: '/usr/bin' },
     platform: 'darwin',
     arch: 'arm64',
     resourcesPath: '/bundle',
@@ -125,6 +139,7 @@ describe('resolveGitRuntime', () => {
     )
     expect(result.descriptor?.source).toBe('override')
     expect(result.descriptor?.executablePath).toBe('/usr/bin/git')
+    expect(result.descriptor?.shellPathEntries).toEqual(['/usr/bin'])
   })
 
   it('fails strictly on an invalid override instead of falling back', async () => {
@@ -135,10 +150,30 @@ describe('resolveGitRuntime', () => {
     expect(result.unavailableReason).toBe('override_invalid')
   })
 
+  it('rejects a relative override instead of resolving it through PATH', async () => {
+    const result = await resolveGitRuntime(
+      makeDeps({ env: { SPARK_GIT_EXECUTABLE: 'git' }, existsSync: () => true }),
+    )
+    expect(result.descriptor).toBeNull()
+    expect(result.unavailableReason).toBe('override_invalid')
+  })
+
+  it('rejects an override below the minimum supported version', async () => {
+    const result = await resolveGitRuntime(
+      makeDeps({
+        env: { SPARK_GIT_EXECUTABLE: '/usr/bin/git' },
+        execFileAsync: makeFakeExec('2.20.0'),
+      }),
+    )
+    expect(result.descriptor).toBeNull()
+    expect(result.unavailableReason).toBe('override_invalid')
+  })
+
   it('uses system Git when it meets the minimum version', async () => {
     const result = await resolveGitRuntime(makeDeps())
     expect(result.descriptor?.source).toBe('system')
-    expect(result.descriptor?.executablePath).toBe('git')
+    expect(result.descriptor?.executablePath).toBe('/usr/bin/git')
+    expect(result.descriptor?.shellPathEntries).toEqual(['/usr/bin'])
   })
 
   it('falls back to bundled when system Git is below the minimum version', async () => {
@@ -216,7 +251,25 @@ describe('resolveGitRuntime', () => {
     expect(result.unavailableReason).toBe('bundled_invalid')
   })
 
+  it('rejects a bundled runtime below the minimum supported version', async () => {
+    const result = await resolveGitRuntime(
+      makeDeps({
+        env: { SPARK_GIT_RUNTIME_MODE: 'bundled-only' },
+        readFileSync: () =>
+          JSON.stringify({
+            version: '2.20.0',
+            platform: 'darwin',
+            arch: 'arm64',
+            entry: 'bin/git',
+          }),
+        execFileAsync: makeFakeExec('2.45.4', '2.20.0'),
+      }),
+    )
+    expect(result.descriptor).toBeNull()
+    expect(result.unavailableReason).toBe('bundled_invalid')
+  })
+
   it('documents the enforced minimum version', () => {
-    expect(compareVersions(MIN_GIT_VERSION, '2.22.0')).toBe(1)
+    expect(compareVersions(MIN_GIT_VERSION, '2.30.9')).toBe(1)
   })
 })

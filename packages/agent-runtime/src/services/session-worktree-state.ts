@@ -10,13 +10,9 @@
  * 主动上报（主路径），或运行时事件检测推断（兜底）。持久化到 sessions.metadata_json
  * 的 runtimeWorktree 键，与 debugMode / team 同策略，不新增列。
  */
-import { execFile } from 'node:child_process'
 import { realpath } from 'node:fs/promises'
-import { promisify } from 'node:util'
 import { SessionRepository, type SparkDatabase } from '@spark/storage'
 import { GitWorktreeService, type RawWorktree } from './git-worktree.service.js'
-
-const execFileAsync = promisify(execFile)
 
 /** 与 protocol SessionRuntimeWorktree 同构的持久化结构 */
 export interface SessionRuntimeWorktreeState {
@@ -72,16 +68,16 @@ export function readSessionRuntimeWorktree(
 
 /**
  * 会话 worktree 状态读写 + git 校验。
- * exec 可注入以便测试（与 GitWorktreeService 同约定）。
+ * GitWorktreeService 可注入以便测试。
  */
 export class SessionWorktreeStateService {
   private readonly git: GitWorktreeService
 
   constructor(
     private readonly db: SparkDatabase,
-    exec: typeof execFileAsync = execFileAsync,
+    git: GitWorktreeService = new GitWorktreeService(),
   ) {
-    this.git = new GitWorktreeService(exec)
+    this.git = git
   }
 
   /** 读取会话当前 runtimeWorktree 状态 */

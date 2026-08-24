@@ -14,9 +14,16 @@
 
 import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import {
+  GitCommandService,
+  buildGitChildEnvironment as buildSharedGitChildEnvironment,
+  configureDefaultGitCommandService,
+  type GitCommandRuntimeDescriptor,
+  type GitRuntimeSource as SharedGitRuntimeSource,
+} from '@spark/agent-runtime'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('git-runtime')
@@ -25,7 +32,7 @@ const execFileAsync = promisify(execFile)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type GitRuntimeSource = 'override' | 'system' | 'bundled'
+export type GitRuntimeSource = SharedGitRuntimeSource
 
 /**
  * SPARK_GIT_RUNTIME_MODE is a diagnostics/CI switch, not a product setting:
@@ -35,17 +42,7 @@ export type GitRuntimeSource = 'override' | 'system' | 'bundled'
  */
 export type GitRuntimeMode = 'auto' | 'system-only' | 'bundled-only'
 
-export interface GitRuntimeDescriptor {
-  /** Monotonic generation; refresh produces a new immutable descriptor. */
-  generation: number
-  source: GitRuntimeSource
-  executablePath: string
-  version: string
-  /** Env vars to merge into the command's environment (never global). */
-  commandEnvPatch: NodeJS.ProcessEnv
-  /** PATH entries to prepend for managed shells/PTYs. */
-  shellPathEntries: string[]
-}
+export interface GitRuntimeDescriptor extends GitCommandRuntimeDescriptor {}
 
 export type GitRuntimeUnavailableReason =
   | 'override_invalid'
@@ -100,7 +97,7 @@ interface ResolvedGitRuntimeDeps {
 }
 
 /** Minimum Git version required by the features we use (switch/restore etc.). */
-export const MIN_GIT_VERSION = '2.23.0'
+export const MIN_GIT_VERSION = '2.31.0'
 
 export const GIT_RUNTIME_METADATA_FILENAME = 'git-runtime.json'
 
@@ -136,26 +133,7 @@ export function buildGitChildEnvironment(
   descriptor: GitRuntimeDescriptor,
   platform: NodeJS.Platform = process.platform,
 ): NodeJS.ProcessEnv {
-  const childEnv: NodeJS.ProcessEnv = { ...baseEnv }
-  for (const [key, value] of Object.entries(descriptor.commandEnvPatch)) {
-    childEnv[key] = value
-  }
-  if (descriptor.shellPathEntries.length === 0) return childEnv
-
-  const isWin = platform === 'win32'
-  // Windows env is case-insensitive: normalize to a single uppercase PATH key.
-  const pathKey = 'PATH'
-  const existing = isWin
-    ? (Object.entries(childEnv).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? '')
-    : (childEnv['PATH'] ?? '')
-  const sep = isWin ? ';' : ':'
-  const merged = [...descriptor.shellPathEntries, ...existing.split(sep).filter(Boolean)]
-  // Remove the case-insensitive duplicate before writing the canonical key.
-  for (const key of Object.keys(childEnv)) {
-    if (key !== pathKey && key.toLowerCase() === 'path') delete childEnv[key]
-  }
-  childEnv[pathKey] = merged.join(sep)
-  return childEnv
+  return buildSharedGitChildEnvironment(baseEnv, descriptor, platform)
 }
 
 export function parseGitRuntimeMode(value: string | undefined): GitRuntimeMode {
@@ -206,14 +184,26 @@ async function probeGitExecutable(
   executablePath: string,
   deps: ResolvedGitRuntimeDeps,
   env: NodeJS.ProcessEnv,
-): Promise<{ version: string } | null> {
+): Promise<{ version: string; execPath: string } | null> {
   try {
-    const { stdout } = await deps.execFileAsync(executablePath, ['--version'], {
+    const { stdout: versionOutput } = await deps.execFileAsync(executablePath, ['--version'], {
       timeout: 5000,
       env,
     })
-    const version = parseGitVersion(stdout)
-    return version ? { version } : null
+    const version = parseGitVersion(versionOutput)
+    if (version == null) return null
+    const { stdout: execPathOutput } = await deps.execFileAsync(executablePath, ['--exec-path'], {
+      timeout: 5000,
+      env,
+    })
+    const execPath = execPathOutput.trim()
+    if (!isAbsolute(execPath) || !deps.existsSync(execPath)) return null
+    const httpsHelper = join(
+      execPath,
+      deps.platform === 'win32' ? 'git-remote-https.exe' : 'git-remote-https',
+    )
+    if (!deps.existsSync(httpsHelper)) return null
+    return { version, execPath }
   } catch {
     return null
   }
@@ -223,9 +213,16 @@ async function resolveSystemGit(
   deps: ResolvedGitRuntimeDeps,
   generation: number,
 ): Promise<GitRuntimeResolution> {
-  const candidates = deps.platform === 'win32' ? ['git.exe', 'git'] : ['git']
-  for (const command of candidates) {
-    const probe = await probeGitExecutable(command, deps, deps.env)
+  const candidates = getSystemGitCandidates(deps)
+  for (const executablePath of candidates) {
+    if (deps.platform === 'darwin' && executablePath === '/usr/bin/git') {
+      try {
+        await deps.execFileAsync('/usr/bin/xcode-select', ['-p'], { timeout: 3000, env: deps.env })
+      } catch {
+        continue
+      }
+    }
+    const probe = await probeGitExecutable(executablePath, deps, deps.env)
     if (probe == null) continue
     if (compareVersions(probe.version, MIN_GIT_VERSION) < 0) {
       return {
@@ -238,10 +235,10 @@ async function resolveSystemGit(
       descriptor: {
         generation,
         source: 'system',
-        executablePath: command,
+        executablePath,
         version: probe.version,
         commandEnvPatch: {},
-        shellPathEntries: [],
+        shellPathEntries: [dirname(executablePath)],
       },
       unavailableReason: null,
       message: null,
@@ -252,6 +249,23 @@ async function resolveSystemGit(
     unavailableReason: 'no_system_git',
     message: 'No usable system Git found in PATH',
   }
+}
+
+function getSystemGitCandidates(deps: ResolvedGitRuntimeDeps): string[] {
+  const rawPath = Object.entries(deps.env).find(([key]) => key.toLowerCase() === 'path')?.[1]
+  if (!rawPath) return []
+  const separator = deps.platform === 'win32' ? ';' : ':'
+  const names = deps.platform === 'win32' ? ['git.exe', 'git.cmd', 'git'] : ['git']
+  const candidates: string[] = []
+  for (const rawEntry of rawPath.split(separator)) {
+    const entry = rawEntry.trim().replace(/^"|"$/g, '')
+    if (!entry) continue
+    for (const name of names) {
+      const candidate = join(entry, name)
+      if (isAbsolute(candidate) && deps.existsSync(candidate)) candidates.push(candidate)
+    }
+  }
+  return [...new Set(candidates)]
 }
 
 async function resolveBundledGit(
@@ -291,6 +305,13 @@ async function resolveBundledGit(
         descriptor: null,
         unavailableReason: 'bundled_invalid',
         message: `Bundled Git version mismatch: metadata says ${metadata.version}, executable reports ${probe.version}`,
+      }
+    }
+    if (compareVersions(probe.version, MIN_GIT_VERSION) < 0) {
+      return {
+        descriptor: null,
+        unavailableReason: 'bundled_invalid',
+        message: `Bundled Git ${probe.version} is below the minimum supported ${MIN_GIT_VERSION}`,
       }
     }
     return {
@@ -338,11 +359,11 @@ export async function resolveGitRuntime(
   // 1. Explicit override - strict: an invalid override is an error, never a fallback.
   const overridePath = deps.env['SPARK_GIT_EXECUTABLE']
   if (overridePath) {
-    if (!deps.existsSync(overridePath)) {
+    if (!isAbsolute(overridePath) || !deps.existsSync(overridePath)) {
       return {
         descriptor: null,
         unavailableReason: 'override_invalid',
-        message: `SPARK_GIT_EXECUTABLE is set but does not exist: ${overridePath}`,
+        message: 'SPARK_GIT_EXECUTABLE must point to an existing absolute path',
       }
     }
     const probe = await probeGitExecutable(overridePath, deps, deps.env)
@@ -353,6 +374,13 @@ export async function resolveGitRuntime(
         message: 'SPARK_GIT_EXECUTABLE is set but the executable is not a working Git',
       }
     }
+    if (compareVersions(probe.version, MIN_GIT_VERSION) < 0) {
+      return {
+        descriptor: null,
+        unavailableReason: 'override_invalid',
+        message: `SPARK_GIT_EXECUTABLE reports Git ${probe.version}, below the minimum supported ${MIN_GIT_VERSION}`,
+      }
+    }
     return {
       descriptor: {
         generation,
@@ -360,7 +388,7 @@ export async function resolveGitRuntime(
         executablePath: overridePath,
         version: probe.version,
         commandEnvPatch: {},
-        shellPathEntries: [],
+        shellPathEntries: [dirname(overridePath)],
       },
       unavailableReason: null,
       message: null,
@@ -423,4 +451,16 @@ export async function refreshGitRuntime(): Promise<GitRuntimeResolution> {
 /** Expose the resolved executable for internal callers in Phase 2+ migration. */
 export function getGitExecutablePath(): string | null {
   return _cached?.descriptor?.executablePath ?? null
+}
+
+const gitCommandService = new GitCommandService({
+  current: () => getCachedGitRuntime(),
+  resolve: () => initializeGitRuntime(),
+  refresh: () => refreshGitRuntime(),
+})
+
+configureDefaultGitCommandService(gitCommandService)
+
+export function getGitCommandService(): GitCommandService {
+  return gitCommandService
 }
