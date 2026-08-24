@@ -2,7 +2,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { DEFAULT_SHORTCUTS, loadShortcuts, saveShortcuts } from '../design/hooks/useKeyboard'
+import {
+  DEFAULT_SHORTCUTS,
+  isMonacoEditorTarget,
+  loadShortcuts,
+  saveShortcuts,
+} from '../design/hooks/useKeyboard'
 
 describe('shortcut persistence', () => {
   beforeEach(() => {
@@ -13,6 +18,27 @@ describe('shortcut persistence', () => {
   it('uses F for the global palette and K for sidebar session search', () => {
     expect(DEFAULT_SHORTCUTS.find((shortcut) => shortcut.id === 'openPalette')?.key).toBe('f')
     expect(DEFAULT_SHORTCUTS.find((shortcut) => shortcut.id === 'search')?.key).toBe('k')
+    expect(DEFAULT_SHORTCUTS.find((shortcut) => shortcut.id === 'openFileSearch')).toMatchObject({
+      key: 'p',
+      shift: false,
+    })
+    expect(DEFAULT_SHORTCUTS.find((shortcut) => shortcut.id === 'openContentSearch')).toMatchObject(
+      {
+        key: 'f',
+        shift: true,
+      },
+    )
+  })
+
+  it('recognizes Monaco descendants so Cmd/Ctrl+F can remain editor-local', () => {
+    const editor = document.createElement('div')
+    editor.className = 'monaco-editor'
+    const textarea = document.createElement('textarea')
+    editor.append(textarea)
+    document.body.append(editor)
+
+    expect(isMonacoEditorTarget(textarea)).toBe(true)
+    expect(isMonacoEditorTarget(document.body)).toBe(false)
   })
 
   it('migrates the reversed defaults back to F palette and K session search', () => {

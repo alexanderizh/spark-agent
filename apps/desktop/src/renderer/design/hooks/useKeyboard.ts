@@ -46,6 +46,8 @@ export type ShortcutId =
   | 'search'
   | 'escape'
   | 'focusComposer'
+  | 'openFileSearch'
+  | 'openContentSearch'
 
 export type ShortcutBinding = {
   id: ShortcutId
@@ -68,20 +70,145 @@ export type ShortcutBinding = {
    ============================================================ */
 
 export const DEFAULT_SHORTCUTS: ShortcutBinding[] = [
-  { id: 'openPalette',   label: '命令面板',       key: 'f', mod: true,  shift: false, description: '打开命令面板（支持搜索会话）',   group: 'action' },
-  { id: 'newSession',    label: '新建会话',       key: 'n', mod: true,  shift: false, description: '创建一个新的聊天会话',           group: 'action' },
-  { id: 'openSettings',  label: '设置',           key: ',', mod: true,  shift: false, description: '打开设置页面',                   group: 'settings' },
-  { id: 'viewChat',      label: 'Chat 视图',      key: '1', mod: true,  shift: false, description: '切换到 Chat 视图',               group: 'navigation' },
-  { id: 'viewWorkflows', label: 'Workflows 视图', key: '2', mod: true,  shift: false, description: '切换到 Workflows 视图',          group: 'navigation' },
-  { id: 'viewAgents',    label: 'Agents 视图',    key: '3', mod: true,  shift: false, description: '切换到 Agents 视图',             group: 'navigation' },
-  { id: 'viewSkills',    label: 'Skills 视图',    key: '4', mod: true,  shift: false, description: '切换到 Skills 视图',             group: 'navigation' },
-  { id: 'viewMcp',       label: '连接器与 MCP 视图',       key: '5', mod: true,  shift: false, description: '切换到连接器与 MCP 视图',                group: 'navigation' },
-  { id: 'viewSettings',  label: 'Settings 快捷', key: '6', mod: true,  shift: false, description: '切换到 Settings 视图',           group: 'navigation' },
-  { id: 'toggleSidebar', label: '快捷录入任务',  key: 'b', mod: true,  shift: false, description: '打开全局任务快捷录入浮窗',       group: 'action' },
-  { id: 'search',        label: '会话搜索',       key: 'k', mod: true,  shift: false, description: '聚焦侧边栏会话搜索框（Chat 页面）', group: 'action' },
-  { id: 'escape',        label: '关闭',           key: 'Escape', mod: false, shift: false, description: '关闭当前对话框/面板/命令面板', group: 'action' },
-  { id: 'focusComposer', label: '聚焦输入框',     key: 'l', mod: true,  shift: false, description: '聚焦聊天输入框并滚动到底部',     group: 'action' },
+  {
+    id: 'openPalette',
+    label: '命令面板',
+    key: 'f',
+    mod: true,
+    shift: false,
+    description: '打开命令面板（支持搜索会话）',
+    group: 'action',
+  },
+  {
+    id: 'newSession',
+    label: '新建会话',
+    key: 'n',
+    mod: true,
+    shift: false,
+    description: '创建一个新的聊天会话',
+    group: 'action',
+  },
+  {
+    id: 'openSettings',
+    label: '设置',
+    key: ',',
+    mod: true,
+    shift: false,
+    description: '打开设置页面',
+    group: 'settings',
+  },
+  {
+    id: 'viewChat',
+    label: 'Chat 视图',
+    key: '1',
+    mod: true,
+    shift: false,
+    description: '切换到 Chat 视图',
+    group: 'navigation',
+  },
+  {
+    id: 'viewWorkflows',
+    label: 'Workflows 视图',
+    key: '2',
+    mod: true,
+    shift: false,
+    description: '切换到 Workflows 视图',
+    group: 'navigation',
+  },
+  {
+    id: 'viewAgents',
+    label: 'Agents 视图',
+    key: '3',
+    mod: true,
+    shift: false,
+    description: '切换到 Agents 视图',
+    group: 'navigation',
+  },
+  {
+    id: 'viewSkills',
+    label: 'Skills 视图',
+    key: '4',
+    mod: true,
+    shift: false,
+    description: '切换到 Skills 视图',
+    group: 'navigation',
+  },
+  {
+    id: 'viewMcp',
+    label: '连接器与 MCP 视图',
+    key: '5',
+    mod: true,
+    shift: false,
+    description: '切换到连接器与 MCP 视图',
+    group: 'navigation',
+  },
+  {
+    id: 'viewSettings',
+    label: 'Settings 快捷',
+    key: '6',
+    mod: true,
+    shift: false,
+    description: '切换到 Settings 视图',
+    group: 'navigation',
+  },
+  {
+    id: 'toggleSidebar',
+    label: '快捷录入任务',
+    key: 'b',
+    mod: true,
+    shift: false,
+    description: '打开全局任务快捷录入浮窗',
+    group: 'action',
+  },
+  {
+    id: 'search',
+    label: '会话搜索',
+    key: 'k',
+    mod: true,
+    shift: false,
+    description: '聚焦侧边栏会话搜索框（Chat 页面）',
+    group: 'action',
+  },
+  {
+    id: 'escape',
+    label: '关闭',
+    key: 'Escape',
+    mod: false,
+    shift: false,
+    description: '关闭当前对话框/面板/命令面板',
+    group: 'action',
+  },
+  {
+    id: 'focusComposer',
+    label: '聚焦输入框',
+    key: 'l',
+    mod: true,
+    shift: false,
+    description: '聚焦聊天输入框并滚动到底部',
+    group: 'action',
+  },
+  {
+    id: 'openFileSearch',
+    label: '文件搜索',
+    key: 'p',
+    mod: true,
+    shift: false,
+    description: '打开工作区文件搜索面板（代码页）',
+    group: 'action',
+  },
+  {
+    id: 'openContentSearch',
+    label: '全局代码搜索',
+    key: 'f',
+    mod: true,
+    shift: true,
+    description: '打开工作区代码内容搜索面板（代码页）',
+    group: 'action',
+  },
 ]
+
+/** 打开工作区搜索面板的全局事件（ChatView 监听：切代码面板 + 打开搜索侧栏） */
+export const OPEN_CODE_SEARCH_EVENT = 'spark:open-code-search'
 
 /* ============================================================
    Persistence
@@ -93,7 +220,9 @@ const STORAGE_KEY = 'spark-agent:shortcuts'
 const SHORTCUTS_VERSION_KEY = 'spark-agent:shortcuts-version'
 const SHORTCUTS_SCHEMA_VERSION = 4
 
-function migrateLegacyShortcutBindings(saved: Partial<ShortcutBinding>[]): Partial<ShortcutBinding>[] {
+function migrateLegacyShortcutBindings(
+  saved: Partial<ShortcutBinding>[],
+): Partial<ShortcutBinding>[] {
   const savedVersion = Number(localStorage.getItem(SHORTCUTS_VERSION_KEY) ?? '0')
   if (savedVersion >= SHORTCUTS_SCHEMA_VERSION) return saved
 
@@ -145,6 +274,11 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
   if (target.isContentEditable) return true
   return false
+}
+
+/** Monaco 内的 Cmd/Ctrl+F 必须留给编辑器自身的单文件查找。 */
+export function isMonacoEditorTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('.monaco-editor') != null
 }
 
 /* ============================================================
@@ -200,13 +334,7 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
     // Shift+Ctrl+R 保留给 Electron 自己的硬刷新（带 cache-bypass），
     // 留作「真的想 reload 应用」的逃生口。
     const modRPressed = isMac ? e.metaKey : e.ctrlKey
-    if (
-      modRPressed &&
-      !e.shiftKey &&
-      !e.altKey &&
-      e.key.toLowerCase() === 'r' &&
-      !e.repeat
-    ) {
+    if (modRPressed && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r' && !e.repeat) {
       // 在 overlay 打开时（命令面板、权限弹窗等）不接管刷新，
       // 让用户沿用浏览器原生的 reload 行为（一般用不上，但更安全）。
       const overlayOpen = actionsRef.current.hasOverlayOpen?.() ?? false
@@ -219,20 +347,24 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
     }
 
     const shortcuts = shortcutsRef.current
-    const { setTweak, onSearchFocus, onNewSession, onQuickTask, onToggleSidebar, hasOverlayOpen } = actionsRef.current
+    const { setTweak, onSearchFocus, onNewSession, onQuickTask, onToggleSidebar, hasOverlayOpen } =
+      actionsRef.current
 
     for (const sc of shortcuts) {
       const modPressed = isMac ? e.metaKey : e.ctrlKey
       const modMatch = sc.mod ? modPressed : !modPressed
 
-      if (
-        e.key === sc.key &&
-        modMatch &&
-        sc.shift === e.shiftKey
-      ) {
+      // Shift 按下时 e.key 为大写（如 Cmd+Shift+F → 'F'），shift 条目按小写比较
+      const keyMatch = e.key === sc.key || (sc.shift && e.key.toLowerCase() === sc.key)
+      if (keyMatch && modMatch && sc.shift === e.shiftKey) {
         // For mod-required shortcuts, skip if input is focused, except command
-        // palette and app search.
-        if (sc.mod && sc.id !== 'search' && sc.id !== 'openPalette' && isEditableTarget(e.target)) continue
+        // palette, app search, and workspace search (主流编辑器里 Cmd+P 需在输入态可用).
+        const editableExempt =
+          sc.id === 'search' ||
+          sc.id === 'openPalette' ||
+          sc.id === 'openFileSearch' ||
+          sc.id === 'openContentSearch'
+        if (sc.mod && !editableExempt && isEditableTarget(e.target)) continue
         // For Escape, always handle (even in inputs)
         if (sc.id === 'escape' && isEditableTarget(e.target)) {
           // Let the input handle Escape naturally (blur, etc.) — only close overlays
@@ -241,6 +373,10 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
 
         // For Escape with no overlay open, skip entirely
         if (sc.id === 'escape' && !hasOverlayOpen?.()) continue
+
+        // 必须在 preventDefault 之前放行，否则 Monaco 虽不打开命令面板，
+        // 浏览器事件仍已被取消，编辑器自身的 find action 无法收到快捷键。
+        if (sc.id === 'openPalette' && isMonacoEditorTarget(e.target)) return
 
         e.preventDefault()
         e.stopPropagation()
@@ -252,6 +388,14 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
             setTweak('paletteMode', 'global')
             setTweak('showPalette', true)
             break
+          case 'openFileSearch':
+          case 'openContentSearch': {
+            // 打开工作区搜索面板：文件名（Cmd/Ctrl+P）/ 内容（Cmd/Ctrl+Shift+F）。
+            // 由 ChatView 监听事件完成「切代码面板 + 打开搜索侧栏」，SearchPanel 聚焦输入框。
+            const mode = sc.id === 'openFileSearch' ? 'files' : 'content'
+            window.dispatchEvent(new CustomEvent(OPEN_CODE_SEARCH_EVENT, { detail: { mode } }))
+            break
+          }
           case 'newSession':
             if (onNewSession) {
               onNewSession()
