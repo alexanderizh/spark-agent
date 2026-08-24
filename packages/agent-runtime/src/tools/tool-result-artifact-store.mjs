@@ -16,7 +16,7 @@ const TOOL_RESULT_EXTENSIONS = ['.txt', '.json']
 const TOOL_RESULT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 const TOOL_RESULT_TOTAL_BYTES = 512 * 1024 * 1024
 const ERROR_LINE_PATTERN =
-  /(?:^|\b)(?:error|failed|failure|fatal|exception|traceback|panic|caused by|assertion|segmentation fault|syntaxerror|typeerror|referenceerror|ts\d{3,5}|npm err| err_|✗|×)(?:\b|:)/i
+  /(?:^|\b)(?:error|failed|failure|fatal|exception|traceback|panic|caused by|assertion|segmentation fault|syntaxerror|typeerror|referenceerror|ts\d{3,5}|npm err|\u2009err_|✗|×)(?:\b|:)/i
 
 export function governMcpToolResult(result, options) {
   const serialized = serializeToolResult(result)

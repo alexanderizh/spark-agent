@@ -9,38 +9,37 @@ const {
   hardenElectronFuses,
   pruneOnnxForContext,
   signWindowsStandaloneNodeRuntime,
-} =
-  require('../../../../scripts/after-pack.js') as {
-    pruneMacElectronLocales: (appPath: string) => Promise<{ kept: string[]; removed: number }>
-    hardenElectronFuses: (
-      context: unknown,
-      dependencies: {
-        flipFuses(path: string, options: Record<string | number, unknown>): Promise<void>
-      },
-    ) => Promise<void>
-    signWindowsStandaloneNodeRuntime: (
-      context: unknown,
-      runtime: { executablePath: string },
-      dependencies: {
-        environment: NodeJS.ProcessEnv
-        sign: (packager: unknown, executablePath: string) => Promise<void>
-        inspect: (
-          executablePath: string,
-          options: { expectedPublisherThumbprint: string },
-        ) => Promise<{ publisherThumbprint: string; timestamped: boolean }>
-      },
-    ) => Promise<{ signed: boolean }>
-    pruneOnnxForContext: (
-      context: unknown,
-      dependencies: {
-        prunePackagedOnnxRuntime: (
-          resourcesPath: string,
-          platform: string,
-          arch: string,
-        ) => Promise<{ kept: string[]; removed: string[] }>
-      },
-    ) => Promise<{ kept: string[]; removed: string[] }>
-  }
+} = require('../../../../scripts/after-pack.js') as {
+  pruneMacElectronLocales: (appPath: string) => Promise<{ kept: string[]; removed: number }>
+  hardenElectronFuses: (
+    context: unknown,
+    dependencies: {
+      flipFuses(path: string, options: Record<string | number, unknown>): Promise<void>
+    },
+  ) => Promise<void>
+  signWindowsStandaloneNodeRuntime: (
+    context: unknown,
+    runtime: { executablePath: string },
+    dependencies: {
+      environment: NodeJS.ProcessEnv
+      sign: (packager: unknown, executablePath: string) => Promise<void>
+      inspect: (
+        executablePath: string,
+        options: { expectedPublisherThumbprint: string },
+      ) => Promise<{ publisherThumbprint: string; timestamped: boolean }>
+    },
+  ) => Promise<{ signed: boolean }>
+  pruneOnnxForContext: (
+    context: unknown,
+    dependencies: {
+      prunePackagedOnnxRuntime: (
+        resourcesPath: string,
+        platform: string,
+        arch: string,
+      ) => Promise<{ kept: string[]; removed: string[] }>
+    },
+  ) => Promise<{ kept: string[]; removed: string[] }>
+}
 const { beforePack } = require('../../../../scripts/before-pack.js') as {
   beforePack: (context: {
     electronPlatformName: string
@@ -234,38 +233,25 @@ describe('after-pack ONNX runtime pruning', () => {
     expect(result.removed.sort()).toEqual(['darwin/x64', 'linux', 'win32'])
     expect(
       existsSync(
-        join(
-          root,
-          'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64',
-        ),
+        join(root, 'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64'),
       ),
     ).toBe(true)
     expect(
-      existsSync(
-        join(root, 'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/linux'),
-      ),
+      existsSync(join(root, 'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/linux')),
     ).toBe(false)
     expect(
-      existsSync(
-        join(root, 'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/win32'),
-      ),
+      existsSync(join(root, 'app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/win32')),
     ).toBe(false)
   })
 
   it('excludes the unused ONNX web runtime from production packaging', () => {
-    const config = readFileSync(
-      join(__dirname, '../../../../electron-builder.yml'),
-      'utf8',
-    )
+    const config = readFileSync(join(__dirname, '../../../../electron-builder.yml'), 'utf8')
 
     expect(config).toContain("'!**/node_modules/onnxruntime-web/**'")
   })
 
   it('keeps the optional depth runtime dependency closure out of the base package', () => {
-    const config = readFileSync(
-      join(__dirname, '../../../../electron-builder.yml'),
-      'utf8',
-    )
+    const config = readFileSync(join(__dirname, '../../../../electron-builder.yml'), 'utf8')
     const packageJson = JSON.parse(
       readFileSync(join(__dirname, '../../../../package.json'), 'utf8'),
     ) as {
@@ -280,28 +266,19 @@ describe('after-pack ONNX runtime pruning', () => {
   })
 
   it('configures the beforePack hook that filters foreign ONNX native runtimes', () => {
-    const config = readFileSync(
-      join(__dirname, '../../../../electron-builder.yml'),
-      'utf8',
-    )
+    const config = readFileSync(join(__dirname, '../../../../electron-builder.yml'), 'utf8')
 
     expect(config).toContain('beforePack: scripts/before-pack.js')
   })
 
   it('excludes local Playwright output from release packaging', () => {
-    const config = readFileSync(
-      join(__dirname, '../../../../electron-builder.yml'),
-      'utf8',
-    )
+    const config = readFileSync(join(__dirname, '../../../../electron-builder.yml'), 'utf8')
 
     expect(config).toContain("'!output{,/**/*}'")
   })
 
   it('keeps optional Office Viewer assets out of the base package', () => {
-    const config = readFileSync(
-      join(__dirname, '../../../../electron-builder.yml'),
-      'utf8',
-    )
+    const config = readFileSync(join(__dirname, '../../../../electron-builder.yml'), 'utf8')
 
     expect(config).toContain("'!out/renderer/file-viewer{,/**/*}'")
   })
@@ -319,9 +296,7 @@ describe('after-pack ONNX runtime pruning', () => {
       },
       {
         prunePackagedOnnxRuntime: async (resourcesPath, platform, arch) => {
-          expect(resourcesPath).toBe(
-            '/tmp/spark-pack/Spark Agent.app/Contents/Resources',
-          )
+          expect(resourcesPath).toBe('/tmp/spark-pack/Spark Agent.app/Contents/Resources')
           return { kept: ['darwin/arm64'], removed: ['linux', 'win32'] }
         },
       },
@@ -537,10 +512,7 @@ describe('after-pack Native Host artifact manifest', () => {
         timestamped: true,
       },
     })
-    expect(sign).toHaveBeenCalledWith(
-      packager,
-      'C:\\SparkWork\\resources\\runtime\\node\\node.exe',
-    )
+    expect(sign).toHaveBeenCalledWith(packager, 'C:\\SparkWork\\resources\\runtime\\node\\node.exe')
     expect(inspect).toHaveBeenCalledWith(
       'C:\\SparkWork\\resources\\runtime\\node\\node.exe',
       expect.objectContaining({ expectedPublisherThumbprint: 'd'.repeat(64) }),
@@ -731,17 +703,12 @@ TeamIdentifier=ABCDE12345
     )
     expect(runCommand.mock.calls[0]?.[1]).not.toContain('D:\\SparkComputerHost.exe')
     expect(runCommand.mock.calls[0]?.[1]).toEqual(
-      expect.arrayContaining([
-        '-Command',
-        expect.stringContaining('$expectedSelfSignedPublisher'),
-      ]),
+      expect.arrayContaining(['-Command', expect.stringContaining('$expectedSelfSignedPublisher')]),
     )
     expect(runCommand.mock.calls[0]?.[1]).not.toEqual(
       expect.arrayContaining([
         '-Command',
-        expect.stringContaining(
-          '[System.Security.Cryptography.X509Certificates.StoreName]::Root',
-        ),
+        expect.stringContaining('[System.Security.Cryptography.X509Certificates.StoreName]::Root'),
       ]),
     )
   })
@@ -754,7 +721,7 @@ TeamIdentifier=ABCDE12345
 
     expect(workflow).toContain('"os":"macos-26-intel","name":"mac-x64"')
     expect(workflow).toContain('"os":"windows-2022","name":"win-x64"')
-    expect(workflow).not.toContain('win-arm64')
+    expect(workflow).not.toContain('"name":"win-arm64"')
     expect(workflow).not.toContain('SPARK_WINDOWS_PUBLISHER_THUMBPRINT: ${{ secrets.')
   })
 

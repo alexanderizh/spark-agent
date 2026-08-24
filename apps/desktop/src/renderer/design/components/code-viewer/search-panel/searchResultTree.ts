@@ -130,14 +130,15 @@ export function flattenSearchResultTree(
   const visit = (node: SearchResultTreeNode, depth: number): void => {
     const key = getSearchResultTreeNodeKey(node.kind, node.path)
     const collapsed = collapsedNodeKeys.has(key)
-    rows.push({ kind: node.kind, key, depth, node, collapsed })
-
-    if (collapsed) return
     if (node.kind === 'directory') {
+      rows.push({ kind: 'directory', key, depth, node, collapsed })
+      if (collapsed) return
       for (const child of node.children) visit(child, depth + 1)
       return
     }
-    if (!includeMatches) return
+
+    rows.push({ kind: 'file', key, depth, node, collapsed })
+    if (collapsed || !includeMatches) return
 
     node.matches.forEach((match, index) => {
       rows.push({

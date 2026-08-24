@@ -45,11 +45,7 @@ function targetArchitecture(value) {
 }
 
 function findLockEntry(lock, platform, arch) {
-  return (
-    lock.targets.find(
-      (target) => target.platform === platform && target.arch === arch,
-    ) ?? null
-  )
+  return lock.targets.find((target) => target.platform === platform && target.arch === arch) ?? null
 }
 
 async function resolveSourceArchive(entry, environment) {
@@ -95,7 +91,7 @@ function destinationRoot(context) {
   const platform = context.electronPlatformName
   if (platform === 'darwin') {
     const appName = context.packager.appInfo.productFilename
-    return path.join(context.appOutDir, `${appName}.app`, 'Contents`, 'Resources', 'runtime', 'git')
+    return path.join(context.appOutDir, `${appName}.app`, 'Contents', 'Resources', 'runtime', 'git')
   }
   return path.join(context.appOutDir, 'resources', 'runtime', 'git')
 }
@@ -172,12 +168,7 @@ async function packageGitRuntime(context, options = {}) {
 
   const root = destinationRoot(context)
   await extractArchive(archivePath, root)
-  const verified = await verifyPackagedGitRuntime(
-    root,
-    entry,
-    entry.version,
-    environment,
-  )
+  const verified = await verifyPackagedGitRuntime(root, entry, entry.version, environment)
 
   await fs.writeFile(
     path.join(root, 'git-runtime.json'),
@@ -196,9 +187,7 @@ async function packageGitRuntime(context, options = {}) {
     'utf-8',
   )
 
-  console.log(
-    `[after-pack] Git runtime: ${entry.artifactId} -> ${root} (git ${verified.version})`,
-  )
+  console.log(`[after-pack] Git runtime: ${entry.artifactId} -> ${root} (git ${verified.version})`)
   return { root, ...verified, artifactId: entry.artifactId }
 }
 
