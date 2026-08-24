@@ -89,6 +89,18 @@ export function syncCanvasTaskRuntimeToNode(task: CanvasTask, data: CanvasNodeDa
   if (task.inputBindings) data.inputBindings = task.inputBindings.map((binding) => ({ ...binding }))
 }
 
+export function syncCanvasTaskPrimaryOutputToNode(
+  task: Pick<CanvasTask, 'status' | 'outputNodeIds' | 'outputAssetIds'>,
+  data: CanvasNodeData,
+): boolean {
+  if (task.status !== 'completed') return false
+  const primaryOutputId = task.outputNodeIds[0] ?? task.outputAssetIds[0]
+  if (!primaryOutputId) return false
+  data.primaryOutputId = primaryOutputId
+  data.primaryOutputSelection = 'auto_latest'
+  return true
+}
+
 function syncOptionalString(
   data: CanvasNodeData,
   key: 'agentId' | 'providerProfileId' | 'manifestId' | 'modelId',

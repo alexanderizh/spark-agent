@@ -238,6 +238,10 @@ describe('canvas media output integrity', () => {
       outputAssetIds: [snapshot.assets[0]?.id],
       outputNodeIds: [],
     })
+    expect(snapshot.nodes.find((node) => node.id === 'operation-1')?.data).toMatchObject({
+      primaryOutputId: snapshot.assets[0]?.id,
+      primaryOutputSelection: 'auto_latest',
+    })
     expect(snapshot.nodes.some((node) => node.type === 'video')).toBe(false)
   })
 

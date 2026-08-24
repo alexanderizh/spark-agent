@@ -107,6 +107,7 @@ import {
   appendCanvasTaskModelOutputEvent,
   initialCanvasTaskRuntimeEvents,
   syncCanvasNodeRuntimeData,
+  syncCanvasTaskPrimaryOutputToNode,
   syncCanvasTaskRuntimeToNode,
 } from './canvasTaskLifecycle'
 import { materializeCanvasTaskInputFiles } from './canvasWorkspaceTaskInput'
@@ -5093,6 +5094,7 @@ export const canvasApi = {
         ...(task.providerProfileId ? { providerProfileId: task.providerProfileId } : {}),
         ...(task.modelId ? { modelId: task.modelId } : {}),
       }
+      syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)
       taskNode.updatedAt = at
     }
 
@@ -6771,6 +6773,7 @@ export const canvasApi = {
           message: `已按 ${splitEpisodeCount} 集拆分输出`,
         }
         syncCanvasTaskRuntimeToNode(task, taskNode.data)
+        syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)
         taskNode.updatedAt = at
       }
       updateProjectCounts(db, projectId)
@@ -6872,6 +6875,7 @@ export const canvasApi = {
         message: '文本已生成',
       }
       syncCanvasTaskRuntimeToNode(task, taskNode.data)
+      syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)
       taskNode.updatedAt = at
     }
     db.assets.push(asset)
@@ -7217,6 +7221,7 @@ export const canvasApi = {
         message: `${response.assets.length} 个产物已写回画布`,
       }
       syncCanvasTaskRuntimeToNode(task, taskNode.data)
+      syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)
       taskNode.updatedAt = at
     }
     updateProjectCounts(db, projectId)

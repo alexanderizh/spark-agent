@@ -275,7 +275,7 @@ export type CanvasNodeData = {
   outputMode?: CanvasOperationOutputMode
   /** 默认资源操作与候选型下游传参所使用的主产物。可匹配 output/node/asset id。 */
   primaryOutputId?: string
-  /** 主产物选择策略；手动选择后即使再次运行也保留采用项。 */
+  /** 主产物选择策略；手动选择可切换历史项，新任务成功产出后恢复为最新项。 */
   primaryOutputSelection?: CanvasOperationOutputSelectionPolicy
   /** 从操作节点展开出的资产引用节点；同一 outputId 重复展开时复用现有引用。 */
   materializedOutput?: {

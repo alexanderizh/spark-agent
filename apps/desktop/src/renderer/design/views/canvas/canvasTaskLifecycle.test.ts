@@ -3,6 +3,7 @@ import {
   appendCanvasTaskRuntimeEvent,
   appendCanvasTaskModelOutputEvent,
   initialCanvasTaskRuntimeEvents,
+  syncCanvasTaskPrimaryOutputToNode,
   syncCanvasNodeRuntimeData,
   syncCanvasTaskRuntimeToNode,
 } from './canvasTaskLifecycle'
@@ -127,4 +128,45 @@ describe('canvas task lifecycle diagnostics', () => {
     expect(data.inputBindings?.[0]).toMatchObject({ role: 'first_frame' })
     expect(data.inputBindings).not.toBe(task.inputBindings)
   })
+
+  it('selects the first output from a newly completed multi-output task', () => {
+    const data: CanvasNodeData = {
+      primaryOutputId: 'old-output',
+      primaryOutputSelection: 'manual',
+    }
+
+    expect(
+      syncCanvasTaskPrimaryOutputToNode(
+        {
+          status: 'completed',
+          outputNodeIds: ['new-output-1', 'new-output-2'],
+          outputAssetIds: ['new-asset-1', 'new-asset-2'],
+        },
+        data,
+      ),
+    ).toBe(true)
+    expect(data).toMatchObject({
+      primaryOutputId: 'new-output-1',
+      primaryOutputSelection: 'auto_latest',
+    })
+  })
+
+  it.each([
+    { status: 'failed' as const, outputNodeIds: ['failed-output'], outputAssetIds: [] },
+    { status: 'completed' as const, outputNodeIds: [], outputAssetIds: [] },
+  ])(
+    'keeps the existing primary output for $status tasks without a usable success output',
+    (task) => {
+      const data: CanvasNodeData = {
+        primaryOutputId: 'old-output',
+        primaryOutputSelection: 'manual',
+      }
+
+      expect(syncCanvasTaskPrimaryOutputToNode(task, data)).toBe(false)
+      expect(data).toMatchObject({
+        primaryOutputId: 'old-output',
+        primaryOutputSelection: 'manual',
+      })
+    },
+  )
 })
