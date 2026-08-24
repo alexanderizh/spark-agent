@@ -9,6 +9,13 @@
  *   archive, or SHA256 mismatch aborts the pack - never fall back to "rely on
  *   the user's system Git".
  *
+ *   Sole exception: a lock whose targets array is empty means the Phase 0
+ *   artifacts have not been ingested yet and the bundled Git runtime is
+ *   globally disabled for the whole release line. The pack then skips the
+ *   runtime with an explicit warning (system Git stays the runtime source).
+ *   As soon as a single target is locked in, every release target must have
+ *   an entry - clearing individual entries to skip a platform is not possible.
+ *
  * Source archive resolution (in order):
  *   1. SPARK_GIT_RUNTIME_ARCHIVE  - absolute path to the verified archive
  *   2. SPARK_GIT_RUNTIME_DIR      - directory containing <artifactId>.<ext>
@@ -149,6 +156,14 @@ async function packageGitRuntime(context, options = {}) {
   const arch = targetArchitecture(context.arch)
   const environment = options.environment ?? process.env
   const lock = options.lock ?? (await loadGitRuntimeLock())
+
+  if (lock.targets.length === 0) {
+    console.warn(
+      '[after-pack] Git runtime lock has no targets: bundled Git runtime is not enabled ' +
+        'yet, skipping (releases rely on system Git until Phase 0 artifacts are locked in).',
+    )
+    return { skipped: true, platform, arch }
+  }
 
   const entry = findLockEntry(lock, platform, arch)
   if (!entry) {

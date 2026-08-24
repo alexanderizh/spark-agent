@@ -20,3 +20,4 @@
 1. 发布 job 中 target 在锁内无匹配条目时**直接失败**（fail closed），禁止退化为“依赖用户系统 Git”。
 2. 条目只能由 Phase 0 制品门禁通过后人工添加：上游签名校验、SBOM/provenance、CVE 扫描、公网 GET 复验 SHA256 全部通过。
 3. 归档内容必须是完整可重定向前缀：`bin/`、`libexec/git-core/`、`templates/`、CA bundle、许可证与第三方声明。
+4. 唯一例外：`targets` 为**空数组**时表示 Phase 0 制品尚未入库、内置 Git runtime 对整条发布线未启用，打包脚本跳过 runtime 交付并输出显式警告（发布继续依赖系统 Git）。只要锁内存在任何条目，规则 1 的 fail closed 对全部正式 target 生效；不允许通过删除单个平台条目来跳过该平台。
