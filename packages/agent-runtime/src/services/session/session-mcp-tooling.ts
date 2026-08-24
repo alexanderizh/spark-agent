@@ -41,6 +41,7 @@ import {
   writeMediaMcpRuntimeConfig,
 } from '../media/media-mcp-runtime-config.js'
 import { buildMediaGenerationSystemPrompt } from '../media/media-mcp-contract.js'
+import { ensureWorkspaceManagedDirIgnored } from '../../tools/workspace-git-ignore.mjs'
 import {
   buildImageGenerationSystemPrompt,
   resolveDebugMcpServerPath,
@@ -473,6 +474,8 @@ export class SessionMcpTooling {
     }
 
     const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'images')
+    // 多媒体产物目录可再生且体积大，best-effort 写入仓库本地忽略，避免被连带提交。
+    ensureWorkspaceManagedDirIgnored(workspaceRootPath, ['.spark-artifacts'])
     const providerName = config.imageProvider?.trim() || 'openai'
     const apiType = config.imageApiType ?? 'sync'
     return {
@@ -522,6 +525,8 @@ export class SessionMcpTooling {
     const [primary] = providers
     if (primary == null) return null
     const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'media')
+    // 同上：spark_media 统一媒体产物的落盘根目录，进入用户仓库前先确保被本地忽略。
+    ensureWorkspaceManagedDirIgnored(workspaceRootPath, ['.spark-artifacts'])
     const runtimeProviders = providers.map(({ apiKey: _apiKey, ...provider }, index) => ({
       ...provider,
       apiKeyEnv: `SPARK_MEDIA_API_KEY_${index}`,

@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 
+import { ensureWorkspaceManagedDirIgnored } from './workspace-git-ignore.mjs'
+
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/
 const SAFE_EXTENSION = /^\.[A-Za-z0-9]+$/
 
@@ -79,6 +81,10 @@ export function writeContentAddressedWorkspaceFile(params) {
     params.workspaceRoot,
     params.directorySegments,
   )
+  // 平台托管产物目录（tool-results / sub-app-sources 等内容寻址缓存）首次写入时，
+  // best-effort 写入仓库本地 .git/info/exclude，避免被 `git add .` 连带提交。
+  // 注意：.spark-agent/memory 不走本函数（memory-store 直写），不受此忽略影响。
+  ensureWorkspaceManagedDirIgnored(params.workspaceRoot, params.directorySegments)
   const sha256 = createHash('sha256').update(params.content, 'utf8').digest('hex')
   const fileName = `${sha256}${params.extension}`
   const targetPath = resolve(directory, fileName)

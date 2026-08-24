@@ -329,6 +329,27 @@ export function parseWorktreePromptMeta(raw: string): WorktreePromptMeta | null 
 }
 
 /**
+ * 工作区平台托管目录的 git 处理规则（有工作区的会话注入）。
+ *
+ * 目标：平台在用户项目内自动产生的目录不被 `git add .` 连带提交，同时不剥夺
+ * 用户对「项目记忆是否随仓库共享」的选择权：
+ * - 临时产物目录（tool-results / sub-app-sources / .spark-artifacts）由运行时
+ *   best-effort 写入 .git/info/exclude（见 tools/workspace-git-ignore.mjs），此处
+ *   引导 agent 在协助提交等时机主动排除、发现漏网时提醒；
+ * - `.spark-agent/memory/` 刻意不自动忽略，由 agent 在合适时机询问用户一次后决定。
+ */
+export const WORKSPACE_TEMP_DIRS_SYSTEM_PROMPT = [
+  '[Workspace Temp Dirs]',
+  '当前工作区内由平台自动产生的目录分两类，git 处理规则不同：',
+  '平台临时产物（绝不提交进用户项目）：',
+  '- `.spark-agent/tool-results/`（超长工具结果归档）、`.spark-agent/sub-app-sources/`（子应用源码导出）、`.spark-artifacts/`（多媒体产物）是可再生缓存，通常已被平台自动写入仓库本地忽略（.git/info/exclude）。',
+  '- 协助用户提交代码时主动排除这些目录；若发现其中某个目录仍被 git 跟踪或未被忽略，提醒用户将其加入忽略，未经用户同意不要修改项目的 .gitignore。',
+  '项目长期记忆（由用户决定是否共享）：',
+  '- `.spark-agent/memory/` 存放项目记忆，有随仓库版本化、团队共享的价值，平台不会自动忽略它。',
+  '- 当你在 git 仓库工作区发现该目录未被忽略且未被跟踪、且恰逢相关时机（协助用户提交代码、用户提到记忆功能、或你即将写入项目记忆）时，先询问一次用户：项目记忆是随仓库提交共享，还是加入 .gitignore？按用户答复执行；已被忽略或已被跟踪都视为用户已决策，不再重复询问。',
+].join('\n')
+
+/**
  * 会话 worktree 状态上报引导（静态文本，全 adapter 注入）。
  * 告知 agent 在进入/退出 worktree 开发时必须调用 set_worktree_state 工具，
  * 否则应用 UI 会继续显示主仓库分支，误导用户。
