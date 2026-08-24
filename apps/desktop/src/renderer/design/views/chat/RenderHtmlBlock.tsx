@@ -1,11 +1,18 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import { MarkdownCodeBlock } from '../../components/MarkdownCodeBlock'
 import { BlockTrafficHeader } from '../../components/BlockTrafficHeader'
-import { buildRenderHtmlSrcDoc, type HtmlOpenMode } from '../../services/render-html'
+import {
+  buildHtmlRenderToken,
+  buildRenderHtmlSrcDoc,
+  htmlRenderDocUrl,
+  putHtmlRuntimeDoc,
+  releaseHtmlRuntimeDoc,
+  type HtmlOpenMode,
+} from '../../services/render-html'
 import type { UIBlock } from '../../services/event-mapper'
 import './RenderHtmlBlock.less'
 
@@ -62,11 +69,9 @@ export function RenderHtmlBlock({
     useContext(HtmlRenderContext)
   const [sourceOpen, setSourceOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
-  const [loadedSrcDoc, setLoadedSrcDoc] = useState<string | null>(null)
-  const [frameErrorState, setFrameErrorState] = useState<{
-    srcDoc: string
-    message: string
-  } | null>(null)
+  const [frame, setFrame] = useState<{ src: string; version: number } | null>(null)
+  const [loadedVersion, setLoadedVersion] = useState<number | null>(null)
+  const [frameError, setFrameError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const isSidePanel = variant === 'side-panel'
@@ -75,9 +80,33 @@ export function RenderHtmlBlock({
     activeRemotePresentation?.blockId === block.toolCallId ? activeRemotePresentation.mode : null
   const isOpenElsewhere = isOpenInSidePanel || remoteOpenMode != null
   const srcDoc = useMemo(() => buildRenderHtmlSrcDoc(block, resolvedTheme), [block, resolvedTheme])
+  const docToken = useMemo(() => buildHtmlRenderToken(block.toolCallId), [block.toolCallId])
 
-  const frameLoaded = loadedSrcDoc === srcDoc
-  const frameError = frameErrorState?.srcDoc === srcDoc ? frameErrorState.message : null
+  // 合成文档 → 主进程登记 → capability-asset 导航地址（机制同子应用，见
+  // main/services/RuntimeDocRegistry.ts）。srcDoc 变化时复用 token 覆盖登记，
+  // 递增 version 强制 iframe 重新加载。卸载时 release：同 token 的其他展示
+  // 入口（侧面板/全屏）若仍挂载，已加载内容不受影响，其下次重建会重新 put。
+  const docVersionRef = useRef(0)
+  useEffect(() => {
+    let cancelled = false
+    docVersionRef.current += 1
+    const version = docVersionRef.current
+    putHtmlRuntimeDoc(docToken, srcDoc)
+      .then(() => {
+        if (cancelled) return
+        setFrameError(null)
+        setFrame({ src: htmlRenderDocUrl(docToken, version), version })
+      })
+      .catch(() => {
+        if (!cancelled) setFrameError('HTML 沙箱文档登记失败')
+      })
+    return () => {
+      cancelled = true
+      releaseHtmlRuntimeDoc(docToken)
+    }
+  }, [docToken, srcDoc])
+
+  const frameLoaded = frame != null && loadedVersion === frame.version
 
   useEffect(() => {
     if (!fullscreen) return
@@ -213,17 +242,19 @@ export function RenderHtmlBlock({
       ) : (
         <div className="render-html-frame-wrap" style={{ height: `${block.height}px` }}>
           {!frameLoaded && <div className="render-html-loading">正在渲染 HTML…</div>}
-          <iframe
-            title={block.title}
-            className="render-html-frame"
-            sandbox="allow-scripts"
-            srcDoc={srcDoc}
-            onLoad={() => {
-              setLoadedSrcDoc(srcDoc)
-              setFrameErrorState(null)
-            }}
-            onError={() => setFrameErrorState({ srcDoc, message: '隔离文档加载失败' })}
-          />
+          {frame != null && (
+            <iframe
+              title={block.title}
+              className="render-html-frame"
+              sandbox="allow-scripts"
+              src={frame.src}
+              onLoad={() => {
+                setLoadedVersion(frame.version)
+                setFrameError(null)
+              }}
+              onError={() => setFrameError('隔离文档加载失败')}
+            />
+          )}
         </div>
       )}
 
@@ -268,13 +299,17 @@ export function RenderHtmlBlock({
                 <div className="render-html-muted-state" role="status">
                   等待 HTML 安全校验…
                 </div>
-              ) : (
+              ) : frame != null ? (
                 <iframe
                   title={`${block.title}（全屏）`}
                   className="render-html-frame"
                   sandbox="allow-scripts"
-                  srcDoc={srcDoc}
+                  src={frame.src}
                 />
+              ) : (
+                <div className="render-html-muted-state" role="status">
+                  正在渲染 HTML…
+                </div>
               )}
             </div>
           </div>

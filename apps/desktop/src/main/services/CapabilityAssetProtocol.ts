@@ -4,6 +4,7 @@ import { lstat, realpath } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { getOptionalCapabilityManager } from '../ipc/registerOptionalCapabilityIpc.js'
 import { createSafeFileResponse } from './SafeFileProtocol.js'
+import { HTML_RENDER_RUNTIME_HOST, takeHtmlRenderRuntimeDoc } from './HtmlRenderRuntimeDocs.js'
 import { SUB_APP_RUNTIME_HOST, takeSubAppRuntimeDoc } from './SubAppRuntimeDocs.js'
 
 export const CAPABILITY_ASSET_SCHEME = 'capability-asset'
@@ -21,6 +22,12 @@ export const CAPABILITY_ASSET_PRIVILEGED_SCHEME: CustomScheme = {
 }
 
 type ResolveAssetRoot = (capabilityId: 'office-viewer') => Promise<string | null>
+
+/** 沙箱文档域：host → 按命中的 token 取文档（见各 RuntimeDocs 服务）。 */
+const RUNTIME_DOC_HOSTS: Record<string, (token: string) => string | null> = {
+  [SUB_APP_RUNTIME_HOST]: takeSubAppRuntimeDoc,
+  [HTML_RENDER_RUNTIME_HOST]: takeHtmlRenderRuntimeDoc,
+}
 
 export async function resolveCapabilityAssetPath(
   requestUrl: string,
@@ -68,10 +75,11 @@ export function registerCapabilityAssetProtocol(): void {
   protocol.handle(CAPABILITY_ASSET_SCHEME, async (request) => {
     try {
       const url = new URL(request.url)
-      // 子应用沙箱文档：内存登记、按 token 提供（见 SubAppRuntimeDocs）。
-      if (url.hostname === SUB_APP_RUNTIME_HOST) {
+      // 沙箱文档：内存登记、按 token 提供（SubAppRuntimeDocs / HtmlRenderRuntimeDocs）。
+      const takeRuntimeDoc = RUNTIME_DOC_HOSTS[url.hostname]
+      if (takeRuntimeDoc != null) {
         const token = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
-        const html = takeSubAppRuntimeDoc(token)
+        const html = takeRuntimeDoc(token)
         if (html == null) return new Response('Not Found', { status: 404 })
         return new Response(html, {
           status: 200,

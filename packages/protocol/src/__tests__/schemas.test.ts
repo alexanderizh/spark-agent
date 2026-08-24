@@ -941,6 +941,25 @@ describe('IPC schemas', () => {
     ).toThrow()
   })
 
+  it('validates HTML render runtime doc tokens and document bounds', () => {
+    expect(
+      IpcSchemaRegistry['html:put-runtime-doc'].parse({
+        token: 'hr-html-1-abc123de',
+        document: '<!doctype html><html></html>',
+      }),
+    ).toEqual({ token: 'hr-html-1-abc123de', document: '<!doctype html><html></html>' })
+    expect(() =>
+      IpcSchemaRegistry['html:put-runtime-doc'].parse({ token: 'bad token!', document: 'x' }),
+    ).toThrow()
+    expect(() =>
+      IpcSchemaRegistry['html:put-runtime-doc'].parse({
+        token: 'hr-html-1-abc123de',
+        document: 'x'.repeat(220_001),
+      }),
+    ).toThrow()
+    expect(() => IpcSchemaRegistry['html:release-runtime-doc'].parse({ token: '' })).toThrow()
+  })
+
   it('validates sub-app download history payloads', () => {
     expect(
       IpcSchemaRegistry['browser:sub-app-reveal-download'].parse({
