@@ -4873,6 +4873,7 @@ function ArchivedSection() {
   const [batchDeleting, setBatchDeleting] = useState(false)
   const { toast } = useToast()
   const { requestConfirm } = useApp()
+  const { refreshData } = useSessionSidebar()
 
   const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
   const { invoke: listSessions } = useIpcInvoke('session:list')
@@ -4908,7 +4909,7 @@ function ArchivedSection() {
     try {
       await updateWorkspace({ workspaceId: workspace.id, archived: false })
       toast.success(`项目「${workspace.name}」已恢复`)
-      refresh()
+      await Promise.all([refresh(), refreshData()])
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '恢复项目失败')
     }
@@ -4918,7 +4919,7 @@ function ArchivedSection() {
     try {
       await updateSession({ sessionId: session.id, archived: false })
       toast.success(`会话「${session.title || '新会话'}」已恢复`)
-      refresh()
+      await Promise.all([refresh(), refreshData()])
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '恢复会话失败')
     }
