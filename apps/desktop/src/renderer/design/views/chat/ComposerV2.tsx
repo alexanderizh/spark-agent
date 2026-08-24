@@ -635,6 +635,8 @@ export function ComposerV2({
   onRefreshBranches,
   onFetchBranches,
   onCreateBranch,
+  onCheckoutBranchTag,
+  onCreateBranchFromTag,
   onCancelSession,
   onSent,
   showProjectPicker,
@@ -724,6 +726,9 @@ export function ComposerV2({
   onRefreshBranches?: () => void
   onFetchBranches?: () => Promise<void>
   onCreateBranch?: (branch: string) => Promise<void>
+  // 检出标签（detached）与从标签创建分支；两者都提供时分支弹窗才显示标签分组
+  onCheckoutBranchTag?: (tag: string) => Promise<boolean>
+  onCreateBranchFromTag?: (tag: string, branch: string) => Promise<boolean>
   onCancelSession: (sessionId: SessionId) => void | Promise<void>
   onSent: (sessionId: SessionId, started?: boolean) => void
   // 项目选择器相关（仅在空会话下使用）
@@ -2516,6 +2521,7 @@ export function ComposerV2({
     agent: 'Agent',
     mcp: 'MCP',
     skill: '技能',
+    'project-skill': '项目技能',
     resource: '资源',
     team: '团队',
     utility: '工具',
@@ -2532,6 +2538,7 @@ export function ComposerV2({
     'agent',
     'mcp',
     'skill',
+    'project-skill',
     'resource',
     'team',
     'utility',
@@ -2584,12 +2591,13 @@ export function ComposerV2({
 
   const refreshSlashCommands = useCallback(async () => {
     try {
-      const res = await window.spark.invoke('command:list', {})
+      const sid = session?.id
+      const res = await window.spark.invoke('command:list', sid != null ? { sessionId: sid } : {})
       setSlashCmds(res.commands ?? [])
     } catch {
       // keep the previous command cache if refresh fails
     }
-  }, [])
+  }, [session?.id])
 
   // 弹窗开关状态必须与击键同拍置位：若先 await 命令列表 IPC 再 setSlashOpen(true)，
   // 输入 `/` 后立刻回车的 keydown 会落在 slashOpen 仍为 false 的窗口里，
@@ -3625,7 +3633,9 @@ export function ComposerV2({
                           {cmd.layer === 'sdk'
                             ? 'SDK'
                             : cmd.layer === 'skill'
-                              ? '技能'
+                              ? cmd.group === 'project-skill'
+                                ? '项目'
+                                : '技能'
                               : cmd.layer === 'custom'
                                 ? '自定义'
                                 : '内置'}
@@ -3691,7 +3701,6 @@ export function ComposerV2({
         )}
         {activeQuickReplies != null &&
           !isBusy &&
-          value.trim().length === 0 &&
           attachments.length === 0 &&
           sessionReferences.length === 0 && (
             <QuickReplySuggestions
@@ -4015,6 +4024,10 @@ export function ComposerV2({
                   {...(onCreateBranch !== undefined ? { onCreateBranch } : {})}
                   {...(onRefreshBranches !== undefined ? { onOpen: onRefreshBranches } : {})}
                   {...(onFetchBranches !== undefined ? { onFetch: onFetchBranches } : {})}
+                  {...(onCheckoutBranchTag !== undefined
+                    ? { onCheckoutTag: onCheckoutBranchTag }
+                    : {})}
+                  {...(onCreateBranchFromTag !== undefined ? { onCreateBranchFromTag } : {})}
                 />
               )}
             </div>
@@ -4059,6 +4072,7 @@ export function ComposerV2({
             onOpenSkillStore={onOpenSkillStore}
             onAddContextFiles={() => void handleAddContextFiles()}
             onAddSessionReference={() => setSessionReferencePickerOpen(true)}
+            sessionId={session?.id ?? null}
             onInsertSlashCommand={() => {
               // 打开斜杠命令面板：保留已有输入，不覆盖 value。
               // 弹窗以全量列表呈现；选中命令后由 selectSlashCmd 在当前光标处增量插入。

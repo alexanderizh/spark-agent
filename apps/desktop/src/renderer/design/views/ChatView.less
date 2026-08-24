@@ -660,6 +660,293 @@
   cursor: pointer;
 }
 
+/* ---------- 提交范围：文件树选择器 ---------- */
+
+.git-commit-scope-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm);
+  margin: 0 var(--pad-lg) var(--pad-sm);
+  font-size: var(--font-sm);
+}
+
+.git-commit-scope-label {
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.git-commit-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 20px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.git-commit-scope-chip.is-empty {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+.git-commit-scope-reset,
+.git-commit-scope-toggle {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.git-commit-scope-reset:hover,
+.git-commit-scope-toggle:hover {
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+  color: var(--text-strong);
+}
+
+.git-commit-scope-reset:disabled,
+.git-commit-scope-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.git-commit-scope-toggle {
+  margin-left: auto;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+}
+
+.git-commit-scope-toggle:hover {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  color: var(--primary);
+}
+
+.git-scope-tree-panel {
+  display: flex;
+  flex-direction: column;
+  margin: 0 var(--pad-lg) var(--pad-sm);
+  border: 1px solid var(--divider);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.git-scope-tree-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
+}
+
+.git-scope-tree-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  color: var(--text-faint);
+}
+
+.git-scope-tree-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  font-size: var(--font-sm);
+  outline: none;
+}
+
+.git-scope-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.git-scope-search-clear:hover {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text-strong);
+}
+
+.git-scope-tree-bulk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.git-scope-tree-bulk button {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.git-scope-tree-bulk button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text-strong);
+}
+
+.git-scope-tree-bulk button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.git-scope-tree-body {
+  max-height: 240px;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.git-scope-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding-right: 10px;
+  color: var(--text);
+  font-size: var(--font-sm);
+  user-select: none;
+  cursor: pointer;
+}
+
+.git-scope-tree-row:hover {
+  background: var(--hover);
+}
+
+.git-scope-tree-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+  outline-offset: -2px;
+}
+
+.git-scope-tree-row input[type='checkbox'] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.git-scope-tree-row.is-selected {
+  color: var(--text-strong);
+}
+
+.git-scope-caret {
+  display: inline-flex;
+  align-items: center;
+  width: 12px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.git-scope-dir-name {
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-scope-dir-count {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.git-scope-staged-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--primary);
+  flex-shrink: 0;
+}
+
+.git-scope-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.git-scope-status-badge.mod {
+  background: color-mix(in srgb, #eab308 18%, transparent);
+  color: #ca8a04;
+}
+
+.git-scope-status-badge.add {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+}
+
+.git-scope-status-badge.del {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
+.git-scope-file-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-scope-file-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.git-scope-tree-empty {
+  padding: 18px 0;
+  color: var(--text-faint);
+  font-size: var(--font-sm);
+  text-align: center;
+}
+
 .git-action-list {
   margin-top: 0;
   padding-top: var(--pad-xs);
@@ -839,7 +1126,7 @@
   gap: 8px;
   width: 100%;
   min-height: 34px;
-  margin-top: 6px;
+  margin-top: 0px;
   padding: 6px 8px;
   border: 0;
   border-radius: var(--r-sm);
@@ -863,7 +1150,7 @@
   gap: 4px;
   width: 100%;
   min-height: 34px;
-  margin-top: 6px;
+  margin-top: 0px;
   padding: 0 4px 0 8px;
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--text) 4%, transparent);
@@ -907,6 +1194,124 @@
 
 .git-create-branch-inline-btn.confirm:not(:disabled) {
   color: var(--primary);
+}
+
+/* 标签分组：tag 行（复用 .git-branch-row 的行样式）+ 相对时间 + 展开箭头 */
+.git-tag-item {
+  display: grid;
+  gap: 1px;
+}
+
+.git-tag-icon {
+  color: var(--text-faint);
+}
+
+.git-tag-row > .git-tag-time {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.git-tag-row > svg:last-child {
+  margin-left: 0;
+  color: var(--text-faint);
+  transition: transform 0.12s ease;
+}
+
+.git-tag-row > svg:last-child.open {
+  transform: rotate(180deg);
+}
+
+/* tag 行内展开的两步动作：创建分支为主路径（primary），检出为查看历史（次级） */
+.git-tag-actions {
+  display: grid;
+  gap: 1px;
+  margin-left: 22px;
+}
+
+.git-tag-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  text-align: left;
+}
+
+.git-tag-action-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.git-tag-action-btn.primary:not(:disabled) {
+  color: var(--primary);
+}
+
+.git-tag-action-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.git-tag-create-inline {
+  width: calc(100% - 22px);
+  margin-left: 22px;
+}
+
+.git-tag-create-inline + .git-create-error {
+  margin-top: 2px;
+  margin-left: 22px;
+}
+
+/* 分离头指针提示条：检出 tag 后展示，点选任意本地分支即可恢复 */
+.git-detached-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 0 6px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--warning, #d69e2e) 12%, transparent);
+  color: var(--warning, #d69e2e);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.git-detached-notice > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* composer 分支触发按钮：detached 态显示 tag/短 SHA + 「分离」徽标 */
+.composer-branch-trigger-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.composer-branch-trigger-label .is-detached {
+  color: var(--warning, #d69e2e);
+}
+
+.composer-branch-detached-badge {
+  flex: none;
+  padding: 1px 4px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--warning, #d69e2e) 16%, transparent);
+  color: var(--warning, #d69e2e);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 /* composer 分支选择器弹窗：复用 .git-branch-search / .git-branch-list / .git-create-branch-btn
@@ -1232,11 +1637,19 @@ body.git-review-tree-resizing {
   font-weight: 700;
 }
 
-.git-review-tree-refresh {
+/* 树头部操作区：展开全部 / 折叠全部 / 刷新 */
+.git-review-tree-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
+  gap: 2px;
+}
+
+.git-review-tree-head-btn {
   display: inline-grid;
   width: 22px;
   height: 22px;
-  margin-left: auto;
   place-items: center;
   border: 0;
   border-radius: var(--r-sm);
@@ -3047,6 +3460,38 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 项目技能分块：小节头 + 行内「项目」标识 */
+.composer-actions-sub-group-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px 3px;
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+  line-height: 14px;
+  user-select: none;
+}
+
+.composer-actions-sub-group-count {
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 12px;
+  padding: 0 4px;
+  border-radius: var(--r-sm);
+  background: var(--hover);
+}
+
+.composer-actions-sub-item-tag {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
 }
 
 .composer-actions-sub-empty {

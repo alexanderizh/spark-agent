@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { WorkspaceGitBranch } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import type { BranchState } from './ChatComposerTypes'
+import { formatRelativeTime } from './ChatViewUtils'
 
 type BranchGroup = {
   kind: WorkspaceGitBranch['kind']
@@ -29,8 +30,160 @@ export function getBranchGroups(branchState: BranchState, search = ''): BranchGr
       label: '远程分支',
       branches: visible.filter((item) => item.kind === 'remote'),
     },
+    { kind: 'tag', label: '标签', branches: visible.filter((item) => item.kind === 'tag') },
   ]
   return groups.filter((group) => group.branches.length > 0)
+}
+
+function tagUpdatedAtLabel(updatedAt: number): string {
+  if (!Number.isFinite(updatedAt) || updatedAt <= 0) return ''
+  return formatRelativeTime(new Date(updatedAt).toISOString())
+}
+
+export type TagCheckoutHandler = (tag: string) => Promise<boolean>
+export type TagCreateBranchHandler = (tag: string, branch: string) => Promise<boolean>
+
+/**
+ * 标签行：点击不直接切换，而是展开两个动作——
+ * 「从此标签创建分支」（安全主路径，提交归属新分支）和
+ * 「检出此标签」（分离头指针，仅查看历史代码）。
+ */
+function GitTagRow({
+  tag,
+  active = false,
+  disabled = false,
+  expanded = false,
+  onToggleExpanded,
+  onCheckout,
+  onCreateBranch,
+}: {
+  tag: WorkspaceGitBranch
+  active?: boolean
+  disabled?: boolean
+  expanded?: boolean
+  onToggleExpanded: () => void
+  onCheckout: TagCheckoutHandler
+  onCreateBranch: TagCreateBranchHandler
+}) {
+  const [creating, setCreating] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const draftTrimmed = draft.trim()
+  const branchError =
+    draftTrimmed.length === 0
+      ? ''
+      : draftTrimmed.endsWith('/')
+        ? '分支名不能以“/”结尾。'
+        : /\s/.test(draftTrimmed)
+          ? '分支名不能包含空白字符。'
+          : ''
+
+  const runCheckout = async () => {
+    if (disabled || busy) return
+    setBusy(true)
+    try {
+      // 成功时父级关闭弹窗，本组件随弹窗卸载；失败保留展开态便于重试
+      await onCheckout(tag.name)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const runCreateBranch = async () => {
+    if (disabled || busy || !draftTrimmed || branchError) return
+    setBusy(true)
+    try {
+      await onCreateBranch(tag.name, draftTrimmed)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resetCreating = () => {
+    setCreating(false)
+    setDraft('')
+  }
+
+  return (
+    <div className={`git-tag-item${expanded ? ' expanded' : ''}`}>
+      <button
+        type="button"
+        className={`git-branch-row git-tag-row${active ? ' active' : ''}`}
+        disabled={disabled || busy}
+        onClick={() => {
+          if (expanded) resetCreating()
+          onToggleExpanded()
+        }}
+      >
+        <Icons.Tag size={14} className="git-tag-icon" />
+        <span className="git-branch-copy">
+          <span className="git-branch-name truncate">{tag.name}</span>
+          {active && <span className="git-branch-desc">分离头指针 · 仅查看</span>}
+        </span>
+        <span className="git-tag-time">{tagUpdatedAtLabel(tag.updatedAt)}</span>
+        <Icons.ChevronDown size={12} className={`git-tag-chevron${expanded ? ' open' : ''}`} />
+      </button>
+      {expanded &&
+        (creating ? (
+          <>
+            <div className="git-create-branch-inline git-tag-create-inline">
+              <input
+                className="git-create-branch-inline-input"
+                value={draft}
+                autoFocus
+                placeholder={`基于 ${tag.name} 的新分支名`}
+                disabled={busy}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void runCreateBranch()
+                  if (event.key === 'Escape') resetCreating()
+                }}
+              />
+              <button
+                type="button"
+                className="git-create-branch-inline-btn"
+                title="取消"
+                disabled={busy}
+                onClick={resetCreating}
+              >
+                <Icons.X size={13} />
+              </button>
+              <button
+                type="button"
+                className="git-create-branch-inline-btn confirm"
+                title="创建并检出"
+                disabled={busy || !draftTrimmed || !!branchError}
+                onClick={() => void runCreateBranch()}
+              >
+                <Icons.Check size={13} />
+              </button>
+            </div>
+            {branchError && <div className="git-create-error">{branchError}</div>}
+          </>
+        ) : (
+          <div className="git-tag-actions">
+            <button
+              type="button"
+              className="git-tag-action-btn primary"
+              disabled={disabled || busy}
+              onClick={() => setCreating(true)}
+            >
+              <Icons.GitBranch size={13} />
+              <span>从此标签创建分支...</span>
+            </button>
+            <button
+              type="button"
+              className="git-tag-action-btn"
+              disabled={disabled || busy}
+              onClick={() => void runCheckout()}
+            >
+              <Icons.Tag size={13} />
+              <span>检出 {tag.name}（分离头指针 · 仅查看）</span>
+            </button>
+          </div>
+        ))}
+    </div>
+  )
 }
 
 export function GitBranchRows({
@@ -39,23 +192,50 @@ export function GitBranchRows({
   currentBranch,
   disabled = false,
   currentDescription,
+  detachedHead = false,
   onSelect,
+  onCheckoutTag,
+  onCreateBranchFromTag,
 }: {
   branchState: BranchState
   search: string
   currentBranch: string
   disabled?: boolean
   currentDescription?: string | null
+  /** 当前为分离头指针时，currentBranch 是 tag 名或短 SHA，用于标记对应 tag 行。 */
+  detachedHead?: boolean
   onSelect: (branch: string) => void
+  onCheckoutTag?: TagCheckoutHandler
+  onCreateBranchFromTag?: TagCreateBranchHandler
 }) {
+  const [expandedTag, setExpandedTag] = useState<string | null>(null)
   const groups = getBranchGroups(branchState, search)
-  if (groups.length === 0) return <div className="git-popover-muted">没有匹配分支</div>
+  // 标签组需要检出回调才有可交互入口；未提供时（旧调用方）整组隐藏
+  const visibleGroups = groups.filter((group) => group.kind !== 'tag' || onCheckoutTag != null)
+  if (visibleGroups.length === 0) return <div className="git-popover-muted">没有匹配分支</div>
 
-  return groups.map((group) => (
+  return visibleGroups.map((group) => (
     <section className="git-branch-section" key={group.kind}>
       <div className="git-branch-section-title">{group.label}</div>
       {group.branches.map((branch) => {
         const active = branch.kind === 'local' && branch.name === currentBranch
+        if (branch.kind === 'tag') {
+          if (onCheckoutTag == null || onCreateBranchFromTag == null) return null
+          return (
+            <GitTagRow
+              key={`tag:${branch.name}`}
+              tag={branch}
+              active={detachedHead && branch.name === currentBranch}
+              disabled={disabled}
+              expanded={expandedTag === branch.name}
+              onToggleExpanded={() =>
+                setExpandedTag((previous) => (previous === branch.name ? null : branch.name))
+              }
+              onCheckout={onCheckoutTag}
+              onCreateBranch={onCreateBranchFromTag}
+            />
+          )
+        }
         return (
           <button
             type="button"
@@ -104,12 +284,16 @@ export function ComposerBranchSelect({
   onCreateBranch,
   onOpen,
   onFetch,
+  onCheckoutTag,
+  onCreateBranchFromTag,
 }: {
   branchState: BranchState
   onChange: (branch: string) => void | Promise<void>
   onCreateBranch?: (branch: string) => Promise<void>
   onOpen?: () => void
   onFetch?: () => Promise<void>
+  onCheckoutTag?: TagCheckoutHandler
+  onCreateBranchFromTag?: TagCreateBranchHandler
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -121,6 +305,7 @@ export function ComposerBranchSelect({
   useCloseOnOutside(rootRef, () => setOpen(false), open)
 
   const currentBranch = branchState.currentBranch ?? ''
+  const detached = branchState.detachedHead === true
 
   const resetPanel = () => {
     setSearch('')
@@ -176,7 +361,12 @@ export function ComposerBranchSelect({
           })
         }
       >
-        <span>{currentBranch || '未配置'}</span>
+        <span className="composer-branch-trigger-label">
+          <span className={`truncate${detached ? ' is-detached' : ''}`}>
+            {currentBranch || '未配置'}
+          </span>
+          {detached && <span className="composer-branch-detached-badge">分离</span>}
+        </span>
         <Icons.ChevronDown size={12} />
       </button>
       {open && (
@@ -186,7 +376,7 @@ export function ComposerBranchSelect({
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索分支"
+              placeholder="搜索分支或标签"
               autoFocus
             />
             {onFetch != null && (
@@ -206,11 +396,31 @@ export function ComposerBranchSelect({
               branchState={branchState}
               search={search}
               currentBranch={currentBranch}
+              detachedHead={detached}
               disabled={busy}
               onSelect={(branch) => {
                 setOpen(false)
                 if (branch !== currentBranch) void onChange(branch)
               }}
+              {...(onCheckoutTag != null &&
+                onCreateBranchFromTag != null && {
+                  onCheckoutTag: async (tag: string) => {
+                    const ok = await onCheckoutTag(tag)
+                    if (ok) {
+                      setOpen(false)
+                      resetPanel()
+                    }
+                    return ok
+                  },
+                  onCreateBranchFromTag: async (tag: string, branch: string) => {
+                    const ok = await onCreateBranchFromTag(tag, branch)
+                    if (ok) {
+                      setOpen(false)
+                      resetPanel()
+                    }
+                    return ok
+                  },
+                })}
             />
           </div>
           {onCreateBranch != null &&

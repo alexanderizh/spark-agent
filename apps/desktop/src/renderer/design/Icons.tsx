@@ -931,6 +931,12 @@ export const Icons = {
       <path d="M18 8.5a8 8 0 0 1-8 8" />
     </IconBase>
   ),
+  Tag: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
+      <circle cx="7.5" cy="7.5" r="0.5" fill="currentColor" />
+    </IconBase>
+  ),
   Box: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16zM3.3 7L12 12l8.7-5M12 22V12" />

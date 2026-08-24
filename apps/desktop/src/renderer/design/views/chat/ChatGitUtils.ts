@@ -42,8 +42,15 @@ export function getGitSourceLabel(status: WorkspaceGitStatusResponse | null): st
   return `${status.remoteName}/${status.remoteBranch ?? status.currentBranch ?? '-'}`
 }
 
-export function buildDefaultCommitMessage(status: WorkspaceGitStatusResponse | null): string {
-  const files = status?.files ?? []
+export function buildDefaultCommitMessage(
+  status: WorkspaceGitStatusResponse | null,
+  paths?: readonly string[],
+): string {
+  let files = status?.files ?? []
+  if (paths != null) {
+    const selected = new Set(paths)
+    files = files.filter((file) => selected.has(file.path))
+  }
   if (files.length === 0) return 'Update workspace changes'
   const first = files[0]?.path ?? 'workspace changes'
   return files.length === 1
@@ -54,15 +61,23 @@ export function buildDefaultCommitMessage(status: WorkspaceGitStatusResponse | n
 /**
  * 留空提交信息时，构造发给当前会话 agent 的消息。
  * 携带 includeUnstaged / push 两个用户在面板上的选择，由 agent 分析 diff
- * 后生成提交信息并执行提交。
+ * 后生成提交信息并执行提交。paths 存在时约束 agent 只提交指定文件。
  */
-export function buildAgentCommitMessage(includeUnstaged: boolean, push: boolean): string {
+export function buildAgentCommitMessage(
+  includeUnstaged: boolean,
+  push: boolean,
+  paths?: readonly string[],
+): string {
   const lines: string[] = [
     '请帮我提交当前仓库的更改。',
     '1. 先运行 `git status` 与 `git diff` 分析所有变更，按变更逻辑分组。',
     '2. 生成简洁、可读的提交信息，必要时在 body 补充说明。',
   ]
-  if (includeUnstaged) {
+  if (paths != null && paths.length > 0) {
+    lines.push('3. 只提交下面列出的文件（已按我的选择圈定范围），不要 git add 范围外的任何更改：')
+    for (const path of paths) lines.push(`   - ${path}`)
+    lines.push('   如某文件既有已暂存又有未暂存的改动，请一并提交该文件的全部当前改动。')
+  } else if (includeUnstaged) {
     lines.push('3. 暂存全部相关更改（含未暂存的）后再提交，例如 `git add -A` 或按需选择文件。')
   } else {
     lines.push('3. 仅提交当前已暂存的更改，不要对未暂存的内容执行 git add。')
@@ -231,6 +246,74 @@ export function getGitTreeStageClass(change: WorkspaceGitFileChange): string {
   return 'unstaged'
 }
 
+export type GitChangeStatusCode = 'M' | 'A' | 'D' | '?'
+
+/**
+ * 提交范围树的短状态徽章。status 字段来自 porcelain XY 码 trim 后的值
+ * （如 'M'、'MM'、'??'），需结合 staged/unstaged/untracked 布尔值判定，
+ * 避免 staged-only 与 unstaged-only 都显示 'M' 时无法区分增删意图。
+ */
+export function getGitChangeStatusCode(change: WorkspaceGitFileChange): GitChangeStatusCode {
+  if (change.untracked) return '?'
+  if (change.status.includes('D')) return 'D'
+  if (change.status.includes('A')) return 'A'
+  return 'M'
+}
+
+export function getGitChangeStatusBadgeClass(code: GitChangeStatusCode): string {
+  switch (code) {
+    case 'A':
+    case '?':
+      return 'add'
+    case 'D':
+      return 'del'
+    default:
+      return 'mod'
+  }
+}
+
+export type GitSelectionSummary = {
+  count: number
+  additions: number
+  deletions: number
+}
+
+export function summarizeGitSelection(
+  files: readonly WorkspaceGitFileChange[],
+  selected: ReadonlySet<string>,
+): GitSelectionSummary {
+  let additions = 0
+  let deletions = 0
+  let count = 0
+  for (const file of files) {
+    if (!selected.has(file.path)) continue
+    count += 1
+    additions += file.additions
+    deletions += file.deletions
+  }
+  return { count, additions, deletions }
+}
+
+/** 收集节点下所有文件路径（含节点自身是文件的情况），用于文件夹整组勾选。 */
+export function collectGitTreeNodeFilePaths(node: GitReviewTreeNode): string[] {
+  const paths: string[] = []
+  if (node.change != null) paths.push(node.change.path)
+  for (const child of node.children) {
+    for (const path of collectGitTreeNodeFilePaths(child)) paths.push(path)
+  }
+  return paths
+}
+
+/** 收集树内全部目录节点 path（含根节点空串），用于树面板一键展开全部。 */
+export function collectGitReviewTreeDirPaths(node: GitReviewTreeNode): string[] {
+  const paths: string[] = []
+  if (node.change == null) paths.push(node.path)
+  for (const child of node.children) {
+    for (const path of collectGitReviewTreeDirPaths(child)) paths.push(path)
+  }
+  return paths
+}
+
 export function formatGitStashDate(date: string | null): string {
   if (!date) return ''
   const timestamp = Date.parse(date)
@@ -243,10 +326,7 @@ export function formatGitStashDate(date: string | null): string {
   }).format(timestamp)
 }
 
-export function parseGitDiffViewSegments(
-  diff: string,
-  collapseAfter = 4,
-): GitDiffViewSegment[] {
+export function parseGitDiffViewSegments(diff: string, collapseAfter = 4): GitDiffViewSegment[] {
   const rawLines: GitDiffViewLine[] = []
   let oldLn = 0
   let newLn = 0

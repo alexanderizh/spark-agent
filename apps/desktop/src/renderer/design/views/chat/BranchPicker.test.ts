@@ -30,4 +30,37 @@ describe('getBranchGroups', () => {
       )[0]?.branches.map((branch) => branch.name),
     ).toEqual(['feature/search'])
   })
+
+  it('groups tags after local and remote branches', () => {
+    const groups = getBranchGroups({
+      currentBranch: 'main',
+      branches: ['main'],
+      branchDetails: [
+        { name: 'main', kind: 'local', updatedAt: 300 },
+        { name: 'origin/main', kind: 'remote', updatedAt: 200 },
+        { name: 'v2.4.0', kind: 'tag', updatedAt: 100 },
+      ],
+    })
+
+    expect(groups.map((group) => group.label)).toEqual(['本地分支', '远程分支', '标签'])
+    expect(groups[2]?.branches.map((branch) => branch.name)).toEqual(['v2.4.0'])
+  })
+
+  it('matches tags by search query together with branches', () => {
+    const groups = getBranchGroups(
+      {
+        currentBranch: 'main',
+        branches: ['main'],
+        branchDetails: [
+          { name: 'main', kind: 'local', updatedAt: 300 },
+          { name: 'v1.0.0', kind: 'tag', updatedAt: 50 },
+          { name: 'v2.4.0', kind: 'tag', updatedAt: 100 },
+        ],
+      },
+      'v2',
+    )
+
+    expect(groups.map((group) => group.label)).toEqual(['标签'])
+    expect(groups[0]?.branches.map((branch) => branch.name)).toEqual(['v2.4.0'])
+  })
 })

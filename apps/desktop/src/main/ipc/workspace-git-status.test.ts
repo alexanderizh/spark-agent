@@ -8,6 +8,7 @@ import {
   getWorkspaceBranches,
   getWorkspaceGitFileDiff,
   getWorkspaceGitStatus,
+  pullWorkspaceBranch,
 } from './workspace-git-status.js'
 
 const execFileAsync = promisify(execFile)
@@ -129,6 +130,108 @@ describe('workspace Git status for an unpushed local branch', () => {
         expect.objectContaining({ path: 'base.txt', staged: false, unstaged: true }),
         expect.objectContaining({ path: 'draft.txt', untracked: true, additions: 1 }),
       ]),
+    )
+  })
+})
+
+describe('workspace git tags and detached HEAD', () => {
+  it('lists lightweight and annotated tags alongside branches', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    await git(workspacePath, ['tag', 'v1.0.0'])
+    await git(workspacePath, ['tag', '-a', 'v2.0.0', '-m', 'release two'])
+
+    const result = await getWorkspaceBranches(workspacePath)
+
+    const tags = result.branchDetails.filter((item) => item.kind === 'tag')
+    expect(tags.map((tag) => tag.name)).toEqual(expect.arrayContaining(['v1.0.0', 'v2.0.0']))
+    expect(tags.every((tag) => Number.isFinite(tag.updatedAt))).toBe(true)
+    // 分支列表不受标签影响
+    expect(result.branches).toEqual(expect.arrayContaining(['feature/local-review', 'master']))
+    expect(result.detachedHead).toBe(false)
+    expect(result.currentBranch).toBe('feature/local-review')
+  })
+
+  it('reports detached HEAD with the exact tag name instead of the first local branch', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    await git(workspacePath, ['tag', 'v1.0.0'])
+    await git(workspacePath, ['checkout', 'v1.0.0'])
+
+    const result = await getWorkspaceBranches(workspacePath)
+
+    expect(result.detachedHead).toBe(true)
+    expect(result.currentBranch).toBe('v1.0.0')
+    // 回归断言：旧实现会把 branchList[0] 误当当前分支
+    expect(result.branches[0]).toBeDefined()
+    expect(result.currentBranch).not.toBe(result.branches[0])
+    expect(result.branches).toEqual(expect.arrayContaining(['feature/local-review', 'master']))
+  })
+
+  it('falls back to the short SHA when detached at a commit without any tag', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    const shortSha = await git(workspacePath, ['rev-parse', '--short', 'HEAD'])
+    await git(workspacePath, ['checkout', '--detach'])
+
+    const result = await getWorkspaceBranches(workspacePath)
+
+    expect(result.detachedHead).toBe(true)
+    expect(result.currentBranch).toBe(shortSha)
+  })
+
+  it('surfaces detachedHead on the git status response', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    await git(workspacePath, ['tag', 'v1.0.0'])
+    await git(workspacePath, ['checkout', 'v1.0.0'])
+
+    const status = await getWorkspaceGitStatus(workspacePath)
+
+    expect(status.detachedHead).toBe(true)
+    expect(status.currentBranch).toBe('v1.0.0')
+  })
+})
+
+describe('pullWorkspaceBranch', () => {
+  it('pulls remote updates into the local branch with default git pull semantics', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    // 回到带上游的 master 分支，再从 bare 远端克隆一个副本在远端追加提交
+    await git(workspacePath, ['switch', 'master'])
+    const root = path.dirname(workspacePath)
+    const clonePath = path.join(root, 'peer-clone')
+    await git(root, ['clone', path.join(root, 'remote.git'), clonePath])
+    await git(clonePath, ['config', 'user.name', 'Spark Test'])
+    await git(clonePath, ['config', 'user.email', 'spark@example.com'])
+    await fs.writeFile(path.join(clonePath, 'remote-change.txt'), 'from remote\n')
+    await git(clonePath, ['add', 'remote-change.txt'])
+    await git(clonePath, ['commit', '-m', 'remote change'])
+    await git(clonePath, ['push', 'origin', 'master'])
+
+    // behind 基于 remote-tracking 引用：先 fetch（等价于用户刷新分支列表）才能看到落后
+    await git(workspacePath, ['fetch', 'origin'])
+    const before = await getWorkspaceGitStatus(workspacePath)
+    expect(before.behind).toBe(1)
+
+    await pullWorkspaceBranch(workspacePath)
+
+    const after = await getWorkspaceGitStatus(workspacePath)
+    expect(after.behind).toBe(0)
+    await expect(fs.readFile(path.join(workspacePath, 'remote-change.txt'), 'utf8')).resolves.toBe(
+      'from remote\n',
+    )
+  })
+
+  it('rejects pulling when the current branch has no upstream', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-no-upstream-'))
+    tempDirs.push(root)
+    const workspacePath = path.join(root, 'workspace')
+    await fs.mkdir(workspacePath)
+    await git(workspacePath, ['init', '--initial-branch=master'])
+    await git(workspacePath, ['config', 'user.name', 'Spark Test'])
+    await git(workspacePath, ['config', 'user.email', 'spark@example.com'])
+    await fs.writeFile(path.join(workspacePath, 'local.txt'), 'local\n')
+    await git(workspacePath, ['add', 'local.txt'])
+    await git(workspacePath, ['commit', '-m', 'local only'])
+
+    await expect(pullWorkspaceBranch(workspacePath)).rejects.toThrow(
+      '当前分支没有设置上游分支，无法拉取',
     )
   })
 })

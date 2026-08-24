@@ -105,10 +105,7 @@ export function useLiveWorkspaceGitStatus({
     [commitStatus, getGitStatus, workspaceId],
   )
 
-  const refreshGitStatus = useCallback(
-    () => requestGitStatus(true),
-    [requestGitStatus],
-  )
+  const refreshGitStatus = useCallback(() => requestGitStatus(true), [requestGitStatus])
 
   const applyGitStatus = useCallback(
     (status: WorkspaceGitStatusResponse | null) => {
@@ -170,6 +167,8 @@ export function useLiveWorkspaceGitStatus({
 
   useEffect(() => {
     if (!live || workspaceId == null) return
+    // 打开 Git UI 的瞬间先拉一次（非 force：与在飞请求互斥），否则首个数据要等满 2s 轮询周期
+    scheduleRefresh(false)
     const interval = setInterval(() => scheduleRefresh(false), LIVE_STATUS_POLL_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [live, scheduleRefresh, workspaceId])

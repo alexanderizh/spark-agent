@@ -14,6 +14,7 @@ import {
   GIT_REVIEW_TREE_WIDTH_STORAGE_KEY,
   buildDefaultExpandedTreeDirs,
   buildGitReviewTree,
+  collectGitReviewTreeDirPaths,
   formatGitStashDate,
   formatSignedNumber,
   getGitReviewFileOpenPath,
@@ -166,6 +167,7 @@ function GitReviewTreePanel({
   workspaceRootPath,
   onSelectPath,
   onRefresh,
+  onOpenInEditor,
 }: {
   changes: WorkspaceGitFileChange[]
   status: WorkspaceGitStatusResponse | null
@@ -173,6 +175,7 @@ function GitReviewTreePanel({
   workspaceRootPath: string | null
   onSelectPath: (path: string) => void
   onRefresh: () => Promise<void>
+  onOpenInEditor?: ((path: string) => void) | undefined
 }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<GitReviewStageFilter>('all')
@@ -202,6 +205,16 @@ function GitReviewTreePanel({
     setExpandedDirs((prev) => ({ ...prev, [path]: prev[path] !== true }))
   }
 
+  const expandAllDirs = () => {
+    const next: Record<string, boolean> = { '': true }
+    for (const dirPath of collectGitReviewTreeDirPaths(tree)) next[dirPath] = true
+    setExpandedDirs(next)
+  }
+
+  const collapseAllDirs = () => {
+    setExpandedDirs({ '': true })
+  }
+
   const filterOptions: Array<{ value: GitReviewStageFilter; label: string; count: number }> = [
     { value: 'all', label: '全部', count: changes.length },
     { value: 'staged', label: '已暂存', count: stagedCount },
@@ -216,9 +229,32 @@ function GitReviewTreePanel({
           <span>文件结构</span>
           <span className="git-review-tree-count">{filteredChanges.length}</span>
         </div>
-        <button type="button" className="git-review-tree-refresh" onClick={() => void onRefresh()}>
-          <Icons.RotateCw size={12} />
-        </button>
+        <div className="git-review-tree-actions">
+          <button
+            type="button"
+            className="git-review-tree-head-btn"
+            title="展开全部目录"
+            onClick={expandAllDirs}
+          >
+            <Icons.ChevronDown size={12} />
+          </button>
+          <button
+            type="button"
+            className="git-review-tree-head-btn"
+            title="折叠全部目录"
+            onClick={collapseAllDirs}
+          >
+            <Icons.ChevronUp size={12} />
+          </button>
+          <button
+            type="button"
+            className="git-review-tree-head-btn"
+            title="刷新"
+            onClick={() => void onRefresh()}
+          >
+            <Icons.RotateCw size={12} />
+          </button>
+        </div>
       </div>
       <div className="git-review-tree-search">
         <Icons.Search size={12} />
@@ -252,6 +288,7 @@ function GitReviewTreePanel({
             workspaceRootPath={workspaceRootPath}
             onToggleDir={toggleDir}
             onSelectPath={onSelectPath}
+            onOpenInEditor={onOpenInEditor}
           />
         ))}
         {filteredChanges.length === 0 && (
@@ -291,6 +328,7 @@ function GitReviewTreeNodeRow({
   workspaceRootPath,
   onToggleDir,
   onSelectPath,
+  onOpenInEditor,
 }: {
   node: GitReviewTreeNode
   depth: number
@@ -299,6 +337,7 @@ function GitReviewTreeNodeRow({
   workspaceRootPath: string | null
   onToggleDir: (path: string) => void
   onSelectPath: (path: string) => void
+  onOpenInEditor?: ((path: string) => void) | undefined
 }) {
   const change = node.change
   const expanded = expandedDirs[node.path] === true
@@ -326,11 +365,23 @@ function GitReviewTreeNodeRow({
           </span>
         </button>
         {isGitReviewFileOpenable(change) && (
-          <SessionFileOpenPicker
-            filePath={getGitReviewFileOpenPath(workspaceRootPath, change.path)}
-            className="git-review-tree-file-open"
-            compact
-          />
+          <span className="git-review-tree-row-tools">
+            {onOpenInEditor != null && (
+              <button
+                type="button"
+                className="git-review-tree-file-edit"
+                title="在编辑器中打开并编辑（diff 视图）"
+                onClick={() => onOpenInEditor(change.path)}
+              >
+                <Icons.Code size={12} />
+              </button>
+            )}
+            <SessionFileOpenPicker
+              filePath={getGitReviewFileOpenPath(workspaceRootPath, change.path)}
+              className="git-review-tree-file-open"
+              compact
+            />
+          </span>
         )}
       </div>
     )
@@ -362,6 +413,7 @@ function GitReviewTreeNodeRow({
             workspaceRootPath={workspaceRootPath}
             onToggleDir={onToggleDir}
             onSelectPath={onSelectPath}
+            onOpenInEditor={onOpenInEditor}
           />
         ))}
     </>
@@ -376,6 +428,7 @@ export function GitReviewPanel({
   onWidthChange,
   onRefresh,
   onClose,
+  onOpenInEditor,
 }: {
   workspaceId: string | null
   workspaceRootPath: string | null
@@ -384,6 +437,8 @@ export function GitReviewPanel({
   onWidthChange: (width: number) => void
   onRefresh: () => Promise<void>
   onClose: () => void
+  /** 一键进入代码面板的 Git 编辑视图（可选：不传则按钮不显示） */
+  onOpenInEditor?: ((path: string) => void) | undefined
 }) {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const changes = status?.files ?? []
@@ -579,7 +634,9 @@ export function GitReviewPanel({
                         {dir && <span className="git-review-file-dir truncate">{dir}</span>}
                         <span className="git-review-file-name truncate">{base}</span>
                       </span>
-                      <span className="git-review-file-stage">{getGitChangeStageLabel(change)}</span>
+                      <span className="git-review-file-stage">
+                        {getGitChangeStageLabel(change)}
+                      </span>
                       <span className="git-review-file-stats">
                         <span className="git-add">+{change.additions}</span>
                         <span className="git-del">-{change.deletions}</span>
@@ -589,11 +646,23 @@ export function GitReviewPanel({
                       </span>
                     </button>
                     {isGitReviewFileOpenable(change) && (
-                      <SessionFileOpenPicker
-                        filePath={getGitReviewFileOpenPath(workspaceRootPath, change.path)}
-                        className="git-review-file-open"
-                        compact
-                      />
+                      <span className="git-review-row-tools">
+                        {onOpenInEditor != null && (
+                          <button
+                            type="button"
+                            className="git-review-file-edit"
+                            title="在编辑器中打开并编辑（diff 视图）"
+                            onClick={() => onOpenInEditor(change.path)}
+                          >
+                            <Icons.Code size={12} />
+                          </button>
+                        )}
+                        <SessionFileOpenPicker
+                          filePath={getGitReviewFileOpenPath(workspaceRootPath, change.path)}
+                          className="git-review-file-open"
+                          compact
+                        />
+                      </span>
                     )}
                   </div>
                   {expanded && workspaceId != null && (
@@ -631,6 +700,7 @@ export function GitReviewPanel({
                 workspaceRootPath={workspaceRootPath}
                 onSelectPath={setExpandedPath}
                 onRefresh={onRefresh}
+                {...(onOpenInEditor != null ? { onOpenInEditor } : {})}
               />
             </>
           )}

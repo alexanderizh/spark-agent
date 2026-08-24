@@ -31,6 +31,38 @@
   margin-left: 4px;
 }
 
+/* 行尾操作区：「在编辑器中打开并编辑」+ 原有打开方式选择器（主列表与树面板共用） */
+.git-review-tree-row-tools,
+.git-review-row-tools {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.git-review-tree-file-edit,
+.git-review-file-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-secondary, #8f8f99);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--hover);
+    color: var(--text-primary, #d4d4d4);
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--primary, #4f7cff);
+  }
+}
+
 .git-review-tree-row-wrap {
   padding-right: 4px;
   border-radius: var(--r-xs);

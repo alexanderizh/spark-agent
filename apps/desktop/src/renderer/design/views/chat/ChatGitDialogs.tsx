@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { WorkspaceGitStatusResponse } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { resolveDisplayedGitBranch } from '../chat-session-routing'
 import type { BranchState } from './ChatComposerTypes'
-import { formatSignedNumber } from './ChatGitUtils'
+import { formatSignedNumber, summarizeGitSelection } from './ChatGitUtils'
+import { GitCommitScopeTree } from './GitCommitScopeTree'
 import { GitBranchRows } from './BranchPicker'
 
 function GitDialogShell({
@@ -44,18 +45,29 @@ export function GitCommitDialog({
   onClose,
   onCommit,
   onPush,
+  onPull,
   onRefresh,
 }: {
   status: WorkspaceGitStatusResponse | null
   branchState: BranchState
   onClose: () => void
-  onCommit: (options: { message: string; includeUnstaged: boolean; push: boolean }) => Promise<void>
+  onCommit: (options: {
+    message: string
+    includeUnstaged: boolean
+    push: boolean
+    paths?: string[]
+  }) => Promise<void>
   onPush: () => Promise<void>
+  onPull: () => Promise<void>
   onRefresh: () => Promise<void>
 }) {
   const [commitMessage, setCommitMessage] = useState('')
   const [includeUnstaged, setIncludeUnstaged] = useState(true)
   const [busy, setBusy] = useState(false)
+  // 提交范围：all = 维持原全量语义；partial = 用户圈定了文件清单
+  const [scopeMode, setScopeMode] = useState<'all' | 'partial'>('all')
+  const [treeOpen, setTreeOpen] = useState(false)
+  const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string>>(() => new Set())
   const currentBranch = resolveDisplayedGitBranch({
     branchStateCurrentBranch: branchState.currentBranch,
     statusCurrentBranch: status?.currentBranch,
@@ -66,10 +78,46 @@ export function GitCommitDialog({
   const stagedFiles = status?.stagedFiles ?? 0
   const unstagedFiles = status?.unstagedFiles ?? 0
   const aheadCommits = status?.ahead ?? 0
-  const commitFileCount = includeUnstaged ? changedFiles : stagedFiles
+  // 当前开关下可进入提交范围的文件清单：不包含未暂存时仅剩已暂存文件
+  const committableFiles = useMemo(() => {
+    const files = status?.files ?? []
+    return includeUnstaged ? files : files.filter((file) => file.staged)
+  }, [status, includeUnstaged])
+  const selectionSummary =
+    scopeMode === 'partial' ? summarizeGitSelection(committableFiles, selectedPaths) : null
+  const commitFileCount =
+    selectionSummary != null ? selectionSummary.count : includeUnstaged ? changedFiles : stagedFiles
   const canCommit =
-    (includeUnstaged ? changedFiles > 0 : stagedFiles > 0) && status?.isGitRepo === true
+    scopeMode === 'partial'
+      ? (selectionSummary?.count ?? 0) > 0 && status?.isGitRepo === true
+      : (includeUnstaged ? changedFiles > 0 : stagedFiles > 0) && status?.isGitRepo === true
   const canPush = status?.hasRemote === true && aheadCommits > 0
+  const behindCommits = status?.behind ?? 0
+  // pull 自带 fetch：behind 计数基于 remote-tracking 引用，可能过期低估为 0，
+  // 因此只要配置了远端就允许随时拉取（与 VSCode 行为一致），behind 仅作徽标提示。
+  const canPull = status?.hasRemote === true
+
+  const enterPartialScope = () => {
+    setScopeMode('partial')
+    setTreeOpen(true)
+    // 进入选择默认全选，与「默认全部提交」的基线一致
+    setSelectedPaths(new Set(committableFiles.map((file) => file.path)))
+  }
+
+  const resetScopeToAll = () => {
+    setScopeMode('all')
+    setTreeOpen(false)
+    setSelectedPaths(new Set())
+  }
+
+  const toggleIncludeUnstaged = (next: boolean) => {
+    setIncludeUnstaged(next)
+    if (scopeMode === 'partial') {
+      // 可选范围变化：回到「全选当前清单」的默认态，避免残留越界选择
+      const nextFiles = next ? (status?.files ?? []) : (status?.files ?? []).filter((f) => f.staged)
+      setSelectedPaths(new Set(nextFiles.map((file) => file.path)))
+    }
+  }
 
   const runCommit = async (push: boolean) => {
     if (!canCommit || busy) return
@@ -80,6 +128,7 @@ export function GitCommitDialog({
         message: commitMessage.trim(),
         includeUnstaged,
         push,
+        ...(scopeMode === 'partial' ? { paths: [...selectedPaths] } : {}),
       })
       setCommitMessage('')
       await onRefresh()
@@ -94,6 +143,18 @@ export function GitCommitDialog({
     setBusy(true)
     try {
       await onPush()
+      await onRefresh()
+      onClose()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const runPull = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await onPull()
       await onRefresh()
       onClose()
     } finally {
@@ -122,11 +183,59 @@ export function GitCommitDialog({
         <input
           type="checkbox"
           checked={includeUnstaged}
-          onChange={(event) => setIncludeUnstaged(event.target.checked)}
+          onChange={(event) => toggleIncludeUnstaged(event.target.checked)}
         />
         <span>包含未暂存的更改</span>
         <span className="git-action-count-pill">未暂存 {unstagedFiles}</span>
       </label>
+      <div className="git-commit-scope-row">
+        <span className="git-commit-scope-label">提交范围</span>
+        {scopeMode === 'all' ? (
+          <span className="git-commit-scope-chip">全部 · {commitFileCount} 个文件</span>
+        ) : (
+          <span
+            className={`git-commit-scope-chip${(selectionSummary?.count ?? 0) === 0 ? ' is-empty' : ''}`}
+          >
+            已选 {selectionSummary?.count ?? 0}/{committableFiles.length}
+            {(selectionSummary?.additions ?? 0) > 0 && (
+              <span className="git-add">
+                +{formatSignedNumber(selectionSummary?.additions ?? 0)}
+              </span>
+            )}
+            {(selectionSummary?.deletions ?? 0) > 0 && (
+              <span className="git-del">
+                -{formatSignedNumber(selectionSummary?.deletions ?? 0)}
+              </span>
+            )}
+          </span>
+        )}
+        {scopeMode === 'partial' && (
+          <button
+            type="button"
+            className="git-commit-scope-reset"
+            disabled={busy}
+            onClick={resetScopeToAll}
+          >
+            重置为全部
+          </button>
+        )}
+        <button
+          type="button"
+          className="git-commit-scope-toggle"
+          disabled={busy || committableFiles.length === 0}
+          onClick={() => (scopeMode === 'all' ? enterPartialScope() : setTreeOpen((prev) => !prev))}
+        >
+          {scopeMode === 'all' ? '选择文件' : treeOpen ? '收起' : '展开'}
+        </button>
+      </div>
+      {scopeMode === 'partial' && treeOpen && (
+        <GitCommitScopeTree
+          files={committableFiles}
+          selected={selectedPaths}
+          onSelectedChange={setSelectedPaths}
+          disabled={busy}
+        />
+      )}
       <div className="git-action-list">
         <button
           type="button"
@@ -172,6 +281,22 @@ export function GitCommitDialog({
             <span className="git-action-count-pill">待推送 {aheadCommits}</span>
           </span>
         </button>
+        <button
+          type="button"
+          className="git-action-row"
+          disabled={!canPull || busy}
+          onClick={() => void runPull()}
+        >
+          <span className="git-env-icon">
+            <Icons.Download size={14} />
+          </span>
+          <span>拉取</span>
+          <span className="git-action-meta">
+            {behindCommits > 0 && (
+              <span className="git-action-count-pill">待拉取 {behindCommits}</span>
+            )}
+          </span>
+        </button>
       </div>
     </GitDialogShell>
   )
@@ -184,6 +309,8 @@ export function GitBranchDialog({
   onSwitchBranch,
   onOpenCreateBranch,
   onFetch,
+  onCheckoutTag,
+  onCreateBranchFromTag,
 }: {
   status: WorkspaceGitStatusResponse | null
   branchState: BranchState
@@ -191,6 +318,8 @@ export function GitBranchDialog({
   onSwitchBranch: (branch: string) => Promise<boolean>
   onOpenCreateBranch: () => void
   onFetch: () => Promise<void>
+  onCheckoutTag?: (tag: string) => Promise<boolean>
+  onCreateBranchFromTag?: (tag: string, branch: string) => Promise<boolean>
 }) {
   const [branchSearch, setBranchSearch] = useState('')
   const [busy, setBusy] = useState(false)
@@ -199,6 +328,8 @@ export function GitBranchDialog({
     branchStateCurrentBranch: branchState.currentBranch,
     statusCurrentBranch: status?.currentBranch,
   })
+  // branchState 与 status 刷新节奏不同，detached 标记取任一非空值
+  const detachedHead = branchState.detachedHead ?? status?.detachedHead ?? false
   const changedFiles = status?.changedFiles ?? 0
 
   const runFetch = async () => {
@@ -237,6 +368,15 @@ export function GitBranchDialog({
           Fetch
         </button>
       </div>
+      {detachedHead && currentBranch != null && currentBranch !== '' && (
+        <div className="git-detached-notice">
+          <Icons.AlertTriangle size={14} />
+          <span>
+            当前处于分离头指针（{currentBranch}
+            ），新提交不归属任何分支。选择下方任意本地分支即可恢复。
+          </span>
+        </div>
+      )}
       <div className="git-branch-list">
         <GitBranchRows
           branchState={
@@ -246,8 +386,32 @@ export function GitBranchDialog({
           }
           search={branchSearch}
           currentBranch={currentBranch ?? ''}
+          detachedHead={detachedHead}
           disabled={busy}
           currentDescription={changedFiles > 0 ? `未提交：${changedFiles} 个文件` : null}
+          {...(onCheckoutTag != null &&
+            onCreateBranchFromTag != null && {
+              onCheckoutTag: async (tag: string) => {
+                setBusy(true)
+                try {
+                  const ok = await onCheckoutTag(tag)
+                  if (ok) onClose()
+                  return ok
+                } finally {
+                  setBusy(false)
+                }
+              },
+              onCreateBranchFromTag: async (tag: string, branch: string) => {
+                setBusy(true)
+                try {
+                  const ok = await onCreateBranchFromTag(tag, branch)
+                  if (ok) onClose()
+                  return ok
+                } finally {
+                  setBusy(false)
+                }
+              },
+            })}
           onSelect={(branch) => {
             if (branch === currentBranch) {
               onClose()
