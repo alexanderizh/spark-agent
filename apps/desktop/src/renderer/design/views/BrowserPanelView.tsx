@@ -12,6 +12,14 @@ import { useApp, BROWSER_PANEL_WIDTH_MIN, BROWSER_PANEL_WIDTH_MAX } from '../App
 
 const DEFAULT_URL = 'https://spark.yiqibyte.com'
 
+/**
+ * Shared with the agent-controlled spark_browser windows (main process
+ * `persist:spark-browser:<profileId>` partitions). Keeping the sidebar on the
+ * same default partition means logins made here are visible to agent browser
+ * windows and vice versa.
+ */
+const SIDEBAR_PARTITION = 'persist:spark-browser:default'
+
 interface ViewState {
   title: string | null
   url: string | null
@@ -129,7 +137,7 @@ export function BrowserPanelView(): ReactElement | null {
       e.preventDefault()
       e.stopPropagation()
       // Capture parent container width to clamp panel so it never overflows
-      const containerWidth = (panelRef.current?.parentElement?.clientWidth ?? window.innerWidth)
+      const containerWidth = panelRef.current?.parentElement?.clientWidth ?? window.innerWidth
       dragState.current = {
         startX: e.clientX,
         startWidth: t.browserPanelWidth,
@@ -144,10 +152,7 @@ export function BrowserPanelView(): ReactElement | null {
         if (s == null) return
         const delta = s.startX - ev.clientX
         const maxAllowed = Math.min(BROWSER_PANEL_WIDTH_MAX, s.containerWidth - 100)
-        const next = Math.max(
-          BROWSER_PANEL_WIDTH_MIN,
-          Math.min(maxAllowed, s.startWidth + delta),
-        )
+        const next = Math.max(BROWSER_PANEL_WIDTH_MIN, Math.min(maxAllowed, s.startWidth + delta))
         s.latestWidth = next
         if (s.rafId == null) {
           s.rafId = window.requestAnimationFrame(() => {
@@ -215,11 +220,7 @@ export function BrowserPanelView(): ReactElement | null {
           <span>浏览器</span>
         </div>
         <div className="browser-panel-actions">
-          <button
-            className="icon-btn"
-            onClick={handleTogglePanel}
-            title="隐藏面板"
-          >
+          <button className="icon-btn" onClick={handleTogglePanel} title="隐藏面板">
             <Icons.PanelRight size={14} />
           </button>
         </div>
@@ -242,7 +243,7 @@ export function BrowserPanelView(): ReactElement | null {
           ref={webviewRef as React.LegacyRef<Electron.WebviewTag>}
           src={DEFAULT_URL}
           className="browser-panel-webview"
-          partition="persist:browser-automation"
+          partition={SIDEBAR_PARTITION}
           allowpopups={false}
         />
       </div>

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, session as electronSession } from 'electron'
-import type { DownloadItem, Event, WebContents } from 'electron'
+import type { Cookie, DownloadItem, Event, Session, WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { createLogger } from '@spark/shared'
@@ -39,6 +39,13 @@ const DEFAULT_URL =
 `)
 
 const PROFILE_ID_RE = /^[a-zA-Z0-9_.-]{1,80}$/
+const SPARK_BROWSER_PARTITION_PREFIX = 'persist:spark-browser:'
+// Chromium persist partitions only store cookies that carry an expiration
+// date. Session cookies (no expirationDate) — common for QR-code logins —
+// would be dropped on every app restart. The cookie bridge mirrors them into
+// persistent cookies capped at this lifetime (same tradeoff as Chrome's
+// "continue where you left off").
+const SESSION_COOKIE_PERSIST_SECONDS = 90 * 24 * 60 * 60
 const MAX_EVENTS = 500
 const DOWNLOAD_TIMEOUT_MS = 120_000
 const MEDIA_INSPECTION_SCRIPT = `(() => {
@@ -187,7 +194,34 @@ function validateProfileId(profileId: string | undefined): string {
 }
 
 function partitionForProfile(profileId: string): string {
-  return `persist:spark-browser:${profileId}`
+  return `${SPARK_BROWSER_PARTITION_PREFIX}${profileId}`
+}
+
+/**
+ * Copy a session cookie (no expirationDate) into an equivalent persistent
+ * cookie so the login survives app restarts. `cookies.set` overwrites the
+ * existing (name, domain, path) entry, so this upgrades the cookie in place.
+ */
+async function persistSessionCookie(ses: Session, cookie: Cookie): Promise<void> {
+  const domain = cookie.domain ?? ''
+  const host = domain.replace(/^\./, '')
+  if (!host || cookie.path == null || !cookie.name) return
+  const scheme = cookie.secure === true ? 'https' : 'http'
+  await ses.cookies.set({
+    url: `${scheme}://${host}${cookie.path}`,
+    name: cookie.name,
+    value: cookie.value ?? '',
+    // Forward domain only for wildcard cookies (leading dot); omitting it
+    // keeps host-only cookies host-only.
+    ...(domain.startsWith('.') ? { domain } : {}),
+    path: cookie.path,
+    ...(cookie.secure === true ? { secure: true } : {}),
+    ...(cookie.httpOnly === true ? { httpOnly: true } : {}),
+    expirationDate: Math.floor(Date.now() / 1000) + SESSION_COOKIE_PERSIST_SECONDS,
+    ...(cookie.sameSite != null && cookie.sameSite !== 'unspecified'
+      ? { sameSite: cookie.sameSite }
+      : {}),
+  })
 }
 
 function pushBounded<T>(items: T[], item: T): void {
@@ -290,11 +324,16 @@ function createPageReady(): {
 
 export class InternalBrowserService {
   private readonly windows = new Map<string, WindowState>()
+  private readonly cookieBridgePartitions = new Set<string>()
   private lifecycleBound = false
 
   bindLifecycle(): void {
     if (this.lifecycleBound) return
     this.lifecycleBound = true
+    // The shared default partition is also mounted by the sidebar webview,
+    // which never passes through openWindow — install its cookie bridge
+    // eagerly so sidebar logins persist too.
+    this.installSessionCookieBridge(partitionForProfile('default'))
     app.on('before-quit', () => {
       this.closeAll()
     })
@@ -365,6 +404,7 @@ export class InternalBrowserService {
       mediaCandidates: new Map(),
     }
     this.windows.set(windowId, state)
+    this.installSessionCookieBridge(partition)
     this.attachWindowEvents(state)
     await win.loadURL(buildInternalBrowserShellUrl(partition))
     await this.navigate(windowId, targetUrl)
@@ -728,6 +768,27 @@ export class InternalBrowserService {
       })
     }
     return { ok: true, profileId }
+  }
+
+  /**
+   * Mirror session cookies written inside a spark-browser partition into
+   * persistent cookies (see persistSessionCookie). Idempotent per partition;
+   * the listener lives on the long-lived partition session, so it also covers
+   * other windows sharing the same partition (e.g. the sidebar webview).
+   */
+  private installSessionCookieBridge(partition: string): void {
+    if (!partition.startsWith(SPARK_BROWSER_PARTITION_PREFIX)) return
+    if (this.cookieBridgePartitions.has(partition)) return
+    this.cookieBridgePartitions.add(partition)
+    const ses = electronSession.fromPartition(partition)
+    ses.cookies.on('changed', (_event, cookie, _cause, removed) => {
+      if (removed || cookie.expirationDate != null) return
+      void persistSessionCookie(ses, cookie).catch((err) => {
+        log.warn(
+          `session cookie persist failed for ${cookie.name}@${cookie.domain}: ${String(err)}`,
+        )
+      })
+    })
   }
 
   private attachWindowEvents(state: WindowState): void {
