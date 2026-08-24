@@ -3910,6 +3910,12 @@ export interface RuntimeToolStatus {
   version: string | null
   /** Download URL for installation */
   downloadUrl: string
+  /**
+   * Where the runtime comes from (Git only for now):
+   * 'system' = user's PATH, 'bundled' = shipped with the app,
+   * 'override' = SPARK_GIT_EXECUTABLE (dev/diagnostics).
+   */
+  source?: 'system' | 'bundled' | 'override'
 }
 
 export interface ShellEnvironmentStatus {

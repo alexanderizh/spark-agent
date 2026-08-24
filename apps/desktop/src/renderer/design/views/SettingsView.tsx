@@ -5450,6 +5450,12 @@ function IntegritySection() {
               </div>
             </div>
             <div className="integrity-sdk-right">
+              {tool.available && tool.source === 'bundled' && (
+                <span className="badge dot">内置</span>
+              )}
+              {tool.available && tool.source === 'system' && (
+                <span className="badge dot">系统</span>
+              )}
               {getToolBadge(tool)}
               {!tool.available && (
                 <Button
