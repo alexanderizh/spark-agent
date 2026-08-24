@@ -696,7 +696,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       <div className="floating-sidebar-header">
         {/* 品牌名仅在 Windows 侧栏头部展示；macOS 顶部由红绿灯占位，保持留白 */}
         <div className="floating-sidebar-brand">
-          {isPlatformWin32 && <span className="floating-sidebar-brand-name">Spark Worker</span>}
+          {isPlatformWin32 && <span className="floating-sidebar-brand-name">SparkWork</span>}
         </div>
         {/* <div className="sidebar-logo"><SparkLogoMark /></div> */}
         <div className="sidebar-header-actions">

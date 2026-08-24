@@ -43,7 +43,6 @@ import { requestSessionReferenceAdd } from './views/chat/session-reference-contr
 import {
   useSessionSidebar,
   buildProjectGroups,
-  filterProjectGroupsWithSessions,
   sortSessionsByPinned,
   type SessionSummary,
   type ProjectGroup,
@@ -2202,9 +2201,9 @@ export function SidebarSessionList() {
       ctx.workspaces.some((w) => w.id === selectedBaseWorkspaceId)
         ? selectedBaseWorkspaceId
         : filter.projectId
-    const projectGroups = filterProjectGroupsWithSessions(
-      buildProjectGroups(ctx.workspaces, filteredSessions),
-    ).filter((group) => filter.projectId === 'all' || group.workspace.id === selectedProjectGroupId)
+    const projectGroups = buildProjectGroups(ctx.workspaces, filteredSessions).filter(
+      (group) => filter.projectId === 'all' || group.workspace.id === selectedProjectGroupId,
+    )
     const noProjectWorkspace = ctx.noProjectWorkspace
     const noProject = noProjectWorkspace
       ? filteredSessions.filter((s) => s.workspaceIds.includes(noProjectWorkspace.id))

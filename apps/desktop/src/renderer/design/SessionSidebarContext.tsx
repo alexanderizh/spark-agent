@@ -311,11 +311,6 @@ export function buildProjectGroups(
   })
 }
 
-/** 侧边栏筛选后只展示仍有命中会话的项目，避免渲染空项目分组。 */
-export function filterProjectGroupsWithSessions(groups: ProjectGroup[]): ProjectGroup[] {
-  return groups.filter((group) => group.sessions.length > 0)
-}
-
 type SessionSidebarCtx = {
   // Data
   sessions: SessionSummary[]

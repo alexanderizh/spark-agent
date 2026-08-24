@@ -2283,7 +2283,7 @@ describe('Renderer Smoke Tests', () => {
     expect(container.textContent).not.toContain('Other Project')
   })
 
-  it('hides project groups with no sessions matching the active filters', async () => {
+  it('keeps project groups even when no sessions match the active filters', async () => {
     localStorage.setItem(
       'spark-agent:sidebar-filter',
       JSON.stringify({
@@ -2387,7 +2387,7 @@ describe('Renderer Smoke Tests', () => {
       expect(container.textContent).toContain('Recent Project')
       expect(container.textContent).toContain('Recent session')
     })
-    expect(container.textContent).not.toContain('Stale Project')
+    expect(container.textContent).toContain('Stale Project')
     expect(container.textContent).not.toContain('Stale session')
   })
 
