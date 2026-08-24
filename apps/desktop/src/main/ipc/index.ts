@@ -301,6 +301,7 @@ import {
   tryGitStdout,
   workspaceGitStateFromError,
 } from './workspace-git-status.js'
+import { scheduleWorkspaceBackgroundFetch } from './workspace-git-background-fetch.js'
 import {
   asSparkGitError,
   assertWorkspaceGitReady,
@@ -5813,6 +5814,9 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('workspace:git-status', async (req) => {
     log.info(`workspace:git-status requested, workspaceId=${req.workspaceId}`)
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    // 旁路节流 fetch：推进本地远端跟踪引用，让 behind 计数能感知远端新提交。
+    // fire-and-forget，不阻塞本次 status 返回；fetch 落库后由下一次轮询带出新数字。
+    scheduleWorkspaceBackgroundFetch(workspace.root_path)
     return getWorkspaceGitStatus(workspace.root_path)
   })
 
