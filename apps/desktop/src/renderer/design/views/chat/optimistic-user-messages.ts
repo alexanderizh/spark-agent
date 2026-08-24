@@ -1,12 +1,6 @@
 import { flushSync } from 'react-dom'
 import type { UIMessage } from '../../services/event-mapper'
 import type { ComposerAttachment, ComposerSessionReference } from './ChatComposerTypes'
-import {
-  beginOptimisticMessageRenderProbe,
-  markOptimisticBeginReturned,
-  markOptimisticLifecycleSettled,
-  markOptimisticVisiblePaintWaitResolved,
-} from './optimistic-message-render-debug'
 
 export interface OptimisticUserMessageDraft {
   clientId: string
@@ -61,39 +55,27 @@ export function startOptimisticUserSend(
 
   const clientId = createId()
   const createdAt = now()
-  beginOptimisticMessageRenderProbe({
-    clientId,
-    sessionId: input.sessionId,
-    createdAt,
-    hiddenUntilStarted: input.hiddenUntilStarted === true,
-    contentLength: input.content.length,
-  })
   flushSync(() => callbacks.onBegin({ ...input, clientId, createdAt }))
-  markOptimisticBeginReturned(clientId)
   let settled = false
 
   return {
     clientId,
     waitUntilVisible: async () => {
       await waitForVisiblePaint()
-      markOptimisticVisiblePaintWaitResolved(clientId)
     },
     commit: (turnId, started) => {
       if (settled) return
       settled = true
-      markOptimisticLifecycleSettled(clientId, 'commit', { turnId, started })
       callbacks.onCommit(clientId, turnId, started)
     },
     fail: (error) => {
       if (settled) return
       settled = true
-      markOptimisticLifecycleSettled(clientId, 'fail', { error })
       callbacks.onFail(clientId, error)
     },
     cancel: () => {
       if (settled) return
       settled = true
-      markOptimisticLifecycleSettled(clientId, 'cancel')
       callbacks.onCancel(clientId)
     },
   }
