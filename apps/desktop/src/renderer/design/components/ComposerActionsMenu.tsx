@@ -11,7 +11,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
-import type { SkillItem } from '@spark/protocol'
+import type { ProjectSkillSummaryItem, SkillItem } from '@spark/protocol'
 
 interface ComposerActionsMenuProps {
   /** 触发「添加文件或图片」 */
@@ -21,13 +21,15 @@ interface ComposerActionsMenuProps {
   /** 打开会话参考选择器 */
   onAddSessionReference?: () => void
   /** 把技能名作为 `@技能名 ` 插入到输入框（由父组件实现光标位置） */
-  onInsertSkillMention: (skill: SkillItem) => void
+  onInsertSkillMention: (skill: { name: string }) => void
   /** 触发斜杠命令菜单：等同在输入框键入 `/` */
   onInsertSlashCommand?: () => void
   /** 打开技能管理页面，可指定目标 tab */
   onOpenSkillStore?: (tab: 'installed' | 'create') => void
   /** 是否在运行中（运行中禁用整个菜单） */
   disabled?: boolean
+  /** 当前会话 ID：用于扫描该会话工作区的项目级技能（分块展示在子菜单底部） */
+  sessionId?: string | null
 }
 
 type SkillSubPlacement = 'top-right' | 'bottom-right' | 'top-left' | 'bottom-left'
@@ -40,14 +42,16 @@ export function ComposerActionsMenu({
   onInsertSlashCommand,
   onOpenSkillStore,
   disabled = false,
+  sessionId,
 }: ComposerActionsMenuProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const skillItemRef = useRef<HTMLDivElement | null>(null)
   const [open, setOpen] = useState(false)
   const [skillSubOpen, setSkillSubOpen] = useState(false)
-  const [skillSubPlacement, setSkillSubPlacement] =
-    useState<SkillSubPlacement>('bottom-right')
+  const [skillSubPlacement, setSkillSubPlacement] = useState<SkillSubPlacement>('bottom-right')
   const [skills, setSkills] = useState<SkillItem[]>([])
+  const [projectSkills, setProjectSkills] = useState<ProjectSkillSummaryItem[]>([])
+  const projectSkillsSessionRef = useRef<string | null | undefined>(undefined)
   const [skillsLoading, setSkillsLoading] = useState(false)
   const [skillSearch, setSkillSearch] = useState('')
   const { invoke: listSkills } = useIpcInvoke('skill:list')
@@ -61,7 +65,8 @@ export function ComposerActionsMenu({
     const rect = item.getBoundingClientRect()
     const estimatedSubWidth = 260
     const estimatedSubHeight = Math.min(320, window.innerHeight - gutter * 2)
-    const nextVertical = rect.top + estimatedSubHeight > window.innerHeight - gutter ? 'bottom' : 'top'
+    const nextVertical =
+      rect.top + estimatedSubHeight > window.innerHeight - gutter ? 'bottom' : 'top'
     const nextHorizontal =
       rect.right + 6 + estimatedSubWidth > window.innerWidth - gutter ? 'left' : 'right'
 
@@ -88,6 +93,28 @@ export function ComposerActionsMenu({
       .finally(() => setSkillsLoading(false))
   }, [skills.length, skillsLoading, listSkills, toast])
 
+  // 项目级技能跟随会话工作区：会话变化时重新扫描（skill:list 携带 sessionId 附带返回）。
+  // 主进程扫描失败会降级为不带 projectSkills，此处不需要额外报错打断用户。
+  const loadProjectSkills = useCallback(() => {
+    if (projectSkillsSessionRef.current === sessionId) return
+    projectSkillsSessionRef.current = sessionId
+    if (sessionId == null) {
+      setProjectSkills([])
+      return
+    }
+    listSkills({ sessionId })
+      .then((res) => setProjectSkills(res.projectSkills ?? []))
+      .catch(() => {
+        // 项目技能属于增强展示，失败时静默降级为空列表
+        setProjectSkills([])
+      })
+  }, [sessionId, listSkills])
+
+  useEffect(() => {
+    if (!skillSubOpen) return
+    loadProjectSkills()
+  }, [skillSubOpen, loadProjectSkills])
+
   // 子菜单关闭时清空搜索，避免下次打开残留过滤结果
   useEffect(() => {
     if (!skillSubOpen) setSkillSearch('')
@@ -98,6 +125,12 @@ export function ComposerActionsMenu({
     if (!q) return skills
     return skills.filter((s) => s.name.toLowerCase().includes(q))
   }, [skills, skillSearch])
+
+  const filteredProjectSkills = useMemo(() => {
+    const q = skillSearch.trim().toLowerCase()
+    if (!q) return projectSkills
+    return projectSkills.filter((s) => s.name.toLowerCase().includes(q))
+  }, [projectSkills, skillSearch])
 
   // 外部点击关闭
   useEffect(() => {
@@ -154,7 +187,7 @@ export function ComposerActionsMenu({
     onInsertSlashCommand?.()
   }
 
-  const handleSkillClick = (skill: SkillItem) => {
+  const handleSkillClick = (skill: { name: string }) => {
     setOpen(false)
     setSkillSubOpen(false)
     onInsertSkillMention(skill)
@@ -273,7 +306,7 @@ export function ComposerActionsMenu({
                   <div className="composer-actions-sub-empty">
                     <Icons.Spinner size={12} /> 加载中…
                   </div>
-                ) : filteredSkills.length === 0 ? (
+                ) : filteredSkills.length === 0 && filteredProjectSkills.length === 0 ? (
                   <div className="composer-actions-sub-empty">
                     {skillSearch ? '没有匹配的技能' : '暂无可用技能'}
                   </div>
@@ -292,11 +325,38 @@ export function ComposerActionsMenu({
                         <span className="composer-actions-sub-item-icon">
                           <Icons.File size={12} />
                         </span>
-                        <span className="composer-actions-sub-item-name">
-                          {skill.name}
-                        </span>
+                        <span className="composer-actions-sub-item-name">{skill.name}</span>
                       </button>
                     ))}
+                    {filteredProjectSkills.length > 0 && (
+                      <>
+                        <div className="composer-actions-sub-group-label">
+                          <Icons.Folder size={11} />
+                          <span>项目技能</span>
+                          <span className="composer-actions-sub-group-count">
+                            {filteredProjectSkills.length}
+                          </span>
+                        </div>
+                        {filteredProjectSkills.map((skill) => (
+                          <button
+                            key={skill.id}
+                            type="button"
+                            className="composer-actions-sub-item"
+                            title={skill.description || skill.name}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleSkillClick(skill)
+                            }}
+                          >
+                            <span className="composer-actions-sub-item-icon">
+                              <Icons.Folder size={12} />
+                            </span>
+                            <span className="composer-actions-sub-item-name">{skill.name}</span>
+                            <span className="composer-actions-sub-item-tag">项目</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
                   </div>
                 )}
                 {!skillsLoading && skills.length > 0 && (

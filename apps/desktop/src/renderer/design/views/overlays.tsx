@@ -329,6 +329,7 @@ const GROUP_LABELS: Record<string, string> = {
   agent: 'Agent',
   mcp: 'MCP',
   skill: '技能',
+  'project-skill': '项目技能',
   resource: '资源',
   team: '团队',
   git: 'Git',
@@ -353,6 +354,7 @@ function getGroupIcon(group: string): ReactNode {
     agent: <Icons.Agents size={12} />,
     mcp: <Icons.MCP size={12} />,
     skill: <Icons.Skills size={12} />,
+    'project-skill': <Icons.Folder size={12} />,
     resource: <Icons.Cpu size={12} />,
     team: <Icons.Team size={12} />,
     git: <Icons.GitBranch size={12} />,
@@ -467,11 +469,13 @@ export function CommandPalette({
     return () => window.clearTimeout(handle)
   }, [query, isGlobal, sidebar])
 
-  // Load IPC commands (three-layer)
+  // Load IPC commands (three-layer); re-fetch when the active session changes so
+  // project-local skills from the session's workspace are included.
   useEffect(() => {
     let cancelled = false
+    const sid = sidebar.activeSessionId
     window.spark
-      .invoke('command:list', {})
+      .invoke('command:list', sid != null ? { sessionId: sid } : {})
       .then((res) => {
         if (!cancelled) {
           setIpcCommands(res.commands)
@@ -484,7 +488,7 @@ export function CommandPalette({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [sidebar.activeSessionId])
 
   // Built-in UI commands (shortcuts that appear in the palette)
   const uiCommands: UICmd[] = useMemo(
@@ -961,7 +965,9 @@ function PaletteCommandItem({
             : command.layer === 'builtin'
               ? '内置'
               : command.layer === 'skill'
-                ? '技能'
+                ? command.group === 'project-skill'
+                  ? '项目'
+                  : '技能'
                 : command.layer === 'custom'
                   ? '自定义'
                   : ''}

@@ -23,6 +23,7 @@ import type {
   AgentEvent,
   AgentStatusEvent,
   AssistantMessageEvent,
+  ProjectSkillSummaryItem,
   SessionAttachment,
   SessionGoalResponse,
   SessionHistoryResetEvent,
@@ -215,7 +216,7 @@ export class SessionCommandController {
       ...(session?.model_id != null ? { model: session.model_id } : {}),
     }
 
-    this.registerConfiguredCommands()
+    this.registerConfiguredCommands(workspacePath)
     // A leading slash is also common in routes, file paths, and pasted text.
     // Only consume the message when its first token resolves to a real command;
     // otherwise let the normal Agent turn interpret the user's full text.
@@ -267,7 +268,7 @@ export class SessionCommandController {
       ...(session?.model_id != null ? { model: session.model_id } : {}),
     }
 
-    this.registerConfiguredCommands()
+    this.registerConfiguredCommands(workspacePath)
     // Preserve slash-prefixed routes/paths as ordinary user input when they do
     // not match a registered command. The renderer will forward the original
     // message unchanged, so the Agent can decide what the text represents.
@@ -409,15 +410,53 @@ export class SessionCommandController {
     return { isCommand: true, forwardToAgent: false, started: false }
   }
 
-  listCommands(): CommandListItem[] {
-    this.registerConfiguredCommands()
+  listCommands(sessionId?: string): CommandListItem[] {
+    const workspacePath = sessionId != null ? this.resolveSessionWorkspacePath(sessionId) : null
+    this.registerConfiguredCommands(workspacePath)
     return this.registry.listItems()
   }
 
-  private registerConfiguredCommands(): void {
-    const skills = listSkillSummaries(new SkillRepository(this.db))
+  /**
+   * 列出会话工作区项目技能目录实时扫描到的项目级技能（project: 前缀）。
+   * 同名技能按目录优先级去重（listSkillSummaries 按优先级顺序返回，保留首个）。
+   */
+  listProjectSkills(sessionId: string): ProjectSkillSummaryItem[] {
+    const workspacePath = this.resolveSessionWorkspacePath(sessionId)
+    if (!workspacePath) return []
+    const seen = new Set<string>()
+    const result: ProjectSkillSummaryItem[] = []
+    for (const s of listSkillSummaries(new SkillRepository(this.db), workspacePath)) {
+      if (!s.id.startsWith('project:')) continue
+      const key = s.name.trim().toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      result.push({ id: s.id, name: s.name, description: s.description })
+    }
+    return result
+  }
+
+  private registerConfiguredCommands(workspacePath?: string | null): void {
+    const skills = listSkillSummaries(new SkillRepository(this.db), workspacePath)
     this.registry.registerSkillCommands(skills)
     this.registry.registerCustomCommands(this.listCustomCommands())
+  }
+
+  /** 从会话绑定的首个工作区解析根路径（决定项目级技能的扫描范围）。 */
+  private resolveSessionWorkspacePath(sessionId: string): string | null {
+    try {
+      const session = new SessionRepository(this.db).get(sessionId)
+      const workspaceIds: string[] = session?.workspace_ids_json
+        ? JSON.parse(session.workspace_ids_json)
+        : []
+      const workspaceId = workspaceIds[0]
+      if (workspaceId) {
+        const ws = new WorkspaceRepository(this.db).get(workspaceId)
+        return ws?.root_path ?? null
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return null
   }
 
   private listCustomCommands(): CustomCommandConfig[] {

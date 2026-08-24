@@ -74,7 +74,7 @@ import type {
   SessionReferenceInput,
   SessionReferenceCandidate,
 } from '@spark/protocol'
-import type { SessionPermissionMode } from '@spark/protocol'
+import type { ProjectSkillSummaryItem, SessionPermissionMode } from '@spark/protocol'
 import {
   COMMAND_FOLLOW_UP_TURN_PRESENTATION,
   GOAL_CONTRACT_DRAFT_TURN_PRESENTATION,
@@ -182,6 +182,7 @@ import {
   SUBAGENT_USAGE_HINT_SYSTEM_PROMPT,
   TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION,
   TEAM_DISPATCH_TOOL_DESCRIPTION,
+  WORKSPACE_TEMP_DIRS_SYSTEM_PROMPT,
   appendInterruptedTurnEventsForSession,
   buildAttachmentPromptLedger,
   buildCodexCliModelProviderConfig,
@@ -1576,8 +1577,13 @@ export class SessionService {
     return this.commandController.executeCommandAsEvents(params)
   }
 
-  listCommands(): CommandListItem[] {
-    return this.commandController.listCommands()
+  listCommands(sessionId?: string): CommandListItem[] {
+    return this.commandController.listCommands(sessionId)
+  }
+
+  /** 列出会话工作区项目技能目录扫描到的项目级技能（供 skill:list 附带返回）。 */
+  listProjectSkills(sessionId: string): ProjectSkillSummaryItem[] {
+    return this.commandController.listProjectSkills(sessionId)
   }
 
   // ── SessionCommandHost 窄回调（P1-W3-S2 命令系统迁出）───
@@ -2783,6 +2789,10 @@ export class SessionService {
       teamInstructionsPrompt,
       buildWorktreeSessionSystemPrompt(workspaceInfo),
       SESSION_WORKTREE_STATE_SYSTEM_PROMPT,
+      // 平台临时目录的 git 处理规则只在会话挂了工作区时才有意义（无工作区不注入）。
+      workspaceInfo != null && workspaceInfo.rootPath.trim().length > 0
+        ? WORKSPACE_TEMP_DIRS_SYSTEM_PROMPT
+        : undefined,
       // Task 子代理是 Claude Agent SDK 的原生能力，Codex CLI 路径没有对应工具，
       // 引导语只在 claude-sdk/claude adapter 下注入，避免对 Codex 会话产生误导。
       resolveEngineKind(agentAdapter) === 'claude-sdk'

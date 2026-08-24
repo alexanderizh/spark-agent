@@ -138,6 +138,53 @@ describe('CommandRegistry', () => {
     expect(registry.get('my-skill-b')).toBeDefined()
   })
 
+  it('registerSkillCommands keeps the first skill when names collide in one batch', () => {
+    const registry = createBuiltinRegistry()
+    // Same slug from different sources (e.g. installed skill vs project-local
+    // copies): the earlier entry in the list must win deterministically.
+    registry.registerSkillCommands([
+      {
+        id: 'project:.claude/skills/foo/SKILL.md',
+        name: 'foo',
+        description: 'claude copy',
+        tags: [],
+      },
+      {
+        id: 'project:.agents/skills/foo/SKILL.md',
+        name: 'foo',
+        description: 'agents copy',
+        tags: [],
+      },
+    ])
+    const cmd = registry.get('foo')
+    expect(cmd).toBeDefined()
+    expect(cmd?.layer).toBe('skill')
+    expect(cmd?.description).toBe('claude copy')
+    expect(cmd?.id).toBe('skill:project:.claude/skills/foo/SKILL.md')
+  })
+
+  it('registerSkillCommands groups project: skills separately for display', () => {
+    const registry = createBuiltinRegistry()
+    registry.registerSkillCommands([
+      { id: 'builtin:translate', name: 'Translate', description: 'Translate text', tags: [] },
+      {
+        id: 'project:.claude/skills/website-cicd/SKILL.md',
+        name: 'website-cicd',
+        description: 'CICD',
+        tags: [],
+      },
+    ])
+    // 项目级技能：layer 仍为 skill（执行链/去重不受影响），group 单独分块展示
+    const projectCmd = registry.get('website-cicd')
+    expect(projectCmd).toBeDefined()
+    expect(projectCmd?.layer).toBe('skill')
+    expect(projectCmd?.group).toBe('project-skill')
+    // 已安装技能保持原分组不变
+    const installedCmd = registry.get('translate')
+    expect(installedCmd).toBeDefined()
+    expect(installedCmd?.group).toBe('skill')
+  })
+
   it('registerSkillCommands handles numeric skill IDs correctly', () => {
     const registry = createBuiltinRegistry()
     // Skills from database can have numeric IDs

@@ -36,6 +36,7 @@ export type CommandGroup =
   | 'agent'
   | 'mcp'
   | 'skill'
+  | 'project-skill'
   | 'resource'
   | 'team'
   | 'git'
@@ -363,15 +364,20 @@ export class CommandRegistry {
       // Derive command name from skill name (slugified), not from ID which can be numeric
       const cmdName = slugify(skill.name)
       if (!cmdName) continue
-      // Skip if command name already taken by Layer 1/2
-      if (this.commands.has(cmdName) && this.commands.get(cmdName)!.layer !== 'skill') continue
+      // Skill commands were just cleared, so any surviving name is Layer 1/2;
+      // within this batch, earlier siblings win (installed skills > .claude > .codex
+      // > .cursor > ... project order) instead of the last one overwriting the rest.
+      if (this.commands.has(cmdName)) continue
       const skillId = skill.id
+      // 项目级技能（project: 前缀）单独分组展示，便于在命令面板中与已安装技能区分；
+      // layer 仍为 'skill'，执行链 / 去重 / 置顶逻辑不受影响。
+      const isProjectSkill = skill.id.startsWith('project:')
       this.register({
         id: `skill:${skill.id}`,
         name: cmdName,
         aliases: [],
         layer: 'skill',
-        group: 'skill',
+        group: isProjectSkill ? 'project-skill' : 'skill',
         description: skill.description || skill.name,
         scope: 'session' as const,
         risk: 'none' as const,
