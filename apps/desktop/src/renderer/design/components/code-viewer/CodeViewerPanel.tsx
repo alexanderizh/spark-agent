@@ -13,6 +13,7 @@
 import { Dropdown } from '@lobehub/ui'
 import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import type { WorkspaceGitStatusResponse } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import { FileTypeIcon } from '../FileDisplay'
@@ -23,6 +24,24 @@ import { CodeViewerToolbar } from './CodeViewerToolbar'
 import { useCodeViewerFiles, CodeFileExternalChangeError } from './useCodeViewerFiles'
 import { useGitDiff } from './useGitDiff'
 import { FileExplorerPanel } from './file-explorer/FileExplorerPanel'
+import { GitPanel } from './git-panel/GitPanel'
+import {
+  closeGitPanel,
+  openGitPanel,
+  setGitPanelWidth,
+  toggleGitPanel,
+  useGitPanelVisible,
+  useGitPanelWidth,
+} from './git-panel/gitPanelVisibility'
+import { SearchPanel } from './search-panel/SearchPanel'
+import {
+  closeSearchPanel,
+  openSearchPanel,
+  setSearchPanelWidth,
+  toggleSearchPanel,
+  useSearchPanelVisible,
+  useSearchPanelWidth,
+} from './search-panel/searchPanelVisibility'
 import { getMonacoLanguage } from './codeLanguage'
 import type { OpenCodeFile, CodeViewMode } from './types'
 import './index.less'
@@ -48,6 +67,15 @@ export interface CodeViewerPanelProps {
   // 文件树右键菜单的显式「预览 / 编辑」入口（可选：不传则菜单不显示对应项）
   onPreviewFileFromExplorer?: ((relativePath: string) => void) | undefined
   onEditFileFromExplorer?: ((relativePath: string) => void) | undefined
+  // 文件树右键菜单「添加到对话」（可选：不传则菜单不显示对应项）
+  onAddToChatFromExplorer?: ((relativePath: string) => void) | undefined
+  // Git 面板（与文件树互斥共用同一左侧栏槽位；可见性走全局 store）
+  gitStatus?: WorkspaceGitStatusResponse | null
+  onGitStatusApplied?: ((status: WorkspaceGitStatusResponse | null) => void) | undefined
+  onRefreshGitStatus?: (() => void) | undefined
+  onOpenFileFromGit?: ((relativePath: string) => void) | undefined
+  // 工作区搜索面板（与文件树 / Git 面板互斥共用同一左侧栏槽位）
+  onOpenFileFromSearch: (relativePath: string, lineNumber?: number) => void
 }
 
 function basename(p: string): string {
@@ -75,15 +103,29 @@ export function CodeViewerPanel({
   onOpenFileFromExplorer,
   onPreviewFileFromExplorer,
   onEditFileFromExplorer,
+  onAddToChatFromExplorer,
+  gitStatus,
+  onGitStatusApplied,
+  onRefreshGitStatus,
+  onOpenFileFromGit,
+  onOpenFileFromSearch,
 }: CodeViewerPanelProps) {
   const resolvedTheme = useResolvedTheme()
   const theme: 'dark' | 'light' = resolvedTheme === 'light' ? 'light' : 'dark'
+  const gitPanelVisible = useGitPanelVisible()
+  const gitPanelWidth = useGitPanelWidth()
+  const searchPanelVisible = useSearchPanelVisible()
+  const searchPanelWidth = useSearchPanelWidth()
   const { activeRuntime, editActive, saveActive, reloadActive, forceSaveActive, isDirty } =
     useCodeViewerFiles(files, activeAbsPath)
   const { toast } = useToast()
   const [saving, setSaving] = useState(false)
   const [minimapEnabled, setMinimapEnabled] = useState(false)
-  const resizeStateRef = useRef<{ startWidth: number; startX: number } | null>(null)
+  const resizeStateRef = useRef<{
+    startWidth: number
+    startX: number
+    target: 'explorer' | 'git' | 'search'
+  } | null>(null)
 
   const active = files.find((f) => f.absPath === activeAbsPath) ?? null
   const diffInfo = useGitDiff(
@@ -110,15 +152,33 @@ export function CodeViewerPanel({
     }
   }, [activeAbsPath, saveActive, toast])
 
-  // 文件树宽度拖拽：按下时记录初始宽度和 x，move 用 ref 计算（避免闭包 stale）
+  // 左侧栏宽度拖拽：按下时记录初始宽度 / x / 目标面板（文件树 / Git / 搜索面板，互斥下同时只有一个在用），
+  // move 用 ref 计算（避免闭包 stale）
   const handleResizeStart = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       e.preventDefault()
-      resizeStateRef.current = { startWidth: explorerWidth, startX: e.clientX }
+      const target: 'explorer' | 'git' | 'search' = explorerVisible
+        ? 'explorer'
+        : searchPanelVisible
+          ? 'search'
+          : 'git'
+      resizeStateRef.current = {
+        startWidth:
+          target === 'explorer'
+            ? explorerWidth
+            : target === 'search'
+              ? searchPanelWidth
+              : gitPanelWidth,
+        startX: e.clientX,
+        target,
+      }
       const onMove = (ev: PointerEvent): void => {
         const st = resizeStateRef.current
         if (st == null) return
-        onExplorerWidthChange(st.startWidth + (ev.clientX - st.startX))
+        const next = st.startWidth + (ev.clientX - st.startX)
+        if (st.target === 'explorer') onExplorerWidthChange(next)
+        else if (st.target === 'search') setSearchPanelWidth(next)
+        else setGitPanelWidth(next)
       }
       const onUp = (): void => {
         resizeStateRef.current = null
@@ -130,7 +190,14 @@ export function CodeViewerPanel({
       window.addEventListener('pointermove', onMove)
       window.addEventListener('pointerup', onUp)
     },
-    [explorerWidth, onExplorerWidthChange],
+    [
+      explorerVisible,
+      explorerWidth,
+      gitPanelWidth,
+      searchPanelVisible,
+      searchPanelWidth,
+      onExplorerWidthChange,
+    ],
   )
 
   // 统一外壳（empty / 有激活文件 共用）
@@ -141,10 +208,45 @@ export function CodeViewerPanel({
           type="button"
           className={`cv-ftab-toggle${explorerVisible ? ' on' : ''}`}
           title={explorerVisible ? '隐藏文件树' : '显示文件树'}
-          onClick={() => onExplorerVisibleChange(!explorerVisible)}
+          onClick={() => {
+            if (!explorerVisible) {
+              closeGitPanel()
+              closeSearchPanel()
+            }
+            onExplorerVisibleChange(!explorerVisible)
+          }}
           disabled={workspaceId == null}
         >
           <Icons.FolderClosed size={14} />
+        </button>
+        <button
+          type="button"
+          className={`cv-ftab-toggle${gitPanelVisible ? ' on' : ''}`}
+          title={gitPanelVisible ? '隐藏 Git 面板' : '显示 Git 面板（与文件树互斥）'}
+          onClick={() => {
+            // 打开必须同时收起文件树与搜索面板（左侧栏槽位互斥），否则面板被挡住不出现
+            if (gitPanelVisible) toggleGitPanel(false)
+            else {
+              closeSearchPanel()
+              openGitPanel()
+            }
+          }}
+          disabled={workspaceId == null}
+        >
+          <Icons.GitBranch size={14} />
+        </button>
+        <button
+          type="button"
+          className={`cv-ftab-toggle${searchPanelVisible ? ' on' : ''}`}
+          title={searchPanelVisible ? '隐藏搜索面板' : '搜索文件或代码内容（与文件树互斥）'}
+          onClick={() => {
+            // openSearchPanel 内部会收起文件树与 Git 面板（左侧栏槽位互斥）
+            if (searchPanelVisible) toggleSearchPanel(false)
+            else openSearchPanel()
+          }}
+          disabled={workspaceId == null}
+        >
+          <Icons.Search size={14} />
         </button>
         {files.map((f, idx) => {
           const fDirty = isDirty(f.absPath)
@@ -210,18 +312,40 @@ export function CodeViewerPanel({
         })}
       </div>
       <div className="cv-main-row">
-        {explorerVisible && workspaceId != null ? (
+        {workspaceId != null && (explorerVisible || gitPanelVisible || searchPanelVisible) ? (
           <>
-            <div className="cv-explorer" style={{ width: explorerWidth }}>
-              <FileExplorerPanel
-                workspaceId={workspaceId}
-                workspaceRootPath={workspaceRootPath ?? null}
-                expandedDirs={explorerExpandedDirs}
-                onExpandedChange={onExplorerExpandedChange}
-                onOpenFile={onOpenFileFromExplorer}
-                onPreviewFile={onPreviewFileFromExplorer}
-                onEditFile={onEditFileFromExplorer}
-              />
+            <div
+              className="cv-explorer"
+              style={{
+                width: explorerVisible
+                  ? explorerWidth
+                  : searchPanelVisible
+                    ? searchPanelWidth
+                    : gitPanelWidth,
+              }}
+            >
+              {explorerVisible ? (
+                <FileExplorerPanel
+                  workspaceId={workspaceId}
+                  workspaceRootPath={workspaceRootPath ?? null}
+                  expandedDirs={explorerExpandedDirs}
+                  onExpandedChange={onExplorerExpandedChange}
+                  onOpenFile={onOpenFileFromExplorer}
+                  onPreviewFile={onPreviewFileFromExplorer}
+                  onEditFile={onEditFileFromExplorer}
+                  onAddToChat={onAddToChatFromExplorer}
+                />
+              ) : searchPanelVisible ? (
+                <SearchPanel workspaceId={workspaceId} onOpenFile={onOpenFileFromSearch} />
+              ) : (
+                <GitPanel
+                  workspaceId={workspaceId}
+                  status={gitStatus ?? null}
+                  onRefresh={onRefreshGitStatus ?? (() => {})}
+                  onStatusApplied={onGitStatusApplied ?? (() => {})}
+                  onOpenFile={onOpenFileFromGit ?? (() => {})}
+                />
+              )}
             </div>
             <div className="cv-explorer-resize" onPointerDown={handleResizeStart} />
           </>
@@ -235,7 +359,9 @@ export function CodeViewerPanel({
     return renderLayout(
       <div className="code-viewer-empty">
         <div className="code-viewer-empty-icon">{'</>'}</div>
-        <div className="code-viewer-empty-text">点击左侧文件树或会话中的代码文件，在此查看与编辑</div>
+        <div className="code-viewer-empty-text">
+          点击左侧文件树或会话中的代码文件，在此查看与编辑
+        </div>
       </div>,
     )
   }
@@ -317,7 +443,9 @@ export function CodeViewerPanel({
       </div>
 
       <div className="cv-statusbar">
-        <span className={`cv-sb-item${dirty ? ' dirty' : ''}`}>{dirty ? '● 未保存' : '已保存'}</span>
+        <span className={`cv-sb-item${dirty ? ' dirty' : ''}`}>
+          {dirty ? '● 未保存' : '已保存'}
+        </span>
         <span className="cv-sb-spacer" />
         <span className="cv-sb-item">{getMonacoLanguage(active.absPath)}</span>
         <span className="cv-sb-item">UTF-8</span>

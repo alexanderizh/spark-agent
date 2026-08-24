@@ -224,6 +224,7 @@ import type {
 import type {
   CanvasAssetDownloadBatchResultItem,
   PermissionApprovalDecision,
+  ProjectSkillSummaryItem,
   SessionAttachment,
   SessionListResponse,
   SystemNotificationNavigateRequest,
@@ -277,6 +278,7 @@ import { registerCodexRuntimeIpc } from './registerCodexRuntimeIpc.js'
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
 import { registerSidebarOrderIpc } from './registerSidebarOrderIpc.js'
+import { registerWorkspaceSearchIpc } from './registerWorkspaceSearchIpc.js'
 import { getPluginManager, registerPluginIpc } from './registerPluginIpc.js'
 import { registerFilePreviewIpc } from './registerFilePreviewIpc.js'
 import { registerFileOperationsIpc } from './registerFileOperationsIpc.js'
@@ -289,8 +291,16 @@ import {
   getGitExecErrorMessage,
   getWorkspaceBranches,
   getWorkspaceGitFileDiff,
+  getWorkspaceGitLog,
   getWorkspaceGitStatus,
+  discardWorkspacePaths,
+  dropWorkspaceStash,
+  popWorkspaceStash,
+  pullWorkspaceBranch,
   pushWorkspaceBranch,
+  stageWorkspacePaths,
+  stashWorkspaceChanges,
+  unstageWorkspacePaths,
   tryGitStdout,
 } from './workspace-git-status.js'
 import {
@@ -337,6 +347,7 @@ import type {
 import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
 import { registerPluginRuntimeIpc } from '../services/PluginRuntime/registerPluginRuntimeIpc.js'
 import { registerSubAppIpc } from './registerSubAppIpc.js'
+import { registerHtmlRuntimeDocIpc } from './registerHtmlRuntimeDocIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { getWindowForIpcSender } from './window-controls.js'
@@ -1598,6 +1609,10 @@ export function rebuildManagedSkillsPlugin(): void {
   }
 }
 
+/** 宿主技能增量发现的时间节流间隔（毫秒） */
+const HOST_SKILL_REFRESH_INTERVAL_MS = 30_000
+let _lastHostSkillRefreshAt = 0
+
 /**
  * 应用启动时初始化技能系统：
  *   1. 自动软链宿主机 ~/.claude|~/.codex 技能到 _links 并登记入库（默认可用）
@@ -1637,8 +1652,60 @@ export function initializeAppSkills(): void {
     log.info(
       `App skills initialized: ${hostLinks.length} host skill(s) linked, ${pruned} duplicate(s) pruned`,
     )
+    // 启动刚全量导入过，把节流窗口起点设在现在，避免启动后首次打开面板立即重扫
+    _lastHostSkillRefreshAt = Date.now()
   } catch (err) {
     log.warn(`initializeAppSkills failed: ${String(err)}`)
+  }
+}
+
+/**
+ * 运行期间增量发现宿主机技能（~/.claude/skills、~/.codex/skills）。
+ *
+ * 启动时 initializeAppSkills 只跑一次；agent 会话中新建到宿主目录的技能
+ * 此后不会被发现，需重启应用。本函数挂在 command:list / skill:list 等
+ * 高频入口顺带执行（带时间节流），补上这个缺口：
+ *   1. autoImportHostSkills 幂等补建缺失的软链
+ *   2. 仅对数据库尚未登记（按 rootPath 比对）的新软链技能入库
+ *      ——不重刷已登记技能：importLocalDirectory 会以 enabled:true 覆盖
+ *        用户手动禁用状态
+ *   3. 有新增时去重同名软链行并重建托管插件，让当前会话后续 turn 立即可见
+ *
+ * @returns 本次是否登记了新技能
+ */
+function refreshHostSkillsIncrementally(): boolean {
+  const now = Date.now()
+  if (now - _lastHostSkillRefreshAt < HOST_SKILL_REFRESH_INTERVAL_MS) return false
+  _lastHostSkillRefreshAt = now
+  try {
+    const skillService = getSkillService()
+    const existingRoots = new Set(
+      skillService
+        .listSkills()
+        .map((s) => s.rootPath)
+        .filter((p): p is string => p != null),
+    )
+    const hostLinks = getAppSkillsManager().autoImportHostSkills()
+    let added = 0
+    for (const link of hostLinks) {
+      // 与 importLocalDirectory 的 existing 判定同口径（resolve 后的 rootPath）
+      if (existingRoots.has(path.resolve(link.linkPath))) continue
+      try {
+        skillService.importLocalDirectory(link.linkPath, 'linked')
+        added += 1
+      } catch (err) {
+        log.warn(`Failed to register host skill ${link.linkPath}: ${String(err)}`)
+      }
+    }
+    if (added > 0) {
+      skillService.pruneDuplicateLinkedSkills()
+      rebuildManagedSkillsPlugin()
+      log.info(`Host skills incremental import: ${added} new skill(s)`)
+    }
+    return added > 0
+  } catch (err) {
+    log.warn(`refreshHostSkillsIncrementally failed: ${String(err)}`)
+    return false
   }
 }
 
@@ -5655,11 +5722,61 @@ export function registerAllIpcHandlers(): void {
       }
       return {
         currentBranch: result.currentBranch,
+        detachedHead: result.detachedHead,
         branches: result.branches,
         branchDetails: result.branchDetails,
       }
     } catch (err) {
       throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '切换分支失败'), {
+        cause: err,
+      })
+    }
+  })
+
+  typedIpcHandle('workspace:checkout-tag', async (req) => {
+    log.info(
+      `workspace:checkout-tag requested, workspaceId=${req.workspaceId}, tag=${req.tag}, createBranch=${req.createBranch ?? ''}`,
+    )
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    const newBranch = req.createBranch?.trim() ?? ''
+    if (req.createBranch != null && newBranch.length === 0) {
+      throw new SparkError('VALIDATION_FAILED', '新分支名称不能为空')
+    }
+    try {
+      // 用 refs/tags/<tag> 全限定引用定位，避免 tag 名被 git 解析成选项或其他 ref；
+      // 先验证存在，给前端精准的「标签不存在」错误而不是 git 的模糊 stderr。
+      const tagRef = `refs/tags/${req.tag}`
+      const resolved = await tryGitStdout(workspace.root_path, [
+        'rev-parse',
+        '--verify',
+        '--quiet',
+        `${tagRef}^{commit}`,
+      ])
+      if (resolved == null) {
+        throw new SparkError('GIT_OPERATION_FAILED', `标签 ${req.tag} 不存在`)
+      }
+      if (newBranch.length > 0) {
+        // 安全主路径：从 tag 建分支，后续提交归属新分支
+        await execFileAsync('git', ['switch', '-c', newBranch, tagRef], {
+          cwd: workspace.root_path,
+        })
+      } else {
+        // 查看历史代码：detached HEAD，UI 会提示点选本地分支恢复
+        await execFileAsync('git', ['checkout', tagRef], { cwd: workspace.root_path })
+      }
+      const result = await getWorkspaceBranches(workspace.root_path)
+      if (result.currentBranch == null) {
+        throw new Error('Unable to determine current git ref after checkout tag')
+      }
+      return {
+        currentBranch: result.currentBranch,
+        detachedHead: result.detachedHead,
+        branches: result.branches,
+        branchDetails: result.branchDetails,
+      }
+    } catch (err) {
+      if (err instanceof SparkError) throw err
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '检出标签失败'), {
         cause: err,
       })
     }
@@ -5710,16 +5827,32 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workspace:git-commit', async (req) => {
     log.info(
-      `workspace:git-commit requested, workspaceId=${req.workspaceId}, includeUnstaged=${req.includeUnstaged === true}, push=${req.push === true}`,
+      `workspace:git-commit requested, workspaceId=${req.workspaceId}, includeUnstaged=${req.includeUnstaged === true}, push=${req.push === true}, paths=${req.paths?.length ?? 0}`,
     )
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
     const message = req.message.trim()
     if (message.length === 0) throw new SparkError('VALIDATION_FAILED', '提交信息不能为空')
+    // 路径级提交：去空白后的选中清单；显式空数组视为未选择任何文件，直接拒绝。
+    const selectedPaths = req.paths != null ? req.paths.map((p) => p.trim()).filter(Boolean) : null
+    if (req.paths != null && (selectedPaths == null || selectedPaths.length === 0)) {
+      throw new SparkError('VALIDATION_FAILED', '未选择任何要提交的文件')
+    }
     try {
-      if (req.includeUnstaged === true) {
-        await execFileAsync('git', ['add', '-A'], { cwd: workspace.root_path })
+      if (selectedPaths != null && selectedPaths.length > 0) {
+        // 先 add 选中路径（覆盖 untracked 新文件与删除），再走 pathspec-only commit：
+        // 仅提交这些路径的变更，暂存区中未选中的内容不会混入，且提交后仍保留在暂存区。
+        await execFileAsync('git', ['add', '-A', '--', ...selectedPaths], {
+          cwd: workspace.root_path,
+        })
+        await execFileAsync('git', ['commit', '-m', message, '--', ...selectedPaths], {
+          cwd: workspace.root_path,
+        })
+      } else {
+        if (req.includeUnstaged === true) {
+          await execFileAsync('git', ['add', '-A'], { cwd: workspace.root_path })
+        }
+        await execFileAsync('git', ['commit', '-m', message], { cwd: workspace.root_path })
       }
-      await execFileAsync('git', ['commit', '-m', message], { cwd: workspace.root_path })
       const sha = await execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
         cwd: workspace.root_path,
       })
@@ -5749,6 +5882,129 @@ export function registerAllIpcHandlers(): void {
       return { pushed: true, status: await getWorkspaceGitStatus(workspace.root_path) }
     } catch (err) {
       throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '推送失败'), {
+        cause: err,
+      })
+    }
+  })
+
+  typedIpcHandle('workspace:git-pull', async (req) => {
+    log.info(`workspace:git-pull requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      await pullWorkspaceBranch(workspace.root_path)
+      return { pulled: true, status: await getWorkspaceGitStatus(workspace.root_path) }
+    } catch (err) {
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '拉取失败'), {
+        cause: err,
+      })
+    }
+  })
+
+  // ── 代码面板 Git 管理面板的轻量命令 ──
+
+  typedIpcHandle('workspace:git-log', async (req) => {
+    log.info(`workspace:git-log requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      return await getWorkspaceGitLog(workspace.root_path, req.limit)
+    } catch (err) {
+      throw new SparkError(
+        'GIT_OPERATION_FAILED',
+        getGitExecErrorMessage(err, '获取提交记录失败'),
+        {
+          cause: err,
+        },
+      )
+    }
+  })
+
+  typedIpcHandle('workspace:git-stage', async (req) => {
+    log.info(
+      `workspace:git-stage requested, workspaceId=${req.workspaceId}, paths=${req.paths?.length ?? 0}`,
+    )
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      return { status: await stageWorkspacePaths(workspace.root_path, req.paths) }
+    } catch (err) {
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '暂存失败'), {
+        cause: err,
+      })
+    }
+  })
+
+  typedIpcHandle('workspace:git-unstage', async (req) => {
+    log.info(
+      `workspace:git-unstage requested, workspaceId=${req.workspaceId}, paths=${req.paths?.length ?? 0}`,
+    )
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      return { status: await unstageWorkspacePaths(workspace.root_path, req.paths) }
+    } catch (err) {
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '取消暂存失败'), {
+        cause: err,
+      })
+    }
+  })
+
+  typedIpcHandle('workspace:git-stash-push', async (req) => {
+    log.info(`workspace:git-stash-push requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      return {
+        status: await stashWorkspaceChanges(
+          workspace.root_path,
+          req.message,
+          req.includeUntracked === true,
+        ),
+      }
+    } catch (err) {
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '贮藏失败'), {
+        cause: err,
+      })
+    }
+  })
+
+  typedIpcHandle('workspace:git-stash-pop', async (req) => {
+    log.info(
+      `workspace:git-stash-pop requested, workspaceId=${req.workspaceId}, selector=${req.selector}`,
+    )
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      return { status: await popWorkspaceStash(workspace.root_path, req.selector) }
+    } catch (err) {
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '恢复贮藏失败'), {
+        cause: err,
+      })
+    }
+  })
+
+  typedIpcHandle('workspace:git-stash-drop', async (req) => {
+    log.info(
+      `workspace:git-stash-drop requested, workspaceId=${req.workspaceId}, selector=${req.selector}`,
+    )
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      return { status: await dropWorkspaceStash(workspace.root_path, req.selector) }
+    } catch (err) {
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '丢弃贮藏失败'), {
+        cause: err,
+      })
+    }
+  })
+
+  typedIpcHandle('workspace:git-discard', async (req) => {
+    log.info(
+      `workspace:git-discard requested, workspaceId=${req.workspaceId}, paths=${req.paths?.length ?? 0}`,
+    )
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    // 破坏性操作：空清单直接拒绝，不做「丢弃全部」的隐式语义
+    if (req.paths == null || req.paths.length === 0) {
+      throw new SparkError('VALIDATION_FAILED', '未选择任何要丢弃的文件')
+    }
+    try {
+      return { status: await discardWorkspacePaths(workspace.root_path, req.paths) }
+    } catch (err) {
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '丢弃更改失败'), {
         cause: err,
       })
     }
@@ -5882,10 +6138,13 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('dialog:open-file', async (req) => {
-    // allowDirectories=true：macOS 支持同一个对话框同时选择文件和目录；Windows/Linux
-    // 同时传 openFile + openDirectory 会退化成目录选择器，导致用户点文件后无法完成选择。
+    // allowDirectories=true：macOS/Windows 支持同一个对话框同时选择文件和目录
+    // （Windows 的 openDirectory 只是在 IFileDialog 上额外加 FOS_PICKFOLDERS，
+    // 官方语义即"文件之外额外允许选文件夹"，不会退化）。Linux(GTK) 只要带
+    // openDirectory 就会整体切换成纯目录选择器（SELECT_FOLDER），连文件都选不了，
+    // 因此 Linux 降级为纯文件选择。
     const canPickFilesAndDirectoriesTogether =
-      req.allowDirectories === true && process.platform === 'darwin'
+      req.allowDirectories === true && process.platform !== 'linux'
     const baseProperties: Array<'openFile' | 'openDirectory' | 'multiSelections'> =
       canPickFilesAndDirectoriesTogether
         ? ['openFile', 'openDirectory', 'multiSelections']
@@ -6404,9 +6663,24 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('skill:list', async (req) => {
     const svc = getSkillService()
     svc.ensureBuiltInSkills()
+    // 顺带增量发现宿主机新技能（节流），运行期间 agent 新建到 ~/.claude/skills
+    // 等目录的技能无需重启即可出现在技能面板
+    refreshHostSkillsIncrementally()
     rebuildManagedSkillsPlugin()
     const skills = svc.listSkills(req.scope !== undefined ? { scope: req.scope } : undefined)
-    return { skills }
+    // 携带 sessionId 时附带该会话工作区的项目级技能（技能面板分块展示用）。
+    // 扫描失败不应拖垮整个 skill:list，降级为不带 projectSkills。
+    let projectSkills: ProjectSkillSummaryItem[] | undefined
+    if (req.sessionId != null) {
+      try {
+        projectSkills = getSessionService().listProjectSkills(req.sessionId)
+      } catch (err) {
+        log.warn(
+          `skill:list project skills scan failed: ${err instanceof Error ? err.message : err}`,
+        )
+      }
+    }
+    return { skills, ...(projectSkills != null ? { projectSkills } : {}) }
   })
 
   typedIpcHandle('skill:create', async (req) => {
@@ -7145,8 +7419,10 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
-  typedIpcHandle('command:list', async (_req) => {
-    const commands = getSessionService().listCommands()
+  typedIpcHandle('command:list', async (req) => {
+    // 顺带增量发现宿主机新技能（节流），命令面板无需重启即可看到新软链技能
+    refreshHostSkillsIncrementally()
+    const commands = getSessionService().listCommands(req.sessionId)
     return { commands }
   })
 
@@ -9038,6 +9314,8 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('html:open-external', async (req) => openHtmlInExternalBrowser(req))
 
+  registerHtmlRuntimeDocIpc()
+
   // ─── Window Control Handlers ─────────────────────────────────────────────
 
   typedIpcHandle('window:minimize', async (_req, event) => {
@@ -9182,6 +9460,7 @@ export function registerAllIpcHandlers(): void {
   registerComputerUseIpc()
   registerApplicationSnapshotIpc()
   registerSidebarOrderIpc()
+  registerWorkspaceSearchIpc()
   registerPluginIpc()
   registerSubAppIpc()
 

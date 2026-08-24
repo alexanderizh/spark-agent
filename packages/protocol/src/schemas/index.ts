@@ -24,6 +24,7 @@ import {
 import { ProviderFilesIpcSchemaRegistry } from '../provider-files.js'
 import { VideoChannelTasksIpcSchemaRegistry } from '../video-channel-tasks.js'
 import { SidebarOrderIpcSchemaRegistry } from '../sidebar-order.js'
+import { WorkspaceSearchIpcSchemaRegistry } from '../workspace-search.js'
 import { AppUnreadBadgeIpcSchemaRegistry } from '../app-unread-badge.js'
 import { CanvasWorkflowIpcSchemaRegistry } from '../canvas-workflow.js'
 import { CanvasWorkflowRuntimeIpcSchemaRegistry } from '../canvas-workflow-runtime.js'
@@ -706,6 +707,12 @@ export const WorkspaceSwitchBranchRequestSchema = z.object({
   branch: z.string().min(1).max(200),
 })
 
+export const WorkspaceCheckoutTagRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  tag: z.string().min(1).max(200),
+  createBranch: z.string().min(1).max(200).optional(),
+})
+
 export const WorkspaceFetchBranchesRequestSchema = z.object({
   workspaceId: z.string().uuid(),
 })
@@ -722,6 +729,10 @@ export const WorkspaceGitCommitRequestSchema = z.object({
 })
 
 export const WorkspaceGitPushRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+})
+
+export const WorkspaceGitPullRequestSchema = z.object({
   workspaceId: z.string().uuid(),
 })
 
@@ -934,6 +945,7 @@ export const IpcSchemaRegistry = {
   ...ApplicationSnapshotIpcSchemaRegistry,
   ...AppUnreadBadgeIpcSchemaRegistry,
   ...SidebarOrderIpcSchemaRegistry,
+  ...WorkspaceSearchIpcSchemaRegistry,
   'session:create': SessionCreateRequestSchema,
   'session:send-turn': SessionSendTurnRequestSchema,
   'session:submit-turn': SessionSendTurnRequestSchema,
@@ -1023,11 +1035,13 @@ export const IpcSchemaRegistry = {
   'workspace:list-directory': WorkspaceListDirectoryRequestSchema,
   'workspace:list-branches': WorkspaceListBranchesRequestSchema,
   'workspace:switch-branch': WorkspaceSwitchBranchRequestSchema,
+  'workspace:checkout-tag': WorkspaceCheckoutTagRequestSchema,
   'workspace:fetch-branches': WorkspaceFetchBranchesRequestSchema,
   'workspace:git-status': WorkspaceGitStatusRequestSchema,
   'workspace:git-file-diff': WorkspaceGitFileDiffRequestSchema,
   'workspace:git-commit': WorkspaceGitCommitRequestSchema,
   'workspace:git-push': WorkspaceGitPushRequestSchema,
+  'workspace:git-pull': WorkspaceGitPullRequestSchema,
   'workspace:create-branch': WorkspaceCreateBranchRequestSchema,
   'workspace:watch-start': z.object({
     workspaceId: z.string().min(1),
@@ -1127,7 +1141,10 @@ export const IpcSchemaRegistry = {
   'mcp:authorize': z.object({ serverId: z.string().uuid() }),
   'mcp:deauthorize': z.object({ serverId: z.string().uuid() }),
   'mcp:auth-status': z.object({ serverId: z.string().uuid() }),
-  'skill:list': z.object({ scope: z.string().min(1).max(80).optional() }),
+  'skill:list': z.object({
+    scope: z.string().min(1).max(80).optional(),
+    sessionId: z.string().min(1).max(80).optional(),
+  }),
   'skill:create': z.object({
     id: z.string().min(1).max(120),
     scope: z.string().min(1).max(80),
@@ -1830,6 +1847,15 @@ export const IpcSchemaRegistry = {
     html: z.string().min(1).max(200_000),
     title: z.string().max(60).optional(),
     theme: z.enum(['light', 'dark']).optional(),
+  }),
+  'html:put-runtime-doc': z.object({
+    token: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$/),
+    // 原始 html 上限 200_000（见 html:open-window），此处为经
+    // buildSandboxedHtml 包裹 CSP/主题样式后的合成文档，留包裹余量。
+    document: z.string().min(1).max(220_000),
+  }),
+  'html:release-runtime-doc': z.object({
+    token: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$/),
   }),
 
   // Canvas Agent Bridge

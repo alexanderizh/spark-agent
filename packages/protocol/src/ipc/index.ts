@@ -66,6 +66,8 @@ import type {
 import type { ProviderFilesIpcChannelMap } from '../provider-files.js'
 import type { VideoChannelTasksIpcChannelMap } from '../video-channel-tasks.js'
 import type { SidebarOrderIpcChannelMap } from '../sidebar-order.js'
+import type { WorkspaceSearchIpcChannelMap } from '../workspace-search.js'
+import type { WorkspaceSearchContentStreamPayload } from '../workspace-search.js'
 import type { AppUnreadBadgeIpcChannelMap } from '../app-unread-badge.js'
 import type { PluginIpcChannelMap } from '../plugin.js'
 import type { PluginRuntimeIpcChannelMap } from '../plugin-runtime.js'
@@ -1220,12 +1222,14 @@ export interface WorkspaceListBranchesRequest {
 
 export interface WorkspaceGitBranch {
   name: string
-  kind: 'local' | 'remote'
+  kind: 'local' | 'remote' | 'tag'
   updatedAt: number
 }
 
 export interface WorkspaceListBranchesResponse {
   currentBranch: string | null
+  /** true 时 currentBranch 为分离头指针指向的 tag 名或短 SHA，而非分支名。 */
+  detachedHead?: boolean
   branches: string[]
   branchDetails?: WorkspaceGitBranch[]
 }
@@ -1237,6 +1241,21 @@ export interface WorkspaceSwitchBranchRequest {
 
 export interface WorkspaceSwitchBranchResponse {
   currentBranch: string
+  detachedHead?: boolean
+  branches: string[]
+  branchDetails?: WorkspaceGitBranch[]
+}
+
+export interface WorkspaceCheckoutTagRequest {
+  workspaceId: string
+  tag: string
+  /** 提供时从该 tag 创建并检出此新分支；缺省直接检出 tag（进入分离头指针）。 */
+  createBranch?: string
+}
+
+export interface WorkspaceCheckoutTagResponse {
+  currentBranch: string
+  detachedHead?: boolean
   branches: string[]
   branchDetails?: WorkspaceGitBranch[]
 }
@@ -1274,6 +1293,8 @@ export interface WorkspaceGitStashEntry {
 export interface WorkspaceGitStatusResponse {
   isGitRepo: boolean
   currentBranch: string | null
+  /** true 时 currentBranch 为分离头指针指向的 tag 名或短 SHA，而非分支名。 */
+  detachedHead?: boolean
   branches: string[]
   branchDetails?: WorkspaceGitBranch[]
   ahead: number
@@ -1306,6 +1327,12 @@ export interface WorkspaceGitCommitRequest {
   message: string
   includeUnstaged?: boolean
   push?: boolean
+  /**
+   * 路径级提交：仅提交这些文件/目录的变更（pathspec-only commit）。
+   * 缺省或 undefined 时维持原有全量语义（includeUnstaged 控制 git add -A）。
+   * 空数组视为非法，由主进程拒绝。
+   */
+  paths?: string[]
 }
 
 export interface WorkspaceGitCommitResponse {
@@ -1324,6 +1351,15 @@ export interface WorkspaceGitPushResponse {
   status: WorkspaceGitStatusResponse
 }
 
+export interface WorkspaceGitPullRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceGitPullResponse {
+  pulled: boolean
+  status: WorkspaceGitStatusResponse
+}
+
 export interface WorkspaceGitFileDiffRequest {
   workspaceId: string
   path: string
@@ -1333,6 +1369,89 @@ export interface WorkspaceGitFileDiffRequest {
 export interface WorkspaceGitFileDiffResponse {
   diff: string
   isBinary: boolean
+}
+
+/** 代码面板「提交板块」的一条提交记录 */
+export interface WorkspaceGitCommitEntry {
+  /** 完整 hash（与未推送集合比对用） */
+  hash: string
+  shortHash: string
+  subject: string
+  authorName: string
+  /** ISO 8601 时间 */
+  date: string
+  /** 尚未推送到上游（无上游分支时恒为 false） */
+  unpushed: boolean
+}
+
+export interface WorkspaceGitLogRequest {
+  workspaceId: string
+  /** 返回最近 N 条，缺省 100，上限 500 */
+  limit?: number
+}
+
+export interface WorkspaceGitLogResponse {
+  commits: WorkspaceGitCommitEntry[]
+}
+
+export interface WorkspaceGitStageRequest {
+  workspaceId: string
+  /** 暂存指定路径；缺省或空数组 = 暂存全部（git add -A） */
+  paths?: string[]
+}
+
+export interface WorkspaceGitStageResponse {
+  status: WorkspaceGitStatusResponse
+}
+
+export interface WorkspaceGitUnstageRequest {
+  workspaceId: string
+  /** 取消暂存指定路径；缺省或空数组 = 取消全部暂存 */
+  paths?: string[]
+}
+
+export interface WorkspaceGitUnstageResponse {
+  status: WorkspaceGitStatusResponse
+}
+
+export interface WorkspaceGitStashPushRequest {
+  workspaceId: string
+  message?: string
+  /** 连同未跟踪文件一起贮藏（-u），缺省 false */
+  includeUntracked?: boolean
+}
+
+export interface WorkspaceGitStashPushResponse {
+  status: WorkspaceGitStatusResponse
+}
+
+export interface WorkspaceGitStashPopRequest {
+  workspaceId: string
+  /** stash 选择器，如 stash@{0} */
+  selector: string
+}
+
+export interface WorkspaceGitStashPopResponse {
+  status: WorkspaceGitStatusResponse
+}
+
+export interface WorkspaceGitStashDropRequest {
+  workspaceId: string
+  selector: string
+}
+
+export interface WorkspaceGitStashDropResponse {
+  status: WorkspaceGitStatusResponse
+}
+
+export interface WorkspaceGitDiscardRequest {
+  /** 路径级丢弃；破坏性操作，空数组由主进程拒绝 */
+  workspaceId: string
+  paths: string[]
+}
+
+export interface WorkspaceGitDiscardResponse {
+  status: WorkspaceGitStatusResponse
 }
 
 export interface WorkspaceCreateBranchRequest {
@@ -1913,10 +2032,24 @@ export interface EnvVarLayerValue {
 
 export interface SkillListRequest {
   scope?: string
+  /**
+   * 会话 ID：传入时会解析该会话绑定的工作区，额外扫描项目级技能目录
+   * （.claude/.codex/.cursor 等 skills 目录），随 projectSkills 返回。
+   */
+  sessionId?: string
+}
+
+/** 项目级技能摘要（来自项目技能目录实时扫描，非数据库登记） */
+export interface ProjectSkillSummaryItem {
+  id: string
+  name: string
+  description: string
 }
 
 export interface SkillListResponse {
   skills: SkillItem[]
+  /** 项目级技能（仅请求携带 sessionId 时返回；同名技能已按目录优先级去重） */
+  projectSkills?: ProjectSkillSummaryItem[]
 }
 
 export interface SkillCreateRequest {
@@ -3763,6 +3896,7 @@ export type CommandGroup =
   | 'agent'
   | 'mcp'
   | 'skill'
+  | 'project-skill'
   | 'resource'
   | 'team'
   | 'git'
@@ -3794,7 +3928,10 @@ export interface CommandExecuteResponse {
   session?: SessionListResponse['sessions'][number]
 }
 
-export interface CommandListRequest {}
+export interface CommandListRequest {
+  /** 可选：当前会话 ID，用于扫描该会话所属项目的项目级技能并注入命令面板。 */
+  sessionId?: string
+}
 
 export interface CommandListItem {
   id: string
@@ -4239,6 +4376,25 @@ export interface HtmlViewerOpenRequest {
 
 export interface HtmlViewerOpenResponse {
   success: boolean
+}
+
+/**
+ * 内容区 HTML 渲染块的沙箱文档内存登记协议。
+ *
+ * srcdoc 文档会继承 renderer CSP（script-src 'self' capability-asset:）
+ * 导致渲染块的内联脚本被拦；改为 renderer 把合成文档登记到主进程，再以
+ * `capability-asset://html-render/<token>` 导航加载（自定义 scheme 文档
+ * 不继承父策略容器）。put 在挂载/重建时调用，release 在卸载时调用。
+ */
+export interface HtmlRuntimeDocPutRequest {
+  token: string
+  document: string
+}
+export interface HtmlRuntimeDocReleaseRequest {
+  token: string
+}
+export interface HtmlRuntimeDocAck {
+  ok: true
 }
 
 // ─── Window Control Channels ───────────────────────────────────────────────────
@@ -5860,6 +6016,7 @@ export interface IpcChannelMap
     ApplicationSnapshotIpcChannelMap,
     AppUnreadBadgeIpcChannelMap,
     SidebarOrderIpcChannelMap,
+    WorkspaceSearchIpcChannelMap,
     PluginIpcChannelMap,
     PluginRuntimeIpcChannelMap,
     OutcomeRoomIpcChannelMap,
@@ -5977,12 +6134,21 @@ export interface IpcChannelMap
   'workspace:list-directory': [WorkspaceListDirectoryRequest, WorkspaceListDirectoryResponse]
   'workspace:list-branches': [WorkspaceListBranchesRequest, WorkspaceListBranchesResponse]
   'workspace:switch-branch': [WorkspaceSwitchBranchRequest, WorkspaceSwitchBranchResponse]
+  'workspace:checkout-tag': [WorkspaceCheckoutTagRequest, WorkspaceCheckoutTagResponse]
   'workspace:fetch-branches': [WorkspaceFetchBranchesRequest, WorkspaceFetchBranchesResponse]
   'workspace:git-status': [WorkspaceGitStatusRequest, WorkspaceGitStatusResponse]
   'workspace:git-file-diff': [WorkspaceGitFileDiffRequest, WorkspaceGitFileDiffResponse]
   'workspace:git-check-ignore': [WorkspaceGitCheckIgnoreRequest, WorkspaceGitCheckIgnoreResponse]
   'workspace:git-commit': [WorkspaceGitCommitRequest, WorkspaceGitCommitResponse]
   'workspace:git-push': [WorkspaceGitPushRequest, WorkspaceGitPushResponse]
+  'workspace:git-pull': [WorkspaceGitPullRequest, WorkspaceGitPullResponse]
+  'workspace:git-log': [WorkspaceGitLogRequest, WorkspaceGitLogResponse]
+  'workspace:git-stage': [WorkspaceGitStageRequest, WorkspaceGitStageResponse]
+  'workspace:git-unstage': [WorkspaceGitUnstageRequest, WorkspaceGitUnstageResponse]
+  'workspace:git-stash-push': [WorkspaceGitStashPushRequest, WorkspaceGitStashPushResponse]
+  'workspace:git-stash-pop': [WorkspaceGitStashPopRequest, WorkspaceGitStashPopResponse]
+  'workspace:git-stash-drop': [WorkspaceGitStashDropRequest, WorkspaceGitStashDropResponse]
+  'workspace:git-discard': [WorkspaceGitDiscardRequest, WorkspaceGitDiscardResponse]
   'workspace:create-branch': [WorkspaceCreateBranchRequest, WorkspaceCreateBranchResponse]
   'workspace:list-worktrees': [WorkspaceListWorktreesRequest, WorkspaceListWorktreesResponse]
   'workspace:create-worktree': [WorkspaceCreateWorktreeRequest, WorkspaceCreateWorktreeResponse]
@@ -6445,6 +6611,8 @@ export interface IpcChannelMap
   ]
   'html:open-window': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
   'html:open-external': [HtmlViewerOpenRequest, HtmlViewerOpenResponse]
+  'html:put-runtime-doc': [HtmlRuntimeDocPutRequest, HtmlRuntimeDocAck]
+  'html:release-runtime-doc': [HtmlRuntimeDocReleaseRequest, HtmlRuntimeDocAck]
 
   // Window Controls (renderer → main process)
   'window:minimize': [WindowMinimizeRequest, WindowMinimizeResponse]
@@ -6648,6 +6816,8 @@ export interface IpcStreamChannelMap {
    * 任何入口（管理页 UI、Agent MCP 工具、IPC）造成的创建/发布/启停/归档/
    * 删除/草稿更新都会触发，保证会话内创建的应用即时出现在菜单与胶囊。 */
   'stream:subapp:directory-changed': Record<string, never>
+  /** 工作区内容搜索分批结果（主进程推送；渲染端按自己发起的 requestId 过滤） */
+  'stream:workspace-search:content': WorkspaceSearchContentStreamPayload
   /** 自定义工具变更（创建/更新/删除/启停/导入）：渲染进程工具列表据此刷新。 */
   'stream:custom-tools:changed': {
     change: 'created' | 'updated' | 'deleted' | 'enabled' | 'imported'

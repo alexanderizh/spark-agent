@@ -26,14 +26,9 @@ import {
   Copy,
   FilePenLine,
   FileSearch,
-  FolderOpen,
   Globe,
   Image as ImageIcon,
   Lightbulb,
-  MoreHorizontal,
-  PanelRight,
-  SlidersHorizontal,
-  Server,
   SquareTerminal,
   Trash,
   Save,
@@ -41,13 +36,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
-import {
-  ActivityLogSummaryIcon,
-  ProjectOpenDropdown,
-  TabbarIcon,
-  TabbarTooltipButton,
-} from './chat/ChatToolbar'
-import { ChatTitlebarEnd, ChatTitlebarStart } from './chat/ChatTitlebar'
+import { ActivityLogSummaryIcon } from './chat/ChatToolbar'
 import { UserQuestionDock } from './chat/UserQuestionDock'
 import type { UserQuestionData } from './chat/UserQuestionUtils'
 import {
@@ -71,6 +60,7 @@ import { HeroTipsTicker, SingleAgentEmptyHero, TeamModeEmptyHero } from './chat/
 import { HeroUsageHeatmap } from './chat/HeroUsageHeatmap'
 import { useEmptyHeroUsage } from './chat/useEmptyHeroUsage'
 import { ChatTabbar } from './chat/ChatTabbar'
+import { EmptySessionTopbar } from './chat/EmptySessionTopbar'
 import { SessionSchedulePanel } from './chat/SessionSchedulePanel'
 import {
   DocumentOutputCard,
@@ -184,9 +174,17 @@ import {
   setCodeExplorerVisible,
   setCodeExplorerWidth,
 } from '../components/code-viewer/file-explorer/fileExplorerVisibility'
+import {
+  openGitPanel,
+  useGitPanelVisible,
+} from '../components/code-viewer/git-panel/gitPanelVisibility'
+import { openSearchPanel } from '../components/code-viewer/search-panel/searchPanelVisibility'
 import type { OpenCodeFile, CodeViewMode } from '../components/code-viewer/types'
 import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
+import { insertToComposer } from '../components/code-viewer/composerInsert'
+import { buildComposerAttachmentsFromPaths } from '../services/composer-attachments'
 import {
+  shouldOpenInEditorByDefault,
   shouldPreviewFirst,
   type FileOpenModeOpts,
   type FileOpenHandler,
@@ -294,6 +292,7 @@ import { SKILL_STORE_TARGET_TAB_EVENT, SKILL_STORE_TARGET_TAB_STORAGE_KEY } from
 import { requestAgentsTargetTab } from '../teamNavigation'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
+import { OPEN_CODE_SEARCH_EVENT } from '../hooks/useKeyboard'
 import { MessageBuilder } from '../services/event-mapper'
 import {
   LiveAgentEventBuffer,
@@ -1329,6 +1328,8 @@ export function ChatView({
   )
   const codeExplorerVisible = useCodeExplorerVisible()
   const codeExplorerWidth = useCodeExplorerWidth()
+  // Git 面板可见性（全局 store；与文件树互斥，切换逻辑在两边的开关回调里互相关闭）
+  const gitPanelVisible = useGitPanelVisible()
   // workspace root 同步到 ref：resolveAbsCodePath/openInCodeTab 声明在 activeSessionWorkspace
   // 之前（TDZ），直接引用会报 used-before-declaration；改走 ref，在 activeSessionWorkspace
   // 声明之后的 render 阶段同步最新值。
@@ -1359,9 +1360,11 @@ export function ChatView({
   const { invoke: cancelSessionTurn } = useIpcInvoke('session:cancel')
   const { invoke: listBranches } = useIpcInvoke('workspace:list-branches')
   const { invoke: switchBranch } = useIpcInvoke('workspace:switch-branch')
+  const { invoke: checkoutTag } = useIpcInvoke('workspace:checkout-tag')
   const { invoke: fetchBranches } = useIpcInvoke('workspace:fetch-branches')
   const { invoke: commitGitChanges } = useIpcInvoke('workspace:git-commit')
   const { invoke: pushGitChanges } = useIpcInvoke('workspace:git-push')
+  const { invoke: pullGitChanges } = useIpcInvoke('workspace:git-pull')
   // 留空提交信息时，把提交请求作为消息发给当前会话的 agent，由 agent 分析 diff 并提交。
   const { invoke: sendTurnToAgent } = useIpcInvoke('session:submit-turn')
   const { invoke: createBranch } = useIpcInvoke('workspace:create-branch')
@@ -1764,11 +1767,41 @@ export function ChatView({
     activeSessionWorkspace,
   })
   const gitWorkspaceId = gitWorkspace?.id ?? null
+  // 文件树右键「添加到对话」：把文件/目录经 insertToComposer 追加通道送进当前会话输入框。
+  // 构建方式与「添加相关文件或目录」一致（stat 探测目录、图片生成预览），发送时作为
+  // 路径引用传给 Agent（目录还会加入 agent 可访问目录表），与直接从输入框添加语义相同。
+  const { invoke: prepareComposerImagePreview } = useIpcInvoke('file:prepare-image-preview')
+  const { invoke: statComposerFileKind } = useIpcInvoke('file:stat-kind')
+  const addExplorerNodeToConversation = useCallback(
+    async (relPath: string) => {
+      const absPath = resolveAbsCodePath(relPath)
+      try {
+        const newAttachments = await buildComposerAttachmentsFromPaths([absPath], {
+          idPrefix: 'filetree',
+          prepareImagePreview: prepareComposerImagePreview,
+          statFileKind: statComposerFileKind,
+        })
+        const applied = await insertToComposer(
+          { attachments: newAttachments },
+          activeSession?.id ?? null,
+        )
+        if (applied) {
+          toast.success(`已添加到对话：${relPath === '' ? '工作区根目录' : relPath}`)
+        } else {
+          toast.error('未找到当前会话的输入框，添加失败')
+        }
+      } catch (err) {
+        console.error('添加到对话失败', err)
+        toast.error(err instanceof Error ? err.message : '添加到对话失败')
+      }
+    },
+    [resolveAbsCodePath, prepareComposerImagePreview, statComposerFileKind, activeSession, toast],
+  )
   const { gitStatus, applyGitStatus, refreshGitStatus } = useLiveWorkspaceGitStatus({
     workspaceId: gitWorkspaceId,
     sessionId: active,
     refreshSignal: branchRefreshTick,
-    live: showGitEnvPanel || showGitReviewPanel,
+    live: showGitEnvPanel || showGitReviewPanel || gitPanelVisible,
     onBranchStateChange: setBranchState,
   })
   const activeSessionTasks = useMemo(
@@ -2028,6 +2061,18 @@ export function ChatView({
     return () => window.removeEventListener('spark:focus-composer', handler)
   }, [])
 
+  // Listen for Cmd/Ctrl+P（文件搜索）/ Cmd/Ctrl+Shift+F（内容搜索）from global shortcut handler:
+  // 切到代码面板并打开搜索侧栏（聚焦由 SearchPanel 监听同一事件完成）
+  useEffect(() => {
+    const handler = (e: Event): void => {
+      const detail = (e as CustomEvent<{ mode?: 'files' | 'content' }>).detail
+      openUnifiedSidePanel('code')
+      openSearchPanel(detail?.mode === 'content' ? 'content' : 'files')
+    }
+    window.addEventListener(OPEN_CODE_SEARCH_EVENT, handler)
+    return () => window.removeEventListener(OPEN_CODE_SEARCH_EVENT, handler)
+  }, [openUnifiedSidePanel])
+
   const ensureChatLayoutFitsWindow = useCallback(
     (allowShrink = false, allowGrow = true) => {
       const layout = chatLayoutRef.current
@@ -2217,6 +2262,36 @@ export function ChatView({
     }
   }
 
+  // 检出标签：detached HEAD，适合查看历史代码；toast 明确提示提交不归属分支
+  const handleCheckoutTag = async (tag: string): Promise<boolean> => {
+    if (gitWorkspace == null || !tag) return false
+    try {
+      const res = await checkoutTag({ workspaceId: gitWorkspace.id, tag })
+      setBranchState(res)
+      await refreshGitStatus()
+      toast.success(`已检出标签 ${tag}（分离头指针）`)
+      return true
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '检出标签失败')
+      return false
+    }
+  }
+
+  // 从标签创建并检出新分支：安全主路径，后续提交归属新分支
+  const handleCreateBranchFromTag = async (tag: string, branch: string): Promise<boolean> => {
+    if (gitWorkspace == null || !tag || !branch) return false
+    try {
+      const res = await checkoutTag({ workspaceId: gitWorkspace.id, tag, createBranch: branch })
+      setBranchState(res)
+      await refreshGitStatus()
+      toast.success(`已从标签 ${tag} 创建并切换到 ${res.currentBranch}`)
+      return true
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '从标签创建分支失败')
+      return false
+    }
+  }
+
   // 分支选择器每次展开时调用：主动重新拉取一次最新分支列表，避免用户在终端手动切分支
   // 后界面缓存不同步（常规刷新只在切换项目/窗口聚焦/会话结束时触发，见上方 effect）。
   const refreshBranches = async () => {
@@ -2244,10 +2319,11 @@ export function ChatView({
     message: string
     includeUnstaged: boolean
     push: boolean
+    paths?: string[]
   }) => {
     if (gitWorkspace == null) return
     let commitOptions = options
-    // 留空提交信息：交给当前会话的 agent 分析 diff 并提交（携带暂存/推送开关）。
+    // 留空提交信息：交给当前会话的 agent 分析 diff 并提交（携带暂存/推送开关与文件范围）。
     // 没有活跃会话时回退到模板生成，保证提交按钮始终可用。
     if (options.message.trim() === '') {
       const sessionId = activeSession?.id
@@ -2255,7 +2331,7 @@ export function ChatView({
         try {
           await sendTurnToAgent({
             sessionId,
-            message: buildAgentCommitMessage(options.includeUnstaged, options.push),
+            message: buildAgentCommitMessage(options.includeUnstaged, options.push, options.paths),
           })
           toast.success('已交给助手处理，请在对话中查看进度')
         } catch (err) {
@@ -2264,7 +2340,10 @@ export function ChatView({
         }
         return
       }
-      commitOptions = { ...options, message: buildDefaultCommitMessage(gitStatus) }
+      commitOptions = {
+        ...options,
+        message: buildDefaultCommitMessage(gitStatus, options.paths),
+      }
     }
     try {
       const res = await commitGitChanges({
@@ -2272,6 +2351,7 @@ export function ChatView({
         message: commitOptions.message,
         includeUnstaged: commitOptions.includeUnstaged,
         push: commitOptions.push,
+        ...(commitOptions.paths != null ? { paths: commitOptions.paths } : {}),
       })
       applyGitStatus(res.status)
       toast.success(commitOptions.push ? '已提交并推送' : '已提交变更')
@@ -2289,6 +2369,18 @@ export function ChatView({
       toast.success('已推送到远端')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '推送失败')
+      throw err
+    }
+  }
+
+  const handlePullGitChanges = async () => {
+    if (gitWorkspace == null) return
+    try {
+      const res = await pullGitChanges({ workspaceId: gitWorkspace.id })
+      applyGitStatus(res.status)
+      toast.success('已拉取远端更新')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '拉取失败')
       throw err
     }
   }
@@ -2643,6 +2735,8 @@ export function ChatView({
         onRefreshBranches={refreshBranches}
         onFetchBranches={handleFetchBranches}
         onCreateBranch={handleCreateBranch}
+        onCheckoutBranchTag={handleCheckoutTag}
+        onCreateBranchFromTag={handleCreateBranchFromTag}
         onCancelSession={handleCancelSession}
         onSent={handleUserSent}
         showProjectPicker
@@ -2701,6 +2795,8 @@ export function ChatView({
         onRefreshBranches={refreshBranches}
         onFetchBranches={handleFetchBranches}
         onCreateBranch={handleCreateBranch}
+        onCheckoutBranchTag={handleCheckoutTag}
+        onCreateBranchFromTag={handleCreateBranchFromTag}
         onCancelSession={handleCancelSession}
         onSent={handleUserSent}
         showProjectPicker={showEmptyHero}
@@ -2750,82 +2846,43 @@ export function ChatView({
         ref={chatAreaRef}
       >
         {showEmptyHero && (
-          <div
-            className="chat-sidebar-topbar"
-            onDoubleClick={() => {
-              window.spark.invoke('window:maximize', {}).catch(() => {})
+          <EmptySessionTopbar
+            activeSessionId={active}
+            activeWorkspaceId={activeWorkspaceId}
+            activeWorkspace={activeWorkspace}
+            showGitEnvPanel={showGitEnvPanel}
+            showInspector={showInspector}
+            showConfigPanel={showConfigPanel}
+            showUnifiedPanel={unifiedPanelOpen}
+            showSessionSchedule={showSessionSchedule}
+            sessionScheduleEnabledCount={sessionScheduleEnabledCount}
+            onToggleGitEnvPanel={() => {
+              // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
+              gitPanelUserInteractedRef.current = true
+              gitEnvPanelViewportCollapsedRef.current = false
+              setShowGitEnvPanel((prev) => {
+                const next = !prev
+                if (next) void refreshGitStatus()
+                return next
+              })
             }}
-          >
-            <ChatTitlebarStart {...(onExpandSidebar ? { onExpandSidebar } : {})} />
-            <div className="chat-sidebar-topbar-actions">
-              <TabbarTooltipButton
-                title="环境信息"
-                ariaLabel="环境信息"
-                className={`icon-btn ${showGitEnvPanel ? 'active' : ''}`}
-                onClick={() => {
-                  // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
-                  gitPanelUserInteractedRef.current = true
-                  gitEnvPanelViewportCollapsedRef.current = false
-                  setShowGitEnvPanel((prev) => {
-                    const next = !prev
-                    if (next) void refreshGitStatus()
-                    return next
-                  })
-                }}
-              >
-                <TabbarIcon icon={Server} />
-              </TabbarTooltipButton>
-              {activeWorkspace ? (
-                <ProjectOpenDropdown rootPath={activeWorkspace.rootPath} />
-              ) : (
-                <button
-                  className="icon-btn"
-                  title="请先选择项目文件夹"
-                  aria-label="请先选择项目文件夹"
-                  disabled
-                >
-                  <TabbarIcon icon={FolderOpen} />
-                </button>
-              )}
-              <button
-                className={`icon-btn ${showInspector ? 'active' : ''}`}
-                title="会话检查器"
-                aria-label="会话检查器"
-                onClick={() => {
-                  setShowInspector(!showInspector)
-                  if (!showInspector) {
-                    setUnifiedPanelOpen(false)
-                    clearHtmlPresentation()
-                    setShowConfigPanel(false)
-                    setFilePreview(null)
-                  }
-                }}
-              >
-                <TabbarIcon icon={PanelRight} />
-              </button>
-              <button
-                className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
-                title={activeWorkspace ? '配置面板' : '请先选择项目文件夹'}
-                aria-label="配置面板"
-                disabled={!activeWorkspace}
-                onClick={toggleConfigPanel}
-              >
-                <TabbarIcon icon={SlidersHorizontal} />
-              </button>
-              <button
-                className={`icon-btn ${unifiedPanelOpen ? 'active' : ''}`}
-                title={
-                  activeWorkspace ? '统一侧边面板（终端/侧聊/审查/计划）' : '请先选择项目文件夹'
-                }
-                aria-label="统一侧边面板"
-                disabled={!activeWorkspace}
-                onClick={toggleUnifiedPanel}
-              >
-                <TabbarIcon icon={MoreHorizontal} />
-              </button>
-            </div>
-            <ChatTitlebarEnd />
-          </div>
+            onToggleInspector={() => {
+              setShowInspector(!showInspector)
+              if (!showInspector) {
+                setUnifiedPanelOpen(false)
+                clearHtmlPresentation()
+                setShowConfigPanel(false)
+                setFilePreview(null)
+              }
+            }}
+            onToggleConfig={toggleConfigPanel}
+            onToggleUnifiedPanel={toggleUnifiedPanel}
+            onOpenInEditor={() => openUnifiedSidePanel('code')}
+            {...(onExpandSidebar ? { onExpandSidebar } : {})}
+            createSession={sessionCtx.handleNewSession}
+            openSessionSchedule={sessionCtx.openSessionSchedule}
+            closeSessionSchedule={sessionCtx.closeSessionSchedule}
+          />
         )}
         {/* {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />} */}
         {showEmptyHero && (
@@ -2875,6 +2932,7 @@ export function ChatView({
                 key="chat-tabbar"
                 session={activeSession}
                 workspace={activeWorkspace}
+                onOpenInEditor={() => openUnifiedSidePanel('code')}
                 agentStatus={agentStatus}
                 stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
                 branchState={branchState}
@@ -3101,6 +3159,7 @@ export function ChatView({
           onClose={() => setGitCommitModalOpen(false)}
           onCommit={handleCommitGitChanges}
           onPush={handlePushGitChanges}
+          onPull={handlePullGitChanges}
           onRefresh={refreshGitStatus}
         />
       )}
@@ -3111,6 +3170,8 @@ export function ChatView({
           branchState={branchState}
           onClose={() => setGitBranchModalOpen(false)}
           onSwitchBranch={handleSwitchBranch}
+          onCheckoutTag={handleCheckoutTag}
+          onCreateBranchFromTag={handleCreateBranchFromTag}
           onFetch={handleFetchBranches}
           onOpenCreateBranch={() => {
             setGitBranchModalOpen(false)
@@ -3181,12 +3242,27 @@ export function ChatView({
                 onExplorerWidthChange={setCodeExplorerWidth}
                 onExplorerExpandedChange={setCodeExplorerExpandedDirs}
                 onOpenFileFromExplorer={(rel) =>
-                  isCodeLikeFile(rel) ? openInCodeTab(rel) : handleFilePreview(rel, 'text')
+                  shouldOpenInEditorByDefault(rel)
+                    ? openInCodeTab(rel)
+                    : handleFilePreview(rel, 'text')
                 }
                 onPreviewFileFromExplorer={(rel) =>
                   handleFilePreview(rel, 'text', { mode: 'preview' })
                 }
                 onEditFileFromExplorer={(rel) => openInCodeTab(rel)}
+                onAddToChatFromExplorer={(rel) => void addExplorerNodeToConversation(rel)}
+                gitStatus={gitStatus}
+                onGitStatusApplied={applyGitStatus}
+                onRefreshGitStatus={() => void refreshGitStatus()}
+                onOpenFileFromGit={(rel) => {
+                  setCodeViewMode('diff')
+                  openInCodeTab(rel)
+                }}
+                onOpenFileFromSearch={(rel, line) => {
+                  // 搜索结果命中必为文本文件：编辑器打开并定位到匹配行
+                  setCodeViewMode('source')
+                  openInCodeTab(rel, line != null ? { lineNumber: line } : undefined)
+                }}
               />
             ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
               <GitReviewPanel
@@ -3197,6 +3273,12 @@ export function ChatView({
                 onWidthChange={setSideChatWidth}
                 onRefresh={refreshGitStatus}
                 onClose={() => closeUnifiedSidePanel('review')}
+                onOpenInEditor={(path) => {
+                  // 三连跳：切代码面板 → 展示 Git 面板 → 打开该文件 diff 视图可直接编辑
+                  setCodeViewMode('diff')
+                  openInCodeTab(path)
+                  openGitPanel()
+                }}
               />
             ) : activeUnifiedSideTab === 'html' && activeHtmlPanelBlock != null ? (
               <HtmlRenderProvider value={htmlRenderContext}>
@@ -3308,6 +3390,8 @@ export function ChatView({
                       onRefreshBranches={refreshBranches}
                       onFetchBranches={handleFetchBranches}
                       onCreateBranch={handleCreateBranch}
+                      onCheckoutBranchTag={handleCheckoutTag}
+                      onCreateBranchFromTag={handleCreateBranchFromTag}
                       onCancelSession={handleCancelSession}
                       onSent={handleSideChatSent}
                       showProjectPicker={false}
