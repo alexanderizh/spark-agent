@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Dropdown } from 'antd'
 import type { SubAppSummary } from '@spark/protocol'
@@ -180,7 +180,21 @@ export function UnifiedSessionSidePanel({
   children: ReactNode
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
+  const pickerRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+
+  // 加号菜单是自绘浮层，不经过 antd Dropdown；打开后点击面板外部应立即收起。
+  useEffect(() => {
+    if (!pickerOpen) return
+    const handlePointerDown = (event: PointerEvent): void => {
+      const target = event.target
+      if (target instanceof Node && pickerRef.current?.contains(target)) return
+      setPickerOpen(false)
+    }
+    window.addEventListener('pointerdown', handlePointerDown, true)
+    return () => window.removeEventListener('pointerdown', handlePointerDown, true)
+  }, [pickerOpen])
+
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -306,7 +320,7 @@ export function UnifiedSessionSidePanel({
             )
           })}
         </div>
-        <div className="unified-side-panel-add-wrap">
+        <div className="unified-side-panel-add-wrap" ref={pickerRef}>
           <button
             type="button"
             className="unified-side-panel-add"

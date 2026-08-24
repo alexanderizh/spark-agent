@@ -38,7 +38,18 @@ function report(
   data: Record<string, unknown> = {},
 ): void {
   if (!canReport()) return
+  const payload = {
+    clientId: probe.clientId,
+    messageId: probe.messageId,
+    sessionId: probe.sessionId,
+    elapsedMs: elapsed(probe),
+    hiddenUntilStarted: probe.hiddenUntilStarted,
+    ...data,
+  }
   try {
+    // Windows packaged builds can always expose this through F12 even when the
+    // session-scoped DebugLogServer tool is unavailable to the investigating agent.
+    console.warn(`[BUG-DEBUG] optimistic-render ${JSON.stringify({ tag, ...payload })}`)
     void fetch(DEBUG_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -48,14 +59,7 @@ function report(
         tag,
         source: 'renderer',
         ts: new Date().toISOString(),
-        data: {
-          clientId: probe.clientId,
-          messageId: probe.messageId,
-          sessionId: probe.sessionId,
-          elapsedMs: elapsed(probe),
-          hiddenUntilStarted: probe.hiddenUntilStarted,
-          ...data,
-        },
+        data: payload,
       }),
       keepalive: true,
     }).catch(() => {})
@@ -115,6 +119,10 @@ export function beginOptimisticMessageRenderProbe(input: OptimisticRenderProbeIn
   reportStage(probe, 'optimistic-send-start', {
     createdAt: input.createdAt,
     contentLength: input.contentLength,
+    visibilityState: document.visibilityState,
+    hasFocus: document.hasFocus(),
+    navigatorPlatform: navigator.platform,
+    userAgent: navigator.userAgent,
   })
   ensureLongTaskObserver()
 
@@ -130,6 +138,11 @@ export function beginOptimisticMessageRenderProbe(input: OptimisticRenderProbeIn
 export function markOptimisticBeginReturned(clientId: string): void {
   const probe = probes.get(`optimistic-${clientId}`)
   if (probe != null) reportStage(probe, 'optimistic-on-begin-returned')
+}
+
+export function markOptimisticVisiblePaintWaitResolved(clientId: string): void {
+  const probe = probes.get(`optimistic-${clientId}`)
+  if (probe != null) reportStage(probe, 'optimistic-visible-paint-wait-resolved')
 }
 
 export function markOptimisticLifecycleSettled(

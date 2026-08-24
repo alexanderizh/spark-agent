@@ -5,6 +5,7 @@ import {
   beginOptimisticMessageRenderProbe,
   markOptimisticBeginReturned,
   markOptimisticLifecycleSettled,
+  markOptimisticVisiblePaintWaitResolved,
 } from './optimistic-message-render-debug'
 
 export interface OptimisticUserMessageDraft {
@@ -73,7 +74,10 @@ export function startOptimisticUserSend(
 
   return {
     clientId,
-    waitUntilVisible: waitForVisiblePaint,
+    waitUntilVisible: async () => {
+      await waitForVisiblePaint()
+      markOptimisticVisiblePaintWaitResolved(clientId)
+    },
     commit: (turnId, started) => {
       if (settled) return
       settled = true

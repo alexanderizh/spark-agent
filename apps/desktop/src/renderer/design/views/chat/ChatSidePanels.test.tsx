@@ -1,4 +1,8 @@
+// @vitest-environment jsdom
+
 import React from 'react'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { SubAppSummary } from '@spark/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -7,6 +11,7 @@ import {
   subAppPanelKind,
   type UnifiedSidePanelKind,
 } from './ChatSidePanels'
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function makePanelApp(over: Partial<SubAppSummary>): SubAppSummary {
   return {
@@ -127,5 +132,44 @@ describe('UnifiedSessionSidePanel', () => {
     )
     expect(emptyMarkup).toContain('快捷打开')
     expect(emptyMarkup).toContain('待办清单')
+  })
+
+  it('点击加号菜单外部时自动收起菜单', async () => {
+    const container = document.createElement('div')
+    const outside = document.createElement('button')
+    document.body.append(container, outside)
+    const root = createRoot(container)
+
+    try {
+      await act(async () => {
+        root.render(
+          <UnifiedSessionSidePanel
+            tabs={['terminal']}
+            activeTab="terminal"
+            width={560}
+            onWidthChange={vi.fn()}
+            onSelect={vi.fn()}
+            onOpen={vi.fn()}
+            onCloseTab={vi.fn()}
+          >
+            <div>panel content</div>
+          </UnifiedSessionSidePanel>,
+        )
+      })
+
+      const addButton = container.querySelector<HTMLButtonElement>('.unified-side-panel-add')
+      expect(addButton).not.toBeNull()
+      await act(async () => addButton?.click())
+      expect(container.querySelector('.unified-side-panel-menu.compact')).not.toBeNull()
+
+      await act(async () => {
+        outside.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      })
+      expect(container.querySelector('.unified-side-panel-menu.compact')).toBeNull()
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+      outside.remove()
+    }
   })
 })

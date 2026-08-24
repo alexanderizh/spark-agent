@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, TurnPromptSnapshotEvent, TurnRuntimeMetrics } from '@spark/protocol'
 import type { UsageSnapshot } from './ChatUsageTypes'
 import {
@@ -7,6 +7,7 @@ import {
   buildUsageDataFromEvents,
   computeCacheHitRate,
   createEmptySessionUsageData,
+  ensureSessionScheduleSession,
   eventsAfterLastHistoryReset,
   getLatestInputTokens,
   getProviderContextInputUpdate,
@@ -26,6 +27,41 @@ function event(type: AgentEvent['type'], seq: number): AgentEvent {
 }
 
 describe('ChatViewUtils', () => {
+  describe('ensureSessionScheduleSession', () => {
+    it('opens the active session without creating another one', async () => {
+      const createSession = vi.fn(async () => 'created-session')
+      const openSessionSchedule = vi.fn()
+
+      await ensureSessionScheduleSession({
+        activeSessionId: 'active-session',
+        activeWorkspaceId: 'workspace-1',
+        createSession,
+        openSessionSchedule,
+      })
+
+      expect(createSession).not.toHaveBeenCalled()
+      expect(openSessionSchedule).toHaveBeenCalledWith('active-session')
+    })
+
+    it('creates a session from the current workspace before opening schedules', async () => {
+      const createSession = vi.fn(async (workspaceId?: string | null) => {
+        expect(workspaceId).toBe('workspace-1')
+        return 'created-session'
+      })
+      const openSessionSchedule = vi.fn()
+
+      await ensureSessionScheduleSession({
+        activeSessionId: null,
+        activeWorkspaceId: 'workspace-1',
+        createSession,
+        openSessionSchedule,
+      })
+
+      expect(createSession).toHaveBeenCalledOnce()
+      expect(openSessionSchedule).toHaveBeenCalledWith('created-session')
+    })
+  })
+
   it('does not restore provider input from the previous turn during history hydration', () => {
     const previousUsage = {
       ...event('usage_update', 1),

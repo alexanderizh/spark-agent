@@ -350,3 +350,21 @@ export function formatTokenCount(value: number): string {
   if (value >= 1_000) return `${Math.round(value / 100) / 10}K`
   return `${value}`
 }
+
+/**
+ * Resolve the session target used by the session schedule panel.
+ *
+ * The empty hero can be rendered before a real session exists. In that case
+ * create one through the existing session flow so the schedule remains bound
+ * to a durable session instead of using a placeholder id.
+ */
+export async function ensureSessionScheduleSession<TSessionId extends string>(params: {
+  activeSessionId: TSessionId | null
+  activeWorkspaceId: string | null
+  createSession: (workspaceId?: string | null) => Promise<TSessionId | null>
+  openSessionSchedule: (sessionId: TSessionId) => void
+}): Promise<TSessionId | null> {
+  const sessionId = params.activeSessionId ?? (await params.createSession(params.activeWorkspaceId))
+  if (sessionId != null) params.openSessionSchedule(sessionId)
+  return sessionId
+}
