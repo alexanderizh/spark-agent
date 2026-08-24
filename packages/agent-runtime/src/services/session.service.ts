@@ -226,6 +226,7 @@ import {
   pickGoalDrainableRuntimeSelection,
   prepareTurnAttachments,
   providerRowsForModelRouter,
+  assertModelNotScheduledBlocked,
   readSessionTeamConfig,
   resolveCodexMemberExecutionProfile,
   shouldDeriveSessionTitle,
@@ -2264,6 +2265,9 @@ export class SessionService {
         throw new Error(`API key not found for provider ${provider.id}`)
       }
     }
+
+    // 峰谷定时禁用硬校验：provider/model 至此定值（普通 / Auto Router / CLI override 分支均覆盖）。
+    assertModelNotScheduledBlocked(provider.config_json, model)
 
     // 记忆抽取 settings 未配时回退：本 turn 该会话 / @mention agent 实际生效的对话模型。
     // team 主持 agent 走 session 默认值；@mention 切到成员 agent 时切到成员自己的
@@ -7012,6 +7016,8 @@ export class SessionService {
       apiKey = await resolveProviderApiKey(provider)
       if (apiKey.length === 0) throw new Error('Member provider API key not found')
     }
+    // 峰谷定时禁用硬校验：member 的 provider/model 至此定值（含 override 分支）。
+    assertModelNotScheduledBlocked(provider.config_json, model)
     // 成员 adapter：member 显式配置优先，否则回落会话级（与 Host mention 分支同款取数）。
     const memberAdapter = getAgentAdapterFromSession(
       member.agentAdapter ?? session.agent_adapter,

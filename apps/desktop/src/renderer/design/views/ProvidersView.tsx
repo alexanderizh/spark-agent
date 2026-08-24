@@ -22,6 +22,7 @@ import { ProviderConversationProtocolFields } from './provider/ProviderConversat
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
 import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
 import { ProviderEnabledSwitch } from './provider/ProviderEnabledSwitch'
+import { ProviderModelScheduleSection } from './provider/ProviderModelScheduleSection'
 import {
   MEDIA_CAPABILITY_LABELS,
   MEDIA_PROVIDER_LABELS,
@@ -72,6 +73,7 @@ import {
   isProviderAllowedForRouterAdapter,
   isRoutingModelConfig,
   normalizeRoutingCandidates,
+  scheduledBlockedModelIds,
 } from '@spark/protocol'
 import type {
   ProviderPreset,
@@ -102,6 +104,7 @@ import type {
   RoutingModelConfig,
   ProviderIconConfig,
   ProviderIconStyle,
+  ProviderModelSchedule,
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import { canHealthCheckProviderCardKind, type ProviderCardKind } from './provider-card-actions'
@@ -140,6 +143,8 @@ type ProviderForm = {
   defaultModel: string
   /** Chip 列表内部的 model id 数组（默认模型在最后添加时会被锁定） */
   modelIds: string[]
+  /** 模型定时禁用时段（峰谷定价规避）；空数组 = 清除全部 */
+  modelSchedules: ProviderModelSchedule[]
   endpoint: string
   codexApiKind: 'chat' | 'responses' | 'embedding'
   supportsMillionContext: boolean
@@ -1498,6 +1503,7 @@ function ProvidersView() {
                     }
                     status={p.enabled !== false ? status : 'off'}
                     modelIds={builtin ? [] : cardModelIds}
+                    scheduledBlockedCount={builtin ? 0 : (p.scheduledBlockedModelIds?.length ?? 0)}
                     defaultModel={p.defaultModel}
                     isBuiltin={builtin}
                     isManaged={p.managed === true}
@@ -1830,6 +1836,7 @@ function ProviderCardX({
   onDelete,
   onHealthCheck,
   onEnabledChanged,
+  scheduledBlockedCount = 0,
 }: {
   providerId: string
   vendor: VendorMeta | null
@@ -1862,6 +1869,8 @@ function ProviderCardX({
   onDelete: () => void
   onHealthCheck: () => void
   onEnabledChanged?: (enabled: boolean) => void | Promise<void>
+  /** 当前处于定时禁用时段内的模型数（峰谷定价规避；读取时判定快照）。 */
+  scheduledBlockedCount?: number
 }) {
   const { visibleModelIds, hiddenModelIds } = limitProviderCardModelIds(modelIds)
 
@@ -1985,7 +1994,7 @@ function ProviderCardX({
       <div className="pv_card_row pv_card_row_desc">{desc}</div>
 
       {/* ─── 行 3：支持的模型 pill 平铺，最多 3 行截断 ─── */}
-      {modelIds.length > 0 && (
+      {(modelIds.length > 0 || scheduledBlockedCount > 0) && (
         <div className="pv_card_row pv_card_row_models">
           <div className="pv_card_models">
             {visibleModelIds.map((m) => (
@@ -2005,6 +2014,16 @@ function ProviderCardX({
                 aria-label={`还有 ${hiddenModelIds.length} 个模型`}
               >
                 …
+              </span>
+            )}
+            {scheduledBlockedCount > 0 && (
+              <span
+                className="pv_model_pill pv_model_pill_blocked"
+                title="当前处于定时禁用时段内，模型已在全局隐藏；时段结束自动恢复"
+                aria-label={`${scheduledBlockedCount} 个模型定时禁用中`}
+              >
+                <Icons.Clock size={9} />
+                <span className="pv_model_pill_label">{scheduledBlockedCount} 个定时禁用中</span>
               </span>
             )}
           </div>
@@ -2575,6 +2594,7 @@ export function ProviderEditPanel({
     providerIcon: DEFAULT_PROVIDER_ICON,
     defaultModel: '',
     modelIds: [],
+    modelSchedules: [],
     endpoint: '',
     codexApiKind: 'chat',
     supportsMillionContext: false,
@@ -2733,6 +2753,7 @@ export function ProviderEditPanel({
               providerIcon: providerIconForPreset(preset),
               defaultModel: preset.defaultModel,
               modelIds: [preset.defaultModel],
+              modelSchedules: [],
               endpoint: preset.apiEndpoint,
               codexApiKind: resolveCodexApiKind(
                 preset.provider,
@@ -2766,6 +2787,7 @@ export function ProviderEditPanel({
           providerIcon: DEFAULT_PROVIDER_ICON,
           defaultModel: '',
           modelIds: [],
+          modelSchedules: [],
           endpoint: '',
           codexApiKind: 'chat',
           supportsMillionContext: false,
@@ -2810,6 +2832,7 @@ export function ProviderEditPanel({
               ),
             defaultModel: p.defaultModel,
             modelIds: uniqPreserveOrder(p.modelIds),
+            modelSchedules: p.modelSchedules ?? [],
             endpoint: p.apiEndpoint ?? '',
             codexApiKind: resolveCodexApiKind(
               normalizeProviderKind(p.provider),
@@ -3437,6 +3460,8 @@ export function ProviderEditPanel({
           imageProvider: form.modelType === 'image' ? form.imageProvider : null,
           imageApiType: form.modelType === 'image' ? form.mediaApiType : null,
           ...buildMediaUpdateFields(form),
+          // 定时禁用时段整体下发（空数组 = 清除全部）；服务端先应用时段，再做被禁模型的写保护合并
+          modelSchedules: form.modelSchedules,
         }
         if (form.provider === 'openai') req.codexApiKind = form.codexApiKind
         Object.assign(req, editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty))
@@ -4713,7 +4738,9 @@ export function ProviderEditPanel({
                   <div className="pv_model_picker_head">
                     <span className="pv_model_picker_title">已启用模型（全局可用）</span>
                     <span className="pv_model_picker_hint">
-                      点击 chip 可切换默认；也支持手动补充自定义模型 ID
+                      {scheduledBlockedModelIds(form.modelSchedules).size > 0
+                        ? `点击 chip 可切换默认；也支持手动补充自定义模型 ID；${scheduledBlockedModelIds(form.modelSchedules).size} 个模型处于定时禁用时段内（见下方「定时禁用」）`
+                        : '点击 chip 可切换默认；也支持手动补充自定义模型 ID'}
                     </span>
                   </div>
                   <ChipList
@@ -4741,6 +4768,13 @@ export function ProviderEditPanel({
                 </div>
               </div>
             </div>
+
+            {/* ─── 定时禁用（峰谷定价规避）：时段内模型全局不可见/不可选/不可用 ─── */}
+            <ProviderModelScheduleSection
+              modelIds={form.modelIds}
+              schedules={form.modelSchedules}
+              onChange={(next) => set('modelSchedules', next)}
+            />
 
             {usesClaudeTierMapping(form) && (
               <div className="pv_section">

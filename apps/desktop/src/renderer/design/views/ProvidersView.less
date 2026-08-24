@@ -195,7 +195,7 @@
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
-  width:200px;
+  width: 200px;
   min-width: 200px;
 }
 
@@ -417,7 +417,9 @@
   border-radius: var(--r-md);
   background: var(--bg-sunken);
   cursor: pointer;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
@@ -459,7 +461,9 @@
   color: var(--text-muted);
   text-decoration: none;
   background: transparent;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 
   &:hover {
     color: var(--text-strong, var(--text));
@@ -482,7 +486,9 @@
   margin-top: 12px;
   border-radius: var(--r-lg);
   background: var(--bg-sunken);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
@@ -546,12 +552,24 @@
 }
 
 /* 各类型配色（同时驱动胶囊背景与文字色） */
-.pv_kind--router { --pv-kind-color: #a855f7; }
-.pv_kind--cli    { --pv-kind-color: #8b95a5; }
-.pv_kind--image  { --pv-kind-color: #ec4899; }
-.pv_kind--video  { --pv-kind-color: #06b6d4; }
-.pv_kind--voice  { --pv-kind-color: #f59e0b; }
-.pv_kind--text   { --pv-kind-color: #3b82f6; }
+.pv_kind--router {
+  --pv-kind-color: #a855f7;
+}
+.pv_kind--cli {
+  --pv-kind-color: #8b95a5;
+}
+.pv_kind--image {
+  --pv-kind-color: #ec4899;
+}
+.pv_kind--video {
+  --pv-kind-color: #06b6d4;
+}
+.pv_kind--voice {
+  --pv-kind-color: #f59e0b;
+}
+.pv_kind--text {
+  --pv-kind-color: #3b82f6;
+}
 
 /* ─── 行 1：图标 + (名称 + 状态 tag) + 操作按钮 ─── */
 .pv_card_row_top {
@@ -790,7 +808,10 @@
   line-height: 1.4;
   font-weight: 500;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
 
   &:not(:disabled):hover {
     color: var(--text);
@@ -928,7 +949,9 @@
   background: var(--bg-soft);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 
   &:hover {
     border-color: var(--border-strong, var(--primary));
@@ -1035,7 +1058,11 @@
   background: var(--bg-soft);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.12s ease;
 
   &:hover {
     border-color: color-mix(in srgb, var(--primary) 28%, transparent);
@@ -1219,7 +1246,9 @@
   border-radius: var(--r-sm);
   background: var(--bg-soft);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .pv_icon_picker_trigger:hover {
@@ -1474,7 +1503,9 @@
   border-radius: var(--r-sm);
   background: var(--bg-sunken);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 88%, var(--text) 12%);
@@ -1600,7 +1631,13 @@
   padding: 12px;
   background: var(--spark-surface, transparent);
   color: inherit;
-  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font:
+    12px/1.55 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
   letter-spacing: 0;
 }
 
@@ -1608,4 +1645,204 @@
   margin: 0;
   white-space: pre-wrap;
   font: inherit;
+}
+
+/* ─── 模型定时禁用（峰谷定价规避） ───────────────────────────────────────── */
+
+/* 卡片模型 pill 行内的「定时禁用中」徽标（置灰暂停语义，非错误） */
+.pv_model_pill.pv_model_pill_blocked {
+  flex: 0 0 auto;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--text-muted) 42%, transparent);
+
+  .pv_model_pill_label {
+    white-space: nowrap;
+  }
+}
+
+/* 编辑抽屉：定时禁用区块 */
+.pv_ms_empty {
+  padding: 14px 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pv_ms_list {
+  display: flex;
+  flex-direction: column;
+}
+
+.pv_ms_row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 26px 10px 0;
+  border-bottom: 1px solid var(--border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.pv_ms_row_main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pv_ms_model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.pv_ms_model_select {
+  min-width: 200px;
+  max-width: 320px;
+  flex-shrink: 1;
+}
+
+.pv_ms_blocking_badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--text-muted) 42%, transparent);
+  white-space: nowrap;
+}
+
+.pv_ms_days {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.pv_ms_day {
+  min-width: 26px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+    color: var(--text-secondary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+
+  &.is-active {
+    background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+    border-color: color-mix(in srgb, var(--primary) 42%, transparent);
+    color: var(--text-strong);
+  }
+}
+
+.pv_ms_times {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pv_ms_time {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text-strong);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+}
+
+.pv_ms_time_sep {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.pv_ms_summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pv_ms_summary_text {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pv_ms_cross_note {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  border: 1px dashed color-mix(in srgb, var(--text-muted) 36%, transparent);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 16px;
+}
+
+.pv_ms_remove {
+  position: absolute;
+  top: 10px;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+
+  &:hover {
+    color: var(--danger);
+    background: var(--danger-bg);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+}
+
+.pv_ms_row_error {
+  font-size: 11px;
+  color: var(--danger);
 }

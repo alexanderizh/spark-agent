@@ -24,7 +24,9 @@ export async function loadEditableProviderSnapshot(
   getProviderApiKey: IpcInvoker<ProviderGetApiKeyRequest, ProviderGetApiKeyResponse>,
 ): Promise<EditableProviderSnapshot> {
   const [providerResult, apiKeyResult] = await Promise.all([
-    listProviders({ includeDisabled: true }),
+    // includeScheduledBlocked：编辑界面需要完整 modelIds（含禁用时段内的模型，置灰展示），
+    // 否则基于过滤后视图回写会把被禁模型永久删掉。
+    listProviders({ includeDisabled: true, includeScheduledBlocked: true }),
     getProviderApiKey({ id: profileId }).then(
       ({ apiKey }) => ({ apiKey, error: null }),
       (error: unknown) => ({ apiKey: '', error }),

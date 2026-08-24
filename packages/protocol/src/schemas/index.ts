@@ -22,6 +22,7 @@ import {
   CODEX_AUTO_ROUTER_PROVIDER_ID,
 } from '../auto-router-provider.js'
 import { ProviderFilesIpcSchemaRegistry } from '../provider-files.js'
+import { ProviderModelScheduleSchema } from '../provider-model-schedule.js'
 import { VideoChannelTasksIpcSchemaRegistry } from '../video-channel-tasks.js'
 import { SidebarOrderIpcSchemaRegistry } from '../sidebar-order.js'
 import { WorkspaceSearchIpcSchemaRegistry } from '../workspace-search.js'
@@ -623,6 +624,8 @@ export const ProviderUpdateRequestSchema = z.object({
   mediaDefaults: ProviderMediaDefaultsSchema.optional(),
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
+  /** 模型定时禁用时段；传空数组清除全部时段 */
+  modelSchedules: z.array(ProviderModelScheduleSchema).max(200).optional(),
 })
 
 export const ProviderGetApiKeyRequestSchema = z.object({

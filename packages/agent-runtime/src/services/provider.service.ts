@@ -42,6 +42,10 @@ import {
   isBuiltInLocalCliProvider,
   isAutoRouterProvider,
   isLocalCodexCliProvider,
+  type ProviderModelSchedule,
+  filterBlockedModelIds,
+  sanitizeModelSchedules,
+  scheduledBlockedModelIds,
 } from '@spark/protocol'
 import { ProviderProfileRepository } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
@@ -61,9 +65,21 @@ const isWin = process.platform === 'win32'
 type ProviderModelType = NonNullable<ProviderProfile['modelType']>
 type ImageGenApiType = NonNullable<ProviderProfile['imageApiType']>
 type TextProviderKind = 'anthropic' | 'openai' | 'deepseek' | 'ollama' | 'openai-compatible'
-const PROVIDER_MODEL_TYPES = new Set<ProviderModelType>(['image', 'text', 'multimodal', 'voice', 'video'])
+const PROVIDER_MODEL_TYPES = new Set<ProviderModelType>([
+  'image',
+  'text',
+  'multimodal',
+  'voice',
+  'video',
+])
 const IMAGE_API_TYPES = new Set<ImageGenApiType>(['sync', 'async', 'auto'])
-const TEXT_PROVIDER_KINDS = new Set<TextProviderKind>(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible'])
+const TEXT_PROVIDER_KINDS = new Set<TextProviderKind>([
+  'anthropic',
+  'openai',
+  'deepseek',
+  'ollama',
+  'openai-compatible',
+])
 // CLI 安装状态很少在应用运行中变化。短 TTL 会让 Provider 列表刷新频繁拉起
 // login shell；采用与主流 Agent 凭据 helper 相近的 5 分钟缓存窗口。
 const LOCAL_CLI_CHECK_TTL_MS = 5 * 60_000
@@ -263,12 +279,16 @@ async function checkClaudeCliAvailable(): Promise<boolean> {
   }
   // 3. 用 where/which 解析 PATH（兜底，覆盖 shim 名字不规范的情况）
   const resolved = await resolveClaudeCliPath()
-  if (resolved != null && await tryClaudeVersion(resolved)) return true
+  if (resolved != null && (await tryClaudeVersion(resolved))) return true
   // 4. 最后兜底：用 login shell 重新解析用户的真实 PATH
   //    （Electron GUI 进程的 PATH 来自 launchd，不含 .zshrc 里 nvm/volta 等初始化，
   //    导致 ~/.nvm/versions/node/*/bin/claude 这类用户级安装检测不到）
   const loginResolved = await resolveCliFromLoginShell('claude')
-  if (loginResolved != null && loginResolved !== resolved && await tryClaudeVersion(loginResolved)) {
+  if (
+    loginResolved != null &&
+    loginResolved !== resolved &&
+    (await tryClaudeVersion(loginResolved))
+  ) {
     return true
   }
   return false
@@ -282,9 +302,13 @@ async function checkCodexCliAvailable(): Promise<boolean> {
     if (await tryCodexVersion(known)) return true
   }
   const resolved = await resolveCodexCliPath()
-  if (resolved != null && await tryCodexVersion(resolved)) return true
+  if (resolved != null && (await tryCodexVersion(resolved))) return true
   const loginResolved = await resolveCliFromLoginShell('codex')
-  if (loginResolved != null && loginResolved !== resolved && await tryCodexVersion(loginResolved)) {
+  if (
+    loginResolved != null &&
+    loginResolved !== resolved &&
+    (await tryCodexVersion(loginResolved))
+  ) {
     return true
   }
   return false
@@ -309,12 +333,17 @@ function rowToProfile(row: {
     : row.id === LOCAL_CLI_PROVIDER_ID
       ? LOCAL_CLI_PROVIDER_NAME
       : row.name
-  const maxTokens = typeof config.maxTokens === 'number' && config.maxTokens > 0
-    ? config.maxTokens
-    : config.managed === true && config.managedType === 'newapi'
-      ? PLATFORM_NEWAPI_MAX_TOKENS
-      : undefined
+  const maxTokens =
+    typeof config.maxTokens === 'number' && config.maxTokens > 0
+      ? config.maxTokens
+      : config.managed === true && config.managedType === 'newapi'
+        ? PLATFORM_NEWAPI_MAX_TOKENS
+        : undefined
   const isManagedPlatformProvider = config.managed === true && config.managedType === 'newapi'
+  // 定时禁用（峰谷定价规避）：原始配置随 profile 带出供编辑界面回显；
+  // 读取侧过滤只发生在 listProviders 返回前，不落库。
+  const modelSchedules = sanitizeModelSchedules(config.modelSchedules)
+  const blockedNow = [...scheduledBlockedModelIds(modelSchedules)]
   return {
     id: row.id,
     name,
@@ -322,14 +351,19 @@ function rowToProfile(row: {
     enabled: row.enabled === 1,
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
+    ...(modelSchedules.length > 0 && { modelSchedules }),
+    ...(blockedNow.length > 0 && { scheduledBlockedModelIds: blockedNow }),
     ...(config.availableModelIds !== undefined && { availableModelIds: config.availableModelIds }),
     ...(config.providerIcon !== undefined && { providerIcon: config.providerIcon }),
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
     ...(config.mediaApiEndpoint !== undefined && { mediaApiEndpoint: config.mediaApiEndpoint }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
     supportsMillionContext: isManagedPlatformProvider || config.supportsMillionContext === true,
-    ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
-    ...(config.modelContextWindows !== undefined && { modelContextWindows: config.modelContextWindows }),
+    ...(typeof config.contextWindow === 'number' &&
+      config.contextWindow > 0 && { contextWindow: config.contextWindow }),
+    ...(config.modelContextWindows !== undefined && {
+      modelContextWindows: config.modelContextWindows,
+    }),
     ...(maxTokens !== undefined && { maxTokens }),
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
@@ -344,7 +378,9 @@ function rowToProfile(row: {
     ...(config.mediaModelRefs !== undefined && { mediaModelRefs: config.mediaModelRefs }),
     ...(config.managed === true && { managed: true }),
     ...(config.managedType !== undefined && { managedType: config.managedType }),
-    ...(config.managedOwnerUserId !== undefined && { managedOwnerUserId: config.managedOwnerUserId }),
+    ...(config.managedOwnerUserId !== undefined && {
+      managedOwnerUserId: config.managedOwnerUserId,
+    }),
     ...(config.credentialState !== undefined && { credentialState: config.credentialState }),
     keystoreRef: row.keystore_ref ?? '',
     isDefault: row.is_default === 1,
@@ -370,10 +406,7 @@ function createAutoRouterProvider(adapter: 'claude' | 'codex'): ProviderProfile 
   }
 }
 
-function hasRouteableTextProvider(
-  profiles: ProviderProfile[],
-  adapter: RoutingAdapter,
-): boolean {
+function hasRouteableTextProvider(profiles: ProviderProfile[], adapter: RoutingAdapter): boolean {
   return profiles.some((profile) => {
     if (!profile.enabled) return false
     if (isBuiltInLocalCliProvider(profile) || isAutoRouterProvider(profile)) return false
@@ -388,10 +421,27 @@ function providerModelIds(profile: ProviderProfile): string[] {
   return [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))]
 }
 
+/**
+ * 峰谷定时禁用的读取侧过滤（不落库）：把禁用时段内的模型从 modelIds 临时剔除，
+ * defaultModel 被禁时置空串，防止渲染端拿 defaultModel 兜底"复活"该模型。
+ * scheduledBlockedModelIds 快照保留在 profile 上，供编辑界面置灰与徽标展示。
+ */
+function applyScheduledBlocking(profile: ProviderProfile): ProviderProfile {
+  const blocked = new Set(profile.scheduledBlockedModelIds ?? [])
+  if (blocked.size === 0) return profile
+  return {
+    ...profile,
+    modelIds: profile.modelIds.filter((id) => !blocked.has(id)),
+    defaultModel: blocked.has(profile.defaultModel) ? '' : profile.defaultModel,
+  }
+}
+
 export class ProviderService {
   constructor(private readonly repo: ProviderProfileRepository) {}
 
-  async listProviders(options: { includeDisabled?: boolean } = {}): Promise<ProviderProfile[]> {
+  async listProviders(
+    options: { includeDisabled?: boolean; includeScheduledBlocked?: boolean } = {},
+  ): Promise<ProviderProfile[]> {
     const profiles = this.repo.listAll().map(rowToProfile)
     const [claudeAvailable, codexAvailable] = await Promise.all([
       this.isLocalCliAvailable(),
@@ -404,14 +454,19 @@ export class ProviderService {
       if (profile.managed === true && profile.credentialState === 'unavailable') return false
       return true
     })
+    // 定时禁用默认在读取侧剔除（全平台选择器看不到）；编辑界面传 includeScheduledBlocked 拿完整列表。
+    const effectiveProfiles =
+      options.includeScheduledBlocked === true
+        ? visibleProfiles
+        : visibleProfiles.map(applyScheduledBlocking)
     const routers: ProviderProfile[] = []
-    if (hasRouteableTextProvider(visibleProfiles, 'claude')) {
+    if (hasRouteableTextProvider(effectiveProfiles, 'claude')) {
       routers.push(createAutoRouterProvider('claude'))
     }
-    if (hasRouteableTextProvider(visibleProfiles, 'codex')) {
+    if (hasRouteableTextProvider(effectiveProfiles, 'codex')) {
       routers.push(createAutoRouterProvider('codex'))
     }
-    return [...visibleProfiles, ...routers]
+    return [...effectiveProfiles, ...routers]
   }
 
   /**
@@ -445,7 +500,7 @@ export class ProviderService {
         if (!available) {
           log.warn(
             `Local claude CLI not found. Tried candidates [${CLAUDE_CLI_CANDIDATES.join(', ')}]` +
-            ` and ${isWin ? 'where' : 'which'} resolution.`,
+              ` and ${isWin ? 'where' : 'which'} resolution.`,
           )
         }
         return available
@@ -473,7 +528,7 @@ export class ProviderService {
         if (!available) {
           log.warn(
             `Local codex CLI not found. Tried candidates [${CODEX_CLI_CANDIDATES.join(', ')}]` +
-            ` and ${isWin ? 'where' : 'which'} resolution.`,
+              ` and ${isWin ? 'where' : 'which'} resolution.`,
           )
         }
         return available
@@ -540,7 +595,10 @@ export class ProviderService {
     const existing = this.repo.get(LOCAL_CODEX_CLI_PROVIDER_ID)
     if (existing != null) {
       const rawConfig = JSON.parse(existing.config_json) as ProviderConfig
-      const normalizedConfig = normalizeLocalCliProviderConfig(LOCAL_CODEX_CLI_PROVIDER_ID, rawConfig)
+      const normalizedConfig = normalizeLocalCliProviderConfig(
+        LOCAL_CODEX_CLI_PROVIDER_ID,
+        rawConfig,
+      )
       if (
         existing.name !== LOCAL_CODEX_CLI_PROVIDER_NAME ||
         existing.provider_type !== 'openai' ||
@@ -609,9 +667,13 @@ export class ProviderService {
     const ref = hasApiKey ? keystore.makeKeystoreRef(providerType, id) : ''
     if (hasApiKey) {
       await keystore.setSecret(ref as keystore.KeystoreRef, params.apiKey)
-      log.info(`Stored API key for provider=${providerType} id=${id} key=${keystore.maskSecret(params.apiKey)}`)
+      log.info(
+        `Stored API key for provider=${providerType} id=${id} key=${keystore.maskSecret(params.apiKey)}`,
+      )
     } else {
-      log.info(`Created provider without API key (local CLI / pending key): provider=${providerType} id=${id}`)
+      log.info(
+        `Created provider without API key (local CLI / pending key): provider=${providerType} id=${id}`,
+      )
     }
 
     if (params.isDefault) {
@@ -631,18 +693,27 @@ export class ProviderService {
         ...(params.providerIcon !== undefined && { providerIcon: params.providerIcon }),
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
         ...(params.codexApiKind !== undefined && { codexApiKind: params.codexApiKind }),
-        ...(params.supportsMillionContext !== undefined && { supportsMillionContext: params.supportsMillionContext }),
-        ...(params.contextWindow !== undefined && params.contextWindow > 0 && { contextWindow: Math.floor(params.contextWindow) }),
-        ...(params.maxTokens !== undefined && params.maxTokens > 0 && { maxTokens: Math.floor(params.maxTokens) }),
-        ...(params.haikuModel !== undefined && params.haikuModel.trim().length > 0 && { haikuModel: params.haikuModel.trim() }),
-        ...(params.sonnetModel !== undefined && params.sonnetModel.trim().length > 0 && { sonnetModel: params.sonnetModel.trim() }),
-        ...(params.opusModel !== undefined && params.opusModel.trim().length > 0 && { opusModel: params.opusModel.trim() }),
+        ...(params.supportsMillionContext !== undefined && {
+          supportsMillionContext: params.supportsMillionContext,
+        }),
+        ...(params.contextWindow !== undefined &&
+          params.contextWindow > 0 && { contextWindow: Math.floor(params.contextWindow) }),
+        ...(params.maxTokens !== undefined &&
+          params.maxTokens > 0 && { maxTokens: Math.floor(params.maxTokens) }),
+        ...(params.haikuModel !== undefined &&
+          params.haikuModel.trim().length > 0 && { haikuModel: params.haikuModel.trim() }),
+        ...(params.sonnetModel !== undefined &&
+          params.sonnetModel.trim().length > 0 && { sonnetModel: params.sonnetModel.trim() }),
+        ...(params.opusModel !== undefined &&
+          params.opusModel.trim().length > 0 && { opusModel: params.opusModel.trim() }),
         ...(params.modelType !== undefined && { modelType: normalizeModelType(params.modelType) }),
         ...(params.imageProvider !== undefined && { imageProvider: params.imageProvider }),
         ...(params.imageApiType !== undefined && { imageApiType: params.imageApiType }),
         ...(params.mediaProvider !== undefined && { mediaProvider: params.mediaProvider }),
         ...(params.mediaApiType !== undefined && { mediaApiType: params.mediaApiType }),
-        ...(params.mediaCapabilities !== undefined && { mediaCapabilities: params.mediaCapabilities }),
+        ...(params.mediaCapabilities !== undefined && {
+          mediaCapabilities: params.mediaCapabilities,
+        }),
         ...(params.mediaDefaults !== undefined && { mediaDefaults: params.mediaDefaults }),
         ...(params.mediaModelRefs !== undefined && { mediaModelRefs: params.mediaModelRefs }),
       }),
@@ -685,6 +756,8 @@ export class ProviderService {
     mediaCapabilities?: MediaCapabilityId[]
     mediaDefaults?: ProviderMediaDefaults
     mediaModelRefs?: ProviderMediaModelRef[]
+    /** 模型定时禁用时段；传空数组清除全部时段。 */
+    modelSchedules?: ProviderModelSchedule[]
     apiKey?: string
     isDefault?: boolean
     enabled?: boolean
@@ -700,11 +773,14 @@ export class ProviderService {
 
     // 协议格式切换（anthropic ↔ openai）：同步 provider_type，并让配置按新类型重新归一化。
     const nextProviderType =
-      params.provider !== undefined ? normalizeProviderType(params.provider) : existing.provider_type
+      params.provider !== undefined
+        ? normalizeProviderType(params.provider)
+        : existing.provider_type
 
     let updatedKeystoreRef: string | undefined
     if (params.apiKey !== undefined) {
-      const ref = existing.keystore_ref || keystore.makeKeystoreRef(existing.provider_type, params.id)
+      const ref =
+        existing.keystore_ref || keystore.makeKeystoreRef(existing.provider_type, params.id)
       await keystore.setSecret(ref as keystore.KeystoreRef, params.apiKey)
       updatedKeystoreRef = ref
       log.info(`Updated API key for id=${params.id} key=${keystore.maskSecret(params.apiKey)}`)
@@ -738,10 +814,17 @@ export class ProviderService {
       params.modelType !== undefined ||
       params.imageProvider !== undefined ||
       params.imageApiType !== undefined ||
+      params.modelSchedules !== undefined ||
       mediaTouched
         ? { ...existingConfig }
         : undefined
 
+    // 定时禁用时段先于 modelIds 合并应用，保证"删时段 + 删模型"能在同一次保存里生效。
+    if (newConfig !== undefined && params.modelSchedules !== undefined) {
+      const schedules = sanitizeModelSchedules(params.modelSchedules)
+      if (schedules.length === 0) delete newConfig.modelSchedules
+      else newConfig.modelSchedules = schedules
+    }
     if (newConfig !== undefined && nextDefaultModel !== undefined) {
       newConfig.defaultModel = nextDefaultModel
       if (params.modelIds === undefined) {
@@ -749,10 +832,18 @@ export class ProviderService {
       }
     }
     if (newConfig !== undefined && params.modelIds !== undefined) {
-      newConfig.modelIds = normalizeModelIds(
-        nextDefaultModel ?? newConfig.defaultModel,
-        params.modelIds,
+      // 写保护：编辑界面若基于过滤后视图提交，看不到禁用时段内的模型；此处把这类模型
+      // 从现有配置合并回来，防止编辑其他字段时把被禁模型永久删掉。
+      // 要删除被禁模型，请先在同一次保存里移除它的时段配置（modelSchedules 已先行应用）。
+      const submittedModelIds = params.modelIds
+      const blocked = scheduledBlockedModelIds(newConfig.modelSchedules)
+      const preserved = (newConfig.modelIds ?? []).filter(
+        (id) => blocked.has(id) && !submittedModelIds.includes(id),
       )
+      newConfig.modelIds = normalizeModelIds(nextDefaultModel ?? newConfig.defaultModel, [
+        ...submittedModelIds,
+        ...preserved,
+      ])
     }
     if (newConfig !== undefined && params.providerIcon !== undefined) {
       if (params.providerIcon == null) delete newConfig.providerIcon
@@ -854,7 +945,11 @@ export class ProviderService {
   }
 
   async deleteProvider(id: string): Promise<void> {
-    if (id === LOCAL_CLI_PROVIDER_ID || id === LOCAL_CODEX_CLI_PROVIDER_ID || isAutoRouterProvider(id)) {
+    if (
+      id === LOCAL_CLI_PROVIDER_ID ||
+      id === LOCAL_CODEX_CLI_PROVIDER_ID ||
+      isAutoRouterProvider(id)
+    ) {
       throw new Error('Cannot delete the built-in provider')
     }
     const row = this.repo.get(id)
@@ -942,8 +1037,8 @@ export class ProviderService {
   }): Promise<ProviderHealthCheckResponse> {
     const providerType = normalizeProviderType(params.provider)
     log.info(
-      `testConnection started, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-      + `model=${params.defaultModel}, codexApiKind=${params.codexApiKind ?? 'chat'}`,
+      `testConnection started, provider=${providerType}, id=${params.id ?? '(draft)'}, ` +
+        `model=${params.defaultModel}, codexApiKind=${params.codexApiKind ?? 'chat'}`,
     )
     const apiKey = await this.resolveProviderApiKey(params.id, params.apiKey)
     if (!apiKey) {
@@ -957,18 +1052,17 @@ export class ProviderService {
     const defaultModel = params.defaultModel.trim()
     if (!defaultModel) {
       log.warn(
-        `testConnection aborted: default model missing, provider=${providerType}, `
-        + `id=${params.id ?? '(draft)'}`,
+        `testConnection aborted: default model missing, provider=${providerType}, ` +
+          `id=${params.id ?? '(draft)'}`,
       )
       return { healthy: false, errorMessage: 'Default model is required' }
     }
 
-    const resolvedEndpoint = providerType === 'anthropic'
-      ? endpoint
-      : (endpoint ?? getDefaultEndpointBase(providerType))
+    const resolvedEndpoint =
+      providerType === 'anthropic' ? endpoint : (endpoint ?? getDefaultEndpointBase(providerType))
     log.debug(
-      `testConnection pinging endpoint=${resolvedEndpoint ?? '(default)'}, `
-      + `provider=${providerType}, id=${params.id ?? '(draft)'}`,
+      `testConnection pinging endpoint=${resolvedEndpoint ?? '(default)'}, ` +
+        `provider=${providerType}, id=${params.id ?? '(draft)'}`,
     )
 
     const start = Date.now()
@@ -977,22 +1071,22 @@ export class ProviderService {
       await (providerType === 'anthropic'
         ? fetchAnthropicMessagesPing(endpoint, apiKey, defaultModel)
         : fetchOpenAiCompatiblePing(
-          endpoint ?? getDefaultEndpointBase(providerType),
-          apiKey,
-          defaultModel,
-          params.codexApiKind ?? 'chat',
-        ))
+            endpoint ?? getDefaultEndpointBase(providerType),
+            apiKey,
+            defaultModel,
+            params.codexApiKind ?? 'chat',
+          ))
       const latencyMs = Date.now() - start
       log.info(
-        `testConnection success, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-        + `latencyMs=${latencyMs}`,
+        `testConnection success, provider=${providerType}, id=${params.id ?? '(draft)'}, ` +
+          `latencyMs=${latencyMs}`,
       )
       return { healthy: true, latencyMs }
     } catch (err) {
       const latencyMs = Date.now() - start
       log.warn(
-        `testConnection threw, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-        + `latencyMs=${latencyMs}, error=${err instanceof Error ? err.message : String(err)}`,
+        `testConnection threw, provider=${providerType}, id=${params.id ?? '(draft)'}, ` +
+          `latencyMs=${latencyMs}, error=${err instanceof Error ? err.message : String(err)}`,
       )
       return {
         healthy: false,
@@ -1012,8 +1106,8 @@ export class ProviderService {
   }): Promise<ProviderFetchedModel[]> {
     const providerType = normalizeProviderType(params.provider)
     log.info(
-      `fetchModels started, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-      + `isFullUrl=${params.isFullUrl === true}`,
+      `fetchModels started, provider=${providerType}, id=${params.id ?? '(draft)'}, ` +
+        `isFullUrl=${params.isFullUrl === true}`,
     )
     const apiKey = await this.resolveProviderApiKey(params.id, params.apiKey)
     if (!apiKey) {
@@ -1025,17 +1119,21 @@ export class ProviderService {
 
     const endpoint = await this.resolveProviderEndpoint(params.id, params.apiEndpoint)
     const baseUrl = endpoint ?? getDefaultEndpointBase(providerType)
-    const candidates = getModelsUrlCandidates(baseUrl, params.isFullUrl === true, params.modelsUrl ?? null)
+    const candidates = getModelsUrlCandidates(
+      baseUrl,
+      params.isFullUrl === true,
+      params.modelsUrl ?? null,
+    )
     if (candidates.length === 0) {
       log.warn(
-        `fetchModels aborted: cannot derive endpoint, provider=${providerType}, `
-        + `id=${params.id ?? '(draft)'}, baseUrl=${baseUrl ?? '(none)'}`,
+        `fetchModels aborted: cannot derive endpoint, provider=${providerType}, ` +
+          `id=${params.id ?? '(draft)'}, baseUrl=${baseUrl ?? '(none)'}`,
       )
       throw new Error('Cannot derive models endpoint')
     }
     log.debug(
-      `fetchModels trying ${candidates.length} endpoint(s), provider=${providerType}, `
-      + `id=${params.id ?? '(draft)'}`,
+      `fetchModels trying ${candidates.length} endpoint(s), provider=${providerType}, ` +
+        `id=${params.id ?? '(draft)'}`,
     )
 
     let lastNotFound: string | null = null
@@ -1048,13 +1146,13 @@ export class ProviderService {
         })
         const models = normalizeFetchedModels(json)
         log.info(
-          `fetchModels success, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-          + `url=${url}, count=${models.length}`,
+          `fetchModels success, provider=${providerType}, id=${params.id ?? '(draft)'}, ` +
+            `url=${url}, count=${models.length}`,
         )
         return models
       } catch (err) {
         const isHttp = err instanceof HttpError
-        const status = isHttp ? err.statusCode ?? 'network' : 'network'
+        const status = isHttp ? (err.statusCode ?? 'network') : 'network'
         const body = truncateResponseBody(
           redactProviderSecret(
             isHttp ? err.message.replace(/^HTTP \d+:\s*/, '') : String(err),
@@ -1062,8 +1160,8 @@ export class ProviderService {
           ),
         )
         log.warn(
-          `fetchModels endpoint failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-          + `url=${sanitizeRequestUrl(url)}, status=${status}, body="${body}"`,
+          `fetchModels endpoint failed, provider=${providerType}, id=${params.id ?? '(draft)'}, ` +
+            `url=${sanitizeRequestUrl(url)}, status=${status}, body="${body}"`,
         )
         if (isHttp && (err.statusCode === 404 || err.statusCode === 405)) {
           lastNotFound = `HTTP ${status}: ${body}`
@@ -1073,12 +1171,11 @@ export class ProviderService {
       }
     }
     log.warn(
-      `fetchModels all-endpoints-failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-      + `lastNotFound=${lastNotFound ?? '(none)'}`,
+      `fetchModels all-endpoints-failed, provider=${providerType}, id=${params.id ?? '(draft)'}, ` +
+        `lastNotFound=${lastNotFound ?? '(none)'}`,
     )
     throw new Error(`All model endpoints failed: ${lastNotFound ?? 'no candidates'}`)
   }
-
 
   async ensureManagedNewApiProvider(params: {
     ownerUserId: string
@@ -1088,18 +1185,26 @@ export class ProviderService {
     apiKey: string
     credentialState?: 'ready' | 'session_conflict' | 'quota_exhausted' | 'unavailable'
   }): Promise<ProviderProfile> {
-    const availableModelIds = [...new Set(params.modelIds.map(model => model.trim()).filter(Boolean))]
+    const availableModelIds = [
+      ...new Set(params.modelIds.map((model) => model.trim()).filter(Boolean)),
+    ]
     const existing = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
-    const existingConfig = existing && isManagedProviderRow(existing)
-      ? normalizeProviderConfig(JSON.parse(existing.config_json) as ProviderConfig)
-      : null
-    const preferredModelIds = existingConfig?.modelIds.filter(model => availableModelIds.includes(model)) ?? []
+    const existingConfig =
+      existing && isManagedProviderRow(existing)
+        ? normalizeProviderConfig(JSON.parse(existing.config_json) as ProviderConfig)
+        : null
+    const preferredModelIds =
+      existingConfig?.modelIds.filter((model) => availableModelIds.includes(model)) ?? []
     const modelIds = preferredModelIds.length > 0 ? preferredModelIds : availableModelIds
-    const defaultModel = existingConfig && modelIds.includes(existingConfig.defaultModel)
-      ? existingConfig.defaultModel
-      : modelIds[0]
+    const defaultModel =
+      existingConfig && modelIds.includes(existingConfig.defaultModel)
+        ? existingConfig.defaultModel
+        : modelIds[0]
     if (!defaultModel) throw new Error('平台账户当前没有可用模型')
-    const keystoreRef = keystore.makeKeystoreRef('newapi', `spark-user-${params.ownerUserId}-api-key`)
+    const keystoreRef = keystore.makeKeystoreRef(
+      'newapi',
+      `spark-user-${params.ownerUserId}-api-key`,
+    )
     await keystore.setSecret(keystoreRef, params.apiKey)
     const config = normalizeProviderConfig({
       defaultModel,
@@ -1117,7 +1222,12 @@ export class ProviderService {
         ? { contextWindow: existingConfig.contextWindow }
         : {}),
       ...(existingConfig?.modelContextWindows !== undefined
-        ? { modelContextWindows: normalizeModelContextWindows(existingConfig.modelContextWindows, availableModelIds) }
+        ? {
+            modelContextWindows: normalizeModelContextWindows(
+              existingConfig.modelContextWindows,
+              availableModelIds,
+            ),
+          }
         : {}),
       modelType: 'text',
       managed: true,
@@ -1139,14 +1249,16 @@ export class ProviderService {
       if (!updated) throw new Error('平台官方 Provider 更新后无法读取')
       return rowToProfile(updated)
     }
-    return rowToProfile(this.repo.create({
-      id: PLATFORM_NEWAPI_PROVIDER_ID,
-      providerType: 'anthropic',
-      name: 'Spark 平台模型',
-      config,
-      keystoreRef,
-      isDefault: false,
-    }))
+    return rowToProfile(
+      this.repo.create({
+        id: PLATFORM_NEWAPI_PROVIDER_ID,
+        providerType: 'anthropic',
+        name: 'Spark 平台模型',
+        config,
+        keystoreRef,
+        isDefault: false,
+      }),
+    )
   }
 
   async refreshManagedNewApiModels(params: {
@@ -1161,9 +1273,11 @@ export class ProviderService {
       throw new Error('平台官方 Provider 属于其他登录账号')
     }
 
-    const availableModelIds = [...new Set(params.modelIds.map(model => model.trim()).filter(Boolean))]
+    const availableModelIds = [
+      ...new Set(params.modelIds.map((model) => model.trim()).filter(Boolean)),
+    ]
     if (availableModelIds.length === 0) throw new Error('平台账户当前没有可用文本模型')
-    const preferredModelIds = config.modelIds.filter(model => availableModelIds.includes(model))
+    const preferredModelIds = config.modelIds.filter((model) => availableModelIds.includes(model))
     const modelIds = preferredModelIds.length > 0 ? preferredModelIds : availableModelIds
     const defaultModel = modelIds.includes(config.defaultModel) ? config.defaultModel : modelIds[0]
     if (!defaultModel) throw new Error('平台账户当前没有可用文本模型')
@@ -1177,7 +1291,12 @@ export class ProviderService {
         // 兼容已创建的旧平台 Provider：未配置模型级值时也按 1M 解析。
         supportsMillionContext: true,
         ...(config.modelContextWindows !== undefined
-          ? { modelContextWindows: normalizeModelContextWindows(config.modelContextWindows, availableModelIds) }
+          ? {
+              modelContextWindows: normalizeModelContextWindows(
+                config.modelContextWindows,
+                availableModelIds,
+              ),
+            }
           : {}),
         // 平台目录是受管多媒体模型的唯一来源。整表替换可同时完成新增、下线
         // 和旧版“图片模型误存进 modelIds”数据的迁移。
@@ -1201,7 +1320,13 @@ export class ProviderService {
     if (!row || !isManagedProviderRow(row)) throw new Error('平台官方 Provider 尚未就绪')
     const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
     const availableModelIds = config.availableModelIds ?? config.modelIds
-    const selected = [...new Set(params.modelIds.map(model => model.trim()).filter(model => availableModelIds.includes(model)))]
+    const selected = [
+      ...new Set(
+        params.modelIds
+          .map((model) => model.trim())
+          .filter((model) => availableModelIds.includes(model)),
+      ),
+    ]
     const firstSelected = selected[0]
     if (!firstSelected) throw new Error('至少启用一个平台模型')
     const requestedDefault = params.defaultModel.trim()
@@ -1256,7 +1381,10 @@ export class ProviderService {
     })
   }
 
-  private async resolveProviderApiKey(id: string | undefined, apiKey: string | undefined): Promise<string> {
+  private async resolveProviderApiKey(
+    id: string | undefined,
+    apiKey: string | undefined,
+  ): Promise<string> {
     const direct = apiKey?.trim()
     if (direct) return direct
     if (!id) return ''
@@ -1265,7 +1393,10 @@ export class ProviderService {
     return (await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef))?.trim() ?? ''
   }
 
-  private async resolveProviderEndpoint(id: string | undefined, apiEndpoint: string | null | undefined): Promise<string | undefined> {
+  private async resolveProviderEndpoint(
+    id: string | undefined,
+    apiEndpoint: string | null | undefined,
+  ): Promise<string | undefined> {
     const direct = apiEndpoint?.trim()
     if (direct) return direct
     if (apiEndpoint === null) return undefined
@@ -1341,10 +1472,7 @@ export class ProviderService {
           // replace: 更新已存在的（保留 keystoreRef、本地 isDefault）
           // 若导入数据包含 apiKey，则更新 Keychain 中的 key
           if (profile.apiKey && match.keystore_ref) {
-            await keystore.setSecret(
-              match.keystore_ref as keystore.KeystoreRef,
-              profile.apiKey,
-            )
+            await keystore.setSecret(match.keystore_ref as keystore.KeystoreRef, profile.apiKey)
             log.info(`Updated API key during import for id=${match.id} name=${profile.name}`)
           }
           this.repo.update(match.id, {
@@ -1436,22 +1564,24 @@ function fetchOpenAiCompatiblePing(
       retryBackoffMs: 250,
     })
   }
-  const endpoint = codexApiKind === 'responses'
-    ? getOpenAiResponsesEndpoint(apiEndpoint)
-    : getOpenAiChatCompletionsEndpoint(apiEndpoint)
-  const body = codexApiKind === 'responses'
-    ? {
-      model,
-      input: 'ping',
-      max_output_tokens: 1,
-      stream: false,
-    }
-    : {
-      model,
-      messages: [{ role: 'user', content: 'ping' }],
-      max_tokens: 1,
-      stream: false,
-    }
+  const endpoint =
+    codexApiKind === 'responses'
+      ? getOpenAiResponsesEndpoint(apiEndpoint)
+      : getOpenAiChatCompletionsEndpoint(apiEndpoint)
+  const body =
+    codexApiKind === 'responses'
+      ? {
+          model,
+          input: 'ping',
+          max_output_tokens: 1,
+          stream: false,
+        }
+      : {
+          model,
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+          stream: false,
+        }
 
   return fetchJson(endpoint, {
     method: 'POST',
@@ -1471,9 +1601,9 @@ function formatProviderConnectionError(err: unknown, timeoutMs: number): string 
   if (!(err instanceof Error)) return fallback
   const normalized = `${err.name}: ${err.message}`.toLowerCase()
   if (
-    err.name === 'TimeoutError'
-    || normalized.includes('timed out')
-    || normalized.includes('aborted due to timeout')
+    err.name === 'TimeoutError' ||
+    normalized.includes('timed out') ||
+    normalized.includes('aborted due to timeout')
   ) {
     return `连接测试超时（>${Math.ceil(timeoutMs / 1000)}s），请检查网络、代理或接口地址后重试`
   }
@@ -1516,6 +1646,8 @@ interface ProviderConfig {
   mediaDefaults?: ProviderMediaDefaults
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs?: ProviderMediaModelRef[]
+  /** 模型定时禁用时段（峰谷定价规避）；空/缺省视为无定时。 */
+  modelSchedules?: ProviderModelSchedule[]
   /** Provider 列表和模型配置表单里展示的 LobeHub 图标配置。 */
   providerIcon?: { id?: unknown; style?: unknown }
   managed?: boolean
@@ -1542,7 +1674,7 @@ interface ModelsListResponse {
 
 function normalizeProviderType(providerType: string): TextProviderKind {
   return TEXT_PROVIDER_KINDS.has(providerType as TextProviderKind)
-    ? providerType as TextProviderKind
+    ? (providerType as TextProviderKind)
     : 'openai'
 }
 
@@ -1559,16 +1691,16 @@ function normalizeModelContextWindows(
 ): Record<string, number> {
   const available = new Set(availableModelIds)
   return Object.fromEntries(
-    Object.entries(values).filter(([modelId, value]) =>
-      available.has(modelId)
-      && Number.isInteger(value)
-      && value >= 1_024
-      && value <= 10_000_000,
+    Object.entries(values).filter(
+      ([modelId, value]) =>
+        available.has(modelId) && Number.isInteger(value) && value >= 1_024 && value <= 10_000_000,
     ),
   )
 }
 
-function normalizeProviderIcon(icon: ProviderConfig['providerIcon']): ProviderIconConfig | undefined {
+function normalizeProviderIcon(
+  icon: ProviderConfig['providerIcon'],
+): ProviderIconConfig | undefined {
   if (icon == null || typeof icon !== 'object') return undefined
   const id = typeof icon.id === 'string' ? icon.id.trim().toLowerCase() : ''
   if (!id) return undefined
@@ -1576,8 +1708,7 @@ function normalizeProviderIcon(icon: ProviderConfig['providerIcon']): ProviderIc
   return { id, style }
 }
 
-type NormalizedProviderConfig =
-  Required<Pick<ProviderConfig, 'defaultModel' | 'modelIds'>> &
+type NormalizedProviderConfig = Required<Pick<ProviderConfig, 'defaultModel' | 'modelIds'>> &
   Omit<ProviderConfig, 'defaultModel' | 'modelIds' | 'providerIcon'> & {
     providerIcon?: ProviderIconConfig
   }
@@ -1616,15 +1747,13 @@ function normalizeMediaCapabilities(
 
 function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConfig {
   const defaultModel = (config.defaultModel ?? config.model ?? '').trim()
-  const modelType = config.modelType !== undefined ? normalizeModelType(config.modelType) : undefined
+  const modelType =
+    config.modelType !== undefined ? normalizeModelType(config.modelType) : undefined
   const providerIcon = normalizeProviderIcon(config.providerIcon)
   const { providerIcon: _rawProviderIcon, ...configWithoutProviderIcon } = config
-  const imageProvider = modelType === 'image'
-    ? (config.imageProvider?.trim() || 'openai')
-    : undefined
-  const imageApiType = modelType === 'image'
-    ? normalizeImageApiType(config.imageApiType)
-    : undefined
+  const imageProvider = modelType === 'image' ? config.imageProvider?.trim() || 'openai' : undefined
+  const imageApiType =
+    modelType === 'image' ? normalizeImageApiType(config.imageApiType) : undefined
   const normalized: NormalizedProviderConfig = {
     ...configWithoutProviderIcon,
     defaultModel,
@@ -1643,7 +1772,7 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
   // 并保证 mediaCapabilities 至少包含 image.generate（design doc §5.1 兼容规则）。
   if (modelType === 'image') {
     const inferredProvider = mediaProviderFromImageProvider(
-      config.mediaProvider ?? (config.imageProvider ?? 'openai'),
+      config.mediaProvider ?? config.imageProvider ?? 'openai',
     )
     const inferredApiType =
       config.mediaApiType != null && isMediaApiType(config.mediaApiType)
@@ -1681,11 +1810,16 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
   }
   if (Array.isArray(config.mediaModelRefs)) {
     normalized.mediaModelRefs = config.mediaModelRefs
-      .filter((ref) => ref != null && typeof ref.manifestId === 'string' && ref.manifestId.trim().length > 0)
+      .filter(
+        (ref) =>
+          ref != null && typeof ref.manifestId === 'string' && ref.manifestId.trim().length > 0,
+      )
       .map((ref) => {
         const normalizedRef: ProviderMediaModelRef = {
           manifestId: ref.manifestId.trim(),
-          ...(ref.modelId != null && ref.modelId.trim().length > 0 ? { modelId: ref.modelId.trim() } : {}),
+          ...(ref.modelId != null && ref.modelId.trim().length > 0
+            ? { modelId: ref.modelId.trim() }
+            : {}),
           ...(ref.enabled !== undefined ? { enabled: ref.enabled } : {}),
           ...(ref.defaults !== undefined ? { defaults: ref.defaults } : {}),
           ...(ref.templateManifestId != null && ref.templateManifestId.trim().length > 0
@@ -1728,12 +1862,17 @@ function shouldDefaultOpenAiCodexResponses(apiEndpoint?: string): boolean {
   const base = apiEndpoint?.trim().replace(/\/+$/, '').toLowerCase()
   if (!base) return false
   if (base.endsWith('/api/coding')) return true
-  return base === 'https://open.bigmodel.cn/api/coding/paas/v4' ||
+  return (
+    base === 'https://open.bigmodel.cn/api/coding/paas/v4' ||
     base === 'https://coding.dashscope.aliyuncs.com/v1' ||
     base === 'https://api.lkeap.cloud.tencent.com/coding/v3'
+  )
 }
 
-function normalizeLocalCliProviderConfig(providerId: string, config: ProviderConfig): NormalizedProviderConfig {
+function normalizeLocalCliProviderConfig(
+  providerId: string,
+  config: ProviderConfig,
+): NormalizedProviderConfig {
   if (providerId === LOCAL_CODEX_CLI_PROVIDER_ID) {
     return normalizeProviderConfig({
       ...config,
@@ -1751,21 +1890,24 @@ function normalizeLocalCliProviderConfig(providerId: string, config: ProviderCon
 
 function normalizeModelType(value: unknown): ProviderModelType {
   return typeof value === 'string' && PROVIDER_MODEL_TYPES.has(value as ProviderModelType)
-    ? value as ProviderModelType
+    ? (value as ProviderModelType)
     : 'multimodal'
 }
 
 function normalizeImageApiType(value: unknown): ImageGenApiType {
   return typeof value === 'string' && IMAGE_API_TYPES.has(value as ImageGenApiType)
-    ? value as ImageGenApiType
+    ? (value as ImageGenApiType)
     : 'sync'
 }
 
 function getDefaultEndpointBase(providerType: string): string {
   switch (providerType) {
-    case 'anthropic': return 'https://api.anthropic.com'
-    case 'openai': return 'https://api.openai.com/v1'
-    default: return 'https://api.openai.com/v1'
+    case 'anthropic':
+      return 'https://api.anthropic.com'
+    case 'openai':
+      return 'https://api.openai.com/v1'
+    default:
+      return 'https://api.openai.com/v1'
   }
 }
 
@@ -1788,7 +1930,8 @@ function getOpenAiChatCompletionsEndpoint(apiEndpoint: string): string {
 function getOpenAiResponsesEndpoint(apiEndpoint: string): string {
   const base = apiEndpoint.replace(/\/+$/, '')
   if (base.endsWith('/responses')) return base
-  if (base.endsWith('/chat/completions')) return `${base.slice(0, -'/chat/completions'.length)}/responses`
+  if (base.endsWith('/chat/completions'))
+    return `${base.slice(0, -'/chat/completions'.length)}/responses`
   if (endsWithVersionSegment(base)) return `${base}/responses`
   if (base.endsWith('/v1')) return `${base}/responses`
   return `${base}/v1/responses`
@@ -1797,7 +1940,8 @@ function getOpenAiResponsesEndpoint(apiEndpoint: string): string {
 function getOpenAiEmbeddingsEndpoint(apiEndpoint: string): string {
   const base = apiEndpoint.replace(/\/+$/, '')
   if (base.endsWith('/embeddings')) return base
-  if (base.endsWith('/chat/completions')) return `${base.slice(0, -'/chat/completions'.length)}/embeddings`
+  if (base.endsWith('/chat/completions'))
+    return `${base.slice(0, -'/chat/completions'.length)}/embeddings`
   if (base.endsWith('/responses')) return `${base.slice(0, -'/responses'.length)}/embeddings`
   if (endsWithVersionSegment(base)) return `${base}/embeddings`
   if (base.endsWith('/v1')) return `${base}/embeddings`
@@ -1832,7 +1976,8 @@ function getModelsUrlCandidates(
     const v1Index = trimmed.indexOf('/v1/')
     if (v1Index >= 0) candidates.push(`${trimmed.slice(0, v1Index)}/v1/models`)
     const lastSlash = trimmed.lastIndexOf('/')
-    if (lastSlash > trimmed.indexOf('://') + 2) candidates.push(`${trimmed.slice(0, lastSlash)}/models`)
+    if (lastSlash > trimmed.indexOf('://') + 2)
+      candidates.push(`${trimmed.slice(0, lastSlash)}/models`)
     return uniqStrings(candidates)
   }
 
@@ -1872,11 +2017,12 @@ function normalizeFetchedModels(response: ModelsListResponse): ProviderFetchedMo
     .flatMap((item): ProviderFetchedModel[] => {
       const id = typeof item.id === 'string' ? item.id.trim() : ''
       if (!id) return []
-      const ownedBy = typeof item.owned_by === 'string'
-        ? item.owned_by
-        : typeof item.ownedBy === 'string'
-          ? item.ownedBy
-          : null
+      const ownedBy =
+        typeof item.owned_by === 'string'
+          ? item.owned_by
+          : typeof item.ownedBy === 'string'
+            ? item.ownedBy
+            : null
       return [{ id, ownedBy }]
     })
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -1944,9 +2090,13 @@ function rowToExportProfile(
     modelIds: config.modelIds,
     ...(config.providerIcon !== undefined && { providerIcon: config.providerIcon }),
     supportsMillionContext: config.supportsMillionContext === true,
-    ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
-    ...(config.modelContextWindows !== undefined && { modelContextWindows: config.modelContextWindows }),
-    ...(typeof config.maxTokens === 'number' && config.maxTokens > 0 && { maxTokens: config.maxTokens }),
+    ...(typeof config.contextWindow === 'number' &&
+      config.contextWindow > 0 && { contextWindow: config.contextWindow }),
+    ...(config.modelContextWindows !== undefined && {
+      modelContextWindows: config.modelContextWindows,
+    }),
+    ...(typeof config.maxTokens === 'number' &&
+      config.maxTokens > 0 && { maxTokens: config.maxTokens }),
     isDefault: row.is_default === 1,
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
@@ -1999,18 +2149,27 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     ...(profile.apiEndpoint != null && { apiEndpoint: profile.apiEndpoint }),
     ...(profile.codexApiKind !== undefined && { codexApiKind: profile.codexApiKind }),
     supportsMillionContext: profile.supportsMillionContext,
-    ...(typeof profile.contextWindow === 'number' && profile.contextWindow > 0 && { contextWindow: profile.contextWindow }),
-    ...(profile.modelContextWindows !== undefined && { modelContextWindows: profile.modelContextWindows }),
-    ...(typeof profile.maxTokens === 'number' && profile.maxTokens > 0 && { maxTokens: profile.maxTokens }),
-    ...(profile.haikuModel != null && profile.haikuModel.length > 0 && { haikuModel: profile.haikuModel }),
-    ...(profile.sonnetModel != null && profile.sonnetModel.length > 0 && { sonnetModel: profile.sonnetModel }),
-    ...(profile.opusModel != null && profile.opusModel.length > 0 && { opusModel: profile.opusModel }),
+    ...(typeof profile.contextWindow === 'number' &&
+      profile.contextWindow > 0 && { contextWindow: profile.contextWindow }),
+    ...(profile.modelContextWindows !== undefined && {
+      modelContextWindows: profile.modelContextWindows,
+    }),
+    ...(typeof profile.maxTokens === 'number' &&
+      profile.maxTokens > 0 && { maxTokens: profile.maxTokens }),
+    ...(profile.haikuModel != null &&
+      profile.haikuModel.length > 0 && { haikuModel: profile.haikuModel }),
+    ...(profile.sonnetModel != null &&
+      profile.sonnetModel.length > 0 && { sonnetModel: profile.sonnetModel }),
+    ...(profile.opusModel != null &&
+      profile.opusModel.length > 0 && { opusModel: profile.opusModel }),
     ...(profile.modelType !== undefined && { modelType: profile.modelType }),
     ...(profile.imageProvider !== undefined && { imageProvider: profile.imageProvider }),
     ...(profile.imageApiType !== undefined && { imageApiType: profile.imageApiType }),
     ...(profile.mediaProvider !== undefined && { mediaProvider: profile.mediaProvider }),
     ...(profile.mediaApiType !== undefined && { mediaApiType: profile.mediaApiType }),
-    ...(profile.mediaCapabilities !== undefined && { mediaCapabilities: profile.mediaCapabilities }),
+    ...(profile.mediaCapabilities !== undefined && {
+      mediaCapabilities: profile.mediaCapabilities,
+    }),
     ...(profile.mediaDefaults !== undefined && { mediaDefaults: profile.mediaDefaults }),
     ...(profile.mediaModelRefs !== undefined && { mediaModelRefs: profile.mediaModelRefs }),
   }

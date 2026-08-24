@@ -42,6 +42,12 @@ import {
   LOCAL_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   isLocalCodexCliProvider,
+  filterBlockedModelIds,
+  isScheduleActiveNow,
+  parseModelSchedules,
+  sanitizeModelSchedules,
+  scheduleBlockMessage,
+  scheduledBlockedModelIds,
 } from '@spark/protocol'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../../sdk/index.js'
 import {
@@ -1181,14 +1187,19 @@ export function providerRowsForModelRouter(
     .filter((row) => row.enabled !== 0)
     .map((row) => {
       const config = parseProviderConfigForModelRouter(row.config_json)
+      // 峰谷定时禁用：被禁模型不参与 Auto Router 候选（读取时判定，不改库）。
+      const schedules = sanitizeModelSchedules(config.modelSchedules)
+      const rawModelIds = Array.isArray(config.modelIds)
+        ? config.modelIds.filter((item): item is string => typeof item === 'string')
+        : []
+      const rawDefaultModel =
+        stringConfigValue(config.defaultModel) ?? stringConfigValue(config.model) ?? ''
+      const blocked = scheduledBlockedModelIds(schedules)
       return {
         id: row.id,
         provider: row.provider_type,
-        defaultModel:
-          stringConfigValue(config.defaultModel) ?? stringConfigValue(config.model) ?? '',
-        modelIds: Array.isArray(config.modelIds)
-          ? config.modelIds.filter((item): item is string => typeof item === 'string')
-          : [],
+        defaultModel: blocked.has(rawDefaultModel) ? '' : rawDefaultModel,
+        modelIds: filterBlockedModelIds(rawModelIds, schedules),
         ...(isKnownModelType(config.modelType) ? { modelType: config.modelType } : {}),
         ...(typeof config.mediaProvider === 'string'
           ? { mediaProvider: config.mediaProvider }
@@ -1202,6 +1213,19 @@ export function providerRowsForModelRouter(
           : {}),
       }
     })
+}
+
+/**
+ * turn / member dispatch 的最终硬校验：provider 与 model 定值后，若该模型处于
+ * 定时禁用时段（峰谷定价规避）则抛错，引导用户切换模型。挂在定格点可覆盖
+ * 普通分支、Auto Router 分支与 CLI override 分支。
+ */
+export function assertModelNotScheduledBlocked(configJson: string, modelId: string): void {
+  for (const schedule of parseModelSchedules(configJson)) {
+    if (schedule.modelId === modelId && isScheduleActiveNow(schedule)) {
+      throw new Error(scheduleBlockMessage(schedule, modelId))
+    }
+  }
 }
 
 export function parseProviderConfigForModelRouter(configJson: string): Record<string, unknown> {

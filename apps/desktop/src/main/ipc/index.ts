@@ -61,6 +61,7 @@ import {
 } from './user-question-recovery.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
+import { startProviderScheduleWatcher } from '../services/ProviderScheduleWatcher.js'
 import {
   decodeTextFileBuffer,
   encodeTextFileContent,
@@ -3332,6 +3333,10 @@ export function registerAllIpcHandlers(): void {
     ),
   )
 
+  // 峰谷定时禁用边界 watcher：被禁模型集合变化时广播 provider 配置变更，
+  // 全端选择器即时刷新（读取时判定方案，watcher 只是刷新信号，不写库）。
+  startProviderScheduleWatcher(() => pushConfigChanged('provider', 'update'))
+
   // ─── Canvas Agent Bridge ───────────────────────────────────────────────
 
   typedIpcHandle('canvas:window:open', async (req) => {
@@ -3646,7 +3651,10 @@ export function registerAllIpcHandlers(): void {
     if (await svc.isLocalCodexCliAvailable()) {
       await svc.ensureLocalCodexCliProvider()
     }
-    const profiles = await svc.listProviders({ includeDisabled: req.includeDisabled === true })
+    const profiles = await svc.listProviders({
+      includeDisabled: req.includeDisabled === true,
+      includeScheduledBlocked: req.includeScheduledBlocked === true,
+    })
     return { profiles }
   })
 

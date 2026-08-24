@@ -19,6 +19,7 @@
 import type { AgentEvent, SessionId, TurnId, TeamA2ATask, TeamA2AReply } from '../events/index.js'
 import type { UserMessagePresentation } from '../turn-message-presentation.js'
 import type { HookNode } from '../hooks.js'
+import type { ProviderModelSchedule } from '../provider-model-schedule.js'
 import type {
   ProviderMediaDefaults,
   MediaProviderKind,
@@ -754,6 +755,10 @@ export interface ProviderProfile {
   mediaDefaults?: ProviderMediaDefaults
   /** 启用的多媒体模型 manifest 引用，用于 schema 驱动的参数面板和工具描述 */
   mediaModelRefs?: ProviderMediaModelRef[]
+  /** 模型定时禁用时段（峰谷定价规避），持久化于 config_json.modelSchedules。 */
+  modelSchedules?: ProviderModelSchedule[]
+  /** 当前时刻处于定时禁用时段的模型 ID 快照（本机时区）；供 UI 置灰与「禁用中」徽标。 */
+  scheduledBlockedModelIds?: string[]
   /** Keychain 引用 ID（非明文 Key）*/
   keystoreRef: string
   /** 是否为默认 Profile */
@@ -886,6 +891,8 @@ export interface PlatformModelUsage {
 export interface ProviderListRequest {
   /** 管理页面使用；普通模型选择器只返回已启用 Provider。 */
   includeDisabled?: boolean
+  /** Provider 编辑界面使用；返回未过滤的完整 modelIds（被禁模型仍展示，置灰）。 */
+  includeScheduledBlocked?: boolean
 }
 
 export interface ProviderListResponse {
@@ -993,6 +1000,8 @@ export interface ProviderUpdateRequest {
   mediaDefaults?: ProviderMediaDefaults
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs?: ProviderMediaModelRef[]
+  /** 模型定时禁用时段；传空数组清除全部时段。 */
+  modelSchedules?: ProviderModelSchedule[]
 }
 
 export interface ProviderUpdateResponse {
