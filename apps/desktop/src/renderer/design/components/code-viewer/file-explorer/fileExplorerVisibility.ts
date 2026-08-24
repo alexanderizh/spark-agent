@@ -31,12 +31,16 @@ function clampWidth(v: number): number {
 }
 
 function readSettings(): ExplorerSettings {
-  const fallback: ExplorerSettings = { visible: false, width: DEFAULT_WIDTH }
+  // 默认展开文件树；仅当用户显式收起过（localStorage 存了 'false'）才保持收起
+  const fallback: ExplorerSettings = { visible: true, width: DEFAULT_WIDTH }
   if (typeof window === 'undefined') return fallback
-  let visible = false
+  let visible = true
   let width = DEFAULT_WIDTH
   try {
-    visible = window.localStorage.getItem(VISIBLE_KEY) === 'true'
+    const raw = window.localStorage.getItem(VISIBLE_KEY)
+    // 仅在用户显式操作过（存了 'true'/'false'）时才覆盖默认值；
+    // 未写入过时 getItem 返回 null，保持默认展开
+    if (raw != null) visible = raw === 'true'
   } catch {
     /* localStorage 不可用时退回内存默认值 */
   }
@@ -96,7 +100,7 @@ export function setCodeExplorerWidth(next: number): void {
 }
 
 export function useCodeExplorerVisible(): boolean {
-  return useSyncExternalStore(subscribe, getCodeExplorerVisible, () => false)
+  return useSyncExternalStore(subscribe, getCodeExplorerVisible, () => true)
 }
 
 export function useCodeExplorerWidth(): number {

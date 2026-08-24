@@ -41,6 +41,8 @@ export interface FileExplorerPanelProps {
   // 右键菜单的显式「预览 / 编辑」入口（可选：不传则菜单不显示对应项）
   onPreviewFile?: ((relativePath: string) => void) | undefined
   onEditFile?: ((relativePath: string) => void) | undefined
+  // 右键菜单「添加到对话」（可选：不传则菜单不显示对应项）
+  onAddToChat?: ((relativePath: string) => void) | undefined
 }
 
 export function FileExplorerPanel({
@@ -51,6 +53,7 @@ export function FileExplorerPanel({
   onOpenFile,
   onPreviewFile,
   onEditFile,
+  onAddToChat,
 }: FileExplorerPanelProps): ReactNode {
   const { toast } = useToast()
   const clipboard = useFileClipboard()
@@ -91,6 +94,7 @@ export function FileExplorerPanel({
     onOpenFile: (p) => openAndSelect(p),
     ...(onPreviewFile != null ? { onPreviewFile: (p: string) => onPreviewFile(p) } : {}),
     ...(onEditFile != null ? { onEditFile: (p: string) => onEditFile(p) } : {}),
+    ...(onAddToChat != null ? { onAddToChat: (p: string) => onAddToChat(p) } : {}),
     onCopyPath: async (p) => {
       try {
         await writeClipboardText(joinAbs(p))

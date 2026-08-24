@@ -1,16 +1,46 @@
-// 路由判定矩阵单测：预览优先策略（md/html/office/图片/音视频 → 预览面板；
-// txt/log/csv 纯文本与代码/配置类 → 代码 tab）。
+// 路由判定矩阵单测：
+// - shouldPreviewFirst：聊天消息文件链接的预览优先策略（md/html/office/图片/音视频 → 预览面板；
+//   txt/log/csv 纯文本与代码/配置类 → 代码 tab）。
+// - shouldOpenInEditorByDefault：文件树单击的默认路由（编辑器优先，仅二进制富媒体走预览）。
 // 见 design/components/fileOpenRouting.ts。
 
 import { describe, expect, it } from 'vitest'
 import {
   canOpenInEditor,
   canOpenPreview,
+  shouldOpenInEditorByDefault,
   shouldPreviewFirst,
 } from '../design/components/fileOpenRouting'
 
 describe('fileOpenRouting', () => {
-  describe('shouldPreviewFirst（点击默认路由）', () => {
+  describe('shouldOpenInEditorByDefault（文件树单击：编辑器优先）', () => {
+    it('代码/配置/文本/未知扩展一律编辑器（含 dotfile）', () => {
+      expect(shouldOpenInEditorByDefault('/repo/src/a.ts')).toBe(true)
+      expect(shouldOpenInEditorByDefault('/repo/.gitignore')).toBe(true)
+      expect(shouldOpenInEditorByDefault('/repo/a.txt')).toBe(true)
+      expect(shouldOpenInEditorByDefault('/repo/a.unknownext')).toBe(true)
+    })
+
+    it('md/html/svg 富预览类型默认编辑器（预览走右键菜单显式入口）', () => {
+      expect(shouldOpenInEditorByDefault('/repo/README.md')).toBe(true)
+      expect(shouldOpenInEditorByDefault('/repo/index.html')).toBe(true)
+      expect(shouldOpenInEditorByDefault('/repo/logo.svg')).toBe(true)
+    })
+
+    it('csv/tsv 属 universal 表格预览但默认编辑器（与纯文本路由一致）', () => {
+      expect(shouldOpenInEditorByDefault('/repo/data.csv')).toBe(true)
+      expect(shouldOpenInEditorByDefault('/repo/data.tsv')).toBe(true)
+    })
+
+    it('图片/音视频/office 等二进制富媒体走预览面板', () => {
+      expect(shouldOpenInEditorByDefault('/repo/a.png')).toBe(false)
+      expect(shouldOpenInEditorByDefault('/repo/a.mp4')).toBe(false)
+      expect(shouldOpenInEditorByDefault('/repo/a.mp3')).toBe(false)
+      expect(shouldOpenInEditorByDefault('/repo/a.docx')).toBe(false)
+    })
+  })
+
+  describe('shouldPreviewFirst（聊天消息链接：预览优先）', () => {
     it('富文档类预览优先：md / html', () => {
       expect(shouldPreviewFirst('docs/readme.md')).toBe(true)
       expect(shouldPreviewFirst('docs/report.markdown')).toBe(true)
@@ -59,11 +89,13 @@ describe('fileOpenRouting', () => {
       expect(canOpenInEditor('data/table.csv')).toBe(true)
     })
 
-    it('编辑项：代码/markup/纯文本可用，office/图片不可用', () => {
+    it('编辑项：代码/markup/纯文本/dotfile 可用，office/图片不可用', () => {
       expect(canOpenInEditor('src/app.ts')).toBe(true)
       expect(canOpenInEditor('docs/readme.md')).toBe(true)
       expect(canOpenInEditor('web/index.html')).toBe(true)
       expect(canOpenInEditor('logs/app.log')).toBe(true)
+      expect(canOpenInEditor('.gitignore')).toBe(true)
+      expect(canOpenInEditor('.env.local')).toBe(true)
       expect(canOpenInEditor('docs/report.docx')).toBe(false)
       expect(canOpenInEditor('assets/logo.png')).toBe(false)
     })

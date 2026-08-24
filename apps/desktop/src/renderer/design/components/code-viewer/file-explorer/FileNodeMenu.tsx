@@ -21,6 +21,8 @@ export interface FileMenuActions {
   // 显式「预览 / 编辑」入口（可选：不传则菜单不显示对应项）
   onPreviewFile?: (path: string) => void
   onEditFile?: (path: string) => void
+  /** 「添加到对话」：把文件/目录作为上下文引用加入当前会话输入框（可选：不传则菜单不显示对应项） */
+  onAddToChat?: (path: string) => void
   onCopyPath: (path: string) => void
   onCopy: (path: string) => void
   onCut: (path: string) => void
@@ -72,6 +74,14 @@ export function buildNodeMenuItems(
       items.push(item(<Icons.Edit size={14} />, '编辑', () => actions.onEditFile?.(node.path)))
     }
   }
+  // 「添加到对话」：文件与目录都提供（目录走与「添加相关文件或目录」一致的路径引用语义）
+  if (actions.onAddToChat != null) {
+    items.push(
+      item(<Icons.MessageSquarePlus size={14} />, '添加到对话', () =>
+        actions.onAddToChat?.(node.path),
+      ),
+    )
+  }
   items.push(item(<Icons.Copy size={14} />, '复制路径', () => actions.onCopyPath(node.path)))
   items.push(item(<Icons.Copy size={14} />, '复制', () => actions.onCopy(node.path)))
   items.push(item(<Icons.Scissors size={14} />, '剪切', () => actions.onCut(node.path)))
@@ -79,9 +89,13 @@ export function buildNodeMenuItems(
     items.push(item(<Icons.FolderPlus size={14} />, '粘贴', () => actions.onPasteInto(node.path)))
   }
   if (isDir) {
-    items.push(item(<Icons.FilePlus size={14} />, '新建文件', () => actions.onCreateFile(node.path)))
     items.push(
-      item(<Icons.FolderPlus size={14} />, '新建文件夹', () => actions.onCreateDirectory(node.path)),
+      item(<Icons.FilePlus size={14} />, '新建文件', () => actions.onCreateFile(node.path)),
+    )
+    items.push(
+      item(<Icons.FolderPlus size={14} />, '新建文件夹', () =>
+        actions.onCreateDirectory(node.path),
+      ),
     )
   }
   items.push(item(<Icons.Edit size={14} />, '重命名', () => actions.onRename(node.path)))

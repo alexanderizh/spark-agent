@@ -71,6 +71,7 @@ export function ChatTabbar({
   clearWillStopRun = false,
   onCopyAllMessages,
   onExpandSidebar,
+  onOpenInEditor,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -109,6 +110,8 @@ export function ChatTabbar({
   clearWillStopRun?: boolean
   onCopyAllMessages?: () => void
   onExpandSidebar?: () => void
+  /** 打开内置代码编辑器侧面板，供项目打开方式下拉新增「从内置编辑器打开」选项 */
+  onOpenInEditor?: () => void
 }) {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
@@ -268,7 +271,10 @@ export function ChatTabbar({
         )}
         {workspace && (
           <>
-            <ProjectOpenDropdown rootPath={workspace.rootPath} />
+            <ProjectOpenDropdown
+              rootPath={workspace.rootPath}
+              {...(onOpenInEditor ? { onOpenInEditor } : {})}
+            />
           </>
         )}
         {showClearConfirm && onClearMessages && (

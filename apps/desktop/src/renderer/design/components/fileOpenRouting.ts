@@ -59,3 +59,21 @@ export function canOpenPreview(filePath: string): boolean {
 export function canOpenInEditor(filePath: string): boolean {
   return isCodeLikeFile(filePath)
 }
+
+/**
+ * 文件树单击的默认路由：是否直接进代码编辑器（Monaco）。
+ *
+ * 编辑器优先：只有 Monaco 无法承载的二进制富媒体（图片/音视频/office 等）
+ * 单击仍走预览面板；md/html/svg 等文本类富预览类型默认进编辑器，
+ * 预览入口由右键菜单「预览」显式提供（canOpenPreview 白名单）。
+ */
+export function shouldOpenInEditorByDefault(filePath: string): boolean {
+  const previewType = getPreviewFileType(filePath)
+  if (previewType == null || previewType === 'text') return true
+  if (previewType === 'markdown' || previewType === 'html') return true
+  const ext = getFileExtension(filePath).toLowerCase()
+  // svg 属 'image' 但为 XML 文本；csv/tsv 属 'universal'（表格预览）但为可编辑纯文本
+  if (ext === '.svg' || SPREADSHEET_TEXT_EXTENSIONS.has(ext)) return true
+  // 其余 image / audio / video / universal（office/pdf 等）为二进制富媒体 → 预览
+  return false
+}

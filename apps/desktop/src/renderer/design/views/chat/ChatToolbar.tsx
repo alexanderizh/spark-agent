@@ -24,7 +24,10 @@ export const ActivityLogSummaryIcon = ({
 
 const PROJECT_OPEN_PREF_KEY = 'spark:project-open-preference'
 
-type ProjectOpenPreference = { type: 'folder' } | { type: 'tool'; toolId: string }
+type ProjectOpenPreference =
+  | { type: 'builtin' }
+  | { type: 'folder' }
+  | { type: 'tool'; toolId: string }
 
 /**
  * 检测本机已安装的外部工具（IDE / 终端）。结果在模块级别缓存共享，
@@ -118,6 +121,7 @@ function useOpenWithPicker() {
  * 用当前偏好打开一个路径。
  * - target='project'：folder 用 tool:open-folder，工具用 tool:open-project
  * - target='file'：folder 改用 file:reveal（在 Finder 里定位文件），工具用 tool:open-project（IDE 打开该文件）
+ * 注意：builtin 偏好（内置编辑器）不走本函数，由调用方以 UI 回调打开侧面板。
  */
 async function openWithPath(
   preference: ProjectOpenPreference,
@@ -148,11 +152,22 @@ async function openWithPath(
   }
 }
 
+/**
+ * 读取「打开方式」偏好。无历史存储时默认内置编辑器；
+ * 已保存过 folder / tool 偏好的老用户保持原选择不受影响。
+ */
 function loadProjectOpenPreference(): ProjectOpenPreference {
   try {
     const raw = localStorage.getItem(PROJECT_OPEN_PREF_KEY)
-    if (!raw) return { type: 'folder' }
+    if (!raw) return { type: 'builtin' }
     const parsed = JSON.parse(raw) as unknown
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      (parsed as ProjectOpenPreference).type === 'builtin'
+    ) {
+      return { type: 'builtin' }
+    }
     if (
       parsed &&
       typeof parsed === 'object' &&
@@ -171,7 +186,7 @@ function loadProjectOpenPreference(): ProjectOpenPreference {
   } catch {
     /* ignore corrupt preference */
   }
-  return { type: 'folder' }
+  return { type: 'builtin' }
 }
 
 function saveProjectOpenPreference(pref: ProjectOpenPreference) {
@@ -220,7 +235,14 @@ export function TabbarTooltipButton({
   )
 }
 
-export function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
+export function ProjectOpenDropdown({
+  rootPath,
+  onOpenInEditor,
+}: {
+  rootPath: string
+  /** 打开内置代码编辑器侧面板；未提供时隐藏「从内置编辑器打开」选项 */
+  onOpenInEditor?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const { ideTools, terminalTools, loading, preference, preferredTool, setPreference, redetect } =
@@ -236,11 +258,31 @@ export function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
   }, [open])
 
   const handleDefaultAction = async () => {
+    // builtin 偏好打开的是应用内编辑器面板而非外部程序，走 UI 回调；
+    // 未提供回调（旧调用方）时回退到系统文件夹行为。
+    if (preference.type === 'builtin') {
+      if (onOpenInEditor) {
+        onOpenInEditor()
+        return
+      }
+      try {
+        await openWithPath({ type: 'folder' }, undefined, rootPath, 'project')
+      } catch (err) {
+        console.error('Failed to open project:', err)
+      }
+      return
+    }
     try {
       await openWithPath(preference, preferredTool, rootPath, 'project')
     } catch (err) {
       console.error('Failed to open project:', err)
     }
+  }
+
+  const handleSelectBuiltin = () => {
+    setOpen(false)
+    setPreference({ type: 'builtin' })
+    onOpenInEditor?.()
   }
 
   const handleSelectFolder = () => {
@@ -259,8 +301,11 @@ export function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
     )
   }
 
-  const triggerTitle =
-    preference.type === 'folder'
+  const showBuiltinOption = onOpenInEditor != null
+  const builtinPreferred = preference.type === 'builtin' && showBuiltinOption
+  const triggerTitle = builtinPreferred
+    ? '从内置编辑器打开'
+    : preference.type === 'folder'
       ? '在文件夹中打开'
       : preferredTool
         ? `在 ${preferredTool.name} 中打开`
@@ -286,7 +331,9 @@ export function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
           className="icon-btn tool-dropdown-main"
           onClick={() => void handleDefaultAction()}
         >
-          {preferredTool ? (
+          {builtinPreferred ? (
+            <Icons.Code size={18} />
+          ) : preferredTool ? (
             <span className="tool-dropdown-trigger-icon">
               {getToolIcon(preferredTool.iconHint, preferredTool.kind)}
             </span>
@@ -305,6 +352,14 @@ export function ProjectOpenDropdown({ rootPath }: { rootPath: string }) {
       </div>
       {open && (
         <div className="tool-dropdown">
+          {showBuiltinOption && (
+            <button type="button" className="tool-dropdown-item" onClick={handleSelectBuiltin}>
+              <span className="tool-dropdown-item-icon">
+                <Icons.Code size={14} />
+              </span>
+              <span className="tool-dropdown-item-name">从内置编辑器打开</span>
+            </button>
+          )}
           <button type="button" className="tool-dropdown-item" onClick={handleSelectFolder}>
             <span className="tool-dropdown-item-icon">
               <Icons.FolderOpen size={14} />

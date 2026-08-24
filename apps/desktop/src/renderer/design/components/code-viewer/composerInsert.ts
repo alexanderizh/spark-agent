@@ -112,6 +112,9 @@ export function useInsertToComposer(input: {
           type: att.type,
           path: att.path,
           name: att.name ?? getFileNameFromPath(att.path),
+          // 调用方（如文件树右键）已生成图片预览时原样透传，避免 chip 丢失预览
+          ...(att.previewPath != null ? { previewPath: att.previewPath } : {}),
+          ...(att.previewUrl != null ? { previewUrl: att.previewUrl } : {}),
         }))
         appendAttachments(next)
       }

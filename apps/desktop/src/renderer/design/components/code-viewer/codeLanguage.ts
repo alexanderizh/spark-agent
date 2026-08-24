@@ -114,7 +114,8 @@ const TEXT_LIKE_EXTENSIONS = new Set(['txt', 'text', 'log', 'env', 'csv', 'tsv']
 function extractExt(filePath: string): string | null {
   const clean = filePath.replace(/^.*[\\/]/, '')
   const dot = clean.lastIndexOf('.')
-  if (dot < 0) return null
+  // dot <= 0：无点（README），或点在首位（.gitignore）——dotfile 的首点不是扩展名分隔符
+  if (dot <= 0) return null
   return clean.slice(dot + 1).toLowerCase()
 }
 
@@ -139,9 +140,11 @@ export function getMonacoLanguage(filePath: string): string {
  * markdown 也算（代码 tab 的 markdown 用 Monaco 看 raw 比纯预览更利于编辑）。
  */
 export function isCodeLikeFile(filePath: string): boolean {
+  const base = extractBasename(filePath)
+  // 点开头文件（.gitignore/.gitattributes/.env.local/...）按工程惯例是配置文本，
+  // 一律视为可编辑，不依赖扩展名判定
+  if (base.startsWith('.')) return true
   const ext = extractExt(filePath)
-  if (ext == null) {
-    return CODE_BASENAMES.has(extractBasename(filePath))
-  }
+  if (ext == null) return CODE_BASENAMES.has(base)
   return ext in EXT_LANG_MAP || TEXT_LIKE_EXTENSIONS.has(ext)
 }
