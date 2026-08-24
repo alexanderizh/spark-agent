@@ -49,6 +49,7 @@ import { confirmVideoSubmission, isVideoSubmissionOperation } from './canvasVide
 import { useCanvasInputBindings } from './useCanvasInputBindings'
 import { materializeCanvasInputBindingReferences } from './canvasInputBindings'
 import { resolveCanvasMediaInputs } from './canvasResolvedMediaInputs'
+import { selectCanvasOperationBindingConnectionNodes } from './canvasOperationBindingConnections'
 
 /** 分离音频的输出格式选项（copy=原轨无损抽取，其余为重编码） */
 const AUDIO_FORMAT_OPTIONS: Array<{ value: 'copy' | 'mp3' | 'aac' | 'wav'; label: string }> = [
@@ -641,13 +642,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     () => resolveCanvasMediaInputs(snapshot, expandedSourceInputNodes),
     [expandedSourceInputNodes, snapshot],
   )
-  const editableSourceMediaNodes = useMemo(
-    () =>
-      expandedSourceInputNodes.filter((item) =>
-        isSupportedMediaInputNode(item, capability?.inputTypes ?? []),
-      ),
-    [capability, expandedSourceInputNodes],
-  )
   const mediaInputOptions = useMemo(
     () =>
       snapshot.nodes
@@ -750,10 +744,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   ])
   const bindingConnectionNodeIds = useMemo(
     () =>
-      (canEditMediaInputs ? editableSourceMediaNodes : expandedSourceInputNodes).map(
-        (item) => item.id,
-      ),
-    [canEditMediaInputs, editableSourceMediaNodes, expandedSourceInputNodes],
+      selectCanvasOperationBindingConnectionNodes({
+        expandedSourceNodes: expandedSourceInputNodes,
+        supportedInputTypes: canEditMediaInputs ? (capability?.inputTypes ?? []) : [],
+      }).map((item) => item.id),
+    [canEditMediaInputs, capability?.inputTypes, expandedSourceInputNodes],
   )
 
   const inheritedNegativePrompt = useMemo(() => {
@@ -3210,13 +3205,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     </div>
   )
 })
-
-function isSupportedMediaInputNode(node: CanvasNode, inputTypes: readonly string[]): boolean {
-  if (node.type === 'image') return inputTypes.includes('image')
-  if (node.type === 'video') return inputTypes.includes('video')
-  if (node.type === 'audio') return inputTypes.includes('audio')
-  return false
-}
 
 function canRepollCanvasTask(task: CanvasTask): boolean {
   return (

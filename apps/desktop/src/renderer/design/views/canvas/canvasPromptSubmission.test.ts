@@ -80,6 +80,50 @@ const snapshot = (): CanvasSnapshot => ({
 })
 
 describe('canvasPromptSubmission', () => {
+  it.each([
+    ['resolved output', 'operation-output:asset-text'],
+    ['legacy task owner', 'operation-text'],
+  ])('compiles a connected text task output bound by its %s', async (_case, bindingNodeId) => {
+    const taskOutput = taskOutputSnapshot('text')
+    const result = await buildCanvasPromptSubmission({
+      document: {
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'connection-text',
+            source: 'connection',
+            sourceNodeId: 'operation-text',
+            relation: 'generic',
+            label: '上游文本任务',
+            order: 0,
+          },
+        ],
+      },
+      snapshot: taskOutput,
+      operation: 'text_to_image',
+      inputBindings: [
+        {
+          id: `connection:${bindingNodeId}:input`,
+          sourceNodeId: bindingNodeId,
+          origin: 'connection',
+          kind: 'text',
+          relation: 'generic',
+          role: 'input',
+          enabled: true,
+          order: 0,
+          promptBlockId: 'connection-text',
+        },
+      ],
+    })
+
+    expect(result.prompt).toContain('[文本引用 T1 开始]')
+    expect(result.prompt).toContain('雨夜车站里的重逢镜头')
+    expect(result.relationManifest).toEqual([
+      expect.objectContaining({ sourceNodeId: 'operation-output:asset-text' }),
+    ])
+  })
+
   it.each(['image', 'video', 'audio'] as const)(
     'compiles a lazily materialized %s task output selected as a reference',
     async (kind) => {
@@ -434,17 +478,19 @@ describe('canvasPromptSubmission', () => {
   })
 })
 
-function taskOutputSnapshot(kind: 'image' | 'video' | 'audio'): CanvasSnapshot {
+function taskOutputSnapshot(kind: 'image' | 'video' | 'audio' | 'text'): CanvasSnapshot {
   const operationByKind = {
     image: 'text_to_image',
     video: 'text_to_video',
     audio: 'extract_audio',
+    text: 'text_generate',
   } as const
-  const extensionByKind = { image: 'png', video: 'mp4', audio: 'mp3' } as const
+  const extensionByKind = { image: 'png', video: 'mp4', audio: 'mp3', text: 'txt' } as const
   const mimeTypeByKind = {
     image: 'image/png',
     video: 'video/mp4',
     audio: 'audio/mpeg',
+    text: 'text/plain',
   } as const
   const operation = operationByKind[kind]
   const operationNode: CanvasNode = {
@@ -461,7 +507,9 @@ function taskOutputSnapshot(kind: 'image' | 'video' | 'audio'): CanvasSnapshot {
     type: kind,
     title: `${kind} output`,
     mimeType: mimeTypeByKind[kind],
-    url: `https://cdn.example.com/output.${extensionByKind[kind]}`,
+    ...(kind === 'text'
+      ? { contentText: '雨夜车站里的重逢镜头' }
+      : { url: `https://cdn.example.com/output.${extensionByKind[kind]}` }),
   }
   return {
     ...snapshot(),

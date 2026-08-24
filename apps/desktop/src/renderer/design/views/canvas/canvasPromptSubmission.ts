@@ -26,6 +26,12 @@ export type CanvasPromptSubmission = CanvasPromptTaskFields & {
   inputFiles?: CanvasMediaTaskInputFile[]
 }
 
+type ResolvedExecutableReferences = {
+  document: NonNullable<CanvasPromptTaskFields['promptDocument']>
+  nodes: CanvasNode[]
+  sourceByBlockId: ReadonlyMap<string, { blockId: string; nodeId: string }>
+}
+
 export function buildCanvasPromptDocumentForInputs(input: {
   prompt: string
   nodes: CanvasNode[]
@@ -71,7 +77,7 @@ export async function buildCanvasPromptSubmission(input: {
     selectedSourceNodes,
     input.snapshot,
   )
-  const executableSourceDocument = applyInputBindings(resolved.document, input.inputBindings)
+  const executableSourceDocument = applyInputBindings(resolved, input.inputBindings)
   const visibleDocument = applyInputRoles(input.document, input.inputRoles, input.inputBindings)
   const document = applyInputRoles(
     buildCanvasSubmissionPromptDocument({ document: executableSourceDocument, inputNodes }),
@@ -114,44 +120,72 @@ export async function buildCanvasPromptSubmission(input: {
 }
 
 function applyInputBindings(
-  document: NonNullable<CanvasPromptTaskFields['promptDocument']>,
+  resolved: ResolvedExecutableReferences,
   bindings: CanvasPromptTaskFields['inputBindings'],
 ): NonNullable<CanvasPromptTaskFields['promptDocument']> {
-  if (!bindings) return document
-  const activeNodeIds = new Set(
-    bindings.filter((binding) => binding.enabled).map((binding) => binding.sourceNodeId),
-  )
+  if (!bindings) return resolved.document
   return {
     version: 2,
-    blocks: document.blocks
+    blocks: resolved.document.blocks
       .filter(
         (block) =>
           (block.kind !== 'reference' && block.kind !== 'structured') ||
-          activeNodeIds.has(block.sourceNodeId),
+          isResolvedReferenceEnabled(block, resolved.sourceByBlockId, bindings),
       )
       .map((block) => ({ ...block })),
   }
 }
 
+function isResolvedReferenceEnabled(
+  block: Extract<CanvasPromptBlock, { kind: 'reference' | 'structured' }>,
+  sourceByBlockId: ResolvedExecutableReferences['sourceByBlockId'],
+  bindings: NonNullable<CanvasPromptTaskFields['inputBindings']>,
+): boolean {
+  const source = sourceByBlockId.get(block.id) ?? {
+    blockId: block.id,
+    nodeId: block.sourceNodeId,
+  }
+  const blockBindings = bindings.filter((binding) => binding.promptBlockId === source.blockId)
+  const candidates = blockBindings.length > 0 ? blockBindings : bindings
+  return candidates.some(
+    (binding) =>
+      binding.enabled &&
+      (binding.sourceNodeId === block.sourceNodeId || binding.sourceNodeId === source.nodeId),
+  )
+}
+
 function resolveExecutableReferences(
   document: NonNullable<CanvasPromptTaskFields['promptDocument']>,
   snapshot: CanvasSnapshot,
-): { document: NonNullable<CanvasPromptTaskFields['promptDocument']>; nodes: CanvasNode[] } {
+): ResolvedExecutableReferences {
   const nodeById = new Map(snapshot.nodes.map((node) => [node.id, node]))
   const resolvedNodes = new Map<string, CanvasNode>()
+  const sourceByBlockId = new Map<string, { blockId: string; nodeId: string }>()
   const blocks = document.blocks.flatMap<CanvasPromptBlock>((block) => {
     if (block.kind !== 'reference' && block.kind !== 'structured') return [{ ...block }]
-    const source = nodeById.get(block.sourceNodeId)
-    if (!source) return [{ ...block }]
-    const expanded = expandCanvasInputNodes([source], snapshot)
-    if (expanded.length === 1 && expanded[0]?.id === source.id) return [{ ...block }]
-    if (expanded.length === 0) return [{ ...block }]
+    const originalSource = { blockId: block.id, nodeId: block.sourceNodeId }
+    const sourceNode = nodeById.get(block.sourceNodeId)
+    if (!sourceNode) {
+      sourceByBlockId.set(block.id, originalSource)
+      return [{ ...block }]
+    }
+    const expanded = expandCanvasInputNodes([sourceNode], snapshot)
+    if (expanded.length === 1 && expanded[0]?.id === sourceNode.id) {
+      sourceByBlockId.set(block.id, originalSource)
+      return [{ ...block }]
+    }
+    if (expanded.length === 0) {
+      sourceByBlockId.set(block.id, originalSource)
+      return [{ ...block }]
+    }
     return expanded.map((node, index) => {
       resolvedNodes.set(node.id, node)
+      const resolvedBlockId = `${block.id}-resolved-${index}`
+      sourceByBlockId.set(resolvedBlockId, originalSource)
       if (block.kind === 'structured') {
         return {
           ...block,
-          id: `${block.id}-resolved-${index}`,
+          id: resolvedBlockId,
           sourceNodeId: node.id,
           summary:
             expanded.length > 1 ? `${block.summary} · ${node.title ?? index + 1}` : block.summary,
@@ -159,14 +193,18 @@ function resolveExecutableReferences(
       }
       return {
         ...block,
-        id: `${block.id}-resolved-${index}`,
+        id: resolvedBlockId,
         sourceNodeId: node.id,
         label: expanded.length > 1 ? `${block.label} · ${node.title ?? index + 1}` : block.label,
         order: block.order + index,
       }
     })
   })
-  return { document: { version: 2, blocks }, nodes: Array.from(resolvedNodes.values()) }
+  return {
+    document: { version: 2, blocks },
+    nodes: Array.from(resolvedNodes.values()),
+    sourceByBlockId,
+  }
 }
 
 function applyInputRoles(
