@@ -58,6 +58,7 @@ const AUDIO_FORMAT_OPTIONS: Array<{ value: 'copy' | 'mp3' | 'aac' | 'wav'; label
   { value: 'aac', label: 'AAC / M4A' },
   { value: 'wav', label: 'WAV（无损）' },
 ]
+
 import { useCanvasOperationDraftAutosave } from './useCanvasOperationDraftAutosave'
 import { CanvasTaskValidationError } from './canvasTaskSubmissionValidation'
 import {
@@ -146,6 +147,13 @@ import type {
   CanvasTask,
   ShotScriptConfig,
 } from './canvas.types'
+
+/**
+ * 让高级设置/自定义参数 Popover 内的 Select 下拉层加入同一层叠上下文。
+ * antd Select 默认把下拉层挂到 body，层级低于画布参数 Popover 时会被其遮住。
+ */
+const getCanvasPopoverPopupContainer = (triggerNode: HTMLElement): HTMLElement =>
+  triggerNode.closest<HTMLElement>('.ant-popover') ?? document.body
 
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
 type CanvasTaskInputRoleSelection = CanvasTaskInputRole | CanvasTaskInputRole[]
@@ -2239,6 +2247,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   size="middle"
                   value={param.type}
                   disabled={running}
+                  getPopupContainer={getCanvasPopoverPopupContainer}
                   options={[
                     { value: 'string', label: '文本' },
                     { value: 'number', label: '数字' },
@@ -2259,6 +2268,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     value={param.value || undefined}
                     placeholder="值"
                     disabled={running}
+                    getPopupContainer={getCanvasPopoverPopupContainer}
                     options={[
                       { value: 'true', label: 'true' },
                       { value: 'false', label: 'false' },
