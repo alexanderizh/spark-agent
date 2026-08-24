@@ -1,10 +1,12 @@
 # SparkWork 内置 Git Runtime 回退修复计划
 
-> 状态: 待开发 | 最后核对: 2026-08-24
+> 状态: 实施中 | 最后核对: 2026-08-24
+
+> Phase 1–3 的代码改造已在隔离 worktree 分支 `worktree-bundled-git-runtime` 实现：GitRuntimeService、runtime lock、打包校验与完整性来源，统一 GitCommandService，Workspace 四态协议/UI，以及 worktree、checkpoint、`/git`、内置终端和 Agent 子进程迁移。代码级验证已完成：desktop 聚焦测试 49/49、agent-runtime 聚焦测试 89/89，desktop、agent-runtime、protocol、shared typecheck，定向 ESLint、统一 Git runtime 静态门禁和 `git diff --check` 均通过。Phase 0 制品尚未入库（lock targets 为空，此时打包会按设计直接失败）；Phase 4 的正式安装包与无系统 Git 真机矩阵按用户要求暂缓。
 
 ## 1. 结论
 
-将 Git 视为桌面端基础运行时，按平台和架构把一套完整、可重定位的 Git runtime 随安装包交付。应用启动时先修复宿主 PATH，再按“显式开发覆盖 → 满足最低能力门槛的系统 Git → 内置 Git”解析可执行环境；内部功能和 `/git` 内置只读命令统一通过绝对可执行路径运行 Git，Agent 自由 shell 与内置终端通过子进程级环境构造器获得同一 runtime。任何 Git 专用环境变量都不写入全局 `process.env`。
+将 Git 视为桌面端基础运行时，按平台和架构把一套完整、可重定位的 Git runtime 随安装包交付。应用启动时先修复宿主 PATH，再按“显式开发覆盖 -> 满足最低能力门槛的系统 Git -> 内置 Git”解析可执行环境；内部功能和 `/git` 内置只读命令统一通过绝对可执行路径运行 Git，Agent 自由 shell 与内置终端通过子进程级环境构造器获得同一 runtime。任何 Git 专用环境变量都不写入全局 `process.env`。
 
 这次修复不采用以下方案：
 
@@ -112,7 +114,7 @@ Git runtime 是发布输入，不是终端用户按需安装项。当前桌面�
 
 在仓库中新增受版本控制的 runtime lock，固定每个正式 target 的 artifact id、版本、归档 SHA256、大小、入口路径、上游源码摘要和 SBOM 摘要。桌面 release job 通过 lock 精确选择制品，并要求远端 manifest 与 lock 完全一致，禁止按前缀或“latest”选择可执行代码。
 
-制品供应链门禁包括：验证上游 Git tag/源码签名或官方发布签名；保存对应源码、补丁和可复现构建脚本；生成 SBOM 与构建 provenance；扫描 Git、OpenSSL/libcurl、OpenSSH 和 CA bundle 的已知高危漏洞；审计 macOS rpath/最低系统版本、Windows DLL/VC runtime 依赖、可执行位和符号链接；归档 SHA256 → 上传 → 公网完整 GET → 重新计算 SHA256 → staging manifest → 全仓审计 → 正式 manifest 替换 → 正式 manifest 回读。Git runtime 维护 owner、常规更新周期和高危漏洞修复 SLA 必须在 Phase 0 明确，不能只验证传输哈希。
+制品供应链门禁包括：验证上游 Git tag/源码签名或官方发布签名；保存对应源码、补丁和可复现构建脚本；生成 SBOM 与构建 provenance；扫描 Git、OpenSSL/libcurl、OpenSSH 和 CA bundle 的已知高危漏洞；审计 macOS rpath/最低系统版本、Windows DLL/VC runtime 依赖、可执行位和符号链接；归档 SHA256 -> 上传 -> 公网完整 GET -> 重新计算 SHA256 -> staging manifest -> 全仓审计 -> 正式 manifest 替换 -> 正式 manifest 回读。Git runtime 维护 owner、常规更新周期和高危漏洞修复 SLA 必须在 Phase 0 明确，不能只验证传输哈希。
 
 ### 4.2 Runtime 解析顺序
 
@@ -205,7 +207,7 @@ type GitFailureCode = 'GIT_OPERATION_FAILED' | 'GIT_OPERATION_OUTCOME_UNKNOWN' |
 
 - Git 面板继续保留 loading skeleton。
 - `not_repository` 显示“当前项目不是 Git 仓库”。
-- `runtime_unavailable` 显示“Git 运行环境不可用”，提供“重新检测”和“打开设置 → 完整性”入口，不再伪装成非仓库。
+- `runtime_unavailable` 显示“Git 运行环境不可用”，提供“重新检测”和“打开设置 -> 完整性”入口，不再伪装成非仓库。
 - `failed` 显示精确错误摘要和重试入口。
 - 完整性页把 Git 标记为“系统”或“内置”，展示版本；内置可用时不再提示用户下载安装系统 Git。
 - 会话分支/工作树状态发生 runtime 错误时保留上一个可信快照并展示不可用提示，不用空字符串覆盖可信分支。

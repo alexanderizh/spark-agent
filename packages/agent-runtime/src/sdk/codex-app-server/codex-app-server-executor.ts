@@ -31,6 +31,7 @@ import type {
   SDKPermissionRequestContext,
   SDKTurnAttachment,
 } from '../types.js'
+import { buildDefaultGitChildEnvironment } from '../../services/git-command.service.js'
 import type {
   AppServerThreadParamsBase,
   AppServerTurnStartParams,
@@ -1194,12 +1195,14 @@ export class CodexAppServerExecutor
 // ── 纯函数助手 ─────────────────────────────────────────────────────────────
 
 function buildAppServerEnv(config: SDKExecutorConfig, pathDirs: string[]): Record<string, string> {
-  const env = stringifyEnv({
-    ...process.env,
-    ...(config.codexCliProvider?.env ?? {}),
-    ...(config.customEnv ?? {}),
-    ...buildCodexMcpEnv(config.mcpServers),
-  })
+  const env = stringifyEnv(
+    buildDefaultGitChildEnvironment({
+      ...process.env,
+      ...(config.codexCliProvider?.env ?? {}),
+      ...(config.customEnv ?? {}),
+      ...buildCodexMcpEnv(config.mcpServers),
+    }),
+  )
   if (pathDirs.length > 0) prependPathDirs(env, pathDirs)
   if (config.apiKey != null && config.apiKey.length > 0) {
     // 与 @openai/codex-sdk 一致：api key 经 CODEX_API_KEY 传递。

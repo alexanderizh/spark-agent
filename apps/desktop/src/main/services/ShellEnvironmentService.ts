@@ -24,6 +24,11 @@ import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { resolveStandaloneNodeRuntimePath } from './StandaloneNodeRuntime.js'
+import {
+  initializeGitRuntime,
+  refreshGitRuntime,
+  type GitRuntimeResolution,
+} from './GitRuntimeService.js'
 
 const log = createLogger('shell-env')
 
@@ -49,6 +54,8 @@ export interface RuntimeToolStatus {
   version: string | null
   /** Download URL for installation */
   downloadUrl: string
+  /** Where the runtime comes from (Git only: system/bundled/override) */
+  source?: 'system' | 'bundled' | 'override'
 }
 
 export interface ShellEnvironmentStatus {
@@ -100,16 +107,20 @@ async function fixWindowsPath(originalPath: string): Promise<{
 }> {
   try {
     // Use reg.exe to query user PATH from HKCU
-    const userPathPromise = execFileAsync(
-      'reg',
-      ['query', 'HKCU\\Environment', '/v', 'Path'],
-      { timeout: 5000, windowsHide: true },
-    ).catch(() => ({ stdout: '' }))
+    const userPathPromise = execFileAsync('reg', ['query', 'HKCU\\Environment', '/v', 'Path'], {
+      timeout: 5000,
+      windowsHide: true,
+    }).catch(() => ({ stdout: '' }))
 
     // Query system PATH from HKLM
     const systemPathPromise = execFileAsync(
       'reg',
-      ['query', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment', '/v', 'Path'],
+      [
+        'query',
+        'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment',
+        '/v',
+        'Path',
+      ],
       { timeout: 5000, windowsHide: true },
     ).catch(() => ({ stdout: '' }))
 
@@ -148,7 +159,9 @@ async function fixWindowsPath(originalPath: string): Promise<{
 
     if (fixedPath !== originalPath) {
       process.env.PATH = fixedPath
-      log.info(`PATH fixed: added ${uniquePaths.length - splitPathEntries(originalPath).length} entries`)
+      log.info(
+        `PATH fixed: added ${uniquePaths.length - splitPathEntries(originalPath).length} entries`,
+      )
     }
 
     return { originalPath, fixedPath, changed: fixedPath !== originalPath }
@@ -202,14 +215,10 @@ function getCommonWindowsPaths(): string[] {
   )
 
   // nvm-windows
-  paths.push(
-    join(process.env['APPDATA'] ?? join(home, 'AppData', 'Roaming'), 'nvm'),
-  )
+  paths.push(join(process.env['APPDATA'] ?? join(home, 'AppData', 'Roaming'), 'nvm'))
 
   // Volta
-  paths.push(
-    join(home, 'AppData', 'Local', 'Volta', 'bin'),
-  )
+  paths.push(join(home, 'AppData', 'Local', 'Volta', 'bin'))
 
   // Python
   paths.push(
@@ -232,14 +241,10 @@ function getCommonWindowsPaths(): string[] {
   )
 
   // pnpm
-  paths.push(
-    join(home, 'AppData', 'Local', 'pnpm'),
-  )
+  paths.push(join(home, 'AppData', 'Local', 'pnpm'))
 
   // yarn
-  paths.push(
-    join(home, 'AppData', 'Local', 'Yarn', 'bin'),
-  )
+  paths.push(join(home, 'AppData', 'Local', 'Yarn', 'bin'))
 
   return paths
 }
@@ -301,7 +306,9 @@ async function fixUnixPath(originalPath: string): Promise<{
 
     if (fixedPath !== originalPath) {
       process.env.PATH = fixedPath
-      log.info(`PATH fixed: added ${uniquePaths.length - splitPathEntries(originalPath).length} entries`)
+      log.info(
+        `PATH fixed: added ${uniquePaths.length - splitPathEntries(originalPath).length} entries`,
+      )
     }
 
     return { originalPath, fixedPath, changed: fixedPath !== originalPath }
@@ -348,9 +355,7 @@ function getNvmNodePaths(): string[] {
 
     const defaultVersion = versions.find((version) => {
       const normalizedVersion = version.replace(/^v/, '')
-      return (
-        normalizedVersion === defaultAlias || normalizedVersion.startsWith(`${defaultAlias}.`)
-      )
+      return normalizedVersion === defaultAlias || normalizedVersion.startsWith(`${defaultAlias}.`)
     })
     const orderedVersions = defaultVersion
       ? [defaultVersion, ...versions.filter((version) => version !== defaultVersion)]
@@ -396,14 +401,8 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     versionRegex: /(\d+\.\d+\.\d+)/,
     downloadUrl: 'https://docs.npmjs.com/downloading-and-installing-node-js-and-npm',
   },
-  {
-    command: 'git',
-    displayName: 'Git',
-    winCommands: ['git.exe'],
-    versionArgs: ['--version'],
-    versionRegex: /(\d+\.\d+\.\d+)/,
-    downloadUrl: 'https://git-scm.com/downloads',
-  },
+  // Git is NOT detected here: GitRuntimeService owns its resolution
+  // (system-first with bundled fallback). See detectGitTool().
   {
     command: 'python',
     displayName: 'Python',
@@ -475,6 +474,24 @@ async function detectBundledTool(tool: ToolDefinition): Promise<RuntimeToolStatu
     return detectBundledNpm(tool)
   }
   return null
+}
+
+/**
+ * Git is resolved by GitRuntimeService (system Git first, bundled fallback)
+ * so the integrity page reflects the same runtime the app will actually use.
+ */
+function detectGitTool(tool: ToolDefinition, resolution: GitRuntimeResolution): RuntimeToolStatus {
+  const descriptor = resolution.descriptor
+  const status: RuntimeToolStatus = {
+    command: tool.command,
+    displayName: tool.displayName,
+    available: descriptor != null,
+    resolvedPath: descriptor?.executablePath ?? null,
+    version: descriptor?.version ?? null,
+    downloadUrl: tool.downloadUrl,
+  }
+  if (descriptor != null) status.source = descriptor.source
+  return status
 }
 
 async function detectBundledNode(tool: ToolDefinition): Promise<RuntimeToolStatus | null> {
@@ -554,7 +571,9 @@ function findBundledNpmCli(): string | null {
   const candidates = new Set<string>()
   for (const root of getBundledRuntimeRootCandidates()) {
     candidates.add(join(root, 'node_modules', 'npm', 'bin', 'npm-cli.js'))
-    candidates.add(join(root.replace(/\.asar$/, '.asar.unpacked'), 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+    candidates.add(
+      join(root.replace(/\.asar$/, '.asar.unpacked'), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    )
     candidates.add(join(root, 'app.asar', 'node_modules', 'npm', 'bin', 'npm-cli.js'))
     candidates.add(join(root, 'app.asar.unpacked', 'node_modules', 'npm', 'bin', 'npm-cli.js'))
     candidates.add(join(root, 'node', 'node_modules', 'npm', 'bin', 'npm-cli.js'))
@@ -614,8 +633,23 @@ export async function initializeShellEnvironment(): Promise<ShellEnvironmentStat
   // Step 1: Fix PATH
   const pathResult = await fixShellPath()
 
-  // Step 2: Detect tools
-  const tools = await Promise.all(TOOL_DEFINITIONS.map(detectTool))
+  // Step 2: Resolve the Git runtime (system-first, bundled fallback) after PATH
+  // is fixed so system Git detection sees the user's real PATH.
+  const gitResolution = await initializeGitRuntime()
+
+  // Step 3: Detect tools
+  const gitToolDefinition: ToolDefinition = {
+    command: 'git',
+    displayName: 'Git',
+    winCommands: ['git.exe'],
+    versionArgs: ['--version'],
+    versionRegex: /(\d+\.\d+\.\d+)/,
+    downloadUrl: 'https://git-scm.com/downloads',
+  }
+  const tools = await Promise.all([
+    ...TOOL_DEFINITIONS.map(detectTool),
+    detectGitTool(gitToolDefinition, gitResolution),
+  ])
 
   const status: ShellEnvironmentStatus = {
     pathFixed: pathResult.changed,
@@ -627,12 +661,12 @@ export async function initializeShellEnvironment(): Promise<ShellEnvironmentStat
 
   _cachedStatus = status
 
-  const available = tools.filter(t => t.available).map(t => `${t.displayName}@${t.version}`)
-  const missing = tools.filter(t => !t.available).map(t => t.displayName)
+  const available = tools.filter((t) => t.available).map((t) => `${t.displayName}@${t.version}`)
+  const missing = tools.filter((t) => !t.available).map((t) => t.displayName)
 
   log.info(
     `Shell environment initialized. PATH ${pathResult.changed ? 'fixed' : 'unchanged'}. ` +
-    `Available: [${available.join(', ')}]. Missing: [${missing.join(', ')}].`,
+      `Available: [${available.join(', ')}]. Missing: [${missing.join(', ')}].`,
   )
 
   return status
@@ -653,7 +687,19 @@ export async function getShellEnvironmentStatus(): Promise<ShellEnvironmentStatu
  */
 export async function recheckRuntimeTools(): Promise<ShellEnvironmentStatus> {
   log.info('Re-checking runtime tools...')
-  const tools = await Promise.all(TOOL_DEFINITIONS.map(detectTool))
+  const gitResolution = await refreshGitRuntime()
+  const gitToolDefinition: ToolDefinition = {
+    command: 'git',
+    displayName: 'Git',
+    winCommands: ['git.exe'],
+    versionArgs: ['--version'],
+    versionRegex: /(\d+\.\d+\.\d+)/,
+    downloadUrl: 'https://git-scm.com/downloads',
+  }
+  const tools = await Promise.all([
+    ...TOOL_DEFINITIONS.map(detectTool),
+    detectGitTool(gitToolDefinition, gitResolution),
+  ])
 
   const status: ShellEnvironmentStatus = {
     pathFixed: _cachedStatus?.pathFixed ?? false,

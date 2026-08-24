@@ -1,0 +1,7 @@
+{
+  "$schema": "./git-runtime-lock.schema.md",
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-24",
+  "notes": "Git runtime lock. Release jobs MUST fail closed when the target platform/arch has no entry here. Entries are only added after the Phase 0 supply-chain gates pass (upstream signature, SBOM, provenance, CVE scan, public re-download SHA verification).",
+  "targets": []
+}

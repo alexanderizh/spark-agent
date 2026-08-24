@@ -31,6 +31,7 @@ import type {
 import { WorkspaceRepository } from '@spark/storage'
 import { getDatabase } from '../db.js'
 import { pushStreamEvent } from '../ipc/typed-ipc.js'
+import { getGitCommandService } from './GitRuntimeService.js'
 
 const log = createLogger('terminal:service')
 
@@ -160,7 +161,7 @@ class TerminalService {
     const title = (req.title?.trim() || deriveTitle(rootPath)).slice(0, 80)
 
     const env: NodeJS.ProcessEnv = {
-      ...process.env,
+      ...getGitCommandService().buildChildEnvironment(process.env),
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       FORCE_COLOR: '1',

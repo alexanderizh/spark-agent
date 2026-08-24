@@ -13,11 +13,16 @@ vi.mock('../../components/SessionFileOpenPicker', () => ({
     </button>
   ),
 }))
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function createStatus(additions: number, fileStatus = 'M'): WorkspaceGitStatusResponse {
   return {
+    state: {
+      kind: 'ready',
+      repositoryKind: 'worktree',
+      runtimeSource: 'system',
+      runtimeVersion: '2.45.4',
+    },
     isGitRepo: true,
     currentBranch: 'master',
     branches: ['master'],

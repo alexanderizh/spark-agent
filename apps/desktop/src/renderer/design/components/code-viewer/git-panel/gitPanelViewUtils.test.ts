@@ -108,6 +108,12 @@ describe('formatGitRelativeTime', () => {
 
 describe('buildGitPanelLogRefreshKey', () => {
   const baseStatus: WorkspaceGitStatusResponse = {
+    state: {
+      kind: 'ready',
+      repositoryKind: 'worktree',
+      runtimeSource: 'system',
+      runtimeVersion: '2.50.0',
+    },
     isGitRepo: true,
     currentBranch: 'master',
     branches: [],

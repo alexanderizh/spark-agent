@@ -14,6 +14,7 @@ const {
   signWindowsNativeHost,
 } = require('./package-windows-native-host.js')
 const { packageStandaloneNodeRuntime, targetArchitecture } = require('./package-standalone-node.js')
+const { packageGitRuntime } = require('./package-git-runtime.js')
 const { prunePackagedOnnxRuntime } = require('./prune-onnx-runtime.js')
 const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses')
 
@@ -125,6 +126,9 @@ async function pruneOnnxForContext(
 
 module.exports = async function afterPack(context) {
   const standaloneNodeRuntime = await packageStandaloneNodeRuntime(context)
+  // Fail closed: no lock entry for this target aborts the pack instead of
+  // silently relying on the user's system Git.
+  await packageGitRuntime(context)
   const onnxResult = await pruneOnnxForContext(context)
   console.log(
     `[after-pack] ONNX runtime: kept ${onnxResult.kept.join(', ') || '<none>'}, removed ${onnxResult.removed.join(', ') || '<none>'}`,

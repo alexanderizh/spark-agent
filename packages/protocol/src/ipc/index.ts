@@ -1226,7 +1226,26 @@ export interface WorkspaceGitBranch {
   updatedAt: number
 }
 
+export type GitRuntimeSource = 'override' | 'system' | 'bundled'
+
+export type WorkspaceGitFailureCode =
+  | 'GIT_OPERATION_FAILED'
+  | 'GIT_OPERATION_OUTCOME_UNKNOWN'
+  | 'AUTH_REQUIRED'
+
+export type WorkspaceGitState =
+  | {
+      kind: 'ready'
+      repositoryKind: 'worktree' | 'bare'
+      runtimeSource: GitRuntimeSource
+      runtimeVersion: string
+    }
+  | { kind: 'not_repository' }
+  | { kind: 'runtime_unavailable'; code: 'GIT_RUNTIME_UNAVAILABLE'; message: string }
+  | { kind: 'failed'; code: WorkspaceGitFailureCode; message: string }
+
 export interface WorkspaceListBranchesResponse {
+  state: WorkspaceGitState
   currentBranch: string | null
   /** true 时 currentBranch 为分离头指针指向的 tag 名或短 SHA，而非分支名。 */
   detachedHead?: boolean
@@ -1240,6 +1259,7 @@ export interface WorkspaceSwitchBranchRequest {
 }
 
 export interface WorkspaceSwitchBranchResponse {
+  state: WorkspaceGitState
   currentBranch: string
   detachedHead?: boolean
   branches: string[]
@@ -1291,7 +1311,9 @@ export interface WorkspaceGitStashEntry {
 }
 
 export interface WorkspaceGitStatusResponse {
-  isGitRepo: boolean
+  state: WorkspaceGitState
+  /** Compatibility field: error states are null, not false. */
+  isGitRepo: boolean | null
   currentBranch: string | null
   /** true 时 currentBranch 为分离头指针指向的 tag 名或短 SHA，而非分支名。 */
   detachedHead?: boolean
@@ -1460,6 +1482,7 @@ export interface WorkspaceCreateBranchRequest {
 }
 
 export interface WorkspaceCreateBranchResponse {
+  state: WorkspaceGitState
   currentBranch: string
   branches: string[]
   branchDetails?: WorkspaceGitBranch[]
@@ -1481,7 +1504,8 @@ export interface WorkspaceListWorktreesRequest {
   workspaceId: string
 }
 export interface WorkspaceListWorktreesResponse {
-  isGitRepo: boolean
+  state: WorkspaceGitState
+  isGitRepo: boolean | null
   baseBranch: string | null
   /** 主仓库根的绝对路径；合并需在主仓库执行（base 分支无法在子 worktree 检出） */
   baseRepoRoot: string | null
@@ -4047,6 +4071,12 @@ export interface RuntimeToolStatus {
   version: string | null
   /** Download URL for installation */
   downloadUrl: string
+  /**
+   * Where the runtime comes from (Git only for now):
+   * 'system' = user's PATH, 'bundled' = shipped with the app,
+   * 'override' = SPARK_GIT_EXECUTABLE (dev/diagnostics).
+   */
+  source?: 'system' | 'bundled' | 'override'
 }
 
 export interface ShellEnvironmentStatus {

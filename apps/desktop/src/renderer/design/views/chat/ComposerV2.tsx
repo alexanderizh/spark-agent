@@ -785,7 +785,16 @@ export function ComposerV2({
   // 「为本会话创建隔离 worktree」开关（新会话或尚无消息的空会话、且 git 项目可用）
   const [createWorktree, setCreateWorktree] = useState(false)
   const [worktreeBranch, setWorktreeBranch] = useState('')
-  const isGitWorkspace = branchState.currentBranch != null
+  const isGitWorkspace =
+    branchState.currentBranch != null &&
+    (branchState.gitState == null ||
+      (branchState.gitState.kind === 'ready' && branchState.gitState.repositoryKind === 'worktree'))
+  const worktreeUnavailableHint =
+    branchState.gitState?.kind === 'runtime_unavailable'
+      ? 'Git 运行环境不可用，请在“设置 → 完整性”中重新检测'
+      : branchState.gitState?.kind === 'failed'
+        ? branchState.gitState.message
+        : '当前项目不是 Git 仓库'
   // 无活跃会话（hero）或活跃会话尚无消息（如从项目「+」新建的空会话）时，
   // 允许勾选 worktree——worktree 必须在会话产生消息前绑定。
   const isNewSessionComposer = canShowComposerWorktreeToggle({
@@ -4242,7 +4251,7 @@ export function ComposerV2({
               <div className="composer-worktree-controls">
                 <label
                   className={`composer-worktree-toggle ${createWorktree ? 'is-active' : ''}`}
-                  title={isGitWorkspace ? '在隔离 worktree 中运行本会话' : '当前项目不是 git 仓库'}
+                  title={isGitWorkspace ? '在隔离 worktree 中运行本会话' : worktreeUnavailableHint}
                 >
                   <input
                     type="checkbox"

@@ -497,7 +497,7 @@ describe('Built-in commands', () => {
   it('/git status executes locally', async () => {
     const deps = makeDeps({
       getWorkspacePath: () => '/fake/workspace',
-      execShell: vi.fn(async () => ({ stdout: 'M src/app.ts', stderr: '', exitCode: 0 })),
+      execGit: vi.fn(async () => ({ stdout: 'M src/app.ts', stderr: '', exitCode: 0 })),
     })
     const result = await registry.execute(parse('/git status'), ctx, deps)
     expect(result.success).toBe(true)
@@ -510,11 +510,12 @@ describe('Built-in commands', () => {
       ctx,
       makeDeps({
         getWorkspacePath: () => null,
-        execShell: vi.fn(async (command: string) => ({
-          stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
+        execShell: vi.fn(async () => ({
+          stdout: 'spark-shell-ok',
           stderr: '',
           exitCode: 0,
         })),
+        execGit: vi.fn(async () => ({ stdout: 'git version 2.40.0', stderr: '', exitCode: 0 })),
         checkSdkAvailability: vi.fn(async () => ({
           claudeSdk: true,
           codexCli: true,
@@ -579,11 +580,12 @@ describe('Built-in commands', () => {
         })),
         getProviderName: vi.fn(() => null),
         getWorkspacePath: () => '/workspace/app',
-        execShell: vi.fn(async (command: string) => ({
-          stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
+        execShell: vi.fn(async () => ({
+          stdout: 'spark-shell-ok',
           stderr: '',
           exitCode: 0,
         })),
+        execGit: vi.fn(async () => ({ stdout: 'git version 2.40.0', stderr: '', exitCode: 0 })),
         checkSdkAvailability: vi.fn(async () => ({
           claudeSdk: true,
           codexCli: true,
@@ -622,11 +624,12 @@ describe('Built-in commands', () => {
           agentId: 'agent-1',
         })),
         getWorkspacePath: () => '/workspace/app',
-        execShell: vi.fn(async (command: string) => ({
-          stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
+        execShell: vi.fn(async () => ({
+          stdout: 'spark-shell-ok',
           stderr: '',
           exitCode: 0,
         })),
+        execGit: vi.fn(async () => ({ stdout: 'git version 2.40.0', stderr: '', exitCode: 0 })),
         checkSdkAvailability: vi.fn(async () => ({
           claudeSdk: true,
           codexCli: true,
@@ -672,33 +675,33 @@ describe('Built-in commands', () => {
   it('/git log with numeric limit executes locally', async () => {
     const deps = makeDeps({
       getWorkspacePath: () => '/fake/workspace',
-      execShell: vi.fn(async () => ({ stdout: 'abc123 test commit', stderr: '', exitCode: 0 })),
+      execGit: vi.fn(async () => ({ stdout: 'abc123 test commit', stderr: '', exitCode: 0 })),
     })
     const result = await registry.execute(parse('/git log 5'), ctx, deps)
     expect(result.success).toBe(true)
-    expect(deps.execShell).toHaveBeenCalledWith('git log --oneline -5', '/fake/workspace')
+    expect(deps.execGit).toHaveBeenCalledWith(['log', '--oneline', '-5'], '/fake/workspace')
   })
 
   it('/git log rejects non-numeric limit', async () => {
     const deps = makeDeps({
       getWorkspacePath: () => '/fake/workspace',
-      execShell: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+      execGit: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
     })
     const result = await registry.execute(parse('/git log foo'), ctx, deps)
     expect(result.success).toBe(false)
     expect(result.message).toContain('用法：/git log [n]')
-    expect(deps.execShell).not.toHaveBeenCalled()
+    expect(deps.execGit).not.toHaveBeenCalled()
   })
 
   it('/git log rejects shell injection attempts without executing', async () => {
     const deps = makeDeps({
       getWorkspacePath: () => '/fake/workspace',
-      execShell: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+      execGit: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
     })
     const result = await registry.execute(parse('/git log "1; rm -rf /"'), ctx, deps)
     expect(result.success).toBe(false)
     expect(result.message).toContain('用法：/git log [n]')
-    expect(deps.execShell).not.toHaveBeenCalled()
+    expect(deps.execGit).not.toHaveBeenCalled()
   })
 
   it('/skill run selects a skill for the follow-up turn', async () => {

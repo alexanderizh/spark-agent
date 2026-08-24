@@ -56,6 +56,7 @@ import {
 import { FileChipIcon } from './chat/ChatFileIcon'
 import { GitReviewPanel } from './chat/ChatGitReview'
 import { useLiveWorkspaceGitStatus } from './chat/useLiveWorkspaceGitStatus'
+import { useWorkspaceBranchState } from './chat/useWorkspaceBranchState'
 import { HeroTipsTicker, SingleAgentEmptyHero, TeamModeEmptyHero } from './chat/ChatHero'
 import { HeroUsageHeatmap } from './chat/HeroUsageHeatmap'
 import { useEmptyHeroUsage } from './chat/useEmptyHeroUsage'
@@ -1247,7 +1248,6 @@ export function ChatView({
     setTurnPromptSnapshots([])
   }, [active])
 
-  const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   // 分支刷新触发器：窗口重新聚焦（用户可能在终端/IDE 里切了分支）或会话从 running 回到
   // idle（agent 自己切了分支）时 bump，让下方 listBranches effect 重新拉取最新分支。
   const [branchRefreshTick, setBranchRefreshTick] = useState(0)
@@ -1767,6 +1767,7 @@ export function ChatView({
     activeSessionWorkspace,
   })
   const gitWorkspaceId = gitWorkspace?.id ?? null
+  const { branchState, applyBranchState } = useWorkspaceBranchState(gitWorkspaceId)
   // 文件树右键「添加到对话」：把文件/目录经 insertToComposer 追加通道送进当前会话输入框。
   // 构建方式与「添加相关文件或目录」一致（stat 探测目录、图片生成预览），发送时作为
   // 路径引用传给 Agent（目录还会加入 agent 可访问目录表），与直接从输入框添加语义相同。
@@ -1802,7 +1803,7 @@ export function ChatView({
     sessionId: active,
     refreshSignal: branchRefreshTick,
     live: showGitEnvPanel || showGitReviewPanel || gitPanelVisible,
-    onBranchStateChange: setBranchState,
+    onBranchStateChange: applyBranchState,
   })
   const activeSessionTasks = useMemo(
     () => (active == null ? [] : extractSessionProgressTasks(activeMessages)),
@@ -1821,24 +1822,23 @@ export function ChatView({
   //   2. branchRefreshTick 变化 —— 窗口重新聚焦 / 会话结束（见下方监听），覆盖
   //      用户在终端或 IDE 内手动 git switch、或 agent 自己切了分支后界面不同步的场景。
   useEffect(() => {
-    if (gitWorkspaceId == null) {
-      setBranchState({ currentBranch: null, branches: [] })
-      return
-    }
+    if (gitWorkspaceId == null) return
     let cancelled = false
     listBranches({ workspaceId: gitWorkspaceId })
       .then((res) => {
-        if (!cancelled) setBranchState(res)
+        if (!cancelled) applyBranchState(res)
       })
       .catch(() => {
-        if (!cancelled) setBranchState({ currentBranch: null, branches: [] })
+        // Transport failures retain the last trusted branch snapshot.
       })
     return () => {
       cancelled = true
     }
-  }, [gitWorkspaceId, branchRefreshTick, listBranches])
+  }, [applyBranchState, gitWorkspaceId, branchRefreshTick, listBranches])
 
   const isGitRepo = gitStatus?.isGitRepo === true
+  const isGitWorktree =
+    gitStatus?.state.kind === 'ready' && gitStatus.state.repositoryKind === 'worktree'
   // 右上角环境面板（git / 进程 / 目标）只要三者其一有内容即可展示，不再强依赖 git 仓库。
   const hasSessionCollaboration =
     lineageSessionId === active && (activeLineage != null || activeChildLineages.length > 0)
@@ -1940,11 +1940,11 @@ export function ChatView({
   }, [gitWorkspaceId, active, readGitEnvPanelRightGutter])
 
   useEffect(() => {
-    if (isGitRepo) return
+    if (isGitWorktree) return
     setGitCommitModalOpen(false)
     setGitBranchModalOpen(false)
     setGitCreateBranchOpen(false)
-  }, [isGitRepo])
+  }, [isGitWorktree])
 
   // 自动展开右上角环境悬浮面板（git / 进程 / 目标）。
   // 触发条件（须同时满足）：
@@ -2231,7 +2231,7 @@ export function ChatView({
     if (gitWorkspace == null || !branch || branch === branchState.currentBranch) return false
     try {
       const res = await switchBranch({ workspaceId: gitWorkspace.id, branch })
-      setBranchState(res)
+      applyBranchState(res)
       await refreshGitStatus()
       toast.success(`已切换到 ${res.currentBranch}`)
       return true
@@ -2249,7 +2249,8 @@ export function ChatView({
     if (gitWorkspace == null) return
     try {
       const res = await createBranch({ workspaceId: gitWorkspace.id, branch })
-      setBranchState({
+      applyBranchState({
+        gitState: res.state,
         currentBranch: res.currentBranch,
         branches: res.branches,
         branchDetails: res.branchDetails,
@@ -2267,7 +2268,7 @@ export function ChatView({
     if (gitWorkspace == null || !tag) return false
     try {
       const res = await checkoutTag({ workspaceId: gitWorkspace.id, tag })
-      setBranchState(res)
+      applyBranchState(res)
       await refreshGitStatus()
       toast.success(`已检出标签 ${tag}（分离头指针）`)
       return true
@@ -2282,7 +2283,7 @@ export function ChatView({
     if (gitWorkspace == null || !tag || !branch) return false
     try {
       const res = await checkoutTag({ workspaceId: gitWorkspace.id, tag, createBranch: branch })
-      setBranchState(res)
+      applyBranchState(res)
       await refreshGitStatus()
       toast.success(`已从标签 ${tag} 创建并切换到 ${res.currentBranch}`)
       return true
@@ -2298,7 +2299,7 @@ export function ChatView({
     if (gitWorkspaceId == null) return
     try {
       const res = await listBranches({ workspaceId: gitWorkspaceId })
-      setBranchState(res)
+      applyBranchState(res)
     } catch {
       // 静默失败，保留上一次已知分支列表
     }
@@ -2308,7 +2309,7 @@ export function ChatView({
     if (gitWorkspaceId == null) return
     try {
       const res = await fetchBranches({ workspaceId: gitWorkspaceId })
-      setBranchState(res)
+      applyBranchState(res)
       toast.success('Fetch 完成')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Fetch 失败')
@@ -3152,7 +3153,7 @@ export function ChatView({
         />
       )}
 
-      {gitCommitModalOpen && isGitRepo && (
+      {gitCommitModalOpen && isGitWorktree && (
         <GitCommitDialog
           status={gitStatus}
           branchState={branchState}
@@ -3164,7 +3165,7 @@ export function ChatView({
         />
       )}
 
-      {gitBranchModalOpen && isGitRepo && (
+      {gitBranchModalOpen && isGitWorktree && (
         <GitBranchDialog
           status={gitStatus}
           branchState={branchState}
@@ -3180,7 +3181,7 @@ export function ChatView({
         />
       )}
 
-      {gitCreateBranchOpen && isGitRepo && (
+      {gitCreateBranchOpen && isGitWorktree && (
         <GitCreateBranchDialog
           onClose={() => setGitCreateBranchOpen(false)}
           onCreateBranch={async (branch) => {

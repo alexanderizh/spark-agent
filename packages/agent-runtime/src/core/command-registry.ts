@@ -17,6 +17,7 @@ import crypto from 'node:crypto'
 import { clipTextHeadTail } from '@spark/shared'
 import type { SessionAttachment } from '@spark/protocol'
 import type { ParsedCommand } from './command-parser.js'
+import { getDefaultGitCommandService } from '../services/git-command.service.js'
 
 /* ============================================================
    Types
@@ -151,6 +152,11 @@ export interface CommandDeps {
   execShell?: (
     command: string,
     cwd?: string,
+  ) => Promise<{ stdout: string; stderr: string; exitCode: number }>
+  /** Execute a read-only Git command through the selected managed runtime. */
+  execGit?: (
+    args: readonly string[],
+    cwd: string,
   ) => Promise<{ stdout: string; stderr: string; exitCode: number }>
   /** 获取会话事件数量 */
   getSessionEventCount?: (id: string) => number
@@ -1130,12 +1136,13 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
       if (!cwd) {
         return { success: false, message: '未打开工作区。' }
       }
-      if (!deps.execShell) {
-        return { success: false, message: 'Shell 执行不可用。' }
-      }
+      const execGit =
+        deps.execGit ??
+        ((args: readonly string[], gitCwd: string) =>
+          getDefaultGitCommandService().execute(args, { cwd: gitCwd, operation: 'read' }))
       try {
         if (subcommand === 'status') {
-          const { stdout } = await deps.execShell('git status --short', cwd)
+          const { stdout } = await execGit(['status', '--short'], cwd)
           return {
             success: true,
             message: stdout.trim() ? `\`\`\`\n${stdout}\n\`\`\`` : '工作区干净，无变更。',
@@ -1146,18 +1153,18 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
           if (limit == null) {
             return { success: false, message: GIT_LOG_LIMIT_USAGE }
           }
-          const { stdout } = await deps.execShell(`git log --oneline -${limit}`, cwd)
+          const { stdout } = await execGit(['log', '--oneline', `-${limit}`], cwd)
           return { success: true, message: `\`\`\`\n${stdout}\n\`\`\`` }
         }
         if (subcommand === 'stash') {
-          const { stdout } = await deps.execShell('git stash list', cwd)
+          const { stdout } = await execGit(['stash', 'list'], cwd)
           return {
             success: true,
             message: stdout.trim() ? `\`\`\`\n${stdout}\n\`\`\`` : '无暂存变更。',
           }
         }
         if (subcommand === 'branch') {
-          const { stdout } = await deps.execShell('git branch -a --list', cwd)
+          const { stdout } = await execGit(['branch', '-a', '--list'], cwd)
           return { success: true, message: `\`\`\`\n${stdout}\n\`\`\`` }
         }
         return {
@@ -1227,9 +1234,12 @@ async function resolveGitVersion(
   deps: CommandDeps,
   cwd: string | null,
 ): Promise<{ available: boolean; version?: string; error?: string }> {
-  if (!deps.execShell) return { available: false, error: 'Shell dependency is not registered' }
+  const execGit =
+    deps.execGit ??
+    ((args: readonly string[], gitCwd: string) =>
+      getDefaultGitCommandService().execute(args, { cwd: gitCwd, operation: 'read' }))
   try {
-    const result = await deps.execShell('git --version', cwd ?? undefined)
+    const result = await execGit(['--version'], cwd ?? process.cwd())
     const output = [result.stdout, result.stderr]
       .filter((part) => part.trim().length > 0)
       .join('\n')

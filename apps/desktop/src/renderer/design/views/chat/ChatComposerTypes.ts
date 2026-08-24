@@ -7,9 +7,11 @@ import type {
   SessionPermissionMode,
   SessionReasoningEffort,
   WorkspaceGitBranch,
+  WorkspaceGitState,
 } from '@spark/protocol'
 
 export type BranchState = {
+  gitState?: WorkspaceGitState
   currentBranch: string | null
   /** true 时 currentBranch 为分离头指针指向的 tag 名或短 SHA，而非分支名。 */
   detachedHead?: boolean | undefined

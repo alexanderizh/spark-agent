@@ -132,6 +132,12 @@ describe('ChatGitUtils', () => {
 
   it('scopes default commit messages to the selected paths', () => {
     const status = {
+      state: {
+        kind: 'ready',
+        repositoryKind: 'worktree',
+        runtimeSource: 'system',
+        runtimeVersion: '2.50.0',
+      } as const,
       isGitRepo: true,
       currentBranch: 'master',
       branches: ['master'],
