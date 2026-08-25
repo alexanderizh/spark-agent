@@ -71,6 +71,12 @@ const candidates: VideoWorkbenchPickerCandidate[] = [
     kind: 'image',
     url: 'safe-file:///project/%E9%9B%A8%E5%A4%9C%E8%BD%A6%E7%AB%99.png',
   },
+  {
+    id: 'audio-track',
+    title: '旁白',
+    kind: 'audio',
+    url: 'safe-file:///project/narration.wav',
+  },
 ]
 
 let mounted: { root: ReturnType<typeof createRoot>; container: HTMLElement } | null = null
@@ -130,7 +136,7 @@ describe('VideoWorkbenchResourcePicker selection', () => {
 
     expect(container.querySelectorAll('.vwb-picker-results')).toHaveLength(1)
     const rows = container.querySelectorAll<HTMLButtonElement>('.vwb-picker-result')
-    expect(rows).toHaveLength(3)
+    expect(rows).toHaveLength(4)
 
     await act(async () => {
       rows[0]?.click()
@@ -168,5 +174,31 @@ describe('VideoWorkbenchResourcePicker selection', () => {
     const visibleRows = container.querySelectorAll<HTMLButtonElement>('.vwb-picker-result')
     expect(visibleRows).toHaveLength(1)
     expect(visibleRows[0]?.textContent).toContain('图片转场成片')
+  })
+
+  it('shows audio candidates in their own filter', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mounted = { root, container }
+
+    await act(async () => {
+      root.render(
+        <VideoWorkbenchResourcePicker
+          open
+          candidates={candidates}
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      )
+    })
+    const audioFilter = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.vwb-picker-chip'),
+    ).find((button) => button.textContent?.includes('音频'))
+    await act(async () => audioFilter?.click())
+
+    const visibleRows = container.querySelectorAll<HTMLButtonElement>('.vwb-picker-result')
+    expect(visibleRows).toHaveLength(1)
+    expect(visibleRows[0]?.textContent).toContain('旁白')
   })
 })

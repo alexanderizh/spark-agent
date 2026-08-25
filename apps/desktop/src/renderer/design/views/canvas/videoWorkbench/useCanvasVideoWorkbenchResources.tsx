@@ -20,7 +20,7 @@ export function useCanvasVideoWorkbenchResources({
     () =>
       (snapshot?.nodes ?? []).flatMap((node) => {
         if (
-          (node.type !== 'image' && node.type !== 'video') ||
+          (node.type !== 'image' && node.type !== 'video' && node.type !== 'audio') ||
           typeof node.data.url !== 'string' ||
           !node.data.url ||
           node.id === workbenchNodeId
@@ -30,7 +30,9 @@ export function useCanvasVideoWorkbenchResources({
         return [
           {
             id: node.id,
-            title: node.title?.trim() || (node.type === 'video' ? '视频' : '图片'),
+            title:
+              node.title?.trim() ||
+              (node.type === 'video' ? '视频' : node.type === 'audio' ? '音频' : '图片'),
             url: node.data.url,
             kind: node.type,
             ...(typeof node.data.thumbnailUrl === 'string'
@@ -45,11 +47,11 @@ export function useCanvasVideoWorkbenchResources({
   const addLocalResources = useCallback(async (): Promise<LocalResourceFile[]> => {
     if (!projectId) return []
     const picked = await window.spark.invoke('dialog:open-file', {
-      title: '添加图片或视频资源',
+      title: '添加图片、视频或音频资源',
       multiple: true,
       filters: [
         {
-          name: '图片与视频',
+          name: '图片、视频与音频',
           extensions: [
             'png',
             'jpg',
@@ -62,6 +64,13 @@ export function useCanvasVideoWorkbenchResources({
             'm4v',
             'avi',
             'mkv',
+            'mp3',
+            'wav',
+            'm4a',
+            'aac',
+            'flac',
+            'ogg',
+            'opus',
           ],
         },
       ],
@@ -71,8 +80,7 @@ export function useCanvasVideoWorkbenchResources({
     const projectRootPath = snapshot?.project.rootPath
     const imported = await Promise.all(
       sourcePaths.map(async (sourcePath): Promise<LocalResourceFile | null> => {
-        const extension = sourcePath.split('.').pop()?.toLowerCase() ?? ''
-        const kind = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extension) ? 'image' : 'video'
+        const kind = inferVideoWorkbenchResourceKindFromPath(sourcePath)
         const copied = await window.spark.invoke('canvas:asset:copy-to-project', {
           projectId,
           ...(projectRootPath ? { projectRootPath } : {}),
@@ -101,7 +109,7 @@ export function useCanvasVideoWorkbenchResources({
     // 候选基于 allCanvasResources：同时包含用户手建节点与任务产物(task_output)节点——
     // 后者 url 经 materialize 已固化为持久 safe-file 路径，可安全纳入。
     if (allCanvasResources.length === 0) {
-      message.info('当前画布没有可加入工作台的图片或视频节点')
+      message.info('当前画布没有可加入工作台的图片、视频或音频节点')
     }
     // 用户当前在画布上选中的节点排前面，方便快速定位
     if (selectedNodes.length === 0) return allCanvasResources
@@ -131,11 +139,34 @@ export function useCanvasVideoWorkbenchResources({
         }
       }
       const candidates = allCanvasResources.filter((resource) => candidateNodeIds.has(resource.id))
-      const primary = candidates.find((resource) => resource.kind === 'video') ?? candidates[0]
+      const primary =
+        candidates.find((resource) => resource.kind === 'video') ??
+        candidates.find((resource) => resource.kind === 'audio') ??
+        candidates[0]
       if (primary) resources.push(primary)
     }
     return Array.from(new Map(resources.map((resource) => [resource.id, resource])).values())
   }, [allCanvasResources, snapshot, workbenchNodeId])
 
   return { addLocalResources, pickCanvasResources, collectUpstreamResources }
+}
+
+const VIDEO_WORKBENCH_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif'])
+const VIDEO_WORKBENCH_AUDIO_EXTENSIONS = new Set([
+  'mp3',
+  'wav',
+  'm4a',
+  'aac',
+  'flac',
+  'ogg',
+  'opus',
+])
+
+export function inferVideoWorkbenchResourceKindFromPath(
+  sourcePath: string,
+): LocalResourceFile['kind'] {
+  const extension = sourcePath.split('.').pop()?.toLowerCase() ?? ''
+  if (VIDEO_WORKBENCH_IMAGE_EXTENSIONS.has(extension)) return 'image'
+  if (VIDEO_WORKBENCH_AUDIO_EXTENSIONS.has(extension)) return 'audio'
+  return 'video'
 }

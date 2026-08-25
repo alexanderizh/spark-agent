@@ -87,6 +87,13 @@ describe('resourcePanelUtils', () => {
       expect(resources[0]?.durationSec).toBe(12)
       expect(resources).toBe(original)
     })
+
+    it('replaces a zero duration because it represents missing media metadata', () => {
+      const source = makeResource({ id: 'source:workbench', durationSec: 0 })
+      const resources = backfillResourceMetadata([source], source.id, { durationSec: 24 })
+
+      expect(resources[0]?.durationSec).toBe(24)
+    })
   })
 
   describe('shouldSeedSourceTrack', () => {

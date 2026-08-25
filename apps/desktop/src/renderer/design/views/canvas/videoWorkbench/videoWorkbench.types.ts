@@ -77,8 +77,8 @@ export type VideoWorkbenchTab = 'resources' | 'frames' | 'edit' | 'output'
 /** 资源来源分类 */
 export type WorkbenchResourceSource = 'upstream' | 'canvas' | 'local'
 
-/** 资源媒体类型 */
-export type WorkbenchResourceKind = 'video' | 'image'
+/** 资源媒体类型（V1 读取器也接受 audio，供多轨兼容视图复用）。 */
+export type WorkbenchResourceKind = 'video' | 'image' | 'audio'
 
 /**
  * 资源面板条目。
@@ -95,7 +95,7 @@ export interface WorkbenchResource {
   id: string
   /** 来源分类 */
   source: WorkbenchResourceSource
-  /** 媒体类型：视频 / 图片 */
+  /** 媒体类型：视频 / 图片 / 音频 */
   kind: WorkbenchResourceKind
   /** 显示名（沿用节点标题 / 文件名） */
   title: string
@@ -104,19 +104,19 @@ export interface WorkbenchResource {
   /** 磁盘绝对路径，ffmpeg 需要（图片可作为静帧视频来源） */
   originPath: string
   /** 缩略图 URL（视频可取自关键帧；图片可用 url 本身） */
-  thumbnailUrl?: string
+  thumbnailUrl?: string | undefined
   /** 视频时长（秒），仅视频有 */
-  durationSec?: number
+  durationSec?: number | undefined
   /** 宽（视频/图片通用） */
-  width?: number
+  width?: number | undefined
   /** 高 */
-  height?: number
+  height?: number | undefined
   /** 文件大小（字节），仅本机导入知道 */
-  fileSize?: number
+  fileSize?: number | undefined
   /** source === 'upstream' 时记录来源画布节点 id（用于回链/重收集） */
-  upstreamNodeId?: string
+  upstreamNodeId?: string | undefined
   /** 上游节点多个产物时的 index（默认 0 = 首选） */
-  upstreamArtifactIndex?: number
+  upstreamArtifactIndex?: number | undefined
   /** 导入时间戳（毫秒） */
   importedAt: number
 }
@@ -280,7 +280,7 @@ function isWorkbenchResource(v: unknown): v is WorkbenchResource {
     isOptionalString(o.upstreamNodeId) &&
     isOptionalFiniteNumber(o.upstreamArtifactIndex) &&
     (o.source === 'upstream' || o.source === 'canvas' || o.source === 'local') &&
-    (o.kind === 'video' || o.kind === 'image')
+    (o.kind === 'video' || o.kind === 'image' || o.kind === 'audio')
   )
 }
 function isTrackClip(v: unknown): v is TrackClip {

@@ -16,9 +16,9 @@ import { Icons } from '../../../Icons'
 
 /** 缩略图渲染所需的最小资源字段（避免强依赖完整 WorkbenchResource） */
 export interface ThumbnailSource {
-  kind: 'video' | 'image'
+  kind: 'video' | 'image' | 'audio'
   url: string
-  thumbnailUrl?: string
+  thumbnailUrl?: string | undefined
 }
 
 export interface ThumbnailMeta {
@@ -49,6 +49,23 @@ function VideoWorkbenchResourceThumb({
     return (
       <div className={`${cls} no-preview`}>
         <Icons.Film size={fallbackSize} />
+      </div>
+    )
+  }
+
+  if (resource.kind === 'audio') {
+    return (
+      <div className={`${cls} no-preview`}>
+        <Icons.AudioLines size={fallbackSize} />
+        <audio
+          src={resource.url}
+          preload="metadata"
+          style={{ display: 'none' }}
+          onLoadedMetadata={(event) => {
+            const durationSec = event.currentTarget.duration
+            if (Number.isFinite(durationSec) && durationSec > 0) onMeta?.({ durationSec })
+          }}
+        />
       </div>
     )
   }

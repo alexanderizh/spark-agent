@@ -129,7 +129,7 @@ export function indexResourcesById(resources: WorkbenchResource[]): Map<string, 
   return map
 }
 
-/** 将探测到的媒体元数据补回资源，已有字段保持不变。 */
+/** 将探测到的媒体元数据补回资源，已有有效字段保持不变。 */
 export function backfillResourceMetadata(
   resources: WorkbenchResource[],
   resourceId: string,
@@ -141,7 +141,9 @@ export function backfillResourceMetadata(
   if (!resource) return resources
 
   const shouldBackfillDuration =
-    resource.durationSec === undefined && metadata.durationSec !== undefined
+    (!Number.isFinite(resource.durationSec) || Number(resource.durationSec) <= 0) &&
+    Number.isFinite(metadata.durationSec) &&
+    Number(metadata.durationSec) > 0
   const shouldBackfillWidth = resource.width === undefined && metadata.width !== undefined
   const shouldBackfillHeight = resource.height === undefined && metadata.height !== undefined
   const shouldBackfillFileSize = resource.fileSize === undefined && metadata.fileSize !== undefined

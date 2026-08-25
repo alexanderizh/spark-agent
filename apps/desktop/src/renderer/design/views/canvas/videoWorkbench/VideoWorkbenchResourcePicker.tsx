@@ -34,6 +34,7 @@ const FILTER_LABELS: Record<VideoWorkbenchResourceFilter, string> = {
   all: '全部',
   video: '视频',
   image: '图片',
+  audio: '音频',
 }
 
 export function VideoWorkbenchResourcePicker<T extends VideoWorkbenchPickerCandidate>({
@@ -54,11 +55,13 @@ export function VideoWorkbenchResourcePicker<T extends VideoWorkbenchPickerCandi
   const counts = useMemo(() => {
     let video = 0
     let image = 0
+    let audio = 0
     for (const c of candidates) {
       if (c.kind === 'video') video++
       else if (c.kind === 'image') image++
+      else if (c.kind === 'audio') audio++
     }
-    return { all: candidates.length, video, image }
+    return { all: candidates.length, video, image, audio }
   }, [candidates])
 
   const visible = useMemo(
@@ -130,7 +133,7 @@ export function VideoWorkbenchResourcePicker<T extends VideoWorkbenchPickerCandi
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          {(['all', 'video', 'image'] as VideoWorkbenchResourceFilter[]).map((key) => (
+          {(['all', 'video', 'image', 'audio'] as VideoWorkbenchResourceFilter[]).map((key) => (
             <button
               key={key}
               type="button"
@@ -144,7 +147,7 @@ export function VideoWorkbenchResourcePicker<T extends VideoWorkbenchPickerCandi
 
         <div className="vwb-picker-summary">
           <span>
-            {filter === 'all' ? '图片与视频' : FILTER_LABELS[filter]}
+            {filter === 'all' ? '图片、视频与音频' : FILTER_LABELS[filter]}
             <small>{visible.length}</small>
           </span>
           {selectionMode === 'multiple' && visible.length > 0 && (
@@ -160,7 +163,7 @@ export function VideoWorkbenchResourcePicker<T extends VideoWorkbenchPickerCandi
             <strong>{candidates.length === 0 ? '当前画布没有可选资源' : '没有匹配的资源'}</strong>
             <div className="muted">
               {candidates.length === 0
-                ? '先在画布上创建图片或视频节点，再回到这里选择。'
+                ? '先在画布上创建图片、视频或音频节点，再回到这里选择。'
                 : '试试调整搜索关键词或筛选条件。'}
             </div>
           </div>
@@ -221,8 +224,8 @@ export function VideoWorkbenchResourcePicker<T extends VideoWorkbenchPickerCandi
 }
 
 function resourceMetadata(candidate: VideoWorkbenchPickerCandidate): string {
-  const parts = [candidate.kind === 'video' ? '视频' : '图片']
-  if (candidate.kind === 'video' && candidate.durationSec) {
+  const parts = [candidate.kind === 'video' ? '视频' : candidate.kind === 'audio' ? '音频' : '图片']
+  if ((candidate.kind === 'video' || candidate.kind === 'audio') && candidate.durationSec) {
     parts.push(formatTimestamp(candidate.durationSec))
   }
   if (candidate.width && candidate.height) parts.push(`${candidate.width}×${candidate.height}`)

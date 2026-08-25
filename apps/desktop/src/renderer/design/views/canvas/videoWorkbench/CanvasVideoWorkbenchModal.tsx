@@ -21,9 +21,7 @@ import type { FfmpegInstallProgress, VideoProcessRequest } from '@spark/protocol
 import { Icons } from '../../../Icons'
 import type { CanvasNode } from '../canvas.types'
 import {
-  createDefaultVideoWorkbenchData,
   formatTimestamp,
-  readVideoWorkbenchData,
   type KeyframeStrategy,
   type VideoProbeInfo,
   type VideoWorkbenchData,
@@ -34,7 +32,6 @@ import {
 import { VideoWorkbenchFramePanel } from './VideoWorkbenchFramePanel'
 import { VideoWorkbenchEditPanel } from './VideoWorkbenchEditPanel'
 import { VideoWorkbenchResourcePanel } from './VideoWorkbenchResourcePanel'
-import { VideoWorkbenchTrackTimeline } from './VideoWorkbenchTrackTimeline'
 import { VideoWorkbenchOutputPanel } from './VideoWorkbenchOutputPanel'
 import type { ThumbnailMeta } from './VideoWorkbenchResourceThumb'
 import { VideoWorkbenchResourcePicker } from './VideoWorkbenchResourcePicker'
@@ -47,17 +44,33 @@ import {
 } from './videoCropModel'
 import {
   backfillResourceMetadata,
-  duplicateTrackClip,
   indexResourcesById,
-  insertResourceIntoTrack,
   mergeResources,
-  removeTrackClip,
-  resolveClipAtGlobalTime,
-  shouldSeedSourceTrack,
-  splitTrackClip,
   trackNeedsMaterialization,
 } from './resourcePanelUtils'
 import type { TrackClip, WorkbenchResource } from './videoWorkbench.types'
+import {
+  createDefaultVideoWorkbenchProject,
+  type VideoWorkbenchProjectV2,
+  type VideoWorkbenchResourceV2,
+} from './model/projectTypes'
+import { useVideoWorkbenchProjectSession } from './model/useVideoWorkbenchProjectSession'
+import {
+  isLegacyVideoWorkbenchExportCompatible,
+  videoWorkbenchClipToLegacyTrackClip,
+} from './model/projectLegacyAdapter'
+import {
+  createVideoWorkbenchClipForResource,
+  createVideoWorkbenchEntityId,
+  createVideoWorkbenchTrack,
+  findDefaultVideoWorkbenchTrackForResource,
+  resolveVideoWorkbenchTrackAppendTime,
+} from './model/timelineEditing'
+import { findVideoWorkbenchClip } from './model/trackRules'
+import { backfillVideoWorkbenchProjectResourceMetadata } from './model/resourceMetadata'
+import { resolveVideoWorkbenchClipTiming } from './model/timelineMath'
+import { syncVideoWorkbenchSourceResource } from './model/sourceResourceSync'
+import { VideoWorkbenchMultiTrackTimeline } from './timeline/VideoWorkbenchMultiTrackTimeline'
 import './videoWorkbench.less'
 
 /** macOS 无边框窗口红绿灯安全区 */
@@ -97,7 +110,7 @@ export interface CanvasResourceOption {
   id: string
   title: string
   url: string
-  kind: 'video' | 'image'
+  kind: 'video' | 'image' | 'audio'
   thumbnailUrl?: string
   durationSec?: number
   width?: number
@@ -109,7 +122,7 @@ export interface CanvasResourceOption {
 export interface LocalResourceFile {
   path: string
   name: string
-  kind: 'video' | 'image'
+  kind: 'video' | 'image' | 'audio'
   url: string
   thumbnailUrl?: string
   durationSec?: number
@@ -122,7 +135,7 @@ interface Props {
   node: CanvasNode | null
   open: boolean
   onClose: () => void
-  onSave: (data: VideoWorkbenchData) => Promise<void>
+  onSave: (data: VideoWorkbenchProjectV2) => Promise<void>
   /** 把关键帧导出为画布图片节点 */
   onExportKeyframes?: (
     frames: WorkbenchKeyframe[],
@@ -189,9 +202,6 @@ function localResourceFileToWorkbenchResource(f: LocalResourceFile): WorkbenchRe
   }
 }
 
-/** 持久化防抖窗口（毫秒）。拖拽重排 / 加 mark 这类高频操作会被合并为一次 onSave。 */
-const PERSIST_DEBOUNCE_MS = 300
-
 export function CanvasVideoWorkbenchModal({
   node,
   open,
@@ -206,13 +216,30 @@ export function CanvasVideoWorkbenchModal({
   onCollectUpstream,
   onMaterializeOutput,
 }: Props): ReactElement | null {
-  // 惰性初始化：只在 mount 时跑一次 readVideoWorkbenchData，避免每次 re-render 都重跑校验。
-  // Modal 在父级用 key={node.id} 绑定节点，切换节点会完整 remount，所以这里不需要额外重置 draft。
-  const [draft, setDraft] = useState<VideoWorkbenchData>(() =>
-    node?.data?.videoWorkbench
-      ? readVideoWorkbenchData(node.data.videoWorkbench as Record<string, unknown>)
-      : createDefaultVideoWorkbenchData(),
-  )
+  // V2 是唯一编辑与持久化状态源；旧面板只消费 session 暴露的兼容视图。
+  // Modal 在父级用 key={node.id} 绑定节点，切换节点会完整 remount。
+  const projectSession = useVideoWorkbenchProjectSession({
+    raw: node?.data?.videoWorkbench,
+    open,
+    onSave,
+    onSaveError: (error) => {
+      message.error(error instanceof Error ? error.message : '自动保存视频工作台失败')
+    },
+  })
+  const {
+    project,
+    legacyDraft: draft,
+    issues: projectIssues,
+    readOnly: projectReadOnly,
+    canUndo,
+    canRedo,
+    applyCommand: applyProjectCommand,
+    updateProject,
+    updateLegacyDraft: updateDraft,
+    undo: undoProject,
+    redo: redoProject,
+    saveNow: saveProjectNow,
+  } = projectSession
   const [activeTab, setActiveTab] = useState<'resources' | 'frames' | 'edit' | 'output'>(
     draft.activeTab === 'frames' ||
       draft.activeTab === 'edit' ||
@@ -221,6 +248,13 @@ export function CanvasVideoWorkbenchModal({
       ? draft.activeTab
       : 'resources',
   )
+  useEffect(() => {
+    updateProject((current) =>
+      current.ui.activeTab === activeTab
+        ? current
+        : { ...current, ui: { ...current.ui, activeTab } },
+    )
+  }, [activeTab, updateProject])
   const [ffmpegReady, setFfmpegReady] = useState<boolean | null>(null)
   const [ffmpegInstalling, setFfmpegInstalling] = useState(false)
   const [ffmpegInstallProgress, setFfmpegInstallProgress] = useState<FfmpegInstallProgress | null>(
@@ -253,8 +287,9 @@ export function CanvasVideoWorkbenchModal({
   const [currentTime, setCurrentTime] = useState(0)
   /** 资源面板当前选中的资源 id（用于在主预览区单独预览） */
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
-  /** 轨道中当前选中的分段 id（用于播放控制栏的分段操作） */
-  const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
+  /** 轨道中当前选中的分段；末项是属性与播放控制栏使用的主选分段。 */
+  const [selectedClipIds, setSelectedClipIds] = useState<string[]>([])
+  const selectedClipId = selectedClipIds.at(-1) ?? null
   /** 多段轨道连播状态机（active 时主预览区按 clip 顺序连播，详见 useVideoWorkbenchPlayback） */
   const playback = useVideoWorkbenchPlayback({
     track: draft.track,
@@ -314,9 +349,25 @@ export function CanvasVideoWorkbenchModal({
     playback.currentResource,
   ])
   const { selectedResource, previewUrl, previewKind, isPlayback } = preview
-  const selectedClip = useMemo(
-    () => draft.track.find((clip) => clip.id === selectedClipId) ?? null,
-    [draft.track, selectedClipId],
+  const selectedProjectClip = useMemo(
+    () => (selectedClipId ? findVideoWorkbenchClip(project, selectedClipId) : null),
+    [project, selectedClipId],
+  )
+  const selectedClip = useMemo(() => {
+    if (!selectedProjectClip) return null
+    const resource = selectedProjectClip.clip.resourceId
+      ? project.resources.find((item) => item.id === selectedProjectClip.clip.resourceId)
+      : undefined
+    return videoWorkbenchClipToLegacyTrackClip(selectedProjectClip.clip, resource)
+  }, [project.resources, selectedProjectClip])
+  const usedResourceIds = useMemo(
+    () =>
+      new Set(
+        project.tracks.flatMap((track) =>
+          track.clips.flatMap((clip) => (clip.resourceId ? [clip.resourceId] : [])),
+        ),
+      ),
+    [project.tracks],
   )
   // 解构 playback 的稳定函数与状态，避免依赖整个对象导致下游 useCallback 频繁重建
   const {
@@ -328,10 +379,8 @@ export function CanvasVideoWorkbenchModal({
     handleVideoPause: playbackOnPause,
     exit: playbackExit,
     playing: playbackPlaying,
-    active: playbackActive,
     globalTimeSec: playbackGlobalTime,
     totalDurationSec: playbackTotal,
-    currentClipId: playbackCurrentClipId,
   } = playback
 
   const probe = draft.probeInfo
@@ -378,53 +427,6 @@ export function CanvasVideoWorkbenchModal({
       .then((s: { ffmpegReady: boolean }) => setFfmpegReady(s.ffmpegReady))
       .catch(() => setFfmpegReady(false))
   }, [open])
-
-  // ── 防抖持久化：draft 变化时合并为一次 onSave ──────────────────────
-  // 关键点：
-  //  - setDraft 的 updater 必须是纯函数，不能塞 IPC 副作用
-  //  - unmount / open 关闭时强制 flush 一次，避免最后一次改动丢失
-  //  - 跳过首次 mount（draft 与已持久化数据一致，不重复写）
-  const isFirstRenderRef = useRef(true)
-  const pendingDraftRef = useRef<VideoWorkbenchData | null>(null)
-  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const onSaveRef = useRef(onSave)
-  useEffect(() => {
-    onSaveRef.current = onSave
-  }, [onSave])
-  const flushSave = useCallback(() => {
-    if (flushTimerRef.current != null) {
-      clearTimeout(flushTimerRef.current)
-      flushTimerRef.current = null
-    }
-    if (pendingDraftRef.current) {
-      const next = pendingDraftRef.current
-      pendingDraftRef.current = null
-      void onSaveRef.current(next)
-    }
-  }, [])
-  useEffect(() => {
-    if (isFirstRenderRef.current) {
-      isFirstRenderRef.current = false
-      return
-    }
-    pendingDraftRef.current = draft
-    if (flushTimerRef.current != null) clearTimeout(flushTimerRef.current)
-    flushTimerRef.current = setTimeout(flushSave, PERSIST_DEBOUNCE_MS)
-    return () => {
-      if (flushTimerRef.current != null) {
-        clearTimeout(flushTimerRef.current)
-        flushTimerRef.current = null
-      }
-    }
-  }, [draft, flushSave])
-  // open 转 false（父级把 videoWorkbenchNode 设回 null → key 变化导致 unmount）时 flush 兜底
-  useEffect(() => {
-    if (open) return
-    flushSave()
-    return flushSave
-  }, [open, flushSave])
-  // 组件卸载（key 变化时也会触发）再 flush 一次，最后一道防线
-  useEffect(() => flushSave, [flushSave])
 
   useEffect(() => {
     if (!open) return
@@ -475,42 +477,45 @@ export function CanvasVideoWorkbenchModal({
     }
   }, [open])
 
-  const probeAndUpdate = useCallback(async (n: CanvasNode) => {
-    if (probingRef.current) return
-    const sourcePath = resolveDiskPath((n.data as { url?: string }).url ?? '')
-    if (!sourcePath) return // 未关联视频文件，跳过探测（预览区已展示"未关联视频"）
-    probingRef.current = true
-    setBusy(true)
-    setProgress(null)
-    setProbeFailed(false)
-    try {
-      const reqId = shortId()
-      const res = await window.spark.invoke('video:probe', {
-        operation: 'probe',
-        input: sourcePath,
-        params: {},
-        requestId: reqId,
-      })
-      if (res.success && res.result) {
-        const probeInfo = res.result as VideoProbeInfo
-        setDraft((d) => ({
-          ...d,
-          probeInfo,
-          resourcePanel: backfillResourceMetadata(d.resourcePanel, `source:${n.id}`, probeInfo),
-        }))
-      } else {
-        // probe 返回失败（路径校验/ffmpeg 执行错误）—— 不阻塞，用 video 元素信息降级
-        console.warn('[video-workbench] probe failed:', res.error)
+  const probeAndUpdate = useCallback(
+    async (n: CanvasNode) => {
+      if (probingRef.current) return
+      const sourcePath = resolveDiskPath((n.data as { url?: string }).url ?? '')
+      if (!sourcePath) return // 未关联视频文件，跳过探测（预览区已展示"未关联视频"）
+      probingRef.current = true
+      setBusy(true)
+      setProgress(null)
+      setProbeFailed(false)
+      try {
+        const reqId = shortId()
+        const res = await window.spark.invoke('video:probe', {
+          operation: 'probe',
+          input: sourcePath,
+          params: {},
+          requestId: reqId,
+        })
+        if (res.success && res.result) {
+          const probeInfo = res.result as VideoProbeInfo
+          updateDraft((d) => ({
+            ...d,
+            probeInfo,
+            resourcePanel: backfillResourceMetadata(d.resourcePanel, `source:${n.id}`, probeInfo),
+          }))
+        } else {
+          // probe 返回失败（路径校验/ffmpeg 执行错误）—— 不阻塞，用 video 元素信息降级
+          console.warn('[video-workbench] probe failed:', res.error)
+          setProbeFailed(true)
+        }
+      } catch (err) {
+        console.warn('[video-workbench] probe error:', err)
         setProbeFailed(true)
+      } finally {
+        setBusy(false)
+        probingRef.current = false
       }
-    } catch (err) {
-      console.warn('[video-workbench] probe error:', err)
-      setProbeFailed(true)
-    } finally {
-      setBusy(false)
-      probingRef.current = false
-    }
-  }, [])
+    },
+    [updateDraft],
+  )
 
   // ── 首次打开自动 probe（若 probeInfo 缺失且 ffmpeg 可用）─────────
   useEffect(() => {
@@ -559,7 +564,7 @@ export function CanvasVideoWorkbenchModal({
             timestampSec: f.timestampSec,
             index: f.index,
           }))
-          setDraft((d) => ({ ...d, keyframes: frames }))
+          updateDraft((d) => ({ ...d, keyframes: frames }))
           message.success(`提取了 ${frames.length} 个关键帧`)
         } else {
           console.error('[video-workbench] extractKeyframes failed:', res.error)
@@ -572,7 +577,7 @@ export function CanvasVideoWorkbenchModal({
         setProgress(null)
       }
     },
-    [node, probe, extractConfig],
+    [node, probe, extractConfig, updateDraft],
   )
 
   // 跳转到指定时间点
@@ -660,7 +665,7 @@ export function CanvasVideoWorkbenchModal({
         const imported = await onExportKeyframes(frames, node.id)
         if (imported && imported.length > 0) {
           const importedByIndex = new Map(imported.map((frame) => [frame.index, frame]))
-          setDraft((current) => ({
+          updateDraft((current) => ({
             ...current,
             keyframes: current.keyframes.map((frame) => importedByIndex.get(frame.index) ?? frame),
           }))
@@ -671,7 +676,7 @@ export function CanvasVideoWorkbenchModal({
         setBusy(false)
       }
     },
-    [node, onExportKeyframes],
+    [node, onExportKeyframes, updateDraft],
   )
 
   // ── 通用视频处理（剪辑/转码/分割等），产物记录到 draft.outputs ──
@@ -716,19 +721,22 @@ export function CanvasVideoWorkbenchModal({
         createdAt: Date.now(),
         summary: entry.summary,
       }))
-      setDraft((d) => ({
+      updateDraft((d) => ({
         ...d,
         outputs: [...outputs, ...d.outputs].slice(0, 20),
         activeTab: 'output',
       }))
     },
-    [],
+    [updateDraft],
   )
 
-  const appendOutput = useCallback((output: WorkbenchOutput) => {
-    setActiveTab('output')
-    setDraft((d) => prependWorkbenchOutput(d, output))
-  }, [])
+  const appendOutput = useCallback(
+    (output: WorkbenchOutput) => {
+      setActiveTab('output')
+      updateDraft((d) => prependWorkbenchOutput(d, output))
+    },
+    [updateDraft],
+  )
 
   const recordOutput = useCallback(
     (summary: string, outputPath: string, type: WorkbenchOutput['type']) => {
@@ -787,12 +795,7 @@ export function CanvasVideoWorkbenchModal({
     [handleProcess, probe?.height, probe?.width, recordOutput],
   )
 
-  // ── 资源面板 / 多段轨道 handlers ───────────────────────────────
-  // updater 必须是纯函数（无 IPC 副作用）；持久化由 useEffect 防抖接管
-  const updateDraft = useCallback((updater: (d: VideoWorkbenchData) => VideoWorkbenchData) => {
-    setDraft((d) => updater(d))
-  }, [])
-
+  // ── 资源面板 / 多轨 handlers ───────────────────────────────────
   const exportTrackOutput = useCallback(
     async (track: TrackClip[]): Promise<WorkbenchOutput | null> => {
       const sortedTrack = track.slice().sort((a, b) => a.order - b.order)
@@ -963,25 +966,24 @@ export function CanvasVideoWorkbenchModal({
     [draft.resourcePanel, onMaterializeOutput, updateDraft],
   )
 
-  // 旧工作台把 node.data.url 放在独立单视频时间线；首次打开时迁入统一资源轨道。
-  // 工作台保持打开时若切换源视频，父级会重置持久化数据，这里同步重置本地 draft，
-  // 避免防抖保存把旧轨道重新写回节点。
+  // 旧工作台把 node.data.url 放在独立单视频时间线；首次打开时迁入 V2 主视频轨。
+  // 工作台保持打开时切换源视频会重建当前工程，避免旧多轨引用重新写回新源节点。
   useEffect(() => {
     if (!sourceVideoUrl || seededSourceUrlRef.current === sourceVideoUrl) return
     const sourceChanged = seededSourceUrlRef.current !== ''
     seededSourceUrlRef.current = sourceVideoUrl
-    updateDraft((current) => {
+    updateProject((current) => {
       const resourceId = `source:${node?.id ?? 'video'}`
-      const persistedSource = current.resourcePanel.find((resource) => resource.id === resourceId)
+      const persistedSource = current.resources.find((resource) => resource.id === resourceId)
       const sourceMetadata = current.probeInfo ?? persistedSource
-      const sourceResource: WorkbenchResource = {
+      const sourceResource: VideoWorkbenchResourceV2 = {
         id: resourceId,
         source: 'canvas',
         kind: 'video',
         title: node?.title?.replace(/^视频工作台\s*[—-]?\s*/, '') || '源视频',
         url: sourceVideoUrl,
         originPath: resolveDiskPath(sourceVideoUrl) || sourceVideoUrl,
-        importedAt: Date.now(),
+        importedAt: persistedSource?.importedAt ?? Date.now(),
         ...(sourceMetadata?.durationSec !== undefined
           ? { durationSec: sourceMetadata.durationSec }
           : {}),
@@ -990,126 +992,113 @@ export function CanvasVideoWorkbenchModal({
         ...(sourceMetadata?.fileSize !== undefined ? { fileSize: sourceMetadata.fileSize } : {}),
       }
       if (sourceChanged || (persistedSource != null && persistedSource.url !== sourceVideoUrl)) {
-        const reset = createDefaultVideoWorkbenchData()
+        const reset = createDefaultVideoWorkbenchProject()
+        const mainTrack = reset.tracks[0]
+        if (!mainTrack) return reset
         return {
           ...reset,
-          resourcePanel: [sourceResource],
-          track: insertResourceIntoTrack([], sourceResource),
+          resources: [sourceResource],
+          tracks: [
+            {
+              ...mainTrack,
+              clips: [createVideoWorkbenchClipForResource(reset, sourceResource, 0)],
+            },
+          ],
         }
       }
-      if (!shouldSeedSourceTrack(current.track, current.resourcePanel, resourceId)) {
-        if (!sourceMetadata) return current
-        const resourcePanel = backfillResourceMetadata(
-          current.resourcePanel,
-          resourceId,
-          sourceMetadata,
-        )
-        return resourcePanel === current.resourcePanel ? current : { ...current, resourcePanel }
-      }
-      const resourcePanel = mergeResources(current.resourcePanel, [sourceResource])
-      return {
-        ...current,
-        resourcePanel,
-        track: insertResourceIntoTrack([], sourceResource),
-      }
+      return syncVideoWorkbenchSourceResource(current, sourceResource)
     })
-  }, [node?.id, node?.title, sourceVideoUrl, updateDraft])
+  }, [node?.id, node?.title, sourceVideoUrl, updateProject])
 
   const handleAddResourceToTrack = useCallback(
-    (resource: WorkbenchResource, insertAfterClipId?: string | null) => {
-      updateDraft((d) => ({
-        ...d,
-        track: insertResourceIntoTrack(d.track, resource, insertAfterClipId),
-      }))
+    (resource: WorkbenchResource) => {
+      const projectResource = project.resources.find((candidate) => candidate.id === resource.id)
+      if (!projectResource) return
+      const targetTrack = findDefaultVideoWorkbenchTrackForResource(project, projectResource)
+      if (targetTrack) {
+        const clip = createVideoWorkbenchClipForResource(
+          project,
+          projectResource,
+          resolveVideoWorkbenchTrackAppendTime(targetTrack),
+        )
+        const result = applyProjectCommand({
+          type: 'clip/add',
+          trackId: targetTrack.id,
+          clip,
+        })
+        if (result.applied) {
+          setSelectedClipIds([clip.id])
+          playbackExit()
+          setSelectedResourceId(projectResource.id)
+        }
+        return
+      }
+      let newTrackKind: 'audio' | 'overlay' | 'video'
+      if (projectResource.kind === 'audio') newTrackKind = 'audio'
+      else if (project.tracks.some((candidate) => candidate.kind === 'video')) {
+        newTrackKind = 'overlay'
+      } else newTrackKind = 'video'
+      const track = createVideoWorkbenchTrack(project, newTrackKind)
+      const clip = createVideoWorkbenchClipForResource(project, projectResource, 0)
+      track.clips = [clip]
+      const result = applyProjectCommand({ type: 'track/add', track })
+      if (result.applied) {
+        setSelectedClipIds([clip.id])
+        playbackExit()
+        setSelectedResourceId(projectResource.id)
+      }
     },
-    [updateDraft],
-  )
-
-  const handleReorderTrack = useCallback(
-    (nextTrack: TrackClip[]) => {
-      updateDraft((d) => ({ ...d, track: nextTrack }))
-    },
-    [updateDraft],
+    [applyProjectCommand, playbackExit, project],
   )
 
   const handleRemoveClip = useCallback(
     (clipId: string) => {
-      setSelectedClipId((current) => (current === clipId ? null : current))
-      updateDraft((d) => ({ ...d, track: removeTrackClip(d.track, clipId) }))
+      setSelectedClipIds((current) => current.filter((candidate) => candidate !== clipId))
+      const result = applyProjectCommand({ type: 'clip/remove', clipId })
+      if (!result.applied) message.warning('轨道已锁定，无法删除片段')
     },
-    [updateDraft],
+    [applyProjectCommand],
   )
 
-  const handleClearTrack = useCallback(() => {
-    setSelectedClipId(null)
-    updateDraft((d) => ({ ...d, track: [] }))
-  }, [updateDraft])
-
-  const handleSelectClip = useCallback(
-    (clipId: string | null) => {
-      setSelectedClipId(clipId)
+  const handleSelectClips = useCallback(
+    (clipIds: string[]) => {
+      setSelectedClipIds(clipIds)
+      const clipId = clipIds.at(-1)
       if (!clipId) return
-      const clip = draft.track.find((item) => item.id === clipId)
-      const resource = clip
-        ? draft.resourcePanel.find((item) => item.id === clip.resourceId)
+      const found = findVideoWorkbenchClip(project, clipId)
+      const resource = found?.clip.resourceId
+        ? project.resources.find((item) => item.id === found.clip.resourceId)
         : undefined
       if (resource) {
         playbackExit()
         setSelectedResourceId(resource.id)
       }
     },
-    [draft.resourcePanel, draft.track, playbackExit],
+    [playbackExit, project],
   )
 
   const handleDuplicateClip = useCallback(
     (clipId: string) => {
-      const nextTrack = duplicateTrackClip(draft.track, clipId)
-      if (nextTrack.length === draft.track.length) return
-      const originalIds = new Set(draft.track.map((clip) => clip.id))
-      const duplicate = nextTrack.find((clip) => !originalIds.has(clip.id))
-      handleReorderTrack(nextTrack)
-      if (duplicate) setSelectedClipId(duplicate.id)
-    },
-    [draft.track, handleReorderTrack],
-  )
-
-  const handleTrackDurationChange = useCallback(
-    (clipId: string, nextDuration: number) => {
-      updateDraft((current) => {
-        const resources = indexResourcesById(current.resourcePanel)
-        return {
-          ...current,
-          track: current.track.map((clip) => {
-            if (clip.id !== clipId) return clip
-            const resource = resources.get(clip.resourceId)
-            if (resource?.kind === 'image') return { ...clip, staticDuration: nextDuration }
-            const startSec = clip.range?.startSec ?? 0
-            const maxEnd = resource?.durationSec ?? startSec + nextDuration
-            return {
-              ...clip,
-              range: { startSec, endSec: Math.min(maxEnd, startSec + nextDuration) },
-            }
-          }),
-        }
+      const found = findVideoWorkbenchClip(project, clipId)
+      if (!found) return
+      const duplicateClipId = createVideoWorkbenchEntityId('clip')
+      const timelineStartSec =
+        found.track.kind === 'video'
+          ? resolveVideoWorkbenchTrackAppendTime(found.track)
+          : resolveVideoWorkbenchClipTiming(found.clip).timelineEndSec
+      const result = applyProjectCommand({
+        type: 'clip/duplicate',
+        clipId,
+        duplicateClipId,
+        timelineStartSec,
       })
+      if (result.applied) setSelectedClipIds([duplicateClipId])
     },
-    [updateDraft],
+    [applyProjectCommand, project],
   )
-
-  const handleSplitTrackAtPlayhead = useCallback(() => {
-    const resources = indexResourcesById(draft.resourcePanel)
-    const resolved = resolveClipAtGlobalTime(draft.track, resources, playbackGlobalTime)
-    if (!resolved) return
-    const nextTrack = splitTrackClip(draft.track, resources, resolved.clip.id, resolved.offsetSec)
-    if (nextTrack.length === draft.track.length) {
-      message.info('请把播放头移到片段内部后再分割')
-      return
-    }
-    handleReorderTrack(nextTrack)
-  }, [draft.resourcePanel, draft.track, handleReorderTrack, playbackGlobalTime])
 
   const handlePreviewResource = useCallback(
-    (resource: WorkbenchResource) => {
+    (resource: WorkbenchResource | VideoWorkbenchResourceV2) => {
       playbackExit()
       setSelectedResourceId(resource.id)
     },
@@ -1118,14 +1107,20 @@ export function CanvasVideoWorkbenchModal({
 
   const handleRemoveResource = useCallback(
     (resourceId: string) => {
-      updateDraft((d) => ({
-        ...d,
-        resourcePanel: d.resourcePanel.filter((r) => r.id !== resourceId),
-        // 同时从轨道中清理引用了该资源的 clip
-        track: d.track.filter((c) => c.resourceId !== resourceId),
-      }))
+      setSelectedResourceId((current) => (current === resourceId ? null : current))
+      updateProject(
+        (current) => ({
+          ...current,
+          resources: current.resources.filter((resource) => resource.id !== resourceId),
+          tracks: current.tracks.map((track) => ({
+            ...track,
+            clips: track.clips.filter((clip) => clip.resourceId !== resourceId),
+          })),
+        }),
+        true,
+      )
     },
-    [updateDraft],
+    [updateProject],
   )
 
   // 视频缩略图 <video> onLoadedMetadata 回填：本机导入 / 上游收集的资源常缺 durationSec / 宽高，
@@ -1137,29 +1132,10 @@ export function CanvasVideoWorkbenchModal({
     metaFlushTimerRef.current = null
     const buffer = metaBufferRef.current
     if (buffer.size === 0) return
-    const entries = Array.from(buffer.entries())
+    const metadataById = new Map(buffer)
     buffer.clear()
-    updateDraft((d) => {
-      let changed = false
-      const resourcePanel = d.resourcePanel.map((r) => {
-        const entry = entries.find(([id]) => id === r.id)
-        if (!entry) return r
-        const meta = entry[1]
-        const durationSec = r.durationSec ?? meta.durationSec
-        const width = r.width ?? meta.width
-        const height = r.height ?? meta.height
-        if (durationSec === r.durationSec && width === r.width && height === r.height) return r
-        changed = true
-        return {
-          ...r,
-          ...(durationSec !== undefined ? { durationSec } : {}),
-          ...(width !== undefined ? { width } : {}),
-          ...(height !== undefined ? { height } : {}),
-        }
-      })
-      return changed ? { ...d, resourcePanel } : d
-    })
-  }, [updateDraft])
+    updateProject((current) => backfillVideoWorkbenchProjectResourceMetadata(current, metadataById))
+  }, [updateProject])
   const handleResourceMeta = useCallback(
     (resourceId: string, meta: ThumbnailMeta) => {
       const prev = metaBufferRef.current.get(resourceId) ?? {}
@@ -1424,38 +1400,58 @@ export function CanvasVideoWorkbenchModal({
   ])
 
   const handleSaveAndClose = useCallback(async () => {
+    if (projectReadOnly) {
+      message.error('该工程来自更高版本，当前版本不能覆盖保存')
+      return
+    }
     setSavingDraft(true)
     try {
-      let nextDraft = draft
-      if (onMaterializeOutput && trackNeedsMaterialization(draft.track)) {
+      let nextProject = project
+      if (
+        onMaterializeOutput &&
+        isLegacyVideoWorkbenchExportCompatible(project) &&
+        trackNeedsMaterialization(draft.track)
+      ) {
         setBusy(true)
         try {
           const output = await exportTrackOutput(draft.track)
           if (!output) throw new Error('当前轨道没有可保存的视频')
           const materialized = await onMaterializeOutput(output, 'add')
-          nextDraft = prependWorkbenchOutput(
-            draft,
-            materialized
-              ? {
-                  ...output,
-                  canvasNodeId: materialized.nodeId,
-                  outputPath: materialized.outputPath,
-                  outputUrl: materialized.outputUrl,
-                }
-              : output,
-          )
+          const nextOutput = materialized
+            ? {
+                ...output,
+                canvasNodeId: materialized.nodeId,
+                outputPath: materialized.outputPath,
+                outputUrl: materialized.outputUrl,
+              }
+            : output
+          nextProject = {
+            ...project,
+            outputs: [nextOutput, ...project.outputs].slice(0, 20),
+            ui: { ...project.ui, activeTab: 'output' },
+          }
+          updateProject(() => nextProject)
         } finally {
           setBusy(false)
         }
       }
-      await onSave(nextDraft)
+      await saveProjectNow(nextProject)
       onClose()
     } catch (error) {
       message.error(error instanceof Error ? error.message : '保存视频工作台失败')
     } finally {
       setSavingDraft(false)
     }
-  }, [draft, exportTrackOutput, onClose, onMaterializeOutput, onSave])
+  }, [
+    draft.track,
+    exportTrackOutput,
+    onClose,
+    onMaterializeOutput,
+    project,
+    projectReadOnly,
+    saveProjectNow,
+    updateProject,
+  ])
 
   if (!open) return null
 
@@ -1496,6 +1492,7 @@ export function CanvasVideoWorkbenchModal({
                   size="small"
                   type={draft.resourcePanel.length === 0 ? 'primary' : 'default'}
                   icon={<Icons.Video size={14} />}
+                  disabled={projectReadOnly}
                 >
                   添加资源
                 </Button>
@@ -1505,7 +1502,7 @@ export function CanvasVideoWorkbenchModal({
               size="small"
               type="primary"
               loading={savingDraft}
-              disabled={busy}
+              disabled={busy || projectReadOnly}
               onClick={() => void handleSaveAndClose()}
               icon={<Icons.Check size={14} />}
             >
@@ -1536,6 +1533,20 @@ export function CanvasVideoWorkbenchModal({
             >
               {ffmpegInstalling ? '正在安装' : '下载并安装'}
             </Button>
+          </div>
+        )}
+        {projectIssues.length > 0 && (
+          <div
+            className="vwb-project-warning"
+            title={projectIssues.join('\n')}
+            role={projectReadOnly ? 'alert' : 'status'}
+          >
+            <Icons.AlertTriangle size={15} />
+            <span>
+              {projectReadOnly
+                ? '该工程版本高于当前客户端，已进入只读保护，避免覆盖新格式数据。'
+                : `工程读取时发现 ${projectIssues.length} 处异常引用，数据已保留并可继续修复。`}
+            </span>
           </div>
         )}
 
@@ -1589,6 +1600,12 @@ export function CanvasVideoWorkbenchModal({
                   className="vwb-video"
                   style={{ objectFit: 'contain' }}
                 />
+              ) : previewUrl && previewKind === 'audio' ? (
+                <div className="vwb-audio-preview">
+                  <Icons.AudioLines size={42} />
+                  <strong>{selectedResource?.title ?? '音频素材'}</strong>
+                  <audio src={previewUrl} controls preload="metadata" />
+                </div>
               ) : (
                 <div className="vwb-video-empty">
                   <Icons.Film size={48} />
@@ -1615,6 +1632,7 @@ export function CanvasVideoWorkbenchModal({
                   className="vwb-player-btn"
                   onClick={() => stepFrame(-1)}
                   disabled={previewKind !== 'video'}
+                  aria-label="上一帧"
                   title="上一帧（←）"
                 >
                   <Icons.ChevronLeft size={16} />
@@ -1623,6 +1641,7 @@ export function CanvasVideoWorkbenchModal({
                   className="vwb-player-btn vwb-player-play"
                   onClick={handlePlayToggle}
                   disabled={!isPlayback && previewKind !== 'video'}
+                  aria-label={playbackPlaying ? '暂停' : '播放'}
                   title={playbackPlaying ? '暂停（空格）' : '播放（空格）'}
                 >
                   {playbackPlaying ? <Icons.Pause size={18} /> : <Icons.Play size={18} />}
@@ -1631,6 +1650,7 @@ export function CanvasVideoWorkbenchModal({
                   className="vwb-player-btn"
                   onClick={() => stepFrame(1)}
                   disabled={previewKind !== 'video'}
+                  aria-label="下一帧"
                   title="下一帧（→）"
                 >
                   <Icons.ChevronRight size={16} />
@@ -1644,14 +1664,19 @@ export function CanvasVideoWorkbenchModal({
                 </span>
                 {selectedClip ? (
                   <div className="vwb-player-clip-actions" aria-label="分段操作">
-                    <span className="vwb-player-clip-label">已选分段</span>
+                    <span className="vwb-player-clip-label">
+                      {selectedClipIds.length > 1
+                        ? `主选分段 · 共 ${selectedClipIds.length} 段`
+                        : '已选分段'}
+                    </span>
                     <button
                       className="vwb-player-btn"
                       onClick={(event) => {
                         event.stopPropagation()
                         handleDuplicateClip(selectedClip.id)
                       }}
-                      disabled={busy}
+                      disabled={busy || projectReadOnly}
+                      aria-label="复制选中的分段"
                       title="复制选中的分段"
                     >
                       <Icons.Copy size={14} />
@@ -1664,6 +1689,7 @@ export function CanvasVideoWorkbenchModal({
                         void handleMaterializeClip(selectedClip, 'add')
                       }}
                       disabled={busy || !onMaterializeOutput}
+                      aria-label="将选中的分段添加到画布"
                       title="将选中的分段添加为新的画布视频节点"
                     >
                       <Icons.Plus size={14} />
@@ -1676,6 +1702,7 @@ export function CanvasVideoWorkbenchModal({
                         void handleMaterializeClip(selectedClip, 'replace')
                       }}
                       disabled={busy || !onMaterializeOutput}
+                      aria-label="用选中的分段替换当前视频"
                       title="用选中的分段替换当前视频节点"
                     >
                       <Icons.Refresh size={14} />
@@ -1687,7 +1714,8 @@ export function CanvasVideoWorkbenchModal({
                         event.stopPropagation()
                         handleRemoveClip(selectedClip.id)
                       }}
-                      disabled={busy}
+                      disabled={busy || projectReadOnly}
+                      aria-label="删除选中的分段"
                       title="删除选中的分段"
                     >
                       <Icons.Trash size={14} />
@@ -1696,38 +1724,37 @@ export function CanvasVideoWorkbenchModal({
                   </div>
                 ) : null}
                 <div className="vwb-player-spacer" />
-                <button className="vwb-player-btn" onClick={handleToStart} title="回到开头（Home）">
+                <button
+                  className="vwb-player-btn"
+                  onClick={handleToStart}
+                  aria-label="回到开头"
+                  title="回到开头（Home）"
+                >
                   <Icons.RotateCcw size={14} />
                 </button>
               </div>
             )}
 
-            {/* 唯一主编辑轨道：多资源拼接、播放、排序、切分与时长调整 */}
-            <VideoWorkbenchTrackTimeline
-              track={draft.track}
-              resources={draft.resourcePanel}
+            <VideoWorkbenchMultiTrackTimeline
+              project={project}
               busy={busy}
-              onReorder={handleReorderTrack}
-              onRemoveClip={handleRemoveClip}
-              selectedClipId={selectedClip?.id ?? null}
-              onSelectClip={handleSelectClip}
+              readOnly={projectReadOnly}
+              selectedClipIds={selectedClipIds}
+              playheadSec={playbackGlobalTime}
+              playing={playbackPlaying}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onSelectionChange={handleSelectClips}
               onPreviewResource={handlePreviewResource}
-              onAddResourceToTrack={handleAddResourceToTrack}
-              onClearTrack={handleClearTrack}
+              onSeek={handlePlaybackSeek}
+              onPlaybackToggle={handlePlaybackToggle}
+              onCommand={applyProjectCommand}
+              onUpdateProject={updateProject}
+              onUndo={undoProject}
+              onRedo={redoProject}
               onOpenFrames={() => setActiveTab('frames')}
               onOpenEdit={() => setActiveTab('edit')}
               onOpenOutput={() => setActiveTab('output')}
-              onSplitAtPlayhead={handleSplitTrackAtPlayhead}
-              onDurationChange={handleTrackDurationChange}
-              playback={{
-                active: playbackActive,
-                playing: playbackPlaying,
-                currentClipId: playbackCurrentClipId,
-                globalTimeSec: playbackGlobalTime,
-                totalDurationSec: playbackTotal,
-              }}
-              onPlaybackSeek={handlePlaybackSeek}
-              onPlaybackToggle={handlePlaybackToggle}
             />
           </div>
 
@@ -1759,8 +1786,10 @@ export function CanvasVideoWorkbenchModal({
               <VideoWorkbenchResourcePanel
                 resources={draft.resourcePanel}
                 track={draft.track}
+                usedResourceIds={usedResourceIds}
                 autoCollectUpstream={draft.autoCollectUpstream}
                 busy={busy}
+                readOnly={projectReadOnly}
                 onAddToTrack={handleAddResourceToTrack}
                 onPreview={handlePreviewResource}
                 onRemoveResource={handleRemoveResource}
@@ -1775,19 +1804,19 @@ export function CanvasVideoWorkbenchModal({
             {activeTab === 'frames' && (
               <VideoWorkbenchFramePanel
                 draft={draft}
-                busy={busy}
+                busy={busy || projectReadOnly}
                 progress={progress}
                 progressStage={progressStage}
                 ffmpegReady={ffmpegReady}
                 onExtract={extractKeyframes}
                 onConfigChange={(cfg) => {
-                  setDraft((d) => ({ ...d, extractConfig: cfg }))
+                  updateDraft((d) => ({ ...d, extractConfig: cfg }))
                 }}
                 onSeek={seekTo}
                 onExport={handleExportKeyframes}
                 onRemoveKeyframes={(indexes) => {
                   const indexesToRemove = new Set(indexes)
-                  setDraft((d) => ({
+                  updateDraft((d) => ({
                     ...d,
                     keyframes: d.keyframes.filter(
                       (keyframe) => !indexesToRemove.has(keyframe.index),
@@ -1800,7 +1829,7 @@ export function CanvasVideoWorkbenchModal({
             {activeTab === 'edit' && (
               <VideoWorkbenchEditPanel
                 probe={probe}
-                busy={busy}
+                busy={busy || projectReadOnly}
                 progress={progress}
                 ffmpegReady={ffmpegReady}
                 probeFailed={probeFailed}
@@ -1814,8 +1843,8 @@ export function CanvasVideoWorkbenchModal({
             {activeTab === 'output' && (
               <VideoWorkbenchOutputPanel
                 outputs={draft.outputs}
-                trackLength={draft.track.length}
-                busy={busy}
+                trackLength={project.tracks.reduce((count, track) => count + track.clips.length, 0)}
+                busy={busy || projectReadOnly}
                 onExportTrack={() => void handleExportTrack()}
                 onAddToCanvas={(output) => void handleMaterializeOutput(output, 'add')}
                 onReplaceCurrent={(output) => void handleMaterializeOutput(output, 'replace')}

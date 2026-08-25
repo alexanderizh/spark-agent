@@ -20,7 +20,7 @@ import { formatTimestamp, type TrackClip, type WorkbenchResource } from './video
 import { isResourceUsedInTrack } from './resourcePanelUtils'
 import { ResourceThumb, type ThumbnailMeta } from './VideoWorkbenchResourceThumb'
 
-type Filter = 'all' | 'video' | 'image'
+type Filter = 'all' | 'video' | 'image' | 'audio'
 
 export interface ResourceDragPayload {
   resourceId: string
@@ -30,8 +30,10 @@ export interface ResourceDragPayload {
 interface Props {
   resources: WorkbenchResource[]
   track: TrackClip[]
+  usedResourceIds?: ReadonlySet<string> | undefined
   autoCollectUpstream: boolean
   busy: boolean
+  readOnly?: boolean | undefined
   onAddToTrack: (resource: WorkbenchResource) => void
   onPreview: (resource: WorkbenchResource) => void
   onRemoveResource: (resourceId: string) => void
@@ -49,13 +51,16 @@ const FILTER_LABELS: Record<Filter, string> = {
   all: '全部',
   video: '视频',
   image: '图片',
+  audio: '音频',
 }
 
 export function VideoWorkbenchResourcePanel({
   resources,
   track,
+  usedResourceIds,
   autoCollectUpstream,
   busy,
+  readOnly = false,
   onAddToTrack,
   onPreview,
   onRemoveResource,
@@ -71,11 +76,13 @@ export function VideoWorkbenchResourcePanel({
   const counts = useMemo(() => {
     let video = 0
     let image = 0
+    let audio = 0
     for (const r of resources) {
       if (r.kind === 'video') video++
       else if (r.kind === 'image') image++
+      else if (r.kind === 'audio') audio++
     }
-    return { all: resources.length, video, image }
+    return { all: resources.length, video, image, audio }
   }, [resources])
 
   const visible = useMemo(() => {
@@ -101,7 +108,7 @@ export function VideoWorkbenchResourcePanel({
               size="small"
               checked={autoCollectUpstream}
               onChange={onAutoCollectToggle}
-              disabled={busy}
+              disabled={busy || readOnly}
             />
             <span>自动收集上游</span>
           </label>
@@ -111,11 +118,12 @@ export function VideoWorkbenchResourcePanel({
       <div className="vwb-resource-toolbar">
         <input
           className="vwb-resource-search"
-          placeholder="🔍 搜索资源..."
+          aria-label="搜索资源"
+          placeholder="搜索资源..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        {(['all', 'video', 'image'] as Filter[]).map((key) => (
+        {(['all', 'video', 'image', 'audio'] as Filter[]).map((key) => (
           <button
             key={key}
             type="button"
@@ -129,7 +137,12 @@ export function VideoWorkbenchResourcePanel({
 
       <div className="vwb-resource-quickadd">
         {onPickLocal && (
-          <Button size="small" icon={<Icons.Upload size={13} />} onClick={onPickLocal}>
+          <Button
+            size="small"
+            icon={<Icons.Upload size={13} />}
+            onClick={onPickLocal}
+            disabled={readOnly}
+          >
             本机
           </Button>
         )}
@@ -138,7 +151,7 @@ export function VideoWorkbenchResourcePanel({
             size="small"
             icon={<Icons.Layers size={13} />}
             onClick={onPickCanvas}
-            disabled={busy}
+            disabled={busy || readOnly}
           >
             从画布
           </Button>
@@ -149,6 +162,7 @@ export function VideoWorkbenchResourcePanel({
           icon={<Icons.Link size={13} />}
           onClick={onCollectUpstream}
           loading={busy}
+          disabled={readOnly}
         >
           按上级连线收集
         </Button>
@@ -160,12 +174,15 @@ export function VideoWorkbenchResourcePanel({
           <strong>{resources.length === 0 ? '暂无资源' : '没有匹配的资源'}</strong>
           <div className="muted">
             {resources.length === 0
-              ? '从本机导入图片 / 视频，或按上级连线自动收集上游节点的首选产物。'
+              ? '从本机导入图片 / 视频 / 音频，或按上级连线收集上游素材。'
               : '试试调整搜索关键词或筛选条件。'}
           </div>
           {resources.length === 0 && (
             <div className="vwb-resource-empty-hint">
-              <strong>💡 上游节点首选产物规则</strong>
+              <strong className="vwb-resource-empty-hint-title">
+                <Icons.Lightbulb size={13} />
+                <span>上游节点首选产物规则</span>
+              </strong>
               <br />· 优先取首个视频产物
               <br />· 没有视频时取首个图片产物
               <br />· 一个上游节点可能产出多个产物，可在卡片上切换
@@ -175,18 +192,17 @@ export function VideoWorkbenchResourcePanel({
       ) : (
         <div className="vwb-resource-grid">
           {visible.map((r) => {
-            const used = isResourceUsedInTrack(track, r.id)
+            const used = usedResourceIds?.has(r.id) ?? isResourceUsedInTrack(track, r.id)
             return (
               <ResourceCard
                 key={r.id}
                 resource={r}
                 used={used}
+                disabled={readOnly}
                 onAdd={() => onAddToTrack(r)}
                 onPreview={() => onPreview(r)}
                 onRemove={() => onRemoveResource(r.id)}
-                onMeta={
-                  onResourceMeta ? (meta) => onResourceMeta(r.id, meta) : undefined
-                }
+                onMeta={onResourceMeta ? (meta) => onResourceMeta(r.id, meta) : undefined}
               />
             )
           })}
@@ -199,6 +215,7 @@ export function VideoWorkbenchResourcePanel({
 interface ResourceCardProps {
   resource: WorkbenchResource
   used: boolean
+  disabled: boolean
   onAdd: () => void
   onPreview: () => void
   onRemove: () => void
@@ -208,6 +225,7 @@ interface ResourceCardProps {
 function ResourceCard({
   resource,
   used,
+  disabled,
   onAdd,
   onPreview,
   onRemove,
@@ -215,14 +233,15 @@ function ResourceCard({
 }: ResourceCardProps): ReactElement {
   const { kind, title, source, durationSec, width, height, fileSize } = resource
   const isVideo = kind === 'video'
-  const sourceLabel = source === 'upstream' ? '↑ 上游' : source === 'canvas' ? '🎨 画布' : '本地'
+  const isAudio = kind === 'audio'
+  const sourceLabel = source === 'upstream' ? '上游' : source === 'canvas' ? '画布' : '本地'
   const sourceClass =
     source === 'upstream' ? 'from-up' : source === 'canvas' ? 'from-canvas' : 'from-local'
 
   return (
     <div
       className={`vwb-resource-card${used ? ' used' : ''}`}
-      draggable
+      draggable={!disabled}
       onDragStart={(e) => {
         e.dataTransfer.setData(
           'application/x-vwb-resource',
@@ -238,10 +257,10 @@ function ResourceCard({
       <div className="vwb-resource-thumb">
         <ResourceThumb resource={resource} className="vwb-resource-thumb-media" onMeta={onMeta} />
         <span className={`vwb-resource-type vwb-resource-type-${kind}`}>
-          {isVideo ? '视频' : '图片'}
+          {isVideo ? '视频' : isAudio ? '音频' : '图片'}
         </span>
         <span className={`vwb-resource-source ${sourceClass}`}>{sourceLabel}</span>
-        {isVideo && durationSec ? (
+        {(isVideo || isAudio) && durationSec ? (
           <span className="vwb-resource-duration">{formatTimestamp(durationSec)}</span>
         ) : !isVideo && width && height ? (
           <span className="vwb-resource-duration">
@@ -261,8 +280,8 @@ function ResourceCard({
                 ? '画布节点'
                 : '本机导入'}
           </span>
-          {isVideo && durationSec ? <span>{formatTimestamp(durationSec)}</span> : null}
-          {!isVideo && width && height ? (
+          {(isVideo || isAudio) && durationSec ? <span>{formatTimestamp(durationSec)}</span> : null}
+          {!isVideo && !isAudio && width && height ? (
             <span>
               {width}×{height}
             </span>
@@ -279,26 +298,25 @@ function ResourceCard({
           <Icons.Eye size={13} />
         </button>
       </Tooltip>
-      {used ? (
-        <span className="vwb-resource-used-badge">已在轨道</span>
-      ) : (
-        <Tooltip title="加入轨道">
-          <button
-            type="button"
-            className="vwb-resource-add"
-            aria-label={`加入 ${title} 到轨道`}
-            onClick={onAdd}
-          >
-            +
-          </button>
-        </Tooltip>
-      )}
+      {used ? <span className="vwb-resource-used-badge">已在轨道</span> : null}
+      <Tooltip title={used ? '再次加入轨道' : '加入轨道'}>
+        <button
+          type="button"
+          className="vwb-resource-add"
+          aria-label={`加入 ${title} 到轨道`}
+          onClick={onAdd}
+          disabled={disabled}
+        >
+          <Icons.Plus size={13} />
+        </button>
+      </Tooltip>
       <Tooltip title="从面板移除">
         <button
           type="button"
           className="vwb-resource-remove"
           aria-label={`移除 ${title}`}
           onClick={onRemove}
+          disabled={disabled}
         >
           <Icons.X size={11} />
         </button>

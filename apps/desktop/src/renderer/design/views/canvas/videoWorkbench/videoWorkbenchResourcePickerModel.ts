@@ -1,9 +1,9 @@
-export type VideoWorkbenchResourceFilter = 'all' | 'video' | 'image'
+export type VideoWorkbenchResourceFilter = 'all' | 'video' | 'image' | 'audio'
 
 export interface VideoWorkbenchPickerCandidate {
   id: string
   title: string
-  kind: 'video' | 'image'
+  kind: 'video' | 'image' | 'audio'
   url: string
   thumbnailUrl?: string
   durationSec?: number

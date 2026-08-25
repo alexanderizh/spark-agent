@@ -141,12 +141,14 @@ import { createDefaultStage3DData, type Stage3DData } from './stage3d/stage3d.ty
 import { CanvasVideoWorkbenchModal } from './videoWorkbench/CanvasVideoWorkbenchModal'
 import { useCanvasVideoWorkbenchResources } from './videoWorkbench/useCanvasVideoWorkbenchResources'
 import {
-  createDefaultVideoWorkbenchData,
   type WorkbenchCanvasMaterialization,
-  type VideoWorkbenchData,
   type WorkbenchKeyframe,
   type WorkbenchOutput,
 } from './videoWorkbench/videoWorkbench.types'
+import {
+  createDefaultVideoWorkbenchProject,
+  type VideoWorkbenchProjectV2,
+} from './videoWorkbench/model/projectTypes'
 import {
   getKeyframeCanvasGridPosition,
   getKeyframeCanvasNodeSize,
@@ -3102,7 +3104,7 @@ export function CanvasWorkspaceView({
         width: VIDEO_NODE_DEFAULT_SIZE.width,
         height: VIDEO_NODE_DEFAULT_SIZE.height,
       })
-      const wbData = createDefaultVideoWorkbenchData()
+      const wbData = createDefaultVideoWorkbenchProject()
       if (sourceVideoAssetId) wbData.sourceVideoAssetId = sourceVideoAssetId
       await updateNodeData(node.id, {
         ...node.data,
@@ -3854,7 +3856,7 @@ export function CanvasWorkspaceView({
   })
 
   const handleSaveVideoWorkbench = useCallback(
-    async (data: VideoWorkbenchData) => {
+    async (data: VideoWorkbenchProjectV2) => {
       if (!videoWorkbenchNode) return
       // updateNodeData 是 merge 语义（{...node.data, ...data}），
       // 只传 videoWorkbench 字段即可，无需展开闭包里的 node.data（避免覆盖并发改动）。
@@ -3982,7 +3984,7 @@ export function CanvasWorkspaceView({
     const fileUrl = encodeToSafeFileUrl(copyResult.filePath as string)
     await updateNodeData(videoWorkbenchNode.id, {
       url: fileUrl,
-      videoWorkbench: createDefaultVideoWorkbenchData() as unknown as Record<string, unknown>,
+      videoWorkbench: createDefaultVideoWorkbenchProject() as unknown as Record<string, unknown>,
     })
     message.success('视频已导入工作台')
   }, [videoWorkbenchNode, projectId, snapshot?.project.rootPath, updateNodeData])
@@ -3993,7 +3995,7 @@ export function CanvasWorkspaceView({
       if (!videoWorkbenchNode) return
       await updateNodeData(videoWorkbenchNode.id, {
         url,
-        videoWorkbench: createDefaultVideoWorkbenchData() as unknown as Record<string, unknown>,
+        videoWorkbench: createDefaultVideoWorkbenchProject() as unknown as Record<string, unknown>,
       })
       message.success('已切换源视频')
     },
