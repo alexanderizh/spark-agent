@@ -78,6 +78,45 @@
   }
 }
 
+.sp-layout-switch {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  margin: 0 3px;
+  padding-left: 4px;
+  border-left: 1px solid var(--cv-border-soft);
+}
+
+.sp-layout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--cv-text-faint);
+  font-size: 10px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--cv-text);
+    background: var(--cv-bg-3);
+  }
+
+  &.active {
+    color: var(--cv-accent);
+    background: var(--cv-accent-soft);
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--cv-accent);
+    outline-offset: -1px;
+  }
+}
+
 /* ---------- 模式切换（文件 / 内容） ---------- */
 
 .sp-mode-tabs {
@@ -303,6 +342,96 @@
   position: relative;
 }
 
+/* ---------- 列表结果：文件 / 内容命中 ---------- */
+
+.sp-flat-file-row,
+.sp-flat-match-row {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  padding: 0 9px;
+  border: none;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--cv-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--cv-bg-3);
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--cv-accent);
+    outline-offset: -1px;
+  }
+}
+
+.sp-flat-file-row {
+  align-items: center;
+  gap: 7px;
+
+  &.selected {
+    border-left-color: var(--cv-accent);
+    background: var(--cv-accent-soft);
+  }
+}
+
+.sp-flat-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sp-flat-title,
+.sp-flat-path,
+.sp-flat-match-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-flat-title {
+  color: var(--cv-text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sp-flat-path {
+  color: var(--cv-text-faint);
+  font-size: 10px;
+}
+
+.sp-flat-match-row {
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+
+.sp-flat-match-heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 5px;
+
+  .sp-flat-path {
+    margin-left: auto;
+    padding-left: 8px;
+  }
+}
+
+.sp-flat-match-text {
+  width: 100%;
+  padding-left: 18px;
+  color: var(--cv-text-dim);
+  font-family: var(--cv-mono);
+  font-size: 11px;
+}
+
 /* ---------- 树形结果：目录 / 文件节点 ---------- */
 
 .sp-tree-row {
@@ -457,6 +586,7 @@
   }
 
   .sp-icon-btn,
+  .sp-layout-btn,
   .sp-mode-tab,
   .sp-search-box,
   .sp-input-action,

@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import type { WorkspaceSearchContentMatch } from '@spark/protocol'
+import type { WorkspaceSearchContentMatch, WorkspaceSearchFileHit } from '@spark/protocol'
 import { Icons } from '../../../Icons'
 import { FileTypeIcon } from '../../FileDisplay'
 import { OPEN_CODE_SEARCH_EVENT } from '../../../hooks/useKeyboard'
@@ -25,6 +25,12 @@ import {
   type SearchResultTreeRow,
 } from './searchResultTree'
 import { useWorkspaceSearch } from './useWorkspaceSearch'
+import {
+  readSearchPanelWorkspaceState,
+  writeSearchPanelWorkspaceState,
+  type SearchPanelWorkspaceState,
+  type SearchResultLayout,
+} from './searchPanelWorkspaceState'
 import './SearchPanel.less'
 
 export interface SearchPanelProps {
@@ -34,14 +40,43 @@ export interface SearchPanelProps {
 
 export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): React.ReactNode {
   const mode = useSearchPanelMode()
-  const [query, setQuery] = useState('')
-  const [caseSensitive, setCaseSensitive] = useState(false)
+  const [workspaceState, setWorkspaceState] = useState<SearchPanelWorkspaceState>(() =>
+    readSearchPanelWorkspaceState(workspaceId),
+  )
   const [refreshTick, setRefreshTick] = useState(0)
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set())
   const [selectedIdx, setSelectedIdx] = useState(0)
 
   const inputRef = useRef<HTMLInputElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const query = workspaceState.queries[mode]
+  const { caseSensitive, resultLayout } = workspaceState
+
+  const updateWorkspaceState = useCallback(
+    (updater: (prev: SearchPanelWorkspaceState) => SearchPanelWorkspaceState): void => {
+      setWorkspaceState(updater)
+    },
+    [],
+  )
+  const setQuery = useCallback(
+    (nextQuery: string): void => {
+      updateWorkspaceState((prev) => ({
+        ...prev,
+        queries: { ...prev.queries, [mode]: nextQuery },
+      }))
+    },
+    [mode, updateWorkspaceState],
+  )
+  const setResultLayout = useCallback(
+    (nextLayout: SearchResultLayout): void => {
+      updateWorkspaceState((prev) => ({ ...prev, resultLayout: nextLayout }))
+    },
+    [updateWorkspaceState],
+  )
+
+  useEffect(() => {
+    writeSearchPanelWorkspaceState(workspaceId, workspaceState)
+  }, [workspaceId, workspaceState])
 
   const search = useWorkspaceSearch({
     workspaceId,
@@ -99,15 +134,19 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
     })
     return index
   }, [fileRows])
-  const selectedFileIndex = Math.min(selectedIdx, Math.max(visibleFileRows.length - 1, 0))
-  const selectedFilePath = visibleFileRows[selectedFileIndex]?.node.path
-
-  const fileVirtualizer = useVirtualizer({
+  const fileTreeVirtualizer = useVirtualizer({
     count: fileRows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 28,
     overscan: 12,
     getItemKey: (i) => fileRows[i]?.key ?? i,
+  })
+  const fileListVirtualizer = useVirtualizer({
+    count: search.fileHits.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 42,
+    overscan: 12,
+    getItemKey: (i) => search.fileHits[i]?.path ?? i,
   })
 
   // ── content 模式：按文件聚合 → 目录树 → 当前可见虚拟行 ───────────────
@@ -139,6 +178,16 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
       return row.key
     },
   })
+  const contentListVirtualizer = useVirtualizer({
+    count: search.contentMatches.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 48,
+    overscan: 12,
+    getItemKey: (i) => {
+      const match = search.contentMatches[i]
+      return match == null ? i : `${match.path}:${match.line}:${match.column}:${i}`
+    },
+  })
 
   const toggleTreeNode = useCallback((kind: 'directory' | 'file', path: string): void => {
     const key = getSearchResultTreeNodeKey(kind, path)
@@ -151,35 +200,58 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
   }, [])
 
   // ── 键盘流（files 模式：↑↓ 选择 / Enter 打开；content：Enter 立即搜） ──
+  const selectableFilePaths = useMemo(
+    () =>
+      resultLayout === 'tree'
+        ? visibleFileRows.map((row) => row.node.path)
+        : search.fileHits.map((hit) => hit.path),
+    [resultLayout, visibleFileRows, search.fileHits],
+  )
+  const selectedFileIndex = Math.min(selectedIdx, Math.max(selectableFilePaths.length - 1, 0))
+  const selectedFilePath = selectableFilePaths[selectedFileIndex]
+
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>): void => {
       if (mode === 'files') {
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
           e.preventDefault()
-          if (visibleFileRows.length === 0) return
+          if (selectableFilePaths.length === 0) return
           setSelectedIdx((prev) => {
-            const current = Math.min(prev, visibleFileRows.length - 1)
+            const current = Math.min(prev, selectableFilePaths.length - 1)
             const next =
               e.key === 'ArrowDown'
-                ? Math.min(current + 1, visibleFileRows.length - 1)
+                ? Math.min(current + 1, selectableFilePaths.length - 1)
                 : Math.max(current - 1, 0)
-            const path = visibleFileRows[next]?.node.path
-            const rowIndex = path == null ? undefined : fileRowIndexByPath.get(path)
-            if (rowIndex != null) fileVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
+            const path = selectableFilePaths[next]
+            if (resultLayout === 'tree') {
+              const rowIndex = path == null ? undefined : fileRowIndexByPath.get(path)
+              if (rowIndex != null) fileTreeVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
+            } else {
+              fileListVirtualizer.scrollToIndex(next, { align: 'auto' })
+            }
             return next
           })
           return
         }
         if (e.key === 'Enter') {
-          const row = visibleFileRows[selectedFileIndex] ?? visibleFileRows[0]
-          if (row != null) {
+          const path = selectableFilePaths[selectedFileIndex] ?? selectableFilePaths[0]
+          if (path != null) {
             e.preventDefault()
-            onOpenFile(row.node.path)
+            onOpenFile(path)
           }
         }
       }
     },
-    [mode, visibleFileRows, selectedFileIndex, fileRowIndexByPath, fileVirtualizer, onOpenFile],
+    [
+      mode,
+      selectableFilePaths,
+      selectedFileIndex,
+      resultLayout,
+      fileRowIndexByPath,
+      fileTreeVirtualizer,
+      fileListVirtualizer,
+      onOpenFile,
+    ],
   )
 
   const trimmed = query.trim()
@@ -228,7 +300,7 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
     }
     // content
     if (trimmed === '') {
-      return <div className="sp-status">跨文件搜索代码内容（⌘⇧F / Ctrl+Shift+F）</div>
+      return <div className="sp-status">跨文件搜索代码内容（代码面板内 ⌘F / Ctrl+F）</div>
     }
     if (search.cancelled) {
       return <div className="sp-status">搜索已取消</div>
@@ -264,6 +336,30 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
             <Icons.RotateCw size={13} />
           </button>
         )}
+        <div className="sp-layout-switch" aria-label="搜索结果布局">
+          <button
+            type="button"
+            className={`sp-layout-btn${resultLayout === 'tree' ? ' active' : ''}`}
+            title="树形显示"
+            aria-label="树形显示"
+            aria-pressed={resultLayout === 'tree'}
+            onClick={() => setResultLayout('tree')}
+          >
+            <Icons.Folder size={12} />
+            <span>树形</span>
+          </button>
+          <button
+            type="button"
+            className={`sp-layout-btn${resultLayout === 'list' ? ' active' : ''}`}
+            title="列表显示"
+            aria-label="列表显示"
+            aria-pressed={resultLayout === 'list'}
+            onClick={() => setResultLayout('list')}
+          >
+            <Icons.ListFilter size={12} />
+            <span>列表</span>
+          </button>
+        </div>
         <button
           type="button"
           className="sp-icon-btn"
@@ -335,7 +431,12 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
               title="区分大小写"
               aria-label="区分大小写"
               aria-pressed={caseSensitive}
-              onClick={() => setCaseSensitive((v) => !v)}
+              onClick={() =>
+                updateWorkspaceState((prev) => ({
+                  ...prev,
+                  caseSensitive: !prev.caseSensitive,
+                }))
+              }
             >
               Aa
             </button>
@@ -350,7 +451,7 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
       <div
         className="sp-results"
         ref={scrollRef}
-        role="tree"
+        role={resultLayout === 'tree' ? 'tree' : 'list'}
         aria-busy={search.loading}
         aria-label={mode === 'files' ? '文件搜索结果' : '代码内容搜索结果'}
       >
@@ -364,27 +465,39 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
                   : '试试更短的名称，或刷新文件索引'
               }
             />
+          ) : resultLayout === 'list' ? (
+            <div
+              className="sp-list"
+              style={{ height: fileListVirtualizer.getTotalSize(), position: 'relative' }}
+            >
+              {fileListVirtualizer.getVirtualItems().map((vItem) => {
+                const hit = search.fileHits[vItem.index]
+                if (hit == null) return null
+                return (
+                  <VirtualRow key={vItem.key} start={vItem.start} size={vItem.size}>
+                    <FlatFileResultRow
+                      hit={hit}
+                      selected={hit.path === selectedFilePath}
+                      onOpen={onOpenFile}
+                      onMouseEnter={(path) => {
+                        const index = search.fileHits.findIndex((item) => item.path === path)
+                        if (index >= 0) setSelectedIdx(index)
+                      }}
+                    />
+                  </VirtualRow>
+                )
+              })}
+            </div>
           ) : (
             <div
               className="sp-list"
-              style={{ height: fileVirtualizer.getTotalSize(), position: 'relative' }}
+              style={{ height: fileTreeVirtualizer.getTotalSize(), position: 'relative' }}
             >
-              {fileVirtualizer.getVirtualItems().map((vItem) => {
+              {fileTreeVirtualizer.getVirtualItems().map((vItem) => {
                 const row = fileRows[vItem.index]
                 if (row == null || row.kind === 'match') return null
                 return (
-                  <div
-                    key={vItem.key}
-                    role="none"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${vItem.start}px)`,
-                      height: `${vItem.size}px`,
-                    }}
-                  >
+                  <VirtualRow key={vItem.key} start={vItem.start} size={vItem.size}>
                     {row.kind === 'directory' ? (
                       <TreeDirectoryRow
                         row={row}
@@ -403,12 +516,12 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
                         }}
                       />
                     )}
-                  </div>
+                  </VirtualRow>
                 )
               })}
             </div>
           )
-        ) : contentRows.length === 0 ? (
+        ) : search.contentMatches.length === 0 ? (
           <SearchEmpty
             title={
               !search.loading && trimmed !== '' && search.error == null && !showMinQueryHint
@@ -421,6 +534,21 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
                 : '输入至少 2 个字符开始代码搜索'
             }
           />
+        ) : resultLayout === 'list' ? (
+          <div
+            className="sp-list"
+            style={{ height: contentListVirtualizer.getTotalSize(), position: 'relative' }}
+          >
+            {contentListVirtualizer.getVirtualItems().map((vItem) => {
+              const match = search.contentMatches[vItem.index]
+              if (match == null) return null
+              return (
+                <VirtualRow key={vItem.key} start={vItem.start} size={vItem.size}>
+                  <FlatMatchResultRow match={match} onOpen={openMatch} />
+                </VirtualRow>
+              )
+            })}
+          </div>
         ) : (
           <div
             className="sp-list"
@@ -430,18 +558,7 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
               const row = contentRows[vItem.index]
               if (row == null) return null
               return (
-                <div
-                  key={vItem.key}
-                  role="none"
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${vItem.start}px)`,
-                    height: `${vItem.size}px`,
-                  }}
-                >
+                <VirtualRow key={vItem.key} start={vItem.start} size={vItem.size}>
                   {row.kind === 'directory' && (
                     <TreeDirectoryRow
                       row={row}
@@ -452,7 +569,7 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
                   )}
                   {row.kind === 'file' && <ContentFileRow row={row} onToggle={toggleTreeNode} />}
                   {row.kind === 'match' && <MatchResultRow row={row} onOpen={openMatch} />}
-                </div>
+                </VirtualRow>
               )
             })}
           </div>
@@ -465,6 +582,101 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
 type DirectoryRow = Extract<SearchResultTreeRow, { kind: 'directory' }>
 type FileRow = Extract<SearchResultTreeRow, { kind: 'file' }>
 type MatchRow = Extract<SearchResultTreeRow, { kind: 'match' }>
+
+function VirtualRow({
+  start,
+  size,
+  children,
+}: {
+  start: number
+  size: number
+  children: React.ReactNode
+}): React.ReactNode {
+  return (
+    <div
+      role="none"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        transform: `translateY(${start}px)`,
+        height: `${size}px`,
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+function splitResultPath(path: string): { name: string; parent: string } {
+  const normalized = path.replace(/\\/g, '/')
+  const separator = normalized.lastIndexOf('/')
+  return separator < 0
+    ? { name: normalized, parent: '' }
+    : { name: normalized.slice(separator + 1), parent: normalized.slice(0, separator) }
+}
+
+function FlatFileResultRow({
+  hit,
+  selected,
+  onOpen,
+  onMouseEnter,
+}: {
+  hit: WorkspaceSearchFileHit
+  selected: boolean
+  onOpen: (path: string) => void
+  onMouseEnter: (path: string) => void
+}): React.ReactNode {
+  const path = splitResultPath(hit.path)
+  return (
+    <button
+      type="button"
+      role="listitem"
+      className={`sp-flat-file-row${selected ? ' selected' : ''}`}
+      title={hit.path}
+      aria-current={selected ? true : undefined}
+      onClick={() => onOpen(hit.path)}
+      onMouseEnter={() => onMouseEnter(hit.path)}
+    >
+      <FileTypeIcon filePath={hit.path} size={14} />
+      <span className="sp-flat-main">
+        <span className="sp-flat-title">{path.name}</span>
+        {path.parent !== '' && <span className="sp-flat-path">{path.parent}</span>}
+      </span>
+    </button>
+  )
+}
+
+function FlatMatchResultRow({
+  match,
+  onOpen,
+}: {
+  match: WorkspaceSearchContentMatch
+  onOpen: (match: WorkspaceSearchContentMatch) => void
+}): React.ReactNode {
+  const path = splitResultPath(match.path)
+  return (
+    <button
+      type="button"
+      role="listitem"
+      className="sp-flat-match-row"
+      title={`${match.path}:${match.line}`}
+      onClick={() => onOpen(match)}
+    >
+      <span className="sp-flat-match-heading">
+        <FileTypeIcon filePath={match.path} size={13} />
+        <span className="sp-flat-title">{path.name}</span>
+        <span className="sp-flat-path">
+          {path.parent !== '' ? `${path.parent} · ` : ''}第 {match.line} 行
+        </span>
+      </span>
+      <span className="sp-flat-match-text">
+        <MatchText match={match} />
+      </span>
+    </button>
+  )
+}
 
 const TREE_INDENT_PX = 14
 const TREE_MAX_VISUAL_DEPTH = 8

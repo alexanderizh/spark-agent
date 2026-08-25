@@ -1,5 +1,5 @@
 /**
- * 文件树顶部工具栏：工作区名 + 新建文件/文件夹 + 搜索切换 + 折叠全部 + 刷新。
+ * 文件树顶部工具栏：工作区名 + 新建文件/文件夹 + 切换搜索面板 + 折叠全部 + 刷新。
  * 纯展示 + 事件转发，不含业务状态。
  */
 
@@ -8,20 +8,19 @@ import { Icons } from '../../../Icons'
 
 export interface FileExplorerToolbarProps {
   workspaceLabel: string
-  searchActive: boolean
   onNewFile: () => void
   onNewDirectory: () => void
-  onToggleSearch: () => void
+  /** 切换到全局搜索面板（文件名 + 内容搜索，替代原树内过滤） */
+  onOpenSearch: () => void
   onCollapseAll: () => void
   onRefresh: () => void
 }
 
 export function FileExplorerToolbar({
   workspaceLabel,
-  searchActive,
   onNewFile,
   onNewDirectory,
-  onToggleSearch,
+  onOpenSearch,
   onCollapseAll,
   onRefresh,
 }: FileExplorerToolbarProps): ReactNode {
@@ -39,9 +38,9 @@ export function FileExplorerToolbar({
       </button>
       <button
         type="button"
-        className={`fe-tool-btn${searchActive ? ' on' : ''}`}
-        title="搜索"
-        onClick={onToggleSearch}
+        className="fe-tool-btn"
+        title="切换到搜索面板（文件名 / 内容搜索）"
+        onClick={onOpenSearch}
       >
         <Icons.Search size={14} />
       </button>

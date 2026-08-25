@@ -7,7 +7,7 @@
  *   - create：在 parentDir 节点行紧接其后插入一行虚拟输入（图标按 file/directory）
  */
 
-import type { ReactNode } from 'react'
+import type { DragEvent, ReactNode } from 'react'
 import { Icons } from '../../../Icons'
 import { FileTreeNode } from './FileTreeNode'
 import { InlineRenameInput } from './InlineRenameInput'
@@ -25,6 +25,14 @@ export interface FileTreeProps {
   onSelect: (path: string) => void
   onConfirmRename: (value: string) => void
   onCancelRename: () => void
+  /** 拖拽源：写自定义 MIME payload（移动 / 拖入会话区共用） */
+  onNodeDragStart: (node: FileExplorerNode, event: DragEvent<HTMLDivElement>) => void
+  /** 拖拽结束（含松手与取消）；清理 dnd 模块的拖拽中源路径 */
+  onNodeDragEnd: () => void
+  /** drop 到目录节点 → 移入该目录 */
+  onDropIntoDir: (dirPath: string, event: DragEvent<HTMLDivElement>) => void
+  /** 拖拽进行中的源节点路径；命中行渲染半透明「拖动中」反馈 */
+  draggingPath: string | null
 }
 
 export function FileTree({
@@ -38,6 +46,10 @@ export function FileTree({
   onSelect,
   onConfirmRename,
   onCancelRename,
+  onNodeDragStart,
+  onNodeDragEnd,
+  onDropIntoDir,
+  draggingPath,
 }: FileTreeProps): ReactNode {
   const createParentDir =
     renameTarget != null && renameTarget.kind !== 'rename' ? renameTarget.parentDir : null
@@ -82,10 +94,19 @@ export function FileTree({
         onSelect={onSelect}
         onConfirmRename={onConfirmRename}
         onCancelRename={onCancelRename}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragEnd={onNodeDragEnd}
+        onDropIntoDir={onDropIntoDir}
+        dragging={path === draggingPath}
       />,
     )
     // 新建行紧接 parentDir 节点之后
-    if (createParentDir != null && createKind != null && path === createParentDir && !createInserted) {
+    if (
+      createParentDir != null &&
+      createKind != null &&
+      path === createParentDir &&
+      !createInserted
+    ) {
       rows.push(
         <CreateRow
           key="__create__"
@@ -113,7 +134,8 @@ export function FileTree({
     )
   }
 
-  return <div className="fe-tree">{rows}</div>
+  // 真实拖拽进行中（dragstart 到 dragend 之间）才挂 is-dragging，用于切换抓手光标
+  return <div className={draggingPath != null ? 'fe-tree is-dragging' : 'fe-tree'}>{rows}</div>
 }
 
 function CreateRow({

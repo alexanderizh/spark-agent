@@ -21,6 +21,8 @@ const DEFAULT_WIDTH = 380
 export type SearchPanelMode = 'files' | 'content'
 
 const MODE_KEY = 'spark-agent:code-search-panel-mode'
+const MODE_SCHEMA_KEY = 'spark-agent:code-search-panel-mode-schema'
+const MODE_SCHEMA_VERSION = 2
 
 /** 拖拽宽度边界（供拖拽条 clamp 使用） */
 export const SEARCH_PANEL_WIDTH_BOUNDS = { min: MIN_WIDTH, max: MAX_WIDTH }
@@ -53,11 +55,18 @@ function readWidth(): number {
 }
 
 function readMode(): SearchPanelMode {
-  if (typeof window === 'undefined') return 'files'
+  if (typeof window === 'undefined') return 'content'
   try {
-    return window.localStorage.getItem(MODE_KEY) === 'content' ? 'content' : 'files'
+    // v1 默认写入 files；升级到 v2 时迁移为新的产品默认「内容搜索」。此后尊重用户选择。
+    const version = Number(window.localStorage.getItem(MODE_SCHEMA_KEY) ?? '0')
+    if (version < MODE_SCHEMA_VERSION) {
+      window.localStorage.setItem(MODE_KEY, 'content')
+      window.localStorage.setItem(MODE_SCHEMA_KEY, String(MODE_SCHEMA_VERSION))
+      return 'content'
+    }
+    return window.localStorage.getItem(MODE_KEY) === 'files' ? 'files' : 'content'
   } catch {
-    return 'files'
+    return 'content'
   }
 }
 
@@ -136,6 +145,7 @@ export function setSearchPanelMode(next: SearchPanelMode): void {
   mode = next
   try {
     window.localStorage.setItem(MODE_KEY, next)
+    window.localStorage.setItem(MODE_SCHEMA_KEY, String(MODE_SCHEMA_VERSION))
   } catch {
     /* localStorage 不可用时仅内存生效 */
   }
@@ -151,7 +161,7 @@ export function useSearchPanelWidth(): number {
 }
 
 export function useSearchPanelMode(): SearchPanelMode {
-  return useSyncExternalStore(subscribe, getSearchPanelMode, () => 'files' as const)
+  return useSyncExternalStore(subscribe, getSearchPanelMode, () => 'content' as const)
 }
 
 export function resetSearchPanelSettingsForTest(): void {

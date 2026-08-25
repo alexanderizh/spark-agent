@@ -31,6 +31,10 @@ export interface CodeViewerEditorProps {
   lineNumber?: number | undefined
   /** 是否显示右侧小地图（minimap），由工具栏开关控制 */
   minimapEnabled: boolean
+  /** 字号（px），由顶部行缩放控件控制 */
+  fontSize: number
+  /** 行高（px），与 fontSize 配对计算 */
+  lineHeight: number
   onContentChange: (value: string) => void
   onSave: () => void
 }
@@ -42,6 +46,8 @@ export function CodeViewerEditor({
   theme,
   lineNumber,
   minimapEnabled,
+  fontSize,
+  lineHeight,
   onContentChange,
   onSave,
 }: CodeViewerEditorProps) {
@@ -117,8 +123,8 @@ export function CodeViewerEditor({
           readOnly,
           contextmenu: false,
           minimap: { enabled: minimapEnabled },
-          fontSize: 13,
-          lineHeight: 20,
+          fontSize,
+          lineHeight,
           lineNumbers: 'on',
           scrollBeyondLastLine: false,
           smoothScrolling: true,

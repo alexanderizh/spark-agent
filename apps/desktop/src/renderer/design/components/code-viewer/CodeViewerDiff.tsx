@@ -20,9 +20,18 @@ export interface CodeViewerDiffProps {
   isBinary?: boolean | undefined
   loading?: boolean | undefined
   error?: string | undefined
+  /** 字号（px），由顶部行缩放控件控制（行高为相对值自动跟随） */
+  fontSize?: number | undefined
 }
 
-export function CodeViewerDiff({ diff, changeType, isBinary, loading, error }: CodeViewerDiffProps) {
+export function CodeViewerDiff({
+  diff,
+  changeType,
+  isBinary,
+  loading,
+  error,
+  fontSize,
+}: CodeViewerDiffProps) {
   const segments = useMemo(() => (diff ? parseGitDiffViewSegments(diff, 4) : []), [diff])
   const [expandedGaps, setExpandedGaps] = useState<Set<number>>(new Set())
 
@@ -74,7 +83,10 @@ export function CodeViewerDiff({ diff, changeType, isBinary, loading, error }: C
   }
 
   return (
-    <div className="code-viewer-diff">
+    <div
+      className="code-viewer-diff"
+      style={fontSize != null ? { fontSize: `${fontSize}px` } : undefined}
+    >
       {segments.map((seg, i) => {
         if (seg.kind === 'gap') {
           const expanded = expandedGaps.has(i)
@@ -114,7 +126,7 @@ function DiffLine({ line }: { line: GitDiffViewLine }) {
       </div>
     )
   }
-  const ln = line.type === 'del' ? line.oldLn ?? '' : line.newLn ?? ''
+  const ln = line.type === 'del' ? (line.oldLn ?? '') : (line.newLn ?? '')
   return (
     <div className={`cvd-line ${line.type}`}>
       <span className="cvd-ln">{ln}</span>

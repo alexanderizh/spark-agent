@@ -15,6 +15,7 @@ import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { WorkspaceGitStatusResponse } from '@spark/protocol'
 import { Icons } from '../../Icons'
+import { OPEN_CODE_SEARCH_EVENT } from '../../hooks/useKeyboard'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import { FileTypeIcon } from '../FileDisplay'
 import { useToast } from '../Toast'
@@ -43,6 +44,16 @@ import {
   useSearchPanelWidth,
 } from './search-panel/searchPanelVisibility'
 import { getMonacoLanguage } from './codeLanguage'
+import { resolveCodeSearchShortcut } from './codeSearchShortcut'
+import {
+  CODE_VIEWER_ZOOM_BOUNDS,
+  diffFontSizeFor,
+  editorFontSizeFor,
+  editorLineHeightFor,
+  resetCodeViewerZoom,
+  stepCodeViewerZoom,
+  useCodeViewerZoom,
+} from './codeViewerZoom'
 import type { OpenCodeFile, CodeViewMode } from './types'
 import './index.less'
 
@@ -121,6 +132,10 @@ export function CodeViewerPanel({
   const { toast } = useToast()
   const [saving, setSaving] = useState(false)
   const [minimapEnabled, setMinimapEnabled] = useState(false)
+  const zoom = useCodeViewerZoom()
+  const editorFontSize = editorFontSizeFor(zoom)
+  const editorLineHeight = editorLineHeightFor(editorFontSize)
+  const diffFontSize = diffFontSizeFor(zoom)
   const resizeStateRef = useRef<{
     startWidth: number
     startX: number
@@ -151,6 +166,21 @@ export function CodeViewerPanel({
       setSaving(false)
     }
   }, [activeAbsPath, saveActive, toast])
+
+  // 代码面板内统一接管搜索快捷键（capture 早于 Monaco / 应用全局处理）：
+  // Cmd/Ctrl+F = 内容搜索，Cmd/Ctrl+P = 文件搜索；三个左侧板块内行为一致。
+  const handleSearchShortcut = useCallback((event: React.KeyboardEvent<HTMLDivElement>): void => {
+    const mode = resolveCodeSearchShortcut(event)
+    if (mode == null) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    openSearchPanel(mode)
+    // 面板首次挂载发生在 store 通知后的 render；下一宏任务再通知 SearchPanel 聚焦/全选。
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_CODE_SEARCH_EVENT, { detail: { mode } }))
+    }, 0)
+  }, [])
 
   // 左侧栏宽度拖拽：按下时记录初始宽度 / x / 目标面板（文件树 / Git / 搜索面板，互斥下同时只有一个在用），
   // move 用 ref 计算（避免闭包 stale）
@@ -202,114 +232,155 @@ export function CodeViewerPanel({
 
   // 统一外壳（empty / 有激活文件 共用）
   const renderLayout = (editorContent: ReactNode): ReactNode => (
-    <div className="code-viewer-panel" data-cv-theme={theme}>
+    <div
+      className="code-viewer-panel"
+      data-cv-theme={theme}
+      onKeyDownCapture={handleSearchShortcut}
+    >
       <div className="cv-filetabs">
-        <button
-          type="button"
-          className={`cv-ftab-toggle${explorerVisible ? ' on' : ''}`}
-          title={explorerVisible ? '隐藏文件树' : '显示文件树'}
-          onClick={() => {
-            if (!explorerVisible) {
-              closeGitPanel()
-              closeSearchPanel()
+        <div className="cv-ftab-switch">
+          <button
+            type="button"
+            className={`cv-ftab-toggle${explorerVisible ? ' on' : ''}`}
+            title={explorerVisible ? '隐藏文件树' : '显示文件树'}
+            onClick={() => {
+              if (!explorerVisible) {
+                closeGitPanel()
+                closeSearchPanel()
+              }
+              onExplorerVisibleChange(!explorerVisible)
+            }}
+            disabled={workspaceId == null}
+          >
+            <Icons.FolderClosed size={14} />
+            <span className="cv-ftab-toggle-text">文件</span>
+          </button>
+          <button
+            type="button"
+            className={`cv-ftab-toggle${gitPanelVisible ? ' on' : ''}`}
+            title={gitPanelVisible ? '隐藏 Git 面板' : '显示 Git 面板（与文件树互斥）'}
+            onClick={() => {
+              // 打开必须同时收起文件树与搜索面板（左侧栏槽位互斥），否则面板被挡住不出现
+              if (gitPanelVisible) toggleGitPanel(false)
+              else {
+                closeSearchPanel()
+                openGitPanel()
+              }
+            }}
+            disabled={workspaceId == null}
+          >
+            <Icons.GitBranch size={14} />
+            <span className="cv-ftab-toggle-text">Git</span>
+          </button>
+          <button
+            type="button"
+            className={`cv-ftab-toggle${searchPanelVisible ? ' on' : ''}`}
+            title={searchPanelVisible ? '隐藏搜索面板' : '搜索文件或代码内容（与文件树互斥）'}
+            onClick={() => {
+              // openSearchPanel 内部会收起文件树与 Git 面板（左侧栏槽位互斥）
+              if (searchPanelVisible) toggleSearchPanel(false)
+              else openSearchPanel()
+            }}
+            disabled={workspaceId == null}
+          >
+            <Icons.Search size={14} />
+            <span className="cv-ftab-toggle-text">搜索</span>
+          </button>
+        </div>
+        <div className="cv-filetabs-scroll">
+          {files.map((f, idx) => {
+            const fDirty = isDirty(f.absPath)
+            const isActive = f.absPath === activeAbsPath
+            // tab 右键菜单：关闭 / 关闭右侧 / 关闭左侧 / 关闭全部 / 关闭已保存
+            const tabMenu = {
+              items: [
+                { key: 'close', label: '关闭', onClick: () => onCloseFiles([f.absPath]) },
+                {
+                  key: 'closeRight',
+                  label: '关闭右侧',
+                  onClick: () => onCloseFiles(files.slice(idx + 1).map((x) => x.absPath)),
+                },
+                {
+                  key: 'closeLeft',
+                  label: '关闭左侧',
+                  onClick: () => onCloseFiles(files.slice(0, idx).map((x) => x.absPath)),
+                },
+                {
+                  key: 'closeAll',
+                  label: '关闭全部',
+                  onClick: () => onCloseFiles(files.map((x) => x.absPath)),
+                },
+                {
+                  key: 'closeSaved',
+                  label: '关闭已保存',
+                  onClick: () =>
+                    onCloseFiles(files.filter((x) => !isDirty(x.absPath)).map((x) => x.absPath)),
+                },
+              ],
             }
-            onExplorerVisibleChange(!explorerVisible)
-          }}
-          disabled={workspaceId == null}
-        >
-          <Icons.FolderClosed size={14} />
-        </button>
-        <button
-          type="button"
-          className={`cv-ftab-toggle${gitPanelVisible ? ' on' : ''}`}
-          title={gitPanelVisible ? '隐藏 Git 面板' : '显示 Git 面板（与文件树互斥）'}
-          onClick={() => {
-            // 打开必须同时收起文件树与搜索面板（左侧栏槽位互斥），否则面板被挡住不出现
-            if (gitPanelVisible) toggleGitPanel(false)
-            else {
-              closeSearchPanel()
-              openGitPanel()
-            }
-          }}
-          disabled={workspaceId == null}
-        >
-          <Icons.GitBranch size={14} />
-        </button>
-        <button
-          type="button"
-          className={`cv-ftab-toggle${searchPanelVisible ? ' on' : ''}`}
-          title={searchPanelVisible ? '隐藏搜索面板' : '搜索文件或代码内容（与文件树互斥）'}
-          onClick={() => {
-            // openSearchPanel 内部会收起文件树与 Git 面板（左侧栏槽位互斥）
-            if (searchPanelVisible) toggleSearchPanel(false)
-            else openSearchPanel()
-          }}
-          disabled={workspaceId == null}
-        >
-          <Icons.Search size={14} />
-        </button>
-        {files.map((f, idx) => {
-          const fDirty = isDirty(f.absPath)
-          const isActive = f.absPath === activeAbsPath
-          // tab 右键菜单：关闭 / 关闭右侧 / 关闭左侧 / 关闭全部 / 关闭已保存
-          const tabMenu = {
-            items: [
-              { key: 'close', label: '关闭', onClick: () => onCloseFiles([f.absPath]) },
-              {
-                key: 'closeRight',
-                label: '关闭右侧',
-                onClick: () => onCloseFiles(files.slice(idx + 1).map((x) => x.absPath)),
-              },
-              {
-                key: 'closeLeft',
-                label: '关闭左侧',
-                onClick: () => onCloseFiles(files.slice(0, idx).map((x) => x.absPath)),
-              },
-              {
-                key: 'closeAll',
-                label: '关闭全部',
-                onClick: () => onCloseFiles(files.map((x) => x.absPath)),
-              },
-              {
-                key: 'closeSaved',
-                label: '关闭已保存',
-                onClick: () =>
-                  onCloseFiles(files.filter((x) => !isDirty(x.absPath)).map((x) => x.absPath)),
-              },
-            ],
-          }
-          return (
-            <Dropdown
-              key={f.absPath}
-              trigger={['contextMenu']}
-              menu={tabMenu}
-              placement="bottomLeft"
-            >
-              <div
-                className={`cv-ftab${isActive ? ' active' : ''}${fDirty ? ' dirty' : ''}`}
-                title={f.absPath}
-                onClick={() => onSelectActive(f.absPath)}
+            return (
+              <Dropdown
+                key={f.absPath}
+                trigger={['contextMenu']}
+                menu={tabMenu}
+                placement="bottomLeft"
               >
-                <span className="cv-ftab-icon">
-                  <FileTypeIcon filePath={f.absPath} size={14} />
-                </span>
-                <span className="cv-ftab-name">{basename(f.displayPath)}</span>
-                <span className="cv-ftab-dot" aria-label="未保存" />
-                <button
-                  type="button"
-                  className="cv-ftab-x"
-                  aria-label="关闭"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onCloseFile(f.absPath)
-                  }}
+                <div
+                  className={`cv-ftab${isActive ? ' active' : ''}${fDirty ? ' dirty' : ''}`}
+                  title={f.absPath}
+                  onClick={() => onSelectActive(f.absPath)}
                 >
-                  ×
-                </button>
-              </div>
-            </Dropdown>
-          )
-        })}
+                  <span className="cv-ftab-icon">
+                    <FileTypeIcon filePath={f.absPath} size={14} />
+                  </span>
+                  <span className="cv-ftab-name">{basename(f.displayPath)}</span>
+                  <span className="cv-ftab-dot" aria-label="未保存" />
+                  <button
+                    type="button"
+                    className="cv-ftab-x"
+                    aria-label="关闭"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onCloseFile(f.absPath)
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              </Dropdown>
+            )
+          })}
+        </div>
+        <div className="cv-zoom">
+          <button
+            type="button"
+            className="cv-zoom-btn"
+            aria-label="缩小"
+            title="缩小（10%）"
+            onClick={() => stepCodeViewerZoom(-10)}
+            disabled={zoom <= CODE_VIEWER_ZOOM_BOUNDS.min}
+          >
+            <Icons.Minus size={13} />
+          </button>
+          <button
+            type="button"
+            className="cv-zoom-value"
+            title="重置缩放"
+            onClick={() => resetCodeViewerZoom()}
+          >
+            {zoom}%
+          </button>
+          <button
+            type="button"
+            className="cv-zoom-btn"
+            aria-label="放大"
+            title="放大（10%）"
+            onClick={() => stepCodeViewerZoom(10)}
+            disabled={zoom >= CODE_VIEWER_ZOOM_BOUNDS.max}
+          >
+            <Icons.Plus size={13} />
+          </button>
+        </div>
       </div>
       <div className="cv-main-row">
         {workspaceId != null && (explorerVisible || gitPanelVisible || searchPanelVisible) ? (
@@ -334,9 +405,14 @@ export function CodeViewerPanel({
                   onPreviewFile={onPreviewFileFromExplorer}
                   onEditFile={onEditFileFromExplorer}
                   onAddToChat={onAddToChatFromExplorer}
+                  onOpenSearch={() => openSearchPanel()}
                 />
               ) : searchPanelVisible ? (
-                <SearchPanel workspaceId={workspaceId} onOpenFile={onOpenFileFromSearch} />
+                <SearchPanel
+                  key={workspaceId}
+                  workspaceId={workspaceId}
+                  onOpenFile={onOpenFileFromSearch}
+                />
               ) : (
                 <GitPanel
                   workspaceId={workspaceId}
@@ -408,7 +484,9 @@ export function CodeViewerPanel({
       )}
 
       <div className="cv-body">
-        {activeRuntime?.state === 'loading' && (
+        {(activeRuntime == null ||
+          activeRuntime.state === 'idle' ||
+          activeRuntime.state === 'loading') && (
           <div className="code-viewer-loading">
             <Icons.Spinner size={18} className="cv-spin" /> 读取文件…
           </div>
@@ -427,6 +505,7 @@ export function CodeViewerPanel({
               loading={diffInfo.loading}
               error={diffInfo.error}
               changeType={active.changeType}
+              fontSize={diffFontSize}
             />
           ) : (
             <CodeViewerEditor
@@ -436,6 +515,8 @@ export function CodeViewerPanel({
               theme={theme}
               lineNumber={active.lineNumber}
               minimapEnabled={minimapEnabled}
+              fontSize={editorFontSize}
+              lineHeight={editorLineHeight}
               onContentChange={editActive}
               onSave={() => void handleSave()}
             />
