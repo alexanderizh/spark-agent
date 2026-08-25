@@ -4,7 +4,6 @@ import {
   createDefaultVideoWorkbenchTrack,
 } from './projectTypes'
 import {
-  isLegacyVideoWorkbenchExportCompatible,
   updateVideoWorkbenchProjectFromLegacy,
   videoWorkbenchProjectToLegacyData,
 } from './projectLegacyAdapter'
@@ -96,19 +95,5 @@ describe('video workbench legacy adapter', () => {
       expect.objectContaining({ timelineStartSec: 0, sourceInSec: 3, sourceOutSec: 5 }),
     )
     expect(next.tracks[1]).toBe(project.tracks[1])
-  })
-
-  it('allows legacy concat only for contiguous, unmodified video-only projects', () => {
-    const project = createProject()
-    project.tracks = [project.tracks[0]!]
-    project.tracks[0]!.clips[0]!.timelineStartSec = 0
-    expect(isLegacyVideoWorkbenchExportCompatible(project)).toBe(true)
-
-    project.tracks[0]!.clips[0]!.timelineStartSec = 2
-    expect(isLegacyVideoWorkbenchExportCompatible(project)).toBe(false)
-
-    project.tracks[0]!.clips[0]!.timelineStartSec = 0
-    project.tracks[0]!.clips[0]!.speed = 2
-    expect(isLegacyVideoWorkbenchExportCompatible(project)).toBe(false)
   })
 })

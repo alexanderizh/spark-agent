@@ -20,7 +20,6 @@ import {
   resolveClipAtGlobalTime,
   shouldSeedSourceTrack,
   splitTrackClip,
-  trackNeedsMaterialization,
   upstreamNodeToResource,
   type UpstreamNodeRef,
 } from './resourcePanelUtils'
@@ -494,50 +493,6 @@ describe('resourcePanelUtils', () => {
     it('clamps negative offsets to 0', () => {
       const clip = makeClip({ id: 'c1', resourceId: 'r1' })
       expect(clipSeekTimeSec(clip, -2)).toBe(0)
-    })
-  })
-
-  describe('trackNeedsMaterialization', () => {
-    const source = makeResource({
-      id: 'source:node-1',
-      source: 'canvas',
-      durationSec: 12,
-    })
-
-    it('materializes an untouched source clip when saving and closing', () => {
-      expect(trackNeedsMaterialization([makeClip({ id: 'clip-1', resourceId: source.id })])).toBe(
-        true,
-      )
-    })
-
-    it('does not materialize an empty track', () => {
-      expect(trackNeedsMaterialization([])).toBe(false)
-    })
-
-    it('materializes a split range after one segment is removed', () => {
-      expect(
-        trackNeedsMaterialization([
-          makeClip({
-            id: 'clip-1',
-            resourceId: source.id,
-            range: { startSec: 0, endSec: 5 },
-          }),
-        ]),
-      ).toBe(true)
-    })
-
-    it('materializes a track containing multiple clips', () => {
-      expect(
-        trackNeedsMaterialization([
-          makeClip({ id: 'clip-1', resourceId: source.id }),
-          makeClip({
-            id: 'clip-2',
-            resourceId: source.id,
-            order: 1,
-            range: { startSec: 6, endSec: 12 },
-          }),
-        ]),
-      ).toBe(true)
     })
   })
 

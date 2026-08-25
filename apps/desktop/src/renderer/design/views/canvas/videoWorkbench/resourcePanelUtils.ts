@@ -370,15 +370,6 @@ export function calculateTrackDuration(
   return total
 }
 
-/**
- * 判断保存并关闭工作台时是否需要把轨道物化为独立视频节点。
- * 保存操作始终保留原工作台节点及其源资源；只要轨道有内容，就生成一个新节点。
- * 空轨道没有可物化的视频结果，因此仍只允许保存工作台草稿。
- */
-export function trackNeedsMaterialization(track: TrackClip[]): boolean {
-  return track.length > 0
-}
-
 /** 合并去重：把新资源合入已有资源面板，按 id 去重，新条目覆盖旧条目。 */
 export function mergeResources(
   existing: WorkbenchResource[],

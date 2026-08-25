@@ -42,12 +42,7 @@ import {
   videoCropRectToPixels,
   type VideoCropRect,
 } from './videoCropModel'
-import {
-  backfillResourceMetadata,
-  indexResourcesById,
-  mergeResources,
-  trackNeedsMaterialization,
-} from './resourcePanelUtils'
+import { backfillResourceMetadata, indexResourcesById, mergeResources } from './resourcePanelUtils'
 import type { TrackClip, WorkbenchResource } from './videoWorkbench.types'
 import {
   createDefaultVideoWorkbenchProject,
@@ -55,10 +50,7 @@ import {
   type VideoWorkbenchResourceV2,
 } from './model/projectTypes'
 import { useVideoWorkbenchProjectSession } from './model/useVideoWorkbenchProjectSession'
-import {
-  isLegacyVideoWorkbenchExportCompatible,
-  videoWorkbenchClipToLegacyTrackClip,
-} from './model/projectLegacyAdapter'
+import { videoWorkbenchClipToLegacyTrackClip } from './model/projectLegacyAdapter'
 import {
   createVideoWorkbenchClipForResource,
   createVideoWorkbenchEntityId,
@@ -1490,52 +1482,17 @@ export function CanvasVideoWorkbenchModal({
     }
     setSavingDraft(true)
     try {
-      let nextProject = project
-      if (
-        onMaterializeOutput &&
-        isLegacyVideoWorkbenchExportCompatible(project) &&
-        trackNeedsMaterialization(draft.track)
-      ) {
-        setBusy(true)
-        try {
-          const output = await exportTrackOutput(draft.track)
-          if (!output) throw new Error('当前轨道没有可保存的视频')
-          const materialized = await onMaterializeOutput(output, 'add')
-          const nextOutput = materialized
-            ? {
-                ...output,
-                canvasNodeId: materialized.nodeId,
-                outputPath: materialized.outputPath,
-                outputUrl: materialized.outputUrl,
-              }
-            : output
-          nextProject = {
-            ...project,
-            outputs: [nextOutput, ...project.outputs].slice(0, 20),
-            ui: { ...project.ui, activeTab: 'output' },
-          }
-          updateProject(() => nextProject)
-        } finally {
-          setBusy(false)
-        }
-      }
-      await saveProjectNow(nextProject)
+      // 保存只持久化工作台工程数据（轨道/关键帧/资源/产物记录），随 onSave 写回当前画布节点；
+      // 不再自动导出轨道、不再新建视频节点。轨道成果落画布属于显式操作：
+      // 「导出当前轨道」后由产物面板的「添加到画布 / 替换当前节点」决定去向。
+      await saveProjectNow(project)
       onClose()
     } catch (error) {
       message.error(error instanceof Error ? error.message : '保存视频工作台失败')
     } finally {
       setSavingDraft(false)
     }
-  }, [
-    draft.track,
-    exportTrackOutput,
-    onClose,
-    onMaterializeOutput,
-    project,
-    projectReadOnly,
-    saveProjectNow,
-    updateProject,
-  ])
+  }, [onClose, project, projectReadOnly, saveProjectNow])
 
   if (!open) return null
 

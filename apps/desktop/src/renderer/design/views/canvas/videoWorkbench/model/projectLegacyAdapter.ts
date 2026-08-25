@@ -5,7 +5,6 @@ import type {
   VideoWorkbenchResourceV2,
   VideoWorkbenchTrack,
 } from './projectTypes'
-import { resolveVideoWorkbenchClipTiming } from './timelineMath'
 
 /**
  * Phase 1 keeps the existing preview/keyframe/process panels alive while V2 becomes the only
@@ -105,35 +104,6 @@ export function videoWorkbenchClipToLegacyTrackClip(
   return resource?.kind === 'image'
     ? { ...base, staticDuration: clip.durationSec }
     : { ...base, range: { startSec: clip.sourceInSec, endSec: clip.sourceOutSec } }
-}
-
-export function isLegacyVideoWorkbenchExportCompatible(project: VideoWorkbenchProjectV2): boolean {
-  const populatedTracks = project.tracks.filter((track) => track.clips.length > 0)
-  if (!populatedTracks.every((track) => track.kind === 'video') || populatedTracks.length > 1) {
-    return false
-  }
-  const track = populatedTracks[0]
-  if (!track) return true
-  const resourcesById = new Map(project.resources.map((resource) => [resource.id, resource]))
-  let cursorSec = 0
-  for (const clip of [...track.clips].sort(
-    (left, right) => left.timelineStartSec - right.timelineStartSec,
-  )) {
-    const timing = resolveVideoWorkbenchClipTiming(clip)
-    const resource = clip.resourceId ? resourcesById.get(clip.resourceId) : undefined
-    const hasUnsupportedEdit =
-      resource?.kind !== 'video' ||
-      clip.speed !== 1 ||
-      clip.transform != null ||
-      clip.audio != null ||
-      clip.fadeInSec != null ||
-      clip.fadeOutSec != null ||
-      clip.text != null ||
-      Math.abs(timing.timelineStartSec - cursorSec) > 0.000_001
-    if (hasUnsupportedEdit) return false
-    cursorSec = timing.timelineEndSec
-  }
-  return true
 }
 
 function mergeLegacyResources(
