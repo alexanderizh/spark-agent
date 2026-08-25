@@ -4,7 +4,8 @@
  * 包含：
  *   - 提取策略选择（场景突变 / I帧 / 均匀采样）+ 参数调节
  *   - 「提取关键帧」按钮 + 进度条
- *   - 关键帧缩略图墙（时间戳 + 点击跳转 + 删除 + 批量导出画布）
+ *   - 关键帧缩略图墙：默认浏览态（点击跳转），「多选」进入批量态
+ *     （勾选 / 全选 / 删除选中 / 导入画布），可退出回到浏览态
  */
 import { useMemo, useState, type ReactElement } from 'react'
 import { Button, Checkbox, Segmented, Slider, Tooltip } from 'antd'
@@ -53,43 +54,46 @@ export function VideoWorkbenchFramePanel({
   const cfg = draft.extractConfig
   const isScene = cfg.strategy === 'scene'
   const isUniform = cfg.strategy === 'uniform'
-  const [selectionState, setSelectionState] = useState<{
-    source: WorkbenchKeyframe[]
-    indexes: ReadonlySet<number>
-  }>(() => ({
-    source: draft.keyframes,
-    indexes: new Set(draft.keyframes.map((kf) => kf.index)),
-  }))
-  const selectedIndexes = useMemo(
-    () =>
-      selectionState.source === draft.keyframes
-        ? selectionState.indexes
-        : new Set(draft.keyframes.map((kf) => kf.index)),
-    [draft.keyframes, selectionState],
-  )
+  /** 多选模式：默认关闭。关闭时缩略图点击仅跳转，不显示勾选框。 */
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIndexes, setSelectedIndexes] = useState<ReadonlySet<number>>(new Set())
+  /** keyframes 变化（重新提取 / 删除）后，只保留仍存在的选中项，不再回退为全选。 */
+  const liveSelectedIndexes = useMemo(() => {
+    const live = new Set(draft.keyframes.map((kf) => kf.index))
+    const next = new Set<number>()
+    selectedIndexes.forEach((index) => {
+      if (live.has(index)) next.add(index)
+    })
+    return next
+  }, [draft.keyframes, selectedIndexes])
   const selectedKeyframes = useMemo(
-    () => selectKeyframesForRemoval(draft.keyframes, selectedIndexes),
-    [draft.keyframes, selectedIndexes],
+    () => selectKeyframesForRemoval(draft.keyframes, liveSelectedIndexes),
+    [draft.keyframes, liveSelectedIndexes],
   )
   const selectedKeyframesForImport = useMemo(
-    () => selectKeyframesForImport(draft.keyframes, selectedIndexes),
-    [draft.keyframes, selectedIndexes],
+    () => selectKeyframesForImport(draft.keyframes, liveSelectedIndexes),
+    [draft.keyframes, liveSelectedIndexes],
   )
   const allKeyframesSelected =
     draft.keyframes.length > 0 && selectedKeyframes.length === draft.keyframes.length
 
   const toggleKeyframeSelection = (index: number) => {
-    const next = new Set(selectedIndexes)
+    const next = new Set(liveSelectedIndexes)
     if (next.has(index)) next.delete(index)
     else next.add(index)
-    setSelectionState({ source: draft.keyframes, indexes: next })
+    setSelectedIndexes(next)
   }
 
   const toggleAllKeyframes = () => {
-    setSelectionState({
-      source: draft.keyframes,
-      indexes: allKeyframesSelected ? new Set() : new Set(draft.keyframes.map((kf) => kf.index)),
-    })
+    setSelectedIndexes(
+      allKeyframesSelected ? new Set() : new Set(draft.keyframes.map((kf) => kf.index)),
+    )
+  }
+
+  /** 进入多选：默认全不选；退出多选：清空选择回到默认浏览态。 */
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIndexes(new Set())
   }
 
   return (
@@ -174,7 +178,24 @@ export function VideoWorkbenchFramePanel({
           <span className="vwb-section-title">
             关键帧 <em>{draft.keyframes.length}</em>
           </span>
-          {draft.keyframes.length > 0 && (
+          {draft.keyframes.length > 0 && !selectMode && (
+            <div className="vwb-frame-selection-controls">
+              <Tooltip title="勾选关键帧进行批量删除 / 导入画布">
+                <Button
+                  size="small"
+                  type="text"
+                  onClick={() => {
+                    setSelectMode(true)
+                    setSelectedIndexes(new Set())
+                  }}
+                  icon={<Icons.CheckSquare size={14} />}
+                >
+                  多选
+                </Button>
+              </Tooltip>
+            </div>
+          )}
+          {draft.keyframes.length > 0 && selectMode && (
             <div className="vwb-frame-selection-controls">
               <span className="vwb-frame-selection-count">已选 {selectedKeyframes.length}</span>
               <Button size="small" type="text" onClick={toggleAllKeyframes}>
@@ -192,20 +213,21 @@ export function VideoWorkbenchFramePanel({
                   删除选中
                 </Button>
               </Tooltip>
-            </div>
-          )}
-          {draft.keyframes.length > 0 && (
-            <Tooltip title="把关键帧导出为画布图片节点">
-              <Button
-                size="small"
-                type="text"
-                disabled={selectedKeyframesForImport.length === 0}
-                onClick={() => void onExport(selectedKeyframesForImport)}
-                icon={<Icons.Image size={14} />}
-              >
-                导入画布
+              <Tooltip title="把关键帧导出为画布图片节点">
+                <Button
+                  size="small"
+                  type="text"
+                  disabled={selectedKeyframesForImport.length === 0}
+                  onClick={() => void onExport(selectedKeyframesForImport)}
+                  icon={<Icons.Image size={14} />}
+                >
+                  导入画布
+                </Button>
+              </Tooltip>
+              <Button size="small" type="text" onClick={exitSelectMode}>
+                退出多选
               </Button>
-            </Tooltip>
+            </div>
           )}
         </div>
 
@@ -221,9 +243,15 @@ export function VideoWorkbenchFramePanel({
               <div
                 key={kf.index}
                 className="vwb-frame-card"
-                data-selected={selectedIndexes.has(kf.index)}
+                data-selected={selectMode && liveSelectedIndexes.has(kf.index)}
               >
-                <div className="vwb-frame-thumb" onClick={() => onSeek(kf.timestampSec)}>
+                <div
+                  className="vwb-frame-thumb"
+                  title={selectMode ? '点击勾选该关键帧' : '点击跳转到该时间点'}
+                  onClick={() =>
+                    selectMode ? toggleKeyframeSelection(kf.index) : onSeek(kf.timestampSec)
+                  }
+                >
                   <img src={kf.previewUrl} alt={`帧 ${kf.index}`} loading="lazy" />
                   <span className="vwb-frame-time">{formatTimestamp(kf.timestampSec)}</span>
                   {kf.canvasNodeId && (
@@ -234,16 +262,18 @@ export function VideoWorkbenchFramePanel({
                     </Tooltip>
                   )}
                 </div>
-                <Checkbox
-                  className="vwb-frame-select"
-                  checked={selectedIndexes.has(kf.index)}
-                  aria-label={`选择关键帧 ${kf.index + 1}`}
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={(event) => {
-                    event.stopPropagation()
-                    toggleKeyframeSelection(kf.index)
-                  }}
-                />
+                {selectMode && (
+                  <Checkbox
+                    className="vwb-frame-select"
+                    checked={liveSelectedIndexes.has(kf.index)}
+                    aria-label={`选择关键帧 ${kf.index + 1}`}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => {
+                      event.stopPropagation()
+                      toggleKeyframeSelection(kf.index)
+                    }}
+                  />
+                )}
                 <button
                   className="vwb-frame-remove"
                   onClick={() => onRemoveKeyframes([kf.index])}

@@ -373,6 +373,14 @@
   }
 }
 
+/* 播放速率文本按钮（0.25x / 0.5x …）：固定最小宽避免档位切换时跳动 */
+.vwb-player-rate {
+  padding: 0 7px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .vwb-player-play {
   min-width: 36px;
   height: 36px;
@@ -1025,6 +1033,9 @@
   align-items: center;
   gap: 2px;
   margin-left: auto;
+  /* 多选态操作项多，窄面板放不下时换行收口到右侧 */
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .vwb-frame-selection-count {
@@ -1136,8 +1147,13 @@
   background: #0f0f12;
   transition: transform 0.12s;
 
+  /* 多选态选中：2px 实色边框 + 缩略图压暗，扁平不发光 */
   &[data-selected='true'] {
-    box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.9);
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 1);
+
+    .vwb-frame-thumb img {
+      filter: brightness(0.72);
+    }
   }
 
   &:hover {
@@ -1195,11 +1211,12 @@
   padding: 2px;
 }
 
+/* 删除按钮：右上角，hover 显示；z-index 高于「已导入」标记避免视觉打架 */
 .vwb-frame-remove {
   position: absolute;
-  z-index: 2;
-  top: 30px;
-  left: 6px;
+  z-index: 3;
+  top: 5px;
+  right: 6px;
   width: 18px;
   height: 18px;
   border-radius: 50%;

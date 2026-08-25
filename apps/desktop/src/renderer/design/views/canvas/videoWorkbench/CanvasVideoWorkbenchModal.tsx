@@ -81,6 +81,13 @@ function shortId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
+/** 播放速率档位（含慢放 0.25x / 0.5x），显示为 "0.25x" 样式 */
+const PLAYBACK_RATES = [0.25, 0.5, 1, 2] as const
+
+function formatPlaybackRate(rate: number): string {
+  return `${rate}x`
+}
+
 function prependWorkbenchOutput(
   draft: VideoWorkbenchData,
   output: WorkbenchOutput,
@@ -285,6 +292,8 @@ export function CanvasVideoWorkbenchModal({
   const [videoMetaSize, setVideoMetaSize] = useState<{ width: number; height: number } | null>(null)
   /** 当前播放位置（秒），用于手动标记 */
   const [currentTime, setCurrentTime] = useState(0)
+  /** 播放速率（含慢放 0.25x/0.5x），作用于主预览 video 元素 */
+  const [playbackRate, setPlaybackRate] = useState(1)
   /** 资源面板当前选中的资源 id（用于在主预览区单独预览） */
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
   /** 轨道中当前选中的分段；末项是属性与播放控制栏使用的主选分段。 */
@@ -579,6 +588,82 @@ export function CanvasVideoWorkbenchModal({
     },
     [node, probe, extractConfig, updateDraft],
   )
+
+  /**
+   * 手动截取当前帧：把主预览区正在显示的这一帧提取为图片并插入关键帧列表。
+   * 输入源跟随当前预览：单独预览资源 > 连播当前片段资源 > 源视频；
+   * video.currentTime 即该资源本地时间，与提取输入一一对应。
+   */
+  const handleCaptureCurrentFrame = useCallback(async () => {
+    const v = videoRef.current
+    if (!v || previewKind !== 'video') return
+    const previewResourceUrl = selectedResource
+      ? selectedResource.url
+      : isPlayback && playback.currentResource
+        ? playback.currentResource.url
+        : ((node?.data as { url?: string } | undefined)?.url ?? '')
+    const inputPath = previewResourceUrl ? resolveDiskPath(previewResourceUrl) : ''
+    if (!inputPath) {
+      message.error('无法解析当前预览源路径')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await window.spark.invoke('video:process', {
+        operation: 'extractFramesAtTimes',
+        input: inputPath,
+        params: { timesSec: [v.currentTime] },
+        requestId: shortId(),
+      })
+      if (res.success && res.result) {
+        const frames = res.result as Array<{
+          path: string
+          timestampSec: number
+          index: number
+        }>
+        const frame = frames[0]
+        if (!frame) {
+          message.warning('未能提取当前帧，可稍偏移播放头后重试')
+          return
+        }
+        updateDraft((d) => {
+          const nextIndex = d.keyframes.reduce((max, kf) => Math.max(max, kf.index), -1) + 1
+          const keyframe: WorkbenchKeyframe = {
+            path: frame.path,
+            previewUrl: encodeToSafeFileUrl(frame.path),
+            timestampSec: frame.timestampSec,
+            index: nextIndex,
+          }
+          return {
+            ...d,
+            keyframes: [...d.keyframes, keyframe].sort((a, b) => a.timestampSec - b.timestampSec),
+          }
+        })
+        message.success('已截取当前帧到关键帧列表')
+      } else {
+        console.error('[video-workbench] captureFrame failed:', res.error)
+        message.error(res.error ?? '截取当前帧失败')
+      }
+    } catch (err) {
+      message.error(`截取当前帧失败: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [isPlayback, node, playback.currentResource, previewKind, selectedResource, updateDraft])
+
+  // 播放速率：换 src / 连播切 clip 后 video 元素会重置为 1x，需重新应用；
+  // readyState < 1（未加载元数据）时部分实现设置不生效，等 loadedmetadata 后再补一次。
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    v.playbackRate = playbackRate
+    if (v.readyState >= 1) return
+    const apply = () => {
+      v.playbackRate = playbackRate
+    }
+    v.addEventListener('loadedmetadata', apply, { once: true })
+    return () => v.removeEventListener('loadedmetadata', apply)
+  }, [playbackRate, previewUrl])
 
   // 跳转到指定时间点
   const seekTo = useCallback((sec: number) => {
@@ -1654,6 +1739,15 @@ export function CanvasVideoWorkbenchModal({
                 >
                   <Icons.ChevronRight size={16} />
                 </button>
+                <button
+                  className="vwb-player-btn"
+                  onClick={() => void handleCaptureCurrentFrame()}
+                  disabled={previewKind !== 'video' || busy || ffmpegReady !== true}
+                  aria-label="截取当前帧"
+                  title="截取当前帧到关键帧列表"
+                >
+                  <Icons.Camera size={15} />
+                </button>
                 <span className="vwb-player-time">
                   {formatTimestamp(isPlayback ? playbackGlobalTime : currentTime)}
                 </span>
@@ -1661,6 +1755,25 @@ export function CanvasVideoWorkbenchModal({
                 <span className="vwb-player-duration">
                   {formatTimestamp(isPlayback ? playbackTotal : duration)}
                 </span>
+                <Dropdown
+                  menu={{
+                    items: PLAYBACK_RATES.map((rate) => ({
+                      key: String(rate),
+                      label: formatPlaybackRate(rate),
+                    })),
+                    selectedKeys: [String(playbackRate)],
+                    onClick: ({ key }) => setPlaybackRate(Number(key)),
+                  }}
+                  trigger={['click']}
+                >
+                  <button
+                    className="vwb-player-btn vwb-player-rate"
+                    aria-label="播放速率"
+                    title="播放速率（含慢放）"
+                  >
+                    {formatPlaybackRate(playbackRate)}
+                  </button>
+                </Dropdown>
                 {selectedClip ? (
                   <div className="vwb-player-clip-actions" aria-label="分段操作">
                     <span className="vwb-player-clip-label">

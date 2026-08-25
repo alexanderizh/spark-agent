@@ -313,6 +313,13 @@ export const Icons = {
       <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
     </IconBase>
   ),
+  /** 相机 — 手动截取当前帧 */
+  Camera: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+      <circle cx="12" cy="13" r="3" />
+    </IconBase>
+  ),
   Brush: (p: IconProps) => (
     <IconBase {...p}>
       <path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08" />
