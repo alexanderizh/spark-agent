@@ -12,7 +12,6 @@ import type {
   SteerCapableExecutor,
 } from '../engine-executor.js'
 import {
-  CodexRuntimeNotInstalledError,
   CodexSdkExecutor,
   buildCodexGoalPrompt,
   buildCodexMcpConfig,
@@ -232,8 +231,9 @@ export class CodexAppServerExecutor
     } | null = null
     try {
       prepared = await this.prepareSession(sessionId, config)
-    } catch (err) {
-      if (err instanceof CodexRuntimeNotInstalledError) throw err
+    } catch {
+      // turn/start 前的准备错误统一交给 Sdk fallback；fallback 自己负责生成
+      // 可操作的 agent_error（包括 CODEX_RUNTIME_NOT_INSTALLED）。
     }
     if (prepared == null) {
       await this.runViaFallback(sessionId, turnId, userMessage, config)
@@ -506,10 +506,8 @@ export class CodexAppServerExecutor
     if (executablePath == null) {
       const bundled = resolveBundledCodexCli()
       if (bundled == null) {
-        // 无受管运行时且未强制要求：回退 Sdk 载具（其内部再尝试 PATH 解析）。
-        if (process.env.SPARK_CODEX_REQUIRE_RUNTIME === '1') {
-          throw new CodexRuntimeNotInstalledError()
-        }
+        // 始终回退 Sdk 载具：生产态由 SPARK_CODEX_REQUIRE_RUNTIME 让 fallback
+        // 生成 CODEX_RUNTIME_NOT_INSTALLED；开发态仍可继续尝试 PATH/bundled CLI。
         publishLifecycleMetrics({ appServerFallback: true })
         return null
       }
@@ -658,10 +656,9 @@ export class CodexAppServerExecutor
       }
       publishLifecycleMetrics()
       return { client, router, lease, threadId, resumedThread: false }
-    } catch (err) {
+    } catch {
       publishLifecycleMetrics({ appServerFallback: true })
       await lease?.release({ invalidate: true }).catch(() => undefined)
-      if (err instanceof CodexRuntimeNotInstalledError) throw err
       return null
     }
   }

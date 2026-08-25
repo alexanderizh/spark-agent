@@ -139,12 +139,13 @@ function clampPanelWidth(value: number, min: number, max: number): number {
 
 // 统一侧边面板宽度边界
 const MIN_SIDE_CHAT_WIDTH = 360
-const MAX_SIDE_CHAT_WIDTH = 1200
+// 非浏览器环境兜底（SSR / 测试）
+const FALLBACK_MAX_SIDE_CHAT_WIDTH = 1200
 
-// 视口保护：面板最宽不超过 72vw，避免挤占主聊天区
+// 视口上限：面板最宽可拖到全窗口 85vw，避免完全挤占主聊天区
 export function maxSideChatWidthForViewport(): number {
-  if (typeof window === 'undefined') return MAX_SIDE_CHAT_WIDTH
-  return Math.min(MAX_SIDE_CHAT_WIDTH, Math.floor(window.innerWidth * 0.72))
+  if (typeof window === 'undefined') return FALLBACK_MAX_SIDE_CHAT_WIDTH
+  return Math.floor(window.innerWidth * 0.85)
 }
 
 // 默认宽度按窗口宽度分档：大屏更宽，小屏保底 500。

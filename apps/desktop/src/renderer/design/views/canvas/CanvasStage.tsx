@@ -76,7 +76,7 @@ import {
 import { getOperationVisual } from './canvasOperationIcons'
 import { readCharacterSubviews } from './canvasCharacterLibrary'
 import { readAssetKind } from './canvasFilmAssets'
-import { dispatchCanvasStageDrop } from './canvasWorkflowDrag'
+import { dispatchCanvasStageDrop, hasCanvasStageDroppableDrag } from './canvasWorkflowDrag'
 import { resolveCanvasZoomLod } from './canvasZoomLod'
 import type { CanvasPipelineAssetKind } from './canvasPipelineOps'
 import {
@@ -2473,9 +2473,12 @@ function CanvasStageInner({
   // 画布是一个 HTML5 drop 目标：dragover 必须 preventDefault 才能触发 drop；
   // enter/leave 用计数器处理嵌套子元素，避免抖动。坐标沿用右键菜单的
   // screenToFlowPosition，保证落点与视觉一致。
+  // 只有外部文件 / 工作流两类拖拽可以放置；产物等其他拖拽经过画布时
+  // 不 preventDefault（浏览器显示禁止放置），也不点亮高亮。
   const handleStageDragOver = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
       if (!onDropFiles && !onDropWorkflow) return
+      if (!hasCanvasStageDroppableDrag(event.dataTransfer)) return
       event.preventDefault()
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
     },
@@ -2485,6 +2488,7 @@ function CanvasStageInner({
   const handleStageDragEnter = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
       if (!onDropFiles && !onDropWorkflow) return
+      if (!hasCanvasStageDroppableDrag(event.dataTransfer)) return
       event.preventDefault()
       dragDepthRef.current += 1
       if (dragDepthRef.current === 1) setDropActive(true)
@@ -2495,6 +2499,7 @@ function CanvasStageInner({
   const handleStageDragLeave = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
       if (!onDropFiles && !onDropWorkflow) return
+      if (!hasCanvasStageDroppableDrag(event.dataTransfer)) return
       event.preventDefault()
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
       if (dragDepthRef.current === 0) setDropActive(false)
@@ -2505,6 +2510,7 @@ function CanvasStageInner({
   const handleStageDrop = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
       if (!onDropFiles && !onDropWorkflow) return
+      if (!hasCanvasStageDroppableDrag(event.dataTransfer)) return
       event.preventDefault()
       dragDepthRef.current = 0
       setDropActive(false)

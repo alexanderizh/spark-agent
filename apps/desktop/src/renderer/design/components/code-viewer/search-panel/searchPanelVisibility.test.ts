@@ -28,6 +28,10 @@ describe('searchPanelVisibility', () => {
     resetSearchPanelSettingsForTest()
   })
 
+  it('defaults existing users to content search after the mode schema upgrade', () => {
+    expect(getSearchPanelMode()).toBe('content')
+  })
+
   it('opens search in the requested mode and closes the other sidebar panels', () => {
     setCodeExplorerVisible(true)
     toggleGitPanel(true)

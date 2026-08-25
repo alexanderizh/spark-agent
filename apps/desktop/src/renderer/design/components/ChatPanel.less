@@ -1389,12 +1389,8 @@ textarea.chat-panel-question-answer {
   align-items: center;
   gap: 2px;
   flex-wrap: nowrap;
-  overflow-x: auto;
+  min-width: 0;
   padding: 0 1px;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
 
   // 把全局 composer-select 压缩为紧凑胶囊
   .composer-select {
@@ -1423,32 +1419,30 @@ textarea.chat-panel-question-answer {
   }
 }
 
-// 参数行内的附件图标按钮（扁平化）
-.chat-panel-attach-icon {
-  display: inline-flex;
+// 仅参数项横向滚动；左侧「+」按钮留在非裁剪层，保证向上展开的弹窗可见。
+.chat-panel-composer-below-scroll {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  gap: inherit;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+// 参数行复用工作台「+」弹窗，触发器保持与紧凑参数胶囊等高。
+.chat-panel-composer-below .composer-actions-trigger {
   width: 24px;
   height: 24px;
-  border: none;
   border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
+}
 
-  &:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--text) 6%, transparent);
-    color: var(--text);
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
+.chat-panel-composer-below .composer-actions-popup {
+  left: -4px;
 }
 
 .chat-panel-composer-bar {

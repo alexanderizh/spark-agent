@@ -1,24 +1,22 @@
 /**
  * 文件树资源管理器容器。
  *
- * 组合 Toolbar + SearchBox + Tree/SearchResults + 删除确认框；
+ * 组合 Toolbar + Tree + 删除确认框；
  * 实现全部 FileMenuActions（打开/复制路径/复制/剪切/粘贴/新建/重命名/删除/刷新）。
  *
  * 受控状态（expandedDirs）由外部持有以便 per-session 快照；
- * 内部状态：搜索开关/关键词、选中项、内联重命名目标、待确认删除项。
+ * 内部状态：选中项、内联重命名目标、待确认删除项。
  * 文件操作 IPC 成功后由 watch 自动 reload 受影响目录，无需手动刷新。
  */
 
-import { useState } from 'react'
+import { useState, type DragEvent } from 'react'
 import type { ReactNode } from 'react'
 import { Dropdown } from '@lobehub/ui'
 import { Icons } from '../../../Icons'
-import { FileTypeIcon } from '../../FileDisplay'
 import { ConfirmDialog } from '../../ConfirmDialog'
 import { useToast } from '../../Toast'
 import { FileTree } from './FileTree'
 import { FileExplorerToolbar } from './FileExplorerToolbar'
-import { FileSearchBox } from './FileSearchBox'
 import { buildEmptyMenuItems, type FileMenuActions } from './FileNodeMenu'
 import { useFileClipboard, setFileClipboard } from './useFileClipboard'
 import { useFileExplorerTree } from './useFileExplorerTree'
@@ -30,7 +28,20 @@ import {
   trashPath,
   writeClipboardText,
 } from './fileExplorerActions'
-import { baseName, parentPath, type FileExplorerNode, type RenameTarget } from './fileExplorerTypes'
+import {
+  hasFileExplorerNodeDrag,
+  readFileExplorerNodeDragPayload,
+  setActiveDragRelPath,
+  writeFileExplorerNodeDragPayload,
+  type FileExplorerNodeDragPayload,
+} from './fileExplorerDnd'
+import {
+  baseName,
+  parentPath,
+  ROOT_PATH,
+  type FileExplorerNode,
+  type RenameTarget,
+} from './fileExplorerTypes'
 
 export interface FileExplorerPanelProps {
   workspaceId: string | null
@@ -43,6 +54,8 @@ export interface FileExplorerPanelProps {
   onEditFile?: ((relativePath: string) => void) | undefined
   // 右键菜单「添加到对话」（可选：不传则菜单不显示对应项）
   onAddToChat?: ((relativePath: string) => void) | undefined
+  /** 工具栏搜索按钮：切换到全局搜索面板（与文件树槽位互斥） */
+  onOpenSearch: () => void
 }
 
 export function FileExplorerPanel({
@@ -54,21 +67,21 @@ export function FileExplorerPanel({
   onPreviewFile,
   onEditFile,
   onAddToChat,
+  onOpenSearch,
 }: FileExplorerPanelProps): ReactNode {
   const { toast } = useToast()
   const clipboard = useFileClipboard()
-  const [searchActive, setSearchActive] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null)
   const [confirmDeletePath, setConfirmDeletePath] = useState<string | null>(null)
+  /** 拖拽进行中的源节点路径（dragstart 写入 / dragend 清除），用于源行半透明反馈 */
+  const [draggingPath, setDraggingPath] = useState<string | null>(null)
 
   const tree = useFileExplorerTree({
     workspaceId,
     enabled: workspaceId != null,
     expandedDirs,
     onExpandedChange,
-    searchQuery,
   })
 
   const joinAbs = (rel: string): string => {
@@ -87,6 +100,73 @@ export function FileExplorerPanel({
     if (dir !== '' && !expandedDirs.has(dir)) {
       onExpandedChange(new Set(expandedDirs).add(dir))
     }
+  }
+
+  // ── 拖拽移动（树内）──
+  // 拖到目录节点 = 移入；拖到树空白处 = 移到根；拖到会话输入区 = 参考资源（由 ComposerV2 消费）。
+  // 成功后 watch 自动 reload 受影响目录，无需手动刷新。
+  const handleNodeDragStart = (node: FileExplorerNode, event: DragEvent<HTMLDivElement>): void => {
+    if (node.path === ROOT_PATH) return
+    setActiveDragRelPath(node.path)
+    setDraggingPath(node.path)
+    writeFileExplorerNodeDragPayload(event.dataTransfer, {
+      relPath: node.path,
+      absPath: joinAbs(node.path),
+      name: node.name,
+      type: node.type,
+    })
+  }
+
+  const handleNodeDragEnd = (): void => {
+    setActiveDragRelPath(null)
+    setDraggingPath(null)
+  }
+
+  const moveNodeToDir = async (
+    payload: FileExplorerNodeDragPayload,
+    targetDir: string,
+  ): Promise<void> => {
+    if (workspaceId == null) return
+    // 合法性兜底（dragover 已按拖拽中源路径拦截，这里防异常构造的 payload）
+    if (targetDir === payload.relPath || targetDir.startsWith(payload.relPath + '/')) {
+      toast.error('不能移动到自身或其子目录')
+      return
+    }
+    const name = baseName(payload.relPath)
+    const target = targetDir === ROOT_PATH ? name : `${targetDir}/${name}`
+    if (target === payload.relPath) {
+      toast.info('已在当前位置')
+      return
+    }
+    // 'error' 策略：目标已存在即报错，绝不静默覆盖
+    const res = await movePath(workspaceId, payload.relPath, target, 'error')
+    if (res.ok) {
+      toast.success(`已移动到 ${targetDir === ROOT_PATH ? '根目录' : baseName(targetDir)}`)
+      setSelectedPath(target)
+    } else {
+      toast.error(res.error ?? '移动失败')
+    }
+  }
+
+  const handleDropIntoDir = (dirPath: string, event: DragEvent<HTMLDivElement>): void => {
+    const payload = readFileExplorerNodeDragPayload(event.dataTransfer)
+    if (payload == null) return
+    void moveNodeToDir(payload, dirPath)
+  }
+
+  const handleTreeScrollDragOver = (event: DragEvent<HTMLDivElement>): void => {
+    if (!hasFileExplorerNodeDrag(event.dataTransfer)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleTreeScrollDrop = (event: DragEvent<HTMLDivElement>): void => {
+    if (!hasFileExplorerNodeDrag(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    const payload = readFileExplorerNodeDragPayload(event.dataTransfer)
+    if (payload == null) return
+    void moveNodeToDir(payload, ROOT_PATH)
   }
 
   // ── FileMenuActions ──
@@ -202,43 +282,25 @@ export function FileExplorerPanel({
     else toast.error(res.error ?? '删除失败')
   }
 
-  const handleToggleSearch = (): void => {
-    if (searchActive) {
-      setSearchActive(false)
-      setSearchQuery('')
-    } else {
-      setSearchActive(true)
-    }
-  }
-
   const emptyMenu = buildEmptyMenuItems('', menuActions, clipboard)
-  const isSearching = searchActive && searchQuery.trim() !== ''
-  const showEmpty =
-    !tree.loading && tree.error == null && !isSearching && tree.visiblePaths.length === 0
+  const showEmpty = !tree.loading && tree.error == null && tree.visiblePaths.length === 0
 
   return (
     <div className="fe-panel">
       <FileExplorerToolbar
         workspaceLabel={baseName(workspaceRootPath ?? '') || '项目'}
-        searchActive={searchActive}
         onNewFile={() => menuActions.onCreateFile('')}
         onNewDirectory={() => menuActions.onCreateDirectory('')}
-        onToggleSearch={handleToggleSearch}
+        onOpenSearch={onOpenSearch}
         onCollapseAll={() => onExpandedChange(new Set())}
         onRefresh={tree.refresh}
       />
-      {searchActive && (
-        <FileSearchBox
-          value={searchQuery}
-          onChange={setSearchQuery}
-          onClose={() => {
-            setSearchActive(false)
-            setSearchQuery('')
-          }}
-        />
-      )}
       <Dropdown trigger={['contextMenu']} menu={emptyMenu} placement="bottomLeft">
-        <div className="fe-tree-scroll">
+        <div
+          className="fe-tree-scroll"
+          onDragOver={handleTreeScrollDragOver}
+          onDrop={handleTreeScrollDrop}
+        >
           {tree.loading && (
             <div className="fe-state">
               <Icons.Spinner size={16} className="fe-spin" /> 加载中…
@@ -247,15 +309,7 @@ export function FileExplorerPanel({
           {!tree.loading && tree.error != null && (
             <div className="fe-state fe-state-error">{tree.error}</div>
           )}
-          {!tree.loading && tree.error == null && isSearching && (
-            <SearchResults
-              nodes={tree.nodes}
-              matches={tree.searchMatches}
-              selectedPath={selectedPath}
-              onSelect={openAndSelect}
-            />
-          )}
-          {!tree.loading && tree.error == null && !isSearching && (
+          {!tree.loading && tree.error == null && (
             <FileTree
               nodes={tree.nodes}
               visiblePaths={tree.visiblePaths}
@@ -269,6 +323,10 @@ export function FileExplorerPanel({
                 void handleConfirmRename(v)
               }}
               onCancelRename={() => setRenameTarget(null)}
+              onNodeDragStart={handleNodeDragStart}
+              onNodeDragEnd={handleNodeDragEnd}
+              onDropIntoDir={handleDropIntoDir}
+              draggingPath={draggingPath}
             />
           )}
           {showEmpty && <div className="fe-state">暂无文件</div>}
@@ -289,49 +347,6 @@ export function FileExplorerPanel({
         }}
         onConfirm={handleConfirmDelete}
       />
-    </div>
-  )
-}
-
-/** 搜索结果列表（仅文件可点击打开；目录不展示，避免误点） */
-function SearchResults({
-  nodes,
-  matches,
-  selectedPath,
-  onSelect,
-}: {
-  nodes: Map<string, FileExplorerNode>
-  matches: string[]
-  selectedPath: string | null
-  onSelect: (path: string) => void
-}): ReactNode {
-  const fileMatches = matches.filter((p) => nodes.get(p)?.type === 'file')
-  if (fileMatches.length === 0) {
-    return <div className="fe-state">无匹配文件</div>
-  }
-  return (
-    <div className="fe-tree fe-search-results">
-      {fileMatches.map((p) => {
-        const node = nodes.get(p)
-        if (node == null) return null
-        return (
-          <div
-            key={p}
-            className={`fe-node${selectedPath === p ? ' selected' : ''}`}
-            style={{ paddingLeft: 22 }}
-            title={p}
-            onClick={() => onSelect(p)}
-          >
-            <span className="fe-chevron invisible">
-              <Icons.ChevronRight size={14} />
-            </span>
-            <span className="fe-icon">
-              <FileTypeIcon filePath={p} size={14} />
-            </span>
-            <span className="fe-name">{node.name}</span>
-          </div>
-        )
-      })}
     </div>
   )
 }

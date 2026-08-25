@@ -34,19 +34,27 @@ function makeRepo() {
 
   return {
     rows,
-    create: vi.fn((params: { id: string; name: string; rootPath: string; projectKind?: string; worktreeMeta?: unknown }) => {
-      const row = makeWorkspace({
-        id: params.id,
-        name: params.name,
-        root_path: params.rootPath,
-        spark_config_path: `${params.rootPath}/.spark`,
-        agent_runtime_path: `${params.rootPath}/.agent_spark`,
-        project_kind: params.projectKind ?? 'unknown',
-        worktree_meta_json: params.worktreeMeta ? JSON.stringify(params.worktreeMeta) : null,
-      })
-      rows.set(row.id, row)
-      return row
-    }),
+    create: vi.fn(
+      (params: {
+        id: string
+        name: string
+        rootPath: string
+        projectKind?: string
+        worktreeMeta?: unknown
+      }) => {
+        const row = makeWorkspace({
+          id: params.id,
+          name: params.name,
+          root_path: params.rootPath,
+          spark_config_path: `${params.rootPath}/.spark`,
+          agent_runtime_path: `${params.rootPath}/.agent_spark`,
+          project_kind: params.projectKind ?? 'unknown',
+          worktree_meta_json: params.worktreeMeta ? JSON.stringify(params.worktreeMeta) : null,
+        })
+        rows.set(row.id, row)
+        return row
+      },
+    ),
     findByRootPath: vi.fn((rootPath: string) => {
       return [...rows.values()].find((row) => row.root_path === rootPath) ?? null
     }),
@@ -244,14 +252,63 @@ describe('WorkspaceService', () => {
     expect(entries.some((entry) => entry.path.startsWith('node_modules'))).toBe(false)
   })
 
+  it('lists every direct child without letting a large directory truncate later root entries', async () => {
+    const workspace = await service.openWorkspace(tempDir)
+    const largeDir = path.join(tempDir, 'a-large')
+    await mkdir(largeDir, { recursive: true })
+    await Promise.all(
+      Array.from({ length: 1_005 }, (_, index) =>
+        writeFile(path.join(largeDir, `entry-${String(index).padStart(4, '0')}.txt`), ''),
+      ),
+    )
+    await writeFile(path.join(largeDir, 'z-last-child.txt'), '')
+    await writeFile(path.join(tempDir, 'z-last-root-file.txt'), '')
+
+    const rootEntries = await service.listDirectoryTree(workspace.id, { maxDepth: 0 })
+    const childEntries = await service.listDirectoryTree(workspace.id, {
+      path: 'a-large',
+      maxDepth: 0,
+    })
+
+    expect(rootEntries.map((entry) => entry.path)).toEqual(['a-large', 'z-last-root-file.txt'])
+    expect(rootEntries.find((entry) => entry.path === 'a-large')?.childrenCount).toBeUndefined()
+    expect(childEntries).toHaveLength(1_006)
+    expect(childEntries.at(-1)?.path).toBe('a-large/z-last-child.txt')
+  })
+
+  it('includes dependency and build directories on explicit file explorer requests', async () => {
+    const workspace = await service.openWorkspace(tempDir)
+    for (const directory of ['.next', 'coverage', 'dist', 'node_modules', 'out']) {
+      await mkdir(path.join(tempDir, directory), { recursive: true })
+    }
+    await mkdir(path.join(tempDir, '.git'), { recursive: true })
+    await mkdir(path.join(tempDir, '.worktrees', 'feat-a'), { recursive: true })
+
+    const entries = await service.listDirectoryTree(workspace.id, {
+      maxDepth: 0,
+      includeIgnoredDirectories: true,
+    })
+    const paths = entries.map((entry) => entry.path)
+
+    expect(paths).toEqual(['.next', 'coverage', 'dist', 'node_modules', 'out'])
+    expect(paths).not.toContain('.git')
+    expect(paths).not.toContain('.worktrees')
+  })
+
   it('hides known worktree containers from the workspace directory tree', async () => {
     const workspace = await service.openWorkspace(tempDir)
     await mkdir(path.join(tempDir, '.worktrees', 'feat-a'), { recursive: true })
     await mkdir(path.join(tempDir, '.claude', 'worktrees', 'feat-b'), { recursive: true })
     await mkdir(path.join(tempDir, '.spark', 'worktrees', 'legacy'), { recursive: true })
     await writeFile(path.join(tempDir, '.worktrees', 'feat-a', 'generated.ts'), 'export {}')
-    await writeFile(path.join(tempDir, '.claude', 'worktrees', 'feat-b', 'generated.ts'), 'export {}')
-    await writeFile(path.join(tempDir, '.spark', 'worktrees', 'legacy', 'generated.ts'), 'export {}')
+    await writeFile(
+      path.join(tempDir, '.claude', 'worktrees', 'feat-b', 'generated.ts'),
+      'export {}',
+    )
+    await writeFile(
+      path.join(tempDir, '.spark', 'worktrees', 'legacy', 'generated.ts'),
+      'export {}',
+    )
 
     const entries = await service.listDirectoryTree(workspace.id, { maxDepth: 3 })
     const paths = entries.map((entry) => entry.path)
@@ -402,10 +459,18 @@ describe('WorkspaceService worktree', () => {
     await execFileAsyncT('git', ['commit', '-m', 'init'], { cwd: repoDir })
 
     const repo = makeRepo()
-    const base = repo.create({ id: 'base', name: 'base', rootPath: repoDir, projectKind: 'unknown' })
+    const base = repo.create({
+      id: 'base',
+      name: 'base',
+      rootPath: repoDir,
+      projectKind: 'unknown',
+    })
     const svc = new WorkspaceService(repo as never, new GitWorktreeService())
 
-    const wt = await svc.createWorktreeWorkspace({ baseWorkspaceId: base.id, branch: 'spark/feat-1' })
+    const wt = await svc.createWorktreeWorkspace({
+      baseWorkspaceId: base.id,
+      branch: 'spark/feat-1',
+    })
     expect(wt.root_path).toContain(path.join('.worktrees'))
     expect(wt.root_path).not.toContain(path.join('.spark', 'worktrees'))
     expect(repo.create).toHaveBeenCalledTimes(2)
@@ -424,10 +489,18 @@ describe('WorkspaceService worktree', () => {
     await mkdir(path.join(repoDir, '.claude', 'worktrees'), { recursive: true })
 
     const repo = makeRepo()
-    const base = repo.create({ id: 'base', name: 'base', rootPath: repoDir, projectKind: 'unknown' })
+    const base = repo.create({
+      id: 'base',
+      name: 'base',
+      rootPath: repoDir,
+      projectKind: 'unknown',
+    })
     const svc = new WorkspaceService(repo as never, new GitWorktreeService())
 
-    const wt = await svc.createWorktreeWorkspace({ baseWorkspaceId: base.id, branch: 'spark/feat-claude' })
+    const wt = await svc.createWorktreeWorkspace({
+      baseWorkspaceId: base.id,
+      branch: 'spark/feat-claude',
+    })
     expect(wt.root_path).toContain(path.join('.claude', 'worktrees'))
     expect(wt.root_path).not.toContain(path.join('.spark', 'worktrees'))
 

@@ -32,6 +32,19 @@ export interface FileClipboardEntry {
 /** root 节点的路径常量 */
 export const ROOT_PATH = ''
 
+/**
+ * 按 posix 相对路径推导层级深度（root ''=0，顶级 'src'=1，'src/x'=2）。
+ *
+ * 不用后端 entry.depth：那是「相对本次 list-directory 请求起点」的深度，
+ * 展开目录时 reloadDir 传 path=目录 & maxDepth:0，返回的子项 depth 恒为 0，
+ * 直接透传会导致展开后所有子项失去缩进。path 本身相对 workspace root，
+ * 按 '/' 分段永远能得到真实层级。
+ */
+export function pathDepth(posixPath: string): number {
+  if (posixPath === ROOT_PATH) return 0
+  return posixPath.split('/').length
+}
+
 /** WorkspaceTreeEntry → FileExplorerNode（统一 posix 路径、简化 symlink） */
 export function toExplorerNode(entry: WorkspaceTreeEntry): FileExplorerNode {
   const posixPath = entry.path.replace(/\\/g, '/')
@@ -40,7 +53,7 @@ export function toExplorerNode(entry: WorkspaceTreeEntry): FileExplorerNode {
     path: posixPath,
     name: entry.name,
     type,
-    depth: entry.depth,
+    depth: pathDepth(posixPath),
     hasChildren: type === 'directory' ? entry.childrenCount !== 0 : undefined,
   }
 }
@@ -97,22 +110,6 @@ export function computeVisiblePaths(
   }
   walk(ROOT_PATH)
   return result
-}
-
-/** 文件名模糊过滤（不区分大小写）；返回匹配的 path 列表（含文件与目录，目录优先排序） */
-export function filterBySearch(
-  nodes: Map<string, FileExplorerNode>,
-  query: string,
-): string[] {
-  const q = query.trim().toLowerCase()
-  if (!q) return []
-  const matched: FileExplorerNode[] = []
-  for (const node of nodes.values()) {
-    if (node.path === ROOT_PATH) continue
-    if (node.name.toLowerCase().includes(q)) matched.push(node)
-  }
-  matched.sort(compareNodes)
-  return matched.map((n) => n.path)
 }
 
 /**

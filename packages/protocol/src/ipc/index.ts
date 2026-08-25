@@ -1219,6 +1219,8 @@ export interface WorkspaceListDirectoryRequest {
   workspaceId: string
   path?: string
   maxDepth?: number
+  /** Include commonly excluded dependency/build directories. `.git` remains hidden. */
+  includeIgnoredDirectories?: boolean
 }
 
 export interface WorkspaceListDirectoryResponse {
@@ -4537,7 +4539,13 @@ export interface FileRevealResponse {
 export interface FileReadRequest {
   /** Absolute path to the file to read. */
   filePath: string
+  /** Optional caller-specific byte ceiling. The main process rejects before reading the full file. */
+  maxBytes?: number
+  /** When true, reject files whose leading bytes look binary before decoding/transferring them. */
+  rejectBinary?: boolean
 }
+
+export type FileReadErrorCode = 'file-too-large' | 'binary-file' | 'not-a-file' | 'read-failed'
 
 export interface FileReadResponse {
   /** File content decoded to UTF-8 string (BOM stripped). */
@@ -4546,6 +4554,10 @@ export interface FileReadResponse {
   encoding?: string
   /** Populated with the error message when the read failed. */
   error?: string
+  /** Stable reason for callers that need tailored UI. */
+  errorCode?: FileReadErrorCode
+  /** Observed file size in bytes when available. */
+  size?: number
 }
 
 export interface FileReadBinaryRequest {

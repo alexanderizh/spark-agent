@@ -54,6 +54,26 @@ const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf])
 const UTF16LE_BOM = Buffer.from([0xff, 0xfe])
 const UTF16BE_BOM = Buffer.from([0xfe, 0xff])
 
+/**
+ * 轻量二进制探测：有 BOM 的 UTF-16 明确视为文本；其余样本若含 NUL，或不可打印
+ * 控制字节占比明显过高，则视为二进制。该判断只用于编辑器预览前置拦截，编码识别仍由
+ * decodeTextFileBuffer 负责。
+ */
+export function looksLikeBinaryTextBuffer(buf: Buffer): boolean {
+  if (buf.length === 0) return false
+  if (buf.subarray(0, 2).equals(UTF16LE_BOM) || buf.subarray(0, 2).equals(UTF16BE_BOM)) {
+    return false
+  }
+
+  let suspiciousControls = 0
+  for (const byte of buf) {
+    if (byte === 0) return true
+    const allowedWhitespace = byte === 9 || byte === 10 || byte === 12 || byte === 13
+    if (!allowedWhitespace && (byte < 32 || byte === 127)) suspiciousControls += 1
+  }
+  return suspiciousControls > Math.max(4, Math.floor(buf.length * 0.1))
+}
+
 /** 识别 Buffer 的文本编码并解码；解码失败（二进制等）退回宽松 utf-8（含 U+FFFD），与旧行为一致 */
 export function decodeTextFileBuffer(buf: Buffer): DecodedTextFile {
   if (buf.length === 0) return { content: '', encoding: 'utf-8' }

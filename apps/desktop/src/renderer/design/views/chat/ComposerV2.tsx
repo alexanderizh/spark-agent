@@ -36,6 +36,7 @@ import { canReuseComposerSession, canShowComposerWorktreeToggle } from '../chat-
 import { resolveComposerRunningAgentIds } from '../../services/composer-working-state'
 import {
   getPreferredProviderForAdapter,
+  getPreferredProviderWithAdapterFallback,
   getProviderAdapterKind,
   getCliSparkOverrideProviders,
   isCliSparkConversationProvider,
@@ -166,6 +167,11 @@ import {
   readSessionReferenceDragPayload,
   type SessionReferenceDragPayload,
 } from './session-reference-dnd'
+import {
+  hasFileExplorerNodeDrag,
+  readFileExplorerNodeDragPayload,
+} from '../../components/code-viewer/file-explorer/fileExplorerDnd'
+import { ComposerDropOverlay } from './ComposerDropOverlay'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -1628,7 +1634,11 @@ export function ComposerV2({
 
   useEffect(() => {
     if (session != null || providers.length === 0 || compatibleProviders.length > 0) return
-    const fallbackProvider = getPreferredProvider(providers, initialPrefs, draftAdapter)
+    const fallbackProvider = getPreferredProviderWithAdapterFallback(
+      providers,
+      initialPrefs.providerProfileId,
+      draftAdapter,
+    )
     if (fallbackProvider == null) return
     const nextAdapter = getProviderAdapterKind(fallbackProvider)
     const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
@@ -2178,6 +2188,19 @@ export function ComposerV2({
         setSessionReferenceDropActive(true)
         return
       }
+      // 文件树节点拖入会话区 → 参考资源（自定义 MIME 不含 Files 类型，
+      // 与 OS 文件拖入 / 会话引用拖拽互不冲突；树内 drop 已被 React 层拦截不会到这里）
+      if (
+        !sending &&
+        hasFileExplorerNodeDrag(event.dataTransfer) &&
+        isSessionReferenceDropTarget(event.target)
+      ) {
+        event.preventDefault()
+        if (event.dataTransfer != null) event.dataTransfer.dropEffect = 'copy'
+        dragDepthRef.current += 1
+        setFileDropActive(true)
+        return
+      }
       if (!shouldHandle(event)) {
         resetDragState()
         return
@@ -2198,6 +2221,16 @@ export function ComposerV2({
         setSessionReferenceDropActive(true)
         return
       }
+      if (
+        !sending &&
+        hasFileExplorerNodeDrag(event.dataTransfer) &&
+        isSessionReferenceDropTarget(event.target)
+      ) {
+        event.preventDefault()
+        if (event.dataTransfer != null) event.dataTransfer.dropEffect = 'copy'
+        setFileDropActive(true)
+        return
+      }
       if (!shouldHandle(event)) {
         resetDragState()
         return
@@ -2210,6 +2243,11 @@ export function ComposerV2({
       if (hasSessionReferenceDrag(event.dataTransfer)) {
         sessionDragDepthRef.current = Math.max(0, sessionDragDepthRef.current - 1)
         if (sessionDragDepthRef.current === 0) setSessionReferenceDropActive(false)
+        return
+      }
+      if (hasFileExplorerNodeDrag(event.dataTransfer)) {
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+        if (dragDepthRef.current === 0) setFileDropActive(false)
         return
       }
       if (!hasFileDataTransfer(event.dataTransfer)) return
@@ -2226,6 +2264,18 @@ export function ComposerV2({
         const payload = readSessionReferenceDragPayload(event.dataTransfer)
         resetDragState()
         handleDropSessionReference(payload)
+        return
+      }
+      if (
+        !sending &&
+        hasFileExplorerNodeDrag(event.dataTransfer) &&
+        isSessionReferenceDropTarget(event.target)
+      ) {
+        event.preventDefault()
+        const payload = readFileExplorerNodeDragPayload(event.dataTransfer)
+        resetDragState()
+        // 走 OS 文件拖入同链路（目录作为路径引用传给 Agent）
+        if (payload != null) void handleDropFilePaths([payload.absPath])
         return
       }
       if (!shouldHandle(event)) {
@@ -3688,17 +3738,15 @@ export function ComposerV2({
             onClose={() => setPreviewAttachment(null)}
           />
         )}
-        {fileDropActive && (
-          <div className="composer-file-drop-overlay" aria-live="polite">
-            <div className="composer-file-drop-target">
-              <span className="composer-file-drop-icon" aria-hidden="true">
-                <Icons.FilePlus size={42} strokeWidth={1.6} />
-              </span>
-              <strong>松开即可添加到会话</strong>
-              <span>支持文件和文件夹</span>
-            </div>
+        <ComposerDropOverlay active={fileDropActive} className="composer-file-drop-overlay">
+          <div className="composer-file-drop-target">
+            <span className="composer-file-drop-icon" aria-hidden="true">
+              <Icons.FilePlus size={42} strokeWidth={1.6} />
+            </span>
+            <strong>松开即可添加到会话</strong>
+            <span>支持文件和文件夹</span>
           </div>
-        )}
+        </ComposerDropOverlay>
         {sessionReferenceDropActive && (
           <div className="composer-session-ref-drop-overlay" aria-live="polite">
             <div className="composer-session-ref-drop-target">

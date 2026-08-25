@@ -37,11 +37,15 @@ export type CanvasAudioPreviewActions = {
 
 function CanvasAgentArtifactDragSource({
   output,
+  enabled = true,
   children,
 }: {
   output: CanvasOperationOutputView
+  /** 节点卡片内关闭：产物区域把拖拽交还给节点本身（react-flow 移动节点），拖入 Agent 对话只保留在详情面板与资源管理面板。 */
+  enabled?: boolean
   children: ReactNode
 }) {
+  if (!enabled) return <>{children}</>
   const payload = createCanvasAgentArtifactPayload(output)
   if (!canDragCanvasAgentArtifact(payload)) return <>{children}</>
   return (
@@ -194,6 +198,8 @@ export function CanvasOperationOutputPreview({
   const normalizedThumbnail = output.thumbnailUrl
     ? normalizeEduAssetUrl(output.thumbnailUrl)
     : normalizedUrl
+  // 「拖入 Agent 对话」只在详情面板启用；节点卡片内产物区域要让拖拽移动节点本身。
+  const dragToAgentEnabled = variant === 'detail'
   const textPresentation = useMemo(
     () =>
       isReadableCanvasOperationTextOutput(output)
@@ -205,7 +211,7 @@ export function CanvasOperationOutputPreview({
   if (output.type === 'image' && normalizedThumbnail) {
     if (variant === 'detail') {
       return (
-        <CanvasAgentArtifactDragSource output={output}>
+        <CanvasAgentArtifactDragSource output={output} enabled={dragToAgentEnabled}>
           <CanvasOperationImagePreview
             key={`${output.id}:${normalizedThumbnail}`}
             src={normalizedThumbnail}
@@ -215,7 +221,7 @@ export function CanvasOperationOutputPreview({
       )
     }
     return (
-      <CanvasAgentArtifactDragSource output={output}>
+      <CanvasAgentArtifactDragSource output={output} enabled={dragToAgentEnabled}>
         <img
           className={`canvas-operation-output-media is-${variant}`}
           src={normalizedThumbnail}
@@ -229,7 +235,7 @@ export function CanvasOperationOutputPreview({
   }
   if (output.type === 'video' && normalizedUrl) {
     return (
-      <CanvasAgentArtifactDragSource output={output}>
+      <CanvasAgentArtifactDragSource output={output} enabled={dragToAgentEnabled}>
         <CanvasVideoPlayer
           className={`canvas-operation-output-media is-${variant}`}
           src={normalizedUrl}
@@ -243,7 +249,7 @@ export function CanvasOperationOutputPreview({
   }
   if (output.type === 'audio' && normalizedUrl) {
     return (
-      <CanvasAgentArtifactDragSource output={output}>
+      <CanvasAgentArtifactDragSource output={output} enabled={dragToAgentEnabled}>
         <div className={`canvas-operation-output-audio is-${variant}`}>
           <CanvasAudioNodePresentation
             ref={audioPresentationRef}
@@ -259,7 +265,7 @@ export function CanvasOperationOutputPreview({
   }
   if (textPresentation?.kind === 'storyboard') {
     return (
-      <CanvasAgentArtifactDragSource output={output}>
+      <CanvasAgentArtifactDragSource output={output} enabled={dragToAgentEnabled}>
         <div className={`canvas-operation-output-storyboard is-${variant}`}>
           <CanvasShotScriptTable rows={textPresentation.rows} isolateWheel={isolateWheel} />
         </div>
@@ -268,7 +274,7 @@ export function CanvasOperationOutputPreview({
   }
   if (textPresentation?.kind === 'json') {
     return (
-      <CanvasAgentArtifactDragSource output={output}>
+      <CanvasAgentArtifactDragSource output={output} enabled={dragToAgentEnabled}>
         <pre
           className={`canvas-operation-output-json is-${variant}${isolateWheel ? ' nowheel' : ''}`}
         >
@@ -279,7 +285,7 @@ export function CanvasOperationOutputPreview({
   }
   if (textPresentation?.kind === 'text') {
     return (
-      <CanvasAgentArtifactDragSource output={output}>
+      <CanvasAgentArtifactDragSource output={output} enabled={dragToAgentEnabled}>
         <div
           className={`canvas-operation-output-text is-${variant}${isolateWheel ? ' nowheel' : ''}`}
         >
@@ -299,7 +305,7 @@ export function CanvasOperationOutputPreview({
   }
 
   return (
-    <CanvasAgentArtifactDragSource output={output}>
+    <CanvasAgentArtifactDragSource output={output} enabled={dragToAgentEnabled}>
       <div className={`canvas-operation-output-empty is-${variant}`}>
         {output.type === 'video' || output.type === 'audio' ? (
           <Icons.Play size={variant === 'detail' ? 38 : 30} />

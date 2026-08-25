@@ -48,15 +48,29 @@
   }
 }
 
-/* 文件 tabs 行 */
+/* 文件 tabs 行（三段布局：功能切换组 | tabs 滚动区 | 缩放组） */
 .cv-filetabs {
   display: flex;
+  align-items: stretch;
   height: 34px;
   background: var(--cv-bg-2);
   border-bottom: 1px solid var(--cv-border);
+  flex: none;
+}
+/* 功能切换组（图标 + 文字） */
+.cv-ftab-switch {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+}
+/* tabs 滚动区：超宽横向滚动，不占位滚动条 */
+.cv-filetabs-scroll {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  flex: none;
   scrollbar-width: none;
   &::-webkit-scrollbar {
     height: 0;
@@ -464,12 +478,15 @@
   flex: 1;
 }
 
-/* ── 文件树开关按钮（位于 cv-filetabs 最左） ── */
+/* ── 功能切换按钮（文件 / Git / 搜索，图标 + 文字） ── */
 .cv-ftab-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
+  gap: 5px;
+  width: auto;
+  min-width: 56px;
+  padding: 0 10px;
   height: 100%;
   flex: none;
   background: transparent;
@@ -488,6 +505,55 @@
   &:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+}
+.cv-ftab-toggle-text {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ── 缩放组【- n% +】（位于 cv-filetabs 最右） ── */
+.cv-zoom {
+  display: flex;
+  align-items: center;
+  flex: none;
+  border-left: 1px solid var(--cv-border-soft);
+  padding: 0 4px;
+}
+.cv-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cv-text-dim);
+  cursor: pointer;
+  &:hover:not(:disabled) {
+    background: var(--cv-bg-3);
+    color: var(--cv-text);
+  }
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+.cv-zoom-value {
+  min-width: 40px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cv-text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+  &:hover {
+    background: var(--cv-bg-3);
+    color: var(--cv-text);
   }
 }
 
@@ -596,54 +662,6 @@ body.cv-resizing {
   transform: rotate(-90deg);
 }
 
-.fe-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  flex: none;
-  border-bottom: 1px solid var(--cv-border-soft);
-  background: var(--cv-bg-2);
-}
-.fe-search-icon {
-  display: flex;
-  color: var(--cv-text-faint);
-}
-.fe-search-input {
-  flex: 1;
-  min-width: 0;
-  height: 22px;
-  background: var(--cv-bg);
-  border: 1px solid var(--cv-border-soft);
-  border-radius: 4px;
-  color: var(--cv-text);
-  font-size: 12px;
-  padding: 0 6px;
-  outline: none;
-  &:focus {
-    border-color: var(--cv-accent);
-  }
-}
-.fe-search-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex: none;
-  background: transparent;
-  border: 0;
-  border-radius: 3px;
-  color: var(--cv-text-faint);
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-  &:hover {
-    background: var(--cv-bg-3);
-    color: var(--cv-text);
-  }
-}
-
 .fe-tree-scroll {
   flex: 1;
   min-height: 0;
@@ -651,6 +669,13 @@ body.cv-resizing {
 }
 .fe-tree {
   padding: 4px 0 12px;
+  /* 宽内容撑开真实宽度供 .fe-tree-scroll 横向滚动；窄内容保持至少铺满 */
+  min-width: 100%;
+  width: max-content;
+  /* 真实拖拽进行中才切换抓手光标，平时保持正常指针 */
+  &.is-dragging .fe-node {
+    cursor: grabbing;
+  }
 }
 .fe-node {
   display: flex;
@@ -667,12 +692,24 @@ body.cv-resizing {
   &.selected {
     background: var(--cv-accent-soft);
   }
+  &.dragging {
+    /* 拖动中的源行半透明（与剪切态一致的视觉语言） */
+    opacity: 0.45;
+  }
+  &.drop-target {
+    background: var(--cv-accent-soft);
+    box-shadow: inset 0 0 0 1px var(--cv-accent);
+  }
   &.cut {
     opacity: 0.5;
     .fe-name {
       text-decoration: line-through;
     }
   }
+}
+.fe-create-row {
+  /* 新建输入行不可拖拽，覆盖 is-dragging 时的抓手光标 */
+  cursor: text;
 }
 .fe-chevron {
   display: flex;

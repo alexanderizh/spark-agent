@@ -33,6 +33,7 @@ import { CancellationNotice } from '../views/chat/CancellationNotice'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
 import { InlinePermissionApproval } from './InlinePermissionApproval'
+import { ComposerActionsMenu } from './ComposerActionsMenu'
 import { ChatPanelThinkingGroup } from './ChatPanelThinkingGroup'
 import { ChatPanelToolActivity } from './ChatPanelToolActivity'
 import { isCanvasMutationTool } from './chat-panel-tool-activity'
@@ -260,7 +261,6 @@ export function ChatPanel({
   const unseenActivityKeysRef = useRef<Set<string>>(new Set())
   const historyLoadedRef = useRef(false)
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
-  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
   const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
   const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
@@ -531,37 +531,62 @@ export function ChatPanel({
     [statFileKind],
   )
 
-  const handleAddContextFiles = useCallback(async () => {
+  const handleAddImages = useCallback(async () => {
     try {
       const selected = await openFileDialog({
-        title: '添加相关文件',
+        title: '添加图片',
         multiple: true,
+        filters: [
+          {
+            name: '图片',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg', 'heic', 'heif'],
+          },
+        ],
       })
       const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
       if (selected.canceled || filePaths.length === 0) return
       const nextAttachments = await Promise.all(
-        filePaths.map((filePath, index) => buildContextAttachment(filePath, 'ctx-file', index)),
+        filePaths.map((filePath, index) => buildContextAttachment(filePath, 'image', index)),
       )
       appendAttachments(nextAttachments)
     } catch (err) {
-      console.error('添加文件失败', err)
-      toast.error(err instanceof Error ? err.message : '添加文件失败')
+      console.error('添加图片失败', err)
+      toast.error(err instanceof Error ? err.message : '添加图片失败')
     }
   }, [appendAttachments, buildContextAttachment, openFileDialog, toast])
 
-  const handleAddContextDirectory = useCallback(async () => {
+  const handleAddContextFiles = useCallback(async () => {
     try {
-      const selected = await openDirectoryDialog({
-        title: '添加相关目录',
+      const selected = await openFileDialog({
+        title: '添加文件或文件夹',
+        multiple: true,
+        allowDirectories: true,
       })
-      if (selected.canceled || selected.filePath == null) return
-      const attachment = await buildContextAttachment(selected.filePath, 'ctx-dir', 0)
-      appendAttachments([attachment])
+      const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
+      if (selected.canceled || filePaths.length === 0) return
+      const nextAttachments = await Promise.all(
+        filePaths.map((filePath, index) => buildContextAttachment(filePath, 'ctx', index)),
+      )
+      appendAttachments(nextAttachments)
     } catch (err) {
-      console.error('添加目录失败', err)
-      toast.error(err instanceof Error ? err.message : '添加目录失败')
+      console.error('添加文件或文件夹失败', err)
+      toast.error(err instanceof Error ? err.message : '添加文件或文件夹失败')
     }
-  }, [appendAttachments, buildContextAttachment, openDirectoryDialog, toast])
+  }, [appendAttachments, buildContextAttachment, openFileDialog, toast])
+
+  const handleInsertSlashCommand = useCallback(() => {
+    const textarea = textareaRef.current
+    const selectionStart = textarea?.selectionStart ?? input.length
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart
+    applyInput(`${input.slice(0, selectionStart)}/${input.slice(selectionEnd)}`)
+    requestAnimationFrame(() => {
+      const nextTextarea = textareaRef.current
+      if (nextTextarea == null) return
+      const nextCaret = selectionStart + 1
+      nextTextarea.focus()
+      nextTextarea.setSelectionRange(nextCaret, nextCaret)
+    })
+  }, [applyInput, input])
 
   const canHandleDrop = useCallback(
     (dataTransfer: DataTransfer) =>
@@ -1087,25 +1112,16 @@ export function ChatPanel({
         </div>
         {/* 底部附件按钮行（始终渲染，composerBelow 可选追加更多参数项） */}
         <div className="chat-panel-composer-below">
-          <button
-            type="button"
-            className="chat-panel-attach-icon"
+          <ComposerActionsMenu
+            onAddAttachments={() => void handleAddImages()}
+            attachmentLabel="添加图片"
+            onAddContextFiles={() => void handleAddContextFiles()}
+            contextFilesLabel="添加文件或文件夹"
+            onInsertSlashCommand={handleInsertSlashCommand}
             disabled={disabled}
-            title="添加文件"
-            onClick={() => void handleAddContextFiles()}
-          >
-            <Icons.FilePlus size={13} />
-          </button>
-          <button
-            type="button"
-            className="chat-panel-attach-icon"
-            disabled={disabled}
-            title="添加目录"
-            onClick={() => void handleAddContextDirectory()}
-          >
-            <Icons.FolderPlus size={13} />
-          </button>
-          {composerBelow}
+            triggerTitle="添加图片、文件或文件夹"
+          />
+          {composerBelow && <div className="chat-panel-composer-below-scroll">{composerBelow}</div>}
         </div>
       </div>
     </div>

@@ -1747,11 +1747,10 @@ export function CreateProjectModal({
       title={
         <div className="project-create-modal-title">
           <span className="project-create-modal-title-icon" aria-hidden="true">
-            <Icons.FolderPlus size={22} />
+            <Icons.FolderPlus size={18} />
           </span>
           <span className="project-create-modal-title-copy">
             <strong>{t('sidebar.project.createTitle')}</strong>
-            <small>{t('sidebar.project.createSubtitle')}</small>
           </span>
         </div>
       }

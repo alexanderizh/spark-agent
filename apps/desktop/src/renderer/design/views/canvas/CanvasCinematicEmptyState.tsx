@@ -31,10 +31,6 @@ export function CanvasCinematicEmptyState({
   return (
     <section className="canvas-cinematic-empty" aria-label="空画布创作引导">
       <div className="canvas-cinematic-empty-inner">
-        <span className="canvas-cinematic-empty-kicker">
-          <Icons.Sparkles size={13} />
-          从一句话开始，也可以拖入素材
-        </span>
         <h1>今天想创造怎样的世界？</h1>
         <p>Agent 会把故事拆成角色、场景、分镜和生成任务，并在画布中保留完整创作脉络。</p>
 

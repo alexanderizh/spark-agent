@@ -2703,8 +2703,8 @@ body.git-review-tree-resizing {
 }
 
 .composer-file-drop-overlay {
-  position: fixed;
-  inset: 0 0 0 var(--sidebar-offset, 210px);
+  position: absolute;
+  inset: 0;
   z-index: calc(var(--z-modal, 1000) + 20);
   display: flex;
   align-items: center;
@@ -2715,6 +2715,10 @@ body.git-review-tree-resizing {
   backdrop-filter: blur(16px) saturate(1.16);
   pointer-events: none;
   animation: composer-file-drop-fade 160ms ease-out;
+}
+
+.composer-drop-overlay-anchor {
+  display: none;
 }
 
 .composer-file-drop-target {
@@ -2806,10 +2810,6 @@ body.git-review-tree-resizing {
   background: color-mix(in srgb, var(--primary) 12%, var(--panel));
   color: color-mix(in srgb, var(--primary) 76%, var(--text));
   box-shadow: 0 12px 34px color-mix(in srgb, var(--primary) 13%, transparent);
-}
-
-.app.sidebar-hidden .composer-file-drop-overlay {
-  left: 0;
 }
 
 .dark .composer-file-drop-overlay,
@@ -5214,7 +5214,7 @@ body.side-chat-resizing {
     calc(100% - max(24px, var(--chat-main-min-width, 566px)))
   );
   min-width: min(360px, calc(100% - max(24px, var(--chat-main-min-width, 566px))));
-  max-width: min(1200px, 72vw, calc(100% - max(24px, var(--chat-main-min-width, 566px))));
+  max-width: min(85vw, calc(100% - max(24px, var(--chat-main-min-width, 566px))));
   height: 100vh;
   flex: 0 1 var(--side-chat-width, min(44vw, 620px));
   position: relative;

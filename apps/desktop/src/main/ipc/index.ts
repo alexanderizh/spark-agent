@@ -16,6 +16,7 @@ import { registerOutcomeRoomIpc } from './registerOutcomeRoomIpc.js'
 import { registerTeamP1Ipc } from './registerTeamP1Ipc.js'
 import { registerTeamOutcomeIpc } from './registerTeamOutcomeIpc.js'
 import { createWorkspaceInfoMapper } from './workspace-info.js'
+import { readTextFileForRenderer } from './file-read.js'
 import {
   buildCanvasMediaProviderPrompt,
   buildCanvasRuntimeRequest,
@@ -62,11 +63,7 @@ import {
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
 import { startProviderScheduleWatcher } from '../services/ProviderScheduleWatcher.js'
-import {
-  decodeTextFileBuffer,
-  encodeTextFileContent,
-  parseTextFileEncoding,
-} from '../services/TextFileEncoding.js'
+import { encodeTextFileContent, parseTextFileEncoding } from '../services/TextFileEncoding.js'
 import { openHtmlInExternalBrowser, openHtmlViewerWindow } from '../services/HtmlViewerService.js'
 import { getSubAppBrowserService } from '../services/SubAppBrowserService.js'
 import { fetchLinkMetadata } from '../services/LinkMetadataService.js'
@@ -260,7 +257,6 @@ import { PASTED_IMAGE_MAX_EDGE, resizePastedImageBuffer } from '../services/Past
 import { collectCanvasVideoWorkbenchPaths } from '../services/canvasVideoWorkbenchPaths.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
-import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
 import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
 import { registerProviderFilesIpc } from './registerProviderFilesIpc.js'
@@ -272,7 +268,11 @@ import { registerCanvasWorkflowIpc } from './registerCanvasWorkflowIpc.js'
 import { registerCanvasDepthTaskIpc } from './registerCanvasDepthTaskIpc.js'
 import { registerCanvasAudioExtractIpc } from './registerCanvasAudioExtractIpc.js'
 import { registerCanvasFrameExtractIpc } from './registerCanvasFrameExtractIpc.js'
-import { registerOptionalCapabilityIpc } from './registerOptionalCapabilityIpc.js'
+import {
+  getOptionalCapabilityManager,
+  registerOptionalCapabilityIpc,
+} from './registerOptionalCapabilityIpc.js'
+import { registerSdkIntegrityIpc } from './registerSdkIntegrityIpc.js'
 import { registerCodexRuntimeIpc } from './registerCodexRuntimeIpc.js'
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
@@ -3294,7 +3294,9 @@ export function registerAllIpcHandlers(): void {
   registerCanvasDepthTaskIpc()
   registerCanvasAudioExtractIpc()
   registerCanvasFrameExtractIpc()
-  registerOptionalCapabilityIpc()
+  const optionalCapabilityManager = getOptionalCapabilityManager()
+  registerOptionalCapabilityIpc({ manager: optionalCapabilityManager })
+  registerSdkIntegrityIpc({ capabilityManager: optionalCapabilityManager })
   registerCodexRuntimeIpc({
     getDiagnostics: () => getSessionService().getCodexRuntimeDiagnostics(),
     restartIdle: () => getSessionService().restartIdleCodexRuntimes(),
@@ -5689,10 +5691,7 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workspace:list-directory', async (req) => {
     log.info(`workspace:list-directory requested, workspaceId=${req.workspaceId}`)
-    const entries = await getWorkspaceService().listDirectoryTree(req.workspaceId, {
-      ...(req.path !== undefined && { path: req.path }),
-      ...(req.maxDepth !== undefined && { maxDepth: req.maxDepth }),
-    })
+    const entries = await getWorkspaceService().listDirectoryTree(req.workspaceId, req)
     return { entries }
   })
 
@@ -8546,22 +8545,6 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
-  // ─── SDK Integrity Handlers ─────────────────────────────────────────────
-
-  typedIpcHandle('sdk:integrity-check', async (req) => {
-    log.info(`sdk:integrity-check requested, checkLatest=${req.checkLatest ?? false}`)
-    const result = await checkSdkIntegrity(req)
-    return result
-  })
-
-  typedIpcHandle('sdk:integrity-install', async (req) => {
-    log.info(`sdk:integrity-install requested, packageName=${req.packageName}`)
-    const result = await installSdk(req.packageName, (progress) => {
-      pushStreamEvent('stream:sdk:install-progress', progress)
-    })
-    return result
-  })
-
   // Shell Environment & Runtime Detection
   typedIpcHandle('env:get-status', async () => {
     const status = await getShellEnvironmentStatus()
@@ -8775,16 +8758,17 @@ export function registerAllIpcHandlers(): void {
     log.info(`file:read requested, path=${filePath}`)
 
     try {
-      const fs = await import('node:fs/promises')
-      // 按字节读入后自动识别编码（BOM → 严格 UTF-8 → GB18030），
-      // 避免 GBK 等非 UTF-8 文件（中文 Windows 常见）被解码成不可逆乱码
-      const buf = await fs.readFile(filePath)
-      const decoded = decodeTextFileBuffer(buf)
-      return { content: decoded.content, encoding: decoded.encoding }
+      const result = await readTextFileForRenderer(req)
+      if (result.error != null) {
+        log.warn(
+          `file:read rejected, path=${filePath}, code=${result.errorCode ?? 'read-failed'}, error=${result.error}`,
+        )
+      }
+      return result
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.warn(`file:read failed, path=${filePath}, error=${message}`)
-      return { error: message }
+      return { error: message, errorCode: 'read-failed' }
     }
   })
 

@@ -699,6 +699,7 @@ export const WorkspaceListDirectoryRequestSchema = z.object({
   workspaceId: z.string().uuid(),
   path: z.string().max(500).optional().default(''),
   maxDepth: z.number().int().min(0).max(5).optional().default(3),
+  includeIgnoredDirectories: z.boolean().optional().default(false),
 })
 
 export const WorkspaceListBranchesRequestSchema = z.object({

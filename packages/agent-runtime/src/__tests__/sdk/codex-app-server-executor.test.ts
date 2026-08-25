@@ -7,6 +7,7 @@ import type { AgentEvent } from '@spark/protocol'
 import { CodexAppServerExecutor } from '../../sdk/codex-app-server/codex-app-server-executor.js'
 import type { CodexAppServerExecutorOptions } from '../../sdk/codex-app-server/codex-app-server-executor.js'
 import { CodexAppServerRuntimeSupervisor } from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
+import { CodexRuntimeNotInstalledError } from '../../sdk/codex-sdk-executor.js'
 import type { EngineExecutor } from '../../sdk/engine-executor.js'
 import { isCompactCapable, isSteerCapable } from '../../sdk/engine-executor.js'
 import type { SDKExecutorConfig, SDKTurnAttachment } from '../../sdk/types.js'
@@ -540,6 +541,43 @@ describe('CodexAppServerExecutor', () => {
     expect(eventsOf(events, 'agent_status').at(-1)).toMatchObject({ status: 'completed' })
     // app-server 路径未发出任何事件（回退在事件前决定），user_message 只来自本层一次都没有。
     expect(eventsOf(events, 'user_message')).toHaveLength(0)
+  })
+
+  it('运行时缺失：准备阶段错误交给 Sdk fallback 生成标准安装恢复事件', async () => {
+    const runtimeSupervisor = {
+      acquire: vi.fn(async () => {
+        throw new CodexRuntimeNotInstalledError()
+      }),
+    } as unknown as CodexAppServerRuntimeSupervisor
+    const fallback = new FakeEngineExecutor({
+      events: [
+        {
+          type: 'agent_error',
+          code: 'CODEX_RUNTIME_NOT_INSTALLED',
+          message: 'Codex native runtime 未安装',
+          retryable: true,
+        },
+      ],
+      terminalStatus: 'error',
+    })
+
+    const { events, error } = await runScenario(
+      { steps: [] },
+      {
+        executor: {
+          executablePath: process.execPath,
+          runtimeSupervisor,
+          createFallback: () => fallback,
+        },
+      },
+    )
+
+    expect(error).toBeNull()
+    expect(fallback.record).not.toBeNull()
+    expect(eventsOf(events, 'agent_error')).toContainEqual(
+      expect.objectContaining({ code: 'CODEX_RUNTIME_NOT_INSTALLED' }),
+    )
+    expect(eventsOf(events, 'agent_status').at(-1)).toMatchObject({ status: 'error' })
   })
 
   it('fresh native thread 持久化失败时在 turn/start 前回退并注入备用历史', async () => {

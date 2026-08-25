@@ -5,7 +5,8 @@
  *  - 文件 tabs 列表（OpenCodeFile[]）与激活路径由 ChatView 受控持有并传入；本 hook 只负责
  *    「每个 absPath 的内容运行时态」（content / savedContent / state / externalChanged），
  *    与 tabs 增删解耦。
- *  - 新文件进入 tabs → 自动读取（file:read），loadingPathsRef 去重避免并发重复读。
+ *  - 仅激活 tab 按需读取（file:read）；非激活且已保存的内容立即释放，脏内容保留。
+ *  - 关闭 tab 会清理对应 runtime；异步读取返回前若已关闭/切走，不再把大字符串写回内存。
  *  - 编辑：editActive 更新 content；content !== savedContent 即脏。
  *  - 保存：file:write-text。保存前重读磁盘与 savedContent 对比，若磁盘已被外部（agent 等）
  *    修改，抛 CodeFileExternalChangeError 由 UI 弹「覆盖 / 重载」确认，绝不静默覆盖。
@@ -18,6 +19,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OpenCodeFile, CodeFileRuntime } from './types'
 
 type RuntimeMap = Record<string, CodeFileRuntime>
+
+/** 代码编辑器单文件读取上限；限制在主进程完整读取和 IPC 序列化之前执行。 */
+export const CODE_VIEWER_MAX_FILE_BYTES = 5 * 1024 * 1024
 
 const EMPTY_RUNTIME: CodeFileRuntime = {
   content: '',
@@ -37,7 +41,13 @@ export class CodeFileExternalChangeError extends Error {
   }
 }
 
-type FileReadResp = { content?: string; encoding?: string; error?: string }
+type FileReadResp = {
+  content?: string
+  encoding?: string
+  error?: string
+  errorCode?: string
+  size?: number
+}
 type FileWriteResp = { success: boolean }
 
 export interface UseCodeViewerFilesResult {
@@ -59,16 +69,36 @@ export function useCodeViewerFiles(
 ): UseCodeViewerFilesResult {
   const [runtimes, setRuntimes] = useState<RuntimeMap>({})
   const loadingPathsRef = useRef<Set<string>>(new Set())
+  const readGenerationRef = useRef<Map<string, number>>(new Map())
+  const openPathsRef = useRef<Set<string>>(new Set())
+  const activeAbsPathRef = useRef<string | null>(activeAbsPath)
+
+  // 异步回调必须看到当前 tab/active，而不能捕获发起读取时的旧 props。
+  openPathsRef.current = new Set(files.map((file) => file.absPath))
+  activeAbsPathRef.current = activeAbsPath
 
   const readFile = useCallback(async (absPath: string) => {
     if (loadingPathsRef.current.has(absPath)) return
+    const generation = (readGenerationRef.current.get(absPath) ?? 0) + 1
+    readGenerationRef.current.set(absPath, generation)
     loadingPathsRef.current.add(absPath)
     setRuntimes((prev) => ({
       ...prev,
       [absPath]: { ...(prev[absPath] ?? EMPTY_RUNTIME), state: 'loading', error: undefined },
     }))
     try {
-      const res = (await window.spark.invoke('file:read', { filePath: absPath })) as FileReadResp
+      const res = (await window.spark.invoke('file:read', {
+        filePath: absPath,
+        maxBytes: CODE_VIEWER_MAX_FILE_BYTES,
+        rejectBinary: true,
+      })) as FileReadResp
+      if (
+        readGenerationRef.current.get(absPath) !== generation ||
+        !openPathsRef.current.has(absPath) ||
+        activeAbsPathRef.current !== absPath
+      ) {
+        return
+      }
       if (res.error) {
         setRuntimes((prev) => ({
           ...prev,
@@ -83,6 +113,13 @@ export function useCodeViewerFiles(
         }))
       }
     } catch (err) {
+      if (
+        readGenerationRef.current.get(absPath) !== generation ||
+        !openPathsRef.current.has(absPath) ||
+        activeAbsPathRef.current !== absPath
+      ) {
+        return
+      }
       setRuntimes((prev) => ({
         ...prev,
         [absPath]: {
@@ -92,18 +129,49 @@ export function useCodeViewerFiles(
         },
       }))
     } finally {
-      loadingPathsRef.current.delete(absPath)
+      if (readGenerationRef.current.get(absPath) === generation) {
+        loadingPathsRef.current.delete(absPath)
+      }
     }
   }, [])
 
-  // 新文件进入 tabs → 自动读取
+  // P2：只在文件真正成为 active 时读取。打开十几个 tab 不再立刻读取十几份内容。
   useEffect(() => {
-    for (const f of files) {
-      if (runtimes[f.absPath] == null && !loadingPathsRef.current.has(f.absPath)) {
-        void readFile(f.absPath)
+    if (
+      activeAbsPath != null &&
+      openPathsRef.current.has(activeAbsPath) &&
+      runtimes[activeAbsPath] == null &&
+      !loadingPathsRef.current.has(activeAbsPath)
+    ) {
+      void readFile(activeAbsPath)
+    }
+  }, [activeAbsPath, runtimes, readFile])
+
+  // P1 + P2 内存回收：关闭项全部删除；非激活项只保留未保存内容，已保存内容可按需重读。
+  useEffect(() => {
+    const openPaths = openPathsRef.current
+    // 切走或关闭时让尚未完成的读取失效。这样同一路径随即重新激活/重新打开时，
+    // 会发起新请求，旧请求即使更晚返回也不能覆盖新一轮 runtime。
+    for (const path of loadingPathsRef.current) {
+      if (!openPaths.has(path) || path !== activeAbsPath) {
+        readGenerationRef.current.set(path, (readGenerationRef.current.get(path) ?? 0) + 1)
+        loadingPathsRef.current.delete(path)
       }
     }
-  }, [files, runtimes, readFile])
+    setRuntimes((prev) => {
+      let changed = false
+      const next: RuntimeMap = {}
+      for (const [path, runtime] of Object.entries(prev)) {
+        const dirty = runtime.state === 'ready' && runtime.content !== runtime.savedContent
+        if (openPaths.has(path) && (path === activeAbsPath || dirty)) {
+          next[path] = runtime
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [files, activeAbsPath])
 
   const editActive = useCallback(
     (content: string) => {
@@ -149,6 +217,8 @@ export function useCodeViewerFiles(
     try {
       const r = (await window.spark.invoke('file:read', {
         filePath: activeAbsPath,
+        maxBytes: CODE_VIEWER_MAX_FILE_BYTES,
+        rejectBinary: true,
       })) as FileReadResp
       if (!r.error) diskContent = r.content ?? ''
     } catch {
