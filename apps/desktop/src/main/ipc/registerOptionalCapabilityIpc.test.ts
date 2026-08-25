@@ -22,6 +22,12 @@ const snapshot = {
   remoteAvailable: true,
 }
 
+const sdkIntegrity = {
+  sdks: [],
+  tools: [],
+  checkedAt: '2026-08-25T00:00:00.000Z',
+}
+
 describe('registerOptionalCapabilityIpc', () => {
   beforeEach(() => {
     harness.handlers.clear()
@@ -39,7 +45,8 @@ describe('registerOptionalCapabilityIpc', () => {
       uninstall: vi.fn(async () => ({ success: true, message: 'ok', snapshot })),
       setAutoUpdate: vi.fn(async () => snapshot),
     }
-    registerOptionalCapabilityIpc({ manager })
+    const checkSdkIntegrity = vi.fn(async () => sdkIntegrity)
+    registerOptionalCapabilityIpc({ manager, checkSdkIntegrity })
 
     expect([...harness.handlers.keys()].sort()).toEqual([
       'optional-capability:cancel',
@@ -52,14 +59,26 @@ describe('registerOptionalCapabilityIpc', () => {
       'optional-capability:update',
     ])
 
-    await harness.handlers.get('optional-capability:check')!({ forceRemote: true })
-    await harness.handlers.get('optional-capability:install')!({ capabilityId: 'office-viewer' })
+    const checkHandler = harness.handlers.get('optional-capability:check')
+    const installHandler = harness.handlers.get('optional-capability:install')
+    expect(checkHandler).toBeDefined()
+    expect(installHandler).toBeDefined()
+    if (checkHandler == null || installHandler == null) throw new Error('handlers not registered')
+
+    await checkHandler({ forceRemote: true })
+    await installHandler({ capabilityId: 'office-viewer' })
+    await installHandler({ capabilityId: 'codex-runtime' })
 
     expect(manager.check).toHaveBeenCalledWith(true)
     expect(manager.install).toHaveBeenCalledWith('office-viewer')
+    expect(manager.install).toHaveBeenCalledWith('codex-runtime')
+    expect(checkSdkIntegrity).toHaveBeenCalledOnce()
+    expect(checkSdkIntegrity).toHaveBeenCalledWith({ checkLatest: false })
     expect(harness.events).toEqual([
       { channel: 'stream:optional-capability:snapshot', payload: snapshot },
       { channel: 'stream:optional-capability:snapshot', payload: snapshot },
+      { channel: 'stream:optional-capability:snapshot', payload: snapshot },
+      { channel: 'stream:sdk:integrity', payload: sdkIntegrity },
     ])
   })
 })

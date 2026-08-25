@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   decodeTextFileBuffer,
   encodeTextFileContent,
+  looksLikeBinaryTextBuffer,
   parseTextFileEncoding,
 } from './TextFileEncoding.js'
 
@@ -56,6 +57,22 @@ describe('decodeTextFileBuffer', () => {
 
   it('空文件返回 utf-8 空串', () => {
     expect(decodeTextFileBuffer(Buffer.alloc(0))).toEqual({ content: '', encoding: 'utf-8' })
+  })
+})
+
+describe('looksLikeBinaryTextBuffer', () => {
+  it('accepts regular UTF-8 and BOM-marked UTF-16 text', () => {
+    expect(looksLikeBinaryTextBuffer(Buffer.from('const value = 1\n', 'utf8'))).toBe(false)
+    expect(
+      looksLikeBinaryTextBuffer(
+        Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('中文', 'utf16le')]),
+      ),
+    ).toBe(false)
+  })
+
+  it('rejects NUL-heavy and control-byte binary samples', () => {
+    expect(looksLikeBinaryTextBuffer(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2]))).toBe(true)
+    expect(looksLikeBinaryTextBuffer(Buffer.from([1, 2, 3, 4, 5, 6, 65, 66]))).toBe(true)
   })
 })
 

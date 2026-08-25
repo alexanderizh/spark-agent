@@ -20,7 +20,11 @@ const PROJECT_KIND_INDICATORS: ReadonlyArray<{
   /** 二次确认文件（可选，精确文件名） */
   confirmFiles?: string[]
 }> = [
-  { files: ['package.json'], kind: 'typescript', confirmFiles: ['tsconfig.json', 'tsconfig.jsonc'] },
+  {
+    files: ['package.json'],
+    kind: 'typescript',
+    confirmFiles: ['tsconfig.json', 'tsconfig.jsonc'],
+  },
   { files: ['package.json'], kind: 'javascript' },
   { files: ['Cargo.toml'], kind: 'rust' },
   { files: ['go.mod'], kind: 'go' },
@@ -42,11 +46,15 @@ const PROJECT_KIND_INDICATORS: ReadonlyArray<{
 export async function detectProjectKind(rootPath: string): Promise<string> {
   try {
     const dirents = await fs.readdir(rootPath, { withFileTypes: true })
-    const fileNames = new Set(dirents.filter((d) => d.isFile() || d.isSymbolicLink()).map((d) => d.name))
+    const fileNames = new Set(
+      dirents.filter((d) => d.isFile() || d.isSymbolicLink()).map((d) => d.name),
+    )
 
     for (const indicator of PROJECT_KIND_INDICATORS) {
       const hasMainFile = indicator.files.some((f) =>
-        f.startsWith('.') ? fileNames.has(f) || [...fileNames].some((n) => n.endsWith(f)) : fileNames.has(f),
+        f.startsWith('.')
+          ? fileNames.has(f) || [...fileNames].some((n) => n.endsWith(f))
+          : fileNames.has(f),
       )
       if (!hasMainFile) continue
 
@@ -76,6 +84,7 @@ export interface UpdateWorkspaceParams {
 export interface ListDirectoryTreeParams {
   path?: string
   maxDepth?: number
+  includeIgnoredDirectories?: boolean
 }
 
 export interface OpenWorkspaceParams {
@@ -104,14 +113,8 @@ const WORKTREE_CONTAINER_PATHS = new Set([
   CLAUDE_WORKTREE_CONTAINER,
   LEGACY_SPARK_WORKTREE_CONTAINER,
 ])
-const IGNORED_TREE_NAMES = new Set([
-  '.git',
-  '.next',
-  'coverage',
-  'dist',
-  'node_modules',
-  'out',
-])
+const ALWAYS_IGNORED_TREE_NAMES = new Set(['.git'])
+const DEFAULT_IGNORED_TREE_NAMES = new Set(['.next', 'coverage', 'dist', 'node_modules', 'out'])
 
 export class WorkspaceService {
   private currentWorkspace: WorkspaceRow | null = null
@@ -121,7 +124,11 @@ export class WorkspaceService {
     private readonly git: GitWorktreeService = new GitWorktreeService(),
   ) {}
 
-  async openWorkspace(rootPath: string, name?: string, params: OpenWorkspaceParams = {}): Promise<WorkspaceRow> {
+  async openWorkspace(
+    rootPath: string,
+    name?: string,
+    params: OpenWorkspaceParams = {},
+  ): Promise<WorkspaceRow> {
     const resolved = path.resolve(rootPath)
     if (params.create === true) {
       await fs.mkdir(resolved, { recursive: true })
@@ -154,7 +161,11 @@ export class WorkspaceService {
     this.currentWorkspace = null
   }
 
-  listWorkspaces(limit = 50, offset = 0, params: { includeArchived?: boolean } = {}): WorkspaceRow[] {
+  listWorkspaces(
+    limit = 50,
+    offset = 0,
+    params: { includeArchived?: boolean } = {},
+  ): WorkspaceRow[] {
     return this.repo.listAll(limit, offset, params)
   }
 
@@ -173,14 +184,18 @@ export class WorkspaceService {
     await assertDirectory(startPath)
 
     const maxDepth = clampDepth(params.maxDepth ?? DEFAULT_TREE_DEPTH)
+    const includeIgnoredDirectories = params.includeIgnoredDirectories === true
+    // Direct-child requests are used by the lazy file explorer and must be complete.
+    // Recursive legacy requests remain bounded to avoid unexpectedly scanning huge trees.
+    const entryLimit = maxDepth === 0 ? Number.POSITIVE_INFINITY : MAX_TREE_ENTRIES
     const entries: WorkspaceTreeEntry[] = []
 
     const walk = async (dirPath: string, relativePrefix: string, depth: number): Promise<void> => {
-      if (entries.length >= MAX_TREE_ENTRIES) return
+      if (entries.length >= entryLimit) return
 
-      const children = await readVisibleChildren(dirPath)
+      const children = await readVisibleChildren(dirPath, includeIgnoredDirectories)
       for (const child of children) {
-        if (entries.length >= MAX_TREE_ENTRIES) return
+        if (entries.length >= entryLimit) return
 
         const childPath = path.join(dirPath, child.name)
         const childRelativePath = toPosixPath(path.join(relativePrefix, child.name))
@@ -188,8 +203,10 @@ export class WorkspaceService {
         // 不应污染主项目的文件树。
         if (WORKTREE_CONTAINER_PATHS.has(childRelativePath)) continue
         const isDirectory = child.isDirectory()
-        const childEntries = isDirectory ? await readVisibleChildren(childPath) : []
-        const extension = !isDirectory && !child.isSymbolicLink() ? path.extname(child.name).slice(1).toLowerCase() : ''
+        const extension =
+          !isDirectory && !child.isSymbolicLink()
+            ? path.extname(child.name).slice(1).toLowerCase()
+            : ''
         const entry: WorkspaceTreeEntry = {
           name: child.name,
           path: childRelativePath,
@@ -198,7 +215,14 @@ export class WorkspaceService {
         }
 
         if (extension !== '') entry.extension = extension
-        if (isDirectory) entry.childrenCount = childEntries.length
+        // Direct lazy-load requests deliberately leave the count unknown. The explorer
+        // treats such directories as expandable and corrects empty state after expansion,
+        // avoiding one extra readdir for every child directory (notably node_modules).
+        if (isDirectory && maxDepth > 0) {
+          entry.childrenCount = (
+            await readVisibleChildren(childPath, includeIgnoredDirectories)
+          ).length
+        }
 
         entries.push(entry)
 
@@ -243,13 +267,15 @@ export class WorkspaceService {
       return current
     }
 
-    const relocatedFrom = Array.from(new Set([
-      ...('relocated_from_json' in current
-        ? parseRelocatedFrom(current.relocated_from_json)
-        : []),
-      previousRoot,
-      ...(params.relocatedFrom ?? []),
-    ]))
+    const relocatedFrom = Array.from(
+      new Set([
+        ...('relocated_from_json' in current
+          ? parseRelocatedFrom(current.relocated_from_json)
+          : []),
+        previousRoot,
+        ...(params.relocatedFrom ?? []),
+      ]),
+    )
     this.repo.relocate(id, { rootPath: resolved, relocatedFrom })
     const updated = this.repo.findByIdOrFail(id)
 
@@ -273,7 +299,12 @@ export class WorkspaceService {
     await ensureGitignoreEntry(mainRepoRoot, `${worktreeContainer}/`)
     await this.git.addWorktree(mainRepoRoot, { branch, targetPath, baseBranch })
 
-    const meta: WorktreeMeta = { baseRepoRoot: mainRepoRoot, branch, baseBranch, baseWorkspaceId: base.id }
+    const meta: WorktreeMeta = {
+      baseRepoRoot: mainRepoRoot,
+      branch,
+      baseBranch,
+      baseWorkspaceId: base.id,
+    }
     const workspace = this.repo.create({
       id: randomUUID(),
       name: `${base.name} · ${branch}`,
@@ -287,7 +318,11 @@ export class WorkspaceService {
   }
 
   /** 分支或目标目录已存在时追加数字后缀，返回可用的唯一分支名 */
-  private async resolveUniqueBranch(mainRepoRoot: string, desired: string, worktreeContainer: string): Promise<string> {
+  private async resolveUniqueBranch(
+    mainRepoRoot: string,
+    desired: string,
+    worktreeContainer: string,
+  ): Promise<string> {
     const exists = async (candidate: string): Promise<boolean> => {
       if (await this.git.branchExists(mainRepoRoot, candidate)) return true
       const dir = path.join(mainRepoRoot, worktreeContainer, slugifyBranch(candidate))
@@ -307,7 +342,10 @@ export class WorkspaceService {
     return candidate
   }
 
-  async removeWorktreeWorkspace(workspaceId: string, opts: { force?: boolean } = {}): Promise<void> {
+  async removeWorktreeWorkspace(
+    workspaceId: string,
+    opts: { force?: boolean } = {},
+  ): Promise<void> {
     const meta = this.repo.getWorktreeMeta(workspaceId)
     if (meta == null) throw new Error('Workspace is not a worktree')
     const ws = this.repo.findByIdOrFail(workspaceId)
@@ -351,11 +389,18 @@ function resolveInsideRoot(rootPath: string, relativePath: string): string {
   return resolved
 }
 
-async function readVisibleChildren(dirPath: string): Promise<import('node:fs').Dirent[]> {
+async function readVisibleChildren(
+  dirPath: string,
+  includeIgnoredDirectories = false,
+): Promise<import('node:fs').Dirent[]> {
   try {
     const children = await fs.readdir(dirPath, { withFileTypes: true })
     return children
-      .filter((child) => !IGNORED_TREE_NAMES.has(child.name))
+      .filter(
+        (child) =>
+          !ALWAYS_IGNORED_TREE_NAMES.has(child.name) &&
+          (includeIgnoredDirectories || !DEFAULT_IGNORED_TREE_NAMES.has(child.name)),
+      )
       .sort((a, b) => {
         if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
         return a.name.localeCompare(b.name)
@@ -374,7 +419,9 @@ function parseRelocatedFrom(value: string | null): string[] {
   if (value == null || value.trim() === '') return []
   try {
     const parsed = JSON.parse(value) as unknown
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : []
   } catch {
     return []
   }
@@ -407,7 +454,9 @@ async function ensureGitignoreEntry(repoRoot: string, entry: string): Promise<vo
   let content = ''
   try {
     content = await fs.readFile(gitignorePath, 'utf8')
-  } catch { /* no .gitignore yet */ }
+  } catch {
+    /* no .gitignore yet */
+  }
   const lines = content.split(/\r?\n/).map((l) => l.trim())
   if (lines.includes(entry.trim())) return
   const prefix = content === '' || content.endsWith('\n') ? '' : '\n'

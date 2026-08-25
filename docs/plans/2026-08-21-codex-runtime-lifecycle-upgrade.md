@@ -1,6 +1,6 @@
 # Codex Runtime 生命周期升级计划
 
-> 状态: 实施中 | 最后核对: 2026-08-22
+> 状态: 实施中 | 最后核对: 2026-08-25
 
 ## 背景
 
@@ -94,6 +94,14 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 
 ### P3-D：Runtime 升级兼容与 Skills 告警分类（已实现）
 
+- App Server 在 runtime 缺失或其他 turn-start 前准备失败时统一进入 SDK fallback；
+  生产态由 fallback 生成 `CODEX_RUNTIME_NOT_INSTALLED` 标准事件，确保聊天界面展示下载恢复卡，
+  不再只抛出会被会话收尾层吞掉的准备异常。
+- SDK 完整性与可选功能组件的 Codex runtime 安装入口双向发布复检快照；任一入口安装完成后，
+  两块 UI 都立即采用磁盘上的真实激活状态，不再依赖刷新消除重复“安装运行时”提示。
+- 新电脑只有已导入的 Codex Provider、没有 adapter 历史偏好时，Provider 初始化先尊重当前
+  adapter；仅当该 adapter 完全没有可用 Provider 时才回退到另一引擎。新建会话不再把已存在的
+  Codex Provider 误报为“需要配置 Provider”，Composer 也不再因同一误判静默禁用发送。
 - 已安装且文件完整、版本不低于 `0.144.5` 协议基线的 native runtime 不再与应用内
   `@openai/codex-sdk` 精确绑版；应用升级后继续可用，匹配当前 SDK 的云端 runtime 作为
   `update_available` 可选升级呈现。
@@ -142,6 +150,10 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 
 ## 当前验证
 
+- 2026-08-25 缺失 runtime 与完整性同步回归：App Server executor 38/38、双向 IPC 2/2、
+  SDK 完整性与聊天恢复卡聚焦用例通过；agent-runtime 与 desktop main strict typecheck 通过。
+- 2026-08-25 fresh install 仅有 Codex Provider 的 adapter 回退与新建会话回归：22/22 通过；
+  当前 adapter 仍有可用 Provider 时保持原选择优先级，不进行跨引擎切换。
 - protocol、agent-runtime、desktop TypeScript strict 检查通过。
 - Runtime 9 个聚焦文件 105/105 通过，包含 Router、Client、Supervisor、persistent Runtime、
   Executor、native binding、Registry 与真实 SQLite lifecycle；测试前后通过仓库脚本切换并恢复
