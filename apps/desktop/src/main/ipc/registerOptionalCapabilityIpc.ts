@@ -7,17 +7,11 @@ import type {
 } from '../services/optional-capabilities/definitions.js'
 import { getExternalCapabilityAdapters } from '../services/optional-capabilities/externalCapabilityAdapters.js'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
+import { registerVideoWorkbenchCapabilityIpc } from './registerVideoWorkbenchCapabilityIpc.js'
 
 type Manager = Pick<
   OptionalCapabilityManager,
-  | 'list'
-  | 'check'
-  | 'install'
-  | 'update'
-  | 'repair'
-  | 'cancel'
-  | 'uninstall'
-  | 'setAutoUpdate'
+  'list' | 'check' | 'install' | 'update' | 'repair' | 'cancel' | 'uninstall' | 'setAutoUpdate'
 >
 
 export interface RegisterOptionalCapabilityIpcOptions {
@@ -32,8 +26,7 @@ export function getOptionalCapabilityManager(): OptionalCapabilityManager {
     platform: currentPlatform(),
     arch: currentArchitecture(),
     externalAdapters: getExternalCapabilityAdapters(),
-    onProgress: (progress) =>
-      pushStreamEvent('stream:optional-capability:progress', progress),
+    onProgress: (progress) => pushStreamEvent('stream:optional-capability:progress', progress),
   })
   return managerSingleton
 }
@@ -41,6 +34,7 @@ export function getOptionalCapabilityManager(): OptionalCapabilityManager {
 export function registerOptionalCapabilityIpc(
   options: RegisterOptionalCapabilityIpcOptions = {},
 ): void {
+  registerVideoWorkbenchCapabilityIpc()
   const manager = options.manager ?? getOptionalCapabilityManager()
   const publish = (snapshot: OptionalCapabilitySnapshot) => {
     pushStreamEvent('stream:optional-capability:snapshot', snapshot)
@@ -79,7 +73,11 @@ function registerMutation(
 }
 
 function currentPlatform(): SupportedDesktopPlatform {
-  if (process.platform === 'darwin' || process.platform === 'linux' || process.platform === 'win32') {
+  if (
+    process.platform === 'darwin' ||
+    process.platform === 'linux' ||
+    process.platform === 'win32'
+  ) {
     return process.platform
   }
   throw new Error(`Unsupported desktop platform: ${process.platform}`)

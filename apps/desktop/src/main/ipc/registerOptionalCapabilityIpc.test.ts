@@ -50,6 +50,7 @@ describe('registerOptionalCapabilityIpc', () => {
       'optional-capability:set-auto-update',
       'optional-capability:uninstall',
       'optional-capability:update',
+      'video-workbench:get-ffmpeg-capabilities',
     ])
 
     await harness.handlers.get('optional-capability:check')!({ forceRemote: true })
