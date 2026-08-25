@@ -3,39 +3,13 @@ import { CheckCircle2, Download, LoaderCircle, RotateCcw, Settings } from 'lucid
 import type { SdkIntegrityInstallProgress } from '@spark/protocol'
 import { useApp } from '../../AppContext'
 import { SdkInstallProgressView } from '../../components/SdkInstallProgress'
-
-const CODEX_SDK_PACKAGE = '@openai/codex-sdk'
+import { CODEX_SDK_PACKAGE, sharedCodexRuntimeInstall } from '../../utils/codex-runtime-install'
 
 type RecoveryState =
   | { phase: 'idle'; message: string }
   | { phase: 'installing'; message: string }
   | { phase: 'success'; message: string }
   | { phase: 'error'; message: string }
-
-let activeInstall: ReturnType<typeof installCodexRuntime> | null = null
-
-async function installCodexRuntime() {
-  const result = await window.spark.invoke('sdk:integrity-install', {
-    packageName: CODEX_SDK_PACKAGE,
-  })
-  if (!result.success) throw new Error(result.message)
-
-  void window.spark
-    .invoke('sdk:integrity-check', { checkLatest: false })
-    .then((integrity) => {
-      window.localStorage.setItem('spark-sdk-integrity', JSON.stringify(integrity))
-    })
-    .catch(() => undefined)
-
-  return result
-}
-
-function sharedCodexRuntimeInstall() {
-  activeInstall ??= installCodexRuntime().finally(() => {
-    activeInstall = null
-  })
-  return activeInstall
-}
 
 export function CodexRuntimeRecovery({ onRetry }: { onRetry?: () => void }) {
   const { setTweak } = useApp()

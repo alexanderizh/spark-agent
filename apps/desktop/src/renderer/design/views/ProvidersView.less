@@ -1846,3 +1846,115 @@
   font-size: 11px;
   color: var(--danger);
 }
+
+.pv_codex_runtime_notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 36%, transparent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+
+  &.is-success {
+    border-color: color-mix(in srgb, var(--success) 36%, transparent);
+    background: color-mix(in srgb, var(--success) 8%, transparent);
+    color: var(--success);
+    font-size: 12px;
+    gap: 7px;
+  }
+}
+
+.pv_codex_runtime_notice_body {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pv_codex_runtime_notice_status {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+
+  > svg {
+    flex: 0 0 auto;
+    margin-top: 2px;
+    color: var(--warning);
+  }
+}
+
+.pv_codex_runtime_notice.is-installing .pv_codex_runtime_notice_status > svg,
+.pv_codex_runtime_notice.is-installing .pv_codex_runtime_notice_install > svg {
+  animation: pv_codex_runtime_spin 0.9s linear infinite;
+}
+
+.pv_codex_runtime_notice_actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.pv_codex_runtime_notice_actions button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pv_codex_runtime_notice_install {
+  background: var(--primary);
+  color: #fff;
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--primary) 88%, #000);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.65;
+  }
+}
+
+.pv_codex_runtime_notice_settings {
+  border-color: var(--border) !important;
+  background: transparent;
+  color: var(--text-muted);
+
+  &:hover {
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+    color: var(--text);
+  }
+}
+
+@keyframes pv_codex_runtime_spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 560px) {
+  .pv_codex_runtime_notice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pv_codex_runtime_notice_actions {
+    flex-wrap: wrap;
+  }
+}

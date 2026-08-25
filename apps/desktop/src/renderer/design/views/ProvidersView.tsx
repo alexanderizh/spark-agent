@@ -19,6 +19,7 @@ import { Badge, Switch } from 'antd'
 import { Icons } from '../Icons'
 import { ChipList } from '../components/ChipList'
 import { ProviderConversationProtocolFields } from './provider/ProviderConversationProtocolFields'
+import { ProviderCodexRuntimeNotice } from './provider/ProviderCodexRuntimeNotice'
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
 import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
 import { ProviderEnabledSwitch } from './provider/ProviderEnabledSwitch'
@@ -3865,6 +3866,9 @@ export function ProviderEditPanel({
                       { label: 'OpenAI 格式', value: 'openai' },
                     ]}
                   />
+                  {form.provider === 'openai' && form.codexApiKind !== 'embedding' && (
+                    <ProviderCodexRuntimeNotice />
+                  )}
                 </>
               )}
 
