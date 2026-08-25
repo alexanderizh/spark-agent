@@ -77,8 +77,9 @@ import { GoalIterationDivider } from './chat/GoalIterationDivider'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
 import {
-  ComputerActivityBlock,
   ComputerActivityProvider,
+  ComputerActivitySegmentCard,
+  ComputerActivitySegmentsBridge,
 } from '../components/ComputerActivityBlock'
 import {
   readModelSwitchMarkers,
@@ -4775,177 +4776,187 @@ function ChatStream({
             </div>
           )}
           <ComputerActivityProvider sessionId={sessionId}>
-            <VirtualMessageList
-              ref={virtualMessageListRef}
-              items={displayMessages}
-              scrollElementRef={streamRef}
-              getItemKey={(msg) => msg.id}
-              estimateSize={(msg) => (msg.role === 'user' ? 120 : 220)}
-              renderAfterItem={(msg, index) => {
-                const marker = modelSwitchMarkers.find((item) => item.afterMessageId === msg.id)
-                const nextMessage = displayMessages[index + 1]
-                const isTurnEnd = msg.turnId != null && nextMessage?.turnId !== msg.turnId
-                const activityTurnId = isTurnEnd ? msg.turnId : undefined
-                if (marker == null && activityTurnId == null) return null
-                return (
-                  <>
-                    {marker != null && <ModelSwitchNotice marker={marker} />}
-                    {activityTurnId != null && <ComputerActivityBlock turnId={activityTurnId} />}
-                  </>
-                )
-              }}
-              renderItem={(msg, index) => {
-                const nextMessage = displayMessages[index + 1]
-                const isTurnEnd = msg.turnId != null && nextMessage?.turnId !== msg.turnId
-                const turnNavItem =
-                  msg.turnId == null
-                    ? undefined
-                    : turnNavItems.find((item) => item.turnId === msg.turnId)
-                const onFork =
-                  onRequestFork != null &&
-                  isTurnEnd &&
-                  turnNavItem != null &&
-                  turnNavItem.status !== 'streaming'
-                    ? () => onRequestFork(msg.turnId as TurnId, turnNavItem.ordinal)
-                    : undefined
-
-                return msg.role === 'user' ? (
-                  <UserMsg
-                    key={msg.id}
-                    timestamp={msg.timestamp}
-                    blocks={msg.blocks}
-                    {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
-                    {...(msg.sessionReferences != null && msg.sessionReferences.length > 0
-                      ? {
-                          sessionReferences: msg.sessionReferences.map((reference) => ({
-                            sourceSessionId: reference.sourceSessionId,
-                            title:
-                              reference.title ??
-                              sessions.find((item) => item.id === reference.sourceSessionId)
-                                ?.title ??
-                              '未命名会话',
-                          })),
-                        }
-                      : {})}
-                    {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
-                      ? {
-                          mentionAgentName:
-                            agents.find((a) => a.id === msg.mentionAgentId)?.name ??
-                            msg.mentionAgentId,
-                        }
-                      : {})}
-                    {...(msg.deliveryState != null ? { deliveryState: msg.deliveryState } : {})}
-                    {...(msg.deliveryError != null ? { deliveryError: msg.deliveryError } : {})}
-                    {...(msg.eventIds.length > 0 || isDeletableOptimisticUserMessage(msg)
-                      ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds, msg.clientId) }
-                      : {})}
-                    selectionMode={multiSelectMode}
-                    selected={selectedMessageIds.has(msg.id)}
-                    onToggleSelected={() => toggleMessageSelected(msg.id)}
-                    onStartMultiSelect={() => enterMultiSelectMode(msg.id)}
-                    {...(onReplyTo != null
-                      ? {
-                          onReply: (selectedText?: string) =>
-                            onReplyTo(msg, undefined, undefined, selectedText),
-                        }
-                      : {})}
-                    {...(onResendMessage != null
-                      ? {
-                          onResend: () =>
-                            onResendMessage({
-                              text: extractTextFromBlocks(msg.blocks),
-                              attachments: msg.attachments ?? [],
-                              ...(msg.sessionReferences != null && msg.sessionReferences.length > 0
-                                ? {
-                                    sessionReferences: msg.sessionReferences.map((reference) => ({
-                                      sourceSessionId: reference.sourceSessionId,
-                                      title:
-                                        reference.title ??
-                                        sessions.find(
-                                          (item) => item.id === reference.sourceSessionId,
-                                        )?.title ??
-                                        '未命名会话',
-                                      ...(reference.snapshotSeq !== undefined
-                                        ? { snapshotSeq: reference.snapshotSeq }
-                                        : {}),
-                                      status: 'active',
-                                    })),
-                                  }
-                                : {}),
-                            }),
-                        }
-                      : {})}
-                  >
-                    {renderBlocks(msg.blocks, {
-                      detectDocumentOutput: false,
-                      ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
-                      ...(onFilePreview != null ? { onFilePreview } : {}),
-                    })}
-                  </UserMsg>
-                ) : (
-                  (() => {
-                    const identity = resolveAssistantIdentity(
-                      msg,
-                      agents,
-                      assistantAgentId,
-                      assistantName,
-                      assistantAvatarSrc,
-                    )
-                    const retryPayload = buildErrorRetryPayload(displayMessages, index)
+            <ComputerActivitySegmentsBridge messages={displayMessages}>
+              {(segmentsFor) => (
+                <VirtualMessageList
+                  ref={virtualMessageListRef}
+                  items={displayMessages}
+                  scrollElementRef={streamRef}
+                  getItemKey={(msg) => msg.id}
+                  estimateSize={(msg) => (msg.role === 'user' ? 120 : 220)}
+                  renderAfterItem={(msg) => {
+                    const marker = modelSwitchMarkers.find((item) => item.afterMessageId === msg.id)
+                    const segments = segmentsFor(msg.id)
+                    if (marker == null && segments.length === 0) return null
                     return (
-                      <AssistantMessageRows
+                      <>
+                        {marker != null && <ModelSwitchNotice marker={marker} />}
+                        {segments.map((view) => (
+                          <ComputerActivitySegmentCard key={view.key} view={view} />
+                        ))}
+                      </>
+                    )
+                  }}
+                  renderItem={(msg, index) => {
+                    const nextMessage = displayMessages[index + 1]
+                    const isTurnEnd = msg.turnId != null && nextMessage?.turnId !== msg.turnId
+                    const turnNavItem =
+                      msg.turnId == null
+                        ? undefined
+                        : turnNavItems.find((item) => item.turnId === msg.turnId)
+                    const onFork =
+                      onRequestFork != null &&
+                      isTurnEnd &&
+                      turnNavItem != null &&
+                      turnNavItem.status !== 'streaming'
+                        ? () => onRequestFork(msg.turnId as TurnId, turnNavItem.ordinal)
+                        : undefined
+
+                    return msg.role === 'user' ? (
+                      <UserMsg
                         key={msg.id}
-                        sessionId={sessionId}
-                        workspaceRootPath={workspaceRootPath}
-                        messageId={msg.id}
+                        timestamp={msg.timestamp}
                         blocks={msg.blocks}
-                        messageStatus={msg.status}
-                        isLatest={expandedAssistantMessageIds.has(msg.id)}
-                        sessionRunning={agentIsRunning || persistedSessionStatus === 'running'}
-                        assistantId={identity.id}
-                        assistantName={identity.name}
-                        assistantAvatarSrc={identity.avatarSrc}
-                        showIdentity={shouldShowAssistantIdentity(
-                          teamConfig.enabled,
-                          identity.id,
-                          assistantAgentId,
-                        )}
-                        teamModeActive={teamConfig.enabled}
-                        {...(onFilePreview != null ? { onFilePreview } : {})}
-                        {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
-                        {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
-                        {...(msg.durationMs != null ? { turnDurationMs: msg.durationMs } : {})}
-                        {...(msg.status !== 'streaming'
+                        {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
+                        {...(msg.sessionReferences != null && msg.sessionReferences.length > 0
                           ? {
-                              onDelete: () => handleDeleteMessage(msg.id, msg.eventIds),
-                              selectionMode: multiSelectMode,
-                              selected: selectedMessageIds.has(msg.id),
-                              onToggleSelected: () => toggleMessageSelected(msg.id),
-                              onStartMultiSelect: () => enterMultiSelectMode(msg.id),
+                              sessionReferences: msg.sessionReferences.map((reference) => ({
+                                sourceSessionId: reference.sourceSessionId,
+                                title:
+                                  reference.title ??
+                                  sessions.find((item) => item.id === reference.sourceSessionId)
+                                    ?.title ??
+                                  '未命名会话',
+                              })),
                             }
                           : {})}
-                        {...(onFork != null ? { onFork } : {})}
-                        {...(onReplyTo != null && msg.status !== 'streaming'
+                        {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
+                          ? {
+                              mentionAgentName:
+                                agents.find((a) => a.id === msg.mentionAgentId)?.name ??
+                                msg.mentionAgentId,
+                            }
+                          : {})}
+                        {...(msg.deliveryState != null ? { deliveryState: msg.deliveryState } : {})}
+                        {...(msg.deliveryError != null ? { deliveryError: msg.deliveryError } : {})}
+                        {...(msg.eventIds.length > 0 || isDeletableOptimisticUserMessage(msg)
+                          ? {
+                              onDelete: () =>
+                                handleDeleteMessage(msg.id, msg.eventIds, msg.clientId),
+                            }
+                          : {})}
+                        selectionMode={multiSelectMode}
+                        selected={selectedMessageIds.has(msg.id)}
+                        onToggleSelected={() => toggleMessageSelected(msg.id)}
+                        onStartMultiSelect={() => enterMultiSelectMode(msg.id)}
+                        {...(onReplyTo != null
                           ? {
                               onReply: (selectedText?: string) =>
-                                onReplyTo(msg, identity.id, identity.name, selectedText),
+                                onReplyTo(msg, undefined, undefined, selectedText),
                             }
                           : {})}
-                        {...(retryPayload != null && onResendMessage != null
-                          ? { onRetry: () => onResendMessage(retryPayload) }
-                          : {})}
-                        {...(msg.status !== 'streaming' && onReplyToMember != null
+                        {...(onResendMessage != null
                           ? {
-                              onReplyToMember,
-                              onDeleteMemberMessage: handleDeleteMemberMessage,
+                              onResend: () =>
+                                onResendMessage({
+                                  text: extractTextFromBlocks(msg.blocks),
+                                  attachments: msg.attachments ?? [],
+                                  ...(msg.sessionReferences != null &&
+                                  msg.sessionReferences.length > 0
+                                    ? {
+                                        sessionReferences: msg.sessionReferences.map(
+                                          (reference) => ({
+                                            sourceSessionId: reference.sourceSessionId,
+                                            title:
+                                              reference.title ??
+                                              sessions.find(
+                                                (item) => item.id === reference.sourceSessionId,
+                                              )?.title ??
+                                              '未命名会话',
+                                            ...(reference.snapshotSeq !== undefined
+                                              ? { snapshotSeq: reference.snapshotSeq }
+                                              : {}),
+                                            status: 'active',
+                                          }),
+                                        ),
+                                      }
+                                    : {}),
+                                }),
                             }
                           : {})}
-                      />
+                      >
+                        {renderBlocks(msg.blocks, {
+                          detectDocumentOutput: false,
+                          ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
+                          ...(onFilePreview != null ? { onFilePreview } : {}),
+                        })}
+                      </UserMsg>
+                    ) : (
+                      (() => {
+                        const identity = resolveAssistantIdentity(
+                          msg,
+                          agents,
+                          assistantAgentId,
+                          assistantName,
+                          assistantAvatarSrc,
+                        )
+                        const retryPayload = buildErrorRetryPayload(displayMessages, index)
+                        return (
+                          <AssistantMessageRows
+                            key={msg.id}
+                            sessionId={sessionId}
+                            workspaceRootPath={workspaceRootPath}
+                            messageId={msg.id}
+                            blocks={msg.blocks}
+                            messageStatus={msg.status}
+                            isLatest={expandedAssistantMessageIds.has(msg.id)}
+                            sessionRunning={agentIsRunning || persistedSessionStatus === 'running'}
+                            assistantId={identity.id}
+                            assistantName={identity.name}
+                            assistantAvatarSrc={identity.avatarSrc}
+                            showIdentity={shouldShowAssistantIdentity(
+                              teamConfig.enabled,
+                              identity.id,
+                              assistantAgentId,
+                            )}
+                            teamModeActive={teamConfig.enabled}
+                            {...(onFilePreview != null ? { onFilePreview } : {})}
+                            {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
+                            {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
+                            {...(msg.durationMs != null ? { turnDurationMs: msg.durationMs } : {})}
+                            {...(msg.status !== 'streaming'
+                              ? {
+                                  onDelete: () => handleDeleteMessage(msg.id, msg.eventIds),
+                                  selectionMode: multiSelectMode,
+                                  selected: selectedMessageIds.has(msg.id),
+                                  onToggleSelected: () => toggleMessageSelected(msg.id),
+                                  onStartMultiSelect: () => enterMultiSelectMode(msg.id),
+                                }
+                              : {})}
+                            {...(onFork != null ? { onFork } : {})}
+                            {...(onReplyTo != null && msg.status !== 'streaming'
+                              ? {
+                                  onReply: (selectedText?: string) =>
+                                    onReplyTo(msg, identity.id, identity.name, selectedText),
+                                }
+                              : {})}
+                            {...(retryPayload != null && onResendMessage != null
+                              ? { onRetry: () => onResendMessage(retryPayload) }
+                              : {})}
+                            {...(msg.status !== 'streaming' && onReplyToMember != null
+                              ? {
+                                  onReplyToMember,
+                                  onDeleteMemberMessage: handleDeleteMemberMessage,
+                                }
+                              : {})}
+                          />
+                        )
+                      })()
                     )
-                  })()
-                )
-              }}
-            />
+                  }}
+                />
+              )}
+            </ComputerActivitySegmentsBridge>
           </ComputerActivityProvider>
           {showWaitingAgent && (
             <AgentMsg

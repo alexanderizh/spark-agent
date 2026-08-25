@@ -12,6 +12,7 @@ import {
   groupComputerActivityEvents,
   isTerminalComputerActivityEvent,
   mergeComputerActivityEvents,
+  sliceComputerActivityTimelines,
 } from './computer-activity-timeline'
 import './ComputerActivityBlock.less'
 
@@ -83,34 +84,90 @@ function ComputerActivitySessionProvider({
   )
 }
 
-export function ComputerActivityBlock({ turnId }: { turnId?: string }) {
-  const activity = useContext(ComputerActivityContext)
-  const { lang, t } = useI18n()
-  const timelines = useMemo(
-    () =>
-      groupComputerActivityEvents(activity?.events ?? []).filter(
-        (timeline) => turnId == null || timeline.events.some((event) => event.turnId === turnId),
-      ),
-    [activity?.events, turnId],
-  )
-  const loadError = activity?.loadError ?? null
-  if (timelines.length === 0 && loadError == null) return null
+/** 消息插槽里一段电脑操作记录的渲染模型（由 Bridge 切片产出） */
+export interface ComputerActivitySegmentView {
+  key: string
+  computerSessionId: string
+  /** 本段事件（seq 升序），时间上落在所属消息与其后一条消息之间 */
+  events: ComputerUseEvent[]
+  /** 整条 computerSession 时间线的全部事件（终态/耗时按全量判定） */
+  sessionEvents: ComputerUseEvent[]
+  session: ComputerSession | null
+  /** 是否为该时间线切出的最后一段：状态徽标与控制按钮只跟随它 */
+  isSessionLatest: boolean
+  /** 会话级加载失败信息（只挂在最后一条消息的末段上显示一次） */
+  loadError: string | null
+}
 
+/**
+ * 消费 ComputerActivityProvider 的数据，把电脑操作时间线按消息时间锚点切片，
+ * 通过 render-prop 向消息列表提供 `segmentsFor(messageId)`；每条消息后的插槽
+ * 渲染自己的段，实现操作记录按时间顺序穿插在会话消息流内。
+ */
+export function ComputerActivitySegmentsBridge({
+  messages,
+  children,
+}: {
+  messages: ReadonlyArray<{ id: string; timestamp?: string | undefined }>
+  children: (segmentsFor: (messageId: string) => ComputerActivitySegmentView[]) => ReactNode
+}) {
+  const activity = useContext(ComputerActivityContext)
+  const timelines = useMemo(
+    () => groupComputerActivityEvents(activity?.events ?? []),
+    [activity?.events],
+  )
+  const segmentsFor = useMemo(() => {
+    const segmentsByMessage = sliceComputerActivityTimelines(timelines, messages)
+    const lastMessage = messages[messages.length - 1]
+    return (messageId: string): ComputerActivitySegmentView[] => {
+      const segments = segmentsByMessage.get(messageId) ?? []
+      const views: ComputerActivitySegmentView[] = segments.map((segment) => ({
+        key: `${segment.computerSessionId}:${segment.events[0]?.seq ?? 0}`,
+        computerSessionId: segment.computerSessionId,
+        events: segment.events,
+        sessionEvents:
+          timelines.find((timeline) => timeline.computerSessionId === segment.computerSessionId)
+            ?.events ?? segment.events,
+        session: activity?.sessions.find((item) => item.id === segment.computerSessionId) ?? null,
+        isSessionLatest: segment.isSessionLatest,
+        loadError: null,
+      }))
+      // 会话级加载失败只显示一次：挂到最后一条消息的末尾（无段时补一个纯错误段）。
+      if (activity?.loadError != null && messageId === lastMessage?.id) {
+        const lastView = views[views.length - 1]
+        if (lastView != null) {
+          views[views.length - 1] = { ...lastView, loadError: activity.loadError }
+        } else {
+          views.push({
+            key: 'load-error',
+            computerSessionId: '',
+            events: [],
+            sessionEvents: [],
+            session: null,
+            isSessionLatest: false,
+            loadError: activity.loadError,
+          })
+        }
+      }
+      return views
+    }
+  }, [timelines, activity?.sessions, activity?.loadError, messages])
+  return children(segmentsFor)
+}
+
+/** 消息插槽里的电脑操作段卡片：轻量折叠卡；控制按钮只出现在时间线的最新段 */
+export function ComputerActivitySegmentCard({ view }: { view: ComputerActivitySegmentView }) {
+  const { lang, t } = useI18n()
+  if (view.loadError != null && view.events.length === 0) {
+    return (
+      <section className="computer-activity-list" aria-label={t('computerActivity.ariaLabel')}>
+        <div className="computer-activity-load-error">{view.loadError}</div>
+      </section>
+    )
+  }
   return (
     <section className="computer-activity-list" aria-label={t('computerActivity.ariaLabel')}>
-      {loadError != null && <div className="computer-activity-load-error">{loadError}</div>}
-      {timelines.map((timeline) => (
-        <ComputerActivityCard
-          key={timeline.computerSessionId}
-          computerSessionId={timeline.computerSessionId}
-          session={
-            activity?.sessions.find((item) => item.id === timeline.computerSessionId) ?? null
-          }
-          events={timeline.events}
-          lang={lang}
-          t={t}
-        />
-      ))}
+      <ComputerActivityCard view={view} lang={lang} t={t} />
     </section>
   )
 }
@@ -142,23 +199,20 @@ async function loadTimeline(computerSessionId: string): Promise<ComputerUseEvent
 }
 
 function ComputerActivityCard({
-  computerSessionId,
-  session,
-  events,
+  view,
   lang,
   t,
 }: {
-  computerSessionId: string
-  session: ComputerSession | null
-  events: ComputerUseEvent[]
+  view: ComputerActivitySegmentView
   lang: 'zh' | 'en'
   t: Translate
 }) {
-  const latest = events.at(-1)
+  const { computerSessionId, session, isSessionLatest } = view
+  const latest = view.sessionEvents.at(-1)
   const terminal = isTerminalComputerActivityEvent(latest)
   const status = activityStatus(latest, t)
-  const visibleEvents = events.filter((event) => event.type !== 'computer_observation_created')
-  const elapsed = elapsedLabel(events, t)
+  const visibleEvents = view.events.filter((event) => event.type !== 'computer_observation_created')
+  const elapsed = isSessionLatest ? elapsedLabel(view.sessionEvents, t) : null
   const [controlStatus, setControlStatus] = useState(session?.status ?? null)
   const [windows, setWindows] = useState<NativeWindowDescriptor[] | null>(null)
   const [selectedWindowId, setSelectedWindowId] = useState('')
@@ -219,12 +273,19 @@ function ComputerActivityCard({
   }
 
   return (
-    <details className={`computer-activity-card is-${status.kind}`} open={!terminal}>
+    <details
+      className={`computer-activity-card is-${status.kind}`}
+      open={isSessionLatest ? !terminal : false}
+    >
       <summary>
         <Icons.ChevronRight size={12} className="computer-activity-chev" />
         <span className="computer-activity-status-dot" aria-hidden="true" />
         <span className="computer-activity-title">{t('computerActivity.title')}</span>
-        <span className="computer-activity-status">{status.label}</span>
+        <span className="computer-activity-status">
+          {isSessionLatest
+            ? status.label
+            : t('computerActivity.segment.steps', { count: view.events.length })}
+        </span>
         {elapsed != null && <span className="computer-activity-elapsed">{elapsed}</span>}
       </summary>
       <ol className="computer-activity-events">
@@ -235,11 +296,19 @@ function ComputerActivityCard({
           </li>
         ))}
       </ol>
-      {session != null && !terminal && (
+      {view.loadError != null && (
+        <div className="computer-activity-load-error">{view.loadError}</div>
+      )}
+      {isSessionLatest && session != null && !terminal && (
         <div className="computer-activity-controls">
           <div className="computer-activity-control-actions">
             {controlStatus !== 'paused' && (
-              <Button type="text" size="small" disabled={controlBusy} onClick={() => void control('pause')}>
+              <Button
+                type="text"
+                size="small"
+                disabled={controlBusy}
+                onClick={() => void control('pause')}
+              >
                 {t('computerActivity.control.pause')}
               </Button>
             )}
@@ -263,7 +332,12 @@ function ComputerActivityCard({
                 {t('computerActivity.control.takeover')}
               </Button>
             )}
-            <Button type="text" size="small" disabled={controlBusy} onClick={() => void control('stop')}>
+            <Button
+              type="text"
+              size="small"
+              disabled={controlBusy}
+              onClick={() => void control('stop')}
+            >
               {t('computerActivity.control.stop')}
             </Button>
           </div>

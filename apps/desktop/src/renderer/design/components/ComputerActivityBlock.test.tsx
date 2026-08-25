@@ -4,7 +4,11 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ComputerSession, ComputerUseEvent, SessionId } from '@spark/protocol'
-import { ComputerActivityBlock, ComputerActivityProvider } from './ComputerActivityBlock'
+import {
+  ComputerActivityProvider,
+  ComputerActivitySegmentCard,
+  ComputerActivitySegmentsBridge,
+} from './ComputerActivityBlock'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../i18n', () => {
@@ -64,7 +68,30 @@ function computerSession(
   }
 }
 
-describe('ComputerActivityBlock', () => {
+function renderSegments(
+  sessionId: SessionId,
+  messages: ReadonlyArray<{ id: string; timestamp?: string | undefined }>,
+): React.ReactElement {
+  return (
+    <ComputerActivityProvider sessionId={sessionId}>
+      <ComputerActivitySegmentsBridge messages={messages}>
+        {(segmentsFor) => (
+          <>
+            {messages.map((message) => (
+              <div key={message.id} data-testid={message.id}>
+                {segmentsFor(message.id).map((view) => (
+                  <ComputerActivitySegmentCard key={view.key} view={view} />
+                ))}
+              </div>
+            ))}
+          </>
+        )}
+      </ComputerActivitySegmentsBridge>
+    </ComputerActivityProvider>
+  )
+}
+
+describe('ComputerActivitySegmentsBridge', () => {
   let container: HTMLDivElement
   let root: Root
   let resolveSecondSession: ((value: { computerSessions: ComputerSession[] }) => void) | undefined
@@ -147,22 +174,14 @@ describe('ComputerActivityBlock', () => {
   })
 
   it('removes the previous timeline immediately while the next session loads', async () => {
+    // 事件时刻 2026-07-31：锚点取更早的消息，段落在其插槽里
+    const messages = [{ id: 'm1', timestamp: '2026-07-30T00:00:00.000Z' }]
     await act(async () => {
-      root.render(
-        <ComputerActivityProvider sessionId={'session-1' as SessionId}>
-          <ComputerActivityBlock />
-        </ComputerActivityProvider>,
-      )
+      root.render(renderSegments('session-1' as SessionId, messages))
     })
     expect(container.textContent).toContain('risk=L1')
 
-    act(() =>
-      root.render(
-        <ComputerActivityProvider sessionId={'session-2' as SessionId}>
-          <ComputerActivityBlock />
-        </ComputerActivityProvider>,
-      ),
-    )
+    act(() => root.render(renderSegments('session-2' as SessionId, messages)))
     expect(container.textContent).toBe('')
 
     await act(async () => {
@@ -174,9 +193,9 @@ describe('ComputerActivityBlock', () => {
   it('pauses before offering every visible application in the target picker', async () => {
     await act(async () => {
       root.render(
-        <ComputerActivityProvider sessionId={'session-1' as SessionId}>
-          <ComputerActivityBlock />
-        </ComputerActivityProvider>,
+        renderSegments('session-1' as SessionId, [
+          { id: 'm1', timestamp: '2026-07-30T00:00:00.000Z' },
+        ]),
       )
     })
     const button = (label: string) =>
@@ -196,21 +215,17 @@ describe('ComputerActivityBlock', () => {
     })
   })
 
-  it('renders activity only in the matching conversation turn', async () => {
+  it('renders segments only in the message slot whose time precedes the events', async () => {
     await act(async () => {
       root.render(
-        <ComputerActivityProvider sessionId={'session-1' as SessionId}>
-          <div data-testid="matching">
-            <ComputerActivityBlock turnId="turn-computer-1" />
-          </div>
-          <div data-testid="unrelated">
-            <ComputerActivityBlock turnId="turn-unrelated" />
-          </div>
-        </ComputerActivityProvider>,
+        renderSegments('session-1' as SessionId, [
+          { id: 'm-before', timestamp: '2026-07-30T00:00:00.000Z' },
+          { id: 'm-after', timestamp: '2026-08-01T00:00:00.000Z' },
+        ]),
       )
     })
 
-    expect(container.querySelector('[data-testid="matching"]')?.textContent).toContain('risk=L1')
-    expect(container.querySelector('[data-testid="unrelated"]')?.textContent).toBe('')
+    expect(container.querySelector('[data-testid="m-before"]')?.textContent).toContain('risk=L1')
+    expect(container.querySelector('[data-testid="m-after"]')?.textContent).toBe('')
   })
 })
