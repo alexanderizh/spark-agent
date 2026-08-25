@@ -2975,16 +2975,61 @@ body.sidebar-resizing {
   padding-inline: 14px;
 }
 
-/* Slash command popup */
+/* Slash command popup — 悬浮层，锚定输入框卡片(.composer-v2, relative)向上弹出，
+   不占会话区文档流高度，避免撑开空会话 banner/tips */
 .slash-cmd-popup {
-  width: 100%;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
   max-height: 320px;
   overflow-y: auto;
   background: var(--panel-elev);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  margin-bottom: 6px;
   box-shadow: var(--shadow-md);
+  z-index: 20;
+}
+/* 弹窗顶部工具行：sticky 跟随滚动，右侧提供常显关闭按钮 */
+.slash-cmd-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px 5px 12px;
+  background: var(--panel-elev);
+}
+.slash-cmd-toolbar-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slash-cmd-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+}
+.slash-cmd-close:hover {
+  color: var(--text-strong);
+  background: var(--hover);
 }
 .slash-cmd-group-header {
   padding: 6px 12px 3px;

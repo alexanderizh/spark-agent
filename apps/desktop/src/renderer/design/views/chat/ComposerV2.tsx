@@ -852,6 +852,8 @@ export function ComposerV2({
   const composerParamBarRef = useRef<HTMLDivElement | null>(null)
   useResponsiveComposerParamVisibility(composerParamBarRef)
   const composingRef = useRef(false)
+  // 最近一次 compositionend 的时刻：用于区分「组合确认键的余波」与「IME 对普通按键的误报」
+  const compositionEndedAtRef = useRef(0)
   const lastFocusedDraftBucketRef = useRef<string | null>(null)
   // ── Mention (@) 状态：仅团队模式启用时生效 ──
   const [mentionOpen, setMentionOpen] = useState(false)
@@ -1989,14 +1991,6 @@ export function ComposerV2({
             : {}),
           ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
         })
-        // __SPARK_DEBUG_START__
-        console.warn('[BUG-DEBUG] ComposerV2.submit-turn resolved', {
-          sessionId: targetSessionId,
-          turnId: res.turnId,
-          started: res.started,
-          textLength: text.length,
-        })
-        // __SPARK_DEBUG_END__
         settleOptimisticUserSend(optimisticSend, res)
         if (!res.started) {
           setQueueVisible(true)
@@ -2360,15 +2354,6 @@ export function ComposerV2({
   )
 
   const handleSend = async () => {
-    // __SPARK_DEBUG_START__
-    console.warn('[BUG-DEBUG] ComposerV2.handleSend invoked', {
-      canSubmit,
-      sending,
-      isWorking,
-      valueLength: value.length,
-      attachmentCount: attachments.length,
-    })
-    // __SPARK_DEBUG_END__
     if (!canSubmit || voiceInputActiveRef.current) return
     if (!submitGateRef.current.tryEnter()) return
     setTextEditMenu(null)
@@ -3050,6 +3035,69 @@ export function ComposerV2({
     })
   }, [])
 
+  // 弹窗打开期间在 window 捕获阶段统一处理 Escape / Enter / Tab：焦点不在输入框时（如点过
+  // 消息区、或从 + 菜单打开弹窗），textarea 上的 handleKeyDown 收不到事件；焦点在输入框内时
+  // 也不能放行 Enter/Tab —— Lexical 挂在 contentEditable 上的原生监听器先于 React 合成事件
+  // handleKeyDown 执行，放行后 Enter 会被 Lexical 先插成换行符，onChange 检测不到 / 上下文
+  // 随即关掉弹窗，Enter 随后落到发送分支（把 / 当消息发出）。window 捕获阶段先于一切目标阶段
+  // 监听器，在这里选择命令并掐断传播，事件不会到达 Lexical，弹窗状态不被破坏。
+  // Escape 同理只关弹窗、不触发中断生成等其他全局 Escape 行为。
+  useEffect(() => {
+    if (!slashOpen && !mentionOpen) return
+    const handlePopupKeydown = (event: KeyboardEvent) => {
+      // IME 组合确认的 Enter / 取消组合的 Escape 交给输入法，不作用于弹窗
+      if (composingRef.current) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        if (slashOpen) closeSlashPopup()
+        if (mentionOpen) closeMentionPopup()
+        return
+      }
+      if (
+        (event.key !== 'Enter' && event.key !== 'Tab') ||
+        event.shiftKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      )
+        return
+      if (slashOpen && flatSlashList.length > 0) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        const cmd = flatSlashList[slashIndex] ?? flatSlashList[0]
+        if (cmd != null) selectSlashCmd(cmd)
+        return
+      }
+      if (slashOpen && flatSlashList.length === 0) {
+        // 与输入框内语义一致：无匹配命令时 Enter 收起弹窗，不落到其他全局 Enter 行为
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        closeSlashPopup()
+        return
+      }
+      if (mentionOpen && filteredMentionCandidates.length > 0) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        const candidate = filteredMentionCandidates[mentionIndex] ?? filteredMentionCandidates[0]
+        if (candidate != null) handleMentionSelect(candidate)
+      }
+    }
+    window.addEventListener('keydown', handlePopupKeydown, { capture: true })
+    return () => window.removeEventListener('keydown', handlePopupKeydown, { capture: true })
+  }, [
+    slashOpen,
+    mentionOpen,
+    flatSlashList,
+    slashIndex,
+    filteredMentionCandidates,
+    mentionIndex,
+    closeSlashPopup,
+    closeMentionPopup,
+    selectSlashCmd,
+    handleMentionSelect,
+  ])
+
   // scroll selected item into view
   useEffect(() => {
     if (!slashOpen) return
@@ -3059,7 +3107,19 @@ export function ComposerV2({
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const nativeEvent = event.nativeEvent as KeyboardEvent & { isComposing?: boolean }
-    if (nativeEvent.isComposing || composingRef.current || event.keyCode === 229) return
+    // IME 组合期以 compositionstart/end 维护的 composingRef 为准（真实组合会话的可靠信号）。
+    // macOS 中文输入法会把 Enter 的 keydown 误标为 keyCode 229 / isComposing（无真实组合时也是），
+    // 曾把命令弹窗的 Enter 选择静默吞掉；Tab/Escape 不被 IME 标记，表现为「只有 Tab 能插入」。
+    // 裸 isComposing / 229 仅在紧跟 compositionend 的 100ms 内视为「组合确认键的余波」继续拦截。
+    if (composingRef.current) {
+      return
+    }
+    if (
+      (nativeEvent.isComposing === true || event.keyCode === 229) &&
+      performance.now() - compositionEndedAtRef.current < 100
+    ) {
+      return
+    }
 
     // ── Mention popup navigation（优先级高于 Slash，因 @ 弹窗只在团队模式生效） ──
     if (mentionOpen) {
@@ -3667,69 +3727,6 @@ export function ComposerV2({
             onReorder={handleReorderQueuedMessages}
           />
         )}
-        {slashOpen && flatSlashList.length > 0 && (
-          <div className="slash-cmd-popup" ref={slashListRef}>
-            {(() => {
-              let flatIdx = -1
-              return groupedSlashCmds.map((group) => (
-                <div key={group.key}>
-                  <div className="slash-cmd-group-header">{group.label}</div>
-                  {group.cmds.map((cmd) => {
-                    flatIdx++
-                    const idx = flatIdx
-                    const isPinned = pinnedCmdIds.includes(cmd.id)
-                    return (
-                      <div
-                        key={cmd.id}
-                        className={`slash-cmd-item has-pin${idx === slashIndex ? ' selected' : ''}`}
-                        onMouseEnter={() => setSlashIndex(idx)}
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          selectSlashCmd(cmd)
-                        }}
-                      >
-                        <span className={`slash-cmd-layer layer-${cmd.layer}`}>
-                          {cmd.layer === 'sdk'
-                            ? 'SDK'
-                            : cmd.layer === 'skill'
-                              ? cmd.group === 'project-skill'
-                                ? '项目'
-                                : '技能'
-                              : cmd.layer === 'custom'
-                                ? '自定义'
-                                : '内置'}
-                        </span>
-                        <span className="slash-cmd-name">/{cmd.name}</span>
-                        {cmd.aliases.length > 0 && (
-                          <span className="slash-cmd-aliases">
-                            {cmd.aliases.map((a) => `/${a}`).join(' ')}
-                          </span>
-                        )}
-                        <span className="slash-cmd-desc">{cmd.description}</span>
-                        {cmd.risk === 'high' && <span className="slash-cmd-risk high">危险</span>}
-                        {cmd.risk === 'medium' && (
-                          <span className="slash-cmd-risk medium">注意</span>
-                        )}
-                        <button
-                          type="button"
-                          className={`slash-cmd-pin${isPinned ? ' is-pinned' : ''}`}
-                          title={isPinned ? '取消置顶' : '置顶'}
-                          onMouseDown={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            togglePinSlashCmd(cmd.id)
-                          }}
-                        >
-                          {isPinned ? <Icons.PinFill size={12} /> : <Icons.Pin size={12} />}
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              ))
-            })()}
-          </div>
-        )}
         {previewAttachment != null && (
           <ImagePreviewModal
             src={resolveComposerImageSrc(previewAttachment.previewPath ?? previewAttachment.path)}
@@ -3770,6 +3767,85 @@ export function ComposerV2({
           data-session-reference-drop-target
           className={`composer composer-v2 has-workspace-picks ${teamConfig.enabled ? 'composer-team-mode' : ''} ${manualExpanded ? 'expanded' : ''}${sessionReferenceDropActive ? ' is-session-reference-drop-active' : ''}`}
         >
+          {slashOpen && flatSlashList.length > 0 && (
+            <div className="slash-cmd-popup" ref={slashListRef}>
+              <div className="slash-cmd-toolbar">
+                <span className="slash-cmd-toolbar-hint">↑↓ 选择 · Enter 插入 · Esc 关闭</span>
+                <button
+                  type="button"
+                  className="slash-cmd-close"
+                  title="关闭命令面板"
+                  aria-label="关闭命令面板"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    closeSlashPopup()
+                  }}
+                >
+                  <Icons.X size={12} />
+                </button>
+              </div>
+              {(() => {
+                let flatIdx = -1
+                return groupedSlashCmds.map((group) => (
+                  <div key={group.key}>
+                    <div className="slash-cmd-group-header">{group.label}</div>
+                    {group.cmds.map((cmd) => {
+                      flatIdx++
+                      const idx = flatIdx
+                      const isPinned = pinnedCmdIds.includes(cmd.id)
+                      return (
+                        <div
+                          key={cmd.id}
+                          className={`slash-cmd-item has-pin${idx === slashIndex ? ' selected' : ''}`}
+                          onMouseEnter={() => setSlashIndex(idx)}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            selectSlashCmd(cmd)
+                          }}
+                        >
+                          <span className={`slash-cmd-layer layer-${cmd.layer}`}>
+                            {cmd.layer === 'sdk'
+                              ? 'SDK'
+                              : cmd.layer === 'skill'
+                                ? cmd.group === 'project-skill'
+                                  ? '项目'
+                                  : '技能'
+                                : cmd.layer === 'custom'
+                                  ? '自定义'
+                                  : '内置'}
+                          </span>
+                          <span className="slash-cmd-name">/{cmd.name}</span>
+                          {cmd.aliases.length > 0 && (
+                            <span className="slash-cmd-aliases">
+                              {cmd.aliases.map((a) => `/${a}`).join(' ')}
+                            </span>
+                          )}
+                          <span className="slash-cmd-desc">{cmd.description}</span>
+                          {cmd.risk === 'high' && <span className="slash-cmd-risk high">危险</span>}
+                          {cmd.risk === 'medium' && (
+                            <span className="slash-cmd-risk medium">注意</span>
+                          )}
+                          <button
+                            type="button"
+                            className={`slash-cmd-pin${isPinned ? ' is-pinned' : ''}`}
+                            title={isPinned ? '取消置顶' : '置顶'}
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              togglePinSlashCmd(cmd.id)
+                            }}
+                          >
+                            {isPinned ? <Icons.PinFill size={12} /> : <Icons.Pin size={12} />}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))
+              })()}
+            </div>
+          )}
           {teamConfig.enabled && (
             <div className="composer-team-banner">
               <span className="composer-team-banner-badge">
@@ -4013,6 +4089,7 @@ export function ComposerV2({
               }}
               onCompositionEnd={() => {
                 composingRef.current = false
+                compositionEndedAtRef.current = performance.now()
               }}
               onPaste={(event) => {
                 void handlePaste(event)
