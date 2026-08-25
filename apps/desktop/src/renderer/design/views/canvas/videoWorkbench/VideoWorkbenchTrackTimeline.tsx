@@ -515,7 +515,9 @@ const ClipCard = memo(function ClipCard({
           {resource?.title ?? `已丢失 · ${clip.resourceId.slice(0, 8)}`}
         </div>
         <div className="vwb-track-clip-meta">
-          <span>{isImage ? '🖼' : '🎬'}</span>
+          <span className="vwb-track-clip-kind" aria-hidden="true">
+            {isImage ? <Icons.Image size={11} /> : <Icons.Film size={11} />}
+          </span>
           <span>{formatTimestamp(duration)}</span>
         </div>
       </div>

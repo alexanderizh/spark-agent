@@ -40,6 +40,7 @@ vi.mock('../../../Icons', () => ({
   Icons: {
     Check: () => <span>checked</span>,
     Layers: () => <span>layers</span>,
+    Search: () => <span data-testid="search-icon" />,
   },
 }))
 
@@ -135,6 +136,10 @@ describe('VideoWorkbenchResourcePicker selection', () => {
     })
 
     expect(container.querySelectorAll('.vwb-picker-results')).toHaveLength(1)
+    expect(container.querySelector('[data-testid="search-icon"]')).not.toBeNull()
+    expect(container.querySelector<HTMLInputElement>('.vwb-picker-search')?.placeholder).toBe(
+      '搜索画布资源...',
+    )
     const rows = container.querySelectorAll<HTMLButtonElement>('.vwb-picker-result')
     expect(rows).toHaveLength(4)
 

@@ -127,12 +127,18 @@ export function VideoWorkbenchResourcePicker<T extends VideoWorkbenchPickerCandi
     >
       <div className="vwb-picker">
         <div className="vwb-picker-toolbar">
-          <input
-            className="vwb-picker-search"
-            placeholder="🔍 搜索画布资源..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <label className="vwb-picker-search-wrap">
+            <span className="vwb-picker-search-icon" aria-hidden="true">
+              <Icons.Search size={13} />
+            </span>
+            <input
+              className="vwb-picker-search"
+              aria-label="搜索画布资源"
+              placeholder="搜索画布资源..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
           {(['all', 'video', 'image', 'audio'] as VideoWorkbenchResourceFilter[]).map((key) => (
             <button
               key={key}

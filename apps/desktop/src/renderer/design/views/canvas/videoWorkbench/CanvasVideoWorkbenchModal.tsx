@@ -1277,7 +1277,8 @@ export function CanvasVideoWorkbenchModal({
     if (onAddLocalResources) {
       items.push({
         key: 'resource-from-file',
-        label: '📁 从本机添加资源',
+        icon: <Icons.FolderPlus size={14} />,
+        label: '从本机添加资源',
         onClick: () => {
           setActiveTab('resources')
           void handlePickLocal()
@@ -1287,7 +1288,8 @@ export function CanvasVideoWorkbenchModal({
     if (onPickCanvasResources) {
       items.push({
         key: 'resource-from-canvas',
-        label: '🖼️ 从画布选择资源',
+        icon: <Icons.Canvas size={14} />,
+        label: '从画布选择资源',
         onClick: () => {
           setActiveTab('resources')
           void handlePickCanvas()
@@ -1298,7 +1300,8 @@ export function CanvasVideoWorkbenchModal({
       items.push({ type: 'divider' })
       items.push({
         key: 'resource-collect-upstream',
-        label: '🔗 按上级连线自动收集',
+        icon: <Icons.Link size={14} />,
+        label: '按上级连线自动收集',
         onClick: () => {
           setActiveTab('resources')
           void handleCollectUpstream()
@@ -1310,14 +1313,16 @@ export function CanvasVideoWorkbenchModal({
       if (onAddVideo) {
         items.push({
           key: 'video-from-file',
-          label: '🎬 从本机设置主视频',
+          icon: <Icons.Film size={14} />,
+          label: '从本机设置主视频',
           onClick: () => void onAddVideo(),
         })
       }
       if (onSelectVideo && videoNodes && videoNodes.length > 0) {
         items.push({
           key: 'video-source-from-canvas',
-          label: '🎬 从画布设置主视频…',
+          icon: <Icons.Film size={14} />,
+          label: '从画布设置主视频…',
           onClick: handlePickSourceVideo,
         })
       }
