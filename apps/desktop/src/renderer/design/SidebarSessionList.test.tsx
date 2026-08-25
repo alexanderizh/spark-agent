@@ -38,6 +38,7 @@ vi.mock('./i18n', () => ({
       ({
         'sidebar.showLess': '收起',
         'sidebar.showMore': '显示更多',
+        'sidebar.project.openInEditor': '打开项目',
         'sidebar.projectsToolbar.title': '项目',
         'sidebar.projectsToolbar.collapseAll': '折叠所有项目',
         'sidebar.projectsToolbar.expandAll': '展开所有项目',
@@ -139,6 +140,7 @@ describe('ProjectSessionGroup pagination', () => {
           onArchiveProject={() => undefined}
           onDeleteProject={() => undefined}
           onOpenProjectFolder={() => undefined}
+          onOpenProjectInEditor={() => undefined}
           onRenameSession={() => undefined}
           onCommitSessionTitle={async () => undefined}
           onToggleSessionPinned={() => undefined}
@@ -208,6 +210,7 @@ describe('ProjectSessionGroup pagination', () => {
           onArchiveProject={() => undefined}
           onDeleteProject={() => undefined}
           onOpenProjectFolder={() => undefined}
+          onOpenProjectInEditor={() => undefined}
           onRenameSession={() => undefined}
           onCommitSessionTitle={async () => undefined}
           onToggleSessionPinned={() => undefined}
@@ -271,6 +274,7 @@ describe('ProjectSessionGroup pagination', () => {
           onArchiveProject={() => undefined}
           onDeleteProject={() => undefined}
           onOpenProjectFolder={() => undefined}
+          onOpenProjectInEditor={() => undefined}
           onRenameSession={() => undefined}
           onCommitSessionTitle={async () => undefined}
           onToggleSessionPinned={() => undefined}
@@ -328,6 +332,7 @@ describe('ProjectSessionGroup pagination', () => {
           onArchiveProject={() => undefined}
           onDeleteProject={() => undefined}
           onOpenProjectFolder={() => undefined}
+          onOpenProjectInEditor={() => undefined}
           onRenameSession={() => undefined}
           onCommitSessionTitle={async () => undefined}
           onToggleSessionPinned={() => undefined}
@@ -379,6 +384,7 @@ describe('ProjectSessionGroup pagination', () => {
           onArchiveProject={() => undefined}
           onDeleteProject={() => undefined}
           onOpenProjectFolder={() => undefined}
+          onOpenProjectInEditor={() => undefined}
           onRenameSession={() => undefined}
           onCommitSessionTitle={async () => undefined}
           onToggleSessionPinned={() => undefined}
@@ -438,6 +444,7 @@ describe('ProjectSessionGroup pagination', () => {
           onArchiveProject={() => undefined}
           onDeleteProject={() => undefined}
           onOpenProjectFolder={() => undefined}
+          onOpenProjectInEditor={() => undefined}
           onRenameSession={() => undefined}
           onCommitSessionTitle={async () => undefined}
           onToggleSessionPinned={() => undefined}
@@ -468,6 +475,64 @@ describe('ProjectSessionGroup pagination', () => {
         button.textContent?.includes('复制路径'),
       ),
     ).toBe(true)
+  })
+
+  it('opens the project in the editor from the project actions menu', async () => {
+    const workspace: WorkspaceInfo = {
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      id: 'workspace-1',
+      name: 'Spark-Agent',
+      pinnedAt: null,
+      rootPath: '/tmp/spark-agent',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      worktreeMeta: null,
+    }
+    const onOpenProjectInEditor = vi.fn()
+
+    act(() => {
+      root.render(
+        <ProjectSessionGroup
+          group={{ workspace, sessions: [] }}
+          activeSessionId={null}
+          activeWorkspaceId={workspace.id}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={{}}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          onSelectWorkspace={async () => undefined}
+          onSelectSession={() => undefined}
+          onNewSession={() => undefined}
+          onRenameProject={() => undefined}
+          onToggleProjectPinned={() => undefined}
+          onArchiveProject={() => undefined}
+          onDeleteProject={() => undefined}
+          onOpenProjectFolder={() => undefined}
+          onOpenProjectInEditor={onOpenProjectInEditor}
+          onRenameSession={() => undefined}
+          onCommitSessionTitle={async () => undefined}
+          onToggleSessionPinned={() => undefined}
+          onArchiveSession={() => undefined}
+          onDeleteSession={() => undefined}
+        />,
+      )
+    })
+
+    const projectMenuButton = container.querySelector<HTMLButtonElement>(
+      '.proj-head .item-menu-btn',
+    )
+    if (projectMenuButton == null) throw new Error('Missing project actions button')
+    await act(async () => projectMenuButton.click())
+    expect(document.querySelectorAll('.action-menu')).toHaveLength(1)
+
+    const openInEditorButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.action-menu-item'),
+    ).find((button) => button.textContent?.trim() === '打开项目')
+    if (openInEditorButton == null) throw new Error('Missing open-in-editor menu item')
+    await act(async () => openInEditorButton.click())
+
+    expect(onOpenProjectInEditor).toHaveBeenCalledWith(workspace)
   })
 
   it('opens session schedules from the session actions menu', async () => {
@@ -504,6 +569,7 @@ describe('ProjectSessionGroup pagination', () => {
           onArchiveProject={() => undefined}
           onDeleteProject={() => undefined}
           onOpenProjectFolder={() => undefined}
+          onOpenProjectInEditor={() => undefined}
           onRenameSession={() => undefined}
           onCommitSessionTitle={async () => undefined}
           onToggleSessionPinned={() => undefined}
@@ -585,6 +651,7 @@ describe('ProjectSessionGroup pagination', () => {
           onArchiveProject={() => undefined}
           onDeleteProject={() => undefined}
           onOpenProjectFolder={() => undefined}
+          onOpenProjectInEditor={() => undefined}
           onRenameSession={() => undefined}
           onCommitSessionTitle={async () => undefined}
           onToggleSessionPinned={() => undefined}

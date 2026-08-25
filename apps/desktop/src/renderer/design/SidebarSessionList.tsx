@@ -38,6 +38,7 @@ import {
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { Icons } from './Icons'
+import { requestOpenProjectCodeViewer } from './components/code-viewer/codeViewerNavigation'
 import { writeSessionReferenceDragPayload } from './views/chat/session-reference-dnd'
 import { requestSessionReferenceAdd } from './views/chat/session-reference-control'
 import {
@@ -1095,6 +1096,7 @@ export function ProjectSessionGroup({
   onArchiveProject,
   onDeleteProject,
   onOpenProjectFolder,
+  onOpenProjectInEditor,
   onRenameSession,
   onCommitSessionTitle,
   onToggleSessionPinned,
@@ -1123,6 +1125,7 @@ export function ProjectSessionGroup({
   onArchiveProject: (workspace: WorkspaceInfo) => void
   onDeleteProject: (workspace: WorkspaceInfo) => void
   onOpenProjectFolder: (workspace: WorkspaceInfo) => void
+  onOpenProjectInEditor: (workspace: WorkspaceInfo) => void
   onRenameSession: (session: SessionSummary) => void
   onCommitSessionTitle: (session: SessionSummary, title: string) => Promise<void>
   onToggleSessionPinned: (session: SessionSummary) => void
@@ -1152,6 +1155,11 @@ export function ProjectSessionGroup({
   }, [group.workspace.rootPath, optionalToast])
 
   const projectMenuItems = [
+    {
+      icon: <Icons.Code size={14} />,
+      label: t('sidebar.project.openInEditor'),
+      onClick: () => onOpenProjectInEditor(group.workspace),
+    },
     {
       icon: group.workspace.pinnedAt == null ? <Pin size={14} /> : <PinOff size={14} />,
       label:
@@ -2608,6 +2616,26 @@ export function SidebarSessionList() {
                               onArchiveProject={ctx.handleArchiveProject}
                               onDeleteProject={ctx.handleDeleteProject}
                               onOpenProjectFolder={ctx.handleOpenProjectFolder}
+                              onOpenProjectInEditor={async (targetWorkspace) => {
+                                // 活跃会话属于其他项目时先退出该会话，让代码面板落到目标项目
+                                // （会话工作区含 worktree 时归并到 base 项目判断）
+                                const activeSession =
+                                  ctx.sessions.find((s) => s.id === ctx.activeSessionId) ?? null
+                                const belongsToTarget = activeSession?.workspaceIds.some(
+                                  (id) =>
+                                    id === targetWorkspace.id ||
+                                    ctx.workspaces.find((w) => w.id === id)?.worktreeMeta
+                                      ?.baseWorkspaceId === targetWorkspace.id,
+                                )
+                                if (activeSession != null && !belongsToTarget) {
+                                  ctx.setActiveSession(null)
+                                }
+                                ctx.setActiveWorkspace(targetWorkspace.id)
+                                const opened = await ctx.handleOpenWorkspace(targetWorkspace)
+                                if (!opened) return // 打开失败（如目录已被删除）：保留错误 toast，不再切视图/开空面板
+                                setTweak('view', 'chat')
+                                requestOpenProjectCodeViewer()
+                              }}
                               onRenameSession={ctx.handleRenameSession}
                               onCommitSessionTitle={ctx.commitSessionTitle}
                               onToggleSessionPinned={ctx.handleToggleSessionPinned}
