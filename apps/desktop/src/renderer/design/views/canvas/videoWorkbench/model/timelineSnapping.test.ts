@@ -74,4 +74,12 @@ describe('video workbench timeline snapping', () => {
     expect(result.timeSec).toBe(6)
     expect(result.alignedEdge).toBe('start')
   })
+
+  it('keeps the requested clip start when neither edge is within the snap threshold', () => {
+    expect(snapVideoWorkbenchClipMove(3, 4, [{ timeSec: 20, kind: 'marker' }], 40, 8)).toEqual({
+      snapped: false,
+      timeSec: 3,
+      deltaSec: 0,
+    })
+  })
 })

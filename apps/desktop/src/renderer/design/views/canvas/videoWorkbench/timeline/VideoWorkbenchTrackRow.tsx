@@ -9,10 +9,7 @@ import type {
 } from '../model/projectTypes'
 import { timelineClientXToProjectTime, trackKindLabel } from '../model/timelineEditing'
 import type { TrackMutableChanges, VideoWorkbenchClipSelectionMode } from './timelineTypes'
-import {
-  VIDEO_WORKBENCH_CLIP_DRAG_MIME,
-  VideoWorkbenchTimelineClip,
-} from './VideoWorkbenchTimelineClip'
+import { VideoWorkbenchTimelineClip } from './VideoWorkbenchTimelineClip'
 
 const VIDEO_WORKBENCH_RESOURCE_DRAG_MIME = 'application/x-vwb-resource'
 const VIDEO_WORKBENCH_TRACK_DRAG_MIME = 'application/x-vwb-project-track'
@@ -33,10 +30,13 @@ interface Props {
   onTrackRemove: (trackId: string) => void
   onTrackReorder: (trackId: string, targetOrder: number) => void
   onResourceDrop: (trackId: string, resourceId: string, timelineStartSec: number) => void
-  onClipMove: (clipId: string, trackId: string, rawTimelineStartSec: number) => void
   onDuplicateClip: (clip: VideoWorkbenchClip, track: VideoWorkbenchTrack) => void
   onRemoveClip: (clipId: string) => void
   onTrimClip: (clipId: string, edge: 'start' | 'end', sourceTimeSec: number) => void
+  onClipMoveEnd: (
+    clipId: string,
+    pointer: { clientX: number; clientY: number; grabOffsetSec: number },
+  ) => void
   onSeek: (timeSec: number) => void
 }
 
@@ -56,10 +56,10 @@ export function VideoWorkbenchTrackRow({
   onTrackRemove,
   onTrackReorder,
   onResourceDrop,
-  onClipMove,
   onDuplicateClip,
   onRemoveClip,
   onTrimClip,
+  onClipMoveEnd,
   onSeek,
 }: Props): ReactElement {
   const [renaming, setRenaming] = useState(false)
@@ -78,18 +78,6 @@ export function VideoWorkbenchTrackRow({
     if (editingDisabled || track.locked) return
     const bounds = event.currentTarget.getBoundingClientRect()
     const dropTimeSec = timelineClientXToProjectTime(event.clientX, bounds.left, 0, pixelsPerSecond)
-    const clipPayload = parseJson<{ clipId?: unknown; offsetSec?: unknown }>(
-      event.dataTransfer.getData(VIDEO_WORKBENCH_CLIP_DRAG_MIME),
-    )
-    if (typeof clipPayload?.clipId === 'string') {
-      event.preventDefault()
-      const offsetSec =
-        typeof clipPayload.offsetSec === 'number' && Number.isFinite(clipPayload.offsetSec)
-          ? Math.max(0, clipPayload.offsetSec)
-          : 0
-      onClipMove(clipPayload.clipId, track.id, Math.max(0, dropTimeSec - offsetSec))
-      return
-    }
     const resourcePayload = parseJson<{ resourceId?: unknown }>(
       event.dataTransfer.getData(VIDEO_WORKBENCH_RESOURCE_DRAG_MIME),
     )
@@ -101,16 +89,9 @@ export function VideoWorkbenchTrackRow({
 
   const acceptsDrag = (event: DragEvent<HTMLDivElement>) => {
     if (editingDisabled || track.locked) return
-    if (
-      event.dataTransfer.types.includes(VIDEO_WORKBENCH_CLIP_DRAG_MIME) ||
-      event.dataTransfer.types.includes(VIDEO_WORKBENCH_RESOURCE_DRAG_MIME)
-    ) {
+    if (event.dataTransfer.types.includes(VIDEO_WORKBENCH_RESOURCE_DRAG_MIME)) {
       event.preventDefault()
-      event.dataTransfer.dropEffect = event.dataTransfer.types.includes(
-        VIDEO_WORKBENCH_CLIP_DRAG_MIME,
-      )
-        ? 'move'
-        : 'copy'
+      event.dataTransfer.dropEffect = 'copy'
     }
   }
 
@@ -277,6 +258,7 @@ export function VideoWorkbenchTrackRow({
       </div>
       <div
         className={`vwb-mt-lane${track.locked || editingDisabled ? ' is-locked' : ''}`}
+        data-track-id={track.id}
         style={{ width: `${timelineWidth}px` }}
         onDragOver={acceptsDrag}
         onDrop={handleDrop}
@@ -307,6 +289,7 @@ export function VideoWorkbenchTrackRow({
                 onDuplicate={onDuplicateClip}
                 onRemove={onRemoveClip}
                 onTrim={onTrimClip}
+                onMoveEnd={onClipMoveEnd}
               />
             ))}
       </div>

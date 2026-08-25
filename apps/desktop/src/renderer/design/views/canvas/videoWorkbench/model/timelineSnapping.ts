@@ -96,8 +96,10 @@ export function snapVideoWorkbenchClipMove(
     zoomPxPerSec,
     thresholdPx,
   )
+  if (!startResult.snapped && !endResult.snapped) {
+    return { snapped: false, timeSec: safeStartSec, deltaSec: 0 }
+  }
   const result = chooseNearestResult(startResult, endResult)
-  if (!result.snapped) return result
   const alignedEdge = result === startResult ? 'start' : 'end'
   const nextStartSec = Math.max(0, safeStartSec + result.deltaSec)
   return {

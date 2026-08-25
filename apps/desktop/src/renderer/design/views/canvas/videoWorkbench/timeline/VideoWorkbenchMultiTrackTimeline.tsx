@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactElement,
+} from 'react'
 import { Button, Switch, Tooltip, message } from 'antd'
 import { Icons } from '../../../../Icons'
+import { classNames } from '../../../../utils/class-names'
 import type {
   VideoWorkbenchClip,
   VideoWorkbenchProjectV2,
@@ -13,12 +18,15 @@ import type {
   VideoWorkbenchProjectCommandResult,
 } from '../model/projectReducer'
 import {
+  buildVideoWorkbenchMagneticReorderMoves,
   createVideoWorkbenchClipForResource,
   createVideoWorkbenchEntityId,
   createVideoWorkbenchTrack,
+  timelineClientXToProjectTime,
   VIDEO_WORKBENCH_TIMELINE_MAX_PX_PER_SEC,
   VIDEO_WORKBENCH_TIMELINE_MIN_PX_PER_SEC,
 } from '../model/timelineEditing'
+import { isMainVideoWorkbenchTrack } from '../model/trackRules'
 import {
   resolveVideoWorkbenchClipTiming,
   resolveVideoWorkbenchProjectDuration,
@@ -39,13 +47,11 @@ interface Props {
   readOnly: boolean
   selectedClipIds: readonly string[]
   playheadSec: number
-  playing: boolean
   canUndo: boolean
   canRedo: boolean
   onSelectionChange: (clipIds: string[]) => void
   onPreviewResource: (resource: VideoWorkbenchResourceV2) => void
   onSeek: (timeSec: number) => void
-  onPlaybackToggle: () => void
   onCommand: (command: VideoWorkbenchProjectCommand) => VideoWorkbenchProjectCommandResult
   onUpdateProject: (
     updater: (project: VideoWorkbenchProjectV2) => VideoWorkbenchProjectV2,
@@ -64,13 +70,11 @@ export function VideoWorkbenchMultiTrackTimeline({
   readOnly,
   selectedClipIds,
   playheadSec,
-  playing,
   canUndo,
   canRedo,
   onSelectionChange,
   onPreviewResource,
   onSeek,
-  onPlaybackToggle,
   onCommand,
   onUpdateProject,
   onUndo,
@@ -79,6 +83,9 @@ export function VideoWorkbenchMultiTrackTimeline({
   onOpenEdit,
   onOpenOutput,
 }: Props): ReactElement {
+  const rulerRef = useRef<HTMLDivElement>(null)
+  const playheadPointerIdRef = useRef<number | null>(null)
+  const [draggingPlayhead, setDraggingPlayhead] = useState(false)
   const pixelsPerSecond = Math.min(
     VIDEO_WORKBENCH_TIMELINE_MAX_PX_PER_SEC,
     Math.max(VIDEO_WORKBENCH_TIMELINE_MIN_PX_PER_SEC, project.ui.zoomPxPerSec),
@@ -196,6 +203,20 @@ export function VideoWorkbenchMultiTrackTimeline({
           )
         : { timeSec: rawGroupStartSec }
       const snappedDeltaSec = snapped.timeSec - groupStartSec
+      if (
+        movingSelection.length === 1 &&
+        found.track.id === trackId &&
+        project.project.magneticMainTrack &&
+        isMainVideoWorkbenchTrack(project, trackId)
+      ) {
+        const moves = buildVideoWorkbenchMagneticReorderMoves(
+          found.track,
+          clipId,
+          found.clip.timelineStartSec + snappedDeltaSec,
+        )
+        if (moves.length > 0) runCommand({ type: 'clip/move-many', moves })
+        return
+      }
       if (movingSelection.length === 1) {
         runCommand({
           type: 'clip/move',
@@ -216,6 +237,70 @@ export function VideoWorkbenchMultiTrackTimeline({
     },
     [pixelsPerSecond, playheadSec, project, runCommand, selectedClipIdSet, selectedClips],
   )
+
+  const handleClipMoveEnd = useCallback(
+    (clipId: string, pointer: { clientX: number; clientY: number; grabOffsetSec: number }) => {
+      const lane = document
+        .elementsFromPoint(pointer.clientX, pointer.clientY)
+        .find(
+          (element): element is HTMLElement =>
+            element instanceof HTMLElement && element.classList.contains('vwb-mt-lane'),
+        )
+      const trackId = lane?.dataset.trackId
+      if (!lane || !trackId) return
+      const bounds = lane.getBoundingClientRect()
+      const pointerTimeSec = timelineClientXToProjectTime(
+        pointer.clientX,
+        bounds.left,
+        0,
+        pixelsPerSecond,
+      )
+      handleClipMove(clipId, trackId, Math.max(0, pointerTimeSec - pointer.grabOffsetSec))
+    },
+    [handleClipMove, pixelsPerSecond],
+  )
+
+  const seekFromClientX = useCallback(
+    (clientX: number) => {
+      const ruler = rulerRef.current
+      if (!ruler) return
+      const bounds = ruler.getBoundingClientRect()
+      const nextTimeSec = timelineClientXToProjectTime(clientX, bounds.left, 0, pixelsPerSecond)
+      onSeek(Math.min(projectDurationSec, nextTimeSec))
+    },
+    [onSeek, pixelsPerSecond, projectDurationSec],
+  )
+
+  const handlePlayheadPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      playheadPointerIdRef.current = event.pointerId
+      setDraggingPlayhead(true)
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+      seekFromClientX(event.clientX)
+    },
+    [seekFromClientX],
+  )
+
+  const handlePlayheadPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (playheadPointerIdRef.current !== event.pointerId) return
+      event.preventDefault()
+      seekFromClientX(event.clientX)
+    },
+    [seekFromClientX],
+  )
+
+  const finishPlayheadDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (playheadPointerIdRef.current !== event.pointerId) return
+    playheadPointerIdRef.current = null
+    setDraggingPlayhead(false)
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }, [])
 
   const handleDuplicateClip = useCallback(
     (clip: VideoWorkbenchClip, track: VideoWorkbenchTrack) => {
@@ -474,7 +559,7 @@ export function VideoWorkbenchMultiTrackTimeline({
             产物
           </Button>
           <span className="vwb-mt-toolbar-divider" />
-          <Tooltip title="主视频删除后自动闭合空隙">
+          <Tooltip title="主视频拖动或删除时自动排序并闭合空隙">
             <label className="vwb-mt-switch">
               <Switch
                 size="small"
@@ -514,17 +599,6 @@ export function VideoWorkbenchMultiTrackTimeline({
               <span className="vwb-mt-switch-label">吸附</span>
             </label>
           </Tooltip>
-          <button
-            type="button"
-            className="vwb-mt-play"
-            aria-label={playing ? '暂停时间线' : '播放时间线'}
-            onClick={onPlaybackToggle}
-          >
-            {playing ? <Icons.Pause size={13} /> : <Icons.Play size={13} />}
-          </button>
-          <span className="vwb-mt-time">
-            {formatTimestamp(playheadSec)} / {formatTimestamp(projectDurationSec)}
-          </span>
           <input
             type="range"
             min={VIDEO_WORKBENCH_TIMELINE_MIN_PX_PER_SEC}
@@ -556,7 +630,15 @@ export function VideoWorkbenchMultiTrackTimeline({
             <span>{sortedTracks.length} 条轨道</span>
             <small>{project.resources.length} 个素材</small>
           </div>
-          <div className="vwb-mt-ruler" style={{ width: `${timelineWidth}px` }}>
+          <div
+            ref={rulerRef}
+            className="vwb-mt-ruler"
+            style={{ width: `${timelineWidth}px` }}
+            onPointerDown={handlePlayheadPointerDown}
+            onPointerMove={handlePlayheadPointerMove}
+            onPointerUp={finishPlayheadDrag}
+            onPointerCancel={finishPlayheadDrag}
+          >
             {ticks.map((tick) => (
               <span
                 key={`${tick.second}-${tick.leftPx}`}
@@ -586,12 +668,12 @@ export function VideoWorkbenchMultiTrackTimeline({
             onTrackRemove={(trackId) => runCommand({ type: 'track/remove', trackId })}
             onTrackReorder={handleTrackReorder}
             onResourceDrop={handleResourceDrop}
-            onClipMove={handleClipMove}
             onDuplicateClip={handleDuplicateClip}
             onRemoveClip={(clipId) => runCommand({ type: 'clip/remove', clipId })}
             onTrimClip={(clipId, edge, sourceTimeSec) =>
               runCommand({ type: 'clip/trim', clipId, edge, sourceTimeSec })
             }
+            onClipMoveEnd={handleClipMoveEnd}
             onSeek={onSeek}
           />
         ))}
@@ -599,9 +681,32 @@ export function VideoWorkbenchMultiTrackTimeline({
           <div className="vwb-mt-empty">暂无轨道，请先添加主视频、叠加或音频轨。</div>
         ) : null}
         <div
-          className="vwb-mt-playhead"
-          style={{ left: `${188 + Math.max(0, playheadSec) * pixelsPerSecond}px` }}
-          aria-hidden="true"
+          className={classNames('vwb-mt-playhead', draggingPlayhead && 'is-dragging')}
+          style={{
+            left: `calc(var(--vwb-mt-head-width) + ${Math.max(0, playheadSec) * pixelsPerSecond}px)`,
+          }}
+          role="slider"
+          tabIndex={0}
+          aria-label="播放进度"
+          aria-valuemin={0}
+          aria-valuemax={projectDurationSec}
+          aria-valuenow={Math.min(projectDurationSec, Math.max(0, playheadSec))}
+          aria-valuetext={formatTimestamp(playheadSec)}
+          onPointerDown={handlePlayheadPointerDown}
+          onPointerMove={handlePlayheadPointerMove}
+          onPointerUp={finishPlayheadDrag}
+          onPointerCancel={finishPlayheadDrag}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+            event.preventDefault()
+            const deltaSec = event.shiftKey ? 1 : 0.1
+            onSeek(
+              Math.min(
+                projectDurationSec,
+                Math.max(0, playheadSec + (event.key === 'ArrowLeft' ? -deltaSec : deltaSec)),
+              ),
+            )
+          }}
         >
           <span />
         </div>

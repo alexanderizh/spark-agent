@@ -4,6 +4,7 @@ import {
   createDefaultVideoWorkbenchTrack,
 } from './projectTypes'
 import {
+  buildVideoWorkbenchMagneticReorderMoves,
   createVideoWorkbenchClipForResource,
   findDefaultVideoWorkbenchTrackForResource,
   resolveVideoWorkbenchTrackAppendTime,
@@ -87,5 +88,38 @@ describe('video workbench timeline editing helpers', () => {
     expect(findDefaultVideoWorkbenchTrackForResource(project, audioResource)).toBeUndefined()
     expect(resolveVideoWorkbenchTrackAppendTime(audioTrack)).toBe(9)
     expect(timelineClientXToProjectTime(260, 100, 40, 20)).toBe(10)
+  })
+
+  it('reorders and closes main-track gaps around the dragged clip', () => {
+    const track = createDefaultVideoWorkbenchTrack('video', 'track:main', 'Main', 0)
+    track.clips = [
+      {
+        id: 'clip:a',
+        timelineStartSec: 0,
+        sourceInSec: 0,
+        sourceOutSec: 4,
+        durationSec: 4,
+        speed: 1,
+        enabled: true,
+      },
+      {
+        id: 'clip:b',
+        timelineStartSec: 8,
+        sourceInSec: 0,
+        sourceOutSec: 3,
+        durationSec: 3,
+        speed: 1,
+        enabled: true,
+      },
+    ]
+
+    expect(buildVideoWorkbenchMagneticReorderMoves(track, 'clip:b', 3)).toEqual([
+      { clipId: 'clip:a', targetTrackId: 'track:main', timelineStartSec: 0 },
+      { clipId: 'clip:b', targetTrackId: 'track:main', timelineStartSec: 4 },
+    ])
+    expect(buildVideoWorkbenchMagneticReorderMoves(track, 'clip:b', 1)).toEqual([
+      { clipId: 'clip:b', targetTrackId: 'track:main', timelineStartSec: 0 },
+      { clipId: 'clip:a', targetTrackId: 'track:main', timelineStartSec: 3 },
+    ])
   })
 })

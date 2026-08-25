@@ -88,6 +88,47 @@ export function resolveVideoWorkbenchTrackAppendTime(track: VideoWorkbenchTrack)
   )
 }
 
+export interface VideoWorkbenchMagneticClipMove {
+  clipId: string
+  targetTrackId: string
+  timelineStartSec: number
+}
+
+/** 主视频轨开启磁吸时，将拖动片段插入目标顺序并从 0 开始连续排布。 */
+export function buildVideoWorkbenchMagneticReorderMoves(
+  track: Pick<VideoWorkbenchTrack, 'id' | 'clips'>,
+  clipId: string,
+  rawTimelineStartSec: number,
+): VideoWorkbenchMagneticClipMove[] {
+  const sortedClips = [...track.clips].sort(
+    (left, right) =>
+      left.timelineStartSec - right.timelineStartSec || left.id.localeCompare(right.id),
+  )
+  const movingClip = sortedClips.find((clip) => clip.id === clipId)
+  if (!movingClip) return []
+
+  const remainingClips = sortedClips.filter((clip) => clip.id !== clipId)
+  const safeStartSec = Math.max(
+    0,
+    Number.isFinite(rawTimelineStartSec) ? rawTimelineStartSec : movingClip.timelineStartSec,
+  )
+  const insertAt = remainingClips.findIndex((clip) => {
+    const timing = resolveVideoWorkbenchClipTiming(clip)
+    const durationSec = timing.timelineEndSec - timing.timelineStartSec
+    return safeStartSec < timing.timelineStartSec + durationSec / 2
+  })
+  const reorderedClips = [...remainingClips]
+  reorderedClips.splice(insertAt < 0 ? reorderedClips.length : insertAt, 0, movingClip)
+
+  let timelineStartSec = 0
+  return reorderedClips.map((clip) => {
+    const move = { clipId: clip.id, targetTrackId: track.id, timelineStartSec }
+    const timing = resolveVideoWorkbenchClipTiming(clip)
+    timelineStartSec += timing.timelineEndSec - timing.timelineStartSec
+    return move
+  })
+}
+
 export function timelineClientXToProjectTime(
   clientX: number,
   laneLeft: number,

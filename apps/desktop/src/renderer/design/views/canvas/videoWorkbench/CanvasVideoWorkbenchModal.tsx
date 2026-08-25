@@ -642,7 +642,7 @@ export function CanvasVideoWorkbenchModal({
     [isPlayback, playbackGlobalTime, playbackSeek],
   )
 
-  /** 播放条 seek：若正在单独预览某资源，自动切回连播模式（点播放控件 = 想看整条） */
+  /** 时间线 seek：若正在单独预览某资源，自动切回连播模式。 */
   const handlePlaybackSeek = useCallback(
     (sec: number) => {
       if (selectedResourceId) setSelectedResourceId(null)
@@ -650,12 +650,6 @@ export function CanvasVideoWorkbenchModal({
     },
     [selectedResourceId, playbackSeek],
   )
-
-  /** 播放条播放按钮：同上，自动退出单独预览 */
-  const handlePlaybackToggle = useCallback(() => {
-    if (selectedResourceId) setSelectedResourceId(null)
-    playbackToggle()
-  }, [selectedResourceId, playbackToggle])
 
   const handleExportKeyframes = useCallback(
     async (frames: WorkbenchKeyframe[]) => {
@@ -1741,13 +1735,11 @@ export function CanvasVideoWorkbenchModal({
               readOnly={projectReadOnly}
               selectedClipIds={selectedClipIds}
               playheadSec={playbackGlobalTime}
-              playing={playbackPlaying}
               canUndo={canUndo}
               canRedo={canRedo}
               onSelectionChange={handleSelectClips}
               onPreviewResource={handlePreviewResource}
               onSeek={handlePlaybackSeek}
-              onPlaybackToggle={handlePlaybackToggle}
               onCommand={applyProjectCommand}
               onUpdateProject={updateProject}
               onUndo={undoProject}

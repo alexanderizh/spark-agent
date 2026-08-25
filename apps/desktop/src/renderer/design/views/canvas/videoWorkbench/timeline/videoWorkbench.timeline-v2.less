@@ -62,7 +62,6 @@
   font-size: 11px;
 }
 
-.vwb-mt-play,
 .vwb-mt-track-actions button,
 .vwb-mt-track-drag,
 .vwb-mt-track-name,
@@ -74,7 +73,6 @@
   cursor: pointer;
 }
 
-.vwb-mt-play:focus-visible,
 .vwb-mt-track-actions button:focus-visible,
 .vwb-mt-track-drag:focus-visible,
 .vwb-mt-track-name:focus-visible,
@@ -89,23 +87,6 @@
   color: #7dd6bb;
   font-size: 10px;
   white-space: nowrap;
-}
-
-.vwb-mt-play {
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 5px;
-  background: #2f8f76;
-  color: #fff;
-}
-
-.vwb-mt-time {
-  min-width: 88px;
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
 }
 
 .vwb-mt-toolbar input[type='range'] {
@@ -172,6 +153,8 @@
   position: relative;
   height: 28px;
   background: #15181d;
+  cursor: pointer;
+  touch-action: none;
 
   > span {
     position: absolute;
@@ -401,6 +384,15 @@
   border-radius: 5px;
   background: #193a34;
   cursor: grab;
+  touch-action: none;
+
+  &.is-dragging {
+    z-index: 10;
+    transform: translate3d(var(--vwb-mt-drag-x, 0), var(--vwb-mt-drag-y, 0), 0);
+    cursor: grabbing;
+    opacity: 0.84;
+    pointer-events: none;
+  }
 
   &:focus-visible {
     outline: 2px solid #93c5fd;
@@ -534,7 +526,24 @@
   bottom: 0;
   width: 1px;
   background: #ff625f;
-  pointer-events: none;
+  cursor: ew-resize;
+  outline: none;
+  touch-action: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 -5px;
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px rgba(147, 197, 253, 0.9);
+  }
+
+  &.is-dragging {
+    width: 2px;
+    box-shadow: 0 0 0 1px rgba(255, 98, 95, 0.22);
+  }
 
   span {
     position: absolute;
@@ -612,10 +621,6 @@
 
   .vwb-mt-switch-label {
     display: none;
-  }
-
-  .vwb-mt-time {
-    min-width: 76px;
   }
 
   .vwb-mt-toolbar input[type='range'] {

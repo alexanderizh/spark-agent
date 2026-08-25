@@ -59,8 +59,31 @@ import { VideoWorkbenchMultiTrackTimeline } from './VideoWorkbenchMultiTrackTime
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 let mounted: { root: ReturnType<typeof createRoot>; container: HTMLElement } | null = null
+const originalElementsFromPoint = document.elementsFromPoint
+
+function pointerEvent(
+  type: string,
+  options: { clientX: number; clientY?: number; pointerId?: number; button?: number },
+): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperties(event, {
+    clientX: { value: options.clientX },
+    clientY: { value: options.clientY ?? 0 },
+    pointerId: { value: options.pointerId ?? 1 },
+    button: { value: options.button ?? 0 },
+  })
+  return event
+}
 
 afterEach(async () => {
+  if (originalElementsFromPoint) {
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: originalElementsFromPoint,
+    })
+  } else {
+    Reflect.deleteProperty(document, 'elementsFromPoint')
+  }
   if (!mounted) return
   await act(async () => mounted?.root.unmount())
   mounted.container.remove()
@@ -68,6 +91,82 @@ afterEach(async () => {
 })
 
 describe('VideoWorkbenchMultiTrackTimeline', () => {
+  it('seeks by dragging the red playhead area and does not render duplicate playback controls', async () => {
+    const project = createDefaultVideoWorkbenchProject()
+    const mainTrack = project.tracks[0]
+    if (!mainTrack) throw new Error('默认工程应包含一条画面轨')
+    mainTrack.clips = [
+      {
+        id: 'clip:playhead',
+        timelineStartSec: 0,
+        sourceInSec: 0,
+        sourceOutSec: 10,
+        durationSec: 10,
+        speed: 1,
+        enabled: true,
+      },
+    ]
+    const onSeek = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mounted = { root, container }
+
+    await act(async () => {
+      root.render(
+        <VideoWorkbenchMultiTrackTimeline
+          project={project}
+          busy={false}
+          readOnly={false}
+          selectedClipIds={[]}
+          playheadSec={0}
+          canUndo={false}
+          canRedo={false}
+          onSelectionChange={vi.fn()}
+          onPreviewResource={vi.fn()}
+          onSeek={onSeek}
+          onCommand={vi.fn((command) => ({ applied: true as const, project, command }))}
+          onUpdateProject={vi.fn()}
+          onUndo={vi.fn()}
+          onRedo={vi.fn()}
+          onOpenFrames={vi.fn()}
+          onOpenEdit={vi.fn()}
+          onOpenOutput={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.vwb-mt-play')).toBeNull()
+    expect(container.querySelector('.vwb-mt-time')).toBeNull()
+    const ruler = container.querySelector<HTMLElement>('.vwb-mt-ruler')
+    if (!ruler) throw new Error('时间线应渲染标尺')
+    vi.spyOn(ruler, 'getBoundingClientRect').mockReturnValue({
+      x: 100,
+      y: 0,
+      left: 100,
+      right: 820,
+      top: 0,
+      bottom: 28,
+      width: 720,
+      height: 28,
+      toJSON: () => ({}),
+    })
+    const pointerDown = new MouseEvent('pointerdown', {
+      bubbles: true,
+      button: 0,
+      clientX: 196,
+    })
+    Object.defineProperty(pointerDown, 'pointerId', { value: 7 })
+    await act(async () => ruler.dispatchEvent(pointerDown))
+    expect(onSeek).toHaveBeenLastCalledWith(2)
+
+    const playhead = container.querySelector<HTMLElement>('[role="slider"][aria-label="播放进度"]')
+    await act(async () => {
+      playhead?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    expect(onSeek).toHaveBeenLastCalledWith(0.1)
+  })
+
   it('renders visual/audio track heads and dispatches track controls', async () => {
     const project = createDefaultVideoWorkbenchProject()
     const audioTrack = createDefaultVideoWorkbenchTrack('audio', 'track:audio', '旁白', 1)
@@ -87,13 +186,11 @@ describe('VideoWorkbenchMultiTrackTimeline', () => {
           readOnly={false}
           selectedClipIds={[]}
           playheadSec={0}
-          playing={false}
           canUndo={false}
           canRedo={false}
           onSelectionChange={vi.fn()}
           onPreviewResource={vi.fn()}
           onSeek={vi.fn()}
-          onPlaybackToggle={vi.fn()}
           onCommand={onCommand}
           onUpdateProject={vi.fn()}
           onUndo={vi.fn()}
@@ -200,13 +297,11 @@ describe('VideoWorkbenchMultiTrackTimeline', () => {
           readOnly={false}
           selectedClipIds={[]}
           playheadSec={0}
-          playing={false}
           canUndo={false}
           canRedo={false}
           onSelectionChange={onSelectionChange}
           onPreviewResource={onPreviewResource}
           onSeek={vi.fn()}
-          onPlaybackToggle={vi.fn()}
           onCommand={onCommand}
           onUpdateProject={vi.fn()}
           onUndo={vi.fn()}
@@ -336,13 +431,11 @@ describe('VideoWorkbenchMultiTrackTimeline', () => {
             readOnly={false}
             selectedClipIds={selectedClipIds}
             playheadSec={0}
-            playing={false}
             canUndo={false}
             canRedo={false}
             onSelectionChange={onSelectionChange}
             onPreviewResource={vi.fn()}
             onSeek={vi.fn()}
-            onPlaybackToggle={vi.fn()}
             onCommand={onCommand}
             onUpdateProject={vi.fn()}
             onUndo={vi.fn()}
@@ -395,5 +488,199 @@ describe('VideoWorkbenchMultiTrackTimeline', () => {
       clipIds: ['clip:1', 'clip:audio'],
     })
     expect(onSelectionChange).toHaveBeenLastCalledWith([])
+  })
+
+  it('moves a clip left using pointer coordinates and snaps it beside the previous clip', async () => {
+    const project = createDefaultVideoWorkbenchProject()
+    const track = project.tracks[0]
+    if (!track) throw new Error('默认工程应包含一条画面轨')
+    project.resources = [
+      {
+        id: 'video:drag',
+        source: 'local',
+        kind: 'video',
+        title: 'Drag video',
+        url: 'safe-file:///drag.mp4',
+        originPath: '/drag.mp4',
+        importedAt: 1,
+        durationSec: 12,
+      },
+    ]
+    track.clips = [
+      {
+        id: 'clip:left',
+        resourceId: 'video:drag',
+        timelineStartSec: 0,
+        sourceInSec: 0,
+        sourceOutSec: 8,
+        durationSec: 8,
+        speed: 1,
+        enabled: true,
+      },
+      {
+        id: 'clip:moving',
+        resourceId: 'video:drag',
+        timelineStartSec: 10,
+        sourceInSec: 8,
+        sourceOutSec: 10,
+        durationSec: 2,
+        speed: 1,
+        enabled: true,
+      },
+    ]
+    const onCommand = vi.fn((command) => ({ applied: true as const, project, command }))
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mounted = { root, container }
+
+    await act(async () => {
+      root.render(
+        <VideoWorkbenchMultiTrackTimeline
+          project={project}
+          busy={false}
+          readOnly={false}
+          selectedClipIds={['clip:moving']}
+          playheadSec={13}
+          canUndo={false}
+          canRedo={false}
+          onSelectionChange={vi.fn()}
+          onPreviewResource={vi.fn()}
+          onSeek={vi.fn()}
+          onCommand={onCommand}
+          onUpdateProject={vi.fn()}
+          onUndo={vi.fn()}
+          onRedo={vi.fn()}
+          onOpenFrames={vi.fn()}
+          onOpenEdit={vi.fn()}
+          onOpenOutput={vi.fn()}
+        />,
+      )
+    })
+
+    const lane = container.querySelector<HTMLElement>('.vwb-mt-lane')
+    const movingClip = container.querySelector<HTMLElement>('[data-clip-id="clip:moving"]')
+    if (!lane || !movingClip) throw new Error('时间线片段应已渲染')
+    const laneLeft = 188
+    const pixelsPerSecond = project.ui.zoomPxPerSec
+    const grabOffsetPx = 20
+    lane.getBoundingClientRect = () =>
+      ({ left: laneLeft, right: 2000, top: 28, bottom: 90 }) as DOMRect
+    movingClip.getBoundingClientRect = () =>
+      ({
+        left: laneLeft + 10 * pixelsPerSecond,
+        right: laneLeft + 12 * pixelsPerSecond,
+        top: 34,
+        bottom: 84,
+      }) as DOMRect
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: vi.fn(() => [lane]),
+    })
+
+    await act(async () => {
+      movingClip.dispatchEvent(
+        pointerEvent('pointerdown', {
+          clientX: laneLeft + 10 * pixelsPerSecond + grabOffsetPx,
+          clientY: 50,
+        }),
+      )
+      window.dispatchEvent(
+        pointerEvent('pointermove', {
+          clientX: laneLeft + 8 * pixelsPerSecond + grabOffsetPx,
+          clientY: 50,
+        }),
+      )
+      window.dispatchEvent(
+        pointerEvent('pointerup', {
+          clientX: laneLeft + 8 * pixelsPerSecond + grabOffsetPx,
+          clientY: 50,
+        }),
+      )
+    })
+
+    expect(onCommand).toHaveBeenLastCalledWith({
+      type: 'clip/move-many',
+      moves: [
+        { clipId: 'clip:left', targetTrackId: track.id, timelineStartSec: 0 },
+        { clipId: 'clip:moving', targetTrackId: track.id, timelineStartSec: 8 },
+      ],
+    })
+  })
+
+  it('supports clicking, dragging, and keyboard adjustment on the playhead', async () => {
+    const project = createDefaultVideoWorkbenchProject()
+    const track = project.tracks[0]
+    if (!track) throw new Error('默认工程应包含一条画面轨')
+    track.clips = [
+      {
+        id: 'clip:duration',
+        timelineStartSec: 0,
+        sourceInSec: 0,
+        sourceOutSec: 12,
+        durationSec: 12,
+        speed: 1,
+        enabled: true,
+      },
+    ]
+    const onSeek = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mounted = { root, container }
+
+    await act(async () => {
+      root.render(
+        <VideoWorkbenchMultiTrackTimeline
+          project={project}
+          busy={false}
+          readOnly={false}
+          selectedClipIds={[]}
+          playheadSec={0}
+          canUndo={false}
+          canRedo={false}
+          onSelectionChange={vi.fn()}
+          onPreviewResource={vi.fn()}
+          onSeek={onSeek}
+          onCommand={vi.fn((command) => ({ applied: true as const, project, command }))}
+          onUpdateProject={vi.fn()}
+          onUndo={vi.fn()}
+          onRedo={vi.fn()}
+          onOpenFrames={vi.fn()}
+          onOpenEdit={vi.fn()}
+          onOpenOutput={vi.fn()}
+        />,
+      )
+    })
+
+    const ruler = container.querySelector<HTMLElement>('.vwb-mt-ruler')
+    const playhead = container.querySelector<HTMLElement>('[role="slider"][aria-label="播放进度"]')
+    if (!ruler || !playhead) throw new Error('播放头与标尺应已渲染')
+    expect(container.querySelector('.vwb-mt-play')).toBeNull()
+    expect(container.querySelector('.vwb-mt-time')).toBeNull()
+    const rulerLeft = 188
+    ruler.getBoundingClientRect = () =>
+      ({ left: rulerLeft, right: 2000, top: 0, bottom: 28 }) as DOMRect
+
+    await act(async () => {
+      ruler.dispatchEvent(
+        pointerEvent('pointerdown', {
+          clientX: rulerLeft + 2 * project.ui.zoomPxPerSec,
+        }),
+      )
+      ruler.dispatchEvent(
+        pointerEvent('pointermove', {
+          clientX: rulerLeft + 4 * project.ui.zoomPxPerSec,
+        }),
+      )
+      ruler.dispatchEvent(
+        pointerEvent('pointerup', {
+          clientX: rulerLeft + 4 * project.ui.zoomPxPerSec,
+        }),
+      )
+      playhead.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+
+    expect(onSeek.mock.calls.map(([timeSec]) => timeSec)).toEqual([2, 4, 0.1])
   })
 })

@@ -1,5 +1,5 @@
-import { memo, useCallback } from 'react'
-import type { DragEvent, KeyboardEvent, MouseEvent, PointerEvent, ReactElement } from 'react'
+import { memo, useCallback, useEffect, useRef } from 'react'
+import type { KeyboardEvent, MouseEvent, PointerEvent, ReactElement } from 'react'
 import { Tooltip } from 'antd'
 import { Icons } from '../../../../Icons'
 import type {
@@ -11,8 +11,6 @@ import { resolveVideoWorkbenchClipTiming } from '../model/timelineMath'
 import { formatTimestamp } from '../videoWorkbench.types'
 import { ResourceThumb } from '../VideoWorkbenchResourceThumb'
 import type { VideoWorkbenchClipSelectionMode } from './timelineTypes'
-
-export const VIDEO_WORKBENCH_CLIP_DRAG_MIME = 'application/x-vwb-project-clip'
 
 interface Props {
   clip: VideoWorkbenchClip
@@ -27,6 +25,10 @@ interface Props {
   onDuplicate: (clip: VideoWorkbenchClip, track: VideoWorkbenchTrack) => void
   onRemove: (clipId: string) => void
   onTrim: (clipId: string, edge: 'start' | 'end', sourceTimeSec: number) => void
+  onMoveEnd: (
+    clipId: string,
+    pointer: { clientX: number; clientY: number; grabOffsetSec: number },
+  ) => void
 }
 
 function VideoWorkbenchTimelineClipComponent({
@@ -42,13 +44,20 @@ function VideoWorkbenchTimelineClipComponent({
   onDuplicate,
   onRemove,
   onTrim,
+  onMoveEnd,
 }: Props): ReactElement {
   const timing = resolveVideoWorkbenchClipTiming(clip)
   const width = Math.max(18, clip.durationSec * pixelsPerSecond)
+  const dragCleanupRef = useRef<(() => void) | null>(null)
+  const suppressClickRef = useRef(false)
 
   const handleSelect = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
       event.stopPropagation()
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false
+        return
+      }
       onSelect(clip.id, event.metaKey || event.ctrlKey || event.shiftKey ? 'toggle' : 'replace')
     },
     [clip.id, onSelect],
@@ -63,24 +72,86 @@ function VideoWorkbenchTimelineClipComponent({
     [clip.id, onSelect],
   )
 
-  const handleDragStart = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      if (editingDisabled || track.locked) {
-        event.preventDefault()
-        return
-      }
-      const bounds = event.currentTarget.getBoundingClientRect()
-      event.dataTransfer.setData(
-        VIDEO_WORKBENCH_CLIP_DRAG_MIME,
-        JSON.stringify({
-          clipId: clip.id,
-          offsetSec: Math.max(0, event.clientX - bounds.left) / pixelsPerSecond,
-        }),
+  const startMove = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || editingDisabled || track.locked) return
+      if (event.target instanceof Element && event.target.closest('button')) return
+
+      dragCleanupRef.current?.()
+      const element = event.currentTarget
+      const bounds = element.getBoundingClientRect()
+      const pointerId = event.pointerId
+      const pointerStartX = event.clientX
+      const pointerStartY = event.clientY
+      const grabOffsetSec = Math.min(
+        timing.timelineEndSec - timing.timelineStartSec,
+        Math.max(0, event.clientX - bounds.left) / pixelsPerSecond,
       )
-      event.dataTransfer.effectAllowed = 'move'
+      let latestClientX = event.clientX
+      let latestClientY = event.clientY
+      let dragging = false
+
+      const cleanup = () => {
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', end)
+        window.removeEventListener('pointercancel', cancel)
+        element.classList.remove('is-dragging')
+        element.style.removeProperty('--vwb-mt-drag-x')
+        element.style.removeProperty('--vwb-mt-drag-y')
+        dragCleanupRef.current = null
+      }
+      const move = (moveEvent: globalThis.PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId) return
+        latestClientX = moveEvent.clientX
+        latestClientY = moveEvent.clientY
+        const deltaX = moveEvent.clientX - pointerStartX
+        const deltaY = moveEvent.clientY - pointerStartY
+        if (!dragging && Math.hypot(deltaX, deltaY) < 3) return
+        dragging = true
+        suppressClickRef.current = true
+        moveEvent.preventDefault()
+        element.classList.add('is-dragging')
+        element.style.setProperty('--vwb-mt-drag-x', `${deltaX}px`)
+        element.style.setProperty('--vwb-mt-drag-y', `${deltaY}px`)
+      }
+      const end = (endEvent: globalThis.PointerEvent) => {
+        if (endEvent.pointerId !== pointerId) return
+        latestClientX = endEvent.clientX
+        latestClientY = endEvent.clientY
+        const shouldCommit = dragging
+        cleanup()
+        if (shouldCommit) {
+          onMoveEnd(clip.id, {
+            clientX: latestClientX,
+            clientY: latestClientY,
+            grabOffsetSec,
+          })
+          window.setTimeout(() => {
+            suppressClickRef.current = false
+          }, 0)
+        }
+      }
+      const cancel = (cancelEvent: globalThis.PointerEvent) => {
+        if (cancelEvent.pointerId === pointerId) cleanup()
+      }
+
+      dragCleanupRef.current = cleanup
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', end)
+      window.addEventListener('pointercancel', cancel)
     },
-    [clip.id, editingDisabled, pixelsPerSecond, track.locked],
+    [
+      clip.id,
+      editingDisabled,
+      onMoveEnd,
+      pixelsPerSecond,
+      timing.timelineEndSec,
+      timing.timelineStartSec,
+      track.locked,
+    ],
   )
+
+  useEffect(() => () => dragCleanupRef.current?.(), [])
 
   const startTrim = useCallback(
     (edge: 'start' | 'end', event: PointerEvent<HTMLButtonElement>) => {
@@ -123,12 +194,11 @@ function VideoWorkbenchTimelineClipComponent({
         left: `${timing.timelineStartSec * pixelsPerSecond}px`,
         width: `${width}px`,
       }}
-      draggable={!editingDisabled && !track.locked}
       data-clip-id={clip.id}
       role="button"
       tabIndex={0}
       aria-pressed={selected}
-      onDragStart={handleDragStart}
+      onPointerDown={startMove}
       onClick={handleSelect}
       onKeyDown={handleSelectKey}
       onDoubleClick={() => {
