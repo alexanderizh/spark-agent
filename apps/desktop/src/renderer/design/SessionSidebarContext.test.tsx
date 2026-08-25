@@ -1384,6 +1384,116 @@ describe('SessionSidebarContext', () => {
     )
   })
 
+  it('creates a Codex session from the only imported provider on a fresh install', async () => {
+    const workspace = {
+      id: 'workspace-codex',
+      name: 'Codex Workspace',
+      rootPath: '/tmp/codex-workspace',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+    }
+    const providerId = 'imported-codex-provider'
+    const createdSessions: Record<string, unknown>[] = []
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: providerId,
+              name: 'Imported Codex',
+              provider: 'openai',
+              defaultModel: 'gpt-5.6-luna',
+              modelIds: ['gpt-5.6-luna'],
+              apiEndpoint: 'https://example.com/v1',
+              keystoreRef: providerId,
+              isDefault: true,
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
+            {
+              id: 'codex-auto-router',
+              name: 'Codex Auto Router',
+              provider: 'openai',
+              defaultModel: '',
+              modelIds: [],
+              apiEndpoint: '',
+              keystoreRef: '',
+              isDefault: false,
+              createdAt: '',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: 'platform-manager-agent',
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: 'missing-claude-provider',
+              modelId: 'claude-sonnet',
+              agentAdapter: 'claude-sdk',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'medium',
+            },
+          ],
+        }
+      }
+      if (channel === 'session:create') {
+        createdSessions.push(request ?? {})
+        return { sessionId: 'created-codex-session' }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.selectedProviderId).toBe(providerId)
+      expect(latestCtxRef.current?.agents).toHaveLength(1)
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.handleNewSession(workspace.id, { forceNew: true })
+    })
+
+    expect(appContextMock.requestConfirm).not.toHaveBeenCalled()
+    expect(createdSessions).toEqual([
+      expect.objectContaining({
+        providerProfileId: providerId,
+        modelId: 'gpt-5.6-luna',
+        agentAdapter: 'codex',
+      }),
+    ])
+  })
+
   it('refreshes a session activity time when an old session starts running', async () => {
     const oldUpdatedAt = '2026-07-01T00:00:00.000Z'
     let queueChangedHandler: ((event: Record<string, unknown>) => void) | null = null

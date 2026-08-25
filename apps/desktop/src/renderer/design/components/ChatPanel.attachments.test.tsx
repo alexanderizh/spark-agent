@@ -44,6 +44,55 @@ function getChatPanel(container: HTMLDivElement): Element {
 }
 
 describe('ChatPanel dropped attachments', () => {
+  it('uses the compact add menu with only canvas-relevant actions', async () => {
+    Object.defineProperty(window, 'spark', {
+      configurable: true,
+      value: {
+        invoke: vi.fn(),
+        on: vi.fn(() => () => undefined),
+      },
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mounted.push({ root, container })
+
+    await act(async () =>
+      root.render(
+        <ChatPanel
+          sessionId={null}
+          onSend={vi.fn(async () => undefined)}
+          composerBelow={<button data-testid="composer-below-control">模型</button>}
+        />,
+      ),
+    )
+
+    const actionsMenu = container.querySelector('.composer-actions-menu')
+    const parameterScroller = container.querySelector('.chat-panel-composer-below-scroll')
+    expect(actionsMenu?.parentElement?.classList.contains('chat-panel-composer-below')).toBe(true)
+    expect(parameterScroller?.contains(actionsMenu)).toBe(false)
+    expect(
+      parameterScroller?.querySelector('[data-testid="composer-below-control"]'),
+    ).not.toBeNull()
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="添加图片、文件或文件夹"]')?.click()
+    })
+
+    expect(container.textContent).toContain('添加图片')
+    expect(container.textContent).toContain('添加文件或文件夹')
+    expect(container.textContent).toContain('命令')
+    expect(container.textContent).not.toContain('技能')
+
+    const commandButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.composer-actions-item'),
+    ).find((button) => button.textContent?.trim() === '命令')
+    await act(async () => commandButton?.click())
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('.chat-panel-input')
+    expect(textarea?.value).toBe('/')
+  })
+
   it('adds a host artifact drop to the composer and sends it with the turn', async () => {
     Object.defineProperty(window, 'spark', {
       configurable: true,

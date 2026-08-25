@@ -35,7 +35,7 @@ import type {
 import { isAutoRouterProvider } from '@spark/protocol'
 import { SerialTaskQueue } from './sidebar-manual-order'
 import {
-  getPreferredProviderForAdapter,
+  getPreferredProviderWithAdapterFallback,
   getProviderAdapterKind,
   isProviderCompatibleWithAdapter,
 } from './utils/provider-adapter'
@@ -138,7 +138,7 @@ function getPreferredProvider(
   prefs: ComposerPrefs,
   adapter: SessionAgentAdapter,
 ): ProviderProfile | undefined {
-  return getPreferredProviderForAdapter(providers, prefs.providerProfileId, adapter)
+  return getPreferredProviderWithAdapterFallback(providers, prefs.providerProfileId, adapter)
 }
 
 function getProviderDefaultModel(provider: ProviderProfile): string | undefined {

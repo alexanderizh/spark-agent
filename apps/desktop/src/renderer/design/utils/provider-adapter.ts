@@ -69,3 +69,22 @@ export function getPreferredProviderForAdapter(
     compatible[0]
   )
 }
+
+/**
+ * Resolve an initial provider without leaving a fresh install stuck on the default adapter.
+ * The requested adapter still wins; only when it has no provider do we cross to the other engine.
+ */
+export function getPreferredProviderWithAdapterFallback(
+  providers: ProviderProfile[],
+  preferredProviderId: string | undefined,
+  adapter: SessionAgentAdapter,
+): ProviderProfile | undefined {
+  return (
+    getPreferredProviderForAdapter(providers, preferredProviderId, adapter) ??
+    getPreferredProviderForAdapter(
+      providers,
+      preferredProviderId,
+      isClaudeAdapter(adapter) ? 'codex' : 'claude-sdk',
+    )
+  )
+}

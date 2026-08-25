@@ -16,12 +16,16 @@ import type { ProjectSkillSummaryItem, SkillItem } from '@spark/protocol'
 interface ComposerActionsMenuProps {
   /** 触发「添加文件或图片」 */
   onAddAttachments: () => void
+  /** 自定义附件菜单文案；默认沿用工作台文案 */
+  attachmentLabel?: string
   /** 触发「添加相关文件或目录」：选中后挂为路径引用（不发送内容，仅作上下文参考） */
   onAddContextFiles?: () => void
+  /** 自定义相关文件菜单文案；默认沿用工作台文案 */
+  contextFilesLabel?: string
   /** 打开会话参考选择器 */
   onAddSessionReference?: () => void
   /** 把技能名作为 `@技能名 ` 插入到输入框（由父组件实现光标位置） */
-  onInsertSkillMention: (skill: { name: string }) => void
+  onInsertSkillMention?: (skill: { name: string }) => void
   /** 触发斜杠命令菜单：等同在输入框键入 `/` */
   onInsertSlashCommand?: () => void
   /** 打开技能管理页面，可指定目标 tab */
@@ -30,19 +34,24 @@ interface ComposerActionsMenuProps {
   disabled?: boolean
   /** 当前会话 ID：用于扫描该会话工作区的项目级技能（分块展示在子菜单底部） */
   sessionId?: string | null
+  /** 「+」按钮提示；默认沿用工作台提示 */
+  triggerTitle?: string
 }
 
 type SkillSubPlacement = 'top-right' | 'bottom-right' | 'top-left' | 'bottom-left'
 
 export function ComposerActionsMenu({
   onAddAttachments,
+  attachmentLabel = '添加文件或图片',
   onAddContextFiles,
+  contextFilesLabel = '添加相关文件或目录',
   onAddSessionReference,
   onInsertSkillMention,
   onInsertSlashCommand,
   onOpenSkillStore,
   disabled = false,
   sessionId,
+  triggerTitle = '添加文件、图片或技能',
 }: ComposerActionsMenuProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const skillItemRef = useRef<HTMLDivElement | null>(null)
@@ -190,7 +199,7 @@ export function ComposerActionsMenu({
   const handleSkillClick = (skill: { name: string }) => {
     setOpen(false)
     setSkillSubOpen(false)
-    onInsertSkillMention(skill)
+    onInsertSkillMention?.(skill)
   }
 
   const handleOpenSkillStore = (tab: 'installed' | 'create') => {
@@ -207,7 +216,8 @@ export function ComposerActionsMenu({
       <button
         type="button"
         className="icon-btn composer-actions-trigger"
-        title="添加文件、图片或技能"
+        title={triggerTitle}
+        aria-label={triggerTitle}
         disabled={disabled}
         onClick={handleOpenToggle}
       >
@@ -224,7 +234,7 @@ export function ComposerActionsMenu({
             <span className="composer-actions-item-icon">
               <Icons.FilePlus size={14} />
             </span>
-            <span className="composer-actions-item-label">添加文件或图片</span>
+            <span className="composer-actions-item-label">{attachmentLabel}</span>
           </button>
           {onAddContextFiles && (
             <button
@@ -236,7 +246,7 @@ export function ComposerActionsMenu({
               <span className="composer-actions-item-icon">
                 <Icons.FolderPlus size={14} />
               </span>
-              <span className="composer-actions-item-label">添加相关文件或目录</span>
+              <span className="composer-actions-item-label">{contextFilesLabel}</span>
             </button>
           )}
           {onAddSessionReference && (
@@ -265,134 +275,136 @@ export function ComposerActionsMenu({
               <span className="composer-actions-item-label">命令</span>
             </button>
           )}
-          <div
-            ref={skillItemRef}
-            className={`composer-actions-item has-sub${skillSubOpen ? ' sub-open' : ''}`}
-            onMouseEnter={() => {
-              updateSkillSubPlacement()
-              setSkillSubOpen(true)
-              loadSkills()
-            }}
-            onClick={() => {
-              updateSkillSubPlacement()
-              setSkillSubOpen((v) => !v)
-            }}
-            role="button"
-            tabIndex={0}
-          >
-            <span className="composer-actions-item-icon">
-              <Icons.Skills size={14} />
-            </span>
-            <span className="composer-actions-item-label">技能</span>
-            <span className="composer-actions-item-chev">
-              <Icons.ChevronRight size={12} />
-            </span>
-            {skillSubOpen && (
-              <div
-                className={`composer-actions-sub placement-${skillSubPlacement}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="composer-actions-sub-search">
-                  <Icons.Search size={12} />
-                  <input
-                    type="text"
-                    value={skillSearch}
-                    placeholder="搜索技能"
-                    onChange={(e) => setSkillSearch(e.target.value)}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  />
-                </div>
-                {skillsLoading ? (
-                  <div className="composer-actions-sub-empty">
-                    <Icons.Spinner size={12} /> 加载中…
+          {onInsertSkillMention && (
+            <div
+              ref={skillItemRef}
+              className={`composer-actions-item has-sub${skillSubOpen ? ' sub-open' : ''}`}
+              onMouseEnter={() => {
+                updateSkillSubPlacement()
+                setSkillSubOpen(true)
+                loadSkills()
+              }}
+              onClick={() => {
+                updateSkillSubPlacement()
+                setSkillSubOpen((v) => !v)
+              }}
+              role="button"
+              tabIndex={0}
+            >
+              <span className="composer-actions-item-icon">
+                <Icons.Skills size={14} />
+              </span>
+              <span className="composer-actions-item-label">技能</span>
+              <span className="composer-actions-item-chev">
+                <Icons.ChevronRight size={12} />
+              </span>
+              {skillSubOpen && (
+                <div
+                  className={`composer-actions-sub placement-${skillSubPlacement}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="composer-actions-sub-search">
+                    <Icons.Search size={12} />
+                    <input
+                      type="text"
+                      value={skillSearch}
+                      placeholder="搜索技能"
+                      onChange={(e) => setSkillSearch(e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    />
                   </div>
-                ) : filteredSkills.length === 0 && filteredProjectSkills.length === 0 ? (
-                  <div className="composer-actions-sub-empty">
-                    {skillSearch ? '没有匹配的技能' : '暂无可用技能'}
-                  </div>
-                ) : (
-                  <div className="composer-actions-sub-list">
-                    {filteredSkills.map((skill) => (
+                  {skillsLoading ? (
+                    <div className="composer-actions-sub-empty">
+                      <Icons.Spinner size={12} /> 加载中…
+                    </div>
+                  ) : filteredSkills.length === 0 && filteredProjectSkills.length === 0 ? (
+                    <div className="composer-actions-sub-empty">
+                      {skillSearch ? '没有匹配的技能' : '暂无可用技能'}
+                    </div>
+                  ) : (
+                    <div className="composer-actions-sub-list">
+                      {filteredSkills.map((skill) => (
+                        <button
+                          key={skill.id}
+                          type="button"
+                          className="composer-actions-sub-item"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleSkillClick(skill)
+                          }}
+                        >
+                          <span className="composer-actions-sub-item-icon">
+                            <Icons.File size={12} />
+                          </span>
+                          <span className="composer-actions-sub-item-name">{skill.name}</span>
+                        </button>
+                      ))}
+                      {filteredProjectSkills.length > 0 && (
+                        <>
+                          <div className="composer-actions-sub-group-label">
+                            <Icons.Folder size={11} />
+                            <span>项目技能</span>
+                            <span className="composer-actions-sub-group-count">
+                              {filteredProjectSkills.length}
+                            </span>
+                          </div>
+                          {filteredProjectSkills.map((skill) => (
+                            <button
+                              key={skill.id}
+                              type="button"
+                              className="composer-actions-sub-item"
+                              title={skill.description || skill.name}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleSkillClick(skill)
+                              }}
+                            >
+                              <span className="composer-actions-sub-item-icon">
+                                <Icons.Folder size={12} />
+                              </span>
+                              <span className="composer-actions-sub-item-name">{skill.name}</span>
+                              <span className="composer-actions-sub-item-tag">项目</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {!skillsLoading && skills.length > 0 && (
+                    <>
+                      <div className="composer-actions-sub-divider" />
                       <button
-                        key={skill.id}
                         type="button"
-                        className="composer-actions-sub-item"
+                        className="composer-actions-sub-item is-utility"
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleSkillClick(skill)
+                          handleOpenSkillStore('installed')
                         }}
                       >
                         <span className="composer-actions-sub-item-icon">
-                          <Icons.File size={12} />
+                          <Icons.Sliders size={12} />
                         </span>
-                        <span className="composer-actions-sub-item-name">{skill.name}</span>
+                        <span className="composer-actions-sub-item-name">管理技能</span>
                       </button>
-                    ))}
-                    {filteredProjectSkills.length > 0 && (
-                      <>
-                        <div className="composer-actions-sub-group-label">
-                          <Icons.Folder size={11} />
-                          <span>项目技能</span>
-                          <span className="composer-actions-sub-group-count">
-                            {filteredProjectSkills.length}
-                          </span>
-                        </div>
-                        {filteredProjectSkills.map((skill) => (
-                          <button
-                            key={skill.id}
-                            type="button"
-                            className="composer-actions-sub-item"
-                            title={skill.description || skill.name}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleSkillClick(skill)
-                            }}
-                          >
-                            <span className="composer-actions-sub-item-icon">
-                              <Icons.Folder size={12} />
-                            </span>
-                            <span className="composer-actions-sub-item-name">{skill.name}</span>
-                            <span className="composer-actions-sub-item-tag">项目</span>
-                          </button>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                )}
-                {!skillsLoading && skills.length > 0 && (
-                  <>
-                    <div className="composer-actions-sub-divider" />
-                    <button
-                      type="button"
-                      className="composer-actions-sub-item is-utility"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleOpenSkillStore('installed')
-                      }}
-                    >
-                      <span className="composer-actions-sub-item-icon">
-                        <Icons.Sliders size={12} />
-                      </span>
-                      <span className="composer-actions-sub-item-name">管理技能</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="composer-actions-sub-item is-utility"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleOpenSkillStore('create')
-                      }}
-                    >
-                      <span className="composer-actions-sub-item-icon">
-                        <Icons.Plus size={12} />
-                      </span>
-                      <span className="composer-actions-sub-item-name">添加技能</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+                      <button
+                        type="button"
+                        className="composer-actions-sub-item is-utility"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleOpenSkillStore('create')
+                        }}
+                      >
+                        <span className="composer-actions-sub-item-icon">
+                          <Icons.Plus size={12} />
+                        </span>
+                        <span className="composer-actions-sub-item-name">添加技能</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -789,11 +789,13 @@
   .ant-modal-header {
     justify-content: flex-start;
     margin-bottom: 0;
-    padding: var(--pad-xl) var(--pad-xl) var(--pad-md);
+    padding: var(--pad-xl) var(--pad-xl) var(--pad-lg);
     background: var(--panel);
   }
 
   .ant-modal-title {
+    flex: 1;
+    min-width: 0;
     color: var(--text-strong);
     font-size: var(--font-base);
   }
@@ -823,9 +825,9 @@
 
 .project-create-modal-title {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: var(--pad-md);
-  justify-content: flex-start;
   min-width: 0;
   padding-inline-end: calc(var(--pad-xl) * 2);
   text-align: left;
@@ -836,8 +838,8 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: calc(var(--control-h-form) + var(--pad-md));
-  height: calc(var(--control-h-form) + var(--pad-md));
+  width: var(--control-h-form);
+  height: var(--control-h-form);
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--primary-soft) 72%, var(--panel));
   color: var(--primary);
@@ -871,6 +873,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--pad-lg);
+  padding: 12px 0;
 }
 
 .project-create-modal .field {

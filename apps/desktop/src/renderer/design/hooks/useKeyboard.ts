@@ -276,7 +276,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   return false
 }
 
-/** Monaco 内的 Cmd/Ctrl+F 必须留给编辑器自身的单文件查找。 */
+/** 未被代码面板 capture 接管的 Monaco，保留其自身单文件查找。 */
 export function isMonacoEditorTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('.monaco-editor') != null
 }

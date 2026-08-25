@@ -3,10 +3,13 @@ import type { ProviderProfile } from '@spark/protocol'
 import {
   getProviderAdapterKind,
   getPreferredProviderForAdapter,
+  getPreferredProviderWithAdapterFallback,
   isProviderCompatibleWithAdapter,
 } from '../design/utils/provider-adapter'
 
-function profile(partial: Partial<ProviderProfile> & Pick<ProviderProfile, 'id' | 'provider' | 'name'>): ProviderProfile {
+function profile(
+  partial: Partial<ProviderProfile> & Pick<ProviderProfile, 'id' | 'provider' | 'name'>,
+): ProviderProfile {
   return {
     defaultModel: '',
     modelIds: [],
@@ -33,6 +36,11 @@ describe('provider adapter selection', () => {
     provider: 'openai',
     defaultModel: 'codex cli',
     modelIds: ['codex cli'],
+  })
+  const codexAutoRouter = profile({
+    id: 'codex-auto-router',
+    name: 'Codex Auto Router',
+    provider: 'openai',
   })
   const anthropicCompatible = profile({
     id: 'deepseek-anthropic',
@@ -65,6 +73,34 @@ describe('provider adapter selection', () => {
     )
     expect(selected?.id).toBe('local-codex-cli')
     expect(selected?.defaultModel).toBe('codex cli')
+  })
+
+  it('falls back to a Codex provider when a fresh install has no Claude provider', () => {
+    const importedCodexProvider = profile({
+      id: 'imported-codex',
+      name: 'Imported Codex',
+      provider: 'openai',
+      defaultModel: 'gpt-5.6-luna',
+      modelIds: ['gpt-5.6-luna'],
+    })
+
+    expect(
+      getPreferredProviderWithAdapterFallback(
+        [codexAutoRouter, importedCodexProvider],
+        undefined,
+        'claude-sdk',
+      )?.id,
+    ).toBe(importedCodexProvider.id)
+  })
+
+  it('keeps the preferred adapter when it still has a compatible provider', () => {
+    expect(
+      getPreferredProviderWithAdapterFallback(
+        [anthropicCompatible, localCodex],
+        localCodex.id,
+        'claude-sdk',
+      )?.id,
+    ).toBe(anthropicCompatible.id)
   })
 
   it('routes the official Spark managed provider to Claude SDK', () => {
