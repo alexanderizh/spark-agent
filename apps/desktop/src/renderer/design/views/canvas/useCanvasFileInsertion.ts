@@ -7,6 +7,7 @@ import {
   readVideoDimensions,
 } from './canvas-safe-file'
 import { classifyDroppedFile, layoutDroppedFiles, textFormatFromFileName } from './canvasFileDrop'
+import { isEditableKeyboardTarget } from './canvasPasteGuard'
 import {
   getImageGridMetrics,
   fitImageNodeSize,
@@ -363,9 +364,7 @@ export function useCanvasFileInsertion({
       try {
         if (images.length > 0) {
           const prepared = await Promise.all(
-            images.map((file) =>
-              prepareCanvasImageUpload(file, { grouped: images.length > 1 }),
-            ),
+            images.map((file) => prepareCanvasImageUpload(file, { grouped: images.length > 1 })),
           )
           const result = await insertPreparedImages(prepared, origin)
           for (const id of result.createdNodeIds) createdNodeIds.push(id)
@@ -439,9 +438,7 @@ export function useCanvasFileInsertion({
       if (totalSupported > 0) {
         if (createdNodeIds.length > 0) setSelectedNodeIds(createdNodeIds.slice(-1))
         message.success(
-          totalSupported === 1
-            ? '已添加文件到画布'
-            : `已添加 ${totalSupported} 个文件到画布`,
+          totalSupported === 1 ? '已添加文件到画布' : `已添加 ${totalSupported} 个文件到画布`,
         )
       }
       if (unsupportedCount > 0) {
@@ -465,18 +462,4 @@ export function useCanvasFileInsertion({
     handleFileChange,
     handleDropFiles,
   }
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  const tagName = target.tagName.toLowerCase()
-  return (
-    tagName === 'input' ||
-    tagName === 'textarea' ||
-    tagName === 'select' ||
-    target.isContentEditable ||
-    Boolean(
-      target.closest('[contenteditable="true"], .canvas-inline-ai-composer, .ant-modal, .ant-drawer'),
-    )
-  )
 }

@@ -64,6 +64,7 @@ import { useCanvasPromptNodePicker } from './useCanvasPromptNodePicker'
 import { CanvasBatchTaskPanel } from './CanvasBatchTaskPanel'
 import { useCanvasBatchTasks } from './useCanvasBatchTasks'
 import { shouldFocusCanvasInlinePanel } from './canvasInlinePanelFocus'
+import { isEditableKeyboardTarget } from './canvasPasteGuard'
 import { captureCanvasTaskViewport, runWithCanvasTaskViewport } from './canvasTaskViewportGuard'
 import { confirmCanvasLeaveWithRunningTasks } from './canvasLeaveTaskGuard'
 import { CanvasOperationWorkbench } from './CanvasOperationWorkbench'
@@ -478,22 +479,6 @@ function writeCanvasAutoSaveEnabled(projectId: string, enabled: boolean): void {
 
 function areNodeIdsEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index])
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  const tagName = target.tagName.toLowerCase()
-  return (
-    tagName === 'input' ||
-    tagName === 'textarea' ||
-    tagName === 'select' ||
-    target.isContentEditable ||
-    Boolean(
-      target.closest(
-        '[contenteditable="true"], .canvas-inline-ai-composer, .ant-modal, .ant-drawer, .canvas-operation-panel',
-      ),
-    )
-  )
 }
 
 function toolLabel(tool: CanvasTool): string {

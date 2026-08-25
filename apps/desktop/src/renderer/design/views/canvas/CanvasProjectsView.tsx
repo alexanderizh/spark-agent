@@ -13,6 +13,7 @@ import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { useApp } from '../../AppContext'
 import { useCanvasProjectSelection } from './CanvasProjectSelectionContext'
 import { sortCanvasProjects } from './canvasProjectSort'
+import { CanvasWelcomeHome } from './CanvasWelcomeHome'
 // 记录已被本组件处理过的「新建项目」信号值（来自侧栏 L1「新建项目」按钮）。
 // 用 module-level 而非 ref，确保 unmount→remount（切走再切回 canvas view）
 // 时不会重复响应同一个已处理过的信号——用户切走再回来不应自动弹窗。
@@ -55,9 +56,9 @@ export function CanvasProjectsView({
     () => projects.find((p) => p.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
   )
-  // 欢迎页最近项目缩略（最多 4 个，按更新时间降序）
+  // 欢迎页最近项目（最多 8 个，按更新时间降序）
   const recentProjects = useMemo(
-    () => sortCanvasProjects(projects, 'updated', 'desc').slice(0, 4),
+    () => sortCanvasProjects(projects, 'updated', 'desc').slice(0, 8),
     [projects],
   )
 
@@ -402,49 +403,11 @@ export function CanvasProjectsView({
             onSetCoverFromAsset={handleSetCoverFromAsset}
           />
         ) : (
-          <div className="canvas-projects-welcome">
-            <div className="canvas-welcome-hero">
-              <Icons.Canvas size={48} />
-              <h3>选择左侧项目查看详情，或新建画布开始创作</h3>
-              {/* <p>
-                无限画布以项目为单位组织素材、节点、任务与生成血缘。
-                点击侧栏项目查看详情，双击直接进入画布。
-              </p> */}
-              <Button
-                size="middle"
-                type="primary"
-                icon={<Icons.Plus size={16} />}
-                onClick={openCreate}
-              >
-                新建项目
-              </Button>
-            </div>
-            {recentProjects.length > 0 && (
-              <div className="canvas-welcome-recent">
-                <h4>最近项目</h4>
-                <div className="canvas-welcome-recent-grid">
-                  {recentProjects.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="canvas-welcome-recent-card"
-                      onClick={() => selectProject(p.id)}
-                      title={p.title}
-                    >
-                      {p.coverUrl ? (
-                        <img src={p.coverUrl} alt={p.title} draggable={false} />
-                      ) : (
-                        <span className="canvas-welcome-recent-placeholder">
-                          <Icons.Canvas size={20} />
-                        </span>
-                      )}
-                      <span className="canvas-welcome-recent-name">{p.title}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <CanvasWelcomeHome
+            projects={recentProjects}
+            onCreate={openCreate}
+            onSelectProject={selectProject}
+          />
         )}
       </main>
 

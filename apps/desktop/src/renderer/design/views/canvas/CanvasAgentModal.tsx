@@ -2486,7 +2486,6 @@ export function PermissionPickerInline({
       }}
       popupRender={() => (
         <div className="composer-dropdown-menu canvas-agent-permission-menu">
-          <div className="composer-menu-group-title">运行权限</div>
           {options.map((option) => (
             <button
               key={option.value}
