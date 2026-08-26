@@ -101,6 +101,25 @@
   opacity: 0.88;
 }
 
+/* 条目内终端图标可点击（打开终端面板）：按钮重置 + hover 提亮 */
+button.session-terminal-indicator-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--primary);
+    opacity: 1;
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--primary);
+    outline-offset: 1px;
+    border-radius: 3px;
+  }
+}
+
 .session-terminal-count {
   position: absolute;
   right: -7px;

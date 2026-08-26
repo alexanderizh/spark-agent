@@ -27,11 +27,24 @@ describe('SidebarFilterMenu canvas-project filter', () => {
   })
 })
 
+describe('SidebarFilterMenu project multi-select', () => {
+  it('treats an empty selection as default and any selection as active', () => {
+    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER })).toBe(true)
+    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, projectIds: ['ws-1'] })).toBe(false)
+  })
+
+  it('allows reordering while one or multiple projects are selected', () => {
+    expect(
+      canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, projectIds: ['ws-1'] }, false),
+    ).toBe(true)
+    expect(
+      canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, projectIds: ['ws-1', 'ws-2'] }, false),
+    ).toBe(true)
+  })
+})
+
 describe('canReorderSidebarSessions', () => {
   it('allows reordering while a project filter or canvas-project visibility is active', () => {
-    expect(canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, projectId: 'ws-1' }, false)).toBe(
-      true,
-    )
     expect(
       canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, canvasProjects: 'hide' }, false),
     ).toBe(true)

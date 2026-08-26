@@ -135,3 +135,61 @@ describe('GitEnvPanel session collaboration', () => {
     expect(document.body.querySelector('.git-collaboration-dialog')).toBeNull()
   })
 })
+
+describe('GitEnvPanel open-terminal running indicator', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  function baseProps(): React.ComponentProps<typeof GitEnvPanel> {
+    return {
+      status: null,
+      branchState: { currentBranch: 'master', branches: [] },
+      onClose: vi.fn(),
+      onOpenCreateBranch: vi.fn(),
+      onOpenCommit: vi.fn(),
+      onOpenBranches: vi.fn(),
+      onOpenReview: vi.fn(),
+      onOpenTerminal: vi.fn(),
+      tasks: [],
+      goal: null,
+      onGoalControl: vi.fn(),
+    }
+  }
+
+  it('hides the running dot when no terminal is active', () => {
+    act(() => {
+      root.render(<GitEnvPanel {...baseProps()} />)
+    })
+
+    expect(container.querySelector('.git-env-terminal-running-dot')).toBeNull()
+    const terminalRow = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('打开终端'),
+    )
+    expect(terminalRow?.getAttribute('title')).toBeNull()
+  })
+
+  it('shows the theme-colored dot and hint title when terminals are running', () => {
+    act(() => {
+      root.render(<GitEnvPanel {...baseProps()} terminalRunningCount={2} />)
+    })
+
+    const dot = container.querySelector('.git-env-terminal-running-dot')
+    expect(dot).not.toBeNull()
+    expect(dot?.getAttribute('aria-label')).toBe('终端运行中')
+    const terminalRow = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('打开终端'),
+    )
+    expect(terminalRow?.getAttribute('title')).toContain('终端运行中 (2)')
+  })
+})

@@ -39,6 +39,7 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { Icons } from './Icons'
 import { requestOpenProjectCodeViewer } from './components/code-viewer/codeViewerNavigation'
+import { requestOpenTerminalPanel } from './views/chat/terminalPanelNavigation'
 import { writeSessionReferenceDragPayload } from './views/chat/session-reference-dnd'
 import { requestSessionReferenceAdd } from './views/chat/session-reference-control'
 import {
@@ -253,10 +254,16 @@ function readSidebarFilter(): SidebarFilterState {
   try {
     const raw = window.localStorage.getItem(SIDEBAR_FILTER_KEY)
     if (!raw) return { ...DEFAULT_SIDEBAR_FILTER }
-    const parsed = JSON.parse(raw) as Partial<SidebarFilterState>
+    const parsed = JSON.parse(raw) as Partial<SidebarFilterState> & { projectId?: unknown }
+    // 兼容旧版单选 projectId：字符串（非 'all'）迁移成单元素数组；非法值回退全部。
+    const projectIds = Array.isArray(parsed.projectIds)
+      ? parsed.projectIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+      : typeof parsed.projectId === 'string' && parsed.projectId !== 'all'
+        ? [parsed.projectId]
+        : DEFAULT_SIDEBAR_FILTER.projectIds
     return {
       status: parsed.status ?? DEFAULT_SIDEBAR_FILTER.status,
-      projectId: parsed.projectId ?? DEFAULT_SIDEBAR_FILTER.projectId,
+      projectIds,
       lastActivity: parsed.lastActivity ?? DEFAULT_SIDEBAR_FILTER.lastActivity,
       scheduledTasks: parsed.scheduledTasks ?? DEFAULT_SIDEBAR_FILTER.scheduledTasks,
       canvasProjects: parsed.canvasProjects ?? DEFAULT_SIDEBAR_FILTER.canvasProjects,
@@ -307,9 +314,10 @@ function filterByLastActivity(
   })
 }
 
-function filterByProject(sessions: SessionSummary[], projectId: string): SessionSummary[] {
-  if (projectId === 'all') return sessions
-  return sessions.filter((s) => s.workspaceIds.includes(projectId))
+function filterByProject(sessions: SessionSummary[], projectIds: string[]): SessionSummary[] {
+  if (projectIds.length === 0) return sessions
+  const selected = new Set(projectIds)
+  return sessions.filter((s) => s.workspaceIds.some((workspaceId) => selected.has(workspaceId)))
 }
 
 function filterByScheduledTasks(
@@ -334,7 +342,7 @@ export function applySessionFilters(
     filter.canvasProjects === 'show' ? sessions : filterCanvasSessions(sessions, workspaces)
   return filterByLastActivity(
     filterByScheduledTasks(
-      filterByProject(filterByStatus(canvasVisibleSessions, filter.status), filter.projectId),
+      filterByProject(filterByStatus(canvasVisibleSessions, filter.status), filter.projectIds),
       filter.scheduledTasks,
       scheduleSummaries,
     ),
@@ -975,16 +983,25 @@ function ChatListItem({
             </Tooltip>
           )}
           {terminalRunningCount > 0 && (
-            <span
-              className="session-terminal-indicator"
-              title={`终端运行中 (${terminalRunningCount})`}
-              aria-label="终端运行中"
+            <button
+              type="button"
+              className="session-terminal-indicator session-terminal-indicator-btn"
+              title={`终端运行中 (${terminalRunningCount})，点击打开终端`}
+              aria-label={`终端运行中 (${terminalRunningCount})，打开终端面板`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                // 不触发条目 hover 卡以外的行为冲突；先走选中语义（激活会话 + 切视图），
+                // 再派发「打开终端面板」跨视图请求（ChatView 消费后展开统一侧栏终端 tab）
+                e.stopPropagation()
+                onClick(s.id)
+                requestOpenTerminalPanel()
+              }}
             >
               <Icons.Terminal size={12} strokeWidth={1.7} />
               {terminalRunningCount > 1 && (
                 <span className="session-terminal-count">{terminalRunningCount}</span>
               )}
-            </span>
+            </button>
           )}
           {displayStatus !== 'idle' && badgeInfo.icon ? (
             <span
@@ -2215,16 +2232,20 @@ export function SidebarSessionList() {
       return [{ id: 'none:all', label: 'sidebar.allSessions', sessions: filteredSessions }]
     }
     // 'project' mode: each workspace is its own group
-    const selectedWorkspace =
-      filter.projectId === 'all' ? null : filterWorkspaces.find((w) => w.id === filter.projectId)
-    const selectedBaseWorkspaceId = selectedWorkspace?.worktreeMeta?.baseWorkspaceId
-    const selectedProjectGroupId =
-      selectedBaseWorkspaceId != null &&
-      filterWorkspaces.some((w) => w.id === selectedBaseWorkspaceId)
-        ? selectedBaseWorkspaceId
-        : filter.projectId
+    // 项目多选：每个选中 id 解析到它归属的分组（worktree 归并到 base 分组）；
+    // 空集合 = 全部项目，不过滤分组。
+    const selectedGroupIds =
+      filter.projectIds.length > 0
+        ? new Set(
+            filter.projectIds.map((id) => {
+              const workspace = filterWorkspaces.find((w) => w.id === id)
+              const baseId = workspace?.worktreeMeta?.baseWorkspaceId
+              return baseId != null && filterWorkspaces.some((w) => w.id === baseId) ? baseId : id
+            }),
+          )
+        : null
     const projectGroups = buildProjectGroups(filterWorkspaces, filteredSessions).filter(
-      (group) => filter.projectId === 'all' || group.workspace.id === selectedProjectGroupId,
+      (group) => selectedGroupIds == null || selectedGroupIds.has(group.workspace.id),
     )
     const noProjectWorkspace = ctx.noProjectWorkspace
     const noProject = noProjectWorkspace
@@ -2274,7 +2295,7 @@ export function SidebarSessionList() {
     return [...orderedProjects, ...ungroupedGroup]
   }, [
     filter.groupBy,
-    filter.projectId,
+    filter.projectIds,
     filteredSessions,
     filterWorkspaces,
     ctx.noProjectWorkspace,

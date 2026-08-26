@@ -102,6 +102,7 @@ export function GitEnvPanel({
   onOpenBranches,
   onOpenReview,
   onOpenTerminal,
+  terminalRunningCount = 0,
   tasks,
   goal,
   onGoalControl,
@@ -117,6 +118,8 @@ export function GitEnvPanel({
   onOpenBranches: () => void
   onOpenReview: () => void
   onOpenTerminal: () => void
+  /** 当前会话运行中的内置终端数：>0 时在「打开终端」行上点亮主题色小圆点标识 */
+  terminalRunningCount?: number
   tasks: InspectorTask[]
   goal: GoalSnapshot | null
   onGoalControl: (action: 'pause' | 'resume' | 'clear' | 'complete' | 'confirm' | 'reject') => void
@@ -234,11 +237,23 @@ export function GitEnvPanel({
             </button>
           </>
         )}
-        <button type="button" className="git-env-row" onClick={onOpenTerminal}>
-          <span className="git-env-icon">
+        <button
+          type="button"
+          className="git-env-row"
+          onClick={onOpenTerminal}
+          {...(terminalRunningCount > 0 ? { title: `终端运行中 (${terminalRunningCount})` } : {})}
+        >
+          <span className="git-env-icon" aria-hidden="true">
             <Icons.Terminal size={14} />
           </span>
           <span>打开终端</span>
+          {/* 已有启动中的终端：右侧主题色小圆点标识（不带文字） */}
+          {terminalRunningCount > 0 && (
+            <>
+              <span className="git-env-spacer" aria-hidden="true" />
+              <span className="git-env-terminal-running-dot" role="img" aria-label="终端运行中" />
+            </>
+          )}
         </button>
         <GitTaskProgressList tasks={tasks} />
         <GitGoalSection goal={goal} onGoalControl={onGoalControl} />

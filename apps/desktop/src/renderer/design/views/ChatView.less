@@ -357,6 +357,16 @@
   flex: 1;
 }
 
+/* 环境面板「打开终端」行：会话已有启动中终端时的主题色小圆点标识（不带文字） */
+.git-env-terminal-running-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-primary-6, #4a8cff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-6, #4a8cff) 18%, transparent);
+}
+
 .git-popover-divider {
   height: 1px;
   margin: 4px 8px;

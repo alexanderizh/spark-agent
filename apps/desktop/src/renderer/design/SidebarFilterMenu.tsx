@@ -21,8 +21,8 @@ export type SidebarCanvasProjectsFilter = 'show' | 'hide'
 
 export interface SidebarFilterState {
   status: SidebarStatusFilter
-  /** workspaceId 或 'all' */
-  projectId: string
+  /** 选中的项目（workspaceId）集合；空数组 = 全部项目 */
+  projectIds: string[]
   lastActivity: SidebarLastActivityFilter
   scheduledTasks: SidebarScheduledTasksFilter
   canvasProjects: SidebarCanvasProjectsFilter
@@ -31,7 +31,7 @@ export interface SidebarFilterState {
 
 export const DEFAULT_SIDEBAR_FILTER: SidebarFilterState = {
   status: 'active',
-  projectId: 'all',
+  projectIds: [],
   lastActivity: 'all',
   scheduledTasks: 'all',
   canvasProjects: 'show',
@@ -41,7 +41,7 @@ export const DEFAULT_SIDEBAR_FILTER: SidebarFilterState = {
 export function isDefaultFilter(state: SidebarFilterState): boolean {
   return (
     state.status === DEFAULT_SIDEBAR_FILTER.status &&
-    state.projectId === DEFAULT_SIDEBAR_FILTER.projectId &&
+    state.projectIds.length === 0 &&
     state.lastActivity === DEFAULT_SIDEBAR_FILTER.lastActivity &&
     state.scheduledTasks === DEFAULT_SIDEBAR_FILTER.scheduledTasks &&
     state.canvasProjects === DEFAULT_SIDEBAR_FILTER.canvasProjects &&
@@ -168,6 +168,41 @@ function SubMenu<T extends string>({
   )
 }
 
+/* ─── MultiSelectSubMenu — 项目多选二级浮层（复用 SubMenu 样式） ─── */
+function ProjectSubMenu({
+  options,
+  selectedIds,
+  onToggleAll,
+  onToggle,
+}: {
+  options: Array<{ value: string; label: string; hint?: string }>
+  selectedIds: ReadonlySet<string>
+  onToggleAll: () => void
+  onToggle: (value: string) => void
+}) {
+  return (
+    <div className="sidebar-filter-submenu">
+      {options.map((opt) => {
+        const active = opt.value === 'all' ? selectedIds.size === 0 : selectedIds.has(opt.value)
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            className={`sidebar-filter-submenu-item${active ? ' is-active' : ''}`}
+            onClick={() => (opt.value === 'all' ? onToggleAll() : onToggle(opt.value))}
+          >
+            <span className="sidebar-filter-submenu-item-label">
+              <span className="sidebar-filter-submenu-item-text">{opt.label}</span>
+              {opt.hint && <span className="sidebar-filter-submenu-item-hint">{opt.hint}</span>}
+            </span>
+            {active && <Icons.Check size={14} className="sidebar-filter-submenu-check" />}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 /* ─── 行 — 一级菜单条目带二级 Trigger ─── */
 function FilterRow({
   label,
@@ -258,15 +293,28 @@ function FilterPopupContent({
     return list
   }, [workspaces, t])
 
+  // 行值文案：空选择=「全部」；单选显示项目名；多选显示「首个 +N」（悬停子菜单可见完整勾选）。
   const projectLabel = useMemo(() => {
-    if (state.projectId === 'all') return t('sidebar.filter.all')
-    const found = workspaces.find((w) => w.id === state.projectId)
-    return found != null ? found.name : t('sidebar.filter.all')
-  }, [state.projectId, workspaces, t])
+    if (state.projectIds.length === 0) return t('sidebar.filter.all')
+    const names = state.projectIds.map((id) => workspaces.find((w) => w.id === id)?.name ?? id)
+    const [first, ...rest] = names
+    if (first == null) return t('sidebar.filter.all')
+    if (rest.length === 0) return first
+    return `${first} +${rest.length}`
+  }, [state.projectIds, workspaces, t])
+  const selectedProjectIdSet = useMemo(() => new Set(state.projectIds), [state.projectIds])
+  const toggleProject = (workspaceId: string) => {
+    onChange({
+      ...state,
+      projectIds: state.projectIds.includes(workspaceId)
+        ? state.projectIds.filter((id) => id !== workspaceId)
+        : [...state.projectIds, workspaceId],
+    })
+  }
 
   const statusHighlight =
     state.status !== DEFAULT_SIDEBAR_FILTER.status || state.status === 'active'
-  const projectHighlight = state.projectId !== 'all'
+  const projectHighlight = state.projectIds.length > 0
   const lastActivityHighlight = state.lastActivity !== 'all'
   const scheduledTasksHighlight = state.scheduledTasks !== 'all'
   const canvasProjectsHighlight = state.canvasProjects !== DEFAULT_SIDEBAR_FILTER.canvasProjects
@@ -289,10 +337,11 @@ function FilterPopupContent({
         valueLabel={projectLabel}
         highlighted={projectHighlight}
       >
-        <SubMenu
+        <ProjectSubMenu
           options={projectOptions}
-          current={state.projectId}
-          onSelect={(value) => onChange({ ...state, projectId: value })}
+          selectedIds={selectedProjectIdSet}
+          onToggleAll={() => onChange({ ...state, projectIds: [] })}
+          onToggle={toggleProject}
         />
       </FilterRow>
       <FilterRow
@@ -304,18 +353,15 @@ function FilterPopupContent({
           options={canvasProjectOptions}
           current={state.canvasProjects}
           onSelect={(value) => {
-            const selectedWorkspace = workspaces.find(
-              (workspace) => workspace.id === state.projectId,
-            )
+            // 隐藏画布项目时，把选中集合里的画布项目剔除；其余选择保留。
+            const canvasWorkspaceIds = value === 'hide' ? getCanvasWorkspaceIds(workspaces) : null
             onChange({
               ...state,
               canvasProjects: value,
-              projectId:
-                value === 'hide' &&
-                selectedWorkspace != null &&
-                getCanvasWorkspaceIds(workspaces).has(selectedWorkspace.id)
-                  ? 'all'
-                  : state.projectId,
+              projectIds:
+                canvasWorkspaceIds != null
+                  ? state.projectIds.filter((id) => !canvasWorkspaceIds.has(id))
+                  : state.projectIds,
             })
           }}
         />

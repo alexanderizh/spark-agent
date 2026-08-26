@@ -26,6 +26,7 @@ import { useCodeViewerFiles, CodeFileExternalChangeError } from './useCodeViewer
 import { useGitDiff } from './useGitDiff'
 import { FileExplorerPanel } from './file-explorer/FileExplorerPanel'
 import { GitPanel } from './git-panel/GitPanel'
+import { useGitPanelActions } from './git-panel/useGitPanelActions'
 import {
   closeGitPanel,
   openGitPanel,
@@ -34,6 +35,7 @@ import {
   useGitPanelVisible,
   useGitPanelWidth,
 } from './git-panel/gitPanelVisibility'
+import { SidebarGitFooter, shouldShowSidebarGitFooter } from './SidebarGitFooter'
 import { SearchPanel } from './search-panel/SearchPanel'
 import {
   closeSearchPanel,
@@ -141,6 +143,17 @@ export function CodeViewerPanel({
     startX: number
     target: 'explorer' | 'git' | 'search'
   } | null>(null)
+
+  // 左侧栏公用 foot（分支 + ahead/behind + 同步）的动作实例：挂在面板常驻层，
+  // 面板切换 / 侧栏隐藏时同步动作不中断，结果照常经 onStatusApplied 回写共享快照。
+  const gitSidebarActions = useGitPanelActions({
+    workspaceId: workspaceId ?? null,
+    onStatusApplied: onGitStatusApplied ?? (() => {}),
+  })
+  const gitSidebarSyncing =
+    gitSidebarActions.busy === 'sync' ||
+    gitSidebarActions.busy === 'pull' ||
+    gitSidebarActions.busy === 'push'
 
   const active = files.find((f) => f.absPath === activeAbsPath) ?? null
   const diffInfo = useGitDiff(
@@ -395,31 +408,41 @@ export function CodeViewerPanel({
                     : gitPanelWidth,
               }}
             >
-              {explorerVisible ? (
-                <FileExplorerPanel
-                  workspaceId={workspaceId}
-                  workspaceRootPath={workspaceRootPath ?? null}
-                  expandedDirs={explorerExpandedDirs}
-                  onExpandedChange={onExplorerExpandedChange}
-                  onOpenFile={onOpenFileFromExplorer}
-                  onPreviewFile={onPreviewFileFromExplorer}
-                  onEditFile={onEditFileFromExplorer}
-                  onAddToChat={onAddToChatFromExplorer}
-                  onOpenSearch={() => openSearchPanel()}
-                />
-              ) : searchPanelVisible ? (
-                <SearchPanel
-                  key={workspaceId}
-                  workspaceId={workspaceId}
-                  onOpenFile={onOpenFileFromSearch}
-                />
-              ) : (
-                <GitPanel
-                  workspaceId={workspaceId}
+              <div className="cv-explorer-body">
+                {explorerVisible ? (
+                  <FileExplorerPanel
+                    workspaceId={workspaceId}
+                    workspaceRootPath={workspaceRootPath ?? null}
+                    expandedDirs={explorerExpandedDirs}
+                    onExpandedChange={onExplorerExpandedChange}
+                    onOpenFile={onOpenFileFromExplorer}
+                    onPreviewFile={onPreviewFileFromExplorer}
+                    onEditFile={onEditFileFromExplorer}
+                    onAddToChat={onAddToChatFromExplorer}
+                    onOpenSearch={() => openSearchPanel()}
+                  />
+                ) : searchPanelVisible ? (
+                  <SearchPanel
+                    key={workspaceId}
+                    workspaceId={workspaceId}
+                    onOpenFile={onOpenFileFromSearch}
+                  />
+                ) : (
+                  <GitPanel
+                    workspaceId={workspaceId}
+                    status={gitStatus ?? null}
+                    onRefresh={onRefreshGitStatus ?? (() => {})}
+                    onStatusApplied={onGitStatusApplied ?? (() => {})}
+                    onOpenFile={onOpenFileFromGit ?? (() => {})}
+                  />
+                )}
+              </div>
+              {/* 公用 foot：分支 + 待同步数量 + 同步按钮（三个左侧面板共用；非 Git 仓库隐藏） */}
+              {shouldShowSidebarGitFooter(gitStatus ?? null) && (
+                <SidebarGitFooter
                   status={gitStatus ?? null}
-                  onRefresh={onRefreshGitStatus ?? (() => {})}
-                  onStatusApplied={onGitStatusApplied ?? (() => {})}
-                  onOpenFile={onOpenFileFromGit ?? (() => {})}
+                  busy={gitSidebarSyncing}
+                  onSync={() => void gitSidebarActions.sync()}
                 />
               )}
             </div>

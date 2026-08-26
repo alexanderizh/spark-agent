@@ -3,8 +3,12 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SessionId, WorkspaceInfo } from '@spark/protocol'
+import type { SessionId, TerminalSessionActivity, WorkspaceInfo } from '@spark/protocol'
 import type { SessionSummary } from './SessionSidebarContext'
+import {
+  OPEN_TERMINAL_PANEL_EVENT,
+  OPEN_TERMINAL_PANEL_PENDING_KEY,
+} from './views/chat/terminalPanelNavigation'
 import {
   applySessionFilters,
   FlatGroup,
@@ -667,6 +671,153 @@ describe('ProjectSessionGroup pagination', () => {
     expect(indicators[0]?.classList.contains('is-enabled')).toBe(true)
     expect(indicators[1]?.classList.contains('is-paused')).toBe(true)
     expect(indicators[0]?.querySelector('.anticon')).not.toBeNull()
+  })
+})
+
+describe('session terminal indicator opens terminal panel', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+    window.localStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
+  function renderGroup(
+    sessionTerminalActivity: Record<string, TerminalSessionActivity>,
+    onSelectSession: (session: SessionSummary) => void = () => undefined,
+  ): SessionSummary[] {
+    const sessions = createSessions(1)
+    const workspace: WorkspaceInfo = {
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      id: 'workspace-1',
+      name: 'Spark-Agent',
+      pinnedAt: null,
+      rootPath: '/tmp/spark-agent',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      worktreeMeta: null,
+    }
+    act(() => {
+      root.render(
+        <ProjectSessionGroup
+          group={{ workspace, sessions }}
+          activeSessionId={null}
+          activeWorkspaceId={workspace.id}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={sessionTerminalActivity}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          onSelectWorkspace={async () => undefined}
+          onSelectSession={onSelectSession}
+          onNewSession={() => undefined}
+          onRenameProject={() => undefined}
+          onToggleProjectPinned={() => undefined}
+          onArchiveProject={() => undefined}
+          onDeleteProject={() => undefined}
+          onOpenProjectFolder={() => undefined}
+          onOpenProjectInEditor={() => undefined}
+          onRenameSession={() => undefined}
+          onCommitSessionTitle={async () => undefined}
+          onToggleSessionPinned={() => undefined}
+          onArchiveSession={() => undefined}
+          onDeleteSession={() => undefined}
+        />,
+      )
+    })
+    return sessions
+  }
+
+  it('hides the indicator when the session has no running terminal', () => {
+    renderGroup({})
+    expect(container.querySelector('.session-terminal-indicator')).toBeNull()
+  })
+
+  it('clicks the indicator to select the session and request the terminal panel', () => {
+    const onSelectSession = vi.fn()
+    const events: CustomEvent[] = []
+    const listener = (event: Event): void => {
+      events.push(event as CustomEvent)
+    }
+    window.addEventListener(OPEN_TERMINAL_PANEL_EVENT, listener)
+
+    try {
+      const sessions = renderGroup(
+        { 'session-0': { sessionId: 'session-0' as SessionId, running: 2, total: 3 } },
+        onSelectSession,
+      )
+
+      const indicator = container.querySelector<HTMLButtonElement>(
+        '.session-terminal-indicator-btn',
+      )
+      expect(indicator).not.toBeNull()
+      expect(indicator?.getAttribute('title')).toContain('终端运行中 (2)')
+
+      act(() => {
+        // 行内按钮：阻断冒泡，不触发条目本身的点击
+        indicator?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+
+      // 先走选中语义（激活会话），再派发打开终端面板请求
+      expect(onSelectSession).toHaveBeenCalledWith(sessions[0])
+      expect(events).toHaveLength(1)
+      expect(window.localStorage.getItem(OPEN_TERMINAL_PANEL_PENDING_KEY)).not.toBeNull()
+    } finally {
+      window.removeEventListener(OPEN_TERMINAL_PANEL_EVENT, listener)
+    }
+  })
+})
+
+describe('project multi-select session filtering', () => {
+  const buildProjectSessions = (): SessionSummary[] => {
+    const base = createSessions(1)[0]
+    if (base === undefined) throw new Error('Expected a base session fixture')
+    return [
+      base,
+      { ...base, id: 'session-b' as SessionId, workspaceIds: ['workspace-2'] },
+      { ...base, id: 'session-c' as SessionId, workspaceIds: ['workspace-3'] },
+      {
+        ...base,
+        id: 'session-multi' as SessionId,
+        workspaceIds: ['workspace-1', 'workspace-2'],
+      },
+    ]
+  }
+
+  it('keeps sessions from every selected project and drops the rest', () => {
+    expect(
+      applySessionFilters(buildProjectSessions(), {
+        ...DEFAULT_SIDEBAR_FILTER,
+        projectIds: ['workspace-1', 'workspace-2'],
+      }).map((session) => session.id),
+    ).toEqual(['session-0', 'session-b', 'session-multi'])
+  })
+
+  it('treats an empty selection as no project filter', () => {
+    expect(
+      applySessionFilters(buildProjectSessions(), {
+        ...DEFAULT_SIDEBAR_FILTER,
+        projectIds: [],
+      }).map((session) => session.id),
+    ).toEqual(['session-0', 'session-b', 'session-c', 'session-multi'])
   })
 })
 

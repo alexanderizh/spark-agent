@@ -564,11 +564,18 @@
   min-height: 0;
 }
 .cv-explorer {
+  display: flex;
+  flex-direction: column;
   flex: none;
   height: 100%;
   min-height: 0;
   overflow: hidden;
   background: var(--cv-bg-2);
+}
+/* 面板本体（文件树 / 搜索 / Git 三选一），公用 foot 栏（.gp-footer）贴在其下 */
+.cv-explorer-body {
+  flex: 1;
+  min-height: 0;
 }
 .cv-explorer-resize {
   position: relative;

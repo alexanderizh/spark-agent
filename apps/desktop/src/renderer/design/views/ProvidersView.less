@@ -939,22 +939,19 @@
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  min-height: 52px;
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  color: var(--text-secondary);
-  background: var(--bg-soft);
+  min-height: 38px;
+  padding: 7px 6px;
+  border: none;
+  border-bottom: 1px solid var(--divider, var(--border));
+  color: var(--text-muted);
+  background: transparent;
   cursor: pointer;
   text-align: left;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
+  transition: background 0.15s ease;
 
   &:hover {
-    border-color: var(--border-strong, var(--primary));
     background: var(--hover);
   }
 
@@ -964,34 +961,33 @@
   }
 }
 
+/* 与 pv_section_icon 同规格：22px 主题色软底小方块 */
 .pv_advanced_toggle_icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
   border-radius: var(--r-sm);
   color: var(--primary);
   background: var(--primary-soft);
 }
 
-.pv_advanced_toggle_text {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
+/* 与 pv_section_title 同风格：小号加粗字距标题 */
 .pv_advanced_toggle_title {
-  color: var(--text-strong);
+  flex-shrink: 0;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
 }
 
+/* 摘要靠右展示，超长截断；与 pv_section_hint 同层级 */
 .pv_advanced_toggle_summary {
   overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  text-align: right;
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.4;
@@ -1001,7 +997,7 @@
 
 .pv_advanced_fields {
   grid-column: 1 / -1;
-  padding-top: 4px;
+  padding-top: 12px;
 }
 
 .pv_connection_actions {
@@ -1845,37 +1841,31 @@
   color: var(--danger);
 }
 
+/* OpenAI 协议下的 Codex 运行时常驻提示条：默认中性，仅缺失/失败时转警示色 */
 .pv_codex_runtime_notice {
+  grid-column: 1 / -1; /* 表单为两列网格，提示条横跨全宽，避免被压成窄列 */
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--warning) 36%, transparent);
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  gap: 8px 12px;
+  padding: 4px 8px;
+  background: transparent;
 
-  &.is-success {
-    border-color: color-mix(in srgb, var(--success) 36%, transparent);
-    background: color-mix(in srgb, var(--success) 8%, transparent);
-    color: var(--success);
-    font-size: 12px;
-    gap: 7px;
+  &.is-warning {
+    background: color-mix(in srgb, var(--warning) 8%, transparent);
   }
-}
 
-.pv_codex_runtime_notice_body {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 8px;
+  /* 本次安装失败时以 danger 强调，盖过 warning 底色 */
+  &.is-error {
+    background: color-mix(in srgb, var(--danger) 6%, transparent);
+  }
 }
 
 .pv_codex_runtime_notice_status {
   display: flex;
   min-width: 0;
-  align-items: flex-start;
+  flex: 1 1 auto;
+  align-items: center;
   gap: 7px;
   color: var(--text-secondary);
   font-size: 12px;
@@ -1883,14 +1873,67 @@
 
   > svg {
     flex: 0 0 auto;
-    margin-top: 2px;
     color: var(--warning);
   }
 }
 
+.pv_codex_runtime_notice.is-ready .pv_codex_runtime_notice_status > svg {
+  color: var(--success);
+}
+
+.pv_codex_runtime_notice.is-checking .pv_codex_runtime_notice_status > svg,
 .pv_codex_runtime_notice.is-installing .pv_codex_runtime_notice_status > svg,
 .pv_codex_runtime_notice.is-installing .pv_codex_runtime_notice_install > svg {
   animation: pv_codex_runtime_spin 0.9s linear infinite;
+}
+
+.pv_codex_runtime_notice.is-checking .pv_codex_runtime_notice_status > svg,
+.pv_codex_runtime_notice.is-installing .pv_codex_runtime_notice_status > svg {
+  color: var(--text-muted);
+}
+
+.pv_codex_runtime_notice_text {
+  min-width: 0;
+}
+
+.pv_codex_runtime_notice_badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+
+  > svg {
+    flex: 0 0 auto;
+  }
+
+  &.is-ok {
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 10%, transparent);
+  }
+
+  &.is-warn {
+    color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 12%, transparent);
+  }
+
+  &.is-busy {
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+
+    > svg {
+      animation: pv_codex_runtime_spin 0.9s linear infinite;
+    }
+  }
+}
+
+.pv_codex_runtime_notice_progress {
+  min-width: 0;
+  flex: 1 1 100%;
 }
 
 .pv_codex_runtime_notice_actions {
@@ -1898,6 +1941,7 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
 }
 
 .pv_codex_runtime_notice_actions button {
@@ -1954,5 +1998,6 @@
 
   .pv_codex_runtime_notice_actions {
     flex-wrap: wrap;
+    margin-left: 0;
   }
 }

@@ -4159,12 +4159,10 @@ export function ProviderEditPanel({
                 onClick={() => setAdvancedOpen((open) => !open)}
               >
                 <span className="pv_advanced_toggle_icon">
-                  <Icons.Settings size={14} />
+                  <Icons.Settings size={12} />
                 </span>
-                <span className="pv_advanced_toggle_text">
-                  <span className="pv_advanced_toggle_title">高级设置</span>
-                  <span className="pv_advanced_toggle_summary">{advancedSummary}</span>
-                </span>
+                <span className="pv_advanced_toggle_title">高级设置</span>
+                <span className="pv_advanced_toggle_summary">{advancedSummary}</span>
                 {advancedOpen ? <Icons.ChevronUp size={14} /> : <Icons.ChevronDown size={14} />}
               </button>
 

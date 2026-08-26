@@ -199,6 +199,11 @@ import {
   consumePendingOpenProjectCodeViewer,
   clearPendingOpenProjectCodeViewer,
 } from '../components/code-viewer/codeViewerNavigation'
+import {
+  OPEN_TERMINAL_PANEL_EVENT,
+  consumePendingOpenTerminalPanel,
+  clearPendingOpenTerminalPanel,
+} from './chat/terminalPanelNavigation'
 import type { OpenCodeFile, CodeViewMode } from '../components/code-viewer/types'
 import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
 import { insertToComposer } from '../components/code-viewer/composerInsert'
@@ -2124,6 +2129,28 @@ export function ChatView({
     openUnifiedSidePanel('code')
   }, [codeViewerOpenSignal, openUnifiedSidePanel])
 
+  // 「打开终端面板」导航（侧栏会话条目终端图标）：与代码面板同构 —— 挂载时消费
+  // localStorage 待处理请求（派发瞬间 ChatView 未挂载的场景），运行期监听事件并清标记，
+  // 统一转为信号计数由落地 effect 处理。
+  const [terminalPanelOpenSignal, setTerminalPanelOpenSignal] = useState(0)
+  useEffect(() => {
+    if (consumePendingOpenTerminalPanel()) setTerminalPanelOpenSignal((n) => n + 1)
+    const handler = (): void => {
+      clearPendingOpenTerminalPanel()
+      setTerminalPanelOpenSignal((n) => n + 1)
+    }
+    window.addEventListener(OPEN_TERMINAL_PANEL_EVENT, handler)
+    return () => window.removeEventListener(OPEN_TERMINAL_PANEL_EVENT, handler)
+  }, [])
+  // 落地：展开统一侧栏终端 tab。lastHandled ref 去重；声明位置在会话切换的
+  // 面板快照 effect 之后，保证切会话同帧先恢复快照、再展开终端。
+  const lastHandledTerminalSignalRef = useRef(0)
+  useEffect(() => {
+    if (terminalPanelOpenSignal <= lastHandledTerminalSignalRef.current) return
+    lastHandledTerminalSignalRef.current = terminalPanelOpenSignal
+    openUnifiedSidePanel('terminal')
+  }, [terminalPanelOpenSignal, openUnifiedSidePanel])
+
   const ensureChatLayoutFitsWindow = useCallback(
     (allowShrink = false, allowGrow = true) => {
       const layout = chatLayoutRef.current
@@ -2930,6 +2957,7 @@ export function ChatView({
             onToggleConfig={toggleConfigPanel}
             onToggleUnifiedPanel={toggleUnifiedPanel}
             onOpenInEditor={() => openUnifiedSidePanel('code')}
+            onOpenInTerminal={() => openUnifiedSidePanel('terminal')}
             {...(onExpandSidebar ? { onExpandSidebar } : {})}
             createSession={sessionCtx.handleNewSession}
             openSessionSchedule={sessionCtx.openSessionSchedule}
@@ -2985,6 +3013,7 @@ export function ChatView({
                 session={activeSession}
                 workspace={activeWorkspace}
                 onOpenInEditor={() => openUnifiedSidePanel('code')}
+                onOpenInTerminal={() => openUnifiedSidePanel('terminal')}
                 agentStatus={agentStatus}
                 stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
                 branchState={branchState}
@@ -3144,6 +3173,9 @@ export function ChatView({
             onOpenBranches={() => setGitBranchModalOpen(true)}
             onOpenReview={handleOpenGitReview}
             onOpenTerminal={() => openUnifiedSidePanel('terminal')}
+            terminalRunningCount={
+              active != null ? (sessionCtx.sessionTerminalActivity[active]?.running ?? 0) : 0
+            }
             tasks={activeSessionTasks}
             goal={activeSessionGoal}
             onGoalControl={handleGoalControl}
@@ -6155,7 +6187,9 @@ function ValidationSuggestionCard({
       if (res.queued === true) {
         toast.info('会话运行中，验证命令已加入队列，将在当前任务完成后执行。')
       } else {
-        toast.info(repair ? '验证命令已执行；失败时会交给 Agent 继续修复。' : '验证命令已开始执行。')
+        toast.info(
+          repair ? '验证命令已执行；失败时会交给 Agent 继续修复。' : '验证命令已开始执行。',
+        )
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '验证命令执行失败')
@@ -7480,20 +7514,14 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
         : projectSessionTaskTimelineBlocks(segment.blocks, sessionTaskEntry.anchorToolCallId)
     return projectedBlocks.length > 0 ? index : lastIndex
   }, -1)
-  const lastAgentSegmentIndex = segments.reduce(
-    (lastIndex, segment, index) => {
-      if (segment.kind !== 'agent') return lastIndex
-      const projectedBlocks =
-        sessionTaskEntry == null
-          ? segment.blocks
-          : projectSessionTaskTimelineBlocks(
-              segment.blocks,
-              sessionTaskEntry.anchorToolCallId,
-            )
-      return projectedBlocks.length > 0 ? index : lastIndex
-    },
-    -1,
-  )
+  const lastAgentSegmentIndex = segments.reduce((lastIndex, segment, index) => {
+    if (segment.kind !== 'agent') return lastIndex
+    const projectedBlocks =
+      sessionTaskEntry == null
+        ? segment.blocks
+        : projectSessionTaskTimelineBlocks(segment.blocks, sessionTaskEntry.anchorToolCallId)
+    return projectedBlocks.length > 0 ? index : lastIndex
+  }, -1)
 
   return (
     <>
@@ -7576,10 +7604,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
         const segmentBlocks =
           sessionTaskEntry == null
             ? segment.blocks
-            : projectSessionTaskTimelineBlocks(
-                segment.blocks,
-                sessionTaskEntry.anchorToolCallId,
-              )
+            : projectSessionTaskTimelineBlocks(segment.blocks, sessionTaskEntry.anchorToolCallId)
         if (segmentBlocks.length === 0) return null
         const segmentStreaming = segmentIsLatest && status === 'running'
         const segmentTaskEntry =

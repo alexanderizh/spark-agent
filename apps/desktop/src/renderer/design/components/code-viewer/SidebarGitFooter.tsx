@@ -1,12 +1,19 @@
 /**
- * GitPanelFooter —— 底部 foot 栏：当前分支 + 待同步数量（↑ahead ↓behind）+ 同步按钮。
+ * SidebarGitFooter —— 编辑器左侧栏公用 foot 栏：当前分支 + 待同步数量（↑ahead ↓behind）
+ * + 同步按钮。文件树 / 搜索 / Git 三个面板共用同一槽位，因此挂在其父容器
+ * （.cv-explorer）底部而不是任何单个面板内部。
  * 点击同步 = 先拉取后推送（与用户终端习惯一致，避免直接 push 被拒）。
  */
 
 import type { WorkspaceGitStatusResponse } from '@spark/protocol'
-import { Icons } from '../../../Icons'
+import { Icons } from '../../Icons'
 
-export function GitPanelFooter({
+/** status 尚未加载完（null）时仍显示占位（分支 '-' + 禁用同步）；确认非 Git 仓库则整个隐藏 */
+export function shouldShowSidebarGitFooter(status: WorkspaceGitStatusResponse | null): boolean {
+  return status == null || status.isGitRepo === true
+}
+
+export function SidebarGitFooter({
   status,
   busy,
   onSync,

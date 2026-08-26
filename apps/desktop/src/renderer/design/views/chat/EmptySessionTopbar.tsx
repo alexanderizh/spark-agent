@@ -27,6 +27,8 @@ type EmptySessionTopbarProps = {
   onToggleConfig: () => void
   onToggleUnifiedPanel: () => void
   onOpenInEditor: () => void
+  /** 展开内置终端面板，供项目打开方式下拉新增「内置终端」选项 */
+  onOpenInTerminal?: () => void
   onExpandSidebar?: () => void
   createSession: (workspaceId?: string | null) => Promise<SessionId | null>
   openSessionSchedule: (sessionId: SessionId) => void
@@ -48,6 +50,7 @@ export function EmptySessionTopbar({
   onToggleConfig,
   onToggleUnifiedPanel,
   onOpenInEditor,
+  onOpenInTerminal,
   onExpandSidebar,
   createSession,
   openSessionSchedule,
@@ -94,6 +97,7 @@ export function EmptySessionTopbar({
           <ProjectOpenDropdown
             rootPath={activeWorkspace.rootPath}
             onOpenInEditor={onOpenInEditor}
+            {...(onOpenInTerminal ? { onOpenInTerminal } : {})}
           />
         ) : (
           <button

@@ -238,10 +238,13 @@ export function TabbarTooltipButton({
 export function ProjectOpenDropdown({
   rootPath,
   onOpenInEditor,
+  onOpenInTerminal,
 }: {
   rootPath: string
   /** 打开内置代码编辑器侧面板；未提供时隐藏「从内置编辑器打开」选项 */
   onOpenInEditor?: () => void
+  /** 展开内置终端面板；未提供时隐藏「内置终端」选项 */
+  onOpenInTerminal?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -366,6 +369,21 @@ export function ProjectOpenDropdown({
             </span>
             <span className="tool-dropdown-item-name">在文件夹中打开</span>
           </button>
+          {onOpenInTerminal && (
+            <button
+              type="button"
+              className="tool-dropdown-item"
+              onClick={() => {
+                setOpen(false)
+                onOpenInTerminal()
+              }}
+            >
+              <span className="tool-dropdown-item-icon">
+                <Icons.Terminal size={14} />
+              </span>
+              <span className="tool-dropdown-item-name">内置终端</span>
+            </button>
+          )}
           {loading && (
             <div className="tool-dropdown-loading">
               <Icons.Spinner size={12} /> 检测中...

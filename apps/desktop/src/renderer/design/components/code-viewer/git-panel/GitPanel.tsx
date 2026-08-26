@@ -2,7 +2,8 @@
  * GitPanel —— 代码面板左侧栏的 Git 管理面板主容器。
  *
  * 结构（自上而下）：标题行（Git + 刷新）· 提交区（信息输入 + 提交已暂存）
- * · 滚动区（已暂存 / 更改 / 贮藏 / 提交 四个分组）· foot（分支 + ahead/behind + 同步）。
+ * · 滚动区（已暂存 / 更改 / 贮藏 / 提交 四个分组）。
+ * 分支同步 foot 栏已提升为左侧栏公用 footer（SidebarGitFooter），不再在此渲染。
  *
  * 数据：status 由 ChatView 共享快照受控传入（与审查面板 / 提交弹窗同源）；
  * 写操作经 useGitPanelActions 走轻量 IPC 并把响应中的最新 status 回写共享快照。
@@ -17,7 +18,6 @@ import { ConfirmDialog } from '../../ConfirmDialog'
 import { GitGroupSection } from './GitChangesSection'
 import { GitStashSection } from './GitStashSection'
 import { GitCommitHistory } from './GitCommitHistory'
-import { GitPanelFooter } from './GitPanelFooter'
 import { useGitCommitLog } from './useGitCommitLog'
 import { useGitPanelActions } from './useGitPanelActions'
 import { setGitPanelViewMode, useGitPanelViewMode } from './gitPanelVisibility'
@@ -164,7 +164,6 @@ export function GitPanel({
           <div className="gp-skeleton" style={{ width: '52%' }} />
           <div className="gp-skeleton" style={{ width: '70%' }} />
         </div>
-        <GitPanelFooter status={null} busy={false} onSync={() => {}} />
       </div>
     )
   }
@@ -251,12 +250,6 @@ export function GitPanel({
           onRefresh={() => setLogTick((t) => t + 1)}
         />
       </div>
-
-      <GitPanelFooter
-        status={status}
-        busy={actions.busy === 'sync' || actions.busy === 'pull' || actions.busy === 'push'}
-        onSync={() => void actions.sync()}
-      />
 
       <ConfirmDialog
         open={confirm != null}
