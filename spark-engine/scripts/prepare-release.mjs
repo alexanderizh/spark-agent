@@ -15,7 +15,7 @@
 //   (write temp + rename), so clients never observe a torn file.
 //
 // The directory can be uploaded to any static host (including the repository
-// MinIO artifact conventions); install.sh / install.ps1 consume it via --base,
+// spark-cli-releases branch); install.sh / install.ps1 consume it via --base,
 // and `spark update` consumes latest.json plus the .sha256 sidecars.
 
 import { execFile } from 'node:child_process'

@@ -2,7 +2,7 @@
  * ============================================================================
  * Single-source release contract for the .mjs tooling.
  * ============================================================================
- * Shared by scripts/prepare-release.mjs, scripts/publish-release-to-minio.mjs,
+ * Shared by scripts/prepare-release.mjs,
  * and scripts/verify-release.mjs so they cannot drift apart. The TypeScript
  * runtime twin lives in src/cli/release.ts (+ src/cli/semver.ts); those
  * runtimes cannot import this file, so their copies are enforced equal by the
@@ -11,7 +11,7 @@
 
 /** SYNC CONSTANT — keep identical to DEFAULT_RELEASE_BASE in src/cli/release.ts,
  * DEFAULT_BASE in install.sh and $DefaultBase in install.ps1. */
-export const DEFAULT_RELEASE_BASE = 'https://minio.yiqibyte.com/spark-desktop/spark-cli/v1'
+export const DEFAULT_RELEASE_BASE = 'https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases'
 
 export const RELEASE_PACKAGE_NAME = '@spark/agent'
 export const TARBALL_PREFIX = 'spark-agent'

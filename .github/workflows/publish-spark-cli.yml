@@ -1,31 +1,28 @@
 name: Publish Spark CLI Release
 
-# Spark CLI（spark-engine）发布闭环：
-# prepare-release → publish-release-to-minio（latest.json 最后发布）→ verify-release 公网校验。
+# Spark CLI（spark-engine）发布闭环，全程 GitHub 原生、零外部凭据：
 #
-# 触发方式：workflow_dispatch 手动触发。push 自动触发依赖 spark-engine/package.json
-# 的版本号变化，语义与桌面端发布工作流一致。
+#   quality gate → prepare-release → 提交制品到 spark-cli-releases 分支
+#   → verify-release 对 raw.githubusercontent.com 公网回读校验。
 #
-# 凭据：仓库 secrets 中的 MINIO_IP / MINIO_PORT_API / MINIO_ID / MINIO_PWD /
-# MINIO_BUCKET / BUCKET_BASE_URL 只注入发布 job，不写入源码、制品或日志。
+# 触发：push 修改 spark-engine/package.json 或本 workflow；也支持手动触发。
+# 制品地址（安装器与 `spark update` 消费的同一 URL 空间）：
+#   https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases/
+#
+# 不可变契约：分支上 spark-agent-<version>.tgz 一旦存在即不可覆盖；同名不同
+# 字节属于发布事故，工作流会硬失败。latest.json 是唯一可变指针，最后提交。
 
 on:
   push:
     branches:
       - master
     paths:
-      - spark-engine/package.json
-      - .github/workflows/publish-spark-cli.yml
+      - 'spark-engine/package.json'
+      - '.github/workflows/publish-spark-cli.yml'
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: '只做本地校验与 dry-run，不实际上传'
-        required: true
-        type: boolean
-        default: false
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: publish-spark-cli
@@ -33,19 +30,12 @@ concurrency:
 
 jobs:
   release:
-    name: Prepare, publish, verify
+    name: Prepare, publish to GitHub, verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
         working-directory: spark-engine
-    env:
-      MINIO_IP: ${{ secrets.MINIO_IP }}
-      MINIO_PORT_API: ${{ secrets.MINIO_PORT_API }}
-      MINIO_ID: ${{ secrets.MINIO_ID }}
-      MINIO_PWD: ${{ secrets.MINIO_PWD }}
-      MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
-      BUCKET_BASE_URL: ${{ secrets.BUCKET_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -62,47 +52,66 @@ jobs:
         run: npm run verify
 
       # 质量门通过后生成不可变发布目录（tgz + sha256 sidecar + latest.json + 安装器）。
-      # 无需凭据，因此无条件执行：即便未配置上传凭据，artifact 也始终可用于手动分发。
       - name: Prepare release directory
         run: node scripts/prepare-release.mjs release
 
-      # 凭据策略：
-      # - push 自动触发但仓库尚未配置 secrets → 降级为“本地构建 + artifact + 警告”，
-      #   流程保持绿色；配置 secrets 后的下一次 bump 即自动恢复真实发布；
-      # - 手动触发且选择真实发布 → 缺凭据属于操作者错误，硬失败。
-      - name: Check MinIO credentials are configured
-        id: creds
-        if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+      # 把制品平铺到 spark-cli-releases 分支：历史版本全部保留（pinned 安装可回溯），
+      # latest.json 作为唯一可变指针最后提交。推送使用内置 GITHUB_TOKEN，无需 secrets。
+      - name: Publish artifacts to the spark-cli-releases branch
         shell: bash
+        env:
+          VERSION: ${{ github.sha }}
         run: |
-          missing=()
-          for v in MINIO_IP MINIO_PORT_API MINIO_ID MINIO_PWD MINIO_BUCKET BUCKET_BASE_URL; do
-            if [ -z "${!v}" ]; then missing+=("$v"); fi
-          done
-          if [ ${#missing[@]} -gt 0 ]; then
-            if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-              echo "::warning::尚未配置 MinIO 发布 secrets（${missing[*]}）；已跳过上传，仅本地校验并产出 artifact。在仓库 Settings → Secrets 配置后，下次变更 package.json 将自动发布。"
-              echo "configured=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "::error::缺少 MinIO 发布 secrets: ${missing[*]}"
-              exit 1
-            fi
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          TARBALL="spark-agent-${VERSION}.tgz"
+          test -f "release/${TARBALL}"
+
+          git config user.name 'spark-release-bot'
+          git config user.email 'actions@github.com'
+          git fetch origin spark-cli-releases || true
+          if git ls-remote --exit-code --heads origin spark-cli-releases >/dev/null 2>&1; then
+            git checkout -B spark-cli-releases origin/spark-cli-releases
           else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+            git checkout --orphan spark-cli-releases
+            git rm -rf . -q || true
           fi
 
-      # 不可变审计 → 上传缺失对象 → 双通道回读校验 → latest.json 最后发布。
-      - name: Dry run (local validation only)
-        if: ${{ inputs.dry_run == true }}
-        run: node scripts/publish-release-to-minio.mjs release --dry-run
+          # 不可变契约：同版本已存在时字节必须一致（最新 sha256 sidecar 为准）。
+          if [ -f "${TARBALL}.sha256" ]; then
+            old="$(cut -d' ' -f1 <"${TARBALL}.sha256" | head -n1)"
+            new="$(cut -d' ' -f1 <release/"${TARBALL}".sha256 | head -n1)"
+            if [ "$old" != "$new" ]; then
+              echo "::error::${TARBALL} 已以不同内容发布过（$old ≠ $new）；请升版本号后重试。"
+              exit 1
+            fi
+          fi
 
-      - name: Publish to MinIO (latest.json last)
-        if: ${{ steps.creds.outputs.configured == 'true' }}
-        run: node scripts/publish-release-to-minio.mjs release
+          cp -f release/* .
+          git add -A
+          if git diff --cached --quiet; then
+            echo '::notice::发布分支已是目标状态，无内容需要提交。'
+          else
+            git commit -q -m "release(spark-cli): v${VERSION}"
+            git push origin HEAD:spark-cli-releases
+          fi
 
+      # 公网回读校验与安装器/更新器处于同一 URL 空间；raw CDN 缓存有延迟，
+      # 本步骤因此内置 6x30 秒重试窗口。
       - name: Verify published release over public HTTPS
-        if: ${{ steps.creds.outputs.configured == 'true' }}
-        run: node scripts/verify-release.mjs release
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases'
+          for attempt in 1 2 3 4 5 6; do
+            if node scripts/verify-release.mjs release --base "$BASE"; then
+              exit 0
+            fi
+            echo "::warning::第 ${attempt}/6 次公网校验未通过（可能是 raw CDN 缓存延迟），30 秒后重试。"
+            sleep 30
+          done
+          echo '::error::公网校验在重试窗口内仍未通过。'
+          exit 1
 
       - name: Upload prepared release as workflow artifact
         if: always()
@@ -116,5 +125,4 @@ jobs:
             spark-engine/release/install.sh
             spark-engine/release/install.ps1
             spark-engine/release/install.cmd
-          if-no-files-found: warn
           retention-days: 5

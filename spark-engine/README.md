@@ -32,12 +32,12 @@ Three equivalent paths put `spark` on PATH:
 
   ```bash
   # macOS / Linux — latest release
-  curl -fsSL https://minio.yiqibyte.com/spark-desktop/spark-cli/v1/install.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases/install.sh | sh
   ```
 
   ```powershell
   # Windows PowerShell
-  irm https://minio.yiqibyte.com/spark-desktop/spark-cli/v1/install.ps1 | iex
+  irm https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases/install.ps1 | iex
   ```
 
   The installer enforces the Node engine range, downloads the versioned tarball, verifies its sha256 against the release manifest (`latest.json` or the `.sha256` sidecar for pinned versions), installs it with npm, and — when the npm global bin is not on PATH — falls back to `spark install` for the `~/.spark/bin` launcher. `--tarball <path>` / `SPARK_INSTALL_TARBALL` installs a local file with no download (the hook the SparkWork desktop app uses for its future install button). Build the distributable directory with `node scripts/prepare-release.mjs [out-dir]` (tarball + `.sha256` + `latest.json`); upload it to any static host.
@@ -85,14 +85,13 @@ node scripts/prepare-release.mjs [out-dir]
 
 produces the immutable release set: `spark-agent-<version>.tgz` (npm pack), its `<...>.sha256` sidecar, the three installers, and `latest.json`. Versioned artifacts are immutable — republishing the same version with different bytes is a hard error; bump `package.json` instead.
 
-Upload happens against the self-hosted MinIO host with credentials only in environment variables (`MINIO_IP`, `MINIO_PORT_API`, `MINIO_ID`, `MINIO_PWD`, `MINIO_BUCKET`, and the public read base `BUCKET_BASE_URL`):
+Publishing is GitHub-native and credential-free: the release workflow commits the directory to the `spark-cli-releases` branch, whose raw URLs (`https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases/...`) are exactly what installers, `spark update`, and the public verifier consume. All versions coexist on that branch, so pinned installs of old releases keep working; `latest.json` is the only mutable pointer and is committed last. Raw CDN caching means a just-published version can take up to five minutes to become visible everywhere.
 
 ```bash
-node scripts/publish-release-to-minio.mjs [dir] [--base <url>] [--dry-run]
-node scripts/verify-release.mjs [dir] [--base <url>]   # post-publish public check
+node scripts/verify-release.mjs [dir] [--base <url>]   # public HTTPS check against any base
 ```
 
-Publish order is contractual: audit remote immutables first (identical objects skip, divergent ones abort before any write), upload what is missing, verify each artifact by authenticated _and_ public HTTPS read-back, then publish `latest.json` strictly last. A failed run can therefore never expose a partial release as latest. `scripts/release-contract.mjs` carries the shared schema/base-URL contract for all three tools; CI runs the same flow in the spark-engine publish workflow.
+`scripts/release-contract.mjs` carries the shared schema/base-URL contract for all tools; CI runs prepare → publish-to-branch → verify in the spark-engine publish workflow.
 
 ## Recovering from a failed update
 

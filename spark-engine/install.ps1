@@ -18,7 +18,7 @@ $NodeMin = '22.14.0'
 $NodeMaxMajor = 23
 # SYNC CONSTANT — keep identical to DEFAULT_RELEASE_BASE in src/cli/release.ts,
 # RELEASE_BASE in scripts/prepare-release.mjs, and DEFAULT_BASE in install.sh.
-$DefaultBase = 'https://minio.yiqibyte.com/spark-desktop/spark-cli/v1'
+$DefaultBase = 'https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases'
 if (-not $Base) { $Base = $DefaultBase }
 
 function Fail([string]$Message) {

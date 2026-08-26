@@ -19,6 +19,26 @@ export declare function parseRemoteManifest(raw: string): {
 
 export declare function resolveVerifyBase(input: { baseOverride?: string; env?: NodeJS.ProcessEnv }): string
 
+export interface DiscoveredArtifact {
+  filename: string
+  bytes: Buffer
+  sha256: string
+}
+
+export interface DiscoveredRelease {
+  manifest: {
+    name: '@spark/agent'
+    version: string
+    sha256: string
+    tarball: string
+    publishedAt?: string
+  }
+  artifacts: DiscoveredArtifact[]
+}
+
+/** Loads and cross-checks a local release directory (strict schema + hashes). */
+export declare function discoverReleaseArtifacts(releaseDir: string): Promise<DiscoveredRelease>
+
 /** Runs the CLI flow; resolves to the process exit code (0 pass, 1 fail). */
 export declare function run(
   argv?: string[],

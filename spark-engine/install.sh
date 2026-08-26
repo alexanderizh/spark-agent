@@ -19,7 +19,7 @@ NODE_MIN_MINOR=14
 NODE_MAX_MAJOR=23
 # SYNC CONSTANT — keep identical to DEFAULT_RELEASE_BASE in src/cli/release.ts,
 # RELEASE_BASE in scripts/prepare-release.mjs, and $DefaultBase in install.ps1.
-DEFAULT_BASE='https://minio.yiqibyte.com/spark-desktop/spark-cli/v1'
+DEFAULT_BASE='https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases'
 
 BASE=${SPARK_INSTALL_BASE:-$DEFAULT_BASE}
 VERSION=${SPARK_INSTALL_VERSION:-}

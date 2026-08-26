@@ -6,7 +6,8 @@
 //   node scripts/verify-release.mjs [release-dir] [--base <url>]
 //
 // Base resolution order: --base > SPARK_RELEASE_BASE > SPARK_INSTALL_BASE >
-// BUCKET_BASE_URL/spark-cli/v1 > the built-in DEFAULT_RELEASE_BASE.
+// the built-in DEFAULT_RELEASE_BASE (the raw.githubusercontent.com mirror of
+// the spark-cli-releases branch).
 //
 // Remote-only checks:
 //   1. latest.json exists, parses, and passes strict schema validation;
@@ -120,15 +121,60 @@ export function parseRemoteManifest(raw) {
   }
 }
 
+const HARD_CAP_BYTES = 512 * 1024 * 1024
+
+/**
+ * Loads and cross-checks a local release directory produced by
+ * scripts/prepare-release.mjs: strict manifest, complete artifact set, sidecar
+ * pairing, and tarball hash agreement.
+ */
+export async function discoverReleaseArtifacts(releaseDir) {
+  let manifestRaw
+  try {
+    manifestRaw = await readFile(join(releaseDir, 'latest.json'), 'utf8')
+  } catch {
+    throw new VerifyError(
+      `${releaseDir} does not contain latest.json — run scripts/prepare-release.mjs first`,
+    )
+  }
+  const manifest = parseRemoteManifest(manifestRaw)
+
+  const filenames = [manifest.tarball, `${manifest.tarball}.sha256`, ...INSTALLER_NAMES]
+  const artifacts = []
+  for (const filename of filenames) {
+    let bytes
+    try {
+      bytes = await readFile(join(releaseDir, filename))
+    } catch {
+      throw new VerifyError(`release directory is incomplete: ${filename} is missing`)
+    }
+    if (bytes.length === 0) throw new VerifyError(`release artifact ${filename} is empty`)
+    if (bytes.length > HARD_CAP_BYTES)
+      throw new VerifyError(
+        `release artifact ${filename} exceeds the ${HARD_CAP_BYTES} byte limit`,
+      )
+    artifacts.push({ filename, bytes, sha256: createHash('sha256').update(bytes).digest('hex') })
+  }
+
+  const [tarball, sidecar] = artifacts
+  if (tarball.sha256 !== manifest.sha256) {
+    throw new VerifyError(
+      `tarball sha256 mismatch: latest.json says ${manifest.sha256}, local bytes hash ${tarball.sha256}`,
+    )
+  }
+  const sidecarText = sidecar.bytes.toString('utf8')
+  const match = /^([0-9a-f]{64}) {2}(.+)\n?$/u.exec(sidecarText)
+  if (!match || match[1] !== manifest.sha256 || match[2] !== manifest.tarball) {
+    throw new VerifyError(
+      `${sidecar.filename} must contain "${manifest.sha256}  ${manifest.tarball}", got: ${JSON.stringify(sidecarText.slice(0, 120))}`,
+    )
+  }
+  return { manifest, artifacts }
+}
+
 export function resolveVerifyBase({ baseOverride, env = process.env }) {
   const candidate =
-    baseOverride ??
-    env.SPARK_RELEASE_BASE ??
-    env.SPARK_INSTALL_BASE ??
-    (env.BUCKET_BASE_URL
-      ? `${env.BUCKET_BASE_URL.replace(/\/+$/u, '')}/spark-cli/v1`
-      : undefined) ??
-    DEFAULT_RELEASE_BASE
+    baseOverride ?? env.SPARK_RELEASE_BASE ?? env.SPARK_INSTALL_BASE ?? DEFAULT_RELEASE_BASE
   return candidate.replace(/\/+$/u, '')
 }
 

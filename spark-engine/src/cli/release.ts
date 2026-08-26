@@ -13,7 +13,7 @@ import { parseSemVer } from './semver.js'
  * scripts (those runtimes cannot import TypeScript). A contract test enforces
  * byte-for-byte equality between every copy.
  */
-export const DEFAULT_RELEASE_BASE = 'https://minio.yiqibyte.com/spark-desktop/spark-cli/v1'
+export const DEFAULT_RELEASE_BASE = 'https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases'
 
 export const RELEASE_PACKAGE_NAME = '@spark/agent'
 const TARBALL_PREFIX = 'spark-agent'
