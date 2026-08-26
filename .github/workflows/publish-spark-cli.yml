@@ -64,6 +64,7 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
+          set -x
           # 校验脚本随分支切换会被清掉，先存到 runner 临时目录供下个步骤使用。
           mkdir -p "$RUNNER_TEMP/spark-verify"
           cp spark-engine/scripts/verify-release.mjs \
