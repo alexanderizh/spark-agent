@@ -1050,3 +1050,70 @@
     max-width: none;
   }
 }
+
+/* ─── 批量选择 / 导入导出 ─────────────────────────────────────────────── */
+
+.canvas-prompt-library-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid
+    color-mix(in srgb, var(--primary, #8b7cff) 36%, var(--divider, rgba(255, 255, 255, 0.1)));
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--primary, #8b7cff) 10%, var(--panel, #171a21));
+}
+
+.canvas-prompt-library-selection-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted, #9298a6);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.canvas-prompt-library-selection-count {
+  color: var(--text-strong, #f5f7fb);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.canvas-prompt-library-selection-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.canvas-prompt-library-card.selecting {
+  cursor: default;
+}
+
+.canvas-prompt-library-card.selecting:hover {
+  border-color: color-mix(in srgb, var(--primary, #8b7cff) 44%, var(--divider, #303541));
+  transform: none;
+}
+
+.canvas-prompt-library-card.selected {
+  border-color: color-mix(in srgb, var(--primary, #8b7cff) 78%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--primary, #8b7cff) 42%, transparent),
+    0 12px 26px rgba(0, 0, 0, 0.12);
+}
+
+.canvas-prompt-library-card-check {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: rgba(12, 14, 18, 0.72);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}

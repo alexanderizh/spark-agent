@@ -281,6 +281,7 @@ import { registerWorkspaceSearchIpc } from './registerWorkspaceSearchIpc.js'
 import { getPluginManager, registerPluginIpc } from './registerPluginIpc.js'
 import { registerFilePreviewIpc } from './registerFilePreviewIpc.js'
 import { registerFileOperationsIpc } from './registerFileOperationsIpc.js'
+import { registerPromptLibraryPackageIpc } from './registerPromptLibraryPackageIpc.js'
 import { registerPastedTextIpc } from './registerPastedTextIpc.js'
 import { registerSessionImageOptimizerIpc } from './registerSessionImageOptimizerIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
@@ -3288,6 +3289,7 @@ export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
   registerFilePreviewIpc()
   registerFileOperationsIpc()
+  registerPromptLibraryPackageIpc()
   registerPastedTextIpc()
   registerSessionImageOptimizerIpc()
   registerFontAssetIpc()

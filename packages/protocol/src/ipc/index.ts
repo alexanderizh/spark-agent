@@ -3221,6 +3221,36 @@ export interface SettingsGetAllResponse {
   settings: Record<string, Record<string, unknown>>
 }
 
+// ─── Prompt Library Package（无限画布 · 全局提示词库文件夹包） ────────────────
+
+export interface PromptLibraryExportPackageRequest {
+  /** 用户选定的导出父目录；包内容写入其下的新子文件夹 */
+  targetParentDirectory: string
+  /** 包文件夹名（不含时间戳），缺省 spark-prompt-library */
+  packageName?: string
+  /** 完整包 JSON 字符串：kind=spark.prompt-library，items 内封面以 coverUrl(data URL) 内联 */
+  packageJson: string
+}
+
+export interface PromptLibraryExportPackageResponse {
+  exported: boolean
+  directoryPath?: string
+  exportedCount?: number
+  error?: string
+}
+
+export interface PromptLibraryReadPackageRequest {
+  directory: string
+}
+
+export interface PromptLibraryReadPackageResponse {
+  /** 目录下没有 prompt-library.json 时为 false */
+  found: boolean
+  /** 包 JSON 字符串；items 内封面已重新内联为 coverUrl(data URL) */
+  packageJson?: string
+  error?: string
+}
+
 // ─── Log Channels ─────────────────────────────────────────────────────────────
 // 本地日志读取与管理。日志路径由主进程 initFileLogger 决定（app.getPath('logs')）。
 
@@ -6411,6 +6441,13 @@ export interface IpcChannelMap
   'settings:set': [SettingsSetRequest, SettingsSetResponse]
   'settings:get-category': [SettingsGetCategoryRequest, SettingsGetCategoryResponse]
   'settings:get-all': [SettingsGetAllRequest, SettingsGetAllResponse]
+
+  // 无限画布 · 全局提示词库文件夹包导入导出（prompt-library.json + covers/）
+  'prompt-library:export-package': [
+    PromptLibraryExportPackageRequest,
+    PromptLibraryExportPackageResponse,
+  ]
+  'prompt-library:read-package': [PromptLibraryReadPackageRequest, PromptLibraryReadPackageResponse]
 
   // Log
   'log:read': [LogReadRequest, LogReadResponse]

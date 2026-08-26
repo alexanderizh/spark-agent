@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@lobehub/ui'
-import { Empty, Input, Modal, Popconfirm, Select, Spin, Switch, message } from 'antd'
+import { Checkbox, Empty, Input, Modal, Popconfirm, Select, Spin, Switch, message } from 'antd'
 import { Icons } from '../../Icons'
 import { useApp } from '../../AppContext'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
@@ -34,6 +34,12 @@ import {
   type GlobalPromptLibraryItem,
   type GlobalPromptLibraryState,
 } from './canvasPromptLibraryStore'
+import {
+  exportPromptLibraryPackage,
+  importPromptLibraryPackage,
+  mergeImportedPromptLibrary,
+  promptCoverUrlToDataUrl,
+} from './canvasPromptLibraryPackage'
 import './canvas-prompt-library.less'
 
 type PromptEditorState = {
@@ -119,6 +125,10 @@ export function CanvasPromptLibraryView() {
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [categorySaving, setCategorySaving] = useState(false)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(new Set())
+  const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const reloadRequestRef = useRef(0)
 
@@ -255,6 +265,141 @@ export function CanvasPromptLibraryView() {
       return haystack.includes(cleanQuery)
     })
   }, [activeCategory, activeSource, hideSystemPrompts, query, systemPromptEntries])
+
+  const visibleSelectableKeys = useMemo(() => {
+    const keys = new Set<string>()
+    for (const asset of filteredGlobalAssets) keys.add(`global:${asset.id}`)
+    for (const { asset } of filteredProjectEntries) {
+      keys.add(`project:${asset.projectId}:${asset.id}`)
+    }
+    return keys
+  }, [filteredGlobalAssets, filteredProjectEntries])
+  const allVisibleSelected =
+    visibleSelectableKeys.size > 0 &&
+    [...visibleSelectableKeys].every((key) => selectedKeys.has(key))
+  const someVisibleSelected = [...visibleSelectableKeys].some((key) => selectedKeys.has(key))
+
+  const enterSelectionMode = () => {
+    setSelectionMode(true)
+    setSelectedKeys(new Set())
+    setEditor((current) => {
+      if (current?.coverPreviewUrl?.startsWith('blob:'))
+        URL.revokeObjectURL(current.coverPreviewUrl)
+      return null
+    })
+  }
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false)
+    setSelectedKeys(new Set())
+  }
+
+  const toggleSelectedKey = (key: string) => {
+    setSelectedKeys((previous) => {
+      const next = new Set(previous)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const toggleSelectAllVisible = () => {
+    setSelectedKeys((previous) => {
+      if ([...visibleSelectableKeys].every((key) => previous.has(key))) {
+        const next = new Set(previous)
+        for (const key of visibleSelectableKeys) next.delete(key)
+        return next
+      }
+      return new Set([...previous, ...visibleSelectableKeys])
+    })
+  }
+
+  const handleExportSelected = async () => {
+    if (!library || selectedKeys.size === 0 || exporting) return
+    setExporting(true)
+    try {
+      const items: GlobalPromptLibraryItem[] = []
+      let skippedCovers = 0
+      for (const item of library.items) {
+        if (!selectedKeys.has(`global:${item.id}`)) continue
+        const coverUrl = await promptCoverUrlToDataUrl(item.coverUrl)
+        if (item.coverUrl && !coverUrl) skippedCovers += 1
+        items.push({ ...item, coverUrl, coverMimeType: coverUrl ? item.coverMimeType : null })
+      }
+      for (const { asset, projectAssets } of projectEntries) {
+        if (!selectedKeys.has(`project:${asset.projectId}:${asset.id}`)) continue
+        const text = readPromptLibraryText(asset)
+        if (!text.trim()) continue
+        const cover = readPromptLibraryCover(asset, projectAssets)
+        const coverUrl = await promptCoverUrlToDataUrl(cover.url)
+        if (cover.url && !coverUrl) skippedCovers += 1
+        items.push({
+          id: asset.id,
+          title: asset.title ?? '-',
+          text,
+          category: getPromptCategory(asset) ?? '',
+          tags: Array.isArray(asset.metadata.tags)
+            ? asset.metadata.tags.filter((tag): tag is string => typeof tag === 'string')
+            : [],
+          coverUrl,
+          coverMimeType: coverUrl ? (cover.mimeType ?? 'image/png') : null,
+          usageCount:
+            typeof asset.metadata.usageCount === 'number' &&
+            Number.isFinite(asset.metadata.usageCount)
+              ? asset.metadata.usageCount
+              : 0,
+          createdAt: asset.createdAt,
+          updatedAt: asset.updatedAt,
+        })
+      }
+      if (items.length === 0) {
+        message.warning('请先选择要导出的提示词')
+        return
+      }
+      const result = await exportPromptLibraryPackage({ categories, items })
+      if (!result.exported) {
+        if (result.error) message.error(`导出失败：${result.error}`)
+        return
+      }
+      message.success(
+        `已导出 ${result.exportedCount ?? items.length} 条提示词${
+          skippedCovers > 0 ? `（${skippedCovers} 个封面无法读取，已跳过）` : ''
+        }`,
+      )
+      exitSelectionMode()
+    } catch (exportError) {
+      message.error(exportError instanceof Error ? exportError.message : '导出提示词库失败')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleImportPackage = async () => {
+    if (!library || importing) return
+    setImporting(true)
+    try {
+      const payload = await importPromptLibraryPackage()
+      if (!payload) return
+      const { next, importedCount, skippedCount } = mergeImportedPromptLibrary(library, payload)
+      if (importedCount === 0) {
+        message.info(
+          skippedCount > 0
+            ? `导入完成：${skippedCount} 条提示词已存在，未重复导入`
+            : '导入包中没有可导入的提示词',
+        )
+        return
+      }
+      await writeGlobalPromptLibrary(next)
+      setLibrary(next)
+      message.success(
+        `已导入 ${importedCount} 条提示词${skippedCount > 0 ? `，跳过重复 ${skippedCount} 条` : ''}`,
+      )
+    } catch (importError) {
+      message.error(importError instanceof Error ? importError.message : '导入提示词库失败')
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const openCreatePrompt = useCallback(() => {
     setEditor({ ...EMPTY_EDITOR, category: defaultCategory(categories) })
@@ -542,6 +687,27 @@ export function CanvasPromptLibraryView() {
           <Button
             size="small"
             type="text"
+            loading={importing}
+            disabled={!library}
+            onClick={() => void handleImportPackage()}
+            icon={<Icons.Upload size={15} />}
+            aria-label="从文件夹导入提示词"
+          >
+            导入
+          </Button>
+          <Button
+            size="small"
+            type="text"
+            disabled={!library || selectionMode}
+            onClick={enterSelectionMode}
+            icon={<Icons.Download size={15} />}
+            aria-label="批量导出提示词"
+          >
+            导出
+          </Button>
+          <Button
+            size="small"
+            type="text"
             loading={loading}
             onClick={() => void reload()}
             icon={<Icons.Refresh size={15} />}
@@ -638,6 +804,47 @@ export function CanvasPromptLibraryView() {
             </div>
           </div>
 
+          {selectionMode && (
+            <div
+              className="canvas-prompt-library-selection-bar"
+              role="toolbar"
+              aria-label="提示词批量操作"
+            >
+              <label className="canvas-prompt-library-selection-all">
+                <Checkbox
+                  checked={allVisibleSelected}
+                  indeterminate={!allVisibleSelected && someVisibleSelected}
+                  onChange={toggleSelectAllVisible}
+                />
+                <span>全选当前列表（{visibleSelectableKeys.size}）</span>
+              </label>
+              <span className="canvas-prompt-library-selection-count">
+                已选 {selectedKeys.size} 条
+              </span>
+              <div className="canvas-prompt-library-selection-actions">
+                <Button
+                  size="small"
+                  onClick={() => setSelectedKeys(new Set())}
+                  disabled={selectedKeys.size === 0}
+                >
+                  清空选择
+                </Button>
+                <Button
+                  size="small"
+                  type="primary"
+                  loading={exporting}
+                  disabled={selectedKeys.size === 0}
+                  onClick={() => void handleExportSelected()}
+                >
+                  导出所选{selectedKeys.size > 0 ? `（${selectedKeys.size}）` : ''}
+                </Button>
+                <Button size="small" onClick={exitSelectionMode}>
+                  完成
+                </Button>
+              </div>
+            </div>
+          )}
+
           {filteredGlobalAssets.length === 0 &&
           filteredProjectEntries.length === 0 &&
           filteredSystemPromptEntries.length === 0 ? (
@@ -649,21 +856,42 @@ export function CanvasPromptLibraryView() {
             <div className="canvas-prompt-library-card-grid">
               {filteredGlobalAssets.map((asset) => {
                 const coverUrl = readPromptLibraryCover(asset, snapshot?.assets ?? []).url
+                const selectionKey = `global:${asset.id}`
+                const selected = selectedKeys.has(selectionKey)
                 return (
                   <article
-                    key={`global:${asset.id}`}
-                    className="canvas-prompt-library-card"
+                    key={selectionKey}
+                    className={`canvas-prompt-library-card${selectionMode ? ' selecting' : ''}${
+                      selectionMode && selected ? ' selected' : ''
+                    }`}
                     role="button"
                     tabIndex={0}
-                    onClick={() => openEditPrompt(asset, 'global', snapshot?.assets ?? [])}
+                    aria-pressed={selectionMode ? selected : undefined}
+                    onClick={() =>
+                      selectionMode
+                        ? toggleSelectedKey(selectionKey)
+                        : openEditPrompt(asset, 'global', snapshot?.assets ?? [])
+                    }
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault()
-                        openEditPrompt(asset, 'global', snapshot?.assets ?? [])
+                        if (selectionMode) toggleSelectedKey(selectionKey)
+                        else openEditPrompt(asset, 'global', snapshot?.assets ?? [])
                       }
                     }}
                   >
                     <div className="canvas-prompt-library-card-cover">
+                      {selectionMode && (
+                        <span
+                          className="canvas-prompt-library-card-check"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={selected}
+                            onChange={() => toggleSelectedKey(selectionKey)}
+                          />
+                        </span>
+                      )}
                       {coverUrl ? (
                         <PromptLibraryCoverImage src={coverUrl} />
                       ) : (
@@ -726,21 +954,42 @@ export function CanvasPromptLibraryView() {
               {filteredProjectEntries.map((entry) => {
                 const { asset, projectName, projectAssets } = entry
                 const coverUrl = readPromptLibraryCover(asset, projectAssets).url
+                const selectionKey = `project:${asset.projectId}:${asset.id}`
+                const selected = selectedKeys.has(selectionKey)
                 return (
                   <article
-                    key={`project:${asset.projectId}:${asset.id}`}
-                    className="canvas-prompt-library-card"
+                    key={selectionKey}
+                    className={`canvas-prompt-library-card${selectionMode ? ' selecting' : ''}${
+                      selectionMode && selected ? ' selected' : ''
+                    }`}
                     role="button"
                     tabIndex={0}
-                    onClick={() => openEditPrompt(asset, 'project', projectAssets)}
+                    aria-pressed={selectionMode ? selected : undefined}
+                    onClick={() =>
+                      selectionMode
+                        ? toggleSelectedKey(selectionKey)
+                        : openEditPrompt(asset, 'project', projectAssets)
+                    }
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault()
-                        openEditPrompt(asset, 'project', projectAssets)
+                        if (selectionMode) toggleSelectedKey(selectionKey)
+                        else openEditPrompt(asset, 'project', projectAssets)
                       }
                     }}
                   >
                     <div className="canvas-prompt-library-card-cover">
+                      {selectionMode && (
+                        <span
+                          className="canvas-prompt-library-card-check"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={selected}
+                            onChange={() => toggleSelectedKey(selectionKey)}
+                          />
+                        </span>
+                      )}
                       {coverUrl ? (
                         <PromptLibraryCoverImage src={coverUrl} />
                       ) : (

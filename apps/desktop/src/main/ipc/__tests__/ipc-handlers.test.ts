@@ -97,6 +97,7 @@ describe('IPC handler registration completeness', () => {
         'plugin-marketplace',
         'plugin-runtime',
         'prompt-config',
+        'prompt-library',
         'provider',
         'remote',
         'rules',

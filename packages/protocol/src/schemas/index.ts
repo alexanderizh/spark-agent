@@ -406,6 +406,17 @@ export const ClipboardWriteTextRequestSchema = z.object({
   text: z.string().max(10_000_000),
 })
 
+export const PromptLibraryExportPackageRequestSchema = z.object({
+  targetParentDirectory: z.string().min(1).max(2000),
+  packageName: z.string().min(1).max(120).optional(),
+  // 单张封面 ≤8MB（base64 后约 11M 字符），条目数量有限，整体上限放宽到 60M 字符
+  packageJson: z.string().min(2).max(60_000_000),
+})
+
+export const PromptLibraryReadPackageRequestSchema = z.object({
+  directory: z.string().min(1).max(2000),
+})
+
 export const SessionCancelRequestSchema = z.object({
   sessionId: SessionIdSchema,
 })
@@ -1075,6 +1086,8 @@ export const IpcSchemaRegistry = {
   'file:move': FileMoveRequestSchema,
   'file:copy': FileCopyRequestSchema,
   'clipboard:write-text': ClipboardWriteTextRequestSchema,
+  'prompt-library:export-package': PromptLibraryExportPackageRequestSchema,
+  'prompt-library:read-package': PromptLibraryReadPackageRequestSchema,
   'app:get-startup-settings': z.object({}),
   'app:set-startup-settings': z.object({
     openAtLogin: z.boolean(),
