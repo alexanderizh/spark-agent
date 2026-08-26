@@ -108,6 +108,7 @@ import {
   collectSelectableGroupChildNodeIds,
   cssEscape,
   findLatestCreatedOperationNode,
+  isolateCanvasSnapshotContent,
   isRecord,
   nextFrame,
   normalizeColorsForHtml2Canvas,
@@ -2029,6 +2030,7 @@ export function CanvasWorkspaceView({
       }
 
       const stageElement = document.querySelector<HTMLElement>('.canvas-stage-area')
+      const contentNodeIds = contentNodes.map((node) => node.id)
       const contentElements = contentNodes
         .map((node) =>
           document.querySelector<HTMLElement>(`[data-canvas-node-id="${cssEscape(node.id)}"]`),
@@ -2100,7 +2102,7 @@ export function CanvasWorkspaceView({
               clonedDocument.querySelector<HTMLElement>('.canvas-stage-area')
             const clonedWindow = clonedDocument.defaultView
             if (clonedStageElement && clonedWindow) {
-              clonedStageElement.classList.add('canvas-stage-snapshot-content-only')
+              isolateCanvasSnapshotContent(clonedStageElement, contentNodeIds)
               normalizeColorsForHtml2Canvas(clonedStageElement, clonedWindow)
             }
           },

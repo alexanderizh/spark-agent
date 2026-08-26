@@ -250,6 +250,59 @@ describe('CanvasPromptComposer', () => {
     ).toBe('https://example.com/sujin-home-card.png')
   })
 
+  it('renders an image prompt reverse reference from its resolved output text', async () => {
+    const operation = {
+      ...textNode(),
+      id: 'image-prompt-reverse-operation',
+      type: 'image_prompt_reverse' as const,
+      title: '图片反推',
+      data: {
+        operation: 'image_prompt_reverse' as const,
+        prompt: '只反推人物动作',
+      },
+    }
+    const output = {
+      ...textNode(),
+      id: 'image-prompt-reverse-output',
+      title: '反推提示词',
+      data: {
+        text: '女武者从远景进入画面，随后完成长枪旋转动作。',
+        origin: 'task_output' as const,
+      },
+    }
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'operation-reference',
+            source: 'connection',
+            sourceNodeId: operation.id,
+            relation: 'generic',
+            label: operation.title,
+            order: 0,
+          },
+        ],
+      },
+      [operation],
+      [],
+      undefined,
+      new Map([[operation.id, output]]),
+    )
+
+    const chip = mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-chip')
+    await act(async () => {
+      chip?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+
+    expect(window.document.querySelector('.canvas-prompt-hover-scroll')?.textContent).toBe(
+      output.data.text,
+    )
+    expect(window.document.body.textContent).not.toContain(operation.data.prompt)
+  })
+
   it('renders the referenced image instead of its URL data in the hover card', async () => {
     const referencedImage = imageNode()
     referencedImage.data.url = 'safe-file://x/hero.png'

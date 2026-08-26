@@ -302,7 +302,7 @@ describe('canvas cinematic integration', () => {
     expect(node).toContain('actions.deleteOperationOutputs?.(node.id, [imageTaskOutput])')
     expect(node).toContain('overlayActions={operationTaskActions}')
     expect(node).toContain('canvas-node-task-image-actions')
-    expect(node).toContain("{!isTask && node.type !== 'image' ? (")
+    expect(node).toContain('{showStandaloneActionFooter ? (')
     expect(node).toContain('const showOutputFooter = shouldShowOutputNavigation')
     expect(nodeStyles).toContain('.canvas-node-operation .canvas-node-task-image-actions')
     expect(nodeStyles).toContain('.canvas-node-task-image-actions')
@@ -317,7 +317,7 @@ describe('canvas cinematic integration', () => {
     expect(node).toContain('className="canvas-node-subview-chip canvas-node-image-chip-preview"')
     expect(node).toContain('className="canvas-node-subview-chip canvas-node-image-chip-replace"')
     expect(node).toContain('{imageResourceActions}')
-    expect(node).toContain("!isTask && node.type !== 'image'")
+    expect(node).toContain('canvasNodeHasStandaloneActionFooter(node)')
     expect(node).not.toContain('className="canvas-node-image-chips nodrag nopan"')
   })
 

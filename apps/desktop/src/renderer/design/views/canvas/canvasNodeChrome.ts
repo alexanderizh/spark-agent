@@ -17,6 +17,15 @@ export function canvasNodeUsesFlatMediaFrame(node: Pick<CanvasNode, 'type'>): bo
   return node.type === 'image' || node.type === 'video'
 }
 
+/**
+ * loaded 视频已经由内嵌播放器承载预览与全屏操作，不能再让节点 action footer
+ * 覆盖播放器底部控制条；空视频仍保留 footer，方便进入编辑补充素材。
+ */
+export function canvasNodeHasStandaloneActionFooter(node: CanvasNode): boolean {
+  if (isOperationNode(node) || node.type === 'image') return false
+  return node.type !== 'video' || !node.data.url
+}
+
 /** 图片节点的顶部栏优先展示用户可识别的节点名称。 */
 export function resolveCanvasNodeMetaLabel(
   node: Pick<CanvasNode, 'type' | 'title'>,

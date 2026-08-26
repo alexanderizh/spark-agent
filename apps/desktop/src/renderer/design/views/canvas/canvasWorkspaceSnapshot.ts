@@ -47,6 +47,54 @@ export function canvasTaskFailureMessage(task: CanvasTask): string {
   return detail ? `任务失败：${detail}` : '任务失败，请检查任务详情后重试'
 }
 
+const CANVAS_SNAPSHOT_INTERACTION_SELECTOR = [
+  '.react-flow__controls',
+  '.react-flow__edge',
+  '.react-flow__edgelabel-renderer',
+  '.canvas-minimap',
+  '.canvas-alignment-guides',
+  '.canvas-edge-delete-button',
+  '.canvas-stage-quick-actions',
+  '.canvas-tool-switch-hint',
+  '.canvas-prompt-node-picker-banner',
+  '.canvas-node-selection-toolbar',
+  '.canvas-node-quick-footer',
+  '.canvas-node-floating-toolbar',
+  '.canvas-node-floating-panel',
+  '.canvas-multi-select-toolbar-anchor',
+  '.canvas-bottom-dock',
+].join(', ')
+
+function hideElementForCanvasSnapshot(element: HTMLElement): void {
+  element.style.setProperty('visibility', 'hidden', 'important')
+}
+
+/**
+ * 把 html2canvas 的克隆画布收窄为本次需要合成的内容节点。
+ *
+ * 组节点、其它重叠节点和交互浮层仍会出现在整块 stage 的 DOM 中；如果只在最终位图上裁切，
+ * 它们依然可能覆盖目标内容。因此必须在 html2canvas 绘制克隆 DOM 前隐藏非目标节点宿主。
+ */
+export function isolateCanvasSnapshotContent(
+  clonedStageElement: HTMLElement,
+  targetNodeIds: Iterable<string>,
+): void {
+  const targetIdSet = new Set(targetNodeIds)
+  clonedStageElement.classList.add('canvas-stage-snapshot-content-only')
+
+  clonedStageElement.querySelectorAll<HTMLElement>('.react-flow__node').forEach((nodeHost) => {
+    const canvasNode = nodeHost.querySelector<HTMLElement>('[data-canvas-node-id]')
+    const nodeId = canvasNode?.dataset.canvasNodeId
+    if (!nodeId || !targetIdSet.has(nodeId)) {
+      hideElementForCanvasSnapshot(nodeHost)
+    }
+  })
+
+  clonedStageElement
+    .querySelectorAll<HTMLElement>(CANVAS_SNAPSHOT_INTERACTION_SELECTOR)
+    .forEach(hideElementForCanvasSnapshot)
+}
+
 // html2canvas 1.4.1 只认 hsl/hsla/rgb/rgba 颜色函数，遇到 color()/oklch()/oklab()/color-mix()
 // 等现代颜色函数会抛 "Attempting to parse an unsupported color function"。这里在截图前把目标
 // 子树里所有用到这些函数的颜色相关样式，改写成浏览器规范化后的 rgb()/rgba() 等价值。

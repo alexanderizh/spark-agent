@@ -31,7 +31,11 @@ import {
 import { operationLabel } from './canvas.api'
 import { isCanvasImageContentNode, isOperationNode, nodeOperation } from './canvas.capabilities'
 import { isFullBleedCanvasImageNode } from './canvasImageNodePresentation'
-import { canvasNodeUsesFlatMediaFrame, resolveCanvasNodeMetaLabel } from './canvasNodeChrome'
+import {
+  canvasNodeHasStandaloneActionFooter,
+  canvasNodeUsesFlatMediaFrame,
+  resolveCanvasNodeMetaLabel,
+} from './canvasNodeChrome'
 import {
   isLongText,
   keepsCanvasMediaNodeAspectRatio,
@@ -737,6 +741,7 @@ export const CanvasNode = memo(function CanvasNode({
   // 图片与视频无论 loaded / empty 都使用同一个扁平媒体 Frame，避免资源加载前后
   // 因标题栏、footer 切换导致节点尺寸跳动。图片的源比例修正仍由 presentation helper 负责。
   const useFlatMediaFrame = canvasNodeUsesFlatMediaFrame(node)
+  const showStandaloneActionFooter = canvasNodeHasStandaloneActionFooter(node)
   const isEmptyImageNode = node.type === 'image' && !isFullBleedImageNode
   const isEmptyVideoNode = node.type === 'video' && !node.data.url
   const inlinePrimaryAction = canvasNodeInlinePrimaryAction(node)
@@ -2134,7 +2139,7 @@ export const CanvasNode = memo(function CanvasNode({
                     </div>
                   )}
                 </div>
-                {!isTask && node.type !== 'image' ? (
+                {showStandaloneActionFooter ? (
                   useFlatMediaFrame ? (
                     <div className="canvas-node-image-overlay-footer nodrag nopan">
                       <button

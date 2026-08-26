@@ -646,7 +646,12 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     () => buildOperationPanelPromptOwnerNodeIds(snapshot),
     [snapshot],
   )
-  const { bindingNodes, outputMediaKindByNodeId, outputMediaNodeByNodeId } = useMemo(
+  const {
+    bindingNodes,
+    outputMediaKindByNodeId,
+    outputMediaNodeByNodeId,
+    presentationNodeBySourceId,
+  } = useMemo(
     () => resolveCanvasMediaInputs(snapshot, expandedSourceInputNodes),
     [expandedSourceInputNodes, snapshot],
   )
@@ -1975,9 +1980,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     setPendingDedicatedMediaNode(null)
     markConfigurationTouched()
   }, [markConfigurationTouched, nodeById, pendingDedicatedMediaNode, setSelectedInputNodeIds])
-  const promptPresentationNodeBySourceId = useMemo(() => {
-    return new Map(outputMediaNodeByNodeId)
-  }, [outputMediaNodeByNodeId])
+  const promptPresentationNodeBySourceId = presentationNodeBySourceId
   const mediaPresentationNodeBySourceId = useMemo(() => {
     const resolved = new Map(promptPresentationNodeBySourceId)
     for (const assignment of mediaInputAssignments) {

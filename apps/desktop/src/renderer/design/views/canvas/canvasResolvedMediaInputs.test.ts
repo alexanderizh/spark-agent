@@ -6,7 +6,7 @@ describe('resolveCanvasMediaInputs', () => {
   it.each(['image', 'video', 'audio'] as const)(
     'resolves an asset-only %s output that has not been expanded into a canvas node',
     (kind) => {
-      const snapshot = taskOutputSnapshot(kind)
+      const snapshot = operationOutputSnapshot(kind)
       const resolved = resolveCanvasMediaInputs(snapshot)
       const output = resolved.outputMediaNodeByNodeId.get(`operation-${kind}`)
 
@@ -19,13 +19,32 @@ describe('resolveCanvasMediaInputs', () => {
       expect(resolved.bindingNodes).toContainEqual(output)
     },
   )
+
+  it('presents an image prompt reverse node from its output text instead of its input prompt', () => {
+    const snapshot = operationOutputSnapshot('text')
+    const operationNode = snapshot.nodes[0]
+    if (!operationNode) throw new Error('Missing image prompt reverse operation fixture')
+    operationNode.data.prompt = '只反推人物动作'
+
+    const presentationNode = resolveCanvasMediaInputs(snapshot).presentationNodeBySourceId.get(
+      operationNode.id,
+    )
+
+    expect(presentationNode).toMatchObject({
+      type: 'text',
+      assetId: 'asset-text',
+      data: { text: '女武者从远景进入画面，随后完成长枪旋转动作。', origin: 'task_output' },
+    })
+    expect(presentationNode?.data.text).not.toBe(operationNode.data.prompt)
+  })
 })
 
-function taskOutputSnapshot(kind: 'image' | 'video' | 'audio'): CanvasSnapshot {
+function operationOutputSnapshot(kind: 'image' | 'video' | 'audio' | 'text'): CanvasSnapshot {
   const operationByKind = {
     image: 'text_to_image',
     video: 'text_to_video',
     audio: 'extract_audio',
+    text: 'image_prompt_reverse',
   } as const
   const operation = operationByKind[kind]
   const node = {
@@ -56,7 +75,9 @@ function taskOutputSnapshot(kind: 'image' | 'video' | 'audio'): CanvasSnapshot {
     type: kind,
     source: 'ai_generated',
     title: `${kind} output`,
-    url: `https://cdn.example.com/${kind}`,
+    ...(kind === 'text'
+      ? { contentText: '女武者从远景进入画面，随后完成长枪旋转动作。' }
+      : { url: `https://cdn.example.com/${kind}` }),
     metadata: {},
     createdAt: '2026-08-23T00:00:00.000Z',
     updatedAt: '2026-08-23T00:00:00.000Z',

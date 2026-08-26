@@ -3,6 +3,7 @@ import {
   CANVAS_NODE_CONTENT_TITLE_HEIGHT,
   CANVAS_NODE_QUICK_FOOTER_HEIGHT,
   canvasNodeChromeExtraHeight,
+  canvasNodeHasStandaloneActionFooter,
   resolveCanvasNodeMetaLabel,
 } from './canvasNodeChrome'
 import type { CanvasNode } from './canvas.types'
@@ -113,5 +114,26 @@ describe('resolveCanvasNodeMetaLabel', () => {
     expect(
       resolveCanvasNodeMetaLabel(createNode({ type: 'video', title: '视频剪辑' }), '视频'),
     ).toBe('视频')
+  })
+})
+
+describe('canvasNodeHasStandaloneActionFooter', () => {
+  it('does not cover the controls of a loaded standalone video node', () => {
+    expect(
+      canvasNodeHasStandaloneActionFooter(
+        createNode({ type: 'video', data: { url: 'safe-file://clip.mp4' } }),
+      ),
+    ).toBe(false)
+  })
+
+  it('keeps the action footer for empty video and non-video nodes', () => {
+    expect(canvasNodeHasStandaloneActionFooter(createNode({ type: 'video' }))).toBe(true)
+    expect(canvasNodeHasStandaloneActionFooter(createNode({ type: 'audio' }))).toBe(true)
+    expect(canvasNodeHasStandaloneActionFooter(createNode({ type: 'text' }))).toBe(true)
+  })
+
+  it('keeps image and operation node behavior unchanged', () => {
+    expect(canvasNodeHasStandaloneActionFooter(createNode({ type: 'image' }))).toBe(false)
+    expect(canvasNodeHasStandaloneActionFooter(createNode({ type: 'text_to_image' }))).toBe(false)
   })
 })
