@@ -55,39 +55,41 @@ jobs:
       - name: Prepare release directory
         run: node scripts/prepare-release.mjs release
 
-      # 把制品平铺到 spark-cli-releases 分支：历史版本全部保留（pinned 安装可回溯），
-      # latest.json 作为唯一可变指针最后提交。推送使用内置 GITHUB_TOKEN，无需 secrets。
+      # 把制品平铺到 spark-cli-releases 分支的仓库根（与 DEFAULT_RELEASE_BASE 的
+      # raw 直链一一对应）：历史版本全部保留（pinned 安装可回溯），latest.json
+      # 是唯一可变指针。推送使用内置 GITHUB_TOKEN，无需 secrets。
+      # 注意必须回到仓库根执行 git/cp——留在 spark-engine 子目录会把整库带上分支。
       - name: Publish artifacts to the spark-cli-releases branch
         shell: bash
-        env:
-          VERSION: ${{ github.sha }}
+        working-directory: .
         run: |
           set -euo pipefail
-          VERSION="$(node -p "require('./package.json').version")"
+          VERSION="$(node -p "require('./spark-engine/package.json').version")"
           TARBALL="spark-agent-${VERSION}.tgz"
-          test -f "release/${TARBALL}"
+          test -f "spark-engine/release/${TARBALL}"
 
           git config user.name 'spark-release-bot'
           git config user.email 'actions@github.com'
-          git fetch origin spark-cli-releases || true
           if git ls-remote --exit-code --heads origin spark-cli-releases >/dev/null 2>&1; then
+            git fetch origin spark-cli-releases
             git checkout -B spark-cli-releases origin/spark-cli-releases
           else
             git checkout --orphan spark-cli-releases
-            git rm -rf . -q || true
+            git rm -rfq . || true
           fi
 
-          # 不可变契约：同版本已存在时字节必须一致（最新 sha256 sidecar 为准）。
-          if [ -f "${TARBALL}.sha256" ]; then
-            old="$(cut -d' ' -f1 <"${TARBALL}.sha256" | head -n1)"
-            new="$(cut -d' ' -f1 <release/"${TARBALL}".sha256 | head -n1)"
-            if [ "$old" != "$new" ]; then
-              echo "::error::${TARBALL} 已以不同内容发布过（$old ≠ $new）；请升版本号后重试。"
+          cp -f spark-engine/release/* .
+
+          # 不可变契约：同版本已发布过时 sha256 必须一致，否则硬失败提示升版。
+          if git cat-file -e "HEAD:${TARBALL}.sha256" 2>/dev/null; then
+            published="$(git show "HEAD:${TARBALL}.sha256" | cut -d' ' -f1 | head -n1)"
+            current="$(cut -d' ' -f1 <"${TARBALL}.sha256" | head -n1)"
+            if [ "$published" != "$current" ]; then
+              echo "::error::${TARBALL} 已以不同内容发布过（${published} ≠ ${current}）；请升版本号后重试。"
               exit 1
             fi
           fi
 
-          cp -f release/* .
           git add -A
           if git diff --cached --quiet; then
             echo '::notice::发布分支已是目标状态，无内容需要提交。'
