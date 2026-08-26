@@ -19,3 +19,9 @@ describe('SidebarFilterMenu scheduled-task filter', () => {
     expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, scheduledTasks: 'attached' })).toBe(false)
   })
 })
+
+describe('SidebarFilterMenu canvas-project filter', () => {
+  it('treats hiding canvas projects as an active filter', () => {
+    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, canvasProjects: 'hide' })).toBe(false)
+  })
+})

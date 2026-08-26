@@ -85,6 +85,7 @@ import {
   isUnresolvableFileDrop,
 } from './services/composer-attachments'
 import { getDirectoryDropIntent } from './services/project-folder-drop'
+import { filterCanvasSessions, filterCanvasWorkspaces } from './workspace-visibility'
 
 const projectSortableId = (projectId: string): string => `project:${projectId}`
 const sessionSortableId = (projectId: string, sessionId: string): string =>
@@ -251,6 +252,7 @@ function readSidebarFilter(): SidebarFilterState {
       projectId: parsed.projectId ?? DEFAULT_SIDEBAR_FILTER.projectId,
       lastActivity: parsed.lastActivity ?? DEFAULT_SIDEBAR_FILTER.lastActivity,
       scheduledTasks: parsed.scheduledTasks ?? DEFAULT_SIDEBAR_FILTER.scheduledTasks,
+      canvasProjects: parsed.canvasProjects ?? DEFAULT_SIDEBAR_FILTER.canvasProjects,
       groupBy: parsed.groupBy ?? DEFAULT_SIDEBAR_FILTER.groupBy,
     }
   } catch {
@@ -319,10 +321,13 @@ export function applySessionFilters(
   sessions: SessionSummary[],
   filter: SidebarFilterState,
   scheduleSummaries: SessionScheduleSummaries = {},
+  workspaces: WorkspaceInfo[] = [],
 ): SessionSummary[] {
+  const canvasVisibleSessions =
+    filter.canvasProjects === 'show' ? sessions : filterCanvasSessions(sessions, workspaces)
   return filterByLastActivity(
     filterByScheduledTasks(
-      filterByProject(filterByStatus(sessions, filter.status), filter.projectId),
+      filterByProject(filterByStatus(canvasVisibleSessions, filter.status), filter.projectId),
       filter.scheduledTasks,
       scheduleSummaries,
     ),
@@ -2053,7 +2058,7 @@ export function SidebarSessionList() {
     [appState.view, ctx.activeSessionId, t],
   )
 
-  // Sidebar global filter (status / project / lastActivity / groupBy)
+  // Sidebar global filter (status / project / canvas projects / lastActivity / groupBy)
   const [filter, setFilter] = useState<SidebarFilterState>(() => readSidebarFilter())
   const handleFilterChange = useCallback((next: SidebarFilterState) => {
     setFilter(next)
@@ -2163,14 +2168,18 @@ export function SidebarSessionList() {
     isBlocked: isDeleteShortcutBlocked,
   })
 
-  // Apply status / project / lastActivity filters
+  const filterWorkspaces = useMemo(
+    () => filterCanvasWorkspaces(ctx.workspaces, filter.canvasProjects === 'show'),
+    [ctx.workspaces, filter.canvasProjects],
+  )
+
+  // Apply status / project / canvas project / lastActivity filters
   const filteredSessions = useMemo(() => {
     const source = searchVisible && searchQuery.trim() ? searchResultSessions : ctx.sessions
-    const visibleSource = source
     // 与后端 SQL 对齐：置顶在前、未置顶按 updatedAt 倒序。
     // 乐观更新 pinnedAt 后由这里即时重排，覆盖 date/state/none 分组及 noProject/ungrouped。
     return sortSessionsByPinned(
-      applySessionFilters(visibleSource, filter, ctx.sessionScheduleSummaries),
+      applySessionFilters(source, filter, ctx.sessionScheduleSummaries, ctx.workspaces),
     )
   }, [
     ctx.sessionScheduleSummaries,
@@ -2193,14 +2202,14 @@ export function SidebarSessionList() {
     }
     // 'project' mode: each workspace is its own group
     const selectedWorkspace =
-      filter.projectId === 'all' ? null : ctx.workspaces.find((w) => w.id === filter.projectId)
+      filter.projectId === 'all' ? null : filterWorkspaces.find((w) => w.id === filter.projectId)
     const selectedBaseWorkspaceId = selectedWorkspace?.worktreeMeta?.baseWorkspaceId
     const selectedProjectGroupId =
       selectedBaseWorkspaceId != null &&
-      ctx.workspaces.some((w) => w.id === selectedBaseWorkspaceId)
+      filterWorkspaces.some((w) => w.id === selectedBaseWorkspaceId)
         ? selectedBaseWorkspaceId
         : filter.projectId
-    const projectGroups = buildProjectGroups(ctx.workspaces, filteredSessions).filter(
+    const projectGroups = buildProjectGroups(filterWorkspaces, filteredSessions).filter(
       (group) => filter.projectId === 'all' || group.workspace.id === selectedProjectGroupId,
     )
     const noProjectWorkspace = ctx.noProjectWorkspace
@@ -2253,7 +2262,7 @@ export function SidebarSessionList() {
     filter.groupBy,
     filter.projectId,
     filteredSessions,
-    ctx.workspaces,
+    filterWorkspaces,
     ctx.noProjectWorkspace,
     ctx.sidebarOrder,
     ctx.sessionAgentStatuses,
@@ -2266,6 +2275,7 @@ export function SidebarSessionList() {
     filter.projectId === DEFAULT_SIDEBAR_FILTER.projectId &&
     filter.lastActivity === DEFAULT_SIDEBAR_FILTER.lastActivity &&
     filter.scheduledTasks === DEFAULT_SIDEBAR_FILTER.scheduledTasks &&
+    filter.canvasProjects === DEFAULT_SIDEBAR_FILTER.canvasProjects &&
     !(searchVisible && searchQuery.trim().length > 0)
   const canReorderProjects = canReorderSessions
   const sensors = useSensors(
@@ -2401,7 +2411,7 @@ export function SidebarSessionList() {
   const filterSlot = (
     <SidebarFilterMenu
       state={filter}
-      workspaces={ctx.workspaces}
+      workspaces={filterWorkspaces}
       onChange={handleFilterChange}
       onClear={handleFilterClear}
     />

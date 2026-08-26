@@ -10,12 +10,14 @@ import { ListFilter } from 'lucide-react'
 import './SidebarFilterMenu.less'
 import { Icons } from './Icons'
 import { useI18n } from './i18n'
+import { getCanvasWorkspaceIds } from './workspace-visibility'
 import type { WorkspaceInfo } from '@spark/protocol'
 
 export type SidebarStatusFilter = 'active' | 'archived' | 'all'
 export type SidebarLastActivityFilter = 'today' | '1d' | '3d' | '7d' | '30d' | 'all'
 export type SidebarGroupBy = 'date' | 'project' | 'state' | 'none'
 export type SidebarScheduledTasksFilter = 'all' | 'attached' | 'none'
+export type SidebarCanvasProjectsFilter = 'show' | 'hide'
 
 export interface SidebarFilterState {
   status: SidebarStatusFilter
@@ -23,6 +25,7 @@ export interface SidebarFilterState {
   projectId: string
   lastActivity: SidebarLastActivityFilter
   scheduledTasks: SidebarScheduledTasksFilter
+  canvasProjects: SidebarCanvasProjectsFilter
   groupBy: SidebarGroupBy
 }
 
@@ -31,6 +34,7 @@ export const DEFAULT_SIDEBAR_FILTER: SidebarFilterState = {
   projectId: 'all',
   lastActivity: 'all',
   scheduledTasks: 'all',
+  canvasProjects: 'show',
   groupBy: 'project',
 }
 
@@ -40,6 +44,7 @@ export function isDefaultFilter(state: SidebarFilterState): boolean {
     state.projectId === DEFAULT_SIDEBAR_FILTER.projectId &&
     state.lastActivity === DEFAULT_SIDEBAR_FILTER.lastActivity &&
     state.scheduledTasks === DEFAULT_SIDEBAR_FILTER.scheduledTasks &&
+    state.canvasProjects === DEFAULT_SIDEBAR_FILTER.canvasProjects &&
     state.groupBy === DEFAULT_SIDEBAR_FILTER.groupBy
   )
 }
@@ -68,6 +73,14 @@ export const SCHEDULED_TASK_FILTER_OPTIONS: Array<{
   { value: 'none', labelKey: 'sidebar.filter.scheduledTasks.none' },
 ]
 
+const CANVAS_PROJECT_FILTER_OPTIONS: Array<{
+  value: SidebarCanvasProjectsFilter
+  labelKey: string
+}> = [
+  { value: 'show', labelKey: 'sidebar.filter.canvasProjects.show' },
+  { value: 'hide', labelKey: 'sidebar.filter.canvasProjects.hide' },
+]
+
 const GROUP_BY_OPTIONS: Array<{ value: SidebarGroupBy; labelKey: string }> = [
   { value: 'date', labelKey: 'sidebar.filter.groupBy.date' },
   { value: 'project', labelKey: 'sidebar.filter.groupBy.project' },
@@ -93,6 +106,13 @@ function getScheduledTasksLabelKey(value: SidebarScheduledTasksFilter): string {
   return (
     SCHEDULED_TASK_FILTER_OPTIONS.find((option) => option.value === value)?.labelKey ??
     'sidebar.filter.all'
+  )
+}
+
+function getCanvasProjectsLabelKey(value: SidebarCanvasProjectsFilter): string {
+  return (
+    CANVAS_PROJECT_FILTER_OPTIONS.find((option) => option.value === value)?.labelKey ??
+    'sidebar.filter.canvasProjects.show'
   )
 }
 
@@ -196,6 +216,14 @@ function FilterPopupContent({
       })),
     [t],
   )
+  const canvasProjectOptions = useMemo(
+    () =>
+      CANVAS_PROJECT_FILTER_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.labelKey),
+      })),
+    [t],
+  )
 
   const projectOptions = useMemo(() => {
     const list: Array<{ value: string; label: string; hint?: string }> = [
@@ -222,6 +250,7 @@ function FilterPopupContent({
   const projectHighlight = state.projectId !== 'all'
   const lastActivityHighlight = state.lastActivity !== 'all'
   const scheduledTasksHighlight = state.scheduledTasks !== 'all'
+  const canvasProjectsHighlight = state.canvasProjects !== DEFAULT_SIDEBAR_FILTER.canvasProjects
 
   return (
     <div className="sidebar-filter-menu" onClick={(e) => e.stopPropagation()}>
@@ -245,6 +274,31 @@ function FilterPopupContent({
           options={projectOptions}
           current={state.projectId}
           onSelect={(value) => onChange({ ...state, projectId: value })}
+        />
+      </FilterRow>
+      <FilterRow
+        label={t('sidebar.filter.rowCanvasProjects')}
+        valueLabel={t(getCanvasProjectsLabelKey(state.canvasProjects))}
+        highlighted={canvasProjectsHighlight}
+      >
+        <SubMenu
+          options={canvasProjectOptions}
+          current={state.canvasProjects}
+          onSelect={(value) => {
+            const selectedWorkspace = workspaces.find(
+              (workspace) => workspace.id === state.projectId,
+            )
+            onChange({
+              ...state,
+              canvasProjects: value,
+              projectId:
+                value === 'hide' &&
+                selectedWorkspace != null &&
+                getCanvasWorkspaceIds(workspaces).has(selectedWorkspace.id)
+                  ? 'all'
+                  : state.projectId,
+            })
+          }}
         />
       </FilterRow>
       <FilterRow

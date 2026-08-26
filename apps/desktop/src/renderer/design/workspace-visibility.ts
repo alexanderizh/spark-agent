@@ -16,7 +16,26 @@ export function isCanvasWorkspace(workspace: WorkspaceInfo): boolean {
 }
 
 export function getCanvasWorkspaceIds(workspaces: WorkspaceInfo[]): Set<string> {
-  return new Set(workspaces.filter(isCanvasWorkspace).map((workspace) => workspace.id))
+  const canvasWorkspaceIds = new Set(
+    workspaces.filter(isCanvasWorkspace).map((workspace) => workspace.id),
+  )
+  // Worktree 路径通常位于画布项目目录之外，需从其 base workspace 继承画布归属。
+  for (const workspace of workspaces) {
+    const baseWorkspaceId = workspace.worktreeMeta?.baseWorkspaceId
+    if (baseWorkspaceId != null && canvasWorkspaceIds.has(baseWorkspaceId)) {
+      canvasWorkspaceIds.add(workspace.id)
+    }
+  }
+  return canvasWorkspaceIds
+}
+
+export function filterCanvasWorkspaces(
+  workspaces: WorkspaceInfo[],
+  includeCanvasProjects: boolean,
+): WorkspaceInfo[] {
+  if (includeCanvasProjects) return workspaces
+  const canvasWorkspaceIds = getCanvasWorkspaceIds(workspaces)
+  return workspaces.filter((workspace) => !canvasWorkspaceIds.has(workspace.id))
 }
 
 export function isCanvasSession(

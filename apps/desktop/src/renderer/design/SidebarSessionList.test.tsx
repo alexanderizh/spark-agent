@@ -13,6 +13,7 @@ import {
   SidebarProjectToolbar,
 } from './SidebarSessionList'
 import { DEFAULT_SIDEBAR_FILTER } from './SidebarFilterMenu'
+import { filterCanvasWorkspaces } from './workspace-visibility'
 import { readSessionReferenceDragPayload } from './views/chat/session-reference-dnd'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -624,6 +625,74 @@ describe('scheduled-task session filtering', () => {
         summaries,
       ).map((session) => session.id),
     ).toEqual(['session-2'])
+  })
+})
+
+describe('canvas-project session filtering', () => {
+  it('hides canvas sessions while preserving ordinary sessions', () => {
+    const workspaces: WorkspaceInfo[] = [
+      {
+        id: 'workspace-1',
+        name: '普通项目',
+        rootPath: '/tmp/workspace-1',
+        canvasProjectId: null,
+        pinnedAt: null,
+        archivedAt: null,
+        createdAt: '2026-07-29T08:00:00.000Z',
+        updatedAt: '2026-07-29T08:00:00.000Z',
+        worktreeMeta: null,
+      },
+      {
+        id: 'canvas-workspace',
+        name: '画布项目',
+        rootPath: '/tmp/canvas-workspace',
+        canvasProjectId: 'canvas-project',
+        pinnedAt: null,
+        archivedAt: null,
+        createdAt: '2026-07-29T08:00:00.000Z',
+        updatedAt: '2026-07-29T08:00:00.000Z',
+        worktreeMeta: null,
+      },
+      {
+        id: 'canvas-worktree',
+        name: '画布项目 Worktree',
+        rootPath: '/tmp/canvas-worktree',
+        canvasProjectId: null,
+        pinnedAt: null,
+        archivedAt: null,
+        createdAt: '2026-07-29T08:00:00.000Z',
+        updatedAt: '2026-07-29T08:00:00.000Z',
+        worktreeMeta: {
+          baseRepoRoot: '/tmp/canvas-workspace',
+          branch: 'feature/canvas',
+          baseBranch: 'main',
+          baseWorkspaceId: 'canvas-workspace',
+        },
+      },
+    ]
+    const sessions = [
+      ...createSessions(1),
+      {
+        ...createSessions(1)[0],
+        id: 'canvas-session' as SessionId,
+        workspaceIds: ['canvas-workspace'],
+      },
+      {
+        ...createSessions(1)[0],
+        id: 'canvas-worktree-session' as SessionId,
+        workspaceIds: ['canvas-worktree'],
+      },
+    ]
+
+    expect(
+      applySessionFilters(
+        sessions,
+        { ...DEFAULT_SIDEBAR_FILTER, canvasProjects: 'hide' },
+        {},
+        workspaces,
+      ).map((session) => session.id),
+    ).toEqual(['session-0'])
+    expect(filterCanvasWorkspaces(workspaces, false).map(({ id }) => id)).toEqual(['workspace-1'])
   })
 })
 

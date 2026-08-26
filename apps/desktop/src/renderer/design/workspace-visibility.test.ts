@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkspaceInfo } from '@spark/protocol'
 import {
+  filterCanvasWorkspaces,
   filterCanvasSessions,
+  getCanvasWorkspaceIds,
   isCanvasWorkspace,
   listSelectableWorkspaces,
 } from './workspace-visibility'
@@ -56,6 +58,50 @@ describe('workspace visibility', () => {
 
     expect(filterCanvasSessions(sessions, workspaces).map((session) => session.id)).toEqual([
       'code-session',
+    ])
+  })
+
+  it('filters canvas workspaces when the caller hides canvas projects', () => {
+    const workspaces = [workspace('code'), workspace('canvas', { canvasProjectId: 'canvas-1' })]
+
+    expect(filterCanvasWorkspaces(workspaces, false).map(({ id }) => id)).toEqual(['code'])
+    expect(filterCanvasWorkspaces(workspaces, true)).toBe(workspaces)
+  })
+
+  it('treats a canvas project worktree as part of the canvas workspace family', () => {
+    const workspaces = [
+      workspace('code'),
+      workspace('code-worktree', {
+        worktreeMeta: {
+          baseRepoRoot: '/tmp/code',
+          branch: 'feature/code',
+          baseBranch: 'main',
+          baseWorkspaceId: 'code',
+        },
+      }),
+      workspace('canvas', { canvasProjectId: 'canvas-1' }),
+      workspace('canvas-worktree', {
+        canvasProjectId: null,
+        worktreeMeta: {
+          baseRepoRoot: '/tmp/canvas',
+          branch: 'feature/canvas',
+          baseBranch: 'main',
+          baseWorkspaceId: 'canvas',
+        },
+      }),
+    ]
+    const sessions = [
+      { id: 'code-worktree-session', workspaceIds: ['code-worktree'] },
+      { id: 'canvas-worktree-session', workspaceIds: ['canvas-worktree'] },
+    ] as Parameters<typeof filterCanvasSessions>[0]
+
+    expect(getCanvasWorkspaceIds(workspaces)).toEqual(new Set(['canvas', 'canvas-worktree']))
+    expect(filterCanvasWorkspaces(workspaces, false).map(({ id }) => id)).toEqual([
+      'code',
+      'code-worktree',
+    ])
+    expect(filterCanvasSessions(sessions, workspaces).map(({ id }) => id)).toEqual([
+      'code-worktree-session',
     ])
   })
 
