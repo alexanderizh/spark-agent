@@ -10,8 +10,8 @@ use windows::Win32::Security::Cryptography::{
 };
 use windows::Win32::Security::WinTrust::{
     WINTRUST_ACTION_GENERIC_VERIFY_V2, WINTRUST_DATA, WINTRUST_DATA_0, WINTRUST_FILE_INFO,
-    WTD_CHOICE_FILE, WTD_REVOKE_WHOLECHAIN, WTD_SAFER_FLAG, WTD_STATEACTION_CLOSE,
-    WTD_STATEACTION_VERIFY, WTD_UI_NONE, WTHelperGetProvCertFromChain,
+    WTD_CACHE_ONLY_URL_RETRIEVAL, WTD_CHOICE_FILE, WTD_REVOKE_WHOLECHAIN, WTD_SAFER_FLAG,
+    WTD_STATEACTION_CLOSE, WTD_STATEACTION_VERIFY, WTD_UI_NONE, WTHelperGetProvCertFromChain,
     WTHelperGetProvSignerFromChain, WTHelperProvDataFromStateData, WinVerifyTrust,
 };
 use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -214,7 +214,11 @@ fn verified_signer_thumbprint(path: &Path) -> Result<String, RuntimeAuthorizatio
             pFile: &mut file_info,
         },
         dwStateAction: WTD_STATEACTION_VERIFY,
-        dwProvFlags: WTD_SAFER_FLAG,
+        // Parent authorization is a local startup boundary and must not depend on
+        // revocation endpoints being reachable. Keep whole-chain verification, but
+        // constrain URL retrieval to the Windows cache; the verified leaf is still
+        // pinned to the release publisher SHA-256 thumbprint below.
+        dwProvFlags: WTD_SAFER_FLAG | WTD_CACHE_ONLY_URL_RETRIEVAL,
         ..WINTRUST_DATA::default()
     };
     let mut action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
