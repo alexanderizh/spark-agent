@@ -114,6 +114,14 @@ jobs:
             fi
           fi
 
+          # 终局断言：提交前的 latest.json 必须指向本次发布的版本，否则宁可
+          # 红灯——v0.3.0 曾因指针被回滚成旧版本而"绿灯发布旧渠道"。
+          pointer_version="$(node -p "JSON.parse(require('fs').readFileSync('latest.json','utf8')).version")"
+          if [ "$pointer_version" != "$VERSION" ]; then
+            echo "::error::latest.json 指针版本(${pointer_version})与发布版本(${VERSION})不一致，拒绝提交"
+            exit 1
+          fi
+
           git add -A
           if git diff --cached --quiet; then
             echo '::notice::发布分支已是目标状态，无内容需要提交。'
