@@ -233,18 +233,23 @@ describe('verifyWindowsNativeHostArtifact', () => {
     expect(script).toContain('$signature.Status -ne "Valid" -and -not $selfSignedPublisher')
   })
 
-  it('allows Authenticode inspection enough time for a cold Windows runner', () => {
-    const options = windowsCodeSignatureExecOptions('C:\\Program Files\\SparkWork\\SparkWork.exe')
+  it('extends Authenticode inspection only for the bounded release smoke', () => {
+    const executablePath = 'C:\\Program Files\\SparkWork\\SparkWork.exe'
+    const runtimeOptions = windowsCodeSignatureExecOptions(executablePath, {})
+    const releaseOptions = windowsCodeSignatureExecOptions(executablePath, {
+      SPARK_NATIVE_HOST_SMOKE_REPORT: 'C:\\Temp\\native-host-report.json',
+    })
 
-    expect(options.timeout).toBeGreaterThanOrEqual(30_000)
-    expect(options.env.SPARK_AUTHENTICODE_PATH).toBe('C:\\Program Files\\SparkWork\\SparkWork.exe')
+    expect(runtimeOptions.timeout).toBe(30_000)
+    expect(releaseOptions.timeout).toBe(120_000)
+    expect(releaseOptions.env.SPARK_AUTHENTICODE_PATH).toBe(executablePath)
   })
 
   it('surfaces an actionable error when Windows Authenticode inspection times out', () => {
-    const error = windowsCodeSignatureInspectionError({ killed: true, signal: 'SIGTERM' })
+    const error = windowsCodeSignatureInspectionError({ killed: true, signal: 'SIGTERM' }, 120_000)
 
     expect(error).toBeInstanceOf(NativeHostArtifactError)
-    expect(error.message).toContain('timed out')
+    expect(error.message).toContain('timed out after 120000ms')
   })
 
   it('binds the EXE hash and WinVerifyTrust publisher thumbprint to the outer application signer', async () => {

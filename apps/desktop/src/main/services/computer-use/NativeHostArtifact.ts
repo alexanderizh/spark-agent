@@ -13,6 +13,10 @@ const MAX_EXECUTABLE_BYTES = 268_435_456
 const NATIVE_HOST_SIGNING_IDENTIFIER = 'com.spark-agent.desktop.computer-host'
 const MINIMUM_TRUSTED_NATIVE_HOST_VERSION = [0, 1, 0] as const
 export const WINDOWS_CODE_SIGNATURE_TIMEOUT_MS = 30_000
+// The final signed-App smoke runs on a cold hosted Windows image where Authenticode may need
+// to populate certificate and timestamp caches. This only extends the release gate; normal
+// application startup keeps the shorter fail-closed timeout above.
+export const WINDOWS_RELEASE_SMOKE_CODE_SIGNATURE_TIMEOUT_MS = 120_000
 
 const NativeHostArtifactBase = {
   schemaVersion: z.literal(1),
@@ -507,6 +511,7 @@ export async function inspectWindowsCodeSignature(
   }
   const powershell = join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
   const script = buildWindowsCodeSignatureInspectionScript()
+  const execOptions = windowsCodeSignatureExecOptions(executablePath)
   let result: { stdout: string; stderr: string }
   try {
     result = (await execFileAsync(
@@ -520,10 +525,10 @@ export async function inspectWindowsCodeSignature(
         '-Command',
         script,
       ],
-      windowsCodeSignatureExecOptions(executablePath),
+      execOptions,
     )) as { stdout: string; stderr: string }
   } catch (error) {
-    throw windowsCodeSignatureInspectionError(error)
+    throw windowsCodeSignatureInspectionError(error, execOptions.timeout)
   }
   const encoded = result.stdout.trim()
   const digest = Buffer.from(encoded, 'base64')
@@ -533,22 +538,32 @@ export async function inspectWindowsCodeSignature(
   return { publisherThumbprint: digest.toString('hex') }
 }
 
-export function windowsCodeSignatureExecOptions(executablePath: string) {
+export function windowsCodeSignatureExecOptions(
+  executablePath: string,
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  const releaseSmoke = environment.SPARK_NATIVE_HOST_SMOKE_REPORT?.trim()
   return {
     encoding: 'utf8' as const,
-    timeout: WINDOWS_CODE_SIGNATURE_TIMEOUT_MS,
+    timeout:
+      releaseSmoke == null || releaseSmoke === ''
+        ? WINDOWS_CODE_SIGNATURE_TIMEOUT_MS
+        : WINDOWS_RELEASE_SMOKE_CODE_SIGNATURE_TIMEOUT_MS,
     maxBuffer: 16 * 1_024,
     windowsHide: true,
-    env: { ...process.env, SPARK_AUTHENTICODE_PATH: executablePath },
+    env: { ...environment, SPARK_AUTHENTICODE_PATH: executablePath },
   }
 }
 
-export function windowsCodeSignatureInspectionError(error: unknown): NativeHostArtifactError {
+export function windowsCodeSignatureInspectionError(
+  error: unknown,
+  timeoutMs = WINDOWS_CODE_SIGNATURE_TIMEOUT_MS,
+): NativeHostArtifactError {
   const details = error as { code?: unknown; killed?: unknown }
   const timedOut = details.killed === true || details.code === 'ETIMEDOUT'
   return untrusted(
     timedOut
-      ? `Windows Authenticode inspection timed out after ${WINDOWS_CODE_SIGNATURE_TIMEOUT_MS}ms`
+      ? `Windows Authenticode inspection timed out after ${timeoutMs}ms`
       : 'Windows Authenticode inspection failed',
     error,
     timedOut
