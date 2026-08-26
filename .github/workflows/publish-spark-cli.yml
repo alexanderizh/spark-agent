@@ -83,23 +83,32 @@ jobs:
             git rm -rfq . || true
           fi
 
+          # 远端是否已有该版本：必须在 cp 覆盖工作区之前判定，否则全新版本的
+          # 制品一落地就会误命中"同版本重跑"分支（v0.3.0 曾因此把 latest.json
+          # 回滚成旧指针，渠道永远停在上一个版本）。
+          REMOTE_HAS_TARBALL=false
+          if [ -f "$TARBALL" ]; then REMOTE_HAS_TARBALL=true; fi
+
           cp -f spark-engine/release/* .
 
           # 同版本幂等：releases 分支上若该版本已存在，则以远端为准保留原字节
-          # （不同环境的 npm 包不是字节确定的），只清掉本次本地重打包的拷贝。
-          # 这样质量门/发版的重复触发永远收敛为绿色；真正的防篡改由
-          # 安装器与 `spark update` 在下载时的全量 SHA-256 校验承担。
-          if [ -f "$TARBALL" ]; then
+          # （不同环境的 npm 包不是字节确定的），只清掉本次本地重打包的拷贝；
+          # 全新版本则让刚拷贝的最新指针原样提交。这样质量门/发版的重复触发
+          # 永远收敛为绿色；真正的防篡改由安装器与 `spark update` 在下载时的
+          # 全量 SHA-256 校验承担。
+          if [ "$REMOTE_HAS_TARBALL" = true ]; then
             git checkout -- "$TARBALL" "${TARBALL}.sha256" 2>/dev/null || true
-            # 该版本的 latest.json 也以远端为权威，避免指向不匹配的哈希。
-            if node -e '
-              const fs = require("fs");
-              const remote = JSON.parse(fs.readFileSync("latest.json", "utf8"));
-              const local = JSON.parse(
-                fs.readFileSync("spark-engine/release/latest.json", "utf8"),
-              );
-              process.exit(remote.version === local.version ? 0 : 1);
-            '; then
+            # 该版本的 latest.json 以 checkout 时刻的远端内容为权威：
+            # 必须读 HEAD，而不是已被 cp 覆盖的工作区文件（自己和自己比）。
+            remote_pointer_version="$(git show "HEAD:latest.json" | node -e '
+              let data = "";
+              process.stdin.on("data", (chunk) => { data += chunk });
+              process.stdin.on("end", () => {
+                try { process.stdout.write(JSON.parse(data).version ?? "") }
+                catch { process.stdout.write("") }
+              });
+            ')"
+            if [ "$remote_pointer_version" = "$VERSION" ]; then
               git checkout -- latest.json 2>/dev/null || true
             fi
           fi
