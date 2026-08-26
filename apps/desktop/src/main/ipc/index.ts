@@ -64,6 +64,7 @@ import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
 import { startProviderScheduleWatcher } from '../services/ProviderScheduleWatcher.js'
 import { encodeTextFileContent, parseTextFileEncoding } from '../services/TextFileEncoding.js'
+import { CANVAS_SNAPSHOT_KEEP_ON_EXIT, pruneCanvasSnapshots } from '../services/CanvasSnapshotRetention.js'
 import { openHtmlInExternalBrowser, openHtmlViewerWindow } from '../services/HtmlViewerService.js'
 import { getSubAppBrowserService } from '../services/SubAppBrowserService.js'
 import { fetchLinkMetadata } from '../services/LinkMetadataService.js'
@@ -1045,6 +1046,10 @@ async function writeCanvasProjectPackageFiles(input: {
     JSON.stringify(snapshot, null, 2),
     'utf-8',
   )
+  // 每次保存追加一份全量时间戳快照，必须同步修剪否则无限膨胀；失败不影响保存流程。
+  pruneCanvasSnapshots(directory.snapshotsDir).catch((error) => {
+    log.warn(`Failed to prune canvas snapshots for ${input.projectId}: ${String(error)}`)
+  })
 }
 
 /** Canvas 持久化 Repository（SQLite-backed，见 migration 027） */
@@ -3351,6 +3356,22 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('canvas:window:close-confirmed', async () => {
     return { success: getCanvasWindowService().closeAfterRendererGuard() }
+  })
+
+  // 退出画布编辑（窗口关闭/切换到其他项目）时收紧该项目的历史快照：
+  // 编辑期间按次保留 CANVAS_SNAPSHOT_KEEP 份用于崩溃恢复，退出后只留少量恢复点。
+  getCanvasWindowService().onProjectExited((projectId) => {
+    void (async () => {
+      // 项目已删除时跳过：ensure 会按 title+id 重建目录树，不能为已删项目复活空目录。
+      if (getCanvasProjectRepo().get(projectId) == null) return
+      const directory = await ensureCanvasProjectDirectoryById(projectId)
+      const removed = await pruneCanvasSnapshots(directory.snapshotsDir, CANVAS_SNAPSHOT_KEEP_ON_EXIT)
+      if (removed.length > 0) {
+        log.info(`Pruned ${removed.length} canvas snapshots after exiting project ${projectId}`)
+      }
+    })().catch((error) => {
+      log.warn(`Failed to prune canvas snapshots on exit for ${projectId}: ${String(error)}`)
+    })
   })
 
   typedIpcHandle('canvas:host-attach', async (req, event) => {

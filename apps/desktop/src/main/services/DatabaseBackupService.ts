@@ -4,6 +4,12 @@ import { basename, join } from 'node:path'
 
 const DATABASE_SUFFIXES = ['', '-wal', '-shm'] as const
 const BACKUP_PREFIX = 'pre-migration-v'
+/** 每个版本首次启动做一次全量备份，单份约等于数据库体积；2 份 = 当前版本 + 上一版本 */
+export const DEFAULT_MAX_DATABASE_BACKUPS = 2
+/** 备份保留天数：迁移问题一般在升级后短时间内暴露，超期即回收 */
+export const DEFAULT_BACKUP_MAX_AGE_DAYS = 14
+/** 崩溃残留的 .tmp- 目录回收下限；更近的可能属于并发启动实例 */
+const STALE_TMP_DIRECTORY_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 export interface DatabaseBackupSnapshot {
   directory: string
@@ -19,7 +25,14 @@ interface EnsureDatabaseBackupOptions {
   backupRoot: string
   appVersion: string
   maxBackups?: number
+  maxAgeDays?: number
   now?: Date
+}
+
+interface PruneDatabaseBackupsOptions {
+  maxBackups: number
+  maxAgeDays: number
+  now: Date
 }
 
 function safeVersion(version: string): string {
@@ -62,7 +75,10 @@ export async function ensurePreMigrationBackup(
 
   const directory = backupDirectory(options.backupRoot, options.appVersion)
   const existing = await readSnapshot(directory, false)
-  if (existing != null) return existing
+  if (existing != null) {
+    await safePruneDatabaseBackups(options.backupRoot, options)
+    return existing
+  }
 
   await mkdir(options.backupRoot, { recursive: true })
   const temporaryDirectory = `${directory}.tmp-${process.pid}-${Date.now()}`
@@ -92,7 +108,7 @@ export async function ensurePreMigrationBackup(
       { encoding: 'utf8', mode: 0o600 },
     )
     await rename(temporaryDirectory, directory)
-    await pruneDatabaseBackups(options.backupRoot, options.maxBackups ?? 5)
+    await safePruneDatabaseBackups(options.backupRoot, options)
     return snapshot
   } catch (error) {
     await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)
@@ -113,15 +129,58 @@ export async function restoreDatabaseBackup(snapshot: DatabaseBackupSnapshot): P
   }
 }
 
-async function pruneDatabaseBackups(backupRoot: string, maxBackups: number): Promise<void> {
+/**
+ * 清理历史迁移备份：
+ *   - 超过 maxAgeDays 的整份回收（无论数量）；
+ *   - 其余按 mtime 从新到旧只保留 maxBackups 份；
+ *   - 崩溃残留的 .tmp- 目录超过 24h 直接回收（近期的可能属于并发启动实例）。
+ * 清理是尽力而为：失败不影响启动与备份流程。
+ */
+export async function pruneDatabaseBackups(
+  backupRoot: string,
+  options: PruneDatabaseBackupsOptions,
+): Promise<void> {
+  const { maxBackups, maxAgeDays, now } = options
   if (maxBackups < 1) return
   const entries = await readdir(backupRoot, { withFileTypes: true })
-  const candidates = await Promise.all(entries
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith(BACKUP_PREFIX) && !entry.name.includes('.tmp-'))
-    .map(async (entry) => ({
-      path: join(backupRoot, entry.name),
-      mtimeMs: (await stat(join(backupRoot, entry.name))).mtimeMs,
-    })))
+  const tmpDirectories: Array<{ path: string; mtimeMs: number }> = []
+  const candidates: Array<{ path: string; mtimeMs: number }> = []
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(BACKUP_PREFIX)) continue
+    const path = join(backupRoot, entry.name)
+    try {
+      const mtimeMs = (await stat(path)).mtimeMs
+      if (entry.name.includes('.tmp-')) tmpDirectories.push({ path, mtimeMs })
+      else candidates.push({ path, mtimeMs })
+    } catch {
+      // 枚举后被删除等竞态：跳过
+    }
+  }
+
+  const staleTmpCutoff = now.getTime() - STALE_TMP_DIRECTORY_MAX_AGE_MS
+  // maxAgeDays < 1 视为不限期，避免误传 0 时把刚创建的备份也按超龄回收
+  const ageCutoff = maxAgeDays >= 1 ? now.getTime() - maxAgeDays * 24 * 60 * 60 * 1000 : Number.NEGATIVE_INFINITY
+  const toDelete = tmpDirectories.filter((entry) => entry.mtimeMs < staleTmpCutoff)
+  toDelete.push(...candidates.filter((entry) => entry.mtimeMs < ageCutoff))
+
   candidates.sort((left, right) => right.mtimeMs - left.mtimeMs)
-  await Promise.all(candidates.slice(maxBackups).map((entry) => rm(entry.path, { recursive: true, force: true })))
+  const kept = candidates.filter((entry) => entry.mtimeMs >= ageCutoff)
+  toDelete.push(...kept.slice(maxBackups))
+
+  await Promise.all(toDelete.map((entry) => rm(entry.path, { recursive: true, force: true })))
+}
+
+async function safePruneDatabaseBackups(
+  backupRoot: string,
+  options: EnsureDatabaseBackupOptions,
+): Promise<void> {
+  try {
+    await pruneDatabaseBackups(backupRoot, {
+      maxBackups: options.maxBackups ?? DEFAULT_MAX_DATABASE_BACKUPS,
+      maxAgeDays: options.maxAgeDays ?? DEFAULT_BACKUP_MAX_AGE_DAYS,
+      now: options.now ?? new Date(),
+    })
+  } catch {
+    // 清理失败不影响备份与启动
+  }
 }

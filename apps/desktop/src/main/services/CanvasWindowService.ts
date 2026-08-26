@@ -48,6 +48,9 @@ export interface CanvasWindowServiceDeps {
   openExternal: (url: string) => void
 }
 
+/** 画布项目退出编辑（窗口关闭或切换到其他项目）时触发 */
+export type CanvasProjectExitedHandler = (projectId: string) => void
+
 function buildCanvasWindowUrl(rendererUrl: string, projectId: string): string {
   const url = new URL(rendererUrl)
   url.searchParams.set('window', 'canvas')
@@ -59,8 +62,26 @@ export class CanvasWindowService {
   private win: CanvasBrowserWindow | null = null
   private activeProjectId: string | null = null
   private allowCloseOnce = false
+  private projectExitedHandler: CanvasProjectExitedHandler | null = null
 
   constructor(private readonly deps: CanvasWindowServiceDeps) {}
+
+  /**
+   * 注册「画布项目退出编辑」回调：窗口关闭或切换到其他项目时触发。
+   * 用于上层做善后清理（如收紧该项目的历史快照），回调抛错只记日志。
+   */
+  onProjectExited(handler: CanvasProjectExitedHandler): void {
+    this.projectExitedHandler = handler
+  }
+
+  private notifyProjectExited(projectId: string | null): void {
+    if (projectId == null || this.projectExitedHandler == null) return
+    try {
+      this.projectExitedHandler(projectId)
+    } catch (error) {
+      log.warn(`Canvas project exit handler failed for ${projectId}: ${String(error)}`)
+    }
+  }
 
   async open(req: CanvasWindowOpenRequest): Promise<CanvasWindowOpenResponse> {
     const win = this.ensureWindow()
@@ -69,6 +90,7 @@ export class CanvasWindowService {
       try {
         await this.loadProject(win, req.projectId)
         this.activeProjectId = req.projectId
+        this.notifyProjectExited(previousProjectId)
       } catch (error) {
         this.activeProjectId = previousProjectId
         if (isNavigationCancelledByRendererGuard(error)) {
@@ -95,9 +117,11 @@ export class CanvasWindowService {
   close(): boolean {
     const win = this.win
     if (win == null || win.isDestroyed()) return false
+    const exitingProjectId = this.activeProjectId
     win.destroy()
     this.win = null
     this.activeProjectId = null
+    this.notifyProjectExited(exitingProjectId)
     return true
   }
 
@@ -138,9 +162,11 @@ export class CanvasWindowService {
     })
     win.on('closed', () => {
       if (this.win === win) {
+        const exitingProjectId = this.activeProjectId
         this.win = null
         this.activeProjectId = null
         this.allowCloseOnce = false
+        this.notifyProjectExited(exitingProjectId)
       }
     })
     registerAppWindow(win as never)

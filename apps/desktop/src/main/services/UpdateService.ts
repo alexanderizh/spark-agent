@@ -19,7 +19,7 @@ import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { createWriteStream, existsSync, readFileSync } from 'node:fs'
 import { mkdir, rename, rm, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { app, powerMonitor } from 'electron'
 import { createLogger } from '@spark/shared'
 import type {
@@ -28,6 +28,7 @@ import type {
   UpdateProgressInfo,
   UpdateChannel,
 } from '@spark/protocol'
+import { pruneUpdaterCacheDirs } from './updaterCache.js'
 
 const log = createLogger('update-service')
 
@@ -566,6 +567,17 @@ export class UpdateService {
     const loadedConfig = loadReleaseFeedConfig()
     this.releaseFeedConfig = loadedConfig.config
     log.info(`Update feed configured from ${loadedConfig.source} -> ${loadedConfig.config.owner}/${loadedConfig.config.repo}`)
+
+    // 历史版本安装包只增不删会线性吃掉磁盘，启动时回收旧版本缓存目录。
+    void pruneUpdaterCacheDirs(
+      join(app.getPath('userData'), this.releaseFeedConfig.updaterCacheDirName),
+    ).then((removed) => {
+      if (removed.length > 0) {
+        log.info(`Pruned ${removed.length} stale updater cache directories: ${removed.map((entry) => basename(entry.directory)).join(', ')}`)
+      }
+    }).catch((error) => {
+      log.warn(`Failed to prune updater cache: ${String(error)}`)
+    })
 
     app.on('browser-window-focus', this.onWindowFocus)
     app.on('will-quit', this.onWillQuit)

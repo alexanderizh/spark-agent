@@ -178,3 +178,88 @@ describe('CanvasWindowService', () => {
     expect(created[0]?.webContents.send).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('CanvasWindowService.onProjectExited', () => {
+  function createServiceWithListener(): {
+    service: CanvasWindowService
+    created: FakeWindow[]
+    exited: string[]
+  } {
+    const created: FakeWindow[] = []
+    const exited: string[] = []
+    const service = new CanvasWindowService({
+      createWindow: () => {
+        const win = createFakeWindow(created.length + 1)
+        created.push(win)
+        return win as never
+      },
+      getRendererUrl: () => 'http://127.0.0.1:5173',
+      getRendererFile: () => '/app/out/renderer/index.html',
+      isDev: true,
+      openExternal: vi.fn(),
+    })
+    service.onProjectExited((projectId) => exited.push(projectId))
+    return { service, created, exited }
+  }
+
+  it('notifies the previous project when switching to another project', async () => {
+    const { service, exited } = createServiceWithListener()
+
+    await service.open({ projectId: 'canvas_project_1' })
+    await service.open({ projectId: 'canvas_project_2' })
+
+    expect(exited).toEqual(['canvas_project_1'])
+    expect(service.getActiveProjectId()).toBe('canvas_project_2')
+  })
+
+  it('does not notify when reopening the active project', async () => {
+    const { service, exited } = createServiceWithListener()
+
+    await service.open({ projectId: 'canvas_project_1' })
+    await service.open({ projectId: 'canvas_project_1' })
+
+    expect(exited).toEqual([])
+  })
+
+  it('notifies the active project when the window is closed', async () => {
+    const { service, created, exited } = createServiceWithListener()
+
+    await service.open({ projectId: 'canvas_project_1' })
+    getWindowListener(created[0]!, 'closed')()
+
+    expect(exited).toEqual(['canvas_project_1'])
+    expect(service.getActiveProjectId()).toBeNull()
+  })
+
+  it('notifies the active project on close() and clears the state', async () => {
+    const { service, exited } = createServiceWithListener()
+
+    await service.open({ projectId: 'canvas_project_1' })
+
+    expect(service.close()).toBe(true)
+    expect(exited).toEqual(['canvas_project_1'])
+    expect(service.getActiveProjectId()).toBeNull()
+  })
+
+  it('keeps closing normally when the handler throws', async () => {
+    const created: FakeWindow[] = []
+    const service = new CanvasWindowService({
+      createWindow: () => {
+        const win = createFakeWindow(created.length + 1)
+        created.push(win)
+        return win as never
+      },
+      getRendererUrl: () => 'http://127.0.0.1:5173',
+      getRendererFile: () => '/app/out/renderer/index.html',
+      isDev: true,
+      openExternal: vi.fn(),
+    })
+    service.onProjectExited(() => {
+      throw new Error('handler boom')
+    })
+    await service.open({ projectId: 'canvas_project_1' })
+
+    expect(service.close()).toBe(true)
+    expect(service.getActiveProjectId()).toBeNull()
+  })
+})
