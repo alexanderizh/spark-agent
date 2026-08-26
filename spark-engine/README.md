@@ -100,6 +100,27 @@ If an updater was killed mid-transaction, the next `spark update` restores consi
 
 First run without local configuration: `spark` still opens the TUI and shows the model picker — SparkWork routes (live catalog), locally configured models, and a terminal provider-configuration wizard (`c`). The wizard writes a local provider into `~/.spark/config.toml` referencing credentials only by environment-variable name; nothing secret is ever stored. `/model` reopens the picker between turns (a running turn keeps its model). Non-interactive invocations (`--plain`, `--json`, piped prompts) stay fail-fast with actionable guidance. `spark init` remains for scripting; `spark doctor` reports the resolved `spark` on PATH (broken links, version drift, shadowing), stale SparkWork bridge descriptors, and Node engine compliance.
 
+## Interactive session controls
+
+The TUI keeps a persistent status line under the input box — model · permission mode · reasoning effort · token/cost tally — so you always know what will run before you type.
+
+| Command   | Action                                                    |
+| --------- | --------------------------------------------------------- |
+| `/model`  | Open the model picker (SparkWork routes + local channels) |
+| `/perm`   | Switch permission policy for this session                 |
+| `/effort` | Cycle reasoning effort: auto → off → low → medium → high  |
+| `/status` | Session id, queued turns, event count, current controls   |
+| `/clear`  | Start a fresh session                                     |
+| `/help`   | Command reference (Tab completes any prefix)              |
+
+Permission switching is session-scoped: `/perm` opens a picker over `default` → `acceptEdits` → `plan` → `bypass`. The destructive `bypass` entry demands a second Enter to arm, and single-key cycling never reaches it — bypass requires going through the picker or launching with `--permission-mode bypass`. A new session falls back to its config snapshot.
+
+Reasoning effort (`/effort`, or `--effort off|low|medium|high` on one-shot runs) maps onto each protocol's native control: Anthropic receives a thinking-token budget (4k/12k/32k), the OpenAI Responses API receives the matching `reasoning.effort`. `auto` leaves the provider default untouched.
+
+Plan mode composes an approval loop with the policy switch: a turn run under `plan` sees only read-only tools; when it finishes with a proposal on screen, the TUI shows it back bounded to twelve lines — **Enter** approves the plan, switches the session to `acceptEdits`, and immediately executes with full tooling; **Esc** keeps iterating in plan mode.
+
+Approvals remain fail-closed: every side-effecting tool call renders a card with the exact arguments, policy reason, and risk class, offering allow-once, allow-for-session (when the policy grants that scope), and deny; Esc always denies.
+
 ## Model configuration
 
 Spark reads `~/.spark/config.toml` and then project `.spark/config.toml`. Provider credentials are referenced by environment-variable name and are never stored in the config or session snapshot.

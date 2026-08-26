@@ -2,6 +2,7 @@ import { Box, Text, useInput } from 'ink'
 import { useMemo, useState, type ReactElement } from 'react'
 
 import { shouldSwallowImeKeypress } from '../ime-guard.js'
+import { SLASH_COMMANDS } from '../slash-commands.js'
 import { glyphs, type TerminalCapabilities, type TuiTheme } from '../theme.js'
 
 export interface InputEditorProps {
@@ -43,6 +44,14 @@ export function InputEditor(props: InputEditorProps): ReactElement {
       if (key.return) {
         if (key.shift || key.meta) insert('\n')
         else submit()
+        return
+      }
+      if (key.tab && completions.length > 0) {
+        // Tab adopts the first completion; typing further disambiguates.
+        const adopted = completions[0] ?? ''
+        if (!adopted) return
+        setValue(`${adopted} `)
+        setCursor(Array.from(adopted).length + 1)
         return
       }
       if (key.leftArrow) setCursor((position) => Math.max(0, position - 1))
@@ -105,9 +114,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
     .slice(Math.min(cursor, visibleCharacters.length) + (current ? 1 : 0))
     .join('')
   const completions = value.startsWith('/')
-    ? ['/help', '/status', '/model', '/perm', '/clear', '/exit'].filter((command) =>
-        command.startsWith(value),
-      )
+    ? SLASH_COMMANDS.map((command) => command.name).filter((command) => command.startsWith(value))
     : []
 
   return (

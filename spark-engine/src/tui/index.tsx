@@ -8,6 +8,7 @@ import { InteractiveApprover } from '../permission/interactive.js'
 import { Agent, type AgentSession } from '../sdk/agent.js'
 import type { AgentEvent } from '../events/schema.js'
 import { SwitchableLlmService } from '../llm/switchable.js'
+import type { ReasoningEffort } from '../llm/types.js'
 import { SparkTuiApp } from './app.js'
 import { useModelRuntime } from './use-model-runtime.js'
 import { detectTerminalCapabilities } from './theme.js'
@@ -20,6 +21,8 @@ export interface RunTuiOptions {
   readonly llm?: LlmService | undefined
   readonly model?: string | undefined
   readonly permissionMode?: PermissionMode | undefined
+  /** Initial reasoning effort (from --effort); adjustable via /effort. */
+  readonly reasoningEffort?: ReasoningEffort | undefined
   /**
    * Startup model-resolution failure. When set (with no llm/model), the TUI
    * still opens and shows the onboarding picker instead of dying in the shell.
@@ -67,6 +70,9 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
       initialModel={options.model}
       startupError={options.startupError}
       permissionMode={permissionMode}
+      {...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort })}
       onModelChanged={(model) => {
         currentModel = model
       }}
@@ -86,6 +92,7 @@ interface SparkTuiRootProps {
   readonly initialModel?: string | undefined
   readonly startupError?: string | undefined
   readonly permissionMode: PermissionMode
+  readonly reasoningEffort?: ReasoningEffort | undefined
   readonly onModelChanged: (model: string | undefined) => void
   readonly stdout: NodeJS.WriteStream
 }
@@ -104,6 +111,7 @@ function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
       approver={props.approver}
       createSession={props.createSession}
       permissionMode={props.permissionMode}
+      {...(props.reasoningEffort === undefined ? {} : { reasoningEffort: props.reasoningEffort })}
       modelRuntime={modelRuntime}
       capabilities={detectTerminalCapabilities(props.stdout)}
     />

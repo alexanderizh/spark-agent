@@ -2,16 +2,19 @@ import { Box, Text, useApp } from 'ink'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 
 import type { AgentEvent } from '../events/schema.js'
-import type { LlmDelta } from '../llm/types.js'
+import type { LlmDelta, ReasoningEffort } from '../llm/types.js'
 import type { InteractiveApprover, PendingApproval } from '../permission/interactive.js'
 import type { PermissionDecision, PermissionMode } from '../permission/types.js'
 import type { AgentSession } from '../sdk/agent.js'
+import { PermissionCard } from './components/permission-card.js'
+import { PermissionPicker } from './components/permission-picker.js'
 import { ActiveTools, Transcript } from './components/rows.js'
 import { InputEditor } from './components/input-editor.js'
-import { PermissionCard } from './components/permission-card.js'
+import { PlanApprovalCard } from './components/plan-card.js'
 import { WorkingLine } from './components/spinner.js'
 import { WelcomeBox } from './components/welcome.js'
 import { ModelPicker, ProviderConfigForm } from './model-flow.js'
+import { cycleEffort, effortLabel, helpDetail } from './slash-commands.js'
 import type { ModelRuntimeController } from './use-model-runtime.js'
 import { projectTranscript } from './projection.js'
 import {
@@ -32,6 +35,8 @@ export interface SparkTuiAppProps {
   readonly model?: string
   readonly modelRuntime?: ModelRuntimeController
   readonly permissionMode?: PermissionMode
+  /** Initial reasoning effort (from --effort); adjustable via /effort. */
+  readonly reasoningEffort?: ReasoningEffort
 }
 
 export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
@@ -49,6 +54,15 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   )
   const [exitArmed, setExitArmed] = useState(false)
   const [configFormOpen, setConfigFormOpen] = useState(false)
+  const [permPickerOpen, setPermPickerOpen] = useState(false)
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | undefined>(
+    props.reasoningEffort,
+  )
+  const [permissionMode, setPermissionModeState] = useState<PermissionMode>(
+    props.permissionMode ?? props.initialSession.permissionMode,
+  )
+  /** Non-empty after a plan-mode turn produced a plan awaiting approval. */
+  const [planProposal, setPlanProposal] = useState<string | undefined>(undefined)
   const controllers = useRef<AbortController[]>([])
   const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -98,9 +112,11 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       controllers.current.push(controller)
       setActiveTurns((count) => count + 1)
       setNotice('')
+      setPlanProposal(undefined)
       void session
         .turn(value, {
           signal: controller.signal,
+          ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
           onEvent: appendEvent,
           onDelta: handleDelta,
         })
@@ -109,20 +125,19 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           setActiveTurns((count) => Math.max(0, count - 1))
         })
     },
-    [appendEvent, effectiveModel, handleDelta, modelRuntime, session],
+    [appendEvent, effectiveModel, handleDelta, modelRuntime, reasoningEffort, session],
   )
 
   const handleCommand = async (raw: string): Promise<void> => {
     const [command] = raw.trim().split(/\s+/, 1)
     switch (command) {
       case '/help':
-        setNotice(
-          '/help /status /model /perm /clear /exit · Enter 发送 · Shift+Enter 换行 · Esc 中断',
-        )
+        setNotice(helpDetail())
         break
       case '/status':
         setNotice(
-          `session=${session.sessionId} · queued=${session.queuedTurns()} · events=${events.length}`,
+          `session=${session.sessionId} · queued=${session.queuedTurns()} · events=${events.length}` +
+            ` · 模型=${effectiveModel ?? '未配置'} · 权限=${permissionMode} · 推理=${effortLabel(reasoningEffort)}`,
         )
         break
       case '/model':
@@ -138,10 +153,22 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         modelRuntime.openPicker()
         break
       case '/perm':
-        setNotice(
-          `权限模式: ${props.permissionMode ?? session.permissionMode}（未知/策略异常/审批缺失均 fail-closed）`,
-        )
+        if (activeTurns > 0) {
+          setNotice('turn 运行中；权限策略将在下一个 turn 生效，请稍后切换。')
+          break
+        }
+        setPermPickerOpen(true)
         break
+      case '/effort': {
+        if (activeTurns > 0) {
+          setNotice('turn 运行中；推理强度在下一个 turn 生效。')
+          break
+        }
+        const next = cycleEffort(reasoningEffort)
+        setReasoningEffort(next)
+        setNotice(`推理强度: ${effortLabel(next)}（对下一个 turn 生效）`)
+        break
+      }
       case '/clear': {
         if (activeTurns > 0) {
           setNotice('当前仍有 turn 运行；请先中断或等待完成，再开启新会话。')
@@ -197,6 +224,51 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const metrics = useMemo(() => deriveMetrics(events), [events])
   const action = deriveAction(events, liveText, liveThinking, pending)
   const empty = projection.settled.length === 0 && liveText === '' && liveThinking === ''
+  const lastAssistantText = useMemo(() => {
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index]
+      if (event?.type === 'assistant.completed' && (event.message.text ?? '').trim()) {
+        return event.message.text ?? ''
+      }
+    }
+    return undefined
+  }, [events])
+
+  // Plan-mode approval flow: when a plan turn settles while still in plan
+  // mode, surface its proposal for approve/iterate instead of silently ending.
+  const prevActiveTurns = useRef(0)
+  useEffect(() => {
+    const wasRunning = prevActiveTurns.current > 0
+    prevActiveTurns.current = activeTurns
+    if (wasRunning && activeTurns === 0 && permissionMode === 'plan' && lastAssistantText) {
+      setPlanProposal(lastAssistantText)
+    }
+  }, [activeTurns, lastAssistantText, permissionMode])
+
+  const applyPermissionMode = useCallback(
+    (mode: PermissionMode) => {
+      session.setPermissionMode(mode)
+      setPermissionModeState(mode)
+      setPermPickerOpen(false)
+      setPlanProposal(undefined)
+      setNotice(
+        mode === 'plan'
+          ? '已切换到计划模式：只读探索，产出计划后会询问是否执行。'
+          : mode === 'bypass'
+            ? '危险：权限绕过已启用（仅本会话），工具将不经审批执行。'
+            : `权限策略已切换为 ${mode}（本会话生效）。`,
+      )
+    },
+    [session],
+  )
+
+  const approvePlan = useCallback(() => {
+    setPlanProposal(undefined)
+    applyPermissionMode('acceptEdits')
+    submit('请严格按照上面的计划开始执行；逐步使用可用工具完成任务。')
+    // submit depends on this callback through the editor only; calling it here
+    // re-enters the same stable closure captured for the card's lifetime.
+  }, [applyPermissionMode, submit])
 
   return (
     <Box flexDirection="column">
@@ -228,6 +300,30 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           onDecide={decide}
           onNotice={(message) => {
             setNotice(message)
+          }}
+        />
+      )}
+      {permPickerOpen && !pending && (
+        <PermissionPicker
+          theme={theme}
+          current={permissionMode}
+          onPick={applyPermissionMode}
+          onClose={() => {
+            setPermPickerOpen(false)
+          }}
+          onNotice={(message) => {
+            setNotice(message)
+          }}
+        />
+      )}
+      {planProposal !== undefined && !permPickerOpen && !pending && (
+        <PlanApprovalCard
+          proposal={planProposal}
+          theme={theme}
+          onApprove={approvePlan}
+          onDismiss={() => {
+            setPlanProposal(undefined)
+            setNotice('已留在计划模式；继续讨论或输入 /perm 切换策略。')
           }}
         />
       )}
@@ -274,16 +370,23 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       {notice && <Text color={theme.warn}>{notice}</Text>}
       <InputEditor
         active={!pickerOpen}
-        locked={pending !== undefined || pickerOpen}
+        locked={pending !== undefined || pickerOpen || permPickerOpen || planProposal !== undefined}
         capabilities={capabilities}
         theme={theme}
         onSubmit={submit}
         onEscape={interrupt}
         onControlC={controlC}
       />
-      <Text color={theme.dim} dimColor>
-        ? 快捷键 · /help · spark {effectiveModel ?? '未选择模型'}
-      </Text>
+      <Box gap={2} flexWrap="wrap">
+        <Text color={theme.accent}>{effectiveModel ?? '未选择模型'}</Text>
+        <Text color={permissionMode === 'plan' ? theme.ok : theme.dim}>权限:{permissionMode}</Text>
+        <Text color={reasoningEffort === undefined ? theme.dim : theme.ok}>
+          推理:{effortLabel(reasoningEffort)}
+        </Text>
+        <Text color={theme.dim}>
+          {metrics.tokens} tok · ${metrics.costUsd.toFixed(4)} · /help
+        </Text>
+      </Box>
     </Box>
   )
 }

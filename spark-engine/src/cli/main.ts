@@ -12,7 +12,8 @@ import {
 } from '../config/model-config.js'
 import { createDefaultEnv, defaultSparkHome } from '../env.js'
 import type { AgentEvent } from '../events/schema.js'
-import type { LlmDelta } from '../llm/types.js'
+import type { LlmDelta, ReasoningEffort } from '../llm/types.js'
+import { isReasoningEffort } from '../llm/types.js'
 import { isPermissionMode, type PermissionMode } from '../permission/types.js'
 import { Agent, type AgentSession } from '../sdk/agent.js'
 import {
@@ -45,6 +46,7 @@ interface CliOptions {
   readonly allowPrerelease: boolean
   readonly package: boolean
   readonly permissionMode: PermissionMode
+  readonly reasoningEffort?: ReasoningEffort
   readonly positionals: readonly string[]
 }
 
@@ -145,6 +147,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     await runTui({
       cwd: process.cwd(),
       permissionMode: options.permissionMode,
+      ...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort }),
       ...(runtime ? { llm: runtime.service, model: runtime.modelId } : { startupError }),
     })
     const notice = await Promise.race([
@@ -170,7 +175,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (prompt) return runOnce(prompt, options, runtime)
 
   if (process.stdin.isTTY && process.stdout.isTTY && options.plain) {
-    return runPlainRepl(runtime, options.permissionMode)
+    return runPlainRepl(runtime, options.permissionMode, options.reasoningEffort)
   }
   process.stderr.write(
     'No task was provided. Pass a prompt, pipe stdin, or run spark in an interactive TTY.\n',
@@ -337,6 +342,7 @@ function parseCli(argv: readonly string[]): CliOptions {
       force: { type: 'boolean', default: false },
       'allow-prerelease': { type: 'boolean', default: false },
       package: { type: 'boolean', default: false },
+      effort: { type: 'string' },
       'permission-mode': { type: 'string' },
       'dangerously-skip-permissions': { type: 'boolean', default: false },
       'output-format': { type: 'string' },
@@ -349,6 +355,10 @@ function parseCli(argv: readonly string[]): CliOptions {
   const configuredPermissionMode = parsed.values['permission-mode']
   if (configuredPermissionMode !== undefined && !isPermissionMode(configuredPermissionMode)) {
     throw new Error(`Unsupported --permission-mode: ${configuredPermissionMode}`)
+  }
+  const configuredEffort = parsed.values.effort
+  if (configuredEffort !== undefined && !isReasoningEffort(configuredEffort)) {
+    throw new Error(`Unsupported --effort: ${configuredEffort} (off | low | medium | high)`)
   }
   const dangerousBypass = parsed.values['dangerously-skip-permissions'] ?? false
   if (dangerousBypass && configuredPermissionMode && configuredPermissionMode !== 'bypass') {
@@ -369,6 +379,7 @@ function parseCli(argv: readonly string[]): CliOptions {
     allowPrerelease: parsed.values['allow-prerelease'] ?? false,
     package: parsed.values.package ?? false,
     permissionMode: dangerousBypass ? 'bypass' : (configuredPermissionMode ?? 'default'),
+    ...(configuredEffort === undefined ? {} : { reasoningEffort: configuredEffort }),
     positionals: parsed.positionals,
   }
 }
@@ -401,6 +412,9 @@ async function runOnce(
   try {
     const result = await session.turn(prompt, {
       signal: controller.signal,
+      ...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort }),
       onEvent: options.json
         ? (event) => {
             process.stdout.write(`${JSON.stringify(event)}\n`)
@@ -429,6 +443,7 @@ async function runOnce(
 async function runPlainRepl(
   runtime: ConfiguredModelRuntime,
   permissionMode: PermissionMode,
+  reasoningEffort: ReasoningEffort | undefined,
 ): Promise<number> {
   const agent = createConfiguredAgent(runtime)
   warnPermissionBypass(permissionMode)
@@ -444,7 +459,7 @@ async function runPlainRepl(
   try {
     for await (const line of terminal) {
       if (line.trim() === '/exit' || line.trim() === '/quit') break
-      if (line.trim()) await runPlainTurn(session, line)
+      if (line.trim()) await runPlainTurn(session, line, reasoningEffort)
       process.stdout.write('> ')
     }
     return 0
@@ -453,9 +468,14 @@ async function runPlainRepl(
   }
 }
 
-async function runPlainTurn(session: AgentSession, prompt: string): Promise<void> {
+async function runPlainTurn(
+  session: AgentSession,
+  prompt: string,
+  reasoningEffort: ReasoningEffort | undefined,
+): Promise<void> {
   let wroteText = false
   await session.turn(prompt, {
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
     onDelta: (delta: LlmDelta) => {
       if (delta.type === 'text') {
         wroteText = true
@@ -486,7 +506,8 @@ async function readStdin(): Promise<string> {
 }
 
 function helpText(version?: string): string {
-  return `spark ${version === undefined ? '' : `${version} `}— deterministic coding agent\n\nUsage:\n  spark                     Interactive TUI\n  spark "task"              Run one task\n  spark -p "task"           Run one task\n  spark --plain             Plain interactive REPL\n  spark --json "task"       NDJSON fact events\n  spark models              List local and SparkWork-synced models\n  spark doctor              Diagnose install, discovery, and model selection\n  spark install [--bin dir] Link the spark launcher onto PATH\n  spark uninstall [--bin dir]\n                            Remove the spark launcher only\n  spark uninstall --package\n                            Remove the npm package, its shims, and the launcher;\n                            ~/.spark config/sessions/caches are kept\n  spark update [--check]    Check for or install a release upgrade\n  spark upgrade             Alias for spark update\n  spark init                Write a starter ~/.spark/config.toml\n\nUpdate exit codes:\n  0 update available / update applied        1 up to date, older remote, or prerelease gated\n  2 usage error                               3 check or upgrade failed\n  4 another update is in progress\n\nOptions:\n  -p, --prompt <text>       Task prompt\n  -m, --model <id>          Select a local id, SparkWork route id, or unique model name\n      --bin <dir>           Launcher directory for install/uninstall (default ~/.spark/bin)\n      --base <url>          Release base for update (default SPARK_RELEASE_BASE, SPARK_INSTALL_BASE,\n                            [update] base_url in config.toml, then the built-in release host)\n      --target <semver>     Pin an exact version for update (checksum via the .sha256 sidecar)\n      --check               Only report the update status; apply nothing\n      --allow-prerelease    Consider prerelease releases for update\n      --package             With uninstall: remove the installed npm package too\n      --force               Replace a foreign launcher during install\n      --plain               Disable color and terminal redraw\n      --json                Emit persisted events as NDJSON; structured update results\n      --output-format <fmt> text | json | stream-json\n      --permission-mode <m> default | acceptEdits | plan | bypass\n      --dangerously-skip-permissions\n                             Alias for --permission-mode bypass\n  -h, --help                Show help\n  -V, --version             Show version\n`
+  return `spark ${version === undefined ? '' : `${version} `}— deterministic coding agent\n\nUsage:\n  spark                     Interactive TUI\n  spark "task"              Run one task\n  spark -p "task"           Run one task\n  spark --plain             Plain interactive REPL\n  spark --json "task"       NDJSON fact events\n  spark models              List local and SparkWork-synced models\n  spark doctor              Diagnose install, discovery, and model selection\n  spark install [--bin dir] Link the spark launcher onto PATH\n  spark uninstall [--bin dir]\n                            Remove the spark launcher only\n  spark uninstall --package\n                            Remove the npm package, its shims, and the launcher;\n                            ~/.spark config/sessions/caches are kept\n  spark update [--check]    Check for or install a release upgrade\n  spark upgrade             Alias for spark update\n  spark init                Write a starter ~/.spark/config.toml\n\nUpdate exit codes:\n  0 update available / update applied        1 up to date, older remote, or prerelease gated\n  2 usage error                               3 check or upgrade failed\n  4 another update is in progress\n\nOptions:\n  -p, --prompt <text>       Task prompt\n  -m, --model <id>          Select a local id, SparkWork route id, or unique model name\n      --bin <dir>           Launcher directory for install/uninstall (default ~/.spark/bin)\n      --base <url>          Release base for update (default SPARK_RELEASE_BASE, SPARK_INSTALL_BASE,\n                            [update] base_url in config.toml, then the built-in release host)\n      --target <semver>     Pin an exact version for update (checksum via the .sha256 sidecar)\n      --check               Only report the update status; apply nothing\n      --allow-prerelease    Consider prerelease releases for update\n      --package             With uninstall: remove the installed npm package too\n      --force               Replace a foreign launcher during install\n      --plain               Disable color and terminal redraw\n      --json                Emit persisted events as NDJSON; structured update results\n      --output-format <fmt> text | json | stream-json\n      --permission-mode <m> default | acceptEdits | plan | bypass
+      --effort <level>      Reasoning effort: off | low | medium | high (default: provider default)\n      --dangerously-skip-permissions\n                             Alias for --permission-mode bypass\n  -h, --help                Show help\n  -V, --version             Show version\n`
 }
 
 async function runningVersion(): Promise<string> {
