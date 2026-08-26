@@ -9,6 +9,7 @@ import {
   ComputerActivitySegmentCard,
   ComputerActivitySegmentsBridge,
 } from './ComputerActivityBlock'
+import type { ComputerActivityAnchorMessage } from './computer-activity-timeline'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../i18n', () => {
@@ -28,6 +29,19 @@ function actionRequested(computerSessionId: string, riskLevel: 'L1' | 'L2'): Com
     seq: 0,
     actionId: `action-${computerSessionId}`,
     riskLevel,
+  }
+}
+
+function sessionCompleted(computerSessionId: string): ComputerUseEvent {
+  return {
+    id: `event-${computerSessionId}-done`,
+    type: 'computer_session_completed',
+    sessionId: `session-${computerSessionId}`,
+    turnId: `turn-${computerSessionId}`,
+    computerSessionId,
+    timestamp: '2026-07-31T00:00:01.000Z',
+    seq: 1,
+    verificationIds: ['verification-1'],
   }
 }
 
@@ -70,7 +84,7 @@ function computerSession(
 
 function renderSegments(
   sessionId: SessionId,
-  messages: ReadonlyArray<{ id: string; timestamp?: string | undefined }>,
+  messages: ReadonlyArray<ComputerActivityAnchorMessage>,
 ): React.ReactElement {
   return (
     <ComputerActivityProvider sessionId={sessionId}>
@@ -89,6 +103,10 @@ function renderSegments(
       </ComputerActivitySegmentsBridge>
     </ComputerActivityProvider>
   )
+}
+
+function anchor(id: string, timestamp: string): ComputerActivityAnchorMessage {
+  return { id, role: 'user', status: 'completed', timestamp }
 }
 
 describe('ComputerActivitySegmentsBridge', () => {
@@ -112,6 +130,9 @@ describe('ComputerActivitySegmentsBridge', () => {
                 return new Promise<{ computerSessions: ComputerSession[] }>((resolve) => {
                   resolveSecondSession = resolve
                 })
+              }
+              if (input.sessionId === 'session-3') {
+                return Promise.resolve({ computerSessions: [computerSession('computer-3')] })
               }
               return Promise.resolve({ computerSessions: [computerSession('computer-1')] })
             }
@@ -153,13 +174,16 @@ describe('ComputerActivitySegmentsBridge', () => {
               })
             }
             const isSecondSession = input.computerSessionId === 'computer-2'
+            const isThirdSession = input.computerSessionId === 'computer-3'
             return Promise.resolve({
-              events: [
-                actionRequested(
-                  isSecondSession ? 'computer-2' : 'computer-1',
-                  isSecondSession ? 'L2' : 'L1',
-                ),
-              ],
+              events: isThirdSession
+                ? [actionRequested('computer-3', 'L1'), sessionCompleted('computer-3')]
+                : [
+                    actionRequested(
+                      isSecondSession ? 'computer-2' : 'computer-1',
+                      isSecondSession ? 'L2' : 'L1',
+                    ),
+                  ],
               nextSeq: 0,
             })
           },
@@ -175,7 +199,7 @@ describe('ComputerActivitySegmentsBridge', () => {
 
   it('removes the previous timeline immediately while the next session loads', async () => {
     // 事件时刻 2026-07-31：锚点取更早的消息，段落在其插槽里
-    const messages = [{ id: 'm1', timestamp: '2026-07-30T00:00:00.000Z' }]
+    const messages = [anchor('m1', '2026-07-30T00:00:00.000Z')]
     await act(async () => {
       root.render(renderSegments('session-1' as SessionId, messages))
     })
@@ -193,9 +217,7 @@ describe('ComputerActivitySegmentsBridge', () => {
   it('pauses before offering every visible application in the target picker', async () => {
     await act(async () => {
       root.render(
-        renderSegments('session-1' as SessionId, [
-          { id: 'm1', timestamp: '2026-07-30T00:00:00.000Z' },
-        ]),
+        renderSegments('session-1' as SessionId, [anchor('m1', '2026-07-30T00:00:00.000Z')]),
       )
     })
     const button = (label: string) =>
@@ -215,12 +237,26 @@ describe('ComputerActivitySegmentsBridge', () => {
     })
   })
 
-  it('renders segments only in the message slot whose time precedes the events', async () => {
+  it('attaches an active timeline to the last message (live monitoring area)', async () => {
     await act(async () => {
       root.render(
         renderSegments('session-1' as SessionId, [
-          { id: 'm-before', timestamp: '2026-07-30T00:00:00.000Z' },
-          { id: 'm-after', timestamp: '2026-08-01T00:00:00.000Z' },
+          anchor('m-before', '2026-07-30T00:00:00.000Z'),
+          anchor('m-after', '2026-08-01T00:00:00.000Z'),
+        ]),
+      )
+    })
+
+    expect(container.querySelector('[data-testid="m-before"]')?.textContent).toBe('')
+    expect(container.querySelector('[data-testid="m-after"]')?.textContent).toContain('risk=L1')
+  })
+
+  it('settles a finished timeline into the message slot that precedes the events', async () => {
+    await act(async () => {
+      root.render(
+        renderSegments('session-3' as SessionId, [
+          anchor('m-before', '2026-07-30T00:00:00.000Z'),
+          anchor('m-after', '2026-08-01T00:00:00.000Z'),
         ]),
       )
     })

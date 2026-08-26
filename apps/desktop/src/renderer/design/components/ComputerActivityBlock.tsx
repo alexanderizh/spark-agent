@@ -13,6 +13,7 @@ import {
   isTerminalComputerActivityEvent,
   mergeComputerActivityEvents,
   sliceComputerActivityTimelines,
+  type ComputerActivityAnchorMessage,
 } from './computer-activity-timeline'
 import './ComputerActivityBlock.less'
 
@@ -108,7 +109,7 @@ export function ComputerActivitySegmentsBridge({
   messages,
   children,
 }: {
-  messages: ReadonlyArray<{ id: string; timestamp?: string | undefined }>
+  messages: ReadonlyArray<ComputerActivityAnchorMessage>
   children: (segmentsFor: (messageId: string) => ComputerActivitySegmentView[]) => ReactNode
 }) {
   const activity = useContext(ComputerActivityContext)
@@ -117,8 +118,8 @@ export function ComputerActivitySegmentsBridge({
     [activity?.events],
   )
   const segmentsFor = useMemo(() => {
-    const segmentsByMessage = sliceComputerActivityTimelines(timelines, messages)
     const lastMessage = messages[messages.length - 1]
+    const segmentsByMessage = sliceComputerActivityTimelines(timelines, messages, lastMessage?.id)
     return (messageId: string): ComputerActivitySegmentView[] => {
       const segments = segmentsByMessage.get(messageId) ?? []
       const views: ComputerActivitySegmentView[] = segments.map((segment) => ({
