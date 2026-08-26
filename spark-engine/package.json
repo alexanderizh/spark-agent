@@ -1,6 +1,6 @@
 {
   "name": "@spark/agent",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Deterministic, event-sourced coding agent SDK, CLI, and TUI",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
