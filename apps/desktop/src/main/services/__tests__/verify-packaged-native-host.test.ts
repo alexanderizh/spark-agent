@@ -14,6 +14,10 @@ const { parseMacSignatureOutput } =
       hardenedRuntime: boolean
     }
   }
+const { WINDOWS_RELEASE_SMOKE_TIMEOUT_MS } =
+  require('../../../../scripts/verify-packaged-native-host-windows.js') as {
+    WINDOWS_RELEASE_SMOKE_TIMEOUT_MS: number
+  }
 const {
   assertSmokeReport,
   createSmokeEnvironment,
@@ -157,7 +161,8 @@ describe('packaged Native Host release verifier', () => {
   })
 
   it('allows two bounded Windows trust probes to finish before aborting the smoke', () => {
-    expect(DEFAULT_SMOKE_TIMEOUT_MS).toBeGreaterThanOrEqual(90_000)
+    expect(DEFAULT_SMOKE_TIMEOUT_MS).toBe(90_000)
+    expect(WINDOWS_RELEASE_SMOKE_TIMEOUT_MS).toBeGreaterThanOrEqual(600_000)
   })
 
   it('keeps the end of noisy App output where the Native Host failure is logged', () => {

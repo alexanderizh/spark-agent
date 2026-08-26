@@ -10,6 +10,11 @@ const {
   validatePackagedNativeHost,
 } = require('./verify-packaged-native-host.js')
 
+// A cold connection can inspect both the App and Host signatures (2 × 120s) before the 20s
+// protocol handshake, and packaged diagnostics may perform one bounded reconnect. Keep the
+// outer release gate long enough for both attempts while still terminating deterministically.
+const WINDOWS_RELEASE_SMOKE_TIMEOUT_MS = 600_000
+
 async function verifyPackagedWindowsNativeHost(options) {
   const appDirectory = path.resolve(options.appDirectory)
   const provenanceRoot = path.join(
@@ -51,6 +56,7 @@ async function verifyPackagedWindowsNativeHost(options) {
     appExecutable,
     platform: 'windows',
     architecture: options.architecture,
+    timeoutMs: WINDOWS_RELEASE_SMOKE_TIMEOUT_MS,
   })
   return contract
 }
@@ -71,4 +77,4 @@ if (require.main === module) {
     })
 }
 
-module.exports = { verifyPackagedWindowsNativeHost }
+module.exports = { WINDOWS_RELEASE_SMOKE_TIMEOUT_MS, verifyPackagedWindowsNativeHost }
