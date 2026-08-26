@@ -224,32 +224,78 @@ describe('chat inspector task progress', () => {
     ])
   })
 
-  it('marks unfinished host tasks as interrupted after their message ends', () => {
+  it('preserves unfinished host task states after a normal message completion', () => {
     const create = toolBlock(
       'task_create',
       { subject: '运行页面验收', activeForm: '正在运行页面验收' },
       { output: 'Task #1 created successfully: 运行页面验收' },
     )
     const update = toolBlock('task_update', { taskId: '1', status: 'in_progress' })
+    const pendingTask = toolBlock(
+      'task_create',
+      { subject: '尚未开始的验收任务' },
+      {
+        toolCallId: 'pending-task',
+        output: 'Task #2 created successfully: 尚未开始的验收任务',
+      },
+    )
     const memberTask = toolBlock(
       'task_create',
       { subject: '成员内部检查' },
       {
         toolCallId: 'member-task',
-        output: 'Task #2 created successfully: 成员内部检查',
+        output: 'Task #3 created successfully: 成员内部检查',
         teamMember: true,
       },
     )
-    const messages = [assistantMessage('completed', [create, update, memberTask])]
+    const messages = [assistantMessage('completed', [create, update, pendingTask, memberTask])]
 
     expect(extractSessionProgressTasks(messages)).toEqual([
-      expect.objectContaining({ id: '#1', subject: '运行页面验收', status: 'interrupted' }),
+      expect.objectContaining({ id: '#1', subject: '运行页面验收', status: 'in_progress' }),
+      expect.objectContaining({ id: '#2', subject: '尚未开始的验收任务', status: 'pending' }),
     ])
     expect(extractInspectorTasks(messages).map((task) => task.subject)).toEqual([
       '运行页面验收',
+      '尚未开始的验收任务',
       '成员内部检查',
     ])
   })
+
+  it.each(['error', 'cancelled'] as const)(
+    'marks only an active host task as interrupted when its message ends with %s',
+    (messageStatus) => {
+      const running = toolBlock(
+        'task_create',
+        { subject: '正在执行的任务' },
+        {
+          toolCallId: 'create-running',
+          output: 'Task #1 created successfully: 正在执行的任务',
+        },
+      )
+      const pending = toolBlock(
+        'task_create',
+        { subject: '尚未执行的任务' },
+        {
+          toolCallId: 'create-pending',
+          output: 'Task #2 created successfully: 尚未执行的任务',
+        },
+      )
+      const update = toolBlock(
+        'task_update',
+        { taskId: '1', status: 'in_progress' },
+        { toolCallId: 'update-running' },
+      )
+
+      expect(
+        extractSessionProgressTasks([
+          assistantMessage(messageStatus, [running, pending, update]),
+        ]).map((task) => [task.subject, task.status]),
+      ).toEqual([
+        ['正在执行的任务', 'interrupted'],
+        ['尚未执行的任务', 'pending'],
+      ])
+    },
+  )
 
   it('keeps a host task running while its owning message is still streaming', () => {
     const create = toolBlock(

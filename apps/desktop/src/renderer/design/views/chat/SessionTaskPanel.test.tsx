@@ -6,7 +6,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { InspectorTask } from './ChatInspectorUtils'
 import { SessionTaskPanel } from './SessionTaskPanel'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const tasks: InspectorTask[] = [
@@ -41,12 +40,20 @@ describe('SessionTaskPanel', () => {
     act(() => root.render(<SessionTaskPanel tasks={tasks} />))
 
     expect(container.querySelector('[aria-label="Agent 任务进度"]')).not.toBeNull()
+    expect(container.querySelector('.block-traffic-header')).not.toBeNull()
+    expect(container.querySelectorAll('.md-code-dot')).toHaveLength(3)
     expect(container.querySelectorAll('.session-task-panel-item')).toHaveLength(3)
     expect(container.textContent).toContain('进行中')
     expect(container.textContent).toContain('1/3')
     expect(container.textContent).toContain('正在实现会话任务面板')
     expect(container.textContent).toContain('共享检查器任务快照')
     expect(container.querySelector('[aria-current="step"]')).not.toBeNull()
+    expect(
+      container.querySelector('.session-task-panel-item.is-pending .lucide-circle'),
+    ).not.toBeNull()
+    expect(
+      container.querySelector('.session-task-panel-item.is-pending .lucide-circle-x'),
+    ).toBeNull()
   })
 
   it('renders nothing when the shared extractor has no tasks', () => {

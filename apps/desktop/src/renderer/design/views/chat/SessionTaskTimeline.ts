@@ -16,7 +16,10 @@ export function areSessionTaskTimelineEntriesEqual(
 ): boolean {
   if (left === right) return true
   if (left == null || right == null) return false
-  if (left.anchorToolCallId !== right.anchorToolCallId || left.tasks.length !== right.tasks.length) {
+  if (
+    left.anchorToolCallId !== right.anchorToolCallId ||
+    left.tasks.length !== right.tasks.length
+  ) {
     return false
   }
   return left.tasks.every((task, index) => {
@@ -39,8 +42,7 @@ export function projectSessionTaskTimelineBlocks(
   anchorToolCallId: string,
 ): UIBlock[] {
   return blocks.filter(
-    (block) =>
-      !isSessionProgressToolBlock(block) || block.toolCallId === anchorToolCallId,
+    (block) => !isSessionProgressToolBlock(block) || block.toolCallId === anchorToolCallId,
   )
 }
 
@@ -65,7 +67,7 @@ export function shouldReplaceSessionTaskBlock(
  *
  * The snapshot intentionally delegates to `extractSessionProgressTasks`, the
  * same source used by the floating inspector, so both surfaces share status
- * normalization and interrupted-task semantics.
+ * normalization and terminal-state semantics.
  */
 export function buildSessionTaskTimeline(
   messages: UIMessage[],

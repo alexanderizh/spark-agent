@@ -1,57 +1,36 @@
 .session-task-panel {
-  width: min(100%, 680px);
+  --session-task-bg: var(--panel, #fff);
+  --session-task-border: var(--border, #e8e5df);
+  width: 100%;
   margin: 8px 0 10px;
-  padding: 10px 0 8px;
+  overflow: hidden;
   color: var(--text);
-  border-block: 1px solid var(--divider);
-}
-
-.session-task-panel-head,
-.session-task-panel-title,
-.session-task-panel-summary,
-.session-task-panel-item {
-  display: flex;
-  align-items: center;
-}
-
-.session-task-panel-head {
-  min-height: 22px;
-  margin-bottom: 7px;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.session-task-panel-title {
-  gap: 6px;
-  color: var(--text-strong);
-  font-size: var(--font-sm);
-  font-weight: 650;
-  letter-spacing: 0.01em;
-}
-
-.session-task-panel-title svg {
-  color: var(--primary);
+  border: 1px solid var(--session-task-border);
+  border-radius: 8px;
+  background: var(--session-task-bg);
 }
 
 .session-task-panel-summary {
-  gap: 8px;
+  display: inline-flex;
+  align-items: center;
   color: var(--text-muted);
-  font-size: var(--font-xs);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .session-task-panel-list {
   display: flex;
   margin: 0;
-  padding: 0;
+  padding: 8px 10px 9px;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   list-style: none;
 }
 
 .session-task-panel-item {
+  display: flex;
   min-width: 0;
-  padding: 4px 0;
+  padding: 5px 0;
   align-items: flex-start;
   gap: 8px;
   color: var(--text-muted);
@@ -131,13 +110,5 @@
 @media (max-width: 640px) {
   .session-task-panel {
     margin-block: 6px 8px;
-  }
-
-  .session-task-panel-head {
-    gap: 8px;
-  }
-
-  .session-task-panel-summary > :first-child {
-    display: none;
   }
 }

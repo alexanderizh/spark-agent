@@ -327,9 +327,9 @@ function settleFinishedProgress(
   tasks: InspectorTask[],
   messageStatus: UIMessage['status'] | null,
 ): InspectorTask[] {
-  if (messageStatus === 'streaming') return tasks
+  if (messageStatus !== 'error' && messageStatus !== 'cancelled') return tasks
   return tasks.map((task) =>
-    task.status === 'completed' ? task : { ...task, status: 'interrupted' },
+    task.status === 'in_progress' ? { ...task, status: 'interrupted' } : task,
   )
 }
 

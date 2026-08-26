@@ -1,4 +1,5 @@
-import { CheckCircle2, Circle, CircleX, ListTodo, LoaderCircle } from 'lucide-react'
+import { CheckCircle2, Circle, CircleX, LoaderCircle } from 'lucide-react'
+import { BlockTrafficHeader } from '../../components/BlockTrafficHeader'
 import type { InspectorTask } from './ChatInspectorUtils'
 import './SessionTaskPanel.less'
 
@@ -13,23 +14,23 @@ export function SessionTaskPanel({ tasks }: { tasks: InspectorTask[] }) {
     : completed === tasks.length
       ? '已完成'
       : hasInterrupted
-        ? '已结束'
+        ? '已中断'
         : '已计划'
 
   return (
     <section className="session-task-panel" aria-label="Agent 任务进度">
-      <header className="session-task-panel-head">
-        <span className="session-task-panel-title">
-          <ListTodo size={15} aria-hidden="true" />
-          任务
-        </span>
-        <span className="session-task-panel-summary">
-          <span>{stateLabel}</span>
-          <span aria-label={`已完成 ${completed} 项，共 ${tasks.length} 项`}>
+      <BlockTrafficHeader
+        title="任务"
+        status={stateLabel}
+        actions={
+          <span
+            className="session-task-panel-summary"
+            aria-label={`已完成 ${completed} 项，共 ${tasks.length} 项`}
+          >
             {completed}/{tasks.length}
           </span>
-        </span>
-      </header>
+        }
+      />
       <ol className="session-task-panel-list">
         {tasks.map((task) => {
           const isRunning = task.status === 'in_progress'
