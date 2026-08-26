@@ -100,10 +100,9 @@ describe('spark install / uninstall / init', () => {
     expect(refused.code).toBe(2)
     expect(refused.stderr).toContain('not a spark launcher')
 
-    const forced = await runCli(
-      ['install', '--bin', binDir, '--force'],
-      { SPARK_HOME: join(root, 'home') },
-    )
+    const forced = await runCli(['install', '--bin', binDir, '--force'], {
+      SPARK_HOME: join(root, 'home'),
+    })
     expect(forced.code).toBe(0)
     expect(forced.stdout).toContain('Replaced existing launcher')
   })
@@ -163,9 +162,16 @@ describe('spark install / uninstall / init', () => {
 
   it('doctor says when spark is not on PATH at all', async () => {
     const root = await createRoot()
+    // A dedicated empty dir keeps this assertion independent of whatever
+    // happens to sit next to node on the developer machine.
+    const emptyPath = join(root, 'empty-bin')
+    await mkdir(emptyPath, { recursive: true })
+    // Only a node symlink lives there, so the doctor child can boot while the
+    // PATH scan stays independent of the developer machine's global bins.
+    await symlink(process.execPath, join(emptyPath, 'node'))
     const result = await runCli(
       ['doctor'],
-      { SPARK_HOME: join(root, 'home'), PATH: nodeDir },
+      { SPARK_HOME: join(root, 'home'), PATH: emptyPath },
       root,
     )
     expect(result.stdout).toContain('spark on PATH: not found')

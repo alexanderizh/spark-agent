@@ -1,112 +1,132 @@
-import { Box, Text, useInput } from 'ink';
-import { useMemo, useState, type ReactElement } from 'react';
+import { Box, Text, useInput } from 'ink'
+import { useMemo, useState, type ReactElement } from 'react'
 
-import { shouldSwallowImeKeypress } from '../ime-guard.js';
-import type { TuiTheme } from '../theme.js';
+import { shouldSwallowImeKeypress } from '../ime-guard.js'
+import { glyphs, type TerminalCapabilities, type TuiTheme } from '../theme.js'
 
 export interface InputEditorProps {
-  readonly active: boolean;
-  readonly locked: boolean;
-  readonly theme: TuiTheme;
-  readonly onSubmit: (value: string) => void;
-  readonly onEscape: () => void;
-  readonly onControlC: () => void;
+  readonly active: boolean
+  readonly locked: boolean
+  readonly capabilities: TerminalCapabilities
+  readonly theme: TuiTheme
+  readonly onSubmit: (value: string) => void
+  readonly onEscape: () => void
+  readonly onControlC: () => void
 }
 
 export function InputEditor(props: InputEditorProps): ReactElement {
-  const [value, setValue] = useState('');
-  const [cursor, setCursor] = useState(0);
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const characters = useMemo(() => Array.from(value), [value]);
+  const [value, setValue] = useState('')
+  const [cursor, setCursor] = useState(0)
+  const [history, setHistory] = useState<string[]>([])
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  const characters = useMemo(() => Array.from(value), [value])
 
   useInput(
     (input, key) => {
       if (key.ctrl && input === 'c') {
-        props.onControlC();
-        return;
+        props.onControlC()
+        return
       }
       if (key.escape) {
-        props.onEscape();
-        return;
+        props.onEscape()
+        return
       }
-      const code = input.codePointAt(0);
-      if (shouldSwallowImeKeypress({
-        ...(key.return ? { name: 'return' } : {}),
-        ...(code === undefined ? {} : { code }),
-      })) {
-        return;
+      const code = input.codePointAt(0)
+      if (
+        shouldSwallowImeKeypress({
+          ...(key.return ? { name: 'return' } : {}),
+          ...(code === undefined ? {} : { code }),
+        })
+      ) {
+        return
       }
       if (key.return) {
-        if (key.shift || key.meta) insert('\n');
-        else submit();
-        return;
+        if (key.shift || key.meta) insert('\n')
+        else submit()
+        return
       }
-      if (key.leftArrow) setCursor((position) => Math.max(0, position - 1));
-      else if (key.rightArrow) setCursor((position) => Math.min(characters.length, position + 1));
-      else if (key.home) setCursor(0);
-      else if (key.end) setCursor(characters.length);
-      else if (key.backspace) removeBeforeCursor();
-      else if (key.delete) removeAtCursor();
-      else if ((key.upArrow || key.downArrow) && value.length === 0) navigateHistory(key.upArrow ? 1 : -1);
-      else if (input && !key.ctrl && !key.meta) insert(input);
+      if (key.leftArrow) setCursor((position) => Math.max(0, position - 1))
+      else if (key.rightArrow) setCursor((position) => Math.min(characters.length, position + 1))
+      else if (key.home) setCursor(0)
+      else if (key.end) setCursor(characters.length)
+      else if (key.backspace) removeBeforeCursor()
+      else if (key.delete) removeAtCursor()
+      else if ((key.upArrow || key.downArrow) && value.length === 0)
+        navigateHistory(key.upArrow ? 1 : -1)
+      else if (input && !key.ctrl && !key.meta) insert(input)
     },
     { isActive: props.active && !props.locked },
-  );
+  )
 
   const insert = (input: string): void => {
-    const inserted = Array.from(input);
-    setValue([...characters.slice(0, cursor), ...inserted, ...characters.slice(cursor)].join(''));
-    setCursor(cursor + inserted.length);
-  };
+    const inserted = Array.from(input)
+    setValue([...characters.slice(0, cursor), ...inserted, ...characters.slice(cursor)].join(''))
+    setCursor(cursor + inserted.length)
+  }
 
   const removeBeforeCursor = (): void => {
-    if (cursor === 0) return;
-    setValue([...characters.slice(0, cursor - 1), ...characters.slice(cursor)].join(''));
-    setCursor(cursor - 1);
-  };
+    if (cursor === 0) return
+    setValue([...characters.slice(0, cursor - 1), ...characters.slice(cursor)].join(''))
+    setCursor(cursor - 1)
+  }
 
   const removeAtCursor = (): void => {
-    if (cursor >= characters.length) return;
-    setValue([...characters.slice(0, cursor), ...characters.slice(cursor + 1)].join(''));
-  };
+    if (cursor >= characters.length) return
+    setValue([...characters.slice(0, cursor), ...characters.slice(cursor + 1)].join(''))
+  }
 
   const submit = (): void => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    setHistory((items) => [...items, value]);
-    setHistoryIndex(-1);
-    setValue('');
-    setCursor(0);
-    props.onSubmit(value);
-  };
+    const trimmed = value.trim()
+    if (!trimmed) return
+    setHistory((items) => [...items, value])
+    setHistoryIndex(-1)
+    setValue('')
+    setCursor(0)
+    props.onSubmit(value)
+  }
 
   const navigateHistory = (direction: number): void => {
-    if (history.length === 0) return;
-    const next = Math.min(history.length - 1, Math.max(-1, historyIndex + direction));
-    setHistoryIndex(next);
-    const selected = next < 0 ? '' : (history.at(-(next + 1)) ?? '');
-    setValue(selected);
-    setCursor(Array.from(selected).length);
-  };
+    if (history.length === 0) return
+    const next = Math.min(history.length - 1, Math.max(-1, historyIndex + direction))
+    setHistoryIndex(next)
+    const selected = next < 0 ? '' : (history.at(-(next + 1)) ?? '')
+    setValue(selected)
+    setCursor(Array.from(selected).length)
+  }
 
-  const visible = value.split('\n').length >= 8 ? `[粘贴 ${value.split('\n').length} 行 · 提交后按原文发送]` : value;
-  const visibleCharacters = Array.from(visible);
-  const before = visibleCharacters.slice(0, Math.min(cursor, visibleCharacters.length)).join('');
-  const current = visibleCharacters[Math.min(cursor, visibleCharacters.length)];
-  const after = visibleCharacters.slice(Math.min(cursor, visibleCharacters.length) + (current ? 1 : 0)).join('');
+  const visible =
+    value.split('\n').length >= 8
+      ? `[粘贴 ${value.split('\n').length} 行 · 提交后按原文发送]`
+      : value
+  const visibleCharacters = Array.from(visible)
+  const before = visibleCharacters.slice(0, Math.min(cursor, visibleCharacters.length)).join('')
+  const current = visibleCharacters[Math.min(cursor, visibleCharacters.length)]
+  const after = visibleCharacters
+    .slice(Math.min(cursor, visibleCharacters.length) + (current ? 1 : 0))
+    .join('')
   const completions = value.startsWith('/')
-    ? ['/help', '/status', '/model', '/perm', '/clear', '/exit'].filter((command) => command.startsWith(value))
-    : [];
+    ? ['/help', '/status', '/model', '/perm', '/clear', '/exit'].filter((command) =>
+        command.startsWith(value),
+      )
+    : []
 
   return (
     <Box flexDirection="column">
-      <Text color={props.locked ? props.theme.dim : props.theme.accent}>
-        ❯ {props.locked ? '(输入已锁定)' : before}
-        {!props.locked && <Text inverse>{current ?? ' '}</Text>}
-        {!props.locked && after}
-      </Text>
-      {completions.length > 0 && <Text color={props.theme.dim}>{completions.join('  ')}</Text>}
+      <Box
+        borderStyle="round"
+        borderColor={props.locked ? props.theme.dim : props.theme.accent}
+        paddingX={1}
+      >
+        <Text color={props.locked ? props.theme.dim : props.theme.accent}>
+          {glyphs(props.capabilities).user}{' '}
+        </Text>
+        <Text>
+          {props.locked ? '(输入已锁定)' : before}
+          {!props.locked && <Text inverse>{current ?? ' '}</Text>}
+          {!props.locked && after}
+        </Text>
+      </Box>
+      {completions.length > 0 && <Text color={props.theme.dim}> {completions.join('  ')}</Text>}
     </Box>
-  );
+  )
 }

@@ -99,6 +99,19 @@ describe('built CLI contract', () => {
     ])
   })
 
+  it('keeps non-interactive runs fail-fast when no model is configured', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-cli-nocfg-'))
+    roots.push(root)
+    const result = await runCli(
+      ['do something'],
+      { SPARK_HOME: join(root, 'home'), NO_COLOR: '1' },
+      root,
+    )
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain('No model is available')
+    expect(result.stderr).toContain('spark init')
+  })
+
   it('rejects unknown and conflicting permission modes before loading config', async () => {
     const unknown = await runCli(['--permission-mode', 'unsafe', 'hello'])
     const conflicting = await runCli([

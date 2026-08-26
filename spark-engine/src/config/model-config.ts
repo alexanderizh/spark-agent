@@ -1,8 +1,8 @@
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
-import { parse } from 'smol-toml'
+import { parse, stringify } from 'smol-toml'
 import { z } from 'zod'
 
 import type { LlmService } from '../seams.js'
@@ -107,21 +107,68 @@ export class ModelConfigError extends Error {
 export async function loadConfiguredModel(
   options: LoadModelConfigOptions,
 ): Promise<ConfiguredModelRuntime> {
-  const { config, environment, host, projectLayer, globalPath, projectPath, globalExists, projectExists } =
-    await loadModelContext(options)
+  const {
+    config,
+    environment,
+    host,
+    projectLayer,
+    globalPath,
+    projectPath,
+    globalExists,
+    projectExists,
+  } = await loadModelContext(options)
   const localSelected = options.model ?? environment.SPARK_MODEL ?? selectedModel(projectLayer)
   const modelId = localSelected ?? host.catalog?.defaultRoute ?? config.agent.model
   if (!modelId) {
     throw noModelSelectedError({ host, globalPath, projectPath, globalExists, projectExists })
   }
   const failover = parseFailover(environment.SPARK_FAILOVER_MODELS) ?? config.agent.failover
+  return buildConfiguredRuntime(
+    {
+      config,
+      environment,
+      host,
+      projectLayer,
+      globalPath,
+      projectPath,
+      globalExists,
+      projectExists,
+    },
+    modelId,
+    failover,
+    options.fetch,
+  )
+}
+
+/**
+ * Builds a runtime for one explicitly chosen model id (a local model entry or a
+ * SparkWork route id). The interactive host uses this after the user picks a
+ * model on the picker, so every selection re-reads the effective config and
+ * the live SparkWork catalog instead of trusting startup state.
+ */
+export async function createConfiguredRuntime(
+  options: LoadModelConfigOptions & { readonly model: string },
+): Promise<ConfiguredModelRuntime> {
+  const context = await loadModelContext(options)
+  const failover =
+    parseFailover(context.environment.SPARK_FAILOVER_MODELS) ?? context.config.agent.failover
+  return buildConfiguredRuntime(context, options.model, failover, options.fetch)
+}
+
+function buildConfiguredRuntime(
+  context: LoadedModelContext,
+  modelId: string,
+  failover: readonly string[],
+  fetcher: FetchLike | undefined,
+): ConfiguredModelRuntime {
+  const { config, environment, host } = context
   const route = [...new Set([modelId, ...failover])]
   const registry = new ModelRegistry()
   for (const id of route) {
     if (!config.models[id] && !host.catalog && host.diagnostic) {
       throw new ModelConfigError(`Model ${id} is unavailable. ${host.diagnostic}`)
     }
-    registerModelRoute(registry, id, config, environment, host.catalog, options.fetch)
+    registerModelRoute(registry, id, config, environment, host.catalog, fetcher)
   }
   return {
     service: registry.createRoute(route, { retry: { maxRetries: config.agent.max_retries } }),
@@ -195,6 +242,96 @@ export async function inspectConfiguredModels(
   })
 }
 
+export interface LocalProviderInput {
+  readonly sparkHome: string
+  readonly alias: string
+  readonly protocol: ModelProtocol
+  readonly baseUrl?: string
+  readonly apiKeyEnv: string
+  readonly modelId: string
+}
+
+export interface LocalProviderConfigResult {
+  readonly configPath: string
+  readonly modelEntryId: string
+}
+
+const LOCAL_ALIAS = /^[a-z][a-z0-9-]{0,63}$/u
+const API_KEY_ENV_NAME = /^[A-Z_][A-Z0-9_]*$/u
+
+/**
+ * Terminal-side provider configuration flow (docs 016 §4): merges one local
+ * provider + model entry into ~/.spark/config.toml. Credentials are only ever
+ * referenced by environment-variable name — this function refuses to persist
+ * anything else and never touches project-level config.
+ */
+export async function configureLocalProvider(
+  input: LocalProviderInput,
+): Promise<LocalProviderConfigResult> {
+  const alias = input.alias.trim()
+  const apiKeyEnv = input.apiKeyEnv.trim()
+  const modelId = input.modelId.trim()
+  const baseUrl = input.baseUrl?.trim() ?? ''
+  if (!LOCAL_ALIAS.test(alias)) {
+    throw new ModelConfigError(
+      `Invalid provider alias "${alias}": use lowercase letters, digits and dashes, starting with a letter`,
+    )
+  }
+  if (!API_KEY_ENV_NAME.test(apiKeyEnv)) {
+    throw new ModelConfigError(
+      `Invalid credential environment variable "${apiKeyEnv}": use UPPER_SNAKE_CASE (the key itself is never stored)`,
+    )
+  }
+  if (!modelId || modelId.length > 200) {
+    throw new ModelConfigError('A non-empty upstream model id (at most 200 chars) is required')
+  }
+  if (input.protocol !== 'anthropic-messages' && input.protocol !== 'openai-responses') {
+    throw new ModelConfigError(`Unsupported protocol: ${String(input.protocol)}`)
+  }
+  if (baseUrl !== '') {
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        throw new Error('scheme')
+      }
+    } catch {
+      throw new ModelConfigError(`Invalid base_url "${baseUrl}": expected an http(s) URL`)
+    }
+  }
+
+  const configPath = resolve(input.sparkHome, 'config.toml')
+  const existing = await readLayer(configPath)
+  const providers = asRecord(existing.layer.providers) ?? {}
+  const models = asRecord(existing.layer.models) ?? {}
+  const mutated: Record<string, unknown> = structuredClone(existing.layer)
+  mutated.providers = {
+    ...providers,
+    [alias]: {
+      protocol: input.protocol,
+      ...(baseUrl === '' ? {} : { base_url: baseUrl }),
+      api_key_env: apiKeyEnv,
+    },
+  }
+  mutated.models = {
+    ...models,
+    [alias]: { provider: alias, model: modelId },
+  }
+  try {
+    ModelConfigSchema.parse(mutated)
+  } catch (error) {
+    throw new ModelConfigError(
+      `Merging provider "${alias}" would produce an invalid config: ${formatZodError(error)}`,
+      { cause: error },
+    )
+  }
+
+  await mkdir(input.sparkHome, { recursive: true, mode: 0o700 })
+  const temporary = resolve(input.sparkHome, `.config.toml.${process.pid}.tmp`)
+  await writeFile(temporary, `${stringify(mutated)}\n`, { encoding: 'utf8', mode: 0o600 })
+  await rename(temporary, configPath)
+  return { configPath, modelEntryId: alias }
+}
+
 interface LoadedModelContext {
   readonly config: ModelConfig
   readonly environment: NodeJS.ProcessEnv
@@ -214,7 +351,8 @@ async function loadModelContext(options: LoadModelConfigOptions): Promise<Loaded
     options.projectConfigPath ?? resolve(options.cwd, '.spark', 'config.toml'),
   )
   const global = await readLayer(globalPath)
-  const project = projectPath === globalPath ? { layer: {}, exists: false } : await readLayer(projectPath)
+  const project =
+    projectPath === globalPath ? { layer: {}, exists: false } : await readLayer(projectPath)
   const merged = mergeConfigLayers(global.layer, project.layer, environment)
   let config: ModelConfig
   try {
@@ -250,7 +388,9 @@ interface NoModelState {
 }
 
 function noModelSelectedError(state: NoModelState): ModelConfigError {
-  const hostDiagnostic = state.host.diagnostic ? ` SparkWork discovery: ${state.host.diagnostic}` : ''
+  const hostDiagnostic = state.host.diagnostic
+    ? ` SparkWork discovery: ${state.host.diagnostic}`
+    : ''
   if (state.host.catalog) {
     const sample = state.host.catalog.routes
       .slice(0, 3)

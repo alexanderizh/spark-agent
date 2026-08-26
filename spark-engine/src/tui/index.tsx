@@ -1,39 +1,54 @@
-import { render, type RenderOptions } from 'ink';
-import React from 'react';
+import { render, type RenderOptions } from 'ink'
+import React from 'react'
 
-import { createDefaultEnv } from '../env.js';
-import type { PermissionMode } from '../permission/types.js';
-import type { LlmService } from '../seams.js';
-import { InteractiveApprover } from '../permission/interactive.js';
-import { Agent, type AgentSession } from '../sdk/agent.js';
-import type { AgentEvent } from '../events/schema.js';
-import { SparkTuiApp } from './app.js';
-import { detectTerminalCapabilities } from './theme.js';
+import { createDefaultEnv } from '../env.js'
+import type { PermissionMode } from '../permission/types.js'
+import type { LlmService } from '../seams.js'
+import { InteractiveApprover } from '../permission/interactive.js'
+import { Agent, type AgentSession } from '../sdk/agent.js'
+import type { AgentEvent } from '../events/schema.js'
+import { SwitchableLlmService } from '../llm/switchable.js'
+import { SparkTuiApp } from './app.js'
+import { useModelRuntime } from './use-model-runtime.js'
+import { detectTerminalCapabilities } from './theme.js'
 
 export interface RunTuiOptions {
-  readonly cwd?: string;
-  readonly dataRoot?: string;
-  readonly stdout?: NodeJS.WriteStream;
-  readonly stdin?: NodeJS.ReadStream;
-  readonly llm: LlmService;
-  readonly model: string;
-  readonly permissionMode?: PermissionMode;
+  readonly cwd?: string
+  readonly dataRoot?: string
+  readonly stdout?: NodeJS.WriteStream
+  readonly stdin?: NodeJS.ReadStream
+  readonly llm?: LlmService | undefined
+  readonly model?: string | undefined
+  readonly permissionMode?: PermissionMode | undefined
+  /**
+   * Startup model-resolution failure. When set (with no llm/model), the TUI
+   * still opens and shows the onboarding picker instead of dying in the shell.
+   */
+  readonly startupError?: string | undefined
 }
 
 export async function runTui(options: RunTuiOptions): Promise<void> {
-  const cwd = options.cwd ?? process.cwd();
-  const approver = new InteractiveApprover();
+  const cwd = options.cwd ?? process.cwd()
+  const approver = new InteractiveApprover()
+  const switchable = new SwitchableLlmService()
+  if (options.llm) switchable.set(options.llm)
   const env = createDefaultEnv({
     cwd,
     approver,
-    llm: options.llm,
+    llm: switchable,
     ...(options.dataRoot === undefined ? {} : { dataRoot: options.dataRoot }),
-  });
-  const agent = Agent.open({ cwd, env });
-  const permissionMode = options.permissionMode ?? 'default';
-  const session = await agent.newSession({ permissionMode, model: options.model });
-  const initialEvents = await collect(session);
-  const stdout = options.stdout ?? process.stdout;
+  })
+  const agent = Agent.open({ cwd, env })
+  const permissionMode = options.permissionMode ?? 'default'
+  let currentModel = options.model
+  const createSession = async (): Promise<AgentSession> =>
+    agent.newSession({
+      permissionMode,
+      ...(currentModel === undefined ? {} : { model: currentModel }),
+    })
+  const session = await createSession()
+  const initialEvents = await collect(session)
+  const stdout = options.stdout ?? process.stdout
   const renderOptions: RenderOptions = {
     stdout,
     stdin: options.stdin ?? process.stdin,
@@ -41,36 +56,74 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
     maxFps: 30,
     incrementalRendering: true,
     alternateScreen: false,
-  };
+  }
   const instance = render(
-    <SparkTuiApp
+    <SparkTuiRoot
       initialSession={session}
       initialEvents={initialEvents}
       approver={approver}
-      createSession={async () =>
-        agent.newSession({ permissionMode, model: options.model })
-      }
-      model={options.model}
+      createSession={createSession}
+      switchable={switchable}
+      initialModel={options.model}
+      startupError={options.startupError}
       permissionMode={permissionMode}
-      capabilities={detectTerminalCapabilities(stdout)}
+      onModelChanged={(model) => {
+        currentModel = model
+      }}
+      stdout={stdout}
     />,
     renderOptions,
-  );
-  await instance.waitUntilExit();
+  )
+  await instance.waitUntilExit()
+}
+
+interface SparkTuiRootProps {
+  readonly initialSession: AgentSession
+  readonly initialEvents: readonly AgentEvent[]
+  readonly approver: InteractiveApprover
+  readonly createSession: () => Promise<AgentSession>
+  readonly switchable: SwitchableLlmService
+  readonly initialModel?: string | undefined
+  readonly startupError?: string | undefined
+  readonly permissionMode: PermissionMode
+  readonly onModelChanged: (model: string | undefined) => void
+  readonly stdout: NodeJS.WriteStream
+}
+
+function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
+  const modelRuntime = useModelRuntime({
+    switchable: props.switchable,
+    ...(props.initialModel === undefined ? {} : { initialModel: props.initialModel }),
+    ...(props.startupError === undefined ? {} : { startupError: props.startupError }),
+    onModelChanged: props.onModelChanged,
+  })
+  return (
+    <SparkTuiApp
+      initialSession={props.initialSession}
+      initialEvents={props.initialEvents}
+      approver={props.approver}
+      createSession={props.createSession}
+      permissionMode={props.permissionMode}
+      modelRuntime={modelRuntime}
+      capabilities={detectTerminalCapabilities(props.stdout)}
+    />
+  )
 }
 
 async function collect(session: AgentSession): Promise<AgentEvent[]> {
-  const events: AgentEvent[] = [];
-  for await (const event of session.events()) events.push(event);
-  return events;
+  const events: AgentEvent[] = []
+  for await (const event of session.events()) events.push(event)
+  return events
 }
 
-export * from './app.js';
-export * from './ime-guard.js';
-export * from './projection.js';
-export * from './theme.js';
-export * from './components/header.js';
-export * from './components/input-editor.js';
-export * from './components/permission-card.js';
-export * from './components/rows.js';
-export * from './components/status-line.js';
+export * from './app.js'
+export * from './ime-guard.js'
+export * from './model-flow.js'
+export * from './use-model-runtime.js'
+export * from './projection.js'
+export * from './theme.js'
+export * from './components/input-editor.js'
+export * from './components/permission-card.js'
+export * from './components/rows.js'
+export * from './components/spinner.js'
+export * from './components/welcome.js'

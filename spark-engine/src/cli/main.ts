@@ -81,6 +81,36 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   const positionalPrompt = options.positionals.join(' ').trim()
   let prompt = options.prompt ?? positionalPrompt
   if (!prompt && !process.stdin.isTTY) prompt = (await readStdin()).trim()
+
+  const tuiAvailable =
+    !options.plain &&
+    !options.json &&
+    process.stdin.isTTY &&
+    process.stdout.isTTY &&
+    process.env.CI !== 'true' &&
+    process.env.TERM !== 'dumb'
+  if (tuiAvailable && !prompt) {
+    // Interactive first-run contract: enter the TUI even without a configured
+    // model — the onboarding picker resolves or configures one in-terminal.
+    const { runTui } = await import('../tui/index.js')
+    let runtime: ConfiguredModelRuntime | undefined
+    let startupError: string | undefined
+    try {
+      runtime = await loadConfiguredModel({
+        cwd: process.cwd(),
+        ...(options.model === undefined ? {} : { model: options.model }),
+      })
+    } catch (error) {
+      startupError = terminalSafe(message(error))
+    }
+    await runTui({
+      cwd: process.cwd(),
+      permissionMode: options.permissionMode,
+      ...(runtime ? { llm: runtime.service, model: runtime.modelId } : { startupError }),
+    })
+    return 0
+  }
+
   let runtime: ConfiguredModelRuntime
   try {
     runtime = await loadConfiguredModel({
@@ -93,22 +123,6 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   }
   if (prompt) return runOnce(prompt, options, runtime)
 
-  const tuiAvailable =
-    !options.plain &&
-    !options.json &&
-    process.stdin.isTTY &&
-    process.stdout.isTTY &&
-    process.env.CI !== 'true' &&
-    process.env.TERM !== 'dumb'
-  if (tuiAvailable) {
-    const { runTui } = await import('../tui/index.js')
-    await runTui({
-      llm: runtime.service,
-      model: runtime.modelId,
-      permissionMode: options.permissionMode,
-    })
-    return 0
-  }
   if (process.stdin.isTTY && process.stdout.isTTY && options.plain) {
     return runPlainRepl(runtime, options.permissionMode)
   }

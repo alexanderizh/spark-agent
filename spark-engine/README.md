@@ -42,7 +42,7 @@ Three equivalent paths put `spark` on PATH:
 
 `spark install` never depends on the working directory: the package root is located from the running code itself and verified by package name. It refuses to overwrite a foreign file at the launcher path unless `--force` is passed, prints the exact `export PATH=...` (or `fish_add_path`) line when the bin directory is not on PATH, and warns when another `spark` appears earlier on PATH. `spark uninstall` removes only launchers that provably belong to spark.
 
-First run without local configuration: if SparkWork is running, its default model is selected automatically and no credentials are copied anywhere. If SparkWork is not running, `spark init` writes a credential-free starter `~/.spark/config.toml` (all examples reference `api_key_env`); the CLI then falls back to that standalone configuration. `spark doctor` reports the resolved `spark` on PATH (broken links, version drift, shadowing), stale SparkWork bridge descriptors, and Node engine compliance.
+First run without local configuration: `spark` still opens the TUI and shows the model picker — SparkWork routes (live catalog), locally configured models, and a terminal provider-configuration wizard (`c`). The wizard writes a local provider into `~/.spark/config.toml` referencing credentials only by environment-variable name; nothing secret is ever stored. `/model` reopens the picker between turns (a running turn keeps its model). Non-interactive invocations (`--plain`, `--json`, piped prompts) stay fail-fast with actionable guidance. `spark init` remains for scripting; `spark doctor` reports the resolved `spark` on PATH (broken links, version drift, shadowing), stale SparkWork bridge descriptors, and Node engine compliance.
 
 ## Model configuration
 
