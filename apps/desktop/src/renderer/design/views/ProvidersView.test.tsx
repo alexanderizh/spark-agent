@@ -3,6 +3,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ProviderCreateRequest } from '@spark/protocol'
 
 import {
   default as ProvidersView,
@@ -1333,7 +1334,10 @@ describe('ProviderEditPanel progressive configuration', () => {
       'provider:list',
       vi.fn(async () => ({ profiles: [scheduleProfile] })),
     )
-    mocks.invokers.set('provider:get-api-key', vi.fn(async () => ({ apiKey: 'sk-saved' })))
+    mocks.invokers.set(
+      'provider:get-api-key',
+      vi.fn(async () => ({ apiKey: 'sk-saved' })),
+    )
     const updateProvider = vi.fn(async (_req: Record<string, unknown>) => ({
       profile: scheduleProfile,
     }))
@@ -1342,11 +1346,7 @@ describe('ProviderEditPanel progressive configuration', () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
-        <ProviderEditPanel
-          visible
-          profileId="provider-schedule-e2e"
-          onClose={() => undefined}
-        />,
+        <ProviderEditPanel visible profileId="provider-schedule-e2e" onClose={() => undefined} />,
       )
     })
     await act(async () => {
@@ -1398,8 +1398,11 @@ describe('ProviderEditPanel progressive configuration', () => {
   })
 
   it('定时禁用：新建 Provider 时时段随 create payload 落库', async () => {
-    mocks.invokers.set('provider:list', vi.fn(async () => ({ profiles: [] })))
-    const createProvider = vi.fn(async () => ({ profile: null }))
+    mocks.invokers.set(
+      'provider:list',
+      vi.fn(async () => ({ profiles: [] })),
+    )
+    const createProvider = vi.fn(async (_request: ProviderCreateRequest) => ({ profile: null }))
     mocks.invokers.set('provider:create', createProvider)
 
     await act(async () => {

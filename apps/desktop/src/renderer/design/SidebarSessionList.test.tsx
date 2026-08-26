@@ -670,15 +670,17 @@ describe('canvas-project session filtering', () => {
         },
       },
     ]
-    const sessions = [
-      ...createSessions(1),
+    const baseSession = createSessions(1)[0]
+    if (baseSession === undefined) throw new Error('Expected a base session fixture')
+    const sessions: SessionSummary[] = [
+      baseSession,
       {
-        ...createSessions(1)[0],
+        ...baseSession,
         id: 'canvas-session' as SessionId,
         workspaceIds: ['canvas-workspace'],
       },
       {
-        ...createSessions(1)[0],
+        ...baseSession,
         id: 'canvas-worktree-session' as SessionId,
         workspaceIds: ['canvas-worktree'],
       },

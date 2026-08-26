@@ -36,8 +36,7 @@ describe('groupModelSchedules', () => {
     ]
     const rows = groupModelSchedules(schedules)
     expect(rows).toHaveLength(2)
-    expect(rows[0].modelIds).toEqual(['m1', 'm2'])
-    expect(rows[1].modelIds).toEqual(['m3'])
+    expect(rows.map((row) => row.modelIds)).toEqual([['m1', 'm2'], ['m3']])
   })
 
   it('ungroup 后逐模型展开且同模型去重', () => {
@@ -69,7 +68,9 @@ describe('candidateModelIdsForRow / firstUnusedModelId', () => {
   ]
 
   it('行候选 = 本行已选 + 未被其他行占用的模型', () => {
-    expect(candidateModelIdsForRow(rows[0], ['m1', 'm2', 'm3', 'm4', 'm5'], rows)).toEqual([
+    const firstRow = rows[0]
+    if (firstRow === undefined) throw new Error('Expected a model schedule row fixture')
+    expect(candidateModelIdsForRow(firstRow, ['m1', 'm2', 'm3', 'm4', 'm5'], rows)).toEqual([
       'm1',
       'm2',
       'm4',
