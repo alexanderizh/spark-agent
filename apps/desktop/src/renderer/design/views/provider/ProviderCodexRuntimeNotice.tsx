@@ -12,12 +12,12 @@ import {
 } from '../../utils/codex-runtime-install'
 
 type RuntimeState = 'checking' | 'missing' | 'ready'
-type InstallPhase = 'idle' | 'installing' | 'success' | 'error'
+type InstallPhase = 'idle' | 'installing' | 'error'
 
 /**
- * OpenAI 格式对话渠道配置时的 Codex 运行时缺失警示条。
- * 运行时是该类渠道的硬依赖，缺失时在配置阶段即提示并支持一键安装，
- * 避免用户保存后到发消息才看到 CODEX_RUNTIME_NOT_INSTALLED。
+ * OpenAI 格式对话渠道配置时的 Codex 运行时常驻提示条。
+ * 运行时为按需安装的本地依赖：固定说明文案 + 实时检测结果徽标，
+ * 未安装时提供一键下载入口；未安装也不阻断保存渠道，保存后可随时补装。
  */
 export function ProviderCodexRuntimeNotice() {
   const { setTweak } = useApp()
@@ -30,7 +30,7 @@ export function ProviderCodexRuntimeNotice() {
 
   useEffect(() => {
     let cancelled = false
-    // 缓存命中 'missing' 时仍刷新一次本地检测，避免读到安装完成前的旧缓存。
+    // 缓存命中后仍刷新一次本地检测，避免读到安装完成前的旧缓存。
     void fetchCodexRuntimeInstalled()
       .then((installed) => {
         if (cancelled || installed == null) return
@@ -46,7 +46,9 @@ export function ProviderCodexRuntimeNotice() {
       if (payload.packageName !== CODEX_SDK_PACKAGE) return
       setProgress(payload)
       if (payload.state === 'done') {
-        setInstallPhase('success')
+        // 安装完成后直接收敛到「已安装」常态，由徽标承担成功反馈。
+        setInstallPhase('idle')
+        setRuntimeState('ready')
       } else if (payload.state === 'error') {
         setInstallPhase('error')
       } else {
@@ -65,8 +67,9 @@ export function ProviderCodexRuntimeNotice() {
     setInstallPhase('installing')
     try {
       await sharedCodexRuntimeInstall()
-      setInstallPhase('success')
+      setInstallPhase('idle')
       setRuntimeState('ready')
+      setProgress(null)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : `Codex runtime 安装失败：${String(error)}`
@@ -82,71 +85,82 @@ export function ProviderCodexRuntimeNotice() {
     }
   }
 
-  // 已就绪且没有需要展示的安装结果时不渲染，避免表单闪动。
-  if (runtimeState === 'ready' && installPhase !== 'success') return null
-  if (runtimeState === 'checking') return null
+  // 只有「当前确实不可用」（缺失或本次安装失败）才走警示配色，其余保持中性信息条。
+  const warned = runtimeState === 'missing' || installPhase === 'error'
+  const showInstallEntry = runtimeState !== 'ready'
 
-  if (runtimeState === 'ready' && installPhase === 'success') {
-    return (
-      <div className="pv_codex_runtime_notice is-success" role="status" aria-live="polite">
-        <CheckCircle2 size={14} aria-hidden="true" />
-        <span>Codex 运行时已安装，该渠道可用于发起会话。</span>
-      </div>
-    )
-  }
+  // 徽标优先反映进行中的安装，其次反映检测结果。
+  const busy = installPhase === 'installing' || runtimeState === 'checking'
+  const badgeTone = busy ? 'is-busy' : runtimeState === 'ready' ? 'is-ok' : 'is-warn'
+  const badgeLabel = busy
+    ? installPhase === 'installing'
+      ? '正在安装'
+      : '检测中'
+    : runtimeState === 'ready'
+      ? '已安装'
+      : '未安装'
 
   return (
-    <div className={`pv_codex_runtime_notice is-${installPhase}`} role="alert">
-      <div className="pv_codex_runtime_notice_body">
-        <div className="pv_codex_runtime_notice_status">
-          {installPhase === 'installing' ? (
-            <LoaderCircle size={14} aria-hidden="true" />
-          ) : (
-            <TriangleAlert size={14} aria-hidden="true" />
-          )}
-          <span>
-            未安装 Codex 运行时。OpenAI 格式对话渠道依赖 Codex
-            运行时，未安装时保存后暂无法发起会话，可先保存稍后安装。
-          </span>
-        </div>
-        {progress != null && installPhase !== 'idle' && (
-          <SdkInstallProgressView progress={progress} compact />
+    <div
+      className={`pv_codex_runtime_notice is-${runtimeState} ${warned ? 'is-warning' : 'is-calm'} is-${installPhase}`}
+      role={warned ? 'alert' : 'status'}
+      aria-live="polite"
+    >
+      <div className="pv_codex_runtime_notice_status">
+        {busy ? (
+          <LoaderCircle size={14} aria-hidden="true" />
+        ) : runtimeState === 'ready' ? (
+          <CheckCircle2 size={14} aria-hidden="true" />
+        ) : (
+          <TriangleAlert size={14} aria-hidden="true" />
         )}
-      </div>
-      <div className="pv_codex_runtime_notice_actions">
-        <button
-          type="button"
-          className="pv_codex_runtime_notice_install"
-          disabled={installPhase === 'installing' || installPhase === 'success'}
-          onClick={() => void install()}
-        >
-          {installPhase === 'installing' ? (
-            <LoaderCircle size={13} aria-hidden="true" />
-          ) : installPhase === 'success' ? (
-            <CheckCircle2 size={13} aria-hidden="true" />
+        <span className="pv_codex_runtime_notice_text">
+          Codex 运行时为本地按需安装依赖，OpenAI 格式渠道发起会话前需要就绪，未安装也可先保存。
+        </span>
+        <span className={`pv_codex_runtime_notice_badge ${badgeTone}`}>
+          {runtimeState === 'ready' && !busy ? (
+            <CheckCircle2 size={11} aria-hidden="true" />
+          ) : busy ? (
+            <LoaderCircle size={11} aria-hidden="true" />
           ) : (
-            <Download size={13} aria-hidden="true" />
+            <TriangleAlert size={11} aria-hidden="true" />
           )}
-          {installPhase === 'installing'
-            ? '正在安装'
-            : installPhase === 'error'
-              ? '重试下载'
-              : installPhase === 'success'
-                ? '安装完成'
-                : '下载并安装'}
-        </button>
-        <button
-          type="button"
-          className="pv_codex_runtime_notice_settings"
-          onClick={() => {
-            setTweak('settingsSection', 'integrity')
-            setTweak('view', 'settings')
-          }}
-        >
-          <Settings size={13} aria-hidden="true" />
-          前往完整性
-        </button>
+          {badgeLabel}
+        </span>
       </div>
+      {(installPhase === 'installing' || installPhase === 'error') && progress != null && (
+        <div className="pv_codex_runtime_notice_progress">
+          <SdkInstallProgressView progress={progress} compact />
+        </div>
+      )}
+      {showInstallEntry && (
+        <div className="pv_codex_runtime_notice_actions">
+          <button
+            type="button"
+            className="pv_codex_runtime_notice_install"
+            disabled={installPhase === 'installing'}
+            onClick={() => void install()}
+          >
+            {installPhase === 'installing' ? (
+              <LoaderCircle size={13} aria-hidden="true" />
+            ) : (
+              <Download size={13} aria-hidden="true" />
+            )}
+            {installPhase === 'installing' ? '正在安装' : installPhase === 'error' ? '重试下载' : '下载并安装'}
+          </button>
+          <button
+            type="button"
+            className="pv_codex_runtime_notice_settings"
+            onClick={() => {
+              setTweak('settingsSection', 'integrity')
+              setTweak('view', 'settings')
+            }}
+          >
+            <Settings size={13} aria-hidden="true" />
+            前往完整性
+          </button>
+        </div>
+      )}
     </div>
   )
 }

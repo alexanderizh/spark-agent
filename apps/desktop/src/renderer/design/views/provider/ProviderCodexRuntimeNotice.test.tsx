@@ -131,29 +131,46 @@ describe('ProviderCodexRuntimeNotice', () => {
     await flushAsync()
   }
 
+  function queryBanner(): HTMLDivElement | null {
+    return container.querySelector<HTMLDivElement>('.pv_codex_runtime_notice')
+  }
+
+  function queryInstallButton(): HTMLButtonElement | null {
+    return container.querySelector<HTMLButtonElement>('.pv_codex_runtime_notice_install')
+  }
+
+  function queryBadge(): HTMLElement | null {
+    return container.querySelector<HTMLElement>('.pv_codex_runtime_notice_badge')
+  }
+
   it('renders the warning banner when the codex runtime is missing', async () => {
     await renderNotice()
 
-    const banner = container.querySelector<HTMLDivElement>('.pv_codex_runtime_notice')
+    const banner = queryBanner()
     expect(banner).not.toBeNull()
     expect(banner?.getAttribute('role')).toBe('alert')
-    expect(banner?.textContent).toContain('未安装 Codex 运行时')
-    expect(
-      container.querySelector<HTMLButtonElement>('.pv_codex_runtime_notice_install')?.textContent,
-    ).toContain('下载并安装')
+    expect(banner?.textContent).toContain('按需安装')
+    expect(queryBadge()?.textContent).toContain('未安装')
+    expect(queryInstallButton()?.textContent).toContain('下载并安装')
   })
 
-  it('renders nothing when the codex runtime is installed', async () => {
+  it('keeps the banner visible as an installed status when the codex runtime is ready', async () => {
     mocks.invoke.mockImplementation(async (channel: string) => {
       if (channel === 'sdk:integrity-check') return integrityResponse(true)
       return null
     })
     await renderNotice()
 
-    expect(container.querySelector('.pv_codex_runtime_notice')).toBeNull()
+    const banner = queryBanner()
+    expect(banner).not.toBeNull()
+    expect(banner?.getAttribute('role')).toBe('status')
+    expect(banner?.className).toContain('is-ready')
+    expect(queryBadge()?.textContent).toContain('已安装')
+    expect(queryInstallButton()).toBeNull()
+    expect(container.querySelector('.pv_codex_runtime_notice_settings')).toBeNull()
   })
 
-  it('shows the cached missing state before the fresh check and hides the banner once installed', async () => {
+  it('starts from the cached missing state and settles to the installed-only banner', async () => {
     window.localStorage.setItem('spark-sdk-integrity', JSON.stringify(integrityResponse(false)))
     let resolveCheck: ((value: SdkIntegrityCheckResponse) => void) | null = null
     mocks.invoke.mockImplementation((channel: string) => {
@@ -170,8 +187,9 @@ describe('ProviderCodexRuntimeNotice', () => {
       root.render(<ProviderCodexRuntimeNotice />)
     })
 
-    // 检测尚未返回：缓存命中 missing，横幅立即可见。
-    expect(container.querySelector('.pv_codex_runtime_notice')).not.toBeNull()
+    // 检测尚未返回：缓存命中 missing，横幅立即可见并带未安装徽标。
+    expect(queryBanner()).not.toBeNull()
+    expect(queryBadge()?.textContent).toContain('未安装')
 
     await act(async () => {
       resolveCheck?.(integrityResponse(true))
@@ -179,15 +197,17 @@ describe('ProviderCodexRuntimeNotice', () => {
     })
     await flushAsync()
 
-    // 刷新检测返回已安装后，横幅消失。
-    expect(container.querySelector('.pv_codex_runtime_notice')).toBeNull()
+    // 刷新检测返回已安装后，横幅保留（常驻）并切换为已安装态、隐藏安装入口。
+    expect(queryBanner()).not.toBeNull()
+    expect(queryBadge()?.textContent).toContain('已安装')
+    expect(queryInstallButton()).toBeNull()
   })
 
-  it('installs the codex runtime on demand and switches to the success state', async () => {
+  it('installs the codex runtime on demand and settles into the installed state', async () => {
     await renderNotice()
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.pv_codex_runtime_notice_install')?.click()
+      queryInstallButton()?.click()
     })
     await flushAsync()
 
@@ -195,9 +215,11 @@ describe('ProviderCodexRuntimeNotice', () => {
       packageName: '@openai/codex-sdk',
     })
 
-    const success = container.querySelector('.pv_codex_runtime_notice.is-success')
-    expect(success).not.toBeNull()
-    expect(success?.textContent).toContain('Codex 运行时已安装')
+    const banner = queryBanner()
+    expect(banner).not.toBeNull()
+    expect(banner?.getAttribute('role')).toBe('status')
+    expect(queryBadge()?.textContent).toContain('已安装')
+    expect(queryInstallButton()).toBeNull()
   })
 
   it('reports install failures with a retry action', async () => {
@@ -211,27 +233,29 @@ describe('ProviderCodexRuntimeNotice', () => {
     await renderNotice()
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.pv_codex_runtime_notice_install')?.click()
+      queryInstallButton()?.click()
     })
     await flushAsync()
 
     const banner = container.querySelector<HTMLDivElement>('.pv_codex_runtime_notice.is-error')
     expect(banner).not.toBeNull()
     expect(banner?.textContent).toContain('下载中断')
-    expect(
-      container.querySelector<HTMLButtonElement>('.pv_codex_runtime_notice_install')?.textContent,
-    ).toContain('重试下载')
+    expect(queryBadge()?.textContent).toContain('未安装')
+    expect(queryInstallButton()?.textContent).toContain('重试下载')
   })
 
-  it('keeps the banner in sync when the runtime is installed from elsewhere', async () => {
+  it('flips to the installed state when the runtime is installed from elsewhere', async () => {
     await renderNotice()
-    expect(container.querySelector('.pv_codex_runtime_notice')).not.toBeNull()
+    expect(queryBanner()).not.toBeNull()
+    expect(queryInstallButton()).not.toBeNull()
 
     await act(async () => {
       emitStream('stream:sdk:integrity', integrityResponse(true))
     })
 
-    expect(container.querySelector('.pv_codex_runtime_notice')).toBeNull()
+    expect(queryBanner()).not.toBeNull()
+    expect(queryBadge()?.textContent).toContain('已安装')
+    expect(queryInstallButton()).toBeNull()
   })
 
   it('shows download progress while installing', async () => {
@@ -248,16 +272,16 @@ describe('ProviderCodexRuntimeNotice', () => {
     await renderNotice()
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.pv_codex_runtime_notice_install')?.click()
+      queryInstallButton()?.click()
     })
     await act(async () => {
       emitStream('stream:sdk:install-progress', installProgress('downloading', '正在下载'))
     })
 
     expect(container.querySelector('.sdk-install-progress')?.textContent).toContain('正在下载')
-    expect(
-      container.querySelector<HTMLButtonElement>('.pv_codex_runtime_notice_install')?.textContent,
-    ).toContain('正在安装')
+    const installingButton = queryInstallButton()
+    expect(installingButton?.textContent).toContain('正在安装')
+    expect(installingButton?.disabled).toBe(true)
 
     // 释放共享安装单例，避免悬挂 Promise 影响后续用例。
     await act(async () => {
