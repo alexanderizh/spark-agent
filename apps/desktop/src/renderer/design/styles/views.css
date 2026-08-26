@@ -8661,7 +8661,7 @@ body.inspector-resizing {
 /* ─── Custom commands settings ───────────────────────────────────────────── */
 .custom-command-toolbar {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto auto;
   gap: 8px;
   margin: 12px 0;
 }
@@ -8800,6 +8800,80 @@ body.inspector-resizing {
   resize: vertical;
   font-family: var(--font-mono);
   line-height: 1.6;
+}
+
+/* ─── Custom command import modal ────────────────────────────────────────── */
+.custom-command-import {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.custom-command-import-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+  font-size: var(--font-xs);
+}
+.custom-command-import-mono {
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+.custom-command-import-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warning, #d97706);
+  font-weight: 500;
+}
+.custom-command-import-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.custom-command-import-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 2px;
+}
+.custom-command-import-row {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--font-xs);
+}
+.custom-command-import-row.invalid {
+  opacity: 0.66;
+}
+.custom-command-import-row:not(.invalid):hover {
+  background: var(--hover);
+}
+.custom-command-import-name {
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.custom-command-import-desc {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.custom-command-import-empty {
+  padding: 18px 0;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  text-align: center;
 }
 
 /* ─── Telemetry: Log Viewer ───────────────────────────────────────────────── */
