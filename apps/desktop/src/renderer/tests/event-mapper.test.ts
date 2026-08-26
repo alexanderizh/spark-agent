@@ -200,6 +200,39 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('merges stream reconnect attempts in place and keeps the turn running', () => {
+    const builder = new MessageBuilder()
+    const reconnectEvent = (id: string, attempt: number): AgentEvent => ({
+      ...baseEvent('runtime_signal'),
+      id,
+      type: 'runtime_signal',
+      signal: 'stream_reconnect',
+      level: 'info',
+      title: '网络连接中断，正在自动重连',
+      message: `Reconnecting... ${attempt}/5`,
+      code: 'CODEX_STREAM_RECONNECT',
+      retryable: false,
+      details: [{ label: '重试进度', value: `${attempt}/5` }],
+    })
+
+    builder.processEvent(reconnectEvent('reconnect-1', 1))
+    builder.processEvent(reconnectEvent('reconnect-2', 2))
+    builder.processEvent(reconnectEvent('reconnect-3', 3))
+
+    const message = builder.getAllMessages()[0]
+    // 重连是自恢复过程信号：不把消息打成 error，且多次尝试合并为一行并展示最新进度
+    expect(message?.status).not.toBe('error')
+    expect(message?.eventIds).toEqual(['reconnect-1', 'reconnect-2', 'reconnect-3'])
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        kind: 'runtime_signal',
+        signal: 'stream_reconnect',
+        occurrenceCount: 3,
+        details: [{ label: '重试进度', value: '3/5' }],
+      }),
+    ])
+  })
+
   it('does not merge permission denials for different tools', () => {
     const builder = new MessageBuilder()
     const permissionDenied = (id: string, tool: string): AgentEvent => ({

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEvent, TurnRuntimeMetrics } from '@spark/protocol'
 import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from '../codex-compaction-event.js'
+import { createStreamReconnectSignal } from '../codex-stream-reconnect.js'
 import { CODEX_CONTEXT_POLICY_CONFIG } from '../codex-context-policy.js'
 import { resolveCodexPermissionPolicy } from '../codex-permission-policy.js'
 import { toCodexReasoningEffort } from '../reasoning-effort.js'
@@ -801,6 +802,15 @@ export class CodexAppServerExecutor
       case 'error': {
         const message = readNestedMessage(record.error)
         if (message != null && isBenignCodexSdkError(message)) return
+        // 流式断线自动重连是自恢复过程信号，降级为 runtime_signal，
+        // 避免前端把「正在重连」渲染成整轮失败（见 codex-stream-reconnect.ts）。
+        if (message != null) {
+          const reconnectSignal = createStreamReconnectSignal(message, this.makeCurrentBase())
+          if (reconnectSignal != null) {
+            this.emit(reconnectSignal)
+            return
+          }
+        }
         const willRetry = record.willRetry !== false
         this.emit({
           type: 'agent_error',

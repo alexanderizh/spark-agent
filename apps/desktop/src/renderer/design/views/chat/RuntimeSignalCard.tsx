@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent } from 'react'
 import { Icons } from '../../Icons'
 import type { UIBlock } from '../../services/event-mapper'
+import { StreamReconnectNotice } from './StreamReconnectNotice'
 import { StreamingErrorCard } from './StreamingErrorCard'
 import './RuntimeSignalCard.css'
 
@@ -100,6 +101,7 @@ export function RuntimeSignalCard({
   onRetry?: () => void
 }) {
   if (block.signal === 'background_tasks') return <BackgroundTasksCard block={block} />
+  if (block.signal === 'stream_reconnect') return <StreamReconnectNotice block={block} />
 
   return (
     <StreamingErrorCard

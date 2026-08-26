@@ -14,6 +14,7 @@ import type {
 import type { AgentEvent } from '@spark/protocol'
 import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
+import { createStreamReconnectSignal } from './codex-stream-reconnect.js'
 import { CODEX_CONTEXT_POLICY_CONFIG } from './codex-context-policy.js'
 import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import { toCodexReasoningEffort } from './reasoning-effort.js'
@@ -301,6 +302,15 @@ export class CodexSdkExecutor implements EngineExecutor {
         return
       case 'error':
         if (isBenignCodexSdkError(event.message)) return
+        // 流式断线自动重连是自恢复过程信号，降级为 runtime_signal，
+        // 避免前端把「正在重连」渲染成整轮失败（见 codex-stream-reconnect.ts）。
+        {
+          const reconnectSignal = createStreamReconnectSignal(event.message, makeBase())
+          if (reconnectSignal != null) {
+            this.emit(reconnectSignal)
+            return
+          }
+        }
         this.emit({
           ...makeBase(),
           type: 'agent_error',

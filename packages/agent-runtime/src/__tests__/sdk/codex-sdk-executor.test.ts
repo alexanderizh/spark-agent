@@ -915,6 +915,63 @@ describe('CodexSdkExecutor', () => {
     ])
   })
 
+  it('downgrades automatic reconnect attempts to runtime signals instead of errors', async () => {
+    runStreamed.mockResolvedValue({
+      events: streamFrom([
+        { type: 'error', message: 'Reconnecting... 1/5 (stream disconnected)' },
+        { type: 'item.completed', item: { id: 'msg-1', type: 'agent_message', text: 'Done' } },
+      ]),
+    })
+
+    const events: Array<{ type: string; signal?: string; level?: string; message?: string }> = []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'agent_error' || event.type === 'runtime_signal') {
+        events.push({
+          type: event.type,
+          ...(event.type === 'runtime_signal'
+            ? { signal: event.signal, level: event.level, message: event.message }
+            : {}),
+          ...(event.type === 'agent_error' ? { message: event.message } : {}),
+        })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    // 重连是自恢复过程信号：不发 agent_error（会污染整轮终态），降级为 runtime_signal
+    expect(events).toEqual([
+      {
+        type: 'runtime_signal',
+        signal: 'stream_reconnect',
+        level: 'info',
+        message: 'Reconnecting... 1/5 (stream disconnected)',
+      },
+    ])
+  })
+
+  it('still reports retry exhaustion after the final reconnect attempt fails', async () => {
+    runStreamed.mockResolvedValue({
+      events: streamFrom([{ type: 'error', message: 'exceeded retry limit, last status: 429' }]),
+    })
+
+    const events: Array<{ type: string; code?: string }> = []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'agent_error' || event.type === 'runtime_signal') {
+        events.push(
+          event.type === 'agent_error'
+            ? { type: event.type, code: event.code }
+            : { type: event.type },
+        )
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([{ type: 'agent_error', code: 'CODEX_SDK_STREAM_ERROR' }])
+  })
+
   it('resumes an existing Codex SDK thread when sdkSessionId is available', async () => {
     resumeThread.mockReturnValue({ runStreamed })
     runStreamed.mockResolvedValue({

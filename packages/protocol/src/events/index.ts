@@ -958,6 +958,8 @@ export interface RuntimeSignalEvent extends BaseEvent {
     | 'mirror_error'
     | 'worker_shutdown'
     | 'background_tasks'
+    /** Provider 流式连接中断后的自动重连提示；SDK 自恢复，不算整轮失败。 */
+    | 'stream_reconnect'
   level: 'info' | 'warning' | 'error'
   title: string
   message: string

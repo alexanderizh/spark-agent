@@ -1,0 +1,36 @@
+.stream-reconnect-notice {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  min-height: 44px;
+  color: var(--text-tertiary, #858585);
+  font-size: 14px;
+  font-weight: 400;
+  box-sizing: border-box;
+}
+
+.stream-reconnect-notice-line {
+  height: 1px;
+  min-width: 24px;
+  flex: 1;
+  background: color-mix(in srgb, currentColor 24%, transparent);
+}
+
+.stream-reconnect-notice-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .stream-reconnect-notice {
+    gap: 10px;
+    font-size: 12px;
+  }
+
+  .stream-reconnect-notice-content {
+    gap: 7px;
+  }
+}

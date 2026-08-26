@@ -1047,12 +1047,18 @@ export class MessageBuilder {
 
       case 'runtime_signal': {
         const aggregationKey = runtimeSignalAggregationKey(event)
-        const existing = this.findRuntimeIssueBlock(
-          event.turnId,
-          (block) =>
-            block.kind === 'runtime_signal' &&
-            runtimeSignalAggregationKey(block) === aggregationKey,
-        )
+        // 重连提示按「信号 + 来源」聚合而不是按原文：每次尝试的 message 携带最新
+        // 进度（Reconnecting... 1/5 → 2/5），按原文聚合会在会话里堆叠多条提示行。
+        const matchesAggregation = (
+          block: Extract<UIBlock, { kind: 'error' | 'runtime_signal' }>,
+        ): boolean =>
+          event.signal === 'stream_reconnect'
+            ? block.kind === 'runtime_signal' &&
+              block.signal === 'stream_reconnect' &&
+              runtimeEventOriginKey(block.origin) === runtimeEventOriginKey(event.origin)
+            : block.kind === 'runtime_signal' &&
+              runtimeSignalAggregationKey(block) === aggregationKey
+        const existing = this.findRuntimeIssueBlock(event.turnId, matchesAggregation)
         const relatedSubagent =
           event.origin?.kind === 'subagent'
             ? this.findSubagentBlock({
