@@ -61,7 +61,17 @@ jobs:
       - name: Quality gate (boundary, typecheck, lint, tests, build, package smoke)
         run: npm run verify
 
+      # 质量门通过后生成不可变发布目录（tgz + sha256 sidecar + latest.json + 安装器）。
+      # 无需凭据，因此无条件执行：即便未配置上传凭据，artifact 也始终可用于手动分发。
+      - name: Prepare release directory
+        run: node scripts/prepare-release.mjs release
+
+      # 凭据策略：
+      # - push 自动触发但仓库尚未配置 secrets → 降级为“本地构建 + artifact + 警告”，
+      #   流程保持绿色；配置 secrets 后的下一次 bump 即自动恢复真实发布；
+      # - 手动触发且选择真实发布 → 缺凭据属于操作者错误，硬失败。
       - name: Check MinIO credentials are configured
+        id: creds
         if: ${{ github.event_name == 'push' || !inputs.dry_run }}
         shell: bash
         run: |
@@ -70,13 +80,16 @@ jobs:
             if [ -z "${!v}" ]; then missing+=("$v"); fi
           done
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::缺少 MinIO 发布 secrets: ${missing[*]}"
-            exit 1
+            if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+              echo "::warning::尚未配置 MinIO 发布 secrets（${missing[*]}）；已跳过上传，仅本地校验并产出 artifact。在仓库 Settings → Secrets 配置后，下次变更 package.json 将自动发布。"
+              echo "configured=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::缺少 MinIO 发布 secrets: ${missing[*]}"
+              exit 1
+            fi
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
-
-      # 质量门通过后生成不可变发布目录（tgz + sha256 sidecar + latest.json + 安装器）。
-      - name: Prepare release directory
-        run: node scripts/prepare-release.mjs release
 
       # 不可变审计 → 上传缺失对象 → 双通道回读校验 → latest.json 最后发布。
       - name: Dry run (local validation only)
@@ -84,11 +97,11 @@ jobs:
         run: node scripts/publish-release-to-minio.mjs release --dry-run
 
       - name: Publish to MinIO (latest.json last)
-        if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+        if: ${{ steps.creds.outputs.configured == 'true' }}
         run: node scripts/publish-release-to-minio.mjs release
 
       - name: Verify published release over public HTTPS
-        if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+        if: ${{ steps.creds.outputs.configured == 'true' }}
         run: node scripts/verify-release.mjs release
 
       - name: Upload prepared release as workflow artifact

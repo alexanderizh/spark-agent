@@ -34,10 +34,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 // Shared, dependency-free release contract: base URL constant, strict SemVer,
 // and the latest.json schema — see scripts/release-contract.mjs.
-import { INSTALLER_NAMES, parseReleaseManifest } from './release-contract.mjs'
+import { DEFAULT_RELEASE_BASE, INSTALLER_NAMES, parseReleaseManifest } from './release-contract.mjs'
 
 // Re-exported for consumers of this module's public surface.
-export { DEFAULT_RELEASE_BASE } from './release-contract.mjs'
+export { DEFAULT_RELEASE_BASE }
 const HARD_CAP_BYTES = 512 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000
 
@@ -494,12 +494,14 @@ async function main(argv) {
   const releaseDir = resolve(positional[0] ?? join(packageRoot, 'release'))
 
   const discovered = await discoverReleaseArtifacts(releaseDir)
-  // A dry-run with an explicit --base is a pure local check that must work
-  // without any credentials; otherwise the environment has to be complete.
+  // A dry-run is a pure local check: without credentials it targets the
+  // built-in release base (or an explicit --base) purely for plan display and
+  // touches neither network nor bucket. Real publishing always requires a
+  // complete credential environment.
   let config
   let remoteBase
-  if (dryRun && baseOverride !== undefined && !process.env.MINIO_BUCKET) {
-    const url = new URL(baseOverride)
+  if (dryRun && !process.env.MINIO_BUCKET) {
+    const url = new URL(baseOverride ?? DEFAULT_RELEASE_BASE)
     remoteBase = {
       url,
       keyPrefix: url.pathname.split('/').filter(Boolean).map(decodeURIComponent).join('/'),
