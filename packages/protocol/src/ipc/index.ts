@@ -4293,6 +4293,8 @@ export interface VideoProcessRequest {
     | 'watermark'
     | 'burnSubtitle'
     | 'extractAudio'
+    /** 等比缩放 + 按百分比压缩码率，一次转码完成（params: scalePercent 10~200 / compressPercent 10~90） */
+    | 'scaleCompress'
   /** 媒体类型；缺省 'video'。audio 模式下只允许 trim / adjustSpeed / probe / extractAudio。 */
   kind?: 'video' | 'audio'
   /** 源视频文件绝对路径 */

@@ -643,6 +643,7 @@ function CanvasStageInner({
   onReplaceVideo,
   onPreviewPanorama,
   onEditVideo,
+  onVideoScaleCompress,
   onAudioTrim,
   onAudioSpeed,
   onExpandOperationOutputs,
@@ -724,6 +725,8 @@ function CanvasStageInner({
   onPreviewPanorama: (nodeId: string) => void
   /** 视频节点右键 → 视频编辑（打开视频工作台） */
   onEditVideo: (nodeId: string) => void
+  /** 视频节点右键/工具栏 → 尺寸与压缩弹窗（ffmpeg 缩放+码率压缩，物化新子节点） */
+  onVideoScaleCompress?: (nodeId: string) => void
   /** 音频节点 in-node chip "截取" → 触发 ffmpeg 截取 + 物化新节点 */
   onAudioTrim?: (nodeId: string, startSec: number, endSec: number) => void
   /** 音频节点 in-node chip "变速" → 触发 ffmpeg atempo + 物化新节点 */
@@ -828,6 +831,7 @@ function CanvasStageInner({
       ...(onReplaceVideo ? { replaceVideo: onReplaceVideo } : {}),
       previewPanorama: onPreviewPanorama,
       ...(onEditVideo ? { editVideo: onEditVideo } : {}),
+      ...(onVideoScaleCompress ? { scaleCompressVideo: onVideoScaleCompress } : {}),
       ...(onAudioTrim ? { audioTrim: onAudioTrim } : {}),
       ...(onAudioSpeed ? { audioSpeed: onAudioSpeed } : {}),
       expandOperationOutputs: onExpandOperationOutputs,
@@ -859,6 +863,7 @@ function CanvasStageInner({
       onSplitStoryboard,
       onPreviewPanorama,
       onEditVideo,
+      onVideoScaleCompress,
       onAudioTrim,
       onAudioSpeed,
       onExpandOperationOutputs,

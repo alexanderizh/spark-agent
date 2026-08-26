@@ -1091,6 +1091,8 @@ export interface TranscodeOpts {
   audioCodec?: 'aac' | 'libopus' | 'none' | undefined
   resolution?: { w: number; h: number } | undefined
   bitrate?: string | undefined // 如 '2M'
+  /** 音轨目标码率（如 '128k'）；缺省交给编码器默认值 */
+  audioBitrate?: string | undefined
   crf?: number | undefined // 18~28
   fps?: number | undefined
 }
@@ -1137,6 +1139,7 @@ export async function transcodeVideo(
   } else {
     args.push('-c:a', 'aac')
   }
+  if (opts.audioBitrate && opts.audioCodec !== 'none') args.push('-b:a', opts.audioBitrate)
   if (opts.bitrate) args.push('-b:v', opts.bitrate)
   args.push('-y', outputPath)
 

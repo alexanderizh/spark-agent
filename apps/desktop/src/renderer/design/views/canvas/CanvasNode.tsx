@@ -409,6 +409,8 @@ export type CanvasFlowNodeData = {
     previewPanorama: (nodeId: string) => void
     /** 视频节点：右键 → 视频编辑（打开视频工作台） */
     editVideo?: (nodeId: string) => void
+    /** 视频节点：右键/工具栏 → 尺寸与压缩弹窗（ffmpeg 缩放+码率压缩，物化新子节点） */
+    scaleCompressVideo?: (nodeId: string) => void
     /** 音频节点：截取（返回开始/结束秒），由父级触发 IPC 并物化新子节点 */
     audioTrim?: (nodeId: string, startSec: number, endSec: number) => void
     /** 音频节点：变速（factor 由 IPC 校验 0.1x–4.0x），由父级触发 IPC 并物化新子节点 */
@@ -1091,6 +1093,14 @@ export const CanvasNode = memo(function CanvasNode({
           onClick: () => actions.editVideo?.(node.id),
         })
       }
+      if (actions.scaleCompressVideo) {
+        addAction({
+          key: 'scale-compress-video',
+          label: '尺寸与压缩',
+          icon: <Icons.Minimize size={15} />,
+          onClick: () => actions.scaleCompressVideo?.(node.id),
+        })
+      }
       addAction({
         key: 'extract-audio',
         label: '分离音频',
@@ -1265,6 +1275,20 @@ export const CanvasNode = memo(function CanvasNode({
                 // 统一传 node.id；handleEditVideo 内部自动解析操作节点的产物视频
                 onClick: () => actions.editVideo!(node.id),
               },
+              ...(actions.scaleCompressVideo
+                ? [
+                    {
+                      key: 'scale-compress-video',
+                      label: (
+                        <span className="canvas-menu-item">
+                          <Icons.Minimize size={14} /> 尺寸与压缩
+                        </span>
+                      ),
+                      // 与视频编辑同一套解析：操作节点取其产物视频
+                      onClick: () => actions.scaleCompressVideo!(node.id),
+                    },
+                  ]
+                : []),
               { type: 'divider' as const },
             ]
           : []),

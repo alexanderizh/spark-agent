@@ -37,6 +37,16 @@ import {
   type KeyframeStrategy,
   type TranscodeOpts,
 } from './FfmpegRunner.js'
+import {
+  COMPRESS_MAX_PERCENT,
+  COMPRESS_MIN_PERCENT,
+  computeEffectiveDisplaySize,
+  computeScaledEvenSize,
+  planCompression,
+  RESERVED_AUDIO_BITRATE_ARG,
+  SCALE_MAX_PERCENT,
+  SCALE_MIN_PERCENT,
+} from './videoScaleCompressMath.js'
 import { getSafeFileAllowedRoots } from './SafeFileProtocol.js'
 import { createLogger } from '@spark/shared'
 
@@ -357,6 +367,74 @@ async function dispatch(
       if (!srtPath) throw new Error('烧录字幕需要 srtPath 参数')
       const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
       return burnSubtitle(input, srtPath, outputPath, onProgress)
+    }
+
+    // ── 尺寸压缩（等比缩放 + 码率百分比压缩，一次转码完成）────────
+    case 'scaleCompress': {
+      const scalePercent = asNumber(params.scalePercent)
+      const compressPercent = asNumber(params.compressPercent)
+      if (scalePercent == null || scalePercent < SCALE_MIN_PERCENT || scalePercent > SCALE_MAX_PERCENT) {
+        throw new Error(
+          `尺寸缩放比例超出允许范围 [${SCALE_MIN_PERCENT}, ${SCALE_MAX_PERCENT}]: ${String(params.scalePercent)}`,
+        )
+      }
+      if (
+        compressPercent == null ||
+        compressPercent < COMPRESS_MIN_PERCENT ||
+        compressPercent > COMPRESS_MAX_PERCENT
+      ) {
+        throw new Error(
+          `压缩比例超出允许范围 [${COMPRESS_MIN_PERCENT}, ${COMPRESS_MAX_PERCENT}]: ${String(params.compressPercent)}`,
+        )
+      }
+      const probeInfo = await probeVideo(input)
+      // probe 是编码尺寸，FFmpeg 解码时会自动转正：先换算有效显示宽高再缩放
+      const displaySize = computeEffectiveDisplaySize(probeInfo.width, probeInfo.height, probeInfo.rotation)
+      if (!displaySize) {
+        throw new Error(`无法读取视频分辨率（probe: ${probeInfo.width}x${probeInfo.height}），无法缩放`)
+      }
+      const size = computeScaledEvenSize(displaySize.width, displaySize.height, scalePercent)
+      if (!size) {
+        throw new Error(`缩放后无法得到有效分辨率：${displaySize.width}x${displaySize.height} @ ${scalePercent}%`)
+      }
+      // 「压到原文件的约 N%」：目标总码率 = 原始总码率 × N%，预留音轨码率后给视频流；
+      // 原始码率探测不到时回退 CRF 质量模式
+      const plan = planCompression({
+        totalBitrateBps: probeInfo.bitrate,
+        durationSec: probeInfo.durationSec,
+        fileSizeBytes: probeInfo.fileSize,
+        hasAudio: probeInfo.hasAudio,
+        compressPercent,
+      })
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
+      const opts: TranscodeOpts = {
+        format: 'mp4',
+        videoCodec: 'libx264',
+        resolution: { w: size.width, h: size.height },
+      }
+      if (plan.mode === 'bitrate') {
+        opts.bitrate = `${Math.max(1, Math.round(plan.videoBitrateBps / 1000))}k`
+        if (plan.audioBitrateBps > 0) {
+          opts.audioCodec = 'aac'
+          opts.audioBitrate = RESERVED_AUDIO_BITRATE_ARG
+        } else {
+          // 无音轨时显式 -an，避免默认 aac 输出无意义音轨参数
+          opts.audioCodec = 'none'
+        }
+      } else {
+        // 码率未知 → CRF 质量回退（音频走编码器默认码率）
+        opts.crf = plan.crf
+        if (!probeInfo.hasAudio) opts.audioCodec = 'none'
+      }
+      await transcodeVideo(input, outputPath, opts, onProgress)
+      return {
+        path: outputPath,
+        width: size.width,
+        height: size.height,
+        // 时长与源一致；回传免得渲染端创建节点时二次 probe
+        durationSec: probeInfo.durationSec,
+        compressionMode: plan.mode,
+      }
     }
 
     // ── 音频分离 ──────────────────────────────────────────────────

@@ -1658,12 +1658,12 @@ export function readAssetTextForNode(asset: CanvasAsset): string {
 }
 
 /**
- * 解析音频节点的本地文件路径：优先 node.data.filePath，回退到关联 asset.storageKey。
+ * 解析媒体节点的本地文件路径：优先 node.data.filePath，回退到关联 asset.storageKey。
  *
- * 仅供音频截取/变速等本地 ffmpeg 链路使用；非本地（http(s) URL）资源不进入这些链路，
- * 调用方收到 null 时应当走"放弃"分支（toast 友好提示）。
+ * 供音频截取/变速、视频尺寸压缩等本地 ffmpeg 链路使用；非本地（http(s) URL）资源
+ * 不进入这些链路，调用方收到 null 时应当走"放弃"分支（toast 友好提示）。
  */
-export function readAudioLocalFilePath(
+export function readMediaLocalFilePath(
   node: Pick<CanvasNode, 'id' | 'assetId' | 'data'>,
   db?: CanvasDb,
 ): string | null {
@@ -4026,6 +4026,104 @@ export const canvasApi = {
     })
     writeDb(db)
     return newNode
+  },
+
+  /**
+   * 触发视频节点尺寸压缩：ffmpeg 等比缩放 + 按百分比压缩码率，物化为新 video 子节点，
+   * 并用 `generated` 边与父节点相连，原节点保留。
+   *
+   * 语义与主进程 videoProcessHandler 的 scaleCompress 分支一致：
+   * - 尺寸 scalePercent（10~200）：按有效显示宽高等比缩放，100% 不改尺寸；
+   * - 压缩 compressPercent（10~90）：目标总码率 ≈ 原始总码率 × N%，探测不到回退 CRF。
+   *
+   * @param onProgress 转码进度回调（按 requestId 过滤，避免与其他视频任务串扰）
+   */
+  async materializeVideoScaleCompress(input: {
+    projectId: string
+    boardId: string
+    parentNodeId: string
+    filePath: string
+    fileName: string
+    mimeType?: string | null
+    scalePercent: number
+    compressPercent: number
+    onProgress?: (progress: { percent: number; stage: string }) => void
+  }): Promise<CanvasNode | null> {
+    const db = readDb()
+    const parent = db.nodes.find(
+      (n) => n.id === input.parentNodeId && n.projectId === input.projectId,
+    )
+    if (!parent) return null
+
+    const requestId = `video_scale_compress_${input.parentNodeId}_${Date.now()}`
+    // 进度订阅放在本函数内：requestId 在这里生成，只有这里能正确过滤
+    const unsubscribe = input.onProgress
+      ? window.spark.on('stream:video:process-progress', (progress) => {
+          if (progress.requestId !== requestId) return
+          input.onProgress?.({ percent: progress.percent, stage: progress.stage })
+        })
+      : null
+
+    try {
+      const response = await window.spark.invoke('video:process', {
+        operation: 'scaleCompress',
+        input: input.filePath,
+        params: { scalePercent: input.scalePercent, compressPercent: input.compressPercent },
+        requestId,
+      })
+      const result = (
+        response as {
+          success: boolean
+          result?: { path?: string; width?: number; height?: number; durationSec?: number }
+          error?: string
+        }
+      )?.result
+      if (!(response as { success: boolean })?.success || !result?.path) {
+        throw new Error((response as { error?: string })?.error ?? '视频处理失败')
+      }
+
+      const newNode = await this.createMediaNode({
+        projectId: input.projectId,
+        boardId: input.boardId,
+        kind: 'video',
+        fileName: `${input.fileName} 尺寸压缩`,
+        ...(input.mimeType ? { fileMimeType: input.mimeType } : {}),
+        filePath: result.path,
+        x: parent.x + parent.width + 48,
+        y: parent.y,
+        ...(typeof result.width === 'number' && result.width > 0
+          ? { mediaWidth: result.width }
+          : {}),
+        ...(typeof result.height === 'number' && result.height > 0
+          ? { mediaHeight: result.height }
+          : {}),
+        ...(typeof result.durationSec === 'number' && result.durationSec > 0
+          ? { durationMs: Math.round(result.durationSec * 1000) }
+          : {}),
+      })
+      if (!newNode) throw new Error('尺寸压缩产物节点创建失败')
+
+      db.edges.push({
+        id: uid('canvas_edge'),
+        userId: USER_ID,
+        projectId: input.projectId,
+        boardId: input.boardId,
+        sourceNodeId: input.parentNodeId,
+        targetNodeId: newNode.id,
+        type: 'generated',
+        taskId: null,
+        metadata: {
+          videoOp: 'scale-compress',
+          scalePercent: input.scalePercent,
+          compressPercent: input.compressPercent,
+        },
+        createdAt: now(),
+      })
+      writeDb(db)
+      return newNode
+    } finally {
+      unsubscribe?.()
+    }
   },
 
   /**

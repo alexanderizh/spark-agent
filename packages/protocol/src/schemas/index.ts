@@ -1749,6 +1749,7 @@ export const IpcSchemaRegistry = {
       'crop',
       'watermark',
       'burnSubtitle',
+      'scaleCompress',
     ]),
     input: z.string().min(1).max(4096),
     params: z.record(z.string(), z.unknown()),

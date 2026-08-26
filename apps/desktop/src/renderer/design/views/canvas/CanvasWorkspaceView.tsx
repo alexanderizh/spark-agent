@@ -141,6 +141,11 @@ import {
 import { CanvasDirectorStage3DModal } from './stage3d/CanvasDirectorStage3DModal'
 import { createDefaultStage3DData, type Stage3DData } from './stage3d/stage3d.types'
 import { CanvasVideoWorkbenchModal } from './videoWorkbench/CanvasVideoWorkbenchModal'
+import {
+  CanvasVideoScaleCompressModal,
+  type CanvasVideoScaleCompressSource,
+  type VideoScaleCompressConfirmInput,
+} from './videoNode/CanvasVideoScaleCompressModal'
 import { useCanvasVideoWorkbenchResources } from './videoWorkbench/useCanvasVideoWorkbenchResources'
 import {
   type WorkbenchCanvasMaterialization,
@@ -275,7 +280,7 @@ import {
   canvasApi,
   flushCanvasTaskRuntimeWrites,
   isCanvasDirty,
-  readAudioLocalFilePath,
+  readMediaLocalFilePath,
   revertProject,
   saveCanvas,
 } from './canvas.api'
@@ -731,6 +736,9 @@ export function CanvasWorkspaceView({
   }, [characterSubviewEditorNodeId, resolveCanvasResourceActionNode, snapshot])
   const [directorStage3DNodeId, setDirectorStage3DNodeId] = useState<string | null>(null)
   const [videoWorkbenchNodeId, setVideoWorkbenchNodeId] = useState<string | null>(null)
+  // 视频节点「尺寸与压缩」弹窗的源视频信息；null = 弹窗关闭
+  const [videoScaleCompressSource, setVideoScaleCompressSource] =
+    useState<CanvasVideoScaleCompressSource | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const {
     ownerNodeId: promptNodePickerOwnerId,
@@ -2409,7 +2417,7 @@ export function CanvasWorkspaceView({
       if (!projectId || !snap) return
       const source = snap.nodes.find((n) => n.id === nodeId)
       if (!source || source.type !== 'audio') return
-      const filePath = readAudioLocalFilePath(source)
+      const filePath = readMediaLocalFilePath(source)
       if (!filePath) {
         message.error('无法定位源音频文件')
         return
@@ -2445,7 +2453,7 @@ export function CanvasWorkspaceView({
       if (!projectId || !snap) return
       const source = snap.nodes.find((n) => n.id === nodeId)
       if (!source || source.type !== 'audio') return
-      const filePath = readAudioLocalFilePath(source)
+      const filePath = readMediaLocalFilePath(source)
       if (!filePath) {
         message.error('无法定位源音频文件')
         return
@@ -2471,6 +2479,64 @@ export function CanvasWorkspaceView({
       }
     },
     [projectId, refreshTaskSnapshot],
+  )
+
+  // 视频节点「尺寸与压缩」入口：解析操作节点的产物资源节点后打开设置弹窗
+  // （与 handleEditVideo 的统一解析方式一致；无本地文件时提示放弃）。
+  const handleOpenVideoScaleCompress = useCallback(
+    (nodeId: string) => {
+      const snap = snapshotRef.current
+      if (!snap) return
+      const node = snap.nodes.find((item) => item.id === nodeId)
+      if (!node) return
+
+      const resolved = isOperationNode(node) ? resolveCanvasOperationResourceNode(node, snap) : node
+      const target = resolved ?? node
+
+      const filePath = readMediaLocalFilePath(target)
+      if (!filePath) {
+        message.warning('该视频没有可用的本地文件，暂不支持尺寸压缩')
+        return
+      }
+      closeCanvasFloatPanels('node-edit')
+      setSelectedNodeIds([target.id])
+      setVideoScaleCompressSource({
+        nodeId: target.id,
+        filePath,
+        fileName: target.title ?? 'video',
+        ...(typeof target.data.mimeType === 'string' && target.data.mimeType
+          ? { mimeType: target.data.mimeType }
+          : {}),
+      })
+    },
+    [closeCanvasFloatPanels],
+  )
+
+  // 尺寸压缩确认：ffmpeg 缩放+转码 → 物化新 video 子节点 + generated 连线。
+  // 失败原样抛回弹窗展示并复位进度。
+  const handleVideoScaleCompressConfirm = useCallback(
+    async (input: VideoScaleCompressConfirmInput) => {
+      const source = videoScaleCompressSource
+      if (!projectId || !source) throw new Error('缺少源视频')
+      const boardId = snapshotRef.current?.board.id
+      if (!boardId) throw new Error('画布尚未就绪')
+      const created = await canvasApi.materializeVideoScaleCompress({
+        projectId,
+        boardId,
+        parentNodeId: source.nodeId,
+        filePath: source.filePath,
+        fileName: source.fileName,
+        ...(source.mimeType ? { mimeType: source.mimeType } : {}),
+        scalePercent: input.scalePercent,
+        compressPercent: input.compressPercent,
+        onProgress: input.onProgress,
+      })
+      if (created) await refreshTaskSnapshot()
+      message.success(
+        `已生成尺寸压缩副本（${input.scalePercent}% 尺寸 / 压缩到原大小 ${input.compressPercent}%）`,
+      )
+    },
+    [projectId, refreshTaskSnapshot, videoScaleCompressSource],
   )
 
   // 360 全景产物节点的「全景预览」入口（由右键菜单触发，与「编辑」解耦）。
@@ -8454,6 +8520,7 @@ export function CanvasWorkspaceView({
             onEditNode={handleEditNode}
             onRenameNode={(nodeId, title) => patchNodes([nodeId], { title })}
             onEditVideo={handleEditVideo}
+            onVideoScaleCompress={handleOpenVideoScaleCompress}
             onAudioTrim={handleAudioTrim}
             onAudioSpeed={handleAudioSpeed}
             onExpandOperationOutputs={handleExpandLatestOperationOutputs}
@@ -8740,6 +8807,12 @@ export function CanvasWorkspaceView({
             onPickCanvasResources={handlePickCanvasWorkbenchResources}
             onCollectUpstream={handleCollectUpstreamWorkbenchResources}
             onMaterializeOutput={handleMaterializeVideoOutput}
+          />
+          <CanvasVideoScaleCompressModal
+            open={Boolean(videoScaleCompressSource)}
+            source={videoScaleCompressSource}
+            onClose={() => setVideoScaleCompressSource(null)}
+            onConfirm={handleVideoScaleCompressConfirm}
           />
           <CanvasFilmAssetCenter
             open={filmCenterOpen}
