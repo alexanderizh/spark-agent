@@ -57,7 +57,17 @@ app.commandLine.appendSwitch(
   'OverlayScrollbar,OverlayScrollbarFlashAfterAnyScrollUpdate,OverlayScrollbarFlashWhenMouseEnter,OverlayScrollbarWinStyle',
 )
 
+// ─── Dev userData isolation ────────────────────────────────────────────────
+// 必须在任何 userData 消费者（单实例锁、数据库、各服务）之前执行：
+// dev 运行时把数据目录切到 @spark/desktop-dev，避免开发构建与生产安装包
+// 共写同一个 spark.db（曾触发在线恢复 split-brain 丢数据）。详见 data-profile.ts。
+const devUserDataDir = applyDevUserData(app, !app.isPackaged, process.env)
+if (devUserDataDir) {
+  console.warn(`[data-profile] dev run detected, using isolated userData: ${devUserDataDir}`)
+}
+
 import { is } from '@electron-toolkit/utils'
+import { applyDevUserData } from './data-profile.js'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
 import { startBackgroundMaintenanceWorker } from './services/background-maintenance-worker.js'
 import { startSnapshotVaultMaintenance } from './services/computer-use/SnapshotVaultMaintenance.js'
