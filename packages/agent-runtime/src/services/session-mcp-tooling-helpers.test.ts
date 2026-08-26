@@ -160,10 +160,15 @@ describe('WEB_SEARCH_SYSTEM_PROMPT', () => {
 })
 
 describe('QUICK_REPLIES_SYSTEM_PROMPT', () => {
-  it('keeps the tool optional, short, capped, and mutually exclusive with question tools', () => {
+  it('prefers the optional tool for simple confirmations while keeping replies short and exclusive', () => {
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('simple confirmation')
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('approve a proposed fix')
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('prefer offering quick replies')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('You decide whether the tool is useful')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('1-4')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('at most 40 characters')
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('`用户补充：`')
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('in the same user message')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('mutually exclusive')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('AskUserQuestion')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('request_user_input')

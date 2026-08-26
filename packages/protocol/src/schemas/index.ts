@@ -340,6 +340,11 @@ export const FileSavePastedImageRequestSchema = z.object({
   projectRootPath: z.string().min(1).max(2000).optional(),
 })
 
+export const FileSavePastedTextRequestSchema = z.object({
+  text: z.string().min(1).max(20_000_000),
+  suggestedBaseName: z.string().min(1).max(120).optional(),
+})
+
 export const FileSavePastedMediaRequestSchema = z.object({
   dataUrl: z.string().min(1).max(200_000_000),
   kind: z.enum(['video', 'audio']),
@@ -574,6 +579,8 @@ export const ProviderCreateRequestSchema = z
     mediaDefaults: ProviderMediaDefaultsSchema.optional(),
     /** 启用的多媒体模型 manifest 引用 */
     mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
+    /** 模型定时禁用时段；新建时随渠道一并落库 */
+    modelSchedules: z.array(ProviderModelScheduleSchema).max(200).optional(),
   })
   .superRefine((value, ctx) => {
     if ((value.defaultModel ?? value.model)?.trim().length) return
@@ -1057,6 +1064,7 @@ export const IpcSchemaRegistry = {
   'dialog:open-directory': DialogOpenDirectoryRequestSchema,
   'dialog:open-file': DialogOpenFileRequestSchema,
   'file:save-pasted-image': FileSavePastedImageRequestSchema,
+  'file:save-pasted-text': FileSavePastedTextRequestSchema,
   'file:save-pasted-media': FileSavePastedMediaRequestSchema,
   'file:prepare-image-preview': FilePrepareImagePreviewRequestSchema,
   'file:prepare-session-images': FilePrepareSessionImagesRequestSchema,

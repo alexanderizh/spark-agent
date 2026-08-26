@@ -654,6 +654,8 @@ export class ProviderService {
     mediaCapabilities?: MediaCapabilityId[]
     mediaDefaults?: ProviderMediaDefaults
     mediaModelRefs?: ProviderMediaModelRef[]
+    /** 模型定时禁用时段；新建时随渠道 config 一并落库。 */
+    modelSchedules?: ProviderModelSchedule[]
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -716,6 +718,9 @@ export class ProviderService {
         }),
         ...(params.mediaDefaults !== undefined && { mediaDefaults: params.mediaDefaults }),
         ...(params.mediaModelRefs !== undefined && { mediaModelRefs: params.mediaModelRefs }),
+        ...(params.modelSchedules !== undefined && {
+          modelSchedules: sanitizeModelSchedules(params.modelSchedules),
+        }),
       }),
       keystoreRef: ref,
       isDefault: params.isDefault ?? false,

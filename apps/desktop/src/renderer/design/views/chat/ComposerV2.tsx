@@ -120,7 +120,13 @@ import type {
   SessionRuntimePatch,
   TextEditMenuState,
 } from './ChatComposerTypes'
+import { COMPOSER_ATTACHMENT_LIMIT } from './ChatComposerTypes'
 import { useComposerCodeReferences } from './composer-code-references'
+import {
+  buildPastedTextAttachment,
+  pasteClipboardTextAsPlainText,
+  shouldConvertPastedTextToResource,
+} from './composer-pasted-text'
 import {
   NO_PROJECT_WORKSPACE_NAME,
   useSessionSidebar,
@@ -129,7 +135,10 @@ import {
 import type { UIMessage } from '../../services/event-mapper'
 import { formatTokenCount, resolveContextUsedTokens } from './ChatViewUtils'
 import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
-import { resolvePendingQuickReplies } from '../../services/quick-reply-suggestions'
+import {
+  buildQuickReplyMessage,
+  resolvePendingQuickReplies,
+} from '../../services/quick-reply-suggestions'
 import { useAppControlComposerPrefill } from './composerAppControl'
 import { useSessionReferenceAddControl } from './session-reference-control'
 import {
@@ -283,22 +292,25 @@ function InlineContextMenu({
 
 async function editTextSelection(
   target: ComposerLexicalInputHandle,
-  action: 'cut' | 'copy' | 'paste',
+  action: 'cut' | 'copy',
 ): Promise<void> {
   target.focus()
-  if (action === 'paste') {
-    try {
-      const text = await navigator.clipboard.readText()
-      target.replaceSelection(text)
-    } catch {
-      document.execCommand('paste')
-    }
-    return
-  }
   document.execCommand(action)
 }
 
-function TextEditContextMenu({ menu, onClose }: { menu: TextEditMenuState; onClose: () => void }) {
+function TextEditContextMenu({
+  menu,
+  onClose,
+  onPasteAsText,
+  onPasteAsResource,
+}: {
+  menu: TextEditMenuState
+  onClose: () => void
+  /** 右键「粘贴为文本」：无条件按普通文本插入（跳过长度阈值）。 */
+  onPasteAsText: (target: ComposerLexicalInputHandle) => void
+  /** 右键「粘贴为资源」：无条件把剪贴板文本落盘为 .txt 引用附件（跳过长度阈值）。 */
+  onPasteAsResource: () => void
+}) {
   const { target, hasSelection, isEditable } = menu
   const items = useMemo<ContextMenuItem[]>(() => {
     const result: ContextMenuItem[] = []
@@ -319,10 +331,16 @@ function TextEditContextMenu({ menu, onClose }: { menu: TextEditMenuState; onClo
           onClick: () => void editTextSelection(target, 'copy'),
         },
         {
-          key: 'paste',
-          label: '粘贴',
+          key: 'paste-as-text',
+          label: '粘贴为文本',
           icon: <Icons.FilePlus size={14} />,
-          onClick: () => void editTextSelection(target, 'paste'),
+          onClick: () => onPasteAsText(target),
+        },
+        {
+          key: 'paste-as-resource',
+          label: '粘贴为资源',
+          icon: <Icons.FileText size={14} />,
+          onClick: onPasteAsResource,
         },
       )
     } else if (hasSelection) {
@@ -343,7 +361,7 @@ function TextEditContextMenu({ menu, onClose }: { menu: TextEditMenuState; onClo
       },
     })
     return result
-  }, [hasSelection, isEditable, target])
+  }, [hasSelection, isEditable, onPasteAsResource, onPasteAsText, target])
   return <InlineContextMenu x={menu.x} y={menu.y} items={items} onClose={onClose} />
 }
 
@@ -848,6 +866,7 @@ export function ComposerV2({
   const [previewAttachment, setPreviewAttachment] = useState<ComposerAttachment | null>(null)
   const [textEditMenu, setTextEditMenu] = useState<TextEditMenuState | null>(null)
   const textareaRef = useRef<ComposerLexicalInputHandle | null>(null)
+  const pasteAsTextThresholdBypassRef = useRef(false)
   const [knownSkillNames, setKnownSkillNames] = useState<string[]>([])
   const composerParamBarRef = useRef<HTMLDivElement | null>(null)
   useResponsiveComposerParamVisibility(composerParamBarRef)
@@ -887,6 +906,7 @@ export function ComposerV2({
   const { invoke: sendTurn } = useIpcInvoke('session:submit-turn')
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
+  const { invoke: savePastedText } = useIpcInvoke('file:save-pasted-text')
   const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
   const { invoke: prepareSessionImages } = useIpcInvoke('file:prepare-session-images')
   const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
@@ -1895,11 +1915,17 @@ export function ComposerV2({
           }
           // 命令结果已通过事件流注入到聊天中，无需 Toast
           if (res.session != null) onCommandComplete(res.session)
-          if (res.started === true) onSent(sessionId, true)
-          await refreshQueueState(sessionId)
-          if (res.started === true) {
+          if (res.queued === true) {
+            // 会话运行中：命令已进入会话队列，等当前 turn 结束后出队执行。
+            // 队列面板立即给出可见反馈，草稿也在此刻清掉（消息已被接受）。
+            setQueueVisible(true)
+            onSent(sessionId, false)
+            clearDraftBuckets([draftBucketKey, sessionId, NEW_SESSION_DRAFT_BUCKET])
+          } else if (res.started === true) {
+            onSent(sessionId, true)
             clearDraftBuckets([draftBucketKey, sessionId, NEW_SESSION_DRAFT_BUCKET])
           }
+          await refreshQueueState(sessionId)
         } catch (err) {
           optimisticSend?.fail(err instanceof Error ? err.message : String(err))
           console.error('命令执行失败', err)
@@ -2059,7 +2085,7 @@ export function ComposerV2({
       setAttachments((current) => {
         const byPath = new Map(current.map((attachment) => [attachment.path, attachment]))
         for (const attachment of nextAttachments) {
-          if (byPath.size >= 20) {
+          if (byPath.size >= COMPOSER_ATTACHMENT_LIMIT) {
             truncated = true
             break
           }
@@ -2305,9 +2331,29 @@ export function ComposerV2({
 
   const handlePaste = useCallback(
     async (event: React.ClipboardEvent<HTMLElement>) => {
+      if (pasteAsTextThresholdBypassRef.current) return
       const items = Array.from(event.clipboardData?.items ?? [])
       const imageItems = items.filter((item) => item.type.startsWith('image/'))
-      if (imageItems.length === 0) return
+      if (imageItems.length === 0) {
+        // 超长纯文本：不铺平进输入框，落盘为 .txt 引用附件（阈值见 composer-pasted-text）。
+        // 右键菜单的「粘贴为文本」不走这里，主动选择优先于阈值。
+        const text = event.clipboardData?.getData('text/plain') ?? ''
+        if (!shouldConvertPastedTextToResource(text)) return
+        event.preventDefault()
+        if (attachments.length >= COMPOSER_ATTACHMENT_LIMIT) {
+          toast.info(`单轮最多添加 ${COMPOSER_ATTACHMENT_LIMIT} 个附件。`)
+          return
+        }
+        try {
+          const attachment = await buildPastedTextAttachment(text, { savePastedText })
+          const added = appendAttachments([attachment])
+          if (added > 0) toast.info('长文本已转为引用资源')
+        } catch (err) {
+          console.error('粘贴长文本失败', err)
+          toast.error(err instanceof Error ? err.message : '粘贴长文本失败')
+        }
+        return
+      }
 
       event.preventDefault()
       try {
@@ -2343,8 +2389,51 @@ export function ComposerV2({
         toast.error(err instanceof Error ? err.message : '粘贴图片失败')
       }
     },
-    [appendAttachments, savePastedImage, toast],
+    [appendAttachments, attachments.length, savePastedImage, savePastedText, toast],
   )
+
+  const handlePasteAsText = useCallback(
+    async (target: ComposerLexicalInputHandle) => {
+      try {
+        await pasteClipboardTextAsPlainText(target, {
+          readClipboardText: () => navigator.clipboard.readText(),
+          pasteNativelyWithThresholdBypass: () => {
+            pasteAsTextThresholdBypassRef.current = true
+            try {
+              if (!document.execCommand('paste')) throw new Error('无法读取剪贴板文本')
+            } finally {
+              pasteAsTextThresholdBypassRef.current = false
+            }
+          },
+        })
+      } catch (err) {
+        console.error('粘贴为文本失败', err)
+        toast.error(err instanceof Error ? err.message : '粘贴为文本失败')
+      }
+    },
+    [toast],
+  )
+
+  /** 输入框右键「粘贴为资源」：主动选择，跳过长度阈值，短文本也转为引用附件。 */
+  const handlePasteAsResource = useCallback(async () => {
+    if (attachments.length >= COMPOSER_ATTACHMENT_LIMIT) {
+      toast.info(`单轮最多添加 ${COMPOSER_ATTACHMENT_LIMIT} 个附件。`)
+      return
+    }
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text.trim().length === 0) {
+        toast.info('剪贴板中没有可粘贴的文本')
+        return
+      }
+      const attachment = await buildPastedTextAttachment(text, { savePastedText })
+      const added = appendAttachments([attachment])
+      if (added > 0) toast.success('已粘贴为引用资源')
+    } catch (err) {
+      console.error('粘贴为资源失败', err)
+      toast.error(err instanceof Error ? err.message : '粘贴为资源失败')
+    }
+  }, [appendAttachments, attachments.length, savePastedText, toast])
 
   const handleRemoveAttachment = useCallback(
     (id: string) => {
@@ -3759,7 +3848,12 @@ export function ComposerV2({
           sessionReferences.length === 0 && (
             <QuickReplySuggestions
               replies={activeQuickReplies.replies}
-              onSelect={(reply) => void dispatchMessage(reply, [], null)}
+              onSelect={(reply) => {
+                if (selectedProvider == null || !submitGateRef.current.tryEnter()) return
+                const message = buildQuickReplyMessage(reply, value)
+                setValue('')
+                void dispatchMessage(message, [], null).finally(() => submitGateRef.current.leave())
+              }}
               onDismiss={() => setDismissedQuickReplyKey(activeQuickReplies.key)}
             />
           )}
@@ -4103,7 +4197,12 @@ export function ComposerV2({
             />
           </div>
           {textEditMenu != null && (
-            <TextEditContextMenu menu={textEditMenu} onClose={() => setTextEditMenu(null)} />
+            <TextEditContextMenu
+              menu={textEditMenu}
+              onClose={() => setTextEditMenu(null)}
+              onPasteAsText={(target) => void handlePasteAsText(target)}
+              onPasteAsResource={() => void handlePasteAsResource()}
+            />
           )}
           <MentionPopover
             open={mentionOpen && filteredMentionCandidates.length > 0 && teamConfig.enabled}

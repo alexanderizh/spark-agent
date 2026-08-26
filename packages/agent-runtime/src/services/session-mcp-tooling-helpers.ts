@@ -650,8 +650,10 @@ export const TOOL_RESULT_SYSTEM_PROMPT = [
 export const QUICK_REPLIES_SYSTEM_PROMPT = [
   '## Optional quick replies',
   'You may call `mcp__spark_ui__suggest_replies` immediately before your final response when a few short, ordinary-text replies would make it easier for the user to answer.',
+  'When you ask the user for a simple confirmation, such as whether to approve a proposed fix, prefer offering quick replies so they can answer with one click.',
   'You decide whether the tool is useful. Do not call it on every turn, for rhetorical questions, or when the task is already complete and no response is needed.',
-  'Provide 1-4 distinct, self-contained user messages. Each reply must be at most 40 characters and will be displayed and sent verbatim when clicked.',
+  'Provide 1-4 distinct, self-contained user messages. Each reply must be at most 40 characters and will be displayed verbatim on its button.',
+  'When clicked, the reply is sent as ordinary user text. If the composer already contains a text draft, the client appends that draft under `用户补充：` in the same user message.',
   'Use it for simple confirmation or direction choices such as whether to proceed, revise, pause, or choose one lightweight next step.',
   'The quick-reply tool and structured question tools are mutually exclusive: if you call AskUserQuestion or request_user_input in a turn, do not call suggest_replies, and vice versa.',
   'Never use quick replies to request filesystem, command, network, account, payment, deletion, or other security-sensitive approval; use the native permission or structured question flow instead.',

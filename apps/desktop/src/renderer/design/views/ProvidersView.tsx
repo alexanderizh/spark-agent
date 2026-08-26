@@ -2703,11 +2703,15 @@ export function ProviderEditPanel({
     if (!trimmed) return
     setForm((prev) => {
       if (!checked && prev.defaultModel.trim() === trimmed) return prev
+      if (checked) {
+        return { ...prev, modelIds: uniqPreserveOrder([trimmed, ...prev.modelIds]) }
+      }
+      // 联动清理：模型被移除时同步删除其定时禁用时段，避免残留配置继续生效
+      const modelIds = prev.modelIds.filter((id) => id !== trimmed)
       return {
         ...prev,
-        modelIds: checked
-          ? uniqPreserveOrder([trimmed, ...prev.modelIds])
-          : prev.modelIds.filter((id) => id !== trimmed),
+        modelIds,
+        modelSchedules: prev.modelSchedules.filter((s) => s.modelId !== trimmed),
       }
     })
   }, [])
@@ -3438,6 +3442,8 @@ export function ProviderEditPanel({
       const endpoint = form.endpoint.trim()
       // 确保 defaultModel 在 modelIds 中且排在最前（锁定为 primary）
       const modelIds = uniqPreserveOrder([effectiveDefaultModel, ...form.modelIds])
+      // 兜底：不在启用列表中的模型，其定时禁用时段一并清除（正常路径已由编辑入口联动清理）
+      const modelSchedules = form.modelSchedules.filter((s) => modelIds.includes(s.modelId))
       const haiku = form.haikuModel.trim()
       const sonnet = form.sonnetModel.trim()
       const opus = form.opusModel.trim()
@@ -3462,7 +3468,7 @@ export function ProviderEditPanel({
           imageApiType: form.modelType === 'image' ? form.mediaApiType : null,
           ...buildMediaUpdateFields(form),
           // 定时禁用时段整体下发（空数组 = 清除全部）；服务端先应用时段，再做被禁模型的写保护合并
-          modelSchedules: form.modelSchedules,
+          modelSchedules,
         }
         if (form.provider === 'openai') req.codexApiKind = form.codexApiKind
         Object.assign(req, editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty))
@@ -3487,6 +3493,8 @@ export function ProviderEditPanel({
           imageProvider: form.modelType === 'image' ? form.imageProvider : null,
           imageApiType: form.modelType === 'image' ? form.mediaApiType : null,
           ...buildMediaUpdateFields(form),
+          // 定时禁用时段随创建一并落库（此前 create 链路缺失导致新建配置丢失）
+          modelSchedules,
         })
       }
       onClose()
@@ -4698,7 +4706,12 @@ export function ProviderEditPanel({
                         setForm((prev) => {
                           const d = prev.defaultModel.trim()
                           if (!d) return prev
-                          return { ...prev, modelIds: [d] }
+                          // 联动清理：仅保留默认模型时，其余模型的定时禁用时段一并移除
+                          return {
+                            ...prev,
+                            modelIds: [d],
+                            modelSchedules: prev.modelSchedules.filter((s) => s.modelId === d),
+                          }
                         })
                       }}
                     >
@@ -4749,7 +4762,14 @@ export function ProviderEditPanel({
                   </div>
                   <ChipList
                     value={form.modelIds}
-                    onChange={(ids) => set('modelIds', ids)}
+                    onChange={(ids) => {
+                      // 联动清理：chip 删除模型时同步移除其定时禁用时段，避免残留配置继续生效
+                      setForm((prev) => ({
+                        ...prev,
+                        modelIds: ids,
+                        modelSchedules: prev.modelSchedules.filter((s) => ids.includes(s.modelId)),
+                      }))
+                    }}
                     onSelectDefault={(id) => {
                       // 把 id 设为默认模型：从 modelIds 里把它放到最前
                       setForm((prev) => {

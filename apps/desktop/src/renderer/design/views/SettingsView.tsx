@@ -4377,6 +4377,8 @@ function StorageSection() {
     databaseBytes: number
     cacheBytes: number
     projectsBytes: number
+    attachmentsDir: string
+    attachmentsBytes: number
     canvasProjectsBytes: number
     logsPath: string
     logsBytes: number
@@ -4714,6 +4716,11 @@ function StorageSection() {
               label="项目工作目录 (projects/)"
               used={formatBytes(stats.projectsBytes)}
               pct={percent(stats.projectsBytes, stats.totalBytes)}
+            />
+            <UsageRow
+              label="会话附件 (attachments/)"
+              used={formatBytes(stats.attachmentsBytes)}
+              pct={percent(stats.attachmentsBytes, stats.totalBytes)}
             />
             <UsageRow
               label="Canvas 项目目录"

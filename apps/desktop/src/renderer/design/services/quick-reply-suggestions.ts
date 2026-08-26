@@ -31,6 +31,14 @@ export function parseQuickReplies(input: unknown): string[] {
   return replies
 }
 
+export function buildQuickReplyMessage(reply: string, draft: string): string {
+  const normalizedReply = reply.trim()
+  const userSupplement = draft.trim()
+  if (!userSupplement) return normalizedReply
+
+  return `${normalizedReply}\n\n用户补充：\n${userSupplement}`
+}
+
 /**
  * Resolve the latest unconsumed quick replies after the most recent user message.
  * An unanswered structured question wins if a model violates the mutual-exclusion prompt.

@@ -10,6 +10,8 @@ import type {
   WorkspaceGitState,
 } from '@spark/protocol'
 
+export const COMPOSER_ATTACHMENT_LIMIT = 20
+
 export type BranchState = {
   gitState?: WorkspaceGitState
   currentBranch: string | null

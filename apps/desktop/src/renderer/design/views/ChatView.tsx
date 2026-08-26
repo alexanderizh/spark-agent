@@ -91,6 +91,14 @@ import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
 import { CancellationNotice } from './chat/CancellationNotice'
 import { groupChatMessageTimeline } from './chat/chat-message-timeline'
 import { ActivitySegment } from './chat/ActivitySegment'
+import { SessionTaskPanel } from './chat/SessionTaskPanel'
+import {
+  areSessionTaskTimelineEntriesEqual,
+  buildSessionTaskTimeline,
+  projectSessionTaskTimelineBlocks,
+  shouldReplaceSessionTaskBlock,
+  type SessionTaskTimelineEntry,
+} from './chat/SessionTaskTimeline'
 import {
   getToolLogGroupKind,
   isChatActivitySegmentRunning,
@@ -208,6 +216,7 @@ import {
   extractInspectorSubagents,
   extractSessionProgressTasks,
   isRecord,
+  isSessionProgressToolBlock,
   parseTodosFromInputOrOutput,
   type InspectorTask,
 } from './chat/ChatInspectorUtils'
@@ -3577,6 +3586,10 @@ function ChatStream({
     [messages, optimisticMessages, sessionId],
   )
   const turnNavItems = useMemo(() => buildChatTurnNavItems(displayMessages), [displayMessages])
+  const sessionTaskTimeline = useMemo(
+    () => buildSessionTaskTimeline(displayMessages),
+    [displayMessages],
+  )
   const messagesRef = useRef<UIMessage[]>([])
   const [agentIsRunning, setAgentIsRunning] = useState(false)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
@@ -4901,6 +4914,7 @@ function ChatStream({
                           assistantAvatarSrc,
                         )
                         const retryPayload = buildErrorRetryPayload(displayMessages, index)
+                        const sessionTaskEntry = sessionTaskTimeline.get(msg.id)
                         return (
                           <AssistantMessageRows
                             key={msg.id}
@@ -4908,6 +4922,7 @@ function ChatStream({
                             workspaceRootPath={workspaceRootPath}
                             messageId={msg.id}
                             blocks={msg.blocks}
+                            {...(sessionTaskEntry != null ? { sessionTaskEntry } : {})}
                             messageStatus={msg.status}
                             isLatest={expandedAssistantMessageIds.has(msg.id)}
                             sessionRunning={agentIsRunning || persistedSessionStatus === 'running'}
@@ -5196,6 +5211,7 @@ function renderBlocks(
     autoCollapseTools?: boolean
     onFilePreview?: FileOpenHandler
     detectDocumentOutput?: boolean
+    sessionTaskEntry?: SessionTaskTimelineEntry
   } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
@@ -5228,6 +5244,14 @@ function renderBlocks(
       case 'tool_call': {
         if (isHiddenTimelineBlock(block)) {
           return null
+        }
+        if (
+          options.sessionTaskEntry != null &&
+          shouldReplaceSessionTaskBlock(block, options.sessionTaskEntry)
+        ) {
+          return block.toolCallId === options.sessionTaskEntry.anchorToolCallId ? (
+            <SessionTaskPanel key={i} tasks={options.sessionTaskEntry.tasks} />
+          ) : null
         }
         const toolStatus =
           block.status === 'success'
@@ -5536,6 +5560,7 @@ function renderBlocksGrouped(
     workspaceRootPath?: string | null
     autoCollapseTools?: boolean
     onFilePreview?: FileOpenHandler
+    sessionTaskEntry?: SessionTaskTimelineEntry
   } = {},
 ): ReactNode {
   const autoCollapseEnabled = readAppearance().autoCollapseTools
@@ -5566,6 +5591,7 @@ function renderActivityBlocks(
     workspaceRootPath?: string | null
     autoCollapseTools?: boolean
     onFilePreview?: FileOpenHandler
+    sessionTaskEntry?: SessionTaskTimelineEntry
   },
 ): ReactNode {
   const surface = options.surface ?? 'main'
@@ -5591,6 +5617,17 @@ function renderActivityBlocks(
   }
 
   blocks.forEach((block, index) => {
+    // 会话任务面板替换逻辑与 renderBlocks 的 tool_call 分支同源：任务类工具块
+    // （task_create / task_update / todo_write / todo_read）不进入 ToolLogGroup 批处理，
+    // 否则会绕过 renderBlocks 内的 SessionTaskPanel 替换（anchor 渲染面板、其余吞掉）。
+    // 必须放在 getToolLogGroupKind 分桶之前：task_* / todo_read 会被 classifyToolLog
+    // 兜底归入通用 'tool' 桶。
+    if (shouldReplaceSessionTaskBlock(block, options.sessionTaskEntry)) {
+      flush(`tool-log-${index}`)
+      nodes.push(<Fragment key={`block-${index}`}>{renderBlocks([block], options)}</Fragment>)
+      return
+    }
+
     const kind = getToolLogGroupKind(block, surface)
     if (kind != null && (block.kind === 'tool_call' || block.kind === 'terminal')) {
       if (batchKind != null && batchKind !== kind) flush(`tool-log-${index}`)
@@ -6070,11 +6107,15 @@ function ValidationSuggestionCard({
     setRunningCommand(runKey)
     try {
       const quotedCommand = quoteSlashCommandArg(command)
-      await window.spark.invoke('command:execute', {
+      const res = await window.spark.invoke('command:execute', {
         sessionId,
         message: repair ? `/validate ${quotedCommand} --repair` : `/validate ${quotedCommand}`,
       })
-      toast.info(repair ? '验证命令已执行；失败时会交给 Agent 继续修复。' : '验证命令已开始执行。')
+      if (res.queued === true) {
+        toast.info('会话运行中，验证命令已加入队列，将在当前任务完成后执行。')
+      } else {
+        toast.info(repair ? '验证命令已执行；失败时会交给 Agent 继续修复。' : '验证命令已开始执行。')
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '验证命令执行失败')
     } finally {
@@ -7274,6 +7315,7 @@ type AssistantRowCompareProps = {
   workspaceRootPath: string | null
   status?: 'running'
   blocks: UIBlock[]
+  sessionTaskEntry?: SessionTaskTimelineEntry
   messageStatus?: UIMessage['status']
   isLatest?: boolean
   timestamp?: string | undefined
@@ -7299,6 +7341,7 @@ function assistantRowsPropsAreEqual(
   }
   return (
     prev.blocks === next.blocks &&
+    areSessionTaskTimelineEntriesEqual(prev.sessionTaskEntry, next.sessionTaskEntry) &&
     prev.messageStatus === next.messageStatus &&
     prev.sessionId === next.sessionId &&
     prev.workspaceRootPath === next.workspaceRootPath &&
@@ -7322,6 +7365,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   workspaceRootPath,
   status,
   blocks,
+  sessionTaskEntry,
   messageStatus,
   isLatest,
   timestamp,
@@ -7348,6 +7392,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   workspaceRootPath: string | null
   status?: 'running'
   blocks: UIBlock[]
+  sessionTaskEntry?: SessionTaskTimelineEntry
   messageStatus?: UIMessage['status']
   isLatest?: boolean
   timestamp?: string | undefined
@@ -7384,15 +7429,33 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   const hideTeamHostProcessLogs = teamModeActive && !showTeamActivityLogs
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
+  const lastRenderableSegmentIndex = segments.reduce((lastIndex, segment, index) => {
+    if (segment.kind !== 'agent') return index
+    const projectedBlocks =
+      sessionTaskEntry == null
+        ? segment.blocks
+        : projectSessionTaskTimelineBlocks(segment.blocks, sessionTaskEntry.anchorToolCallId)
+    return projectedBlocks.length > 0 ? index : lastIndex
+  }, -1)
   const lastAgentSegmentIndex = segments.reduce(
-    (lastIndex, segment, index) => (segment.kind === 'agent' ? index : lastIndex),
+    (lastIndex, segment, index) => {
+      if (segment.kind !== 'agent') return lastIndex
+      const projectedBlocks =
+        sessionTaskEntry == null
+          ? segment.blocks
+          : projectSessionTaskTimelineBlocks(
+              segment.blocks,
+              sessionTaskEntry.anchorToolCallId,
+            )
+      return projectedBlocks.length > 0 ? index : lastIndex
+    },
     -1,
   )
 
   return (
     <>
       {segments.map((segment, index) => {
-        const segmentIsLatest = isLatest === true && index === segments.length - 1
+        const segmentIsLatest = isLatest === true && index === lastRenderableSegmentIndex
         if (segment.kind === 'team') {
           return (
             <div key={`team-${index}`} className="team-timeline-segment">
@@ -7455,17 +7518,40 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             <TeamDiscussionStatusBlockView key={`team-status-${index}`} block={segment.block} />
           )
         }
+        const segmentBlocks =
+          sessionTaskEntry == null
+            ? segment.blocks
+            : projectSessionTaskTimelineBlocks(
+                segment.blocks,
+                sessionTaskEntry.anchorToolCallId,
+              )
+        if (segmentBlocks.length === 0) return null
         const segmentStreaming = segmentIsLatest && status === 'running'
+        const segmentTaskEntry =
+          sessionTaskEntry != null &&
+          segmentBlocks.some(
+            (block) =>
+              isSessionProgressToolBlock(block) &&
+              block.toolCallId === sessionTaskEntry.anchorToolCallId,
+          )
+            ? sessionTaskEntry
+            : undefined
         // 团队模式关闭过程日志时，host 的纯过程段（只有思考/工具调用等，会被 CSS 整体隐藏）
         // 不再渲染；流式段保留，让「执行任务中」运行标识可见。有正文/错误/结果卡片的段不受影响。
-        if (hideTeamHostProcessLogs && !segmentStreaming && !hasVisibleAgentBlocks(segment.blocks))
+        if (
+          hideTeamHostProcessLogs &&
+          segmentTaskEntry == null &&
+          !segmentStreaming &&
+          !hasVisibleAgentBlocks(segmentBlocks)
+        )
           return null
         return (
           <AgentMsg
             key={`agent-${index}`}
             sessionId={sessionId}
             workspaceRootPath={workspaceRootPath}
-            blocks={segment.blocks}
+            blocks={segmentBlocks}
+            {...(segmentTaskEntry != null ? { sessionTaskEntry: segmentTaskEntry } : {})}
             isLatest={segmentIsLatest}
             {...(sessionRunning !== undefined ? { sessionRunning } : {})}
             assistantId={assistantId}
@@ -7637,6 +7723,7 @@ const AgentMsg = React.memo(function AgentMsg({
   workspaceRootPath,
   status,
   blocks,
+  sessionTaskEntry,
   messageStatus,
   isLatest,
   timestamp,
@@ -7660,6 +7747,7 @@ const AgentMsg = React.memo(function AgentMsg({
   workspaceRootPath: string | null
   status?: 'running'
   blocks: UIBlock[]
+  sessionTaskEntry?: SessionTaskTimelineEntry
   messageStatus?: UIMessage['status']
   isLatest?: boolean
   timestamp?: string | undefined
@@ -7710,7 +7798,9 @@ const AgentMsg = React.memo(function AgentMsg({
   )
   const toolCallBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'tool_call' }> =>
-      b.kind === 'tool_call' && !isHiddenTimelineBlock(b),
+      b.kind === 'tool_call' &&
+      !isHiddenTimelineBlock(b) &&
+      !(sessionTaskEntry != null && isSessionProgressToolBlock(b)),
   )
   const errorBlocks = blocks.filter((b) => b.kind === 'error')
   const isStreaming = status === 'running'
@@ -7852,11 +7942,13 @@ const AgentMsg = React.memo(function AgentMsg({
                   workspaceRootPath,
                   onFilePreview,
                   autoCollapseTools: !(isStreaming || suppressAutoCollapse),
+                  ...(sessionTaskEntry != null ? { sessionTaskEntry } : {}),
                 }
               : {
                   sessionId,
                   workspaceRootPath,
                   autoCollapseTools: !(isStreaming || suppressAutoCollapse),
+                  ...(sessionTaskEntry != null ? { sessionTaskEntry } : {}),
                 },
           )}
         </div>

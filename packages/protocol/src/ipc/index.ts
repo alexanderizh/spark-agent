@@ -947,6 +947,8 @@ export interface ProviderCreateRequest {
   mediaDefaults?: ProviderMediaDefaults
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs?: ProviderMediaModelRef[]
+  /** 模型定时禁用时段；新建时随渠道一并落库 */
+  modelSchedules?: ProviderModelSchedule[]
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
   isDefault?: boolean
@@ -1636,6 +1638,9 @@ export interface AppGetStorageStatsResponse {
   databaseBytes: number
   cacheBytes: number
   projectsBytes: number
+  /** 应用级持久附件目录（粘贴长文本等会话引用资源）大小 */
+  attachmentsDir: string
+  attachmentsBytes: number
   canvasProjectsBytes: number
   /** 本地文件日志目录（app.getPath('logs')）大小 */
   logsPath: string
@@ -3960,6 +3965,8 @@ export interface CommandExecuteResponse {
   forwardToAgent?: boolean
   inChat?: boolean
   started?: boolean
+  /** 会话有活跃执行时命令已进入会话队列，等当前 turn 结束后出队执行。 */
+  queued?: boolean
   session?: SessionListResponse['sessions'][number]
 }
 
@@ -4632,6 +4639,24 @@ export interface FileSavePastedImageResponse {
   /** 写入后的绝对路径 */
   filePath: string
   /** 根据 MIME / 文件名推导出的 basename */
+  fileName: string
+}
+
+/**
+ * `file:save-pasted-text` — 把渲染进程剪贴板里的超长纯文本写入应用级持久目录，
+ * 返回绝对路径，供会话以文件附件形式引用（避免长文本铺平在输入区与消息气泡中）。
+ */
+export interface FileSavePastedTextRequest {
+  /** 原始纯文本内容，主进程以 UTF-8 写入 .txt 文件 */
+  text: string
+  /** 可选建议文件名前缀，不含扩展名；可携带可读摘要（主进程会做文件名安全清洗） */
+  suggestedBaseName?: string
+}
+
+export interface FileSavePastedTextResponse {
+  /** 写入后的绝对路径 */
+  filePath: string
+  /** 写入后的 basename（.txt 结尾） */
   fileName: string
 }
 
@@ -6493,6 +6518,7 @@ export interface IpcChannelMap
   // File Save Image — show save dialog and copy a local image to the user's chosen path
   'file:save-image': [FileSaveImageRequest, FileSaveImageResponse]
   'file:save-pasted-image': [FileSavePastedImageRequest, FileSavePastedImageResponse]
+  'file:save-pasted-text': [FileSavePastedTextRequest, FileSavePastedTextResponse]
   'file:save-pasted-media': [FileSavePastedMediaRequest, FileSavePastedMediaResponse]
   'file:save-canvas-annotation': [FileSaveCanvasAnnotationRequest, FileSaveCanvasAnnotationResponse]
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]

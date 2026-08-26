@@ -6,11 +6,19 @@ import {
   scheduledBlockedModelIds,
   type ProviderModelSchedule,
 } from '@spark/protocol'
+import {
+  candidateModelIdsForRow,
+  firstUnusedModelId,
+  groupModelSchedules,
+  ungroupModelSchedules,
+  type ModelScheduleGroupRow,
+} from './providerModelScheduleGroups'
 
 /**
  * 模型定时禁用时段编辑区（峰谷定价规避）。
  *
- * 行内扁平编辑：每行一个模型的时段配置（模型 / 周几 / 起止时间 / 开关 / 删除），
+ * 行内扁平编辑：每行可绑定多个模型（窗口配置相同的模型合并展示，保存时按模型
+ * 展开回逐条 schedule），行内包含模型多选 / 周几 / 起止时间 / 开关 / 删除，
  * 当前处于禁用时段内的模型行会显示「禁用中」状态。仅编辑表单状态，
  * 保存时随 provider:update 的 modelSchedules 字段整体下发（空数组 = 清除全部）。
  */
@@ -57,28 +65,30 @@ export function ProviderModelScheduleSection({
   onChange,
 }: ProviderModelScheduleSectionProps) {
   const blocked = useMemo(() => scheduledBlockedModelIds(schedules), [schedules])
+  const rows = useMemo(() => groupModelSchedules(schedules), [schedules])
   const hasAnyModel = modelIds.length > 0
 
-  const updateAt = (index: number, patch: Partial<ProviderModelSchedule>) => {
-    const next = schedules.map((schedule, i) =>
-      i === index ? { ...schedule, ...patch } : schedule,
-    )
+  const updateRows = (next: ModelScheduleGroupRow[]) => {
+    onChange(ungroupModelSchedules(next))
+  }
+
+  const updateRowAt = (index: number, patch: Partial<ModelScheduleGroupRow>) => {
+    const next = rows.map((row, i) => (i === index ? { ...row, ...patch } : row))
     if (next[index] == null) return
-    onChange(next)
+    updateRows(next)
   }
 
-  const removeAt = (index: number) => {
-    onChange(schedules.filter((_, i) => i !== index))
+  const removeRowAt = (index: number) => {
+    updateRows(rows.filter((_, i) => i !== index))
   }
 
-  const addSchedule = () => {
-    const firstUsable = modelIds.find((id) => !schedules.some((s) => s.modelId === id))
-    const modelId = firstUsable ?? modelIds[0]
+  const addRow = () => {
+    const modelId = firstUnusedModelId(modelIds, rows) ?? modelIds[0]
     if (modelId == null) return
-    onChange([
-      ...schedules,
+    updateRows([
+      ...rows,
       {
-        modelId,
+        modelIds: [modelId],
         enabled: true,
         days: [...DEFAULT_DAYS],
         startMinute: DEFAULT_START_MINUTE,
@@ -101,8 +111,8 @@ export function ProviderModelScheduleSection({
           type="button"
           className="pv_section_action"
           disabled={!hasAnyModel}
-          title={hasAnyModel ? '为某个模型添加定时禁用时段' : '请先添加模型'}
-          onClick={addSchedule}
+          title={hasAnyModel ? '为模型添加定时禁用时段（一行可绑定多个模型）' : '请先添加模型'}
+          onClick={addRow}
         >
           <Icons.Plus size={11} />
           <span>添加时段</span>
@@ -113,38 +123,47 @@ export function ProviderModelScheduleSection({
           <div className="pv_ms_empty">未设置定时禁用时段</div>
         ) : (
           <div className="pv_ms_list">
-            {schedules.map((schedule, index) => {
-              const crossingMidnight = schedule.endMinute < schedule.startMinute
-              const invalidWindow =
-                schedule.days.length === 0 || schedule.startMinute === schedule.endMinute
-              const blocking = blocked.has(schedule.modelId)
-              const candidateIds = [
-                schedule.modelId,
-                ...modelIds.filter((id) => !schedules.some((s) => s.modelId === id)),
-              ]
+            {rows.map((row, index) => {
+              const crossingMidnight = row.endMinute < row.startMinute
+              const invalidWindow = row.days.length === 0 || row.startMinute === row.endMinute
+              const blocking = row.modelIds.some((id) => blocked.has(id))
+              const candidates = candidateModelIdsForRow(row, modelIds, rows)
+              const removeTitle =
+                row.modelIds.length > 1
+                  ? `移除 ${row.modelIds.join('、')} 的定时禁用`
+                  : `移除 ${row.modelIds[0]} 的定时禁用`
               return (
-                <div key={`${schedule.modelId}:${index}`} className="pv_ms_row">
+                <div key={index} className="pv_ms_row">
                   <div className="pv_ms_row_main">
                     <div className="pv_ms_model">
                       <Select
+                        mode="multiple"
                         size="small"
-                        value={schedule.modelId}
-                        options={candidateIds.map((id) => ({ value: id, label: id }))}
-                        onChange={(value) => updateAt(index, { modelId: value })}
+                        value={row.modelIds}
+                        options={candidates.map((id) => ({ value: id, label: id }))}
+                        onChange={(values) => {
+                          if (values.length === 0) {
+                            // 行内模型清空视为删除整行
+                            removeRowAt(index)
+                            return
+                          }
+                          updateRowAt(index, { modelIds: values })
+                        }}
                         popupMatchSelectWidth={false}
                         className="pv_ms_model_select"
+                        placeholder="选择要禁用的模型"
                       />
                       <Switch
                         size="small"
-                        checked={schedule.enabled}
-                        onChange={(checked) => updateAt(index, { enabled: checked })}
-                        title={schedule.enabled ? '关闭后时段不生效' : '开启后时段生效'}
+                        checked={row.enabled}
+                        onChange={(checked) => updateRowAt(index, { enabled: checked })}
+                        title={row.enabled ? '关闭后时段不生效' : '开启后时段生效'}
                       />
                       {blocking && <span className="pv_ms_blocking_badge">禁用中</span>}
                     </div>
                     <div className="pv_ms_days">
                       {DAY_OPTIONS.map((day) => {
-                        const active = schedule.days.includes(day.value)
+                        const active = row.days.includes(day.value)
                         return (
                           <button
                             key={day.value}
@@ -152,10 +171,10 @@ export function ProviderModelScheduleSection({
                             className={`pv_ms_day${active ? ' is-active' : ''}`}
                             title={`周${day.label}`}
                             onClick={() =>
-                              updateAt(index, {
+                              updateRowAt(index, {
                                 days: active
-                                  ? schedule.days.filter((d) => d !== day.value)
-                                  : [...schedule.days, day.value].sort((a, b) => a - b),
+                                  ? row.days.filter((d) => d !== day.value)
+                                  : [...row.days, day.value].sort((a, b) => a - b),
                               })
                             }
                           >
@@ -168,28 +187,36 @@ export function ProviderModelScheduleSection({
                       <input
                         type="time"
                         className="pv_ms_time"
-                        value={minuteToTime(schedule.startMinute)}
+                        value={minuteToTime(row.startMinute)}
                         onChange={(e) => {
                           const minute = timeToMinute(e.target.value)
-                          if (minute >= 0) updateAt(index, { startMinute: minute })
+                          if (minute >= 0) updateRowAt(index, { startMinute: minute })
                         }}
                       />
                       <span className="pv_ms_time_sep">至</span>
                       <input
                         type="time"
                         className="pv_ms_time"
-                        value={minuteToTime(schedule.endMinute % 1440)}
+                        value={minuteToTime(row.endMinute % 1440)}
                         onChange={(e) => {
                           const minute = timeToMinute(e.target.value)
                           if (minute >= 0) {
                             // 结束时间 00:00 表示 24:00（全天到午夜）；否则保持与起始的先后关系语义
-                            updateAt(index, { endMinute: minute === 0 ? 1440 : minute })
+                            updateRowAt(index, { endMinute: minute === 0 ? 1440 : minute })
                           }
                         }}
                       />
                     </div>
                     <div className="pv_ms_summary">
-                      <span className="pv_ms_summary_text">{formatScheduleWindow(schedule)}</span>
+                      <span className="pv_ms_summary_text">
+                        {formatScheduleWindow({
+                          modelId: row.modelIds[0] ?? '',
+                          enabled: row.enabled,
+                          days: row.days,
+                          startMinute: row.startMinute,
+                          endMinute: row.endMinute,
+                        })}
+                      </span>
                       {crossingMidnight && (
                         <span className="pv_ms_cross_note" title="晚段属起始日，凌晨段继承前一日">
                           跨零点
@@ -200,14 +227,14 @@ export function ProviderModelScheduleSection({
                   <button
                     type="button"
                     className="pv_ms_remove"
-                    title={`移除 ${schedule.modelId} 的定时禁用`}
-                    onClick={() => removeAt(index)}
+                    title={removeTitle}
+                    onClick={() => removeRowAt(index)}
                   >
                     <Icons.X size={11} />
                   </button>
                   {invalidWindow && (
                     <div className="pv_ms_row_error">
-                      {schedule.days.length === 0 ? '请至少选择一个生效日期' : '起止时间不能相同'}
+                      {row.days.length === 0 ? '请至少选择一个生效日期' : '起止时间不能相同'}
                     </div>
                   )}
                 </div>

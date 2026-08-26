@@ -48,6 +48,8 @@ export interface InspectorTask {
   createdAt: number
 }
 
+type ToolCallBlock = Extract<UIMessage['blocks'][number], { kind: 'tool_call' }>
+
 export function parseTodosFromInputOrOutput(
   input: Record<string, unknown>,
   output: string | undefined,
@@ -251,6 +253,26 @@ export function extractSessionProgressTasks(messages: UIMessage[]): InspectorTas
   const tasks = extractInspectorTasks(messages, { includeTeamMemberTasks: false })
   const messageStatus = findLatestHostTaskMessageStatus(messages)
   return settleFinishedProgress(tasks, messageStatus)
+}
+
+/**
+ * Whether a host tool call contributes to the session task snapshot shown by
+ * `extractSessionProgressTasks`. Keeping this predicate beside the extractor
+ * prevents the inspector and the inline timeline from drifting apart.
+ */
+export function isSessionProgressToolBlock(
+  block: UIMessage['blocks'][number],
+): block is ToolCallBlock {
+  if (block.kind !== 'tool_call' || block.teamMemberContext != null) return false
+  if (isTaskToolName(block.toolName)) return true
+  if (block.toolName === 'todo_write') {
+    return Array.isArray(block.toolInput['todos']) || parseTodosFromOutput(block.output) != null
+  }
+  return (
+    block.toolName === 'todo_read' &&
+    block.status === 'success' &&
+    parseTodosFromReadOutput(block.output) != null
+  )
 }
 
 type SessionProgressSnapshot = {

@@ -49,6 +49,11 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { MarkdownText } from '../views/ChatView'
 import { resolveComposerImageSrc } from '../views/chat/ComposerV2'
+import { COMPOSER_ATTACHMENT_LIMIT } from '../views/chat/ChatComposerTypes'
+import {
+  buildPastedTextAttachment,
+  shouldConvertPastedTextToResource,
+} from '../views/chat/composer-pasted-text'
 import { getLatestAgentStatus, isRunningAgentStatus } from '../views/chat-session-status'
 import { isOptionalUserQuestion } from '../utils/user-question-readiness'
 import {
@@ -263,6 +268,7 @@ export function ChatPanel({
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
   const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
+  const { invoke: savePastedText } = useIpcInvoke('file:save-pasted-text')
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
   const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
   const { toast } = useToast()
@@ -496,7 +502,7 @@ export function ChatPanel({
       updateAttachments((current) => {
         const byPath = new Map(current.map((attachment) => [attachment.path, attachment]))
         for (const attachment of nextAttachments) {
-          if (byPath.size >= 20) {
+          if (byPath.size >= COMPOSER_ATTACHMENT_LIMIT) {
             truncated = true
             break
           }
@@ -636,12 +642,29 @@ export function ChatPanel({
   )
 
   // 粘贴图片：把剪贴板里的图片存到本地，作为 image 附件引用（与主聊天 ComposerV2 行为一致）。
-  // 粘贴纯文本时无 image 项，直接放行走默认文本粘贴。
+  // 粘贴纯文本超长时与 ComposerV2 一致：落盘为 .txt 引用附件，不铺平进输入框。
   const handlePaste = useCallback(
     async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
       const items = Array.from(event.clipboardData?.items ?? [])
       const imageItems = items.filter((item) => item.type.startsWith('image/'))
-      if (imageItems.length === 0) return
+      if (imageItems.length === 0) {
+        const text = event.clipboardData?.getData('text/plain') ?? ''
+        if (!shouldConvertPastedTextToResource(text)) return
+        event.preventDefault()
+        if (attachments.length >= COMPOSER_ATTACHMENT_LIMIT) {
+          toast.info(`单轮最多添加 ${COMPOSER_ATTACHMENT_LIMIT} 个文件或目录引用。`)
+          return
+        }
+        try {
+          const attachment = await buildPastedTextAttachment(text, { savePastedText })
+          const added = appendAttachments([attachment])
+          if (added > 0) toast.info('长文本已转为引用资源')
+        } catch (err) {
+          console.error('粘贴长文本失败', err)
+          toast.error(err instanceof Error ? err.message : '粘贴长文本失败')
+        }
+        return
+      }
 
       event.preventDefault()
       try {
@@ -674,7 +697,7 @@ export function ChatPanel({
         toast.error(err instanceof Error ? err.message : '粘贴图片失败')
       }
     },
-    [appendAttachments, savePastedImage, toast],
+    [appendAttachments, attachments.length, savePastedImage, savePastedText, toast],
   )
 
   const submitTurn = useCallback(

@@ -1675,11 +1675,10 @@
 }
 
 .pv_ms_row {
-  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 10px 26px 10px 0;
+  padding: 10px 0;
   border-bottom: 1px solid var(--border);
 
   &:last-child {
@@ -1705,7 +1704,7 @@
 
 .pv_ms_model_select {
   min-width: 200px;
-  max-width: 320px;
+  max-width: 360px;
   flex-shrink: 1;
 }
 
@@ -1814,9 +1813,8 @@
 }
 
 .pv_ms_remove {
-  position: absolute;
-  top: 10px;
-  right: 0;
+  flex-shrink: 0;
+  margin-top: 1px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

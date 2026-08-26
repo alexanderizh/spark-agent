@@ -215,6 +215,7 @@ import {
   getWorkspaceRootIssue,
   isCliSparkOverrideCompatible,
   isComputerVisionCandidate,
+  isGoalControlCommand,
   isTitlePrefixOfMessage,
   joinPromptSections,
   makeRuntimeLoadStatus,
@@ -528,6 +529,12 @@ type PendingTurn = UserMessagePresentation & {
   mentionAgentId?: string
   /** 内部续跑标记：只用于用户新消息/停止时从队列移除，不改变隐藏消息展示策略。 */
   isTeamDispatchAutoContinuation?: boolean
+  /**
+   * 排队中的 `/xxx` 命令请求：会话有活跃执行时命令不再绕过队列直接注入事件
+   * （会打断 UI 运行态、插序事件流，/clear、/checkpoint restore 更会改写运行中
+   * 会话的历史）。出队时走命令执行路径（executeQueuedCommandTurn）而非 startTurn。
+   */
+  isCommandTurn?: boolean
 }
 
 type SendTurnParams = UserMessagePresentation & {
@@ -1574,7 +1581,31 @@ export class SessionService {
     message: string
     attachments?: SessionAttachment[]
     sessionReferences?: SessionReferenceInput[]
-  }): Promise<{ isCommand: boolean; forwardToAgent?: boolean; started?: boolean }> {
+  }): Promise<{ isCommand: boolean; forwardToAgent?: boolean; started?: boolean; queued?: boolean }> {
+    // 会话有活跃执行（executor loop / team dispatch / starting 过渡态）时，命令作为
+    // 命令 turn 进入会话队列，等当前 turn 结束后由 startNextQueuedTurn 出队执行——
+    // 与普通消息的排队语义一致。goal 生命周期控制命令豁免（排队等目标结束 =
+    // pause 永不生效，见 isGoalControlCommand）。
+    if (
+      !isGoalControlCommand(params.message) &&
+      (this.hasActiveSessionExecution(params.sessionId) ||
+        this.turnRegistry.isSessionStarting(params.sessionId))
+    ) {
+      // makePendingTurn 的参数面服务于普通 turn；命令 turn 字段少，直接构造
+      // （attachments/sessionReferences 归一化规则与 dispatchTurn 保持一致）。
+      const commandAttachments = normalizeTurnAttachments(params.attachments)
+      const commandReferences = params.sessionReferences?.slice(0, 10) ?? []
+      const commandTurn: PendingTurn = {
+        turnId: crypto.randomUUID(),
+        message: params.message,
+        enqueuedAt: new Date().toISOString(),
+        isCommandTurn: true,
+        ...(commandAttachments != null ? { attachments: commandAttachments } : {}),
+        ...(commandReferences.length > 0 ? { sessionReferences: commandReferences } : {}),
+      }
+      this.enqueueTurn(params.sessionId, commandTurn)
+      return { isCommand: true, forwardToAgent: false, queued: true }
+    }
     return this.commandController.executeCommandAsEvents(params)
   }
 
@@ -8084,6 +8115,18 @@ export class SessionService {
     }
     this.turnRegistry.beginStarting(sessionId, next.turnId)
     this.emitQueueChanged(sessionId)
+    // 命令 turn 不跑 executor loop，出队后直接执行命令本体；同样借用 starting
+    // 过渡态占位，防止命令执行期间新 turn/新命令插队（startTurn 的
+    // existingStartingTurnId 检查会把它们压回队列），UI 的 running 也保持连续。
+    if (next.isCommandTurn === true) {
+      void this.executeQueuedCommandTurn(sessionId, next)
+        .catch((error) => this.handleQueuedCommandFailure(sessionId, next, error))
+        .finally(() => {
+          this.turnRegistry.finishStartingForce(sessionId, next.turnId)
+          if (!this.turnRegistry.hasActiveSession(sessionId)) this.startNextQueuedTurn(sessionId)
+        })
+      return
+    }
     void this.startTurn(
       sessionId,
       next.turnId,
@@ -8103,6 +8146,92 @@ export class SessionService {
         this.turnRegistry.finishStartingForce(sessionId, next.turnId)
         if (!this.turnRegistry.hasActiveSession(sessionId)) this.startNextQueuedTurn(sessionId)
       })
+  }
+
+  /**
+   * 出队执行排队的命令 turn。直接调 controller 完整走命令执行（handler + 结果
+   * 事件注入 + follow-up），不经 SessionService.executeCommandAsEvents 的排队闸——
+   * 出队时刻已无活跃执行，且 starting 占位是本 turn 自己的。
+   *
+   * forwardToAgent 命令（典型 /compact）在渲染器直发路径由前端把原文转普通消息
+   * 发送；出队路径没有前端参与，这里等价地把命令原文作为可见消息发给 Agent。
+   */
+  private async executeQueuedCommandTurn(sessionId: string, turn: PendingTurn): Promise<void> {
+    const result = await this.commandController.executeCommandAsEvents({
+      sessionId,
+      message: turn.message,
+      ...(turn.attachments != null ? { attachments: turn.attachments } : {}),
+      ...(turn.sessionReferences != null ? { sessionReferences: turn.sessionReferences } : {}),
+    })
+    if (result.isCommand && result.forwardToAgent === true) {
+      await this.sendTurn({
+        sessionId,
+        message: turn.message,
+        ...(turn.attachments != null ? { attachments: turn.attachments } : {}),
+        ...(turn.sessionReferences != null ? { sessionReferences: turn.sessionReferences } : {}),
+      })
+    }
+  }
+
+  /**
+   * 排队命令出队执行失败：IPC 调用早已返回 queued，用户看不到异常，必须把失败
+   * 以命令结果事件的形状注入聊天流（与命令成功时的 ✅/❌ 气泡一致），避免排队的
+   * 命令无声消失。队列推进由调用方的 finally 兜底，不会卡死后续 turn。
+   */
+  private handleQueuedCommandFailure(sessionId: string, turn: PendingTurn, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error)
+    log.error('queued command turn failed', {
+      sessionId,
+      message: turn.message,
+      error: message,
+    })
+    const turnId = crypto.randomUUID()
+    const eventRepo = new EventRepository(this.db)
+    const seq0 = this.eventSequencer.reserve(sessionId, eventRepo, 3)
+    const cmdName = turn.message.replace(/^\//, '').split(' ')[0]
+    const failureEvents: AgentEvent[] = [
+      {
+        id: crypto.randomUUID(),
+        type: 'user_message',
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: seq0,
+        content: turn.message,
+        ...(turn.attachments != null ? { attachments: turn.attachments } : {}),
+      },
+      {
+        id: crypto.randomUUID(),
+        type: 'assistant_message',
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: seq0 + 1,
+        mode: 'complete',
+        content: `❌ **/${cmdName}**\n\n命令执行失败：${message}`,
+        provider: 'spark' as const,
+        isFinal: true,
+      },
+      {
+        id: crypto.randomUUID(),
+        type: 'agent_status',
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: seq0 + 2,
+        status: 'error',
+        message: `/${cmdName} failed`,
+      },
+    ]
+    try {
+      persistAndPublishAgentEvents(eventRepo, failureEvents, this.onEvent)
+    } catch (persistError) {
+      log.error('failed to persist queued command failure events', {
+        sessionId,
+        turnId,
+        error: persistError instanceof Error ? persistError.message : String(persistError),
+      })
+    }
   }
 
   private handleQueuedTurnStartFailure(sessionId: string, turn: PendingTurn, error: unknown): void {
@@ -8793,6 +8922,9 @@ export class SessionService {
       const runtimeOnlyPatch = pickGoalDrainableRuntimeSelection(turn.runtimePatch)
       const isPlainUserTurn =
         turn.isTeamDispatchAutoContinuation !== true &&
+        // 命令 turn 必须留给 startNextQueuedTurn 出队执行：内联进迭代 prompt 会把
+        // "/xxx" 当作用户插话文本发给 Agent，命令本身永远不会执行。
+        turn.isCommandTurn !== true &&
         turn.userMessageVisibility !== 'hidden' &&
         (turn.attachments == null || turn.attachments.length === 0) &&
         turn.skillId == null &&

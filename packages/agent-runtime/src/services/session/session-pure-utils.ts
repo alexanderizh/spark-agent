@@ -62,6 +62,7 @@ import { normalizeWorkflowGraph, type WorkflowDispatchAttachment } from '../work
 import { resolveEngineKind } from './engine-kinds.js'
 import type { AgentAdapterKind } from '../session-resume-gate.js'
 import type { ModelRouterProvider } from '../model-router.service.js'
+import { isCommand, parseCommand } from '../../core/index.js'
 
 export type WorktreePromptMeta = {
   baseRepoRoot: string
@@ -1642,4 +1643,22 @@ export function normalizeCustomCommandConfig(value: unknown): CustomCommandConfi
     scriptLanguage: record.scriptLanguage === 'python' ? 'python' : 'javascript',
     enabled: record.enabled !== false,
   }
+}
+
+/** `/goal` 的生命周期控制子命令（排队会死锁的豁免清单，见 isGoalControlCommand）。 */
+const GOAL_CONTROL_ACTIONS = new Set(['pause', 'resume', 'clear', 'complete', 'confirm', 'reject'])
+
+/**
+ * 判断消息是否为 goal 生命周期控制命令（/goal pause|resume|clear|complete|confirm|reject）。
+ *
+ * 这类命令必须豁免"运行中排队"：spark-loop 目标活跃期间队列由 goal 迭代泵推进，
+ * 排队的 /goal pause 会滞留到目标自然结束才执行（等于永不生效）。控制语义本身
+ * 就是"打断当前迭代"，立即执行才是正确行为。
+ */
+export function isGoalControlCommand(message: string): boolean {
+  if (!isCommand(message)) return false
+  const parsed = parseCommand(message)
+  if (parsed?.name !== 'goal') return false
+  const action = parsed.subcommand ?? parsed.args[0]
+  return action != null && GOAL_CONTROL_ACTIONS.has(action)
 }

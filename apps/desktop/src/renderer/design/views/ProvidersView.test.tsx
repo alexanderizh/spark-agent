@@ -128,6 +128,31 @@ vi.mock('@lobehub/ui', async () => {
 vi.mock('antd', () => ({
   Badge: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
   Popconfirm: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  Select: ({
+    value,
+    options = [],
+    onChange,
+  }: {
+    value?: string[]
+    options?: Array<{ label: React.ReactNode; value: string }>
+    onChange?: (value: string[]) => void
+  }) => (
+    <select
+      multiple
+      data-testid="schedule-model-select"
+      defaultValue={value}
+      onChange={(event) => {
+        const selected = Array.from(event.target.selectedOptions).map((option) => option.value)
+        onChange?.(selected)
+      }}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ),
   Switch: () => <button type="button" role="switch" />,
 }))
 
@@ -1282,6 +1307,151 @@ describe('ProviderEditPanel progressive configuration', () => {
         modelIds: ['model-b'],
       }),
     )
+  })
+
+  // ─── 定时禁用时段：编辑回显 / 日期多选 / 删除行 / 新建随建落库 ───
+  const scheduleProfile = {
+    id: 'provider-schedule-e2e',
+    name: 'Schedule Provider',
+    provider: 'openai',
+    defaultModel: 'gpt-5',
+    modelIds: ['gpt-5', 'gpt-5-mini'],
+    apiEndpoint: 'https://api.openai.com/v1',
+    supportsMillionContext: false,
+    isDefault: false,
+    enabled: true,
+    keystoreRef: 'openai-provider-schedule-e2e',
+    createdAt: '',
+    updatedAt: '',
+    modelSchedules: [
+      { modelId: 'gpt-5-mini', enabled: true, days: [1], startMinute: 600, endMinute: 720 },
+    ],
+  }
+
+  async function renderSchedulePanel() {
+    mocks.invokers.set(
+      'provider:list',
+      vi.fn(async () => ({ profiles: [scheduleProfile] })),
+    )
+    mocks.invokers.set('provider:get-api-key', vi.fn(async () => ({ apiKey: 'sk-saved' })))
+    const updateProvider = vi.fn(async (_req: Record<string, unknown>) => ({
+      profile: scheduleProfile,
+    }))
+    mocks.invokers.set('provider:update', updateProvider)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel
+          visible
+          profileId="provider-schedule-e2e"
+          onClose={() => undefined}
+        />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    return { updateProvider, saveButton }
+  }
+
+  it('定时禁用：日期多选后保存 payload 反映新增日期', async () => {
+    const { updateProvider, saveButton } = await renderSchedulePanel()
+
+    const wed = Array.from(container.querySelectorAll('.pv_ms_day')).find(
+      (button) => button.textContent === '三',
+    )
+    expect(wed).toBeDefined()
+    await act(async () => {
+      wed?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+    expect(updateProvider).toHaveBeenCalledTimes(1)
+    expect(updateProvider.mock.calls[0]?.[0].modelSchedules).toEqual([
+      { modelId: 'gpt-5-mini', enabled: true, days: [1, 3], startMinute: 600, endMinute: 720 },
+    ])
+  })
+
+  it('定时禁用：删除时段行后保存 payload 为空数组（清除全部）', async () => {
+    const { updateProvider, saveButton } = await renderSchedulePanel()
+
+    const remove = container.querySelector('.pv_ms_remove')
+    expect(remove).not.toBeNull()
+    await act(async () => {
+      remove?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelectorAll('.pv_ms_row')).toHaveLength(0)
+
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+    expect(updateProvider).toHaveBeenCalledTimes(1)
+    expect(updateProvider.mock.calls[0]?.[0].modelSchedules).toEqual([])
+  })
+
+  it('定时禁用：新建 Provider 时时段随 create payload 落库', async () => {
+    mocks.invokers.set('provider:list', vi.fn(async () => ({ profiles: [] })))
+    const createProvider = vi.fn(async () => ({ profile: null }))
+    mocks.invokers.set('provider:create', createProvider)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel
+          visible
+          initialPresetId="anthropic-official"
+          onClose={() => undefined}
+        />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
+    act(() => {
+      if (!apiKeyInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        apiKeyInput,
+        'sk-new-key',
+      )
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const addButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '添加时段',
+    )
+    expect(addButton).toBeDefined()
+    await act(async () => {
+      addButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelectorAll('.pv_ms_row')).toHaveLength(1)
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+    expect(createProvider).toHaveBeenCalledTimes(1)
+    expect(createProvider.mock.calls[0]?.[0].modelSchedules).toEqual([
+      {
+        modelId: 'claude-sonnet-4-20250514',
+        enabled: true,
+        days: [1, 2, 3, 4, 5],
+        startMinute: 840,
+        endMinute: 1080,
+      },
+    ])
   })
 })
 

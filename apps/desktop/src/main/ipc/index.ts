@@ -281,6 +281,7 @@ import { registerWorkspaceSearchIpc } from './registerWorkspaceSearchIpc.js'
 import { getPluginManager, registerPluginIpc } from './registerPluginIpc.js'
 import { registerFilePreviewIpc } from './registerFilePreviewIpc.js'
 import { registerFileOperationsIpc } from './registerFileOperationsIpc.js'
+import { registerPastedTextIpc } from './registerPastedTextIpc.js'
 import { registerSessionImageOptimizerIpc } from './registerSessionImageOptimizerIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
 import { ComputerUseAgentController } from '../services/computer-use/ComputerUseAgentController.js'
@@ -3287,6 +3288,7 @@ export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
   registerFilePreviewIpc()
   registerFileOperationsIpc()
+  registerPastedTextIpc()
   registerSessionImageOptimizerIpc()
   registerFontAssetIpc()
   registerVoiceIpc()
@@ -6300,6 +6302,7 @@ export function registerAllIpcHandlers(): void {
     const path = await import('node:path')
     const userDataPath = app.getPath('userData')
     const projectsDir = path.join(userDataPath, 'projects')
+    const attachmentsDir = path.join(userDataPath, 'attachments')
     const canvasProjectsRoot = getDefaultCanvasProjectsRoot()
     const databasePath = getDatabasePath()
 
@@ -6355,6 +6358,7 @@ export function registerAllIpcHandlers(): void {
       (await fileSize(`${databasePath}-wal`))
 
     const projectsBytes = await dirSize(projectsDir)
+    const attachmentsBytes = await dirSize(attachmentsDir)
     const canvasProjectsBytes = await dirSize(canvasProjectsRoot)
 
     // 文件日志目录（main.log 及轮转文件），独立统计便于单独清理
@@ -6370,15 +6374,23 @@ export function registerAllIpcHandlers(): void {
     return {
       userDataPath,
       projectsDir,
+      attachmentsDir,
       canvasProjectsRoot,
       databasePath,
       databaseBytes,
       cacheBytes,
       projectsBytes,
+      attachmentsBytes,
       canvasProjectsBytes,
       logsPath,
       logsBytes,
-      totalBytes: databaseBytes + cacheBytes + projectsBytes + canvasProjectsBytes + logsBytes,
+      totalBytes:
+        databaseBytes +
+        cacheBytes +
+        projectsBytes +
+        attachmentsBytes +
+        canvasProjectsBytes +
+        logsBytes,
     }
   })
 
@@ -7462,6 +7474,7 @@ export function registerAllIpcHandlers(): void {
       forwardToAgent: false,
       inChat: true,
       started: cmdResult.started ?? false,
+      ...(cmdResult.queued === true ? { queued: true } : {}),
       session,
     }
   })

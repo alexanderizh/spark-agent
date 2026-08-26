@@ -75,6 +75,25 @@ describe('IPC schemas', () => {
     ).toThrow()
   })
 
+  it('validates persistent pasted-text attachment payloads', () => {
+    expect(
+      IpcSchemaRegistry['file:save-pasted-text'].parse({
+        text: '需要持久保留的长文本',
+        suggestedBaseName: 'pasted-text-摘要',
+      }),
+    ).toEqual({
+      text: '需要持久保留的长文本',
+      suggestedBaseName: 'pasted-text-摘要',
+    })
+    expect(() => IpcSchemaRegistry['file:save-pasted-text'].parse({ text: '' })).toThrow()
+    expect(() =>
+      IpcSchemaRegistry['file:save-pasted-text'].parse({
+        text: 'content',
+        suggestedBaseName: 'x'.repeat(121),
+      }),
+    ).toThrow()
+  })
+
   it('accepts the canvas log scope and rejects unknown log scopes', () => {
     expect(IpcSchemaRegistry['log:read'].parse({ scope: 'canvas' })).toEqual({ scope: 'canvas' })
     expect(() => IpcSchemaRegistry['log:read'].parse({ scope: 'tasks' })).toThrow()
