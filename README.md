@@ -374,6 +374,59 @@ pnpm typecheck && pnpm lint && pnpm test
 
 注意：该许可证附加了个人使用限制，并非标准 SPDX `Apache-2.0` 许可证。
 
+## Spark CLI（spark-engine）
+
+[spark-engine](spark-engine/) 是本仓库的确定性、事件溯源编码 Agent 内核（npm 包 `@spark/agent`），提供 `spark` 命令行与终端交互界面（TUI）。它与桌面端共用 SparkWork 模型渠道：打开 SparkWork 即可自动发现已配置的模型，也支持在终端内直接配置本地渠道。要求 Node.js `>=22.14 <23`、npm 10+。
+
+### 安装
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases/install.sh | sh
+```
+
+```powershell
+# Windows PowerShell
+irm https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases/install.ps1 | iex
+```
+
+安装脚本会校验发布包 sha256 后通过 npm 全局安装，并在需要时把 `spark` 启动器链接到 PATH；也可以直接 `npm install -g @spark/agent`。
+
+### 使用
+
+```bash
+spark                # 进入交互 TUI；未配置模型时会先引导选择/配置渠道
+spark "修复登录超时的 bug 并补充单测"   # 单任务执行
+spark --plain        # 无渲染的纯 REPL
+spark --json "任务"  # 以 NDJSON 输出事件流（脚本友好）
+spark models         # 列出可用模型
+spark doctor         # 诊断安装、模型发现与选择
+```
+
+常用参数：`-m/--model` 选渠道、`--permission-mode default|acceptEdits|plan|bypass` 控制审批策略、`--effort off|low|medium|high` 控制推理强度。
+
+TUI 内常用命令与快捷键（`/help` 随时可查）：
+
+| 命令 | 说明 | 快捷键 | 说明 |
+| --- | --- | --- | --- |
+| `/model` | 切换模型或配置本地渠道 | `esc` | 中断任务；输入非空时先清空输入框 |
+| `/perm` | 切换权限策略 | `Shift+Tab` | 循环 默认→编辑自动→计划 |
+| `/effort` | 切换推理强度 | `Ctrl+O` | 显示/隐藏实时思考流 |
+| `/update` | TUI 内检查并安装新版本 | `Ctrl+U` / `Ctrl+W` | 清空整行 / 删除前一个词 |
+| `/status` `/clear` `/exit` | 会话状态 / 新会话 / 退出 | `\` + Enter | 强制换行 |
+| `/help` | 命令与快捷键总览 | `Ctrl+C` ×2 | 退出 |
+
+### 更新与卸载
+
+```bash
+spark update --check    # 只检查
+spark update            # 升级到最新版（下载校验 → 备份 → 原子替换 → 回读验证，失败自动回滚）
+spark update --target 0.3.0   # 锁定具体版本
+spark uninstall         # 移除启动器；--package 连 npm 包一起移除（保留 ~/.spark 配置与会话）
+```
+
+启动时每天至多检查一次新版本并在退出后提示（`SPARK_UPDATE_CHECK=0` 可关闭）。更多细节见 [spark-engine/README.md](spark-engine/README.md)。
+
 ---
 
 <sub>Built with Electron · React · TypeScript · pnpm.</sub>
