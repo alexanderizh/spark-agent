@@ -119,8 +119,9 @@ import { getDatabase } from './db.js'
 import { getRecentSessionsForTray } from './ipc/index.js'
 import { createLogger } from '@spark/shared'
 import type { UpdateInfo, UpdateStatus } from '@spark/protocol'
-import { SettingsService } from '@spark/agent-runtime'
-import { SettingsRepository } from '@spark/storage'
+import { ProviderService, resolveProviderApiKey, SettingsService } from '@spark/agent-runtime'
+import { ProviderProfileRepository, SettingsRepository } from '@spark/storage'
+import { startSparkCliBridge, type SparkCliBridge } from './services/SparkCliBridgeService.js'
 import { initAuthService, getAuthService } from './services/Auth/AuthService.js'
 import { getPlatformModelService } from './services/PlatformModel/index.js'
 import {
@@ -797,6 +798,7 @@ async function initializeApp(): Promise<void> {
   const dbPath = getDatabasePath()
   // 消息通知轮询服务（auth 初始化完成后赋值启动；提前声明供数据库 try 块内注册的退出清理引用）
   let notificationService: NotificationService | null = null
+  let sparkCliBridge: SparkCliBridge | null = null
   log.info(`Database path: ${dbPath}`)
   let databaseBackup: Awaited<ReturnType<typeof ensurePreMigrationBackup>>
   try {
@@ -899,6 +901,10 @@ async function initializeApp(): Promise<void> {
                 run: () => disposeComputerUseServices(),
               },
               {
+                name: 'spark CLI provider bridge',
+                run: () => sparkCliBridge?.stop() ?? Promise.resolve(),
+              },
+              {
                 name: 'database',
                 run: () => closeDatabase(),
               },
@@ -962,6 +968,25 @@ async function initializeApp(): Promise<void> {
     log.info('Cloud auth service started')
   } catch (err) {
     log.error(`Cloud auth service init failed: ${String(err)}`)
+  }
+
+  // 终端与桌面端共享同一份 Provider 权威数据。必须等 IPC 初始化完成（凭据 vault
+  // 已注入）及平台凭据恢复器就绪后再发布 bridge descriptor，避免 CLI 抢跑时回退到
+  // 直接 Keychain 读取或把托管渠道误判为缺少凭据。
+  try {
+    const providerRepository = new ProviderProfileRepository(getDatabase())
+    const providerService = new ProviderService(providerRepository)
+    sparkCliBridge = await startSparkCliBridge({
+      listProviders: () => providerService.listProviders(),
+      resolveCredential: async (providerId) => {
+        const provider = providerRepository.get(providerId)
+        if (provider == null) throw new Error(`Provider not found: ${providerId}`)
+        return resolveProviderApiKey(provider)
+      },
+    })
+    log.info('Spark CLI provider bridge started')
+  } catch (error) {
+    log.warn(`Spark CLI provider bridge failed to start: ${String(error)}`)
   }
 
   // 2.06 消息通知（站内信 + 平台公告）：注册 IPC 并启动 60s 轮询。
