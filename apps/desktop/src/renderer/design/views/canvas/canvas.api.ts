@@ -18,6 +18,7 @@ import type {
 import { getCanvasCapability, isOperationNode } from './canvas.capabilities'
 import { inferCanvasConnectionType } from './canvasConnectionSemantics'
 import {
+  decodeCanvasSafeFileUrl,
   encodeToSafeFileUrl,
   readFileAsDataUrl,
   readVideoDimensions,
@@ -1658,10 +1659,13 @@ export function readAssetTextForNode(asset: CanvasAsset): string {
 }
 
 /**
- * 解析媒体节点的本地文件路径：优先 node.data.filePath，回退到关联 asset.storageKey。
+ * 解析媒体节点的本地文件路径：优先 node.data.filePath，回退 url 反解、关联 asset.storageKey。
  *
  * 供音频截取/变速、视频尺寸压缩等本地 ffmpeg 链路使用；非本地（http(s) URL）资源
  * 不进入这些链路，调用方收到 null 时应当走"放弃"分支（toast 友好提示）。
+ *
+ * 注意：asset 回退依赖 db 参数；调用方（含视频/音频弹窗入口）应使用
+ * canvasApi.readMediaNodeLocalFilePath 以带上当前热存储 db。
  */
 export function readMediaLocalFilePath(
   node: Pick<CanvasNode, 'id' | 'assetId' | 'data'>,
@@ -1669,7 +1673,7 @@ export function readMediaLocalFilePath(
 ): string | null {
   const direct = typeof node.data?.filePath === 'string' ? node.data.filePath.trim() : ''
   if (direct) return direct
-  const fromUrl = readAudioFilePathFromUrl(node.data?.url)
+  const fromUrl = readLocalPathFromMediaUrl(node.data?.url)
   if (fromUrl) return fromUrl
   if (!db || !node.assetId) return null
   const asset = db.assets.find((a) => a.id === node.assetId)
@@ -1680,9 +1684,15 @@ export function readMediaLocalFilePath(
   return null
 }
 
-/** 从 `safe-file:///` 或 `file://` 形式的 url 反解成本地路径；其它形式返回 null */
-function readAudioFilePathFromUrl(url: unknown): string | null {
+/**
+ * 从媒体 url 反解本地路径；其它形式（http(s)/data:）返回 null。
+ * 优先画布标准 `safe-file://x/<base64>`（encodeToSafeFileUrl 产物），
+ * 兼容历史 `safe-file:///<percent>` 与 `file:///<percent>` 形式。
+ */
+function readLocalPathFromMediaUrl(url: unknown): string | null {
   if (typeof url !== 'string' || url.length === 0) return null
+  const decoded = decodeCanvasSafeFileUrl(url)
+  if (decoded) return decoded
   if (url.startsWith('safe-file:///')) {
     try {
       return decodeURIComponent(url.slice('safe-file:///'.length))
@@ -3900,6 +3910,20 @@ export const canvasApi = {
   },
 
   /**
+   * 解析媒体节点的本地文件路径（带热存储 db 的便捷入口）。
+   *
+   * 节点 data.filePath 缺失时（createMediaNode / insertAssetToBoard 只写 data.url），
+   * 需要回退查关联 asset.storageKey / metadata.filePath——该回退依赖 db，
+   * 视图层请一律使用本方法而非直接调用 readMediaLocalFilePath。
+   */
+  readMediaNodeLocalFilePath(
+    node: Pick<CanvasNode, 'id' | 'assetId' | 'data'> | null | undefined,
+  ): string | null {
+    if (!node) return null
+    return readMediaLocalFilePath(node, readDb())
+  },
+
+  /**
    * 触发音频节点截取：调 IPC 完成 ffmpeg trim，物化为新 audio 子节点，
    * 并用 `generated` 边与父节点相连，原节点保留。
    *
@@ -4042,6 +4066,8 @@ export const canvasApi = {
     projectId: string
     boardId: string
     parentNodeId: string
+    /** 真实落库的锚点节点 id。parentNodeId 可能是 `operation-output:` 虚拟视图 id，不在 db.nodes 中 */
+    anchorNodeId?: string
     filePath: string
     fileName: string
     mimeType?: string | null
@@ -4050,10 +4076,9 @@ export const canvasApi = {
     onProgress?: (progress: { percent: number; stage: string }) => void
   }): Promise<CanvasNode | null> {
     const db = readDb()
-    const parent = db.nodes.find(
-      (n) => n.id === input.parentNodeId && n.projectId === input.projectId,
-    )
-    if (!parent) return null
+    const parentNodeId = input.anchorNodeId ?? input.parentNodeId
+    const parent = db.nodes.find((n) => n.id === parentNodeId && n.projectId === input.projectId)
+    if (!parent) throw new Error('未找到源视频节点，无法生成压缩副本')
 
     const requestId = `video_scale_compress_${input.parentNodeId}_${Date.now()}`
     // 进度订阅放在本函数内：requestId 在这里生成，只有这里能正确过滤
@@ -4108,7 +4133,7 @@ export const canvasApi = {
         userId: USER_ID,
         projectId: input.projectId,
         boardId: input.boardId,
-        sourceNodeId: input.parentNodeId,
+        sourceNodeId: parentNodeId,
         targetNodeId: newNode.id,
         type: 'generated',
         taskId: null,
@@ -5938,6 +5963,19 @@ export const canvasApi = {
     const inputFile = request.inputFiles?.[0]
     const inputPath = inputFile?.path?.trim()
     if (!inputPath) throw new Error('深度视频转换需要可读取的本地视频路径')
+
+    // 主进程侧同时只允许一个深度任务在跑；提交前先探测，占用时直接提示，
+    // 避免先创建任务节点再失败。探测失败不阻断提交，由 create IPC 的主进程硬校验兜底。
+    let depthBusy: boolean
+    try {
+      const depthStatus = await window.spark.invoke('canvas:depth-model:status', {})
+      depthBusy = (depthStatus.runningDepthTaskCount ?? 0) > 0
+    } catch {
+      depthBusy = false
+    }
+    if (depthBusy) {
+      throw new Error('已有深度视频转换任务正在运行，请等待完成或先取消当前任务')
+    }
 
     const started = await this.startWorkflowTask(projectId, {
       boardId: request.boardId,

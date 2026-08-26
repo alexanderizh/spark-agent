@@ -280,7 +280,6 @@ import {
   canvasApi,
   flushCanvasTaskRuntimeWrites,
   isCanvasDirty,
-  readMediaLocalFilePath,
   revertProject,
   saveCanvas,
 } from './canvas.api'
@@ -2419,7 +2418,7 @@ export function CanvasWorkspaceView({
       if (!projectId || !snap) return
       const source = snap.nodes.find((n) => n.id === nodeId)
       if (!source || source.type !== 'audio') return
-      const filePath = readMediaLocalFilePath(source)
+      const filePath = canvasApi.readMediaNodeLocalFilePath(source)
       if (!filePath) {
         message.error('无法定位源音频文件')
         return
@@ -2455,7 +2454,7 @@ export function CanvasWorkspaceView({
       if (!projectId || !snap) return
       const source = snap.nodes.find((n) => n.id === nodeId)
       if (!source || source.type !== 'audio') return
-      const filePath = readMediaLocalFilePath(source)
+      const filePath = canvasApi.readMediaNodeLocalFilePath(source)
       if (!filePath) {
         message.error('无法定位源音频文件')
         return
@@ -2495,15 +2494,20 @@ export function CanvasWorkspaceView({
       const resolved = isOperationNode(node) ? resolveCanvasOperationResourceNode(node, snap) : node
       const target = resolved ?? node
 
-      const filePath = readMediaLocalFilePath(target)
+      const filePath = canvasApi.readMediaNodeLocalFilePath(target)
       if (!filePath) {
         message.warning('该视频没有可用的本地文件，暂不支持尺寸压缩')
         return
       }
+      // 操作节点的产物可能是 `operation-output:` 虚拟视图节点（未展开产物时），
+      // 该 id 不在 db.nodes 中；物化副本必须锚定到真实落库节点（右键点击的节点本身）。
+      const anchorNodeId =
+        resolved && snap.nodes.some((item) => item.id === resolved.id) ? resolved.id : node.id
       closeCanvasFloatPanels('node-edit')
       setSelectedNodeIds([target.id])
       setVideoScaleCompressSource({
         nodeId: target.id,
+        anchorNodeId,
         filePath,
         fileName: target.title ?? 'video',
         ...(typeof target.data.mimeType === 'string' && target.data.mimeType
@@ -2515,7 +2519,7 @@ export function CanvasWorkspaceView({
   )
 
   // 尺寸压缩确认：ffmpeg 缩放+转码 → 物化新 video 子节点 + generated 连线。
-  // 失败原样抛回弹窗展示并复位进度。
+  // 失败原样抛回弹窗展示并复位进度；仅物化成功才刷新并提示成功。
   const handleVideoScaleCompressConfirm = useCallback(
     async (input: VideoScaleCompressConfirmInput) => {
       const source = videoScaleCompressSource
@@ -2526,6 +2530,7 @@ export function CanvasWorkspaceView({
         projectId,
         boardId,
         parentNodeId: source.nodeId,
+        ...(source.anchorNodeId ? { anchorNodeId: source.anchorNodeId } : {}),
         filePath: source.filePath,
         fileName: source.fileName,
         ...(source.mimeType ? { mimeType: source.mimeType } : {}),
@@ -2533,7 +2538,8 @@ export function CanvasWorkspaceView({
         compressPercent: input.compressPercent,
         onProgress: input.onProgress,
       })
-      if (created) await refreshTaskSnapshot()
+      if (!created) throw new Error('压缩副本物化失败，请重试')
+      await refreshTaskSnapshot()
       message.success(
         `已生成尺寸压缩副本（${input.scalePercent}% 尺寸 / 压缩到原大小 ${input.compressPercent}%）`,
       )
@@ -3921,14 +3927,7 @@ export function CanvasWorkspaceView({
         setSelectedNodeIds([videoNode.id])
       }
     },
-    [
-      connectNodes,
-      createMediaNode,
-      directorStage3DNode,
-      patchNodes,
-      setSelectedNodeIds,
-      snapshot,
-    ],
+    [connectNodes, createMediaNode, directorStage3DNode, patchNodes, setSelectedNodeIds, snapshot],
   )
 
   // ─── 视频工作台（subtype video_workbench）───

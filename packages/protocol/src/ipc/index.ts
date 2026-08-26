@@ -5703,6 +5703,12 @@ export interface CanvasDepthModelStatusResponse {
   state: 'missing' | 'installing' | 'ready' | 'error'
   version?: string
   error?: string
+  /**
+   * 主进程当前仍在运行的本地深度视频任务数（含模型下载/推理阶段）。
+   * 深度任务主进程侧同时只允许一个在跑；渲染进程据此在提交前给出即时提示。
+   * 旧版本主进程不返回该字段，调用方按 0 处理。
+   */
+  runningDepthTaskCount?: number
 }
 export interface CanvasDepthModelInstallRequest {}
 export type CanvasDepthModelInstallResponse = CanvasDepthModelStatusResponse

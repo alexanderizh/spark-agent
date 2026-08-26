@@ -19,6 +19,11 @@ import './CanvasVideoScaleCompressModal.less'
 export type CanvasVideoScaleCompressSource = {
   /** 承载源视频的节点 id（已把操作节点解析为产物资源节点） */
   nodeId: string
+  /**
+   * 真实落库的锚点节点 id。nodeId 可能是 `operation-output:` 虚拟视图 id
+   * （任务节点未展开产物时），物化副本节点/连线必须挂在真实节点上。
+   */
+  anchorNodeId?: string
   /** 源视频磁盘绝对路径（safe-file 已解码）；远端 URL 场景不会进入本弹窗 */
   filePath: string
   /** 源文件名（用于生成产物节点标题） */
@@ -108,9 +113,8 @@ export function CanvasVideoScaleCompressModal({
         }
       },
     )
-    const unsubStatus = window.spark.on(
-      'stream:ffmpeg:status',
-      (next: { ffmpegReady: boolean }) => setFfmpegReady(next.ffmpegReady),
+    const unsubStatus = window.spark.on('stream:ffmpeg:status', (next: { ffmpegReady: boolean }) =>
+      setFfmpegReady(next.ffmpegReady),
     )
     return () => {
       unsubInstall?.()

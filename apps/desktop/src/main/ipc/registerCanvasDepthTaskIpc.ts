@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { createLogger } from '@spark/shared'
+import { createLogger, SparkError } from '@spark/shared'
 import type {
   CanvasMediaTaskCreateResponse,
   CanvasMediaTaskStreamPayload,
@@ -69,13 +69,19 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
   typedIpcHandle('canvas:depth-model:status', async () => {
     const snapshot = await capabilityManager.list()
     const depth = snapshot.capabilities.find((item) => item.id === 'local-depth')
+    // 主进程内存态是权威来源：渲染进程提交前据此即时提示，避免先建任务节点再失败。
+    const runningDepthTaskCount = runningTasks.size
     if (depth?.installedVersion && depth.state !== 'damaged') {
-      return { state: 'ready' as const, version: depth.installedVersion }
+      return { state: 'ready' as const, version: depth.installedVersion, runningDepthTaskCount }
     }
     if (depth?.state === 'error' || depth?.state === 'damaged') {
-      return { state: 'error' as const, error: depth.error ?? '本地深度组件已损坏，请修复' }
+      return {
+        state: 'error' as const,
+        error: depth.error ?? '本地深度组件已损坏，请修复',
+        runningDepthTaskCount,
+      }
     }
-    return { state: 'missing' as const }
+    return { state: 'missing' as const, runningDepthTaskCount }
   })
 
   typedIpcHandle('canvas:depth-model:install', async () => {
@@ -99,7 +105,12 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
   typedIpcHandle('canvas:task:create-depth-video', async (request) => {
     assertAllowedInputPath(request.inputPath)
     if (runningTasks.size >= 1) {
-      throw new Error('已有深度视频转换任务正在运行，请等待完成或先取消当前任务')
+      // 必须用 SparkError：普通 Error 会被 typed-ipc 统一掩码成「操作未完成」，
+      // 用户将无法得知失败原因是并发限制。
+      throw new SparkError(
+        'EXECUTION_FAILED',
+        '已有深度视频转换任务正在运行，请等待完成或先取消当前任务',
+      )
     }
     const runtimeTaskId = createRuntimeTaskId()
     const outputPath = createOutputPath(runtimeTaskId)
