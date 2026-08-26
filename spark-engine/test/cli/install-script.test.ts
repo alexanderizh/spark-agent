@@ -3,12 +3,16 @@ import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 const execute = promisify(execFile)
+// Always in lockstep with the package that `npm pack` just produced.
+const packageVersion = (
+  JSON.parse(await readFile(resolve('package.json'), 'utf8')) as { version: string }
+).version
 const roots: string[] = []
 const closers: (() => Promise<void>)[] = []
 const nodeDir = dirname(process.execPath)
@@ -26,7 +30,7 @@ describe('install.sh one-line installer', () => {
     const result = await runInstaller(['--base', fixture.baseUrl], environment)
     expect(result.code).toBe(0)
     expect(result.stdout).toContain('Checksum verified')
-    expect(result.stdout).toContain('Spark CLI v0.1.0 installed')
+    expect(result.stdout).toContain(`Spark CLI v${packageVersion} installed`)
     // The npm bin dir is not on PATH in this environment, so the installer must
     // also have linked the ~/.spark/bin launcher.
     expect(result.stdout).toContain('linking a launcher instead')
@@ -34,7 +38,7 @@ describe('install.sh one-line installer', () => {
     const version = await execute(join(fixture.prefix, 'bin', 'spark'), ['--version'], {
       env: environment,
     })
-    expect(version.stdout.trim()).toBe('0.1.0')
+    expect(version.stdout.trim()).toBe(packageVersion)
   }, 240_000)
 
   it('rejects a tarball whose checksum does not match the manifest', async () => {
@@ -55,22 +59,22 @@ describe('install.sh one-line installer', () => {
 
     const result = await runInstaller(['--tarball', fixture.tarballPath], environment)
     expect(result.code).toBe(0)
-    expect(result.stdout).toContain('Spark CLI v0.1.0 installed')
+    expect(result.stdout).toContain(`Spark CLI v${packageVersion} installed`)
     const version = await execute(join(fixture.prefix, 'bin', 'spark'), ['--version'], {
       env: environment,
     })
-    expect(version.stdout.trim()).toBe('0.1.0')
+    expect(version.stdout.trim()).toBe(packageVersion)
   }, 240_000)
 
   it('installs a pinned version using the checksum sidecar', async () => {
     const fixture = await createReleaseFixture()
     const result = await runInstaller(
-      ['--base', fixture.baseUrl, '--version', '0.1.0'],
+      ['--base', fixture.baseUrl, '--version', packageVersion],
       installerEnvironment(fixture),
     )
     expect(result.code).toBe(0)
     expect(result.stdout).toContain('Checksum verified')
-    expect(result.stdout).toContain('Spark CLI v0.1.0 installed')
+    expect(result.stdout).toContain(`Spark CLI v${packageVersion} installed`)
   }, 240_000)
 
   it('fails closed on an unusable release base before touching npm', async () => {
@@ -114,7 +118,7 @@ async function createReleaseFixture(): Promise<ReleaseFixture> {
   await writeFile(join(staging, `${filename}.sha256`), `${sha256}  ${filename}\n`, 'utf8')
   await writeFile(
     join(staging, 'latest.json'),
-    `${JSON.stringify({ name: '@spark/agent', version: '0.1.0', sha256, tarball: filename })}\n`,
+    `${JSON.stringify({ name: '@spark/agent', version: packageVersion, sha256, tarball: filename })}\n`,
     'utf8',
   )
 

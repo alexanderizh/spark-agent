@@ -274,7 +274,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     <Box flexDirection="column">
       {empty && !pickerOpen && (
         <WelcomeBox
-          version={props.version ?? '0.1.0'}
+          version={props.version ?? '0.2.0'}
           model={effectiveModel}
           cwd={session.cwd}
           capabilities={capabilities}

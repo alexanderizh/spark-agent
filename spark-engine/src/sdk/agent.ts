@@ -44,7 +44,7 @@ export class Agent {
 
   private constructor(options: AgentOptions) {
     this.#cwd = resolve(options.cwd ?? process.cwd())
-    this.#engineVersion = options.engineVersion ?? '0.1.0'
+    this.#engineVersion = options.engineVersion ?? '0.2.0'
     if (options.env) this.#env = options.env
     else if (options.llm) {
       this.#env = createDefaultEnv({

@@ -20,6 +20,8 @@ export interface RunTuiOptions {
   readonly stdin?: NodeJS.ReadStream
   readonly llm?: LlmService | undefined
   readonly model?: string | undefined
+  /** Real package version for the welcome screen; avoids stale fallback text. */
+  readonly version?: string | undefined
   readonly permissionMode?: PermissionMode | undefined
   /** Initial reasoning effort (from --effort); adjustable via /effort. */
   readonly reasoningEffort?: ReasoningEffort | undefined
@@ -70,6 +72,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
       initialModel={options.model}
       startupError={options.startupError}
       permissionMode={permissionMode}
+      {...(options.version === undefined ? {} : { version: options.version })}
       {...(options.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: options.reasoningEffort })}
@@ -91,6 +94,7 @@ interface SparkTuiRootProps {
   readonly switchable: SwitchableLlmService
   readonly initialModel?: string | undefined
   readonly startupError?: string | undefined
+  readonly version?: string | undefined
   readonly permissionMode: PermissionMode
   readonly reasoningEffort?: ReasoningEffort | undefined
   readonly onModelChanged: (model: string | undefined) => void
@@ -111,6 +115,7 @@ function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
       approver={props.approver}
       createSession={props.createSession}
       permissionMode={props.permissionMode}
+      {...(props.version === undefined ? {} : { version: props.version })}
       {...(props.reasoningEffort === undefined ? {} : { reasoningEffort: props.reasoningEffort })}
       modelRuntime={modelRuntime}
       capabilities={detectTerminalCapabilities(props.stdout)}

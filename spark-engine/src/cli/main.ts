@@ -146,6 +146,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     }
     await runTui({
       cwd: process.cwd(),
+      version: await runningVersion(),
       permissionMode: options.permissionMode,
       ...(options.reasoningEffort === undefined
         ? {}

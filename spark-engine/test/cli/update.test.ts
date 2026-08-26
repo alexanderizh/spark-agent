@@ -48,13 +48,25 @@ beforeAll(async () => {
   ).version
 
   baseTarball = await packVariant({ version: packageVersion })
+  // Variant versions derive from the real package version so a package.json
+  // bump can never collide with the fixtures ("next" must stay an upgrade).
+  const bumpMinor = (version: string): string => {
+    const [major, minor] = version.split('.')
+    return `${major}.${Number(minor) + 1}.0`
+  }
+  const nextVersion = bumpMinor(packageVersion)
+  // Strict-SemVer-safe offsets beyond "next" for the tamper fixtures.
+  const offsetVersion = (offset: number): string => {
+    const [major, minor] = packageVersion.split('.')
+    return `${major}.${Number(minor) + 1 + offset}.0`
+  }
   variants = {
-    next: await packVariant({ version: '0.2.0' }),
+    next: await packVariant({ version: nextVersion }),
     older: await packVariant({ version: '0.0.9' }),
-    rc: await packVariant({ version: '0.3.0-rc.1' }),
-    evil: await packVariant({ version: '0.2.1', name: '@evil/agent' }),
-    mismatch: await packVariant({ version: '0.2.2' }),
-    engines: await packVariant({ version: '0.2.4', engines: '>=99.0.0 <100' }),
+    rc: await packVariant({ version: `${nextVersion}-rc.1` }),
+    evil: await packVariant({ version: offsetVersion(2), name: '@evil/agent' }),
+    mismatch: await packVariant({ version: offsetVersion(3) }),
+    engines: await packVariant({ version: offsetVersion(4), engines: '>=99.0.0 <100' }),
   }
 
   templatePrefix = join(root, 'template-prefix')
@@ -272,7 +284,7 @@ describe('spark update — check contract (no side effects)', () => {
     expect(payload).toMatchObject({
       status: 'update_available',
       current: packageVersion,
-      latest: '0.2.0',
+      latest: variants.next!.version,
     })
   })
 
@@ -345,7 +357,7 @@ describe('spark update — check contract (no side effects)', () => {
     const next = variants.next!
     await publish(next.version, next.bytes, next.sha256)
     const result = await runSpark(
-      ['update', '--check', '--json', '--base', serverUrl, '--target', '0.2.0'],
+      ['update', '--check', '--json', '--base', serverUrl, '--target', variants.next!.version],
       checkEnvironment(),
       packageRoot,
     )
@@ -386,14 +398,18 @@ describe('spark update — apply transaction (real npm prefix)', () => {
         latest: string
         root: string
       }
-      expect(payload).toMatchObject({ status: 'updated', current: packageVersion, latest: '0.2.0' })
+      expect(payload).toMatchObject({
+        status: 'updated',
+        current: packageVersion,
+        latest: variants.next!.version,
+      })
       expect(payload.root).toBe(join(npmRootOf(test.prefix), '@spark', 'agent'))
 
-      expect(await prefixSparkVersion(test)).toBe('0.2.0')
+      expect(await prefixSparkVersion(test)).toBe(variants.next!.version)
       const manifest = JSON.parse(
         await readFile(join(npmRootOf(test.prefix), '@spark', 'agent', 'package.json'), 'utf8'),
       ) as { version: string }
-      expect(manifest.version).toBe('0.2.0')
+      expect(manifest.version).toBe(variants.next!.version)
       // Dependencies must be resolvable: hoisted to the global root or nested
       // inside the installed package, depending on the npm strategy.
       const nestedZod = join(
@@ -466,7 +482,7 @@ describe('spark update — apply transaction (real npm prefix)', () => {
         test.cwd,
       )
       expect(result.code).toBe(3)
-      expect(result.stderr).toContain('0.2.2')
+      expect(result.stderr).toContain(variants.mismatch!.version)
       expect(await prefixSparkVersion(test)).toBe(packageVersion)
     },
     240_000,
@@ -513,7 +529,7 @@ describe('spark update — apply transaction (real npm prefix)', () => {
         test.cwd,
       )
       expect(allowed.code).toBe(0)
-      expect(await prefixSparkVersion(test)).toBe('0.3.0-rc.1')
+      expect(await prefixSparkVersion(test)).toBe(variants.rc!.version)
     },
     240_000,
   )
@@ -585,7 +601,7 @@ describe('spark update — apply transaction (real npm prefix)', () => {
         test.cwd,
       )
       expect(result.code).toBe(0)
-      expect(await prefixSparkVersion(test)).toBe('0.2.0')
+      expect(await prefixSparkVersion(test)).toBe(variants.next!.version)
     },
     240_000,
   )
@@ -602,7 +618,7 @@ describe('spark update — apply transaction (real npm prefix)', () => {
         runSpark(['update', '--json', '--base', serverUrl], env, test.cwd),
       ])
       expect([first.code, second.code].sort()).toEqual([0, 4])
-      expect(await prefixSparkVersion(test)).toBe('0.2.0')
+      expect(await prefixSparkVersion(test)).toBe(variants.next!.version)
     },
     240_000,
   )
@@ -630,13 +646,13 @@ describe('spark update — apply transaction (real npm prefix)', () => {
       const manifest = JSON.parse(
         await readFile(join(npmRootOf(test.prefix), '@spark', 'agent', 'package.json'), 'utf8'),
       ) as { version: string }
-      expect(manifest.version).toBe('0.2.0')
+      expect(manifest.version).toBe(variants.next!.version)
       // The ~/.spark/bin launcher still gives access to the new version.
       const viaHome = await execute(join(test.home, 'bin', 'spark'), ['--version'], {
         env: caseEnvironment(test),
         cwd: test.cwd,
       })
-      expect(viaHome.stdout.trim()).toBe('0.2.0')
+      expect(viaHome.stdout.trim()).toBe(variants.next!.version)
     },
     240_000,
   )

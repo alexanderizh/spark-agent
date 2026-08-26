@@ -1,4 +1,4 @@
-{"schemaVersion":1,"sessionId":"session1","seq":0,"ts":1700000000000,"type":"session.started","engineVersion":"0.1.0","cwd":"/workspace","configSnapshot":"{\"a\":2,\"z\":1}"}
+{"schemaVersion":1,"sessionId":"session1","seq":0,"ts":1700000000000,"type":"session.started","engineVersion":"0.2.0","cwd":"/workspace","configSnapshot":"{\"a\":2,\"z\":1}"}
 {"schemaVersion":1,"sessionId":"session1","seq":1,"ts":1700000000001,"type":"turn.started","turnId":"turn1","input":{"kind":"text","text":"edit a.ts"}}
 {"schemaVersion":1,"sessionId":"session1","seq":2,"ts":1700000000002,"type":"step.started","stepId":"step1","turnId":"turn1"}
 {"schemaVersion":1,"sessionId":"session1","seq":3,"ts":1700000000003,"type":"assistant.completed","stepId":"step1","turnId":"turn1","message":{"toolCalls":[{"callId":"read-1","name":"read","args":{"path":"a.ts"}}]},"usage":{"inputTokens":100,"outputTokens":20,"cacheReadTokens":0,"cacheWriteTokens":0}}
