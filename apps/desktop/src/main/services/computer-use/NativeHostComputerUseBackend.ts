@@ -380,7 +380,9 @@ export class NativeHostComputerUseBackend
     }
     return this.measure('action_ms', () =>
       this.runControlOperation('execution', input.envelope.action, async (connection) => {
-        const actionResult = await connection.executeAction(input.envelope, input.signal)
+        const actionResult = await this.measure('action_execute_ms', () =>
+          connection.executeAction(input.envelope, input.signal),
+        )
         // An unbound task is explicitly allowed to follow the foreground desktop. A click,
         // semantic invoke, or keyboard shortcut can open a dialog, switch an application, or
         // move focus to another window. Re-observe the newly focused target instead of forcing
@@ -389,27 +391,27 @@ export class NativeHostComputerUseBackend
         const followsForeground =
           !this.targetBindings.has(input.envelope.computerSessionId) &&
           actionMayChangeFocusedWindow(input.envelope.action)
-        const target = selectControllableWindow(
-          await connection.listWindows(input.signal),
-          followsForeground
-            ? undefined
-            : {
-                appId: input.observation.foreground.app.id,
-                windowId: input.observation.foreground.window.id,
-              },
-          !followsForeground && this.targetBindings.has(input.envelope.computerSessionId),
+        // A bound or focus-stable action already has a validated target in the current
+        // observation. Re-listing every desktop window here adds a Native Host round-trip to
+        // every click/type step without improving target safety; captureObservation still
+        // fails closed if that window vanished. Only unbound focus-changing actions need a
+        // fresh inventory to follow the newly focused app/window.
+        const target = followsForeground
+          ? selectControllableWindow(await connection.listWindows(input.signal))
+          : input.observation.foreground
+        const observation = await this.measure('action_post_observation_ms', () =>
+          this.captureObservation({
+            connection,
+            computerSessionId: input.envelope.computerSessionId,
+            appId: target.app.id,
+            windowId: target.window.id,
+            ...(target.app.processId == null ? {} : { targetProcessId: target.app.processId }),
+            previousTreeVersion: input.observation.treeVersion,
+            fullTree: false,
+            kind: 'execution_after',
+            signal: input.signal,
+          }),
         )
-        const observation = await this.captureObservation({
-          connection,
-          computerSessionId: input.envelope.computerSessionId,
-          appId: target.app.id,
-          windowId: target.window.id,
-          ...(target.app.processId == null ? {} : { targetProcessId: target.app.processId }),
-          previousTreeVersion: input.observation.treeVersion,
-          fullTree: false,
-          kind: 'execution_after',
-          signal: input.signal,
-        })
         return {
           observation,
           // The Host knows whether it actually emitted an input/semantic action. Visual

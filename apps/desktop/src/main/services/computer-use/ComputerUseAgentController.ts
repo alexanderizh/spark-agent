@@ -4,7 +4,6 @@ import {
   VerificationSpecSchema,
   type ComputerSession,
   type ComputerUseCapabilitySummary,
-  type NativeHostCapabilityManifest,
   type NativeWindowDescriptor,
 } from '@spark/protocol'
 import { z } from 'zod'
@@ -362,7 +361,10 @@ export class ComputerUseAgentController {
         }
       }
       case 'start_task': {
-        const capabilities = await getExecutionCapabilitiesWithPermissionRequest(services.backend)
+        // System privacy permissions are managed explicitly from Settings. Starting a task
+        // performs a read-only preflight only and must never interrupt the Agent turn with an
+        // operating-system prompt.
+        const capabilities = await services.backend.getCapabilities()
         if (!supportsExecution(capabilities)) {
           throw executionUnavailable(capabilities)
         }
@@ -802,34 +804,6 @@ function supportsExecution(capabilities: ComputerUseCapabilitySummary): boolean 
   )
 }
 
-export async function getExecutionCapabilitiesWithPermissionRequest(backend: {
-  getCapabilities(): Promise<ComputerUseCapabilitySummary>
-  requestPermissions?: (
-    permissions: Array<'screen' | 'accessibility'>,
-  ) => Promise<NativeHostCapabilityManifest>
-}): Promise<ComputerUseCapabilitySummary> {
-  const initial = await backend.getCapabilities()
-  if (
-    supportsExecution(initial) ||
-    initial.nativeHost == null ||
-    backend.requestPermissions == null
-  ) {
-    return initial
-  }
-  const permissions: Array<'screen' | 'accessibility'> = []
-  if (initial.permissions.screen !== 'granted') permissions.push('screen')
-  if (initial.permissions.accessibility !== 'granted' || initial.permissions.input !== 'granted') {
-    permissions.push('accessibility')
-  }
-  if (permissions.length === 0) return initial
-  try {
-    await backend.requestPermissions(permissions)
-  } catch {
-    // A denied OS prompt is an unavailable capability, not a reason to abort fallback routing.
-  }
-  return backend.getCapabilities().catch(() => initial)
-}
-
 function readComputerSessionId(args: unknown): string {
   if (args == null || typeof args !== 'object' || Array.isArray(args)) throw invalidArguments()
   const value = (args as Record<string, unknown>).computerSessionId
@@ -869,19 +843,19 @@ function executionUnavailable(capabilities: ComputerUseCapabilitySummary): Compu
   if (capabilities.permissions.screen !== 'granted') {
     return new ComputerUseBrokerError(
       'screen_permission_denied',
-      'Screen Recording permission is required for Computer Use',
+      'Screen Recording permission is required. Open Settings → Computer Use to authorize it.',
     )
   }
   if (capabilities.permissions.accessibility !== 'granted') {
     return new ComputerUseBrokerError(
       'accessibility_permission_denied',
-      'Accessibility permission is required for this Computer Use task',
+      'Accessibility permission is required. Open Settings → Computer Use to authorize it.',
     )
   }
   if (capabilities.permissions.input !== 'granted') {
     return new ComputerUseBrokerError(
       'privilege_mismatch',
-      'Input control permission is required for this Computer Use task',
+      'Input control permission is required. Open Settings → Computer Use to authorize it.',
     )
   }
   return new ComputerUseBrokerError(

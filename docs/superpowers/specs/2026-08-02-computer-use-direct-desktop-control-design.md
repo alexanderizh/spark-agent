@@ -1,6 +1,6 @@
 # Computer Use 直接桌面控制设计
 
-> 状态: 实施中 | 最后核对: 2026-08-02
+> 状态: 实施中 | 最后核对: 2026-08-26
 
 ## 目标
 
@@ -148,6 +148,17 @@ Chromium 系渲染器（Electron、Chrome、Edge、Brave 等）默认不为 Web 
 唯一终止路径：agent 主动 `stop`、用户 ESC（killSwitch）、`cancelTurn`、`clearSessionMemory`、模型声明完成、连续决策/执行失败超阈值。
 
 提示词同步：`buildComputerUseSystemPrompt` 明确写入“任务不会被自动取消，持续推进直到完成”“单步失败换方案（换元素 / 坐标 / 键盘导航 / 重读状态）”“由你判断完成、达成后立即 `stop` 释放控制”。
+
+### 13. P0 授权解耦与执行热路径收敛（2026-08-26）
+
+- `PermissionService` 对所有已知 `spark_computer` 高层受管工具直接放行，不再读取会话 Permission Profile、记忆决定或 `forcePrompt`。`start_task`、`resume`、`bind_target` 与观察/诊断/应用状态工具使用同一任务级授权语义；未知工具和 click/type 等低层 MCP 工具继续永久拒绝。
+- 新增的 `list_apps`、`list_windows`、`get_screen_state`、`get_app_state`、`open_app` 已补入 `computer_observe` 映射，避免已发布的高层状态工具因遗漏映射被当作未知工具拒绝。
+- `ComputerUseAgentController.start_task` 只调用 `getCapabilities()` 做只读预检，不再在任务启动时调用 `requestPermissions()`。权限缺失返回精确错误并引导“设置 → 电脑操作”，且不会创建半启动会话。
+- 设置页新增独立“电脑操作”入口，集中展示屏幕录制、辅助功能/输入控制、Native Host 和分阶段延迟；支持首次请求系统授权、打开固定 macOS 隐私设置页、返回应用后自动刷新、运行及复制无内容诊断。新安装默认启用 `my_desktop`，但用户仍可通过既有总开关停止并禁用活动任务。
+- 已绑定或不会改变焦点的动作完成后，复用当前已校验的目标窗口做动作后观察，不再重复调用 `list_windows`。只有未绑定且可能切换焦点的点击、语义 invoke 或快捷键才刷新全桌面窗口清单。
+- 指标新增 `action_execute_ms` 与 `action_post_observation_ms`，与既有 `observation_ms` / `action_ms` 一起区分原生动作执行和动作后截图/AX 观察耗时，后续性能修复必须以该分段数据为依据。
+
+此 P0 的自动化与静态验证完成后仍保持“实施中”，直到最新 DEV 实例完成真实跨应用点击、输入、滚动、失败恢复和停止验收。
 
 ## 测试与验收
 

@@ -1,9 +1,6 @@
 import type { ComputerSession, ComputerUseCapabilitySummary } from '@spark/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  ComputerUseAgentController,
-  getExecutionCapabilitiesWithPermissionRequest,
-} from './ComputerUseAgentController.js'
+import { ComputerUseAgentController } from './ComputerUseAgentController.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 
 const CAPABILITIES: ComputerUseCapabilitySummary = {
@@ -252,7 +249,7 @@ describe('ComputerUseAgentController', () => {
     })
   })
 
-  it('requests missing operating-system permissions before declaring execution unavailable', async () => {
+  it('does not request operating-system permissions while starting a task', async () => {
     const unavailable = {
       ...CAPABILITIES,
       nativeHost: {
@@ -271,16 +268,19 @@ describe('ComputerUseAgentController', () => {
         input: 'denied' as const,
       },
     }
-    const getCapabilities = vi
-      .fn()
-      .mockResolvedValueOnce(unavailable)
-      .mockResolvedValueOnce(CAPABILITIES)
-    const requestPermissions = vi.fn(async () => CAPABILITIES.nativeHost!)
+    const getCapabilities = vi.fn(async () => unavailable)
+    const requestPermissions = vi.fn()
+    const controller = new ComputerUseAgentController({
+      getServices: () => ({ backend: { getCapabilities, requestPermissions } }) as never,
+    })
 
     await expect(
-      getExecutionCapabilitiesWithPermissionRequest({ getCapabilities, requestPermissions }),
-    ).resolves.toBe(CAPABILITIES)
-    expect(requestPermissions).toHaveBeenCalledWith(['screen', 'accessibility'])
+      controller.invoke('session-1', 'start_task', {
+        goal: 'Open Bilibili',
+        environment: 'my_desktop',
+      }),
+    ).rejects.toMatchObject({ code: 'screen_permission_denied' })
+    expect(requestPermissions).not.toHaveBeenCalled()
   })
 
   it.each([

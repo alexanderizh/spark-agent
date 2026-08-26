@@ -69,6 +69,7 @@ describe('computer use IPC schemas', () => {
         'computer-use:list-apps',
         'computer-use:list-sessions',
         'computer-use:list-windows',
+        'computer-use:open-system-settings',
         'computer-use:pause',
         'computer-use:resume',
         'computer-use:resolve-app-command',

@@ -1,6 +1,6 @@
 # Computer Control Broker、租约与审批设计
 
-> 状态: 已落地 | 最后核对: 2026-08-02
+> 状态: 已落地 | 最后核对: 2026-08-26
 
 本文记录 CU-02 已落地的主进程电脑控制安全边界。后续 Native Host、Provider Adapter、Monitor、Workflow、远程控制和 Verification Engine 必须调用本 Broker，不得建立第二条键鼠、Accessibility 或截图执行路径。
 
@@ -94,27 +94,27 @@ Renderer 提交批准时必须回传它展示的 action/target/data-class digest
 - 心跳只能延长仍有效、未释放、同 Operator 的 lease，不能复活过期租约。
 - Pause/Cancel 首先 abort 会话信号并阻止新派发，然后释放 lease。
 - Broker Stop/Kill Switch 同步把 session 标为 canceled、清掉 Observation 和 pending approvals，再等待 backend `cancelSession()` 清空原生队列。
-- Agent turn 结束或手动终止时，MCP capability revoke 会停止该聊天会话拥有的所有 Computer Use 子会话；operator 自然成功或失败也会释放 Native Host 目标绑定和持续捕获，避免系统控制标记残留。
-- 全局快捷键注册失败时 `ComputerKillSwitchService.isArmed()` 保持 false；My Desktop 设置层不得在此状态下启用。
+- Agent turn 结束时只撤销 MCP capability 与快照会话，不停止仍由 Agent 管理的 Computer Use 子会话；取消 turn、清理会话、用户停止或 Kill Switch 才会停止所属桌面任务。operator 自然成功或失败仍会释放 Native Host 目标绑定和持续捕获，避免系统控制标记残留。
+- 全局快捷键注册失败时 `ComputerKillSwitchService.isArmed()` 保持 false，并由能力状态与界面如实展示；该状态不再阻止 My Desktop 启用或执行，用户仍可通过任务停止入口中止控制。
 
 重复的快捷键事件在第一次异步停止尚未结束时会被合并。触发一次 Kill Switch 会对当前进程内所有非终态 Computer Session 执行 best-effort 并行停止；单个 backend 失败不妨碍其余会话被撤销。
 
 ## 6. MCP PermissionService 映射
 
-| 工具                                                              | Permission action        | 默认行为                              |
-| ----------------------------------------------------------------- | ------------------------ | ------------------------------------- |
-| `get_status`、`wait_for_completion`、`capture_app_snapshot`、诊断 | `computer_observe`       | allow                                 |
-| `start_task`                                                      | `computer_task_start`    | ask                                   |
-| `resume`                                                          | `computer_resume`        | ask                                   |
-| `pause`、`stop`、`takeover`                                       | 独立安全控制 action      | 始终允许，不受旧 profile/记忆拒绝阻断 |
-| 未知 `spark_computer` 工具                                        | `computer_unknown`       | 永久 deny                             |
-| click/type/keypress 等低层 MCP 工具                               | `computer_direct_action` | 永久 deny                             |
+| 工具                                                                | Permission action        | 默认行为                              |
+| ------------------------------------------------------------------- | ------------------------ | ------------------------------------- |
+| `get_status`、`wait_for_completion`、快照、诊断、应用/窗口/屏幕状态 | `computer_observe`       | 始终允许，不进入应用内审批            |
+| `start_task`                                                        | `computer_task_start`    | 始终允许，由受信 Broker 管理任务      |
+| `resume`、`bind_target`                                             | `computer_resume`        | 始终允许，由受信 Broker校验会话与目标 |
+| `pause`、`stop`、`takeover`                                         | 独立安全控制 action      | 始终允许，不受旧 profile/记忆拒绝阻断 |
+| 未知 `spark_computer` 工具                                          | `computer_unknown`       | 永久 deny                             |
+| click/type/keypress 等低层 MCP 工具                                 | `computer_direct_action` | 永久 deny                             |
 
-普通 MCP 继续使用既有 `mcp_tool` 行为；只有 `mcp__spark_computer__*` 和 `mcp:spark_computer:*` 进入上述独立映射。PermissionService 只是任务入口的第一层权限，不能替代 Broker 的 action ticket。
+普通 MCP 继续使用既有 `mcp_tool` 行为；只有 `mcp__spark_computer__*` 和 `mcp:spark_computer:*` 进入上述独立映射。已知高层 Computer Use 工具在 PermissionService 中直接放行，任务边界、目标一致性、并发控制、停止和 Native Host 信任仍由主进程 Broker 负责；未知与低层 MCP 动作永久拒绝。
 
 ## 7. 主进程 IPC 与可用性门禁
 
-主进程已通过独立 `registerComputerUseIpc.ts` 注册协议声明的 Computer Use 通道，并由 `registerAllIpcHandlers()` 薄接线。IPC 设置默认关闭；My Desktop 只有在全局 Kill Switch 注册成功后才能持久化启用。禁用总开关或某一执行环境时，先停止受影响的活动 session，再更新设置；另一个 Renderer 必须显式 takeover 才能恢复会话。`start` 在创建 session 之前完成可信 Host 预检，生产默认不会生成不可执行的占位 session。App command 回执额外要求主窗口 mainFrame，iframe/辅助窗口不能确认执行。
+主进程已通过独立 `registerComputerUseIpc.ts` 注册协议声明的 Computer Use 通道，并由 `registerAllIpcHandlers()` 薄接线。新安装默认启用 My Desktop；用户显式禁用总开关或执行环境时，先停止受影响的活动 session，再更新设置。全局 Kill Switch 注册失败不再阻止 My Desktop 启用，但界面必须准确显示其状态。`start` 在创建 session 之前完成可信 Host 与系统权限预检，生产默认不会生成不可执行的占位 session；Agent `start_task` 只预检，不在执行途中请求系统权限。App command 回执额外要求主窗口 mainFrame，iframe/辅助窗口不能确认执行。
 
 `list-apps` 从严格校验的原生窗口描述中去重，冲突身份按 `native_host_incompatible` 拒绝；`get-verification` 只返回 session 匹配且可通过协议解析的持久化记录。迁移 064 提供 durable Computer Use activity event 表，Broker、SessionManager、Operator 与审批路径发射完整生命周期事件；`get-timeline` 按 `computerSessionId + seq` 游标回放，实时流使用相同事件契约。事件仅包含 ID、状态、风险和诊断码，不写截图、输入正文或 AX 文本；存储失败降级为内存实时流，不反向判死已通过治理的动作。
 

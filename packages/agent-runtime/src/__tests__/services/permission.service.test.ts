@@ -163,14 +163,14 @@ describe('PermissionService', () => {
       expect(modeOf(find('trusted'), 'command_exec')).toBe('allow')
       expect(modeOf(find('trusted'), 'command_dangerous')).toBe('ask')
       // computer 管控规则全 profile 一致
+      expect(modeOf(find('strict'), 'computer_task_start')).toBe('allow')
+      expect(modeOf(find('project-standard'), 'computer_resume')).toBe('allow')
       expect(modeOf(find('trusted'), 'computer_direct_action')).toBe('deny')
     })
 
     it('旧版同质规则的库会被一次性迁移，且迁移后用户改动不被覆盖', () => {
       // 模拟旧库：内置 profile 已存在（跳过 seedBuiltins），规则是旧版同质数据
-      const repo = makeMockRepo([
-        { action: 'file_write', profile_id: 'strict', mode: 'allow' },
-      ])
+      const repo = makeMockRepo([{ action: 'file_write', profile_id: 'strict', mode: 'allow' }])
       repo.createProfile({ id: 'strict', name: 'strict', sandboxLevel: 0, isBuiltin: true })
       repo.createProfile({
         id: 'project-standard',
@@ -275,11 +275,12 @@ describe('PermissionService', () => {
       await expect(promise).resolves.toBe(true)
     })
 
-    it('将 spark_computer 任务工具映射为独立权限动作', async () => {
+    it('所有受管 spark_computer 任务工具绕过应用内审批', async () => {
       const repo = makeMockRepo([
-        { action: 'computer_observe', mode: 'allow' },
-        { action: 'computer_task_start', mode: 'ask' },
-        { action: 'computer_stop', mode: 'allow' },
+        { action: 'computer_observe', mode: 'deny' },
+        { action: 'computer_task_start', mode: 'deny' },
+        { action: 'computer_resume', mode: 'deny' },
+        { action: 'computer_stop', mode: 'deny' },
       ])
       const svc = new PermissionService(repo)
       const push = vi.fn()
@@ -294,6 +295,21 @@ describe('PermissionService', () => {
         svc.requestApproval('sess-1', 'mcp:spark_computer:capture_app_snapshot', {}, push),
       ).resolves.toBe(true)
       await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__list_apps', {}, push),
+      ).resolves.toBe(true)
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__list_windows', {}, push),
+      ).resolves.toBe(true)
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__get_screen_state', {}, push),
+      ).resolves.toBe(true)
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__get_app_state', {}, push),
+      ).resolves.toBe(true)
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__open_app', {}, push),
+      ).resolves.toBe(true)
+      await expect(
         svc.requestApproval(
           'sess-1',
           'mcp__spark_computer__wait_for_completion',
@@ -301,22 +317,27 @@ describe('PermissionService', () => {
           push,
         ),
       ).resolves.toBe(true)
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__start_task', {}, push, {
+          forcePrompt: true,
+        }),
+      ).resolves.toBe(true)
       expect(push).not.toHaveBeenCalled()
 
-      const start = svc.requestApproval(
-        'sess-1',
-        'mcp__spark_computer__start_task',
-        { objective: 'Edit the approved document' },
-        push,
-      )
-      expect(push.mock.calls[0]![0]).toMatchObject({
-        action: 'computer_task_start',
-        riskLevel: 'high',
-      })
-      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
-      await expect(start).resolves.toBe(true)
-
-      push.mockClear()
+      await expect(
+        svc.requestApproval(
+          'sess-1',
+          'mcp__spark_computer__start_task',
+          { objective: 'Edit the approved document' },
+          push,
+        ),
+      ).resolves.toBe(true)
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__resume', {}, push),
+      ).resolves.toBe(true)
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__bind_target', {}, push),
+      ).resolves.toBe(true)
       await expect(
         svc.requestApproval('sess-1', 'mcp__spark_computer__stop', {}, push),
       ).resolves.toBe(true)

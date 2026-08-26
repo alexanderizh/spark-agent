@@ -26,16 +26,20 @@ import {
 import { typedIpcHandle } from './typed-ipc.js'
 import { safeComputerUseIpc } from './computerUseIpcError.js'
 import { getMainWindow } from '../windows/index.js'
+import {
+  openComputerUseSystemSettings,
+  type ComputerUseSystemPermission,
+} from '../services/computer-use/ComputerUseSystemSettings.js'
 
 const SETTINGS_CATEGORY = 'computer-use'
 const SETTINGS_KEY = 'settings'
 
 export const DEFAULT_COMPUTER_USE_SETTINGS: ComputerUseSettings = ComputerUseSettingsSchema.parse({
-  enabled: false,
+  enabled: true,
   environments: {
     safeBrowser: false,
     safeDesktop: false,
-    myDesktop: false,
+    myDesktop: true,
   },
   allowedApps: [],
   redactSensitiveContent: true,
@@ -63,6 +67,7 @@ export interface RegisterComputerUseIpcOptions {
   verifications?: ComputerVerificationStore
   getServices?: () => ComputerUseServices
   authorizeRenderer?: (event: IpcMainInvokeEvent) => boolean
+  openSystemSettings?: (permission: ComputerUseSystemPermission) => Promise<{ opened: boolean }>
 }
 
 /** Registers the main-process Computer Use IPC surface. */
@@ -72,6 +77,7 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
     options.verifications ?? new ComputerVerificationRepository(getDatabase())
   const services = options.getServices ?? getComputerUseServices
   const authorizeRenderer = options.authorizeRenderer ?? isTrustedComputerUseRenderer
+  const openSystemSettings = options.openSystemSettings ?? openComputerUseSystemSettings
   const assertRenderer = (event: IpcMainInvokeEvent): void => {
     if (!authorizeRenderer(event)) {
       throw new ComputerUseBrokerError(
@@ -100,6 +106,13 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
     safeComputerUseIpc(() => {
       assertRenderer(event)
       return services().diagnostics.collect()
+    }),
+  )
+
+  typedIpcHandle('computer-use:open-system-settings', async ({ permission }, event) =>
+    safeComputerUseIpc(() => {
+      assertRenderer(event)
+      return openSystemSettings(permission)
     }),
   )
 

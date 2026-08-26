@@ -76,6 +76,9 @@ export type ComputerUseStartRequest = z.infer<typeof ComputerUseStartRequestSche
 export const ComputerUseIpcSchemaRegistry = {
   'computer-use:get-capabilities': EmptyRequestSchema,
   'computer-use:diagnose-native-host': EmptyRequestSchema,
+  'computer-use:open-system-settings': z
+    .object({ permission: z.enum(['screen', 'accessibility']) })
+    .strict(),
   'computer-use:get-settings': EmptyRequestSchema,
   'computer-use:update-settings': ComputerUseSettingsPatchSchema,
   'computer-use:start': ComputerUseStartRequestSchema,
@@ -198,6 +201,10 @@ export interface ComputerVerificationRecord {
 export interface ComputerUseIpcChannelMap {
   'computer-use:get-capabilities': [void, ComputerUseCapabilitySummary]
   'computer-use:diagnose-native-host': [void, ComputerUseNativeHostDiagnosticReport]
+  'computer-use:open-system-settings': [
+    { permission: 'screen' | 'accessibility' },
+    { opened: boolean },
+  ]
   'computer-use:get-settings': [void, ComputerUseSettings]
   'computer-use:update-settings': [Partial<ComputerUseSettings>, ComputerUseSettings]
   'computer-use:start': [ComputerUseStartRequest, { computerSession: ComputerSession }]

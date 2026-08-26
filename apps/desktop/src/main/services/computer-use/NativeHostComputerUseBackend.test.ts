@@ -495,6 +495,47 @@ describe('NativeHostComputerUseBackend', () => {
     )
   })
 
+  it('skips redundant window inventory after a bound focus-changing action', async () => {
+    const after = {
+      ...OBSERVATION,
+      frameId: 'frame-2',
+      treeVersion: 'tree-2',
+      screenshot: { ...OBSERVATION.screenshot, snapshotId: 'snapshot-2' },
+    }
+    const connection = createControlConnection([OBSERVATION, after])
+    const ids = ['snapshot-1', 'snapshot-2']
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'windows',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: () => ids.shift() ?? 'unexpected',
+    })
+    backend.bindSessionTarget({
+      computerSessionId: 'computer-1',
+      appId: 'app-1',
+      windowId: 'window-1',
+    })
+    const signal = new AbortController().signal
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal })
+    vi.mocked(connection.listWindows).mockClear()
+    const envelope = {
+      computerSessionId: 'computer-1',
+      actionId: 'action-1',
+      targetAppId: 'app-1',
+      targetWindowId: 'window-1',
+      action: { type: 'click', point: { x: 0.5, y: 0.5 } },
+    } as ComputerActionEnvelope
+
+    await expect(backend.execute({ envelope, observation: OBSERVATION, signal })).resolves.toEqual({
+      observation: after,
+      noop: false,
+    })
+    expect(connection.listWindows).not.toHaveBeenCalled()
+    expect(connection.observe).toHaveBeenLastCalledWith(
+      expect.objectContaining({ appId: 'app-1', windowId: 'window-1' }),
+    )
+  })
+
   it('follows a newly focused application after an unbound shortcut action', async () => {
     const newlyFocusedWindow = {
       ...FOCUSED_WINDOW,

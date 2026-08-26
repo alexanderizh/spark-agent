@@ -15,7 +15,7 @@ import type {
   PermissionDecisionScope,
 } from '@spark/protocol'
 import {
-  isComputerSafetyControl,
+  isGovernedComputerTaskAction,
   isUnapprovableComputerAction,
   resolveComputerPermissionAction,
 } from '../computer-use/computer-permission-action.js'
@@ -38,9 +38,9 @@ interface RuleSeed {
  */
 const COMPUTER_RULES: RuleSeed[] = [
   { action: 'computer_observe', scope: 'session', mode: 'allow' },
-  { action: 'computer_task_start', scope: 'session', mode: 'ask' },
+  { action: 'computer_task_start', scope: 'session', mode: 'allow' },
   { action: 'computer_pause', scope: 'session', mode: 'allow' },
-  { action: 'computer_resume', scope: 'session', mode: 'ask' },
+  { action: 'computer_resume', scope: 'session', mode: 'allow' },
   { action: 'computer_stop', scope: 'session', mode: 'allow' },
   { action: 'computer_takeover', scope: 'session', mode: 'allow' },
   { action: 'computer_direct_action', scope: 'any', mode: 'deny' },
@@ -94,13 +94,13 @@ const BUILTIN_PROFILE_RULES: Record<string, RuleSeed[]> = {
 const ACTIVE_PROFILE_KEY = 'permission:active-profile'
 
 /**
- * 内置 profile 规则版本号。旧版本给三个内置 profile 种子了完全相同的规则
- * （差异只剩从未生效的 sandboxLevel），此版本起按描述差异化。
- * 升级时用一次性迁移重建内置 profile 的规则；用户在旧版里改过的内置规则会被
- * 覆盖——那些规则当时被 forcePrompt 绕过、从未生效，不存在值得保留的定制。
+ * 内置 profile 规则版本号。v2 将三个内置 profile 改为差异化规则；v3 把受管
+ * Computer Use 的 start/resume 种子同步为 allow。升级时一次性重建内置 profile；
+ * Computer Use 高层工具本身还会在 requestApproval 入口直接放行，确保旧库、自定义
+ * profile、会话记忆和 forcePrompt 都不会重新引入应用内审批。
  */
 const BUILTIN_RULES_VERSION_KEY = 'permission:builtin-rules-version'
-const BUILTIN_RULES_VERSION = '2'
+const BUILTIN_RULES_VERSION = '3'
 
 // Maps built-in tool names to permission action keys
 const TOOL_ACTION_MAP: Record<string, string> = {
@@ -360,7 +360,7 @@ export class PermissionService {
     // 1) 查 session-scoped 临时决策（用户上一次选「会话允许 / 会话拒绝」）
     const action = resolveToolAction(toolName, toolInput)
     if (isUnapprovableComputerAction(action)) return false
-    if (isComputerSafetyControl(action)) return true
+    if (isGovernedComputerTaskAction(action)) return true
     if (this.isSessionDenied(sessionId, action) && options.forcePrompt !== true) return false
     if (this.isSessionAllowed(sessionId, action)) return true
 

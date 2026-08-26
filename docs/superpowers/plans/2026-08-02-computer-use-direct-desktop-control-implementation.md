@@ -1,6 +1,6 @@
 # Computer Use 直接桌面控制实施计划
 
-> 状态: 实施中 | 最后核对: 2026-08-02
+> 状态: 实施中 | 最后核对: 2026-08-26
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -21,6 +21,7 @@
 ### Task 1: 主进程单执行器协调器
 
 **Files:**
+
 - Create: `apps/desktop/src/main/services/computer-use/ComputerDesktopExecutionCoordinator.ts`
 - Create: `apps/desktop/src/main/services/computer-use/ComputerDesktopExecutionCoordinator.test.ts`
 
@@ -64,6 +65,7 @@ Expected: PASS。
 ### Task 2: 会话激活与生产链去持久租约
 
 **Files:**
+
 - Modify: `apps/desktop/src/main/services/computer-use/ComputerSessionManager.ts`
 - Modify: `apps/desktop/src/main/services/computer-use/ComputerSessionManager.test.ts`
 - Modify: `apps/desktop/src/main/services/computer-use/ComputerUseServices.ts`
@@ -74,7 +76,9 @@ Expected: PASS。
 
 ```ts
 expect(manager.activate(session.id)).toMatchObject({ status: 'observing', actuatorLeaseId: null })
-expect(manager.assertDispatchAllowed(actionEnvelope(session.id, session.id)).session.id).toBe(session.id)
+expect(manager.assertDispatchAllowed(actionEnvelope(session.id, session.id)).session.id).toBe(
+  session.id,
+)
 ```
 
 - [x] **Step 2: 运行测试确认旧实现失败**
@@ -96,6 +100,7 @@ Expected: PASS。
 ### Task 3: Controller 与 Renderer IPC 自动抢占
 
 **Files:**
+
 - Modify: `apps/desktop/src/main/services/computer-use/ComputerUseAgentController.ts`
 - Modify: `apps/desktop/src/main/services/computer-use/ComputerUseAgentController.test.ts`
 - Modify: `apps/desktop/src/main/ipc/registerComputerUseIpc.ts`
@@ -130,6 +135,7 @@ Expected: PASS。
 ### Task 4: Policy、Broker 与 Operator 直接执行
 
 **Files:**
+
 - Modify: `apps/desktop/src/main/services/computer-use/ComputerPolicyService.ts`
 - Modify: `apps/desktop/src/main/services/computer-use/ComputerPolicyService.test.ts`
 - Modify: `apps/desktop/src/main/services/computer-use/ComputerControlBroker.ts`
@@ -143,7 +149,9 @@ Expected: PASS。
 L0-L4、sensitive text、unattended、external write 均返回 `allow` 且不创建 approval/handoff；观察应用不匹配仍 `deny/focus_mismatch`。Operator 无 permissionMode/requestApproval/heartbeat，动作信封兼容字段等于 session id，慢模型决策不会触发租约错误。
 
 ```ts
-expect(policy.evaluate(sensitiveEnvelope, contract, observedApp)).toMatchObject({ decision: 'allow' })
+expect(policy.evaluate(sensitiveEnvelope, contract, observedApp)).toMatchObject({
+  decision: 'allow',
+})
 expect(approvals.request).not.toHaveBeenCalled()
 expect(dispatched.actuatorLeaseId).toBe(SESSION.id)
 ```
@@ -167,6 +175,7 @@ Expected: PASS。
 ### Task 5: 模型兼容、文档、全量验证与真实 DEV
 
 **Files:**
+
 - Preserve/verify: `apps/desktop/src/main/services/computer-use/ComputerDecisionAdapter.ts`
 - Preserve/verify: `apps/desktop/src/main/services/computer-use/ComputerDecisionAdapter.test.ts`
 - Preserve/verify: `packages/protocol/src/computer-use/errors.ts`
@@ -206,6 +215,7 @@ Expected: `allowedApps=[]`、无 approval/handoff/lease conflict、哔哩哔哩�
 ### Task 6: 桌面状态多路查询与低阻断应用直达
 
 **Files:**
+
 - Create: `apps/desktop/src/main/services/computer-use/ComputerDesktopStateService.ts`
 - Create: `apps/desktop/src/main/services/computer-use/ComputerApplicationCatalog.ts`
 - Modify: `apps/desktop/src/main/services/computer-use/NativeHostComputerUseBackend.ts`
@@ -240,6 +250,17 @@ Expected: `allowedApps=[]`、无 approval/handoff/lease conflict、哔哩哔哩�
 - [x] 截图证据失败时重新观察并支持 AX-only 决策。
 - [x] 验收窗口清单或验收记录存储失败时保留内存验收结果。
 - [ ] 在真实 Electron/自绘应用中验证 AX noop 后自动切换坐标及键盘路径。
+
+### Task 8: P0 授权设置独立化与核心热路径修复
+
+- [x] `start_task`、`resume`、`bind_target` 和全部高层观察/状态工具绕过应用内 Permission Profile；未知和低层动作仍 fail-closed。
+- [x] 补齐 `list_apps`、`list_windows`、`get_screen_state`、`get_app_state`、`open_app` 的权限动作映射。
+- [x] `start_task` 改为只读能力预检，移除任务启动时的系统权限请求，并返回设置页精确引导。
+- [x] 新增独立“设置 → 电脑操作”组件以及固定系统隐私设置 IPC，支持授权、重新检测、诊断和复制。
+- [x] 新安装默认启用 My Desktop；用户显式关闭设置时仍停止活动任务并阻止 Renderer 直启。
+- [x] 绑定目标动作复用当前窗口，去掉动作后冗余 `list_windows`；新增动作执行与动作后观察分段指标。
+- [x] 补充 PermissionService、Controller、Native Backend、IPC、协议和 React 组件聚焦测试。
+- [ ] 在最新 DEV 实例完成真实桌面端到端验收，并记录观测、动作、动作后观察的最新耗时。
 
 ## 自审
 

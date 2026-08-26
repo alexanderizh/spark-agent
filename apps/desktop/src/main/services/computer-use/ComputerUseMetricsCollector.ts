@@ -3,6 +3,8 @@ export type ComputerUseMetricName =
   | 'permission_request_ms'
   | 'observation_ms'
   | 'action_ms'
+  | 'action_execute_ms'
+  | 'action_post_observation_ms'
   | 'takeover_stop_ms'
   | 'four_step_task_ms'
 

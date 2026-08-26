@@ -28,8 +28,8 @@ import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { ComputerUseTimelineStore } from '../services/computer-use/ComputerUseTimelineStore.js'
 
 const DEFAULT_SETTINGS: ComputerUseSettings = {
-  enabled: false,
-  environments: { safeBrowser: false, safeDesktop: false, myDesktop: false },
+  enabled: true,
+  environments: { safeBrowser: false, safeDesktop: false, myDesktop: true },
   allowedApps: [],
   redactSensitiveContent: true,
   fullRecordingEnabled: false,
@@ -203,6 +203,7 @@ function register(
     services?: any
     verifications?: { get(id: string): ComputerVerificationRow | null }
     authorizeRenderer?: (event: any) => boolean
+    openSystemSettings?: (permission: 'screen' | 'accessibility') => Promise<{ opened: boolean }>
   } = {},
 ) {
   const settings = options.settings ?? createSettingsStore()
@@ -212,6 +213,9 @@ function register(
     getServices: () => services,
     authorizeRenderer: options.authorizeRenderer ?? (() => true),
     ...(options.verifications == null ? {} : { verifications: options.verifications }),
+    ...(options.openSystemSettings == null
+      ? {}
+      : { openSystemSettings: options.openSystemSettings }),
   })
   return { settings, services }
 }
@@ -246,6 +250,7 @@ describe('registerComputerUseIpc', () => {
         'computer-use:deny-action',
         'computer-use:list-apps',
         'computer-use:list-windows',
+        'computer-use:open-system-settings',
         'computer-use:list-sessions',
         'computer-use:get-timeline',
         'computer-use:get-verification',
@@ -263,6 +268,16 @@ describe('registerComputerUseIpc', () => {
       result: { diagnosticCode: 'native_host_ready', stage: 'handshake' },
     })
     expect(services.diagnostics.collect).toHaveBeenCalledOnce()
+  })
+
+  it('opens the requested operating-system privacy pane through a fixed main-process action', async () => {
+    const openSystemSettings = vi.fn(async () => ({ opened: true }))
+    register({ openSystemSettings })
+
+    await expect(
+      harness.handlers.get('computer-use:open-system-settings')!({ permission: 'screen' }, event()),
+    ).resolves.toEqual({ opened: true })
+    expect(openSystemSettings).toHaveBeenCalledWith('screen')
   })
 
   it('rejects every privileged Computer Use channel from an untrusted renderer', async () => {
@@ -322,7 +337,12 @@ describe('registerComputerUseIpc', () => {
 
   it('does not create a session while Computer Use is disabled', async () => {
     const services = createServices()
-    register({ services })
+    const settings = createSettingsStore({
+      ...DEFAULT_SETTINGS,
+      enabled: false,
+      environments: { ...DEFAULT_SETTINGS.environments, myDesktop: false },
+    })
+    register({ services, settings })
 
     await expect(
       harness.handlers.get('computer-use:start')!(

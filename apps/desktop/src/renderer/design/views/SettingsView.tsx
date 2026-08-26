@@ -71,6 +71,7 @@ import { UsageHeatmap } from './UsageHeatmap'
 import { needsSdkInstallAction } from './sdkIntegrityPresentation'
 import { CustomCommandsSection } from './custom-commands/CustomCommandsSection'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
+import { ComputerUseSettingsSection } from '../computer-use/ComputerUseSettingsSection'
 import './SettingsView.less'
 import type {
   SessionAgentAdapter,
@@ -422,6 +423,12 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
       group: '系统',
       items: [
         {
+          id: 'computer-use',
+          icon: <Icons.Monitor size={13} />,
+          label: '电脑操作',
+          keywords: ['辅助功能', '屏幕录制', '输入控制', '系统权限', 'computer use'],
+        },
+        {
           id: 'integrity',
           icon: <Icons.Shield size={13} />,
           label: '完整性',
@@ -505,6 +512,7 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     'system-prompt': SystemPromptSection,
     // 直接引用模块级组件，不要包箭头函数（同 MemoryPanel 的教训）
     'sub-app': SubAppRuntimeSettingsCard,
+    'computer-use': ComputerUseSettingsSection,
     integrity: IntegritySection,
     playwright: PlaywrightStatusCard,
     telemetry: TelemetrySection,
