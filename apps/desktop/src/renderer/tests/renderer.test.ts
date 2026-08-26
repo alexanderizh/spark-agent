@@ -3928,7 +3928,7 @@ describe('Renderer Smoke Tests', () => {
     )
   })
 
-  it('does not auto-collapse the latest two assistant message bodies', async () => {
+  it('auto-collapses completed assistant turns to their final answer', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
@@ -4003,7 +4003,7 @@ describe('Renderer Smoke Tests', () => {
               content: 'first',
             },
             {
-              id: 'assistant-1',
+              id: 'assistant-1-progress',
               type: 'assistant_message',
               sessionId: 'session-1',
               turnId: 'turn-1',
@@ -4011,8 +4011,30 @@ describe('Renderer Smoke Tests', () => {
               seq: 2,
               mode: 'complete',
               provider: 'claude',
-              content: 'Historical long answer',
+              content: 'Historical intermediate update',
+              isFinal: false,
+              segmentId: 'turn-1-progress',
+            },
+            {
+              id: 'assistant-1-final',
+              type: 'assistant_message',
+              sessionId: 'session-1',
+              turnId: 'turn-1',
+              timestamp: '2026-05-27T00:00:01.500Z',
+              seq: 3,
+              mode: 'complete',
+              provider: 'claude',
+              content: 'Historical final summary',
               isFinal: true,
+            },
+            {
+              id: 'status-1',
+              type: 'agent_status',
+              sessionId: 'session-1',
+              turnId: 'turn-1',
+              timestamp: '2026-05-27T00:00:01.800Z',
+              seq: 4,
+              status: 'completed',
             },
             {
               id: 'user-2',
@@ -4020,20 +4042,42 @@ describe('Renderer Smoke Tests', () => {
               sessionId: 'session-1',
               turnId: 'turn-2',
               timestamp: '2026-05-27T00:00:02.000Z',
-              seq: 3,
+              seq: 5,
               content: 'second',
             },
             {
-              id: 'assistant-2',
+              id: 'assistant-2-progress',
               type: 'assistant_message',
               sessionId: 'session-1',
               turnId: 'turn-2',
               timestamp: '2026-05-27T00:00:03.000Z',
-              seq: 4,
+              seq: 6,
               mode: 'complete',
               provider: 'claude',
-              content: 'Latest long answer',
+              content: 'Latest intermediate update',
+              isFinal: false,
+              segmentId: 'turn-2-progress',
+            },
+            {
+              id: 'assistant-2-final',
+              type: 'assistant_message',
+              sessionId: 'session-1',
+              turnId: 'turn-2',
+              timestamp: '2026-05-27T00:00:03.500Z',
+              seq: 7,
+              mode: 'complete',
+              provider: 'claude',
+              content: 'Latest final summary',
               isFinal: true,
+            },
+            {
+              id: 'status-2',
+              type: 'agent_status',
+              sessionId: 'session-1',
+              turnId: 'turn-2',
+              timestamp: '2026-05-27T00:00:03.800Z',
+              seq: 8,
+              status: 'completed',
             },
           ],
           hasMore: false,
@@ -4079,17 +4123,26 @@ describe('Renderer Smoke Tests', () => {
       })
 
       await vi.waitFor(() => {
-        const assistantMessages = container.querySelectorAll('.msg-agent')
-        expect(assistantMessages).toHaveLength(2)
         expect(
-          Array.from(assistantMessages).every(
-            (message) => message.querySelector('.collapse-overlay .collapse-toggle') == null,
-          ),
-        ).toBe(true)
+          container.querySelectorAll('[data-assistant-turn-collapse="collapsed"]'),
+        ).toHaveLength(2)
       })
-      const assistantMessages = container.querySelectorAll('.msg-agent')
-      expect(assistantMessages[0]?.querySelector('.collapse-overlay .collapse-toggle')).toBeNull()
-      expect(assistantMessages[1]?.querySelector('.collapse-overlay .collapse-toggle')).toBeNull()
+      expect(container.textContent).toContain('Historical final summary')
+      expect(container.textContent).toContain('Latest final summary')
+      expect(container.textContent).not.toContain('Historical intermediate update')
+      expect(container.textContent).not.toContain('Latest intermediate update')
+
+      const latestToggle = container.querySelectorAll<HTMLElement>(
+        '[data-assistant-turn-collapse="collapsed"] button',
+      )[1]
+      act(() => latestToggle?.click())
+
+      await vi.waitFor(() => {
+        expect(container.textContent).toContain('Latest intermediate update')
+        expect(
+          container.querySelectorAll('[data-assistant-turn-collapse="expanded"]'),
+        ).toHaveLength(1)
+      })
     } finally {
       scrollHeightSpy.mockRestore()
     }

@@ -108,7 +108,14 @@ export interface UserQuestionAnswerSummary {
 }
 
 export type UIBlock =
-  | { kind: 'text'; content: string; isStreaming: boolean; segmentId?: string }
+  | {
+      kind: 'text'
+      content: string
+      isStreaming: boolean
+      segmentId?: string
+      /** Renderer hint set only by the provider's final assistant_message event. */
+      isFinalAnswer?: boolean
+    }
   | {
       kind: 'thinking'
       content: string
@@ -351,6 +358,8 @@ export type UIBlock =
       content: string
       isStreaming: boolean
       segmentId?: string
+      /** Renderer hint set only by the member's final team_member_message event. */
+      isFinalAnswer?: boolean
       /** 产生/更新该 block 所消费的源 event id，用于「只删这条成员消息」时反查 event。 */
       eventIds?: string[]
     }
@@ -1625,8 +1634,8 @@ export class MessageBuilder {
           if (block.eventIds == null) block.eventIds = []
           if (!block.eventIds.includes(id)) block.eventIds.push(id)
         }
-        const pushBlock = (content: string, isStreaming: boolean) => {
-          msg.blocks.push({
+        const pushBlock = (content: string, isStreaming: boolean, isFinalAnswer = false) => {
+          const block: Extract<UIBlock, { kind: 'team_member_message' }> = {
             kind: 'team_member_message',
             dispatchId: event.dispatchId,
             memberAgentId: event.memberAgentId,
@@ -1634,24 +1643,43 @@ export class MessageBuilder {
             isStreaming,
             ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
             eventIds: [event.id],
-          })
+          }
+          if (isFinalAnswer) block.isFinalAnswer = true
+          msg.blocks.push(block)
         }
 
         if (event.mode === 'complete') {
           if (event.isFinal) {
             // 最终回复：通常等于最后一段 complete，按内容去重收尾；不覆盖此前各段叙述。
             const last = memberBlocks[memberBlocks.length - 1]
+            for (const block of memberBlocks) delete block.isFinalAnswer
             if (event.content.length > 0) {
-              if (last == null) pushBlock(event.content, false)
-              else if (last.isStreaming) {
+              if (last == null) pushBlock(event.content, false, true)
+              else if (
+                memberBlocks.length > 1 &&
+                containsAllContentBlocks(event.content, memberBlocks)
+              ) {
+                for (const block of memberBlocks) block.isStreaming = false
+                last.isFinalAnswer = true
+                recordEventId(last, event.id)
+              } else if (last.isStreaming) {
                 last.content = event.content
                 last.isStreaming = false
+                last.isFinalAnswer = true
+                recordEventId(last, event.id)
+              } else if (contentExtendsBlock(event.content, last.content)) {
+                last.content = event.content
+                last.isFinalAnswer = true
                 recordEventId(last, event.id)
               } else if (last.content.trim() !== event.content.trim()) {
-                pushBlock(event.content, false)
+                pushBlock(event.content, false, true)
               } else {
+                last.isFinalAnswer = true
                 recordEventId(last, event.id)
               }
+            } else if (last != null) {
+              last.isFinalAnswer = true
+              recordEventId(last, event.id)
             }
             for (const b of memberBlocks) b.isStreaming = false
             break
@@ -2215,21 +2243,32 @@ export class MessageBuilder {
 
   /** 最终 result 文本：与最后一段正文按内容去重，避免重复或覆盖此前各段 */
   private reconcileFinalText(msg: UIMessage, content: string): void {
-    if (content.length === 0) return
     type TextBlock = Extract<UIBlock, { kind: 'text' }>
     const textBlocks = msg.blocks.filter((b): b is TextBlock => b.kind === 'text')
-    if (textBlocks.length > 0 && containsAllTextBlocks(content, textBlocks)) {
-      for (const block of textBlocks) block.isStreaming = false
+    for (const block of textBlocks) delete block.isFinalAnswer
+    const lastText = textBlocks.at(-1)
+    if (content.length === 0) {
+      if (lastText != null) lastText.isFinalAnswer = true
       return
     }
-    const lastText = textBlocks.at(-1)
+    if (textBlocks.length > 1 && containsAllTextBlocks(content, textBlocks)) {
+      for (const block of textBlocks) block.isStreaming = false
+      if (lastText != null) lastText.isFinalAnswer = true
+      return
+    }
     if (lastText == null) {
-      msg.blocks.push({ kind: 'text', content, isStreaming: false })
+      msg.blocks.push({ kind: 'text', content, isStreaming: false, isFinalAnswer: true })
     } else if (lastText.isStreaming) {
       lastText.content = content
       lastText.isStreaming = false
+      lastText.isFinalAnswer = true
+    } else if (contentExtendsBlock(content, lastText.content)) {
+      lastText.content = content
+      lastText.isFinalAnswer = true
     } else if (lastText.content.trim() !== content.trim()) {
-      msg.blocks.push({ kind: 'text', content, isStreaming: false })
+      msg.blocks.push({ kind: 'text', content, isStreaming: false, isFinalAnswer: true })
+    } else {
+      lastText.isFinalAnswer = true
     }
   }
 
@@ -2285,6 +2324,13 @@ function containsAllTextBlocks(
   content: string,
   blocks: Array<Extract<UIBlock, { kind: 'text' }>>,
 ): boolean {
+  return containsAllContentBlocks(content, blocks)
+}
+
+function containsAllContentBlocks(
+  content: string,
+  blocks: ReadonlyArray<{ content: string }>,
+): boolean {
   const normalizedContent = normalizeTextForCompare(content)
   if (normalizedContent.length === 0) return false
   let cursor = 0
@@ -2300,6 +2346,12 @@ function containsAllTextBlocks(
 
 function normalizeTextForCompare(text: string): string {
   return text.trim().replace(/\s+/g, ' ')
+}
+
+function contentExtendsBlock(content: string, current: string): boolean {
+  const normalizedContent = normalizeTextForCompare(content)
+  const normalizedCurrent = normalizeTextForCompare(current)
+  return normalizedCurrent.length > 0 && normalizedContent.startsWith(normalizedCurrent)
 }
 
 function mergeCompletedBlockContent(current: string, incoming: string): string {

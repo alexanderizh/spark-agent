@@ -154,6 +154,8 @@ describe('SparkDatabase', () => {
       ]),
     )
     expect(sparkAssistant?.prompt).toContain('平台管理与全栈开发能力')
+    expect(sparkAssistant?.prompt).toContain('用户默认只能看到最后一段最终正文')
+    expect(sparkAssistant?.prompt).toContain('最终回复块必须携带完整答复')
 
     const removedFullstackAgent = db.raw
       .prepare('SELECT id FROM agents WHERE id = ?')
@@ -366,6 +368,27 @@ describe('SparkDatabase', () => {
         }
       ).graph_json,
     ).toContain('platform-manager-agent')
+  })
+
+  it('should add the complete final-response reminder without replacing custom prompt content', () => {
+    const dbPath = join(testDir, 'test.db')
+    const migrationsDir = join(process.cwd(), 'migrations')
+
+    db = new SparkDatabase(dbPath)
+    applyMigrationsThrough(db, migrationsDir, 86)
+    db.raw
+      .prepare("UPDATE agents SET prompt = prompt || '\n\n用户自定义补充' WHERE id = ?")
+      .run('platform-manager-agent')
+
+    db.runMigrations(migrationsDir)
+
+    const { prompt } = db.raw
+      .prepare('SELECT prompt FROM agents WHERE id = ?')
+      .get('platform-manager-agent') as { prompt: string }
+    expect(prompt).toContain('用户自定义补充')
+    expect(prompt).toContain('用户默认只能看到最后一段最终正文')
+    expect(prompt).toContain('最终回复块必须携带完整答复')
+    expect(prompt.match(/用户默认只能看到最后一段最终正文/g)).toHaveLength(1)
   })
 
   it('should not re-apply already applied migrations', () => {

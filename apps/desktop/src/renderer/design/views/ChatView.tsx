@@ -118,6 +118,7 @@ import { ToolLogImageThumb, ToolLogSourceList } from './chat/ToolLogRichOutput'
 import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 import { projectVisibleChatMessages } from './chat/internal-turn-message-visibility'
 import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
+import { useAssistantTurnCollapse } from './chat/useAssistantTurnCollapse'
 import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
 import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
 import { ChatTurnNavigator } from './chat/ChatTurnNavigator'
@@ -7465,9 +7466,11 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   // 避免气泡内内容全被隐藏后只剩下头像+名称的空气泡。
   teamModeActive?: boolean
 }) {
+  const turnCollapse = useAssistantTurnCollapse(messageStatus, blocks)
+
   const showTeamActivityLogs = useTeamActivityLogsVisible()
   const hideTeamHostProcessLogs = teamModeActive && !showTeamActivityLogs
-  const segments = splitAssistantMessageBlocks(blocks)
+  const segments = splitAssistantMessageBlocks(turnCollapse.visibleBlocks)
   if (segments.length === 0) return null
   const lastRenderableSegmentIndex = segments.reduce((lastIndex, segment, index) => {
     if (segment.kind !== 'agent') return index
@@ -7494,6 +7497,18 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
 
   return (
     <>
+      {turnCollapse.canCollapse && (
+        <div
+          className={`assistant-turn-collapse-control${showIdentity ? '' : ' without-avatar'}`}
+          data-assistant-turn-collapse={turnCollapse.expanded ? 'expanded' : 'collapsed'}
+        >
+          <ToolLogsMasterToggle
+            open={turnCollapse.expanded}
+            onToggle={turnCollapse.toggleExpanded}
+            {...(turnDurationMs != null ? { durationMs: turnDurationMs } : {})}
+          />
+        </div>
+      )}
       {segments.map((segment, index) => {
         const segmentIsLatest = isLatest === true && index === lastRenderableSegmentIndex
         if (segment.kind === 'team') {
@@ -7604,6 +7619,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             {...(messageStatus != null ? { messageStatus } : {})}
             {...(timestamp != null ? { timestamp } : {})}
             {...(turnDurationMs != null ? { turnDurationMs } : {})}
+            turnCollapseManaged={turnCollapse.canCollapse}
             {...(onDelete != null ? { onDelete } : {})}
             {...(onFork != null && index === lastAgentSegmentIndex ? { onFork } : {})}
             {...(onReply != null ? { onReply } : {})}
@@ -7632,7 +7648,7 @@ type AssistantMessageSegment =
       running: boolean
     }
 
-function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment[] {
+function splitAssistantMessageBlocks(blocks: readonly UIBlock[]): AssistantMessageSegment[] {
   const segments: AssistantMessageSegment[] = []
   const latestTeamMemberSegments = new Map<
     string,
@@ -7782,6 +7798,7 @@ const AgentMsg = React.memo(function AgentMsg({
   onToggleSelected,
   onStartMultiSelect,
   onRetry,
+  turnCollapseManaged = false,
 }: {
   sessionId: SessionId
   workspaceRootPath: string | null
@@ -7808,6 +7825,8 @@ const AgentMsg = React.memo(function AgentMsg({
   onToggleSelected?: () => void
   onStartMultiSelect?: () => void
   onRetry?: () => void
+  /** The parent turn owns the single collapse control for completed output. */
+  turnCollapseManaged?: boolean
 }) {
   // 首个"内容块"出现前的连续思考 → 顶部思考模块；其后穿插的阶段性思考保留在内容流里
   // 就地渲染（表现为类似工具日志的「思考过程」模块），避免把一个 turn 内多段思考全部堆到开头。
@@ -7877,6 +7896,7 @@ const AgentMsg = React.memo(function AgentMsg({
     (b) => b.kind === 'file_change' && typeof b.diff === 'string' && b.diff.length > 0,
   ).length
   const showToolLogsToggle =
+    !turnCollapseManaged &&
     isFinished &&
     !suppressAutoCollapse &&
     (toolCallBlocks.length > 0 ||

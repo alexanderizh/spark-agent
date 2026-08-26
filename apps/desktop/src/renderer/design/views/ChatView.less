@@ -5656,6 +5656,19 @@ body.side-chat-resizing {
   opacity: 1;
 }
 
+/* 整轮完成后的单一折叠入口。与 assistant 正文左边缘对齐，不新增卡片容器。 */
+.assistant-turn-collapse-control {
+  margin: 0 0 2px 46px;
+}
+
+.assistant-turn-collapse-control.without-avatar {
+  margin-left: 0;
+}
+
+.assistant-turn-collapse-control .thinking-section {
+  margin: 0;
+}
+
 /* 思考与工具日志总开关：用户手动收起后，隐藏本气泡内所有「思考过程」、工具日志组，
    以及附属的可折叠块（checkpoint / plan_proposed / team_dispatch / team_discussion_status），
    由顶部「思考和工具日志」切换条统一控制；流式中不生效，运行反馈照常显示。

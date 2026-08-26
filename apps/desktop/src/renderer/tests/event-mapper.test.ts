@@ -754,6 +754,42 @@ describe('MessageBuilder', () => {
         segmentId: 'seg-2',
       },
     ])
+    const textBlocks = message.blocks.filter((block) => block.kind === 'text')
+    expect(textBlocks[0]?.isFinalAnswer).toBeUndefined()
+    expect(textBlocks[1]?.isFinalAnswer).toBe(true)
+  })
+
+  it('extends a single completed segment with authoritative final text without duplicating it', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-segment',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '初步结论',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-1',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-final',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '初步结论已经完成验证。',
+      provider: 'codex',
+      isFinal: true,
+    })
+
+    const textBlocks = builder.getAllMessages()[0]?.blocks.filter((block) => block.kind === 'text')
+    expect(textBlocks).toEqual([
+      expect.objectContaining({
+        kind: 'text',
+        content: '初步结论已经完成验证。',
+        isFinalAnswer: true,
+      }),
+    ])
   })
 
   it('keeps SDK item errors in the active assistant message for the same turn', () => {

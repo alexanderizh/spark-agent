@@ -117,6 +117,7 @@ describe('MessageBuilder · Team Mode', () => {
     block = findBlock(b, 'team_member_message')
     expect(block?.content).toBe('looks good, ship it')
     expect(block?.isStreaming).toBe(false)
+    expect(block?.isFinalAnswer).toBe(true)
   })
 
   it('skips empty-content member deltas so no phantom block is created', () => {
@@ -214,6 +215,40 @@ describe('MessageBuilder · Team Mode', () => {
     expect(blocks).toHaveLength(1)
     expect(blocks[0]?.content).toBe('hello')
     expect(blocks[0]?.isStreaming).toBe(false)
+    expect(blocks[0]?.isFinalAnswer).toBe(true)
+  })
+
+  it('marks only the last member segment when a final aggregate contains every segment', () => {
+    const b = new MessageBuilder()
+    for (const [segmentId, content] of [
+      ['segment-1', '先检查实现。'],
+      ['segment-2', '最终结论：可以发布。'],
+    ] as const) {
+      b.processEvent({
+        ...base('team_member_message', `${segmentId}-complete`),
+        type: 'team_member_message',
+        dispatchId: 'd1',
+        memberAgentId: 'reviewer',
+        mode: 'complete',
+        segmentId,
+        content,
+        isFinal: false,
+      } as AgentEvent)
+    }
+    b.processEvent({
+      ...base('team_member_message', 'member-final'),
+      type: 'team_member_message',
+      dispatchId: 'd1',
+      memberAgentId: 'reviewer',
+      mode: 'complete',
+      content: '先检查实现。\n\n最终结论：可以发布。',
+      isFinal: true,
+    } as AgentEvent)
+
+    const blocks = findBlocks(b, 'team_member_message')
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]?.isFinalAnswer).toBeUndefined()
+    expect(blocks[1]?.isFinalAnswer).toBe(true)
   })
 
   it('team_dispatch_completed updates dispatch block with reply + final state', () => {
