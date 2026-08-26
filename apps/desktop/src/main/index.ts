@@ -151,6 +151,35 @@ import {
 } from './startup-isolation.js'
 
 const log = createLogger('main')
+
+// ─── Uncaught error guard ────────────────────────────────────────────────────
+// 此前主进程没有任何 uncaughtException / unhandledRejection 兜底：任何未捕获异常
+// 都会触发 Electron 崩溃弹窗（"A JavaScript error occurred in the main process"）
+// 并让整个应用直接退出——退出不走 before-quit 清理，事后文件日志也无任何错误
+// 记录可查（如 2026-08-26 取消深度视频任务后整应用退出、日志却毫无痕迹的事件）。
+// 这里统一记入文件日志（ERROR 级别必落盘 <logs>/main.log）并保持应用存活，把
+// "无声整应用退出"变成可诊断的日志证据；前缀 [main-uncaught] 便于检索。
+const formatUncaughtError = (error: unknown): string => {
+  if (error instanceof Error) return `${error.message}\n${error.stack ?? '(no stack)'}`
+  return String(error)
+}
+process.on('uncaughtException', (error) => {
+  log.error(`[main-uncaught] uncaughtException: ${formatUncaughtError(error)}`)
+})
+process.on('unhandledRejection', (reason) => {
+  log.error(`[main-uncaught] unhandledRejection: ${formatUncaughtError(reason)}`)
+})
+
+// 退出取证：应用内主动退出只有托盘菜单/更新安装等少数入口，但 before-quit 事件
+// 本身不带来源信息。在退出关键节点记录窗口快照与触发事件，复发"整应用意外退出"
+// 时可直接从 main.log 还原退出时刻的窗口状态与先后顺序。前缀 [quit-forensics]。
+const formatWindowSnapshot = (): string => {
+  const windows = BrowserWindow.getAllWindows()
+  if (windows.length === 0) return 'none(全部窗口已销毁)'
+  return windows
+    .map((win) => `#${win.id}[${win.isVisible() ? 'visible' : 'hidden'}]${win.title}`)
+    .join(', ')
+}
 let tray: Tray | null = null
 let computerControlTray: ComputerControlTrayService | null = null
 let unsubscribeComputerControlStatus: (() => void) | null = null
@@ -176,6 +205,7 @@ registerEmergencySessionShutdown(process, disposeSessionServiceForShutdown)
 // preventDefault + hide()，退出被吞，应用无法真正退出。
 app.on('before-quit', () => {
   isQuitting = true
+  log.warn(`[quit-forensics] before-quit; windows=${formatWindowSnapshot()}`)
   unsubscribeComputerControlStatus?.()
   unsubscribeComputerControlStatus = null
   if (computerControlTrayRefreshTimer != null) clearTimeout(computerControlTrayRefreshTimer)
@@ -1241,6 +1271,7 @@ if (ownsSingleInstanceLock) {
   // Windows / Linux：所有窗口关闭时退出应用
   // macOS：由 'activate' 事件处理，不在此退出
   app.on('window-all-closed', () => {
+    log.warn(`[quit-forensics] window-all-closed; isQuitting=${isQuitting}`)
     if (process.platform !== 'darwin' && isQuitting) {
       app.quit()
     }

@@ -208,4 +208,50 @@ describe('DepthVideoRunner', () => {
     expect(encoder.kill).toHaveBeenCalled()
     expect(removeOutput).toHaveBeenCalled()
   })
+
+  it('converts encoder stdin stream errors into a task failure instead of an unhandled error', async () => {
+    const decoder = new FakeProcess()
+    const encoder = new FakeProcess()
+    const removeOutput = vi.fn(async () => undefined)
+    const spawnProcess = vi.fn().mockReturnValueOnce(decoder).mockReturnValueOnce(encoder)
+    const runner = new DepthVideoRunner({
+      probe: async () => ({
+        durationSec: 1,
+        width: 2,
+        height: 1,
+        fps: 1,
+        videoCodec: 'h264',
+        audioCodec: null,
+        bitrate: 1000,
+        hasAudio: false,
+        fileSize: 6,
+      }),
+      resolveBins: async () => ({ ffmpeg: '/managed/ffmpeg', ffprobe: '/managed/ffprobe' }),
+      spawnProcess,
+      createFrameProcessor: () => ({
+        process: vi.fn(async () => new Uint8Array([0, 255])),
+        dispose: vi.fn(async () => undefined),
+      }),
+      finalizeOutput: vi.fn(async () => undefined),
+      removeOutput,
+      ensureOutputDir: vi.fn(async () => undefined),
+    })
+    const pending = runner.run({
+      inputPath: '/canvas/source.mp4',
+      outputPath: '/canvas/depth.mp4',
+      modelDir: '/managed/depth-model',
+      runtimeEntryPath: '/managed/depth-runtime/transformers.js',
+    })
+
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(2))
+    // 模拟真实取消竞态：编码进程已被杀、父进程侧 stdin 尚未感知，
+    // EPIPE 由 libuv 异步上报（无监听器时会成为 uncaughtException）。
+    encoder.stdin.emit('error', new Error('write EPIPE'))
+    decoder.stdout.write(Buffer.alloc(6))
+    decoder.stdout.end()
+    decoder.emit('close', 0)
+
+    await expect(pending).rejects.toThrow('视频编码输入流已中断')
+    expect(removeOutput).toHaveBeenCalled()
+  })
 })

@@ -163,6 +163,7 @@ export class CanvasWindowService {
     win.on('closed', () => {
       if (this.win === win) {
         const exitingProjectId = this.activeProjectId
+        log.warn(`[quit-forensics] canvas window closed; project=${exitingProjectId ?? 'none'}`)
         this.win = null
         this.activeProjectId = null
         this.allowCloseOnce = false

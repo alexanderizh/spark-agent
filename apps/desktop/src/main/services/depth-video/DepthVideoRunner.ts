@@ -109,11 +109,19 @@ export class DepthVideoRunner {
     // Attach rejection handlers immediately: cancellation can terminate both processes at once,
     // while the main flow only awaits them sequentially.
     void Promise.allSettled([decoderExit, encoderExit])
+    // 取消会先 kill ffmpeg，但父进程侧的 stdin 要到下一次写入才异步收到 EPIPE：
+    // 没有 'error' 监听时该错误会升级为 uncaughtException，触发 Electron 崩溃弹窗
+    // 并退出整个应用。这里捕获首个流错误，由主循环把它转成普通的任务失败。
+    let encoderInputFailure: Error | null = null
+    encoder.stdin.on('error', (error) => {
+      encoderInputFailure ??= error instanceof Error ? error : new Error(String(error))
+    })
     let frameProcessor: FrameProcessor | null = null
     const abort = () => {
       terminateDepthProcess(decoder)
       terminateDepthProcess(encoder)
-      void frameProcessor?.dispose()
+      // dispose 可能异步失败（如 worker 终止异常），不能留成 unhandledRejection。
+      void Promise.resolve(frameProcessor?.dispose()).catch(() => undefined)
     }
     request.signal?.addEventListener('abort', abort, { once: true })
 
@@ -133,6 +141,10 @@ export class DepthVideoRunner {
         if (request.signal?.aborted) throw new Error('cancelled')
         pending = Buffer.concat([pending, Buffer.from(chunk)])
         while (pending.length >= frameBytes) {
+          if (request.signal?.aborted) throw new Error('cancelled')
+          if (encoderInputFailure) {
+            throw new Error('视频编码输入流已中断', { cause: encoderInputFailure })
+          }
           const rgb = Uint8Array.from(pending.subarray(0, frameBytes))
           pending = pending.subarray(frameBytes)
           const depth = await frameProcessor.process({
@@ -159,7 +171,7 @@ export class DepthVideoRunner {
         frame: frameCount,
         totalFrames,
       })
-      encoder.stdin.end()
+      if (!encoder.stdin.destroyed) encoder.stdin.end()
       await encoderExit
       if (request.signal?.aborted) throw new Error('cancelled')
       await this.dependencies.finalizeOutput(temporaryPath, request.outputPath)
