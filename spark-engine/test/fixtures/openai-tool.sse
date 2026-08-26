@@ -1,0 +1,12 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","delta":"inspect source"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"id":"fc_1","type":"function_call","status":"completed","arguments":"{\"path\":\"src/a.ts\"}","call_id":"call_1","name":"read"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[{"id":"rs_1","type":"reasoning","encrypted_content":"opaque-reasoning","summary":[{"type":"summary_text","text":"inspect source"}]},{"id":"fc_1","type":"function_call","status":"completed","arguments":"{\"path\":\"src/a.ts\"}","call_id":"call_1","name":"read"}],"usage":{"input_tokens":13,"input_tokens_details":{"cached_tokens":4},"output_tokens":8}}}
+

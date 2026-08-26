@@ -1,0 +1,7 @@
+> hello
+  Hello from Spark.
+-- 完成 · 1 steps · 120 tok · $0.000 --
+spark v0.1.0 · fake-m1 · /workspace · s:session1
+● 就绪 · fake-m1 · /help 帮助
+❯
+/help 帮助 · ↑ 历史 · esc 中断
