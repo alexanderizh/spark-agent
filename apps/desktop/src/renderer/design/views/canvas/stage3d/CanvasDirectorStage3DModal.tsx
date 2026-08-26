@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Tag } from '@lobehub/ui'
+import { Button, Segmented, Tag } from '@lobehub/ui'
 import {
   ConfigProvider,
   Dropdown,
   Input,
+  InputNumber,
   Popover,
-  Segmented,
   Select,
   Slider,
+  Switch,
   message,
   theme as antdTheme,
 } from 'antd'
@@ -31,7 +32,9 @@ import {
   STAGE3D_BODY_TYPES,
   STAGE3D_LIGHTING_LABEL,
   STAGE3D_LIGHTING_PRESETS,
+  STAGE3D_ASPECT_RATIO,
   clamp,
+  resolveStage3DLookAtPoint,
   type Stage3DActor,
   type Stage3DActorModelId,
   type Stage3DBackdropMode,
@@ -80,6 +83,25 @@ import {
 } from './propRegistry'
 import { buildStage3DPrompt } from './prompt'
 import { makeLocalModelProp, readStage3DLocalModelFile } from './localModelImport'
+import {
+  evaluateStage3DCameraMotion,
+  getStage3DMotionPreset,
+  makeKeyframeMotion,
+  makePresetMotion,
+  type Stage3DCameraKeyframe,
+  type Stage3DCameraMotion,
+  type Stage3DMotionPresetId,
+  type Stage3DMotionSubject,
+} from './cameraMotion'
+import { useStage3DMotionPlayback } from './useStage3DMotionPlayback'
+import { CameraPreviewPanel, type Stage3DCameraSource } from './CameraPreviewPanel'
+import { CameraMotionPanel } from './CameraMotionPanel'
+import {
+  Stage3DVideoCancelledError,
+  blobToDataUrl,
+  recordStage3DVideo,
+  stage3DVideoSizeForAspect,
+} from './stage3dVideoRecorder'
 import { useCanvasUnsavedChangesGuard } from '../useCanvasUnsavedChangesGuard'
 import { useResolvedTheme } from '../../../hooks/useResolvedTheme'
 import './stage3d.less'
@@ -180,6 +202,7 @@ export function CanvasDirectorStage3DModal({
   onInsertPrompt,
   onExportScreenshot,
   onExportScreenshots,
+  onExportVideo,
 }: {
   node: CanvasNode | null
   open: boolean
@@ -195,6 +218,8 @@ export function CanvasDirectorStage3DModal({
   onExportScreenshots?: (
     inputs: { dataUrl: string; title: string; prompt: string }[],
   ) => Promise<void> | void
+  /** 录制运镜视频完成：落盘并插入画布视频节点（未传时退化为浏览器下载 .webm） */
+  onExportVideo?: (input: { dataUrl: string; durationMs: number; title: string }) => Promise<void> | void
 }) {
   const resolvedTheme = useResolvedTheme()
   const initial = useMemo(() => (node ? readStage3DData(node) : createDefaultStage3DData()), [node])
@@ -222,6 +247,19 @@ export function CanvasDirectorStage3DModal({
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const sceneRef = useRef<Scene3DHandle>(null)
   const localModelInputRef = useRef<HTMLInputElement | null>(null)
+
+  // ─────────── 机位运动轨迹（运镜）与录制 ───────────
+  /** 运镜播放逐帧机位：ref 传给 Scene3D，命令式驱动取景相机/预览/录制，不触发 React 重渲染 */
+  const cameraOverrideRef = useRef<{ position: [number, number, number]; target: [number, number, number] } | null>(null)
+  /** 播放前的取景预览状态：停止时恢复（自动进入预览播放运镜，看完回到原视角） */
+  const cameraPreviewRestoreRef = useRef(true)
+  /** 相机属性面板 Tab：属性 / 运动轨迹 */
+  const [cameraTab, setCameraTab] = useState<'props' | 'motion'>('props')
+  /** 运镜视频录制状态（null=未在录制） */
+  const [videoRecording, setVideoRecording] = useState<{ progress: number } | null>(null)
+  const recordCancelRef = useRef({ cancelled: false })
+  /** 录制期间禁止重复触发 */
+  const recordingActiveRef = useRef(false)
 
   useEffect(() => {
     if (!open) {
@@ -371,6 +409,233 @@ export function CanvasDirectorStage3DModal({
     window.addEventListener('keydown', onKey, true) // capture 阶段抢先，避免被画布吞掉
     return () => window.removeEventListener('keydown', onKey, true)
   }, [open, undoPose, redoPose])
+
+  // ─────────── 机位运动轨迹（运镜）：播放 / 预设 / 关键帧 ───────────
+  const playback = useStage3DMotionPlayback({
+    onFrame: (frame) => {
+      cameraOverrideRef.current = frame
+    },
+    onFinish: () => {
+      cameraOverrideRef.current = null
+      // 自动进入的取景预览在播完后还原
+      if (!cameraPreviewRestoreRef.current) setCameraPreview(false)
+    },
+  })
+
+  /** 运镜主体：跟随目标优先，回退注视目标 */
+  const resolveMotionSubject = useCallback((d: Stage3DData): Stage3DMotionSubject | undefined => {
+    const id = d.camera.followTargetId ?? d.camera.lookTargetId
+    if (!id) return undefined
+    const actor = d.actors.find((a) => a.id === id)
+    if (actor) return { position: actor.position, rotationY: actor.rotationY }
+    const prop = d.props.find((p) => p.id === id)
+    if (prop) return { position: prop.position, rotationY: 0 }
+    return undefined
+  }, [])
+
+  /** 播放运镜：自动进入取景预览，停止/播完还原原视角 */
+  const playCameraMotion = useCallback(
+    (motion: Stage3DCameraMotion) => {
+      cameraPreviewRestoreRef.current = cameraPreview
+      setCameraPreview(true)
+      playback.play(motion, resolveMotionSubject(draft))
+    },
+    [cameraPreview, draft, playback, resolveMotionSubject],
+  )
+
+  const stopCameraMotion = useCallback(() => {
+    // stop 内部会回调 onFrame(null) 清掉 override
+    playback.stop()
+    if (!cameraPreviewRestoreRef.current) setCameraPreview(false)
+    cameraPreviewRestoreRef.current = true
+  }, [playback])
+
+  /** 套用预设运镜：以当前机位为起点快照，并立即试播 */
+  const applyCameraPreset = useCallback(
+    (presetId: Stage3DMotionPresetId) => {
+      const motion = makePresetMotion(presetId, draft.camera)
+      setDraft((d) => ({ ...d, camera: { ...d.camera, motion } }))
+      playCameraMotion(motion)
+    },
+    [draft.camera, playCameraMotion],
+  )
+
+  const updateCameraMotion = useCallback((patch: Partial<Stage3DCameraMotion>) => {
+    setDraft((d) =>
+      d.camera.motion
+        ? { ...d, camera: { ...d.camera, motion: { ...d.camera.motion, ...patch } } }
+        : d,
+    )
+  }, [])
+
+  const clearCameraMotion = useCallback(() => {
+    if (playback.playing) stopCameraMotion()
+    setDraft((d) => {
+      const camera = { ...d.camera }
+      delete camera.motion
+      return { ...d, camera }
+    })
+  }, [playback.playing, stopCameraMotion])
+
+  /** 保存关键帧轨迹（构建 motion 挂到工作机位并试播） */
+  const saveCameraKeyframes = useCallback(
+    (keyframes: Stage3DCameraKeyframe[], durationSec: number) => {
+      const motion = makeKeyframeMotion(keyframes, durationSec)
+      setDraft((d) => ({ ...d, camera: { ...d.camera, motion } }))
+      playCameraMotion(motion)
+    },
+    [playCameraMotion],
+  )
+
+  /** 把某关键帧位姿应用回工作机位（定位按钮） */
+  const applyCameraKeyframe = useCallback((keyframe: Stage3DCameraKeyframe) => {
+    setDraft((d) => ({
+      ...d,
+      camera: {
+        ...d.camera,
+        position: [...keyframe.position] as [number, number, number],
+        target: [...keyframe.target] as [number, number, number],
+      },
+    }))
+  }, [])
+
+  // ─────────── 运镜视频录制 ───────────
+  const shots = useMemo(() => draft.shots ?? [], [draft.shots])
+  const runVideoRecording = useCallback(
+    async (
+      motion: Stage3DCameraMotion,
+      baseCamera: Stage3DCamera,
+      subject?: Stage3DMotionSubject | undefined,
+    ) => {
+      if (recordingActiveRef.current) return
+      // 录制独占动画驱动：先停掉正在播放的运镜预览，避免两个循环抢 override
+      if (playback.playing) stopCameraMotion()
+      const scene3d = sceneRef.current
+      if (!scene3d) {
+        message.error('3D 视口尚未就绪，请稍后再试')
+        return
+      }
+      recordingActiveRef.current = true
+      recordCancelRef.current = { cancelled: false }
+      setVideoRecording({ progress: 0 })
+      const restorePreview = cameraPreview
+      if (!restorePreview) setCameraPreview(true)
+      const size = stage3DVideoSizeForAspect(STAGE3D_ASPECT_RATIO[baseCamera.aspect])
+      const durationSec = Math.max(0.5, motion.durationSec)
+      try {
+        const result = await recordStage3DVideo({
+          size,
+          durationSec,
+          renderFrame: (tSec, canvas) => {
+            const frame = evaluateStage3DCameraMotion(motion, tSec, subject)
+            // 同步推给主视口取景预览：录制过程实时可见
+            cameraOverrideRef.current = frame
+            return scene3d.renderPreview(
+              {
+                ...baseCamera,
+                fov: motion.start?.fov ?? baseCamera.fov,
+                position: frame.position,
+                target: frame.target,
+              },
+              canvas,
+            )
+          },
+          onProgress: (progress) => setVideoRecording({ progress }),
+          signal: recordCancelRef.current,
+        })
+        const dataUrl = await blobToDataUrl(result.blob)
+        const numberPart = draft.slate?.shotNumber ? `${draft.slate.shotNumber}-` : ''
+        const stamp = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+        const title = `3D运镜-${numberPart}${stamp}`.replace(/\s+/g, '')
+        if (onExportVideo) {
+          await onExportVideo({ dataUrl, durationMs: result.durationMs, title })
+          message.success('运镜视频已生成，已插入画布')
+        } else {
+          const link = document.createElement('a')
+          link.download = `${title}.webm`
+          link.href = dataUrl
+          link.click()
+          message.success('运镜视频已生成')
+        }
+      } catch (error) {
+        if (!(error instanceof Stage3DVideoCancelledError)) {
+          message.error(error instanceof Error ? error.message : '录制运镜视频失败')
+        }
+      } finally {
+        cameraOverrideRef.current = null
+        recordingActiveRef.current = false
+        setVideoRecording(null)
+        if (!restorePreview) setCameraPreview(false)
+      }
+    },
+    [cameraPreview, draft.slate, onExportVideo, playback.playing, stopCameraMotion],
+  )
+
+  const startVideoRecording = useCallback(() => {
+    const motion = draft.camera.motion
+    if (!motion) {
+      message.warning('请先在「运动轨迹」中选择预设运镜或创建轨迹，再录制视频')
+      // 选中相机并切到运动轨迹 Tab，引导用户先配置运镜
+      setPoseMode(false)
+      setDraft((d) => ({ ...d, activeId: 'camera' }))
+      setCameraTab('motion')
+      return
+    }
+    void runVideoRecording(motion, draft.camera, resolveMotionSubject(draft))
+  }, [draft, resolveMotionSubject, runVideoRecording])
+
+  /** 录制指定镜头的运镜视频（镜头需已携带运动轨迹） */
+  const recordShotVideo = useCallback(
+    (shot: Stage3DShot) => {
+      if (!shot.motion) {
+        message.warning('该镜头还没有运动轨迹：切到该镜头后套用预设运镜，再重新保存镜头')
+        return
+      }
+      const shotCamera: Stage3DCamera = {
+        position: [...shot.position],
+        target: [...shot.target],
+        fov: shot.fov,
+        aspect: shot.aspect,
+      }
+      // 镜头未存注视目标 id，主体按当前机位的跟随/注视目标解析（同一场景内一致）
+      void runVideoRecording(shot.motion, shotCamera, resolveMotionSubject(draft))
+    },
+    [draft, resolveMotionSubject, runVideoRecording],
+  )
+
+  // ─────────── 机位预览画中画：机位解析与离屏渲染 ───────────
+  const resolvePreviewCamera = useCallback(
+    (source: Stage3DCameraSource): Stage3DCamera | null => {
+      // 运镜播放/录制中：预览窗跟播当前动画机位
+      if ((playback.playing || videoRecording) && draft.camera.motion) {
+        const motion = draft.camera.motion
+        const elapsed = playback.playing
+          ? playback.getElapsedSec()
+          : (videoRecording?.progress ?? 0) * motion.durationSec
+        const t = Math.min(elapsed, motion.durationSec)
+        const frame = evaluateStage3DCameraMotion(motion, t, resolveMotionSubject(draft))
+        return { ...draft.camera, position: frame.position, target: frame.target }
+      }
+      if (source.kind === 'shot') {
+        const shot = shots.find((s) => s.id === source.id)
+        if (!shot) return null
+        return {
+          position: [...shot.position],
+          target: [...shot.target],
+          fov: shot.fov,
+          aspect: shot.aspect,
+        }
+      }
+      return draft.camera
+    },
+    [draft, playback, resolveMotionSubject, shots, videoRecording],
+  )
+
+  const renderViewportPreview = useCallback(
+    (cam: Stage3DCamera | undefined, target: HTMLCanvasElement) =>
+      sceneRef.current?.renderPreview(cam, target) ?? false,
+    [],
+  )
 
   const prompt = useMemo(() => buildStage3DPrompt(draft), [draft])
   const isDirty = JSON.stringify(draft) !== savedDraftSignatureRef.current
@@ -566,7 +831,11 @@ export function CanvasDirectorStage3DModal({
       const props = d.props.filter((p) => p.id !== d.activeId)
       if (actors.length === d.actors.length && props.length === d.props.length) return d
       const safeActors = actors.length > 0 ? actors : [makeStage3DActor(0)]
-      return { ...d, actors: safeActors, props, activeId: safeActors[0]?.id }
+      // 被删对象若是注视/跟随目标，回退手动坐标（注视点保留原坐标，不跳变）
+      const camera = { ...d.camera }
+      if (camera.lookTargetId && camera.lookTargetId === d.activeId) delete camera.lookTargetId
+      if (camera.followTargetId && camera.followTargetId === d.activeId) delete camera.followTargetId
+      return { ...d, actors: safeActors, props, camera, activeId: safeActors[0]?.id }
     })
   }, [])
 
@@ -589,9 +858,25 @@ export function CanvasDirectorStage3DModal({
   // ─────────── 变换回调（来自 Scene 的 TransformControls）───────────
   const handleActorTransform = useCallback(
     (id: string, position: [number, number, number], rotationY: number) => {
-      updateActor(id, { position, rotationY })
+      setDraft((d) => {
+        const prev = d.actors.find((a) => a.id === id)
+        const actors = d.actors.map((a) => (a.id === id ? { ...a, position, rotationY } : a))
+        // 注视目标跟随：拖动被注视的角色时，注视点跟随平移，保持构图关系
+        if (!prev || d.camera.lookTargetId !== id) return { ...d, actors }
+        const dx = position[0] - prev.position[0]
+        const dy = position[1] - prev.position[1]
+        const dz = position[2] - prev.position[2]
+        return {
+          ...d,
+          actors,
+          camera: {
+            ...d.camera,
+            target: [d.camera.target[0] + dx, d.camera.target[1] + dy, d.camera.target[2] + dz],
+          },
+        }
+      })
     },
-    [updateActor],
+    [],
   )
   const handleCrowdTransform = useCallback(
     (crowdId: string, position: [number, number, number], rotationY: number) => {
@@ -729,7 +1014,7 @@ export function CanvasDirectorStage3DModal({
   }, [node?.title, onExportScreenshot, prompt])
 
   // ─────────── 镜头列表（C1） ───────────
-  const shots = draft.shots ?? []
+  // （shots 已在运镜录制段前声明，此处直接复用）
 
   const saveCurrentAsShot = useCallback(() => {
     setDraft((d) => {
@@ -765,18 +1050,19 @@ export function CanvasDirectorStage3DModal({
     })
   }, [])
 
-  /** 切换到某镜头：把镜头参数写回工作机位（camera），主视口/取景随之跳转 */
+  /** 切换到某镜头：把镜头参数（含运动轨迹）写回工作机位，主视口/取景随之跳转 */
   const applyShot = useCallback((shot: Stage3DShot) => {
-    setDraft((d) => ({
-      ...d,
-      camera: {
+    setDraft((d) => {
+      const camera = {
         position: [...shot.position],
         target: [...shot.target],
         fov: shot.fov,
         aspect: shot.aspect,
-      },
-      activeId: 'camera',
-    }))
+      } as Stage3DCamera
+      // 镜头即完整机位快照：有轨迹则带上，没有则清掉旧轨迹（不残留上一个机位的运镜）
+      if (shot.motion) camera.motion = shot.motion
+      return { ...d, camera, activeId: 'camera' }
+    })
   }, [])
 
   const exportAllShots = useCallback(async () => {
@@ -792,6 +1078,7 @@ export function CanvasDirectorStage3DModal({
         target: [...shot.target],
         fov: shot.fov,
         aspect: shot.aspect,
+        ...(shot.motion ? { motion: shot.motion } : {}),
       }
       const dataUrl = sceneRef.current?.screenshot(cam)
       if (!dataUrl) continue
@@ -876,12 +1163,36 @@ export function CanvasDirectorStage3DModal({
               />
               <Button
                 size="small"
-                type={cameraPreview ? 'primary' : 'text'}
+                type="text"
                 icon={<Icons.Eye size={14} />}
                 onClick={() => setCameraPreview((v) => !v)}
               >
                 {cameraPreview ? '退出取景视角' : '进入取景视角'}
               </Button>
+              {videoRecording ? (
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  icon={<Icons.Square size={13} />}
+                  onClick={() => {
+                    recordCancelRef.current.cancelled = true
+                  }}
+                  title="停止并丢弃录制"
+                >
+                  停止录制 {Math.round(videoRecording.progress * 100)}%
+                </Button>
+              ) : (
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<Icons.Video size={14} />}
+                  onClick={startVideoRecording}
+                  title="按当前机位的运动轨迹录制运镜视频，完成后插入画布"
+                >
+                  录制视频
+                </Button>
+              )}
               <Button
                 size="small"
                 type="text"
@@ -1208,6 +1519,7 @@ export function CanvasDirectorStage3DModal({
                 onActorPoseDragBegin={handleActorPoseDragBegin}
                 onActorPoseDragCommit={handleActorPoseDragCommit}
                 viewNavigationMode={viewNavigationMode}
+                cameraOverrideRef={cameraOverrideRef}
               />
               {cameraPreview && (
                 <div className="stage3d-frame-mask" data-aspect={draft.camera.aspect} />
@@ -1215,6 +1527,21 @@ export function CanvasDirectorStage3DModal({
               {/* C3 构图参考线：纯 DOM overlay，只在取景预览时显示，不参与离屏截图 */}
               {cameraPreview && guide !== 'none' && (
                 <div className={`stage3d-guide stage3d-guide-${guide}`} aria-hidden />
+              )}
+              {/* 运镜视频录制中：进度浮层（录制走离屏管线，此浮层不会被录进去） */}
+              {videoRecording && (
+                <div className="stage3d-record-overlay" aria-live="polite">
+                  <div className="stage3d-record-badge">
+                    <span className="stage3d-record-dot" />
+                    正在录制运镜视频
+                  </div>
+                  <div className="stage3d-record-progress">
+                    <div
+                      className="stage3d-record-progress-bar"
+                      style={{ width: `${Math.round(videoRecording.progress * 100)}%` }}
+                    />
+                  </div>
+                </div>
               )}
               {!cameraPreview && (
                 <div className="stage3d-viewport-toolbar">
@@ -1345,8 +1672,47 @@ export function CanvasDirectorStage3DModal({
                 >
                   <Icons.ChevronRight size={14} />
                 </button>
+                {/* 机位预览常驻右栏顶部：无论当前选中什么对象都可查看导演相机/镜头画面 */}
+                <CameraPreviewPanel
+                  shots={shots}
+                  directorCameraName={draft.camera.name ?? '导演相机'}
+                  resolveCamera={resolvePreviewCamera}
+                  renderPreview={renderViewportPreview}
+                  recording={!!videoRecording}
+                />
                 {activeIsCamera ? (
-                  <CameraInspector draft={draft} setDraft={setDraft} onAim={aimCameraAtSelected} />
+                  <>
+                    <div className="stage3d-section-title">机位</div>
+                    <Segmented
+                      size="small"
+                      block
+                      value={cameraTab}
+                      onChange={(v) => setCameraTab(v as 'props' | 'motion')}
+                      options={[
+                        { label: '属性', value: 'props' },
+                        { label: '运动轨迹', value: 'motion' },
+                      ]}
+                    />
+                    {cameraTab === 'props' ? (
+                      <CameraInspector draft={draft} setDraft={setDraft} onAim={aimCameraAtSelected} />
+                    ) : (
+                      <CameraMotionPanel
+                        motion={draft.camera.motion}
+                        camera={draft.camera}
+                        playing={playback.playing}
+                        progress={playback.progress}
+                        onApplyPreset={applyCameraPreset}
+                        onPlay={() => {
+                          if (draft.camera.motion) playCameraMotion(draft.camera.motion)
+                        }}
+                        onStop={stopCameraMotion}
+                        onDuration={(durationSec) => updateCameraMotion({ durationSec })}
+                        onClear={clearCameraMotion}
+                        onSaveKeyframes={saveCameraKeyframes}
+                        onApplyKeyframe={applyCameraKeyframe}
+                      />
+                    )}
+                  </>
                 ) : activeActor ? (
                   <ActorInspector
                     actor={activeActor}
@@ -1375,6 +1741,8 @@ export function CanvasDirectorStage3DModal({
                   onUpdate={updateShot}
                   onDuplicate={duplicateShot}
                   onRemove={removeShot}
+                  onRecord={recordShotVideo}
+                  recording={!!videoRecording}
                 />
 
                 <LightingInspector
@@ -1488,6 +1856,8 @@ function ShotListPanel({
   onUpdate,
   onDuplicate,
   onRemove,
+  onRecord,
+  recording,
 }: {
   shots: Stage3DShot[]
   onSaveCurrent: () => void
@@ -1495,6 +1865,9 @@ function ShotListPanel({
   onUpdate: (id: string, patch: Partial<Stage3DShot>) => void
   onDuplicate: (id: string) => void
   onRemove: (id: string) => void
+  /** 录制该镜头的运动轨迹视频 */
+  onRecord: (shot: Stage3DShot) => void
+  recording: boolean
 }) {
   return (
     <>
@@ -1537,6 +1910,16 @@ function ShotListPanel({
                 <Button
                   size="small"
                   type="text"
+                  icon={<Icons.Video size={12} />}
+                  disabled={recording}
+                  title={shot.motion ? '录制该镜头的运镜视频' : '该镜头暂无运动轨迹'}
+                  onClick={() => onRecord(shot)}
+                >
+                  录制
+                </Button>
+                <Button
+                  size="small"
+                  type="text"
                   icon={<Icons.Copy size={12} />}
                   onClick={() => onDuplicate(shot.id)}
                 >
@@ -1552,6 +1935,14 @@ function ShotListPanel({
                   删除
                 </Button>
               </div>
+              {shot.motion && (
+                <div className="stage3d-shot-motion-tag">
+                  {shot.motion.kind === 'preset'
+                    ? getStage3DMotionPreset(shot.motion.presetId)?.label ?? '预设运镜'
+                    : '自定义轨迹'}
+                  <span>· {shot.motion.durationSec.toFixed(1)}s</span>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1665,6 +2056,16 @@ function SlateInspector({
 
 // ─────────────────────────── 属性面板：相机 ───────────────────────────
 
+/** 机位旋转（朝向）由 target−position 解出：yaw 水平角 / pitch 俯仰角（度，只读展示） */
+function cameraYawPitch(camera: Stage3DCamera): { yaw: number; pitch: number } {
+  const dx = camera.target[0] - camera.position[0]
+  const dy = camera.target[1] - camera.position[1]
+  const dz = camera.target[2] - camera.position[2]
+  const yaw = (Math.atan2(dx, dz) * 180) / Math.PI
+  const pitch = (Math.atan2(dy, Math.hypot(dx, dz)) * 180) / Math.PI
+  return { yaw: Math.round(yaw), pitch: Math.round(pitch) }
+}
+
 function CameraInspector({
   draft,
   setDraft,
@@ -1677,9 +2078,126 @@ function CameraInspector({
   const { camera } = draft
   const setCam = (patch: Partial<Stage3DData['camera']>) =>
     setDraft((d) => ({ ...d, camera: { ...d.camera, ...patch } }))
+  const [fovEnabled, setFovEnabled] = useState(true)
+  const { yaw, pitch } = cameraYawPitch(camera)
+
+  // 注视目标候选：手动坐标 + 角色 + 道具
+  const lookOptions = [
+    { value: '__manual__', label: '手动坐标' },
+    ...draft.actors.map((a) => ({ value: a.id, label: `角色 · ${a.name}` })),
+    ...draft.props.map((p) => ({ value: p.id, label: `道具 · ${p.name}` })),
+  ]
+  const followOptions = [
+    { value: '__none__', label: '不跟随' },
+    ...draft.actors.map((a) => ({ value: a.id, label: `角色 · ${a.name}` })),
+    ...draft.props.map((p) => ({ value: p.id, label: `道具 · ${p.name}` })),
+  ]
+
+  /** 选择注视目标：立即把注视点吸附到对象中心（角色胸口高度） */
+  const applyLookTarget = (id: string) => {
+    if (id === '__manual__') {
+      setCam({ lookTargetId: undefined })
+      return
+    }
+    const point = resolveStage3DLookAtPoint(draft, id)
+    setCam({ lookTargetId: id, ...(point ? { target: point } : {}) })
+  }
+
   return (
     <>
-      <div className="stage3d-section-title">取景相机</div>
+      <label className="stage3d-field">
+        <span>名称</span>
+        <Input
+          size="small"
+          value={camera.name ?? ''}
+          placeholder="导演相机"
+          onChange={(e) => setCam({ name: e.target.value || undefined })}
+        />
+      </label>
+      <div className="stage3d-field">
+        <span>位置</span>
+        <div className="stage3d-vec3-row">
+          {(['X', 'Y', 'Z'] as const).map((axis, axisIndex) => (
+            <span key={axis} className="stage3d-vec3-item">
+              <em>{axis}</em>
+              <InputNumber
+                size="small"
+                step={0.1}
+                value={Number((camera.position[axisIndex] ?? 0).toFixed(2))}
+                onChange={(v) => {
+                  const next = [...camera.position] as [number, number, number]
+                  next[axisIndex] = Number(v) || 0
+                  setCam({ position: next })
+                }}
+              />
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="stage3d-field">
+        <span>旋转（朝向）</span>
+        <div className="stage3d-vec3-readonly">
+          水平 {yaw}° · 俯仰 {pitch}°（由注视点驱动）
+        </div>
+      </div>
+      <label className="stage3d-field">
+        <span>跟随目标</span>
+        <Select
+          size="small"
+          style={{ width: '100%' }}
+          value={camera.followTargetId ?? '__none__'}
+          options={followOptions}
+          onChange={(id) => setCam({ followTargetId: id === '__none__' ? undefined : id })}
+        />
+      </label>
+      <label className="stage3d-field">
+        <span>注视目标</span>
+        <Select
+          size="small"
+          style={{ width: '100%' }}
+          value={camera.lookTargetId ?? '__manual__'}
+          options={lookOptions}
+          onChange={applyLookTarget}
+        />
+      </label>
+      {!camera.lookTargetId && (
+        <div className="stage3d-field">
+          <span>注视坐标</span>
+          <div className="stage3d-vec3-row">
+            {(['X', 'Y', 'Z'] as const).map((axis, axisIndex) => (
+              <span key={axis} className="stage3d-vec3-item">
+                <em>{axis}</em>
+                <InputNumber
+                  size="small"
+                  step={0.1}
+                  value={Number((camera.target[axisIndex] ?? 0).toFixed(2))}
+                  onChange={(v) => {
+                    const next = [...camera.target] as [number, number, number]
+                    next[axisIndex] = Number(v) || 0
+                    setCam({ target: next })
+                  }}
+                />
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="stage3d-field">
+        <span className="stage3d-field-label-row">
+          视野角度
+          <Switch size="small" checked={fovEnabled} onChange={setFovEnabled} />
+        </span>
+        <Slider
+          min={10}
+          max={100}
+          disabled={!fovEnabled}
+          value={camera.fov}
+          onChange={(v) => setCam({ fov: clamp(v, 10, 100) })}
+        />
+        <div className="stage3d-vec3-readonly">
+          视野 {Math.round(camera.fov)}°（{fovToFocalLabel(camera.fov)}mm 等效焦段）
+        </div>
+      </div>
       <label className="stage3d-field">
         <span>画幅</span>
         <Segmented
@@ -1713,9 +2231,15 @@ function CameraInspector({
       <Button size="small" block icon={<Icons.Eye size={13} />} onClick={onAim}>
         对准选中对象
       </Button>
-      <div className="stage3d-tip">在视口中拖动相机图标改机位；「进入取景视角」预览最终构图。</div>
+      <div className="stage3d-tip">在视口中拖动相机图标改机位；「运动轨迹」页可套用运镜并录制视频。</div>
     </>
   )
+}
+
+/** 垂直 FOV → 等效全画幅焦段（与 prompt.ts 同公式） */
+function fovToFocalLabel(fovDeg: number): number {
+  const fovRad = (fovDeg * Math.PI) / 180
+  return Math.round(24 / (2 * Math.tan(fovRad / 2)))
 }
 
 // ─────────────────────────── 属性面板：角色 ───────────────────────────

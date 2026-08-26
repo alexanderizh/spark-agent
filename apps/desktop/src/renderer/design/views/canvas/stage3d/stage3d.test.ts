@@ -1492,3 +1492,114 @@ describe('stand 姿势下手与大腿不相交（全体型 FK 粗算）', () => 
     }
   })
 })
+
+// ─────────── 机位运镜字段：序列化 / 反序列化 ───────────
+
+describe('readStage3DData：机位名称/注视/跟随目标/运动轨迹', () => {
+  it('完整 motion（preset 与 keyframes）round-trip 保留', () => {
+    const presetMotion = {
+      kind: 'preset',
+      presetId: 'orbit',
+      durationSec: 4.5,
+      start: { position: [1, 2, 3], target: [0, 1, 0], fov: 40 },
+    }
+    const node = fakeNode({
+      version: 1,
+      actors: [{ id: 'a1', name: 'A', bodyType: 'standard', heightScale: 1, position: [0, 0, 0], rotationY: 0, pose: 'stand' }],
+      camera: {
+        position: [0, 1.6, 4.5],
+        target: [0, 1, 0],
+        fov: 40,
+        aspect: '16:9',
+        name: '导演相机',
+        lookTargetId: 'a1',
+        followTargetId: 'a1',
+        motion: presetMotion,
+      },
+      shots: [
+        {
+          id: 's1',
+          name: '镜头1',
+          shotNumber: '1',
+          position: [0, 1.6, 4.5],
+          target: [0, 1, 0],
+          fov: 40,
+          aspect: '16:9',
+          motion: {
+            kind: 'keyframes',
+            durationSec: 3,
+            keyframes: [
+              { id: 'k1', t: 0, position: [0, 1, 4], target: [0, 1, 0] },
+              { id: 'k2', t: 3, position: [4, 1, 0], target: [0, 1, 0] },
+            ],
+          },
+        },
+      ],
+    })
+    const data = readStage3DData(node)
+    expect(data.camera.name).toBe('导演相机')
+    expect(data.camera.lookTargetId).toBe('a1')
+    expect(data.camera.followTargetId).toBe('a1')
+    expect(data.camera.motion?.kind).toBe('preset')
+    expect(data.camera.motion?.presetId).toBe('orbit')
+    expect(data.camera.motion?.durationSec).toBe(4.5)
+    expect(data.camera.motion?.start?.position).toEqual([1, 2, 3])
+    expect(data.shots?.[0]?.motion?.kind).toBe('keyframes')
+    expect(data.shots?.[0]?.motion?.keyframes).toHaveLength(2)
+    // 序列化后原样保留
+    const serialized = serializeStage3DData(data) as Record<string, unknown>
+    const reread = readStage3DData(fakeNode({ version: 1, ...serialized }))
+    expect(reread.camera.motion?.presetId).toBe('orbit')
+    expect(reread.shots?.[0]?.motion?.durationSec).toBe(3)
+  })
+
+  it('脏 motion（未知 kind / 空 keyframes / 非法时长）被丢弃或钳制', () => {
+    const base = {
+      version: 1,
+      actors: [{ id: 'a1', name: 'A', bodyType: 'standard', heightScale: 1, position: [0, 0, 0], rotationY: 0, pose: 'stand' }],
+      camera: { position: [0, 1.6, 4.5], target: [0, 1, 0], fov: 40, aspect: '16:9' },
+    }
+    const bad = readStage3DData(
+      fakeNode({ ...base, camera: { ...base.camera, motion: { kind: 'weird', durationSec: 2 } } }),
+    )
+    expect(bad.camera.motion).toBeUndefined()
+    const emptyKf = readStage3DData(
+      fakeNode({
+        ...base,
+        camera: { ...base.camera, motion: { kind: 'keyframes', durationSec: 2, keyframes: [] } },
+      }),
+    )
+    expect(emptyKf.camera.motion).toBeUndefined()
+    const clamped = readStage3DData(
+      fakeNode({
+        ...base,
+        camera: {
+          ...base.camera,
+          motion: {
+            kind: 'preset',
+            presetId: 'orbit',
+            durationSec: 999,
+            start: { position: [0, 0, 0], target: [0, 0, 0], fov: 40 },
+          },
+        },
+      }),
+    )
+    expect(clamped.camera.motion?.durationSec).toBe(30)
+  })
+
+  it('makeStage3DShot 携带工作机位的运动轨迹', () => {
+    const camera = {
+      position: [0, 1.6, 4.5] as [number, number, number],
+      target: [0, 1, 0] as [number, number, number],
+      fov: 40,
+      aspect: '16:9' as const,
+      motion: {
+        kind: 'preset' as const,
+        presetId: 'push-in' as never,
+        durationSec: 2,
+      },
+    }
+    const shot = makeStage3DShot(camera, 0)
+    expect(shot.motion?.kind).toBe('preset')
+  })
+})

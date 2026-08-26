@@ -1,6 +1,7 @@
 import type { Stage3DActor, Stage3DCamera, Stage3DData, Stage3DProp } from './stage3d.types'
 import { STAGE3D_BODY_TYPE_LABEL, STAGE3D_LIGHTING_LABEL } from './stage3d.types'
 import { POSE_LABEL } from './mannequin'
+import { describeStage3DMotion, describeStage3DMotionEn } from './cameraMotion'
 
 /** 姿势英文描述词（补生图模型），未收录的预设回退中文标签。 */
 const POSE_EN: Record<string, string> = {
@@ -247,6 +248,12 @@ export function buildStage3DPrompt(data: Stage3DData, cameraOverride?: Stage3DCa
   lines.push(
     `机位：${angleWord}角度，相机高度约 ${camHeight.toFixed(1)}m，到主体水平距离约 ${camToSubjectDist.toFixed(1)}m。`,
   )
+
+  // 机位运动轨迹（运镜）：给视频生成模型参考镜头运动方式
+  if (camera.motion) {
+    const en = describeStage3DMotionEn(camera.motion)
+    lines.push(`运镜：${describeStage3DMotion(camera.motion)}${en ? `（${en}）` : ''}。`)
+  }
 
   // 灯光（三点布光预设 + 强度）
   const lighting = data.lighting

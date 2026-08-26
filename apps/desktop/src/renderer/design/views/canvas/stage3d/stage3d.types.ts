@@ -4,6 +4,11 @@ import {
   getStage3DActorModel,
   normalizeStage3DActorModelId,
 } from './actorModelRegistry'
+import type {
+  Stage3DCameraKeyframe,
+  Stage3DCameraMotion,
+  Stage3DMotionPresetId,
+} from './cameraMotion'
 
 /**
  * 3D 导演台数据模型（节点 data.stage3d，version 1）。
@@ -88,6 +93,14 @@ export type Stage3DCamera = {
   /** 垂直视角（度） */
   fov: number
   aspect: Stage3DAspect
+  /** 机位名称（默认「导演相机」，机位预览下拉与提示词回显用） */
+  name?: string | undefined
+  /** 注视目标对象 id（actor / prop）；未设置时用 target 手动坐标 */
+  lookTargetId?: string | undefined
+  /** 跟随目标对象 id：运镜预设环绕/跟拍的主体；未设置时回退注视目标或注视点 */
+  followTargetId?: string | undefined
+  /** 机位运动轨迹（预设运镜或关键帧轨迹） */
+  motion?: Stage3DCameraMotion | undefined
 }
 
 /** 三点布光预设 */
@@ -112,6 +125,8 @@ export type Stage3DShot = {
   target: [number, number, number]
   fov: number
   aspect: Stage3DAspect
+  /** 镜头携带的运动轨迹：切到该镜头时载入工作机位，可播放预览与录制运镜视频 */
+  motion?: Stage3DCameraMotion | undefined
   note?: string | undefined
 }
 
@@ -344,7 +359,7 @@ export function makeStage3DCrowdActors(
   return actors
 }
 
-/** 从相机参数快照一个新镜头 */
+/** 从相机参数快照一个新镜头（携带当前机位的运动轨迹） */
 export function makeStage3DShot(
   camera: Stage3DCamera,
   index: number,
@@ -358,6 +373,7 @@ export function makeStage3DShot(
     target: [...camera.target],
     fov: camera.fov,
     aspect: camera.aspect,
+    ...(camera.motion ? { motion: camera.motion } : {}),
     ...patch,
   }
 }
@@ -382,6 +398,51 @@ const ASPECT_SET = new Set<string>(STAGE3D_ASPECTS)
 const BACKDROP_MODES = new Set<string>(['grid', 'panorama', 'backdrop'])
 const LIGHTING_PRESET_SET = new Set<string>(STAGE3D_LIGHTING_PRESETS)
 
+/** 宽容读取运动轨迹：脏数据直接丢弃，不给渲染层埋雷 */
+function readMotion(raw: unknown): Stage3DCameraMotion | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const m = raw as Record<string, unknown>
+  const kind = m.kind === 'keyframes' ? 'keyframes' : m.kind === 'preset' ? 'preset' : null
+  if (!kind) return undefined
+  const durationSec = clamp(Number(m.durationSec) || 0, 0.5, 30)
+  let start: Stage3DCameraMotion['start'] = undefined
+  if (m.start && typeof m.start === 'object') {
+    const s = m.start as Record<string, unknown>
+    start = {
+      position: vec3(s.position, [0, 1.6, 4.5]),
+      target: vec3(s.target, [0, 1, 0]),
+      fov: clamp(num(s.fov, 40), 10, 100),
+    }
+  }
+  let keyframes: Stage3DCameraKeyframe[] | undefined
+  if (kind === 'keyframes') {
+    keyframes = Array.isArray(m.keyframes)
+      ? (m.keyframes
+          .map((kf) => {
+            if (!kf || typeof kf !== 'object') return null
+            const k = kf as Record<string, unknown>
+            return {
+              id: typeof k.id === 'string' && k.id ? k.id : makeStage3DId('kf'),
+              t: clamp(num(k.t, 0), 0, durationSec),
+              position: vec3(k.position, [0, 1.6, 4.5]),
+              target: vec3(k.target, [0, 1, 0]),
+            }
+          })
+          .filter(Boolean) as Stage3DCameraKeyframe[])
+      : []
+    if (keyframes.length === 0) return undefined
+  }
+  return {
+    kind,
+    ...(kind === 'preset' && typeof m.presetId === 'string'
+      ? { presetId: m.presetId as Stage3DMotionPresetId }
+      : {}),
+    durationSec,
+    ...(start ? { start } : {}),
+    ...(keyframes ? { keyframes } : {}),
+  }
+}
+
 function readShot(raw: unknown, index: number): Stage3DShot | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as Record<string, unknown>
@@ -393,6 +454,7 @@ function readShot(raw: unknown, index: number): Stage3DShot | null {
     target: vec3(s.target, [0, 1, 0]),
     fov: clamp(num(s.fov, 40), 10, 100),
     aspect: (ASPECT_SET.has(String(s.aspect)) ? s.aspect : '16:9') as Stage3DAspect,
+    ...(readMotion(s.motion) ? { motion: readMotion(s.motion) } : {}),
     ...(typeof s.note === 'string' && s.note ? { note: s.note } : {}),
   }
 }
@@ -527,11 +589,22 @@ export function readStage3DData(node: CanvasNode | null | undefined): Stage3DDat
   )
 
   const rawCamera = (data.camera ?? {}) as Record<string, unknown>
+  const cameraMotion = readMotion(rawCamera.motion)
   const camera: Stage3DCamera = {
     position: vec3(rawCamera.position, [0, 1.6, 4.5]),
     target: vec3(rawCamera.target, [0, 1, 0]),
     fov: clamp(num(rawCamera.fov, 40), 10, 100),
     aspect: (ASPECT_SET.has(String(rawCamera.aspect)) ? rawCamera.aspect : '16:9') as Stage3DAspect,
+    ...(typeof rawCamera.name === 'string' && rawCamera.name
+      ? { name: rawCamera.name }
+      : {}),
+    ...(typeof rawCamera.lookTargetId === 'string' && rawCamera.lookTargetId
+      ? { lookTargetId: rawCamera.lookTargetId }
+      : {}),
+    ...(typeof rawCamera.followTargetId === 'string' && rawCamera.followTargetId
+      ? { followTargetId: rawCamera.followTargetId }
+      : {}),
+    ...(cameraMotion ? { motion: cameraMotion } : {}),
   }
 
   const shots = Array.isArray(data.shots)
@@ -567,4 +640,26 @@ export function readStage3DData(node: CanvasNode | null | undefined): Stage3DDat
 /** 序列化为可写回 node.data.stage3d 的普通对象。 */
 export function serializeStage3DData(data: Stage3DData): Record<string, unknown> {
   return data as unknown as Record<string, unknown>
+}
+
+/**
+ * 按对象 id 解析注视点：角色取胸口高度（≈1m×身高缩放×场景倍率），
+ * 道具取重心近似（0.4m×缩放×倍率）。找不到对象时返回 null。
+ */
+export function resolveStage3DLookAtPoint(
+  data: Stage3DData,
+  objectId: string | undefined,
+): [number, number, number] | null {
+  if (!objectId) return null
+  const actor = data.actors.find((a) => a.id === objectId)
+  if (actor) {
+    const chest = 1 * actor.heightScale * (data.sceneScale ?? 1)
+    return [actor.position[0], actor.position[1] + chest, actor.position[2]]
+  }
+  const prop = data.props.find((p) => p.id === objectId)
+  if (prop) {
+    const center = 0.4 * prop.scale * (data.sceneScale ?? 1)
+    return [prop.position[0], prop.position[1] + center, prop.position[2]]
+  }
+  return null
 }

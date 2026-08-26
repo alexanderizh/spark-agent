@@ -3875,6 +3875,62 @@ export function CanvasWorkspaceView({
     [createTextNode, patchNodes, snapshot],
   )
 
+  /** 3D 导演台录制的运镜视频：dataUrl 落盘 → safe-file → 建视频节点并连线到导演台节点 */
+  const handleInsertStage3DVideo = useCallback(
+    async (input: { dataUrl: string; durationMs: number; title: string }) => {
+      if (!snapshot) return
+      const source = directorStage3DNode
+      const saved = await window.spark.invoke('file:save-pasted-media', {
+        dataUrl: input.dataUrl,
+        kind: 'video',
+        mimeType: 'video/webm',
+        suggestedBaseName: input.title || 'stage3d-motion',
+        storageScope: 'canvas',
+        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      })
+      // 取视频宽高/时长填充节点展示信息（失败不阻塞建节点）
+      let mediaWidth: number | undefined
+      let mediaHeight: number | undefined
+      let durationMs: number | undefined
+      try {
+        const dims = await readVideoDimensions(encodeToSafeFileUrl(saved.filePath))
+        mediaWidth = dims.width || undefined
+        mediaHeight = dims.height || undefined
+        durationMs = dims.durationMs ?? (input.durationMs || undefined)
+      } catch {
+        durationMs = input.durationMs || undefined
+      }
+      const nodeSize = VIDEO_NODE_DEFAULT_SIZE
+      const position = source
+        ? { x: source.x + source.width + 60, y: source.y }
+        : positionNodeInViewport(canvasViewportRef.current, nodeSize, { x: 260, y: 200 })
+      const videoNode = await createMediaNode({
+        kind: 'video',
+        fileName: saved.fileName,
+        fileMimeType: 'video/webm',
+        filePath: saved.filePath,
+        x: position.x,
+        y: position.y,
+        ...(mediaWidth ? { mediaWidth } : {}),
+        ...(mediaHeight ? { mediaHeight } : {}),
+        ...(durationMs ? { durationMs } : {}),
+      })
+      if (videoNode) {
+        await patchNodes([videoNode.id], { title: input.title || '3D 运镜视频' })
+        if (source) await connectNodes({ sourceNodeId: source.id, targetNodeId: videoNode.id })
+        setSelectedNodeIds([videoNode.id])
+      }
+    },
+    [
+      connectNodes,
+      createMediaNode,
+      directorStage3DNode,
+      patchNodes,
+      setSelectedNodeIds,
+      snapshot,
+    ],
+  )
+
   // ─── 视频工作台（subtype video_workbench）───
   const videoWorkbenchNode = useMemo(
     () => snapshot?.nodes.find((item) => item.id === videoWorkbenchNodeId) ?? null,
@@ -8799,6 +8855,7 @@ export function CanvasWorkspaceView({
             onInsertPrompt={handleInsertStage3DPrompt}
             onExportScreenshot={handleInsertStage3DScreenshot}
             onExportScreenshots={handleInsertStage3DScreenshots}
+            onExportVideo={handleInsertStage3DVideo}
           />
           <CanvasVideoWorkbenchModal
             key={videoWorkbenchNode?.id}

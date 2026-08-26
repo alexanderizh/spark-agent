@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Canvas, useLoader, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber'
 import { Grid, Html, OrbitControls, TransformControls, useGLTF } from '@react-three/drei'
 import { message } from 'antd'
 import * as THREE from 'three'
@@ -48,9 +48,14 @@ import { BODY_METRICS, poseGroundOffset, type JointId, type Vec3 } from './manne
 export type Scene3DHandle = {
   /**
    * 渲染一帧返回 PNG dataURL（按画幅裁切）。
-   * 不传参用 data.camera（当前工作机位）；传入 cam 时用指定机位（批量导出各镜头用）。
+   * 不传参用 data.camera（当前工作机位，含运镜 override）；传入 cam 时用指定机位（批量导出各镜头用）。
    */
   screenshot: (cam?: Stage3DCamera) => string | null
+  /**
+   * 把指定机位（默认工作机位，含运镜 override）渲染到目标 2D canvas（机位预览画中画用）。
+   * 内部走离屏渲染管线，不写主视口；canvas 内部像素尺寸即输出尺寸。
+   */
+  renderPreview: (cam: Stage3DCamera | undefined, target: HTMLCanvasElement) => boolean
 }
 
 export type Scene3DProps = {
@@ -84,6 +89,12 @@ export type Scene3DProps = {
   cameraPreset?: 'front' | 'side' | 'top' | 'iso' | undefined
   /** 自由视口导航模式：orbit=左键环绕；pan=左键平移舞台视口 */
   viewNavigationMode?: 'orbit' | 'pan' | undefined
+  /**
+   * 运镜播放 override（ref 传递，避免 60fps React 重渲染）：
+   * 取景相机对象、取景预览与离屏截图/录制全部以 ref.current 的动画机位为准，
+   * null 表示未在播放。ref 由上层运镜播放器逐帧写入。
+   */
+  cameraOverrideRef?: Stage3DCameraOverrideRef | undefined
 }
 
 /**
@@ -808,12 +819,63 @@ function PropObject({
 
 // ─────────────────────────── 取景相机对象 + 视锥 ───────────────────────────
 
+/** 视锥固定线段数：4 根射线（apex→角点）+ 4 条矩形边 = 16 段 32 顶点 */
+const FRUSTUM_SEGMENT_COUNT = 16
+
+/**
+ * 原地重写视锥线框几何（运镜播放每帧调用）。
+ * 拓扑与 FramingCameraObject 的初始 geom 完全一致，只更新顶点坐标。
+ */
+function rewriteFrustumGeometry(
+  geometry: THREE.BufferGeometry,
+  camera: Stage3DCamera,
+  position: readonly [number, number, number],
+  target: readonly [number, number, number],
+) {
+  const attribute = geometry.getAttribute('position') as THREE.BufferAttribute | undefined
+  if (!attribute || attribute.count !== FRUSTUM_SEGMENT_COUNT * 2) return
+  const pos = new THREE.Vector3(position[0], position[1], position[2])
+  const lookAt = new THREE.Vector3(target[0], target[1], target[2])
+  const dir = lookAt.clone().sub(pos).normalize()
+  const len = Math.min(lookAt.distanceTo(pos), 6) || 3
+  const up = new THREE.Vector3(0, 1, 0)
+  const right = new THREE.Vector3().crossVectors(dir, up).normalize()
+  const trueUp = new THREE.Vector3().crossVectors(right, dir).normalize()
+  const halfV = Math.tan((camera.fov * Math.PI) / 360) * len
+  const halfH = halfV * STAGE3D_ASPECT_RATIO[camera.aspect]
+  const apex = pos.clone().add(dir.clone().multiplyScalar(0.23))
+  const center = pos.clone().add(dir.clone().multiplyScalar(len))
+  const corner = (sh: number, sv: number) =>
+    center
+      .clone()
+      .add(right.clone().multiplyScalar(halfH * sh))
+      .add(trueUp.clone().multiplyScalar(halfV * sv))
+  const corners = [corner(1, 1), corner(-1, 1), corner(-1, -1), corner(1, -1)]
+  let i = 0
+  const write = (a: THREE.Vector3, b: THREE.Vector3) => {
+    attribute.setXYZ(i, a.x, a.y, a.z)
+    attribute.setXYZ(i + 1, b.x, b.y, b.z)
+    i += 2
+  }
+  for (const c of corners) write(apex, c)
+  for (let k = 0; k < corners.length; k += 1) {
+    const a = corners[k]
+    const b = corners[(k + 1) % corners.length]
+    if (a && b) write(a, b)
+  }
+  attribute.needsUpdate = true
+  geometry.computeBoundingSphere()
+}
+
 function FramingCameraObject({
   data,
+  overrideRef,
   selected,
   onSelect,
 }: {
   data: Stage3DData
+  /** 运镜播放 override：useFrame 逐帧跟随动画机位（命令式，不触发 React 重渲染） */
+  overrideRef: Stage3DCameraOverrideRef
   selected: boolean
   onSelect: () => void
 }) {
@@ -860,6 +922,34 @@ function FramingCameraObject({
     return Math.atan2(dx, dz)
   }, [px, pz, tx, tz])
 
+  // 运镜播放：逐帧把机身与视锥推到动画机位；停止后恢复静态机位。
+  // 走 useFrame 命令式更新（不触发 React 重渲染）；视锥线段数固定，
+  // 直接原地重写 position attribute。
+  const bodyRef = useRef<THREE.Group>(null)
+  const linesRef = useRef<THREE.LineSegments>(null)
+  const appliedOverrideRef = useRef(false)
+
+  useFrame(() => {
+    const body = bodyRef.current
+    const lines = linesRef.current
+    const override = overrideRef.current
+    if (!body || !lines) return
+    if (override) {
+      appliedOverrideRef.current = true
+      const [ox, oy, oz] = override.position
+      const [gx, , gz] = override.target
+      body.position.set(ox, oy, oz)
+      body.rotation.y = Math.atan2(gx - ox, gz - oz)
+      rewriteFrustumGeometry(lines.geometry, camera, override.position, override.target)
+    } else if (appliedOverrideRef.current) {
+      // 播放结束：恢复静态机位（与上方 geom/position memo 一致）
+      appliedOverrideRef.current = false
+      body.position.set(px, py, pz)
+      body.rotation.y = yaw
+      rewriteFrustumGeometry(lines.geometry, camera, camera.position, camera.target)
+    }
+  })
+
   const accent = selected ? '#f5a623' : '#fbbf24'
   const bodyColor = '#374151' // 深灰机身
   const darkColor = '#1f2937' // 更深的细节（遮光斗 / 提手）
@@ -870,6 +960,7 @@ function FramingCameraObject({
     <group userData={{ stage3dHelper: true }}>
       {/* 机身局部坐标：+Z 为镜头朝向（对齐 target），拼装一台仿真电影摄像机（≈0.4m） */}
       <group
+        ref={bodyRef}
         position={camera.position}
         rotation={[0, yaw, 0]}
         onClick={(e) => {
@@ -926,7 +1017,7 @@ function FramingCameraObject({
           <meshStandardMaterial color={darkColor} roughness={0.5} metalness={0.35} />
         </mesh>
       </group>
-      <lineSegments geometry={geom}>
+      <lineSegments ref={linesRef} geometry={geom}>
         <lineBasicMaterial color={accent} transparent opacity={0.8} />
       </lineSegments>
     </group>
@@ -1071,89 +1162,143 @@ function SelectedTransform({
   )
 }
 
-// ─────────────────────────── 截图桥接 ───────────────────────────
+// ─────────────────────────── 截图 / 预览渲染桥接 ───────────────────────────
 
 function ScreenshotBridge({
   data,
+  cameraOverrideRef,
   cameraPreview,
   onReady,
 }: {
   data: Stage3DData
+  cameraOverrideRef: Stage3DCameraOverrideRef | undefined
   cameraPreview: boolean
-  onReady: (fn: (cam?: Stage3DCamera) => string | null) => void
+  onReady: (
+    shot: (cam?: Stage3DCamera) => string | null,
+    renderTo: (cam: Stage3DCamera | undefined, target: HTMLCanvasElement) => boolean,
+  ) => void
 }) {
   const { gl, scene, camera: r3fCamera, size } = useThree()
+  // 离屏渲染目标缓存（截图 1600 长边 / 预览小图两档尺寸来回切，缓存 2 个够用）
+  const rtCacheRef = useRef<Map<string, THREE.WebGLRenderTarget>>(new Map())
 
   useEffect(() => {
-    const fn = (camOverride?: Stage3DCamera): string | null => {
+    const resolveCam = (camOverride?: Stage3DCamera): Stage3DCamera => {
+      if (camOverride) return camOverride
+      const animated = cameraOverrideRef?.current
+      if (animated) {
+        return {
+          ...data.camera,
+          position: [...animated.position] as [number, number, number],
+          target: [...animated.target] as [number, number, number],
+        }
+      }
+      return data.camera
+    }
+
+    /**
+     * 离屏渲染一帧到 outW×outH 的 2D canvas。
+     * 渲染前临时隐藏"编辑器专用、不该出现在成片里"的对象：
+     * - 打了 stage3dHelper 标记的（取景相机模型/视锥线框、各类选中态高亮线框）；
+     * - drei TransformControls 内部生成的 gizmo/plane 辅助对象（type 以 TransformControls 开头，
+     *   不受我们标记控制，只能靠 type 前缀识别）。
+     * 否则离屏相机位置与取景相机模型原点重合，会被模型自身实体几何遮挡（穿帮"头部黑掉"），
+     * 且 gizmo/视锥线框/选中框也会一并被截进去。渲染+读像素后必须在 finally 里恢复可见性。
+     */
+    const renderOffscreen = (
+      shotCam: Stage3DCamera,
+      outW: number,
+      outH: number,
+    ): HTMLCanvasElement | null => {
+      const cam = new THREE.PerspectiveCamera(shotCam.fov, outW / outH, 0.1, 200)
+      cam.position.set(...shotCam.position)
+      cam.lookAt(new THREE.Vector3(...shotCam.target))
+      cam.updateProjectionMatrix()
+
+      const hidden: THREE.Object3D[] = []
+      scene.traverse((obj) => {
+        const isHelper =
+          obj.userData?.stage3dHelper === true || obj.type?.startsWith('TransformControls')
+        if (isHelper && obj.visible) {
+          hidden.push(obj)
+        }
+      })
+      for (const obj of hidden) obj.visible = false
+
       try {
-        const shotCam = camOverride ?? data.camera
+        const cacheKey = `${outW}x${outH}`
+        let rt = rtCacheRef.current.get(cacheKey)
+        if (!rt) {
+          for (const cached of rtCacheRef.current.values()) cached.dispose()
+          rtCacheRef.current.clear()
+          rt = new THREE.WebGLRenderTarget(outW, outH, {
+            minFilter: THREE.LinearFilter,
+            magFilter: THREE.LinearFilter,
+          })
+          rtCacheRef.current.set(cacheKey, rt)
+        }
+        const prevTarget = gl.getRenderTarget()
+        gl.setRenderTarget(rt)
+        gl.render(scene, cam)
+        const buffer = new Uint8Array(outW * outH * 4)
+        gl.readRenderTargetPixels(rt, 0, 0, outW, outH, buffer)
+        gl.setRenderTarget(prevTarget)
+        gl.render(scene, r3fCamera)
+
+        const out = document.createElement('canvas')
+        out.width = outW
+        out.height = outH
+        const ctx = out.getContext('2d')
+        if (!ctx) {
+          return null
+        }
+        const imageData = ctx.createImageData(outW, outH)
+        // readRenderTargetPixels 原点在左下，2D canvas 原点在左上 → 逐行翻转
+        for (let y = 0; y < outH; y += 1) {
+          const srcRow = (outH - 1 - y) * outW * 4
+          const dstRow = y * outW * 4
+          imageData.data.set(buffer.subarray(srcRow, srcRow + outW * 4), dstRow)
+        }
+        ctx.putImageData(imageData, 0, 0)
+        return out
+      } finally {
+        for (const obj of hidden) obj.visible = true
+      }
+    }
+
+    const shot = (camOverride?: Stage3DCamera): string | null => {
+      try {
+        const shotCam = resolveCam(camOverride)
         const ratio = STAGE3D_ASPECT_RATIO[shotCam.aspect]
         // 输出分辨率：以 1600 长边为基准，按画幅换算
         const outW = ratio >= 1 ? 1600 : Math.round(1600 * ratio)
         const outH = ratio >= 1 ? Math.round(1600 / ratio) : 1600
-        const cam = new THREE.PerspectiveCamera(shotCam.fov, ratio, 0.1, 200)
-        cam.position.set(...shotCam.position)
-        cam.lookAt(new THREE.Vector3(...shotCam.target))
-        cam.updateProjectionMatrix()
-
-        // 截图前临时隐藏"编辑器专用、不该出现在截图里"的对象：
-        // - 打了 stage3dHelper 标记的（取景相机模型/视锥线框、各类选中态高亮线框）；
-        // - drei TransformControls 内部生成的 gizmo/plane 辅助对象（type 以 TransformControls 开头，
-        //   不受我们标记控制，只能靠 type 前缀识别）。
-        // 否则离屏相机位置与取景相机模型原点重合，会被模型自身实体几何遮挡（穿帮"头部黑掉"），
-        // 且 gizmo/视锥线框/选中框也会一并被截进去。渲染+读像素后必须在 finally 里恢复可见性。
-        const hidden: THREE.Object3D[] = []
-        scene.traverse((obj) => {
-          const isHelper =
-            obj.userData?.stage3dHelper === true || obj.type?.startsWith('TransformControls')
-          if (isHelper && obj.visible) {
-            hidden.push(obj)
-          }
-        })
-        for (const obj of hidden) obj.visible = false
-
-        // 离屏渲染到 render target，再读像素回 2D canvas → 干净的定尺寸 PNG，
-        // 不受主视口尺寸/画幅影响。
-        const rt = new THREE.WebGLRenderTarget(outW, outH, {
-          minFilter: THREE.LinearFilter,
-          magFilter: THREE.LinearFilter,
-        })
-        try {
-          const prevTarget = gl.getRenderTarget()
-          gl.setRenderTarget(rt)
-          gl.render(scene, cam)
-          const buffer = new Uint8Array(outW * outH * 4)
-          gl.readRenderTargetPixels(rt, 0, 0, outW, outH, buffer)
-          gl.setRenderTarget(prevTarget)
-          gl.render(scene, r3fCamera)
-
-          const out = document.createElement('canvas')
-          out.width = outW
-          out.height = outH
-          const ctx = out.getContext('2d')
-          if (!ctx) {
-            return null
-          }
-          const imageData = ctx.createImageData(outW, outH)
-          // readRenderTargetPixels 原点在左下，2D canvas 原点在左上 → 逐行翻转
-          for (let y = 0; y < outH; y += 1) {
-            const srcRow = (outH - 1 - y) * outW * 4
-            const dstRow = y * outW * 4
-            imageData.data.set(buffer.subarray(srcRow, srcRow + outW * 4), dstRow)
-          }
-          ctx.putImageData(imageData, 0, 0)
-          return out.toDataURL('image/png')
-        } finally {
-          rt.dispose()
-          for (const obj of hidden) obj.visible = true
-        }
+        const out = renderOffscreen(shotCam, outW, outH)
+        return out?.toDataURL('image/png') ?? null
       } catch {
         return null
       }
     }
-    onReady(fn)
-  }, [data.camera, gl, scene, r3fCamera, onReady, size, cameraPreview])
+
+    const renderTo = (camOverride: Stage3DCamera | undefined, target: HTMLCanvasElement): boolean => {
+      try {
+        const shotCam = resolveCam(camOverride)
+        const outW = Math.max(2, Math.floor(target.width))
+        const outH = Math.max(2, Math.floor(target.height))
+        const out = renderOffscreen(shotCam, outW, outH)
+        if (!out) return false
+        const ctx = target.getContext('2d')
+        if (!ctx) return false
+        ctx.clearRect(0, 0, outW, outH)
+        ctx.drawImage(out, 0, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    onReady(shot, renderTo)
+  }, [data.camera, cameraOverrideRef, gl, scene, r3fCamera, onReady, size, cameraPreview, rtCacheRef])
 
   return null
 }
@@ -1201,6 +1346,8 @@ function ViewportCameraSync({
       camera.position.set(...data.camera.position)
       camera.lookAt(new THREE.Vector3(...data.camera.target))
       camera.updateProjectionMatrix()
+      // OrbitControls 的 target 在取景预览下由 JSX prop（data.camera.target）同步；
+      // 运镜播放中由 MotionViewportSync 逐帧接管。
     } else {
       // 退出取景预览：恢复进入前快照的自由视角状态
       const snap = snapshotRef.current
@@ -1216,6 +1363,59 @@ function ViewportCameraSync({
       }
     }
   }, [cameraPreview, data.camera, camera, orbitRef])
+  return null
+}
+
+/**
+ * 运镜播放逐帧同步：overrideRef 有动画机位时，每帧把取景预览相机（含 OrbitControls
+ * 记账 target）命令式推到动画位姿。走 useFrame 而非 React state，避免 60fps 重渲染整个弹窗。
+ */
+export type Stage3DCameraOverrideRef = React.MutableRefObject<{
+  position: [number, number, number]
+  target: [number, number, number]
+} | null>
+
+function MotionViewportSync({
+  overrideRef,
+  enabled,
+  data,
+  orbitRef,
+}: {
+  overrideRef: Stage3DCameraOverrideRef
+  enabled: boolean
+  data: Stage3DData
+  orbitRef: React.MutableRefObject<OrbitRefValue | null>
+}) {
+  const { camera } = useThree()
+  const lastHadOverrideRef = useRef(false)
+
+  useFrame(() => {
+    const override = overrideRef.current
+    if (!enabled) {
+      lastHadOverrideRef.current = false
+      return
+    }
+    if (!(camera instanceof THREE.PerspectiveCamera)) return
+    if (override) {
+      lastHadOverrideRef.current = true
+      camera.position.set(...override.position)
+      camera.lookAt(new THREE.Vector3(...override.target))
+      if (orbitRef.current) {
+        orbitRef.current.target.set(...override.target)
+      }
+      return
+    }
+    if (lastHadOverrideRef.current) {
+      // 运镜结束/手动停止：把取景相机复位回 data.camera 静态机位，
+      // 否则相机会停在最后一帧动画位置。
+      lastHadOverrideRef.current = false
+      camera.position.set(...data.camera.position)
+      camera.lookAt(new THREE.Vector3(...data.camera.target))
+      if (orbitRef.current) {
+        orbitRef.current.target.set(...data.camera.target)
+      }
+    }
+  })
   return null
 }
 
@@ -1346,11 +1546,15 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
     onActorPoseDragBegin,
     cameraPreset,
     viewNavigationMode = 'orbit',
+    cameraOverrideRef,
   },
   ref,
 ) {
   const orbitRef = useRef<OrbitRefValue | null>(null)
   const sceneScale = data.sceneScale ?? 1
+  // 未传 overrideRef 时给个恒空兜底，子组件无需判空
+  const fallbackOverrideRef = useRef<{ position: [number, number, number]; target: [number, number, number] } | null>(null)
+  const activeOverrideRef = cameraOverrideRef ?? fallbackOverrideRef
   const orbitMouseButtons = useMemo(
     () => ({
       LEFT: viewNavigationMode === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
@@ -1370,9 +1574,14 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
     }
   }, [cameraPreview, poseMode])
   const screenshotFnRef = useRef<((cam?: Stage3DCamera) => string | null) | null>(null)
+  const renderToFnRef = useRef<
+    ((cam: Stage3DCamera | undefined, target: HTMLCanvasElement) => boolean) | null
+  >(null)
 
   useImperativeHandle(ref, () => ({
     screenshot: (cam?: Stage3DCamera) => screenshotFnRef.current?.(cam) ?? null,
+    renderPreview: (cam: Stage3DCamera | undefined, target: HTMLCanvasElement) =>
+      renderToFnRef.current?.(cam, target) ?? false,
   }))
 
   return (
@@ -1431,6 +1640,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         {!cameraPreview && !poseMode && (
           <FramingCameraObject
             data={data}
+            overrideRef={activeOverrideRef}
             selected={data.activeId === 'camera'}
             onSelect={() => onSelect('camera')}
           />
@@ -1450,6 +1660,12 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         )}
 
         <ViewportCameraSync data={data} cameraPreview={cameraPreview} orbitRef={orbitRef} />
+        <MotionViewportSync
+          overrideRef={activeOverrideRef}
+          enabled={cameraPreview}
+          data={data}
+          orbitRef={orbitRef}
+        />
         {cameraPreset && (
           <CameraPresetSync
             preset={cameraPreset}
@@ -1459,9 +1675,11 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         )}
         <ScreenshotBridge
           data={data}
+          cameraOverrideRef={activeOverrideRef}
           cameraPreview={cameraPreview}
-          onReady={(fn) => {
-            screenshotFnRef.current = fn
+          onReady={(shot, renderTo) => {
+            screenshotFnRef.current = shot
+            renderToFnRef.current = renderTo
           }}
         />
 

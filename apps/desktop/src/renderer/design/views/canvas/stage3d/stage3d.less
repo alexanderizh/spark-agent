@@ -1070,3 +1070,388 @@ html[data-theme='light'] .stage3d-modal-overlay,
     padding: 2px 0;
   }
 }
+
+// ─────────── 机位预览画中画（CameraPreviewPanel） ───────────
+.stage3d-pip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.stage3d-pip-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--stage3d-text-muted);
+  text-transform: uppercase;
+}
+.stage3d-pip-collapse {
+  border: 1px solid var(--stage3d-panel-border);
+  border-radius: 6px;
+  background: var(--stage3d-control-bg);
+  color: var(--stage3d-control-text-muted);
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  &:hover {
+    color: var(--stage3d-control-text-strong);
+    border-color: var(--stage3d-control-border-hover);
+  }
+}
+.stage3d-pip-thumb {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--stage3d-panel-border);
+  background: #0b1220;
+  line-height: 0;
+
+  .stage3d-pip-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+}
+.stage3d-pip-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--stage3d-text-faint);
+  text-align: center;
+  padding: 0 12px;
+}
+.stage3d-pip-rec {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(190, 18, 60, 0.85);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+}
+.stage3d-pip-rec-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fecdd3;
+  animation: stage3d-rec-blink 1s ease-in-out infinite;
+}
+@keyframes stage3d-rec-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.stage3d-pip-expand {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.62);
+  color: #e2e8f0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  &:hover {
+    background: rgba(15, 23, 42, 0.85);
+  }
+}
+.stage3d-pip-select {
+  width: 100%;
+}
+// 放大：浮到视口中央（fixed 于 shell 内不随右栏滚动）
+.stage3d-pip-expanded-wrap {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 40;
+  width: min(60vw, 880px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--stage3d-panel-border);
+  background: var(--stage3d-panel-bg-strong);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+
+// ─────────── 运动轨迹面板（CameraMotionPanel） ───────────
+.stage3d-motion-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.stage3d-motion-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stage3d-motion-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.stage3d-motion-summary-desc {
+  font-size: 11px;
+  color: var(--stage3d-text-muted);
+}
+.stage3d-motion-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--stage3d-control-border) 55%, transparent);
+  overflow: hidden;
+}
+.stage3d-motion-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--stage3d-control-primary);
+  transition: width 120ms linear;
+}
+.stage3d-motion-duration {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--stage3d-text-muted);
+}
+.stage3d-motion-duration > span:first-child {
+  flex: 1;
+}
+
+// 运镜库弹层
+.stage3d-motion-library-popover {
+  .ant-popover-inner {
+    padding: 10px;
+  }
+}
+.stage3d-motion-library {
+  width: 220px;
+  max-height: 380px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stage3d-motion-library-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--stage3d-text-faint);
+  text-transform: uppercase;
+}
+.stage3d-motion-library-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stage3d-motion-library-group-title {
+  font-size: 10px;
+  color: var(--stage3d-text-faint);
+  padding: 2px 4px;
+}
+.stage3d-motion-library-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--stage3d-control-text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    background: var(--stage3d-control-bg-hover);
+    color: var(--stage3d-control-text-strong);
+  }
+  &.active {
+    background: color-mix(in srgb, var(--stage3d-control-primary) 16%, transparent);
+    color: var(--stage3d-control-primary);
+    font-weight: 600;
+  }
+}
+.stage3d-motion-library-duration {
+  font-size: 10px;
+  color: var(--stage3d-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+// 关键帧编辑器
+.stage3d-motion-keyframe-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--stage3d-panel-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--stage3d-panel-hover) 48%, transparent);
+}
+.stage3d-motion-kf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--stage3d-text-muted);
+}
+.stage3d-motion-kf-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .ant-input-number {
+    width: 64px;
+  }
+}
+.stage3d-motion-kf-index {
+  width: 18px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--stage3d-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.stage3d-motion-kf-unit {
+  font-size: 10px;
+  color: var(--stage3d-text-faint);
+}
+.stage3d-motion-kf-duration {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--stage3d-text-muted);
+
+  > span:first-child {
+    flex: 1;
+  }
+  .ant-input-number {
+    width: 72px;
+  }
+}
+.stage3d-motion-kf-tip {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--stage3d-text-faint);
+}
+.stage3d-motion-kf-actions {
+  display: flex;
+  gap: 6px;
+}
+
+// ─────────── 运镜视频录制浮层 ───────────
+.stage3d-record-overlay {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, #0f172a 78%, transparent);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+.stage3d-record-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #fecdd3;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.stage3d-record-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f43f5e;
+  animation: stage3d-rec-blink 1s ease-in-out infinite;
+}
+.stage3d-record-progress {
+  width: 220px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.3);
+  overflow: hidden;
+}
+.stage3d-record-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: #f43f5e;
+  transition: width 120ms linear;
+}
+
+// ─────────── 相机属性面板：向量坐标行 / 只读信息 ───────────
+.stage3d-vec3-row {
+  display: flex;
+  gap: 4px;
+}
+.stage3d-vec3-item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+
+  > em {
+    font-style: normal;
+    font-size: 10px;
+    color: var(--stage3d-text-faint);
+  }
+  .ant-input-number {
+    width: 100%;
+  }
+}
+.stage3d-vec3-readonly {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--stage3d-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.stage3d-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+// ─────────── 镜头卡片：运镜标记 ───────────
+.stage3d-shot-motion-tag {
+  font-size: 10px;
+  color: var(--stage3d-control-primary);
+  display: flex;
+  gap: 4px;
+  align-items: center;
+
+  span {
+    color: var(--stage3d-text-faint);
+  }
+}
