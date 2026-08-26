@@ -18,8 +18,6 @@ export type Stage3DMotionPlayback = {
   progress: number
   play: (motion: Stage3DCameraMotion, subject?: Stage3DMotionSubject | undefined) => void
   stop: () => void
-  /** 已播放秒数（录制器对齐时间轴 / 进度显示用） */
-  getElapsedSec: () => number
 }
 
 export function useStage3DMotionPlayback(options: {
@@ -59,7 +57,7 @@ export function useStage3DMotionPlayback(options: {
   }, [teardown])
 
   const play = useCallback(
-    (motion: Stage3DMotionMotionInput, subject?: Stage3DMotionSubject | undefined) => {
+    (motion: Stage3DCameraMotion, subject?: Stage3DMotionSubject | undefined) => {
       teardown()
       onFrameRef.current(null)
       motionRef.current = motion
@@ -99,11 +97,6 @@ export function useStage3DMotionPlayback(options: {
     [teardown],
   )
 
-  const getElapsedSec = useCallback(() => {
-    if (!motionRef.current) return 0
-    return Math.max(0, (performance.now() - startPerfRef.current) / 1000)
-  }, [])
-
   // 卸载时兜底清理，避免泄漏 rAF 与 override
   useEffect(() => {
     return () => {
@@ -111,7 +104,5 @@ export function useStage3DMotionPlayback(options: {
     }
   }, [])
 
-  return { playing, progress, play, stop, getElapsedSec }
+  return { playing, progress, play, stop }
 }
-
-type Stage3DMotionMotionInput = Stage3DCameraMotion

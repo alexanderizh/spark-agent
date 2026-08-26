@@ -408,10 +408,11 @@ function readMotion(raw: unknown): Stage3DCameraMotion | undefined {
   let start: Stage3DCameraMotion['start'] = undefined
   if (m.start && typeof m.start === 'object') {
     const s = m.start as Record<string, unknown>
+    const fov = s.fov == null ? undefined : clamp(num(s.fov, 40), 10, 100)
     start = {
       position: vec3(s.position, [0, 1.6, 4.5]),
       target: vec3(s.target, [0, 1, 0]),
-      fov: clamp(num(s.fov, 40), 10, 100),
+      ...(fov != null ? { fov } : {}),
     }
   }
   let keyframes: Stage3DCameraKeyframe[] | undefined

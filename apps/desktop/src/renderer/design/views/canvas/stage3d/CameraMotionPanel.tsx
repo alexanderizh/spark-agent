@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Input, InputNumber, Popover, Tag } from 'antd'
+import { Button, InputNumber, Popover, Tag } from 'antd'
 import { Icons } from '../../../Icons'
 import {
   STAGE3D_MOTION_CATEGORY_LABEL,

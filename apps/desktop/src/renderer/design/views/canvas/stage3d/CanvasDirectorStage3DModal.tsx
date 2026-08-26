@@ -5,7 +5,6 @@ import {
   Dropdown,
   Input,
   InputNumber,
-  Popover,
   Select,
   Slider,
   Switch,
@@ -258,6 +257,8 @@ export function CanvasDirectorStage3DModal({
   /** 运镜视频录制状态（null=未在录制） */
   const [videoRecording, setVideoRecording] = useState<{ progress: number } | null>(null)
   const recordCancelRef = useRef({ cancelled: false })
+  /** 录制进度 setState 节流游标（配合 ≥2% 步进，避免逐帧重渲染） */
+  const lastRecordProgressRef = useRef(0)
   /** 录制期间禁止重复触发 */
   const recordingActiveRef = useRef(false)
 
@@ -508,7 +509,11 @@ export function CanvasDirectorStage3DModal({
       subject?: Stage3DMotionSubject | undefined,
     ) => {
       if (recordingActiveRef.current) return
-      // 录制独占动画驱动：先停掉正在播放的运镜预览，避免两个循环抢 override
+      // 录制独占动画驱动：先停掉正在播放的运镜预览，避免两个循环抢 override。
+      // restore 语义 = 停止播放后用户的「逻辑预览态」：播放中的相机预览是自动开启的，
+      // stopCameraMotion 会按 restore 标记（并在用后复位为 true）决定是否退出预览，
+      // 所以必须在调用它之前把标记读出来；非播放态则直接看当前 cameraPreview。
+      const restorePreview = playback.playing ? cameraPreviewRestoreRef.current : cameraPreview
       if (playback.playing) stopCameraMotion()
       const scene3d = sceneRef.current
       if (!scene3d) {
@@ -517,8 +522,8 @@ export function CanvasDirectorStage3DModal({
       }
       recordingActiveRef.current = true
       recordCancelRef.current = { cancelled: false }
+      lastRecordProgressRef.current = 0
       setVideoRecording({ progress: 0 })
-      const restorePreview = cameraPreview
       if (!restorePreview) setCameraPreview(true)
       const size = stage3DVideoSizeForAspect(STAGE3D_ASPECT_RATIO[baseCamera.aspect])
       const durationSec = Math.max(0.5, motion.durationSec)
@@ -533,14 +538,19 @@ export function CanvasDirectorStage3DModal({
             return scene3d.renderPreview(
               {
                 ...baseCamera,
-                fov: motion.start?.fov ?? baseCamera.fov,
                 position: frame.position,
                 target: frame.target,
               },
               canvas,
             )
           },
-          onProgress: (progress) => setVideoRecording({ progress }),
+          onProgress: (progress) => {
+            // 节流：进度变化 ≥2%（或播完）才 setState，避免逐帧重渲染整个弹窗
+            if (progress >= 1 || progress - lastRecordProgressRef.current >= 0.02) {
+              lastRecordProgressRef.current = progress
+              setVideoRecording({ progress })
+            }
+          },
           signal: recordCancelRef.current,
         })
         const dataUrl = await blobToDataUrl(result.blob)
@@ -606,15 +616,15 @@ export function CanvasDirectorStage3DModal({
   // ─────────── 机位预览画中画：机位解析与离屏渲染 ───────────
   const resolvePreviewCamera = useCallback(
     (source: Stage3DCameraSource): Stage3DCamera | null => {
-      // 运镜播放/录制中：预览窗跟播当前动画机位
-      if ((playback.playing || videoRecording) && draft.camera.motion) {
-        const motion = draft.camera.motion
-        const elapsed = playback.playing
-          ? playback.getElapsedSec()
-          : (videoRecording?.progress ?? 0) * motion.durationSec
-        const t = Math.min(elapsed, motion.durationSec)
-        const frame = evaluateStage3DCameraMotion(motion, t, resolveMotionSubject(draft))
-        return { ...draft.camera, position: frame.position, target: frame.target }
+      // 运镜播放/录制中：播放器与录制器每帧把动画机位写进 override ref，
+      // 直接取当前帧即可（比用 elapsed/progress 重算轨迹更精确且免重渲染）。
+      const animated = cameraOverrideRef.current
+      if (animated) {
+        return {
+          ...draft.camera,
+          position: [...animated.position] as [number, number, number],
+          target: [...animated.target] as [number, number, number],
+        }
       }
       if (source.kind === 'shot') {
         const shot = shots.find((s) => s.id === source.id)
@@ -628,7 +638,7 @@ export function CanvasDirectorStage3DModal({
       }
       return draft.camera
     },
-    [draft, playback, resolveMotionSubject, shots, videoRecording],
+    [draft.camera, shots],
   )
 
   const renderViewportPreview = useCallback(
@@ -955,16 +965,34 @@ export function CanvasDirectorStage3DModal({
   }, [])
 
   // ─────────── 相机 ───────────
+  /**
+   * 对准构图主体：把注视点吸附到「离当前注视点最近」的角色/道具并设为注视目标。
+   * 旧实现按 activeId 查找——但按钮在相机属性面板里，此时 activeId 恒为 'camera'，
+   * 查不到任何对象，按钮一直是空操作；改为就近匹配才真正可用。
+   */
   const aimCameraAtSelected = useCallback(() => {
     setDraft((d) => {
-      const actor = d.actors.find((a) => a.id === d.activeId)
-      const prop = d.props.find((p) => p.id === d.activeId)
-      const t = actor?.position ?? prop?.position
-      if (!t) return d
-      return {
-        ...d,
-        camera: { ...d.camera, target: [t[0], (actor ? 1 : t[1]) as number, t[2]] },
+      const objects: { id: string; position: [number, number, number]; isActor: boolean }[] = [
+        ...d.actors.map((a) => ({ id: a.id, position: a.position, isActor: true })),
+        ...d.props.map((p) => ({ id: p.id, position: p.position, isActor: false })),
+      ]
+      if (objects.length === 0) return d
+      const [tx, , tz] = d.camera.target
+      let best = objects[0]!
+      let bestDist = Infinity
+      for (const obj of objects) {
+        const dist = Math.hypot(obj.position[0] - tx, obj.position[2] - tz)
+        if (dist < bestDist) {
+          bestDist = dist
+          best = obj
+        }
       }
+      const target: [number, number, number] = [
+        best.position[0],
+        best.isActor ? 1 : best.position[1],
+        best.position[2],
+      ]
+      return { ...d, camera: { ...d.camera, target, lookTargetId: best.id } }
     })
   }, [])
 
@@ -2229,7 +2257,7 @@ function CameraInspector({
         />
       </label>
       <Button size="small" block icon={<Icons.Eye size={13} />} onClick={onAim}>
-        对准选中对象
+        对准最近主体
       </Button>
       <div className="stage3d-tip">在视口中拖动相机图标改机位；「运动轨迹」页可套用运镜并录制视频。</div>
     </>

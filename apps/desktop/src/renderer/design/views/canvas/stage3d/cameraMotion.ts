@@ -101,7 +101,8 @@ export type Stage3DCameraMotion = {
     | {
         position: Vec3
         target: Vec3
-        fov: number
+        /** 仅预设轨迹从相机快照；关键帧轨迹不带，录制时用工作机位当前 fov */
+        fov?: number | undefined
       }
     | undefined
   keyframes?: Stage3DCameraKeyframe[] | undefined
@@ -143,9 +144,10 @@ export function makeKeyframeMotion(
   const first = sorted[0]
   const last = sorted[sorted.length - 1]
   const duration = clamp(durationSec, 0.5, 30)
-  // start 取首帧 pose：轨迹未挂 start 时（旧数据）也能从首帧评估
+  // start 取首帧 pose：轨迹未挂 start 时（旧数据）也能从首帧评估。
+  // 关键帧轨迹不带 fov——录制用工作机位当前 fov，避免快照时硬编码错误值。
   const start = first
-    ? { position: [...first.position] as Vec3, target: [...first.target] as Vec3, fov: 40 }
+    ? { position: [...first.position] as Vec3, target: [...first.target] as Vec3 }
     : undefined
   // 首末帧时间归一到 [0, duration]，中间帧按比例缩放
   const t0 = first?.t ?? 0
@@ -216,10 +218,10 @@ export function evaluateStage3DCameraMotion(
   subject?: Stage3DMotionSubject | undefined,
 ): Stage3DMotionFrame {
   const duration = clamp(motion.durationSec, 0.5, 30)
+  // fov 不参与轨迹求值，start 缺失时无需伪造
   const start = motion.start ?? {
     position: [...DEFAULT_START.position] as Vec3,
     target: [...DEFAULT_START.target] as Vec3,
-    fov: 40,
   }
 
   if (motion.kind === 'keyframes') {
