@@ -249,13 +249,14 @@ body.sidebar-resizing {
   text-overflow: ellipsis;
   max-width: 70px;
 }
+/* 隐藏时完全收起不占位，hover 时展开显示 */
 .proj-head .proj-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
   height: 16px;
-  padding: 0 5px;
+  max-width: 0;
+  padding: 0;
   margin-left: auto;
   font-size: 11px;
   font-weight: 500;
@@ -264,11 +265,19 @@ body.sidebar-resizing {
   border-radius: 999px;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
   opacity: 0;
-  transition: opacity 0.12s;
+  transition:
+    opacity 0.12s,
+    max-width 0.15s ease,
+    padding 0.15s ease;
 }
 .proj-head:hover .proj-count {
   opacity: 1;
+  min-width: 18px;
+  max-width: 48px;
+  padding: 0 5px;
 }
 .proj-folder-icon {
   color: currentColor;
