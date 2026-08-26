@@ -1,6 +1,7 @@
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
+import { WindowControls } from '../../components/WindowControls'
 import { CanvasToolbar } from './CanvasToolbar'
 import type { CanvasAutoLayoutMode, CanvasAutoLayoutSpacing } from './canvasAutoLayout'
 import type { CanvasWindowTheme } from './canvas-window-theme'
@@ -11,6 +12,7 @@ type CanvasWorkspaceChromeProps = {
   assetCount: number
   taskCount: number
   showSidebarExpandButton: boolean
+  showWindowControls?: boolean
   saveState: {
     dirty: boolean
     saving: boolean
@@ -42,6 +44,7 @@ export function CanvasWorkspaceChrome({
   assetCount,
   taskCount,
   showSidebarExpandButton,
+  showWindowControls = false,
   saveState,
   selectedCount,
   arranging,
@@ -61,9 +64,8 @@ export function CanvasWorkspaceChrome({
     <header
       className="canvas-workspace-header"
       onDoubleClick={() => {
-        if (window.spark?.platform === 'darwin') {
-          window.spark?.invoke('window:maximize', {}).catch(() => {})
-        }
+        // 与主窗口各标题栏一致：双击拖拽区在最大化 / 还原间切换。
+        window.spark?.invoke('window:maximize', {}).catch(() => {})
       }}
     >
       <div className="canvas-workspace-header-row">
@@ -121,6 +123,11 @@ export function CanvasWorkspaceChrome({
             <Icons.Moon size={14} />
           </button>
         </div>
+      ) : null}
+      {showWindowControls ? (
+        <span className="canvas-workspace-window-controls">
+          <WindowControls />
+        </span>
       ) : null}
     </header>
   )

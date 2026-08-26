@@ -557,6 +557,7 @@ export function CanvasWorkspaceView({
   themeControlled = false,
   windowTheme,
   onWindowThemeChange,
+  showWindowControls = false,
 }: {
   projectId: string
   onBack: () => void | Promise<void>
@@ -564,6 +565,7 @@ export function CanvasWorkspaceView({
   themeControlled?: boolean
   windowTheme?: CanvasWindowTheme
   onWindowThemeChange?: (theme: CanvasWindowTheme) => void
+  showWindowControls?: boolean
 }) {
   const {
     snapshot,
@@ -8310,6 +8312,7 @@ export function CanvasWorkspaceView({
         assetCount={snapshot.assets.length}
         taskCount={snapshot.tasks.length}
         showSidebarExpandButton={showSidebarExpandButton}
+        showWindowControls={showWindowControls}
         saveState={{ dirty, saving, autoSaving, autoSaveEnabled }}
         selectedCount={selectedNodeIds.length}
         arranging={arrangingCanvas}

@@ -93,6 +93,28 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   .canvas-toolbar-save {
     min-width: 0;
   }
+
+  // Win/Linux 独立窗口顶栏的窗口控件（最小化 / 最大化 / 关闭），
+  // 覆盖 .window-controls 默认的 width:100%（那是给侧边栏纵向布局用的）。
+  // macOS 原生红绿灯，.platform-darwin .window-controls 已隐藏。
+  .canvas-workspace-header > .canvas-workspace-window-controls {
+    display: flex;
+    flex: 0 0 auto;
+    align-self: stretch;
+    align-items: center;
+
+    .window-controls {
+      gap: var(--component-control-gap);
+      width: auto;
+      padding: 0;
+    }
+
+    .win-ctrl-btn {
+      width: var(--component-icon-button-size);
+      height: var(--component-icon-button-size);
+      border-radius: var(--r-sm);
+    }
+  }
 }
 
 .canvas-window-standalone.theme-light > .canvas-workspace.canvas-cinematic {

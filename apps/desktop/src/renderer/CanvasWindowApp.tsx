@@ -13,6 +13,11 @@ import {
 } from './design/views/canvas/canvas-window-theme'
 import { getCanvasWindowPlatformClass, readCanvasWindowProjectId } from './canvasWindowParams'
 
+// Win/Linux 画布独立窗口是无边框窗口，需要在顶栏渲染自定义窗口控件；
+// macOS 走原生红绿灯，无需渲染。
+const rendererPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
+const showWindowControls = rendererPlatform !== 'darwin'
+
 type CanvasWindowThemeContextValue = {
   theme: CanvasWindowTheme
   setTheme: (theme: CanvasWindowTheme) => void
@@ -69,6 +74,7 @@ function CanvasWindowShell({ projectId }: { projectId: string }) {
           windowTheme={theme}
           onWindowThemeChange={setTheme}
           showSidebarExpandButton={false}
+          showWindowControls={showWindowControls}
           onBack={async () => {
             await window.spark.invoke('canvas:window:close-confirmed', {})
           }}

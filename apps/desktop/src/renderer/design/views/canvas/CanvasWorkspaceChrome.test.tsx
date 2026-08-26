@@ -110,4 +110,16 @@ describe('CanvasWorkspaceChrome theme switcher', () => {
       'false',
     )
   })
+
+  it('renders frameless window controls only when requested', async () => {
+    const { container } = await renderChrome()
+    expect(container.querySelector('.canvas-workspace-window-controls')).toBeNull()
+
+    const withControls = await renderChrome({ showWindowControls: true })
+    const controls = withControls.container.querySelector('.canvas-workspace-window-controls')
+    expect(controls).not.toBeNull()
+    expect(controls?.querySelector('.win-ctrl-btn.minimize')).not.toBeNull()
+    expect(controls?.querySelector('.win-ctrl-btn.maximize')).not.toBeNull()
+    expect(controls?.querySelector('.win-ctrl-btn.close')).not.toBeNull()
+  })
 })
