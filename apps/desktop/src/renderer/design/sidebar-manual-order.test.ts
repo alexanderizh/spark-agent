@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  mergeManualOrderWithHidden,
   moveItem,
   SerialTaskQueue,
   sortByManualOrder,
@@ -26,6 +27,49 @@ describe('sortByManualOrder', () => {
 describe('moveItem', () => {
   it('moves an item to the requested index', () => {
     expect(moveItem(['a', 'b', 'c'], 0, 2)).toEqual(['b', 'c', 'a'])
+  })
+})
+
+describe('mergeManualOrderWithHidden', () => {
+  it('equals the visible order when nothing is hidden', () => {
+    expect(mergeManualOrderWithHidden(['a', 'b', 'c'], ['b', 'c', 'a'], new Set())).toEqual([
+      'b',
+      'c',
+      'a',
+    ])
+  })
+
+  it('keeps hidden ranked items placed between their previous neighbors', () => {
+    // 画布筛选隐藏 b 后把 c 拖到 a 之前：b 保留有秩位置，而不是丢秩浮到段首。
+    expect(mergeManualOrderWithHidden(['a', 'b', 'c'], ['c', 'a'], new Set(['b']))).toEqual([
+      'c',
+      'a',
+      'b',
+    ])
+  })
+
+  it('keeps a hidden item that led the previous order at the front', () => {
+    expect(mergeManualOrderWithHidden(['h', 'a', 'b'], ['b', 'a'], new Set(['h']))).toEqual([
+      'h',
+      'b',
+      'a',
+    ])
+  })
+
+  it('drops stale hidden ids that are no longer valid', () => {
+    expect(mergeManualOrderWithHidden(['a', 'x', 'b'], ['b', 'a'], new Set())).toEqual(['b', 'a'])
+  })
+
+  it('keeps newly created unranked visible items first', () => {
+    expect(mergeManualOrderWithHidden(['b', 'a'], ['n', 'a', 'b'], new Set())).toEqual([
+      'n',
+      'a',
+      'b',
+    ])
+  })
+
+  it('falls back to the visible order when no manual order exists yet', () => {
+    expect(mergeManualOrderWithHidden(undefined, ['a', 'b'], new Set(['c']))).toEqual(['a', 'b'])
   })
 })
 

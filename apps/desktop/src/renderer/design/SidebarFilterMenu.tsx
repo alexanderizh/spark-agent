@@ -49,6 +49,25 @@ export function isDefaultFilter(state: SidebarFilterState): boolean {
   )
 }
 
+/**
+ * 拖拽排序只被「会改变分组内会话集合」的因素阻断：非项目分组、状态/最近活动/
+ * 计划任务筛选与搜索 —— 它们让分组内只剩余部分会话，此时拖拽会把被隐藏会话
+ * 挤出手动序。项目筛选与画布项目显隐只决定哪些项目分组可见，不改变分组内的
+ * 会话列表，因此不禁用拖拽（隐藏项由合并逻辑保留手动序）。
+ */
+export function canReorderSidebarSessions(
+  filter: SidebarFilterState,
+  searchActive: boolean,
+): boolean {
+  return (
+    filter.groupBy === 'project' &&
+    filter.status === DEFAULT_SIDEBAR_FILTER.status &&
+    filter.lastActivity === DEFAULT_SIDEBAR_FILTER.lastActivity &&
+    filter.scheduledTasks === DEFAULT_SIDEBAR_FILTER.scheduledTasks &&
+    !searchActive
+  )
+}
+
 const STATUS_OPTIONS: Array<{ value: SidebarStatusFilter; labelKey: string }> = [
   { value: 'active', labelKey: 'sidebar.filter.status.active' },
   { value: 'archived', labelKey: 'sidebar.filter.status.archived' },

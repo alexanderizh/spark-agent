@@ -60,6 +60,7 @@ import { useI18n } from './i18n'
 import {
   SidebarFilterMenu,
   DEFAULT_SIDEBAR_FILTER,
+  canReorderSidebarSessions,
   type SidebarFilterState,
   type SidebarStatusFilter,
   type SidebarLastActivityFilter,
@@ -71,11 +72,16 @@ import {
   resolveSidebarActiveWorkspaceId,
   resolveSpecialSidebarGroupWorkspaceId,
 } from './sidebar-session-routing'
-import { moveItem, sortByManualOrderWithinPinnedSections } from './sidebar-manual-order'
+import {
+  mergeManualOrderWithHidden,
+  moveItem,
+  sortByManualOrderWithinPinnedSections,
+} from './sidebar-manual-order'
 import {
   compareProjectDisplayGroups,
   composeProjectGroupSessions,
   getProjectGroupPinnedAt,
+  resolveSessionGroupId,
 } from './sidebar-session-sort'
 import { SidebarProjectDropZone } from './components/SidebarProjectDropZone'
 import { useOptionalToast } from './components/Toast'
@@ -2277,14 +2283,10 @@ export function SidebarSessionList() {
   ])
 
   const noProjectWorkspace = ctx.noProjectWorkspace
-  const canReorderSessions =
-    filter.groupBy === 'project' &&
-    filter.status === DEFAULT_SIDEBAR_FILTER.status &&
-    filter.projectId === DEFAULT_SIDEBAR_FILTER.projectId &&
-    filter.lastActivity === DEFAULT_SIDEBAR_FILTER.lastActivity &&
-    filter.scheduledTasks === DEFAULT_SIDEBAR_FILTER.scheduledTasks &&
-    filter.canvasProjects === DEFAULT_SIDEBAR_FILTER.canvasProjects &&
-    !(searchVisible && searchQuery.trim().length > 0)
+  // 项目筛选与画布项目显隐不禁用拖拽；被筛选隐藏的项目/会话在拖拽落库前经
+  // mergeManualOrderWithHidden 合并回完整手动序，不会因一次拖拽丢秩。
+  const searchActive = searchVisible && searchQuery.trim().length > 0
+  const canReorderSessions = canReorderSidebarSessions(filter, searchActive)
   const canReorderProjects = canReorderSessions
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
@@ -2370,7 +2372,16 @@ export function SidebarSessionList() {
           projectIds.indexOf(activeItem.projectId),
           projectIds.indexOf(overItem.projectId),
         )
-        void ctx.handleReorderProjects(next)
+        // 可保留的隐藏项：仍存在、未归档且能独立成组（非 worktree）的 workspace，
+        // 与后端 sidebar-order:update 的项目校验口径一致；陈旧 id 借拖拽自清理。
+        const reorderableWorkspaceIds = new Set(
+          ctx.workspaces
+            .filter((workspace) => workspace.worktreeMeta == null && workspace.archivedAt == null)
+            .map((workspace) => workspace.id),
+        )
+        void ctx.handleReorderProjects(
+          mergeManualOrderWithHidden(ctx.sidebarOrder.projectIds, next, reorderableWorkspaceIds),
+        )
         return
       }
 
@@ -2400,10 +2411,29 @@ export function SidebarSessionList() {
         zoneIds.indexOf(activeItem.sessionId),
         zoneIds.indexOf(overItem.sessionId),
       )
+      // 可保留的隐藏项：该项目下仍存在、未归档的会话（含 worktree 归并口径），
+      // 与后端 assertSessionOrder 的归属校验一致；被画布筛选等隐藏的会话不丢秩。
+      const projectLiveSessionIds = new Set(
+        ctx.sessions
+          .filter(
+            (session) =>
+              session.archivedAt == null &&
+              resolveSessionGroupId(session, ctx.workspaces) === activeItem.projectId,
+          )
+          .map((session) => session.id),
+      )
+      const persistedZoneIds = activePinned
+        ? ctx.sidebarOrder.pinnedSessionIdsByProject[activeItem.projectId]
+        : ctx.sidebarOrder.sessionIdsByProject[activeItem.projectId]
+      const mergedZoneIds = mergeManualOrderWithHidden(
+        persistedZoneIds,
+        next,
+        projectLiveSessionIds,
+      )
       if (activePinned) {
-        void ctx.handleReorderPinnedSessions(activeItem.projectId, next)
+        void ctx.handleReorderPinnedSessions(activeItem.projectId, mergedZoneIds)
       } else {
-        void ctx.handleReorderSessions(activeItem.projectId, next)
+        void ctx.handleReorderSessions(activeItem.projectId, mergedZoneIds)
       }
     },
     [

@@ -36,6 +36,54 @@ export function sortByManualOrderWithinPinnedSections<T>(
   return [...manuallyOrdered.filter(isPinned), ...manuallyOrdered.filter((item) => !isPinned(item))]
 }
 
+/**
+ * 拖拽发生在被筛选视图（部分项目/会话被筛选隐藏）上时，把仅含可见项的新顺序合并回
+ * 完整手动序：可见项按 visibleNext 的相对顺序落位，被隐藏但仍存在的项按原有邻居
+ * 位置插回，避免一次拖拽把隐藏项挤出手动序（丢秩项会浮到段首，等于排序被破坏）。
+ * validHiddenIds 之外的隐藏 id 视为已删除/已归档的陈旧数据，沿用「拖拽即自清理」
+ * 的既有语义，不回写进持久化顺序。没有隐藏项时结果与 visibleNext 完全一致，
+ * 等价于直接替换，因此无筛选视图可以始终走这条合并路径。
+ */
+export function mergeManualOrderWithHidden(
+  fullOrder: readonly string[] | undefined,
+  visibleNext: readonly string[],
+  validHiddenIds: ReadonlySet<string>,
+): string[] {
+  const persisted = fullOrder ?? []
+  const visibleSet = new Set(visibleNext)
+  const persistedSet = new Set(persisted)
+  const result: string[] = []
+  const emitted = new Set<string>()
+  const emit = (id: string): void => {
+    if (emitted.has(id)) return
+    emitted.add(id)
+    result.push(id)
+  }
+  // 新建未排序项在展示段最前（sortByManualOrder 的无秩项规则），合并后保持该相对位置。
+  for (const id of visibleNext) {
+    if (!persistedSet.has(id)) emit(id)
+  }
+  let cursor = 0
+  for (const id of persisted) {
+    if (!visibleSet.has(id)) {
+      if (validHiddenIds.has(id)) emit(id)
+      continue
+    }
+    while (cursor < visibleNext.length && visibleNext[cursor] !== id) {
+      const nextVisible = visibleNext[cursor]
+      if (nextVisible != null) emit(nextVisible)
+      cursor += 1
+    }
+    if (visibleNext[cursor] === id) cursor += 1
+    emit(id)
+  }
+  for (; cursor < visibleNext.length; cursor += 1) {
+    const remaining = visibleNext[cursor]
+    if (remaining != null) emit(remaining)
+  }
+  return result
+}
+
 export function moveItem<T>(items: readonly T[], fromIndex: number, toIndex: number): T[] {
   if (
     fromIndex < 0 ||
