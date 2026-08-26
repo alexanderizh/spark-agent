@@ -8,7 +8,7 @@ import {
   thinkingConfigFor,
   type LlmRequest,
 } from '../../src/llm/types.js'
-import { cycleEffort, effortLabel, helpLine, SLASH_COMMANDS } from '../../src/tui/slash-commands.js'
+import { cycleEffort, effortLabel, helpDetail, helpLine, SLASH_COMMANDS, TUI_SHORTCUTS } from '../../src/tui/slash-commands.js'
 import { nextPermissionMode } from '../../src/tui/components/permission-picker.js'
 
 function baseRequest(): LlmRequest {
@@ -81,13 +81,34 @@ describe('reasoning effort mapping', () => {
 })
 
 describe('slash command surface', () => {
-  it('covers the model/perms/effort/clear/help/status/exit set once each', () => {
+  it('covers the model/perms/effort/update/clear/help/status/exit set once each', () => {
     const names = SLASH_COMMANDS.map((command) => command.name)
     expect(new Set(names).size).toBe(names.length)
-    for (const required of ['/help', '/status', '/model', '/perm', '/effort', '/clear', '/exit']) {
+    for (const required of [
+      '/help',
+      '/status',
+      '/model',
+      '/perm',
+      '/effort',
+      '/update',
+      '/clear',
+      '/exit',
+    ]) {
       expect(names).toContain(required)
     }
     expect(helpLine()).toContain('/effort')
+  })
+
+  it('lists every command and shortcut in the /help detail', () => {
+    const detail = helpDetail()
+    for (const command of SLASH_COMMANDS) {
+      expect(detail).toContain(command.name)
+      expect(detail).toContain(command.summary)
+    }
+    for (const shortcut of TUI_SHORTCUTS) {
+      expect(detail).toContain(shortcut.keys)
+      expect(detail).toContain(shortcut.summary)
+    }
   })
 
   it('cycles effort auto → off → low → medium → high → auto', () => {

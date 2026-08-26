@@ -6,8 +6,9 @@ import type { LlmDelta, ReasoningEffort } from '../llm/types.js'
 import type { InteractiveApprover, PendingApproval } from '../permission/interactive.js'
 import type { PermissionDecision, PermissionMode } from '../permission/types.js'
 import type { AgentSession } from '../sdk/agent.js'
+import { SPARK_ENGINE_VERSION } from '../version.js'
 import { PermissionCard } from './components/permission-card.js'
-import { PermissionPicker } from './components/permission-picker.js'
+import { PERMISSION_MODES, PermissionPicker, nextPermissionMode } from './components/permission-picker.js'
 import { ActiveTools, Transcript } from './components/rows.js'
 import { InputEditor } from './components/input-editor.js'
 import { PlanApprovalCard } from './components/plan-card.js'
@@ -17,6 +18,11 @@ import { ModelPicker, ProviderConfigForm } from './model-flow.js'
 import { cycleEffort, effortLabel, helpDetail } from './slash-commands.js'
 import type { ModelRuntimeController } from './use-model-runtime.js'
 import { projectTranscript } from './projection.js'
+import {
+  describeUpdateOutcome,
+  type SparkUpdateRunner,
+  type UpdateOutcomeTone,
+} from './update-runner.js'
 import {
   defaultTheme,
   detectTerminalCapabilities,
@@ -34,9 +40,27 @@ export interface SparkTuiAppProps {
   readonly version?: string
   readonly model?: string
   readonly modelRuntime?: ModelRuntimeController
+  /** In-TUI self-update channel; absent disables /update (static/test mode). */
+  readonly updateRunner?: SparkUpdateRunner
   readonly permissionMode?: PermissionMode
   /** Initial reasoning effort (from --effort); adjustable via /effort. */
   readonly reasoningEffort?: ReasoningEffort
+}
+
+interface NoticeState {
+  readonly text: string
+  readonly tone: UpdateOutcomeTone | 'warn'
+}
+
+function permissionLabel(mode: PermissionMode): string {
+  return PERMISSION_MODES.find((entry) => entry.mode === mode)?.label ?? mode
+}
+
+function noticeColor(theme: TuiTheme, tone: NoticeState['tone']): string {
+  if (tone === 'ok') return theme.ok
+  if (tone === 'error') return theme.error
+  if (tone === 'info') return theme.dim
+  return theme.warn
 }
 
 export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
@@ -47,10 +71,13 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const [events, setEvents] = useState<AgentEvent[]>([...props.initialEvents])
   const [liveText, setLiveText] = useState('')
   const [liveThinking, setLiveThinking] = useState('')
+  const [showThinking, setShowThinking] = useState(true)
   const [activeTurns, setActiveTurns] = useState(0)
   const [pending, setPending] = useState<PendingApproval>()
-  const [notice, setNotice] = useState(
-    props.permissionMode === 'bypass' ? '危险：权限绕过已启用，已注册工具可不经审批执行。' : '',
+  const [notice, setNoticeFull] = useState<NoticeState | undefined>(
+    props.permissionMode === 'bypass'
+      ? { text: '危险：权限绕过已启用，已注册工具可不经审批执行。', tone: 'warn' }
+      : undefined,
   )
   const [exitArmed, setExitArmed] = useState(false)
   const [configFormOpen, setConfigFormOpen] = useState(false)
@@ -61,6 +88,8 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(
     props.permissionMode ?? props.initialSession.permissionMode,
   )
+  const [updateRunning, setUpdateRunning] = useState(false)
+  const [updateCheckOnly, setUpdateCheckOnly] = useState(false)
   /** Non-empty after a plan-mode turn produced a plan awaiting approval. */
   const [planProposal, setPlanProposal] = useState<string | undefined>(undefined)
   const controllers = useRef<AbortController[]>([])
@@ -74,6 +103,10 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     },
     [],
   )
+
+  const setNotice = useCallback((text: string) => {
+    setNoticeFull({ text, tone: 'warn' })
+  }, [])
 
   const appendEvent = useCallback((event: AgentEvent) => {
     setEvents((current) =>
@@ -111,7 +144,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       const controller = new AbortController()
       controllers.current.push(controller)
       setActiveTurns((count) => count + 1)
-      setNotice('')
+      setNoticeFull(undefined)
       setPlanProposal(undefined)
       void session
         .turn(value, {
@@ -128,11 +161,49 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     [appendEvent, effectiveModel, handleDelta, modelRuntime, reasoningEffort, session],
   )
 
+  const runUpdate = useCallback(
+    (checkOnly: boolean): void => {
+      const runner = props.updateRunner
+      if (!runner) {
+        setNotice('当前环境未接入更新通道；请退出后运行 `spark update`。')
+        return
+      }
+      if (updateRunning) {
+        setNotice('已有一个更新任务在进行，请等待其完成。')
+        return
+      }
+      if (activeTurns > 0) {
+        setNotice('turn 运行中；请先中断或等待完成，再检查更新。')
+        return
+      }
+      setUpdateCheckOnly(checkOnly)
+      setUpdateRunning(true)
+      setNoticeFull({
+        text: checkOnly ? '正在检查更新…' : '正在更新 Spark，下载校验约需一会儿…',
+        tone: 'info',
+      })
+      void runner
+        .run({ checkOnly })
+        .then((result) => {
+          const outcome = describeUpdateOutcome(result.exitCode, checkOnly, result.output)
+          setNoticeFull({ text: outcome.lines.join('\n'), tone: outcome.tone })
+        })
+        .catch((error: unknown) => {
+          const detail = error instanceof Error ? error.message : String(error)
+          setNoticeFull({ text: `更新失败：${detail}`, tone: 'error' })
+        })
+        .finally(() => {
+          setUpdateRunning(false)
+        })
+    },
+    [activeTurns, props.updateRunner, setNotice, updateRunning],
+  )
+
   const handleCommand = async (raw: string): Promise<void> => {
     const [command] = raw.trim().split(/\s+/, 1)
     switch (command) {
       case '/help':
-        setNotice(helpDetail())
+        setNoticeFull({ text: helpDetail(), tone: 'info' })
         break
       case '/status':
         setNotice(
@@ -167,6 +238,15 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         const next = cycleEffort(reasoningEffort)
         setReasoningEffort(next)
         setNotice(`推理强度: ${effortLabel(next)}（对下一个 turn 生效）`)
+        break
+      }
+      case '/update': {
+        const argument = raw.trim().split(/\s+/)[1]
+        if (argument !== undefined && argument !== '--check' && argument !== 'check') {
+          setNotice('用法：/update 或 /update --check')
+          break
+        }
+        runUpdate(argument !== undefined)
         break
       }
       case '/clear': {
@@ -251,16 +331,28 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       setPermissionModeState(mode)
       setPermPickerOpen(false)
       setPlanProposal(undefined)
-      setNotice(
-        mode === 'plan'
-          ? '已切换到计划模式：只读探索，产出计划后会询问是否执行。'
-          : mode === 'bypass'
-            ? '危险：权限绕过已启用（仅本会话），工具将不经审批执行。'
-            : `权限策略已切换为 ${mode}（本会话生效）。`,
-      )
+      setNoticeFull({
+        text:
+          mode === 'plan'
+            ? '已切换到计划模式：只读探索，产出计划后会询问是否执行。'
+            : mode === 'bypass'
+              ? '危险：权限绕过已启用（仅本会话），工具将不经审批执行。'
+              : `权限策略已切换为 ${permissionLabel(mode)}（本会话生效）。`,
+        tone: mode === 'bypass' ? 'warn' : 'info',
+      })
     },
     [session],
   )
+
+  // Shift+Tab walks the safe modes only; arming bypass stays behind /perm's
+  // explicit double confirm so one stray keypress can never go unreviewed.
+  const cyclePermission = useCallback(() => {
+    if (activeTurns > 0) {
+      setNotice('turn 运行中；权限策略将在下一个 turn 生效，请稍后再切换。')
+      return
+    }
+    applyPermissionMode(nextPermissionMode(permissionMode))
+  }, [activeTurns, applyPermissionMode, permissionMode, setNotice])
 
   const approvePlan = useCallback(() => {
     setPlanProposal(undefined)
@@ -274,7 +366,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     <Box flexDirection="column">
       {empty && !pickerOpen && (
         <WelcomeBox
-          version={props.version ?? '0.2.0'}
+          version={props.version ?? SPARK_ENGINE_VERSION}
           model={effectiveModel}
           cwd={session.cwd}
           capabilities={capabilities}
@@ -282,7 +374,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         />
       )}
       <Transcript rows={projection.settled} theme={theme} />
-      {liveThinking && <Text color={theme.dim}>▍ {liveThinking}</Text>}
+      {showThinking && liveThinking && <Text color={theme.dim}>▍ {liveThinking}</Text>}
       {liveText && <Text>{liveText}</Text>}
       <ActiveTools tools={projection.activeTools} capabilities={capabilities} theme={theme} />
       {activeTurns > 0 && (
@@ -367,15 +459,30 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           }}
         />
       )}
-      {notice && <Text color={theme.warn}>{notice}</Text>}
+      {updateRunning && (
+        <WorkingLine
+          label={updateCheckOnly ? '正在检查更新' : '正在更新 Spark'}
+          detail="连接发布通道，下载并校验安装包"
+          capabilities={capabilities}
+          theme={theme}
+        />
+      )}
+      {notice && (
+        <Text color={noticeColor(theme, notice.tone)}>{notice.text}</Text>
+      )}
       <InputEditor
         active={!pickerOpen}
         locked={pending !== undefined || pickerOpen || permPickerOpen || planProposal !== undefined}
+        running={activeTurns > 0}
         capabilities={capabilities}
         theme={theme}
         onSubmit={submit}
         onEscape={interrupt}
         onControlC={controlC}
+        onCyclePermission={cyclePermission}
+        onToggleThinking={() => {
+          setShowThinking((visible) => !visible)
+        }}
       />
       <Box gap={2} flexWrap="wrap">
         <Text color={theme.accent}>{effectiveModel ?? '未选择模型'}</Text>

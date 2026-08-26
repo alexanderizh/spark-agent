@@ -12,6 +12,7 @@ import type { ReasoningEffort } from '../llm/types.js'
 import { SparkTuiApp } from './app.js'
 import { useModelRuntime } from './use-model-runtime.js'
 import { detectTerminalCapabilities } from './theme.js'
+import type { SparkUpdateRunner } from './update-runner.js'
 
 export interface RunTuiOptions {
   readonly cwd?: string
@@ -23,6 +24,8 @@ export interface RunTuiOptions {
   /** Real package version for the welcome screen; avoids stale fallback text. */
   readonly version?: string | undefined
   readonly permissionMode?: PermissionMode | undefined
+  /** In-TUI /update channel; the CLI layer injects the real transaction. */
+  readonly updateRunner?: SparkUpdateRunner | undefined
   /** Initial reasoning effort (from --effort); adjustable via /effort. */
   readonly reasoningEffort?: ReasoningEffort | undefined
   /**
@@ -72,6 +75,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
       initialModel={options.model}
       startupError={options.startupError}
       permissionMode={permissionMode}
+      {...(options.updateRunner === undefined ? {} : { updateRunner: options.updateRunner })}
       {...(options.version === undefined ? {} : { version: options.version })}
       {...(options.reasoningEffort === undefined
         ? {}
@@ -96,6 +100,7 @@ interface SparkTuiRootProps {
   readonly startupError?: string | undefined
   readonly version?: string | undefined
   readonly permissionMode: PermissionMode
+  readonly updateRunner?: SparkUpdateRunner | undefined
   readonly reasoningEffort?: ReasoningEffort | undefined
   readonly onModelChanged: (model: string | undefined) => void
   readonly stdout: NodeJS.WriteStream
@@ -115,6 +120,7 @@ function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
       approver={props.approver}
       createSession={props.createSession}
       permissionMode={props.permissionMode}
+      {...(props.updateRunner === undefined ? {} : { updateRunner: props.updateRunner })}
       {...(props.version === undefined ? {} : { version: props.version })}
       {...(props.reasoningEffort === undefined ? {} : { reasoningEffort: props.reasoningEffort })}
       modelRuntime={modelRuntime}
@@ -135,6 +141,7 @@ export * from './model-flow.js'
 export * from './use-model-runtime.js'
 export * from './projection.js'
 export * from './theme.js'
+export * from './update-runner.js'
 export * from './components/input-editor.js'
 export * from './components/permission-card.js'
 export * from './components/rows.js'

@@ -30,6 +30,7 @@ import { installWarnings, renderInstallReport } from './diagnostics.js'
 import { executeUpdate } from './update.js'
 import { uninstallSparkPackage } from './uninstall-package.js'
 import { NOTICE_TIMEOUT_MS, updateNoticeLine } from './update-notice.js'
+import type { SparkUpdateRunner } from '../tui/update-runner.js'
 
 interface CliOptions {
   readonly help: boolean
@@ -148,6 +149,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       cwd: process.cwd(),
       version: await runningVersion(),
       permissionMode: options.permissionMode,
+      updateRunner: createTuiUpdateRunner(),
       ...(options.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: options.reasoningEffort }),
@@ -516,6 +518,37 @@ async function runningVersion(): Promise<string> {
     return (await resolveSparkInstall()).version
   } catch {
     return 'unknown'
+  }
+}
+
+/**
+ * Bridges the TUI /update command onto the same transactional `spark update`
+ * path the shell command uses. Output is buffered and surfaced by the TUI as
+ * a notice; exit-code semantics stay in update-runner's describe mapping.
+ */
+function createTuiUpdateRunner(): SparkUpdateRunner {
+  return {
+    run: async ({ checkOnly }) => {
+      let output = ''
+      const io = {
+        stdout: (text: string) => {
+          output += text
+        },
+        stderr: (text: string) => {
+          output += text
+        },
+      }
+      const exitCode = await executeUpdate(
+        {
+          checkOnly,
+          allowPrerelease: false,
+          json: false,
+          sparkHome: defaultSparkHome(),
+        },
+        io,
+      )
+      return { exitCode, output }
+    },
   }
 }
 

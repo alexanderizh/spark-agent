@@ -33,6 +33,8 @@ let variants: Record<string, Artifact>
 let templatePrefix = ''
 let npmCache = ''
 let packageVersion = ''
+/** A guaranteed-newer fixture version derived from the real package version. */
+let newerFixtureVersion = ''
 
 const fixtureRoots: string[] = []
 const caseRoots: string[] = []
@@ -55,6 +57,7 @@ beforeAll(async () => {
     return `${major}.${Number(minor) + 1}.0`
   }
   const nextVersion = bumpMinor(packageVersion)
+  newerFixtureVersion = nextVersion
   // Strict-SemVer-safe offsets beyond "next" for the tamper fixtures.
   const offsetVersion = (offset: number): string => {
     const [major, minor] = packageVersion.split('.')
@@ -474,7 +477,10 @@ describe('spark update — apply transaction (real npm prefix)', () => {
     'keeps the old version when the tarball version disagrees with the manifest',
     async () => {
       const mismatch = variants.mismatch!
-      await publish('0.2.3', mismatch.bytes, mismatch.sha256)
+      // The manifest must be newer than the running install (else the
+      // downgrade refusal short-circuits before the tarball is inspected) yet
+      // differ from the tarball's own version — both derive from package.json.
+      await publish(newerFixtureVersion, mismatch.bytes, mismatch.sha256)
       const test = await freshCase()
       const result = await runSpark(
         ['update', '--json', '--base', serverUrl],

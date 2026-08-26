@@ -11,6 +11,7 @@ import type { AgentEnv, BudgetLimits } from '../seams.js'
 import type { LlmService } from '../seams.js'
 import { isPermissionMode, type PermissionMode } from '../permission/types.js'
 import type { ReasoningEffort } from '../llm/types.js'
+import { SPARK_ENGINE_VERSION } from '../version.js'
 
 export interface AgentOptions {
   readonly cwd?: string
@@ -44,7 +45,7 @@ export class Agent {
 
   private constructor(options: AgentOptions) {
     this.#cwd = resolve(options.cwd ?? process.cwd())
-    this.#engineVersion = options.engineVersion ?? '0.2.0'
+    this.#engineVersion = options.engineVersion ?? SPARK_ENGINE_VERSION
     if (options.env) this.#env = options.env
     else if (options.llm) {
       this.#env = createDefaultEnv({

@@ -8,11 +8,17 @@ import { glyphs, type TerminalCapabilities, type TuiTheme } from '../theme.js'
 export interface InputEditorProps {
   readonly active: boolean
   readonly locked: boolean
+  /** True while an agent turn is running; Esc then always means interrupt. */
+  readonly running?: boolean
   readonly capabilities: TerminalCapabilities
   readonly theme: TuiTheme
   readonly onSubmit: (value: string) => void
   readonly onEscape: () => void
   readonly onControlC: () => void
+  /** Shift+Tab permission-mode cycling; absent = binding ignored. */
+  readonly onCyclePermission?: () => void
+  /** Ctrl+O live-thinking visibility toggle; absent = binding ignored. */
+  readonly onToggleThinking?: () => void
 }
 
 export function InputEditor(props: InputEditorProps): ReactElement {
@@ -29,7 +35,31 @@ export function InputEditor(props: InputEditorProps): ReactElement {
         return
       }
       if (key.escape) {
-        props.onEscape()
+        // Interrupt takes priority while a turn runs; otherwise a non-empty
+        // draft is cleared first so retyping never fights the transcript.
+        if (!props.running && characters.length > 0) {
+          setValue('')
+          setCursor(0)
+        } else {
+          props.onEscape()
+        }
+        return
+      }
+      if (key.tab && key.shift) {
+        props.onCyclePermission?.()
+        return
+      }
+      if (key.ctrl && input === 'o') {
+        props.onToggleThinking?.()
+        return
+      }
+      if (key.ctrl && input === 'u') {
+        setValue('')
+        setCursor(0)
+        return
+      }
+      if (key.ctrl && input === 'w') {
+        removeWordBeforeCursor()
         return
       }
       const code = input.codePointAt(0)
@@ -43,7 +73,11 @@ export function InputEditor(props: InputEditorProps): ReactElement {
       }
       if (key.return) {
         if (key.shift || key.meta) insert('\n')
-        else submit()
+        else if (characters[cursor - 1] === '\\') {
+          // A trailing backslash turns Enter into a hard newline instead of
+          // submitting; the backslash itself is consumed.
+          setValue([...characters.slice(0, cursor - 1), '\n', ...characters.slice(cursor)].join(''))
+        } else submit()
         return
       }
       if (key.tab && completions.length > 0) {
@@ -82,6 +116,15 @@ export function InputEditor(props: InputEditorProps): ReactElement {
   const removeAtCursor = (): void => {
     if (cursor >= characters.length) return
     setValue([...characters.slice(0, cursor), ...characters.slice(cursor + 1)].join(''))
+  }
+
+  const removeWordBeforeCursor = (): void => {
+    let position = cursor
+    while (position > 0 && (characters[position - 1] ?? '').trim() === '') position -= 1
+    while (position > 0 && (characters[position - 1] ?? '').trim() !== '') position -= 1
+    if (position === cursor) return
+    setValue([...characters.slice(0, position), ...characters.slice(cursor)].join(''))
+    setCursor(position)
   }
 
   const submit = (): void => {
