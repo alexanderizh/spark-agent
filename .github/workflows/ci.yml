@@ -39,6 +39,28 @@ jobs:
       - name: Check file size ratchet
         run: node scripts/check-file-size.mjs
 
+  spark-engine:
+    name: Spark engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: spark-engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: 'spark-engine/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify
+        run: npm run verify
+
   quality:
     name: ${{ matrix.label }}
     runs-on: ubuntu-latest
