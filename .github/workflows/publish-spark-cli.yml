@@ -64,6 +64,11 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
+          # 校验脚本随分支切换会被清掉，先存到 runner 临时目录供下个步骤使用。
+          mkdir -p "$RUNNER_TEMP/spark-verify"
+          cp spark-engine/scripts/verify-release.mjs \
+             spark-engine/scripts/release-contract.mjs \
+             "$RUNNER_TEMP/spark-verify/"
           VERSION="$(node -p "require('./spark-engine/package.json').version")"
           TARBALL="spark-agent-${VERSION}.tgz"
           test -f "spark-engine/release/${TARBALL}"
@@ -115,7 +120,8 @@ jobs:
           set -euo pipefail
           BASE='https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases'
           for attempt in 1 2 3 4 5 6; do
-            if node scripts/verify-release.mjs release --base "$BASE"; then
+            # 纯远端校验：latest.json schema、tarball 字节哈希、sidecar 与安装器齐全。
+            if node "$RUNNER_TEMP/spark-verify/verify-release.mjs" --base "$BASE"; then
               exit 0
             fi
             echo "::warning::第 ${attempt}/6 次公网校验未通过（可能是 raw CDN 缓存延迟），30 秒后重试。"
