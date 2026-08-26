@@ -3928,7 +3928,7 @@ describe('Renderer Smoke Tests', () => {
     )
   })
 
-  it('auto-collapses completed assistant turns to their final answer', async () => {
+  it('shows completed assistant turns as full final answers without a second history fold', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
@@ -3966,7 +3966,7 @@ describe('Renderer Smoke Tests', () => {
               archivedAt: null,
               createdAt: '2026-05-27T00:00:00.000Z',
               updatedAt: '2026-05-27T00:00:00.000Z',
-              messageCount: 4,
+              messageCount: 6,
             },
           ],
           total: 1,
@@ -4079,6 +4079,49 @@ describe('Renderer Smoke Tests', () => {
               seq: 8,
               status: 'completed',
             },
+            {
+              id: 'user-3',
+              type: 'user_message',
+              sessionId: 'session-1',
+              turnId: 'turn-3',
+              timestamp: '2026-05-27T00:00:04.000Z',
+              seq: 9,
+              content: 'third',
+            },
+            {
+              id: 'assistant-3-progress',
+              type: 'assistant_message',
+              sessionId: 'session-1',
+              turnId: 'turn-3',
+              timestamp: '2026-05-27T00:00:05.000Z',
+              seq: 10,
+              mode: 'complete',
+              provider: 'claude',
+              content: 'Newest intermediate update',
+              isFinal: false,
+              segmentId: 'turn-3-progress',
+            },
+            {
+              id: 'assistant-3-final',
+              type: 'assistant_message',
+              sessionId: 'session-1',
+              turnId: 'turn-3',
+              timestamp: '2026-05-27T00:00:05.500Z',
+              seq: 11,
+              mode: 'complete',
+              provider: 'claude',
+              content: 'Newest final summary',
+              isFinal: true,
+            },
+            {
+              id: 'status-3',
+              type: 'agent_status',
+              sessionId: 'session-1',
+              turnId: 'turn-3',
+              timestamp: '2026-05-27T00:00:05.800Z',
+              seq: 12,
+              status: 'completed',
+            },
           ],
           hasMore: false,
         }
@@ -4119,26 +4162,33 @@ describe('Renderer Smoke Tests', () => {
       })
 
       await vi.waitFor(() => {
-        expect(container.querySelectorAll('.msg-agent').length).toBe(2)
+        expect(container.querySelectorAll('.msg-agent').length).toBe(3)
       })
 
       await vi.waitFor(() => {
         expect(
           container.querySelectorAll('[data-assistant-turn-collapse="collapsed"]'),
-        ).toHaveLength(2)
+        ).toHaveLength(3)
       })
       expect(container.textContent).toContain('Historical final summary')
       expect(container.textContent).toContain('Latest final summary')
+      expect(container.textContent).toContain('Newest final summary')
       expect(container.textContent).not.toContain('Historical intermediate update')
       expect(container.textContent).not.toContain('Latest intermediate update')
+      expect(container.textContent).not.toContain('Newest intermediate update')
+      expect(
+        Array.from(container.querySelectorAll<HTMLButtonElement>('.msg-agent button')).some(
+          (button) => button.textContent?.trim() === '展开全部',
+        ),
+      ).toBe(false)
 
       const latestToggle = container.querySelectorAll<HTMLElement>(
         '[data-assistant-turn-collapse="collapsed"] button',
-      )[1]
+      )[2]
       act(() => latestToggle?.click())
 
       await vi.waitFor(() => {
-        expect(container.textContent).toContain('Latest intermediate update')
+        expect(container.textContent).toContain('Newest intermediate update')
         expect(
           container.querySelectorAll('[data-assistant-turn-collapse="expanded"]'),
         ).toHaveLength(1)
