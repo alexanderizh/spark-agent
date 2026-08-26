@@ -1,0 +1,107 @@
+name: Publish Spark CLI Release
+
+# Spark CLI（spark-engine）发布闭环：
+# prepare-release → publish-release-to-minio（latest.json 最后发布）→ verify-release 公网校验。
+#
+# 触发方式：workflow_dispatch 手动触发。push 自动触发依赖 spark-engine/package.json
+# 的版本号变化，语义与桌面端发布工作流一致。
+#
+# 凭据：仓库 secrets 中的 MINIO_IP / MINIO_PORT_API / MINIO_ID / MINIO_PWD /
+# MINIO_BUCKET / BUCKET_BASE_URL 只注入发布 job，不写入源码、制品或日志。
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - spark-engine/package.json
+      - .github/workflows/publish-spark-cli.yml
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '只做本地校验与 dry-run，不实际上传'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-spark-cli
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Prepare, publish, verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: spark-engine
+    env:
+      MINIO_IP: ${{ secrets.MINIO_IP }}
+      MINIO_PORT_API: ${{ secrets.MINIO_PORT_API }}
+      MINIO_ID: ${{ secrets.MINIO_ID }}
+      MINIO_PWD: ${{ secrets.MINIO_PWD }}
+      MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+      BUCKET_BASE_URL: ${{ secrets.BUCKET_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: 'spark-engine/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Quality gate (boundary, typecheck, lint, tests, build, package smoke)
+        run: npm run verify
+
+      - name: Check MinIO credentials are configured
+        if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+        shell: bash
+        run: |
+          missing=()
+          for v in MINIO_IP MINIO_PORT_API MINIO_ID MINIO_PWD MINIO_BUCKET BUCKET_BASE_URL; do
+            if [ -z "${!v}" ]; then missing+=("$v"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::缺少 MinIO 发布 secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      # 质量门通过后生成不可变发布目录（tgz + sha256 sidecar + latest.json + 安装器）。
+      - name: Prepare release directory
+        run: node scripts/prepare-release.mjs release
+
+      # 不可变审计 → 上传缺失对象 → 双通道回读校验 → latest.json 最后发布。
+      - name: Dry run (local validation only)
+        if: ${{ inputs.dry_run == true }}
+        run: node scripts/publish-release-to-minio.mjs release --dry-run
+
+      - name: Publish to MinIO (latest.json last)
+        if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+        run: node scripts/publish-release-to-minio.mjs release
+
+      - name: Verify published release over public HTTPS
+        if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+        run: node scripts/verify-release.mjs release
+
+      - name: Upload prepared release as workflow artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spark-cli-release-${{ github.sha }}
+          path: |
+            spark-engine/release/*.tgz
+            spark-engine/release/*.sha256
+            spark-engine/release/latest.json
+            spark-engine/release/install.sh
+            spark-engine/release/install.ps1
+            spark-engine/release/install.cmd
+          if-no-files-found: warn
+          retention-days: 5

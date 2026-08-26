@@ -116,7 +116,7 @@ describe('spark install / uninstall / init', () => {
 
     const result = await runCli(['uninstall', '--bin', binDir], { SPARK_HOME: join(root, 'home') })
     expect(result.code).toBe(2)
-    expect(result.stderr).toContain('not a spark launcher')
+    expect(result.stderr).toContain('was not installed by spark')
     expect(await exists(launcher)).toBe(true)
   })
 

@@ -28,11 +28,16 @@ node dist/cli/main.js --help
 
 Three equivalent paths put `spark` on PATH:
 
-- one-line installer, once release artifacts are hosted on a static file server:
+- one-line installer from the static release server (the built-in release base below is compiled into the CLI, installers, and scripts — override anytime with `--base <url>` / `-Base <url>` / `SPARK_INSTALL_BASE`):
 
   ```bash
-  curl -fsSL <base>/install.sh | SPARK_INSTALL_BASE=<base> sh     # macOS / Linux
-  powershell -File install.ps1 -Base <base>                        # Windows
+  # macOS / Linux — latest release
+  curl -fsSL https://minio.yiqibyte.com/spark-desktop/spark-cli/v1/install.sh | sh
+  ```
+
+  ```powershell
+  # Windows PowerShell
+  irm https://minio.yiqibyte.com/spark-desktop/spark-cli/v1/install.ps1 | iex
   ```
 
   The installer enforces the Node engine range, downloads the versioned tarball, verifies its sha256 against the release manifest (`latest.json` or the `.sha256` sidecar for pinned versions), installs it with npm, and — when the npm global bin is not on PATH — falls back to `spark install` for the `~/.spark/bin` launcher. `--tarball <path>` / `SPARK_INSTALL_TARBALL` installs a local file with no download (the hook the SparkWork desktop app uses for its future install button). Build the distributable directory with `node scripts/prepare-release.mjs [out-dir]` (tarball + `.sha256` + `latest.json`); upload it to any static host.
@@ -41,6 +46,57 @@ Three equivalent paths put `spark` on PATH:
 - from any install location (cloned repo, unpacked tarball, local folder): `spark install` links a launcher into `~/.spark/bin` (override with `--bin <dir>`). On Unix it is a symlink to the package entry, so in-place package updates flow through automatically; on Windows it writes a `spark.cmd` shim.
 
 `spark install` never depends on the working directory: the package root is located from the running code itself and verified by package name. It refuses to overwrite a foreign file at the launcher path unless `--force` is passed, prints the exact `export PATH=...` (or `fish_add_path`) line when the bin directory is not on PATH, and warns when another `spark` appears earlier on PATH. `spark uninstall` removes only launchers that provably belong to spark.
+
+## Updating spark
+
+```bash
+spark update --check          # report only; deterministic exit codes
+spark update                  # upgrade to the latest release
+spark upgrade                 # alias of update
+spark update --target 1.2.3   # pin an exact version (checksum via .sha256 sidecar)
+spark update --allow-prerelease
+spark update --json           # machine-readable one-line status
+```
+
+Exit codes: `0` an update is available or was applied · `1` up to date, remote older, or prerelease gated · `2` usage error · `3` check or upgrade failed · `4` another update is in progress.
+
+Every check downloads a strictly validated `latest.json` (package identity must be `@spark/agent`, strict SemVer version, lowercase hex sha256, deterministic tarball name) over https — loopback http is accepted only for local testing. Redirects that leave the release origin are refused; size caps and timeouts bound every response. Before anything is touched, the downloaded tarball is checksum-verified, its embedded `package.json` identity/version must match the manifest, and its `engines.node` must accept the running Node.
+
+The upgrade itself is transactional: install into a staging prefix inside the npm global tree, verify the staged CLI reports the expected version, then swap the whole staged package directory by rename with the previous installation snapshotted first (dependencies ride inside the package) — any later failure (version probe, `spark doctor`, launcher relink) rolls everything back, so a failed update always leaves the previous spark runnable. A cross-process lock at `~/.spark/update.lock` serializes concurrent updates: a live owner is always honored, a provably dead owner (ESRCH) is retaken immediately, and a lock older than 15 minutes is removed and retaken so a crashed or recycled-pid updater can never wedge updates permanently.
+
+Source precedence for where updates come from: `--base/--target` flags > `SPARK_RELEASE_BASE`/`SPARK_INSTALL_BASE`/`SPARK_INSTALL_VERSION` env > `[update]` in `~/.spark/config.toml` (`base_url`, `version`) > built-in release host. The channel is deliberately steered only by flags/env/global config: a repo-local `.spark/config.toml` may toggle `[update] enabled` for the daily notice but its `base_url`/`version` are ignored by design, so a checked-out project can never hijack the update path.
+
+Interactive TUI sessions print a one-line notice on stderr when a newer release exists. The notice checks at most once per day (cached in `~/.spark/update-check.json`), is skipped entirely for `--json`/`--plain`/piped/CI runs, and is disabled with `SPARK_UPDATE_CHECK=0` or `[update] enabled = false`. An unreachable release host never blocks startup or turns.
+
+## Uninstalling spark
+
+```bash
+spark uninstall               # remove the ~/.spark/bin launcher only
+spark uninstall --package     # full removal: npm package + proven bin shims + launcher
+```
+
+`spark uninstall --package` removes only what provably belongs to spark — the `@spark/agent` package in the npm global tree, its bin shims there, and the `~/.spark/bin` launcher. It never deletes `~/.spark` configuration, sessions, or caches, never follows into foreign packages sharing the tree, and never touches a third-party `spark` found elsewhere on PATH (it is reported instead). Running it twice is safe (`absent`). This intentionally does not uninstall the code this command executes from when installed via `npm link` development setups — remove those with `npm unlink -g @spark/agent`.
+
+## Publishing a release (maintainers)
+
+```bash
+node scripts/prepare-release.mjs [out-dir]
+```
+
+produces the immutable release set: `spark-agent-<version>.tgz` (npm pack), its `<...>.sha256` sidecar, the three installers, and `latest.json`. Versioned artifacts are immutable — republishing the same version with different bytes is a hard error; bump `package.json` instead.
+
+Upload happens against the self-hosted MinIO host with credentials only in environment variables (`MINIO_IP`, `MINIO_PORT_API`, `MINIO_ID`, `MINIO_PWD`, `MINIO_BUCKET`, and the public read base `BUCKET_BASE_URL`):
+
+```bash
+node scripts/publish-release-to-minio.mjs [dir] [--base <url>] [--dry-run]
+node scripts/verify-release.mjs [dir] [--base <url>]   # post-publish public check
+```
+
+Publish order is contractual: audit remote immutables first (identical objects skip, divergent ones abort before any write), upload what is missing, verify each artifact by authenticated _and_ public HTTPS read-back, then publish `latest.json` strictly last. A failed run can therefore never expose a partial release as latest. `scripts/release-contract.mjs` carries the shared schema/base-URL contract for all three tools; CI runs the same flow in the spark-engine publish workflow.
+
+## Recovering from a failed update
+
+If an updater was killed mid-transaction, the next `spark update` restores consistency automatically from its snapshot before proceeding. If automatic restore was impossible (e.g. permissions), the error message names the backup directory to move back manually. `spark doctor` shows the resolved PATH entry's version versus the running one — a stale launcher after manual repair is reported as version drift.
 
 First run without local configuration: `spark` still opens the TUI and shows the model picker — SparkWork routes (live catalog), locally configured models, and a terminal provider-configuration wizard (`c`). The wizard writes a local provider into `~/.spark/config.toml` referencing credentials only by environment-variable name; nothing secret is ever stored. `/model` reopens the picker between turns (a running turn keeps its model). Non-interactive invocations (`--plain`, `--json`, piped prompts) stay fail-fast with actionable guidance. `spark init` remains for scripting; `spark doctor` reports the resolved `spark` on PATH (broken links, version drift, shadowing), stale SparkWork bridge descriptors, and Node engine compliance.
 

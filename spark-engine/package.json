@@ -40,6 +40,9 @@
     "build:test": "tsup --silent",
     "test:watch": "vitest",
     "golden": "vitest run test/golden.test.ts",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "release:publish": "node scripts/publish-release-to-minio.mjs",
+    "release:verify": "node scripts/verify-release.mjs",
     "verify:package": "node scripts/package-smoke.mjs",
     "verify": "npm run boundary && npm run typecheck && npm run lint && npm test && npm run build && npm run verify:package"
   },

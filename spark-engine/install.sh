@@ -17,8 +17,11 @@ PACKAGE_TARBALL_PREFIX=spark-agent
 NODE_MIN_MAJOR=22
 NODE_MIN_MINOR=14
 NODE_MAX_MAJOR=23
+# SYNC CONSTANT — keep identical to DEFAULT_RELEASE_BASE in src/cli/release.ts,
+# RELEASE_BASE in scripts/prepare-release.mjs, and $DefaultBase in install.ps1.
+DEFAULT_BASE='https://minio.yiqibyte.com/spark-desktop/spark-cli/v1'
 
-BASE=${SPARK_INSTALL_BASE:-}
+BASE=${SPARK_INSTALL_BASE:-$DEFAULT_BASE}
 VERSION=${SPARK_INSTALL_VERSION:-}
 TARBALL=${SPARK_INSTALL_TARBALL:-}
 EXPECTED_SHA=''
@@ -28,7 +31,7 @@ usage() {
 Usage: sh install.sh [--base <url>] [--version <semver>] [--tarball <path>] [--help]
 
   --base <url>        Release base URL that hosts latest.json and tarballs
-                      (default: SPARK_INSTALL_BASE)
+                      (default: SPARK_INSTALL_BASE, then the built-in release host)
   --version <semver>  Install a pinned version instead of latest
   --tarball <path>    Install a local npm tarball; no download or manifest needed
 EOF
@@ -115,6 +118,8 @@ resolve_release() {
     EXPECTED_SHA=$(printf '%s' "$manifest" | sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{64\}\)".*/\1/p' | head -n 1)
     [ -n "$VERSION" ] || fail 'latest.json does not contain a readable "version"'
     [ -n "$EXPECTED_SHA" ] || fail 'latest.json does not contain a readable "sha256"'
+    printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || \
+      fail "latest.json reports an invalid version: $VERSION"
   fi
 
   archive_url="$BASE/$PACKAGE_TARBALL_PREFIX-$VERSION.tgz"

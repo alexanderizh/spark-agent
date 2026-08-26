@@ -26,6 +26,9 @@ import {
   type InstallReport,
 } from './install.js'
 import { installWarnings, renderInstallReport } from './diagnostics.js'
+import { executeUpdate } from './update.js'
+import { uninstallSparkPackage } from './uninstall-package.js'
+import { NOTICE_TIMEOUT_MS, updateNoticeLine } from './update-notice.js'
 
 interface CliOptions {
   readonly help: boolean
@@ -35,7 +38,12 @@ interface CliOptions {
   readonly prompt?: string
   readonly model?: string
   readonly bin?: string
+  readonly base?: string
+  readonly target?: string
   readonly force: boolean
+  readonly check: boolean
+  readonly allowPrerelease: boolean
+  readonly package: boolean
   readonly permissionMode: PermissionMode
   readonly positionals: readonly string[]
 }
@@ -70,6 +78,30 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return inspectModels(options.positionals[0], options.json)
   }
   const maintenance = options.positionals[0]
+  if (maintenance === 'update' || maintenance === 'upgrade') {
+    if (options.positionals.length > 1 || options.prompt) {
+      process.stderr.write(`spark ${maintenance} does not accept extra arguments.\n`)
+      return 2
+    }
+    return executeUpdate(
+      {
+        checkOnly: options.check,
+        ...(options.base === undefined ? {} : { base: options.base }),
+        ...(options.target === undefined ? {} : { target: options.target }),
+        allowPrerelease: options.allowPrerelease,
+        json: options.json,
+        sparkHome: defaultSparkHome(),
+      },
+      {
+        stdout: (text) => {
+          process.stdout.write(text)
+        },
+        stderr: (text) => {
+          process.stderr.write(text)
+        },
+      },
+    )
+  }
   if (maintenance === 'install' || maintenance === 'uninstall' || maintenance === 'init') {
     if (options.positionals.length > 1 || options.prompt) {
       process.stderr.write(`spark ${maintenance} does not accept extra arguments.\n`)
@@ -92,6 +124,13 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (tuiAvailable && !prompt) {
     // Interactive first-run contract: enter the TUI even without a configured
     // model — the onboarding picker resolves or configures one in-terminal.
+    // The daily update notice check starts here and is awaited with a hard
+    // budget after the TUI exits, so a slow release host never blocks startup.
+    const noticePromise = updateNoticeLine({
+      sparkHome: defaultSparkHome(),
+      cwd: process.cwd(),
+      currentVersion: await runningVersion(),
+    }).catch(() => undefined)
     const { runTui } = await import('../tui/index.js')
     let runtime: ConfiguredModelRuntime | undefined
     let startupError: string | undefined
@@ -108,6 +147,13 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       permissionMode: options.permissionMode,
       ...(runtime ? { llm: runtime.service, model: runtime.modelId } : { startupError }),
     })
+    const notice = await Promise.race([
+      noticePromise,
+      new Promise<undefined>((resolveNotice) => {
+        setTimeout(resolveNotice, NOTICE_TIMEOUT_MS, undefined)
+      }),
+    ])
+    if (notice !== undefined) process.stderr.write(`${notice}\n`)
     return 0
   }
 
@@ -151,6 +197,20 @@ async function runMaintenanceCommand(
       return 0
     }
     if (command === 'uninstall') {
+      if (options.package) {
+        return await uninstallSparkPackage(
+          { sparkHome: defaultSparkHome(), binDir },
+          {
+            stdout: (text) => {
+              process.stdout.write(text)
+            },
+            stderr: (text) => {
+              process.stderr.write(text)
+            },
+          },
+          options.json,
+        )
+      }
       const result = await uninstallLauncher({ binDir })
       const launcher = launcherPathFor(binDir, process.platform)
       process.stdout.write(
@@ -271,7 +331,12 @@ function parseCli(argv: readonly string[]): CliOptions {
       prompt: { type: 'string', short: 'p' },
       model: { type: 'string', short: 'm' },
       bin: { type: 'string' },
+      base: { type: 'string' },
+      target: { type: 'string' },
+      check: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
+      'allow-prerelease': { type: 'boolean', default: false },
+      package: { type: 'boolean', default: false },
       'permission-mode': { type: 'string' },
       'dangerously-skip-permissions': { type: 'boolean', default: false },
       'output-format': { type: 'string' },
@@ -297,7 +362,12 @@ function parseCli(argv: readonly string[]): CliOptions {
     ...(parsed.values.prompt === undefined ? {} : { prompt: parsed.values.prompt }),
     ...(parsed.values.model === undefined ? {} : { model: parsed.values.model }),
     ...(parsed.values.bin === undefined ? {} : { bin: parsed.values.bin }),
+    ...(parsed.values.base === undefined ? {} : { base: parsed.values.base }),
+    ...(parsed.values.target === undefined ? {} : { target: parsed.values.target }),
     force: parsed.values.force ?? false,
+    check: parsed.values.check ?? false,
+    allowPrerelease: parsed.values['allow-prerelease'] ?? false,
+    package: parsed.values.package ?? false,
     permissionMode: dangerousBypass ? 'bypass' : (configuredPermissionMode ?? 'default'),
     positionals: parsed.positionals,
   }
@@ -416,7 +486,7 @@ async function readStdin(): Promise<string> {
 }
 
 function helpText(version?: string): string {
-  return `spark ${version === undefined ? '' : `${version} `}— deterministic coding agent\n\nUsage:\n  spark                     Interactive TUI\n  spark "task"              Run one task\n  spark -p "task"           Run one task\n  spark --plain             Plain interactive REPL\n  spark --json "task"       NDJSON fact events\n  spark models              List local and SparkWork-synced models\n  spark doctor              Diagnose install, discovery, and model selection\n  spark install [--bin dir] Link the spark launcher onto PATH\n  spark uninstall [--bin dir]\n                            Remove the spark launcher\n  spark init                Write a starter ~/.spark/config.toml\n\nOptions:\n  -p, --prompt <text>       Task prompt\n  -m, --model <id>          Select a local id, SparkWork route id, or unique model name\n      --bin <dir>           Launcher directory for install/uninstall (default ~/.spark/bin)\n      --force               Replace a foreign launcher during install\n      --plain               Disable color and terminal redraw\n      --json                Emit persisted events as NDJSON\n      --output-format <fmt> text | json | stream-json\n      --permission-mode <m> default | acceptEdits | plan | bypass\n      --dangerously-skip-permissions\n                             Alias for --permission-mode bypass\n  -h, --help                Show help\n  -V, --version             Show version\n`
+  return `spark ${version === undefined ? '' : `${version} `}— deterministic coding agent\n\nUsage:\n  spark                     Interactive TUI\n  spark "task"              Run one task\n  spark -p "task"           Run one task\n  spark --plain             Plain interactive REPL\n  spark --json "task"       NDJSON fact events\n  spark models              List local and SparkWork-synced models\n  spark doctor              Diagnose install, discovery, and model selection\n  spark install [--bin dir] Link the spark launcher onto PATH\n  spark uninstall [--bin dir]\n                            Remove the spark launcher only\n  spark uninstall --package\n                            Remove the npm package, its shims, and the launcher;\n                            ~/.spark config/sessions/caches are kept\n  spark update [--check]    Check for or install a release upgrade\n  spark upgrade             Alias for spark update\n  spark init                Write a starter ~/.spark/config.toml\n\nUpdate exit codes:\n  0 update available / update applied        1 up to date, older remote, or prerelease gated\n  2 usage error                               3 check or upgrade failed\n  4 another update is in progress\n\nOptions:\n  -p, --prompt <text>       Task prompt\n  -m, --model <id>          Select a local id, SparkWork route id, or unique model name\n      --bin <dir>           Launcher directory for install/uninstall (default ~/.spark/bin)\n      --base <url>          Release base for update (default SPARK_RELEASE_BASE, SPARK_INSTALL_BASE,\n                            [update] base_url in config.toml, then the built-in release host)\n      --target <semver>     Pin an exact version for update (checksum via the .sha256 sidecar)\n      --check               Only report the update status; apply nothing\n      --allow-prerelease    Consider prerelease releases for update\n      --package             With uninstall: remove the installed npm package too\n      --force               Replace a foreign launcher during install\n      --plain               Disable color and terminal redraw\n      --json                Emit persisted events as NDJSON; structured update results\n      --output-format <fmt> text | json | stream-json\n      --permission-mode <m> default | acceptEdits | plan | bypass\n      --dangerously-skip-permissions\n                             Alias for --permission-mode bypass\n  -h, --help                Show help\n  -V, --version             Show version\n`
 }
 
 async function runningVersion(): Promise<string> {

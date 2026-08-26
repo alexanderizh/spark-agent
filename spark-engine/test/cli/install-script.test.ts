@@ -73,10 +73,15 @@ describe('install.sh one-line installer', () => {
     expect(result.stdout).toContain('Spark CLI v0.1.0 installed')
   }, 240_000)
 
-  it('fails closed when no release base is configured', async () => {
-    const result = await runInstaller([], { ...process.env, SPARK_HOME: await tempRoot() })
+  it('fails closed on an unusable release base before touching npm', async () => {
+    // The installer now ships a built-in default base, so the no-flag path is
+    // legitimate; the fail-closed contract is exercised with a bogus scheme.
+    const result = await runInstaller(['--base', 'ftp://releases.example.com'], {
+      ...process.env,
+      SPARK_HOME: await tempRoot(),
+    })
     expect(result.code).toBe(1)
-    expect(result.stderr).toContain('no release base configured')
+    expect(result.stderr).toContain('must be an http(s) URL')
   })
 })
 
@@ -103,7 +108,9 @@ async function createReleaseFixture(): Promise<ReleaseFixture> {
   const filename = (JSON.parse(pack.stdout) as { filename: string }[])[0]?.filename
   if (!filename?.endsWith('.tgz')) throw new Error('npm pack returned no tarball')
   const tarballPath = join(staging, filename)
-  const sha256 = createHash('sha256').update(await readFile(tarballPath)).digest('hex')
+  const sha256 = createHash('sha256')
+    .update(await readFile(tarballPath))
+    .digest('hex')
   await writeFile(join(staging, `${filename}.sha256`), `${sha256}  ${filename}\n`, 'utf8')
   await writeFile(
     join(staging, 'latest.json'),

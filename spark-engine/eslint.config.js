@@ -45,4 +45,21 @@ export default tseslint.config(
     files: ['**/*.js', '**/*.mjs'],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // Standalone .mjs tooling (release scripts) runs on plain Node globals
+    // without any TypeScript ambient declarations.
+    files: ['**/*.js', '**/*.mjs'],
+    languageOptions: {
+      globals: {
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+      },
+    },
+  },
 );

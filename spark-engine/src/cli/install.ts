@@ -1,4 +1,16 @@
-import { access, constants, lstat, mkdir, open, readFile, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import {
+  access,
+  constants,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  readlink,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -27,7 +39,9 @@ export interface SparkInstall {
  * packages alike, because it only relies on walking up to the enclosing
  * package.json — never on the caller's working directory.
  */
-export async function resolveSparkInstall(fromUrl: string = import.meta.url): Promise<SparkInstall> {
+export async function resolveSparkInstall(
+  fromUrl: string = import.meta.url,
+): Promise<SparkInstall> {
   let directory = dirname(fileURLToPath(fromUrl))
   for (let depth = 0; depth < MAX_ROOT_WALK; depth += 1) {
     const manifestPath = join(directory, 'package.json')
@@ -52,7 +66,9 @@ export async function resolveSparkInstall(fromUrl: string = import.meta.url): Pr
           root: directory,
           version: typeof version === 'string' && version ? version : '0.0.0',
           entry,
-          ...(typeof engines === 'object' && engines !== null && typeof (engines as { node?: unknown }).node === 'string'
+          ...(typeof engines === 'object' &&
+          engines !== null &&
+          typeof (engines as { node?: unknown }).node === 'string'
             ? { nodeEngines: (engines as { node: string }).node }
             : {}),
         }
@@ -92,9 +108,7 @@ export async function installLauncher(
   if (existing?.isDirectory()) {
     throw new InstallError(`${launcherPath} is a directory; remove it or pass --bin elsewhere`)
   }
-  const ours =
-    existing === undefined ||
-    (platform === 'win32' ? await isOurCmdLauncher(launcherPath) : existing.isSymbolicLink())
+  const ours = existing === undefined || (await isSparkOwnedLauncher(launcherPath, platform))
   if (!ours && !options.force) {
     throw new InstallError(
       `${launcherPath} already exists and is not a spark launcher; pass --force to replace it`,
@@ -102,7 +116,9 @@ export async function installLauncher(
   }
 
   const temporary = join(options.binDir, `.spark-launcher-${process.pid}.tmp`)
+  const backup = join(options.binDir, `.spark-launcher-${process.pid}.bak`)
   await rm(temporary, { force: true })
+  await rm(backup, { force: true })
   if (platform === 'win32') {
     await writeFile(
       temporary,
@@ -113,10 +129,15 @@ export async function installLauncher(
     await symlink(options.install.entry, temporary)
   }
   try {
-    if (platform === 'win32') await rm(launcherPath, { force: true })
+    if (platform === 'win32' && existing !== undefined) await rename(launcherPath, backup)
     await rename(temporary, launcherPath)
+    await rm(backup, { force: true })
   } catch (error) {
     await rm(temporary, { force: true })
+    if (platform === 'win32' && existing !== undefined) {
+      await rm(launcherPath, { force: true }).catch(() => undefined)
+      await rename(backup, launcherPath).catch(() => undefined)
+    }
     throw new InstallError(`Unable to publish launcher at ${launcherPath}`, { cause: error })
   }
   return { launcherPath, replaced: existing !== undefined }
@@ -129,28 +150,43 @@ export async function uninstallLauncher(options: LauncherOptions): Promise<Unins
   const launcherPath = launcherPathFor(options.binDir, platform)
   const existing = await lstatIfExists(launcherPath)
   if (existing === undefined) return 'absent'
-  if (platform === 'win32') {
-    if (!existing.isFile() || !(await isOurCmdLauncher(launcherPath))) {
-      throw new InstallError(
-        `${launcherPath} was not installed by spark; remove it manually if you no longer need it`,
-      )
-    }
-    await rm(launcherPath, { force: true })
-    return 'removed'
-  }
-  if (!existing.isSymbolicLink()) {
+  if (!(await isSparkOwnedLauncher(launcherPath, platform))) {
     throw new InstallError(
-      `${launcherPath} is not a spark launcher (regular ${existing.isFile() ? 'file' : 'entry'}); remove it manually`,
-    )
-  }
-  const target = await readlink(launcherPath)
-  if (!target.endsWith(PACKAGE_ENTRY)) {
-    throw new InstallError(
-      `${launcherPath} links to ${target}, which is not a spark package entry; remove it manually`,
+      `${launcherPath} was not installed by spark; remove it manually if you no longer need it`,
     )
   }
   await rm(launcherPath, { force: true })
   return 'removed'
+}
+
+export async function isSparkOwnedLauncher(
+  launcherPath: string,
+  platform: NodeJS.Platform = process.platform,
+  expectedRoot?: string,
+): Promise<boolean> {
+  const info = await lstatIfExists(launcherPath)
+  if (info === undefined) return false
+  let entry: string | undefined
+  if (platform === 'win32') {
+    if (!info.isFile()) return false
+    const content = await readFile(launcherPath, 'utf8').catch(() => '')
+    if (!content.includes(CMD_MARKER)) return false
+    const match = /^node "([^"]+)" %\*$/imu.exec(content)
+    entry = match?.[1]
+  } else {
+    if (!info.isSymbolicLink()) return false
+    const target = await readlink(launcherPath).catch(() => undefined)
+    if (target !== undefined) entry = resolve(dirname(launcherPath), target)
+  }
+  if (!entry?.endsWith(PACKAGE_ENTRY)) return false
+  const packageRoot = resolve(entry, '..', '..', '..')
+  if (expectedRoot !== undefined && packageRoot !== resolve(expectedRoot)) return false
+  try {
+    const manifest: unknown = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
+    return field(manifest, 'name') === SPARK_PACKAGE_NAME
+  } catch {
+    return false
+  }
 }
 
 export interface PathSparkCandidate {
@@ -243,7 +279,9 @@ async function describeTarget(
         if (field(manifest, 'name') === SPARK_PACKAGE_NAME) {
           const version = field(manifest, 'version')
           const parsed = typeof version === 'string' && version ? version : undefined
-          return parsed === undefined ? { isSparkInstall: true } : { isSparkInstall: true, version: parsed }
+          return parsed === undefined
+            ? { isSparkInstall: true }
+            : { isSparkInstall: true, version: parsed }
         }
         return {}
       } catch {
@@ -278,8 +316,11 @@ export function pathExportHint(binDir: string, shell: string | undefined): strin
   if (shellName.endsWith('fish')) {
     return `fish_add_path ${binDir}`
   }
-  const rc =
-    shellName.endsWith('zsh') ? '~/.zshrc' : shellName.endsWith('bash') ? '~/.bashrc' : undefined
+  const rc = shellName.endsWith('zsh')
+    ? '~/.zshrc'
+    : shellName.endsWith('bash')
+      ? '~/.bashrc'
+      : undefined
   const exportLine = `export PATH="${binDir}:$PATH"`
   return rc ? `${exportLine}   # add to ${rc} and restart your terminal` : exportLine
 }
@@ -306,7 +347,7 @@ export function satisfiesNodeEngines(
   if (!range) return { status: 'unmanaged' }
   const bounds = range
     .split(/\s+/u)
-    .map((bound) => /^>=(\d+)\.(\d+)\.(\d+)$/u.exec(bound) ?? /^<(\d+)\.(\d+)\.(\d+)$/u.exec(bound))
+    .map((bound) => parseEngineBound(bound, '>=') ?? parseEngineBound(bound, '<'))
   if (bounds.length === 0 || bounds.some((bound) => bound === null)) {
     return { status: 'unmanaged' }
   }
@@ -326,6 +367,20 @@ export function satisfiesNodeEngines(
     }
   }
   return { status: 'ok' }
+}
+
+/**
+ * Accepts `>=22.14.0`-style bounds with optional shorthand parts (`>=22`,
+ * `<23`) like the ranges this package ships; missing components default to
+ * zero. Anything else is left to the caller's unmanaged handling.
+ */
+const LOWER_BOUND_PATTERN = /^>=(\d+)(?:\.(\d+))?(?:\.(\d+))?$/u
+const UPPER_BOUND_PATTERN = /^<(\d+)(?:\.(\d+))?(?:\.(\d+))?$/u
+
+function parseEngineBound(bound: string, operator: '>=' | '<'): readonly string[] | null {
+  const match = (operator === '>=' ? LOWER_BOUND_PATTERN : UPPER_BOUND_PATTERN).exec(bound)
+  if (!match) return null
+  return [operator, match[1] ?? '0', match[2] ?? '0', match[3] ?? '0']
 }
 
 function compareVersions(current: readonly number[], target: readonly number[]): number {
@@ -397,14 +452,6 @@ export async function buildInstallReport(options: {
   }
 }
 
-async function isOurCmdLauncher(path: string): Promise<boolean> {
-  try {
-    return (await readFile(path, 'utf8')).includes(CMD_MARKER)
-  } catch {
-    return false
-  }
-}
-
 async function lstatIfExists(path: string) {
   try {
     return await lstat(path)
@@ -432,9 +479,7 @@ async function isExecutable(path: string): Promise<boolean> {
 }
 
 function field(manifest: unknown, key: string): unknown {
-  return typeof manifest === 'object' && manifest !== null
-    ? Reflect.get(manifest, key)
-    : undefined
+  return typeof manifest === 'object' && manifest !== null ? Reflect.get(manifest, key) : undefined
 }
 
 export const STARTER_CONFIG = `# Spark CLI configuration, created by \`spark init\`.

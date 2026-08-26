@@ -16,6 +16,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $NodeMin = '22.14.0'
 $NodeMaxMajor = 23
+# SYNC CONSTANT — keep identical to DEFAULT_RELEASE_BASE in src/cli/release.ts,
+# RELEASE_BASE in scripts/prepare-release.mjs, and DEFAULT_BASE in install.sh.
+$DefaultBase = 'https://minio.yiqibyte.com/spark-desktop/spark-cli/v1'
+if (-not $Base) { $Base = $DefaultBase }
 
 function Fail([string]$Message) {
   Write-Host "install.ps1: $Message" -ForegroundColor Red
@@ -59,6 +63,9 @@ if ($Tarball) {
     $Version = $manifest.version
     $expectedSha = $manifest.sha256
     if (-not $Version -or -not $expectedSha) { Fail 'latest.json does not contain version and sha256.' }
+    if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') {
+      Fail "latest.json reports an invalid version: $Version"
+    }
   }
 
   $archiveUrl = "$Base/spark-agent-$Version.tgz"
@@ -85,7 +92,9 @@ if ($npmCode -ne 0) {
 }
 
 $prefix = (npm prefix -g).Trim()
-$bindir = Join-Path $prefix 'bin'
+# On Windows npm's global bin directory is the prefix itself (e.g.
+# %APPDATA%\npm); only Unix installs shims under <prefix>/bin.
+$bindir = if ($env:OS -eq 'Windows_NT') { $prefix } else { Join-Path $prefix 'bin' }
 $sparkBin = Join-Path $bindir 'spark.cmd'
 if (-not (Test-Path $sparkBin)) { $sparkBin = Join-Path $bindir 'spark' }
 if (-not (Test-Path $sparkBin)) { Fail "install finished but spark was not found in $bindir." }
