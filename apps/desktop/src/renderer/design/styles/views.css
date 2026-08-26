@@ -798,7 +798,7 @@ body.sidebar-resizing {
   font-size: var(--font-base);
   font-weight: 600;
   color: var(--text-strong);
-  max-width: 240px;
+  max-width: 80%;
   min-width: 0;
 }
 .chat-tabbar .chat-project-label {
@@ -2104,7 +2104,7 @@ body.sidebar-resizing {
   height: 120px;
   background: linear-gradient(transparent, var(--bg));
   pointer-events: none;
-  border-radius: 12px;
+  border-radius: 1px;
 }
 .collapse-overlay {
   display: flex;
