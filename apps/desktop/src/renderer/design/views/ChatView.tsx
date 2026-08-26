@@ -186,9 +186,18 @@ import {
 } from '../components/code-viewer/file-explorer/fileExplorerVisibility'
 import {
   openGitPanel,
+  closeGitPanel,
   useGitPanelVisible,
 } from '../components/code-viewer/git-panel/gitPanelVisibility'
-import { openSearchPanel } from '../components/code-viewer/search-panel/searchPanelVisibility'
+import {
+  openSearchPanel,
+  closeSearchPanel,
+} from '../components/code-viewer/search-panel/searchPanelVisibility'
+import {
+  OPEN_PROJECT_CODE_VIEWER_EVENT,
+  consumePendingOpenProjectCodeViewer,
+  clearPendingOpenProjectCodeViewer,
+} from '../components/code-viewer/codeViewerNavigation'
 import type { OpenCodeFile, CodeViewMode } from '../components/code-viewer/types'
 import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
 import { insertToComposer } from '../components/code-viewer/composerInsert'
@@ -1090,6 +1099,10 @@ export function ChatView({
   }, [active])
   const [agentStatus, setAgentStatus] = useState('')
   const [composerFocusTrigger, setComposerFocusTrigger] = useState(0)
+  // 「打开项目」导航信号：侧栏项目菜单 -> 代码面板。计数器单调递增，
+  // 由下方 effect 消费；用信号而非直接开关，是为了先让会话切换的
+  // 面板快照 effect（收起面板）跑完，再落地展开，避免同帧互相覆盖。
+  const [codeViewerOpenSignal, setCodeViewerOpenSignal] = useState(0)
   /**
    * 重发请求：从用户消息上的"重发"按钮触发，把该消息的文本+附件重新塞回输入区。
    * requestId 单调递增，ComposerV2 内部通过 useEffect 监听其变化执行写入。
@@ -2082,6 +2095,33 @@ export function ChatView({
     window.addEventListener(OPEN_CODE_SEARCH_EVENT, handler)
     return () => window.removeEventListener(OPEN_CODE_SEARCH_EVENT, handler)
   }, [openUnifiedSidePanel])
+
+  // 「打开项目」导航（侧栏项目菜单 -> 代码面板）：挂载时消费 localStorage 里的
+  // 待处理请求（派发时 ChatView 尚未挂载、事件落空的场景），运行期监听事件即时
+  // 响应并清掉待处理标记。统一转为信号计数，由下方落地 effect 处理。
+  useEffect(() => {
+    if (consumePendingOpenProjectCodeViewer()) setCodeViewerOpenSignal((n) => n + 1)
+    const handler = (): void => {
+      clearPendingOpenProjectCodeViewer()
+      setCodeViewerOpenSignal((n) => n + 1)
+    }
+    window.addEventListener(OPEN_PROJECT_CODE_VIEWER_EVENT, handler)
+    return () => window.removeEventListener(OPEN_PROJECT_CODE_VIEWER_EVENT, handler)
+  }, [])
+
+  // 「打开项目」信号落地：切到代码面板并显示文件树。文件树与 Git/搜索面板共用
+  // 左槽位（互斥），故先关掉两者再亮文件树。用 lastHandled ref 去重，避免
+  // openUnifiedSidePanel 身份变化导致 effect 重跑而误开面板；声明位置在会话
+  // 切换的面板快照 effect（收起面板）之后，保证同帧先收起、后展开。
+  const lastHandledCodeViewerSignalRef = useRef(0)
+  useEffect(() => {
+    if (codeViewerOpenSignal <= lastHandledCodeViewerSignalRef.current) return
+    lastHandledCodeViewerSignalRef.current = codeViewerOpenSignal
+    closeGitPanel()
+    closeSearchPanel()
+    setCodeExplorerVisible(true)
+    openUnifiedSidePanel('code')
+  }, [codeViewerOpenSignal, openUnifiedSidePanel])
 
   const ensureChatLayoutFitsWindow = useCallback(
     (allowShrink = false, allowGrow = true) => {

@@ -384,7 +384,7 @@ type SessionSidebarCtx = {
     options?: SessionGroupActionCopy | undefined,
   ) => Promise<void>
   handleOpenProjectFolder: (workspace: WorkspaceInfo) => Promise<void>
-  handleOpenWorkspace: (workspace: WorkspaceInfo) => Promise<void>
+  handleOpenWorkspace: (workspace: WorkspaceInfo) => Promise<boolean>
   handleReorderProjects: (projectIds: string[]) => Promise<void>
   handleReorderSessions: (projectId: string, sessionIds: string[]) => Promise<void>
   handleReorderPinnedSessions: (projectId: string, sessionIds: string[]) => Promise<void>
@@ -1607,8 +1607,10 @@ export function SessionSidebarProvider({
     async (workspace: WorkspaceInfo) => {
       try {
         await openWorkspace({ rootPath: workspace.rootPath })
+        return true
       } catch (err) {
         toast.error(err instanceof Error ? err.message : t('project.openFailed'))
+        return false
       }
     },
     [openWorkspace, toast],
