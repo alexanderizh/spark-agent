@@ -671,6 +671,7 @@ function CanvasStageInner({
   onInlinePanelResize,
   onPointerFlowPositionChange,
   nodeInlineExtension,
+  overlay,
 }: {
   snapshot: CanvasSnapshot
   activeTool: 'select' | 'pan'
@@ -799,6 +800,12 @@ function CanvasStageInner({
    */
   onPointerFlowPositionChange?: (position: CanvasStagePoint | null) => void
   nodeInlineExtension?: CanvasNodeInlineExtension | null
+  /**
+   * 舞台内部覆盖层（如空画布创作引导）。必须渲染在 .canvas-stage 子树内：
+   * 这些浮层若作为舞台的兄弟节点，会拦截外部文件拖拽事件（dragover/drop
+   * 冒泡不经过 .canvas-stage），导致文件无法落到画布上。
+   */
+  overlay?: ReactNode
 }) {
   const nodesInitialized = useNodesInitialized()
   const nodeActions = useMemo<CanvasNodeActions>(
@@ -3073,6 +3080,7 @@ function CanvasStageInner({
             </div>,
             stageAreaElement ?? document.body,
           )}
+        {overlay}
       </div>
     </>
   )

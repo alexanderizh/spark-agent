@@ -8461,26 +8461,6 @@ export function CanvasWorkspaceView({
             visible={Boolean(promptNodePickerOwnerId)}
             onCancel={() => cancelPromptNodePicker()}
           />
-          {snapshot.nodes.length === 0 && (
-            <CanvasCinematicEmptyState
-              onStartWithAgent={() => {
-                closeCanvasFloatPanels('agent')
-                openAgentPanel()
-              }}
-              onSubmitAgentPrompt={(text) => {
-                closeCanvasFloatPanels('agent')
-                openAgentPanel()
-                agentSubmitRequestIdRef.current += 1
-                setAgentSubmitRequest({ id: agentSubmitRequestIdRef.current, text })
-              }}
-              onOpenInlineAi={() => handleOpenInlineAi()}
-              onUploadFiles={() => uploadFilesInputRef.current?.click()}
-              onOpenWorkflowLibrary={() => {
-                closeCanvasFloatPanels('workflow')
-                setWorkflowDrawerOpen(true)
-              }}
-            />
-          )}
           <CanvasStage
             snapshot={snapshot}
             activeTool={activeTool === 'pan' ? 'pan' : 'select'}
@@ -8561,6 +8541,30 @@ export function CanvasWorkspaceView({
             onViewportChange={handleCanvasViewportChange}
             onViewportControlsChange={handleCanvasViewportControlsChange}
             onPointerFlowPositionChange={handlePointerFlowPositionChange}
+            overlay={
+              snapshot.nodes.length === 0 ? (
+                // 必须挂在舞台子树内：作为舞台兄弟节点时该浮层会吞掉外部文件的
+                // dragover/drop，导致空画布 banner 上拖入文件失效。
+                <CanvasCinematicEmptyState
+                  onStartWithAgent={() => {
+                    closeCanvasFloatPanels('agent')
+                    openAgentPanel()
+                  }}
+                  onSubmitAgentPrompt={(text) => {
+                    closeCanvasFloatPanels('agent')
+                    openAgentPanel()
+                    agentSubmitRequestIdRef.current += 1
+                    setAgentSubmitRequest({ id: agentSubmitRequestIdRef.current, text })
+                  }}
+                  onOpenInlineAi={() => handleOpenInlineAi()}
+                  onUploadFiles={() => uploadFilesInputRef.current?.click()}
+                  onOpenWorkflowLibrary={() => {
+                    closeCanvasFloatPanels('workflow')
+                    setWorkflowDrawerOpen(true)
+                  }}
+                />
+              ) : null
+            }
             onDeleteSelectedNodes={handleDeleteSelectedNodes}
             onAlignSelected={handleAlignSelected}
             onArrangeGridSelection={handleArrangeGridSelection}
