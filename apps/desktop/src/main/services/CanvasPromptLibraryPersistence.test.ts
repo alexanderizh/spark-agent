@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { preserveCanvasProjectPrompts } from './CanvasPromptLibraryPersistence.js'
+import {
+  preserveCanvasProjectPrompts,
+  readCanvasProjectPromptLibraryItems,
+} from './CanvasPromptLibraryPersistence.js'
 
 function safeFileUrl(filePath: string): string {
   const encoded = Buffer.from(filePath, 'utf8')
@@ -87,5 +90,45 @@ describe('preserveCanvasProjectPrompts', () => {
         },
       ),
     ).rejects.toThrow('已中止项目删除')
+  })
+})
+
+describe('readCanvasProjectPromptLibraryItems', () => {
+  it('projects every prompt asset with stable project-qualified ids and cover references', () => {
+    const items = readCanvasProjectPromptLibraryItems('project-1', {
+      assets: [
+        {
+          id: 'cover-1',
+          mimeType: 'image/webp',
+          url: safeFileUrl('/allowed/cover.webp'),
+          metadata: { kind: 'image' },
+        },
+        {
+          id: 'prompt-1',
+          title: '项目提示词',
+          contentText: '镜头从城市上空缓慢推进',
+          metadata: {
+            kind: 'prompt_library',
+            tags: ['镜头', '城市'],
+            attributes: { promptCategory: '运镜', coverAssetId: 'cover-1' },
+          },
+        },
+        { id: 'not-a-prompt', contentText: 'ignore', metadata: { kind: 'text' } },
+      ],
+    })
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        id: 'legacy:project-1:prompt-1',
+        title: '项目提示词',
+        text: '镜头从城市上空缓慢推进',
+        category: '运镜',
+        tags: ['镜头', '城市'],
+        coverUrl: safeFileUrl('/allowed/cover.webp'),
+        coverMimeType: 'image/webp',
+        createdAt: '1970-01-01T00:00:00.000Z',
+        updatedAt: '1970-01-01T00:00:00.000Z',
+      }),
+    ])
   })
 })

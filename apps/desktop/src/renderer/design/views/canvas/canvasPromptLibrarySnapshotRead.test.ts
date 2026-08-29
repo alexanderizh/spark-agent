@@ -101,4 +101,18 @@ describe('canvas prompt library cross-project snapshots', () => {
     ])
     await expect(canvasApi.listProjects()).resolves.toHaveLength(2)
   })
+
+  it('returns soft-deleted projects only when the caller explicitly requests them', async () => {
+    const active = snapshot('project-active').project
+    const deleted = { ...snapshot('project-deleted').project, status: 'deleted' as const }
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'canvas:project:list') return { projects: [active, deleted] }
+      return {}
+    })
+    Object.assign(window, { spark: { invoke } })
+
+    await expect(canvasApi.listProjects()).resolves.toEqual([active])
+    await expect(canvasApi.listProjects(true)).resolves.toEqual([active, deleted])
+    expect(invoke).toHaveBeenLastCalledWith('canvas:project:list', { includeDeleted: true })
+  })
 })

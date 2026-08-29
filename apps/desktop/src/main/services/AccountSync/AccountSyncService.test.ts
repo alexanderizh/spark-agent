@@ -9,7 +9,13 @@ import type {
   AccountSyncExecuteResult,
   AccountSyncPreviewResult,
 } from '@spark/protocol'
-import { AgentRepository, SettingsRepository, SparkDatabase } from '@spark/storage'
+import {
+  AgentRepository,
+  CanvasProjectRepository,
+  CanvasSnapshotRepository,
+  SettingsRepository,
+  SparkDatabase,
+} from '@spark/storage'
 import {
   AccountSyncService,
   type AccountSyncAdapterGateway,
@@ -685,6 +691,138 @@ describe('AccountSyncService', () => {
       usageCount: 7,
     })
     expect(state.categories).toContain('storyboard')
+  })
+
+  it('uploads the same global and cross-project prompt set shown by the prompt library', async () => {
+    settings.set('prompt-library', 'data', {
+      version: 1,
+      categories: ['全局'],
+      items: [
+        {
+          id: 'global-prompt',
+          title: '全局提示词',
+          text: '全局正文',
+          category: '全局',
+          tags: [],
+          coverUrl: null,
+          coverMimeType: null,
+          usageCount: 2,
+          createdAt: '2026-08-29T00:00:00.000Z',
+          updatedAt: '2026-08-30T00:00:00.000Z',
+        },
+      ],
+      legacyMigrated: false,
+    })
+    const projects = new CanvasProjectRepository(db)
+    const snapshots = new CanvasSnapshotRepository(db)
+    projects.upsert({ id: 'project-1', title: '项目一' })
+    projects.upsert({ id: 'project-2', title: '项目二' })
+    snapshots.save(
+      'project-1',
+      0,
+      JSON.stringify({
+        assets: [
+          {
+            id: 'project-prompt-1',
+            title: '项目提示词一',
+            contentText: '项目正文一',
+            createdAt: '2026-08-29T00:00:00.000Z',
+            updatedAt: '2026-08-30T00:00:00.000Z',
+            metadata: {
+              kind: 'prompt_library',
+              tags: ['镜头'],
+              attributes: { promptCategory: '项目' },
+            },
+          },
+        ],
+      }),
+    )
+    snapshots.save(
+      'project-2',
+      0,
+      JSON.stringify({
+        assets: [
+          {
+            id: 'project-prompt-2',
+            title: '项目提示词二',
+            contentText: '项目正文二',
+            createdAt: '2026-08-29T00:00:00.000Z',
+            updatedAt: '2026-08-30T00:00:00.000Z',
+            metadata: { kind: 'prompt_library', attributes: { promptCategory: '项目' } },
+          },
+        ],
+      }),
+    )
+    service.updatePreferences({ enabled: true, categories: { promptLibrary: true } })
+    auth.postHandler = async (path, body) => {
+      if (path.endsWith('/ack')) return {}
+      if (!isExecuteRequest(body)) throw new Error('invalid test request')
+      return successResult(body)
+    }
+
+    await service.execute()
+
+    const execute = auth.postCalls.find((call) => call.path === '/desktop-sync/execute')
+    if (!isExecuteRequest(execute?.body)) throw new Error('missing execute request')
+    expect(
+      firstCategory(execute.body)
+        .records.map((item) => item.id)
+        .sort(),
+    ).toEqual(
+      [
+        'promptLibrary:global-prompt',
+        'promptLibrary:legacy:project-1:project-prompt-1',
+        'promptLibrary:legacy:project-2:project-prompt-2',
+      ].sort(),
+    )
+  })
+
+  it('treats renderer-supplied latest project prompts as authoritative over persisted snapshots', async () => {
+    const projects = new CanvasProjectRepository(db)
+    const snapshots = new CanvasSnapshotRepository(db)
+    projects.upsert({ id: 'project-1', title: '项目一' })
+    snapshots.save(
+      'project-1',
+      0,
+      JSON.stringify({
+        assets: [
+          {
+            id: 'stale-prompt',
+            contentText: '磁盘旧提示词',
+            updatedAt: '2026-08-29T00:00:00.000Z',
+            metadata: { kind: 'prompt_library' },
+          },
+        ],
+      }),
+    )
+    service.updatePreferences({ enabled: true, categories: { promptLibrary: true } })
+    auth.postHandler = async (path, body) => {
+      if (path.endsWith('/ack')) return {}
+      if (!isExecuteRequest(body)) throw new Error('invalid test request')
+      return successResult(body)
+    }
+
+    await service.execute({
+      promptLibraryItems: [
+        {
+          id: 'legacy:project-1:hot-prompt',
+          title: '热状态提示词',
+          text: '尚未落 SQLite 的最新正文',
+          category: '项目',
+          tags: [],
+          coverUrl: null,
+          coverMimeType: null,
+          createdAt: '2026-08-30T00:00:00.000Z',
+          updatedAt: '2026-08-30T00:00:00.000Z',
+        },
+      ],
+    })
+
+    const execute = auth.postCalls.find((call) => call.path === '/desktop-sync/execute')
+    if (!isExecuteRequest(execute?.body)) throw new Error('missing execute request')
+    expect(firstCategory(execute.body).records.map((item) => item.id)).toEqual([
+      'promptLibrary:legacy:project-1:hot-prompt',
+    ])
   })
 })
 

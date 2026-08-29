@@ -20,7 +20,9 @@ export function registerAccountSyncIpc(): void {
   typedIpcHandle('account-sync:execute', async (request) =>
     getAccountSyncService().execute(request),
   )
-  typedIpcHandle('account-sync:preview', async () => getAccountSyncService().preview())
+  typedIpcHandle('account-sync:preview', async (request) =>
+    getAccountSyncService().preview(request),
+  )
   typedIpcHandle('account-sync:list-history', async (request) =>
     getAccountSyncService().listHistory(request.page, request.pageSize),
   )

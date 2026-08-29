@@ -1772,13 +1772,17 @@ export const canvasAssetRepository: AssetRepository = createSnapshotAssetReposit
 })
 
 export const canvasApi = {
-  async listProjects(): Promise<CanvasProject[]> {
+  async listProjects(includeDeleted = false): Promise<CanvasProject[]> {
     try {
-      const { projects } = await window.spark.invoke('canvas:project:list', {})
-      return projects.filter((project) => project.status !== 'deleted').map(toCanvasProject)
+      const { projects } = await window.spark.invoke('canvas:project:list', {
+        ...(includeDeleted ? { includeDeleted: true } : {}),
+      })
+      return projects
+        .filter((project) => includeDeleted || project.status !== 'deleted')
+        .map(toCanvasProject)
     } catch {
       const db = readDb()
-      return db.projects.filter((project) => project.status !== 'deleted')
+      return db.projects.filter((project) => includeDeleted || project.status !== 'deleted')
     }
   },
 

@@ -62,15 +62,15 @@ GitNexus MCP 当前未挂载。影响分析已按项目降级规则使用源码�
 
 ## 4. 同步类别与字段白名单
 
-| 类别       | 同步内容                                                                                                                                                                          | 明确排除                                                                                                                       |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| 自定义命令 | id、name、description、prompt、script、scriptLanguage、enabled、updatedAt                                                                                                         | 命中秘密/本机路径扫描的整条命令                                                                                                |
-| 各级提示词 | 用户可编辑 rules；runtime system/project/session prompt；内置 system rule 的启用覆盖                                                                                              | 内置 system rule 正文；runtime env；助手 prompt 的重复副本                                                                     |
-| 记忆       | id、scope、opaque scopeRef、type、name、description、body、confidence、有效/归档关系和时间                                                                                        | filePath、sourceSessionId、hitCount、lastHitAt、向量、FTS、实体索引                                                            |
-| 助手与团队 | 名称、描述、启用/默认、prompt、permissionMode、安全的 skill/rule/workflow 引用、metadata.avatar 头像；团队拓扑、prompt 和讨论参数                                                 | providerProfileId、modelId、agentAdapter、reasoningEffort、mcpServerIds、hookConfig、任意凭据；metadata 中 avatar 以外的任何键 |
-| 工作流     | id、scope、name、version、description、status、tags、enabled、typed graph                                                                                                         | Provider/模型/密钥/header/env/本机路径字段；命中时跳过整条工作流，不做破坏性裁剪                                               |
-| 外观       | theme、emptyHeroTheme、primary、density、font、fontSize、uiZoom、codeLigature、windowCorners、backdropBlur、autoCollapseTools、inlineTokenCount、syntaxHighlight、timestampFormat | 导航状态、当前页面、侧栏展开状态、本机字体文件和其他会话态 UI 字段                                                             |
-| 提示词库   | id、title、text、category、tags、coverUrl（图片快照或远程 http(s) 原样）、coverMimeType、createdAt、updatedAt                                                                     | usageCount（本地保留不参与合并）、本地文件路径；封面读取/压缩失败时 coverUrl 置空、文字仍同步                                  |
+| 类别       | 同步内容                                                                                                                                                                           | 明确排除                                                                                                                       |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 自定义命令 | id、name、description、prompt、script、scriptLanguage、enabled、updatedAt                                                                                                          | 命中秘密/本机路径扫描的整条命令                                                                                                |
+| 各级提示词 | 用户可编辑 rules；runtime system/project/session prompt；内置 system rule 的启用覆盖                                                                                               | 内置 system rule 正文；runtime env；助手 prompt 的重复副本                                                                     |
+| 记忆       | id、scope、opaque scopeRef、type、name、description、body、confidence、有效/归档关系和时间                                                                                         | filePath、sourceSessionId、hitCount、lastHitAt、向量、FTS、实体索引                                                            |
+| 助手与团队 | 名称、描述、启用/默认、prompt、permissionMode、安全的 skill/rule/workflow 引用、metadata.avatar 头像；团队拓扑、prompt 和讨论参数                                                  | providerProfileId、modelId、agentAdapter、reasoningEffort、mcpServerIds、hookConfig、任意凭据；metadata 中 avatar 以外的任何键 |
+| 工作流     | id、scope、name、version、description、status、tags、enabled、typed graph                                                                                                          | Provider/模型/密钥/header/env/本机路径字段；命中时跳过整条工作流，不做破坏性裁剪                                               |
+| 外观       | theme、emptyHeroTheme、primary、density、font、fontSize、uiZoom、codeLigature、windowCorners、backdropBlur、autoCollapseTools、inlineTokenCount、syntaxHighlight、timestampFormat  | 导航状态、当前页面、侧栏展开状态、本机字体文件和其他会话态 UI 字段                                                             |
+| 提示词库   | 全局设置与所有画布项目（含软删除项目）最新 snapshot 中的提示词；同步 id、title、text、category、tags、coverUrl（图片快照或远程 http(s) 原样）、coverMimeType、createdAt、updatedAt | usageCount（本地保留不参与合并）、本地文件路径；封面读取/压缩失败时 coverUrl 置空、文字仍同步                                  |
 
 补充规则：
 
@@ -81,6 +81,8 @@ GitNexus MCP 当前未挂载。影响分析已按项目降级规则使用源码�
 - 字体在目标设备不可用时保留用户选择，由现有外观回退逻辑显示可用字体，不下载字体文件。
 - 助手/团队头像只同步 `metadata.avatar` 键，builtin/dicebear/url/upload 四种形态均允许；upload 形态必须是 `data:image/` 前缀且 ≤240KB，超限条目整条跳过。应用时与本机既有 metadata 键合并（整体替换会丢本机键）。
 - 提示词库封面同步策略：本地文件经 sharp 压缩为 dataUrl 快照（最长边 512px、质量 80→60→40 递减、≤240KB base64）；远程 http(s) URL 原样保留；读取/压缩失败时封面置空、文字仍同步。`data:image/` 前缀的图片正文豁免文本秘密扫描（base64 常含疑似密钥/路径子串），非图片 data URL 不豁免。
+- 提示词库全量口径：全局设置条目优先，再汇总所有画布项目（含软删除项目）通过 `canvasApi.openSnapshot` 读取的最新 snapshot（包括未落 SQLite 的画布热状态）中 `kind=prompt_library` 的资产；删除项目不等于删除其中的提示词资产。项目条目使用 `legacy:<projectId>:<assetId>` 稳定 ID，并兼容旧版 `legacy:<assetId>` 去重。渲染端快照不可用时，主进程按项目目录 `snapshots/latest.json` 优先、SQLite 快照回退；缺少时间字段的旧资产使用固定 epoch，避免每次同步产生伪冲突。
+- 渲染端只向同步 IPC 投影提示词白名单字段，不传完整画布 snapshot；项目提示词单次最多 2000 条、投影字段合计最多 6000 万字符，渲染端预检与主进程协议校验使用同一上限。
 
 ## 5. 敏感信息防线
 

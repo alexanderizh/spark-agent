@@ -14,6 +14,7 @@ import { useToast } from '../../components/Toast'
 import { applySyncedAppearanceLocally } from '../../hooks/useAppearance'
 import { AccountSyncConflictPanel } from './AccountSyncConflictPanel'
 import { pickLocalAppearance } from './account-sync-appearance'
+import { executeAccountSync } from './account-sync-client'
 import { CATEGORY_META } from './account-sync-meta'
 import { formatTime } from './account-sync-format'
 import { translateSyncErrorCodes } from './sync-error-messages'
@@ -188,7 +189,7 @@ export function AccountSyncSettingsSection(): React.ReactElement {
   const handleSync = async (): Promise<void> => {
     setSyncing(true)
     try {
-      const response = await window.spark.invoke('account-sync:execute', {})
+      const response = await executeAccountSync({}, preferences.categories.promptLibrary)
       applySyncResponse(response)
     } catch (error) {
       toast.error(getErrorMessage(error, '账号同步失败'))
@@ -306,6 +307,7 @@ export function AccountSyncSettingsSection(): React.ReactElement {
 
           <AccountSyncConflictPanel
             disabled={syncDisabled}
+            includePromptLibrary={preferences.categories.promptLibrary}
             onApplied={applySyncResponse}
             onSyncingChange={setConflictSyncing}
           />

@@ -11,11 +11,14 @@ import { useToast } from '../../components/Toast'
 import { CATEGORY_META } from './account-sync-meta'
 import { formatTime } from './account-sync-format'
 import { translateSyncErrorCodes } from './sync-error-messages'
+import { executeAccountSync, previewAccountSync } from './account-sync-client'
 import './AccountSyncConflictPanel.less'
 
 interface AccountSyncConflictPanelProps {
   /** 同步链路不可用（未登录 / 未开启 / 未选类别 / 同步中）时整体禁用 */
   disabled: boolean
+  /** 是否同步提示词库；开启时预览和执行都会携带画布最新热快照投影 */
+  includePromptLibrary?: boolean
   /** 应用选择执行成功后回调，父组件据此刷新本次结果、外观与历史 */
   onApplied: (response: AccountSyncExecuteResponse) => void
   /** 面板自身执行中状态上抛，父组件用于合并同步按钮禁用 */
@@ -46,6 +49,7 @@ function readChoiceSide(value: unknown): AccountSyncConflictSide | null {
 
 export function AccountSyncConflictPanel({
   disabled,
+  includePromptLibrary = false,
   onApplied,
   onSyncingChange,
 }: AccountSyncConflictPanelProps): React.ReactElement {
@@ -61,7 +65,7 @@ export function AccountSyncConflictPanel({
     setPreviewLoading(true)
     setPreviewError(null)
     try {
-      const result = await window.spark.invoke('account-sync:preview', {})
+      const result = await previewAccountSync(includePromptLibrary)
       setPreviewResult(result)
       setChoices({})
       setOpen(true)
@@ -88,9 +92,7 @@ export function AccountSyncConflictPanel({
     setApplying(true)
     onSyncingChange?.(true)
     try {
-      const response = await window.spark.invoke('account-sync:execute', {
-        conflictChoices: choices,
-      })
+      const response = await executeAccountSync({ conflictChoices: choices }, includePromptLibrary)
       onApplied(response)
       setOpen(false)
       setPreviewResult(null)

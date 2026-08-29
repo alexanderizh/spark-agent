@@ -2,6 +2,7 @@ import type {
   AccountSyncCategory,
   AccountSyncCategoryResult,
   AccountSyncItem,
+  AccountSyncPromptLibraryItemInput,
 } from '@spark/protocol'
 import {
   AgentRepository,
@@ -20,6 +21,7 @@ import {
   type AccountSyncCollectResult,
 } from './sync-policy.js'
 import { compressPromptCoverToDataUrl } from './prompt-library-cover.js'
+import { readAllPromptLibraryItems } from './prompt-library-source.js'
 import {
   PROMPT_LIBRARY_SETTINGS_CATEGORY,
   PROMPT_LIBRARY_SETTINGS_KEY,
@@ -174,7 +176,10 @@ export class AccountSyncAdapters {
     this.memories = new MemoryRepository(db)
   }
 
-  async collect(category: AccountSyncCategory): Promise<AccountSyncCollectResult> {
+  async collect(
+    category: AccountSyncCategory,
+    context?: { promptLibraryItems?: readonly AccountSyncPromptLibraryItemInput[] },
+  ): Promise<AccountSyncCollectResult> {
     switch (category) {
       case 'customCommands':
         return this.collectCustomCommands()
@@ -189,7 +194,7 @@ export class AccountSyncAdapters {
       case 'appearance':
         return this.collectAppearance()
       case 'promptLibrary':
-        return this.collectPromptLibrary()
+        return this.collectPromptLibrary(context?.promptLibraryItems)
     }
   }
 
@@ -458,9 +463,17 @@ export class AccountSyncAdapters {
    * 本地文件/超大 dataUrl 用 sharp 压缩为 ≤512px、≤240KB 的 dataUrl 内嵌快照，
    * 远程 http(s) URL 原样保留；读不到或压缩失败的条目封面置空，文字仍正常同步。
    */
-  private async collectPromptLibrary(): Promise<AccountSyncCollectResult> {
+  private async collectPromptLibrary(
+    latestProjectItems?: readonly AccountSyncPromptLibraryItemInput[],
+  ): Promise<AccountSyncCollectResult> {
     const raw = this.settings.get(PROMPT_LIBRARY_SETTINGS_CATEGORY, PROMPT_LIBRARY_SETTINGS_KEY)
-    const items = readPromptLibraryItems(raw)
+    const items = await readAllPromptLibraryItems(
+      this.db,
+      readPromptLibraryItems(raw),
+      latestProjectItems === undefined
+        ? undefined
+        : readPromptLibraryItems({ items: latestProjectItems }),
+    )
     const candidates: Array<{
       id: string
       updatedAt: string

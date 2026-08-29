@@ -229,8 +229,8 @@ function promptItemFromAsset(
   asset: CanvasPromptSnapshotAsset,
   existing: PersistedPromptLibraryItem | undefined,
   cover: { url: string; mimeType: string } | null,
+  fallbackTimestamp = new Date().toISOString(),
 ): PersistedPromptLibraryItem {
-  const now = new Date().toISOString()
   return {
     id: `legacy:${projectId}:${asset.id}`,
     title: readString(asset.title) ?? '-',
@@ -240,9 +240,43 @@ function promptItemFromAsset(
     coverUrl: cover?.url ?? existing?.coverUrl ?? null,
     coverMimeType: cover?.mimeType ?? existing?.coverMimeType ?? null,
     usageCount: existing?.usageCount ?? 0,
-    createdAt: readString(asset.createdAt) ?? existing?.createdAt ?? now,
-    updatedAt: readString(asset.updatedAt) ?? existing?.updatedAt ?? now,
+    createdAt: readString(asset.createdAt) ?? existing?.createdAt ?? fallbackTimestamp,
+    updatedAt: readString(asset.updatedAt) ?? existing?.updatedAt ?? fallbackTimestamp,
   }
+}
+
+function inferPromptCoverMimeType(source: string): string {
+  const dataMimeType = /^data:([^;,]+)/.exec(source)?.[1]
+  if (dataMimeType) return dataMimeType
+  const decodedPath = decodeSafeFileUrl(source)
+  return inferImageMimeType(decodedPath ?? source)
+}
+
+/**
+ * 把单个画布项目 snapshot 中的提示词资产投影为全局提示词库条目。
+ *
+ * 账号同步和渲染端“全部用户提示词”必须使用同一数据口径：项目提示词以
+ * `legacy:<projectId>:<assetId>` 作为跨设备稳定 ID，封面只保留来源引用，后续由
+ * 同步层统一压缩/安全校验。这里不读取文件，避免一个失效封面阻断文字同步。
+ */
+export function readCanvasProjectPromptLibraryItems(
+  projectId: string,
+  snapshot: CanvasPromptSnapshot,
+): PersistedPromptLibraryItem[] {
+  const assets = (Array.isArray(snapshot.assets) ? snapshot.assets : []).filter(
+    (asset): asset is CanvasPromptSnapshotAsset => isRecord(asset) && typeof asset.id === 'string',
+  )
+  const assetsById = new Map(assets.map((asset) => [asset.id, asset]))
+  return assets.filter(isPromptLibraryAsset).map((asset) => {
+    const coverSource = readPromptCoverSource(asset, assetsById)
+    const cover = coverSource
+      ? {
+          url: coverSource.source,
+          mimeType: coverSource.mimeType ?? inferPromptCoverMimeType(coverSource.source),
+        }
+      : null
+    return promptItemFromAsset(projectId, asset, undefined, cover, new Date(0).toISOString())
+  })
 }
 
 export async function preserveCanvasProjectPrompts(

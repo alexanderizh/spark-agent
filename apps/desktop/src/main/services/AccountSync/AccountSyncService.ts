@@ -15,7 +15,9 @@ import {
   type AccountSyncHistoryItem,
   type AccountSyncItem,
   type AccountSyncListHistoryResponse,
+  type AccountSyncPromptLibraryItemInput,
   type AccountSyncPreferences,
+  type AccountSyncPreviewRequest,
   type AccountSyncPreviewResult,
   type AccountSyncUpdatePreferencesRequest,
 } from '@spark/protocol'
@@ -52,7 +54,10 @@ type CollectionFailure = {
 }
 
 export interface AccountSyncAdapterGateway {
-  collect(category: AccountSyncCategory): Promise<AccountSyncCollectResult>
+  collect(
+    category: AccountSyncCategory,
+    context?: { promptLibraryItems?: readonly AccountSyncPromptLibraryItemInput[] },
+  ): Promise<AccountSyncCollectResult>
   apply(
     result: AccountSyncCategoryResult,
     protectedIds: ReadonlySet<string>,
@@ -174,7 +179,11 @@ export class AccountSyncService {
         new SparkError('VALIDATION_FAILED', '账号已切换，请等待当前同步结束后重试'),
       )
     }
-    const promise = this.executeOnce(userId, input?.conflictChoices).finally(() => {
+    const promise = this.executeOnce(
+      userId,
+      input?.conflictChoices,
+      input?.promptLibraryItems,
+    ).finally(() => {
       if (this.inFlight?.promise === promise) this.inFlight = null
     })
     this.inFlight = { userId, promise }
@@ -185,7 +194,7 @@ export class AccountSyncService {
    * 冲突预览：只向服务端请求三方合并计算，不落库、不 ack、不写本地状态。
    * 与 execute 的 inFlight 相互独立，预览为只读操作，可随时发起。
    */
-  preview(): Promise<AccountSyncPreviewResult> {
+  preview(input?: AccountSyncPreviewRequest): Promise<AccountSyncPreviewResult> {
     const userId = this.requireUserId()
     if (this.previewInFlight != null) {
       if (this.previewInFlight.userId === userId) return this.previewInFlight.promise
@@ -193,7 +202,7 @@ export class AccountSyncService {
         new SparkError('VALIDATION_FAILED', '账号已切换，请在当前账号下重新预览'),
       )
     }
-    const promise = this.previewOnce(userId).finally(() => {
+    const promise = this.previewOnce(userId, input?.promptLibraryItems).finally(() => {
       if (this.previewInFlight?.promise === promise) this.previewInFlight = null
     })
     this.previewInFlight = { userId, promise }
@@ -228,6 +237,7 @@ export class AccountSyncService {
   private async executeOnce(
     userId: string,
     conflictChoices?: Record<string, AccountSyncConflictSide>,
+    promptLibraryItems?: readonly AccountSyncPromptLibraryItemInput[],
   ): Promise<AccountSyncExecuteResponse> {
     const preferences = this.readPreferences(userId)
     if (!preferences.enabled) {
@@ -246,6 +256,7 @@ export class AccountSyncService {
       selected,
       operationId,
       now,
+      promptLibraryItems,
     )
     if (this.auth.getCurrentUserId() !== userId) {
       throw new SparkError('VALIDATION_FAILED', '同步期间账号已切换，请在当前账号下重新同步')
@@ -429,7 +440,10 @@ export class AccountSyncService {
    * 不写 preferences、不 ack、不更新任何类别状态；本地采集失败的类别
    * 并入 categories 并标记 errorCode，不影响其他类别。
    */
-  private async previewOnce(userId: string): Promise<AccountSyncPreviewResult> {
+  private async previewOnce(
+    userId: string,
+    promptLibraryItems?: readonly AccountSyncPromptLibraryItemInput[],
+  ): Promise<AccountSyncPreviewResult> {
     const preferences = this.readPreferences(userId)
     if (!preferences.enabled) {
       throw new SparkError('VALIDATION_FAILED', '请先开启账号同步')
@@ -442,7 +456,13 @@ export class AccountSyncService {
 
     const operationId = randomUUID()
     const now = new Date().toISOString()
-    const { collected, failures } = await this.collectAll(userId, selected, operationId, now)
+    const { collected, failures } = await this.collectAll(
+      userId,
+      selected,
+      operationId,
+      now,
+      promptLibraryItems,
+    )
     if (this.auth.getCurrentUserId() !== userId) {
       throw new SparkError('VALIDATION_FAILED', '同步期间账号已切换，请在当前账号下重新预览')
     }
@@ -538,11 +558,14 @@ export class AccountSyncService {
     selected: AccountSyncCategory[],
     operationId: string,
     now: string,
+    promptLibraryItems?: readonly AccountSyncPromptLibraryItemInput[],
   ): Promise<{ collected: CollectedCategory[]; failures: CollectionFailure[] }> {
     const results = await Promise.all(
       selected.map(async (category) => {
         try {
-          return { collected: await this.collectCategory(userId, category, now) }
+          return {
+            collected: await this.collectCategory(userId, category, now, promptLibraryItems),
+          }
         } catch (error) {
           log.warn(
             `local sync collect failed operation=${operationId} category=${category}: ${
@@ -569,9 +592,13 @@ export class AccountSyncService {
     userId: string,
     category: AccountSyncCategory,
     deletedAt: string,
+    promptLibraryItems?: readonly AccountSyncPromptLibraryItemInput[],
   ): Promise<CollectedCategory> {
     const state = this.readCategoryState(userId, category)
-    const collected = await this.adapters.collect(category)
+    const collected = await this.adapters.collect(
+      category,
+      promptLibraryItems == null ? {} : { promptLibraryItems },
+    )
     const protectedIds = new Set(collected.skippedItems.map((item) => item.id))
     const records = [...collected.records]
     for (const baseId of Object.keys(state.baseHashes)) {

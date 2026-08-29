@@ -622,7 +622,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         setTweak('settingsSection', 'account-sync')
         return
       }
-      const response = await window.spark.invoke('account-sync:execute', {})
+      const { executeAccountSync } = await import('./design/views/account-sync/account-sync-client')
+      const response = await executeAccountSync(
+        {},
+        prefsResponse.preferences.categories.promptLibrary,
+      )
       const result = response.result
       if (response.appliedAppearance != null) {
         applySyncedAppearance(response.appliedAppearance)
