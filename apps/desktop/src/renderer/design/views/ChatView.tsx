@@ -8218,7 +8218,8 @@ function ThinkingSection({
   const [open, setOpen] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const [needsCollapse, setNeedsCollapse] = useState(false)
-  const [expanded, setExpanded] = useState(false)
+  // 内层截断默认展开：点开后直接展示全文（超长时提供「收起」），不默认压到 240px。
+  const [expanded, setExpanded] = useState(true)
   // —— 「思考开始时自动展开一次」逻辑已禁用（改为默认折叠）。恢复方法：取消下方 4 处行首注释。
   //    (a) 下面 2 个 ref 声明；(b) 下面的 useEffect；(c) handleToggleOpen 内的一行。
   // 每个 section 至多自动展开一次；用户手动折叠/展开后，后续思考不再自动展开（尊重用户）。
