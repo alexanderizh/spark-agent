@@ -82,4 +82,74 @@ describe('buildContextLedger', () => {
       truncated: true,
     })
   })
+
+  it('derives the deferred runtime history section from the last real prompt size', () => {
+    // 原生 resume 实况：conversationHistoryPrompt 为空（历史由 runtime 维护），
+    // 上一轮真实 prompt 规模 300K，静态段（system+project+user）合计约 20K。
+    const result = buildContextLedger({
+      systemPrompt: 'system-only instructions',
+      projectContextPrompt: 'project context',
+      conversationHistoryLabel: 'Conversation History (native resume)',
+      conversationHistoryUsedTokens: 300_000,
+      userMessage: 'current user message',
+    })
+
+    const staticTotal =
+      estimateTokens('system-only instructions') +
+      estimateTokens('project context') +
+      estimateTokens('current user message')
+    const history = result.sections.find(
+      (section) => section.label === 'Conversation History (native resume)',
+    )
+    expect(history).toMatchObject({
+      estimatedTokens: 300_000 - staticTotal,
+      charCount: 0,
+    })
+    // 账本总量随真实规模增长，不再冻结在静态段合计
+    expect(result.totalEstimatedTokens).toBe(300_000)
+  })
+
+  it('drops the deferred history section when no real usage exists yet', () => {
+    const result = buildContextLedger({
+      systemPrompt: 'base prompt',
+      conversationHistoryLabel: 'Conversation History (native resume)',
+      userMessage: 'hello',
+    })
+
+    expect(result.sections.map((section) => section.label)).toEqual([
+      'System Prompt',
+      'User Message',
+    ])
+  })
+
+  it('drops the deferred history section when real usage does not exceed static sections', () => {
+    const result = buildContextLedger({
+      systemPrompt: 'system-only instructions',
+      conversationHistoryLabel: 'Conversation History (native resume)',
+      conversationHistoryUsedTokens: 2,
+      userMessage: 'current user message',
+    })
+
+    expect(result.sections.map((section) => section.label)).toEqual([
+      'System Prompt',
+      'User Message',
+    ])
+    expect(result.totalEstimatedTokens).toBe(
+      estimateTokens('system-only instructions') + estimateTokens('current user message'),
+    )
+  })
+
+  it('prefers the injected history prompt over the derived value on fresh paths', () => {
+    const result = buildContextLedger({
+      systemPrompt: 'base prompt',
+      conversationHistoryLabel: 'Conversation History',
+      conversationHistoryPrompt: 'recent dialogue transcript',
+      // fresh 路径不应出现 usedTokens；即使误传，注入的 prompt 文本优先
+      conversationHistoryUsedTokens: 999_999,
+      userMessage: 'hello',
+    })
+
+    const history = result.sections.find((section) => section.label === 'Conversation History')
+    expect(history?.estimatedTokens).toBe(estimateTokens('recent dialogue transcript'))
+  })
 })

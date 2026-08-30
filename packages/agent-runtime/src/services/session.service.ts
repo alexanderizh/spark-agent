@@ -216,6 +216,7 @@ import {
   getDebugModeFromMetadata,
   getFastModeFromMetadata,
   getLatestMatchingTurnPromptSnapshot,
+  getLastRealPromptTokens,
   getLatestTurnIdFromEvents,
   getLocalCliDefaultModel,
   getProviderModelIds,
@@ -3119,6 +3120,13 @@ export class SessionService {
     // Emit a detailed token breakdown of all context sections for UI display
     {
       const attachmentPromptLedger = buildAttachmentPromptLedger(executorTurnAttachments)
+      // 原生 resume / 常驻 app-server 路径：历史由 runtime 内部维护、不注入 Spark
+      // prompt，若账本缺历史段，「上下文用量」会恒等于静态 prompt 规模冻结不动。
+      // 用上一轮最后一次真实请求的 prompt 规模反推展示用历史段（clamp 到窗口）。
+      const runtimeManagedHistory = canResumeSdkSession || usePersistentCodexAppServer
+      const lastRealPromptTokens = runtimeManagedHistory
+        ? getLastRealPromptTokens(eventRepo, sessionId)
+        : undefined
       const { sections: ledgerSections, totalEstimatedTokens } = buildContextLedger({
         skillPrompt: composedSkillSystemPrompt,
         systemPrompt: contextLedgerSystemPrompt,
@@ -3129,12 +3137,17 @@ export class SessionService {
         projectContextTruncated: projectContext.budget?.truncated ?? false,
         // resume 成功路径不注入 Spark 历史；SDK 内部维护完整 history。
         // resumeRecoveryHistoryPrompt 是 standby，不计入本轮实际 prompt ledger。
-        conversationHistoryLabel: canResumeSdkSession
+        conversationHistoryLabel: runtimeManagedHistory
           ? 'Conversation History (native resume)'
           : storedContinuitySummary != null
             ? 'Continuity Capsule + Recent Exact History'
             : 'Conversation History',
         conversationHistoryPrompt,
+        ...(lastRealPromptTokens != null
+          ? {
+              conversationHistoryUsedTokens: Math.min(lastRealPromptTokens, contextWindowTokens),
+            }
+          : {}),
         userMessage: executorMessage,
         attachmentPrompt: attachmentPromptLedger,
       })

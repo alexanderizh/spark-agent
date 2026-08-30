@@ -1,4 +1,5 @@
 import type { AgentEvent, TurnPromptSnapshotEvent } from '@spark/protocol'
+import { providerPromptWindowTokens } from '@spark/shared'
 import type { SessionUsageData, TurnUsageRow, UsageSnapshot } from './ChatUsageTypes'
 
 export function clamp(value: number, min: number, max: number): number {
@@ -26,13 +27,15 @@ export function getProviderContextInputUpdate(event: AgentEvent): number | null 
 
 /**
  * 把 usage_update 换算成「最近一次请求的真实 prompt 规模」（上下文占用口径）。
- * claude（Anthropic 计量）：inputTokens 只是未命中缓存的余量，真实规模 =
- *   input + cache_read + cache_creation，漏掉缓存字段会把 95% 占用显示成 4%。
- * codex（OpenAI 计量）：inputTokens 已含 cached，直接可用。
+ * 计量规则与主进程 context ledger 共用 @spark/shared 的单一实现，防止两端漂移。
  */
 function providerContextWindowTokens(event: Extract<AgentEvent, { type: 'usage_update' }>): number {
-  if (event.provider !== 'claude') return event.inputTokens
-  return event.inputTokens + (event.cacheHitTokens ?? 0) + (event.cacheWriteTokens ?? 0)
+  return providerPromptWindowTokens({
+    provider: event.provider,
+    inputTokens: event.inputTokens,
+    cacheHitTokens: event.cacheHitTokens,
+    cacheWriteTokens: event.cacheWriteTokens,
+  })
 }
 
 /**

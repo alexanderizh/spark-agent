@@ -17,6 +17,7 @@ import {
   SkillRepository,
   TeamDiscussionRepository,
 } from '@spark/storage'
+import { providerPromptWindowTokens } from '@spark/shared'
 import type {
   AgentItem,
   WorkflowItem,
@@ -1715,4 +1716,55 @@ export function isGoalControlCommand(message: string): boolean {
   if (parsed?.name !== 'goal') return false
   const action = parsed.subcommand ?? parsed.args[0]
   return action != null && GOAL_CONTROL_ACTIONS.has(action)
+}
+
+/**
+ * 取会话内最近一次真实请求的 prompt 规模（usage_update，provider 计量口径换算）。
+ *
+ * 原生 resume 路径的 context ledger 不注入对话历史（由 runtime 内部维护），需要
+ * 用该值反推历史段展示规模，否则「上下文用量」恒等于静态 prompt 冻结不动。
+ * ledger 在本轮执行前构建，取到的必属此前轮次；无有效用量（含零值快照）返回
+ * undefined，调用方按「无数据」处理。
+ *
+ * 各执行器 usage_update 的口径差异（取值必须区分，勿当同一种快照）：
+ *   - codex 常驻 app-server：thread/tokenUsage/updated 的 `last` 字段 = 最近一次
+ *     请求的 input（已含 cached）——反推的理想口径。
+ *   - codex-openai：每请求 prompt_tokens（已含 cached）。
+ *   - claude：轮内 per-call 变体（assistant 消息，无 estimatedCostUsd）与单次请求
+ *     一一对应；result 变体带 estimatedCostUsd（total_cost_usd），是本轮主循环所有
+ *     模型调用的**合计**（实测一轮 input 132K + cacheRead 5.3M，远超任何单窗口），
+ *     必须跳过，否则反推会把历史段顶到窗口上限。实测重工具轮只剩零值占位与
+ *     result 合计，全部不可用时返回 undefined（宁缺毋假；claude 渲染端本就
+ *     真实 usage 优先，不受此值影响）。
+ */
+export function getLastRealPromptTokens(
+  eventRepo: EventRepository,
+  sessionId: string,
+): number | undefined {
+  // 最新一页按 seq 正序返回，从尾向前找第一条可用快照。
+  const rows = eventRepo.queryBySession({ sessionId, eventType: 'usage_update', limit: 32 }).events
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const tokens = readPromptWindowTokens(rows[index]?.event_json ?? '')
+    if (tokens != null) return tokens
+  }
+  return undefined
+}
+
+function readPromptWindowTokens(eventJson: string): number | undefined {
+  let event: AgentEvent
+  try {
+    event = JSON.parse(eventJson) as AgentEvent
+  } catch {
+    return undefined
+  }
+  if (event.type !== 'usage_update') return undefined
+  if (event.inputTokens == null || event.inputTokens <= 0) return undefined
+  // claude result 变体的轮内合计（estimatedCostUsd 是 result 独有标记，见上方矩阵）。
+  if (event.provider === 'claude' && event.estimatedCostUsd != null) return undefined
+  return providerPromptWindowTokens({
+    provider: event.provider,
+    inputTokens: event.inputTokens,
+    cacheHitTokens: event.cacheHitTokens,
+    cacheWriteTokens: event.cacheWriteTokens,
+  })
 }
