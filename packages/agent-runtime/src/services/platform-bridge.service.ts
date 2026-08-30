@@ -47,6 +47,11 @@ import {
 import type { McpService } from './mcp-server.service.js'
 import type { CustomToolService } from './custom-tools/custom-tool.service.js'
 import { CustomToolAuthoringService } from './custom-tools/custom-tool-authoring.service.js'
+import type { ToolPackageService } from './tool-packages/tool-package.service.js'
+import {
+  handleToolPackageBridgeMethod,
+  type ToolPackageBridgeMethod,
+} from './platform-bridge-tool-packages.js'
 import type { McpServerRepository } from '@spark/storage'
 import type { ProviderProfileRepository } from '@spark/storage'
 import type { WorkflowRepository } from '@spark/storage'
@@ -392,6 +397,8 @@ export interface PlatformBridgeDeps {
   mcpRepo: McpServerRepository
   /** 与桌面 IPC / 热刷新 Runtime 共用的自定义工具服务实例。 */
   customToolService: CustomToolService
+  /** 与 Runtime Catalog 共用的通用 Tool Package 服务。 */
+  toolPackageService: ToolPackageService
   providerRepo: ProviderProfileRepository
   workflowRepo: WorkflowRepository
   agentRepo: AgentRepository
@@ -676,6 +683,28 @@ export class PlatformBridgeService {
         return await this.customToolRollback(d, params)
       case 'custom_tools.delete':
         return await this.customToolDelete(d, params)
+
+      // ── Generic Tool Packages ──
+      case 'tool_packages.guide':
+      case 'tool_packages.list':
+      case 'tool_packages.get':
+      case 'tool_packages.inspect':
+      case 'tool_packages.create_project':
+      case 'tool_packages.list_project_files':
+      case 'tool_packages.read_project_file':
+      case 'tool_packages.write_project_file':
+      case 'tool_packages.install_directory':
+      case 'tool_packages.environment_status':
+      case 'tool_packages.configure_environment':
+      case 'tool_packages.request_secret':
+      case 'tool_packages.set_permission':
+      case 'tool_packages.set_enabled':
+      case 'tool_packages.test':
+        return handleToolPackageBridgeMethod(
+          d.toolPackageService,
+          method as ToolPackageBridgeMethod,
+          params,
+        )
 
       // ── Providers ──
       case 'providers.list':

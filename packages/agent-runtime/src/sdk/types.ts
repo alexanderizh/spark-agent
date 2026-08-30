@@ -758,6 +758,8 @@ export interface SDKExecutorConfig {
   pluginRuntimeMcpServer?: SDKMcpServerConfig | undefined
   /** Exact MCP tool names published by the current plugin runtime snapshot. */
   pluginRuntimeToolNames?: string[] | undefined
+  /** Native tools exposed to direct OpenAI-compatible Chat Completions tool_calls. */
+  openAIChatTools?: OpenAIChatToolDefinition[] | undefined
   /** Built-in web search MCP server (spark_search) — auto-injected for all sessions */
   webSearchMcpServer?: SDKMcpServerConfig | undefined
   /** Built-in sub app management MCP server (spark_app) — auto-injected for all sessions */
@@ -855,6 +857,14 @@ export interface SDKExecutorConfig {
         }>
       }
     | undefined
+}
+
+export interface OpenAIChatToolDefinition {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+  risk: 'read' | 'low-write' | 'high-write' | 'destructive'
+  invoke(input: Record<string, unknown>): Promise<unknown>
 }
 
 export interface CodexRuntimeResource {

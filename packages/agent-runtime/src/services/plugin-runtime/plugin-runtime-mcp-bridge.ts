@@ -3,12 +3,14 @@ import { createHash, randomUUID } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { z, type ZodTypeAny } from 'zod'
+import { z, type ZodType } from 'zod'
 import type { CodexRuntimeResource, SDKMcpServerConfig } from '../../sdk/types.js'
 import { createLogger } from '@spark/shared'
 import type { RuntimeBroker } from './runtime-broker.js'
 import type { RuntimeToolDefinition } from '@spark/protocol'
 import type { CustomToolRuntimeCatalog } from '../custom-tools/custom-tool-runtime-catalog.js'
+import type { ToolPackageRuntimeCatalog } from '../tool-packages/tool-package-runtime-catalog.js'
+import type { ToolProcessInvocationContext } from '../tool-packages/tool-process-host.js'
 
 const log = createLogger('plugin-runtime:mcp-bridge')
 const MAX_RESULT_BYTES = 2 * 1024 * 1024
@@ -50,12 +52,16 @@ export class PluginRuntimeMcpBridge {
   constructor(
     private readonly broker: RuntimeBroker,
     private readonly customTools?: CustomToolRuntimeCatalog,
+    private readonly toolPackages?: ToolPackageRuntimeCatalog,
   ) {}
 
   async serve(
-    options: { runtimeLeaseKey?: string | undefined } = {},
+    options: {
+      runtimeLeaseKey?: string | undefined
+      invocationContext?: Omit<ToolProcessInvocationContext, 'environment'>
+    } = {},
   ): Promise<PluginRuntimeMcpHandle | null> {
-    const definitions = await this.collectDefinitions()
+    const definitions = await this.collectDefinitions(options.invocationContext)
     if (definitions.length === 0) return null
     await this.ensureServer()
     const leaseKey = options.runtimeLeaseKey?.trim() || null
@@ -98,23 +104,17 @@ export class PluginRuntimeMcpBridge {
       runtimeResource: null,
     }
     for (const definition of definitions) {
+      const inputSchema = compileMcpInputSchema(
+        definition.tool.inputSchema,
+        definition.includeRuntimeControls,
+      )
       mcp.registerTool(
         definition.qualifiedName,
         {
           description: definition.tool.description,
-          inputSchema: z
-            .object({
-              ...(definition.includeRuntimeControls
-                ? {
-                    accountId: z.string().optional(),
-                    confirmationToken: z.string().optional(),
-                  }
-                : {}),
-              ...shapeFromSchema(definition.tool.inputSchema),
-            })
-            .passthrough(),
+          inputSchema,
         },
-        async (args: Record<string, unknown>) => {
+        async (args: unknown) => {
           const activeDefinition = session.definitions.get(definition.qualifiedName)
           if (session.activeGeneration == null || activeDefinition == null) {
             return {
@@ -122,8 +122,16 @@ export class PluginRuntimeMcpBridge {
               isError: true,
             }
           }
+          if (args == null || typeof args !== 'object' || Array.isArray(args)) {
+            return {
+              content: [
+                { type: 'text' as const, text: 'Runtime tool arguments must be an object' },
+              ],
+              isError: true,
+            }
+          }
           try {
-            const result = await activeDefinition.invoke(args ?? {})
+            const result = await activeDefinition.invoke(args as Record<string, unknown>)
             return toMcpResult(result)
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Plugin runtime tool failed'
@@ -208,7 +216,9 @@ export class PluginRuntimeMcpBridge {
     }
   }
 
-  private async collectDefinitions(): Promise<CollectedRuntimeDefinition[]> {
+  private async collectDefinitions(
+    invocationContext: Omit<ToolProcessInvocationContext, 'environment'> = {},
+  ): Promise<CollectedRuntimeDefinition[]> {
     const definitions: CollectedRuntimeDefinition[] = []
     const enabled = new Set(
       this.broker
@@ -241,6 +251,16 @@ export class PluginRuntimeMcpBridge {
         })
     }
     for (const entry of this.customTools?.list() ?? []) {
+      definitions.push({
+        runtimeId: null,
+        tool: entry.tool,
+        qualifiedName: entry.qualifiedName,
+        includeRuntimeControls: false,
+        autoAllow: entry.tool.risk === 'read',
+        invoke: entry.invoke,
+      })
+    }
+    for (const entry of this.toolPackages?.list(invocationContext) ?? []) {
       definitions.push({
         runtimeId: null,
         tool: entry.tool,
@@ -312,29 +332,28 @@ function extractBearer(request: IncomingMessage): string | null {
   return match?.[1] ?? null
 }
 
-function shapeFromSchema(schema: Record<string, unknown>): Record<string, ZodTypeAny> {
-  const properties = schema.properties
-  if (properties == null || typeof properties !== 'object' || Array.isArray(properties)) return {}
-  const required = new Set(
-    Array.isArray(schema.required)
-      ? schema.required.filter((item): item is string => typeof item === 'string')
-      : [],
-  )
-  const shape: Record<string, ZodTypeAny> = {}
-  for (const [key, raw] of Object.entries(properties as Record<string, unknown>)) {
-    const value = raw != null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-    let field: ZodTypeAny =
-      value.type === 'boolean'
-        ? z.boolean()
-        : value.type === 'number' || value.type === 'integer'
-          ? z.number()
-          : value.type === 'array'
-            ? z.array(z.unknown())
-            : z.string()
-    if (!required.has(key)) field = field.optional()
-    shape[key] = field
-  }
-  return shape
+function compileMcpInputSchema(
+  schema: Record<string, unknown>,
+  includeRuntimeControls: boolean,
+): ZodType {
+  if (schema.type !== 'object') throw new Error('Runtime tool inputSchema must describe an object')
+  const properties =
+    schema.properties != null &&
+    typeof schema.properties === 'object' &&
+    !Array.isArray(schema.properties)
+      ? (schema.properties as Record<string, unknown>)
+      : {}
+  const effectiveSchema = includeRuntimeControls
+    ? {
+        ...schema,
+        properties: {
+          ...properties,
+          accountId: { type: 'string' },
+          confirmationToken: { type: 'string' },
+        },
+      }
+    : schema
+  return z.fromJSONSchema(effectiveSchema)
 }
 
 function toMcpResult(value: unknown): {
@@ -343,12 +362,25 @@ function toMcpResult(value: unknown): {
 } {
   let text = JSON.stringify(value)
   if (text === undefined) text = 'null'
-  if (text.length > MAX_RESULT_BYTES)
-    text = `${text.slice(0, MAX_RESULT_BYTES)}\n[truncated by Spark runtime]`
-  if (value != null && typeof value === 'object' && !Array.isArray(value))
+  const marker = '\n[truncated by Spark runtime]'
+  const truncated = Buffer.byteLength(text, 'utf8') > MAX_RESULT_BYTES
+  if (truncated) {
+    const contentBytes = MAX_RESULT_BYTES - Buffer.byteLength(marker, 'utf8')
+    text = `${truncateUtf8(text, contentBytes)}${marker}`
+  }
+  if (!truncated && value != null && typeof value === 'object' && !Array.isArray(value))
     return {
       content: [{ type: 'text', text }],
       structuredContent: value as Record<string, unknown>,
     }
   return { content: [{ type: 'text', text }] }
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value, 'utf8')
+  if (bytes.length <= maxBytes) return value
+  return bytes
+    .subarray(0, maxBytes)
+    .toString('utf8')
+    .replace(/\uFFFD$/, '')
 }

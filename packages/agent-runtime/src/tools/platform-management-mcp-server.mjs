@@ -566,6 +566,223 @@ function toolDefinitions() {
       },
     },
 
+    // ── Generic Tool Packages ──
+    {
+      name: 'tool_packages_guide',
+      description:
+        '获取完整 Tool Package 开发指南。创建复杂自定义工具时先调用；工具可包含任意多文件代码、依赖和运行时，MCP 不是默认内核。',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    {
+      name: 'tool_packages_list',
+      description: '列出已安装的通用 Tool Package、状态、信任级别和当前启用版本。',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    {
+      name: 'tool_packages_get',
+      description:
+        '读取已安装 Tool Package 的稳定详情，包括准确版本的 manifest、环境变量声明与脱敏配置状态、权限和版本信息。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId'],
+        properties: { packageId: { type: 'string' }, version: { type: 'string' } },
+      },
+    },
+    {
+      name: 'tool_packages_inspect',
+      description:
+        '只读检查本地 Tool Package 目录、manifest、文件数、大小和完整性；不会执行包代码。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['sourcePath'],
+        properties: { sourcePath: { type: 'string', description: '本地工具工程绝对路径' } },
+      },
+    },
+    {
+      name: 'tool_packages_create_project',
+      description:
+        '创建受管多文件 Tool Project。写入已校验 spark-tool.json 和初始文件，但不会安装、构建、执行或启用。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['manifest'],
+        properties: {
+          manifest: { type: 'object', additionalProperties: true },
+          files: {
+            type: 'array',
+            maxItems: 100,
+            items: {
+              type: 'object',
+              required: ['path', 'content'],
+              properties: { path: { type: 'string' }, content: { type: 'string' } },
+            },
+          },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_write_project_file',
+      description:
+        '向已有受管 Tool Project 写入一个 UTF-8 文件，用于 Agent 逐步开发复杂多文件工具；不执行文件。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId', 'path', 'content'],
+        properties: {
+          packageId: { type: 'string' },
+          path: { type: 'string', description: '工程内相对 POSIX 路径' },
+          content: { type: 'string' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_list_project_files',
+      description:
+        '列出已有受管 Tool Project 的文件路径和字节大小；只读取目录元数据，不执行工程代码。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId'],
+        properties: { packageId: { type: 'string' } },
+      },
+    },
+    {
+      name: 'tool_packages_read_project_file',
+      description:
+        '读取已有受管 Tool Project 中一个不超过 2 MB 的 UTF-8 文件；拒绝路径逃逸和符号链接，不执行文件。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId', 'path'],
+        properties: {
+          packageId: { type: 'string' },
+          path: { type: 'string', description: '工程内相对 POSIX 路径' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_install_directory',
+      description:
+        '把受管工程或本地目录复制为不可变安装版本，保持禁用且不执行代码。必须先获得用户同意并设置 confirmInstall=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['sourcePath', 'source', 'confirmInstall'],
+        properties: {
+          sourcePath: { type: 'string' },
+          source: { type: 'string', enum: ['managed-project', 'local-directory'] },
+          confirmInstall: { type: 'boolean' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_environment_status',
+      description:
+        '查看 Tool Package 环境变量 Schema 与是否已配置；secret 只返回状态，绝不返回明文。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId'],
+        properties: { packageId: { type: 'string' }, version: { type: 'string' } },
+      },
+    },
+    {
+      name: 'tool_packages_configure_environment',
+      description:
+        '配置 manifest 允许 Agent 配置的非敏感环境变量。secret 明文不能作为参数，须转到应用内安全输入。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId', 'name', 'value'],
+        properties: {
+          packageId: { type: 'string' },
+          version: { type: 'string' },
+          name: { type: 'string' },
+          value: {},
+          scope: {
+            type: 'string',
+            enum: ['package', 'tool', 'project', 'agent', 'workflow', 'session'],
+          },
+          scopeId: { type: 'string' },
+          toolName: { type: 'string' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_request_secret',
+      description:
+        '为 manifest 允许 Agent 发起配置的 secret 环境变量创建一次性安全输入请求。工具只返回请求状态；密钥由用户在应用内受保护表单填写，绝不进入 Agent 参数或消息记录。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId', 'name'],
+        properties: {
+          packageId: { type: 'string' },
+          version: { type: 'string' },
+          name: { type: 'string' },
+          scope: {
+            type: 'string',
+            enum: ['package', 'tool', 'project', 'agent', 'workflow', 'session'],
+          },
+          scopeId: { type: 'string' },
+          toolName: { type: 'string' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_set_permission',
+      description:
+        '确认或拒绝 Tool Package 声明的 OS effect/Spark Capability。必须先向用户展示含义并设置 confirmPermission=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId', 'version', 'kind', 'permission', 'state', 'confirmPermission'],
+        properties: {
+          packageId: { type: 'string' },
+          version: { type: 'string' },
+          kind: { type: 'string', enum: ['os-effect', 'spark-capability'] },
+          permission: { type: 'string' },
+          state: { type: 'string', enum: ['pending', 'granted', 'denied'] },
+          confirmPermission: { type: 'boolean' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_set_enabled',
+      description:
+        '启用或停用 Tool Package。启用后包内工具在下一 Agent loop 动态注册；启用必须明确确认。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId', 'enabled'],
+        properties: {
+          packageId: { type: 'string' },
+          version: { type: 'string' },
+          enabled: { type: 'boolean' },
+          confirmEnable: { type: 'boolean' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_test',
+      description:
+        '真实执行指定已安装 Tool Package 版本进行测试，无需先启用。代码拥有 trusted-local 权限，必须先获得用户同意并设置 confirmExecute=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId', 'version', 'toolName', 'input', 'confirmExecute'],
+        properties: {
+          packageId: { type: 'string' },
+          version: { type: 'string' },
+          toolName: { type: 'string' },
+          input: {},
+          confirmExecute: { type: 'boolean' },
+        },
+      },
+    },
+
     // ── Providers ──
     {
       name: 'providers_list',
@@ -2025,6 +2242,21 @@ async function handleToolCall(name, args) {
     custom_tools_set_enabled: 'custom_tools.set_enabled',
     custom_tools_rollback: 'custom_tools.rollback',
     custom_tools_delete: 'custom_tools.delete',
+    tool_packages_guide: 'tool_packages.guide',
+    tool_packages_list: 'tool_packages.list',
+    tool_packages_get: 'tool_packages.get',
+    tool_packages_inspect: 'tool_packages.inspect',
+    tool_packages_create_project: 'tool_packages.create_project',
+    tool_packages_list_project_files: 'tool_packages.list_project_files',
+    tool_packages_read_project_file: 'tool_packages.read_project_file',
+    tool_packages_write_project_file: 'tool_packages.write_project_file',
+    tool_packages_install_directory: 'tool_packages.install_directory',
+    tool_packages_environment_status: 'tool_packages.environment_status',
+    tool_packages_configure_environment: 'tool_packages.configure_environment',
+    tool_packages_request_secret: 'tool_packages.request_secret',
+    tool_packages_set_permission: 'tool_packages.set_permission',
+    tool_packages_set_enabled: 'tool_packages.set_enabled',
+    tool_packages_test: 'tool_packages.test',
     providers_list: 'providers.list',
     providers_get: 'providers.get',
     providers_create: 'providers.create',

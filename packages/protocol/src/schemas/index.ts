@@ -46,6 +46,7 @@ import { EvidenceCostIpcSchemaRegistry } from '../evidence-cost.js'
 import { ReplayIpcSchemaRegistry } from '../replay-playbook.js'
 import { SubAppIpcSchemaRegistry } from '../sub-app.js'
 import { CustomToolsIpcSchemaRegistry } from '../custom-tools.js'
+import { ToolPackagesIpcSchemaRegistry } from '../tool-package.js'
 import { NotificationsIpcSchemaRegistry } from '../notifications.js'
 import { AccountSyncIpcSchemaRegistry } from '../account-sync.js'
 
@@ -1023,6 +1024,7 @@ export const IpcSchemaRegistry = {
   ...ReplayIpcSchemaRegistry,
   ...SubAppIpcSchemaRegistry,
   ...CustomToolsIpcSchemaRegistry,
+  ...ToolPackagesIpcSchemaRegistry,
   ...NotificationsIpcSchemaRegistry,
   ...AccountSyncIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,

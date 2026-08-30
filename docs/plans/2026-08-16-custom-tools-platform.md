@@ -2,7 +2,7 @@
 
 > 状态: 已废弃 | 最后核对: 2026-08-31
 
-本方案记录了 0.11.27 的第一阶段声明式 HTTP / Provider Vision 实现，但“每个自定义工具通过受管 `spark_custom_tools` MCP 暴露”的核心架构已经废弃。现行方案见 [原生自定义工具运行时](./2026-08-31-custom-tools-native-runtime.md)：自定义工具是 SparkWork 一等对象，MCP 只允许作为既有外部生态的导入适配器或模型引擎末端传输，不能再承担产品运行内核。
+本方案记录了 0.11.27 的第一阶段声明式 HTTP / Provider Vision 实现，但“每个自定义工具通过受管 `spark_custom_tools` MCP 暴露”的核心架构已经废弃。0.11.28 的单文件受限 Worker 同样不再代表目标架构；现行方案见 [通用自定义工具包平台 V3](./2026-08-31-custom-tool-package-platform-v3.md)。
 
 母讨论：2026-08-16 关于「自定义 Agent 工具 / UI 插件 / Agent 插件」的平台能力评估（结论：低代码自定义工具为 P0，UI 插件缓行，独立 Agent 插件概念不做）。
 本方案基于 2026-08-16 三路代码级调研（工具注册管道 / plugin-sdk 与权限模型 / 持久化与执行先例）+ 两项关键结论人工复核（PlaywrightMcpRegistration 模式、mcp 配置 env 透传）。所有文件路径为当日实测；`session.service.ts` 行号在 Phase 1 W2 拆分期间会漂移，仅作定位参考。

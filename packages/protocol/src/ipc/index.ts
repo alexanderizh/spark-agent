@@ -108,6 +108,7 @@ import type {
 } from '../computer-use/ipc.js'
 import type { SubAppIpcChannelMap } from '../sub-app.js'
 import type { CustomToolsIpcChannelMap } from '../custom-tools.js'
+import type { ToolPackagesIpcChannelMap } from '../tool-package.js'
 import type { NotificationsIpcChannelMap } from '../notifications.js'
 import type { AccountSyncIpcChannelMap } from '../account-sync.js'
 import type { NotificationChangedEvent } from '../notifications.js'
@@ -6219,6 +6220,7 @@ export interface IpcChannelMap
     ReplayPlaybookIpcChannelMap,
     SubAppIpcChannelMap,
     CustomToolsIpcChannelMap,
+    ToolPackagesIpcChannelMap,
     NotificationsIpcChannelMap,
     AccountSyncIpcChannelMap {
   // Session
@@ -7035,6 +7037,12 @@ export interface IpcStreamChannelMap {
   'stream:custom-tools:changed': {
     change: 'created' | 'updated' | 'deleted' | 'enabled' | 'imported'
     id?: string
+  }
+  /** Tool Package 安装、配置、权限、启停或安全输入请求变化。 */
+  'stream:tool-packages:changed': {
+    change: 'installed' | 'configured' | 'permission' | 'enabled' | 'disabled' | 'secret-requested'
+    packageId: string
+    runtimeChanged: boolean
   }
   /** 消息通知变化（主进程轮询 edu-server 后广播）：渲染层据此更新铃铛角标、
    * 快捷面板缓存；newNotifications/newAnnouncements 非空时弹即时 toast。 */

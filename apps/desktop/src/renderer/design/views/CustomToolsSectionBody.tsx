@@ -29,6 +29,7 @@ import {
   preferredVisionProvider,
 } from './custom-tools-ui'
 import { CustomToolStudio } from './CustomToolStudio'
+import { ToolPackagesPanel } from './ToolPackagesPanel'
 import { CustomToolCurlImportModal } from './CustomToolCurlImportModal'
 import {
   consumePendingCustomToolTrace,
@@ -43,7 +44,7 @@ export function CustomToolsSection() {
   const { requestConfirm } = useApp()
   const [tools, setTools] = useState<CustomToolSummary[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
-  const [activeView, setActiveView] = useState<'tools' | 'drafts' | 'runs'>('tools')
+  const [activeView, setActiveView] = useState<'tools' | 'packages' | 'drafts' | 'runs'>('tools')
   const [createOpen, setCreateOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [curlImportOpen, setCurlImportOpen] = useState(false)
@@ -532,13 +533,15 @@ export function CustomToolsSection() {
           <span>开发、测试、发布和观测自定义工具；草稿不会影响 Agent 当前使用的版本。</span>
         </div>
         <div className="ct_toolbar_actions">
-          <Input
-            className="ct_search"
-            value={query}
-            prefix={<Icons.Search size={14} />}
-            placeholder="搜索工具..."
-            onChange={(event) => setQuery(event.target.value)}
-          />
+          {activeView !== 'packages' && (
+            <Input
+              className="ct_search"
+              value={query}
+              prefix={<Icons.Search size={14} />}
+              placeholder="搜索工具..."
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          )}
           <Tooltip title="刷新">
             <Button
               icon={<Icons.Refresh size={14} />}
@@ -549,19 +552,25 @@ export function CustomToolsSection() {
               }}
             />
           </Tooltip>
-          <Button icon={<Icons.Upload size={14} />} onClick={() => void importToolFile()}>
-            导入
-          </Button>
-          <Button icon={<Icons.Download size={14} />} onClick={() => void exportToolFile()}>
-            导出
-          </Button>
-          <Button
-            type="primary"
-            icon={<Icons.Plus size={14} />}
-            onClick={() => setCreateOpen(true)}
-          >
-            创建工具
-          </Button>
+          {activeView !== 'packages' && (
+            <Button icon={<Icons.Upload size={14} />} onClick={() => void importToolFile()}>
+              导入
+            </Button>
+          )}
+          {activeView !== 'packages' && (
+            <Button icon={<Icons.Download size={14} />} onClick={() => void exportToolFile()}>
+              导出
+            </Button>
+          )}
+          {activeView !== 'packages' && (
+            <Button
+              type="primary"
+              icon={<Icons.Plus size={14} />}
+              onClick={() => setCreateOpen(true)}
+            >
+              创建工具
+            </Button>
+          )}
         </div>
       </div>
 
@@ -588,6 +597,7 @@ export function CustomToolsSection() {
         {(
           [
             ['tools', `工具 ${tools.length}`],
+            ['packages', '工具包'],
             ['drafts', `开发中 ${tools.filter((tool) => tool.hasUnpublishedDraft).length}`],
             ['runs', '运行记录'],
           ] as const
@@ -609,7 +619,9 @@ export function CustomToolsSection() {
       </div>
 
       <div className="ct_list">
-        {activeView === 'runs' ? (
+        {activeView === 'packages' ? (
+          <ToolPackagesPanel />
+        ) : activeView === 'runs' ? (
           traces.length === 0 ? (
             <Empty description="还没有本地运行记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           ) : (

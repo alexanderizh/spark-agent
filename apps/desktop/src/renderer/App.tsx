@@ -43,6 +43,7 @@ import { requestOpenBrowserPanel } from './design/views/chat/browserPanelNavigat
 import { COMPOSER_APPEND_EXTERNAL_TEXT_EVENT } from './design/components/browser/browserChromeShared'
 import { useResolvedTheme } from './design/hooks/useResolvedTheme'
 import { OptionalCapabilityCenter } from './design/optional-capabilities/OptionalCapabilityCenter'
+import { ToolPackageSecretRequestHost } from './design/components/ToolPackageSecretRequestHost'
 
 import { shouldShowOnboardingAsync } from './design/views/onboarding-state'
 import {
@@ -2189,6 +2190,7 @@ export function App() {
               <CanvasProjectSelectionProvider>
                 <GateAwareShell />
                 <AppDialogHost />
+                <ToolPackageSecretRequestHost />
               </CanvasProjectSelectionProvider>
             </SessionSidebarProvider>
           </ToastProvider>

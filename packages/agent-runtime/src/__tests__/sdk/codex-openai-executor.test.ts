@@ -73,6 +73,386 @@ describe('CodexOpenAIExecutor', () => {
     ])
   })
 
+  it('executes standard Chat Completions tools and returns tool results to the model', async () => {
+    const invoke = vi.fn(async (input: Record<string, unknown>) => ({ echoed: input }))
+    chatCreate
+      .mockResolvedValueOnce(
+        streamFrom([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'call-1',
+                      function: { name: 'package_acme_echo', arguments: '{"value":' },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [{ index: 0, function: { arguments: '42}' } }],
+                },
+              },
+            ],
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(streamFrom([{ choices: [{ delta: { content: 'Tool finished' } }] }]))
+
+    const events: Array<{ type: string; status?: string; toolName?: string }> = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'tool_call') {
+        events.push({ type: event.type, toolName: event.toolName })
+      } else if (event.type === 'tool_result') {
+        events.push({ type: event.type, status: event.status, toolName: event.toolName })
+      }
+    })
+    await executor.executeTurn(
+      'session-1',
+      'turn-tools',
+      'use the tool',
+      makeConfig({
+        openAIChatTools: [
+          {
+            name: 'package_acme_echo',
+            description: 'Echo input',
+            inputSchema: { type: 'object', properties: { value: { type: 'number' } } },
+            risk: 'read',
+            invoke,
+          },
+        ],
+      }),
+    )
+
+    expect(invoke).toHaveBeenCalledWith({ value: 42 })
+    expect(chatCreate).toHaveBeenCalledTimes(2)
+    expect(chatCreate.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        tools: [
+          expect.objectContaining({
+            type: 'function',
+            function: expect.objectContaining({ name: 'package_acme_echo' }),
+          }),
+        ],
+      }),
+    )
+    expect(chatCreate.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: 'assistant', tool_calls: expect.any(Array) }),
+          expect.objectContaining({
+            role: 'tool',
+            tool_call_id: 'call-1',
+            content: JSON.stringify({ result: { echoed: { value: 42 } } }),
+          }),
+        ]),
+      }),
+    )
+    expect(events).toEqual([
+      { type: 'tool_call', toolName: 'package_acme_echo' },
+      { type: 'tool_result', status: 'success', toolName: 'package_acme_echo' },
+    ])
+  })
+
+  it('rejects unbounded streamed tool arguments before invoking package code', async () => {
+    const invoke = vi.fn(async () => ({ ok: true }))
+    chatCreate.mockResolvedValue(
+      streamFrom([
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call-oversized',
+                    function: {
+                      name: 'package_acme_echo',
+                      arguments: 'x'.repeat(1024 * 1024 + 1),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ]),
+    )
+
+    await expect(
+      new CodexOpenAIExecutor().executeTurn(
+        'session-1',
+        'turn-oversized-arguments',
+        'use the tool',
+        makeConfig({
+          openAIChatTools: [
+            {
+              name: 'package_acme_echo',
+              description: 'Echo input',
+              inputSchema: { type: 'object', properties: {} },
+              risk: 'read',
+              invoke,
+            },
+          ],
+        }),
+      ),
+    ).rejects.toThrow(/tool arguments exceeded 1048576 bytes/)
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('returns a bounded JSON summary for oversized tool results', async () => {
+    const invoke = vi.fn(async () => ({ payload: '你'.repeat(800_000) }))
+    chatCreate
+      .mockResolvedValueOnce(
+        streamFrom([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'call-large-result',
+                      function: { name: 'package_acme_large', arguments: '{}' },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(streamFrom([{ choices: [{ delta: { content: 'Handled summary' } }] }]))
+
+    const outputs: unknown[] = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'tool_result' && event.status === 'success') outputs.push(event.output)
+    })
+    await executor.executeTurn(
+      'session-1',
+      'turn-large-result',
+      'use the tool',
+      makeConfig({
+        openAIChatTools: [
+          {
+            name: 'package_acme_large',
+            description: 'Return a large result',
+            inputSchema: { type: 'object', properties: {} },
+            risk: 'read',
+            invoke,
+          },
+        ],
+      }),
+    )
+
+    const secondRequest = chatCreate.mock.calls[1]?.[0] as
+      | { messages: Array<{ role: string; content?: string }> }
+      | undefined
+    const toolMessage = secondRequest?.messages.find((message) => message.role === 'tool')
+    const providerPayload = JSON.parse(toolMessage?.content ?? '{}') as {
+      result?: { truncated?: boolean; originalBytes?: number; preview?: string }
+    }
+    expect(providerPayload.result).toMatchObject({
+      truncated: true,
+      originalBytes: expect.any(Number),
+    })
+    expect(Buffer.byteLength(toolMessage?.content ?? '', 'utf8')).toBeLessThan(100_000)
+    expect(outputs).toEqual([
+      expect.objectContaining({ truncated: true, originalBytes: expect.any(Number) }),
+    ])
+    expect(JSON.stringify(outputs)).not.toContain('你'.repeat(100_000))
+  })
+
+  it('converts non-serializable tool output into a bounded tool error and continues', async () => {
+    const invoke = vi.fn(async () => {
+      const circular: Record<string, unknown> = {}
+      circular.self = circular
+      return circular
+    })
+    chatCreate
+      .mockResolvedValueOnce(
+        streamFrom([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'call-circular',
+                      function: { name: 'package_acme_circular', arguments: '{}' },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(streamFrom([{ choices: [{ delta: { content: 'Recovered' } }] }]))
+
+    const statuses: string[] = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'tool_result') statuses.push(event.status)
+      if (event.type === 'agent_status') statuses.push(event.status)
+    })
+    await executor.executeTurn(
+      'session-1',
+      'turn-circular',
+      'use the tool',
+      makeConfig({
+        openAIChatTools: [
+          {
+            name: 'package_acme_circular',
+            description: 'Return a circular result',
+            inputSchema: { type: 'object', properties: {} },
+            risk: 'read',
+            invoke,
+          },
+        ],
+      }),
+    )
+
+    const secondRequest = chatCreate.mock.calls[1]?.[0] as
+      | { messages: Array<{ role: string; content?: string }> }
+      | undefined
+    const toolMessage = secondRequest?.messages.find((message) => message.role === 'tool')
+    expect(JSON.parse(toolMessage?.content ?? '{}')).toMatchObject({
+      error: expect.stringContaining('circular'),
+    })
+    expect(statuses).toContain('error')
+    expect(statuses).toContain('completed')
+  })
+
+  it('denies write-capable tools when interactive approval is unavailable', async () => {
+    const invoke = vi.fn(async () => ({ changed: true }))
+    chatCreate
+      .mockResolvedValueOnce(
+        streamFrom([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'call-write',
+                      function: { name: 'package_acme_write', arguments: '{}' },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(streamFrom([{ choices: [{ delta: { content: 'Write denied' } }] }]))
+
+    const results: Array<{ status: string; error?: string }> = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'tool_result') {
+        results.push({
+          status: event.status,
+          ...(event.error != null ? { error: event.error } : {}),
+        })
+      }
+    })
+    await executor.executeTurn(
+      'session-1',
+      'turn-write-denied',
+      'change data',
+      makeConfig({
+        openAIChatTools: [
+          {
+            name: 'package_acme_write',
+            description: 'Write data',
+            inputSchema: { type: 'object', properties: {} },
+            risk: 'low-write',
+            invoke,
+          },
+        ],
+      }),
+    )
+
+    expect(invoke).not.toHaveBeenCalled()
+    expect(results).toEqual([
+      {
+        status: 'denied',
+        error: 'Write-capable Chat Completions tool requires interactive approval',
+      },
+    ])
+  })
+
+  it('treats approval callback failures as a denied write call and continues the turn', async () => {
+    const invoke = vi.fn(async () => ({ changed: true }))
+    const approvalCallback = vi.fn(async () => {
+      throw new Error('approval UI unavailable')
+    })
+    chatCreate
+      .mockResolvedValueOnce(
+        streamFrom([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'call-write-fallback',
+                      function: { name: 'package_acme_write', arguments: '{}' },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        streamFrom([{ choices: [{ delta: { content: 'Approval failed safely' } }] }]),
+      )
+
+    const statuses: string[] = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'tool_result') statuses.push(event.status)
+      if (event.type === 'agent_status') statuses.push(event.status)
+    })
+    await executor.executeTurn(
+      'session-1',
+      'turn-write-fallback',
+      'change data',
+      makeConfig({
+        approvalCallback,
+        openAIChatTools: [
+          {
+            name: 'package_acme_write',
+            description: 'Write data',
+            inputSchema: { type: 'object', properties: {} },
+            risk: 'high-write',
+            invoke,
+          },
+        ],
+      }),
+    )
+
+    expect(approvalCallback).toHaveBeenCalledTimes(1)
+    expect(invoke).not.toHaveBeenCalled()
+    expect(statuses).toContain('denied')
+    expect(statuses).toContain('completed')
+  })
+
   it('reports usage from the terminal Chat Completions chunk', async () => {
     chatCreate.mockResolvedValue(
       streamFrom([

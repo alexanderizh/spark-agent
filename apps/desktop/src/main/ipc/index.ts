@@ -364,6 +364,7 @@ import { registerGitHubConnectorIpc } from '../services/GitHubConnector/register
 import { registerPluginRuntimeIpc } from '../services/PluginRuntime/registerPluginRuntimeIpc.js'
 import { registerSubAppIpc } from './registerSubAppIpc.js'
 import { getCustomToolService, registerCustomToolsIpc } from './registerCustomToolsIpc.js'
+import { registerToolPackagesIpc } from './registerToolPackagesIpc.js'
 import { registerHtmlRuntimeDocIpc } from './registerHtmlRuntimeDocIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
@@ -9589,6 +9590,7 @@ export function registerAllIpcHandlers(): void {
   registerPluginIpc()
   registerSubAppIpc()
   registerCustomToolsIpc()
+  registerToolPackagesIpc(getSessionService().getToolPackageService())
 
   log.info('All IPC handlers registered')
 }

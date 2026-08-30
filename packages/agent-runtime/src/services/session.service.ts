@@ -123,6 +123,8 @@ import { routeProviderVisionAttachments } from './custom-tools/provider-vision-r
 import { createProviderVisionSessionEvents } from './custom-tools/provider-vision-session-events.js'
 import type { CustomToolService } from './custom-tools/custom-tool.service.js'
 import { CustomToolRuntimeCatalog } from './custom-tools/custom-tool-runtime-catalog.js'
+import { ToolPackageService } from './tool-packages/tool-package.service.js'
+import { ToolPackageRuntimeCatalog } from './tool-packages/tool-package-runtime-catalog.js'
 
 /** Read the runtime-log toggle from the telemetry settings object shared with the renderer. */
 export function readRuntimeLogEnabled(settings: Pick<SettingsRepository, 'get'>): boolean {
@@ -890,6 +892,8 @@ export class SessionService {
   private pluginManager: PluginManager | null = null
   private customToolService: CustomToolService | null = null
   private customToolRuntimeUnsubscribe: (() => void) | null = null
+  private readonly toolPackageService: ToolPackageService
+  private toolPackageRuntimeUnsubscribe: (() => void) | null = null
   private pluginManagerInitialization: Promise<void> | null = null
   private pluginRuntimeBroker: RuntimeBroker | null = null
   private pluginRuntimeMcpBridge: PluginRuntimeMcpBridge | null = null
@@ -1085,6 +1089,11 @@ export class SessionService {
     this.commandController = new SessionCommandController(this.db, this)
     this.usageLedger = new SessionUsageLedger(this.db)
     this.platformBridge = new PlatformBridgeService()
+    this.toolPackageService = new ToolPackageService(db)
+    this.toolPackageRuntimeUnsubscribe = this.toolPackageService.onChange((event) => {
+      if (!event.runtimeChanged) return
+      this.mcpVersion += 1
+    })
     this.continuityCoordinator = new SessionContinuityCoordinator(
       db,
       (sessionId, turnId, event, eventRepo) =>
@@ -2610,6 +2619,13 @@ export class SessionService {
     const pluginRuntimeMcp = await this.resolvePluginRuntimeMcpServer(
       turnId,
       usePersistentCodexAppServer ? codexRuntimeLeaseKey : undefined,
+      {
+        sessionId,
+        turnId,
+        ...(primaryWorkspaceId != null ? { projectId: primaryWorkspaceId } : {}),
+        agentId: runtimeAgent.id,
+        ...(runtimeAgent.workflowId != null ? { workflowId: runtimeAgent.workflowId } : {}),
+      },
     )
     const webSearchMcpServer =
       await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
@@ -3327,6 +3343,24 @@ export class SessionService {
       runtimeMetrics.markRequestSent()
       invocationObserver?.(snapshot)
     }
+    const openAIChatTools =
+      config.codexApiKind === 'chat'
+        ? new ToolPackageRuntimeCatalog(this.toolPackageService)
+            .list({
+              sessionId,
+              turnId,
+              ...(primaryWorkspaceId != null ? { projectId: primaryWorkspaceId } : {}),
+              agentId: runtimeAgent.id,
+              ...(runtimeAgent.workflowId != null ? { workflowId: runtimeAgent.workflowId } : {}),
+            })
+            .map((entry) => ({
+              name: entry.qualifiedName,
+              description: entry.tool.description,
+              inputSchema: entry.tool.inputSchema,
+              risk: entry.tool.risk,
+              invoke: entry.invoke,
+            }))
+        : []
     const codexConfig: SDKExecutorConfig = {
       apiKey,
       ...(automation.unattended ? { unattended: true } : {}),
@@ -3339,6 +3373,7 @@ export class SessionService {
       permissionMode,
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
       ...(config.codexApiKind != null ? { codexApiKind: config.codexApiKind } : {}),
+      ...(openAIChatTools.length > 0 ? { openAIChatTools } : {}),
       ...(activeCliSparkOverride != null || (!isLocalCli && provider.provider_type !== 'anthropic')
         ? {
             codexCliProvider: buildCodexCliModelProviderConfig({
@@ -5524,6 +5559,10 @@ export class SessionService {
     return this.customToolService
   }
 
+  getToolPackageService(): ToolPackageService {
+    return this.toolPackageService
+  }
+
   getUserSkillsDir(): string | null {
     return this.userSkillsDir
   }
@@ -5544,6 +5583,13 @@ export class SessionService {
   private async resolvePluginRuntimeMcpServer(
     turnId: string,
     codexRuntimeLeaseKey?: string,
+    invocationContext: {
+      sessionId: string
+      turnId?: string
+      projectId?: string
+      agentId?: string
+      workflowId?: string
+    } = { sessionId: '' },
   ): Promise<{ server: SDKMcpServerConfig; toolNames: string[] } | null> {
     if (this.pluginManager != null) {
       this.pluginManagerInitialization ??= this.pluginManager.initialize()
@@ -5561,11 +5607,13 @@ export class SessionService {
         this.customToolService == null
           ? undefined
           : new CustomToolRuntimeCatalog(this.customToolService),
+        new ToolPackageRuntimeCatalog(this.toolPackageService),
       )
     }
     try {
       const handle = await this.pluginRuntimeMcpBridge.serve({
         ...(codexRuntimeLeaseKey != null ? { runtimeLeaseKey: codexRuntimeLeaseKey } : {}),
+        invocationContext,
       })
       if (handle == null) return null
       const handles =
@@ -7935,6 +7983,9 @@ export class SessionService {
       await this.engineRegistry.dispose()
       this.customToolRuntimeUnsubscribe?.()
       this.customToolRuntimeUnsubscribe = null
+      this.toolPackageRuntimeUnsubscribe?.()
+      this.toolPackageRuntimeUnsubscribe = null
+      await this.toolPackageService.dispose()
       await this.platformBridge.stop()
       // FR-0b 修复（审查 B-3）：进程退出时关停所有残留桥接会话 + HTTP server。
       for (const turnId of this.teamMcpHandlesByTurn.keys()) {

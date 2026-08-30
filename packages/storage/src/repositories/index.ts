@@ -7,6 +7,19 @@
  */
 
 export { BaseRepository } from './base.repository.js'
+export { ToolPackageRepository } from './tool-package.repository.js'
+export type {
+  ToolPackageState,
+  ToolPackageVersionStatus,
+  ToolPackagePermissionKind,
+  ToolPackagePermissionState,
+  ToolPackageRow,
+  ToolPackageVersionRow,
+  ToolPackageToolRow,
+  ToolPackageConfigRow,
+  ToolPackagePermissionRow,
+  InstallToolPackageVersionParams,
+} from './tool-package.repository.js'
 export { ApplicationSnapshotRepository } from './application-snapshot.repository.js'
 export { ComputerSessionRepository } from './computer-session.repository.js'
 export type {

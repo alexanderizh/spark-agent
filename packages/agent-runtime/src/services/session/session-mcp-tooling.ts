@@ -27,6 +27,7 @@ import type { McpService, McpOAuthTokenProvider } from '../mcp-server.service.js
 import type { PlatformBridgeService } from '../platform-bridge.service.js'
 import type { PluginManager } from '../plugins/plugin-manager.service.js'
 import type { CustomToolService } from '../custom-tools/custom-tool.service.js'
+import type { ToolPackageService } from '../tool-packages/tool-package.service.js'
 import type {
   CanvasMcpProvider,
   PlatformConfigChangedHandler,
@@ -74,6 +75,7 @@ export interface SessionMcpToolingHost {
   getPlatformBridge(): PlatformBridgeService
   getPluginManager(): PluginManager | null
   getCustomToolService(): CustomToolService | null
+  getToolPackageService(): ToolPackageService
   getUserSkillsDir(): string | null
   getPlatformConfigChangedHandler(): PlatformConfigChangedHandler | undefined
   /** Platform Bridge deps 需回调会话服务公共方法（引用/运行时切换/记忆桥等）。 */
@@ -183,6 +185,7 @@ export class SessionMcpTooling {
       // CustomToolsRuntimeService. The fallback is limited to standalone tests
       // and non-desktop embeddings that do not own those listeners.
       customToolService: this.host.getCustomToolService() ?? new CustomToolService(this.db),
+      toolPackageService: this.host.getToolPackageService(),
       providerRepo: new ProviderProfileRepository(this.db),
       workflowRepo: new WorkflowRepository(this.db),
       agentRepo: new AgentRepository(this.db),

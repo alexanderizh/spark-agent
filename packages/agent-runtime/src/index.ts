@@ -425,6 +425,36 @@ export type {
   ProviderVisionRouteStatus,
 } from './services/custom-tools/provider-vision-router.js'
 export {
+  inspectToolPackageDirectory,
+  installToolPackageDirectoryAtomic,
+} from './services/tool-packages/tool-package-inspector.js'
+export { ToolProcessHost } from './services/tool-packages/tool-process-host.js'
+export type {
+  ToolProcessInvocationContext,
+  ToolProcessInvokeRequest,
+} from './services/tool-packages/tool-process-host.js'
+export {
+  ToolHostCapabilityBroker,
+  ToolHostCapabilityError,
+} from './services/tool-packages/tool-host-capability-broker.js'
+export type {
+  ToolHostCapabilityContext,
+  ToolHostCapabilityDefinition,
+} from './services/tool-packages/tool-host-capability-broker.js'
+export { registerToolPackageBuiltInCapabilities } from './services/tool-packages/tool-package-built-in-capabilities.js'
+export type {
+  ToolPackageBuiltInCapabilityDeps,
+  ToolPackageFilePresentInput,
+  ToolPackageFileUploadInput,
+} from './services/tool-packages/tool-package-built-in-capabilities.js'
+export { ToolPackageService } from './services/tool-packages/tool-package.service.js'
+export type {
+  ToolPackageChangeEvent,
+  ToolPackageInvocationRequest,
+} from './services/tool-packages/tool-package.service.js'
+export { ToolPackageRuntimeCatalog } from './services/tool-packages/tool-package-runtime-catalog.js'
+export type { ToolPackageCatalogEntry } from './services/tool-packages/tool-package-runtime-catalog.js'
+export {
   resolveRuntimeToolPath,
   resolveMcpNodeRuntimeExecutable,
 } from './services/session-mcp-tooling-helpers.js'
