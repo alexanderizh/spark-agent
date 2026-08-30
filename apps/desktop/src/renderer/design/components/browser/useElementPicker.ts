@@ -11,6 +11,7 @@ import {
   ELEMENT_PICKER_SCRIPT,
   type ElementPickInfo,
 } from './elementPickerScript'
+import { callWebviewSafely } from './BrowserTabViewport'
 
 export interface UseElementPickerOptions {
   /** 取当前活动 tab 的 webview（可能尚未挂载） */
@@ -37,12 +38,19 @@ export function useElementPicker(opts: UseElementPickerOptions): ElementPickerCo
 
   const stop = useCallback((): void => {
     generationRef.current += 1
+    const wasActive = activeRef.current
     activeRef.current = false
     setActive(false)
+    // 拾取从未开启时无需向页面注入取消脚本：地址栏提交等高频路径都会先调
+    // stop()，此时 webview guest 可能尚未 attach（dom-ready 未发出），
+    // executeJavaScript 会同步 throw 炸出全局错误弹窗。
+    if (!wasActive) return
     const wv = optsRef.current.getWebview()
     if (wv != null) {
-      void wv.executeJavaScript(ELEMENT_PICKER_CANCEL_SCRIPT).catch(() => {
-        /* 页面已销毁 / 特权页：忽略 */
+      callWebviewSafely(wv, () => {
+        void wv.executeJavaScript(ELEMENT_PICKER_CANCEL_SCRIPT).catch(() => {
+          /* 页面已销毁 / 特权页：忽略 */
+        })
       })
     }
   }, [])
