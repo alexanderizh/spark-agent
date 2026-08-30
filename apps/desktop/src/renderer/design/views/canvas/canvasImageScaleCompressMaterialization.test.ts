@@ -17,7 +17,7 @@ afterEach(() => {
 })
 
 describe('materializeCanvasImageScaleCompress', () => {
-  it('uses the encoded format for the new image file and connects the generated node', async () => {
+  it('uses the encoded format for the new image file and connects the derived node', async () => {
     const unsubscribe = vi.fn()
     const invoke = vi.fn().mockResolvedValue({
       success: true,
@@ -34,7 +34,7 @@ describe('materializeCanvasImageScaleCompress', () => {
     mocks.copyLocalArtifactIntoProject.mockResolvedValue('/project/assets/images/output.jpg')
     const createdNode = { id: 'created-image' } as CanvasNode
     const createImageNode = vi.fn().mockResolvedValue(createdNode)
-    const connectGeneratedNode = vi.fn()
+    const connectDerivedNode = vi.fn()
 
     const result = await materializeCanvasImageScaleCompress(
       {
@@ -51,7 +51,7 @@ describe('materializeCanvasImageScaleCompress', () => {
       {
         parent: { x: 10, y: 20, width: 300 },
         createImageNode,
-        connectGeneratedNode,
+        connectDerivedNode,
       },
     )
 
@@ -80,7 +80,7 @@ describe('materializeCanvasImageScaleCompress', () => {
     const file = createImageNode.mock.calls[0]?.[0]?.file as File
     expect(file.name).toBe('source 尺寸压缩.jpg')
     expect(file.type).toBe('image/jpeg')
-    expect(connectGeneratedNode).toHaveBeenCalledWith(createdNode)
+    expect(connectDerivedNode).toHaveBeenCalledWith(createdNode)
     expect(unsubscribe).toHaveBeenCalledOnce()
   })
 
@@ -93,7 +93,7 @@ describe('materializeCanvasImageScaleCompress', () => {
       },
     })
     const createImageNode = vi.fn()
-    const connectGeneratedNode = vi.fn()
+    const connectDerivedNode = vi.fn()
 
     await expect(
       materializeCanvasImageScaleCompress(
@@ -110,12 +110,12 @@ describe('materializeCanvasImageScaleCompress', () => {
         {
           parent: { x: 0, y: 0, width: 300 },
           createImageNode,
-          connectGeneratedNode,
+          connectDerivedNode,
         },
       ),
     ).rejects.toThrow('编码失败')
     expect(createImageNode).not.toHaveBeenCalled()
-    expect(connectGeneratedNode).not.toHaveBeenCalled()
+    expect(connectDerivedNode).not.toHaveBeenCalled()
     expect(unsubscribe).toHaveBeenCalledOnce()
   })
 })

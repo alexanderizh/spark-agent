@@ -84,6 +84,7 @@ import {
   materializeCanvasImageScaleCompress,
   type CanvasImageScaleCompressMaterializationInput,
 } from './canvasImageScaleCompressMaterialization'
+import { createCanvasScaleCompressDerivationEdge } from './canvasScaleCompressDerivation'
 import type {
   CanvasMediaTaskAsset,
   CanvasMediaTaskCreateRequest,
@@ -4191,7 +4192,7 @@ export const canvasApi = {
 
   /**
    * 触发视频节点尺寸压缩：ffmpeg 等比缩放 + 按百分比压缩码率，物化为新 video 子节点，
-   * 并用 `generated` 边与父节点相连，原节点保留。
+   * 并用 `derived_from` 边与父节点相连，原节点保留。
    *
    * 语义与主进程 videoProcessHandler 的 scaleCompress 分支一致：
    * - 尺寸 scalePercent（10~200）：按有效显示宽高等比缩放，100% 不改尺寸；
@@ -4275,22 +4276,20 @@ export const canvasApi = {
       })
       if (!newNode) throw new Error('尺寸压缩产物节点创建失败')
 
-      db.edges.push({
-        id: uid('canvas_edge'),
-        userId: USER_ID,
-        projectId: input.projectId,
-        boardId: input.boardId,
-        sourceNodeId: parentNodeId,
-        targetNodeId: newNode.id,
-        type: 'generated',
-        taskId: null,
-        metadata: {
-          videoOp: 'scale-compress',
+      db.edges.push(
+        createCanvasScaleCompressDerivationEdge({
+          id: uid('canvas_edge'),
+          userId: USER_ID,
+          projectId: input.projectId,
+          boardId: input.boardId,
+          sourceNodeId: parentNodeId,
+          targetNodeId: newNode.id,
+          mediaKind: 'video',
           scalePercent: input.scalePercent,
           compressPercent: input.compressPercent,
-        },
-        createdAt: now(),
-      })
+          createdAt: now(),
+        }),
+      )
       writeDb(db)
       return newNode
     } finally {
@@ -4300,7 +4299,7 @@ export const canvasApi = {
 
   /**
    * 触发图片节点尺寸压缩：sharp 等比缩放 + 按目标体积百分比迭代逼近压缩，
-   * 物化为新 image 子节点，并用 `generated` 边与父节点相连，原节点保留。
+   * 物化为新 image 子节点，并用 `derived_from` 边与父节点相连，原节点保留。
    *
    * 语义与主进程 imageProcessHandler 的 scaleCompress 分支一致：
    * - 尺寸 scalePercent（10~200）：等比缩放，100% 不改尺寸；
@@ -4319,24 +4318,22 @@ export const canvasApi = {
     return materializeCanvasImageScaleCompress(input, {
       parent,
       createImageNode: (createInput) => this.createImageNode(createInput),
-      connectGeneratedNode: (newNode) => {
+      connectDerivedNode: (newNode) => {
         const currentDb = readDb()
-        currentDb.edges.push({
-          id: uid('canvas_edge'),
-          userId: USER_ID,
-          projectId: input.projectId,
-          boardId: input.boardId,
-          sourceNodeId: parentNodeId,
-          targetNodeId: newNode.id,
-          type: 'generated',
-          taskId: null,
-          metadata: {
-            imageOp: 'scale-compress',
+        currentDb.edges.push(
+          createCanvasScaleCompressDerivationEdge({
+            id: uid('canvas_edge'),
+            userId: USER_ID,
+            projectId: input.projectId,
+            boardId: input.boardId,
+            sourceNodeId: parentNodeId,
+            targetNodeId: newNode.id,
+            mediaKind: 'image',
             scalePercent: input.scalePercent,
             compressPercent: input.compressPercent,
-          },
-          createdAt: now(),
-        })
+            createdAt: now(),
+          }),
+        )
         writeDb(currentDb)
       },
     })

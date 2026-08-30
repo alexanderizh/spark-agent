@@ -2662,7 +2662,7 @@ export function CanvasWorkspaceView({
     [closeCanvasFloatPanels],
   )
 
-  // 尺寸压缩确认：ffmpeg 缩放+转码 → 物化新 video 子节点 + generated 连线。
+  // 尺寸压缩确认：ffmpeg 缩放+转码 → 物化新 video 子节点 + derived_from 连线。
   // 失败原样抛回弹窗展示并复位进度；仅物化成功才刷新并提示成功。
   const handleVideoScaleCompressConfirm = useCallback(
     async (input: VideoScaleCompressConfirmInput) => {

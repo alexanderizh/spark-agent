@@ -29,7 +29,7 @@ type CreateImageNodeInput = {
 type MaterializationDependencies = {
   parent: Pick<CanvasNode, 'x' | 'y' | 'width'>
   createImageNode: (input: CreateImageNodeInput) => Promise<CanvasNode>
-  connectGeneratedNode: (node: CanvasNode) => void
+  connectDerivedNode: (node: CanvasNode) => void
 }
 
 type ImageScaleCompressResult = {
@@ -103,7 +103,7 @@ export async function materializeCanvasImageScaleCompress(
         ? { imageHeight: result.height }
         : {}),
     })
-    dependencies.connectGeneratedNode(node)
+    dependencies.connectDerivedNode(node)
     return node
   } finally {
     unsubscribe?.()

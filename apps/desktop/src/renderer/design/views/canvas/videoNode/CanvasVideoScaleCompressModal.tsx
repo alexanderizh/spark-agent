@@ -3,7 +3,7 @@
  *
  * 链路：右键菜单/顶部工具栏「尺寸与压缩」→ 本弹窗收集两个百分比 →
  * 父级经 canvasApi.materializeVideoScaleCompress 调 IPC（ffmpeg 缩放+转码）→
- * 物化为新 video 子节点并用 generated 连线，原节点保留。
+ * 物化为新 video 子节点并用 derived_from 连线，原节点保留。
  *
  * 弹窗职责：
  *   - ffmpeg 就绪检查（未装时就地给安装按钮，装完继续）

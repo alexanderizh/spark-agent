@@ -51,11 +51,7 @@ describe('canvas operation projection', () => {
     const visibleNodeIds = new Set(['split-audio-task', 'audio-output'])
 
     expect(
-      resolveCanvasSelectionNodeId(
-        'audio-output',
-        visibleNodeIds,
-        producerByOutputNodeId,
-      ),
+      resolveCanvasSelectionNodeId('audio-output', visibleNodeIds, producerByOutputNodeId),
     ).toBe('audio-output')
   })
 
@@ -64,11 +60,7 @@ describe('canvas operation projection', () => {
     const visibleNodeIds = new Set(['split-audio-task'])
 
     expect(
-      resolveCanvasSelectionNodeId(
-        'audio-output',
-        visibleNodeIds,
-        producerByOutputNodeId,
-      ),
+      resolveCanvasSelectionNodeId('audio-output', visibleNodeIds, producerByOutputNodeId),
     ).toBe('split-audio-task')
   })
 
@@ -115,6 +107,29 @@ describe('canvas operation projection', () => {
     expect(projection.visibleNodes).toHaveLength(2)
     expect(projection.visibleEdges).toHaveLength(1)
   })
+
+  it.each([
+    ['text_to_video', 'video'],
+    ['text_to_image', 'image'],
+  ] as const)(
+    'keeps a user-derived %s scale-compress copy visible beside its operation node',
+    (operationType, outputType) => {
+      const operation = node('source-operation', operationType)
+      const output = node('scale-compress-copy', outputType)
+      const projection = buildCanvasOperationProjection(
+        [operation, output],
+        [edge('derived-copy', operation.id, output.id, 'derived_from')],
+      )
+
+      const visibleNodeIds = new Set(projection.visibleNodes.map((item) => item.id))
+      expect(visibleNodeIds).toEqual(new Set([operation.id, output.id]))
+      expect(projection.visibleEdges.map((item) => item.id)).toEqual(['derived-copy'])
+      expect(projection.embeddedOutputNodeIds).toEqual(new Set())
+      expect(
+        resolveCanvasSelectionNodeId(output.id, visibleNodeIds, projection.producerByOutputNodeId),
+      ).toBe(output.id)
+    },
+  )
 
   it('keeps a video workbench visible when a legacy manual edge was stored as generated', () => {
     const operation = node('source-operation', 'text_to_video')

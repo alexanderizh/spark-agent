@@ -16,7 +16,7 @@ import './CanvasImageScaleCompressModal.less'
 export type CanvasImageScaleCompressSource = {
   /** 承载源图片的节点 id；任务节点可能解析为 operation-output 虚拟节点。 */
   nodeId: string
-  /** 真实落库的父节点 id，用于创建 generated 连线。 */
+  /** 真实落库的父节点 id，用于创建 derived_from 连线。 */
   anchorNodeId?: string
   filePath: string
   fileName: string
