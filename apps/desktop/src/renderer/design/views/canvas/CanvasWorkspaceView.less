@@ -725,25 +725,8 @@
   stroke-width: 1.9;
 }
 
-/* 所有连线统一淡色：生成 / 输入边不再用绿/蓝区分，也不再闪烁流动。 */
-.canvas-edge-generated path,
-.canvas-edge-used_as_input path {
-  stroke: color-mix(in srgb, var(--text-muted) 32%, transparent);
-}
-
-/* 选中态连线：用稍深的中性色 + 加粗，便于配合 Delete 键删除时识别选中对象。 */
-.react-flow__edge.selected path,
-.react-flow__edge.selected .canvas-edge-generated path,
-.react-flow__edge.selected .canvas-edge-used_as_input path {
-  stroke: color-mix(in srgb, var(--text-muted) 72%, transparent);
-  stroke-width: 2.4px;
-}
-
-/* 取消 react-flow 默认的边流动动画（让淡色连线更安静） */
-.react-flow__edge.animated path {
-  stroke-dasharray: none !important;
-  animation: none !important;
-}
+/* ── 画布连线（CanvasFlowEdgeRenderer 自定义边）的样式统一由 cinematic/vendor.less
+   在更高优先级的 canvas-cinematic 层持有（@layer 级联高于本 legacy 层，写在两边会打架）。 */
 
 .canvas-alignment-guides {
   position: absolute;

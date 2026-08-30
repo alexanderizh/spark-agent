@@ -1,22 +1,77 @@
 @import (less) '@xyflow/react/dist/style.css';
 
+// 画布连线（CanvasFlowEdgeRenderer 自定义边）：
+// 基础边明显加粗提亮，深色舞台上清晰可辨（此前 1.25px / 20% 过细难认）。
 .canvas-workspace.canvas-cinematic {
-  .react-flow__edge-path {
-    stroke: rgba(165, 176, 190, 0.2);
-    stroke-linecap: round;
-    stroke-width: 1.25;
+  .react-flow__edge .canvas-edge-base {
+    stroke: color-mix(in srgb, var(--text-muted) 78%, transparent);
+    stroke-width: 3.5px;
     transition:
       stroke var(--canvas-cinema-motion-fast) ease,
-      opacity var(--canvas-cinema-motion-fast) ease;
+      stroke-width var(--canvas-cinema-motion-fast) ease;
   }
 
-  .react-flow__edge.selected .react-flow__edge-path,
-  .react-flow__edge:focus .react-flow__edge-path {
-    stroke: rgba(145, 137, 255, 0.82);
-    stroke-width: 1.7;
-    filter: drop-shadow(0 0 5px rgba(119, 108, 246, 0.42));
+  // 与选中节点相连的边：整条染主题色并加粗，作为流光的底衬。
+  .react-flow__edge .canvas-edge-base-flow {
+    stroke: color-mix(in srgb, var(--primary) 88%, transparent);
+    stroke-width: 4px;
   }
 
+  // 边自身被选中 / 聚焦（Delete 删除场景）：最强对比的中性色，优先级高于流光态。
+  .react-flow__edge.selected .canvas-edge-base,
+  .react-flow__edge:focus .canvas-edge-base {
+    stroke: color-mix(in srgb, var(--text-muted) 95%, transparent);
+    stroke-width: 4.4px;
+  }
+
+  // 流光：pathLength=100 归一化后，dasharray 周期 120 > 边长 100，
+  // 起止各留全隐藏段，负向 dashoffset 让光从 source 流向 target 且循环无缝。
+  // glow 与 core 共用同一 dasharray（同长度同相位），光晕借助 blur 柔化后
+  // 恰好包裹光核；光段长度（dash 值）需 ≤ keyframe 起始偏移 18 才能保证起点前完全隐藏。
+  .canvas-edge-streak {
+    pointer-events: none;
+  }
+
+  .canvas-edge-streak-glow,
+  .canvas-edge-streak-core {
+    fill: none;
+    stroke-linecap: round;
+    stroke-dasharray: 9 111;
+    animation: canvas-edge-streak-run 1.3s linear infinite;
+  }
+
+  .canvas-edge-streak-glow {
+    stroke: color-mix(in srgb, var(--primary) 52%, transparent);
+    stroke-width: 9px;
+    filter: blur(3px);
+  }
+
+  .canvas-edge-streak-core {
+    stroke: color-mix(in srgb, var(--primary) 45%, white);
+    stroke-width: 2.8px;
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--primary) 90%, transparent));
+  }
+}
+
+// @keyframes 不参与 @layer 级联，全局只定义一次（legacy 层不再保留副本）。
+@keyframes canvas-edge-streak-run {
+  from {
+    stroke-dashoffset: 18;
+  }
+
+  to {
+    stroke-dashoffset: -102;
+  }
+}
+
+// 用户系统开启「减少动态效果」时隐藏流光，仅保留提亮的静态边。
+@media (prefers-reduced-motion: reduce) {
+  .canvas-workspace.canvas-cinematic .canvas-edge-streak {
+    display: none;
+  }
+}
+
+.canvas-workspace.canvas-cinematic {
   [data-canvas-overlay-host] :where(.ant-dropdown, .ant-select-dropdown, .ant-popover) {
     color: var(--canvas-cinema-text);
     font-family: inherit;

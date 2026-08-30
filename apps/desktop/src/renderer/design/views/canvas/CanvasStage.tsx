@@ -34,6 +34,11 @@ import {
 } from '@xyflow/react'
 import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
+import {
+  CANVAS_EDGE_TYPE,
+  CanvasFlowEdgeRenderer,
+  type CanvasFlowEdgeData,
+} from './CanvasFlowEdge'
 import { CanvasZoomControls } from './CanvasZoomControls'
 import type { CanvasNodeData } from './canvas.types'
 import { mergeFlowNodes } from './canvasStageNodeSync'
@@ -115,6 +120,7 @@ import type {
 } from './canvas.types'
 
 const nodeTypes = { sparkCanvasNode: CanvasNode }
+const edgeTypes = { [CANVAS_EDGE_TYPE]: CanvasFlowEdgeRenderer }
 const defaultNodeOrigin: NodeOrigin = [0, 0]
 const INLINE_NODE_TOOLBAR_HEIGHT = 39
 const CANVAS_MINIMAP_WIDTH = 196
@@ -527,14 +533,19 @@ function toFlowNode(
   return flowNode
 }
 
-function toFlowEdge(edge: CanvasEdge): Edge {
+function toFlowEdge(edge: CanvasEdge, selectedNodeIds: Set<string>): Edge<CanvasFlowEdgeData> {
+  // 与选中节点相连的边写入 data.flow，由 CanvasFlowEdgeRenderer 叠加流光特效。
+  const flow =
+    selectedNodeIds.size > 0 &&
+    (selectedNodeIds.has(edge.sourceNodeId) || selectedNodeIds.has(edge.targetNodeId))
   return {
     id: edge.id,
+    type: CANVAS_EDGE_TYPE,
     source: edge.sourceNodeId,
     target: edge.targetNodeId,
     interactionWidth: 36,
-    // 连线统一淡色、无动画、无标签，保持画布安静（颜色由 canvas-edge-* 统一为中性灰）。
-    className: `canvas-edge-${edge.type}`,
+    // 默认态连线为中性灰（见 .canvas-edge-base）；选中节点相关边整条提亮为主题色并流动。
+    data: { flow },
   }
 }
 
@@ -1077,7 +1088,10 @@ function CanvasStageInner({
   const stageRef = useRef<HTMLDivElement>(null)
   const paneContextMenuRef = useRef<HTMLDivElement>(null)
   const edgeContextMenuRef = useRef<HTMLDivElement>(null)
-  const flowInstanceRef = useRef<ReactFlowInstance<Node<CanvasFlowNodeData>, Edge> | null>(null)
+  const flowInstanceRef = useRef<ReactFlowInstance<
+    Node<CanvasFlowNodeData>,
+    Edge<CanvasFlowEdgeData>
+  > | null>(null)
   // 多选浮动工具栏：跟随选区包围盒上方的屏幕坐标 anchor，viewport/拖动变化时 rAF 节流重算。
   // 必须在 flowInstanceRef 之后声明 —— useMemo factory 同步读取 flowInstanceRef.current，
   // 声明在前会触发 TDZ ReferenceError（选第 2 个节点即白屏）。
@@ -1202,8 +1216,8 @@ function CanvasStageInner({
     () =>
       groupCollapseProjection.visibleEdges
         .filter((edge) => edge.type !== 'group_contains')
-        .map(toFlowEdge),
-    [groupCollapseProjection.visibleEdges],
+        .map((edge) => toFlowEdge(edge, selectedNodeIdSet)),
+    [groupCollapseProjection.visibleEdges, selectedNodeIdSet],
   )
 
   const notifyViewportChange = useCallback(
@@ -1638,7 +1652,7 @@ function CanvasStageInner({
   }, [])
 
   const handleInit = useCallback(
-    (instance: ReactFlowInstance<Node<CanvasFlowNodeData>, Edge>) => {
+    (instance: ReactFlowInstance<Node<CanvasFlowNodeData>, Edge<CanvasFlowEdgeData>>) => {
       flowInstanceRef.current = instance
       const viewport = boardViewport
       latestViewportRef.current = viewport
@@ -2580,6 +2594,7 @@ function CanvasStageInner({
           nodes={flowNodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           defaultViewport={boardViewport}
           minZoom={CANVAS_MIN_ZOOM}
           maxZoom={CANVAS_MAX_ZOOM}
